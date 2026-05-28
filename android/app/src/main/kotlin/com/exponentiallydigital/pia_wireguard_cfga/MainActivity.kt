@@ -1,4 +1,4 @@
-package com.exponentiallydigital.pia_wireguard_cfg
+package com.exponentiallydigital.pia_wireguard_cfga
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.exponentiallydigital.pia_wireguard_cfg"
+    namespace = "com.exponentiallydigital.pia_wireguard_cfga"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -16,14 +16,14 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.exponentiallydigital.pia_wireguard_cfg"
+        applicationId = "com.exponentiallydigital.pia_wireguard_cfga"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        base.archivesName.set("pia-wireguard-generator")
+        base.archivesName.set("pia-wireguard-cfga")
     }
 
     buildTypes {

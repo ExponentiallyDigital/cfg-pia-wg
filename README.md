@@ -1,13 +1,22 @@
-# pia-wireguard-cfg Flutter Android App
+# pia-wireguard-cfga Flutter Android App
 
 GUI Android APK equivalent of https://github.com/ExponentiallyDigital/pia-wireguard-cfg
 
 Implements the identical PIA WireGuard provisioning flow as the Go CLI tool,
 in a native Android GUI using Flutter/Dart.
 
+## To Do
+
+1. update README.md, elaborate release zip file, update output section, add app image
+2. fix release.yaml script (remove parts of gitignore)
+3. fix app name convention
+4. refactor versioning (currently in 2 places)
+5. create homescreen icon on install
+
 ## Setup
 
 ### Prerequisites
+
 - Flutter SDK 3.10 or later: https://flutter.dev/docs/get-started/install
 - Android Studio with Android SDK
 - A connected Android device or emulator
@@ -38,6 +47,8 @@ Output: `build/app/outputs/flutter-apk/app-release.apk`
 adb install build/app/outputs/flutter-apk/app-release.apk
 ```
 
+or sideload via your favorite app.
+
 ## How it works
 
 The provisioning logic in `lib/pia_service.dart` is a direct Dart translation
@@ -58,6 +69,7 @@ of the Go code in main.go, implementing the same steps in the same order:
 ## Output
 
 The generated config is:
+
 - Displayed in the app for review
 - Auto-saved to the app's documents directory
 - Shareable via Android's share sheet (use "Save to Files", send via email, etc.)
@@ -72,14 +84,38 @@ The generated config is:
 
 ## Package dependencies
 
-| Package | Purpose |
-|---|---|
-| `http` | HTTP calls to PIA APIs |
-| `x25519` | WireGuard keypair generation |
-| `path_provider` | App documents directory |
-| `share_plus` | Share/save config file via Android share sheet |
+| Package         | Purpose                                        |
+| --------------- | ---------------------------------------------- |
+| `http`          | HTTP calls to PIA APIs                         |
+| `x25519`        | WireGuard keypair generation                   |
+| `path_provider` | App documents directory                        |
+| `share_plus`    | Share/save config file via Android share sheet |
+
+## Contributing
+
+Contributions are welcome. To contribute:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Ensure the code passes `go vet` cleanly
+5. Submit a pull request with a clear description of the change
+
+## Bugs and feature requests
+
+Found a bug or want to request a feature?
+[Open an issue here](https://github.com/ExponentiallyDigital/pia-wireguard-cfga/issues)
+
+## Support
+
+This tool is unsupported and may cause objects in mirrors to be closer than they appear. Batteries not included.
 
 ## License
 
-GPL-3.0 -- same as the parent Go project.
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 Copyright (C) 2026 Andrew Newbury

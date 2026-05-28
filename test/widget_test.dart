@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfg/main.dart';
+import 'package:pia_wireguard_cfga/main.dart';
 
 void main() {
   testWidgets('shows PIA WireGuard config form', (tester) async {
