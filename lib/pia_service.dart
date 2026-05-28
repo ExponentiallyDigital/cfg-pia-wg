@@ -248,8 +248,12 @@ class PiaService {
     try {
       // Swapped from getUrl to postUrl to meet PIA API requirements
       final request = await httpClient.postUrl(uri);
-      // Explicitly set the body length to 0 so the server handles the empty POST correctly
+
+      // CRITICAL: Tells Dart this POST has no body payload, forcing the headers
+      // to process correctly over the socket for the query string parameters.
+      request.headers.contentType = null;
       request.contentLength = 0;
+
       final rawResponse =
           await request.close().timeout(const Duration(seconds: 10));
       final body = await rawResponse.transform(utf8.decoder).join();
