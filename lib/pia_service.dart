@@ -246,7 +246,8 @@ class PiaService {
     );
 
     try {
-      final request = await httpClient.getUrl(uri);
+      // Swapped from getUrl to postUrl to meet PIA API requirements
+      final request = await httpClient.postUrl(uri);
       final rawResponse =
           await request.close().timeout(const Duration(seconds: 10));
       final body = await rawResponse.transform(utf8.decoder).join();
