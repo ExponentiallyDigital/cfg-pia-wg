@@ -312,7 +312,7 @@ class _MainScreenState extends State<MainScreen> {
           Padding(
             padding: EdgeInsets.only(right: 16),
             child: Text(
-              'v0.0.2',
+              'v0.0.3',
               style: TextStyle(
                 color: Color(0xFF8892A4),
                 fontSize: 11,
@@ -320,7 +320,8 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
         ],
-      ),
+      ),// Explicitly set the body length to 0 so the server handles the empty POST correctly
+  request.contentLength = 0;
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
