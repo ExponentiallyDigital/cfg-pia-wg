@@ -16,9 +16,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
-import 'package:convert/convert.dart';
 import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart';
 import 'package:x25519/x25519.dart' as x25519;
 
 class WgServer {
@@ -155,12 +153,10 @@ class PiaService {
   }) async {
     onProgress?.call('Authenticating with PIA...');
     final credentials = base64Encode(utf8.encode('$username:$password'));
-    final response = await http
-        .post(
-          Uri.parse(_tokenUrl),
-          headers: {'Authorization': 'Basic $credentials'},
-        )
-        .timeout(const Duration(seconds: 10));
+    final response = await http.post(
+      Uri.parse(_tokenUrl),
+      headers: {'Authorization': 'Basic $credentials'},
+    ).timeout(const Duration(seconds: 10));
 
     if (response.statusCode != 200) {
       throw Exception(
@@ -191,7 +187,7 @@ class PiaService {
     priv[31] |= 64;
 
     // Derive public key using X25519
-    final pub = x25519.X25519(priv, x25519.Basepoint);
+    final pub = x25519.X25519(priv, x25519.basePoint);
 
     return (base64Encode(priv), base64Encode(pub));
   }
@@ -231,46 +227,47 @@ class PiaService {
     final secCtx = SecurityContext(withTrustedRoots: false);
     secCtx.setTrustedCertificatesBytes(utf8.encode(caCertPem));
 
-    final httpClientInner = HttpClient(context: secCtx);
-    // ServerName must match the CN from the server list, not the IP
-    httpClientInner.badCertificateCallback =
+    final httpClient = HttpClient(context: secCtx);
+    // ServerName must match the CN from the server list, not the IP.
+    httpClient.badCertificateCallback =
         (X509Certificate cert, String host, int port) => false;
-
-    // We need to override the host to use CN for TLS SNI
-    // Flutter's HttpClient uses the host in the URL for SNI; we override
-    // by using the IP in the URL but setting the expected host separately.
-    // The cleanest approach: connect to IP:1337 but send SNI = CN.
-    // http package + IOClient handles this correctly when we set the host header.
-    final ioClient = IOClient(httpClientInner);
+    httpClient.findProxy = (uri) => 'DIRECT';
+    httpClient.connectionFactory = (uri, proxyHost, proxyPort) {
+      if (proxyHost != null || proxyPort != null) {
+        throw UnsupportedError('Proxy connections are not supported here.');
+      }
+      return Socket.startConnect(server.ip, uri.port);
+    };
 
     final encodedPubkey = Uri.encodeQueryComponent(publicKeyB64);
     final encodedToken = Uri.encodeQueryComponent(token);
-    final urlStr =
-        'https://${server.ip}:1337/addKey?pt=$encodedToken&pubkey=$encodedPubkey';
+    final uri = Uri.parse(
+      'https://${server.cn}:1337/addKey?pt=$encodedToken&pubkey=$encodedPubkey',
+    );
 
-    // Override SNI by using the CN as the host and providing the IP separately.
-    // We build the request manually via HttpClient to control the SNI hostname.
-    final request = await httpClientInner.getUrl(Uri.parse(urlStr));
-    // Set the SNI hostname to the server CN so TLS verification succeeds
-    request.headers.host = server.cn;
-    final rawResponse = await request.close().timeout(const Duration(seconds: 10));
-    final body = await rawResponse.transform(utf8.decoder).join();
+    try {
+      final request = await httpClient.getUrl(uri);
+      final rawResponse =
+          await request.close().timeout(const Duration(seconds: 10));
+      final body = await rawResponse.transform(utf8.decoder).join();
 
-    if (rawResponse.statusCode != 200) {
-      throw Exception(
-          'Registration failed: HTTP ${rawResponse.statusCode}\n$body');
+      if (rawResponse.statusCode != 200) {
+        throw Exception(
+            'Registration failed: HTTP ${rawResponse.statusCode}\n$body');
+      }
+
+      final decoded = jsonDecode(body) as Map<String, dynamic>;
+      final reg = RegResponse.fromJson(decoded);
+
+      if (reg.status != 'OK') {
+        throw Exception(
+            'Registration failed: status "${reg.status}" from PIA server');
+      }
+
+      return reg;
+    } finally {
+      httpClient.close(force: true);
     }
-
-    final decoded = jsonDecode(body) as Map<String, dynamic>;
-    final reg = RegResponse.fromJson(decoded);
-
-    if (reg.status != 'OK') {
-      throw Exception(
-          'Registration failed: status "${reg.status}" from PIA server');
-    }
-
-    ioClient.close();
-    return reg;
   }
 
   // ---------------------------------------------------------------------------
@@ -330,8 +327,8 @@ class PiaService {
 
     // 2. Probe latency and select best server
     onProgress?.call('Measuring server latency...');
-    final probeResults = await probeLatency(selectedRegion.wgServers,
-        onProgress: onProgress);
+    final probeResults =
+        await probeLatency(selectedRegion.wgServers, onProgress: onProgress);
     final responding = probeResults.where((r) => !r.failed).toList();
     if (responding.isEmpty) {
       throw Exception(
@@ -347,8 +344,8 @@ class PiaService {
     final (privateKey, publicKey) = generateWgKeypair();
 
     // 5 & 6. Register key
-    final reg = await registerKey(bestServer, token, publicKey,
-        onProgress: onProgress);
+    final reg =
+        await registerKey(bestServer, token, publicKey, onProgress: onProgress);
 
     // 7. Build config
     onProgress?.call('Building config file...');

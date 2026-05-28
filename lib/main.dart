@@ -5,7 +5,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'pia_service.dart';
@@ -27,11 +26,9 @@ class PiaWgApp extends StatelessWidget {
           primary: Color(0xFF00D4AA),
           secondary: Color(0xFF00A882),
           surface: Color(0xFF1A1D23),
-          background: Color(0xFF12141A),
           error: Color(0xFFFF5C5C),
           onPrimary: Color(0xFF12141A),
           onSurface: Color(0xFFE8EAF0),
-          onBackground: Color(0xFFE8EAF0),
         ),
         useMaterial3: true,
         fontFamily: 'monospace',
@@ -119,12 +116,16 @@ class _MainScreenState extends State<MainScreen> {
     });
     try {
       final regions = await _service.fetchRegions(onProgress: _setStatus);
+      if (!mounted) return;
       setState(() => _regions = regions);
       _showRegionPicker();
     } catch (e) {
+      if (!mounted) return;
       _showError('Failed to load regions: $e');
     } finally {
-      setState(() => _loadingRegions = false);
+      if (mounted) {
+        setState(() => _loadingRegions = false);
+      }
     }
   }
 
@@ -176,6 +177,7 @@ class _MainScreenState extends State<MainScreen> {
         onProgress: _setStatus,
       );
 
+      if (!mounted) return;
       setState(() {
         _generatedConfig = config;
         _status = 'Config generated successfully.';
@@ -184,9 +186,12 @@ class _MainScreenState extends State<MainScreen> {
       // Auto-save to app documents directory
       await _saveConfig(config, region);
     } catch (e) {
+      if (!mounted) return;
       _showError('$e');
     } finally {
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -199,6 +204,7 @@ class _MainScreenState extends State<MainScreen> {
       final filename = 'pia-$region.conf';
       final file = File('${dir.path}/$filename');
       await file.writeAsString(config, flush: true);
+      if (!mounted) return;
       setState(() {
         _savedPath = file.path;
         _status = 'Saved: $filename';
@@ -209,7 +215,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Save to user-chosen directory via file picker
+  // Share/save config through Android's system share sheet
   // ---------------------------------------------------------------------------
   Future<void> _saveToDirectory() async {
     if (_generatedConfig == null) return;
@@ -222,19 +228,23 @@ class _MainScreenState extends State<MainScreen> {
       final tempFile = File('${dir.path}/$filename');
       await tempFile.writeAsString(_generatedConfig!, flush: true);
 
-      await Share.shareXFiles(
-        [XFile(tempFile.path, mimeType: 'text/plain')],
-        subject: filename,
-        text: 'PIA WireGuard config for region: $region',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(tempFile.path, mimeType: 'text/plain')],
+          subject: filename,
+          text: 'PIA WireGuard config for region: $region',
+        ),
       );
     } catch (e) {
+      if (!mounted) return;
       _showError('Could not share file: $e');
     }
   }
 
-  void _copyToClipboard() {
+  Future<void> _copyToClipboard() async {
     if (_generatedConfig == null) return;
-    Clipboard.setData(ClipboardData(text: _generatedConfig!));
+    await Clipboard.setData(ClipboardData(text: _generatedConfig!));
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Config copied to clipboard'),
@@ -253,8 +263,7 @@ class _MainScreenState extends State<MainScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1D23),
-        title: const Text('Error',
-            style: TextStyle(color: Color(0xFFFF5C5C))),
+        title: const Text('Error', style: TextStyle(color: Color(0xFFFF5C5C))),
         content: Text(message,
             style: const TextStyle(color: Color(0xFFE8EAF0), fontSize: 13)),
         actions: [
@@ -299,13 +308,13 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ],
         ),
-        actions: [
+        actions: const [
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: EdgeInsets.only(right: 16),
             child: Text(
               'v1.0.0',
               style: TextStyle(
-                color: const Color(0xFF8892A4),
+                color: Color(0xFF8892A4),
                 fontSize: 11,
               ),
             ),
@@ -318,7 +327,7 @@ class _MainScreenState extends State<MainScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _SectionLabel('REGION'),
+              const _SectionLabel('REGION'),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -347,7 +356,7 @@ class _MainScreenState extends State<MainScreen> {
                 ],
               ),
               const SizedBox(height: 20),
-              _SectionLabel('CREDENTIALS'),
+              const _SectionLabel('CREDENTIALS'),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _usernameCtrl,
@@ -392,7 +401,7 @@ class _MainScreenState extends State<MainScreen> {
                 enableSuggestions: false,
               ),
               const SizedBox(height: 20),
-              _SectionLabel('DNS SERVERS'),
+              const _SectionLabel('DNS SERVERS'),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _dnsCtrl,
@@ -407,7 +416,8 @@ class _MainScreenState extends State<MainScreen> {
                   prefixIcon: Icon(Icons.dns_outlined,
                       color: Color(0xFF8892A4), size: 18),
                   helperText: 'Quad9 default  |  Cloudflare: 1.1.1.1, 1.0.0.1',
-                  helperStyle: TextStyle(color: Color(0xFF4A5268), fontSize: 11),
+                  helperStyle:
+                      TextStyle(color: Color(0xFF4A5268), fontSize: 11),
                 ),
               ),
               const SizedBox(height: 28),
@@ -429,18 +439,23 @@ class _MainScreenState extends State<MainScreen> {
               ),
               if (_status.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                _StatusBar(message: _status, isError: _status.toLowerCase().contains('fail') || _status.toLowerCase().contains('error')),
+                _StatusBar(
+                  message: _status,
+                  isError: _status.toLowerCase().contains('fail') ||
+                      _status.toLowerCase().contains('error'),
+                ),
               ],
               if (_generatedConfig != null) ...[
                 const SizedBox(height: 24),
-                _SectionLabel('GENERATED CONFIG'),
+                const _SectionLabel('GENERATED CONFIG'),
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: const Color(0xFF0E1016),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF00D4AA), width: 1),
+                    border:
+                        Border.all(color: const Color(0xFF00D4AA), width: 1),
                   ),
                   child: SelectableText(
                     _generatedConfig!,
@@ -510,8 +525,7 @@ class _MainScreenState extends State<MainScreen> {
 class _RegionPickerSheet extends StatefulWidget {
   final List<Region> regions;
   final void Function(String) onSelected;
-  const _RegionPickerSheet(
-      {required this.regions, required this.onSelected});
+  const _RegionPickerSheet({required this.regions, required this.onSelected});
 
   @override
   State<_RegionPickerSheet> createState() => _RegionPickerSheetState();
@@ -547,10 +561,12 @@ class _RegionPickerSheetState extends State<_RegionPickerSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
               autofocus: true,
-              style: const TextStyle(color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
+              style: const TextStyle(
+                  color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
               decoration: InputDecoration(
                 hintText: 'Filter regions...',
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF8892A4), size: 18),
+                prefixIcon: const Icon(Icons.search,
+                    color: Color(0xFF8892A4), size: 18),
                 filled: true,
                 fillColor: const Color(0xFF1E2128),
                 border: OutlineInputBorder(
@@ -674,17 +690,14 @@ class _StatusBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: isError
-              ? const Color(0xFF2A1515)
-              : const Color(0xFF0E1E1A),
+          color: isError ? const Color(0xFF2A1515) : const Color(0xFF0E1E1A),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: isError
-                ? const Color(0xFFFF5C5C).withOpacity(0.4)
-                : const Color(0xFF00D4AA).withOpacity(0.3),
+                ? const Color(0xFFFF5C5C).withValues(alpha: 0.4)
+                : const Color(0xFF00D4AA).withValues(alpha: 0.3),
           ),
         ),
         child: Row(
@@ -692,9 +705,8 @@ class _StatusBar extends StatelessWidget {
             Icon(
               isError ? Icons.error_outline : Icons.info_outline,
               size: 14,
-              color: isError
-                  ? const Color(0xFFFF5C5C)
-                  : const Color(0xFF00D4AA),
+              color:
+                  isError ? const Color(0xFFFF5C5C) : const Color(0xFF00D4AA),
             ),
             const SizedBox(width: 8),
             Expanded(

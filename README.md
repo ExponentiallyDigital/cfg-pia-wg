@@ -76,11 +76,8 @@ The generated config is:
 |---|---|
 | `http` | HTTP calls to PIA APIs |
 | `x25519` | WireGuard keypair generation |
-| `convert` | Base64 encoding |
-| `file_picker` | Output directory selection |
 | `path_provider` | App documents directory |
 | `share_plus` | Share/save config file via Android share sheet |
-| `permission_handler` | Storage permissions |
 
 ## License
 
