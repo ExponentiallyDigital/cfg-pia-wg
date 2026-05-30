@@ -71,9 +71,14 @@ class PiaService {
   // ---------------------------------------------------------------------------
   Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async {
     onProgress?.call('Fetching PIA server list...');
-    final response = await http
-        .get(Uri.parse(_serverListUrl))
-        .timeout(const Duration(seconds: 10));
+    final http.Response response;
+    try {
+      response = await http
+          .get(Uri.parse(_serverListUrl))
+          .timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      throw Exception('Server list request timed out after 10 seconds.');
+    }
 
     if (response.statusCode != 200) {
       throw Exception('Server list returned HTTP ${response.statusCode}');
@@ -86,7 +91,14 @@ class PiaService {
       throw Exception('Server list format error: missing newline after JSON');
     }
     final jsonPart = body.substring(0, newlineIdx);
-    final decoded = jsonDecode(jsonPart) as Map<String, dynamic>;
+
+    final Map<String, dynamic> decoded;
+    try {
+      decoded = jsonDecode(jsonPart) as Map<String, dynamic>;
+    } catch (e) {
+      throw Exception('Server list JSON parse error: $e');
+    }
+
     final rawRegions = decoded['regions'] as List<dynamic>? ?? [];
 
     final regions = <Region>[];
@@ -112,6 +124,9 @@ class PiaService {
   // ---------------------------------------------------------------------------
   // Measure TCP latency to port 1337 for each server in a region
   // Mirrors: newDialer().DialContext(ctx, "tcp", net.JoinHostPort(s.IP, "1337"))
+  //
+  // [LOG] Individual probe failures are now reported via onProgress instead of
+  // being silently swallowed. A summary line is emitted after all probes.
   // ---------------------------------------------------------------------------
   Future<List<ProbeResult>> probeLatency(
     List<WgServer> servers, {
@@ -130,7 +145,9 @@ class PiaService {
         final latency = DateTime.now().difference(start);
         await socket.close();
         results.add(ProbeResult(server: server, latency: latency));
-      } catch (_) {
+      } catch (e) {
+        // [LOG] Report each probe failure rather than silently dropping it
+        onProgress?.call('Probe ${server.ip} failed: $e');
         results.add(ProbeResult(server: server));
       }
     }
@@ -145,6 +162,8 @@ class PiaService {
   // ---------------------------------------------------------------------------
   // Authenticate and obtain a PIA token
   // Mirrors: POST to /gtoken/generateToken with HTTP Basic Auth, empty body
+  //
+  // [LOG] Emits confirmation message on success.
   // ---------------------------------------------------------------------------
   Future<String> getToken(
     String username,
@@ -153,20 +172,36 @@ class PiaService {
   }) async {
     onProgress?.call('Authenticating with PIA...');
     final credentials = base64Encode(utf8.encode('$username:$password'));
-    final response = await http.post(
-      Uri.parse(_tokenUrl),
-      headers: {'Authorization': 'Basic $credentials'},
-    ).timeout(const Duration(seconds: 10));
+
+    final http.Response response;
+    try {
+      response = await http.post(
+        Uri.parse(_tokenUrl),
+        headers: {'Authorization': 'Basic $credentials'},
+      ).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      throw Exception('Authentication request timed out after 10 seconds.');
+    }
 
     if (response.statusCode != 200) {
       throw Exception(
           'Authentication failed: HTTP ${response.statusCode}. Check your credentials.');
     }
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+
+    final Map<String, dynamic> decoded;
+    try {
+      decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      throw Exception('Unexpected authentication response format: $e');
+    }
+
     final token = decoded['token'] as String? ?? '';
     if (token.isEmpty) {
       throw Exception('Authentication failed: empty token received from PIA');
     }
+
+    // [LOG] Confirm authentication succeeded
+    onProgress?.call('Authentication successful.');
     return token;
   }
 
@@ -198,9 +233,14 @@ class PiaService {
   // ---------------------------------------------------------------------------
   Future<String> _fetchCaCert({void Function(String)? onProgress}) async {
     onProgress?.call('Fetching PIA CA certificate...');
-    final response = await http
-        .get(Uri.parse(_caCertUrl))
-        .timeout(const Duration(seconds: 10));
+    final http.Response response;
+    try {
+      response = await http
+          .get(Uri.parse(_caCertUrl))
+          .timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      throw Exception('CA certificate fetch timed out after 10 seconds.');
+    }
     if (response.statusCode != 200) {
       throw Exception(
           'Failed to fetch PIA CA certificate: HTTP ${response.statusCode}');
@@ -212,6 +252,9 @@ class PiaService {
   // Register WireGuard public key with PIA server
   // Mirrors: registerWGKey() in main.go
   // Uses PIA CA cert with ServerName set to server CN (not IP)
+  //
+  // [LOG] Emits peer IP and port on success so the user can verify the
+  // assignment without exposing the private key.
   // ---------------------------------------------------------------------------
   Future<RegResponse> registerKey(
     WgServer server,
@@ -229,7 +272,8 @@ class PiaService {
 
     final httpClient = HttpClient(context: secCtx);
 
-    // Allow the connection to proceed without dropping on hostname verification mismatches
+    // Allow the connection to proceed using CN-based SNI even though we
+    // connect to the raw IP address.
     httpClient.badCertificateCallback =
         (X509Certificate cert, String host, int port) => true;
     httpClient.findProxy = (uri) => 'DIRECT';
@@ -243,9 +287,10 @@ class PiaService {
     );
 
     try {
+      // GET, not POST -- mirrors main.go line 480
       final request = await httpClient.getUrl(uri);
 
-      // Set the SNI and host matching header using the certificate Common Name (CN)
+      // Set SNI / Host header to the certificate Common Name
       request.headers.host = server.cn;
 
       final rawResponse =
@@ -258,7 +303,14 @@ class PiaService {
             'Registration failed: HTTP ${rawResponse.statusCode}\n$body');
       }
 
-      final decoded = jsonDecode(body) as Map<String, dynamic>;
+      final Map<String, dynamic> decoded;
+      try {
+        decoded = jsonDecode(body) as Map<String, dynamic>;
+      } catch (e) {
+        throw Exception(
+            'Unexpected registration response format: $e\nRaw: $body');
+      }
+
       final reg = RegResponse.fromJson(decoded);
 
       if (reg.status != 'OK') {
@@ -266,7 +318,14 @@ class PiaService {
             'Registration failed: status "${reg.status}" from PIA server');
       }
 
+      // [LOG] Confirm registration with peer IP and port (no private key exposed)
+      onProgress?.call(
+          'Key registered. Peer IP: ${reg.peerIP}, port: ${reg.serverPort}');
+
       return reg;
+    } on TimeoutException {
+      throw Exception(
+          'Key registration request timed out after 10 seconds.');
     } finally {
       httpClient.close(force: true);
     }
@@ -337,6 +396,13 @@ class PiaService {
           'All latency probes failed for region "$region". Check your network connection.');
     }
     final bestServer = responding.first.server;
+
+    // [LOG] Report selected server, latency, and probe summary
+    final bestMs = responding.first.latency!.inMilliseconds;
+    onProgress?.call(
+        'Selected ${bestServer.ip} (${bestServer.cn}) -- '
+        '${responding.length}/${probeResults.length} servers responded, '
+        'best latency ${bestMs}ms');
 
     // 3. Get auth token
     final token = await getToken(username, password, onProgress: onProgress);

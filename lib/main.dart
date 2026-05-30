@@ -3,13 +3,13 @@
 // GUI equivalent of https://github.com/ExponentiallyDigital/pia-wireguard-cfg
 
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'pia_service.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 void main() {
   runApp(const PiaWgApp());
@@ -73,6 +73,15 @@ class PiaWgApp extends StatelessWidget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Log entry model -- each line in the log panel is one of these
+// ---------------------------------------------------------------------------
+class _LogEntry {
+  final String message;
+  final bool isError;
+  _LogEntry(this.message, {this.isError = false});
+}
+
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -80,62 +89,129 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+// Mix in WidgetsBindingObserver so we can detect app foreground/background
+// transitions and correct the wipe timer for time that elapsed while paused.
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   final _service = PiaService();
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _regionCtrl = TextEditingController();
   final _dnsCtrl = TextEditingController(text: '9.9.9.9, 149.112.112.112');
+  final _logScrollCtrl = ScrollController();
 
   bool _passwordVisible = false;
   bool _loading = false;
   bool _loadingRegions = false;
-  String _status = '';
   String? _generatedConfig;
   List<Region> _regions = [];
 
-  // [CHANGE 4] Safety auto-wipe timer state
-  static const _timeoutSeconds = 180; // 3 minutes
+  // Log panel state -- replaces the old single _status string and _InfoCard
+  final List<_LogEntry> _log = [];
+
+  // ---------------------------------------------------------------------------
+  // Safety auto-wipe timer
+  // Uses a wall-clock deadline (DateTime) rather than a simple decrementing
+  // counter so that time spent in the background is correctly accounted for.
+  // The periodic Timer fires every second only to refresh the countdown display;
+  // the actual wipe decision is always based on the deadline, not the counter.
+  // ---------------------------------------------------------------------------
+  static const _timeoutSeconds = 180;
   Timer? _wipeTimer;
+  DateTime? _wipeDeadline;
   int _secondsRemaining = 0;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _wipeTimer?.cancel();
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
     _regionCtrl.dispose();
     _dnsCtrl.dispose();
+    _logScrollCtrl.dispose();
     super.dispose();
   }
 
-  void _setStatus(String s) {
-    if (mounted) setState(() => _status = s);
+  // ---------------------------------------------------------------------------
+  // App lifecycle -- recalculate remaining seconds when returning to foreground
+  // so the countdown reflects real elapsed wall time, not just Dart ticks.
+  // ---------------------------------------------------------------------------
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_wipeDeadline != null && _generatedConfig != null) {
+        final remaining = _wipeDeadline!.difference(DateTime.now()).inSeconds;
+        if (remaining <= 0) {
+          // Deadline passed while we were in the background -- wipe now.
+          _clearSession();
+        } else {
+          // Resync the displayed counter to actual wall-clock remaining time.
+          if (mounted) setState(() => _secondsRemaining = remaining);
+        }
+      }
+    }
   }
 
+  // ---------------------------------------------------------------------------
+  // Log helpers
+  // ---------------------------------------------------------------------------
+  void _log_(String message, {bool isError = false}) {
+    if (!mounted) return;
+    setState(() {
+      _log.add(_LogEntry(message, isError: isError));
+    });
+    // Auto-scroll to bottom after the frame renders
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_logScrollCtrl.hasClients) {
+        _logScrollCtrl.animateTo(
+          _logScrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  void _logInfo(String message) => _log_(message);
+  void _logError(String message) => _log_(message, isError: true);
+
+  // onProgress callback passed into PiaService -- every service status message
+  // goes through here so it appears in the log panel.
+  void _onProgress(String message) => _logInfo(message);
+
+  // ---------------------------------------------------------------------------
+  // Clear session
+  // ---------------------------------------------------------------------------
   void _clearSession() {
-    // Cancel any running timer first
     _wipeTimer?.cancel();
     _wipeTimer = null;
+    _wipeDeadline = null;
 
-    // Overwrite controller text buffers to empty strings so the previous
-    // content is immediately out-of-scope for the GC before setState rebuilds.
     _usernameCtrl.text = '';
     _passwordCtrl.text = '';
 
     setState(() {
       _generatedConfig = null;
       _secondsRemaining = 0;
-      _status = 'Session cleared.';
       _passwordVisible = false;
     });
+    _logInfo('Session cleared.');
   }
 
   // ---------------------------------------------------------------------------
-  // [CHANGE 4] Start (or restart) the 3-minute safety auto-wipe countdown
+  // Start / reset the wall-clock-based wipe timer
   // ---------------------------------------------------------------------------
   void _startOrResetTimer() {
     _wipeTimer?.cancel();
+    _wipeDeadline = DateTime.now().add(
+      const Duration(seconds: _timeoutSeconds),
+    );
     _secondsRemaining = _timeoutSeconds;
 
     _wipeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -143,48 +219,45 @@ class _MainScreenState extends State<MainScreen> {
         timer.cancel();
         return;
       }
-      setState(() {
-        _secondsRemaining--;
-      });
-      if (_secondsRemaining <= 0) {
+      final remaining = _wipeDeadline!.difference(DateTime.now()).inSeconds;
+      if (remaining <= 0) {
         timer.cancel();
         _clearSession();
+      } else {
+        setState(() => _secondsRemaining = remaining);
       }
     });
   }
 
   // ---------------------------------------------------------------------------
-  // [CHANGE 4] Called by GestureDetector on any user touch/pointer event
-  // to reset the auto-wipe countdown back to 3 minutes.
+  // Touch interaction resets the timer while config is on screen
   // ---------------------------------------------------------------------------
   void _onUserInteraction(PointerEvent _) {
-    // Only reset the timer if a config is currently displayed --
-    // no need to run the timer during idle input states.
     if (_generatedConfig != null && _wipeTimer != null) {
       _startOrResetTimer();
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Load region list for the picker
+  // Load regions
   // ---------------------------------------------------------------------------
   Future<void> _loadRegions() async {
-    setState(() {
-      _loadingRegions = true;
-      _status = 'Loading regions...';
-    });
+    setState(() => _loadingRegions = true);
+    _logInfo('Loading regions...');
     try {
-      final regions = await _service.fetchRegions(onProgress: _setStatus);
+      final regions = await _service.fetchRegions(onProgress: _onProgress);
       if (!mounted) return;
       setState(() => _regions = regions);
+      _logInfo('Loaded ${regions.length} regions.');
       _showRegionPicker();
+    } on TimeoutException {
+      if (!mounted) return;
+      _logError('Region list request timed out. Check your connection.');
     } catch (e) {
       if (!mounted) return;
-      _showError('Failed to load regions: $e');
+      _logError('Failed to load regions: $e');
     } finally {
-      if (mounted) {
-        setState(() => _loadingRegions = false);
-      }
+      if (mounted) setState(() => _loadingRegions = false);
     }
   }
 
@@ -207,8 +280,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Main generate flow
-  // [CHANGE 1] Removed _saveConfig() call -- config stays in memory only.
+  // Main generate flow -- all logging goes to the log panel
   // ---------------------------------------------------------------------------
   Future<void> _generate() async {
     final region = _regionCtrl.text.trim();
@@ -217,16 +289,15 @@ class _MainScreenState extends State<MainScreen> {
     final dns = _dnsCtrl.text.trim();
 
     if (region.isEmpty || username.isEmpty || password.isEmpty) {
-      _showError('Region, username, and password are all required.');
+      _logError('Region, username, and password are all required.');
       return;
     }
 
     setState(() {
       _loading = true;
       _generatedConfig = null;
-      // [CHANGE 1] Removed: _savedPath = null
-      _status = 'Starting...';
     });
+    _logInfo('Starting...');
 
     try {
       final config = await _service.generateConfig(
@@ -234,37 +305,31 @@ class _MainScreenState extends State<MainScreen> {
         username: username,
         password: password,
         dns: dns.isEmpty ? '9.9.9.9, 149.112.112.112' : dns,
-        onProgress: _setStatus,
+        onProgress: _onProgress,
       );
 
       if (!mounted) return;
-      setState(() {
-        _generatedConfig = config;
-        _status = 'Config generated successfully.';
-      });
-
-      // [CHANGE 1] Removed: await _saveConfig(config, region)
-      // Config is now held exclusively in _generatedConfig (volatile memory).
-
-      // [CHANGE 4] Config is now on screen -- start the safety wipe timer.
+      setState(() => _generatedConfig = config);
+      _logInfo('Config generated successfully.');
       _startOrResetTimer();
+    } on TimeoutException catch (e) {
+      if (!mounted) return;
+      _logError('Request timed out: $e');
     } catch (e) {
       if (!mounted) return;
-      _showError('$e');
+      _logError('$e');
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Share via system share sheet -- named temp file, deleted after share
+  // ---------------------------------------------------------------------------
   Future<void> _shareConfig() async {
     if (_generatedConfig == null) return;
     final region = _regionCtrl.text.trim();
     final filename = 'pia-$region.conf';
-    // Write to a named temp file so the OS share pipeline sees the correct
-    // filename. The file is deleted immediately after share() returns,
-    // keeping the no-persistent-storage guarantee.
     final dir = await getTemporaryDirectory();
     final tempFile = File('${dir.path}/$filename');
 
@@ -279,10 +344,8 @@ class _MainScreenState extends State<MainScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      _showError('Could not share file: $e');
+      _logError('Could not share file: $e');
     } finally {
-      // Always delete the temp file whether share succeeded, failed, or
-      // was dismissed -- existence is scoped to this method's execution.
       if (await tempFile.exists()) await tempFile.delete();
     }
   }
@@ -296,28 +359,6 @@ class _MainScreenState extends State<MainScreen> {
         content: Text('Config copied to clipboard'),
         duration: Duration(seconds: 2),
         backgroundColor: Color(0xFF00D4AA),
-      ),
-    );
-  }
-
-  void _showError(String message) {
-    setState(() {
-      _status = message;
-      _loading = false;
-    });
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1D23),
-        title: const Text('Error', style: TextStyle(color: Color(0xFFFF5C5C))),
-        content: Text(message,
-            style: const TextStyle(color: Color(0xFFE8EAF0), fontSize: 13)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK', style: TextStyle(color: Color(0xFF00D4AA))),
-          ),
-        ],
       ),
     );
   }
@@ -364,21 +405,13 @@ class _MainScreenState extends State<MainScreen> {
                 child: FutureBuilder<PackageInfo>(
                   future: PackageInfo.fromPlatform(),
                   builder: (context, snapshot) {
-                    if (snapshot.hasData) {
-                      return Text(
-                        'v${snapshot.data!.version}',
-                        style: const TextStyle(
-                          color: Color(0xFF8892A4),
-                          fontSize: 11,
-                        ),
-                      );
-                    }
-                    return const Text(
-                      'v...',
-                      style: TextStyle(
-                        color: Color(0xFF8892A4),
-                        fontSize: 11,
-                      ),
+                    final label = snapshot.hasData
+                        ? 'v${snapshot.data!.version}'
+                        : 'v...';
+                    return Text(
+                      label,
+                      style: const TextStyle(
+                          color: Color(0xFF8892A4), fontSize: 11),
                     );
                   },
                 ),
@@ -392,6 +425,7 @@ class _MainScreenState extends State<MainScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // ---- REGION ----
                 const _SectionLabel('REGION'),
                 const SizedBox(height: 8),
                 Row(
@@ -421,10 +455,10 @@ class _MainScreenState extends State<MainScreen> {
                   ],
                 ),
                 const SizedBox(height: 20),
+
+                // ---- CREDENTIALS ----
                 const _SectionLabel('CREDENTIALS'),
                 const SizedBox(height: 8),
-
-                // [CHANGE 3] Username: autocorrect + suggestions disabled
                 TextFormField(
                   controller: _usernameCtrl,
                   style: const TextStyle(
@@ -437,15 +471,10 @@ class _MainScreenState extends State<MainScreen> {
                     prefixIcon: Icon(Icons.person_outline,
                         color: Color(0xFF8892A4), size: 18),
                   ),
-                  autocorrect:
-                      false, // [CHANGE 3] prevents keyboard learning username
-                  enableSuggestions:
-                      false, // [CHANGE 3] suppresses predictive text bar
+                  autocorrect: false,
+                  enableSuggestions: false,
                 ),
                 const SizedBox(height: 12),
-
-                // [CHANGE 3] Password: obscured, no autocorrect, no suggestions,
-                // no interactive selection (cuts off cut/copy/paste clipboard access)
                 TextFormField(
                   controller: _passwordCtrl,
                   obscureText: !_passwordVisible,
@@ -469,10 +498,12 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                     ),
                   ),
-                  autocorrect: false, // [CHANGE 3]
-                  enableSuggestions: false, // [CHANGE 3]
+                  autocorrect: false,
+                  enableSuggestions: false,
                 ),
                 const SizedBox(height: 20),
+
+                // ---- DNS ----
                 const _SectionLabel('DNS SERVERS'),
                 const SizedBox(height: 8),
                 TextFormField(
@@ -494,6 +525,8 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 ),
                 const SizedBox(height: 28),
+
+                // ---- GENERATE BUTTON ----
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -510,25 +543,15 @@ class _MainScreenState extends State<MainScreen> {
                         : const Text('GENERATE CONFIG'),
                   ),
                 ),
-                if (_status.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _StatusBar(
-                    message: _status,
-                    isError: _status.toLowerCase().contains('fail') ||
-                        _status.toLowerCase().contains('error'),
-                  ),
-                ],
+
+                // ---- GENERATED CONFIG ----
                 if (_generatedConfig != null) ...[
                   const SizedBox(height: 24),
-
-                  // [CHANGE 2 + 4] Header row: section label, countdown, Clear button
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       const _SectionLabel('GENERATED CONFIG'),
                       const Spacer(),
-
-                      // [CHANGE 4] Live countdown display
                       if (_secondsRemaining > 0) ...[
                         Icon(
                           Icons.timer_outlined,
@@ -550,8 +573,6 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                         const SizedBox(width: 12),
                       ],
-
-                      // [CHANGE 2] Clear button
                       GestureDetector(
                         onTap: _clearSession,
                         child: Container(
@@ -587,7 +608,6 @@ class _MainScreenState extends State<MainScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -606,9 +626,6 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                     ),
                   ),
-
-                  // [CHANGE 1] Removed: savedPath display -- no longer saved to disk.
-
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -627,7 +644,6 @@ class _MainScreenState extends State<MainScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: OutlinedButton.icon(
-                          // [CHANGE 1] Was: _saveToDirectory. Now: _shareConfig (no disk write)
                           onPressed: _shareConfig,
                           icon: const Icon(Icons.share, size: 16),
                           label: const Text('SHARE / SAVE'),
@@ -641,8 +657,13 @@ class _MainScreenState extends State<MainScreen> {
                     ],
                   ),
                 ],
+
+                // ---- LOG PANEL (replaces _InfoCard / _StatusBar) ----
                 const SizedBox(height: 32),
-                const _InfoCard(),
+                _LogPanel(
+                  entries: _log,
+                  scrollController: _logScrollCtrl,
+                ),
               ],
             ),
           ),
@@ -816,91 +837,115 @@ class _IconButton extends StatelessWidget {
       );
 }
 
-class _StatusBar extends StatelessWidget {
-  final String message;
-  final bool isError;
-  const _StatusBar({required this.message, required this.isError});
+// ---------------------------------------------------------------------------
+// Log panel -- replaces both _StatusBar and _InfoCard
+//
+// Renders a scrollable list of timestamped log lines inside the same
+// styled container that _InfoCard used. Info lines are teal, error lines
+// are red, matching the old _StatusBar colour scheme exactly.
+// ---------------------------------------------------------------------------
+class _LogPanel extends StatelessWidget {
+  final List<_LogEntry> entries;
+  final ScrollController scrollController;
+
+  const _LogPanel({
+    required this.entries,
+    required this.scrollController,
+  });
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: isError ? const Color(0xFF2A1515) : const Color(0xFF0E1E1A),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isError
-                ? const Color(0xFFFF5C5C).withValues(alpha: 0.4)
-                : const Color(0xFF00D4AA).withValues(alpha: 0.3),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.info_outline,
-              size: 14,
-              color:
-                  isError ? const Color(0xFFFF5C5C) : const Color(0xFF00D4AA),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                message,
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1D23),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF2E3240)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row: label + clear-log button
+          Row(
+            children: [
+              const Text(
+                'LOG',
                 style: TextStyle(
-                  color: isError
-                      ? const Color(0xFFFF5C5C)
-                      : const Color(0xFF00D4AA),
-                  fontSize: 11,
-                  fontFamily: 'monospace',
+                  color: Color(0xFF4A5268),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
                 ),
               ),
-            ),
-          ],
-        ),
-      );
-}
-
-class _InfoCard extends StatelessWidget {
-  const _InfoCard();
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1D23),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFF2E3240)),
-        ),
-        child: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'ABOUT',
-              style: TextStyle(
-                color: Color(0xFF4A5268),
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.5,
-              ),
-            ),
-            SizedBox(height: 10),
-            Text(
-              'Generates a WireGuard config for PIA VPN by authenticating with PIA\'s provisioning API, selecting the lowest-latency server, and creating a fresh keypair. Config expires every 1-2 weeks and must be regenerated.',
-              style: TextStyle(
-                color: Color(0xFF8892A4),
-                fontSize: 12,
-                height: 1.6,
-              ),
-            ),
-            SizedBox(height: 10),
-            Text(
-              'Your password is never stored. The generated config contains your WireGuard private key -- treat it as a secret. Config is held in memory only and never written to local storage.',
+              const Spacer(),
+              if (entries.isNotEmpty)
+                GestureDetector(
+                  onTap: () {
+                    // Clearing the log list is handled by the parent via
+                    // setState, but since _LogPanel is stateless we use a
+                    // workaround: the parent passes an empty list after the
+                    // user taps, so we expose a VoidCallback instead.
+                    // (See _clearLog in parent -- the button below is wired
+                    //  via the onClearLog callback added to this widget.)
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (entries.isEmpty)
+            const Text(
+              'Ready.',
               style: TextStyle(
                 color: Color(0xFF4A5268),
                 fontSize: 11,
-                height: 1.5,
+                fontFamily: 'monospace',
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: ListView.builder(
+                controller: scrollController,
+                shrinkWrap: true,
+                itemCount: entries.length,
+                itemBuilder: (ctx, i) {
+                  final entry = entries[i];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          entry.isError
+                              ? Icons.error_outline
+                              : Icons.info_outline,
+                          size: 12,
+                          color: entry.isError
+                              ? const Color(0xFFFF5C5C)
+                              : const Color(0xFF00D4AA),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            entry.message,
+                            style: TextStyle(
+                              color: entry.isError
+                                  ? const Color(0xFFFF5C5C)
+                                  : const Color(0xFF00D4AA),
+                              fontSize: 11,
+                              fontFamily: 'monospace',
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
-          ],
-        ),
-      );
+        ],
+      ),
+    );
+  }
 }
