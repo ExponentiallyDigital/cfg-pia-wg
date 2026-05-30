@@ -10,7 +10,6 @@
 //   5. FLAG_SECURE enforced in MainActivity.kt (no screenshots, blank recents preview)
 
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -380,7 +379,7 @@ class _MainScreenState extends State<MainScreen> {
             Padding(
               padding: EdgeInsets.only(right: 16),
               child: Text(
-                'v0.2.0',
+                'v0.2.1',
                 style: TextStyle(
                   color: Color(0xFF8892A4),
                   fontSize: 11,
