@@ -167,6 +167,7 @@ The generated configuration data lifecycle is managed under a high-security para
    (160 regions)
 7. ADD: include total server count with region count (use golang app's styled output)
 8. FIX: still can't install over an existing copy of the app, have to manually uninstall first
+9. CHG: review all log messaages, make successful gen of conf WHITE so it stands out, change timer colour so easier to see
 
 ## Contributing
 
