@@ -1,22 +1,15 @@
 // main.dart
 // PIA WireGuard Config Generator -- Flutter Android APK
 // GUI equivalent of https://github.com/ExponentiallyDigital/pia-wireguard-cfg
-//
-// Security hardening v0.2.0:
-//   1. No permanent filesystem writes -- config held in memory only
-//   2. Clear button wipes credentials and config from RAM + UI
-//   3. Hardened input fields (no autocorrect, no suggestions, no clipboard on password)
-//   4. Auto-wipe safety timer (3 min), reset on any touch/type interaction
-//   5. FLAG_SECURE enforced in MainActivity.kt (no screenshots, blank recents preview)
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'pia_service.dart';
-
-// Removed imports: dart:io, path_provider
-// path_provider and dart:io are no longer needed -- all file I/O removed.
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 void main() {
   runApp(const PiaWgApp());
@@ -98,10 +91,7 @@ class _MainScreenState extends State<MainScreen> {
   bool _loading = false;
   bool _loadingRegions = false;
   String _status = '';
-
-  // [CHANGE 1] Removed: String? _savedPath  -- no more filesystem write path to track.
-  String? _generatedConfig; // volatile in-memory only; never written to disk
-
+  String? _generatedConfig;
   List<Region> _regions = [];
 
   // [CHANGE 4] Safety auto-wipe timer state
@@ -111,9 +101,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    // [CHANGE 4] Always cancel the timer on widget teardown to prevent leaks/crashes
     _wipeTimer?.cancel();
-
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
     _regionCtrl.dispose();
@@ -125,9 +113,6 @@ class _MainScreenState extends State<MainScreen> {
     if (mounted) setState(() => _status = s);
   }
 
-  // ---------------------------------------------------------------------------
-  // [CHANGE 2] Clear session -- wipes credentials, config, and timer from RAM + UI
-  // ---------------------------------------------------------------------------
   void _clearSession() {
     // Cancel any running timer first
     _wipeTimer?.cancel();
@@ -273,26 +258,21 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // [CHANGE 1] Share via system Share Sheet using XFile.fromData
-  // No temp file written to disk -- bytes passed directly through the
-  // share_plus runtime memory stream. Physical file existence is scoped
-  // entirely to the duration of the OS share pipeline.
-  // ---------------------------------------------------------------------------
   Future<void> _shareConfig() async {
     if (_generatedConfig == null) return;
     final region = _regionCtrl.text.trim();
     final filename = 'pia-$region.conf';
+    // Write to a named temp file so the OS share pipeline sees the correct
+    // filename. The file is deleted immediately after share() returns,
+    // keeping the no-persistent-storage guarantee.
+    final dir = await getTemporaryDirectory();
+    final tempFile = File('${dir.path}/$filename');
 
     try {
-      final bytes = Uint8List.fromList(_generatedConfig!.codeUnits);
-
+      await tempFile.writeAsString(_generatedConfig!, flush: true);
       await SharePlus.instance.share(
         ShareParams(
-          // XFile.fromData passes raw bytes -- no path written to storage.
-          files: [
-            XFile.fromData(bytes, name: filename, mimeType: 'text/plain')
-          ],
+          files: [XFile(tempFile.path, mimeType: 'text/plain')],
           subject: filename,
           text: 'PIA WireGuard config for region: $region',
         ),
@@ -300,6 +280,10 @@ class _MainScreenState extends State<MainScreen> {
     } catch (e) {
       if (!mounted) return;
       _showError('Could not share file: $e');
+    } finally {
+      // Always delete the temp file whether share succeeded, failed, or
+      // was dismissed -- existence is scoped to this method's execution.
+      if (await tempFile.exists()) await tempFile.delete();
     }
   }
 
@@ -343,8 +327,6 @@ class _MainScreenState extends State<MainScreen> {
   // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    // [CHANGE 4] Wrap entire scaffold in a Listener so any pointer event
-    // (touch, drag, stylus) resets the safety wipe countdown.
     return Listener(
       onPointerDown: _onUserInteraction,
       behavior: HitTestBehavior.translucent,
@@ -375,14 +357,30 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ],
           ),
-          actions: const [
+          actions: [
             Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: Text(
-                'v0.2.2',
-                style: TextStyle(
-                  color: Color(0xFF8892A4),
-                  fontSize: 11,
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: FutureBuilder<PackageInfo>(
+                  future: PackageInfo.fromPlatform(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasData) {
+                      return Text(
+                        'v${snapshot.data!.version}',
+                        style: const TextStyle(
+                          color: Color(0xFF8892A4),
+                          fontSize: 11,
+                        ),
+                      );
+                    }
+                    return const Text(
+                      'v...',
+                      style: TextStyle(
+                        color: Color(0xFF8892A4),
+                        fontSize: 11,
+                      ),
+                    );
+                  },
                 ),
               ),
             ),

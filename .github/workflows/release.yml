@@ -45,6 +45,7 @@ jobs:
       - name: Build Flutter APK
         run: |
           flutter pub get
+          dart run flutter_launcher_icons
           flutter build apk --release
 
       # 4. INSTALL PANDOC

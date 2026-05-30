@@ -13,7 +13,11 @@ Manually creating a PIA WireGuard configuration requires authenticating against 
 - **Automated lowest-latency server selection:** measures live TCP latency against port 1337 across all available servers in your selected target region, ensuring you always provision against the fastest node.
 - **Cryptographically secure keypair generation:** dynamically generates an ephemeral WireGuard keypair using `x25519` with proper RFC 7748 scalar clamping directly inside the runtime environment.
 - **Dynamic certificate pinning:** fetches PIA's trusted root CA certificate dynamically at runtime from the `pia-foss/manual-connections` repository. No hardcoded certificates ensure operations continue smoothly even if PIA rotates authority roots.
+- **Zero-persistence local footprint:** sensitive keys, usernames, and passwords reside exclusively as short-lived volatile variables inside system RAM (`AppState`). Config payloads are written to a named temporary file solely to preserve the correct filename through the OS share pipeline, then deleted immediately in a `finally` block once `share()` returns -- whether the share completes, is cancelled, or throws. No unencrypted files are permanently cached or retained in local storage.
 - **Credential safety:** your PIA password is entered interactively at execution and used strictly to request a short-lived HTTP Basic Auth provisioning token. Credentials are never written to disk, stored, or logged.
+- **Automatic session self-destruct:** includes an automatic 3-minute safety countdown timer. If the app is left idle for 3 continuous minutes while displaying a configuration, the screen UI, form states, and memory addresses are completely wiped. Active screen interactions automatically reset the clock back to a full 3 minutes.
+- **Native Task-Switcher Protection (`FLAG_SECURE`):** Enforces native OS-level window flags to block third-party screenshot capturing and automatically obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
+- **Input field hardening:** user credential entry textboxes disable predictive dictionary caching, auto-correction tracking assistance, and keyboard learning behaviors, alongside native selection overrides to block background clipboard scraping.
 - **Modern adaptive styling:** fully supports Android 8.0+ Adaptive Icons using a native multi-layered presentation conforming to a dark-mode theme aesthetic (`#12141A`).
 - **Android permissions:** none are requested/required.
 
@@ -29,12 +33,15 @@ Each release contains a compiled, production-ready `.zip` archive containing:
 ## Interface
 
 App screen:
+
 ![Screenshot: pia-wireguard-cfga UI](./images/interface.png)
 
 Filterable region selection:
+
 ![Screenshot: region selection](./images/region-selection.png)
 
 Generated config file:
+
 ![Screenshot: generated config](./images/generated-config.png)
 
 ## Build setup
@@ -43,8 +50,8 @@ If you prefer to compile and test the application locally, follow the configurat
 
 ### Prerequisites
 
-- **Flutter SDK:** version 3.10 or later ([Flutter Installation Guide](https://flutter.dev/docs/get-started/install))
-- **Android SDK / Studio:** ([download](https://developer.android.com/studio) and configure with Java Development Kit (JDK 17), install Android SDK Command-line Tools too (check your config with `flutter doctor`)
+- **Flutter SDK:** version 3.10 or later ([Flutter installation guide](https://flutter.dev/docs/get-started/install))
+- **Android SDK / Studio:** [download Android Studio](https://developer.android.com/studio) and configure with Java Development Kit (JDK 17), also install Android SDK Command-line Tools and check your config with `flutter doctor`
 - A connected physical Android device (with USB Debugging enabled) or an active Android Virtual Device (AVD) Emulator.
 
 ### 1. Install dependencies
@@ -122,14 +129,14 @@ PersistentKeepalive = 25
 AllowedIPs          = 0.0.0.0/0
 ```
 
-## Output
+## Output & session destruction
 
-The generated config is:
+The generated configuration data lifecycle is managed under a high-security paradigm:
 
-- Displayed in the app for review.
-- Auto-saved to the app's documents directory (only accessible by the app itself).
-- Shareable via Android's share sheet (use "Save to Files", send via email, etc.).
-- Copyable to the clipboard.
+- **Ephemeral verification:** displayed on-screen inside an obscured text viewport for instant validation.
+- **Transient streaming:** shareable seamlessly using Android's system share sheet (e.g., via "Save to Files" or encrypted side-channels) via localized memory stream descriptors.
+- **Manual clear:** the "Clear" action button scrubs the username, password, and displayed config on screen data.
+- **Safety timeout clock:** adjacent to the "Clear" action button, a real-time countdown widget tracks session idle state, executing a complete memory and view scrub if the application interface goes completely untouched for 3 consecutive minutes.
 
 ## Notes
 
@@ -139,18 +146,17 @@ The generated config is:
 
 ## Package dependencies
 
-| Package         | Purpose                                        |
-| --------------- | ---------------------------------------------- |
-| `http`          | HTTP calls to PIA APIs                         |
-| `x25519`        | WireGuard keypair generation                   |
-| `path_provider` | App documents directory                        |
-| `share_plus`    | Share/save config file via Android share sheet |
+| Package             | Purpose                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| `http`              | HTTP REST connection pipelines to PIA APIs                                               |
+| `x25519`            | Ephemeral WireGuard keypair generation                                                   |
+| `share_plus`        | Share/save config file via Android share sheet                                           |
+| `package_info_plus` | Querying app package metadata dynamically from `pubspec.yaml` to unify version reporting |
 
 ## Development "to do" list
 
-1. Refactor versioning (currently in 2 places)
-2. Full security audit
-3. Release to Play Store
+1. Full external app security audit
+2. Release to Play Store
 
 ## Contributing
 
