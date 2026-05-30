@@ -243,14 +243,10 @@ class PiaService {
     );
 
     try {
-      final request = await httpClient.postUrl(uri);
+      final request = await httpClient.getUrl(uri);
 
       // Set the SNI and host matching header using the certificate Common Name (CN)
       request.headers.host = server.cn;
-
-      // Explicitly finalize the outbound HTTP POST packet headers configuration
-      request.headers.chunkedTransferEncoding = false;
-      request.contentLength = 0;
 
       final rawResponse =
           await request.close().timeout(const Duration(seconds: 10));
