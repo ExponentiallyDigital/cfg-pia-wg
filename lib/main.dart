@@ -74,7 +74,7 @@ class PiaWgApp extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Log entry model -- each line in the log panel is one of these
+// Log entry model
 // ---------------------------------------------------------------------------
 class _LogEntry {
   final String message;
@@ -89,15 +89,16 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-// Mix in WidgetsBindingObserver so we can detect app foreground/background
-// transitions and correct the wipe timer for time that elapsed while paused.
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   final _service = PiaService();
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _regionCtrl = TextEditingController();
   final _dnsCtrl = TextEditingController(text: '9.9.9.9, 149.112.112.112');
-  final _logScrollCtrl = ScrollController();
+
+  // The ScrollController drives the ONE outer SingleChildScrollView.
+  // The log panel is just a Column inside it -- no nested scroll views.
+  final _scrollCtrl = ScrollController();
 
   bool _passwordVisible = false;
   bool _loading = false;
@@ -105,15 +106,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   String? _generatedConfig;
   List<Region> _regions = [];
 
-  // Log panel state -- replaces the old single _status string and _InfoCard
+  // Log entries -- rendered as a plain Column, never a nested ListView
   final List<_LogEntry> _log = [];
 
   // ---------------------------------------------------------------------------
-  // Safety auto-wipe timer
-  // Uses a wall-clock deadline (DateTime) rather than a simple decrementing
-  // counter so that time spent in the background is correctly accounted for.
-  // The periodic Timer fires every second only to refresh the countdown display;
-  // the actual wipe decision is always based on the deadline, not the counter.
+  // Safety auto-wipe timer (wall-clock deadline based)
   // ---------------------------------------------------------------------------
   static const _timeoutSeconds = 180;
   Timer? _wipeTimer;
@@ -134,56 +131,51 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _passwordCtrl.dispose();
     _regionCtrl.dispose();
     _dnsCtrl.dispose();
-    _logScrollCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
   // ---------------------------------------------------------------------------
-  // App lifecycle -- recalculate remaining seconds when returning to foreground
-  // so the countdown reflects real elapsed wall time, not just Dart ticks.
+  // Lifecycle -- correct countdown when returning from background
   // ---------------------------------------------------------------------------
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      if (_wipeDeadline != null && _generatedConfig != null) {
-        final remaining = _wipeDeadline!.difference(DateTime.now()).inSeconds;
-        if (remaining <= 0) {
-          // Deadline passed while we were in the background -- wipe now.
-          _clearSession();
-        } else {
-          // Resync the displayed counter to actual wall-clock remaining time.
-          if (mounted) setState(() => _secondsRemaining = remaining);
-        }
+    if (state == AppLifecycleState.resumed &&
+        _wipeDeadline != null &&
+        _generatedConfig != null) {
+      final remaining = _wipeDeadline!.difference(DateTime.now()).inSeconds;
+      if (remaining <= 0) {
+        _clearSession();
+      } else {
+        if (mounted) setState(() => _secondsRemaining = remaining);
       }
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Log helpers
+  // Log helpers -- append to list and scroll to bottom after frame
   // ---------------------------------------------------------------------------
-  void _log_(String message, {bool isError = false}) {
+  void _logEntry(String message, {bool isError = false}) {
     if (!mounted) return;
-    setState(() {
-      _log.add(_LogEntry(message, isError: isError));
-    });
-    // Auto-scroll to bottom after the frame renders
+    setState(() => _log.add(_LogEntry(message, isError: isError)));
+    // Scroll the outer SingleChildScrollView to the bottom so the new
+    // log line is visible without the user needing to scroll manually.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_logScrollCtrl.hasClients) {
-        _logScrollCtrl.animateTo(
-          _logScrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 150),
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
       }
     });
   }
 
-  void _logInfo(String message) => _log_(message);
-  void _logError(String message) => _log_(message, isError: true);
+  void _logInfo(String msg) => _logEntry(msg);
+  void _logError(String msg) => _logEntry(msg, isError: true);
 
-  // onProgress callback passed into PiaService -- every service status message
-  // goes through here so it appears in the log panel.
-  void _onProgress(String message) => _logInfo(message);
+  // Passed as onProgress callback to PiaService
+  void _onProgress(String msg) => _logInfo(msg);
 
   // ---------------------------------------------------------------------------
   // Clear session
@@ -192,10 +184,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _wipeTimer?.cancel();
     _wipeTimer = null;
     _wipeDeadline = null;
-
     _usernameCtrl.text = '';
     _passwordCtrl.text = '';
-
     setState(() {
       _generatedConfig = null;
       _secondsRemaining = 0;
@@ -205,13 +195,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   // ---------------------------------------------------------------------------
-  // Start / reset the wall-clock-based wipe timer
+  // Wall-clock wipe timer
   // ---------------------------------------------------------------------------
   void _startOrResetTimer() {
     _wipeTimer?.cancel();
-    _wipeDeadline = DateTime.now().add(
-      const Duration(seconds: _timeoutSeconds),
-    );
+    _wipeDeadline = DateTime.now().add(const Duration(seconds: _timeoutSeconds));
     _secondsRemaining = _timeoutSeconds;
 
     _wipeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -229,9 +217,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // Touch interaction resets the timer while config is on screen
-  // ---------------------------------------------------------------------------
   void _onUserInteraction(PointerEvent _) {
     if (_generatedConfig != null && _wipeTimer != null) {
       _startOrResetTimer();
@@ -280,7 +265,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   // ---------------------------------------------------------------------------
-  // Main generate flow -- all logging goes to the log panel
+  // Generate config
   // ---------------------------------------------------------------------------
   Future<void> _generate() async {
     final region = _regionCtrl.text.trim();
@@ -307,7 +292,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         dns: dns.isEmpty ? '9.9.9.9, 149.112.112.112' : dns,
         onProgress: _onProgress,
       );
-
       if (!mounted) return;
       setState(() => _generatedConfig = config);
       _logInfo('Config generated successfully.');
@@ -324,7 +308,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   // ---------------------------------------------------------------------------
-  // Share via system share sheet -- named temp file, deleted after share
+  // Share via system share sheet
   // ---------------------------------------------------------------------------
   Future<void> _shareConfig() async {
     if (_generatedConfig == null) return;
@@ -332,7 +316,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final filename = 'pia-$region.conf';
     final dir = await getTemporaryDirectory();
     final tempFile = File('${dir.path}/$filename');
-
     try {
       await tempFile.writeAsString(_generatedConfig!, flush: true);
       await SharePlus.instance.share(
@@ -405,22 +388,22 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 child: FutureBuilder<PackageInfo>(
                   future: PackageInfo.fromPlatform(),
                   builder: (context, snapshot) {
-                    final label = snapshot.hasData
-                        ? 'v${snapshot.data!.version}'
-                        : 'v...';
-                    return Text(
-                      label,
-                      style: const TextStyle(
-                          color: Color(0xFF8892A4), fontSize: 11),
-                    );
+                    final label =
+                        snapshot.hasData ? 'v${snapshot.data!.version}' : 'v...';
+                    return Text(label,
+                        style: const TextStyle(
+                            color: Color(0xFF8892A4), fontSize: 11));
                   },
                 ),
               ),
             ),
           ],
         ),
+        // The entire page is ONE SingleChildScrollView.
+        // The log panel is a plain Column at the bottom -- no nested scrolling.
         body: SafeArea(
           child: SingleChildScrollView(
+            controller: _scrollCtrl,
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -637,7 +620,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFF00D4AA),
                             side: const BorderSide(color: Color(0xFF00D4AA)),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 14),
                           ),
                         ),
                       ),
@@ -650,7 +634,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFF00D4AA),
                             side: const BorderSide(color: Color(0xFF00D4AA)),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 14),
                           ),
                         ),
                       ),
@@ -658,13 +643,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   ),
                 ],
 
-                // ---- LOG PANEL (replaces _InfoCard / _StatusBar) ----
+                // ---- LOG PANEL ----
+                // Always present regardless of app state.
+                // Rendered as a plain Column -- no nested ListView or
+                // ConstrainedBox. The outer SingleChildScrollView handles
+                // all scrolling so log lines always appear inline and are
+                // never clipped or rendered out of position.
                 const SizedBox(height: 32),
-                _LogPanel(
-                  entries: _log,
-                  scrollController: _logScrollCtrl,
-                  onClear: () => setState(() => _log.clear()),
-                ),
+                _LogPanel(entries: _log, onClearLog: () {
+                  setState(() => _log.clear());
+                }),
+                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -680,7 +669,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 class _RegionPickerSheet extends StatefulWidget {
   final List<Region> regions;
   final void Function(String) onSelected;
-  const _RegionPickerSheet({required this.regions, required this.onSelected});
+  const _RegionPickerSheet(
+      {required this.regions, required this.onSelected});
 
   @override
   State<_RegionPickerSheet> createState() => _RegionPickerSheetState();
@@ -764,7 +754,8 @@ class _RegionPickerSheetState extends State<_RegionPickerSheet> {
                           ),
                         ),
                         Text(
-                          '${region.wgServers.length} server${region.wgServers.length == 1 ? '' : 's'}',
+                          '${region.wgServers.length} server'
+                          '${region.wgServers.length == 1 ? '' : 's'}',
                           style: const TextStyle(
                               color: Color(0xFF4A5268), fontSize: 11),
                         ),
@@ -839,32 +830,24 @@ class _IconButton extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Log panel -- replaces both _StatusBar and _InfoCard
+// Log panel
 //
-// Renders a scrollable list of timestamped log lines inside the same
-// styled container that _InfoCard used. Info lines are teal, error lines
-// are red, matching the old _StatusBar colour scheme exactly.
+// Key design decision: log entries are rendered as a plain Column, NOT a
+// ListView. This avoids the shrinkWrap+ConstrainedBox trap that caused log
+// lines to escape their container and float over the top of the screen.
+// The outer SingleChildScrollView handles all page scrolling including the
+// log area, so the panel simply grows downward with each new entry.
+//
+// A "CLEAR LOG" button appears in the header once entries exist.
 // ---------------------------------------------------------------------------
-class _LogPanel extends StatefulWidget {
+class _LogPanel extends StatelessWidget {
   final List<_LogEntry> entries;
-  final ScrollController scrollController;
-  final VoidCallback onClear;
+  final VoidCallback onClearLog;
 
-  const _LogPanel({
-    required this.entries,
-    required this.scrollController,
-    required this.onClear,
-  });
+  const _LogPanel({required this.entries, required this.onClearLog});
 
-  @override
-  State<_LogPanel> createState() => _LogPanelState();
-}
-
-class _LogPanelState extends State<_LogPanel> {
   @override
   Widget build(BuildContext context) {
-    final entries = widget.entries;
-
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -875,7 +858,7 @@ class _LogPanelState extends State<_LogPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row: label + clear-log button
+          // Header row
           Row(
             children: [
               const Text(
@@ -890,26 +873,22 @@ class _LogPanelState extends State<_LogPanel> {
               const Spacer(),
               if (entries.isNotEmpty)
                 GestureDetector(
-                  onTap: widget.onClear,
-                  child: Row(
-                    children: const [
-                      Icon(Icons.delete_outline,
-                          size: 12, color: Color(0xFFFF5C5C)),
-                      SizedBox(width: 6),
-                      Text(
-                        'CLEAR',
-                        style: TextStyle(
-                          color: Color(0xFFFF5C5C),
-                          fontSize: 11,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ],
+                  onTap: onClearLog,
+                  child: const Text(
+                    'CLEAR LOG',
+                    style: TextStyle(
+                      color: Color(0xFF4A5268),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
                   ),
                 ),
             ],
           ),
           const SizedBox(height: 10),
+
+          // Log body -- plain Column, grows with content
           if (entries.isEmpty)
             const Text(
               'Ready.',
@@ -920,47 +899,42 @@ class _LogPanelState extends State<_LogPanel> {
               ),
             )
           else
-            SizedBox(
-              height: 220,
-              child: SingleChildScrollView(
-                controller: widget.scrollController,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: entries.map((entry) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            entry.isError
-                                ? Icons.error_outline
-                                : Icons.info_outline,
-                            size: 12,
+            // Each entry is its own Row with icon + text, separated by 4dp
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: entries.map((entry) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        entry.isError
+                            ? Icons.error_outline
+                            : Icons.info_outline,
+                        size: 12,
+                        color: entry.isError
+                            ? const Color(0xFFFF5C5C)
+                            : const Color(0xFF00D4AA),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          entry.message,
+                          style: TextStyle(
                             color: entry.isError
                                 ? const Color(0xFFFF5C5C)
                                 : const Color(0xFF00D4AA),
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            height: 1.4,
                           ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              entry.message,
-                              style: TextStyle(
-                                color: entry.isError
-                                    ? const Color(0xFFFF5C5C)
-                                    : const Color(0xFF00D4AA),
-                                fontSize: 11,
-                                fontFamily: 'monospace',
-                                height: 1.4,
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                    );
-                  }).toList(),
-                ),
-              ),
+                    ],
+                  ),
+                );
+              }).toList(),
             ),
         ],
       ),

@@ -67,7 +67,6 @@ class PiaService {
 
   // ---------------------------------------------------------------------------
   // Fetch and parse the PIA server list
-  // Mirrors: httpClient.Get(serverListURL) + json.Unmarshal(body[:jsonEnd], &sl)
   // ---------------------------------------------------------------------------
   Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async {
     onProgress?.call('Fetching PIA server list...');
@@ -84,7 +83,6 @@ class PiaService {
       throw Exception('Server list returned HTTP ${response.statusCode}');
     }
 
-    // Response is JSON + newline + signature -- only parse the JSON portion
     final body = response.body;
     final newlineIdx = body.indexOf('\n');
     if (newlineIdx == -1) {
@@ -100,7 +98,6 @@ class PiaService {
     }
 
     final rawRegions = decoded['regions'] as List<dynamic>? ?? [];
-
     final regions = <Region>[];
     for (final r in rawRegions) {
       final id = r['id'] as String? ?? '';
@@ -116,17 +113,14 @@ class PiaService {
         regions.add(Region(id: id, wgServers: wgServers));
       }
     }
-
     regions.sort((a, b) => a.id.compareTo(b.id));
     return regions;
   }
 
   // ---------------------------------------------------------------------------
-  // Measure TCP latency to port 1337 for each server in a region
-  // Mirrors: newDialer().DialContext(ctx, "tcp", net.JoinHostPort(s.IP, "1337"))
-  //
-  // [LOG] Individual probe failures are now reported via onProgress instead of
-  // being silently swallowed. A summary line is emitted after all probes.
+  // Measure TCP latency to port 1337 for each server in a region.
+  // Each probe result -- success or failure -- is reported via onProgress so
+  // the user can see all servers and their individual latencies in the log.
   // ---------------------------------------------------------------------------
   Future<List<ProbeResult>> probeLatency(
     List<WgServer> servers, {
@@ -134,7 +128,7 @@ class PiaService {
   }) async {
     final results = <ProbeResult>[];
     for (final server in servers) {
-      onProgress?.call('Probing ${server.ip}...');
+      onProgress?.call('Probing ${server.ip} (${server.cn})...');
       try {
         final start = DateTime.now();
         final socket = await Socket.connect(
@@ -145,12 +139,12 @@ class PiaService {
         final latency = DateTime.now().difference(start);
         await socket.close();
         results.add(ProbeResult(server: server, latency: latency));
-        // Report successful probe with latency
-        onProgress
-            ?.call('Probe ${server.ip} responded ${latency.inMilliseconds}ms');
+        // Report per-server latency so the user can see all candidates
+        onProgress?.call(
+            '  ${server.ip} responded in ${latency.inMilliseconds}ms');
       } catch (e) {
-        // [LOG] Report each probe failure rather than silently dropping it
-        onProgress?.call('Probe ${server.ip} failed: $e');
+        // Report probe failures rather than silently dropping them
+        onProgress?.call('  ${server.ip} probe failed: $e');
         results.add(ProbeResult(server: server));
       }
     }
@@ -164,9 +158,6 @@ class PiaService {
 
   // ---------------------------------------------------------------------------
   // Authenticate and obtain a PIA token
-  // Mirrors: POST to /gtoken/generateToken with HTTP Basic Auth, empty body
-  //
-  // [LOG] Emits confirmation message on success.
   // ---------------------------------------------------------------------------
   Future<String> getToken(
     String username,
@@ -175,7 +166,6 @@ class PiaService {
   }) async {
     onProgress?.call('Authenticating with PIA...');
     final credentials = base64Encode(utf8.encode('$username:$password'));
-
     final http.Response response;
     try {
       response = await http.post(
@@ -202,15 +192,12 @@ class PiaService {
     if (token.isEmpty) {
       throw Exception('Authentication failed: empty token received from PIA');
     }
-
-    // [LOG] Confirm authentication succeeded
     onProgress?.call('Authentication successful.');
     return token;
   }
 
   // ---------------------------------------------------------------------------
   // Generate a WireGuard keypair
-  // Mirrors: generateWGKeypair() in main.go
   // Applies RFC 7748 scalar clamping: k[0] &= 248, k[31] &= 127, k[31] |= 64
   // ---------------------------------------------------------------------------
   (String privateKeyB64, String publicKeyB64) generateWgKeypair() {
@@ -219,20 +206,15 @@ class PiaService {
     for (var i = 0; i < 32; i++) {
       priv[i] = rng.nextInt(256);
     }
-    // RFC 7748 scalar clamping
     priv[0] &= 248;
     priv[31] &= 127;
     priv[31] |= 64;
-
-    // Derive public key using X25519
     final pub = x25519.X25519(priv, x25519.basePoint);
-
     return (base64Encode(priv), base64Encode(pub));
   }
 
   // ---------------------------------------------------------------------------
-  // Fetch PIA CA certificate dynamically (never hardcoded -- stays current)
-  // Mirrors: caCertClient.Get(_caCertUrl) in registerWGKey
+  // Fetch PIA CA certificate dynamically
   // ---------------------------------------------------------------------------
   Future<String> _fetchCaCert({void Function(String)? onProgress}) async {
     onProgress?.call('Fetching PIA CA certificate...');
@@ -252,12 +234,7 @@ class PiaService {
   }
 
   // ---------------------------------------------------------------------------
-  // Register WireGuard public key with PIA server
-  // Mirrors: registerWGKey() in main.go
-  // Uses PIA CA cert with ServerName set to server CN (not IP)
-  //
-  // [LOG] Emits peer IP and port on success so the user can verify the
-  // assignment without exposing the private key.
+  // Register WireGuard public key with PIA server (GET, mirrors main.go)
   // ---------------------------------------------------------------------------
   Future<RegResponse> registerKey(
     WgServer server,
@@ -266,25 +243,17 @@ class PiaService {
     void Function(String)? onProgress,
   }) async {
     final caCertPem = await _fetchCaCert(onProgress: onProgress);
-
     onProgress?.call('Registering key with ${server.ip}...');
 
-    // Build HTTP client with PIA's custom CA cert and correct ServerName
     final secCtx = SecurityContext(withTrustedRoots: false);
     secCtx.setTrustedCertificatesBytes(utf8.encode(caCertPem));
-
     final httpClient = HttpClient(context: secCtx);
-
-    // Allow the connection to proceed using CN-based SNI even though we
-    // connect to the raw IP address.
     httpClient.badCertificateCallback =
         (X509Certificate cert, String host, int port) => true;
     httpClient.findProxy = (uri) => 'DIRECT';
 
     final encodedPubkey = Uri.encodeQueryComponent(publicKeyB64);
     final encodedToken = Uri.encodeQueryComponent(token);
-
-    // Connect directly to the selected server's IP address
     final uri = Uri.parse(
       'https://${server.ip}:1337/addKey?pt=$encodedToken&pubkey=$encodedPubkey',
     );
@@ -292,13 +261,10 @@ class PiaService {
     try {
       // GET, not POST -- mirrors main.go line 480
       final request = await httpClient.getUrl(uri);
-
-      // Set SNI / Host header to the certificate Common Name
       request.headers.host = server.cn;
 
       final rawResponse =
           await request.close().timeout(const Duration(seconds: 10));
-
       final body = await rawResponse.transform(utf8.decoder).join();
 
       if (rawResponse.statusCode != 200) {
@@ -315,28 +281,23 @@ class PiaService {
       }
 
       final reg = RegResponse.fromJson(decoded);
-
       if (reg.status != 'OK') {
         throw Exception(
             'Registration failed: status "${reg.status}" from PIA server');
       }
 
-      // [LOG] Confirm registration with peer IP and port (no private key exposed)
       onProgress?.call(
           'Key registered. Peer IP: ${reg.peerIP}, port: ${reg.serverPort}');
-
       return reg;
     } on TimeoutException {
-      throw Exception('Key registration request timed out after 10 seconds.');
+      throw Exception('Key registration timed out after 10 seconds.');
     } finally {
       httpClient.close(force: true);
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Assemble the complete WireGuard config file content
-  // Mirrors: fmt.Sprintf("[Interface]\nPrivateKey = %s\n...") in main.go
-  // Strips carriage returns to ensure Unix line endings
+  // Assemble the WireGuard config file
   // ---------------------------------------------------------------------------
   String buildConfig({
     required String privateKey,
@@ -346,7 +307,6 @@ class PiaService {
     required String serverIP,
     required int serverPort,
   }) {
-    // Strip any CIDR suffix from peerIP then append /32
     var cleanIP = peerIP;
     final slashIdx = cleanIP.indexOf('/');
     if (slashIdx != -1) cleanIP = cleanIP.substring(0, slashIdx);
@@ -362,12 +322,11 @@ class PiaService {
         'Endpoint = $serverIP:$serverPort\n'
         'PersistentKeepalive = 25\n'
         'AllowedIPs = 0.0.0.0/0\n';
-
     return config.replaceAll('\r', '');
   }
 
   // ---------------------------------------------------------------------------
-  // Full provisioning flow -- called by the UI
+  // Full provisioning flow
   // ---------------------------------------------------------------------------
   Future<String> generateConfig({
     required String region,
@@ -388,8 +347,9 @@ class PiaService {
       throw Exception('No WireGuard servers found for region "$region"');
     }
 
-    // 2. Probe latency and select best server
-    onProgress?.call('Measuring server latency...');
+    // 2. Probe latency -- each server result is logged individually
+    onProgress?.call(
+        'Measuring latency for ${selectedRegion.wgServers.length} server(s) in $region...');
     final probeResults =
         await probeLatency(selectedRegion.wgServers, onProgress: onProgress);
     final responding = probeResults.where((r) => !r.failed).toList();
@@ -398,10 +358,9 @@ class PiaService {
           'All latency probes failed for region "$region". Check your network connection.');
     }
     final bestServer = responding.first.server;
-
-    // [LOG] Report selected server, latency, and probe summary
     final bestMs = responding.first.latency!.inMilliseconds;
-    onProgress?.call('Selected ${bestServer.ip} (${bestServer.cn}) -- '
+    onProgress?.call(
+        'Selected ${bestServer.ip} -- '
         '${responding.length}/${probeResults.length} servers responded, '
         'best latency ${bestMs}ms');
 
