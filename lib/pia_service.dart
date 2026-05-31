@@ -174,6 +174,7 @@ class PiaService {
       final cleanMsg = e.toString().replaceAll('Exception: ', '');
       throw 'Auth error: $cleanMsg';
     }
+  }
 
   // Generates WireGuard keypair using secure random bytes and scalar clamping
   (String, String) generateWgKeypair() {
