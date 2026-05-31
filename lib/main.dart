@@ -354,7 +354,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   style: const TextStyle(
                       color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
                   decoration: const InputDecoration(
-                      labelText: 'PIA Username',
+                      labelText: 'PIA username',
                       hintText: 'e.g. p1234567',
                       prefixIcon: Icon(Icons.person_outline,
                           color: Color(0xFF8892A4), size: 18)),
@@ -368,7 +368,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   style: const TextStyle(
                       color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
                   decoration: InputDecoration(
-                    labelText: 'PIA Password',
+                    labelText: 'PIA password',
                     prefixIcon: const Icon(Icons.lock_outline,
                         color: Color(0xFF8892A4), size: 18),
                     suffixIcon: GestureDetector(
@@ -443,7 +443,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                         const SizedBox(width: 12),
                       ],
                       _ClearButton(
-                          label: 'CLEAR',
+                          label: 'CLEAR CREDS & CFG',
                           icon: Icons.delete_outline,
                           onTap: _clearSession),
                     ],
@@ -521,10 +521,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       Positioned(
                         right: 0,
                         top: -24,
-                        child: _ClearButton(
-                            label: 'CLEAR LOG',
-                            icon: Icons.delete_outline,
-                            onTap: () => setState(() => _log.clear())),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: _ClearButton(
+                              label: 'CLEAR LOG',
+                              icon: Icons.delete_outline,
+                              onTap: () => setState(() => _log.clear())),
+                        ),
                       ),
                   ],
                 ),
