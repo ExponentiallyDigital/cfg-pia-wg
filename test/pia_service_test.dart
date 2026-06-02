@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pia_wireguard_cfga/main.dart' as app;
 import 'package:pia_wireguard_cfga/pia_service.dart';
@@ -76,44 +74,6 @@ class TestPiaService extends PiaService {
     onProgress?.call('register');
     return regResponse;
   }
-}
-
-HttpClientResponse _successfulPipelineResponse(Uri url, String method) {
-  if (url.toString().contains('vpninfo/servers/v6')) {
-    return FakeHttpClientResponse(
-      200,
-      '${jsonEncode({
-            'regions': [
-              {
-                'id': 'aus_melbourne',
-                'servers': {
-                  'wg': [
-                    {'ip': '127.0.0.1', 'cn': 'server-cn'}
-                  ]
-                }
-              }
-            ]
-          })}\n',
-    );
-  }
-  if (url.toString().contains('generateToken')) {
-    return FakeHttpClientResponse(200, jsonEncode({'token': 'token'}));
-  }
-  if (url.toString().contains('ca.rsa.4096.crt')) {
-    return FakeHttpClientResponse(200, _testCaPem);
-  }
-  if (url.toString().contains('/addKey')) {
-    return FakeHttpClientResponse(
-      200,
-      jsonEncode({
-        'status': 'OK',
-        'server_key': 'server-key',
-        'peer_ip': '10.10.0.2',
-        'server_port': 1337,
-      }),
-    );
-  }
-  return FakeHttpClientResponse(404, 'not found');
 }
 
 Future<ServerSocket> _bindLatencyServer() async {

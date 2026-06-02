@@ -12,7 +12,7 @@ Write-Host "Compiling signed Android App Bundle (.aab) for Google Play..." -Fore
 flutter build appbundle --release
 
 Write-Host "Compiling release for local use..." -ForegroundColor Green
-flutter build --release
+flutter build apk --release
 
 Write-Host "--------------------------------------------------------" -ForegroundColor Green
 Write-Host "Success! Upload the file located at:" -ForegroundColor White
