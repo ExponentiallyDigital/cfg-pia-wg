@@ -1,0 +1,6 @@
+{
+  "sonarlint.connectedMode.project": {
+    "connectionId": "exponentiallydigital",
+    "projectKey": "ExponentiallyDigital_pia-wireguard-cfga"
+  }
+}
