@@ -69,7 +69,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        base.archivesName.set("pia-wireguard-cfga")
+        base.archivesName.set("pia_wireguard_cfga")
     }
 
     // ---------------------------------------------------------------------------
