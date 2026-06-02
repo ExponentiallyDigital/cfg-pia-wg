@@ -70,6 +70,25 @@ void main() {
       expect(find.text('Ready.'), findsOneWidget);
     });
 
+    testWidgets('region picker failure logs error and restores browse button',
+        (tester) async {
+      await withFakeHttpClient(
+        () async {
+          await tester.pumpWidget(const PiaWgApp());
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.byIcon(Icons.list_alt));
+          await tester.pumpAndSettle();
+
+          expect(
+              find.textContaining('Failed to load regions:'), findsOneWidget);
+          expect(find.byIcon(Icons.list_alt), findsOneWidget);
+          expect(find.text('CLEAR LOG'), findsOneWidget);
+        },
+        (url, method) => FakeHttpClientResponse(500, 'server unavailable'),
+      );
+    });
+
     testWidgets('main screen shows form fields and generate button',
         (tester) async {
       await tester.pumpWidget(const PiaWgApp());

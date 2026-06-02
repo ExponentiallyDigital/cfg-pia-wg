@@ -15,4 +15,13 @@ void main() {
     expect(response.peerIP, '10.0.0.1');
     expect(response.serverPort, 1337);
   });
+
+  test('RegResponse uses safe defaults for missing json fields', () {
+    final response = RegResponse.fromJson({});
+
+    expect(response.status, '');
+    expect(response.serverKey, '');
+    expect(response.peerIP, '');
+    expect(response.serverPort, 0);
+  });
 }
