@@ -199,7 +199,12 @@ class PiaService {
     final secCtx = SecurityContext(withTrustedRoots: false)
       ..setTrustedCertificatesBytes(utf8.encode(caCertPem));
     final localClient = HttpClient(context: secCtx)
-      ..badCertificateCallback = (_, __, ___) => true;
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) {
+        // The CA pin in SecurityContext validates the chain.
+        // This callback fires only due to IP-vs-hostname mismatch,
+        // so we verify the cert CN matches the expected server identity.
+        return cert.subject.contains('CN=${server.cn}');
+      };
 
     try {
       final uri = Uri.parse(

@@ -1,3 +1,15 @@
+// 1. Lock the plugins and build toolchain dependencies (What SonarQube wants)
+buildscript {
+    dependencyLocking {
+        lockAllConfigurations()
+    }
+}
+
+// 2. Lock standard project configurations (Kept for completeness)
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 allprojects {
     repositories {
         google()
@@ -26,9 +38,7 @@ subprojects {
 }
 
 tasks.register<Delete>("clean") {
+    group = "build"
+    description = "Deletes the root build directory to completely clean the Android project outputs."   
     delete(rootProject.layout.buildDirectory)
-}
-
-dependencyLocking {
-    lockAllConfigurations()
 }

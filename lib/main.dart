@@ -771,12 +771,27 @@ class _LogPanel extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: entries.map((e) {
-                final color = e.isSuccess
-                    ? Colors.white
-                    : (e.isError ? const Color(0xFFFF5C5C) : _kHighlight);
-                final icon = e.isSuccess
-                    ? Icons.check_circle_outline
-                    : (e.isError ? Icons.error_outline : Icons.info_outline);
+                // 1. Determine the color using a clear if/else chain
+                final Color color;
+                if (e.isSuccess) {
+                  color = Colors.white;
+                } else if (e.isError) {
+                  color = const Color(0xFFFF5C5C);
+                } else {
+                  color = _kHighlight;
+                }
+
+                // 2. Determine the icon using a clear if/else chain
+                final IconData icon;
+                if (e.isSuccess) {
+                  icon = Icons.check_circle_outline;
+                } else if (e.isError) {
+                  icon = Icons.error_outline;
+                } else {
+                  icon = Icons.info_outline;
+                }
+
+                // 3. Return your UI cleanly using the variables defined above
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Row(

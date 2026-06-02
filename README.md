@@ -153,14 +153,14 @@ To push the compiled binaries directly onto your phone via Android Debug Bridge 
 adb install build/app/outputs/flutter-apk/app-release.apk
 ```
 
-or sideload via your favourite app (I prefer X-plore).
+### 6. Dependency pinning & reproducible builds
 
-### 6. Dependency pinning
+Project and build-toolchain dependencies are strictly pinned to prevent supply-chain vulnerabilities and ensure reproducible builds across CI/CD environments.
 
-Dependencies are pinned to prevent supply chain vulnerabilities, you may need to generate a fresh android\app\gradle.lockfile file by running (from the project root folder)
+If you update packages or change build plugins, you must regenerate the Gradle lockfiles. To safely generate a fresh set of locks across all layers, execute the following command from the project root folder:
 
-```bash
-.\android\gradlew -p android compileDebugSources --write-locks
+```cmd
+.\android\gradlew -p android :dependencies :app:dependencies --write-locks
 ```
 
 ## How it works
