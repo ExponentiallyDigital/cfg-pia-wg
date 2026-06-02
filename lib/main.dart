@@ -271,107 +271,322 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Listener(
-      onPointerDown: (_) => _generatedConfig != null && _wipeTimer != null
-          ? _startOrResetTimer()
-          : null,
-      behavior: HitTestBehavior.translucent,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF12141A),
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF1A1D23),
-          elevation: 0,
-          title: Row(
+  Future<void> _launchUrlStr(String urlStr) async {
+    final url = Uri.parse(urlStr);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.platformDefault);
+    }
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: const Color(0xFF1A1D23),
+      elevation: 0,
+      title: Row(
+        children: [
+          Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                  color: _kHighlight, shape: BoxShape.circle)),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                      color: _kHighlight, shape: BoxShape.circle)),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const Text('PIA WireGuard Config',
+                  style: TextStyle(
+                      color: Color(0xFFE8EAF0),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600)),
+              Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('PIA WireGuard Config',
-                      style: TextStyle(
-                          color: Color(0xFFE8EAF0),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600)),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        'by ',
-                        style: TextStyle(
-                          color: Color(0xFF8892A4),
-                          fontSize: 10,
-                        ),
-                      ),
-                      MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: InkWell(
-                          onTap: () async {
-                            final url = Uri.parse(
-                                'https://www.exponentiallydigital.com');
-                            if (await canLaunchUrl(url)) {
-                              await launchUrl(url,
-                                  mode: LaunchMode.platformDefault);
-                            }
-                          },
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 2),
-                            child: Text(
-                              'Exponentially Digital',
-                              style: TextStyle(
-                                color: Color(0xFF8892A4),
-                                fontSize: 10,
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
+                  const Text(
+                    'by ',
+                    style: TextStyle(
+                      color: Color(0xFF8892A4),
+                      fontSize: 10,
+                    ),
+                  ),
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: InkWell(
+                      onTap: () =>
+                          _launchUrlStr('https://www.exponentiallydigital.com'),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          'Exponentially Digital',
+                          style: TextStyle(
+                            color: Color(0xFF8892A4),
+                            fontSize: 10,
+                            decoration: TextDecoration.underline,
                           ),
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
             ],
           ),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Center(
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: InkWell(
-                    onTap: () async {
-                      // Replace this URL with your actual GitHub repository link
-                      final url = Uri.parse(
-                          'https://github.com/ExponentiallyDigital/pia-wireguard-cfga');
-                      if (await canLaunchUrl(url)) {
-                        await launchUrl(url, mode: LaunchMode.platformDefault);
-                      }
-                    },
-                    child: FutureBuilder<PackageInfo>(
-                      future: PackageInfo.fromPlatform(),
-                      builder: (context, snap) => Text(
-                        snap.hasData ? 'v${snap.data!.version}' : 'v...',
-                        style: const TextStyle(
-                          color: Color(0xFF8892A4),
-                          fontSize: 11,
-                          decoration: TextDecoration.underline,
-                        ),
+        ],
+      ),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: Center(
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: InkWell(
+                onTap: () => _launchUrlStr(
+                    'https://github.com/ExponentiallyDigital/pia-wireguard-cfga'),
+                child: FutureBuilder<PackageInfo>(
+                  future: PackageInfo.fromPlatform(),
+                  builder: (context, snap) {
+                    final versionText =
+                        snap.hasData ? 'v${snap.data!.version}' : 'v...';
+                    return Text(
+                      versionText,
+                      style: const TextStyle(
+                        color: Color(0xFF8892A4),
+                        fontSize: 11,
+                        decoration: TextDecoration.underline,
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ),
             ),
-          ],
+          ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildRegionRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextFormField(
+            controller: _regionCtrl,
+            style: const TextStyle(
+                color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+                labelText: 'Region ID',
+                hintText: 'e.g. aus_melbourne',
+                prefixIcon:
+                    Icon(Icons.language, color: Color(0xFF8892A4), size: 18)),
+          ),
+        ),
+        const SizedBox(width: 10),
+        _IconButton(
+            icon: Icons.list_alt,
+            loading: _loadingRegions,
+            tooltip: 'Browse regions',
+            onTap: _loadRegions),
+      ],
+    );
+  }
+
+  Widget _buildUsernameField() {
+    return TextFormField(
+      controller: _usernameCtrl,
+      style: const TextStyle(color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
+      decoration: const InputDecoration(
+          labelText: 'PIA username',
+          hintText: 'e.g. p1234567',
+          prefixIcon:
+              Icon(Icons.person_outline, color: Color(0xFF8892A4), size: 18)),
+      autocorrect: false,
+      enableSuggestions: false,
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return TextFormField(
+      controller: _passwordCtrl,
+      obscureText: !_passwordVisible,
+      style: const TextStyle(color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
+      decoration: InputDecoration(
+        labelText: 'PIA password',
+        prefixIcon:
+            const Icon(Icons.lock_outline, color: Color(0xFF8892A4), size: 18),
+        suffixIcon: GestureDetector(
+          onTap: () => setState(() => _passwordVisible = !_passwordVisible),
+          child: Icon(
+              _passwordVisible ? Icons.visibility_off : Icons.visibility,
+              color: const Color(0xFF8892A4),
+              size: 18),
+        ),
+      ),
+      autocorrect: false,
+      enableSuggestions: false,
+    );
+  }
+
+  Widget _buildDnsField() {
+    return TextFormField(
+      controller: _dnsCtrl,
+      style: const TextStyle(
+          color: Color(0xFFE8EAF0), fontFamily: 'monospace', fontSize: 13),
+      decoration: const InputDecoration(
+        labelText: 'DNS servers',
+        hintText: '9.9.9.9, 149.112.112.112',
+        prefixIcon:
+            Icon(Icons.dns_outlined, color: Color(0xFF8892A4), size: 18),
+        helperText: 'Default: Quad9 | Cloudflare: 1.1.1.1, 1.0.0.1',
+        helperStyle: TextStyle(color: _kHighlight, fontSize: 11),
+      ),
+    );
+  }
+
+  Widget _buildGenerateButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: _loading ? null : _generate,
+        child: _loading
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Color(0xFF12141A)))
+            : const Text('GENERATE CONFIG'),
+      ),
+    );
+  }
+
+  Future<void> _copyToClipboard() async {
+    if (_generatedConfig == null) return;
+    await Clipboard.setData(ClipboardData(text: _generatedConfig!));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Config copied'), backgroundColor: _kHighlight));
+    }
+  }
+
+  List<Widget> _buildTimerWidget() {
+    final isUrgent = _secondsRemaining <= 30;
+    final timerColor = isUrgent ? const Color(0xFFFF5C5C) : _kHighlight;
+    return [
+      Icon(Icons.timer_outlined, size: 12, color: timerColor),
+      const SizedBox(width: 4),
+      Text('${_secondsRemaining}s',
+          style: TextStyle(color: timerColor, fontSize: 11)),
+      const SizedBox(width: 12),
+    ];
+  }
+
+  List<Widget> _buildGeneratedConfigSection() {
+    return [
+      const SizedBox(height: 24),
+      Row(
+        children: [
+          const Text('GENERATED CONFIG',
+              style: TextStyle(
+                  color: _kHighlight,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5)),
+          const Spacer(),
+          if (_secondsRemaining > 0) ..._buildTimerWidget(),
+          _ClearButton(
+              label: 'CLEAR CREDS & CFG',
+              icon: Icons.delete_outline,
+              onTap: _clearSession),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+            color: const Color(0xFF0E1016),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _kHighlight)),
+        child: SelectableText(_generatedConfig ?? '',
+            style: const TextStyle(
+                color: _kHighlight,
+                fontFamily: 'monospace',
+                fontSize: 11,
+                height: 1.6)),
+      ),
+      const SizedBox(height: 16),
+      Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _copyToClipboard,
+              icon: const Icon(Icons.copy, size: 16),
+              label: const Text('COPY'),
+              style: OutlinedButton.styleFrom(
+                  foregroundColor: _kHighlight,
+                  side: const BorderSide(color: _kHighlight),
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _shareConfig,
+              icon: const Icon(Icons.share, size: 16),
+              label: const Text('SHARE / SAVE'),
+              style: OutlinedButton.styleFrom(
+                  foregroundColor: _kHighlight,
+                  side: const BorderSide(color: _kHighlight),
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  Widget _buildLogSection() {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 20),
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'LOG',
+            ),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: _LogPanel(
+                  entries: _log,
+                  onClearLog: () => setState(() => _log.clear())),
+            ),
+          ),
+        ),
+        if (_log.isNotEmpty)
+          Positioned(
+            right: 0,
+            top: -24,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: _ClearButton(
+                  label: 'CLEAR LOG',
+                  icon: Icons.delete_outline,
+                  onTap: () => setState(() => _log.clear())),
+            ),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shouldResetTimer = _generatedConfig != null && _wipeTimer != null;
+
+    return Listener(
+      onPointerDown: (_) => shouldResetTimer ? _startOrResetTimer() : null,
+      behavior: HitTestBehavior.translucent,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF12141A),
+        appBar: _buildAppBar(),
         body: SafeArea(
           child: SingleChildScrollView(
             controller: _scrollCtrl,
@@ -379,213 +594,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _regionCtrl,
-                        style: const TextStyle(
-                            color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
-                        decoration: const InputDecoration(
-                            labelText: 'Region ID',
-                            hintText: 'e.g. aus_melbourne',
-                            prefixIcon: Icon(Icons.language,
-                                color: Color(0xFF8892A4), size: 18)),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    _IconButton(
-                        icon: Icons.list_alt,
-                        loading: _loadingRegions,
-                        tooltip: 'Browse regions',
-                        onTap: _loadRegions),
-                  ],
-                ),
+                _buildRegionRow(),
                 const SizedBox(height: 16),
-                TextFormField(
-                  controller: _usernameCtrl,
-                  style: const TextStyle(
-                      color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
-                  decoration: const InputDecoration(
-                      labelText: 'PIA username',
-                      hintText: 'e.g. p1234567',
-                      prefixIcon: Icon(Icons.person_outline,
-                          color: Color(0xFF8892A4), size: 18)),
-                  autocorrect: false,
-                  enableSuggestions: false,
-                ),
+                _buildUsernameField(),
                 const SizedBox(height: 12),
-                TextFormField(
-                  controller: _passwordCtrl,
-                  obscureText: !_passwordVisible,
-                  style: const TextStyle(
-                      color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
-                  decoration: InputDecoration(
-                    labelText: 'PIA password',
-                    prefixIcon: const Icon(Icons.lock_outline,
-                        color: Color(0xFF8892A4), size: 18),
-                    suffixIcon: GestureDetector(
-                      onTap: () =>
-                          setState(() => _passwordVisible = !_passwordVisible),
-                      child: Icon(
-                          _passwordVisible
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                          color: const Color(0xFF8892A4),
-                          size: 18),
-                    ),
-                  ),
-                  autocorrect: false,
-                  enableSuggestions: false,
-                ),
+                _buildPasswordField(),
                 const SizedBox(height: 16),
-                TextFormField(
-                  controller: _dnsCtrl,
-                  style: const TextStyle(
-                      color: Color(0xFFE8EAF0),
-                      fontFamily: 'monospace',
-                      fontSize: 13),
-                  decoration: const InputDecoration(
-                    labelText: 'DNS servers',
-                    hintText: '9.9.9.9, 149.112.112.112',
-                    prefixIcon: Icon(Icons.dns_outlined,
-                        color: Color(0xFF8892A4), size: 18),
-                    helperText: 'Default: Quad9 | Cloudflare: 1.1.1.1, 1.0.0.1',
-                    helperStyle: TextStyle(color: _kHighlight, fontSize: 11),
-                  ),
-                ),
+                _buildDnsField(),
                 const SizedBox(height: 28),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _loading ? null : _generate,
-                    child: _loading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Color(0xFF12141A)))
-                        : const Text('GENERATE CONFIG'),
-                  ),
-                ),
-                if (_generatedConfig != null) ...[
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      const Text('GENERATED CONFIG',
-                          style: TextStyle(
-                              color: _kHighlight,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.5)),
-                      const Spacer(),
-                      if (_secondsRemaining > 0) ...[
-                        Icon(Icons.timer_outlined,
-                            size: 12,
-                            color: _secondsRemaining <= 30
-                                ? const Color(0xFFFF5C5C)
-                                : _kHighlight),
-                        const SizedBox(width: 4),
-                        Text('${_secondsRemaining}s',
-                            style: TextStyle(
-                                color: _secondsRemaining <= 30
-                                    ? const Color(0xFFFF5C5C)
-                                    : _kHighlight,
-                                fontSize: 11)),
-                        const SizedBox(width: 12),
-                      ],
-                      _ClearButton(
-                          label: 'CLEAR CREDS & CFG',
-                          icon: Icons.delete_outline,
-                          onTap: _clearSession),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFF0E1016),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _kHighlight)),
-                    child: SelectableText(_generatedConfig!,
-                        style: const TextStyle(
-                            color: _kHighlight,
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                            height: 1.6)),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            await Clipboard.setData(
-                                ClipboardData(text: _generatedConfig!));
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text('Config copied'),
-                                      backgroundColor: _kHighlight));
-                            }
-                          },
-                          icon: const Icon(Icons.copy, size: 16),
-                          label: const Text('COPY'),
-                          style: OutlinedButton.styleFrom(
-                              foregroundColor: _kHighlight,
-                              side: const BorderSide(color: _kHighlight),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14)),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _shareConfig,
-                          icon: const Icon(Icons.share, size: 16),
-                          label: const Text('SHARE / SAVE'),
-                          style: OutlinedButton.styleFrom(
-                              foregroundColor: _kHighlight,
-                              side: const BorderSide(color: _kHighlight),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                _buildGenerateButton(),
+                if (_generatedConfig != null) ..._buildGeneratedConfigSection(),
                 const SizedBox(height: 32),
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 20),
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'LOG',
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: _LogPanel(
-                              entries: _log,
-                              onClearLog: () => setState(() => _log.clear())),
-                        ),
-                      ),
-                    ),
-                    if (_log.isNotEmpty)
-                      Positioned(
-                        right: 0,
-                        top: -24,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: _ClearButton(
-                              label: 'CLEAR LOG',
-                              icon: Icons.delete_outline,
-                              onTap: () => setState(() => _log.clear())),
-                        ),
-                      ),
-                  ],
-                ),
+                _buildLogSection(),
                 const SizedBox(height: 20),
               ],
             ),
@@ -771,7 +791,6 @@ class _LogPanel extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: entries.map((e) {
-                // 1. Determine the color using a clear if/else chain
                 final Color color;
                 if (e.isSuccess) {
                   color = Colors.white;
@@ -781,7 +800,6 @@ class _LogPanel extends StatelessWidget {
                   color = _kHighlight;
                 }
 
-                // 2. Determine the icon using a clear if/else chain
                 final IconData icon;
                 if (e.isSuccess) {
                   icon = Icons.check_circle_outline;
@@ -791,7 +809,6 @@ class _LogPanel extends StatelessWidget {
                   icon = Icons.info_outline;
                 }
 
-                // 3. Return your UI cleanly using the variables defined above
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Row(
