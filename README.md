@@ -1,6 +1,6 @@
 # pia-wireguard-cfga<img src="./assets/icon/icon.png" alt="PIA WireGuard CFGA" width="150" />
 
-![Release](https://img.shields.io/badge/platform-%20Android%20-blue) ![Release](https://img.shields.io/github/v/release/ExponentiallyDigital/pia-wireguard-cfga) ![Last Commit](https://img.shields.io/github/last-commit/ExponentiallyDigital/pia-wireguard-cfga) ![License](https://img.shields.io/github/license/ExponentiallyDigital/pia-wireguard-cfga) ![Downloads](https://img.shields.io/github/downloads/ExponentiallyDigital/pia-wireguard-cfga/total)<br>
+![Release](https://img.shields.io/badge/platform-%20Android%20-blue) ![Release](https://img.shields.io/github/v/release/ExponentiallyDigital/pia-wireguard-cfga) ![Last Commit](https://img.shields.io/github/last-commit/ExponentiallyDigital/pia-wireguard-cfga) ![License](https://img.shields.io/github/license/ExponentiallyDigital/pia-wireguard-cfga) ![Downloads](https://img.shields.io/github/downloads/ExponentiallyDigital/pia-wireguard-cfga/total)
 <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=alert_status" alt="Quality Gate"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=reliability_rating" alt="Reliability"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=security_rating" alt="Security Rating"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=bugs" alt="Bugs"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=vulnerabilities" alt="Vulnerabilities"></a>
 
 A native Android GUI app built with Flutter and Dart that generates a ready-to-use WireGuard configuration file for the Private Internet Access (PIA) VPN service. It authenticates with PIA's official provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and allows you to save the complete `.conf` to the clipboard or share/save to a user specified app/location.
@@ -36,27 +36,41 @@ Each release contains a versioned, compiled, production-ready `.zip` archive con
 
 1. Enter a region or click the icon to the right and select from a dynamically updated alpha sorted filterable list of current PIA regions.
 
-<table border="0" cellpadding="0" cellspacing="0" width="100%">
+<table style="width: 100%; border-collapse: collapse; border: none;">
   <tr>
-    <td align="center" width="50%" valign="top">
-      <img src="./images/interface.jpg" alt="Screenshot: pia-wireguard-cfga UI" width="95%"><br>
-      <b>PIA WireGuard Config App UI</b>
+    <td align="center" style="width: 50%; border: none; padding: 10px;">
+      <img src="./images/interface.jpg" alt="Screenshot: pia-wireguard-cfga UI" width="100%">
     </td>
-    <td align="center" width="50%" valign="top">
-      <img src="./images/region-selection.jpg" alt="Screenshot: region selection" width="95%"><br>
-      <b>Region Selection Screen</b>
+    <td align="center" style="width: 50%; border: none; padding: 10px;">
+      <img src="./images/region-selection.jpg" alt="Screenshot: region selection" width="100%">
+    </td>
+  </tr>
+  <tr>
+    <td align="center" style="border: none; padding: 5px 10px 10px 10px; vertical-align: top;">
+      <strong>PIA WireGuard Config App UI</strong>
+    </td>
+    <td align="center" style="border: none; padding: 5px 10px 10px 10px; vertical-align: top;">
+      <strong>Region Selection Screen</strong>
     </td>
   </tr>
 </table>
 
 2. Add/paste your PIA username/password details (entered text cannot be copied from the password field)
 
-<table border="0" cellpadding="0" cellspacing="0" width="100%">
+<table style="width: 100%; border-collapse: collapse; border: none;">
   <tr>
-    <td align="center" width="100%">
-      <img src="./images/interface-fields.jpg" alt="Screenshot: interface fields" width="50%"><br>
-      <b>Interface Fields</b>
+    <td style="width: 25%; border: none;"></td>
+    <td align="center" style="width: 50%; border: none; padding: 10px;">
+      <img src="./images/interface-fields.jpg" alt="Screenshot: interface fields" width="100%">
     </td>
+    <td style="width: 25%; border: none;"></td>
+  </tr>
+  <tr>
+    <td style="border: none;"></td>
+    <td align="center" style="border: none; padding: 5px 10px 10px 10px; vertical-align: top;">
+      <strong>Interface Fields</strong>
+    </td>
+    <td style="border: none;"></td>
   </tr>
 </table>
 
@@ -64,12 +78,20 @@ Each release contains a versioned, compiled, production-ready `.zip` archive con
 4. Click on the "GENERATE CONFIG" button.
 5. After successful PIA authentication your chosen region's config file is displayed in the "GENERATED CONFIG" window. You can select specific text from this window or click "COPY" to send the window contents to the clipboard. Use "SHARE / SAVE" to send the config file to a specific app e.g. your favourite file system app to save the generated conf file to a location of choice.
 
-<table border="0" cellpadding="0" cellspacing="0" width="100%">
+<table style="width: 100%; border-collapse: collapse; border: none;">
   <tr>
-    <td align="center" width="100%">
-      <img src="./images/generated-config.jpg" alt="Screenshot: generated config" width="50%"><br>
-      <b>Generated Config</b>
+    <td style="width: 25%; border: none;"></td>
+    <td align="center" style="width: 50%; border: none; padding: 10px;">
+      <img src="./images/generated-config.jpg" alt="Screenshot: generated config" width="100%">
     </td>
+    <td style="width: 25%; border: none;"></td>
+  </tr>
+  <tr>
+    <td style="border: none;"></td>
+    <td align="center" style="border: none; padding: 5px 10px 10px 10px; vertical-align: top;">
+      <strong>Generated Config</strong>
+    </td>
+    <td style="border: none;"></td>
   </tr>
 </table>
 
