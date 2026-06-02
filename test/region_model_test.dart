@@ -1,6 +1,4 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/main.dart';
 import 'package:pia_wireguard_cfga/pia_service.dart';
 
 void main() {
