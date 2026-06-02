@@ -36,34 +36,42 @@ Each release contains a versioned, compiled, production-ready `.zip` archive con
 
 1. Enter a region or click the icon to the right and select from a dynamically updated alpha sorted filterable list of current PIA regions.
 
-<p align="center">
-  <img src="./images/interface.jpg" alt="Screenshot: pia-wireguard-cfga UI" width="48%" \>
-  <img src="./images/region-selection.jpg" alt="Screenshot: region selection" width="48%" \>
-</p>
-<p align="center">
-  <code style="display:inline-block; width:48%; text-align:center;"><b>PIA WireGuard Config App UI</b></code>
-  <code style="display:inline-block; width:48%; text-align:center;"><b>Region Selection Screen</b></code>
-</p>
+<table border="0" cellpadding="0" cellspacing="0" width="100%">
+  <tr>
+    <td align="center" width="50%" valign="top">
+      <img src="./images/interface.jpg" alt="Screenshot: pia-wireguard-cfga UI" width="95%"><br>
+      <b>PIA WireGuard Config App UI</b>
+    </td>
+    <td align="center" width="50%" valign="top">
+      <img src="./images/region-selection.jpg" alt="Screenshot: region selection" width="95%"><br>
+      <b>Region Selection Screen</b>
+    </td>
+  </tr>
+</table>
 
 2. Add/paste your PIA username/password details (entered text cannot be copied from the password field)
 
-<p align="center">
-  <img src="./images/interface-fields.jpg" alt="Screenshot: interface fields" width="50%" \>
-</p>
-<p align="center">
-  <strong>Interface Fields</strong>
-</p>
+<table border="0" cellpadding="0" cellspacing="0" width="100%">
+  <tr>
+    <td align="center" width="100%">
+      <img src="./images/interface-fields.jpg" alt="Screenshot: interface fields" width="50%"><br>
+      <b>Interface Fields</b>
+    </td>
+  </tr>
+</table>
 
 3. Optional - accept the default DNS servers (Quad 9) or enter your choices, use a comma to separate entries.
 4. Click on the "GENERATE CONFIG" button.
 5. After successful PIA authentication your chosen region's config file is displayed in the "GENERATED CONFIG" window. You can select specific text from this window or click "COPY" to send the window contents to the clipboard. Use "SHARE / SAVE" to send the config file to a specific app e.g. your favourite file system app to save the generated conf file to a location of choice.
 
-<p align="center">
-  <img src="./images/generated-config.jpg" alt="Screenshot: generated config" width="50%" \>
-</p>
-<p align="center">
-  <strong>Generated Config</strong>
-</p>
+<table border="0" cellpadding="0" cellspacing="0" width="100%">
+  <tr>
+    <td align="center" width="100%">
+      <img src="./images/generated-config.jpg" alt="Screenshot: generated config" width="50%"><br>
+      <b>Generated Config</b>
+    </td>
+  </tr>
+</table>
 
 6. Conf files are named per the region name (agreed, PIA isn't consistent with the region name format!)
 7. Above the "GENERATED CONFIG" window there's a "CLEAR" button that removes your WireGuard credentials (config data, PIA username/password) from your device's screen and securely overwrites these variables stored in memory. Next to that there's a countdown timer. After no activity for 3 minutes, your credentials are automatically wiped. The timer is reset when there's in app activity (scrolling, tapping etc).
