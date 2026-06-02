@@ -1,5 +1,6 @@
-# pia-wireguard-cfga ![pia-wireguard-cfga](./assets/icon/pia-wireguard-cfga.png)
+# pia-wireguard-cfga<img src="./assets/icon/icon.png" alt="PIA WireGuard CFGA" width="150" />
 
+![Release](https://img.shields.io/badge/platform-%20Android%20-blue) ![Release](https://img.shields.io/github/v/release/ExponentiallyDigital/pia-wireguard-cfga) ![Last Commit](https://img.shields.io/github/last-commit/ExponentiallyDigital/pia-wireguard-cfga) ![License](https://img.shields.io/github/license/ExponentiallyDigital/pia-wireguard-cfga) ![Downloads](https://img.shields.io/github/downloads/ExponentiallyDigital/pia-wireguard-cfga/total)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=alert_status)](https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga) [![Reliability](https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=reliability_rating)](https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=security_rating)](https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga) [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=bugs)](https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga) [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=vulnerabilities)](https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga)
 
 A native Android GUI app built with Flutter and Dart that generates a ready-to-use WireGuard configuration file for the Private Internet Access (PIA) VPN service. It authenticates with PIA's official provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and allows you to save the complete `.conf` to the clipboard or share/save to a user specified app/location.
@@ -177,7 +178,7 @@ The provisioning logic in `lib/pia_service.dart` is a direct Dart translation of
 
 ### Sample output
 
-```
+```none
 [Interface]
 PrivateKey = <freshly generated private key>
 Address    = <client IP/32 assigned by PIA>
