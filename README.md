@@ -221,7 +221,7 @@ This app requires specific native system declarations to manage secure API hands
 
 ### 1. Hardware & networking permissions (`uses-permission`)
 
-- **Internet Access** (`android.permission.INTERNET`)
+- **Internet access** (`android.permission.INTERNET`)
     - **Purpose:** required for secure communication with Private Internet Access (PIA) backend API layers to perform user authentication, dynamically fetch current VPN server endpoints, and request temporary session tokens.
 - **Network connectivity state** (`android.permission.ACCESS_NETWORK_STATE`)
     - **Purpose:** allows the application to verify active device internet handshakes before launching network operations, preventing unexpected crashes and managing socket timeouts.
