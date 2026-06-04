@@ -9,7 +9,7 @@ on:
       dry_run:
         description: "Run without creating a release"
         required: false
-        default: "false"
+        default: "true"   # Defaulting to true — manual runs are dry by default for safety
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -68,7 +68,7 @@ jobs:
 
       - name: Create release package
         run: |
-          ADDON="${{ github.event.repository.name }}"
+          PACKAGE="${{ github.event.repository.name }}"
           VERSION="${GITHUB_REF_NAME}"
           mkdir -p build/$PACKAGE
 
@@ -77,15 +77,18 @@ jobs:
             | sed "s/^# \(.*\)/# \1\n\n**Version:** ${VERSION}/" \
             > /tmp/README.md
 
-          pandoc /tmp/README.md -f gfm -t html -s --self-contained -o build/$PACKAGE/README.html
+          # --embed-resources replaces the deprecated --self-contained flag (Pandoc 3.x+)
+          pandoc /tmp/README.md -f gfm -t html -s --embed-resources --standalone -o build/$PACKAGE/README.html
 
           cp LICENSE build/$PACKAGE/
           cp build/app/outputs/flutter-apk/app-release.apk build/$PACKAGE/pia-wireguard-cfga.apk
-          cp build/app/outputs/flutter-apk/app-release.apk.sha1 build/$PACKAGE/pia-wireguard-cfga.sha1
+
+          # Generate SHA1 explicitly — Flutter does not produce a .sha1 file automatically
+          sha1sum build/app/outputs/flutter-apk/app-release.apk | awk '{print $1}' > build/$PACKAGE/pia-wireguard-cfga.sha1
 
       - name: Create ZIP
         run: |
-          ADDON="${{ github.event.repository.name }}"
+          PACKAGE="${{ github.event.repository.name }}"
           cd build
           zip -r "$PACKAGE-${GITHUB_REF_NAME}.zip" "$PACKAGE"
 

@@ -1,0 +1,122 @@
+name: "Quality & security"
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # ============================================================
+  # Job 1: Static analysis, tests, and code quality
+  # Runs in parallel with the security job
+  # ============================================================
+  quality:
+    name: Quality & static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Fetch dependencies
+        run: flutter pub get --enforce-lockfile
+
+      # ======================
+      # Flutter static analysis
+      # ======================
+      - name: Flutter analyze
+        run: flutter analyze --fatal-infos
+
+      # ======================
+      # Tests + coverage
+      # ======================
+      - name: Flutter tests with coverage
+        run: flutter test --coverage
+
+      # ======================
+      # SonarQube scan
+      # Uses coverage/lcov.info from the test step above
+      # ======================
+      - name: SonarQube scan
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # ============================================================
+  # Job 2: Dependency and mobile security scanning
+  # Runs in parallel with the quality job
+  # ============================================================
+  security:
+    name: Security scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ======================
+      # OSV scanner
+      # Reads pubspec.lock directly — no Flutter setup needed for this step
+      # ======================
+      - name: Run OSV scanner
+        uses: google/osv-scanner-action@v2
+        with:
+          scan-args: |-
+            --format sarif
+            --output osv-results.sarif
+            .
+
+      - name: Upload OSV results to Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: osv-results.sarif
+
+      # ======================
+      # MobSF scan
+      # Requires a built APK — Flutter setup from here
+      # ======================
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Fetch dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Build release APK for MobSF
+        run: flutter build apk --release
+
+      - name: Run mobsfscan
+        uses: MobSF/mobsfscan@main
+        with:
+          args: "build/app/outputs/flutter-apk/app-release.apk --sarif --output mobsfscan.sarif || true"
+
+      - name: Upload MobSF results to Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: mobsfscan.sarif
