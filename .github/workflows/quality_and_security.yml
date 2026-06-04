@@ -8,11 +8,11 @@ on:
 permissions:
   contents: read
   security-events: write
+  actions: read
 
 jobs:
   # ============================================================
   # Job 1: Static analysis, tests, and code quality
-  # Runs in parallel with the security job
   # ============================================================
   quality:
     name: Quality & static analysis
@@ -60,11 +60,26 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # ============================================================
-  # Job 2: Dependency and mobile security scanning
-  # Runs in parallel with the quality job
+  # Job 2: OSV dependency vulnerability scan
+  # Must be a top-level job — osv-scanner-action is a reusable
+  # workflow, not a composite action, so it cannot be a step.
+  # Use osv-scanner-reusable.yml (not the -pr variant, which
+  # diffs against a base branch and requires a PR context).
+  # ============================================================
+  osv-scan:
+    name: OSV dependency scan
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+  # ============================================================
+  # Job 3: Mobile security scanning (MobSF)
+  # Builds the APK and runs static mobile analysis
   # ============================================================
   security:
-    name: Security scanning
+    name: MobSF security scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -72,27 +87,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # ======================
-      # OSV scanner
-      # Reads pubspec.lock directly — no Flutter setup needed for this step
-      # ======================
-      - name: Run OSV scanner
-        uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.3.8
-        with:
-          scan-args: |-
-            --format sarif
-            --output osv-results.sarif
-            .
-
-      - name: Upload OSV results to Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: osv-results.sarif
-
-      # ======================
-      # MobSF scan
-      # Requires a built APK — Flutter setup from here
-      # ======================
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
