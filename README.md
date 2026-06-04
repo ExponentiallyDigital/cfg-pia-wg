@@ -18,6 +18,7 @@ Manually creating a PIA WireGuard configuration requires authenticating against 
 - **Zero-persistence local footprint:** sensitive keys, usernames, and passwords reside exclusively as short-lived volatile variables inside system RAM (`AppState`). Config payloads are written to a named temporary file solely to preserve the correct filename through the OS share pipeline, then deleted immediately in a `finally` block once `share()` returns -- whether the share completes, is cancelled, or throws. No unencrypted files are permanently cached or retained in local storage.
 - **Credential safety:** your PIA password is entered interactively at execution and used strictly to request a short-lived HTTP Basic Auth provisioning token. Credentials are never written to disk, stored, or logged.
 - **Automatic session self-destruct:** includes an automatic 3-minute safety countdown timer. If the app is left idle for 3 continuous minutes while displaying a configuration, the screen UI, form states, and memory addresses are completely wiped. Active screen interactions automatically reset the clock back to a full 3 minutes.
+- **Automated clipboard protection:** copies the generated config securely to the clipboard and triggers an independent 60-second real-time countdown visible under the button. After 60 seconds, or immediately if the user triggers a manual session wipe, the system clipboard is overwritten with an empty string to prevent background clipboard-scraping apps from harvesting your config.
 - **Native Task-Switcher Protection (`FLAG_SECURE`):** Enforces native OS-level window flags to block third-party screenshot capturing and automatically obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
 - **Input field hardening:** user credential entry textboxes disable predictive dictionary caching, auto-correction tracking assistance, and keyboard learning behaviours, alongside native selection overrides to block background clipboard scraping.
 - **Modern adaptive styling:** fully supports Android 8.0+ Adaptive Icons using a native multi-layered presentation conforming to a dark-mode theme aesthetic (`#12141A`).
@@ -198,6 +199,7 @@ The generated configuration data lifecycle is managed under a high-security para
 - **Ephemeral verification:** displayed on-screen inside an obscured text viewport for instant validation.
 - **Transient streaming:** shareable seamlessly using Android's system share sheet (e.g., via "Save to Files" or encrypted side-channels) via localized memory stream descriptors.
 - **Manual clear:** the "Clear" action button scrubs the username, password, and displayed config on screen data.
+- **Clipboard sanitization:** tapping "COPY" invokes a 60-second timer that clears the clipboard storage space automatically, limiting the visibility window of raw private key data.
 - **Safety timeout clock:** adjacent to the "Clear" action button, a real-time countdown widget tracks session idle state, executing a complete memory and view scrub if the application interface goes completely untouched for 3 consecutive minutes.
 
 ## Notes
@@ -246,7 +248,7 @@ This app requires specific native system declarations to manage secure API hands
 2. Release to Play Store - needs 12 testers over 14 continuous days
 3. create SECURITY.md
 4. DONE review Actions CI pipeline - add flutter analyze, rename pipeline
-5. clear clipboard after 30 seconds if conf copied there, make it obvious (add timer?)
+5. DONE clear clipboard after 60 seconds if conf copied there
 6. extra security/code analysis:
    DONE dependabot (dependency review)
    DONE OSV-Scanner
@@ -257,10 +259,14 @@ This app requires specific native system declarations to manage secure API hands
 9. DONE split release.yaml into code scan and actual release
 10. DONE renamed $ADDON to $RELEASE in release.yaml (was carry over from WoW addon packaging)
 11. DONE fixup html intermediary file name (caused resultant doc title issue)
+12. add SBOM as a release artifact (Syft)
+13. add how to privately report a security vulnerability (enabled in GitHub)
+14. implement "renovate" to replace tags with SHAs
+15. switch from SHA-1 to SHA-256 for integrity verification
 
 ## Build chain & utility notes
 
-- keep your build environment up to date:
+- keep your build environment up to date with:
 
 ```cmd
 flutter upgrade

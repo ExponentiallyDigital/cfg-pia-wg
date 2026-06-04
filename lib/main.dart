@@ -168,6 +168,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _wipeDeadline = null;
     _usernameCtrl.clear();
     _passwordCtrl.clear();
+    _clearClipboard();
     setState(() {
       _generatedConfig = null;
       _secondsRemaining = 0;
@@ -480,7 +481,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     _clipboardWipeDeadline = null;
     setState(() => _clipboardSecondsRemaining = 0);
     await Clipboard.setData(const ClipboardData(text: ''));
-    _logEntry('Clipboard cleared automatically.');
+    _logEntry('Clipboard auto cleared.');
   }
 
   Future<void> _copyToClipboard() async {
