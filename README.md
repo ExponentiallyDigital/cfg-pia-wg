@@ -258,14 +258,26 @@ This app requires specific native system declarations to manage secure API hands
 10. DONE renamed $ADDON to $RELEASE in release.yaml (was carry over from WoW addon packaging)
 11. DONE fixup html intermediary file name (caused resultant doc title issue)
 
-## Fixes
+## Build chain notes
 
-- If OSV-Scanner reports build chain vulnerabilities caused by superceeded packages run
+- If OSV-Scanner reports build chain tool vulnerabilities caused by outdated packages, run
 
 ```cmd
 flutter upgrade
 flutter pub upgrade
 .\android\gradlew -p android :dependencies :app:dependencies --write-locks
+```
+
+- to review locally (assumes running under WSL etc)
+
+```bash
+# Download the Linux binary
+sudo curl -L https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 \
+  -o /usr/local/bin/osv-scanner
+sudo chmod +x /usr/local/bin/osv-scanner
+
+# Scan Android/Gradle deps
+osv-scanner --lockfile android/app/gradle.lockfile
 ```
 
 ## Contributing

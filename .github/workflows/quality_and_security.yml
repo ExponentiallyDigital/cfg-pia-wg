@@ -69,6 +69,13 @@ jobs:
   osv-scan:
     name: OSV dependency scan
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8
+    with:
+      # Scan repo root recursively — matches `osv-scanner .` locally.
+      # OSV auto-discovery finds pubspec.lock but not android/app/gradle.lockfile
+      # (Gradle lockfiles are not in OSV's auto-discovery format list), so the
+      # build-tool noise is excluded without needing explicit scoping.
+      # Future lockfiles (Cargo, npm, etc.) will be picked up automatically.
+      scan-args: .
     permissions:
       contents: read
       security-events: write
