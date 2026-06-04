@@ -203,8 +203,8 @@ jobs:
         if: matrix.language == 'java-kotlin'
         run: flutter pub get --enforce-lockfile
 
-      - name: Generate launcher icons
-        run: dart run flutter_launcher_icons
+      #      - name: Generate launcher icons
+      #        run: dart run flutter_launcher_icons
 
       - name: Build Android app to compile Java/Kotlin for CodeQL
         if: matrix.language == 'java-kotlin'
