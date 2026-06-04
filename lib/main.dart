@@ -96,6 +96,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   DateTime? _wipeDeadline;
   int _secondsRemaining = 0;
 
+  Timer? _clipboardTimer;
+  DateTime? _clipboardWipeDeadline;
+  int _clipboardSecondsRemaining = 0;
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +110,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _wipeTimer?.cancel();
+    _clipboardTimer?.cancel();
     for (var controller in [
       _usernameCtrl,
       _passwordCtrl,
@@ -120,14 +125,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed &&
-        _wipeDeadline != null &&
-        _generatedConfig != null) {
-      final remaining = _wipeDeadline!.difference(DateTime.now()).inSeconds;
-      if (remaining <= 0) {
-        _clearSession();
-      } else {
-        setState(() => _secondsRemaining = remaining);
+    if (state == AppLifecycleState.resumed) {
+      if (_wipeDeadline != null && _generatedConfig != null) {
+        final remaining = _wipeDeadline!.difference(DateTime.now()).inSeconds;
+        if (remaining <= 0) {
+          _clearSession();
+        } else {
+          setState(() => _secondsRemaining = remaining);
+        }
+      }
+
+      // Check if clipboard deadline passed while app was in background
+      if (_clipboardWipeDeadline != null) {
+        final remaining =
+            _clipboardWipeDeadline!.difference(DateTime.now()).inSeconds;
+        if (remaining <= 0) {
+          _clearClipboard();
+        } else {
+          setState(() => _clipboardSecondsRemaining = remaining);
+        }
       }
     }
   }
@@ -458,6 +474,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
   }
 
+  void _clearClipboard() async {
+    _clipboardTimer?.cancel();
+    _clipboardTimer = null;
+    _clipboardWipeDeadline = null;
+    setState(() => _clipboardSecondsRemaining = 0);
+    await Clipboard.setData(const ClipboardData(text: ''));
+    _logEntry('Clipboard cleared automatically.');
+  }
+
   Future<void> _copyToClipboard() async {
     if (_generatedConfig == null) return;
     await Clipboard.setData(ClipboardData(text: _generatedConfig!));
@@ -465,6 +490,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Config copied'), backgroundColor: _kHighlight));
     }
+
+    // Start or reset the 60-second countdown
+    _clipboardTimer?.cancel();
+    _clipboardWipeDeadline = DateTime.now().add(const Duration(seconds: 60));
+    setState(() => _clipboardSecondsRemaining = 60);
+
+    _clipboardTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        return timer.cancel();
+      }
+      final remaining =
+          _clipboardWipeDeadline!.difference(DateTime.now()).inSeconds;
+      if (remaining <= 0) {
+        timer.cancel();
+        _clearClipboard();
+      } else {
+        setState(() => _clipboardSecondsRemaining = remaining);
+      }
+    });
   }
 
   List<Widget> _buildTimerWidget() {
@@ -514,16 +558,34 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       ),
       const SizedBox(height: 16),
       Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _copyToClipboard,
-              icon: const Icon(Icons.copy, size: 16),
-              label: const Text('COPY'),
-              style: OutlinedButton.styleFrom(
-                  foregroundColor: _kHighlight,
-                  side: const BorderSide(color: _kHighlight),
-                  padding: const EdgeInsets.symmetric(vertical: 14)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _copyToClipboard,
+                  icon: const Icon(Icons.copy, size: 16),
+                  label: const Text('COPY'),
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: _kHighlight,
+                      side: const BorderSide(color: _kHighlight),
+                      padding: const EdgeInsets.symmetric(vertical: 14)),
+                ),
+                if (_clipboardSecondsRemaining > 0) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Clearing clipboard in $_clipboardSecondsRemaining seconds',
+                    style: const TextStyle(
+                      color: Color(0xFFFF5C5C),
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(width: 12),

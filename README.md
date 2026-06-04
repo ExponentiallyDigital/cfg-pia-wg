@@ -258,9 +258,9 @@ This app requires specific native system declarations to manage secure API hands
 10. DONE renamed $ADDON to $RELEASE in release.yaml (was carry over from WoW addon packaging)
 11. DONE fixup html intermediary file name (caused resultant doc title issue)
 
-## Build chain notes
+## Build chain & utility notes
 
-- If OSV-Scanner reports build chain tool vulnerabilities caused by outdated packages, run
+- keep your build environment up to date:
 
 ```cmd
 flutter upgrade
@@ -268,17 +268,23 @@ flutter pub upgrade
 .\android\gradlew -p android :dependencies :app:dependencies --write-locks
 ```
 
-- to review locally (assumes running under WSL etc)
+- To run **OSV-Scanner** locally (scans dependencies against Google's OSV vulnerability database):
 
-```bash
-# Download the Linux binary
-sudo curl -L https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 \
-  -o /usr/local/bin/osv-scanner
-sudo chmod +x /usr/local/bin/osv-scanner
+  ```bash
+  # 1. Download the latest Linux binary (run from repo root, e.g. under WSL)
+  sudo curl -L https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 \
+    -o /usr/local/bin/osv-scanner
+  sudo chmod +x /usr/local/bin/osv-scanner
 
-# Scan Android/Gradle deps
-osv-scanner --lockfile android/app/gradle.lockfile
-```
+  # 2. Basic scan (recursively scans all supported lockfiles in the project)
+  osv-scanner .
+
+  # 3. Scan only the Dart/Flutter lockfile
+  osv-scanner --lockfile=pubspec.lock
+
+  # 4. Scan Android Gradle dependencies (expect many!)
+  osv-scanner --lockfile=android/app/gradle.lockfile
+  ```
 
 ## Contributing
 
