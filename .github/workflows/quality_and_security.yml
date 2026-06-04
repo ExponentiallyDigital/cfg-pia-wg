@@ -77,7 +77,7 @@ jobs:
       # Reads pubspec.lock directly — no Flutter setup needed for this step
       # ======================
       - name: Run OSV scanner
-        uses: google/osv-scanner-action@v2
+        uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.3.8
         with:
           scan-args: |-
             --format sarif
