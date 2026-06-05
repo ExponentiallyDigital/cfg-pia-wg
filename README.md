@@ -1,6 +1,6 @@
 # pia-wireguard-cfga<img src="./assets/icon/icon.png" alt="PIA WireGuard CFGA" width="150" />
 
-<a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-%20Android%20-blue" alt="Platform"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/pia-wireguard-cfga" alt="Release"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/tags" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/last-commit/ExponentiallyDigital/pia-wireguard-cfga" alt="Last Commit"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/pia-wireguard-cfga" alt="License"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/downloads/ExponentiallyDigital/pia-wireguard-cfga/total" alt="Downloads"></a><br><a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=security_rating" alt="Security Rating"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=reliability_rating" alt="Reliability"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=sqale_rating" alt="Maintainability"></a><br><a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=vulnerabilities" alt="Vulnerabilities"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=bugs" alt="Bugs"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=coverage" alt="Coverage"></a>
+<a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-%20Android%20-blue" alt="Platform"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/pia-wireguard-cfga" alt="Release"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/tags" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/last-commit/ExponentiallyDigital/pia-wireguard-cfga" alt="Last Commit"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/pia-wireguard-cfga" alt="License"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/downloads/ExponentiallyDigital/pia-wireguard-cfga/total" alt="Downloads"></a><br><a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=security_rating" alt="Security Rating"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=reliability_rating" alt="Reliability"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=sqale_rating" alt="Maintainability"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/security/policy/ExponentiallyDigital/pia-wireguard-cfga" alt="Security Policy"></a><br><a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=vulnerabilities" alt="Vulnerabilities"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=bugs" alt="Bugs"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=coverage" alt="Coverage"></a>
 
 A native Android GUI app built with Flutter and Dart that generates a ready-to-use WireGuard configuration file for the Private Internet Access (PIA) VPN service. It authenticates with PIA's official provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and allows you to save the complete `.conf` to the clipboard or share/save to a user specified app/location.
 
@@ -98,6 +98,10 @@ Each release contains a versioned, compiled, production-ready `.zip` archive con
 6. Conf files are named per the region name (agreed, PIA isn't consistent with the region name format!)
 7. Above the "GENERATED CONFIG" window there's a "CLEAR" button that removes your WireGuard credentials (config data, PIA username/password) from your device's screen and securely overwrites these variables stored in memory. Next to that there's a countdown timer. After no activity for 3 minutes, your credentials are automatically wiped. The timer is reset when there's in app activity (scrolling, tapping etc).
 8. At the bottom of the screen there's a scrollable "LOG" of processing/activity that can be cleared.
+
+## Security
+
+We take credential safety and application hardening seriously. Please see our [SECURITY.md](./SECURITY.md) for details on our secure development practices, data handling lifecycles, and instructions on how to privately report potential vulnerabilities.
 
 ## Build setup
 
@@ -244,36 +248,34 @@ This app requires specific native system declarations to manage secure API hands
 
 ## Development "to do" list
 
-1. Fix table display on README: renders fine in VS Code with Markdown Preview Enhanced, but borders are visible on GitHub, and pandoc HTML version has horizintal lines above/below tables
-2. Release to Play Store - needs 12 testers over 14 continuous days
-3. create SECURITY.md
-4. DONE review Actions CI pipeline - add flutter analyze, rename pipeline
-5. DONE clear clipboard after 60 seconds if conf copied there
-6. extra security/code analysis:
-   DONE dependabot (dependency review)
-   DONE OSV-Scanner
-   DONE mobsf
-   AppSweep (Guardsquare) - needs invitation to get free account
-7. add badges for above
-8. include software BOM (bill of materials) - move from README to SECURITY md
-9. DONE split release.yaml into code scan and actual release
-10. DONE renamed $ADDON to $RELEASE in release.yaml (was carry over from WoW addon packaging)
-11. DONE fixup html intermediary file name (caused resultant doc title issue)
-12. add SBOM as a release artifact (Syft)
-13. add how to privately report a security vulnerability (enabled in GitHub)
-14. DONE implement local PS1 app to replace tags with SHAs
-15. switch from SHA-1 to SHA-256 for integrity verification
-16. DONE enable dependabot
+- DONE review Actions CI pipeline - add flutter analyze, rename pipeline
+- DONE clear clipboard after 60 seconds if conf copied there
+- DONE automated security/quality analysis: Flutter analyse, SonarCube, Google OSV dependency scan, Mobile security scanning (MobSF), Dependabot dependency management, and CodeQL analysis.
+- DONE split release.yaml into code scan and actual release
+- DONE renamed $ADDON to $RELEASE in release.yaml (was carry over from WoW addon packaging)
+- DONE fixup html intermediary file name (caused resultant doc title issue)
+- DONE add SBOM as a release artifact (Syft)
+- DONE implement local PS1 app to replace tags with SHAs
+- DONE enable dependabot
+- DONE create SECURITY.md
+- DONE add how to privately report a security vulnerability (enabled in GitHub)
+- DONE include software BOM (bill of materials) in release artifacts
+- DONE rebuild release output files (drop zip, include 3 versions)
+
+- Release to Play Store - needs 12 testers over 14 continuous days
+- Fix table display on README: renders fine in VS Code with Markdown Preview Enhanced, but borders are visible on GitHub, and pandoc HTML version has horizintal lines above/below tables
+- update screenshots for phone, 7" and 10" tablets showing clipboard clearing
+- add README badges for automated security/quality analysis
 
 ## Build chain & utility notes
 
 - keep your build environment up to date with:
 
-```cmd
-flutter upgrade
-flutter pub upgrade
-.\android\gradlew -p android :dependencies :app:dependencies --write-locks
-```
+  ```cmd
+  flutter upgrade
+  flutter pub upgrade
+  .\android\gradlew -p android :dependencies :app:dependencies --write-locks
+  ```
 
 - To run **OSV-Scanner** locally (scans dependencies against Google's OSV vulnerability database):
 
