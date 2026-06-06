@@ -297,7 +297,7 @@ This app requires specific native system declarations to manage secure API hands
 - Release to Play Store - 12 testers opted-in to **closed test** for 14 continuous days
 - Fix table display on README: renders fine in VS Code with Markdown Preview Enhanced, but borders are visible on GitHub, and pandoc HTML version has horizintal lines above/below tables
 - add README badges for automated security/quality analysis
-- add feature "push to to router"
+- add feature "push cfg to router"
 
 ## Build chain & utility notes
 

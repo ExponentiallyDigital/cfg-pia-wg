@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'pia_service.dart';
+import 'router_push_sheet.dart';
 
 void main() => runApp(const PiaWgApp());
 
@@ -603,7 +604,36 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
+      const SizedBox(height: 12),
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _showRouterPushSheet,
+          icon: const Icon(Icons.router, size: 16),
+          label: const Text('PUSH CONFIG TO ROUTER...'),
+          style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFE8EAF0),
+              side: const BorderSide(color: Color(0xFF4A5268)),
+              padding: const EdgeInsets.symmetric(vertical: 14)),
+        ),
+      ),
     ];
+  }
+
+  void _showRouterPushSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1D23),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      isScrollControlled: true,
+      builder: (ctx) => RouterPushSheet(
+        // Changed from _RouterPushSheet
+        config: _generatedConfig!,
+        regionId: _regionCtrl.text.trim(),
+        onLog: _logEntry,
+      ),
+    );
   }
 
   Widget _buildLogSection() {
