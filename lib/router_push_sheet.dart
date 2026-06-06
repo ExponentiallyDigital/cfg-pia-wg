@@ -155,15 +155,9 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       if (activeSlot != null) {
         widget.onLog(
             'Disabling kill switch on active interface wgc$activeSlot...');
-
         await client.run('nvram set wgc${activeSlot}_enforce=0');
         await client.run('nvram commit');
-
-        // Apply immediately
-        await client.run('service restart_wgc');
-
         killSwitchDisabled = true;
-
         widget
             .onLog('Kill switch disabled on active interface wgc$activeSlot.');
       }
@@ -244,34 +238,53 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
           'Applying WireGuard configuration and switching to wgc$slot...');
       await client.run('nvram commit');
       // Restart WireGuard subsystem so enable/enforce changes take effect
-      await client.run('service restart_wgc');
+      await client.run('service restart_vpnc$slot');
       await Future.delayed(const Duration(seconds: 5));
 
-      // --- Step 5: Poll for handshake confirmation via wgcN_rip ---
-      // Clear any stale value from a previous session first to prevent
-      // a leftover IP from giving a false positive on check 1.
-      await client.run('nvram set wgc${slot}_rip=""');
-      widget.onLog('Waiting for WireGuard handshake (up to 30s)...');
-      String publicIp = '';
-      for (int retry = 0; retry < 15; retry++) {
+// --- Step 5: Poll for WireGuard handshake ---
+      widget.onLog('Waiting for WireGuard handshake (up to 90s)...');
+
+      bool handshakeConfirmed = false;
+
+      for (int retry = 0; retry < 45; retry++) {
         widget.onActivity?.call();
         await Future.delayed(const Duration(seconds: 2));
-        final result = await client.run('nvram get wgc${slot}_rip');
-        publicIp = utf8.decode(result).trim();
+
+        final result = await client.run('wg show wgc$slot latest-handshakes');
+
+        final output = utf8.decode(result).trim();
+
+        if (output.contains('No such device')) {
+          widget.onLog('  Check ${retry + 1}/45: interface not started');
+          continue;
+        }
+
+        final fields = output.split(RegExp(r'\s+'));
+
+        if (fields.length >= 2) {
+          final handshakeTimestamp = int.tryParse(fields[1]) ?? 0;
+
+          if (handshakeTimestamp > 0) {
+            handshakeConfirmed = true;
+
+            widget.onLog('  Check ${retry + 1}/45: handshake confirmed');
+
+            break;
+          }
+        }
+
         widget.onLog(
-            '  Check ${retry + 1}/15: ${publicIp.isEmpty ? "(waiting)" : publicIp}');
-        if (publicIp.isNotEmpty && publicIp != '0.0.0.0') break;
+            '  Check ${retry + 1}/45: interface up, waiting for handshake');
       }
 
-      if (publicIp.isEmpty || publicIp == '0.0.0.0') {
+      if (!handshakeConfirmed) {
         throw Exception(
-          'Handshake not confirmed after 30 seconds. '
-          'The new tunnel failed to establish.\n'
+          'WireGuard handshake not detected after 90 seconds.\n'
           'Check tunnel status via SSH: wg show wgc$slot',
         );
       }
 
-      widget.onLog('Handshake confirmed. Public IP: $publicIp');
+      widget.onLog('Handshake confirmed.');
 
       // --- Step 6: Re-enable kill switch (NVRAM only) ---
       // Same reasoning as Step 1 — no restart_firewall. The enforce value is
@@ -280,7 +293,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       final localIp = utf8.decode(localIpResult).trim();
 
       widget.onLog(
-        'VPN connected via $newDesc  |  local: $localIp  |  public: $publicIp',
+        'VPN connected via $newDesc  |  local: $localIp',
         isSuccess: true,
       );
       widget.onLog(
