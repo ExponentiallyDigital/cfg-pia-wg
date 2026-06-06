@@ -147,8 +147,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         'nvram set wgc${slot}_ep_addr_r="$epIp"',
         'nvram set wgc${slot}_ep_port="$epPort"',
         'nvram set wgc${slot}_aips="${wgMap['AllowedIPs'] ?? '0.0.0.0/0'}"',
-        'nvram commit'
-            'service restart_wgc'
+        'nvram commit',
+        'service restart_wgc'
       ]);
 
       for (var cmd in cmds) {
