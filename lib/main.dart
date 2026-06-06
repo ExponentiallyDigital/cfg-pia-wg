@@ -612,8 +612,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           icon: const Icon(Icons.router, size: 16),
           label: const Text('PUSH CONFIG TO ROUTER...'),
           style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFFE8EAF0),
-              side: const BorderSide(color: Color(0xFF4A5268)),
+              foregroundColor: _kHighlight,
+              side: const BorderSide(color: _kHighlight),
               padding: const EdgeInsets.symmetric(vertical: 14)),
         ),
       ),

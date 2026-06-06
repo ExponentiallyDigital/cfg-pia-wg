@@ -29,6 +29,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
   bool _loading = false;
   Map<int, String> _slots = {};
   int _selectedSlot = -1;
+  bool _sshPassVisible = false;
 
   @override
   void dispose() {
@@ -39,7 +40,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
   }
 
   Future<void> _fetchSlots() async {
-    widget.onActivity?.call(); // Refresh session
+    widget.onActivity?.call();
     final ip = _ipCtrl.text.trim();
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
@@ -53,14 +54,16 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
     setState(() => _loading = true);
     widget.onLog('Connecting to router at $ip via SSH...');
 
+    SSHClient? client;
     try {
       final socket =
           await SSHSocket.connect(ip, 22, timeout: const Duration(seconds: 5));
-      final client = SSHClient(
+      client = SSHClient(
         socket,
         username: user,
         onPasswordRequest: () => pass,
       );
+      await client.authenticated;
 
       final Map<int, String> retrievedSlots = {};
 
@@ -70,14 +73,14 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         retrievedSlots[i] = desc;
       }
 
-      client.close();
-
-      if (retrievedSlots.isEmpty) {
-        throw Exception(
-            'No WireGuard config found. Router firmware may not support this nvram schema.');
+      if (retrievedSlots.values.every((d) => d.isEmpty)) {
+        widget.onLog(
+          'Warning: all WireGuard slots appear unconfigured. '
+          'If unexpected, verify the router supports WireGuard client mode.',
+        );
       }
 
-      widget.onLog('Successfully retreived router config.', isSuccess: true);
+      widget.onLog('Successfully retrieved router config.', isSuccess: true);
       setState(() {
         _slots = retrievedSlots;
         _step = 1;
@@ -85,6 +88,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
     } catch (e) {
       widget.onLog('Router SSH connection error: $e', isError: true);
     } finally {
+      client?.close();
       setState(() => _loading = false);
     }
   }
@@ -107,169 +111,164 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
     final slot = _selectedSlot;
     widget.onLog('Preparing to push config to slot wgc$slot...');
 
+    // Declared outside try so both catch and finally can access them.
+    SSHClient? client;
+    bool killSwitchDisabled = false;
+
     try {
       final wgMap = _parseWgConfig(widget.config);
       final epParts = wgMap['Endpoint']?.split(':') ?? [];
       final epIp = epParts.isNotEmpty ? epParts[0] : '';
       final epPort = epParts.length > 1 ? epParts[1] : '1337';
 
-      // Fallback to region ID if the description is blank
       final existingDesc = _slots[slot] ?? '';
       final newDesc = existingDesc.isEmpty ? widget.regionId : existingDesc;
 
       final socket = await SSHSocket.connect(_ipCtrl.text.trim(), 22,
           timeout: const Duration(seconds: 5));
-      final client = SSHClient(
+      client = SSHClient(
         socket,
         username: _userCtrl.text.trim(),
         onPasswordRequest: () => _passCtrl.text,
       );
+      await client.authenticated;
 
-      // Create base list of NVRAM update commands
-      final List<String> cmds = [];
+      // --- Step 1: Disable kill switch before touching the tunnel ---
+      widget.onLog('Disabling kill switch (wgc${slot}_enforce)...');
+      await client.run('nvram set wgc${slot}_enforce=0');
+      await client.run('nvram commit');
+      await client.run('service restart_firewall');
+      killSwitchDisabled = true;
+      widget.onLog('Kill switch disabled.');
+      await Future.delayed(const Duration(seconds: 2));
 
-      // Loop 1 to 5: Set all slots to disabled (0) EXCEPT the explicitly selected target slot (1)
+      // --- Step 2: Write NVRAM variables ---
+      // Disable all slots except the target, then write the new config values.
       for (int i = 1; i <= 5; i++) {
-        cmds.add('nvram set wgc${i}_enable="${i == slot ? "1" : "0"}"');
+        await client.run('nvram set wgc${i}_enable="${i == slot ? "1" : "0"}"');
       }
 
-      // Add configuration payload commands for target slot to retain unmodified secondary variables
-      cmds.addAll([
-        'nvram set wgc${slot}_desc="$newDesc"',
-        'nvram set wgc${slot}_priv="${wgMap['PrivateKey'] ?? ''}"',
-        'nvram set wgc${slot}_addr="${wgMap['Address']?.replaceAll('/32', '') ?? ''}"',
-        'nvram set wgc${slot}_dns="${wgMap['DNS'] ?? ''}"',
-        'nvram set wgc${slot}_mtu="${wgMap['MTU'] ?? '1420'}"',
-        'nvram set wgc${slot}_ppub="${wgMap['PublicKey'] ?? ''}"',
-        'nvram set wgc${slot}_ep_addr="$epIp"',
-        'nvram set wgc${slot}_ep_addr_r="$epIp"',
-        'nvram set wgc${slot}_ep_port="$epPort"',
-        'nvram set wgc${slot}_aips="${wgMap['AllowedIPs'] ?? '0.0.0.0/0'}"',
-        'nvram commit',
-        'service restart_wgc'
-      ]);
+      await client.run('nvram set wgc${slot}_desc="$newDesc"');
+      await client
+          .run('nvram set wgc${slot}_priv="${wgMap['PrivateKey'] ?? ''}"');
+      await client.run('nvram set wgc${slot}_addr="${wgMap['Address'] ?? ''}"');
+      await client.run('nvram set wgc${slot}_dns="${wgMap['DNS'] ?? ''}"');
+      await client.run('nvram set wgc${slot}_mtu="${wgMap['MTU'] ?? '1420'}"');
+      await client
+          .run('nvram set wgc${slot}_ppub="${wgMap['PublicKey'] ?? ''}"');
+      await client.run('nvram set wgc${slot}_ep_addr="$epIp"');
+      await client.run('nvram set wgc${slot}_ep_port="$epPort"');
+      await client.run(
+          'nvram set wgc${slot}_aips="${wgMap['AllowedIPs'] ?? '0.0.0.0/0'}"');
+      await client.run('nvram commit');
+      widget.onLog('NVRAM written and committed.');
 
-      for (var cmd in cmds) {
-        await client.run(cmd);
-      }
+      // --- Step 3: Restart the tunnel ---
+      widget.onLog('Restarting VPN tunnel (restart_vpnc$slot)...');
+      await client.run('service restart_vpnc$slot');
+      await Future.delayed(const Duration(seconds: 3));
 
-      // --- VPN Director Rules Management ---
+      // --- Step 4: Update VPN Director rules ---
       widget.onLog('Updating VPN Director policy routing rules...');
-
-      // Read the single-line rulelist file content
       final readResult =
           await client.run('cat /jffs/openvpn/vpndirector_rulelist');
       final rulelistString = utf8.decode(readResult).trim();
 
       if (rulelistString.isNotEmpty) {
-        final String activeIface = 'WGC$slot'; // e.g. "WGC1"
-
-        // This regex matches a single rule structure: <status>description>local>remote>interface
-        // It relies on the next rule starting with '<' or reaching the end of the line.
+        final String activeIface = 'WGC$slot';
         final ruleRegex = RegExp(r'<(\d)>([^<]+)');
         final matches = ruleRegex.allMatches(rulelistString);
-
         final List<String> updatedRules = [];
 
         for (var match in matches) {
-          final existingStatus = match.group(1); // e.g., "0" or "1"
-          final ruleBody = match.group(2) ??
-              ''; // e.g., "WGC1 Local Subnet to VPN>192.168.0.0/24>>WGC1"
+          final existingStatus = match.group(1);
+          final ruleBody = match.group(2) ?? '';
 
-          // Check if this specific rule block targets any of our WireGuard interfaces
           if (ruleBody.endsWith('>WGC1') ||
               ruleBody.endsWith('>WGC2') ||
               ruleBody.endsWith('>WGC3') ||
               ruleBody.endsWith('>WGC4') ||
               ruleBody.endsWith('>WGC5')) {
-            if (ruleBody.endsWith('>$activeIface')) {
-              // Enable rule if matching the interface being saved
-              updatedRules.add('<1>$ruleBody');
-            } else {
-              // Disable rule if referencing any other WireGuard slot interface
-              updatedRules.add('<0>$ruleBody');
-            }
+            updatedRules.add(ruleBody.endsWith('>$activeIface')
+                ? '<1>$ruleBody'
+                : '<0>$ruleBody');
           } else {
-            // Keep rules matching OpenVPN or WAN interfaces exactly as they were
             updatedRules.add('<$existingStatus>$ruleBody');
           }
         }
 
         if (updatedRules.isNotEmpty) {
-          // Join without newlines to build the exact single-line payload format
           final finalRulesSingleLine =
               updatedRules.join('').replaceAll('"', '\\"');
-
           await client.run(
               'echo -n "$finalRulesSingleLine" > /jffs/openvpn/vpndirector_rulelist');
-
-          // Restart VPN Director service interface mapping daemon
           await client.run('service restart_vpndirector');
         }
       }
 
-      client.close();
-      widget.onLog(
-          'Successfully wrote configuration to router. WireGuard interfaces and VPN Director rules re-applied.',
-          isSuccess: true);
-
-      // --- Fetch and Display Router Status via Local NVRAM with Handshake Delay ---
-      try {
-        // Re-open a brief connection to pull the applied NVRAM state safely
-        final statusSocket = await SSHSocket.connect(_ipCtrl.text.trim(), 22,
-            timeout: const Duration(seconds: 5));
-        final statusClient = SSHClient(
-          statusSocket,
-          username: _userCtrl.text.trim(),
-          onPasswordRequest: () => _passCtrl.text,
-        );
-
-        // 1. Fetch the local tunnel IP address (this is written instantly)
-        final localIpResult =
-            await statusClient.run('nvram get wgc${slot}_addr');
-        final localIp = utf8.decode(localIpResult).trim();
-
-        // 2. Poll the router's memory with a maximum 10-second timeout for the public IP to appear
-        String publicIp = '';
-        for (int retry = 0; retry < 10; retry++) {
-          final publicIpResult =
-              await statusClient.run('nvram get wgc${slot}_rip');
-          publicIp = utf8.decode(publicIpResult).trim();
-
-          if (publicIp.isNotEmpty && publicIp != '0.0.0.0') {
-            break; // Handshake completed, exit the loop early
-          }
-
-          // Signal a keepalive to your activity tracker so the parent view stays active
-          widget.onActivity?.call();
-
-          // Wait 1 second before querying NVRAM again
-          await Future.delayed(const Duration(seconds: 1));
-        }
-
-        if (publicIp.isEmpty || publicIp == '0.0.0.0') {
-          publicIp = 'Activating...';
-        }
-
-        statusClient.close();
-
-        // 3. Print the final status message matching your preferred structure
+      // --- Step 5: Poll for handshake confirmation ---
+      // wgcN_rip is set by Merlin when WireGuard completes a handshake.
+      // We wait up to 30 seconds before deciding the tunnel has failed.
+      widget.onLog('Waiting for WireGuard handshake (up to 30s)...');
+      String publicIp = '';
+      for (int retry = 0; retry < 15; retry++) {
+        widget.onActivity?.call();
+        await Future.delayed(const Duration(seconds: 2));
+        final result = await client.run('nvram get wgc${slot}_rip');
+        publicIp = utf8.decode(result).trim();
         widget.onLog(
-          'Router VPN now connected via $newDesc (local: $localIp - public: $publicIp)',
-          isSuccess: true,
-        );
-      } catch (statusError) {
-        widget.onLog(
-          'Router configuration applied, but local status verification failed.',
-          isError: false,
+            '  Check ${retry + 1}/15: ${publicIp.isEmpty ? "(waiting)" : publicIp}');
+        if (publicIp.isNotEmpty && publicIp != '0.0.0.0') break;
+      }
+
+      if (publicIp.isEmpty || publicIp == '0.0.0.0') {
+        // Throw so the catch block can attempt kill switch restore before surfacing the error.
+        throw Exception(
+          'Handshake not confirmed after 30 seconds. '
+          'Kill switch has NOT been re-enabled. '
+          'Check the tunnel manually, then run: '
+          'nvram set wgc${slot}_enforce=1 && nvram commit && service restart_firewall',
         );
       }
 
-      if (mounted) Navigator.pop(context);
+      widget.onLog('Handshake confirmed. Public IP: $publicIp');
+
+      // --- Step 6: Re-enable kill switch ---
+      widget.onLog('Re-enabling kill switch...');
+      await client.run('nvram set wgc${slot}_enforce=1');
+      await client.run('nvram commit');
+      await client.run('service restart_firewall');
+      killSwitchDisabled = false;
+
+      final localIpResult = await client.run('nvram get wgc${slot}_addr');
+      final localIp = utf8.decode(localIpResult).trim();
+
+      widget.onLog(
+        'VPN connected via $newDesc  |  local: $localIp  |  public: $publicIp',
+        isSuccess: true,
+      );
+      widget.onLog('Kill switch re-enabled. Push complete.', isSuccess: true);
     } catch (e) {
-      widget.onLog('Failed to complete router alignment operations: $e',
+      // If the kill switch was disabled and something went wrong, attempt to restore it.
+      if (killSwitchDisabled) {
+        widget.onLog('Error occurred. Attempting to restore kill switch...');
+        try {
+          await client?.run(
+              'nvram set wgc${slot}_enforce=1 && nvram commit && service restart_firewall');
+          widget.onLog('Kill switch restored.');
+        } catch (_) {
+          widget.onLog(
+            'CRITICAL: Could not restore kill switch automatically. '
+            'Run via SSH: nvram set wgc${slot}_enforce=1 && nvram commit && service restart_firewall',
+            isError: true,
+          );
+        }
+      }
+      widget.onLog('Push failed: ${e.toString().replaceAll('Exception: ', '')}',
           isError: true);
     } finally {
+      // client?.close() is safe whether or not the connection was ever established.
+      client?.close();
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -318,13 +317,23 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _passCtrl,
-                obscureText: true,
+                obscureText: !_sshPassVisible,
                 style: const TextStyle(
                     color: Color(0xFFE8EAF0), fontFamily: 'monospace'),
-                decoration: const InputDecoration(
-                    labelText: 'SSH Password',
-                    prefixIcon:
-                        Icon(Icons.lock, color: Color(0xFF8892A4), size: 18)),
+                decoration: InputDecoration(
+                  labelText: 'SSH Password',
+                  prefixIcon: const Icon(Icons.lock,
+                      color: Color(0xFF8892A4), size: 18),
+                  suffixIcon: GestureDetector(
+                    onTap: () =>
+                        setState(() => _sshPassVisible = !_sshPassVisible),
+                    child: Icon(
+                      _sshPassVisible ? Icons.visibility_off : Icons.visibility,
+                      color: const Color(0xFF8892A4),
+                      size: 18,
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
               ElevatedButton(
