@@ -25,24 +25,34 @@ Manually creating a PIA WireGuard configuration requires authenticating against 
 
 ## Pre-built releases
 
-If you don't want to compile the app from scratch, pre-packaged release archives are available under the [Releases](https://github.com/ExponentiallyDigital/pia-wireguard-cfga/releases) section of this [GitHub repository](https://github.com/ExponentiallyDigital/pia-wireguard-cfga).
+This app has been submitted to the Google Play Store, when their process concludes, a link will be placed **`<here>`**.
 
-Each release contains a versioned, compiled, production-ready `.zip` archive containing:
+If you are non-technical, the file you want to download and install on your device is **`pia_wireguard_cfga-<version>_release.apk`**.
 
-- The optimised multi-platform Android application (`pia-wireguard-cfga.apk`) and SHA1 (`pia-wireguard-cfga.sha1`)
-- Offline documentation (`README.html`, `README.md` and `LICENSE`)
+If you don't want to compile the app from scratch, pre-built release assets are available under the [Releases](https://github.com/ExponentiallyDigital/pia-wireguard-cfga/releases) section of this [GitHub repository](https://github.com/ExponentiallyDigital/pia-wireguard-cfga).
+
+Each release includes the following versioned files:
+
+- **`pia_wireguard_cfga-<version>_release.apk`** – optimised release APK (signed)
+- **`pia_wireguard_cfga-<version>_debug.apk`** – debug APK (for testing)
+- **`pia_wireguard_cfga-<version>_google-play-store.aab`** – Android App Bundle for Play Store publishing
+- **`pia-wireguard-cfga-<version>_sbom.spdx.json`** – software bill of materials (SPDX format)
+- **`README.html`** – offline documentation (generated from this README)
+- **`LICENSE`** – license file
+
+Installlable built artifacts are attested with [GitHub Attestations](https://github.com/ExponentiallyDigital/pia-wireguard-cfga/attestations) for [build provenance](https://slsa.dev/spec/draft/build-provenance) verification.
 
 ## Using the app
 
-1. Enter a region or click the icon to the right and select from a dynamically updated alpha sorted filterable list of current PIA regions.
+1. Enter a region or click the icon to the right and select from a dynamically updated alpha sorted filterable list of current PIA regions:
 
 <table style="width: 100%; border-collapse: collapse; border: none;">
   <tr>
     <td align="center" style="width: 50%; border: none; padding: 10px;">
-      <img src="./images/interface.jpg" alt="Screenshot: pia-wireguard-cfga UI" width="100%">
+      <img src="./images/01-interface.png" alt="Screenshot: pia-wireguard-cfga UI" width="100%">
     </td>
     <td align="center" style="width: 50%; border: none; padding: 10px;">
-      <img src="./images/region-selection.jpg" alt="Screenshot: region selection" width="100%">
+      <img src="./images/02-region-selection.png" alt="Screenshot: region selection" width="100%">
     </td>
   </tr>
   <tr>
@@ -55,13 +65,13 @@ Each release contains a versioned, compiled, production-ready `.zip` archive con
   </tr>
 </table>
 
-2. Add/paste your PIA username/password details (entered text cannot be copied from the password field)
+2. Add/paste your PIA username/password details:
 
 <table style="width: 100%; border-collapse: collapse; border: none;">
   <tr>
     <td style="width: 25%; border: none;"></td>
     <td align="center" style="width: 50%; border: none; padding: 10px;">
-      <img src="./images/interface-fields.jpg" alt="Screenshot: interface fields" width="100%">
+      <img src="./images/03-interface-fields.png" alt="Screenshot: interface fields" width="100%">
     </td>
     <td style="width: 25%; border: none;"></td>
   </tr>
@@ -76,13 +86,36 @@ Each release contains a versioned, compiled, production-ready `.zip` archive con
 
 3. Optional - accept the default DNS servers (Quad 9) or enter your choices, use a comma to separate entries.
 4. Click on the "GENERATE CONFIG" button.
-5. After successful PIA authentication your chosen region's config file is displayed in the "GENERATED CONFIG" window. You can select specific text from this window or click "COPY" to send the window contents to the clipboard. Use "SHARE / SAVE" to send the config file to a specific app e.g. your favourite file system app to save the generated conf file to a location of choice.
+5. After successful PIA authentication your chosen region's config file is displayed in the "GENERATED CONFIG" window. You can select specific text from this window or click "COPY" to send the window contents to the clipboard. Use "SHARE / SAVE" to send the config file to a specific app e.g. your favourite file system app to save the generated conf file to a location of choice:
+
+<table style="width: 100%; border-collapse: collapse; border: none;">
+  <tr>
+    <td align="center" style="width: 50%; border: none; padding: 10px;">
+      <img src="./images/04-generated-config.png" alt="Screenshot: pia-wireguard-cfga UI" width="100%">
+    </td>
+    <td align="center" style="width: 50%; border: none; padding: 10px;">
+      <img src="./images/06-share.png" alt="Screenshot: region selection" width="100%">
+    </td>
+  </tr>
+  <tr>
+    <td align="center" style="border: none; padding: 5px 10px 10px 10px; vertical-align: top;">
+      <strong>Generated config</strong>
+    </td>
+    <td align="center" style="border: none; padding: 5px 10px 10px 10px; vertical-align: top;">
+      <strong>Share</strong>
+    </td>
+  </tr>
+</table>
+
+6. Conf files are named per the region name (agreed, PIA isn't consistent with the region name format!)
+7. Above the "GENERATED CONFIG" window there's a "CLEAR CREDS & CFG" button that removes your WireGuard credentials (config data, PIA username/password) from your device's screen and securely overwrites these variables stored in memory. Next to that there's a countdown timer. After no activity for 3 minutes, your credentials are automatically wiped. The timer is reset when there's in app activity (scrolling, tapping etc).
+   If you use the "COPY" button, the clipboard is cleared after 60 seconds automatically.
 
 <table style="width: 100%; border-collapse: collapse; border: none;">
   <tr>
     <td style="width: 25%; border: none;"></td>
     <td align="center" style="width: 50%; border: none; padding: 10px;">
-      <img src="./images/generated-config.jpg" alt="Screenshot: generated config" width="100%">
+      <img src="./images/05-clear-functions.png" alt="Screenshot: generated config" width="100%">
     </td>
     <td style="width: 25%; border: none;"></td>
   </tr>
@@ -94,9 +127,6 @@ Each release contains a versioned, compiled, production-ready `.zip` archive con
     <td style="border: none;"></td>
   </tr>
 </table>
-
-6. Conf files are named per the region name (agreed, PIA isn't consistent with the region name format!)
-7. Above the "GENERATED CONFIG" window there's a "CLEAR" button that removes your WireGuard credentials (config data, PIA username/password) from your device's screen and securely overwrites these variables stored in memory. Next to that there's a countdown timer. After no activity for 3 minutes, your credentials are automatically wiped. The timer is reset when there's in app activity (scrolling, tapping etc).
 8. At the bottom of the screen there's a scrollable "LOG" of processing/activity that can be cleared.
 
 ## Security
@@ -261,11 +291,12 @@ This app requires specific native system declarations to manage secure API hands
 - DONE add how to privately report a security vulnerability (enabled in GitHub)
 - DONE include software BOM (bill of materials) in release artifacts
 - DONE rebuild release output files (drop zip, include 3 versions)
+- DONE update screenshots for phone, 7" and 10" tablets showing clipboard clearing
 
-- Release to Play Store - needs 12 testers over 14 continuous days
+- Release to Play Store - 12 testers opted-in to **closed test** for 14 continuous days
 - Fix table display on README: renders fine in VS Code with Markdown Preview Enhanced, but borders are visible on GitHub, and pandoc HTML version has horizintal lines above/below tables
-- update screenshots for phone, 7" and 10" tablets showing clipboard clearing
 - add README badges for automated security/quality analysis
+- add feature "push to to router"
 
 ## Build chain & utility notes
 

@@ -63,6 +63,13 @@ We enforce a strict **zero-hardcoded-secrets policy** across this entire infrast
 
 ---
 
+## Build attestation
+
+Build provenance attestations are available for release APK, debug APK, and Google Play Store AAB.
+View them at: https://github.com/ExponentiallyDigital/pia-wireguard-cfga/attestations
+
+---
+
 ## Data handling & privacy
 
 **pia-wireguard-cfga** is architected to operate with a zero-retention, zero-persistence local data footprint to maximize user privacy:
