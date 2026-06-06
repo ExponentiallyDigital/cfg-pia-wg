@@ -148,6 +148,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         'nvram set wgc${slot}_ep_port="$epPort"',
         'nvram set wgc${slot}_aips="${wgMap['AllowedIPs'] ?? '0.0.0.0/0'}"',
         'nvram commit'
+            'service restart_wgc'
       ]);
 
       for (var cmd in cmds) {
@@ -156,7 +157,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
 
       client.close();
       widget.onLog(
-          'Successfully wrote and committed config to router NVRAM (Slot $slot). Only slot wgc$slot is enabled.',
+          'Successfully wrote & enabled $newDesc config as client instance $slot',
           isSuccess: true);
 
       if (mounted) Navigator.pop(context);
