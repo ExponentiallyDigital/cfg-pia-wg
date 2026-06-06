@@ -74,17 +74,16 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
 
       if (retrievedSlots.isEmpty) {
         throw Exception(
-            'No WireGuard slots found. Router firmware may not support this nvram schema.');
+            'No WireGuard config found. Router firmware may not support this nvram schema.');
       }
 
-      widget.onLog('Successfully parsed NVRAM slots from router.',
-          isSuccess: true);
+      widget.onLog('Successfully retreived router config.', isSuccess: true);
       setState(() {
         _slots = retrievedSlots;
         _step = 1;
       });
     } catch (e) {
-      widget.onLog('Router SSH Connection Error: $e', isError: true);
+      widget.onLog('Router SSH connection error: $e', isError: true);
     } finally {
       setState(() => _loading = false);
     }
@@ -107,7 +106,6 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
     setState(() => _loading = true);
     final slot = _selectedSlot;
     widget.onLog('Preparing to push config to slot wgc$slot...');
-    widget.onActivity?.call(); // Refresh session
 
     try {
       final wgMap = _parseWgConfig(widget.config);
@@ -127,7 +125,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         onPasswordRequest: () => _passCtrl.text,
       );
 
-      // Create base list of update commands
+      // Create base list of NVRAM update commands
       final List<String> cmds = [];
 
       // Loop 1 to 5: Set all slots to disabled (0) EXCEPT the explicitly selected target slot (1)
@@ -155,15 +153,105 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         await client.run(cmd);
       }
 
+      // --- VPN Director Rules Management ---
+      widget.onLog('Updating VPN Director policy routing rules...');
+
+      // Read the single-line rulelist file content
+      final readResult =
+          await client.run('cat /jffs/openvpn/vpndirector_rulelist');
+      final rulelistString = utf8.decode(readResult).trim();
+
+      if (rulelistString.isNotEmpty) {
+        final String activeIface = 'WGC$slot'; // e.g. "WGC1"
+
+        // This regex matches a single rule structure: <status>description>local>remote>interface
+        // It relies on the next rule starting with '<' or reaching the end of the line.
+        final ruleRegex = RegExp(r'<(\d)>([^<]+)');
+        final matches = ruleRegex.allMatches(rulelistString);
+
+        final List<String> updatedRules = [];
+
+        for (var match in matches) {
+          final existingStatus = match.group(1); // e.g., "0" or "1"
+          final ruleBody = match.group(2) ??
+              ''; // e.g., "WGC1 Local Subnet to VPN>192.168.0.0/24>>WGC1"
+
+          // Check if this specific rule block targets any of our WireGuard interfaces
+          if (ruleBody.endsWith('>WGC1') ||
+              ruleBody.endsWith('>WGC2') ||
+              ruleBody.endsWith('>WGC3') ||
+              ruleBody.endsWith('>WGC4') ||
+              ruleBody.endsWith('>WGC5')) {
+            if (ruleBody.endsWith('>$activeIface')) {
+              // Enable rule if matching the interface being saved
+              updatedRules.add('<1>$ruleBody');
+            } else {
+              // Disable rule if referencing any other WireGuard slot interface
+              updatedRules.add('<0>$ruleBody');
+            }
+          } else {
+            // Keep rules matching OpenVPN or WAN interfaces exactly as they were
+            updatedRules.add('<$existingStatus>$ruleBody');
+          }
+        }
+
+        if (updatedRules.isNotEmpty) {
+          // Join without newlines to build the exact single-line payload format
+          final finalRulesSingleLine =
+              updatedRules.join('').replaceAll('"', '\\"');
+
+          await client.run(
+              'echo -n "$finalRulesSingleLine" > /jffs/openvpn/vpndirector_rulelist');
+
+          // Restart VPN Director service interface mapping daemon
+          await client.run('service restart_vpndirector');
+        }
+      }
+
       client.close();
       widget.onLog(
-          'Successfully wrote & enabled $newDesc config as client instance $slot',
+          'Successfully wrote configuration to router. WireGuard interfaces and VPN Director rules re-applied.',
           isSuccess: true);
 
+      // Fetch and Display Router Status ---
+      try {
+        // Re-open a brief connection to pull post-applied status safely
+        final statusSocket = await SSHSocket.connect(_ipCtrl.text.trim(), 22, timeout: const Duration(seconds: 5));
+        final statusClient = SSHClient(
+          statusSocket,
+          username: _userCtrl.text.trim(),
+          onPasswordRequest: () => _passCtrl.text,
+        );
+
+        // 1. Get the current local interface IP from NVRAM
+        final localIpResult = await statusClient.run('nvram get wgc${slot}_addr');
+        final localIp = utf8.decode(localIpResult).trim();
+
+        // 2. Fetch the current public IP passing over this active WireGuard interface link
+        // We use a short timeout connect string to avoid blocking if the tunnel handshakes slowly
+        final publicIpResult = await statusClient.run('curl --interface wgc$slot --max-time 5 https://ifconfig.me/ip');
+        var publicIp = utf8.decode(publicIpResult).trim();
+
+        if (publicIp.isEmpty) {
+          publicIp = 'Connecting...';
+        }
+
+        statusClient.close();
+
+        // 3. Print the final composite log message to the screen
+        widget.onLog(
+          'Router connected (local: $localIp - public: $publicIp)',
+          isSuccess: true,
+        );
+      } catch (statusError) {
+        // Quietly log if the state verification wrapper hit an error or timed out
+        widget.onLog(
+          'Router configuration applied, but status verification timed out.',
+          isError: false,
+        );
+      }
+      
       if (mounted) Navigator.pop(context);
-    } catch (e) {
-      widget.onLog('Failed to push to router NVRAM: $e', isError: true);
-    } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
