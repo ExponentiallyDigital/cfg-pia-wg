@@ -21,7 +21,7 @@ class RouterPushSheet extends StatefulWidget {
 }
 
 class _RouterPushSheetState extends State<RouterPushSheet> {
-  final _ipCtrl = TextEditingController(text: '192.168.1.1');
+  final _ipCtrl = TextEditingController(text: '192.168.0.254');
   final _userCtrl = TextEditingController(text: 'admin');
   final _passCtrl = TextEditingController();
 
@@ -229,9 +229,9 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
             await statusClient.run('nvram get wgc${slot}_addr');
         final localIp = utf8.decode(localIpResult).trim();
 
-        // 2. Poll the router's memory with a maximum 5-second timeout for the public IP to appear
+        // 2. Poll the router's memory with a maximum 10-second timeout for the public IP to appear
         String publicIp = '';
-        for (int retry = 0; retry < 5; retry++) {
+        for (int retry = 0; retry < 10; retry++) {
           final publicIpResult =
               await statusClient.run('nvram get wgc${slot}_rip');
           publicIp = utf8.decode(publicIpResult).trim();
