@@ -114,6 +114,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
 
     SSHClient? client;
     bool killSwitchDisabled = false;
+    int? activeSlot;
 
     try {
       final wgMap = _parseWgConfig(widget.config);
@@ -132,9 +133,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         onPasswordRequest: () => _passCtrl.text,
       );
       await client.authenticated;
-      // Determine currently active WireGuard client
-      int? activeSlot;
 
+      // Determine currently active WireGuard client
       for (int i = 1; i <= 5; i++) {
         final enabled =
             utf8.decode(await client.run('nvram get wgc${i}_enable')).trim();
@@ -266,9 +266,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       if (publicIp.isEmpty || publicIp == '0.0.0.0') {
         throw Exception(
           'Handshake not confirmed after 30 seconds. '
-          'Kill switch has NOT been re-enabled. '
-          'Check tunnel status via SSH: wg show wgc$slot\n'
-          'Then re-enable manually: nvram set wgc${slot}_enforce=1 && nvram commit',
+          'The new tunnel failed to establish.\n'
+          'Check tunnel status via SSH: wg show wgc$slot',
         );
       }
 
@@ -284,7 +283,10 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         'VPN connected via $newDesc  |  local: $localIp  |  public: $publicIp',
         isSuccess: true,
       );
-      widget.onLog('Kill switch re-enabled. Push complete.', isSuccess: true);
+      widget.onLog(
+        'Target interface enabled and connected. Push complete.',
+        isSuccess: true,
+      );
       if (mounted) setState(() => _pushComplete = true);
     } catch (e) {
       if (killSwitchDisabled) {
@@ -299,7 +301,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         } catch (_) {
           widget.onLog(
             'CRITICAL: Could not restore kill switch. '
-            'Run via SSH: nvram set wgc${slot}_enforce=1 && nvram commit',
+            'Run via SSH: nvram set wgc${activeSlot}_enforce=1 && nvram commit',
             isError: true,
           );
         }
