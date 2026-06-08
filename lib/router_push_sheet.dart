@@ -82,8 +82,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
 
       if (retrievedSlots.values.every((d) => d.isEmpty)) {
         widget.onLog(
-          'Warning: all WireGuard slots appear unconfigured. '
-          'Verify the router firmware supports WireGuard client mode.',
+          'Warning: all WireGuard slots are unconfigured.',
         );
       }
 
@@ -237,25 +236,25 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       //
       // "wg show interfaces" must return "wgcP". Poll for up to 90 seconds.
       //
-      widget.onLog('Verifying tunnel (up to 90s)...');
+      widget.onLog('Verifying tunnel for up to 60s...');
       bool verified = false;
 
-      for (int retry = 0; retry < 45; retry++) {
+      for (int retry = 0; retry < 30; retry++) {
         widget.onActivity?.call();
         await Future.delayed(const Duration(seconds: 2));
 
         final verifyOutput = await _run(client, 'wg show interfaces');
         if (verifyOutput.contains('wgc$slot')) {
           verified = true;
-          widget.onLog('  Check ${retry + 1}/45: wgc$slot is active');
+          widget.onLog('  Check ${retry + 1}/30: wgc$slot is active');
           break;
         }
-        widget.onLog('  Check ${retry + 1}/45: wgc$slot not yet active');
+        widget.onLog('  Check ${retry + 1}/30: wgc$slot not yet active');
       }
 
       if (!verified) {
         throw Exception(
-          'wgc$slot did not appear in "wg show interfaces" after 90 seconds. '
+          'wgc$slot did not appear in "wg show interfaces" after 60 seconds. '
           'Check tunnel status via SSH: wg show interfaces',
         );
       }

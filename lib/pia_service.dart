@@ -111,7 +111,7 @@ class PiaService {
         final latency = DateTime.now().difference(start);
         await socket.close();
         onProgress
-            ?.call('  ${server.ip} responded in ${latency.inMilliseconds}ms');
+            ?.call(' ${server.ip} responded in ${latency.inMilliseconds}ms');
         return ProbeResult(server: server, latency: latency);
       } catch (e) {
         onProgress?.call('  ${server.ip} failed: $e');
