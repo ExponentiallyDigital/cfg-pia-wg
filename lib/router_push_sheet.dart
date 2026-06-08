@@ -175,7 +175,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         await _run(client, 'nvram commit');
         await _run(
           client,
-          'service "service restart_wgc && service start_vpnrouting0', // removed "stop_wgc N"
+//          'service "stop_wgc $activeSlot" && service restart_wgc && service start_vpnrouting0',
+          'service restart_wgc && service start_vpnrouting0',
         );
         widget
             .onLog('wgc$activeSlot stopped. Waiting for routing to settle...');
@@ -216,7 +217,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       // ???? do we actually need to restart all of these or just
       //        "service restart_wgc; service start_vpnrouting0"
       //
-      // ie do we actually need to start teh wgX servuce? it seems to be started by restart_wgc
+      // restart_wgc;start_vpnrouting0
       //
       widget.onLog('Starting wgc$slot...');
       await _run(client, 'nvram set wgc${slot}_enforce=1');
@@ -224,6 +225,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       await _run(client, 'nvram commit');
       await _run(
         client,
+//        'service "stop_wgc $activeSlot" && restart_wgc && service start_vpnrouting0',
         'service restart_wgc && service start_vpnrouting0',
       );
       widget.onLog('Start sequence sent. Waiting for tunnel to come up...');
@@ -278,7 +280,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
           await client?.run('nvram set wgc${activeSlot}_enable=1');
           await client?.run('nvram commit');
           await client?.run(
-            'service restart_wgc && service restart_firewall && service start_vpnrouting0',
+//            'service restart_wgc && service restart_firewall && service start_vpnrouting0',
+            'service restart_wgc && service start_vpnrouting0',
           );
           widget.onLog('wgc$activeSlot restored.', isSuccess: true);
         } catch (_) {
