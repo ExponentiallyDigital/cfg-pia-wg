@@ -31,7 +31,6 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
 
   int _step = 0; // 0 = credentials, 1 = slot selection
   bool _loading = false;
-  bool _pushComplete = false;
   Map<int, String> _slots = {};
   int _selectedSlot = -1;
   bool _sshPassVisible = false;
@@ -259,7 +258,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         isSuccess: true,
       );
       widget.onLog('Push complete.', isSuccess: true);
-      if (mounted) setState(() => _pushComplete = true);
+      // Automatically close the window instead of setting a flag
+      if (mounted) Navigator.pop(context);
     } catch (e) {
       // ── Error Recovery ───────────────────────────────────────────────────────
       //
@@ -422,9 +422,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: (_loading || _selectedSlot == -1 || _pushComplete)
-                    ? null
-                    : _pushToRouter,
+                onPressed:
+                    (_loading || _selectedSlot == -1) ? null : _pushToRouter,
                 child: _loading
                     ? const SizedBox(
                         height: 20,
@@ -433,19 +432,6 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
                             strokeWidth: 2, color: Color(0xFF12141A)))
                     : const Text('CONFIRM WRITE TO ROUTER'),
               ),
-              if (_pushComplete) ...[
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.check_circle_outline, size: 16),
-                  label: const Text('DONE — CLOSE'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.green,
-                    side: const BorderSide(color: Colors.green),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
-              ],
             ],
           ],
         ),
