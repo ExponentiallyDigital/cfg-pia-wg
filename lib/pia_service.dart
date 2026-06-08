@@ -100,8 +100,8 @@ class PiaService {
 
   // Measures TCP latency concurrently to maximize execution speed
   Future<List<ProbeResult>> probeLatency(List<WgServer> servers,
-      {void Function(String)? onProgress}) async {
-    onProgress?.call('Probing latencies concurrently...');
+      {required String regionId, void Function(String)? onProgress}) async {
+    onProgress?.call('Probing $regionId latency...');
 
     final tasks = servers.map((server) async {
       try {
@@ -261,8 +261,8 @@ class PiaService {
       throw Exception('No WG servers in region.');
     }
 
-    final probeResults =
-        await probeLatency(selected.wgServers, onProgress: onProgress);
+    final probeResults = await probeLatency(selected.wgServers,
+        regionId: region, onProgress: onProgress);
     final responding = probeResults.where((r) => !r.failed).toList();
     if (responding.isEmpty) {
       throw Exception('All latency probes failed.');
