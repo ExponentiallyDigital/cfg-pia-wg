@@ -131,9 +131,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       final epParts = wgMap['Endpoint']?.split(':') ?? [];
       final epIp = epParts.isNotEmpty ? epParts[0] : '';
       final epPort = epParts.length > 1 ? epParts[1] : '1337';
-      final existingDesc = _slots[slot] ?? '';
-      final newDesc = existingDesc.isEmpty ? widget.regionId : existingDesc;
-
+      final newDesc =
+          widget.regionId; // <-- Always use the newly selected region
       final socket = await SSHSocket.connect(
         _ipCtrl.text.trim(),
         22,
