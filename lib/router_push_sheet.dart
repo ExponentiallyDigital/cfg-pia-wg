@@ -113,8 +113,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
     return map;
   }
 
-  // ─── Push to Router ─────────────────────────────────────────────────────────
-
+  // ─── Push to Router ────────────────────────────────────────────────────────
   Future<void> _pushToRouter() async {
     if (_selectedSlot == -1) return;
 
@@ -203,6 +202,11 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       await _run(client, 'nvram set wgc${slot}_ep_port="$epPort"');
       await _run(client,
           'nvram set wgc${slot}_aips="${wgMap['AllowedIPs'] ?? '0.0.0.0/0'}"');
+      // additional parameters set via GUI
+      await _run(client, 'nvram set wgc${slot}_fw=1');
+      await _run(client, 'nvram set wgc${slot}_nat=1');
+      await _run(client, 'nvram set wgc${slot}_alive=25');
+      // end - additional parameters set via GUI
       await _run(client, 'nvram commit');
       widget.onLog('NVRAM written and committed.');
 
@@ -217,15 +221,13 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       // ???? do we actually need to restart all of these or just
       //        "service restart_wgc; service start_vpnrouting0"
       //
-      // restart_wgc;start_vpnrouting0
-      //
       widget.onLog('Starting wgc$slot...');
       await _run(client, 'nvram set wgc${slot}_enforce=1');
       await _run(client, 'nvram set wgc${slot}_enable=1');
       await _run(client, 'nvram commit');
       await _run(
         client,
-//        'service "stop_wgc $activeSlot" && restart_wgc && service start_vpnrouting0',
+//        'service "start_wgc $activeSlot" && restart_wgc && service start_vpnrouting0',
         'service restart_wgc && service start_vpnrouting0',
       );
       widget.onLog('Start sequence sent. Waiting for tunnel to come up...');
