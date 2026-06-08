@@ -175,7 +175,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         await _run(client, 'nvram commit');
         await _run(
           client,
-          'service "service restart_wgc && service restart_vpnrouting0', // removed "stop_wgc N"
+          'service "service restart_wgc && service start_vpnrouting0', // removed "stop_wgc N"
         );
         widget
             .onLog('wgc$activeSlot stopped. Waiting for routing to settle...');
@@ -224,7 +224,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       await _run(client, 'nvram commit');
       await _run(
         client,
-        'service restart_wgc && service restart_vpnrouting0',
+        'service restart_wgc && service start_vpnrouting0',
       );
       widget.onLog('Start sequence sent. Waiting for tunnel to come up...');
       await Future.delayed(const Duration(seconds: 10));
@@ -278,7 +278,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
           await client?.run('nvram set wgc${activeSlot}_enable=1');
           await client?.run('nvram commit');
           await client?.run(
-            'service restart_wgc && service restart_firewall && service restart_vpnrouting0',
+            'service restart_wgc && service restart_firewall && service start_vpnrouting0',
           );
           widget.onLog('wgc$activeSlot restored.', isSuccess: true);
         } catch (_) {
