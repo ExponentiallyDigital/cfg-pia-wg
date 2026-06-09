@@ -586,7 +586,7 @@ void main() {
         expect(results, hasLength(2));
         expect(results.every((r) => !r.failed), true);
         expect(results[0].latency!.compareTo(results[1].latency!) <= 0, true);
-        expect(progress.first, 'Probing latencies concurrently...');
+        expect(progress.first, 'Probing test_region latency...');
         expect(
             progress.where((msg) => msg.contains('responded')), hasLength(2));
       } finally {

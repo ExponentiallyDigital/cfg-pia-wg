@@ -1,4 +1,4 @@
-// router_push_sheet.dart
+// lib/router_push_sheet.dart
 // SSH-based WireGuard config push for ASUS Merlin routers.
 // Uses verified Merlin service command sequences for stop and start.
 
@@ -11,6 +11,9 @@ class RouterPushSheet extends StatefulWidget {
   final String regionId;
   final void Function(String, {bool isError, bool isSuccess}) onLog;
   final VoidCallback? onActivity;
+  // Hook to inject mock SSH clients for testing
+  final Future<SSHClient> Function(String ip, String user, String pass)?
+      testClientFactory;
 
   const RouterPushSheet({
     super.key,
@@ -18,6 +21,7 @@ class RouterPushSheet extends StatefulWidget {
     required this.regionId,
     required this.onLog,
     this.onActivity,
+    this.testClientFactory,
   });
 
   @override
@@ -49,6 +53,19 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
   Future<String> _run(SSHClient client, String cmd) async =>
       utf8.decode(await client.run(cmd)).trim();
 
+  // Helper method to obtain a client connection
+  Future<SSHClient> _getClient(String ip, String user, String pass) async {
+    if (widget.testClientFactory != null) {
+      return widget.testClientFactory!(ip, user, pass);
+    }
+    final socket =
+        await SSHSocket.connect(ip, 22, timeout: const Duration(seconds: 5));
+    final client =
+        SSHClient(socket, username: user, onPasswordRequest: () => pass);
+    await client.authenticated;
+    return client;
+  }
+
   // ─── Fetch Slots ────────────────────────────────────────────────────────────
 
   Future<void> _fetchSlots() async {
@@ -68,14 +85,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
 
     SSHClient? client;
     try {
-      final socket =
-          await SSHSocket.connect(ip, 22, timeout: const Duration(seconds: 5));
-      client = SSHClient(
-        socket,
-        username: user,
-        onPasswordRequest: () => pass,
-      );
-      await client.authenticated;
+      client = await _getClient(ip, user, pass);
 
       final Map<int, String> retrievedSlots = {};
       final Map<int, bool> retrievedKillSwitch = {};
@@ -140,25 +150,12 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       final epParts = wgMap['Endpoint']?.split(':') ?? [];
       final epIp = epParts.isNotEmpty ? epParts[0] : '';
       final epPort = epParts.length > 1 ? epParts[1] : '1337';
-      final newDesc =
-          widget.regionId; // <-- Always use the newly selected region
-      final socket = await SSHSocket.connect(
-        _ipCtrl.text.trim(),
-        22,
-        timeout: const Duration(seconds: 5),
-      );
-      client = SSHClient(
-        socket,
-        username: _userCtrl.text.trim(),
-        onPasswordRequest: () => _passCtrl.text,
-      );
-      await client.authenticated;
+      final newDesc = widget.regionId;
+
+      client = await _getClient(
+          _ipCtrl.text.trim(), _userCtrl.text.trim(), _passCtrl.text);
 
       // ── Step 1: Detect currently active WireGuard interface ────────────────
-      //
-      // "wg show interfaces" returns the active tunnel name, e.g. "wgc1".
-      // An empty result means no tunnel is currently running.
-      //
       widget.onLog('Checking active WireGuard interface...');
       final ifaceOutput = await _run(client, 'wg show interfaces');
       final activeMatch = RegExp(r'wgc(\d)').firstMatch(ifaceOutput);
@@ -169,15 +166,6 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
           : 'No active WireGuard interface found.');
 
       // ── Steps 2–6: Stop the currently active tunnel ────────────────────────
-      //
-      // Merlin stop sequence:
-      //   nvram set wgcN_enforce=0
-      //   nvram set wgcN_enable=0
-      //   nvram commit
-      //   service "stop_wgc N" && service restart_firewall && service restart_vpnrouting0
-      //
-      // Skipped when no tunnel is running (activeSlot == null).
-      //
       if (activeSlot != null) {
         widget.onLog('Stopping wgc$activeSlot...');
         await _run(client, 'nvram set wgc${activeSlot}_enforce=0');
@@ -185,7 +173,6 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         await _run(client, 'nvram commit');
         await _run(
           client,
-//          'service "stop_wgc $activeSlot" && service restart_wgc && service start_vpnrouting0',
           'service restart_wgc && service start_vpnrouting0',
         );
         widget
@@ -194,7 +181,6 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       }
 
       // ── Backup existing slot config ────────────────────────────────────────
-      // Only backs up non-empty slots so we can restore on push failure.
       if (_slots[slot]?.isNotEmpty == true) {
         widget.onLog('Backing up existing wgc$slot config...');
         slotBackup = {};
@@ -221,10 +207,6 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       }
 
       // ── Write new config to NVRAM ──────────────────────────────────────────
-      //
-      // Write tunnel parameters for the target slot before starting it.
-      // wgcP_enable and wgcP_enforce are set in the start sequence below.
-      //
       widget.onLog('Writing NVRAM for wgc$slot...');
       await _run(client, 'nvram set wgc${slot}_desc="$newDesc"');
       await _run(
@@ -240,41 +222,25 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       await _run(client, 'nvram set wgc${slot}_ep_port="$epPort"');
       await _run(client,
           'nvram set wgc${slot}_aips="${wgMap['AllowedIPs'] ?? '0.0.0.0/0'}"');
-      // additional parameters set via GUI
       await _run(client, 'nvram set wgc${slot}_fw=1');
       await _run(client, 'nvram set wgc${slot}_nat=1');
       await _run(client, 'nvram set wgc${slot}_alive=25');
-      // end - additional parameters set via GUI
       await _run(client, 'nvram commit');
       widget.onLog('NVRAM written and committed.');
 
       // ── Steps 7–10: Start the new tunnel ───────────────────────────────────
-      //
-      // Merlin start sequence:
-      //   nvram set wgcP_enforce=1
-      //   nvram set wgcP_enable=1
-      //   nvram commit
-      //   service "start_wgc P" && service restart_firewall && service restart_vpnrouting0
-      //
-      // ???? do we actually need to restart all of these or just
-      //        "service restart_wgc; service start_vpnrouting0"
-      //
       widget.onLog('Starting wgc$slot...');
       await _run(client, 'nvram set wgc${slot}_enforce=1');
       await _run(client, 'nvram set wgc${slot}_enable=1');
       await _run(client, 'nvram commit');
       await _run(
         client,
-//        'service "start_wgc $activeSlot" && restart_wgc && service start_vpnrouting0',
         'service restart_wgc && service start_vpnrouting0',
       );
       widget.onLog('Start sequence sent. Waiting for tunnel to come up...');
       await Future.delayed(const Duration(seconds: 10));
 
       // ── Step 11: Verify wgcP is active ─────────────────────────────────────
-      //
-      // "wg show interfaces" must return "wgcP". Poll for up to 90 seconds.
-      //
       widget.onLog('Verifying tunnel for up to 60s...');
       bool verified = false;
 
@@ -298,15 +264,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         );
       }
 
-// ── Success ─────────────────────────────────────────────────────────────
-//
-// This code has a bug: it only returns the ublic IP address correctly for slot 1
-// If you overwite slot 5 it times out, the public IP address does also change as it is
-// delivered by a pool of servers.
-//
-// I have tried finding this bug with all AIs but none could pinpoint the issue, it feels like
-// a stale variable assignment. Needs further testing.
-//
+      // ── Success ─────────────────────────────────────────────────────────────
       final localIp =
           (await _run(client, 'nvram get wgc${slot}_addr')).split('/').first;
       widget.onLog('Waiting for handshake...');
@@ -326,14 +284,9 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         isSuccess: true,
       );
       widget.onLog('Push complete.', isSuccess: true);
-      // Automatically close the window instead of setting a flag
       if (mounted) Navigator.pop(context);
     } catch (e) {
       // ── Error Recovery ───────────────────────────────────────────────────────
-      //
-      // If the slot active before the push is known, attempt to restore it using
-      // the new start sequence, putting the router back in a known-good state.
-      //
       if (slotBackup != null) {
         widget.onLog('Push failed — restoring wgc$slot config...');
         try {
@@ -357,14 +310,12 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
           await client?.run('nvram set wgc${activeSlot}_enable=1');
           await client?.run('nvram commit');
           await client?.run(
-//            'service restart_wgc && service restart_firewall && service start_vpnrouting0',
             'service restart_wgc && service start_vpnrouting0',
           );
           widget.onLog('wgc$activeSlot restored.', isSuccess: true);
         } catch (_) {
           widget.onLog(
-            'CRITICAL: Could not restore wgc$activeSlot. '
-            'Check router state manually via SSH.',
+            'CRITICAL: Could not restore wgc$activeSlot. Check router state manually via SSH.',
             isError: true,
           );
         }
@@ -375,7 +326,6 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         isError: true,
       );
 
-      // Close the dialog so the main screen log (already auto-scrolled) is visible.
       if (mounted) Navigator.pop(context);
     } finally {
       client?.close();

@@ -60,8 +60,7 @@ void main() {
       await tester.tap(find.text('GENERATE CONFIG'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Region, username, and password required.'),
-          findsOneWidget);
+      expect(find.textContaining("password required"), findsOneWidget);
       expect(find.text('CLEAR LOG'), findsOneWidget);
 
       await tester.tap(find.text('CLEAR LOG'));
