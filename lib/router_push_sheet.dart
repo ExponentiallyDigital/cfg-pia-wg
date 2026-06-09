@@ -299,6 +299,14 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       }
 
 // ── Success ─────────────────────────────────────────────────────────────
+//
+// This code has a bug: it only returns the ublic IP address correctly for slot 1
+// If you overwite slot 5 it times out, the public IP address does also change as it is
+// delivered by a pool of servers.
+//
+// I have tried finding this bug with all AIs but none could pinpoint the issue, it feels like
+// a stale variable assignment. Needs further testing.
+//
       final localIp =
           (await _run(client, 'nvram get wgc${slot}_addr')).split('/').first;
       widget.onLog('Waiting for handshake...');
