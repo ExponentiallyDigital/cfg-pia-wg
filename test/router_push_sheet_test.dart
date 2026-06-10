@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dartssh2/dartssh2.dart';
 
-import 'package:pia_wireguard_cfga/router_push_sheet.dart';
+import 'package:pia_wireguard_cfga/router_push.dart';
 
 // --- FAKE SSH CLIENT ---
 class FakeSSHClient implements SSHClient {

@@ -22,7 +22,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pia_wireguard_cfga/main.dart';
-import 'package:pia_wireguard_cfga/router_push_sheet.dart';
+import 'package:pia_wireguard_cfga/router_push.dart';
 
 import '../http_test_helpers.dart';
 
@@ -55,8 +55,7 @@ MQRWTK4MMjOHQQ4tGnOJ0pThj2Au4XwOnU6S1nrcMJ9jb5srad2TH6BQFLe4uwrC
 1JXQGhGiJI6sr78U1FRmSV0=
 -----END CERTIFICATE-----''';
 
-String _serverListBody() =>
-    '${jsonEncode({
+String _serverListBody() => '${jsonEncode({
           'regions': [
             {
               'id': _kRegion,

@@ -59,6 +59,8 @@ android {
     ndkVersion = flutter.ndkVersion
 
     dependencyLocking {
+        // Enforce strict lock compliance (fails the build if lockfiles are out of date)
+        lockMode.set(org.gradle.api.artifacts.dsl.LockMode.STRICT)
         ignoredDependencies.add("io.flutter:*")
         lockAllConfigurations()
     }
