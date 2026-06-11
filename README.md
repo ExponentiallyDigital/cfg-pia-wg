@@ -617,7 +617,7 @@ This application does not collect analytics, advertising identifiers, or persona
 - add README badge(s) for automated pipeline security & quality tests
 - feature/router-push merge to main & release
 
-  ## Development "to do" listv
+  ## Development "to do" list
 
 - Release to Play Store - +12 testers for **closed test** over 14 continuous days
 
