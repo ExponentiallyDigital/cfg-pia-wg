@@ -229,11 +229,9 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       widget.onLog('Starting wgc$slot...');
       // only start $slot (was restart_wgc), this matches Merlin Advanced_WireguardClient_Content.asp
       await _run(client, 'service "start_wgc $slot"; service restart_vpnrouting0');
-      widget.onLog('Start sequence sent. Waiting for tunnel to come up...');
-      await Future.delayed(const Duration(seconds: 10));
 
       // Verify wgcP is active ─────────────────────────────────────
-      widget.onLog('Verifying tunnel for up to 60s...');
+      widget.onLog('Start sequence sent, verifying tunnel for up to 60s...');
       bool verified = false;
 
       for (int retry = 0; retry < 30; retry++) {
@@ -252,7 +250,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       if (!verified) {
         throw Exception(
           'wgc$slot did not appear in "wg show interfaces" after 60 seconds. '
-          'Check tunnel status via SSH: wg show interfaces',
+          'Check tunnel status via SSH "wg show interfaces" or via GUI.',
         );
       }
 

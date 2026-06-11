@@ -8,6 +8,10 @@ flutter pub get --enforce-lockfile
 Write-Host "Adding icons..." -ForegroundColor Cyan
 dart run flutter_launcher_icons
 
+Write-Host "Running tests..." -ForegroundColor Cyan
+flutter test --coverage
+
+
 Write-Host "Compiling debug version..." -ForegroundColor Green
 flutter build apk --debug
 

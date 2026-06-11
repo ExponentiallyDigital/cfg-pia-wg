@@ -184,9 +184,9 @@ All app processing is reported live in the in-app **LOG** panel including SSH co
 - **Pre-shared keys**: PIA WireGuard does not (ASAICT) employ pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
 - **Time-to-live constraints**: PIA WireGuard configs expire every few weeks per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
 - **Key safety**: the generated config contains private encryption keys. Treat them like a password and manage them securely.
-  > [!IMPORTANT]
+  > [!CAUTION]
   >
-  > **Push to router**: the app assumes that <b>only one WireGuard VPN is active at any time</b>, when you save the config to your router that "slot" will become the active VPN replacing any previously active slot and any slot with a <b>kill switch</b> will be deactivated and the kill switch together with NAT and firewalling will be applied to the newly saved slot.
+  > **Push to router**: the app assumes that <b>only one WireGuard VPN is active at any time</b>, when you save the config to your router that "slot" will become the active VPN replacing any previously active slot and any slot with a <b>kill switch</b> will be deactivated and the kill switch together with NAT and firewalling will be applied to the newly created slot.
 
 ---
 
@@ -282,7 +282,7 @@ Clean the build environment and pull the tracking package constraints defined wi
 
 ```bash
 flutter clean
-flutter pub get
+flutter pub get --enforce-lockfile
 ```
 
 ### 2. Generate assets (launcher icons)
@@ -299,6 +299,7 @@ Execute tests and run a hot-reloaded debug instance directly onto your attached 
 
 ```bash
 flutter test --coverage
+fcr coverage/lcov.info --open # creates & opens ./coverage/coverage-report.html
 flutter run
 ```
 
@@ -361,11 +362,13 @@ flutter build apk --release
 
 ### 6. Sideload
 
-To push the compiled binaries directly onto your phone via Android Debug Bridge (ADB):
+To push the compiled app to your phone via Android Debug Bridge (ADB):
 
 ```bash
 adb install build/app/outputs/flutter-apk/app-release.apk
 ```
+
+---
 
 ## Package dependencies
 
@@ -607,13 +610,13 @@ This application does not collect analytics, advertising identifiers, or persona
 - added flow chart to readme
 - added extensive build environment set up and config notes to README
 - add push to router steps & screenshots
-- Fix table display on README
+- fix table display on README
+- refactored \_pushToRouter(), FIX WAN IP address determination
 
-  ## Development "to do" list
+  ## Development "to do" listv
 
 - Release to Play Store - +12 testers for **closed test** over 14 continuous days
-- add README badges for automated security/quality analysis
-- fix public IP display for > wgc1
+- add README badge(s) for automated pipeline security & quality tests
 
 ---
 
