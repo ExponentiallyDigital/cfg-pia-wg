@@ -297,12 +297,27 @@ dart run flutter_launcher_icons
 
 ### 3. Test and run
 
+The command `fcr` belongs to the `flutter_coverage_report` package. It is a fantastic pure-Dart tool that takes your dense, ugly lcov.info file and parses it into a sleek, interactive HTML webpage right in your browser. Install via
+
+```bash
+dart pub global activate flutter_coverage_report
+```
+
 Execute tests and run a hot-reloaded debug instance directly onto your attached mobile/emulated device:
 
 ```bash
 flutter test --coverage
 fcr coverage/lcov.info --open # creates & opens ./coverage/coverage-report.html
 flutter run
+```
+
+You may need to install the Android emulator for `flutter run` to execute
+
+```bash
+sudo apt install google-android-emulator-installer
+emulator -list-avds       # show emulated devices
+emulator -avd Pixel_7_Pro # replace Pixel_7_Pro with your device name
+flutter devices           # check it is installed
 ```
 
 ### 4. App signing & keystore configuration
@@ -616,6 +631,7 @@ This application does not collect analytics, advertising identifiers, or persona
 - refactored \_pushToRouter(), FIX WAN IP address determination
 - add README badge(s) for automated pipeline security & quality tests
 - feature/router-push merge to main & release
+- add how to install `fcr` for HTML coverage report
 
   ## Development "to do" list
 
