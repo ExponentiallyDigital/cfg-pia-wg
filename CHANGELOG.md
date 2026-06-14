@@ -1,6 +1,6 @@
 # Release changes
 
-2026-06-14
+2026-06-14 v0.4.32 build 322
 
 - split out build info to separate file
 - moved additional scripts to own folder
