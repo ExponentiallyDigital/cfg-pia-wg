@@ -22,26 +22,26 @@ RESET="\033[0m"
 # Help message (shown when no arguments provided)
 ###############################################################################
 if [[ $# -eq 0 ]]; then
-    echo -e "${WHITE}Flutter Build Script${RESET}"
+    echo -e "${WHITE}Flutter build script${RESET}"
     echo ""
     echo -e "${CYAN}Usage:${RESET}"
     echo "  ./build.sh [mode] [options]"
     echo ""
     echo -e "${CYAN}Modes:${RESET}"
+    echo "  all         Build everything (default)"
     echo "  debug       Build only the debug APK"
     echo "  release     Build only the release APK"
     echo "  aab         Build only the Play Store AAB"
-    echo "  all         Build everything (default)"
     echo ""
     echo -e "${CYAN}Options:${RESET}"
-    echo "  --no-clean  Skip running 'flutter clean'"
-    echo "  --clean     Force running 'flutter clean' (default)"
-    echo "  --skip-test Skip running tests"
+    echo "  --no-clean   Skip running 'flutter clean'"
+    echo "  --skip-test  Skip running tests"
     echo "  --skip-icons Skip generating icons (use existing)"
+    echo ""
     echo -e "${CYAN}Examples:${RESET}"
-    echo "  ./build.sh debug"
+    echo "  ./build.sh all"
     echo "  ./build.sh release --no-clean"
-    echo "  ./build.sh all --clean"
+    echo "  ./build.sh debug"
     echo ""
     exit 0
 fi
@@ -219,7 +219,7 @@ echo -e "${MAGENTA}-------------------------------------------------------------
 
 APK_DEBUG="build/app/outputs/flutter-apk/app-debug.apk"
 APK_RELEASE="build/app/outputs/flutter-apk/app-release.apk"
-AAB_RELEASE="build/app/outputs/bundle/release/app-release.aab"
+AAB_RELEASE="build/app/outputs/bundle/release/pia_wireguard_cfga-release.aab"
 
 echo -e "${WHITE}Build artefacts:${RESET}"
 
