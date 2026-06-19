@@ -12,7 +12,7 @@ The **router_watchdog** module adds a user‑configurable watchdog that:
 
 - Runs on a **Merlin‑firmware** router (detected via NVRAM).
 - Periodically pings user‑supplied primary/secondary IP addresses.
-- If both fail for a specified timeout, it generates a new WireGuard configuration by negotiating with PIA servers replicating the PIA negotiation logic from pia_service.dart, implemented in Bash within the watchdog script.
+- If both pings fail, it generates a new WireGuard configuration by negotiating with PIA servers replicating the PIA negotiation logic from pia_service.dart, implemented in Bash within the watchdog script.
 - Applies the new config **using `wg setconf`** (since `wg‑quick` is unavailable) and restarts the interface using the same method as the app (e.g., `service "start_wgc $slot"; service restart_vpnrouting0` – see `router_push.dart` for details).
 - Optionally sends email alerts via the router’s `sendmail` when a reconfiguration is attempted (successful or failed).
 - Provides a UI for enabling/disabling, configuring, viewing status, and reading the watchdog log.
@@ -32,7 +32,7 @@ All watchdog‑related logs are stored in `/jffs/watchdog_wgcN.log` (where `N` i
 - **Merlin Detection**: Execute `nvram get 3rd-party` over SSH to verify the router is running Merlin (`value == "merlin"`). If not, the watchdog feature is hidden.
 - **JFFS Enablement**: When watchdog is activated, ensure `jffs2_scripts=1` and `jffs2_on=1` via `nvram set` and `nvram commit`. **Do not disable** these settings when the watchdog is disabled (leave JFFS as‑is).
 - **Script Deployment**: Generate and upload Bash scripts to `/jffs/scripts/` with the slot name appended (e.g., `watchdog_wgc1.sh`) – all written via SSH commands (no SFTP/SCP).
-- **Connectivity Test**: Ping the **primary** IP; if it fails, ping the **secondary**. Only if **both** fail for the entire timeout period will reconfiguration be triggered.
+- **Connectivity Test**: Ping the **primary** IP; if it fails, ping the **secondary**. Only if **both** fail will reconfiguration be triggered.
 - **Flap Prevention & Retry**: If the router loses WAN connectivity (upstream outage), the watchdog must not repeatedly try to reconfigure. It will **retry every 2 minutes** after a failed reconfiguration attempt (instead of exponential backoff). Emails **must not be sent** on every ping failure – only when a reconfiguration is actually attempted (success or failure). This prevents alert fatigue.
 - **WireGuard Reconfiguration**: When both pings fail and the retry timer allows, the watchdog script:
   - Generates a new private key (`wg genkey`) and computes the public key.
@@ -46,9 +46,8 @@ All watchdog‑related logs are stored in `/jffs/watchdog_wgcN.log` (where `N` i
 - **Logging**: All watchdog actions are logged to `/jffs/watchdog_wgcN.log` (per slot). The log rotates daily, handled by a **cron job** (the script only creates the cron entry for rotation).
 - **Status Display**: The app shows the timestamp of the last successful ICMP response, read from `/jffs/watchdog_last_ping_success_wgcN` (per slot).
 - **User Configuration**: User can set:
-  - **Timeout** (seconds) – how long to wait before reconfiguring after both pings fail. Default: **60 seconds**.
   - **Primary and secondary IPs** (defaults: 8.8.8.8 / 8.8.4.4 and 1.1.1.1 / 1.0.0.1 – user may choose any valid IP). **Both IPs are required**; the user cannot leave either empty.
-  - **Cron interval** (minutes) – how often the watchdog runs (default 5).
+  - **Check interval** (minutes) – how often the watchdog runs (default 5).
   - Email alert settings (From, To, Subject, SMTP server, username, password). **These are stored in NVRAM** on the router, not on the device.
 
 **All ICMP tests must be performed through the router’s currently active VPN interface** (e.g., `wgc1`–`wgc5`), **not** the WAN interface. The script must also explicitly check if the interface exists and is up (ip link show wgcN or ifconfig wgcN) before executing the ping. This ensures that the watchdog verifies VPN connectivity specifically. In the Bash script, use `ping -I wgcN <target>` (where `N` is the slot number) to bind the ping to the VPN interface. If the interface is down or the ping fails, the watchdog will treat this as a connectivity failure and trigger reconfiguration.
@@ -74,14 +73,13 @@ The dialogue includes:
   - Enabled/Disabled state.
   - **“Last successful ping”** timestamp (fetched from router).
 - **Configuration section** (editable):
-  - **Timeout** (integer seconds, default 60).
+  - **Check interval** (minutes, default 5).
   - **Primary ping IP** (required).
   - **Secondary ping IP** (required).
-  - **Cron interval** (minutes, default 5).
   - **Enable Email Alerts** (switch/checkbox).
     - If enabled, show: From, To, Subject, SMTP server (host:port), SMTP username, SMTP password (all required if email enabled).
 - **Actions**:
-  - **“Save & Enable”** – validates all inputs, performs reachability checks for both IPs, and if successful, saves and deploys the watchdog.
+  - **“Save & Enable”** – validates all inputs, performs a reachability check on both both IPs, and if successful, saves and deploys the watchdog.
   - **“Disable”** – removes scripts and cron, disables watchdog (leaves JFFS enabled).
   - **“Test Email”** – sends a test email using the current SMTP settings.
   - **“View Log”** – opens a view of `/jffs/watchdog_wgcN.log` (fetched via SSH).
@@ -122,8 +120,8 @@ All interactions with the router (SSH commands, script deployments, errors) are 
   - `Future<void> deployWatchdogScripts(WatchdogConfig config)` – generates and uploads slot‑specific scripts.
   - `Future<void> startWatchdog(WatchdogConfig config)` – sets up cron jobs.
   - `Future<void> stopWatchdog(int slotIndex)` – removes scripts and cron.
-  - `Future<WatchdogStatus> getWatchdogStatus()` – returns enabled flag and last ping timestamp. isEnabled is determined by checking whether the slot-specific watchdog cron entry exists via `cru l | grep -q watchdog_wgcN`. It is not stored in NVRAM or local state.
-  - `Future<String> getWatchdogLog()` – returns content of log file.
+  - `Future<WatchdogStatus> getWatchdogStatus(int slotIndex)` – returns enabled flag and last ping timestamp. isEnabled is determined by checking whether the slot-specific watchdog cron entry exists via `cru l | grep -q watchdog_wgcN`. It is not stored in NVRAM or local state.
+  - `Future<String> getWatchdogLog(int slotIndex)` – returns content of log file.
   - `Future<void> testEmail(WatchdogConfig config)` – sends test email.
   - `Future<bool> pingHostViaWan(String ip)` - used during pre-save validation; executes `ping -c 1 -W 2 <ip>` with no interface binding
   - `Future<bool> pingHostViaVpn(String ip, int slotIndex)` - used internally by any test-from-app functionality; executes `ping -I wgcN -c 1 -W 2 <ip>`
@@ -167,13 +165,13 @@ All interactions with the router (SSH commands, script deployments, errors) are 
 
 #### 4.3.1 NVRAM parameter storage
 
-Script read all configuration values from NVRAM at startup before doing anything else.
+The script reads all configuration values from NVRAM at startup before doing anything else.
 
 #### 4.3.2 `/jffs/scripts/watchdog_wgcN.sh` (slot‑specific)
 
 Performs the ping test for the region, triggers reconfiguration if needed (with a **2‑minute retry** after a failed attempt), updates the status file, and sends email via `sendmail`. Reconfiguration logic:
 
-- Read configuration from NVRAM (timeout, IPs, email settings, slot number).
+- Read configuration from NVRAM (check interval, IPs, email settings, slot number).
 - Use `ping -I wgcN -c 3 -W 2 $PRIMARY_IP` and, if that fails, `ping -I wgcN -c 3 -W 2 $SECONDARY_IP`. The `-I` flag forces the ping to use the VPN interface, ensuring the watchdog is monitoring VPN‑path reachability, not just WAN connectivity.
 - If both fail and the retry timer (2 minutes since last attempt) has elapsed, perform reconfiguration:
   - Generate new private key: `wg genkey` and store in NVRAM (`nvram set wgcN_priv=...`).
@@ -194,22 +192,18 @@ Performs the ping test for the region, triggers reconfiguration if needed (with 
 ##### 4.3.2.1 `sendmail`
 
 - **Native Authenticated TLS Emailing**: Email alerts must be sent using the built-in BusyBox `sendmail` with its connection helper (`-H`) and authentication flags (`-am`, `-au`, `-ap`).
-- **Connection Helper Selection**: The script must dynamically construct the `sendmail` command based on the user-configured port:
-  - **For Implicit TLS (e.g., Port 465)**:
+- **Connection Helper**: The script must dynamically construct the `sendmail` command snd send via implicit TLS:
 
         ```bash
-        /usr/sbin/sendmail -H"exec openssl s_client -quiet -connect $SMTP_HOST:$SMTP_PORT" -amLOGIN -au"$SMTP_USER" -ap"$SMTP_PASS" -f"$SMTP_FROM" "$SMTP_TO" < /tmp/mail.txt
+        /usr/sbin/sendmail -H"exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt -connect $SMTP_HOST:$SMTP_PORT" -amLOGIN -au"$SMTP_USER" -ap"$SMTP_PASS" -f"$SMTP_FROM" "$SMTP_TO" < /tmp/mail.txt
         ```
 
-  - **For STARTTLS (e.g., Port 587 or 25)**:
-
-        ```bash
-        /usr/sbin/sendmail -H"exec openssl s_client -quiet -starttls smtp -connect $SMTP_HOST:$SMTP_PORT" -amLOGIN -au"$SMTP_USER" -ap"$SMTP_PASS" -f"$SMTP_FROM" "$SMTP_TO" < /tmp/mail.txt
-        ```
+- the `/tmp/mail.txt` is to be deleted immediately after piped into sendmail
+- the `/tmp/mail.txt` is to be constructed with a valid RFC 822 syntax
 
 #### 4.3.3 Cron Jobs
 
-- Add a cron entry for the watchdog check: `<cron_interval> * * * * /jffs/scripts/watchdog_wgcN.sh` using `cru`.
+- Add a cron entry for the watchdog check: `*/<check_interval> * * * * /jffs/scripts/watchdog_wgcN.sh` using `cru`.
 - Add a daily log rotation cron: `0 0 * * * mv /jffs/watchdog_wgcN.log /jffs/watchdog_wgcN.log.old && touch /jffs/watchdog_wgcN.log`.
 - **Persistence across reboots**: use the `cru` utility to manage cron entries as `crontab` is stored in volatile memory (`/var/spool/cron/`).
   - `cru` commands must be added to the startup script `/jffs/scripts/services-start`.
@@ -252,7 +246,7 @@ The script must set them exactly as the app does, including any additional varia
 ### 4.4.1 Watchdog NVRAM Variable names
 
 Watchdog Namespace: all watchdog-specific configuration parameters must be saved using a uniform slot prefix to maintain an organized NVRAM environment
-e.g., wgcN_wd_timeout, wgcN_wd_primary_ip, wgcN_wd_secondary_ip, wgcN_wd_smtp_server, wgcN_wd_smtp_user, wgcN_wd_smtp_pass etc.
+e.g., wgcN_wd_check_interval, wgcN_wd_primary_ip, wgcN_wd_secondary_ip, wgcN_wd_smtp_server, wgcN_wd_smtp_user, wgcN_wd_smtp_pass etc.
 
 ### 4.5 Retry Mechanism
 
@@ -302,7 +296,7 @@ Emails are sent **only** when a reconfiguration is attempted, not on every ping 
 
 - Test that the “Watchdog” button appears only when router is Merlin.
 - Test that the dialogue shows correct status and fields.
-- Test validation (invalid IPs, negative timeout, missing required fields, both IPs required).
+- Test validation (invalid IPs, negative check interval, missing required fields, both IPs required).
 - Test “Test Email” button interaction.
 
 ### 6.3 Integration Tests (Mock SSH)
@@ -340,8 +334,8 @@ Emails are sent **only** when a reconfiguration is attempted, not on every ping 
 
 - [ ] The “Watchdog” button appears only when router is Merlin.
 - [ ] Clicking the button opens a dialogue showing status, configuration, and actions.
-- [ ] The dialogue validates user inputs (IPs, timeout, email fields) – both primary and secondary IPs are required.
-- [ ] It performs a reachability check on **both** ping IPs and advises if either is unreachable.
+- [ ] The dialogue validates user inputs (check interval, IPs, email fields) – both primary and secondary IPs are required.
+- [ ] It performs a reachability check on both both ping IPs and advises if either is unreachable.
 - [ ] It can send a test email with subject “config test”.
 - [ ] Saving enables JFFS scripts (but does not disable on disable), deploys slot‑specific watchdog scripts, and sets up cron jobs (watchdog + log rotation).
 - [ ] Disabling removes scripts and cron but leaves JFFS enabled.

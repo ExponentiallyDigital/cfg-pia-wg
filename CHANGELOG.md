@@ -7,6 +7,15 @@
 
 ## Changes
 
+2026-06-19 version: 0.5.00+327
+
+    - refined watchdog.md
+    - version bump ahead of watchdog implementation
+
+2026-06-19 version: 0.4.35+325
+
+    - updated watchdog.md
+
 2026-06-19 version: 0.4.35+325
 
     - fix typo in lib\router_push.dart array for the 'psk'
