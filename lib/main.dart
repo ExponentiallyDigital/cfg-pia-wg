@@ -82,13 +82,15 @@ class _LogEntry {
 }
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  // Injectable for testing; defaults to the real PIA service in production.
+  final PiaService? service;
+  const MainScreen({super.key, this.service});
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
-  final _service = PiaService();
+  late final PiaService _service = widget.service ?? PiaService();
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _regionCtrl = TextEditingController();
@@ -568,9 +570,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     ];
   }
 
+  // Disables the session-wipe countdown entirely (used while the router push /
+  // watchdog flow is open, so the PIA login survives long SSH operations and idle time).
+  void _disableWipeTimer() {
+    _wipeTimer?.cancel();
+    _wipeTimer = null;
+    _wipeDeadline = null;
+    setState(() => _secondsRemaining = 0);
+  }
+
   void _showRouterPushSheet() {
-    // Reset timer immediately when opening the workflow
-    _startOrResetTimer();
+    // Pushing to the router needs the PIA login to persist through the whole flow,
+    // so the auto-wipe is disabled here (re-armed when the dialog closes).
+    _disableWipeTimer();
 
     showDialog(
       context: context,
@@ -578,21 +590,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       builder: (ctx) => Dialog(
         backgroundColor: const Color(0xFF1A1D23),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) {
-            // Every time the user interacts with the dialog screen, refresh the session timer
-            _startOrResetTimer();
-          },
-          child: RouterPushSheet(
-            config: _generatedConfig!,
-            regionId: _regionCtrl.text.trim(),
-            onLog: _logEntry,
-            onActivity: _startOrResetTimer, // Hooks programmatic tasks to your keepalive mechanism
-          ),
+        child: RouterPushSheet(
+          config: _generatedConfig!,
+          regionId: _regionCtrl.text.trim(),
+          onLog: _logEntry,
+          piaUsername: _usernameCtrl.text.trim(),
+          piaPassword: _passwordCtrl.text.trim(),
         ),
       ),
-    );
+    ).then((_) {
+      // Resume the auto-wipe countdown once the flow is finished.
+      if (mounted && _generatedConfig != null) _startOrResetTimer();
+    });
   }
 
   Widget _buildLogSection() {

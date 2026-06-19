@@ -3,9 +3,12 @@
 ## "to do"
 
 - Release to Play Store - +12 testers for **closed test** over 14 continuous days
-- Add a feature to automatically maintain a persistent WireGuard VPN on the router
 
 ## Changes
+
+2026-06-20 version: 0.5.01+328
+
+    - implemented a feature to automatically maintain a persistent WireGuard VPN on the router
 
 2026-06-19 version: 0.5.00+327
 

@@ -18,13 +18,21 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:dartssh2/dartssh2.dart';
 
+import 'router_watchdog.dart';
+import 'watchdog_dialog.dart';
+
 class RouterPushSheet extends StatefulWidget {
   final String config;
   final String regionId;
   final void Function(String, {bool isError, bool isSuccess}) onLog;
   final VoidCallback? onActivity;
+  // PIA login reused from the main screen (volatile), so the watchdog can store it in NVRAM.
+  final String piaUsername;
+  final String piaPassword;
   // Hook to inject mock SSH clients for testing
   final Future<SSHClient> Function(String ip, String user, String pass)? testClientFactory;
+  // Hook to inject a mock watchdog service for testing
+  final RouterWatchdog Function(SSHClient)? watchdogServiceFactory;
 
   const RouterPushSheet({
     super.key,
@@ -32,7 +40,10 @@ class RouterPushSheet extends StatefulWidget {
     required this.regionId,
     required this.onLog,
     this.onActivity,
+    this.piaUsername = '',
+    this.piaPassword = '',
     this.testClientFactory,
+    this.watchdogServiceFactory,
   });
 
   @override
@@ -48,9 +59,11 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
   bool _loading = false;
   Map<int, String> _slots = {};
   Map<int, bool> _killSwitch = {};
+  Map<int, bool> _watchdogActive = {};
   int? _activeSlot;
   int _selectedSlot = -1;
   bool _sshPassVisible = false;
+  bool _isMerlin = false;
 
   @override
   void dispose() {
@@ -93,11 +106,17 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
     try {
       client = await _getClient(ip, user, pass);
 
+      // Merlin firmware gates the entire watchdog feature.
+      final detectedMerlin = (await _run(client, 'nvram get 3rd-party')) == 'merlin';
+
       final Map<int, String> retrievedSlots = {};
       final Map<int, bool> retrievedKillSwitch = {};
+      final Map<int, bool> retrievedWatchdog = {};
       for (int i = 1; i <= 5; i++) {
         retrievedSlots[i] = await _run(client, 'nvram get wgc${i}_desc');
         retrievedKillSwitch[i] = (await _run(client, 'nvram get wgc${i}_enforce')) == '1';
+        retrievedWatchdog[i] = detectedMerlin &&
+            (await _run(client, 'cru l | grep -qw watchdog_wgc$i && echo 1 || echo 0')) == '1';
       }
       final ifaceOutput = await _run(client, 'wg show interfaces');
       final activeMatch = RegExp(r'wgc(\d)').firstMatch(ifaceOutput);
@@ -113,7 +132,9 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       setState(() {
         _slots = retrievedSlots;
         _killSwitch = retrievedKillSwitch;
+        _watchdogActive = retrievedWatchdog;
         _activeSlot = detectedActiveSlot;
+        _isMerlin = detectedMerlin;
         _step = 1;
       });
     } catch (e) {
@@ -369,6 +390,40 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
     );
   }
 
+  // ─── Watchdog ─────────────────────────────────────────────────────────────────
+  Future<void> _openWatchdog(int slot) async {
+    widget.onActivity?.call();
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => WatchdogDialog(
+        slotIndex: slot,
+        regionDesc: _slots[slot] ?? '',
+        onLog: widget.onLog,
+        onActivity: widget.onActivity,
+        piaUsername: widget.piaUsername,
+        piaPassword: widget.piaPassword,
+        connect: () => _getClient(_ipCtrl.text.trim(), _userCtrl.text.trim(), _passCtrl.text),
+        serviceFactory: widget.watchdogServiceFactory,
+      ),
+    );
+    // Refresh the "watchdog active" badge after the dialog closes.
+    if (!mounted) return;
+    SSHClient? client;
+    try {
+      client = await _getClient(_ipCtrl.text.trim(), _userCtrl.text.trim(), _passCtrl.text);
+      final Map<int, bool> refreshed = {};
+      for (int i = 1; i <= 5; i++) {
+        refreshed[i] = (await _run(client, 'cru l | grep -qw watchdog_wgc$i && echo 1 || echo 0')) == '1';
+      }
+      if (mounted) setState(() => _watchdogActive = refreshed);
+    } catch (_) {
+      // Non-fatal: the badge simply keeps its previous state.
+    } finally {
+      client?.close();
+    }
+  }
+
   // ─── Build ───────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -436,6 +491,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
                     final desc = entry.value.isEmpty ? '(Empty Slot)' : entry.value;
                     final isActive = _activeSlot == slotNum;
                     final hasKillSwitch = _killSwitch[slotNum] == true;
+                    final hasWatchdog = _watchdogActive[slotNum] == true;
                     return InkWell(
                       onTap: () => setState(() => _selectedSlot = slotNum),
                       child: Padding(
@@ -456,21 +512,27 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
                                       style: const TextStyle(
                                           color: Color(0xFF00D4AA), fontFamily: 'monospace', fontWeight: FontWeight.bold)),
                                   Text(desc, style: const TextStyle(color: Color(0xFF8892A4), fontSize: 12)),
-                                  if (isActive || hasKillSwitch) ...[
+                                  if (isActive || hasKillSwitch || hasWatchdog) ...[
                                     const SizedBox(height: 5),
-                                    Row(
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
                                       children: [
                                         if (isActive)
                                           _badge('● ACTIVE',
                                               text: const Color(0xFF00D4AA),
                                               border: const Color(0xFF00D4AA),
                                               bg: const Color(0xFF0F3D2E)),
-                                        if (isActive && hasKillSwitch) const SizedBox(width: 6),
                                         if (hasKillSwitch)
                                           _badge('⚑ KILL SWITCH',
                                               text: const Color(0xFFEF9F27),
                                               border: const Color(0xFFEF9F27),
                                               bg: const Color(0xFF2A1F0E)),
+                                        if (hasWatchdog)
+                                          _badge('◆ WATCHDOG ACTIVE',
+                                              text: const Color(0xFF00D4AA),
+                                              border: const Color(0xFF00D4AA),
+                                              bg: const Color(0xFF0F2E3D)),
                                       ],
                                     ),
                                   ],
@@ -492,6 +554,16 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
                         height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF12141A)))
                     : const Text('CONFIRM WRITE TO ROUTER'),
               ),
+              if (_isMerlin) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _loading
+                      ? null
+                      : () => _openWatchdog(_selectedSlot == -1 ? (_activeSlot ?? 1) : _selectedSlot),
+                  icon: const Icon(Icons.shield_outlined, size: 16),
+                  label: const Text('WATCHDOG...'),
+                ),
+              ],
             ],
           ],
         ),
