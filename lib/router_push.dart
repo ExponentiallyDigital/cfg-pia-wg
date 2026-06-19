@@ -5,8 +5,8 @@
 // version 3 of the License, or (at your option) any later version.
 //
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
-//without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-//See the GNU General Public License for more details.
+// without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License along with this program.
 // If not, see https://www.gnu.org/licenses/.
@@ -137,7 +137,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
   }
 
   // ─── Push to Router ────────────────────────────────────────────────────────
-  // router CLI's ";" mimics "&&": using ";" in router service commands"
+  //
   Future<void> _pushToRouter() async {
     if (_selectedSlot == -1) return;
 
@@ -177,15 +177,15 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
           'enable',
           'enforce',
           'ep_addr',
-          'ep_addr_r', // added
+          'ep_addr_r',
           'ep_port',
           'fw',
           'mtu',
           'nat',
           'ppub',
           'priv',
-          'psk,' // added
-              'rip', // added
+          'psk',
+          'rip',
           'aips'
         ]) {
           slotBackup['wgc${slot}_$key'] = await _run(client, 'nvram get wgc${slot}_$key');

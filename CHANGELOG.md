@@ -1,9 +1,18 @@
+# Changelog
+
 ## "to do"
 
 - Release to Play Store - +12 testers for **closed test** over 14 continuous days
-- Add a feature to setup a cron job on the router to automatically maintain a persistent and valid WireGuard configuration
+- Add a feature to automatically maintain a persistent WireGuard VPN on the router
 
-# Release changes
+## Changes
+
+2026-06-19 version: 0.4.35+325
+
+    - fix typo in lib\router_push.dart array for the 'psk'
+    - formating of license header in dart modules
+    - updated context.md
+    - added watchdog.md, requirements and spec for setting up the new watchdog feature
 
 2026-06-16 version: 0.4.34+324
 
@@ -59,4 +68,3 @@
     - automated security/quality analysis: Flutter analyse, SonarCube, Google OSV dependency scan, Mobile security scanning (MobSF), Dependabot dependency management, and CodeQL analysis.
     - clear the clipboard after 60 seconds if conf copied there
     - review Actions CI pipeline - add Flutter analyse, rename pipeline
-

@@ -5,8 +5,8 @@
 // version 3 of the License, or (at your option) any later version.
 //
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
-//without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-//See the GNU General Public License for more details.
+// without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License along with this program.
 // If not, see https://www.gnu.org/licenses/.
@@ -156,7 +156,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final now = DateTime.now();
     final ts =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-//    if (_log.isEmpty && !msg.contains('Starting') && !_loading) return; // fix for erratic log clearing
     setState(() => _log.add(_LogEntry('[$ts] $msg', isError: isError, isSuccess: isSuccess)));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollCtrl.hasClients) {
