@@ -588,7 +588,7 @@ log "Selected server $BEST_IP ($BEST_CN) for region $DESC"
 PRIV="$(wg genkey)"
 PUB="$(echo "$PRIV" | wg pubkey)"
 
-REG="$(curl -s --max-time 15 --cacert "$TMPCA" --resolve "$BEST_CN:1337:$BEST_IP" "https://$BEST_CN:1337/addKey?pt=$TOKEN&pubkey=$PUB")"
+REG="$(curl -s --max-time 15 --cacert "$TMPCA" --resolve "$BEST_CN:1337:$BEST_IP" -G --data-urlencode "pt=$TOKEN" --data-urlencode "pubkey=$PUB" "https://$BEST_CN:1337/addKey?pt=$TOKEN&pubkey=$PUB")"
 rm -f "$TMPCA"
 RSTATUS="$(echo "$REG" | jq -r '.status // empty')"
 [ "$RSTATUS" = "OK" ] || abort "addKey failed (status: $RSTATUS)"
@@ -614,7 +614,6 @@ nvram set wgc__SLOT___priv="$PRIV"
 nvram set wgc__SLOT___psk=""
 nvram set wgc__SLOT___rip=""
 nvram set wgc__SLOT___aips="0.0.0.0/0"
-nvram commit
 
 # --- Apply via wg setconf, delete the temp config immediately, then restart the interface ---
 cat > "$TMPCONF" <<WGCONF
@@ -626,10 +625,17 @@ Endpoint = $BEST_IP:$SERVER_PORT
 PersistentKeepalive = 25
 AllowedIPs = 0.0.0.0/0
 WGCONF
-wg setconf "$IFACE" "$TMPCONF"
 rm -f "$TMPCONF"
+service "stop_wgc $SLOT"
+sleep 2
 service "start_wgc $SLOT"
 service restart_vpnrouting0
+
+# Verify the interface came up before declaring success
+sleep 3
+if ! ifconfig "$IFACE" >/dev/null 2>&1; then
+  abort "Interface $IFACE did not come up after reconfiguration"
+fi
 
 log "Reconfiguration SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
 send_alert "SUCCESS"

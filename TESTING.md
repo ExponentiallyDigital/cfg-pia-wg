@@ -227,6 +227,10 @@ Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Ad
 203.0.113.0/24 (TEST-NET-3)
 ```
 
+12. Apply a new config to a blank slot
+
+13. Overwrite an existing slot with a different region's config
+
 ### RAM usage
 
 1. With scripts deployed and watchdog active
@@ -240,5 +244,5 @@ Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Ad
 
 2. NVRAM usage
 
-   watchdog active: size: 89113 bytes (41959 left)
-   wwatchdog disabled: size: 89113 bytes (41959 left)
+   watchdog active:
+   wwatchdog disabled:
