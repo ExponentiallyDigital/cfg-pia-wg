@@ -6,6 +6,10 @@
 
 ## Changes
 
+2026-06-20 version: 0.5.02+329
+
+    - added TESTING.md, covers manual email testing
+
 2026-06-20 version: 0.5.01+328
 
     - implemented a feature to automatically maintain a persistent WireGuard VPN on the router
