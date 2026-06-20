@@ -270,9 +270,10 @@ String buildMailBody(WatchdogConfig c, {required bool success, bool testMode = f
 
 // The BusyBox sendmail implicit-TLS command for the one-off test email (concrete values).
 String buildSendmailCommand(String host, int port, WatchdogConfig c) => '/usr/sbin/sendmail '
-    '-H "exec openssl s_client -quiet -tls1_3 -connect $host:$port" '
+    '-H "exec openssl s_client -quiet -tls1_3 '
     '-CAfile /etc/ssl/certs/ca-certificates.crt '
     '-verify_return_error '
+    '-connect $host:$port" '
     '-au${shellSingleQuote(c.smtpUsername)} '
     '-ap${shellSingleQuote(c.smtpPassword)} '
     '-f${shellSingleQuote(c.emailFrom)} '
@@ -386,8 +387,9 @@ class RouterWatchdog {
         await _run('nvram unset wgc${slot}_wd_smtp_user');
         await _run('nvram unset pia_wg_cfga_password');
         await _run('nvram unset pia_wg_cfga_user');
-        // leave interface in prior state
-        // await _run('service "stop_wgc wgc$slot"; service start_vpnrouting0');
+        // below was commented out, which leaves interface in prior state,
+        // instead stop that interface
+        await _run('service "stop_wgc wgc$slot"; service start_vpnrouting0');
         await _logRouter('Watchdog disabled, NVRAM unset and scripts removed for wgc$slot');
         onLog?.call('Watchdog disabled for wgc$slot.', isSuccess: true);
       });
@@ -462,10 +464,11 @@ class RouterWatchdog {
         // Layer 3: TLS handshake probe (only worth running if TCP is up)
         if (tcpOk) {
           final tlsOut = await _run(
-            'printf "QUIT\\r\\n" | timeout 10 openssl s_client '
+            'printf "QUIT\\r\\n" | openssl s_client '
             '-connect $host:$port '
             '-tls1_3 '
             '-CAfile /etc/ssl/certs/ca-certificates.crt '
+            '-timeout 10 '
             '2>&1 | head -40 | tr "\\n" "|"',
           );
           await _logRouter('TLS probe: ${tlsOut.trim()}');
@@ -569,14 +572,13 @@ send_alert() {
 
   TMPERR="/tmp/wd_smtp_err_$$"
 
-  /usr/sbin/sendmail \
-    -H "exec openssl s_client -quiet -tls1_3 -connect $SMTP_HOST:$SMTP_PORT" \
-    -CAfile /etc/ssl/certs/ca-certificates.crt \
-    -verify_return_error \
-    -au"$SMTP_USER" \
-    -ap"$SMTP_PASS" \
-    -f"$EMAIL_FROM" \
-    "$EMAIL_TO" < "$TMPMAIL" 2>"$TMPERR"
+    /usr/sbin/sendmail \
+      -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt \
+      -verify_return_error -connect $SMTP_HOST:$SMTP_PORT" \
+      -au"$SMTP_USER" \
+      -ap"$SMTP_PASS" \
+      -f"$EMAIL_FROM" \
+      "$EMAIL_TO" < "$TMPMAIL" 2>"$TMPERR"
 
   MAIL_EXIT=$?
   rm -f "$TMPMAIL"
@@ -590,15 +592,16 @@ send_alert() {
     if nc -w 5 "$SMTP_HOST" "$SMTP_PORT" </dev/null >/dev/null 2>&1; then
       log "Email diag: TCP $SMTP_HOST:$SMTP_PORT is reachable"
     else
-      log "Email diag: TCP $SMTP_HOST:$SMTP_PORT is UNREACHABLE – check host/port"
+      log "Email diag: TCP $SMTP_HOST:$SMTP_PORT is UNREACHABLE - check host/port"
     fi
 
     # Diagnostic 2: TLS handshake and SMTP greeting (verbose, no -quiet)
     TMPDIAG="/tmp/wd_smtp_diag_$$"
-    printf 'QUIT\r\n' | timeout 10 openssl s_client \
+    printf 'QUIT\r\n' | openssl s_client \
       -connect "$SMTP_HOST:$SMTP_PORT" \
       -tls1_3 \
       -CAfile /etc/ssl/certs/ca-certificates.crt \
+      -timeout 10 \
       2>&1 | head -40 > "$TMPDIAG"
     TLS_EXIT=$?
     TLS_OUT=$(cat "$TMPDIAG" 2>/dev/null | tr '\n' '|')

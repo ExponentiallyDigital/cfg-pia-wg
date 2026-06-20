@@ -11,15 +11,26 @@
 - add a note that when manually adding VPNs, the description needs to match the PIA region name eg `aus_melbourne`
 - on selecting `WATCHDOG CONFIG`, if no slot is active, it should enable the interface (reuse existing code by calling that function)
 - don't exit `PUSH TO ROUTER` when a config is written and a slot made active, we might want to setup the watchdog
-- if slot 1 is active and a watchdog is deployed to it, it remains active even if slot 5 is made active and a watchdog deployed to that slot, so we end up with multiple watchdogs, notre in the docs that watchdog is only for one slot at a time (who runs multiple VPNs on different slots? Maybe someone does...but it's an edge case, just like having more than one WG VPN active concurrently. I'm sure someone does this but I don't.)
+- if slot 1 is active and a watchdog is deployed to it, it remains active even if slot 5 is made active and a watchdog deployed to that slot, so we end up with multiple watchdogs, note in the docs that watchdog is only for one slot at a time (who runs multiple VPNs on different slots? Maybe someone does...but it's an edge case, just like having more than one WG VPN active concurrently. I'm sure someone does this but I don't.)
 - note in docs that watchdog is only ever active on one interface at a time...but that's not how it currently works, needs fixing
 - make it clear that the log in the WATCHDOG screen is from the wgcN log on the router
 - view log should be names "LOAD/GET LOG", as it's not updated in real time, if it becomes realy big there will be a lot of scrolling needed...maybe show in reverse order, currently shows oldest to newest, could log file fill NVRAM? Store it on volatile partition? There are 288 five minute intervals in 24 hours.
-- pushing to wgc5 (perth) did not disable wgc1 (Melb), due to a change I made...where was that!
+- move `WATCHDOG CONFIG` button from `PUSH TO ROUTER` window to main screen, more logical sense as it can be independent of updating a slot's config
+- retain the ssh session until app exits?
 
 ---
 
 ## Changes
+
+2026-06-21 version: 0.5.08
+
+- ??? pushing to wgc5 (perth) did not disable wgc1 (Melb), due to a change I made...where was that!
+- found it, `stopWatchdog`, in `lib\router_watchdog.dart`: had commented out `await _run('service "stop_wgc wgc$slot"; service start_vpnrouting0');` now re-enabled that line (and it works again, no more multiple VPNs running concurently!)
+
+> [!NOTE]
+> If slot 1 was active and a watchdog was deployed to it, it remained active even if slot 5 was made active and a watchdog deployed to that slot, so we end up with multiple watchdogs, added to the `to do` list to note in the docs that the watchdog is only for one slot at a time. Who runs multiple VPNs on different slots? Maybe someone does, just like having more than one WG VPN active concurrently. Ping me if this is an issue!
+
+- fix new sendmail commands causing errors: moved `-CAfile` and `-verify_return_error` back inside the openssl quoted string, replaced `timeout 10 openssl` with `openssl -timeout 10`
 
 2026-06-20 version: 0.5.07
 

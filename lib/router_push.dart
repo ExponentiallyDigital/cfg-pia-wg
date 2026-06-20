@@ -219,12 +219,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         widget.onLog('Stopping wgc$activeSlot...');
         await _run(client, 'nvram set wgc${activeSlot}_enforce=0');
         await _run(client, 'nvram set wgc${activeSlot}_enable=0');
-        await _run(client, 'nvram commit');
         // explicitly stop the specific slot
         await _run(client, 'service "stop_wgc $activeSlot"; service start_vpnrouting0');
-        // explicit clear wgcN_ep_addr_r and wgcN_rip
-//        await _run(client, 'nvram set wgc${activeSlot}_ep_addr_r=""');
-//        await _run(client, 'nvram set wgc${activeSlot}_rip=""');
         // explicit delete wgcN_ep_addr_r and wgcN_rip (were persisting after interface removal)
         await _run(client, 'nvram unset wgc${activeSlot}_ep_addr_r');
         await _run(client, 'nvram unset wgc${activeSlot}_rip');
