@@ -26,7 +26,7 @@ sendmail -v \
 
 ### Construct the test email
 
-Replace `sender@example.com`, ` Sender Name`, `Recipient Name`, and `recipient@example.com` in the below:
+Replace `sender@example.com`, `Sender Name`, `Recipient Name`, and `recipient@example.com` in the below:
 
 ```bash
 cat << EOF > /tmp/test-email.txt
@@ -56,12 +56,10 @@ EOF
 ```
 
 > [!NOTE]
->
 > **Message-ID**: Google will likely silently non-deliver the test email if you reuse the same test message without updating the `Message-ID:` by recreating `/tmp/test-email.txt`.
 
 > [!TIP]
->
-> **EOF**: using `EOF` without single quotes allows variable expansion, typically you would use `'EOF'` but we need the `date` and `hostnames` expanded, which is why we use `cat << EOF >`.
+> **EOF**: Using `EOF` without single quotes allows variable expansion. Typically you would use `'EOF'`, but we need the `date` and `hostnames` expanded, which is why we use `cat << EOF >`.
 
 ### How the Commands Work
 
@@ -142,22 +140,105 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
 
 ## Testing the watchdog feature
 
-When you invoke `PUSH TO ROUTER` and if your roiuter is using Merlin firmware a new button appears
+When you invoke `PUSH TO ROUTER` and if your roiuter is using Merlin firmware a new button appears "DEPLOY WATCHDOG".
 
-files deployed to your router:
+### Checks
 
-- /jffs/scripts/services-start
-- /jffs/scripts/watchdog_wgcN.sh
-- /jffs/watchdog_backoff_wgcN
-- /jffs/watchdog_last_ping_success_wgcN
+1. check that `/jffs/scripts/services-start` contains (1m watchdog)
 
-Created on the router:
+```bash
+#!/bin/sh
+cru a watchdog_wgc1 "*/1 * * * *" /jffs/scripts/watchdog_wgc1.sh
+cru a watchdog_log_rotate_wgc1 "0 0 * * *" "mv /jffs/watchdog_wgc1.log /jffs/watchdog_wgc1.log.old && touch /jffs/watchdog_wgc1.log"
+```
+
+2. check cron and cru are updated in realtime, test 1m and 10m
+
+```bash
+user@host:/tmp/home/root# crontab -l
+*/1 * * * * /jffs/scripts/watchdog_wgc1.sh #watchdog_wgc1#
+0 0 * * * mv /jffs/watchdog_wgc1.log /jffs/watchdog_wgc1.log.old && touch /jffs/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
+
+user@host:/tmp/home/root# cru l
+*/1 * * * * /jffs/scripts/watchdog_wgc1.sh #watchdog_wgc1#
+0 0 * * * mv /jffs/watchdog_wgc1.log /jffs/watchdog_wgc1.log.old && touch /jffs/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
+```
+
+3. check that `/jffs/scripts/watchdog_wgcN.sh` is valid
+
+4. check NVRAM is set correctly
+
+```bash
+user@host:/tmp/home/root# nvram show | grep wgc1
+wgc1_wd_check_interval=1
+wgc1_wd_email_enabled=0
+wgc1_wd_email_from=
+wgc1_wd_email_subject=PIA Watchdog Alert
+wgc1_wd_email_to=
+wgc1_wd_primary_ip=8.8.8.8
+wgc1_wd_secondary_ip=1.1.1.1
+wgc1_wd_smtp_pass=
+wgc1_wd_smtp_server=
+wgc1_wd_smtp_user=
+```
+
+```bash
+user@host:/tmp/home/root# nvram show | grep pia_wg
+pia_wg_cfga_password=REDACTED
+pia_wg_cfga_user=REDACTED
+```
+
+5. Check `/jffs/watchdog_backoff_wgcN`
+
+6. Check `/jffs/watchdog_last_ping_success_wgcN`
+
+7. Check logs are generated
 
 - /jffs/watchdog_wgcN.log
 
-LOG -> /jffs/watchdog_wgcN.log and the router syslog
+6. Check router syslog entries are created
 
-admin0909@arcgate:/tmp/home/root# cru l
-_/1 _ \* \* _ check_wgc_ep #WGC_CHK_EP#
-admin0909@arcgate:/tmp/home/root# crontab -l
-_/1 \* \* \* \* check_wgc_ep #WGC_CHK_EP#
+deploy
+delete
+reconfigure
+
+7. Update `check interval` from 1 to 100 ensure NVRAM written, `cron` and `crontab` updated
+
+8. Check cleanup ocurs when `DISABLE` selected in UI
+
+- cron jobs removed, check with `crontab -l` and `cru l`
+- `/jffs/scripts/services-start` should only contain `#!/bin/sh`
+- add a comment to `/jffs/scripts/services-start`, start
+  all files deleted
+
+9. File permissions & owner
+
+Check `/jffs/scripts/services-start` permission is 777 `-rwxrwxrwx`.
+
+10. Reboot and check that cron and crontab are correct
+
+11. Force a reconfigure to occur
+
+Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Address Blocks Reserved for Documentation](https://www.iana.org/go/rfc5737) these blocks should never respond:
+
+```text
+192.0.2.0/24 (TEST-NET-1)
+198.51.100.0/24 (TEST-NET-2)
+203.0.113.0/24 (TEST-NET-3)
+```
+
+### RAM usage
+
+1. With scripts deployed and watchdog active
+
+   Total :882.34 MB
+   Used :384.00 MB
+   Available :457.09 MB
+   Free :465.82 MB
+   Buffers :0.00 MB
+   Cache :30.73 MB
+
+2. NVRAM usage
+
+   watchdog active: size: 89113 bytes (41959 left)
+   wwatchdog disabled: size: 89113 bytes (41959 left)

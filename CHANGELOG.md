@@ -7,9 +7,15 @@
 - ...
 - Button to enable watchdog should not be able to be pressed unless a slot has been selected, it is greyed out and deosn't become lit until a slot is selected but it can still be pressed and activates the new feature
 - no error shown on screen if hit test email without filling in all details, error is generated to the app log but you can't see it, needs to be visible on screen
-- prefill smtp address & port
+- deploy/start not logged to /jffs/watchdog_wgcN.log
 
 ## Changes
+
+2026-06-20 version: 0.5.04
+
+    - change "WATCHDOG.." to "DEPLOY WATCHDOG"
+    - NVRAM now cleared when watchdog disabled (wgcN + PIA creds)
+    - `command` doesn't exist on busybox, replaced with `which`
 
 2026-06-20 version: 0.5.03
 

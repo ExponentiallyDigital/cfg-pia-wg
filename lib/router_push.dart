@@ -559,7 +559,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
                 OutlinedButton.icon(
                   onPressed: _loading ? null : () => _openWatchdog(_selectedSlot == -1 ? (_activeSlot ?? 1) : _selectedSlot),
                   icon: const Icon(Icons.shield_outlined, size: 16),
-                  label: const Text('WATCHDOG...'),
+                  label: const Text('DEPLOY WATCHDOG'),
                 ),
               ],
             ],

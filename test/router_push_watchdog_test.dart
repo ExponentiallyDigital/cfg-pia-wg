@@ -55,14 +55,14 @@ void main() {
     });
     await tester.pumpWidget(_app(c));
     await _login(tester);
-    expect(find.text('WATCHDOG...'), findsOneWidget);
+    expect(find.text('DEPLOY WATCHDOG'), findsOneWidget);
   });
 
   testWidgets('WATCHDOG button is hidden on non-Merlin routers', (tester) async {
     final c = RecordingSSHClient(responder: (_) => ''); // 3rd-party -> '' (not merlin)
     await tester.pumpWidget(_app(c));
     await _login(tester);
-    expect(find.text('WATCHDOG...'), findsNothing);
+    expect(find.text('DEPLOY WATCHDOG'), findsNothing);
   });
 
   testWidgets('"WATCHDOG ACTIVE" and "KILL SWITCH" badges show for slot 1', (tester) async {
@@ -89,8 +89,8 @@ void main() {
     await tester.pumpWidget(_app(c, wdFactory: (cl) => RouterWatchdog(cl, onLog: _noop)));
     await _login(tester);
 
-    await tester.ensureVisible(find.text('WATCHDOG...'));
-    await tester.tap(find.text('WATCHDOG...'));
+    await tester.ensureVisible(find.text('DEPLOY WATCHDOG'));
+    await tester.tap(find.text('DEPLOY WATCHDOG'));
     await tester.pumpAndSettle();
 
     expect(find.text('WATCHDOG · wgc1'), findsOneWidget);

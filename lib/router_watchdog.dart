@@ -339,7 +339,7 @@ class RouterWatchdog {
     await _run("chmod +x '$path'");
   }
 
-  // Full disable: remove cron jobs, script, services-start lines, and all per-slot files.
+  // Full disable: unset NVRAM, remove cron jobs, script, services-start lines, and all per-slot files.
   // JFFS is intentionally left enabled.
   Future<void> stopWatchdog(int slot) => _guard('disable', () async {
         await _run('cru d watchdog_wgc$slot');
@@ -350,7 +350,20 @@ class RouterWatchdog {
             "> '$path.tmp' && mv '$path.tmp' '$path'");
         await _run('rm -f /jffs/watchdog_wgc$slot.log /jffs/watchdog_wgc$slot.log.old '
             '/jffs/watchdog_last_ping_success_wgc$slot /jffs/watchdog_backoff_wgc$slot');
-        await _logRouter('Watchdog disabled and scripts removed for wgc$slot');
+        // nvram command doesn't allow multiple values in one command
+        await _run('nvram unset wgc${slot}_wd_check_interval');
+        await _run('nvram unset wgc${slot}_wd_email_enabled');
+        await _run('nvram unset wgc${slot}_wd_email_from');
+        await _run('nvram unset wgc${slot}_wd_email_subject');
+        await _run('nvram unset wgc${slot}_wd_email_to');
+        await _run('nvram unset wgc${slot}_wd_primary_ip');
+        await _run('nvram unset wgc${slot}_wd_secondary_ip');
+        await _run('nvram unset wgc${slot}_wd_smtp_pass');
+        await _run('nvram unset wgc${slot}_wd_smtp_server');
+        await _run('nvram unset wgc${slot}_wd_smtp_user');
+        await _run('nvram unset pia_wg_cfga_password');
+        await _run('nvram unset pia_wg_cfga_user');
+        await _logRouter('Watchdog disabled, NVRAM unset and scripts removed for wgc$slot');
         onLog?.call('Watchdog disabled for wgc$slot.', isSuccess: true);
       });
 
@@ -535,7 +548,7 @@ log "Connectivity lost; attempting WireGuard reconfiguration (attempt #$CNT)"
 
 # --- Abort gates: never touch NVRAM unless we can fully reconfigure ---
 [ -n "$DESC" ] || abort "wgc__SLOT___desc is empty"
-command -v jq >/dev/null 2>&1 || abort "jq is not installed"
+which jq >/dev/null 2>&1 || abort "jq is not installed"
 [ -n "$PIA_USER" ] || abort "PIA username is not set"
 
 # --- PIA re-negotiation (curl + jq + wg + openssl) ---
