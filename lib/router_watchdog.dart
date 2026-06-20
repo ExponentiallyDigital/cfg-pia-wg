@@ -445,8 +445,8 @@ LOGFILE="/jffs/watchdog_wgc__SLOT__.log"
 STATUSFILE="/jffs/watchdog_last_ping_success_wgc__SLOT__"
 BACKOFFFILE="/jffs/watchdog_backoff_wgc__SLOT__"
 COOLDOWN=120
-TMPCONF="/tmp/wgc__SLOT__.conf"
-TMPCA="/tmp/wgc__SLOT___ca.crt"
+CACERT="/jffs/pia_ca.rsa.4096.crt"
+CURL="curl -s --max-time 15 --connect-timeout 8 --tlsv1.3 --fail"
 TMPMAIL="/tmp/mail_wgc__SLOT__.txt"
 TMPSRV="/tmp/wgc__SLOT___servers.txt"
 
@@ -475,6 +475,8 @@ DESC="$(nvram get wgc__SLOT___desc)"
 PIA_USER="$(nvram get pia_wg_cfga_user)"
 PIA_PASS="$(nvram get pia_wg_cfga_password)"
 
+log "Watchdog started for $IFACE"
+
 # --- Email alert helper (gated on EMAIL_ON at runtime; one mail per attempt) ---
 send_alert() {
   [ "$EMAIL_ON" = "1" ] || return 0
@@ -500,22 +502,44 @@ send_alert() {
 abort() {
   log "ERROR: $1"
   send_alert "FAILED ($1)"
-  rm -f "$TMPCA" "$TMPCONF" "$TMPSRV"
+  rm -f "$TMPSRV"
   exit 1
 }
 
 # --- Connectivity check through the VPN interface ---
-FAIL=0
+FAIL=1  # default to failure
+log "Checking connectivity via $IFACE (primary=$PRIMARY_IP secondary=$SECONDARY_IP)"
+
+# Check interface first
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then
   log "Interface $IFACE is down or absent"
   FAIL=1
-elif ping -I "$IFACE" -c 3 -W 2 "$PRIMARY_IP" >/dev/null 2>&1; then
-  FAIL=0
-elif ping -I "$IFACE" -c 3 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
-  FAIL=0
 else
-  log "Both ping targets unreachable via $IFACE ($PRIMARY_IP / $SECONDARY_IP)"
-  FAIL=1
+  # Test primary and secondary independently
+  primary_ok=1
+  secondary_ok=1
+
+  if ping -I "$IFACE" -c 3 -W 2 "$PRIMARY_IP" >/dev/null 2>&1; then
+    primary_ok=0
+    log "Primary ping OK ($PRIMARY_IP)"
+  else
+    log "Primary ping FAILED ($PRIMARY_IP)"
+  fi
+
+  if ping -I "$IFACE" -c 3 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
+    secondary_ok=0
+    log "Secondary ping OK ($SECONDARY_IP)"
+  else
+    log "Secondary ping FAILED ($SECONDARY_IP)"
+  fi
+
+  # Set final status: 0 if at least one target responded
+  if [ $primary_ok -eq 0 ] || [ $secondary_ok -eq 0 ]; then
+    FAIL=0
+  else
+    FAIL=1
+    log "Both ping targets unreachable via $IFACE"
+  fi
 fi
 
 # --- Success path: record status, reset backoff, done ---
@@ -526,15 +550,13 @@ if [ "$FAIL" = "0" ]; then
 fi
 
 # --- Failure path: two-line backoff file (count, last-attempt-epoch) ---
+CNT=0
+LAST=0
 if [ -f "$BACKOFFFILE" ]; then
-  CNT="$(sed -n '1p' "$BACKOFFFILE")"
-  LAST="$(sed -n '2p' "$BACKOFFFILE")"
-else
-  CNT=0
-  LAST=0
+  { read -r CNT; read -r LAST; } < "$BACKOFFFILE"
+  [ -n "$CNT" ] || CNT=0
+  [ -n "$LAST" ] || LAST=0
 fi
-[ -n "$CNT" ] || CNT=0
-[ -n "$LAST" ] || LAST=0
 NOW="$(date +%s)"
 CNT=$((CNT + 1))
 ELAPSED=$((NOW - LAST))
@@ -552,13 +574,24 @@ which jq >/dev/null 2>&1 || abort "jq is not installed"
 [ -n "$PIA_USER" ] || abort "PIA username is not set"
 
 # --- PIA re-negotiation (curl + jq + wg + openssl) ---
-curl -s --max-time 15 "$CACERT_URL" -o "$TMPCA" || abort "failed to download CA certificate"
+if [ ! -f "$CACERT" ]; then
+  log "CA certificate not cached; downloading"
+  $CURL "$CACERT_URL" -o "$CACERT" || abort "failed to download CA certificate"
+  openssl x509 -noout -in "$TMPCA" >/dev/null 2>&1 || abort "CA certificate is not valid PEM"
+  log "CA certificate cached at $CACERT"
+else
+  log "Using cached CA certificate"
+fi
 
-TOKEN="$(curl -s --max-time 15 -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" | jq -r '.token // empty')"
+log "Requesting PIA token for user $PIA_USER"
+TOKEN="$($CURL -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" | jq -r '.token // empty')"
 [ -n "$TOKEN" ] || abort "failed to obtain PIA token"
+log "PIA token obtained (length=$(echo -n "$TOKEN" | wc -c))"
 
-SERVERS="$(curl -s --max-time 15 "$SERVERLIST_URL" | head -1 | jq -r --arg id "$DESC" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"')"
+log "Fetching server list for region $DESC"
+SERVERS="$($CURL "$SERVERLIST_URL" | head -1 | jq -r --arg id "$DESC" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"')"
 [ -n "$SERVERS" ] || abort "no servers found for region $DESC"
+log "Server list retrieved: $(echo "$SERVERS" | wc -l | tr -d ' ') candidate(s)"
 
 # Latency sweep over the region's 1-3 servers (file-backed loop to keep results in this shell).
 echo "$SERVERS" > "$TMPSRV"
@@ -571,6 +604,7 @@ while read -r SIP SCN; do
   [ -n "$RTT" ] || RTT=999998
   RTT_INT="${RTT%.*}"
   [ -n "$RTT_INT" ] || RTT_INT=999998
+  log "Latency to $SIP ($SCN): ${RTT_INT}ms"
   if [ "$RTT_INT" -lt "$BEST_RTT" ]; then
     BEST_RTT="$RTT_INT"
     BEST_IP="$SIP"
@@ -585,19 +619,22 @@ fi
 [ -n "$BEST_IP" ] || abort "could not select a server for region $DESC"
 log "Selected server $BEST_IP ($BEST_CN) for region $DESC"
 
+log "Generating WireGuard keypair"
 PRIV="$(wg genkey)"
 PUB="$(echo "$PRIV" | wg pubkey)"
+log "Registering public key with $BEST_IP ($BEST_CN)"
 
-REG="$(curl -s --max-time 15 --cacert "$TMPCA" --resolve "$BEST_CN:1337:$BEST_IP" -G --data-urlencode "pt=$TOKEN" --data-urlencode "pubkey=$PUB" "https://$BEST_CN:1337/addKey?pt=$TOKEN&pubkey=$PUB")"
-rm -f "$TMPCA"
+REG="$($CURL --cacert "$CACERT" --resolve "$BEST_CN:1337:$BEST_IP" -G --data-urlencode "pt=$TOKEN" --data-urlencode "pubkey=$PUB" "https://$BEST_CN:1337/addKey")" || abort "curl addKey request failed"
+log "addKey response received (status will be verified)"
 RSTATUS="$(echo "$REG" | jq -r '.status // empty')"
 [ "$RSTATUS" = "OK" ] || abort "addKey failed (status: $RSTATUS)"
-PEER_IP="$(echo "$REG" | jq -r '.peer_ip // empty' | cut -d/ -f1)"
-SERVER_KEY="$(echo "$REG" | jq -r '.server_key // empty')"
-SERVER_PORT="$(echo "$REG" | jq -r '.server_port // empty')"
+read -r PEER_IP SERVER_KEY SERVER_PORT <<EOF
+$(echo "$REG" | jq -r '[(.peer_ip // "" | split("/")[0]), (.server_key // ""), (.server_port // "")] | @tsv')
+EOF
 [ -n "$PEER_IP" ] && [ -n "$SERVER_KEY" ] && [ -n "$SERVER_PORT" ] || abort "incomplete addKey response"
 
 # --- Write new config to NVRAM (mirrors router_push.dart Step 4; the DNS value is left untouched) ---
+log "Writing new configuration to NVRAM"
 nvram set wgc__SLOT___addr="$PEER_IP/32"
 nvram set wgc__SLOT___alive=25
 nvram set wgc__SLOT___desc="$DESC"
@@ -614,28 +651,25 @@ nvram set wgc__SLOT___priv="$PRIV"
 nvram set wgc__SLOT___psk=""
 nvram set wgc__SLOT___rip=""
 nvram set wgc__SLOT___aips="0.0.0.0/0"
+log "NVRAM write complete"
 
-# --- Apply via wg setconf, delete the temp config immediately, then restart the interface ---
-cat > "$TMPCONF" <<WGCONF
-[Interface]
-PrivateKey = $PRIV
-[Peer]
-PublicKey = $SERVER_KEY
-Endpoint = $BEST_IP:$SERVER_PORT
-PersistentKeepalive = 25
-AllowedIPs = 0.0.0.0/0
-WGCONF
-rm -f "$TMPCONF"
+# --- stop & start the interface ---
+# sleep timers may ned to be increased on low spec routers
+log "Stopping $IFACE"
 service "stop_wgc $SLOT"
 sleep 2
+log "Starting $IFACE"
 service "start_wgc $SLOT"
+log "Restarting VPN routing"
 service restart_vpnrouting0
 
 # Verify the interface came up before declaring success
+log "Waiting for $IFACE to initialise"
 sleep 3
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then
   abort "Interface $IFACE did not come up after reconfiguration"
 fi
+log "Interface $IFACE is up"
 
 log "Reconfiguration SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
 send_alert "SUCCESS"

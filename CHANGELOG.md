@@ -13,10 +13,19 @@
 
 ## Changes
 
+2026-06-20 version: 0.5.06
+
+- extra router logging added to `services-start` script
+- cache PIA CACERT
+- added `--fail` to curl
+- added check that CA cert is valid
+- optimised `services-start` `sed` and `jq` calls
+- replace `curl` with `$CURL` to assist with code maintenance
+
 2026-06-20 version: 0.5.05
 
-- fix, added encoding of PUB and PVT keys with shell script curl
-- fix transient error, added sleep to final interface up comamnds in shell script
+- fix, added encoding of PUB and PVT keys with `services-start` script curl
+- fix transient error, added sleep to final interface up comamnds in `services-start` script
 - fix transient error, removed unnecessary `wg setconf "$IFACE" "$TMPCONF"` from `/jffs/scripts/services-start`
 
 2026-06-20 version: 0.5.04
