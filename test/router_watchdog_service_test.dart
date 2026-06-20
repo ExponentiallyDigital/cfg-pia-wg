@@ -40,7 +40,6 @@ void main() {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '1' : '');
       await RouterWatchdog(c).enableJffsScripts();
       expect(c.ran('nvram set jffs2_scripts=1'), isFalse);
-      expect(c.ran('nvram commit'), isFalse);
     });
 
     test('sets both flags and commits when not enabled', () async {
@@ -48,7 +47,6 @@ void main() {
       await RouterWatchdog(c).enableJffsScripts();
       expect(c.ran('nvram set jffs2_scripts=1'), isTrue);
       expect(c.ran('nvram set jffs2_on=1'), isTrue);
-      expect(c.ran('nvram commit'), isTrue);
     });
   });
 
@@ -60,7 +58,6 @@ void main() {
       expect(c.ran("nvram set wgc1_wd_secondary_ip='1.1.1.1'"), isTrue);
       expect(c.ran("nvram set pia_wg_cfga_user='p1234567'"), isTrue);
       expect(c.ran("nvram set pia_wg_cfga_password='secret'"), isTrue);
-      expect(c.ran('nvram commit'), isTrue);
       expect(c.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
       expect(c.ran('chmod +x /jffs/scripts/watchdog_wgc1.sh'), isTrue);
       expect(c.ran('logger -t pia-wg-cfga'), isTrue);

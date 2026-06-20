@@ -2,6 +2,11 @@
 #
 # Optimised Android / Flutter build environment installer & tuner
 #
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# !!!!!!!!!!!!!!!!!   THIS MAY NOT IMPROVE BUILD TIMES   !!!!!!!!!!!!!!!!!!!!!!
+# !!!!!!!!!!!!!!!!! UNDERSTAND WHAT THIS DOES BEFORE USE !!!!!!!!!!!!!!!!!!!!!!
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#
 # Single-file installer that:
 #  - Configures tmpfs for /tmp on systems with >= 16 GB RAM only; disabled on
 #    <= 8 GB tiers where RAM is too scarce for a scratch disk that Android build

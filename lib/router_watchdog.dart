@@ -234,15 +234,34 @@ String buildCronRotateLine(int slot) => 'cru a watchdog_log_rotate_wgc$slot "0 0
 String buildServicesStartBlock(int slot, int intervalMin) =>
     '${buildCronCheckLine(slot, intervalMin)}\n${buildCronRotateLine(slot)}\n';
 
+// RFC-822 date for the one-off "Test Email"
+String _rfc2822Date(DateTime dt) {
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  final utc = dt.toUtc();
+  return '${days[utc.weekday - 1]}, '
+      '${utc.day.toString().padLeft(2, '0')} '
+      '${months[utc.month - 1]} '
+      '${utc.year} '
+      '${utc.hour.toString().padLeft(2, '0')}:'
+      '${utc.minute.toString().padLeft(2, '0')}:'
+      '${utc.second.toString().padLeft(2, '0')} +0000';
+}
+
 // RFC-822 message body for the one-off "Test Email" (and the success/failure model).
 String buildMailBody(WatchdogConfig c, {required bool success, bool testMode = false}) {
   final subject = testMode ? 'config test' : '${c.emailSubject} - ${success ? 'SUCCESS' : 'FAILED'}';
   final line = testMode
       ? 'This is a test email from the pia-wireguard-cfga watchdog (slot wgc${c.slotIndex}).'
       : 'Watchdog wgc${c.slotIndex} reconfiguration ${success ? 'succeeded' : 'failed'}.';
+  final now = DateTime.now();
+  final epochSecs = now.millisecondsSinceEpoch ~/ 1000;
+  final (host, _) = c.smtpHostPort;
   return 'From: ${c.emailFrom}\r\n'
       'To: ${c.emailTo}\r\n'
       'Subject: $subject\r\n'
+      'Date: ${_rfc2822Date(now)}\r\n'
+      'Message-ID: <$epochSecs.${c.slotIndex}@$host>\r\n'
       'MIME-Version: 1.0\r\n'
       'Content-Type: text/plain; charset=utf-8\r\n'
       '\r\n'
@@ -251,9 +270,14 @@ String buildMailBody(WatchdogConfig c, {required bool success, bool testMode = f
 
 // The BusyBox sendmail implicit-TLS command for the one-off test email (concrete values).
 String buildSendmailCommand(String host, int port, WatchdogConfig c) => '/usr/sbin/sendmail '
-    '-H"exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt -connect $host:$port" '
-    '-amLOGIN -au${shellSingleQuote(c.smtpUsername)} -ap${shellSingleQuote(c.smtpPassword)} '
-    '-f${shellSingleQuote(c.emailFrom)} ${shellSingleQuote(c.emailTo)} < /tmp/mail.txt';
+    '-H "exec openssl s_client -quiet -tls1_3 -connect $host:$port" '
+    '-CAfile /etc/ssl/certs/ca-certificates.crt '
+    '-verify_return_error '
+    '-au${shellSingleQuote(c.smtpUsername)} '
+    '-ap${shellSingleQuote(c.smtpPassword)} '
+    '-f${shellSingleQuote(c.emailFrom)} '
+    '${shellSingleQuote(c.emailTo)} '
+    '< /tmp/mail.txt';
 
 // The full /jffs/scripts/watchdog_wgcN.sh body. Slot-parameterised via __SLOT__.
 String buildWatchdogScript(WatchdogConfig c) => _kWatchdogScriptTemplate.replaceAll('__SLOT__', '${c.slotIndex}');
@@ -298,7 +322,6 @@ class RouterWatchdog {
     if (scripts == '1' && on == '1') return;
     await _run('nvram set jffs2_scripts=1');
     await _run('nvram set jffs2_on=1');
-    await _run('nvram commit');
   }
 
   // Writes nvram config (per-slot + global PIA creds) and uploads the slot-specific script.
@@ -309,7 +332,6 @@ class RouterWatchdog {
         }
         await _run('nvram set pia_wg_cfga_user=${shellSingleQuote(config.piaUsername.trim())}');
         await _run('nvram set pia_wg_cfga_password=${shellSingleQuote(config.piaPassword)}');
-        await _run('nvram commit');
         await _run(heredocWrite('/jffs/scripts/watchdog_wgc$slot.sh', buildWatchdogScript(config)));
         await _run('chmod +x /jffs/scripts/watchdog_wgc$slot.sh');
         await _logRouter('Deployed watchdog script for wgc$slot');
@@ -339,15 +361,16 @@ class RouterWatchdog {
     await _run("chmod +x '$path'");
   }
 
-  // Full disable: unset NVRAM, remove cron jobs, script, services-start lines, and all per-slot files.
+  // Full disable: unset NVRAM, remove cron jobs and service-start script
   // JFFS is intentionally left enabled.
   Future<void> stopWatchdog(int slot) => _guard('disable', () async {
         await _run('cru d watchdog_wgc$slot');
         await _run('cru d watchdog_log_rotate_wgc$slot');
         await _run('rm -f /jffs/scripts/watchdog_wgc$slot.sh');
         const path = '/jffs/scripts/services-start';
+        // strip out cron jobs added when watchdog installed, reinstate 700 permission
         await _run("[ -f '$path' ] && grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' "
-            "> '$path.tmp' && mv '$path.tmp' '$path'");
+            "> '$path.tmp' && mv '$path.tmp' '$path' && chmod 700 '$path'");
         await _run('rm -f /jffs/watchdog_wgc$slot.log /jffs/watchdog_wgc$slot.log.old '
             '/jffs/watchdog_last_ping_success_wgc$slot /jffs/watchdog_backoff_wgc$slot');
         // nvram command doesn't allow multiple values in one command
@@ -363,6 +386,8 @@ class RouterWatchdog {
         await _run('nvram unset wgc${slot}_wd_smtp_user');
         await _run('nvram unset pia_wg_cfga_password');
         await _run('nvram unset pia_wg_cfga_user');
+        // leave interface in prior state
+        // await _run('service "stop_wgc wgc$slot"; service start_vpnrouting0');
         await _logRouter('Watchdog disabled, NVRAM unset and scripts removed for wgc$slot');
         onLog?.call('Watchdog disabled for wgc$slot.', isSuccess: true);
       });
@@ -402,12 +427,58 @@ class RouterWatchdog {
   // Sends a one-off test email (subject "config test") using the supplied SMTP settings.
   Future<void> testEmail(WatchdogConfig config) => _guard('test email', () async {
         final (host, port) = config.smtpHostPort;
+
         await _run(heredocWrite('/tmp/mail.txt', buildMailBody(config, success: true, testMode: true)));
-        await _run(buildSendmailCommand(host, port, config));
-        await _run('rm -f /tmp/mail.txt');
-        await _logRouter('Test email sent to ${config.emailTo}');
-        onLog?.call('Test email sent.', isSuccess: true);
+
+        // Redirect stderr to file; echo exit code into stdout so _run can return it.
+        final result = await _run(
+          '${buildSendmailCommand(host, port, config)} 2>/tmp/wd_smtp_err; echo "EXITCODE:\$?"',
+        );
+
+        final exitCode = _parseExitCode(result);
+
+        if (exitCode == 0) {
+          await _run('rm -f /tmp/mail.txt /tmp/wd_smtp_err');
+          await _logRouter('Test email sent to ${config.emailTo}');
+          onLog?.call('Test email sent.', isSuccess: true);
+          return;
+        }
+
+        // Layer 1: sendmail stderr
+        final stderrRaw = await _run(
+          'cat /tmp/wd_smtp_err 2>/dev/null | head -20 | tr "\\n" "|"',
+        );
+        await _logRouter('Email FAILED (exit=$exitCode) stderr=[${stderrRaw.trim()}]');
+
+        // Layer 2: TCP reachability
+        final ncResult = await _run(
+          'nc -w 5 $host $port </dev/null >/dev/null 2>&1; echo "EXITCODE:\$?"',
+        );
+        final tcpOk = _parseExitCode(ncResult) == 0;
+        await _logRouter(
+          tcpOk ? 'TCP diag: $host:$port is reachable' : 'TCP diag: $host:$port is UNREACHABLE - check host and port',
+        );
+
+        // Layer 3: TLS handshake probe (only worth running if TCP is up)
+        if (tcpOk) {
+          final tlsOut = await _run(
+            'printf "QUIT\\r\\n" | timeout 10 openssl s_client '
+            '-connect $host:$port '
+            '-tls1_3 '
+            '-CAfile /etc/ssl/certs/ca-certificates.crt '
+            '2>&1 | head -40 | tr "\\n" "|"',
+          );
+          await _logRouter('TLS probe: ${tlsOut.trim()}');
+        }
+
+        await _run('rm -f /tmp/mail.txt /tmp/wd_smtp_err');
+        onLog?.call('Test email failed - see router log for details.', isSuccess: false);
       });
+
+  int _parseExitCode(String output) {
+    final match = RegExp(r'EXITCODE:(\d+)').firstMatch(output);
+    return match != null ? int.tryParse(match.group(1)!) ?? -1 : -1;
+  }
 
   // Reachability probe over the WAN (no interface binding) — used during pre-save validation.
   Future<bool> pingHostViaWan(String ip) async {
@@ -481,12 +552,13 @@ log "Watchdog started for $IFACE"
 send_alert() {
   [ "$EMAIL_ON" = "1" ] || return 0
   [ -n "$SMTP_HOST" ] || { log "Email enabled but SMTP server is not configured"; return 0; }
+
   {
     echo "From: $EMAIL_FROM"
     echo "To: $EMAIL_TO"
     echo "Subject: $EMAIL_SUBJECT - $1"
     echo "Date: $(date -R 2>/dev/null || date)"
-    echo "Message-ID: $(date +%s).test@$(hostname)"
+    echo "Message-ID: $(date +%s)@$(hostname)"
     echo "MIME-Version: 1.0"
     echo "Content-Type: text/plain; charset=utf-8"
     echo ""
@@ -494,9 +566,49 @@ send_alert() {
     echo "Region: $DESC"
     echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
   } > "$TMPMAIL"
-  /usr/sbin/sendmail -H"exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt -connect $SMTP_HOST:$SMTP_PORT" -amLOGIN -au"$SMTP_USER" -ap"$SMTP_PASS" -f"$EMAIL_FROM" "$EMAIL_TO" < "$TMPMAIL"
+
+  TMPERR="/tmp/wd_smtp_err_$$"
+
+  /usr/sbin/sendmail \
+    -H "exec openssl s_client -quiet -tls1_3 -connect $SMTP_HOST:$SMTP_PORT" \
+    -CAfile /etc/ssl/certs/ca-certificates.crt \
+    -verify_return_error \
+    -au"$SMTP_USER" \
+    -ap"$SMTP_PASS" \
+    -f"$EMAIL_FROM" \
+    "$EMAIL_TO" < "$TMPMAIL" 2>"$TMPERR"
+
+  MAIL_EXIT=$?
   rm -f "$TMPMAIL"
-  log "Alert email sent ($1)"
+
+  if [ "$MAIL_EXIT" -ne 0 ]; then
+    # Collapse stderr to one log line (newlines → pipes)
+    SMTP_ERR=$(cat "$TMPERR" 2>/dev/null | head -20 | tr '\n' '|')
+    log "Email FAILED (sendmail exit=$MAIL_EXIT) stderr=[${SMTP_ERR:-none}]"
+
+    # Diagnostic 1: TCP reachability
+    if nc -w 5 "$SMTP_HOST" "$SMTP_PORT" </dev/null >/dev/null 2>&1; then
+      log "Email diag: TCP $SMTP_HOST:$SMTP_PORT is reachable"
+    else
+      log "Email diag: TCP $SMTP_HOST:$SMTP_PORT is UNREACHABLE – check host/port"
+    fi
+
+    # Diagnostic 2: TLS handshake and SMTP greeting (verbose, no -quiet)
+    TMPDIAG="/tmp/wd_smtp_diag_$$"
+    printf 'QUIT\r\n' | timeout 10 openssl s_client \
+      -connect "$SMTP_HOST:$SMTP_PORT" \
+      -tls1_3 \
+      -CAfile /etc/ssl/certs/ca-certificates.crt \
+      2>&1 | head -40 > "$TMPDIAG"
+    TLS_EXIT=$?
+    TLS_OUT=$(cat "$TMPDIAG" 2>/dev/null | tr '\n' '|')
+    log "Email diag: TLS probe (exit=$TLS_EXIT) detail=[${TLS_OUT:-none}]"
+    rm -f "$TMPDIAG"
+  else
+    log "Alert email sent ($1)"
+  fi
+
+  rm -f "$TMPERR"
 }
 
 abort() {
@@ -577,7 +689,7 @@ which jq >/dev/null 2>&1 || abort "jq is not installed"
 if [ ! -f "$CACERT" ]; then
   log "CA certificate not cached; downloading"
   $CURL "$CACERT_URL" -o "$CACERT" || abort "failed to download CA certificate"
-  openssl x509 -noout -in "$TMPCA" >/dev/null 2>&1 || abort "CA certificate is not valid PEM"
+  openssl x509 -noout -in "$CACERT" >/dev/null 2>&1 || abort "CA certificate is not valid PEM"
   log "CA certificate cached at $CACERT"
 else
   log "Using cached CA certificate"

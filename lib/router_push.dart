@@ -220,15 +220,21 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         await _run(client, 'nvram set wgc${activeSlot}_enforce=0');
         await _run(client, 'nvram set wgc${activeSlot}_enable=0');
         await _run(client, 'nvram commit');
-        // Explicit stop command targeted at the specific slot
+        // explicitly stop the specific slot
         await _run(client, 'service "stop_wgc $activeSlot"; service start_vpnrouting0');
+        // explicit clear wgcN_ep_addr_r and wgcN_rip
+//        await _run(client, 'nvram set wgc${activeSlot}_ep_addr_r=""');
+//        await _run(client, 'nvram set wgc${activeSlot}_rip=""');
+        // explicit delete wgcN_ep_addr_r and wgcN_rip (were persisting after interface removal)
+        await _run(client, 'nvram unset wgc${activeSlot}_ep_addr_r');
+        await _run(client, 'nvram unset wgc${activeSlot}_rip');
         widget.onLog('wgc$activeSlot stopped. Waiting for routing to settle...');
         await Future.delayed(const Duration(seconds: 5));
       }
 
       // ── Step 4: Write new config to NVRAM ──────────────────────────────────
       // *all* wgc_ nvram variables are set, values which are set at tunnel start (_ap_addr_r and _rip) are set here
-      // to null for safety, _ep_addr anb _ep_addr are the addresses of the server from which our wireguard tunnel starts
+      // to null for safety, _ep_addr and _ep_add_r are the addresses of the server from which our wireguard tunnel starts
       widget.onLog('Writing NVRAM for wgc$slot...');
       await _run(client, 'nvram set wgc${slot}_addr="${wgMap['Address'] ?? ''}"');
       await _run(client, 'nvram set wgc${slot}_alive=25');
@@ -329,8 +335,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
           await client?.run('nvram commit');
           widget.onLog('wgc$slot config restored.', isSuccess: true);
           widget.onLog('Restarting entire WireGuard service & routing ...');
-          // full wireguard service restart, for safety!
-          await client?.run('service restart_wgc; service start_vpnrouting0');
+          widget.onLog('Restarting wgc$activeSlot...');
+          await client?.run('service "restart_wgc $activeSlot"; service start_vpnrouting0');
         } catch (_) {
           widget.onLog(
             'CRITICAL: Could not restore wgc$slot. Check router manually.',
@@ -349,7 +355,6 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
           await client?.run('nvram set wgc${activeSlot}_enable=1');
           await client?.run('nvram commit');
           widget.onLog('Restarting wgc$activeSlot...');
-          // full wireguard service restart, for safety!
           await client?.run('service "restart_wgc $activeSlot"; service start_vpnrouting0');
         } catch (_) {
           widget.onLog('CRITICAL: Could not restart wgc$activeSlot. Check router manually.', isError: true);
@@ -559,7 +564,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
                 OutlinedButton.icon(
                   onPressed: _loading ? null : () => _openWatchdog(_selectedSlot == -1 ? (_activeSlot ?? 1) : _selectedSlot),
                   icon: const Icon(Icons.shield_outlined, size: 16),
-                  label: const Text('DEPLOY WATCHDOG'),
+                  label: const Text('WATCHDOG CONFIG'),
                 ),
               ],
             ],

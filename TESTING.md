@@ -140,7 +140,7 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
 
 ## Testing the watchdog feature
 
-When you invoke `PUSH TO ROUTER` and if your roiuter is using Merlin firmware a new button appears "DEPLOY WATCHDOG".
+When you invoke `PUSH TO ROUTER` and if your roiuter is using Merlin firmware a new button appears "WATCHDOG CONFIG".
 
 ### Checks
 
@@ -208,12 +208,13 @@ reconfigure
 
 - cron jobs removed, check with `crontab -l` and `cru l`
 - `/jffs/scripts/services-start` should only contain `#!/bin/sh`
-- add a comment to `/jffs/scripts/services-start`, start
-  all files deleted
+- add a comment to `/jffs/scripts/services-start`, start watchdog and remove watchdog, comment should persist
+- all files deleted
 
-9. File permissions & owner
+9. File permissions
 
-Check `/jffs/scripts/services-start` permission is 777 `-rwxrwxrwx`.
+Check `/jffs/scripts/services-start` permission is 777 `-rwxrwxrwx`
+Check `/jffs/scripts/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
 
 10. Reboot and check that cron and crontab are correct
 
@@ -227,9 +228,23 @@ Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Ad
 203.0.113.0/24 (TEST-NET-3)
 ```
 
+set thesde via NVRAM eg
+
+```bash
+#valid entries
+nvram set wgc1_wd_primary_ip=8.8.8.8
+nvram set wgc1_wd_secondary_ip=1.1.1.1
+
+#invalid entries
+nvram set wgc1_wd_primary_ip=192.0.2.1
+nvram set wgc1_wd_secondary_ip=198.51.100.1
+```
+
 12. Apply a new config to a blank slot
 
 13. Overwrite an existing slot with a different region's config
+
+14. Overwrite an existing slot with the same region's config
 
 ### RAM usage
 
