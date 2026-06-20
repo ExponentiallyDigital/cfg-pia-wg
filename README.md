@@ -95,7 +95,7 @@ The installlable pre-built apps above have [GitHub Attestations](https://github.
 </table>
 
 6. Conf files are named per the region name (agreed, PIA isn't consistent with the region name format!)
-7. Above the **GENERATED CONFIG** window there's a **CLEAR CREDS & CFG** button that removes your WireGuard credentials (config data, PIA username/password) from your device's screen and securely overwrites these variables from system memory. Next to that there's a countdown timer. After no activity for 3 minutes, your credentials are automatically wiped. The timer is reset when there's in app activity (scrolling, tapping etc).
+7. Above the **GENERATED CONFIG** window there's a **CLEAR ALL** button that removes your WireGuard credentials (config data, PIA username/password) from your device's screen and securely overwrites these variables from system memory. Next to that there's a countdown timer. After no activity for 3 minutes, your credentials are automatically wiped. The timer is reset when there's in app activity (scrolling, tapping etc).
    If you use the **COPY** button, the clipboard is cleared after 60 seconds automatically regardless of activity.
 
 <p align="center">

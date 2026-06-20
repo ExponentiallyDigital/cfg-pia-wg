@@ -98,8 +98,8 @@ Generated configuration data is managed via:
 
 - **Ephemeral verification:** displayed on-screen inside a text viewport for visual validation.
 - **Transient streaming:** shareable using Android's system share sheet (e.g., via "Save to Files" or encrypted side-channels).
-- **Manual clear:** the **CLEAR CREDS & CFG** button scrubs the username, password, and on-screen displayed config.
+- **Manual clear:** the **CLEAR ALL** button scrubs the username, password, and on-screen displayed config.
 - **Clipboard sanitisation:** tapping **COPY** invokes a 60-second timer that clears the clipboard storage space automatically.
-- **Safety timeout clock:** adjacent to the **CLEAR CREDS & CFG** action button, a real-time countdown widget tracks session idle state, wiping config, PIA credentials, and the **GENERATED CONFIG** if the application interface is untouched for 3 consecutive minutes.
+- **Safety timeout clock:** adjacent to the **CLEAR ALL** action button, a real-time countdown widget tracks session idle state, wiping config, PIA credentials, and the **GENERATED CONFIG** if the application interface is untouched for 3 consecutive minutes.
 
 ---

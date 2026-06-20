@@ -16,18 +16,18 @@ Run with `flutter test --coverage` (aggregates with the other suites too).
 
 ## Cases → coverage
 
-| #   | Test                                              | Lines covered                                                                                      |
-| --- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 1   | builds MaterialApp + MainScreen home              | `PiaWgApp.build`, initial state                                                                    |
-| 2   | empty creds → validation error, then CLEAR LOG    | `_generate` 234–241; log clear                                                                     |
-| 3   | password visibility toggle                        | 438                                                                                                |
-| 4   | version link tap launches URL                     | `_launchUrlStr` 295–300, **364**                                                                   |
-| 5   | region picker: load + filter + select             | `_loadRegions` 203–232, `_RegionPickerSheet` 769–845, filter **802**                               |
-| 6   | region picker failure (HTTP 500)                  | 225–226                                                                                            |
-| 7   | **generate → config section → CLEAR CREDS & CFG** | 257–262, 519–624, `_startOrResetTimer` 184–198, `_clearSession` 169–181, `_clearClipboard` 482–488 |
-| 8   | **generate → COPY → lifecycle resume**            | `_copyToClipboard` 491–514, lifecycle 131–146                                                      |
-| 9   | **generate → SHARE/SAVE**                         | `_shareConfig` 273–290                                                                             |
-| 10  | **generate → PUSH CONFIG TO ROUTER**              | `_showRouterPushSheet` 626–647                                                                     |
+| #   | Test                                           | Lines covered                                                                                      |
+| --- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| 1   | builds MaterialApp + MainScreen home           | `PiaWgApp.build`, initial state                                                                    |
+| 2   | empty creds → validation error, then CLEAR LOG | `_generate` 234–241; log clear                                                                     |
+| 3   | password visibility toggle                     | 438                                                                                                |
+| 4   | version link tap launches URL                  | `_launchUrlStr` 295–300, **364**                                                                   |
+| 5   | region picker: load + filter + select          | `_loadRegions` 203–232, `_RegionPickerSheet` 769–845, filter **802**                               |
+| 6   | region picker failure (HTTP 500)               | 225–226                                                                                            |
+| 7   | **generate → config section → CLEAR ALL**      | 257–262, 519–624, `_startOrResetTimer` 184–198, `_clearSession` 169–181, `_clearClipboard` 482–488 |
+| 8   | **generate → COPY → lifecycle resume**         | `_copyToClipboard` 491–514, lifecycle 131–146                                                      |
+| 9   | **generate → SHARE/SAVE**                      | `_shareConfig` 273–290                                                                             |
+| 10  | **generate → PUSH CONFIG TO ROUTER**           | `_showRouterPushSheet` 626–647                                                                     |
 
 ## Cleanup
 

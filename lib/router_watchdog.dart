@@ -227,8 +227,7 @@ String buildCronCheckLine(int slot, int intervalMin) =>
     'cru a watchdog_wgc$slot "*/$intervalMin * * * *" /jffs/scripts/watchdog_wgc$slot.sh';
 
 // The daily log-rotation cron job line.
-String buildCronRotateLine(int slot) =>
-    'cru a watchdog_log_rotate_wgc$slot "0 0 * * *" '
+String buildCronRotateLine(int slot) => 'cru a watchdog_log_rotate_wgc$slot "0 0 * * *" '
     '"mv /jffs/watchdog_wgc$slot.log /jffs/watchdog_wgc$slot.log.old && touch /jffs/watchdog_wgc$slot.log"';
 
 // The two cru lines appended to /jffs/scripts/services-start for reboot persistence.
@@ -251,8 +250,7 @@ String buildMailBody(WatchdogConfig c, {required bool success, bool testMode = f
 }
 
 // The BusyBox sendmail implicit-TLS command for the one-off test email (concrete values).
-String buildSendmailCommand(String host, int port, WatchdogConfig c) =>
-    '/usr/sbin/sendmail '
+String buildSendmailCommand(String host, int port, WatchdogConfig c) => '/usr/sbin/sendmail '
     '-H"exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt -connect $host:$port" '
     '-amLOGIN -au${shellSingleQuote(c.smtpUsername)} -ap${shellSingleQuote(c.smtpPassword)} '
     '-f${shellSingleQuote(c.emailFrom)} ${shellSingleQuote(c.emailTo)} < /tmp/mail.txt';
@@ -411,8 +409,7 @@ class RouterWatchdog {
   // Reachability probe bound to the VPN interface — used by any test-from-app functionality.
   Future<bool> pingHostViaVpn(String ip, int slot) async {
     try {
-      final out =
-          await _run('ping -I wgc$slot -c 1 -W 2 ${shellSingleQuote(ip)} >/dev/null 2>&1 && echo OK || echo FAIL');
+      final out = await _run('ping -I wgc$slot -c 1 -W 2 ${shellSingleQuote(ip)} >/dev/null 2>&1 && echo OK || echo FAIL');
       return out == 'OK';
     } catch (_) {
       return false;
@@ -474,6 +471,7 @@ send_alert() {
     echo "To: $EMAIL_TO"
     echo "Subject: $EMAIL_SUBJECT - $1"
     echo "Date: $(date -R 2>/dev/null || date)"
+    echo "Message-ID: $(date +%s).test@$(hostname)"
     echo "MIME-Version: 1.0"
     echo "Content-Type: text/plain; charset=utf-8"
     echo ""

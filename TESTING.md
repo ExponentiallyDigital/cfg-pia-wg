@@ -139,3 +139,25 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
     -verify_return_error \
     -showcerts < /dev/null
 ```
+
+## Testing the watchdog feature
+
+When you invoke `PUSH TO ROUTER` and if your roiuter is using Merlin firmware a new button appears
+
+files deployed to your router:
+
+- /jffs/scripts/services-start
+- /jffs/scripts/watchdog_wgcN.sh
+- /jffs/watchdog_backoff_wgcN
+- /jffs/watchdog_last_ping_success_wgcN
+
+Created on the router:
+
+- /jffs/watchdog_wgcN.log
+
+LOG -> /jffs/watchdog_wgcN.log and the router syslog
+
+admin0909@arcgate:/tmp/home/root# cru l
+_/1 _ \* \* _ check_wgc_ep #WGC_CHK_EP#
+admin0909@arcgate:/tmp/home/root# crontab -l
+_/1 \* \* \* \* check_wgc_ep #WGC_CHK_EP#

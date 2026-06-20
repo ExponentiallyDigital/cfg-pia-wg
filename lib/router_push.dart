@@ -115,8 +115,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       for (int i = 1; i <= 5; i++) {
         retrievedSlots[i] = await _run(client, 'nvram get wgc${i}_desc');
         retrievedKillSwitch[i] = (await _run(client, 'nvram get wgc${i}_enforce')) == '1';
-        retrievedWatchdog[i] = detectedMerlin &&
-            (await _run(client, 'cru l | grep -qw watchdog_wgc$i && echo 1 || echo 0')) == '1';
+        retrievedWatchdog[i] =
+            detectedMerlin && (await _run(client, 'cru l | grep -qw watchdog_wgc$i && echo 1 || echo 0')) == '1';
       }
       final ifaceOutput = await _run(client, 'wg show interfaces');
       final activeMatch = RegExp(r'wgc(\d)').firstMatch(ifaceOutput);
@@ -295,7 +295,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       for (int i = 0; i < 5; i++) {
         publicIp = (await _run(
           client,
-          'curl -s --max-time 5 https://ipv4.icanhazip.com/ 2>/dev/null',
+          'curl -s --interface wgc$slot --max-time 5 https://ipv4.icanhazip.com/ 2>/dev/null',
         ))
             .trim();
         if (publicIp.isNotEmpty) break;
@@ -557,9 +557,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
               if (_isMerlin) ...[
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
-                  onPressed: _loading
-                      ? null
-                      : () => _openWatchdog(_selectedSlot == -1 ? (_activeSlot ?? 1) : _selectedSlot),
+                  onPressed: _loading ? null : () => _openWatchdog(_selectedSlot == -1 ? (_activeSlot ?? 1) : _selectedSlot),
                   icon: const Icon(Icons.shield_outlined, size: 16),
                   label: const Text('WATCHDOG...'),
                 ),

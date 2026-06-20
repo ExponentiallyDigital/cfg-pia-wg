@@ -497,7 +497,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               style: TextStyle(color: _kHighlight, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
           const Spacer(),
           if (_secondsRemaining > 0) ..._buildTimerWidget(),
-          _ClearButton(label: 'CLEAR CREDS & CFG', icon: Icons.delete_outline, onTap: _clearSession),
+          _ClearButton(label: 'CLEAR ALL', icon: Icons.delete_outline, onTap: _clearSession),
         ],
       ),
       const SizedBox(height: 8),

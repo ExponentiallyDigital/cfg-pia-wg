@@ -3,8 +3,19 @@
 ## "to do"
 
 - Release to Play Store - +12 testers for **closed test** over 14 continuous days
+- Powershell build script to add version to aab (like action script does) + port build.sh functionality to ps1 (rich error handling & stats)
+- ...
+- Button to enable watchdog should not be able to be pressed unless a slot has been selected, it is greyed out and deosn't become lit until a slot is selected but it can still be pressed and activates the new feature
+- no error shown on screen if hit test email without filling in all details, error is generated to the app log but you can't see it, needs to be visible on screen
+- prefill smtp address & port
 
 ## Changes
+
+2026-06-20 version: 0.5.03
+
+    - added message ID to email template
+    - rename "clear creds & cfg" rendering off screen -> "CLEAR ALL", updated tests & projects docs to match
+    - fix local IP address (added `--interface $wgc$slot`)
 
 2026-06-20 version: 0.5.02+329
 

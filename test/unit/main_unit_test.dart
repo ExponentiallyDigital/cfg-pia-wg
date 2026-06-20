@@ -123,11 +123,9 @@ void _installPluginMocks(WidgetTester tester) {
 
 // Pump frames while giving the REAL event loop time (via runAsync) so the real
 // Socket.connect plus the fake-async HTTP inside generateConfig() can complete.
-Future<void> _driveUntil(WidgetTester tester, bool Function() done,
-    {int maxIterations = 150}) async {
+Future<void> _driveUntil(WidgetTester tester, bool Function() done, {int maxIterations = 150}) async {
   for (var i = 0; i < maxIterations; i++) {
-    await tester
-        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
     await tester.pump();
     if (done()) return;
   }
@@ -158,10 +156,7 @@ Future<void> _generate(WidgetTester tester) async {
   await tester.tap(find.text('GENERATE CONFIG'));
   await _driveUntil(
     tester,
-    () => find
-        .textContaining('Config generated successfully')
-        .evaluate()
-        .isNotEmpty,
+    () => find.textContaining('Config generated successfully').evaluate().isNotEmpty,
   );
 }
 
@@ -181,8 +176,7 @@ void main() {
       expect(find.text('Ready.'), findsOneWidget);
     });
 
-    testWidgets('empty credentials log a validation error and clear works',
-        (tester) async {
+    testWidgets('empty credentials log a validation error and clear works', (tester) async {
       await tester.pumpWidget(const PiaWgApp());
       await tester.pumpAndSettle();
 
@@ -242,8 +236,7 @@ void main() {
       }, _fakeResponses);
     });
 
-    testWidgets('failure logs an error and restores the browse button',
-        (tester) async {
+    testWidgets('failure logs an error and restores the browse button', (tester) async {
       await withFakeHttpClient(
         () async {
           await tester.pumpWidget(const PiaWgApp());
@@ -277,8 +270,7 @@ void main() {
       await probeServer.close();
     });
 
-    testWidgets('generates config, shows section, then clears session',
-        (tester) async {
+    testWidgets('generates config, shows section, then clears session', (tester) async {
       _installPluginMocks(tester);
       await withFakeHttpClient(() async {
         await _generate(tester);
@@ -293,7 +285,7 @@ void main() {
         // Fire the periodic session timer once.
         await tester.pump(const Duration(seconds: 1));
 
-        await tester.tap(find.text('CLEAR CREDS & CFG'));
+        await tester.tap(find.text('CLEAR ALL'));
         await tester.pump();
         await tester.pump();
 
@@ -305,8 +297,7 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('copy to clipboard and lifecycle resume re-sync',
-        (tester) async {
+    testWidgets('copy to clipboard and lifecycle resume re-sync', (tester) async {
       _installPluginMocks(tester);
       await withFakeHttpClient(() async {
         await _generate(tester);
@@ -345,8 +336,7 @@ void main() {
         await tester.tap(find.text('SHARE / SAVE'));
         // Give the real temp-file write/share/cleanup real event-loop time.
         for (var i = 0; i < 12; i++) {
-          await tester.runAsync(
-              () => Future<void>.delayed(const Duration(milliseconds: 25)));
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 25)));
           await tester.pump();
         }
         // Reaching here with the section still present == no unhandled exception
