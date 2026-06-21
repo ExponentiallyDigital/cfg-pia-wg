@@ -3,8 +3,18 @@
 ## "to do"
 
 - Release to Play Store - +12 testers for **closed test** over 14 continuous days
+- long term: rebuild app interface: main screen with each option opening on a new screen, provide a menu option to access other screens,make screens reflect typical user workflows
+  - generate WG config
+  - push config to router
+  - VPN watchdog management 
+  - VPN control, en/disable slots 
+  - log view, all functions performed by each option logged here
+  - router control,
+- renane app to reflect actual functionality - app provides asus router control
+- people set and forget, privide options to setup their asus toyter in the most secure way possible
+
+short term:
 - Powershell build script to add version to aab (like action script does) + port build.sh functionality to ps1 (rich error handling & stats)
-- ...
 - Button to enable watchdog should not be able to be pressed unless a slot has been selected, it is greyed out and deosn't become lit until a slot is selected but it can still be pressed and activates the new feature
 - no error shown on screen if hit _test email_ without filling in all details, error is generated to the app log but you can't see it, needs to be visible on screen, it returns lots of info but you won't see it behind the current window
 - as above but for _ping targets_: user not notified that ping targets can't be reached, does log to app's log but not visible, should open a dialogue box warning the user
@@ -21,10 +31,16 @@
 - app is hanging on watchdog deployment...after NVRAM committed
   [10:11:16] Connecting to router at 192.168.0.254 via SSH...[10:11:17] Successfully retrieved router config.[10:12:11] NVRAM committed.
   Exit (admin0909) from <192.168.0.93:56678>: String too long
+- create a user process flow chart
+- 
 
 ---
 
 ## Changes
+
+2026-06-xx version: 0.5.10
+
+- fix script deployment by reducing package size
 
 2026-06-21 version: 0.5.09
 
