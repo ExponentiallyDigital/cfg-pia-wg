@@ -17,10 +17,20 @@
 - view log should be names "LOAD/GET LOG", as it's not updated in real time, if it becomes realy big there will be a lot of scrolling needed...maybe show in reverse order, currently shows oldest to newest, could log file fill NVRAM? Store it on volatile partition? There are 288 five minute intervals in 24 hours.
 - move `WATCHDOG CONFIG` button from `PUSH TO ROUTER` window to main screen, more logical sense as it can be independent of updating a slot's config
 - retain the ssh session until app exits?
+- check all nvram writes are covered by a matching commit
+- app is hanging on watchdog deployment...after NVRAM committed
+  [10:11:16] Connecting to router at 192.168.0.254 via SSH...[10:11:17] Successfully retrieved router config.[10:12:11] NVRAM committed.
+  Exit (admin0909) from <192.168.0.93:56678>: String too long
 
 ---
 
 ## Changes
+
+2026-06-21 version: 0.5.09
+
+- fix removed unused `commitCount` test variable
+- fix test `Step 1: pushToRouter Error Recovery experiences a CRITICAL Failure`, `FakeSSHClient` wasn't reaching the catch block
+- fix test `Step 1: pushToRouter triggers Error Recovery and restores backups successfully` self-resetting flag that crashes the first command of the write phase to trigger the recovery loop, then immediately disables itself so the subsequent rollback actions can succeed
 
 2026-06-21 version: 0.5.08
 

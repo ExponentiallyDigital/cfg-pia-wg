@@ -128,7 +128,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         );
       }
 
-      widget.onLog('Successfully retrieved router config.', isSuccess: true);
+      widget.onLog('?.', isSuccess: true);
       setState(() {
         _slots = retrievedSlots;
         _killSwitch = retrievedKillSwitch;
@@ -224,6 +224,8 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         // explicit delete wgcN_ep_addr_r and wgcN_rip (were persisting after interface removal)
         await _run(client, 'nvram unset wgc${activeSlot}_ep_addr_r');
         await _run(client, 'nvram unset wgc${activeSlot}_rip');
+        await _run(client, 'nvram commit');
+        widget.onLog('NVRAM committed.');
         widget.onLog('wgc$activeSlot stopped. Waiting for routing to settle...');
         await Future.delayed(const Duration(seconds: 5));
       }
@@ -256,7 +258,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
       await _run(client, 'nvram set wgc${slot}_rip=""');
       await _run(client, 'nvram set wgc${slot}_aips="${wgMap['AllowedIPs'] ?? '0.0.0.0/0'}"');
 
-      // Flash commit, single stage (previously set enforce and enable as a second commit)
+      // Flash commit, single stage
       await _run(client, 'nvram commit');
       widget.onLog('NVRAM committed.');
 

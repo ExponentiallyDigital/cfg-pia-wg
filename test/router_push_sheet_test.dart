@@ -51,8 +51,7 @@ AllowedIPs = 0.0.0.0/0
 
   Widget buildTestableWidget({
     required Function(String, {bool isError, bool isSuccess}) onLog,
-    Future<SSHClient> Function(String ip, String user, String pass)?
-        testClientFactory,
+    Future<SSHClient> Function(String ip, String user, String pass)? testClientFactory,
   }) {
     return MaterialApp(
       home: Scaffold(
@@ -79,14 +78,11 @@ AllowedIPs = 0.0.0.0/0
   }
 
   group('RouterPushSheet - 100% Coverage Suite', () {
-    testWidgets(
-        'Step 0: fetchSlots retrieves configs and handles empty slots warning',
-        (tester) async {
+    testWidgets('Step 0: fetchSlots retrieves configs and handles empty slots warning', (tester) async {
       String? lastLog;
       await tester.pumpWidget(buildTestableWidget(
         onLog: (msg, {isError = false, isSuccess = false}) => lastLog = msg,
-        testClientFactory: (ip, user, pass) async =>
-            FakeSSHClient(onRun: (cmd) async {
+        testClientFactory: (ip, user, pass) async => FakeSSHClient(onRun: (cmd) async {
           return '';
         }),
       ));
@@ -97,14 +93,11 @@ AllowedIPs = 0.0.0.0/0
       expect(find.text('WRITE TO WIREGUARD SLOT'), findsOneWidget);
     });
 
-    testWidgets(
-        'Step 1: pushToRouter (Happy Path with Handshake & Active Tunnel Stop)',
-        (tester) async {
+    testWidgets('Step 1: pushToRouter (Happy Path with Handshake & Active Tunnel Stop)', (tester) async {
       List<String> logs = [];
       await tester.pumpWidget(buildTestableWidget(
         onLog: (msg, {isError = false, isSuccess = false}) => logs.add(msg),
-        testClientFactory: (ip, user, pass) async =>
-            FakeSSHClient(onRun: (cmd) async {
+        testClientFactory: (ip, user, pass) async => FakeSSHClient(onRun: (cmd) async {
           if (cmd.contains('nvram get wgc1_desc')) {
             return 'Old-Config'; // Pre-populate to trigger backup path safely
           }
@@ -129,14 +122,12 @@ AllowedIPs = 0.0.0.0/0
       await tester.tap(find.text('CONFIRM WRITE TO ROUTER'));
       await tester.pumpAndSettle(const Duration(seconds: 1));
 
-      expect(logs.any((l) => l.contains('Backing up existing wgc1 config')),
-          isTrue);
+      expect(logs.any((l) => l.contains('Backing up existing wgc1 config')), isTrue);
       expect(logs.any((l) => l.contains('Connected via US-East')), isTrue);
       expect(logs.any((l) => l.contains('Push complete.')), isTrue);
     });
 
-    testWidgets('Step 1: pushToRouter verify loop throws Timeout Exception',
-        (tester) async {
+    testWidgets('Step 1: pushToRouter verify loop throws Timeout Exception', (tester) async {
       bool errorThrown = false;
       await tester.pumpWidget(buildTestableWidget(
         onLog: (msg, {isError = false, isSuccess = false}) {
@@ -144,8 +135,7 @@ AllowedIPs = 0.0.0.0/0
             errorThrown = true;
           }
         },
-        testClientFactory: (ip, user, pass) async =>
-            FakeSSHClient(onRun: (cmd) async {
+        testClientFactory: (ip, user, pass) async => FakeSSHClient(onRun: (cmd) async {
           if (cmd.contains('wg show interfaces')) {
             return '';
           }
@@ -164,11 +154,9 @@ AllowedIPs = 0.0.0.0/0
       expect(errorThrown, isTrue);
     });
 
-    testWidgets(
-        'Step 1: pushToRouter triggers Error Recovery and restores backups successfully',
-        (tester) async {
-      int commitCount = 0;
+    testWidgets('Step 1: pushToRouter triggers Error Recovery and restores backups successfully', (tester) async {
       bool restoredSlot = false;
+      bool simulateFailure = false; // 1. Initialize our one-time trigger flag
 
       await tester.pumpWidget(buildTestableWidget(
         onLog: (msg, {isError = false, isSuccess = false}) {
@@ -176,8 +164,7 @@ AllowedIPs = 0.0.0.0/0
             restoredSlot = true;
           }
         },
-        testClientFactory: (ip, user, pass) async =>
-            FakeSSHClient(onRun: (cmd) async {
+        testClientFactory: (ip, user, pass) async => FakeSSHClient(onRun: (cmd) async {
           if (cmd.contains('nvram get wgc1_desc')) {
             return 'Old-Config'; // Crucial: Ensures _slots[1] is populated during step 0
           }
@@ -187,21 +174,24 @@ AllowedIPs = 0.0.0.0/0
           if (cmd.contains('nvram get wgc1_')) {
             return 'backup_val';
           }
-          if (cmd.contains('nvram commit')) {
-            commitCount++;
-            if (commitCount == 2) {
-              // Target the second commit (the write sequence commit) to fail
-              throw Exception('Simulated crash during write');
-            }
+
+          // 2. Intercept the VERY FIRST command of the write phase and crash it.
+          // By turning the flag off immediately, subsequent recovery commands will succeed.
+          if (simulateFailure) {
+            simulateFailure = false;
+            throw Exception('Simulated crash during write sequence');
           }
+
           return '';
         }),
       ));
 
       await loginAndProceedToSlots(tester);
-
       await tester.tap(find.byType(InkWell).first);
       await tester.pumpAndSettle();
+
+      // 3. Arm the trigger right before the write action begins
+      simulateFailure = true;
 
       await tester.tap(find.text('CONFIRM WRITE TO ROUTER'));
       await tester.pumpAndSettle(const Duration(seconds: 1));
@@ -209,9 +199,7 @@ AllowedIPs = 0.0.0.0/0
       expect(restoredSlot, isTrue);
     });
 
-    testWidgets(
-        'Step 1: pushToRouter Error Recovery experiences a CRITICAL Failure',
-        (tester) async {
+    testWidgets('Step 1: pushToRouter Error Recovery experiences a CRITICAL Failure', (tester) async {
       bool criticalLogged = false;
 
       await tester.pumpWidget(buildTestableWidget(
@@ -220,26 +208,29 @@ AllowedIPs = 0.0.0.0/0
             criticalLogged = true;
           }
         },
-        testClientFactory: (ip, user, pass) async =>
-            FakeSSHClient(onRun: (cmd) async {
+        testClientFactory: (ip, user, pass) async => FakeSSHClient(onRun: (cmd) async {
+          // 1. Allow the backup process to succeed so slotBackup is populated
           if (cmd.contains('nvram get wgc1_desc')) {
-            return 'Old-Config'; // Populated so backup logic handles initial flow
+            return 'Old-Config';
           }
           if (cmd.contains('nvram get wgc1_')) {
             return 'backup_val';
           }
-          if (cmd.contains('nvram commit')) {
-            throw Exception('Every commit fails permanently');
+
+          // 2. Force an exception on write/restart commands.
+          // This ensures the initial push fails (triggering the recovery block)
+          // AND the recovery push fails (triggering the CRITICAL catch block).
+          if (cmd.contains('nvram set') || cmd.contains('service "restart_wgc')) {
+            throw Exception('Simulated SSH write/execution failure');
           }
+
           return 'wgc1';
         }),
       ));
 
       await loginAndProceedToSlots(tester);
-
       await tester.tap(find.byType(InkWell).first);
       await tester.pumpAndSettle();
-
       await tester.tap(find.text('CONFIRM WRITE TO ROUTER'));
       await tester.pumpAndSettle(const Duration(seconds: 1));
 

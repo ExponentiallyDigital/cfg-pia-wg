@@ -333,6 +333,8 @@ class RouterWatchdog {
         }
         await _run('nvram set pia_wg_cfga_user=${shellSingleQuote(config.piaUsername.trim())}');
         await _run('nvram set pia_wg_cfga_password=${shellSingleQuote(config.piaPassword)}');
+        await _run('nvram commit');
+        onLog?.call('NVRAM committed.', isSuccess: true);
         await _run(heredocWrite('/jffs/scripts/watchdog_wgc$slot.sh', buildWatchdogScript(config)));
         await _run('chmod +x /jffs/scripts/watchdog_wgc$slot.sh');
         await _logRouter('Deployed watchdog script for wgc$slot');
@@ -387,6 +389,8 @@ class RouterWatchdog {
         await _run('nvram unset wgc${slot}_wd_smtp_user');
         await _run('nvram unset pia_wg_cfga_password');
         await _run('nvram unset pia_wg_cfga_user');
+        await _run('nvram commit');
+        onLog?.call('NVRAM committed.', isSuccess: true);
         // below was commented out, which leaves interface in prior state,
         // instead stop that interface
         await _run('service "stop_wgc wgc$slot"; service start_vpnrouting0');
@@ -766,6 +770,7 @@ nvram set wgc__SLOT___priv="$PRIV"
 nvram set wgc__SLOT___psk=""
 nvram set wgc__SLOT___rip=""
 nvram set wgc__SLOT___aips="0.0.0.0/0"
+nvram commit
 log "NVRAM write complete"
 
 # --- stop & start the interface ---
