@@ -1,6 +1,6 @@
-# pia-wireguard-cfga<img src="./assets/icon/icon.png" alt="PIA WireGuard CFGA" width="150" />
+# cfg-pia-wg<img src="./assets/icon/icon.png" alt="PIA WireGuard CFGA" width="150" />
 
-<a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-%20Android%20-blue" alt="Platform"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/pia-wireguard-cfga" alt="Release"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/tags" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/last-commit/ExponentiallyDigital/pia-wireguard-cfga" alt="Last Commit"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/pia-wireguard-cfga" alt="License"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfga/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/downloads/ExponentiallyDigital/pia-wireguard-cfga/total" alt="Downloads"></a><br><a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=security_rating" alt="Security Rating"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=reliability_rating" alt="Reliability"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=sqale_rating" alt="Maintainability"> <a href="https://github.com/ExponentiallyDigital/ExponentiallyDigital/security/policy" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Security-Policy-blue" alt="Security Policy"></a></a><br><a href="https://sonarcloud.io/summary/new_code?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=alert_status" alt="Quality"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=vulnerabilities" alt="Vulnerabilities"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=bugs" alt="Bugs"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_pia-wireguard-cfga" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_pia-wireguard-cfga&metric=coverage" alt="Coverage"></a>
+<a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-%20Android%20-blue" alt="Platform"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/cfg-pia-wg" alt="Release"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/tags" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/last-commit/ExponentiallyDigital/cfg-pia-wg" alt="Last Commit"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/cfg-pia-wg" alt="License"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/downloads/ExponentiallyDigital/cfg-pia-wg/total" alt="Downloads"></a><br><a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=security_rating" alt="Security Rating"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=reliability_rating" alt="Reliability"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=sqale_rating" alt="Maintainability"> <a href="https://github.com/ExponentiallyDigital/ExponentiallyDigital/security/policy" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Security-Policy-blue" alt="Security Policy"></a></a><br><a href="https://sonarcloud.io/summary/new_code?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=alert_status" alt="Quality"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=vulnerabilities" alt="Vulnerabilities"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=bugs" alt="Bugs"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=coverage" alt="Coverage"></a>
 
 ---
 
@@ -10,7 +10,7 @@ This app is a GUI Android APK equivalent of my [Windows 11/Linux command line ap
 
 ## Why use this?
 
-Manually creating a PIA WireGuard configuration requires authenticating against multiple APIs, parsing server lists, performing key exchange, and assembling the config by hand. **pia-wireguard-cfga** automates the entire process.
+Manually creating a Configure PIA Wireguarduration requires authenticating against multiple APIs, parsing server lists, performing key exchange, and assembling the config by hand. **cfg-pia-wg** automates the entire process.
 
 ## Features
 
@@ -31,18 +31,18 @@ Manually creating a PIA WireGuard configuration requires authenticating against 
 
 This app has been submitted to the Google Play Store, when their process concludes, a link will be placed **`<here>`**.
 
-If you want to download a pre-built release from [GitHub](https://github.com/ExponentiallyDigital/pia-wireguard-cfga/releases), the file you need is **`pia_wireguard_cfga-<version>_release.apk`**.
+If you want to download a pre-built release from [GitHub](https://github.com/ExponentiallyDigital/cfg-pia-wg/releases), the file you need is **`pia_wireguard_cfga-<version>_release.apk`**.
 
 Each release includes the following versioned files:
 
 - **`pia_wireguard_cfga-<version>_release.apk`** – optimised signed release APK
 - **`pia_wireguard_cfga-<version>_debug.apk`** – debug APK for testing
 - **`pia_wireguard_cfga-<version>_google-play-store.aab`** – an Android App Bundle for the Play Store
-- **`pia-wireguard-cfga-<version>_sbom.spdx.json`** – software bill of materials (SPDX format)
+- **`cfg-pia-wg-<version>_sbom.spdx.json`** – software bill of materials (SPDX format)
 - **`README.html`** – offline documentation (generated from this README)
 - **`LICENSE`** – license file
 
-The installlable pre-built apps above have [GitHub Attestations](https://github.com/ExponentiallyDigital/pia-wireguard-cfga/attestations) for [build provenance](https://slsa.dev/spec/draft/build-provenance) verification.
+The installlable pre-built apps above have [GitHub Attestations](https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations) for [build provenance](https://slsa.dev/spec/draft/build-provenance) verification.
 
 ---
 
@@ -54,7 +54,7 @@ The installlable pre-built apps above have [GitHub Attestations](https://github.
 <tr>
 <td align="center">
 <img src="./images/01-interface.png" width="350"><br>
-<strong>PIA WireGuard Config App UI</strong>
+<strong>Configure PIA Wireguard App UI</strong>
 </td>
 <td align="center">
 <img src="./images/02-region-selection.png" width="350"><br>
@@ -184,7 +184,7 @@ All app processing is reported live in the in-app **LOG** panel including SSH co
 ## Notes
 
 - **Pre-shared keys**: PIA WireGuard does not (ASAICT) employ pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
-- **Time-to-live constraints**: PIA WireGuard configs expire every few weeks per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
+- **Time-to-live constraints**: Configure PIA Wireguards expire every few weeks per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
 - **Key safety**: the generated config contains private encryption keys. Treat them like a password and manage them securely.
   > [!CAUTION]
   >
@@ -259,7 +259,7 @@ This application does not collect analytics, advertising identifiers, or persona
 
 ## Bugs and feature requests
 
-Found a bug or want to request a feature? [Open an issue here](https://github.com/ExponentiallyDigital/pia-wireguard-cfga/issues).
+Found a bug or want to request a feature? [Open an issue here](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues).
 
 ---
 

@@ -35,7 +35,7 @@ class PiaWgApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PIA WireGuard Config',
+      title: 'Configure PIA Wireguard',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: const ColorScheme.dark(
@@ -301,7 +301,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('PIA WireGuard Config',
+              const Text('Configure PIA Wireguard',
                   style: TextStyle(color: Color(0xFFE8EAF0), fontSize: 16, fontWeight: FontWeight.w600)),
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -343,7 +343,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
               child: InkWell(
-                onTap: () => _launchUrlStr('https://github.com/ExponentiallyDigital/pia-wireguard-cfga'),
+                onTap: () => _launchUrlStr('https://github.com/ExponentiallyDigital/cfg-pia-wg'),
                 child: FutureBuilder<PackageInfo>(
                   future: PackageInfo.fromPlatform(),
                   builder: (context, snap) {

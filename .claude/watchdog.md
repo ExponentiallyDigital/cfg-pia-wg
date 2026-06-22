@@ -1,6 +1,6 @@
 # Router Watchdog Module – Architecture & Requirements
 
-This document defines the complete requirements for integrating a watchdog feature into the existing `pia-wireguard-cfga` Flutter app. The watchdog monitors VPN connectivity via ICMP pings and automatically reconfigures WireGuard using PIA’s API when a failure is detected. All router interactions are performed over the established SSH connection.
+This document defines the complete requirements for integrating a watchdog feature into the existing `cfg-pia-wg` Flutter app. The watchdog monitors VPN connectivity via ICMP pings and automatically reconfigures WireGuard using PIA’s API when a failure is detected. All router interactions are performed over the established SSH connection.
 
 Claude Code **must** review the existing module `lib/router_push.dart` to understand how the app currently retrieves, creates, and applies a WireGuard configuration (via bash scripts). The watchdog will reuse that logic. In particular, the NVRAM variable assignments and the service restart commands **must** follow the pattern already used in `router_push.dart` – see the section “// ── Step 4: Write new config to NVRAM” in that file for the required values.
 

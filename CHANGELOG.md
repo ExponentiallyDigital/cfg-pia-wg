@@ -28,10 +28,14 @@
 
 ## Changes
 
+2026-06-22 version: 0.5.11
+
+- Rebranded and renamed from `pia-wireguard-cfga` "PIA WireGuard Config" to `cfg-pia-wg` "Configure PIA Wireguard"
+
 2026-06-22 version: 0.5.10
 
 - moved `watchdog_wgc$slot.log`, `watchdog_last_ping_success_wgc$slot` and `watchdog_backoff_wgc$slot` files from `/jffs` to `/tmp` to reduce NVRAM writes
-- renamed email alerts from "PIA Watchdog Alert" to "pia-wireguard-cfga"
+- renamed email alerts from "PIA Watchdog Alert" to "cfg-pia-wg"
 - fix script deployment (heredoc limit reached) by optimising and reducing package size
 - updated alert email subject
 - updated watchdog connectivity testing logging text

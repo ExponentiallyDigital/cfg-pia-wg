@@ -1,8 +1,8 @@
 # Path to your test directory
-$testDir = "C:\Users\andrew\Documents\GitHubRepos\tools\pia-wireguard-cfga\test"
+$testDir = "C:\Users\andrew\Documents\GitHubRepos\tools\cfg-pia-wg\test"
 
 # Output file
-$outputFile = "C:\Users\andrew\Documents\GitHubRepos\tools\pia-wireguard-cfga\test\combined_tests.txt"
+$outputFile = "C:\Users\andrew\Documents\GitHubRepos\tools\cfg-pia-wg\test\combined_tests.txt"
 
 # Remove output file if it already exists
 if (Test-Path $outputFile) {

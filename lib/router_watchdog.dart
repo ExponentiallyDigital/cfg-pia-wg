@@ -252,7 +252,7 @@ String _rfc2822Date(DateTime dt) {
 String buildMailBody(WatchdogConfig c, {required bool success, bool testMode = false}) {
   final subject = testMode ? 'watchdog config test' : '${c.emailSubject} - ${success ? 'SUCCESS' : 'FAILED'}';
   final line = testMode
-      ? 'This is a test email from the pia-wireguard-cfga watchdog (slot wgc${c.slotIndex}).'
+      ? 'This is a test email from the cfg-pia-wg watchdog (slot wgc${c.slotIndex}).'
       : 'Watchdog wgc${c.slotIndex} reconfiguration ${success ? 'succeeded' : 'failed'}.';
   final now = DateTime.now();
   final epochSecs = now.millisecondsSinceEpoch ~/ 1000;

@@ -21,7 +21,7 @@ We will be notified immediately and will respond to your report as soon as possi
 
 ## Supported versions
 
-Only the latest active [release](https://github.com/ExponentiallyDigital/pia-wireguard-cfga/releases) version receives security updates and vulnerability patches.
+Only the latest active [release](https://github.com/ExponentiallyDigital/cfg-pia-wg/releases) version receives security updates and vulnerability patches.
 
 ---
 
@@ -66,13 +66,13 @@ We enforce a strict **zero-hardcoded-secrets policy** across this entire infrast
 ## Build attestation
 
 Build provenance attestations are available for release APK, debug APK, and Google Play Store AAB.
-View them at: https://github.com/ExponentiallyDigital/pia-wireguard-cfga/attestations
+View them at: https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations
 
 ---
 
 ## Data handling & privacy
 
-**pia-wireguard-cfga** is architected to operate with a zero-retention, zero-persistence local data footprint to maximize user privacy:
+**cfg-pia-wg** is architected to operate with a zero-retention, zero-persistence local data footprint to maximize user privacy:
 
 - **Zero permanent footprint:** the application does not maintain long-term local telemetry, profiling metrics, or databases (`shared_preferences`, secure storage, or SQLite).
 - **Volatile file lifecycles:** when generating WireGuard configuration artifacts (`.conf`), the underlying code writes the payload payload to a transient workspace directory solely to satisfy the operating system's native file sharing framework requirements. This temporary file is wrapped within an explicit, defensive `try/finally` block that guarantees physical deletion from disk blocks immediately upon completion or cancellation of the share sequence.

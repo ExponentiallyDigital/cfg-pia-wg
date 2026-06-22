@@ -59,7 +59,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   final _piaPassCtrl = TextEditingController();
   final _fromCtrl = TextEditingController();
   final _toCtrl = TextEditingController();
-  final _subjectCtrl = TextEditingController(text: 'pia-wireguard-cfga alert');
+  final _subjectCtrl = TextEditingController(text: 'cfg-pia-wg alert');
   final _smtpServerCtrl = TextEditingController();
   final _smtpUserCtrl = TextEditingController();
   final _smtpPassCtrl = TextEditingController();

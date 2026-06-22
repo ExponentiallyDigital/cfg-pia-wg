@@ -109,7 +109,7 @@ flutter build apk --release
 #### Local output destinations
 
 - Standard Flutter pipeline archive: build/app/outputs/flutter-apk/app-release.apk
-- Gradle pipeline build output: build/app/outputs/apk/release/pia-wireguard-cfga-release.apk
+- Gradle pipeline build output: build/app/outputs/apk/release/cfg-pia-wg-release.apk
 
 #### 6. Sideload
 

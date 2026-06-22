@@ -1,10 +1,10 @@
-# Notes on testing pia-wireguard-cfga
+# Notes on testing cfg-pia-wg
 
 ## Testing email send from SSH
 
-If the watchdog feature is used, pia-wireguard-cfga employs the below commands to send emails. If you are having issues with sending email alerts you can test locally via SSH with the following examples.
+If the watchdog feature is used, cfg-pia-wg employs the below commands to send emails. If you are having issues with sending email alerts you can test locally via SSH with the following examples.
 
-As a fully blown `sendmail` is not available, pia-wireguard-cfga uses the built-in BusyBox `sendmail` applet paired with `openssl s_client` to establish a secure email connection. Email is sent with TLS 1.3 encryption, a verified CA bundle is used to ensure that the endpoint is actually who it should be, and enforces strict cryptographic handshake failures.
+As a fully blown `sendmail` is not available, cfg-pia-wg uses the built-in BusyBox `sendmail` applet paired with `openssl s_client` to establish a secure email connection. Email is sent with TLS 1.3 encryption, a verified CA bundle is used to ensure that the endpoint is actually who it should be, and enforces strict cryptographic handshake failures.
 
 This ensures that emails are sent without exposing account credentials to eavesdropping or man-in-the-middle attacks.
 
@@ -173,7 +173,7 @@ user@host:/tmp/home/root# nvram show | grep wgc1
 wgc1_wd_check_interval=1
 wgc1_wd_email_enabled=0
 wgc1_wd_email_from=
-wgc1_wd_email_subject=pia-wireguard-cfga watchdog alert
+wgc1_wd_email_subject=cfg-pia-wg watchdog alert
 wgc1_wd_email_to=
 wgc1_wd_primary_ip=8.8.8.8
 wgc1_wd_secondary_ip=1.1.1.1

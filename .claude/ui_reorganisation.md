@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This document defines the complete requirements for reorganising the user interface in the `pia-wireguard-cfga` Flutter app. The new UI will be more logical and easier to use splitting functions to defined user workflows. The app will also be rebranded everywhere from `pia-wireguard-cfga` "PIA WireGuard Config" to `cfg-pia-wg` "Configure PIA Wireguard".
+This document defines the complete requirements for reorganising the user interface in the `cfg-pia-wg` Flutter app. The new UI will be more logical and easier to use splitting functions to defined user workflows.
 
 Claude Code **must** review all existing modules in `../lib/` to understand how the app currently allows the user to execute the app's functions.
 
@@ -10,16 +10,12 @@ Claude Code **must** review all existing modules in `../lib/` to understand how 
 
 ## 2. Functional Requirements
 
-### 2.1 Rebranded name
-
-- for the entire repo, change every file name and every content item that references the current name of `pia-wireguard-cfga` "PIA WireGuard Config" to `cfg-pia-wg` "Configure PIA Wireguard".
-
-### 2.2 User interface reorganisation
+### 2.1 User interface reorganisation
 
 Create a new main opening screen. On this main screen create these buttons:
 
-- "Generate PIA WireGuard configuration"
-- "Push PIA WireGuard configuration to router\*" (displayed, but grey out until "Generate PIA WireGuard configuration" has executed)
+- "Generate Configure PIA Wireguarduration"
+- "Push Configure PIA Wireguarduration to router\*" (displayed, but grey out until "Generate Configure PIA Wireguarduration" has executed)
 - "Watchdog management\*"
 - "View app log"
 - "Close app"
@@ -34,16 +30,16 @@ add under the existing header the name of this menu button as a heading.
 
 The buttons will perform these functions:
 
-#### 2.2.1 "Generate PIA WireGuard configuration"
+#### 2.1.1 "Generate Configure PIA Wireguarduration"
 
-#### 2.2.2 "Push PIA WireGuard configuration to router"
+#### 2.1.2 "Push Configure PIA Wireguarduration to router"
 
 - reuse the existing router login dialogue `ROUTER SSH LOGIN` which ask for these fields `Router IP`, `SSH Username`, `SSH Password`
 - Per existing logic, once the above has been completed
 
-#### 2.2.3 "Watchdog management"
+#### 2.1.3 "Watchdog management"
 
-#### 2.2.4 "View log" - scrollabler display of the application log, reain the "CLEAR LOG" button
+#### 2.1.4 "View log" - scrollabler display of the application log, reain the "CLEAR LOG" button
 
 =================
 
