@@ -86,9 +86,9 @@ AllowedIPs          = 0.0.0.0/0
 
 Below are detailed representations of the app's network calls, with illustrative, not real, IP addresses.
 
-![Configure PIA Wireguard Network Traffic Flow](<./images/network-traffic-(representative).svg>)
+![Configure PIA WireGuard Network Traffic Flow](<./images/network-traffic-(representative).svg>)
 
-![Configure PIA Wireguard Network Traffic Flow](<./images/network-traffic-(logical).svg>)
+![Configure PIA WireGuard Network Traffic Flow](<./images/network-traffic-(logical).svg>)
 
 ---
 

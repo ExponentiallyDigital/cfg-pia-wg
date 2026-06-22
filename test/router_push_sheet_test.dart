@@ -79,7 +79,6 @@ AllowedIPs = 0.0.0.0/0
 
   group('RouterPushSheet - 100% Coverage Suite', () {
     testWidgets('Step 0: fetchSlots retrieves configs and handles empty slots warning', (tester) async {
-      String? lastLog;
       final List<String> logs = [];
       await tester.pumpWidget(buildTestableWidget(
         onLog: (msg, {isError = false, isSuccess = false}) => logs.add(msg),

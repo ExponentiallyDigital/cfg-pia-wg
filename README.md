@@ -10,7 +10,7 @@ This app is a GUI Android APK equivalent of my [Windows 11/Linux command line ap
 
 ## Why use this?
 
-Manually creating a Configure PIA Wireguarduration requires authenticating against multiple APIs, parsing server lists, performing key exchange, and assembling the config by hand. **cfg-pia-wg** automates the entire process.
+Manually creating a WireGuard configuration for PIA requires authenticating against multiple APIs, parsing server lists, performing key exchange, and assembling the config by hand. **cfg-pia-wg** automates the entire process.
 
 ## Features
 
@@ -54,7 +54,7 @@ The installlable pre-built apps above have [GitHub Attestations](https://github.
 <tr>
 <td align="center">
 <img src="./images/01-interface.png" width="350"><br>
-<strong>Configure PIA Wireguard App UI</strong>
+<strong>Configure PIA WireGuard App UI</strong>
 </td>
 <td align="center">
 <img src="./images/02-region-selection.png" width="350"><br>
@@ -184,7 +184,7 @@ All app processing is reported live in the in-app **LOG** panel including SSH co
 ## Notes
 
 - **Pre-shared keys**: PIA WireGuard does not (ASAICT) employ pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
-- **Time-to-live constraints**: Configure PIA Wireguards expire every few weeks per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
+- **Time-to-live constraints**: PIA WireGuard configurations expire every week or so per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
 - **Key safety**: the generated config contains private encryption keys. Treat them like a password and manage them securely.
   > [!CAUTION]
   >

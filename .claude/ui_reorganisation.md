@@ -14,8 +14,8 @@ Claude Code **must** review all existing modules in `../lib/` to understand how 
 
 Create a new main opening screen. On this main screen create these buttons:
 
-- "Generate Configure PIA Wireguarduration"
-- "Push Configure PIA Wireguarduration to router\*" (displayed, but grey out until "Generate Configure PIA Wireguarduration" has executed)
+- "Generate PIA WireGuard configuration"
+- "Push PIA WireGuard configuration to router\*" (displayed, but grey out until "Generate PIA WireGuard configuration" has executed)
 - "Watchdog management\*"
 - "View app log"
 - "Close app"
@@ -30,9 +30,9 @@ add under the existing header the name of this menu button as a heading.
 
 The buttons will perform these functions:
 
-#### 2.1.1 "Generate Configure PIA Wireguarduration"
+#### 2.1.1 "Generate PIA WireGuard configuration"
 
-#### 2.1.2 "Push Configure PIA Wireguarduration to router"
+#### 2.1.2 "Push PIA WireGuard configuration to router"
 
 - reuse the existing router login dialogue `ROUTER SSH LOGIN` which ask for these fields `Router IP`, `SSH Username`, `SSH Password`
 - Per existing logic, once the above has been completed

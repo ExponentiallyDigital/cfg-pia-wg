@@ -3,11 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pia_wireguard_cfga/main.dart';
 
 void main() {
-  testWidgets('shows Configure PIA Wireguard form', (tester) async {
+  testWidgets('shows Configure PIA WireGuard form', (tester) async {
     await tester.pumpWidget(const PiaWgApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Configure PIA Wireguard'), findsOneWidget);
+    expect(find.text('Configure PIA WireGuard'), findsOneWidget);
     expect(find.text('Region ID'), findsOneWidget);
     expect(find.text('PIA username'), findsOneWidget);
     expect(find.text('PIA password'), findsOneWidget);

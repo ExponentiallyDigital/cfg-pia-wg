@@ -1,15 +1,15 @@
-Configure PIA Wireguard
+Configure PIA WireGuard
 
-The simplest way to generate and push Configure PIA Wireguards to your router.
+The simplest way to generate and push a PIA WireGuard configuration to your router.
 
 Automated WireGuard configuration utility for Private Internet Access (PIA) users.
 
-When your VPN configurations expire, Configure PIA Wireguard App replaces manual scripts with a streamlined workflow. It connects to PIA's provisioning API, benchmarks latency, and exports a .conf payload in seconds. For compatible home networks, write configurations directly into Asuswrt-Merlin router client slots seamlessly, no computer required.
+When your VPN configurations expire, Configure PIA WireGuard App replaces manual scripts with a streamlined workflow. It connects to PIA's provisioning API, benchmarks latency, and exports a .conf payload in seconds. For compatible home networks, write configurations directly into Asuswrt-Merlin router client slots seamlessly, no computer required.
 
 
 The simplicity breakthrough: couch-to-router in 10 seconds
 
-Generating Configure PIA Wireguardurations by hand requires significant expertise. Official scripts require a steep learning curve and a desktop terminal. Other workarounds require running desktop software to capture keys from local storage. This utility makes the migration to high-speed WireGuard completely effortless without needing a computer. The app wraps enterprise-grade automation into a simple mobile interface: tap your desired region from a live latency list, enter your credentials, and tap Generate Config and Push Config to Router. Your encrypted tunnel is active before you can even stand up from the couch.
+Generating PIA WireGuard configurations by hand requires significant expertise. Official scripts require a steep learning curve and a desktop terminal. Other workarounds require running desktop software to capture keys from local storage. This utility makes the migration to high-speed WireGuard completely effortless without needing a computer. The app wraps enterprise-grade automation into a simple mobile interface: tap your desired region from a live latency list, enter your credentials, and tap Generate Config and Push Config to Router. Your encrypted tunnel is active before you can even stand up from the couch.
 
 
 Why run a VPN on your router?

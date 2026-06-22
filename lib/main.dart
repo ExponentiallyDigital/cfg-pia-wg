@@ -35,7 +35,7 @@ class PiaWgApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Configure PIA Wireguard',
+      title: 'Configure PIA WireGuard',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: const ColorScheme.dark(
@@ -301,7 +301,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Configure PIA Wireguard',
+              const Text('Configure PIA WireGuard',
                   style: TextStyle(color: Color(0xFFE8EAF0), fontSize: 16, fontWeight: FontWeight.w600)),
               Row(
                 mainAxisSize: MainAxisSize.min,

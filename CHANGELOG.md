@@ -8,7 +8,7 @@
 - New app to set up an Asus router in the most secure/private way possible
 - Add patreon/paypal donation via app/GitHub
 
-### Short term:
+### Short term
 
 - update and pin java version used in actions scripts to match development environments (v22) - tried 25, breaks local dev env tool chain
 - in `build.ps1` and `build.sh`, add the version number to the aab filename (like action script does)
@@ -28,9 +28,14 @@
 
 ## Changes
 
+2026-06-22 version: 0.5.12
+
+- removed ununsed variable in test\router_push_sheet_test.dart
+-
+
 2026-06-22 version: 0.5.11
 
-- Rebranded and renamed from `pia-wireguard-cfga` "PIA WireGuard Config" to `cfg-pia-wg` "Configure PIA Wireguard"
+- Rebranded and renamed from `pia-wireguard-cfga` "PIA WireGuard Config" to `cfg-pia-wg` "Configure PIA WireGuard"
 
 2026-06-22 version: 0.5.10
 
@@ -70,7 +75,7 @@
 - fix services-start permission is 777 on uninstall
 - normalised router send email command: resequenced, added -verify_return_error, addec space after "H", removed -amLOGIN, removed test from messageID
 - added 3 layer mail send failure: sendmail exit code, sendmail's stderr, and any detail from the underlying openssl handshake
-- added same error checking to test email send function invoked by the UI through `buildSendmailCommand` and ` testEmail`
+- added same error checking to test email send function invoked by the UI through `buildSendmailCommand` and `testEmail`
 - updated test email header and body generation per RFC-822, now matches shell script
 - renamed "DEPLOY WATCHDOG" to "WATCHDOG CONFIG" because you can set/unset from there not just deploy
 - fixed tests to match current code

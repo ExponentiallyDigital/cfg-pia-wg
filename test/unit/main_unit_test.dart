@@ -169,7 +169,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
-      expect(app.title, 'Configure PIA Wireguard');
+      expect(app.title, 'Configure PIA WireGuard');
       expect(app.debugShowCheckedModeBanner, isFalse);
       expect(find.byType(MainScreen), findsOneWidget);
       expect(find.text('GENERATE CONFIG'), findsOneWidget);
