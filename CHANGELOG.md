@@ -2,46 +2,42 @@
 
 ## "to do"
 
+### Long term
+
 - Release to Play Store - +12 testers for **closed test** over 14 continuous days
-- long term: rebuild app interface: main screen with each option opening on a new screen, provide a menu option to access other screens,make screens reflect typical user workflows
-  - generate WG config
-  - push config to router
-  - VPN watchdog management 
-  - VPN control, en/disable slots 
-  - log view, all functions performed by each option logged here
-  - router control,
-- rename app to reflect actual functionality - app provides asus router VPN control, ese if use via an app vs web GUI, short term rename to cfg-pia-wg.
-- people set and forget, provide options to setup their asus router in the most secure/private way possible
+- New app to set up an Asus router in the most secure/private way possible
+- Add patreon/paypal donation via app/GitHub
 
-short term:
-- update and pin java version used in actions scripts to match development environments (v22) - tried 25, breaks local dev env tool chain 
-- Powershell build script to add version number to aab filename (like action script does) + port build.sh functionality to ps1 (rich error handling & stats
-- add flutter analyse to build scripts and docs 
-- Button to enable watchdog should not be able to be pressed unless a slot has been selected, it is greyed out and doesn't become lit until a slot is selected but it can still be pressed and activates the new feature  defaults to wgc1 atm
-- no error shown on screen if hit _test email_ without filling in all details, error is generated to the app log but you can't see it, needs to be visible on screen, it returns lots of info but you won't see it behind the current window
-- as above but for _ping targets_: user not notified that ping targets can't be reached, does log to app's log but not visible, should open a dialogue box warning the user
-- add a note that when manually adding VPNs, the description needs to match the PIA region name eg `aus_melbourne`
-- on selecting `WATCHDOG CONFIG`, if no slot is active, it should enable the interface (reuse existing code by calling that function)
-- don't exit `PUSH TO ROUTER` when a config is written and a slot made active, we might want to set up the watchdog.Fix by moving watchdog button to initial app window, add logic to only show button if a config has been generated, mimics push to router button 
-- if slot 1 is active and a watchdog is deployed to it, it remains active even if slot 5 is made active and a watchdog deployed to that slot, so we end up with multiple watchdogs, note in the docs that watchdog is only for one slot at a time (who runs multiple VPNs on different slots? Maybe someone does...but it's an edge case, just like having more than one WG VPN active concurrently. I'm sure someone does this but I don't.)m Check this is fixed.
-- note in docs that watchdog is only ever active on one interface at a time...but that's not how it currently works, needs fixing
-- make it clear that the log in the WATCHDOG screen is from the wgcN log on the router
-- view log should be named "LOAD/GET LOG", as it's not updated in real time, if it becomes realy big there will be a lot of scrolling needed... consider showing in reverse order, currently shows oldest to newest, could log file fill NVRAM? Store it on volatile partition? There are 288 five minute intervals in 24 hours.
-- move `WATCHDOG CONFIG` button from `PUSH TO ROUTER` window to main screen, more logical sense as it can be independent of updating a slot's config
-- retain the ssh session until watchdog deployment function exits?
+### Short term:
+
+- update and pin java version used in actions scripts to match development environments (v22) - tried 25, breaks local dev env tool chain
+- in `build.ps1` and `build.sh`, add the version number to the aab filename (like action script does)
+- port `build.sh` functionality to `build.ps1` (rich error handling & stats)
+- add `flutter analyse` to build scripts and docs
+- create app process flow chart, add to `ARCHITECTURE.md`
+- create watchdog documentation:
+  - how-to with screenshots
+  - when manually adding VPNs via the Asus web GUI, the watchdog function requires the VPN description match the PIA region name eg `aus_melbourne`
+  - watchdog is only ever active on one interface at a time
+  - requires outbound ICMP over VPN
+  - reconfigure in ~7 seconds
+  - logfile rotated at midnight, it does not persist across reboots
+  - to reduce on router log data, only the current and previous log are ever retained before a reboot
+- watchdog, add error checking on all router SSH commands, log to app and router if any fail (return non zero)
 - check all nvram writes are covered by a matching commit
-- app is hanging on watchdog deployment due to script size and heredoc limit being reached, does not throw an error onscreen but is logged to syslog: [10:12:11] NVRAM committed.
-  Exit (admin0909) from <192.168.0.93:56678>: String too long
-- create a user process flow chart
-- 
-
----
 
 ## Changes
 
-2026-06-xx version: 0.5.10
+2026-06-22 version: 0.5.10
 
-- fix script deployment by optimising and reducing package size
+- moved `watchdog_wgc$slot.log`, `watchdog_last_ping_success_wgc$slot` and `watchdog_backoff_wgc$slot` files from `/jffs` to `/tmp` to reduce NVRAM writes
+- renamed email alerts from "PIA Watchdog Alert" to "pia-wireguard-cfga"
+- fix script deployment (heredoc limit reached) by optimising and reducing package size
+- updated alert email subject
+- updated watchdog connectivity testing logging text
+- updated tests to match new `watchdog_wgc__SLOT__.sh`
+- fixed test not returning `Successfully retrieved router config.`
+- added WIP `ui_reorganisation.md`
 
 2026-06-21 version: 0.5.09
 

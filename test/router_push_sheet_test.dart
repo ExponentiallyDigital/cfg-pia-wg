@@ -80,8 +80,9 @@ AllowedIPs = 0.0.0.0/0
   group('RouterPushSheet - 100% Coverage Suite', () {
     testWidgets('Step 0: fetchSlots retrieves configs and handles empty slots warning', (tester) async {
       String? lastLog;
+      final List<String> logs = [];
       await tester.pumpWidget(buildTestableWidget(
-        onLog: (msg, {isError = false, isSuccess = false}) => lastLog = msg,
+        onLog: (msg, {isError = false, isSuccess = false}) => logs.add(msg),
         testClientFactory: (ip, user, pass) async => FakeSSHClient(onRun: (cmd) async {
           return '';
         }),
@@ -89,7 +90,7 @@ AllowedIPs = 0.0.0.0/0
 
       await loginAndProceedToSlots(tester);
 
-      expect(lastLog, contains('Successfully retrieved router config.'));
+      expect(logs, contains('Successfully retrieved router config.'));
       expect(find.text('WRITE TO WIREGUARD SLOT'), findsOneWidget);
     });
 

@@ -128,6 +128,7 @@ class _RouterPushSheetState extends State<RouterPushSheet> {
         );
       }
 
+      widget.onLog('Successfully retrieved router config.', isSuccess: true);
       widget.onLog('?.', isSuccess: true);
       setState(() {
         _slots = retrievedSlots;

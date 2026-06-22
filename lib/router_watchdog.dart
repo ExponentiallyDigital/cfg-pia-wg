@@ -38,7 +38,7 @@ bool isValidIpv4(String ip) {
   return true;
 }
 
-// Loose RFC-5322-ish email check sufficient for UI validation.
+// Loose RFC-5322 email check for UI validation.
 bool isValidEmail(String email) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email.trim());
 
 // Parses the router status file timestamp ("YYYY-MM-DD HH:MM:SS") to a DateTime.
@@ -228,7 +228,7 @@ String buildCronCheckLine(int slot, int intervalMin) =>
 
 // The daily log-rotation cron job line.
 String buildCronRotateLine(int slot) => 'cru a watchdog_log_rotate_wgc$slot "0 0 * * *" '
-    '"mv /jffs/watchdog_wgc$slot.log /jffs/watchdog_wgc$slot.log.old && touch /jffs/watchdog_wgc$slot.log"';
+    '"mv /tmp/watchdog_wgc$slot.log /tmp/watchdog_wgc$slot.log.old && touch /tmp/watchdog_wgc$slot.log"';
 
 // The two cru lines appended to /jffs/scripts/services-start for reboot persistence.
 String buildServicesStartBlock(int slot, int intervalMin) =>
@@ -250,7 +250,7 @@ String _rfc2822Date(DateTime dt) {
 
 // RFC-822 message body for the one-off "Test Email" (and the success/failure model).
 String buildMailBody(WatchdogConfig c, {required bool success, bool testMode = false}) {
-  final subject = testMode ? 'config test' : '${c.emailSubject} - ${success ? 'SUCCESS' : 'FAILED'}';
+  final subject = testMode ? 'watchdog config test' : '${c.emailSubject} - ${success ? 'SUCCESS' : 'FAILED'}';
   final line = testMode
       ? 'This is a test email from the pia-wireguard-cfga watchdog (slot wgc${c.slotIndex}).'
       : 'Watchdog wgc${c.slotIndex} reconfiguration ${success ? 'succeeded' : 'failed'}.';
@@ -316,13 +316,14 @@ class RouterWatchdog {
 
   Future<bool> isJqInstalled() async => (await _run('which jq')).isNotEmpty;
 
-  // Ensures JFFS custom scripts are enabled. Only commits if a change is needed; never disables.
+  // Ensures JFFS custom scripts are enabled
   Future<void> enableJffsScripts() async {
     final scripts = await _run('nvram get jffs2_scripts');
     final on = await _run('nvram get jffs2_on');
     if (scripts == '1' && on == '1') return;
     await _run('nvram set jffs2_scripts=1');
     await _run('nvram set jffs2_on=1');
+    await _run('nvram commit');
   }
 
   // Writes nvram config (per-slot + global PIA creds) and uploads the slot-specific script.
@@ -374,8 +375,8 @@ class RouterWatchdog {
         // strip out cron jobs added when watchdog installed, reinstate 700 permission
         await _run("[ -f '$path' ] && grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' "
             "> '$path.tmp' && mv '$path.tmp' '$path' && chmod 700 '$path'");
-        await _run('rm -f /jffs/watchdog_wgc$slot.log /jffs/watchdog_wgc$slot.log.old '
-            '/jffs/watchdog_last_ping_success_wgc$slot /jffs/watchdog_backoff_wgc$slot');
+        await _run('rm -f /tmp/watchdog_wgc$slot.log /tmp/watchdog_wgc$slot.log.old '
+            '/tmp/watchdog_last_ping_success_wgc$slot /tmp/watchdog_backoff_wgc$slot');
         // nvram command doesn't allow multiple values in one command
         await _run('nvram unset wgc${slot}_wd_check_interval');
         await _run('nvram unset wgc${slot}_wd_email_enabled');
@@ -394,18 +395,18 @@ class RouterWatchdog {
         // below was commented out, which leaves interface in prior state,
         // instead stop that interface
         await _run('service "stop_wgc wgc$slot"; service start_vpnrouting0');
-        await _logRouter('Watchdog disabled, NVRAM unset and scripts removed for wgc$slot');
+        await _logRouter('Watchdog disabled for wgc$slot');
         onLog?.call('Watchdog disabled for wgc$slot.', isSuccess: true);
       });
 
   // Enabled state is derived from cron, not stored. Last ping comes from the status file.
   Future<WatchdogStatus> getWatchdogStatus(int slot) async {
     final enabled = (await _run('cru l | grep -qw watchdog_wgc$slot && echo 1 || echo 0')) == '1';
-    final ping = await _run('cat /jffs/watchdog_last_ping_success_wgc$slot 2>/dev/null');
+    final ping = await _run('cat /tmp/watchdog_last_ping_success_wgc$slot 2>/dev/null');
     return WatchdogStatus(isEnabled: enabled, lastSuccessfulPing: parseLastPing(ping));
   }
 
-  Future<String> getWatchdogLog(int slot) => _run('cat /jffs/watchdog_wgc$slot.log 2>/dev/null');
+  Future<String> getWatchdogLog(int slot) => _run('cat /tmp/watchdog_wgc$slot.log 2>/dev/null');
 
   // Reads the full watchdog config (per-slot + global PIA) back from NVRAM for the dialog.
   Future<WatchdogConfig> loadConfig(int slot) async {
@@ -511,22 +512,25 @@ class RouterWatchdog {
 // ─── Bash script template ────────────────────────────────────────────────────────
 // POSIX sh. __SLOT__ is the only placeholder; everything else is literal shell.
 // Logs to both /jffs/watchdog_wgcN.log and the router syslog (logger -t pia-wg-cfga).
+//
+// There is a ~7 KB heredoc size limitation for the following payload.
+//
 const String _kWatchdogScriptTemplate = r'''#!/bin/sh
-# watchdog_wgc__SLOT__.sh - auto-generated by pia-wireguard-cfga. Do not edit by hand.
-# Monitors VPN connectivity on wgc__SLOT__ and re-negotiates a fresh PIA WireGuard
-# configuration when both ping targets become unreachable through the tunnel.
+# watchdog_wgc__SLOT__.sh - auto-generated; do not edit.
+# Monitors wgc__SLOT__; re-negotiates PIA WireGuard on ping failure.
 
 SLOT=__SLOT__
 IFACE="wgc__SLOT__"
+K="${IFACE}_"
 LOGTAG="pia-wg-cfga"
-LOGFILE="/jffs/watchdog_wgc__SLOT__.log"
-STATUSFILE="/jffs/watchdog_last_ping_success_wgc__SLOT__"
-BACKOFFFILE="/jffs/watchdog_backoff_wgc__SLOT__"
+LOGFILE="/tmp/watchdog_${IFACE}.log"
+STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"
+BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
 COOLDOWN=120
 CACERT="/jffs/pia_ca.rsa.4096.crt"
 CURL="curl -s --max-time 15 --connect-timeout 8 --tlsv1.3 --fail"
-TMPMAIL="/tmp/mail_wgc__SLOT__.txt"
-TMPSRV="/tmp/wgc__SLOT___servers.txt"
+TMPMAIL="/tmp/mail_${IFACE}.txt"
+TMPSRV="/tmp/${IFACE}_servers.txt"
 
 SERVERLIST_URL="https://serverlist.piaservers.net/vpninfo/servers/v6"
 TOKEN_URL="https://www.privateinternetaccess.com/gtoken/generateToken"
@@ -534,28 +538,30 @@ CACERT_URL="https://raw.githubusercontent.com/pia-foss/manual-connections/master
 
 log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOGFILE"
-  logger -t "$LOGTAG" "wgc__SLOT__: $1"
+  logger -t "$LOGTAG" "$IFACE: $1"
 }
 
-# --- Read all configuration from NVRAM (single source of truth) ---
-PRIMARY_IP="$(nvram get wgc__SLOT___wd_primary_ip)"
-SECONDARY_IP="$(nvram get wgc__SLOT___wd_secondary_ip)"
-EMAIL_ON="$(nvram get wgc__SLOT___wd_email_enabled)"
-EMAIL_FROM="$(nvram get wgc__SLOT___wd_email_from)"
-EMAIL_TO="$(nvram get wgc__SLOT___wd_email_to)"
-EMAIL_SUBJECT="$(nvram get wgc__SLOT___wd_email_subject)"
-SMTP_SERVER="$(nvram get wgc__SLOT___wd_smtp_server)"
-SMTP_USER="$(nvram get wgc__SLOT___wd_smtp_user)"
-SMTP_PASS="$(nvram get wgc__SLOT___wd_smtp_pass)"
+nvset() { nvram set "${K}$1"; }
+
+# --- Read NVRAM configuration ---
+PRIMARY_IP="$(nvram get ${K}wd_primary_ip)"
+SECONDARY_IP="$(nvram get ${K}wd_secondary_ip)"
+EMAIL_ON="$(nvram get ${K}wd_email_enabled)"
+EMAIL_FROM="$(nvram get ${K}wd_email_from)"
+EMAIL_TO="$(nvram get ${K}wd_email_to)"
+EMAIL_SUBJECT="$(nvram get ${K}wd_email_subject)"
+SMTP_SERVER="$(nvram get ${K}wd_smtp_server)"
+SMTP_USER="$(nvram get ${K}wd_smtp_user)"
+SMTP_PASS="$(nvram get ${K}wd_smtp_pass)"
 SMTP_HOST="${SMTP_SERVER%:*}"
 SMTP_PORT="${SMTP_SERVER##*:}"
-DESC="$(nvram get wgc__SLOT___desc)"
+DESC="$(nvram get ${K}desc)"
 PIA_USER="$(nvram get pia_wg_cfga_user)"
 PIA_PASS="$(nvram get pia_wg_cfga_password)"
 
 log "Watchdog started for $IFACE"
 
-# --- Email alert helper (gated on EMAIL_ON at runtime; one mail per attempt) ---
+# --- Email alert helper ---
 send_alert() {
   [ "$EMAIL_ON" = "1" ] || return 0
   [ -n "$SMTP_HOST" ] || { log "Email enabled but SMTP server is not configured"; return 0; }
@@ -569,37 +575,31 @@ send_alert() {
     echo "MIME-Version: 1.0"
     echo "Content-Type: text/plain; charset=utf-8"
     echo ""
-    echo "Watchdog wgc__SLOT__ reconfiguration attempt: $1"
+    echo "Watchdog $IFACE reconfiguration: $1"
     echo "Region: $DESC"
     echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
   } > "$TMPMAIL"
 
   TMPERR="/tmp/wd_smtp_err_$$"
-
-    /usr/sbin/sendmail \
-      -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt \
-      -verify_return_error -connect $SMTP_HOST:$SMTP_PORT" \
-      -au"$SMTP_USER" \
-      -ap"$SMTP_PASS" \
-      -f"$EMAIL_FROM" \
-      "$EMAIL_TO" < "$TMPMAIL" 2>"$TMPERR"
+  /usr/sbin/sendmail \
+    -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt \
+    -verify_return_error -connect $SMTP_HOST:$SMTP_PORT" \
+    -au"$SMTP_USER" \
+    -ap"$SMTP_PASS" \
+    -f"$EMAIL_FROM" \
+    "$EMAIL_TO" < "$TMPMAIL" 2>"$TMPERR"
 
   MAIL_EXIT=$?
   rm -f "$TMPMAIL"
 
   if [ "$MAIL_EXIT" -ne 0 ]; then
-    # Collapse stderr to one log line (newlines → pipes)
     SMTP_ERR=$(cat "$TMPERR" 2>/dev/null | head -20 | tr '\n' '|')
     log "Email FAILED (sendmail exit=$MAIL_EXIT) stderr=[${SMTP_ERR:-none}]"
 
-    # Diagnostic 1: TCP reachability
-    if nc -w 5 "$SMTP_HOST" "$SMTP_PORT" </dev/null >/dev/null 2>&1; then
-      log "Email diag: TCP $SMTP_HOST:$SMTP_PORT is reachable"
-    else
-      log "Email diag: TCP $SMTP_HOST:$SMTP_PORT is UNREACHABLE - check host/port"
-    fi
+    nc -w 5 "$SMTP_HOST" "$SMTP_PORT" </dev/null >/dev/null 2>&1 \
+      && log "Email diag: TCP $SMTP_HOST:$SMTP_PORT reachable" \
+      || log "Email diag: TCP $SMTP_HOST:$SMTP_PORT UNREACHABLE"
 
-    # Diagnostic 2: TLS handshake and SMTP greeting (verbose, no -quiet)
     TMPDIAG="/tmp/wd_smtp_diag_$$"
     printf 'QUIT\r\n' | openssl s_client \
       -connect "$SMTP_HOST:$SMTP_PORT" \
@@ -625,16 +625,14 @@ abort() {
   exit 1
 }
 
-# --- Connectivity check through the VPN interface ---
-FAIL=1  # default to failure
-log "Checking connectivity via $IFACE (primary=$PRIMARY_IP secondary=$SECONDARY_IP)"
+# --- Connectivity check ---
+FAIL=1
+log "Checking $IFACE connectivity"
 
-# Check interface first
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then
   log "Interface $IFACE is down or absent"
   FAIL=1
 else
-  # Test primary and secondary independently
   primary_ok=1
   secondary_ok=1
 
@@ -652,7 +650,6 @@ else
     log "Secondary ping FAILED ($SECONDARY_IP)"
   fi
 
-  # Set final status: 0 if at least one target responded
   if [ $primary_ok -eq 0 ] || [ $secondary_ok -eq 0 ]; then
     FAIL=0
   else
@@ -661,14 +658,14 @@ else
   fi
 fi
 
-# --- Success path: record status, reset backoff, done ---
+# --- Success: update status ---
 if [ "$FAIL" = "0" ]; then
   date '+%Y-%m-%d %H:%M:%S' > "$STATUSFILE"
   printf '0\n0\n' > "$BACKOFFFILE"
   exit 0
 fi
 
-# --- Failure path: two-line backoff file (count, last-attempt-epoch) ---
+# --- Backoff handling ---
 CNT=0
 LAST=0
 if [ -f "$BACKOFFFILE" ]; then
@@ -681,18 +678,18 @@ CNT=$((CNT + 1))
 ELAPSED=$((NOW - LAST))
 if [ "$LAST" -ne 0 ] && [ "$ELAPSED" -lt "$COOLDOWN" ]; then
   printf '%s\n%s\n' "$CNT" "$LAST" > "$BACKOFFFILE"
-  log "In cooldown (${ELAPSED}s < ${COOLDOWN}s); skipping reconfiguration"
+  log "Cooldown ${ELAPSED}s < ${COOLDOWN}s; skipping"
   exit 0
 fi
 printf '%s\n%s\n' "$CNT" "$NOW" > "$BACKOFFFILE"
-log "Connectivity lost; attempting WireGuard reconfiguration (attempt #$CNT)"
+log "Connectivity lost; reconfiguring (attempt #$CNT)"
 
-# --- Abort gates: never touch NVRAM unless we can fully reconfigure ---
-[ -n "$DESC" ] || abort "wgc__SLOT___desc is empty"
+# --- Preflight checks ---
+[ -n "$DESC" ] || abort "${K}desc is empty"
 which jq >/dev/null 2>&1 || abort "jq is not installed"
 [ -n "$PIA_USER" ] || abort "PIA username is not set"
 
-# --- PIA re-negotiation (curl + jq + wg + openssl) ---
+# --- PIA re-negotiation ---
 if [ ! -f "$CACERT" ]; then
   log "CA certificate not cached; downloading"
   $CURL "$CACERT_URL" -o "$CACERT" || abort "failed to download CA certificate"
@@ -705,14 +702,14 @@ fi
 log "Requesting PIA token for user $PIA_USER"
 TOKEN="$($CURL -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" | jq -r '.token // empty')"
 [ -n "$TOKEN" ] || abort "failed to obtain PIA token"
-log "PIA token obtained (length=$(echo -n "$TOKEN" | wc -c))"
+log "PIA token obtained (len=$(echo -n "$TOKEN" | wc -c))"
 
 log "Fetching server list for region $DESC"
 SERVERS="$($CURL "$SERVERLIST_URL" | head -1 | jq -r --arg id "$DESC" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"')"
 [ -n "$SERVERS" ] || abort "no servers found for region $DESC"
-log "Server list retrieved: $(echo "$SERVERS" | wc -l | tr -d ' ') candidate(s)"
+log "Servers: $(echo "$SERVERS" | wc -l | tr -d ' ') candidates"
 
-# Latency sweep over the region's 1-3 servers (file-backed loop to keep results in this shell).
+# Latency sweep
 echo "$SERVERS" > "$TMPSRV"
 BEST_IP=""
 BEST_CN=""
@@ -720,9 +717,7 @@ BEST_RTT=999999
 while read -r SIP SCN; do
   [ -n "$SIP" ] || continue
   RTT="$(ping -c 1 -W 2 "$SIP" 2>/dev/null | sed -n 's/.*time=\([0-9.]*\).*/\1/p' | head -1)"
-  [ -n "$RTT" ] || RTT=999998
-  RTT_INT="${RTT%.*}"
-  [ -n "$RTT_INT" ] || RTT_INT=999998
+  RTT_INT="${RTT%.*}"; : "${RTT_INT:=999998}"
   log "Latency to $SIP ($SCN): ${RTT_INT}ms"
   if [ "$RTT_INT" -lt "$BEST_RTT" ]; then
     BEST_RTT="$RTT_INT"
@@ -744,7 +739,7 @@ PUB="$(echo "$PRIV" | wg pubkey)"
 log "Registering public key with $BEST_IP ($BEST_CN)"
 
 REG="$($CURL --cacert "$CACERT" --resolve "$BEST_CN:1337:$BEST_IP" -G --data-urlencode "pt=$TOKEN" --data-urlencode "pubkey=$PUB" "https://$BEST_CN:1337/addKey")" || abort "curl addKey request failed"
-log "addKey response received (status will be verified)"
+log "addKey response received"
 RSTATUS="$(echo "$REG" | jq -r '.status // empty')"
 [ "$RSTATUS" = "OK" ] || abort "addKey failed (status: $RSTATUS)"
 read -r PEER_IP SERVER_KEY SERVER_PORT <<EOF
@@ -752,29 +747,29 @@ $(echo "$REG" | jq -r '[(.peer_ip // "" | split("/")[0]), (.server_key // ""), (
 EOF
 [ -n "$PEER_IP" ] && [ -n "$SERVER_KEY" ] && [ -n "$SERVER_PORT" ] || abort "incomplete addKey response"
 
-# --- Write new config to NVRAM (mirrors router_push.dart Step 4; the DNS value is left untouched) ---
-log "Writing new configuration to NVRAM"
-nvram set wgc__SLOT___addr="$PEER_IP/32"
-nvram set wgc__SLOT___alive=25
-nvram set wgc__SLOT___desc="$DESC"
-nvram set wgc__SLOT___enable=1
-nvram set wgc__SLOT___enforce=1
-nvram set wgc__SLOT___ep_addr="$BEST_IP"
-nvram set wgc__SLOT___ep_addr_r=""
-nvram set wgc__SLOT___ep_port="$SERVER_PORT"
-nvram set wgc__SLOT___fw=1
-nvram set wgc__SLOT___mtu=1420
-nvram set wgc__SLOT___nat=1
-nvram set wgc__SLOT___ppub="$SERVER_KEY"
-nvram set wgc__SLOT___priv="$PRIV"
-nvram set wgc__SLOT___psk=""
-nvram set wgc__SLOT___rip=""
-nvram set wgc__SLOT___aips="0.0.0.0/0"
+# --- Write new config to NVRAM ---
+log "Writing config to NVRAM"
+nvset "addr=$PEER_IP/32"
+nvset "alive=25"
+nvset "desc=$DESC"
+nvset "enable=1"
+nvset "enforce=1"
+nvset "ep_addr=$BEST_IP"
+nvset "ep_addr_r="
+nvset "ep_port=$SERVER_PORT"
+nvset "fw=1"
+nvset "mtu=1420"
+nvset "nat=1"
+nvset "ppub=$SERVER_KEY"
+nvset "priv=$PRIV"
+nvset "psk="
+nvset "rip="
+nvset "aips=0.0.0.0/0"
 nvram commit
 log "NVRAM write complete"
 
-# --- stop & start the interface ---
-# sleep timers may ned to be increased on low spec routers
+# --- Restart interface ---
+# Increase sleeps on slow routers
 log "Stopping $IFACE"
 service "stop_wgc $SLOT"
 sleep 2
@@ -783,7 +778,6 @@ service "start_wgc $SLOT"
 log "Restarting VPN routing"
 service restart_vpnrouting0
 
-# Verify the interface came up before declaring success
 log "Waiting for $IFACE to initialise"
 sleep 3
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then

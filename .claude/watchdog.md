@@ -17,7 +17,7 @@ The **router_watchdog** module adds a user‑configurable watchdog that:
 - Optionally sends email alerts via the router’s `sendmail` when a reconfiguration is attempted (successful or failed).
 - Provides a UI for enabling/disabling, configuring, viewing status, and reading the watchdog log.
 
-All watchdog‑related logs are stored in `/jffs/watchdog_wgcN.log` (where `N` is the slot number) and rotated daily via a cron job. The status (last successful ping timestamp) is stored in `/jffs/watchdog_last_ping_success_wgcN` (per slot).
+All watchdog‑related logs are stored in `/tmp/watchdog_wgcN.log` (where `N` is the slot number) and rotated daily via a cron job. The status (last successful ping timestamp) is stored in `/tmp/watchdog_last_ping_success_wgcN` (per slot).
 
 **All configuration variables are stored exclusively in NVRAM**, never in files. The script reads them from NVRAM and writes them back when necessary (e.g., new private key, endpoint, etc.). The WireGuard private key is also stored only in NVRAM.
 
@@ -31,7 +31,7 @@ All watchdog‑related logs are stored in `/jffs/watchdog_wgcN.log` (where `N` i
 
 - **Merlin Detection**: Execute `nvram get 3rd-party` over SSH to verify the router is running Merlin (`value == "merlin"`). If not, the watchdog feature is hidden.
 - **JFFS Enablement**: When watchdog is activated, ensure `jffs2_scripts=1` and `jffs2_on=1` via `nvram set` and `nvram commit`. **Do not disable** these settings when the watchdog is disabled (leave JFFS as‑is).
-- **Script Deployment**: Generate and upload Bash scripts to `/jffs/scripts/` with the slot name appended (e.g., `watchdog_wgc1.sh`) – all written via SSH commands (no SFTP/SCP).
+- **Script Deployment**: Generate and upload Bash scripts to `/tmp/scripts/` with the slot name appended (e.g., `watchdog_wgc1.sh`) – all written via SSH commands (no SFTP/SCP).
 - **Connectivity Test**: Ping the **primary** IP; if it fails, ping the **secondary**. Only if **both** fail will reconfiguration be triggered.
 - **Flap Prevention & Retry**: If the router loses WAN connectivity (upstream outage), the watchdog must not repeatedly try to reconfigure. It will **retry every 2 minutes** after a failed reconfiguration attempt (instead of exponential backoff). Emails **must not be sent** on every ping failure – only when a reconfiguration is actually attempted (success or failure). This prevents alert fatigue.
 - **WireGuard Reconfiguration**: When both pings fail and the retry timer allows, the watchdog script:
@@ -43,8 +43,8 @@ All watchdog‑related logs are stored in `/jffs/watchdog_wgcN.log` (where `N` i
   - Applies the config using **`wg setconf`** (not `syncconf`).
   - Restarts the interface using the same method as the app: `service "start_wgc $slot"; service restart_vpnrouting0` (or similar).
 - **Email Alerts (Optional)**: If enabled, `sendmail` is used to notify the user **when a reconfiguration attempt is made**, regardless of success or failure. The email subject should indicate whether the reconfiguration succeeded or failed. Emails **must not be sent** on repeated ping failures; only on actual reconfiguration attempts (and at most one email per attempt).
-- **Logging**: All watchdog actions are logged to `/jffs/watchdog_wgcN.log` (per slot). The log rotates daily, handled by a **cron job** (the script only creates the cron entry for rotation).
-- **Status Display**: The app shows the timestamp of the last successful ICMP response, read from `/jffs/watchdog_last_ping_success_wgcN` (per slot).
+- **Logging**: All watchdog actions are logged to `/tmp/watchdog_wgcN.log` (per slot). The log rotates daily, handled by a **cron job** (the script only creates the cron entry for rotation).
+- **Status Display**: The app shows the timestamp of the last successful ICMP response, read from `/tmp/watchdog_last_ping_success_wgcN` (per slot).
 - **User Configuration**: User can set:
   - **Primary and secondary IPs** (defaults: 8.8.8.8 / 8.8.4.4 and 1.1.1.1 / 1.0.0.1 – user may choose any valid IP). **Both IPs are required**; the user cannot leave either empty.
   - **Check interval** (minutes) – how often the watchdog runs (default 5).
@@ -82,7 +82,7 @@ The dialogue includes:
   - **“Save & Enable”** – validates all inputs, performs a reachability check on both both IPs, and if successful, saves and deploys the watchdog.
   - **“Disable”** – removes scripts and cron, disables watchdog (leaves JFFS enabled).
   - **“Test Email”** – sends a test email using the current SMTP settings.
-  - **“View Log”** – opens a view of `/jffs/watchdog_wgcN.log` (fetched via SSH).
+  - **“View Log”** – opens a view of `/tmp/watchdog_wgcN.log` (fetched via SSH).
 - **Validation**: The dialogue validates all inputs (IP format, positive numbers, email format). Both primary and secondary IPs are required. The test email button validates SMTP connectivity by sending a test email.
 
 Check that `jq` is installed via `which jq`, if it is not installed report it to the user and do not proceed with configuring the watchdog.
@@ -155,11 +155,11 @@ All interactions with the router (SSH commands, script deployments, errors) are 
 - Operations are performed by executing commands:
   - `nvram get <key>`, `nvram set <key>=<value>`, `nvram commit`
   - use `cat <<'EOF'` syntax to write files
-  - `chmod +x /jffs/scripts/watchdog_*.sh` – **only** for the scripts we create (to avoid touching existing scripts).
+  - `chmod +x /tmp/scripts/watchdog_*.sh` – **only** for the scripts we create (to avoid touching existing scripts).
   - `cru` to manage cron jobs.
   - `ping -c 1 -W 2 <ip>` (`pingHostViaWan`) and `ping -I wgcN -c 1 -W 2 <ip>` (`pingHostViaVpn`) for reachability checks
-  - `cat /jffs/watchdog_wgcN.log` to fetch logs.
-  - `cat /jffs/watchdog_last_ping_success_wgcN` to read status.
+  - `cat /tmp/watchdog_wgcN.log` to fetch logs.
+  - `cat /tmp/watchdog_last_ping_success_wgcN` to read status.
 
 ### 4.3 Router‑Side Bash Scripts
 
@@ -167,7 +167,7 @@ All interactions with the router (SSH commands, script deployments, errors) are 
 
 The script reads all configuration values from NVRAM at startup before doing anything else.
 
-#### 4.3.2 `/jffs/scripts/watchdog_wgcN.sh` (slot‑specific)
+#### 4.3.2 `/tmp/scripts/watchdog_wgcN.sh` (slot‑specific)
 
 Performs the ping test for the region, triggers reconfiguration if needed (with a **2‑minute retry** after a failed attempt), updates the status file, and sends email via `sendmail`. Reconfiguration logic:
 
@@ -180,14 +180,14 @@ Performs the ping test for the region, triggers reconfiguration if needed (with 
   - **Targeted Region Extraction**: The script must determine the target PIA region by reading the slot's description from NVRAM using `nvram get wgcN_desc` (which will return a string format like `"aus_melbourne"`).
   - **Scoped JSON Filtering**: When fetching the global PIA server list via `curl`, the script must use `jq` to filter the JSON payload _exclusively_ for endpoints matching that specific region identifier.
   - **Optimized Ping Sweep**: Because each region contains an isolated pool of only 1–3 servers, the script will loop through and execute a latency `ping` test _only_ against these 1–3 endpoints. It will then configure the interface using the single lowest-latency server from that specific region.
-  - **Error Handling**: If `wgcN_desc` is empty, or if `jq` cannot find a matching region block in the PIA API response, the script must log the error to `/jffs/watchdog_wgcN.log` and abort the reconfiguration to prevent a broken fallback configuration.
+  - **Error Handling**: If `wgcN_desc` is empty, or if `jq` cannot find a matching region block in the PIA API response, the script must log the error to `/tmp/watchdog_wgcN.log` and abort the reconfiguration to prevent a broken fallback configuration.
   - Update NVRAM with new endpoint, port, DNS, allowed IPs, etc. The exact variables and values **must** follow the pattern in `lib/router_push.dart` (see the comment “// ── Step 4: Write new config to NVRAM”).
   - Commit NVRAM changes.
   - Apply the new config using `wg setconf wgcN /tmp/wgcN.conf` (the script creates a temporary config from NVRAM values). You must delete the /tmp/wgcN.conf file immediately after the wg setconf command executes.
   - Restart the interface using `service "start_wgc $slot"; service restart_vpnrouting0` (as per `router_push.dart`).
 - If reconfiguration succeeds or fails, send email if enabled (one email per attempt).
 - Update log and status file.
-- Maintain a failure counter in `/jffs/watchdog_backoff_wgcN` by a two-line file: the first line is the failure counter (integer), the second line is the Unix epoch timestamp of the last reconfiguration attempt (integer seconds, from date +%s). If the file does not exist, both values are treated as zero.
+- Maintain a failure counter in `/tmp/watchdog_backoff_wgcN` by a two-line file: the first line is the failure counter (integer), the second line is the Unix epoch timestamp of the last reconfiguration attempt (integer seconds, from date +%s). If the file does not exist, both values are treated as zero.
 
 ##### 4.3.2.1 `sendmail`
 
@@ -203,18 +203,18 @@ Performs the ping test for the region, triggers reconfiguration if needed (with 
 
 #### 4.3.3 Cron Jobs
 
-- Add a cron entry for the watchdog check: `*/<check_interval> * * * * /jffs/scripts/watchdog_wgcN.sh` using `cru`.
-- Add a daily log rotation cron: `0 0 * * * mv /jffs/watchdog_wgcN.log /jffs/watchdog_wgcN.log.old && touch /jffs/watchdog_wgcN.log`.
+- Add a cron entry for the watchdog check: `*/<check_interval> * * * * /tmp/scripts/watchdog_wgcN.sh` using `cru`.
+- Add a daily log rotation cron: `0 0 * * * mv /tmp/watchdog_wgcN.log /tmp/watchdog_wgcN.log.old && touch /tmp/watchdog_wgcN.log`.
 - **Persistence across reboots**: use the `cru` utility to manage cron entries as `crontab` is stored in volatile memory (`/var/spool/cron/`).
-  - `cru` commands must be added to the startup script `/jffs/scripts/services-start`.
+  - `cru` commands must be added to the startup script `/tmp/scripts/services-start`.
   - When the watchdog is disabled, the corresponding `cru` entries must be removed (e.g., `cru d watchdog_wgcN`) and the startup script lines should be removed.
-  - if `/jffs/scripts/services-start` does not exist, it is to be created.
+  - if `/tmp/scripts/services-start` does not exist, it is to be created.
 
 - `cru` job IDs:
   - `cru` job identifiers must follow this naming scheme, where N is the slot number:
     - Watchdog check job: `watchdog_wgcN`
     - Log rotation job: `watchdog_log_rotate_wgcN`
-    - Example for slot 1: `cru a watchdog_wgc1 "*/5 * * * *" /jffs/scripts/watchdog_wgc1.sh`
+    - Example for slot 1: `cru a watchdog_wgc1 "*/5 * * * *" /tmp/scripts/watchdog_wgc1.sh`
     - These identifiers must be used consistently for `cru a`, `cru d`, and the `cru l | grep` check in `getWatchdogStatus()`.
 
 ### 4.4 NVRAM Variables Used
@@ -252,8 +252,8 @@ e.g., wgcN_wd_check_interval, wgcN_wd_primary_ip, wgcN_wd_secondary_ip, wgcN_wd_
 
 To avoid flapping when the WAN is down, the watchdog will:
 
-- Maintain a failure counter in `/jffs/watchdog_backoff_wgcN` by a two-line file: the first line is the failure counter (integer), the second line is the Unix epoch timestamp of the last reconfiguration attempt (integer seconds, from date +%s). If the file does not exist, both values are treated as zero.
-- On a failed ping attempt, increment the counter and write a timestamp to `/jffs/watchdog_backoff_wgcN`.
+- Maintain a failure counter in `/tmp/watchdog_backoff_wgcN` by a two-line file: the first line is the failure counter (integer), the second line is the Unix epoch timestamp of the last reconfiguration attempt (integer seconds, from date +%s). If the file does not exist, both values are treated as zero.
+- On a failed ping attempt, increment the counter and write a timestamp to `/tmp/watchdog_backoff_wgcN`.
 - Reconfigure on the first failure once the cooldown has passed.
 - On a successful ping, reset the counter to 0.
 - After a reconfiguration attempt (success or failure), reset the timer and allow another attempt only after 2 minutes.
@@ -340,7 +340,7 @@ Emails are sent **only** when a reconfiguration is attempted, not on every ping 
 - [ ] Saving enables JFFS scripts (but does not disable on disable), deploys slot‑specific watchdog scripts, and sets up cron jobs (watchdog + log rotation).
 - [ ] Disabling removes scripts and cron but leaves JFFS enabled.
 - [ ] Status (last successful ping timestamp) is shown.
-- [ ] The log file (`/jffs/watchdog_wgcN.log`) can be viewed within the app.
+- [ ] The log file (`/tmp/watchdog_wgcN.log`) can be viewed within the app.
 - [ ] The main screen shows “Watchdog active” label for slots with active watchdog.
 - [ ] All SSH interactions are logged to the app’s log screen using `_logEntry`.
 - [ ] Retry mechanism uses a 2‑minute delay between reconfiguration attempts; emails are sent only on reconfiguration attempts.

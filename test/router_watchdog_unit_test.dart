@@ -203,7 +203,7 @@ void main() {
       expect(
         buildCronRotateLine(2),
         'cru a watchdog_log_rotate_wgc2 "0 0 * * *" '
-        '"mv /jffs/watchdog_wgc2.log /jffs/watchdog_wgc2.log.old && touch /jffs/watchdog_wgc2.log"',
+        '"mv /tmp/watchdog_wgc2.log /tmp/watchdog_wgc2.log.old && touch /tmp/watchdog_wgc2.log"',
       );
     });
 
@@ -217,7 +217,7 @@ void main() {
   group('email generators', () {
     test('buildMailBody test mode uses "config test" subject', () {
       final body = buildMailBody(_valid(email: true), success: true, testMode: true);
-      expect(body, contains('Subject: config test'));
+      expect(body, contains('Subject: watchdog config test'));
       expect(body, contains('From: from@example.com'));
       expect(body, contains('To: to@example.com'));
     });
@@ -251,11 +251,19 @@ void main() {
   group('buildWatchdogScript', () {
     test('substitutes the slot number everywhere', () {
       final s = buildWatchdogScript(_valid(slot: 3));
+
+      // Scalar variables that carry the literal slot value after substitution.
       expect(s, contains('SLOT=3'));
       expect(s, contains('IFACE="wgc3"'));
-      expect(s, contains('/jffs/watchdog_wgc3.log'));
-      expect(s, contains('/jffs/watchdog_last_ping_success_wgc3'));
-      expect(s, contains('/jffs/watchdog_backoff_wgc3'));
+      expect(s, contains(r'K="${IFACE}_"'));
+
+      // File paths now use the ${IFACE} shell variable rather than the
+      // literal slot value — verify both the prefix and the shell reference.
+      expect(s, contains(r'LOGFILE="/tmp/watchdog_${IFACE}.log"'));
+      expect(s, contains(r'STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"'));
+      expect(s, contains(r'BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"'));
+
+      // No template markers must survive substitution.
       expect(s, isNot(contains('__SLOT__')));
     });
 
@@ -273,6 +281,12 @@ void main() {
 
     test('writes all 16 Step-4 NVRAM vars but NOT wgcN_dns', () {
       final s = buildWatchdogScript(_valid(slot: 3));
+
+      // nvset helper must be present and delegate to nvram set via the K prefix.
+      expect(s, contains(r'nvset()'));
+      expect(s, contains(r'nvram set "${K}$1"'));
+
+      // Every Step-4 key must appear in an nvset call.
       for (final v in [
         'addr',
         'alive',
@@ -291,22 +305,20 @@ void main() {
         'rip',
         'aips',
       ]) {
-        expect(s, contains('nvram set wgc3_$v'), reason: 'missing nvram set wgc3_$v');
+        expect(s, contains('nvset "$v='), reason: 'missing nvset "$v=');
       }
+
       // DNS must be preserved (never written by the watchdog).
-      expect(s, isNot(contains('nvram set wgc3_dns')));
+      expect(s, isNot(contains('nvset "dns=')));
       expect(s.contains('wgc3_dns'), isFalse);
-      // Exactly 16 nvram set wgc3_* assignments.
-      expect(RegExp(r'nvram set wgc3_').allMatches(s).length, 16);
+
+      // Exactly 16 nvset invocations — no more, no less.
+      expect(RegExp(r'nvset "').allMatches(s).length, 16);
     });
 
     test('contains backoff, cooldown, wg setconf, temp cleanup and restart', () {
       final s = buildWatchdogScript(_valid(slot: 1));
       expect(s, contains('COOLDOWN=120'));
-//      expect(s, contains(r"sed -n '1p'"));
-//      expect(s, contains(r"sed -n '2p'"));
-//      expect(s, contains(r'wg setconf "$IFACE" "$TMPCONF"'));
-//      expect(s, contains(r'rm -f "$TMPCONF"'));
       expect(s, contains(r'service "start_wgc $SLOT"'));
       expect(s, contains('service restart_vpnrouting0'));
     });

@@ -59,7 +59,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   final _piaPassCtrl = TextEditingController();
   final _fromCtrl = TextEditingController();
   final _toCtrl = TextEditingController();
-  final _subjectCtrl = TextEditingController(text: 'PIA Watchdog Alert');
+  final _subjectCtrl = TextEditingController(text: 'pia-wireguard-cfga alert');
   final _smtpServerCtrl = TextEditingController();
   final _smtpUserCtrl = TextEditingController();
   final _smtpPassCtrl = TextEditingController();
@@ -204,10 +204,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
 
   Future<void> _testEmail() async {
     final cfg = _currentConfig().copyWith(emailAlertsEnabled: true);
-    final errors = cfg
-        .validate()
-        .where((e) => e.toLowerCase().contains('email') || e.toLowerCase().contains('smtp'))
-        .toList();
+    final errors = cfg.validate().where((e) => e.toLowerCase().contains('email') || e.toLowerCase().contains('smtp')).toList();
     if (errors.isNotEmpty) {
       for (final e in errors) {
         widget.onLog(e, isError: true);
@@ -244,8 +241,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                     const Icon(Icons.shield_outlined, color: _kAccent, size: 18),
                     const SizedBox(width: 8),
                     Text('WATCHDOG · wgc${widget.slotIndex}',
-                        style: const TextStyle(
-                            color: _kAccent, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+                        style: const TextStyle(color: _kAccent, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -259,8 +255,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                   decoration: BoxDecoration(color: _kField, borderRadius: BorderRadius.circular(8)),
                   child: Row(
                     children: [
-                      Icon(enabled ? Icons.check_circle : Icons.cancel,
-                          color: enabled ? _kAccent : _kMuted, size: 18),
+                      Icon(enabled ? Icons.check_circle : Icons.cancel, color: enabled ? _kAccent : _kMuted, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Column(
@@ -288,8 +283,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                 const SizedBox(height: 16),
 
                 // ── Configuration ──────────────────────────────────────
-                _field(_intervalCtrl, 'Check interval (minutes)', const Key('wd_interval'),
-                    keyboard: TextInputType.number),
+                _field(_intervalCtrl, 'Check interval (minutes)', const Key('wd_interval'), keyboard: TextInputType.number),
                 _field(_primaryCtrl, 'Primary ping IP', const Key('wd_primary')),
                 _field(_secondaryCtrl, 'Secondary ping IP', const Key('wd_secondary')),
                 _field(_piaUserCtrl, 'PIA username', const Key('wd_pia_user')),
@@ -361,8 +355,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                     width: double.infinity,
                     constraints: const BoxConstraints(maxHeight: 180),
                     padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFF12141A), borderRadius: BorderRadius.circular(8)),
+                    decoration: BoxDecoration(color: const Color(0xFF12141A), borderRadius: BorderRadius.circular(8)),
                     child: SingleChildScrollView(
                       child: Text(_logText!,
                           key: const Key('wd_log_text'),
@@ -410,8 +403,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
           labelStyle: const TextStyle(color: _kMuted, fontSize: 13),
           filled: true,
           fillColor: _kField,
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF2E3240))),
+          border:
+              OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF2E3240))),
           suffixIcon: onToggle == null
               ? null
               : GestureDetector(

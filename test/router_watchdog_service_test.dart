@@ -85,9 +85,9 @@ void main() {
       expect(c.ran('cru d watchdog_log_rotate_wgc1'), isTrue);
       expect(c.ran('rm -f /jffs/scripts/watchdog_wgc1.sh'), isTrue);
       expect(c.ran('/jffs/scripts/services-start'), isTrue);
-      expect(c.ran('/jffs/watchdog_wgc1.log'), isTrue);
-      expect(c.ran('/jffs/watchdog_last_ping_success_wgc1'), isTrue);
-      expect(c.ran('/jffs/watchdog_backoff_wgc1'), isTrue);
+      expect(c.ran('/tmp/watchdog_wgc1.log'), isTrue);
+      expect(c.ran('/tmp/watchdog_last_ping_success_wgc1'), isTrue);
+      expect(c.ran('/tmp/watchdog_backoff_wgc1'), isTrue);
       expect(c.ran('logger -t pia-wg-cfga'), isTrue);
       // JFFS must NOT be disabled.
       expect(c.commands.any((cmd) => cmd.contains('jffs2_scripts=0') || cmd.contains('jffs2_on=0')), isFalse);

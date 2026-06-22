@@ -144,27 +144,27 @@ When you invoke `PUSH TO ROUTER` and if your roiuter is using Merlin firmware a 
 
 ### Checks
 
-1. check that `/jffs/scripts/services-start` contains (1m watchdog)
+1. check that `/tmp/scripts/services-start` contains (1m watchdog)
 
 ```bash
 #!/bin/sh
-cru a watchdog_wgc1 "*/1 * * * *" /jffs/scripts/watchdog_wgc1.sh
-cru a watchdog_log_rotate_wgc1 "0 0 * * *" "mv /jffs/watchdog_wgc1.log /jffs/watchdog_wgc1.log.old && touch /jffs/watchdog_wgc1.log"
+cru a watchdog_wgc1 "*/1 * * * *" /tmp/scripts/watchdog_wgc1.sh
+cru a watchdog_log_rotate_wgc1 "0 0 * * *" "mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log"
 ```
 
 2. check cron and cru are updated in realtime, test 1m and 10m
 
 ```bash
 user@host:/tmp/home/root# crontab -l
-*/1 * * * * /jffs/scripts/watchdog_wgc1.sh #watchdog_wgc1#
-0 0 * * * mv /jffs/watchdog_wgc1.log /jffs/watchdog_wgc1.log.old && touch /jffs/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
+*/1 * * * * /tmp/scripts/watchdog_wgc1.sh #watchdog_wgc1#
+0 0 * * * mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
 
 user@host:/tmp/home/root# cru l
-*/1 * * * * /jffs/scripts/watchdog_wgc1.sh #watchdog_wgc1#
-0 0 * * * mv /jffs/watchdog_wgc1.log /jffs/watchdog_wgc1.log.old && touch /jffs/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
+*/1 * * * * /tmp/scripts/watchdog_wgc1.sh #watchdog_wgc1#
+0 0 * * * mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
 ```
 
-3. check that `/jffs/scripts/watchdog_wgcN.sh` is valid
+3. check that `/tmp/scripts/watchdog_wgcN.sh` is valid
 
 4. check NVRAM is set correctly
 
@@ -173,7 +173,7 @@ user@host:/tmp/home/root# nvram show | grep wgc1
 wgc1_wd_check_interval=1
 wgc1_wd_email_enabled=0
 wgc1_wd_email_from=
-wgc1_wd_email_subject=PIA Watchdog Alert
+wgc1_wd_email_subject=pia-wireguard-cfga watchdog alert
 wgc1_wd_email_to=
 wgc1_wd_primary_ip=8.8.8.8
 wgc1_wd_secondary_ip=1.1.1.1
@@ -188,13 +188,13 @@ pia_wg_cfga_password=REDACTED
 pia_wg_cfga_user=REDACTED
 ```
 
-5. Check `/jffs/watchdog_backoff_wgcN`
+5. Check `/tmp/watchdog_backoff_wgcN`
 
-6. Check `/jffs/watchdog_last_ping_success_wgcN`
+6. Check `/tmp/watchdog_last_ping_success_wgcN`
 
 7. Check logs are generated
 
-- /jffs/watchdog_wgcN.log
+- /tmp/watchdog_wgcN.log
 
 6. Check router syslog entries are created
 
@@ -207,14 +207,14 @@ reconfigure
 8. Check cleanup ocurs when `DISABLE` selected in UI
 
 - cron jobs removed, check with `crontab -l` and `cru l`
-- `/jffs/scripts/services-start` should only contain `#!/bin/sh`
-- add a comment to `/jffs/scripts/services-start`, start watchdog and remove watchdog, comment should persist
+- `/tmp/scripts/services-start` should only contain `#!/bin/sh`
+- add a comment to `/tmp/scripts/services-start`, start watchdog and remove watchdog, comment should persist
 - all files deleted
 
 9. File permissions
 
-Check `/jffs/scripts/services-start` permission is 777 `-rwxrwxrwx`
-Check `/jffs/scripts/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
+Check `/tmp/scripts/services-start` permission is 777 `-rwxrwxrwx`
+Check `/tmp/scripts/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
 
 10. Reboot and check that cron and crontab are correct
 
@@ -231,11 +231,11 @@ Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Ad
 set thesde via NVRAM eg
 
 ```bash
-#valid entries
+# valid entries
 nvram set wgc1_wd_primary_ip=8.8.8.8
 nvram set wgc1_wd_secondary_ip=1.1.1.1
 
-#invalid entries
+# invalid entries
 nvram set wgc1_wd_primary_ip=192.0.2.1
 nvram set wgc1_wd_secondary_ip=198.51.100.1
 ```
@@ -245,6 +245,8 @@ nvram set wgc1_wd_secondary_ip=198.51.100.1
 13. Overwrite an existing slot with a different region's config
 
 14. Overwrite an existing slot with the same region's config
+
+15. check all NVRAM settings are cleared on script disable
 
 ### RAM usage
 
