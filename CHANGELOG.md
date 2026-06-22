@@ -10,26 +10,27 @@
   - VPN control, en/disable slots 
   - log view, all functions performed by each option logged here
   - router control,
-- renane app to reflect actual functionality - app provides asus router control
-- people set and forget, privide options to setup their asus toyter in the most secure way possible
+- rename app to reflect actual functionality - app provides asus router VPN control, ese if use via an app vs web GUI, short term rename to cfg-pia-wg.
+- people set and forget, provide options to setup their asus router in the most secure/private way possible
 
 short term:
-- Powershell build script to add version to aab (like action script does) + port build.sh functionality to ps1 (rich error handling & stats)
-- Button to enable watchdog should not be able to be pressed unless a slot has been selected, it is greyed out and deosn't become lit until a slot is selected but it can still be pressed and activates the new feature
+- update and pin java version used in actions scripts to match development environments (v22) - tried 25, breaks local dev env tool chain 
+- Powershell build script to add version number to aab filename (like action script does) + port build.sh functionality to ps1 (rich error handling & stats
+- add flutter analyse to build scripts and docs 
+- Button to enable watchdog should not be able to be pressed unless a slot has been selected, it is greyed out and doesn't become lit until a slot is selected but it can still be pressed and activates the new feature  defaults to wgc1 atm
 - no error shown on screen if hit _test email_ without filling in all details, error is generated to the app log but you can't see it, needs to be visible on screen, it returns lots of info but you won't see it behind the current window
 - as above but for _ping targets_: user not notified that ping targets can't be reached, does log to app's log but not visible, should open a dialogue box warning the user
 - add a note that when manually adding VPNs, the description needs to match the PIA region name eg `aus_melbourne`
 - on selecting `WATCHDOG CONFIG`, if no slot is active, it should enable the interface (reuse existing code by calling that function)
-- don't exit `PUSH TO ROUTER` when a config is written and a slot made active, we might want to setup the watchdog
-- if slot 1 is active and a watchdog is deployed to it, it remains active even if slot 5 is made active and a watchdog deployed to that slot, so we end up with multiple watchdogs, note in the docs that watchdog is only for one slot at a time (who runs multiple VPNs on different slots? Maybe someone does...but it's an edge case, just like having more than one WG VPN active concurrently. I'm sure someone does this but I don't.)
+- don't exit `PUSH TO ROUTER` when a config is written and a slot made active, we might want to set up the watchdog.Fix by moving watchdog button to initial app window, add logic to only show button if a config has been generated, mimics push to router button 
+- if slot 1 is active and a watchdog is deployed to it, it remains active even if slot 5 is made active and a watchdog deployed to that slot, so we end up with multiple watchdogs, note in the docs that watchdog is only for one slot at a time (who runs multiple VPNs on different slots? Maybe someone does...but it's an edge case, just like having more than one WG VPN active concurrently. I'm sure someone does this but I don't.)m Check this is fixed.
 - note in docs that watchdog is only ever active on one interface at a time...but that's not how it currently works, needs fixing
 - make it clear that the log in the WATCHDOG screen is from the wgcN log on the router
-- view log should be names "LOAD/GET LOG", as it's not updated in real time, if it becomes realy big there will be a lot of scrolling needed...maybe show in reverse order, currently shows oldest to newest, could log file fill NVRAM? Store it on volatile partition? There are 288 five minute intervals in 24 hours.
+- view log should be named "LOAD/GET LOG", as it's not updated in real time, if it becomes realy big there will be a lot of scrolling needed... consider showing in reverse order, currently shows oldest to newest, could log file fill NVRAM? Store it on volatile partition? There are 288 five minute intervals in 24 hours.
 - move `WATCHDOG CONFIG` button from `PUSH TO ROUTER` window to main screen, more logical sense as it can be independent of updating a slot's config
-- retain the ssh session until app exits?
+- retain the ssh session until watchdog deployment function exits?
 - check all nvram writes are covered by a matching commit
-- app is hanging on watchdog deployment...after NVRAM committed
-  [10:11:16] Connecting to router at 192.168.0.254 via SSH...[10:11:17] Successfully retrieved router config.[10:12:11] NVRAM committed.
+- app is hanging on watchdog deployment due to script size and heredoc limit being reached, does not throw an error onscreen but is logged to syslog: [10:12:11] NVRAM committed.
   Exit (admin0909) from <192.168.0.93:56678>: String too long
 - create a user process flow chart
 - 
@@ -40,7 +41,7 @@ short term:
 
 2026-06-xx version: 0.5.10
 
-- fix script deployment by reducing package size
+- fix script deployment by optimising and reducing package size
 
 2026-06-21 version: 0.5.09
 
