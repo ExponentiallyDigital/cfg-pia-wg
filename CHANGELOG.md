@@ -24,14 +24,18 @@
   - logfile rotated at midnight, it does not persist across reboots
   - to reduce on router log data, only the current and previous log are ever retained before a reboot
 - watchdog, add error checking on all router SSH commands, log to app and router if any fail (return non zero)
-- check all nvram writes are covered by a matching commit
+- add robust error checking to all ssh heredoc calls
 
 ## Changes
 
+2026-06-22 version: 0.5.13
+
+- significantly updated `.claude\ui_reorganisation.md`
+
 2026-06-22 version: 0.5.12
 
-- removed ununsed variable in test\router_push_sheet_test.dart
--
+- removed unused variable in test\router_push_sheet_test.dart
+- updated assets to match rebranding
 
 2026-06-22 version: 0.5.11
 
