@@ -14,6 +14,7 @@
 // Copyright (C) 2026 Andrew Newbury.
 //
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
@@ -294,6 +295,17 @@ class RouterWatchdog {
   // Run a command and return trimmed stdout (mirrors router_push.dart `_run`).
   Future<String> _run(String cmd) async => utf8.decode(await client.run(cmd)).trim();
 
+  // Heredoc writes can stall if the SSH channel hangs; bound them at 30s (spec §3) and
+  // surface a troubleshooting message on timeout.
+  Future<String> _runHeredoc(String cmd, String path) async {
+    try {
+      return await _run(cmd).timeout(const Duration(seconds: 30));
+    } on TimeoutException {
+      throw Exception('Timed out after 30s writing to "$path" via SSH heredoc. '
+          'Check SSH connectivity and that the router filesystem (JFFS / /tmp) is writable.');
+    }
+  }
+
   // Best-effort native syslog entry on the router.
   Future<void> _logRouter(String msg) async => _run('logger -t $kWatchdogLogTag ${shellSingleQuote(msg)}');
 
@@ -326,17 +338,35 @@ class RouterWatchdog {
     await _run('nvram commit');
   }
 
+  // Writes the per-slot watchdog NVRAM + global PIA creds (and optionally wgcN_desc), then commits.
+  // Shared by deploy (ENABLE) and the EDIT save path (which writes params without deploying).
+  Future<void> _writeWatchdogNvram(WatchdogConfig config, {String? desc}) async {
+    for (final e in config.toNvram().entries) {
+      await _run('nvram set ${e.key}=${shellSingleQuote(e.value)}');
+    }
+    await _run('nvram set pia_wg_cfga_user=${shellSingleQuote(config.piaUsername.trim())}');
+    await _run('nvram set pia_wg_cfga_password=${shellSingleQuote(config.piaPassword)}');
+    if (desc != null && desc.isNotEmpty) {
+      await _run('nvram set wgc${config.slotIndex}_desc=${shellSingleQuote(desc)}');
+    }
+    await _run('nvram commit');
+  }
+
+  // EDIT-save (spec 2.1.3 decision #1): persist the watchdog parameters (+ optional region desc)
+  // to NVRAM WITHOUT deploying the script or cron jobs. ENABLE deploys later.
+  Future<void> saveWatchdogConfig(WatchdogConfig config, {String? desc}) => _guard('save', () async {
+        await _writeWatchdogNvram(config, desc: desc);
+        onLog?.call('Watchdog settings saved for wgc${config.slotIndex}.', isSuccess: true);
+      });
+
   // Writes nvram config (per-slot + global PIA creds) and uploads the slot-specific script.
   Future<void> deployWatchdogScripts(WatchdogConfig config) => _guard('script deployment', () async {
         final slot = config.slotIndex;
-        for (final e in config.toNvram().entries) {
-          await _run('nvram set ${e.key}=${shellSingleQuote(e.value)}');
-        }
-        await _run('nvram set pia_wg_cfga_user=${shellSingleQuote(config.piaUsername.trim())}');
-        await _run('nvram set pia_wg_cfga_password=${shellSingleQuote(config.piaPassword)}');
-        await _run('nvram commit');
+        await _writeWatchdogNvram(config);
         onLog?.call('NVRAM committed.', isSuccess: true);
-        await _run(heredocWrite('/jffs/scripts/watchdog_wgc$slot.sh', buildWatchdogScript(config)));
+        await _runHeredoc(
+            heredocWrite('/jffs/scripts/watchdog_wgc$slot.sh', buildWatchdogScript(config)),
+            '/jffs/scripts/watchdog_wgc$slot.sh');
         await _run('chmod +x /jffs/scripts/watchdog_wgc$slot.sh');
         await _logRouter('Deployed watchdog script for wgc$slot');
         onLog?.call('Watchdog scripts deployed for wgc$slot.', isSuccess: true);
@@ -435,7 +465,7 @@ class RouterWatchdog {
   Future<void> testEmail(WatchdogConfig config) => _guard('test email', () async {
         final (host, port) = config.smtpHostPort;
 
-        await _run(heredocWrite('/tmp/mail.txt', buildMailBody(config, success: true, testMode: true)));
+        await _runHeredoc(heredocWrite('/tmp/mail.txt', buildMailBody(config, success: true, testMode: true)), '/tmp/mail.txt');
 
         // Redirect stderr to file; echo exit code into stdout so _run can return it.
         final result = await _run(

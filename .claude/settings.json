@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git rm *)",
+      "Bash(awk '/^SF:/{f=$0; sub\\(/^SF:/,\"\",f\\)} /^LF:/{lf=substr\\($0,4\\)} /^LH:/{lh=substr\\($0,4\\); pct=\\(lf>0\\)?\\(100*lh/lf\\):0; printf \"%6.1f%%  %4d/%-4d  %s\\\\n\", pct, lh, lf, f; tot_lf+=lf; tot_lh+=lh} END{printf \"\\\\n%6.1f%%  %4d/%-4d  TOTAL\\\\n\", \\(tot_lf>0?100*tot_lh/tot_lf:0\\), tot_lh, tot_lf}' coverage/lcov.info)",
+      "Bash(awk '/^SF:/{f=$0; sub\\(/^SF:/,\"\",f\\)} /^LF:/{lf=substr\\($0,4\\)} /^LH:/{lh=substr\\($0,4\\); pct=\\(lf>0\\)?\\(100*lh/lf\\):0; printf \"%6.1f%%  %s\\\\n\", pct, f; tot_lf+=lf; tot_lh+=lh} END{printf \"\\\\n%6.1f%%  TOTAL \\(%d/%d\\)\\\\n\", \\(tot_lf>0?100*tot_lh/tot_lf:0\\), tot_lh, tot_lf}' coverage/lcov.info)",
+      "Bash(flutter build *)"
+    ]
+  }
+}

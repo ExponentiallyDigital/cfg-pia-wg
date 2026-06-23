@@ -28,7 +28,15 @@
 
 ## Changes
 
-2026-06-22 version: 0.5.14
+2026-06-23 version: 0.6.01
+
+- FIX local env issues
+
+2026-06-22 version: 0.6.00
+
+- implemented `.claude\ui_reorganisation.md` to fundamentally rebuild the user interface.
+
+2026-06-23 version: 0.5.14
 
 - further updated `.claude\ui_reorganisation.md`, this fundamentally rebuilds the user interface.
 

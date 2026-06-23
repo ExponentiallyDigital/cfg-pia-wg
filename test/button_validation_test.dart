@@ -1,14 +1,16 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/main.dart';
+
+import 'app_test_harness.dart';
 
 void main() {
-  testWidgets('generate validates empty fields', (tester) async {
-    await tester.pumpWidget(const PiaWgApp());
-    await tester.pumpAndSettle();
+  testWidgets('GENERATE stays disabled while required fields are empty', (tester) async {
+    final c = quietController();
+    await pumpAppAtStandalone(tester, c);
 
-    await tester.tap(find.text('GENERATE CONFIG'));
-    await tester.pumpAndSettle();
+    final btn = tester.widget<ElevatedButton>(find.byKey(const Key('generate_config')));
+    expect(btn.onPressed, isNull);
 
-    expect(find.textContaining("password required"), findsOneWidget);
+    await disposeApp(tester, c);
   });
 }

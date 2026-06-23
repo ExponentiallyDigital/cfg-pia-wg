@@ -1,159 +1,88 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:pia_wireguard_cfga/main.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pia_wireguard_cfga/app_shell.dart';
+import 'package:pia_wireguard_cfga/session_controller.dart';
+
+import 'app_test_harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('PiaWgApp Comprehensive Coverage Suite', () {
-    // 1. Test entry point execution
-    testWidgets('test main function entry point', (WidgetTester tester) async {
-      expect(() => runApp(const PiaWgApp()), returnsNormally);
+  group('PiaWgApp shell', () {
+    testWidgets('runApp builds without throwing', (tester) async {
+      final c = quietController();
+      await pumpApp(tester, c);
+      expect(find.byType(PiaWgApp), findsOneWidget);
+      await disposeApp(tester, c);
     });
 
-    // 2. Test valid state pipeline pathing
-    testWidgets(
-        'App Lifecycle state changes trigger session auto-wipe behavior when deadline passes',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(const PiaWgApp());
-      await tester.pumpAndSettle();
+    testWidgets('app lifecycle transitions resync without error', (tester) async {
+      final c = quietController();
+      await pumpApp(tester, c);
 
-      final dynamic widgetsBinding = WidgetsBinding.instance;
+      final dynamic binding = WidgetsBinding.instance;
+      for (final s in const [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        binding.handleAppLifecycleStateChanged(s);
+        await tester.pump();
+      }
 
-      // Navigate background pipeline matching strict AppLifecycleListener invariants
-      widgetsBinding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-      await tester.pump();
-      widgetsBinding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-      await tester.pump();
-      widgetsBinding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-      await tester.pump();
-
-      // Return via symmetrical reversal loop
-      widgetsBinding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-      await tester.pump();
-      widgetsBinding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-      await tester.pump();
-      widgetsBinding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await tester.pumpAndSettle();
+      await disposeApp(tester, c);
     });
 
-    // 3. Test form error checks by trying to generate without credentials
-    testWidgets(
-        'Generating with empty credentials logs an error validation message',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(const PiaWgApp());
-      await tester.pumpAndSettle();
+    testWidgets('navigates to each destination from the main menu', (tester) async {
+      final c = quietController();
+      await pumpApp(tester, c);
 
-      final generateBtn = find.text('GENERATE CONFIG');
-      expect(generateBtn, findsOneWidget);
-      await tester.tap(generateBtn);
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('required'), findsOneWidget);
-    });
-
-    // 5. Drawer Region loading integration UI test
-    testWidgets(
-        'Clicking Region List icon triggers _loadRegions drawer presentation',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(const PiaWgApp());
-      await tester.pumpAndSettle();
-
-      final regionSearchBtn = find.byIcon(Icons.list_alt);
-      expect(regionSearchBtn, findsOneWidget);
-      await tester.tap(regionSearchBtn);
-
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-    });
-
-    // 6. Config Generator target routine simulation via UI interactions
-    testWidgets('Config generator updates form variables safely',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(const PiaWgApp());
-      await tester.pumpAndSettle();
-
-      // Hydrate forms securely via UI components
-      await tester.enterText(find.byType(TextFormField).at(0), 'ca_toronto');
-      await tester.enterText(find.byType(TextFormField).at(1), 'p9999999');
-      await tester.enterText(find.byType(TextFormField).at(2), 'password123');
-      await tester.pumpAndSettle();
-
-      // Toggle password visibility interaction
-      final passwordVisibilityBtn = find.byIcon(Icons.visibility);
-      if (passwordVisibilityBtn.evaluate().isNotEmpty) {
-        await tester.tap(passwordVisibilityBtn);
+      for (final key in const ['menu_manage_router', 'menu_watchdog', 'menu_log']) {
+        await tester.tap(find.byKey(Key(key)));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('screen_close')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('screen_close')));
         await tester.pumpAndSettle();
       }
 
-      final generateBtn = find.text('GENERATE CONFIG');
-      await tester.tap(generateBtn);
-      await tester.pumpAndSettle();
+      await disposeApp(tester, c);
     });
 
-    // 7. Share configuration UI channel mocking
-    testWidgets('Share action interaction handles configuration export pathing',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(const PiaWgApp());
-      await tester.pumpAndSettle();
+    testWidgets('currentDestination tracks the top route', (tester) async {
+      final c = quietController();
+      await pumpApp(tester, c);
+      expect(c.currentDestination, AppDestination.menu);
 
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        const MethodChannel('plugins.flutter.io/path_provider'),
-        (MethodCall methodCall) async {
-          if (methodCall.method == 'getTemporaryDirectory') {
-            return '.';
-          }
-          return null;
-        },
-      );
+      await tester.tap(find.byKey(const Key('menu_log')));
+      await tester.pumpAndSettle();
+      expect(c.currentDestination, AppDestination.log);
+
+      await disposeApp(tester, c);
     });
 
-    // 8. Launcher interactions coverage via UI link interactions
-    testWidgets(
-        'Footer hyperlinks parse platformDefault fallback targets successfully',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(const PiaWgApp());
+    testWidgets('Close app wipes credentials and asks the platform to exit', (tester) async {
+      final calls = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        calls.add(call.method);
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+
+      final c = quietController();
+      await pumpApp(tester, c);
+      c.piaUsername = 'p1234567';
+
+      await tester.tap(find.byKey(const Key('menu_close_app')));
       await tester.pumpAndSettle();
 
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        const MethodChannel('plugins.flutter.io/url_launcher'),
-        (MethodCall methodCall) async {
-          if (methodCall.method == 'canLaunchUrl' ||
-              methodCall.method == 'canLaunch') {
-            return true;
-          }
-          if (methodCall.method == 'launchUrl' ||
-              methodCall.method == 'launch') {
-            return true;
-          }
-          return null;
-        },
-      );
+      expect(c.piaUsername, isEmpty);
+      expect(calls, contains('SystemNavigator.pop'));
 
-      final developerLink = find.text('Exponentially Digital');
-      if (developerLink.evaluate().isNotEmpty) {
-        await tester.tap(developerLink);
-        await tester.pumpAndSettle();
-      }
-    });
-
-    // 9. Clipboard manipulation operations coverage
-    testWidgets(
-        'Copy to clipboard interaction sets structural data values safely',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(const PiaWgApp());
-      await tester.pumpAndSettle();
-
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        (MethodCall methodCall) async {
-          if (methodCall.method == 'Clipboard.setData') {
-            return true;
-          }
-          return null;
-        },
-      );
+      await disposeApp(tester, c);
     });
   });
 }

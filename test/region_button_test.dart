@@ -1,13 +1,17 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
-import 'package:pia_wireguard_cfga/main.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'app_test_harness.dart';
 
 void main() {
-  testWidgets('region button is tappable', (tester) async {
-    await tester.pumpWidget(const PiaWgApp());
-    await tester.pumpAndSettle();
+  testWidgets('region browse button is tappable on the standalone screen', (tester) async {
+    final c = quietController();
+    await pumpAppAtStandalone(tester, c);
 
+    expect(find.byIcon(Icons.list_alt), findsOneWidget);
     await tester.tap(find.byIcon(Icons.list_alt));
     await tester.pump();
+
+    await disposeApp(tester, c);
   });
 }
