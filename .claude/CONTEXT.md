@@ -1,4 +1,4 @@
-context.md
+# context.md
 
 This app runs on an Android phone/tablet and enables a WireGuard VPN to be used with the Private Internte Access (PIA) service.
 
@@ -17,4 +17,4 @@ If "push to router" is selected, a SSH session connects to the router and the us
 
 A new feature has been added that allows setting a persistent WireGuard configuration on the router. A script is deployed to the router through the SSH session. The script sets up a cron job to ICMP ping specific IP addresses via the currently active VPN (WGC1-5, not the router's WAN port). If there is no connectivity through the VPN then a new WireGuard configuration is generated and applied. Optionally, emails are sent when the interface is reconfigured.
 
-A new feature is in developmment. This feature reorganises and streamlines the user interface to account for the watchdog feature's functionality.
+A new feature is in developmment. This feature fundamentally reorganises and streamlines the user interface to account.
