@@ -23,14 +23,74 @@
   - reconfigure in ~7 seconds
   - logfile rotated at midnight, it does not persist across reboots
   - to reduce on router log data, only the current and previous log are ever retained before a reboot
-- watchdog, add error checking on all router SSH commands, log to app and router if any fail (return non zero)
-- add robust error checking to all ssh heredoc calls
+
+### Fixes for new UI
+
+#### Manage Router
+
+- enable button does not disable any preexisting interface
+- disabling/deleting should also disable any active watchdog on that interface
+- deleteing a slot should display the description of thats lot
+- enable, connectivityc heck fails
+- editing a slot instead of saying "Enabled (enable) 1" just say YES
+- editing a slot remove text "(enforce)" and "(fw)"
+- after displaying "WIREGUARD SLOTS" modal, whne you sleect close should take you to home menu, not back to router login <- change it from a modal to a full screen (same for the watchdog modal, make that full screen too)
+- kill switch is always enabled by default when you craete a slot
+- only shows if one slot is active at a time, but I have two active in web UI
+- with wgc1=melb and active with watchdog, attempt to enable wgc5 as perth, ping fails (this should disable the currently active slot and switch this slot to active, perhaps the kilswitch is getting in the way?) instead both slots might try to be active at the same time:
+  [23:27:34] Enabling wgc5...
+  [23:27:35] Verifying wgc5 interface comes up...
+  [23:27:37] Check 1/30: wgc5 is active
+  [23:27:47] Reverting wgc5 to disabled...
+  [23:27:49] Reading router configuration...
+  [23:27:50] Successfully retrieved router config.
+  [23:27:50] Connectivity check failed via wgc5 (primary 8.8.8.8 FAIL, secondary 1.1.1.1 FAIL). Slot left disabled.
+- add icmp ping test start & results to router syslog when doing an ENABLE on an existing interface with another already active, insetad only app has any logging
+
+#### Watchdog
+
+- Rename menu entry from "VPN watchdog management" -> "Watchdog WireGuard management"
+- delete and edit should not show for empty slots
+- shouldn't be able to deploy say perth as a watchdog to a slot that already has melbd as a config, they need to match
+- when saving a watchdog on a slot which has an existing rregion config, change "The current slot configuration will be overwrritten when you choose a new region" -> "This will set this watchdog to the XYZ region." wher XYZ is the chosen region, you then get the rregion dialogue box...so you could end up with a watchdog configured for region X with a slot config for region Y?
+- modify the router log entry to add thge region name the slot watchdog is configured for eg " Deployed watchdog script for wgc1, aus_melbourne"
+- with the shell script, change the log message from "Checking wgc1 connectivity" to "Checking wgc1, aus_melbourne connectivity"
+- should the edit button allow you to choose a new region? if so that must set the slot description to match
+
+#### UI
+
+- Set defaults for router ip and username
+- home menu app name is split "Configure PIA" new line "Wireguard", timer next to version number, on all screens, when a modal opens the header changes and the timer disappears and the app name is now correctly shown on one line, make the version number always show in topm right corrner, when title is one line it in in middle of header window
+- timer should only show if creds are in memory, not always
+- warn before pressing back exits app
+- prefill router IP and username suggestions
+- main menu needs to show how to us ethe hamburger menu
+- hamburger menu button at the top is "MENU", rename to "HOME" that should take you to the main (home) menu
+- need a visual ID which of part of the app you are in, eg "router login" screen could be anything
+  - Manage router, after login says "WIREGUARD SLOTS" -> "MANAGE ROUTER - SLOTS"
+  - Watchdog, after login says "WATCHDOG SLOTS" -> "WATCHDOG - SLOTS"
+- make the active UI screen highlighted in the hamburger menu
+- make each menu option a different colour on main menu and match that to hamburger, and match that to the title of the slot screen eg yellow "WATCHDOG" default green " SLOTS"
+- 10m timer should show on app title bar at all times, it does not display when modals are shown
+- change "CLOSE" button on each of the 4 option screens -> "HOME"
+- if hamburger menu is showing, back button should take you back to the current screen, instead it take the modal winndow back that is showing behind the hamburger menu
+- hamburger menu "Close app" -> "Exit app"
+- don't display the "connect to router" screen is there is an existing ssh connection to the router, reuse it.
+
+---
 
 ## Changes
 
+2026-06-23 version: 0.6.02
+
+- no code changes, extensive to do list generated
+- added actual prompt used to ui_reorganisation.md
+- rebuilt icons
+- changed build.sh to use bash shell (doesn't execute under WSL, check why!)
+
 2026-06-23 version: 0.6.01
 
-- FIX local env issues
+- FIX local env issues (commit not sent correctly, VSC issue)
 
 2026-06-22 version: 0.6.00
 
