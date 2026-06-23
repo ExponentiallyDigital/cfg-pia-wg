@@ -4,9 +4,10 @@
 
 ### Long term
 
-- Release to Play Store - +12 testers for **closed test** over 14 continuous days
+- Release to Play Store, needs 12 **closed test** testers over 14 continuous days (keep installed, run min. once)
 - New app to set up an Asus router in the most secure/private way possible
 - Add patreon/paypal donation via app/GitHub
+- Edit hosts hosts from VPN client
 
 ### Short term
 
@@ -45,7 +46,31 @@
   [23:27:49] Reading router configuration...
   [23:27:50] Successfully retrieved router config.
   [23:27:50] Connectivity check failed via wgc5 (primary 8.8.8.8 FAIL, secondary 1.1.1.1 FAIL). Slot left disabled.
-- add icmp ping test start & results to router syslog when doing an ENABLE on an existing interface with another already active, insetad only app has any logging
+- add icmp ping test start & results to router syslog when doing an ENABLE on an existing interface with another already active, instead only the app has any logging
+- stray settings left behind
+  wgc1_ep_addr_r=
+  wgc1_rip=
+  wgcN_wd_primary_ip=8.8.8.8
+  wgcN_wd_secondary_ip=1.1.1.1
+  wgcP_enable=1
+  wgc_addr=10.157.1.37/32
+  wgc_aips=0.0.0.0/0
+  wgc_alive=25
+  wgc_desc=aus_melbourne
+  wgc_dns=9.9.9.9,149.112.112.112
+  wgc_enable=1
+  wgc_enforce=1
+  wgc_ep_addr=181.214.199.131
+  wgc_ep_port=1337
+  wgc_fw=1
+  wgc_mtu=1420
+  wgc_nat=1
+  wgc_ppub=redacted
+  wgc_priv=redacted
+  wgc_psk=
+  wgc_unit=1
+  wgc_upload_state=0
+  wgc_upload_unit=1
 
 #### Watchdog
 
@@ -53,7 +78,7 @@
 - delete and edit should not show for empty slots
 - shouldn't be able to deploy say perth as a watchdog to a slot that already has melbd as a config, they need to match
 - when saving a watchdog on a slot which has an existing rregion config, change "The current slot configuration will be overwrritten when you choose a new region" -> "This will set this watchdog to the XYZ region." wher XYZ is the chosen region, you then get the rregion dialogue box...so you could end up with a watchdog configured for region X with a slot config for region Y?
-- modify the router log entry to add thge region name the slot watchdog is configured for eg " Deployed watchdog script for wgc1, aus_melbourne"
+- modify the router log entry to add the region name the slot watchdog is configured for eg " Deployed watchdog script for wgc1, aus_melbourne"
 - with the shell script, change the log message from "Checking wgc1 connectivity" to "Checking wgc1, aus_melbourne connectivity"
 - should the edit button allow you to choose a new region? if so that must set the slot description to match
 
@@ -76,10 +101,44 @@
 - if hamburger menu is showing, back button should take you back to the current screen, instead it take the modal winndow back that is showing behind the hamburger menu
 - hamburger menu "Close app" -> "Exit app"
 - don't display the "connect to router" screen is there is an existing ssh connection to the router, reuse it.
+- change "(Empty Slot)" -> "(empty slot)" or leave blank?
+
+### checks
+
+1. Are these being killed on watchdog removal?
+
+```bash
+user@host:/tmp/home/root# cru l
+*/1 * * * * check_wgc_ep #WGC_CHK_EP#
+user@host:/tmp/home/root# crontab -l
+*/1 * * * * check_wgc_ep #WGC_CHK_EP#
+```
+
+2. is the menu state concuming excessive ram?
+3. Setting up a new slot with no wgc entries at all, nor a watchdog, after being asked to login:
+
+' package : flutter /src/widgets/
+framework. dart' : Failed
+assertion: line 6268 pos 12:
+•\_dependents. isEmpty' : is not
+true.
+See also: https://
+docs . flutter. dev/testing/errors
+
+then told "wgc1 has been created. Remember to ENABLE it via the ENABLE button."
+above error not added to app log.
+slot appears OK.
+only happens if therre arte NBO exiosting slots configured and this is teh first (does not happen if craete slot 5 and slot 1 exists)
+
+4. via ADB examine app's user data (84.54 MB) and cache (90.11 kB) - dsebig app size at 0.6.02 is 71.13 MB, total storage used is 156MB. Requires "allowed to keep app working", "Nearby devices", permission is for "nearby permission" (!)
 
 ---
 
 ## Changes
+
+2026-06-24 version: 0.6.03
+
+- no code changes, upadted extensive to do list
 
 2026-06-23 version: 0.6.02
 
