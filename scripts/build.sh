@@ -143,6 +143,9 @@ fi
 
 echo -e "${GREEN}Environment OK${RESET}"
 
+# Extract version from pubspec.yaml and strip build number (e.g., 0.6.04)
+VERSION=$(grep '^version:' pubspec.yaml | sed -E 's/version:[[:space:]]*([^+[:space:]]+).*/\1/')
+
 ###############################################################################
 # Clean (optional)
 ###############################################################################
@@ -179,6 +182,7 @@ fi
 if ! $SKIP_TEST; then
     echo -e "${CYAN}Running tests...${RESET}"
     # fix for scrolling output in CI logs
+    script -q -c "flutter analyze" /dev/null
     script -q -c "flutter test --coverage" /dev/null
 else
     echo -e "${YELLOW}Skipping tests (--skip-test)...${RESET}"
@@ -199,6 +203,12 @@ if [[ "$MODE" == "release" || "$MODE" == "all" ]]; then
     echo -e "${GREEN}Compiling release version...${RESET}"
     START=$(date +%s)
     flutter build apk --release
+    DEFAULT_APK="build/app/outputs/flutter-apk/app-release.apk"
+    TARGET_APK="build/cfg_pia_wireguard-v${VERSION}_release.apk"
+    if [[ -f "$DEFAULT_APK" ]]; then
+        mv "$DEFAULT_APK" "$TARGET_APK"
+        echo -e "${GREEN}Renamed release APK to: $TARGET_APK${RESET}"
+    fi
     END=$(date +%s)
     RELEASE_BUILD_TIME=$((END - START))
 fi
@@ -218,8 +228,8 @@ echo ""
 echo -e "${MAGENTA}-------------------------------------------------------------------------------${RESET}"
 
 APK_DEBUG="build/app/outputs/flutter-apk/app-debug.apk"
-APK_RELEASE="build/app/outputs/flutter-apk/app-release.apk"
-AAB_RELEASE="build/app/outputs/bundle/release/pia_wireguard_cfga-release.aab"
+APK_RELEASE="build/cfg_pia_wireguard-v${VERSION}_release.apk"
+AAB_RELEASE="build/app/outputs/bundle/release/cfg_pia_wireguard-release.aab"
 
 echo -e "${WHITE}Build artefacts:${RESET}"
 

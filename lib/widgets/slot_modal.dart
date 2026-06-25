@@ -15,7 +15,7 @@
 //
 // One modal serves both router screens (spec 3.2). The button set + actions vary by [mode]:
 //   manage   -> CREATE, ENABLE, EDIT, DISABLE, DELETE
-//   watchdog -> ENABLE, EDIT, DISABLE, DELETE, VIEW WATCHDOG LOG
+//   watchdog -> ENABLE, EDIT, DISABLE, DELETE, VIEW ROUTER WATCHDOG LOG
 // A short-lived SSH client is opened for each action (so a dropped connection self-heals), the
 // slot list is refreshed after every action, and a processing overlay covers the modal while busy.
 
@@ -68,8 +68,7 @@ class _SlotModalState extends State<SlotModal> {
   SessionController get _c => widget.controller;
   SlotInfo? get _selectedInfo => _selected == -1 ? null : _slots.slots[_selected];
 
-  RouterSlotService _slotSvc(SSHClient c) =>
-      widget.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
+  RouterSlotService _slotSvc(SSHClient c) => widget.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
   RouterWatchdog _wdSvc(SSHClient c) => widget.watchdogServiceFactory?.call(c) ?? RouterWatchdog(c, onLog: _c.onLog);
 
   // ── Connection helpers ──────────────────────────────────────────────────────────
@@ -170,8 +169,8 @@ class _SlotModalState extends State<SlotModal> {
     final slot = _selected;
     final info = _slots.slots[slot]!;
     if (!info.isEmpty) {
-      final ok = await _confirm('Overwrite wgc$slot?',
-          'Slot wgc$slot currently holds "${info.desc}". Creating a new configuration will overwrite it.');
+      final ok = await _confirm(
+          'Overwrite wgc$slot?', 'Slot wgc$slot currently holds "${info.desc}". Creating a new configuration will overwrite it.');
       if (!ok) return;
     }
     final regionId = await _pickRegion();
@@ -324,8 +323,8 @@ class _SlotModalState extends State<SlotModal> {
 
   Future<void> _deleteWatchdog() async {
     final slot = _selected;
-    final ok = await _confirm('Delete watchdog + wgc$slot?',
-        'This removes the watchdog and clears the wgc$slot configuration on the router.',
+    final ok = await _confirm(
+        'Delete watchdog + wgc$slot?', 'This removes the watchdog and clears the wgc$slot configuration on the router.',
         confirmLabel: 'DELETE', destructive: true);
     if (!ok) return;
     setState(() => _processing = true);
@@ -480,9 +479,8 @@ class _SlotModalState extends State<SlotModal> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(widget.mode == SlotModalMode.manage ? 'WIREGUARD SLOTS' : 'WATCHDOG SLOTS',
-                        style:
-                            const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+                    Text(widget.mode == SlotModalMode.manage ? 'WIREGUARD CONFIGURATION' : 'WATCHDOG CONFIGURATION',
+                        style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
                     const SizedBox(height: 16),
                     _slotList(),
                     const SizedBox(height: 20),
@@ -492,7 +490,7 @@ class _SlotModalState extends State<SlotModal> {
                       alignment: Alignment.centerRight,
                       child: TextButton(
                         onPressed: _processing ? null : () => Navigator.of(context).pop(),
-                        child: const Text('CLOSE', style: TextStyle(color: kMuted)),
+                        child: const Text('HOME', style: TextStyle(color: kMuted)),
                       ),
                     ),
                   ],
@@ -519,7 +517,7 @@ class _SlotModalState extends State<SlotModal> {
         children: _slots.slots.entries.map((entry) {
           final slotNum = entry.key;
           final info = entry.value;
-          final desc = info.isEmpty ? '(Empty Slot)' : info.desc;
+          final desc = info.isEmpty ? '<empty slot>' : info.desc;
           final isActive = _slots.activeSlot == slotNum;
           return InkWell(
             key: Key('slot_row_$slotNum'),
@@ -589,7 +587,7 @@ class _SlotModalState extends State<SlotModal> {
       btn('slot_edit', 'EDIT', info != null ? _editWatchdog : null),
       btn('slot_disable', 'DISABLE', (info != null && wdActive) ? _disableWatchdog : null),
       btn('slot_delete', 'DELETE', info != null ? _deleteWatchdog : null),
-      btn('slot_view_log', 'VIEW WATCHDOG LOG', (info != null && wdActive) ? _viewWatchdogLog : null),
+      btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (info != null && wdActive) ? _viewWatchdogLog : null),
     ];
   }
 }

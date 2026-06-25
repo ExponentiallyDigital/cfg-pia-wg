@@ -74,6 +74,7 @@ flutter format .
 - Run tests
 
 ```bash
+flutter analyze
 flutter test --coverage
 ```
 

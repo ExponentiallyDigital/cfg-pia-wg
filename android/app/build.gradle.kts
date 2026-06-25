@@ -54,7 +54,7 @@ if (keyPropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.exponentiallydigital.pia_wireguard_cfga"
+    namespace = "com.exponentiallydigital.cfg_pia_wireguard"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -70,12 +70,12 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.exponentiallydigital.pia_wireguard_cfga"
+        applicationId = "com.exponentiallydigital.cfg_pia_wireguard"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        base.archivesName.set("pia_wireguard_cfga")
+        base.archivesName.set("cfg_pia_wireguard")
     }
 
     // ---------------------------------------------------------------------------

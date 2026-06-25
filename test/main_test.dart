@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/app_shell.dart';
-import 'package:pia_wireguard_cfga/session_controller.dart';
+import 'package:cfg_pia_wireguard/app_shell.dart';
+import 'package:cfg_pia_wireguard/session_controller.dart';
 
 import 'app_test_harness.dart';
 

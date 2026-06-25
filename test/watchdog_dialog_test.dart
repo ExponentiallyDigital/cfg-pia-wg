@@ -2,17 +2,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:pia_wireguard_cfga/pia_service.dart';
-import 'package:pia_wireguard_cfga/router_watchdog.dart';
-import 'package:pia_wireguard_cfga/session_controller.dart';
-import 'package:pia_wireguard_cfga/watchdog_dialog.dart';
+import 'package:cfg_pia_wireguard/pia_service.dart';
+import 'package:cfg_pia_wireguard/router_watchdog.dart';
+import 'package:cfg_pia_wireguard/session_controller.dart';
+import 'package:cfg_pia_wireguard/watchdog_dialog.dart';
 
 import 'watchdog_test_utils.dart';
 
 class _FakePia extends PiaService {
   @override
-  Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async =>
-      const [Region(id: 'aus_melbourne', wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')])];
+  Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async => const [
+        Region(id: 'aus_melbourne', wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')])
+      ];
 }
 
 SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});

@@ -6,7 +6,7 @@ an ASUS / Asus-Merlin router over SSH.
 
 ## User interface (reorganised, main-menu driven)
 
-The app opens on a **main menu** with five options. Each (except "Close app") opens its own screen
+The app opens on a **main menu** with five options. Each (except "Exit app") opens its own screen
 (not a modal). Every screen shares a static two-line header, a hamburger menu (top-left) for fast
 navigation between destinations, and an inactivity countdown (top-right, hidden while a modal is open).
 
@@ -16,15 +16,15 @@ navigation between destinations, and an inactivity countdown (top-right, hidden 
 2. **Manage router PIA WireGuard configuration\*** — SSH login, then a parameterised slot modal for
    wgc1–5 with CREATE (generate + write to NVRAM, left disabled), ENABLE (with a per-slot connectivity
    check that reverts on failure), EDIT (all WireGuard slot parameters), DISABLE and DELETE.
-3. **VPN watchdog management\*** — SSH login (Merlin only), then the slot modal with ENABLE (deploy the
+3. **Watchdog WireGuard management\*** — SSH login (Merlin only), then the slot modal with ENABLE (deploy the
    watchdog script + cron), EDIT (watchdog parameters + region, saved but not deployed), DISABLE,
    DELETE and VIEW WATCHDOG LOG.
 4. **View app log** — scrollable in-memory application log with CLEAR LOG.
-5. **Close app** — wipes all credentials, config and the clipboard, then exits.
+5. **Exit app** — wipes all credentials, config and the clipboard, then exits.
 
 \* requires SSH connectivity to an Asus router.
 
-After 10 minutes of inactivity (or on Close app / back-exit from the main menu) all credentials, the
+After 10 minutes of inactivity (or on Exit app / back-exit from the main menu) all credentials, the
 generated config and the clipboard are wiped from memory and the user is returned to the main menu.
 Errors are shown in modal dialogs: input-validation errors batched into one dialog, system/SSH errors
 one at a time. **No SSH or PIA credentials, and no generated configuration, are ever written to device

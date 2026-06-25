@@ -1,6 +1,6 @@
 // test/session_controller_test.dart - unit tests for the shared SessionController.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/session_controller.dart';
+import 'package:cfg_pia_wireguard/session_controller.dart';
 
 void main() {
   group('logging', () {

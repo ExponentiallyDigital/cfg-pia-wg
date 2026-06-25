@@ -1,8 +1,8 @@
 // test/screens/main_menu_screen_test.dart - main menu + global chrome + drawer navigation.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/app_shell.dart';
-import 'package:pia_wireguard_cfga/session_controller.dart';
+import 'package:cfg_pia_wireguard/app_shell.dart';
+import 'package:cfg_pia_wireguard/session_controller.dart';
 
 // A controller whose 1 Hz countdown tick is pushed far into the future so the live countdown
 // does not schedule frames during the test (otherwise pumpAndSettle would never settle).
@@ -35,7 +35,7 @@ void main() {
     await _teardown(tester, c);
   });
 
-  testWidgets('tapping a menu button navigates, and CLOSE returns to a fresh main menu', (tester) async {
+  testWidgets('tapping a menu button navigates, and HOME returns to a fresh main menu', (tester) async {
     final c = _quietController();
     await tester.pumpWidget(PiaWgApp(controller: c));
     await tester.pumpAndSettle();

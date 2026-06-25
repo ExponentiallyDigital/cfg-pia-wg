@@ -1,17 +1,18 @@
 // test/widgets/slot_modal_test.dart - the parameterised slot modal (manage + watchdog modes).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/pia_service.dart';
-import 'package:pia_wireguard_cfga/router_slot_service.dart';
-import 'package:pia_wireguard_cfga/session_controller.dart';
-import 'package:pia_wireguard_cfga/widgets/slot_modal.dart';
+import 'package:cfg_pia_wireguard/pia_service.dart';
+import 'package:cfg_pia_wireguard/router_slot_service.dart';
+import 'package:cfg_pia_wireguard/session_controller.dart';
+import 'package:cfg_pia_wireguard/widgets/slot_modal.dart';
 
 import '../watchdog_test_utils.dart';
 
 class _FakePia extends PiaService {
   @override
-  Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async =>
-      const [Region(id: 'aus_melbourne', wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')])];
+  Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async => const [
+        Region(id: 'aus_melbourne', wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')])
+      ];
 
   @override
   Future<String> generateConfig({
@@ -313,8 +314,8 @@ void main() {
     testWidgets('DISABLE runs stopWatchdog', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
-      await tester.pumpWidget(
-          _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await tester
+          .pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));
@@ -329,11 +330,11 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('VIEW WATCHDOG LOG fetches and displays the log', (tester) async {
+    testWidgets('VIEW ROUTER WATCHDOG LOG fetches and displays the log', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'LOG-DATA-XYZ' : '');
-      await tester.pumpWidget(
-          _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await tester
+          .pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));
@@ -352,8 +353,7 @@ void main() {
     testWidgets('EDIT opens the watchdog dialog', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
-      await tester.pumpWidget(
-          _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
+      await tester.pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));
@@ -371,8 +371,8 @@ void main() {
     testWidgets('DELETE confirms then removes the watchdog and clears the slot', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
-      await tester.pumpWidget(
-          _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await tester
+          .pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));

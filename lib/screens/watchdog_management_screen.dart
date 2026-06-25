@@ -1,4 +1,4 @@
-// screens/watchdog_management_screen.dart - "VPN watchdog management" (spec 2.1.3).
+// screens/watchdog_management_screen.dart - "Watchdog WireGuard management" (spec 2.1.3).
 //
 // This program is free software: you can redistribute it and/or modify it under the terms
 // of the GNU General Public License as published by the Free Software Foundation, either

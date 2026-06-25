@@ -1,8 +1,8 @@
 // test/widgets/error_presenter_test.dart - input-batch vs system-one + single-modal-at-a-time.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/session_controller.dart';
-import 'package:pia_wireguard_cfga/widgets/error_presenter.dart';
+import 'package:cfg_pia_wireguard/session_controller.dart';
+import 'package:cfg_pia_wireguard/widgets/error_presenter.dart';
 
 SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
 

@@ -70,19 +70,19 @@ jobs:
           dart run flutter_launcher_icons
           flutter build apk --release
           mv build/app/outputs/flutter-apk/app-release.apk \
-             build/pia_wireguard_cfga-${GITHUB_REF_NAME}_release.apk
+             build/cfg_pia_wireguard-${GITHUB_REF_NAME}_release.apk
 
       - name: Build debug APK
         run: |
           flutter build apk --debug
           mv build/app/outputs/flutter-apk/app-debug.apk \
-             build/pia_wireguard_cfga-${GITHUB_REF_NAME}_debug.apk
+             build/cfg_pia_wireguard-${GITHUB_REF_NAME}_debug.apk
 
       - name: Build AAB
         run: |
           flutter build appbundle --release
-          mv build/app/outputs/bundle/release/pia_wireguard_cfga-release.aab \
-             build/pia_wireguard_cfga-${GITHUB_REF_NAME}_google-play-store.aab
+          mv build/app/outputs/bundle/release/cfg_pia_wireguard-release.aab \
+             build/cfg_pia_wireguard-${GITHUB_REF_NAME}_google-play-store.aab
 
       - name: Generate SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
@@ -99,17 +99,17 @@ jobs:
       - name: Attest release APK
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: build/pia_wireguard_cfga-${{ github.ref_name }}_release.apk
+          subject-path: build/cfg_pia_wireguard-${{ github.ref_name }}_release.apk
 
       - name: Attest debug APK
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: build/pia_wireguard_cfga-${{ github.ref_name }}_debug.apk
+          subject-path: build/cfg_pia_wireguard-${{ github.ref_name }}_debug.apk
 
       - name: Attest AAB
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: build/pia_wireguard_cfga-${{ github.ref_name }}_google-play-store.aab
+          subject-path: build/cfg_pia_wireguard-${{ github.ref_name }}_google-play-store.aab
 
       - name: Install Pandoc
         run: sudo apt-get update && sudo apt-get install -y pandoc
@@ -139,9 +139,9 @@ jobs:
           files: |
             build/README.html
             build/LICENSE
-            build/pia_wireguard_cfga-${{ github.ref_name }}_release.apk
-            build/pia_wireguard_cfga-${{ github.ref_name }}_debug.apk
-            build/pia_wireguard_cfga-${{ github.ref_name }}_google-play-store.aab
+            build/cfg_pia_wireguard-${{ github.ref_name }}_release.apk
+            build/cfg_pia_wireguard-${{ github.ref_name }}_debug.apk
+            build/cfg_pia_wireguard-${{ github.ref_name }}_google-play-store.aab
             cfg-pia-wg-${{ github.ref_name }}_sbom.spdx.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

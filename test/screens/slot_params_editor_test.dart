@@ -1,7 +1,7 @@
 // test/screens/slot_params_editor_test.dart - WireGuard slot parameter editor (spec 3.3).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/screens/slot_params_editor.dart';
+import 'package:cfg_pia_wireguard/screens/slot_params_editor.dart';
 
 // initial values with addr/desc/ep_addr/ppub/priv blank (no defaults) so SAVE starts disabled.
 Map<String, String> _initial() => {

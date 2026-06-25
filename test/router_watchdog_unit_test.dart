@@ -1,6 +1,6 @@
 // test/router_watchdog_unit_test.dart - pure-function unit tests for the watchdog module.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/router_watchdog.dart';
+import 'package:cfg_pia_wireguard/router_watchdog.dart';
 
 WatchdogConfig _valid({
   int slot = 1,

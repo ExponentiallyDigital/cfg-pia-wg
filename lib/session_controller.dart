@@ -16,7 +16,7 @@
 // Holds the credentials, generated config, application log, and the inactivity/clipboard
 // timers that must persist while the user moves between the five workflow screens. NOTHING
 // here is ever written to device storage — it lives only in memory and is wiped on a 10-minute
-// idle timeout, on "Close app", and when the app is backed out of from the main menu.
+// idle timeout, on "Exit app", and when the app is backed out of from the main menu.
 
 import 'dart:async';
 
@@ -30,9 +30,9 @@ const String kDefaultDns = '9.9.9.9, 149.112.112.112';
 /// destination observer to track which screen is on top (for the drawer's no-op-on-current).
 enum AppDestination {
   menu('main_menu', 'Main menu'),
-  standalone('standalone', 'Generate standalone PIA WireGuard configuration'),
+  standalone('standalone', 'Generate PIA WireGuard configuration'),
   manageRouter('manage_router', 'Manage router PIA WireGuard configuration'),
-  watchdog('watchdog', 'VPN watchdog management'),
+  watchdog('watchdog', 'Watchdog WireGuard management'),
   log('log', 'View app log');
 
   const AppDestination(this.routeName, this.title);
@@ -61,8 +61,7 @@ class SessionController extends ChangeNotifier {
         _tickInterval = tickInterval,
         _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter;
 
-  static Future<void> _defaultClipboardWriter(String text) =>
-      Clipboard.setData(ClipboardData(text: text));
+  static Future<void> _defaultClipboardWriter(String text) => Clipboard.setData(ClipboardData(text: text));
 
   // ── Credentials & config (volatile) ─────────────────────────────────────────
   String piaUsername = '';
@@ -111,8 +110,7 @@ class SessionController extends ChangeNotifier {
 
   // Adapter matching the `void Function(String, {bool isError, bool isSuccess})` callback
   // shape used throughout router_push / router_watchdog / watchdog_dialog.
-  void onLog(String msg, {bool isError = false, bool isSuccess = false}) =>
-      logEntry(msg, isError: isError, isSuccess: isSuccess);
+  void onLog(String msg, {bool isError = false, bool isSuccess = false}) => logEntry(msg, isError: isError, isSuccess: isSuccess);
 
   // Stores the generated standalone config (and its region) so it survives screen navigation
   // and is wiped with everything else on idle / close.

@@ -2,10 +2,10 @@
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/router_slot_service.dart';
-import 'package:pia_wireguard_cfga/screens/manage_router_screen.dart';
-import 'package:pia_wireguard_cfga/screens/watchdog_management_screen.dart';
-import 'package:pia_wireguard_cfga/session_controller.dart';
+import 'package:cfg_pia_wireguard/router_slot_service.dart';
+import 'package:cfg_pia_wireguard/screens/manage_router_screen.dart';
+import 'package:cfg_pia_wireguard/screens/watchdog_management_screen.dart';
+import 'package:cfg_pia_wireguard/session_controller.dart';
 
 import '../watchdog_test_utils.dart';
 
@@ -89,7 +89,7 @@ void main() {
     await tester.tap(find.byKey(const Key('connect_router')));
     await tester.pumpAndSettle();
 
-    expect(find.text('WIREGUARD SLOTS'), findsOneWidget);
+    expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
     expect(find.text('aus_melbourne'), findsWidgets);
 
     await tester.pumpWidget(const SizedBox());
@@ -106,7 +106,7 @@ void main() {
     await tester.tap(find.byKey(const Key('connect_router')));
     await tester.pumpAndSettle();
 
-    expect(find.text('WATCHDOG SLOTS'), findsOneWidget);
+    expect(find.text('WATCHDOG CONFIGURATION'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();
@@ -122,7 +122,7 @@ void main() {
     await tester.tap(find.byKey(const Key('connect_router')));
     await tester.pumpAndSettle();
 
-    expect(find.text('WATCHDOG SLOTS'), findsNothing);
+    expect(find.text('WATCHDOG CONFIGURATION'), findsNothing);
     expect(find.textContaining('Merlin'), findsWidgets);
 
     await tester.pumpWidget(const SizedBox());

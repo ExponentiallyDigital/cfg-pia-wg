@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/pia_service.dart';
+import 'package:cfg_pia_wireguard/pia_service.dart';
 
 void main() {
   test('buildConfig builds expected config', () {

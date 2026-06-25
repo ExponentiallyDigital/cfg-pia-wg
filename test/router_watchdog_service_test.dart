@@ -1,6 +1,6 @@
 // test/router_watchdog_service_test.dart - RouterWatchdog service tests over a fake SSH client.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/router_watchdog.dart';
+import 'package:cfg_pia_wireguard/router_watchdog.dart';
 
 import 'watchdog_test_utils.dart';
 
@@ -60,7 +60,7 @@ void main() {
       expect(c.ran("nvram set pia_wg_cfga_password='secret'"), isTrue);
       expect(c.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
       expect(c.ran('chmod +x /jffs/scripts/watchdog_wgc1.sh'), isTrue);
-      expect(c.ran('logger -t pia-wg-cfga'), isTrue);
+      expect(c.ran('logger -t cfg-pia-wg'), isTrue);
     });
   });
 
@@ -73,7 +73,7 @@ void main() {
       expect(c.ran('cru a watchdog_wgc1 "*/5 * * * *"'), isTrue);
       expect(c.ran('cru a watchdog_log_rotate_wgc1'), isTrue);
       expect(c.ran('/jffs/scripts/services-start'), isTrue);
-      expect(c.ran('logger -t pia-wg-cfga'), isTrue);
+      expect(c.ran('logger -t cfg-pia-wg'), isTrue);
     });
   });
 
@@ -88,7 +88,7 @@ void main() {
       expect(c.ran('/tmp/watchdog_wgc1.log'), isTrue);
       expect(c.ran('/tmp/watchdog_last_ping_success_wgc1'), isTrue);
       expect(c.ran('/tmp/watchdog_backoff_wgc1'), isTrue);
-      expect(c.ran('logger -t pia-wg-cfga'), isTrue);
+      expect(c.ran('logger -t cfg-pia-wg'), isTrue);
       // JFFS must NOT be disabled.
       expect(c.commands.any((cmd) => cmd.contains('jffs2_scripts=0') || cmd.contains('jffs2_on=0')), isFalse);
     });
@@ -147,7 +147,7 @@ void main() {
     expect(c.ran('config test'), isTrue);
     expect(c.ran('/usr/sbin/sendmail'), isTrue);
     expect(c.ran('rm -f /tmp/mail.txt'), isTrue);
-    expect(c.ran('logger -t pia-wg-cfga'), isTrue);
+    expect(c.ran('logger -t cfg-pia-wg'), isTrue);
   });
 
   group('ping helpers', () {
@@ -177,7 +177,7 @@ void main() {
     final appLog = <String>[];
     final svc = RouterWatchdog(c, onLog: (m, {isError = false, isSuccess = false}) => appLog.add(m));
     await expectLater(svc.deployWatchdogScripts(cfg(slot: 1)), throwsA(isA<Exception>()));
-    expect(c.commands.any((cmd) => cmd.contains('logger -t pia-wg-cfga') && cmd.contains('ERROR')), isTrue);
+    expect(c.commands.any((cmd) => cmd.contains('logger -t cfg-pia-wg') && cmd.contains('ERROR')), isTrue);
     expect(appLog.any((m) => m.contains('failed')), isTrue);
   });
 }

@@ -187,8 +187,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
         title: Text('Overwrite wgc${widget.slotIndex}?', style: const TextStyle(color: kText, fontSize: 15)),
-        content: const Text('The current slot configuration will be overwritten when you choose a new region.',
-            style: TextStyle(color: kMuted, fontSize: 13)),
+        content:
+            const Text('This will set this watchdog to the newly chosen region', style: TextStyle(color: kMuted, fontSize: 13)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('CONTINUE')),
@@ -346,8 +346,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                   key: const Key('wd_save'),
                   onPressed: (_loading || _jqMissing) ? null : _save,
                   child: _loading
-                      ? const SizedBox(
-                          height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kOnPrimary))
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kOnPrimary))
                       : const Text('SAVE'),
                 ),
                 const SizedBox(height: 8),

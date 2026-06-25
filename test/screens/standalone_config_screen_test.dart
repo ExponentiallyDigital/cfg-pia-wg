@@ -4,8 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/session_controller.dart';
-import 'package:pia_wireguard_cfga/screens/standalone_config_screen.dart';
+import 'package:cfg_pia_wireguard/session_controller.dart';
+import 'package:cfg_pia_wireguard/screens/standalone_config_screen.dart';
 
 import '../http_test_helpers.dart';
 import '../pia_generate_harness.dart';

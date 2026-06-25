@@ -87,7 +87,7 @@ class AppDrawer extends StatelessWidget {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 24, 20, 16),
-              child: Text('MENU',
+              child: Text('HOME',
                   style: TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
             ),
             const Divider(color: kBorder, height: 1),
@@ -107,7 +107,7 @@ class AppDrawer extends StatelessWidget {
             ListTile(
               key: const Key('drawer_close_app'),
               leading: const Icon(Icons.power_settings_new, color: kError, size: 20),
-              title: const Text('Close app', style: TextStyle(color: kError, fontSize: 13)),
+              title: const Text('Exit app', style: TextStyle(color: kError, fontSize: 13)),
               onTap: () {
                 onCloseDrawer();
                 closeApp(controller);

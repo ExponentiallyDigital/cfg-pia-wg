@@ -25,7 +25,7 @@ const String kPiaTokenUrl = 'https://www.privateinternetaccess.com/gtoken/genera
 const String kPiaCaCertUrl = 'https://raw.githubusercontent.com/pia-foss/manual-connections/master/ca.rsa.4096.crt';
 
 // Syslog tag used by every router-side log line (Bash scripts + Dart deploy/delete).
-const String kWatchdogLogTag = 'pia-wg-cfga';
+const String kWatchdogLogTag = 'cfg-pia-wg';
 
 // ─── Validation helpers (pure) ──────────────────────────────────────────────────
 
@@ -364,8 +364,7 @@ class RouterWatchdog {
         final slot = config.slotIndex;
         await _writeWatchdogNvram(config);
         onLog?.call('NVRAM committed.', isSuccess: true);
-        await _runHeredoc(
-            heredocWrite('/jffs/scripts/watchdog_wgc$slot.sh', buildWatchdogScript(config)),
+        await _runHeredoc(heredocWrite('/jffs/scripts/watchdog_wgc$slot.sh', buildWatchdogScript(config)),
             '/jffs/scripts/watchdog_wgc$slot.sh');
         await _run('chmod +x /jffs/scripts/watchdog_wgc$slot.sh');
         await _logRouter('Deployed watchdog script for wgc$slot');
@@ -541,7 +540,7 @@ class RouterWatchdog {
 
 // ─── Bash script template ────────────────────────────────────────────────────────
 // POSIX sh. __SLOT__ is the only placeholder; everything else is literal shell.
-// Logs to both /jffs/watchdog_wgcN.log and the router syslog (logger -t pia-wg-cfga).
+// Logs to both /jffs/watchdog_wgcN.log and the router syslog (logger -t cfg-pia-wg).
 //
 // There is a ~7 KB heredoc size limitation for the following payload.
 //
@@ -552,7 +551,7 @@ const String _kWatchdogScriptTemplate = r'''#!/bin/sh
 SLOT=__SLOT__
 IFACE="wgc__SLOT__"
 K="${IFACE}_"
-LOGTAG="pia-wg-cfga"
+LOGTAG="cfg-pia-wg"
 LOGFILE="/tmp/watchdog_${IFACE}.log"
 STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"
 BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
@@ -657,7 +656,7 @@ abort() {
 
 # --- Connectivity check ---
 FAIL=1
-log "Checking $IFACE connectivity"
+log "Checking $IFACE $DESC connectivity"
 
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then
   log "Interface $IFACE is down or absent"

@@ -40,6 +40,7 @@ dart pub global activate flutter_coverage_report
 Execute tests and run a hot-reloaded debug instance directly onto your attached mobile/emulated device:
 
 ```bash
+flutter analyze
 flutter test --coverage
 fcr coverage/lcov.info --open ## creates & opens ./coverage/coverage-report.html
 flutter run -d <device_id>    ## get your device ID via "flutter devices"

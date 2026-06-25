@@ -14,7 +14,7 @@
 // Copyright (C) 2026 Andrew Newbury.
 //
 // The UI lives in app_shell.dart and the screens/ + widgets/ directories. PiaWgApp is re-exported
-// here so `import 'package:pia_wireguard_cfga/main.dart'` keeps resolving the root widget.
+// here so `import 'package:cfg_pia_wireguard/main.dart'` keeps resolving the root widget.
 
 import 'package:flutter/material.dart';
 

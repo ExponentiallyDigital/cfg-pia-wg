@@ -31,13 +31,13 @@ Manually creating a WireGuard configuration for PIA requires authenticating agai
 
 This app has been submitted to the Google Play Store, when their process concludes, a link will be placed **`<here>`**.
 
-If you want to download a pre-built release from [GitHub](https://github.com/ExponentiallyDigital/cfg-pia-wg/releases), the file you need is **`pia_wireguard_cfga-<version>_release.apk`**.
+If you want to download a pre-built release from [GitHub](https://github.com/ExponentiallyDigital/cfg-pia-wg/releases), the file you need is **`cfg_pia_wireguard-<version>_release.apk`**.
 
 Each release includes the following versioned files:
 
-- **`pia_wireguard_cfga-<version>_release.apk`** – optimised signed release APK
-- **`pia_wireguard_cfga-<version>_debug.apk`** – debug APK for testing
-- **`pia_wireguard_cfga-<version>_google-play-store.aab`** – an Android App Bundle for the Play Store
+- **`cfg_pia_wireguard-<version>_release.apk`** – optimised signed release APK
+- **`cfg_pia_wireguard-<version>_debug.apk`** – debug APK for testing
+- **`cfg_pia_wireguard-<version>_google-play-store.aab`** – an Android App Bundle for the Play Store
 - **`cfg-pia-wg-<version>_sbom.spdx.json`** – software bill of materials (SPDX format)
 - **`README.html`** – offline documentation (generated from this README)
 - **`LICENSE`** – license file

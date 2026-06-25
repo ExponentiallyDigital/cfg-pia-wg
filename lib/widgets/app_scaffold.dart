@@ -102,8 +102,7 @@ class AppHeaderBar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Configure PIA WireGuard',
-                    style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w600)),
+                const Text('Configure PIA WireGuard', style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w600)),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -166,7 +165,7 @@ class AppHeaderBar extends StatelessWidget {
   }
 }
 
-/// Per-screen body wrapper: a scrollable padded content area plus an optional CLOSE button that
+/// Per-screen body wrapper: a scrollable padded content area plus an optional HOME button that
 /// returns to a fresh main menu (spec 2.1; stack-growth is intentional).
 class AppScaffold extends StatelessWidget {
   final Widget child;
@@ -197,7 +196,7 @@ class AppScaffold extends StatelessWidget {
                       side: const BorderSide(color: kBorder),
                       padding: const EdgeInsets.symmetric(vertical: 14)),
                   onPressed: () => navigateToDestination(context, SessionScope.of(context), AppDestination.menu),
-                  child: const Text('CLOSE'),
+                  child: const Text('HOME'),
                 ),
               ),
             ),

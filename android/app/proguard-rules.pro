@@ -4,4 +4,4 @@
 -dontwarn io.flutter.**
 
 # Keep all classes in your app package
--keep class com.exponentiallydigital.pia_wireguard_cfga.** { *; }
+-keep class com.exponentiallydigital.cfg_pia_wireguard.** { *; }

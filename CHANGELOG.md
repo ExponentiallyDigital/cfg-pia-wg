@@ -7,14 +7,12 @@
 - Release to Play Store, needs 12 **closed test** testers over 14 continuous days (keep installed, run min. once)
 - New app to set up an Asus router in the most secure/private way possible
 - Add patreon/paypal donation via app/GitHub
-- Edit hosts hosts from VPN client
+- Edit hosts from VPN client
 
 ### Short term
 
-- update and pin java version used in actions scripts to match development environments (v22) - tried 25, breaks local dev env tool chain
-- in `build.ps1` and `build.sh`, add the version number to the aab filename (like action script does)
-- port `build.sh` functionality to `build.ps1` (rich error handling & stats)
-- add `flutter analyse` to build scripts and docs
+- update play store app name from `pia_wireguard_cfga` to `cfg_pia_wireguard`
+- port `build.sh` functionality to `build.ps1`
 - create app process flow chart, add to `ARCHITECTURE.md`
 - create watchdog documentation:
   - how-to with screenshots
@@ -24,117 +22,76 @@
   - reconfigure in ~7 seconds
   - logfile rotated at midnight, it does not persist across reboots
   - to reduce on router log data, only the current and previous log are ever retained before a reboot
+- new UI: modals need to be resized with tablet/large screen
+- examine and confirm private datastore via `C:\Users\andrew\AppData\Local\Android\sdk\platform-tools\adb.exe exec-out "run-as com.exponentiallydigital.cfg_pia_wireguard tar c ." > C:\Users\andrew\Desktop\app_dump.tar`
 
-### Fixes for new UI
+### Fixes and changes to be made for new UI
 
-#### Manage Router
+#### Manage router PIA WireGuard configuration
 
-- enable button does not disable any preexisting interface
-- disabling/deleting should also disable any active watchdog on that interface
-- deleteing a slot should display the description of thats lot
-- enable, connectivityc heck fails
-- editing a slot instead of saying "Enabled (enable) 1" just say YES
-- editing a slot remove text "(enforce)" and "(fw)"
-- after displaying "WIREGUARD SLOTS" modal, whne you sleect close should take you to home menu, not back to router login <- change it from a modal to a full screen (same for the watchdog modal, make that full screen too)
-- kill switch is always enabled by default when you craete a slot
-- only shows if one slot is active at a time, but I have two active in web UI
-- with wgc1=melb and active with watchdog, attempt to enable wgc5 as perth, ping fails (this should disable the currently active slot and switch this slot to active, perhaps the kilswitch is getting in the way?) instead both slots might try to be active at the same time:
-  [23:27:34] Enabling wgc5...
-  [23:27:35] Verifying wgc5 interface comes up...
-  [23:27:37] Check 1/30: wgc5 is active
-  [23:27:47] Reverting wgc5 to disabled...
-  [23:27:49] Reading router configuration...
-  [23:27:50] Successfully retrieved router config.
-  [23:27:50] Connectivity check failed via wgc5 (primary 8.8.8.8 FAIL, secondary 1.1.1.1 FAIL). Slot left disabled.
-- add icmp ping test start & results to router syslog when doing an ENABLE on an existing interface with another already active, instead only the app has any logging
-- stray settings left behind
-  wgc1_ep_addr_r=
-  wgc1_rip=
-  wgcN_wd_primary_ip=8.8.8.8
-  wgcN_wd_secondary_ip=1.1.1.1
-  wgcP_enable=1
-  wgc_addr=10.157.1.37/32
-  wgc_aips=0.0.0.0/0
-  wgc_alive=25
-  wgc_desc=aus_melbourne
-  wgc_dns=9.9.9.9,149.112.112.112
-  wgc_enable=1
-  wgc_enforce=1
-  wgc_ep_addr=181.214.199.131
-  wgc_ep_port=1337
-  wgc_fw=1
-  wgc_mtu=1420
-  wgc_nat=1
-  wgc_ppub=redacted
-  wgc_priv=redacted
-  wgc_psk=
-  wgc_unit=1
-  wgc_upload_state=0
-  wgc_upload_unit=1
+- disallow concurrency: only one interface should ever be active at a time, ENABLE button must disable any currently enabled interface
+- disabling/deleting an interface must also disable any active watchdog on that interface
+- deleting an interface must display the description of that interface in the confirmation popup
+- when a slot is active (enabled), grey out the ENABLE button
+- when creating an interface set the kill switch to disabled (wgcN_enforce=0)
+- when editing an interface alter the UI text display: currently shows "Enable (enable) 0" , change to "Enabled YES" or "Enabled NO"
+- when displaying the "WIREGUARD SLOTS" modal, the HOME button at thje bottom of that modal should take you to the home menu instead of the router login window
+- when ENABLE is selected and ping tests are conducted, log this to the router log (currently only logging to the app log)
+- CREATE, ENABLE, DISABLE and DELETE must log these activities to the router log
 
-#### Watchdog
+#### Watchdog WireGuard management
 
-- Rename menu entry from "VPN watchdog management" -> "Watchdog WireGuard management"
-- delete and edit should not show for empty slots
-- shouldn't be able to deploy say perth as a watchdog to a slot that already has melbd as a config, they need to match
-- when saving a watchdog on a slot which has an existing rregion config, change "The current slot configuration will be overwrritten when you choose a new region" -> "This will set this watchdog to the XYZ region." wher XYZ is the chosen region, you then get the rregion dialogue box...so you could end up with a watchdog configured for region X with a slot config for region Y?
-- modify the router log entry to add the region name the slot watchdog is configured for eg " Deployed watchdog script for wgc1, aus_melbourne"
-- with the shell script, change the log message from "Checking wgc1 connectivity" to "Checking wgc1, aus_melbourne connectivity"
-- should the edit button allow you to choose a new region? if so that must set the slot description to match
+- ENABLE and DELETE buttons must be greyed out if an empty slot is selected
+- after creating a watchdog on an empty slot, open a popup to remind the user to ENABLE the watchdog (this functionality will then match "Manage router PIA WireGuard configuration")
+- modify `deployWatchdogScripts` to include the region (description) eg from "Deployed watchdog script for wgc5" to "Deployed watchdog script for wgc5, aus_melbourne"
+- disallow concurrency: only one watchdog should ever be active at a time, ENABLE button must disable any currently enabled watchdog
+- when the DELETE button is pressed, add a confirmation popup with this text "This will also delete and disable the underlying region."
+- when EDIT button is pressed for a disabled slot, put the PIA username and password in the mopdal that open up
 
 #### UI
 
-- Set defaults for router ip and username
-- home menu app name is split "Configure PIA" new line "Wireguard", timer next to version number, on all screens, when a modal opens the header changes and the timer disappears and the app name is now correctly shown on one line, make the version number always show in topm right corrner, when title is one line it in in middle of header window
-- timer should only show if creds are in memory, not always
-- warn before pressing back exits app
-- prefill router IP and username suggestions
-- main menu needs to show how to us ethe hamburger menu
-- hamburger menu button at the top is "MENU", rename to "HOME" that should take you to the main (home) menu
-- need a visual ID which of part of the app you are in, eg "router login" screen could be anything
-  - Manage router, after login says "WIREGUARD SLOTS" -> "MANAGE ROUTER - SLOTS"
-  - Watchdog, after login says "WATCHDOG SLOTS" -> "WATCHDOG - SLOTS"
-- make the active UI screen highlighted in the hamburger menu
-- make each menu option a different colour on main menu and match that to hamburger, and match that to the title of the slot screen eg yellow "WATCHDOG" default green " SLOTS"
-- 10m timer should show on app title bar at all times, it does not display when modals are shown
-- change "CLOSE" button on each of the 4 option screens -> "HOME"
-- if hamburger menu is showing, back button should take you back to the current screen, instead it take the modal winndow back that is showing behind the hamburger menu
-- hamburger menu "Close app" -> "Exit app"
-- don't display the "connect to router" screen is there is an existing ssh connection to the router, reuse it.
-- change "(Empty Slot)" -> "(empty slot)" or leave blank?
+- remove the 10 minute timer and all it's associated logic and code
+- set defaults for router ip = "192.168.0.254" and router username = "admin"
+- warn the user when pressing the back key IFF it will exit the application
+- on the main menu screen, show text below "\* requires SSH connectivity to an Asus router". This additional text will use the house green style with vertical padding from the existiong text, it will say "Select from the above and/or use the top left <\insert reduced image of hambuger menu> menu."
+- in the hamburger menu, there is text marked "HOME" in green, make this grey and make it navigate to the main menu screen when pressed
+- in the hamburger menu, make the currently active menu item appear in house GREEN. eg if the user is currently in the "Watchdog WireGuard management" menu item it's modal, display that in house GREE on the manhurger meny. The "Close app" colour does not change and remains red.
+- if there is an existing SSH connection to the router, display the "connect to router" screen in the background but skip to the modal window which aree displayed in the "Manage router PIA WireGuard Configuration" and "Watchdog WireGuard management" menu options.
 
-### checks
+## BUG - 4x init
 
-1. Are these being killed on watchdog removal?
+The very first time an empty slot is selected and a configuration created which asks for a region name then PIA username and password, 4 errors thrown:
 
-```bash
-user@host:/tmp/home/root# cru l
-*/1 * * * * check_wgc_ep #WGC_CHK_EP#
-user@host:/tmp/home/root# crontab -l
-*/1 * * * * check_wgc_ep #WGC_CHK_EP#
-```
-
-2. is the menu state concuming excessive ram?
-3. Setting up a new slot with no wgc entries at all, nor a watchdog, after being asked to login:
-
-' package : flutter /src/widgets/
-framework. dart' : Failed
-assertion: line 6268 pos 12:
-•\_dependents. isEmpty' : is not
-true.
-See also: https://
-docs . flutter. dev/testing/errors
-
-then told "wgc1 has been created. Remember to ENABLE it via the ENABLE button."
-above error not added to app log.
-slot appears OK.
-only happens if therre arte NBO exiosting slots configured and this is teh first (does not happen if craete slot 5 and slot 1 exists)
-
-4. via ADB examine app's user data (84.54 MB) and cache (90.11 kB) - dsebig app size at 0.6.02 is 71.13 MB, total storage used is 156MB. Requires "allowed to keep app working", "Nearby devices", permission is for "nearby permission" (!)
+1. A TextEditingController was used after being disposed.
+2. A RenderFlex overflowed by 99588 pixels on the bottom.
+3. 'package:flutter/src/widgets/framework.dart': Failed assertion: line 6268 pos 12: '\_dependents.isEmpty': is not true.
+4. Duplicate GlobalKeys detected in widget tree
+   then told "wgc1 has been created. Remember to ENABLE it via the ENABLE button."
+   above error not added to app log.
+   slot appears OK.
+   if PIA username/pwd cached fom memory errors do not appear
+   caused by the PIA uname/pwd/IP address x2 dialogue box?
 
 ---
 
 ## Changes
+
+2026-06-25 version: 0.6.04
+
+- change from `pia-wg-cfga` to `cfg-pia-wg` as router log prefix
+- renamed `pia_wireguard_cfga` to `cfg_pia_wireguard` in all build scripts, tests, and settings files
+- add `flutter analyse` to build scripts, actions, and docs
+- updated quality_and_security.yml to use java 21 (was 17 in some places), this matches the local build envs. V25 breaks local dev tool chain.
+- added version number to release assets created by `build.ps1` and `build.sh` (matches GitHub Actions release script)
+- updated slot edit text
+- renamed menu entry from "VPN watchdog management" -> "Watchdog WireGuard management"
+- watchdog shell script, changed log message from "Checking wgc1 connectivity" to "Checking wgc1 aus_melbourne connectivity"
+- updated text for overwrting watchdog config with a different region
+- droped "standalone" from menu item name
+- renamed modal screens from wireguard/watchdog "slots" to "configuration"
+- hamburger menu "Close app" -> "Exit app"
+- slot modal "(Empty Slot)" -> "<\empty slot>"
+- change "CLOSE" button on each of the 4 option screens -> "HOME"
 
 2026-06-24 version: 0.6.03
 

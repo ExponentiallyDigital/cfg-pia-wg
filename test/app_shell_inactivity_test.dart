@@ -1,8 +1,8 @@
 // test/app_shell_inactivity_test.dart - global 10-minute idle wipe + countdown (spec §3).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/app_shell.dart';
-import 'package:pia_wireguard_cfga/session_controller.dart';
+import 'package:cfg_pia_wireguard/app_shell.dart';
+import 'package:cfg_pia_wireguard/session_controller.dart';
 
 void main() {
   // The timer-expiry logic itself (fires the callback + wipes) is unit-tested in

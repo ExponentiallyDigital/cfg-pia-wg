@@ -1,6 +1,6 @@
 // test/router_slot_service_test.dart - RouterSlotService tests over a fake SSH client.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pia_wireguard_cfga/router_slot_service.dart';
+import 'package:cfg_pia_wireguard/router_slot_service.dart';
 
 import 'watchdog_test_utils.dart';
 

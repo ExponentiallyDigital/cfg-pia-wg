@@ -13,7 +13,7 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// Both the "Manage router" (2.1.2) and "VPN watchdog management" (2.1.3) screens reduce to: collect
+// Both the "Manage router" (2.1.2) and "Watchdog WireGuard management" (2.1.3) screens reduce to: collect
 // the router IP / SSH credentials (pre-filled from the shared session), connect, fetch the slots,
 // then open the parameterised SlotModal in the appropriate mode.
 
@@ -88,8 +88,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     setState(() {});
   }
 
-  bool get _canConnect =>
-      _ipCtrl.text.trim().isNotEmpty && _userCtrl.text.trim().isNotEmpty && _passCtrl.text.trim().isNotEmpty;
+  bool get _canConnect => _ipCtrl.text.trim().isNotEmpty && _userCtrl.text.trim().isNotEmpty && _passCtrl.text.trim().isNotEmpty;
 
   // A fresh client each call (so a dropped connection self-heals on the next action).
   Future<SSHClient> _connect() {
@@ -98,8 +97,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     return openSshClient(ip, user, pass);
   }
 
-  RouterSlotService _slotSvc(SSHClient c) =>
-      widget.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
+  RouterSlotService _slotSvc(SSHClient c) => widget.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
 
   Future<void> _onConnect() async {
     setState(() => _connecting = true);
@@ -110,7 +108,9 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       client = await _connect();
       slots = await _slotSvc(client).fetchSlots();
     } catch (e) {
-      if (mounted) await AppErrors.system(context, _c, 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}');
+      if (mounted) {
+        await AppErrors.system(context, _c, 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}');
+      }
     } finally {
       client?.close();
       if (mounted) setState(() => _connecting = false);
@@ -160,7 +160,8 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
               key: const Key('connect_router'),
               onPressed: (_connecting || !_canConnect) ? null : _onConnect,
               child: _connecting
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF12141A)))
+                  ? const SizedBox(
+                      height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF12141A)))
                   : const Text('CONNECT TO ROUTER'),
             ),
           ),
