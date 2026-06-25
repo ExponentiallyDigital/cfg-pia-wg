@@ -121,7 +121,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 _switch('Inbound firewall', _fw, (v) => setState(() => _fw = v), const Key('slot_fw')),
                 _switch('NAT', _nat, (v) => setState(() => _nat = v), const Key('slot_nat')),
                 const SizedBox(height: 8),
-                _readOnly('Enabled (enable)', widget.initial['enable'] ?? ''),
+                _readOnly('Enabled', widget.initial['enable'] == '1' ? 'YES' : 'NO'),
                 _readOnly('Resolved endpoint IP (ep_addr_r)', widget.initial['ep_addr_r'] ?? ''),
                 _readOnly('Preshared key (psk, unused by PIA)', widget.initial['psk'] ?? ''),
                 _readOnly('Router public IP (rip)', widget.initial['rip'] ?? ''),

@@ -87,35 +87,12 @@ void main() {
     });
   });
 
-  group('inactivity timer', () {
-    test('reset arms the countdown', () async {
-      final c = SessionController(
-        inactivityTimeout: const Duration(seconds: 10),
-        tickInterval: const Duration(milliseconds: 20),
-        clipboardWriter: (_) async {},
-      );
-      c.resetActivity();
-      await Future<void>.delayed(const Duration(milliseconds: 70));
-      expect(c.inactivitySeconds, inInclusiveRange(8, 10));
-      c.dispose();
-    });
-
-    test('expiry wipes the session and fires the callback', () async {
-      var fired = false;
-      final c = SessionController(
-        inactivityTimeout: const Duration(milliseconds: 60),
-        tickInterval: const Duration(milliseconds: 20),
-        clipboardWriter: (_) async {},
-      );
-      c.onInactivityExpire = () => fired = true;
-      c.piaUsername = 'u';
-      c.resetActivity();
-
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-
-      expect(fired, isTrue);
-      expect(c.piaUsername, isEmpty);
-      expect(c.log.any((e) => e.message.contains('inactivity')), isTrue);
+  group('routerConnected', () {
+    test('is reset by wipeAll', () async {
+      final c = SessionController(clipboardWriter: (_) async {});
+      c.routerConnected = true;
+      await c.wipeAll();
+      expect(c.routerConnected, isFalse);
       c.dispose();
     });
   });

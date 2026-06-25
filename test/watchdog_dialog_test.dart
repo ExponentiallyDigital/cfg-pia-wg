@@ -144,6 +144,11 @@ void main() {
 
     expect(ssh.ran("nvram set wgc1_desc='aus_melbourne'"), isTrue);
     expect(ssh.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isFalse); // still not deployed
+
+    // Empty-slot create shows the "remember to ENABLE" reminder.
+    expect(find.text('Watchdog configured'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'OK'));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('test email sends with the supplied SMTP settings', (tester) async {

@@ -223,7 +223,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       if (newDesc == null) return;
     }
 
-    await _withService((svc) async {
+    final saved = await _withService((svc) async {
       // Pre-save reachability check over the WAN; warns but still allows saving (spec 2.1.3).
       final p = await svc.pingHostViaWan(cfg.primaryIp.trim());
       final s = await svc.pingHostViaWan(cfg.secondaryIp.trim());
@@ -234,9 +234,27 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         await AppErrors.inputs(context, _c, [...warnings, 'The settings will still be saved.']);
       }
       await svc.saveWatchdogConfig(cfg, desc: newDesc);
+      return true;
     });
-    if (mounted) Navigator.of(context).pop();
+    if (saved != true || !mounted) return;
+    // Configured a previously-empty slot: remind the user to ENABLE it (matches manage CREATE).
+    if (widget.slotIsEmpty && !enabled) {
+      await _remindToEnable();
+      if (!mounted) return;
+    }
+    Navigator.of(context).pop();
   }
+
+  Future<void> _remindToEnable() => showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: kSurface,
+          title: const Text('Watchdog configured', style: TextStyle(color: kHighlight, fontSize: 15)),
+          content: Text('wgc${widget.slotIndex} has been configured. Remember to ENABLE it via the ENABLE button.',
+              style: const TextStyle(color: kText, fontSize: 13)),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+        ),
+      );
 
   Future<void> _testEmail() async {
     final cfg = _currentConfig().copyWith(emailAlertsEnabled: true);

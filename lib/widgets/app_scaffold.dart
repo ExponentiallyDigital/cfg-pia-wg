@@ -15,8 +15,8 @@
 // Copyright (C) 2026 Andrew Newbury.
 //
 // The chrome is rendered ABOVE the navigator (via MaterialApp.builder) so the header is static and
-// the hamburger + countdown stay visible and tappable even while a dialog (slot modal, EDIT, error)
-// is shown below it (spec 3.1). The countdown is hidden whenever a modal is open.
+// the hamburger stays visible and tappable even while a dialog (slot modal, EDIT, error) is shown
+// below it (spec 3.1).
 
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -26,8 +26,7 @@ import '../app_colors.dart';
 import '../session_controller.dart';
 import 'app_drawer.dart';
 
-/// Wraps the whole navigator with the static header bar, the hamburger drawer, and a global
-/// activity listener that resets the inactivity countdown on any interaction.
+/// Wraps the whole navigator with the static header bar and the hamburger drawer.
 class AppChrome extends StatefulWidget {
   final GlobalKey<NavigatorState> navigatorKey;
   final Widget child; // the app's Navigator
@@ -43,37 +42,30 @@ class _AppChromeState extends State<AppChrome> {
   @override
   Widget build(BuildContext context) {
     final controller = SessionScope.of(context);
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => controller.resetActivity(),
-      onPointerMove: (_) => controller.resetActivity(),
-      child: Scaffold(
-        key: _scaffoldKey,
-        backgroundColor: kBg,
-        drawer: AppDrawer(
-          navigatorKey: widget.navigatorKey,
-          controller: controller,
-          onCloseDrawer: () => _scaffoldKey.currentState?.closeDrawer(),
-        ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              AppHeaderBar(controller: controller, onMenu: () => _scaffoldKey.currentState?.openDrawer()),
-              Expanded(child: widget.child),
-            ],
-          ),
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: kBg,
+      drawer: AppDrawer(
+        navigatorKey: widget.navigatorKey,
+        controller: controller,
+        onCloseDrawer: () => _scaffoldKey.currentState?.closeDrawer(),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            AppHeaderBar(onMenu: () => _scaffoldKey.currentState?.openDrawer()),
+            Expanded(child: widget.child),
+          ],
         ),
       ),
     );
   }
 }
 
-/// The static two-line header (migrated from main.dart `_buildAppBar`) plus the hamburger button
-/// and the inactivity countdown.
+/// The static two-line header (migrated from main.dart `_buildAppBar`) plus the hamburger button.
 class AppHeaderBar extends StatelessWidget {
-  final SessionController controller;
   final VoidCallback onMenu;
-  const AppHeaderBar({super.key, required this.controller, required this.onMenu});
+  const AppHeaderBar({super.key, required this.onMenu});
 
   Future<void> _launch(String urlStr) async {
     final url = Uri.parse(urlStr);
@@ -92,6 +84,7 @@ class AppHeaderBar extends StatelessWidget {
           // NB: no Tooltip here — the chrome sits beside the Navigator's Overlay, so an
           // Overlay-dependent Tooltip would assert. The hamburger icon is self-explanatory.
           IconButton(
+            key: const Key('app_hamburger'),
             icon: const Icon(Icons.menu, color: kText),
             onPressed: onMenu,
           ),
@@ -123,10 +116,6 @@ class AppHeaderBar extends StatelessWidget {
               ],
             ),
           ),
-          ListenableBuilder(
-            listenable: controller,
-            builder: (context, _) => _countdown(controller),
-          ),
           const SizedBox(width: 8),
           MouseRegion(
             cursor: SystemMouseCursors.click,
@@ -147,22 +136,6 @@ class AppHeaderBar extends StatelessWidget {
     );
   }
 
-  // Inactivity countdown (mm:ss). Hidden while a modal is open (spec §3).
-  Widget _countdown(SessionController c) {
-    if (c.modalsOpen || c.inactivitySeconds <= 0) return const SizedBox.shrink();
-    final urgent = c.inactivitySeconds <= 60;
-    final color = urgent ? kError : kHighlight;
-    final m = (c.inactivitySeconds ~/ 60).toString();
-    final s = (c.inactivitySeconds % 60).toString().padLeft(2, '0');
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.timer_outlined, size: 12, color: color),
-        const SizedBox(width: 4),
-        Text('$m:$s', key: const Key('inactivity_countdown'), style: TextStyle(color: color, fontSize: 11)),
-      ],
-    );
-  }
 }
 
 /// Per-screen body wrapper: a scrollable padded content area plus an optional HOME button that

@@ -1,20 +1,18 @@
 // test/app_test_harness.dart - shared helpers for full-app widget tests.
 //
-// The live 1 Hz inactivity countdown schedules a frame every second, so a default controller would
-// make pumpAndSettle hang. Tests inject a controller whose tick interval is pushed far out, then
-// dispose it (cancelling the timer) at the end of the test body.
+// The clipboard auto-clear timer ticks at 1 Hz once a COPY arms it; pushing the tick interval far
+// out keeps pumpAndSettle from hanging in tests that exercise the clipboard. Dispose the injected
+// controller at the end of the test body (cancels the timer).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wireguard/app_shell.dart';
 import 'package:cfg_pia_wireguard/session_controller.dart';
 
 SessionController quietController({
-  Duration? inactivityTimeout,
   Duration tickInterval = const Duration(hours: 1),
 }) =>
     SessionController(
       tickInterval: tickInterval,
-      inactivityTimeout: inactivityTimeout ?? const Duration(minutes: 10),
       clipboardWriter: (_) async {},
     );
 

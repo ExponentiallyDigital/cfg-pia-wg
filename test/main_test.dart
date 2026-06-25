@@ -64,7 +64,7 @@ void main() {
       await disposeApp(tester, c);
     });
 
-    testWidgets('Close app wipes credentials and asks the platform to exit', (tester) async {
+    testWidgets('Exit app confirms, wipes credentials and asks the platform to exit', (tester) async {
       final calls = <String>[];
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
         calls.add(call.method);
@@ -77,6 +77,11 @@ void main() {
       c.piaUsername = 'p1234567';
 
       await tester.tap(find.byKey(const Key('menu_close_app')));
+      await tester.pumpAndSettle();
+
+      // Confirmation dialog (all exit paths) — Exit proceeds.
+      expect(find.text('Exit application?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'EXIT'));
       await tester.pumpAndSettle();
 
       expect(c.piaUsername, isEmpty);

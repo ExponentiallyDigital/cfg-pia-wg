@@ -23,7 +23,7 @@ import 'dart:convert';
 
 import 'package:dartssh2/dartssh2.dart';
 
-import 'router_watchdog.dart' show shellSingleQuote;
+import 'router_watchdog.dart' show shellSingleQuote, kWatchdogLogTag;
 
 // The per-slot WireGuard NVRAM keys (without the `wgcN_` prefix), in the order router_push.dart
 // wrote them. Used for backup/restore, delete, and the parameter editor.
@@ -98,6 +98,13 @@ class RouterSlotService {
 
   Future<String> _run(String cmd) async => utf8.decode(await client.run(cmd)).trim();
 
+  // Best-effort router syslog entry (mirrors RouterWatchdog._logRouter); never fails the action.
+  Future<void> _logRouter(String msg) async {
+    try {
+      await _run('logger -t $kWatchdogLogTag ${shellSingleQuote(msg)}');
+    } catch (_) {}
+  }
+
   // ── Read ─────────────────────────────────────────────────────────────────────
   Future<RouterSlots> fetchSlots() async {
     onLog?.call('Reading router configuration...');
@@ -169,7 +176,7 @@ class RouterSlotService {
       await _run('nvram set wgc${slot}_desc="$regionId"');
       await _run('nvram set wgc${slot}_dns="${wgMap['DNS'] ?? ''}"');
       await _run('nvram set wgc${slot}_enable=0'); // created but not active (spec 2.1.2)
-      await _run('nvram set wgc${slot}_enforce=1');
+      await _run('nvram set wgc${slot}_enforce=0'); // kill switch off on create (round-2)
       await _run('nvram set wgc${slot}_ep_addr="$epIp"');
       await _run('nvram set wgc${slot}_ep_addr_r=""');
       await _run('nvram set wgc${slot}_ep_port="$epPort"');
@@ -184,6 +191,7 @@ class RouterSlotService {
       await _run('nvram commit');
       onLog?.call('NVRAM committed.', isSuccess: true);
       onLog?.call('Config written to wgc$slot (disabled).', isSuccess: true);
+      await _logRouter('Created wgc$slot configuration ($regionId)');
     } catch (e) {
       if (backup != null) {
         onLog?.call('Create failed, restoring wgc$slot config...', isError: true);
@@ -230,12 +238,15 @@ class RouterSlotService {
 
     final primaryOk = await pingViaSlot(primaryIp, slot);
     final secondaryOk = await pingViaSlot(secondaryIp, slot);
+    await _logRouter('wgc$slot ENABLE connectivity check: '
+        'primary $primaryIp ${primaryOk ? 'OK' : 'FAIL'}, secondary $secondaryIp ${secondaryOk ? 'OK' : 'FAIL'}');
     if (!primaryOk || !secondaryOk) {
       await _revertEnable(slot);
       throw Exception('Connectivity check failed via wgc$slot '
           '(primary $primaryIp ${primaryOk ? 'OK' : 'FAIL'}, secondary $secondaryIp ${secondaryOk ? 'OK' : 'FAIL'}). '
           'Slot left disabled.');
     }
+    await _logRouter('Enabled wgc$slot');
     onLog?.call('wgc$slot enabled and verified.', isSuccess: true);
   }
 
@@ -252,6 +263,7 @@ class RouterSlotService {
     await _run('nvram set wgc${slot}_enable=0');
     await _run('nvram commit');
     await _run('service "stop_wgc $slot"; service start_vpnrouting0');
+    await _logRouter('Disabled wgc$slot');
     onLog?.call('wgc$slot disabled.', isSuccess: true);
   }
 
@@ -264,6 +276,7 @@ class RouterSlotService {
       await _run('nvram unset wgc${slot}_$key');
     }
     await _run('nvram commit');
+    await _logRouter('Deleted wgc$slot configuration');
     onLog?.call('wgc$slot configuration cleared.', isSuccess: true);
   }
 

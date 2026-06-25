@@ -117,5 +117,6 @@ void main() {
 
     expect(find.text('198.51.100.7'), findsOneWidget); // rip
     expect(find.text('203.0.113.9'), findsOneWidget); // ep_addr_r
+    expect(find.text('YES'), findsOneWidget); // Enabled (enable == '1')
   });
 }

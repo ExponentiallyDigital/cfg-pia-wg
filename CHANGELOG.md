@@ -13,68 +13,44 @@
 
 - update play store app name from `pia_wireguard_cfga` to `cfg_pia_wireguard`
 - port `build.sh` functionality to `build.ps1`
-- create app process flow chart, add to `ARCHITECTURE.md`
-- create watchdog documentation:
+- update README.md with
+  - the new program interface and menu structure
+  - watchdog documentation
   - how-to with screenshots
-  - when manually adding VPNs via the Asus web GUI, the watchdog function requires the VPN description match the PIA region name eg `aus_melbourne`
-  - watchdog is only ever active on one interface at a time
+  - note: when manually adding VPNs via the Asus web GUI, the watchdog function requires the VPN description match the PIA region name eg `aus_melbourne`
+  - note: watchdog/WG VPN is only active on one interface at a time
   - requires outbound ICMP over VPN
   - reconfigure in ~7 seconds
   - logfile rotated at midnight, it does not persist across reboots
   - to reduce on router log data, only the current and previous log are ever retained before a reboot
+- create app process flow chart, add to `ARCHITECTURE.md`
 - new UI: modals need to be resized with tablet/large screen
-- examine and confirm private datastore via `C:\Users\andrew\AppData\Local\Android\sdk\platform-tools\adb.exe exec-out "run-as com.exponentiallydigital.cfg_pia_wireguard tar c ." > C:\Users\andrew\Desktop\app_dump.tar`
-
-### Fixes and changes to be made for new UI
-
-#### Manage router PIA WireGuard configuration
-
-- disallow concurrency: only one interface should ever be active at a time, ENABLE button must disable any currently enabled interface
-- disabling/deleting an interface must also disable any active watchdog on that interface
-- deleting an interface must display the description of that interface in the confirmation popup
-- when a slot is active (enabled), grey out the ENABLE button
-- when creating an interface set the kill switch to disabled (wgcN_enforce=0)
-- when editing an interface alter the UI text display: currently shows "Enable (enable) 0" , change to "Enabled YES" or "Enabled NO"
-- when displaying the "WIREGUARD SLOTS" modal, the HOME button at thje bottom of that modal should take you to the home menu instead of the router login window
-- when ENABLE is selected and ping tests are conducted, log this to the router log (currently only logging to the app log)
-- CREATE, ENABLE, DISABLE and DELETE must log these activities to the router log
-
-#### Watchdog WireGuard management
-
-- ENABLE and DELETE buttons must be greyed out if an empty slot is selected
-- after creating a watchdog on an empty slot, open a popup to remind the user to ENABLE the watchdog (this functionality will then match "Manage router PIA WireGuard configuration")
-- modify `deployWatchdogScripts` to include the region (description) eg from "Deployed watchdog script for wgc5" to "Deployed watchdog script for wgc5, aus_melbourne"
-- disallow concurrency: only one watchdog should ever be active at a time, ENABLE button must disable any currently enabled watchdog
-- when the DELETE button is pressed, add a confirmation popup with this text "This will also delete and disable the underlying region."
-- when EDIT button is pressed for a disabled slot, put the PIA username and password in the mopdal that open up
-
-#### UI
-
-- remove the 10 minute timer and all it's associated logic and code
-- set defaults for router ip = "192.168.0.254" and router username = "admin"
-- warn the user when pressing the back key IFF it will exit the application
-- on the main menu screen, show text below "\* requires SSH connectivity to an Asus router". This additional text will use the house green style with vertical padding from the existiong text, it will say "Select from the above and/or use the top left <\insert reduced image of hambuger menu> menu."
-- in the hamburger menu, there is text marked "HOME" in green, make this grey and make it navigate to the main menu screen when pressed
-- in the hamburger menu, make the currently active menu item appear in house GREEN. eg if the user is currently in the "Watchdog WireGuard management" menu item it's modal, display that in house GREE on the manhurger meny. The "Close app" colour does not change and remains red.
-- if there is an existing SSH connection to the router, display the "connect to router" screen in the background but skip to the modal window which aree displayed in the "Manage router PIA WireGuard Configuration" and "Watchdog WireGuard management" menu options.
-
-## BUG - 4x init
-
-The very first time an empty slot is selected and a configuration created which asks for a region name then PIA username and password, 4 errors thrown:
-
-1. A TextEditingController was used after being disposed.
-2. A RenderFlex overflowed by 99588 pixels on the bottom.
-3. 'package:flutter/src/widgets/framework.dart': Failed assertion: line 6268 pos 12: '\_dependents.isEmpty': is not true.
-4. Duplicate GlobalKeys detected in widget tree
-   then told "wgc1 has been created. Remember to ENABLE it via the ENABLE button."
-   above error not added to app log.
-   slot appears OK.
-   if PIA username/pwd cached fom memory errors do not appear
-   caused by the PIA uname/pwd/IP address x2 dialogue box?
+- confirm private datastore contains 0 sensitive data, use `C:\Users\andrew\AppData\Local\Android\sdk\platform-tools\adb.exe exec-out "run-as com.exponentiallydigital.cfg_pia_wireguard tar c ." > C:\Users\andrew\Desktop\app_dump.tar`
+- after creating a watchdog, add a popup reminding user to ENABLE it
 
 ---
 
 ## Changes
+
+2026-06-25 version: 0.6.05 build 334
+
+- Manage router
+  - Only one interface active at a time — ENABLE first disables any other active interface (and its watchdog); ENABLE is greyed when the selected slot is already enabled.
+  - DISABLE and DELETE also stop the slot's watchdog; DELETE's confirmation shows the slot description.
+  - CREATE now writes wgcN_enforce=0 (kill switch off).
+  - CREATE / ENABLE / DISABLE / DELETE and the ENABLE ping-check are logged to the router syslog (cfg-pia-wg), not just the app log.
+- Watchdog management
+  - ENABLE and DELETE are greyed for an empty slot; only one watchdog active at a time (ENABLE stops any other active watchdog first).
+  - DELETE confirmation reads exactly "This will also delete and disable the underlying region."
+  - Configuring a watchdog on an empty slot pops a "remember to ENABLE" reminder (matching CREATE).
+  - deployWatchdogScripts logs the region too (e.g. "Deployed watchdog script for wgc5, aus_melbourne"). EDIT prefills PIA credentials (already wired; verified).
+- Slot editor / modal
+  - The read-only row now shows "Enabled YES/NO". The modal's HOME button returns to the main menu (not the router login).
+- UI / shell
+  - The 10-minute inactivity timer, countdown, and global activity listener are removed entirely (clipboard 60-second auto-clear kept).
+  - Router screens default to 192.168.0.254 / admin; once connected, re-entering a router screen auto-reconnects and opens its modal.
+  - Every exit path (back key, menu "Exit app", drawer "Exit app") now confirms before wiping + exiting.
+  - Main menu shows a green hint with an inline hamburger icon; the drawer "HOME" entry is grey and navigates to the menu; the active destination shows green (fixed: the tiles' explicit text colour had been overriding selectedColor, and the route observer now ignores dialog routes so the active item stays green while a modal is open).
 
 2026-06-25 version: 0.6.04
 

@@ -60,6 +60,36 @@ void main() {
     c.dispose();
   });
 
+  testWidgets('router IP and SSH username default to 192.168.0.254 / admin', (tester) async {
+    final c = _controller();
+    final ssh = RecordingSSHClient(responder: (_) => '');
+    await tester.pumpWidget(_manage(ssh, c));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(TextFormField, '192.168.0.254'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'admin'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  testWidgets('auto-reconnects and opens the modal when already connected this session', (tester) async {
+    final c = _controller()
+      ..routerIp = '192.168.0.254'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true;
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('3rd-party') ? 'merlin' : '');
+    await tester.pumpWidget(_manage(ssh, c));
+    await tester.pumpAndSettle();
+
+    // No manual CONNECT tap — the modal opens automatically.
+    expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
   testWidgets('SSH credentials pre-fill from the shared session', (tester) async {
     final c = _controller()
       ..routerIp = '10.0.0.1'

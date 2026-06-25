@@ -13,10 +13,10 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// Holds the credentials, generated config, application log, and the inactivity/clipboard
-// timers that must persist while the user moves between the five workflow screens. NOTHING
-// here is ever written to device storage — it lives only in memory and is wiped on a 10-minute
-// idle timeout, on "Exit app", and when the app is backed out of from the main menu.
+// Holds the credentials, generated config, application log, and the 60-second clipboard
+// auto-clear timer that must persist while the user moves between the workflow screens. NOTHING
+// here is ever written to device storage — it lives only in memory and is wiped on "Exit app"
+// and when the app is backed out of from the main menu.
 
 import 'dart:async';
 
@@ -48,16 +48,13 @@ class LogEntry {
 
 /// The shared, volatile session state. Exposed to the widget tree via [SessionScope].
 ///
-/// A single periodic tick drives both the inactivity countdown and the clipboard
-/// auto-clear countdown so there is only ever one [Timer] running.
+/// A single periodic tick drives the 60-second clipboard auto-clear countdown.
 class SessionController extends ChangeNotifier {
   SessionController({
-    Duration inactivityTimeout = const Duration(minutes: 10),
     Duration clipboardTimeout = const Duration(seconds: 60),
     Duration tickInterval = const Duration(seconds: 1),
     Future<void> Function(String text)? clipboardWriter,
-  })  : _inactivityTimeout = inactivityTimeout,
-        _clipboardTimeout = clipboardTimeout,
+  })  : _clipboardTimeout = clipboardTimeout,
         _tickInterval = tickInterval,
         _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter;
 
@@ -76,17 +73,15 @@ class SessionController extends ChangeNotifier {
   // ── Application log ──────────────────────────────────────────────────────────
   final List<LogEntry> log = [];
 
-  // ── Timers ───────────────────────────────────────────────────────────────────
-  final Duration _inactivityTimeout, _clipboardTimeout, _tickInterval;
+  // ── Clipboard timer ──────────────────────────────────────────────────────────
+  final Duration _clipboardTimeout, _tickInterval;
   final Future<void> Function(String text) _clipboardWriter;
 
   Timer? _tickTimer;
-  DateTime? _inactivityDeadline;
-  int inactivitySeconds = 0;
   DateTime? _clipboardDeadline;
   int clipboardSeconds = 0;
 
-  // ── Modal depth (countdown is hidden while > 0) ───────────────────────────────
+  // ── Modal depth (tracked for the error presenter) ─────────────────────────────
   int modalDepth = 0;
   bool get modalsOpen => modalDepth > 0;
 
@@ -94,9 +89,8 @@ class SessionController extends ChangeNotifier {
   // no-op when the current destination is re-selected. Plain field (no notify needed).
   AppDestination currentDestination = AppDestination.menu;
 
-  /// Invoked when the inactivity timeout elapses, AFTER the wipe runs. The app shell
-  /// wires this to close any open modals and redirect to the main menu.
-  VoidCallback? onInactivityExpire;
+  // True once a router SSH connect has succeeded this session (drives auto-reconnect on entry).
+  bool routerConnected = false;
 
   // ── Logging ────────────────────────────────────────────────────────────────────
   void logEntry(String msg, {bool isError = false, bool isSuccess = false}) {
@@ -125,57 +119,25 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Inactivity timer ─────────────────────────────────────────────────────────
-  // Called on app start and on every user interaction. Pushes the deadline forward
-  // cheaply without recreating the timer (so a stream of pointer-move events is light).
-  void resetActivity() {
-    _inactivityDeadline = DateTime.now().add(_inactivityTimeout);
-    _ensureTicking();
-  }
-
+  // ── Clipboard countdown timer ──────────────────────────────────────────────────
   void _ensureTicking() {
     _tickTimer ??= Timer.periodic(_tickInterval, (_) => _tick());
   }
 
   void _tick() {
-    var changed = false;
-    final now = DateTime.now();
-
-    if (_inactivityDeadline != null) {
-      final remaining = _inactivityDeadline!.difference(now).inSeconds;
-      if (remaining <= 0) {
-        _expireInactivity();
-        return;
-      }
-      if (remaining != inactivitySeconds) {
-        inactivitySeconds = remaining;
-        changed = true;
-      }
+    if (_clipboardDeadline == null) return;
+    final remaining = _clipboardDeadline!.difference(DateTime.now()).inSeconds;
+    if (remaining <= 0) {
+      clearClipboard();
+      return;
     }
-
-    if (_clipboardDeadline != null) {
-      final remaining = _clipboardDeadline!.difference(now).inSeconds;
-      if (remaining <= 0) {
-        clearClipboard();
-        return;
-      }
-      if (remaining != clipboardSeconds) {
-        clipboardSeconds = remaining;
-        changed = true;
-      }
+    if (remaining != clipboardSeconds) {
+      clipboardSeconds = remaining;
+      notifyListeners();
     }
-
-    if (changed) notifyListeners();
   }
 
-  void _expireInactivity() {
-    _inactivityDeadline = null;
-    inactivitySeconds = 0;
-    wipeAll(reason: '10 minutes of inactivity');
-    onInactivityExpire?.call();
-  }
-
-  // Re-evaluate both deadlines after the app returns from the background.
+  // Re-evaluate the clipboard deadline after the app returns from the background.
   void resyncOnResume() {
     _tick();
   }
@@ -200,8 +162,8 @@ class SessionController extends ChangeNotifier {
   }
 
   // ── Wipe ─────────────────────────────────────────────────────────────────────────
-  // Clears all volatile credentials + config + clipboard. Used by the idle timeout,
-  // "Close app", and back-exit from the main menu.
+  // Clears all volatile credentials + config + clipboard. Used by "Exit app" and
+  // back-exit from the main menu.
   Future<void> wipeAll({String? reason}) async {
     piaUsername = '';
     piaPassword = '';
@@ -211,6 +173,7 @@ class SessionController extends ChangeNotifier {
     sshPassword = '';
     generatedConfig = null;
     generatedRegionId = '';
+    routerConnected = false;
     await clearClipboard();
     logEntry(reason == null
         ? 'All credentials and WireGuard configuration wiped from memory.'

@@ -32,7 +32,7 @@ class MainMenuScreen extends StatelessWidget {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        await closeApp(controller); // back-exit from the main menu wipes then closes (spec 3.4)
+        await confirmAndExit(context, controller); // confirm before the back key exits (round-2)
       },
       child: AppScaffold(
         showClose: false,
@@ -71,12 +71,26 @@ class MainMenuScreen extends StatelessWidget {
                     foregroundColor: kError,
                     side: const BorderSide(color: kError),
                     padding: const EdgeInsets.symmetric(vertical: 16)),
-                onPressed: () => closeApp(controller),
+                onPressed: () => confirmAndExit(context, controller),
                 child: const Text('Exit app'),
               ),
             ),
             SizedBox(height: spacer),
             const Text('* requires SSH connectivity to an Asus router.', style: TextStyle(color: kMuted, fontSize: 12)),
+            const SizedBox(height: 12),
+            Text.rich(
+              TextSpan(
+                style: const TextStyle(color: kHighlight, fontSize: 12),
+                children: const [
+                  TextSpan(text: 'Select from the above and/or use the top left '),
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: Icon(Icons.menu, size: 16, color: kHighlight),
+                  ),
+                  TextSpan(text: ' menu.'),
+                ],
+              ),
+            ),
           ],
         ),
       ),

@@ -24,13 +24,50 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Configure PIA WireGuard'), findsOneWidget); // static header
-    expect(find.byIcon(Icons.menu), findsOneWidget); // hamburger
+    expect(find.byKey(const Key('app_hamburger')), findsOneWidget); // hamburger
     expect(find.byKey(const Key('menu_standalone')), findsOneWidget);
     expect(find.byKey(const Key('menu_manage_router')), findsOneWidget);
     expect(find.byKey(const Key('menu_watchdog')), findsOneWidget);
     expect(find.byKey(const Key('menu_log')), findsOneWidget);
     expect(find.byKey(const Key('menu_close_app')), findsOneWidget);
     expect(find.text('* requires SSH connectivity to an Asus router.'), findsOneWidget);
+    expect(find.textContaining('Select from the above'), findsOneWidget); // green hint
+
+    await _teardown(tester, c);
+  });
+
+  testWidgets('drawer HOME returns to the main menu', (tester) async {
+    final c = _quietController();
+    await tester.pumpWidget(PiaWgApp(controller: c));
+    await tester.pumpAndSettle();
+
+    // Go to the log screen, then use the drawer HOME entry to come back.
+    await tester.tap(find.byKey(const Key('menu_log')));
+    await tester.pumpAndSettle();
+    expect(find.text('CLEAR LOG'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('app_hamburger')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('drawer_menu')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('menu_standalone')), findsOneWidget); // back on the menu
+
+    await _teardown(tester, c);
+  });
+
+  testWidgets('the Android back key prompts to confirm exit', (tester) async {
+    final c = _quietController();
+    await tester.pumpWidget(PiaWgApp(controller: c));
+    await tester.pumpAndSettle();
+
+    await tester.binding.handlePopRoute(); // simulate the back button on the main menu
+    await tester.pumpAndSettle();
+    expect(find.text('Exit application?'), findsOneWidget);
+
+    // Cancel keeps the app open.
+    await tester.tap(find.widgetWithText(TextButton, 'CANCEL'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('menu_standalone')), findsOneWidget);
 
     await _teardown(tester, c);
   });
@@ -56,7 +93,7 @@ void main() {
     await tester.pumpWidget(PiaWgApp(controller: c));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.menu));
+    await tester.tap(find.byKey(const Key('app_hamburger')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('drawer_log')), findsOneWidget);
 

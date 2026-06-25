@@ -1,5 +1,5 @@
 // app_shell.dart - Application root: owns the SessionController, the global chrome, navigation,
-// the 10-minute inactivity wipe, and lifecycle resync.
+// and lifecycle resync.
 //
 // This program is free software: you can redistribute it and/or modify it under the terms
 // of the GNU General Public License as published by the Free Software Foundation, either
@@ -28,7 +28,11 @@ class DestinationObserver extends NavigatorObserver {
   DestinationObserver(this.controller);
 
   void _update(Route<dynamic>? route) {
-    final name = route?.settings.name;
+    // Only page routes change the current destination; dialogs / bottom sheets (the slot modal,
+    // EDIT, error, region picker) must NOT, so the active drawer item stays highlighted while a
+    // modal is open.
+    if (route is! PageRoute) return;
+    final name = route.settings.name;
     controller.currentDestination = AppDestination.values.firstWhere(
       (d) => d.routeName == name,
       orElse: () => AppDestination.menu,
@@ -94,8 +98,6 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _controller.onInactivityExpire = _onIdleExpire;
-    _controller.resetActivity();
   }
 
   @override
@@ -109,11 +111,6 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) _controller.resyncOnResume();
-  }
-
-  // On idle timeout: close every modal and intermediate screen, returning to the root main menu.
-  void _onIdleExpire() {
-    _navigatorKey.currentState?.popUntil((r) => r.isFirst);
   }
 
   @override

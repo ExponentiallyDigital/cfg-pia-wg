@@ -63,12 +63,22 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     _c = SessionScope.of(context);
     if (!_prefilled) {
       _prefilled = true;
-      _ipCtrl.text = _c.routerIp;
-      _userCtrl.text = _c.sshUsername;
+      // Defaults for a fresh session; never overwrite values the user already entered.
+      _ipCtrl.text = _c.routerIp.isNotEmpty ? _c.routerIp : '192.168.0.254';
+      _userCtrl.text = _c.sshUsername.isNotEmpty ? _c.sshUsername : 'admin';
       _passCtrl.text = _c.sshPassword;
+      _c.routerIp = _ipCtrl.text;
+      _c.sshUsername = _userCtrl.text;
       _ipCtrl.addListener(_sync);
       _userCtrl.addListener(_sync);
       _passCtrl.addListener(_sync);
+
+      // If we already connected this session, re-connect and jump straight to the slot modal.
+      if (_c.routerConnected && _canConnect) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _onConnect();
+        });
+      }
     }
   }
 
@@ -107,6 +117,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     try {
       client = await _connect();
       slots = await _slotSvc(client).fetchSlots();
+      _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
     } catch (e) {
       if (mounted) {
         await AppErrors.system(context, _c, 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}');

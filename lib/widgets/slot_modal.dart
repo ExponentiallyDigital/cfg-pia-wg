@@ -221,13 +221,21 @@ class _SlotModalState extends State<SlotModal> {
       secondary = targets.$2;
     }
 
-    // 3) Write targets (if prompted) + enable with the connectivity check.
+    // 3) Disable any other active interface (one active at a time), write targets if prompted,
+    //    then enable with the connectivity check.
     setState(() => _processing = true);
     client = null;
     Object? error;
     try {
       client = await widget.connect();
       final svc = _slotSvc(client);
+      final wd = _wdSvc(client);
+      for (final other in _slots.slots.values) {
+        if (other.index != slot && other.enabled) {
+          if (other.watchdogActive) await wd.stopWatchdog(other.index);
+          await svc.disableSlot(other.index);
+        }
+      }
       if (!haveTargets) await svc.writeWatchdogPingTargets(slot, primary, secondary);
       await svc.enableSlot(slot, primaryIp: primary, secondaryIp: secondary);
     } catch (e) {
@@ -240,7 +248,14 @@ class _SlotModalState extends State<SlotModal> {
     if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
   }
 
-  Future<void> _disableManage() => _runSlot((svc) => svc.disableSlot(_selected));
+  Future<void> _disableManage() {
+    final slot = _selected;
+    final wdActive = _selectedInfo?.watchdogActive ?? false;
+    return _runSlot((svc) async {
+      if (wdActive) await _wdSvc(svc.client).stopWatchdog(slot); // disabling also stops its watchdog
+      await svc.disableSlot(slot);
+    });
+  }
 
   Future<void> _editManage() async {
     final slot = _selected;
@@ -273,10 +288,16 @@ class _SlotModalState extends State<SlotModal> {
 
   Future<void> _deleteManage() async {
     final slot = _selected;
-    final ok = await _confirm('Delete wgc$slot?', 'This clears the wgc$slot configuration on the router.',
+    final info = _selectedInfo;
+    final desc = (info != null && !info.isEmpty) ? ' ("${info.desc}")' : '';
+    final wdActive = info?.watchdogActive ?? false;
+    final ok = await _confirm('Delete wgc$slot?', 'This clears the wgc$slot$desc configuration on the router.',
         confirmLabel: 'DELETE', destructive: true);
     if (!ok) return;
-    await _runSlot((svc) => svc.deleteSlot(slot));
+    await _runSlot((svc) async {
+      if (wdActive) await _wdSvc(svc.client).stopWatchdog(slot); // deleting also disables its watchdog
+      await svc.deleteSlot(slot);
+    });
   }
 
   // ── Watchdog-mode actions ────────────────────────────────────────────────────────
@@ -288,6 +309,10 @@ class _SlotModalState extends State<SlotModal> {
       return;
     }
     await _runWatchdog((wd) async {
+      // Only one watchdog active at a time: stop any other active watchdog first.
+      for (final other in _slots.slots.values) {
+        if (other.index != slot && other.watchdogActive) await wd.stopWatchdog(other.index);
+      }
       var cfg = await wd.loadConfig(slot);
       if (_c.piaUsername.isNotEmpty) cfg = cfg.copyWith(piaUsername: _c.piaUsername);
       if (_c.piaPassword.isNotEmpty) cfg = cfg.copyWith(piaPassword: _c.piaPassword);
@@ -323,8 +348,7 @@ class _SlotModalState extends State<SlotModal> {
 
   Future<void> _deleteWatchdog() async {
     final slot = _selected;
-    final ok = await _confirm(
-        'Delete watchdog + wgc$slot?', 'This removes the watchdog and clears the wgc$slot configuration on the router.',
+    final ok = await _confirm('Delete watchdog + wgc$slot?', 'This will also delete and disable the underlying region.',
         confirmLabel: 'DELETE', destructive: true);
     if (!ok) return;
     setState(() => _processing = true);
@@ -489,7 +513,8 @@ class _SlotModalState extends State<SlotModal> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: _processing ? null : () => Navigator.of(context).pop(),
+                        // HOME returns to the main menu (closes the modal + intermediate screens).
+                        onPressed: _processing ? null : () => Navigator.of(context, rootNavigator: true).popUntil((r) => r.isFirst),
                         child: const Text('HOME', style: TextStyle(color: kMuted)),
                       ),
                     ),
@@ -563,6 +588,7 @@ class _SlotModalState extends State<SlotModal> {
   List<Widget> _buttons() {
     final info = _selectedInfo;
     final hasDesc = info != null && !info.isEmpty;
+    final enabled = info?.enabled ?? false;
     final wdActive = info?.watchdogActive ?? false;
 
     Widget btn(String key, String label, VoidCallback? onTap) => Padding(
@@ -576,18 +602,20 @@ class _SlotModalState extends State<SlotModal> {
     if (widget.mode == SlotModalMode.manage) {
       return [
         btn('slot_create', 'CREATE', info == null ? null : _create),
-        btn('slot_enable', 'ENABLE', hasDesc ? _enableManage : null),
+        // ENABLE is greyed when the slot is already active (only one interface active at a time).
+        btn('slot_enable', 'ENABLE', (hasDesc && !enabled) ? _enableManage : null),
         btn('slot_edit', 'EDIT', hasDesc ? _editManage : null),
         btn('slot_disable', 'DISABLE', hasDesc ? _disableManage : null),
         btn('slot_delete', 'DELETE', hasDesc ? _deleteManage : null),
       ];
     }
+    // Watchdog mode: ENABLE + DELETE require a non-empty slot (spec round-2).
     return [
-      btn('slot_enable', 'ENABLE', (info != null && !wdActive) ? _enableWatchdog : null),
+      btn('slot_enable', 'ENABLE', (hasDesc && !wdActive) ? _enableWatchdog : null),
       btn('slot_edit', 'EDIT', info != null ? _editWatchdog : null),
-      btn('slot_disable', 'DISABLE', (info != null && wdActive) ? _disableWatchdog : null),
-      btn('slot_delete', 'DELETE', info != null ? _deleteWatchdog : null),
-      btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (info != null && wdActive) ? _viewWatchdogLog : null),
+      btn('slot_disable', 'DISABLE', (hasDesc && wdActive) ? _disableWatchdog : null),
+      btn('slot_delete', 'DELETE', hasDesc ? _deleteWatchdog : null),
+      btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (hasDesc && wdActive) ? _viewWatchdogLog : null),
     ];
   }
 }

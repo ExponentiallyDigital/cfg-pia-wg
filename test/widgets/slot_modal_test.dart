@@ -391,4 +391,159 @@ void main() {
       c.dispose();
     });
   });
+
+  group('round-2 behaviours', () {
+    testWidgets('manage ENABLE is greyed when the slot is already enabled', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      expect(_btn(tester, 'slot_enable').onPressed, isNull); // already active
+      expect(_btn(tester, 'slot_disable').onPressed, isNotNull);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('manage ENABLE disables the previously-active interface (and its watchdog)', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
+        if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
+        if (cmd.contains('wg show interfaces')) return 'wgc2';
+        if (cmd.contains('ping')) return 'OK';
+        return '';
+      });
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.manage,
+        _slots({
+          1: _slot(1, desc: 'aus_melbourne', enabled: true, watchdog: true),
+          2: _slot(2, desc: 'us_east'),
+        }, active: 1),
+        c,
+      ));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_2')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_enable')));
+      await tester.tap(find.byKey(const Key('slot_enable')));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran('cru d watchdog_wgc1'), isTrue); // other slot's watchdog stopped
+      expect(ssh.ran('nvram set wgc1_enable=0'), isTrue); // other slot disabled
+      expect(ssh.ran('nvram set wgc2_enable=1'), isTrue); // target enabled
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('manage DELETE confirm shows the description', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_delete')));
+      await tester.tap(find.byKey(const Key('slot_delete')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('("aus_melbourne")'), findsOneWidget); // desc in the confirm dialog
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('modal HOME returns to the root', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
+      await _open(tester);
+      expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+
+      await tester.ensureVisible(find.widgetWithText(TextButton, 'HOME'));
+      await tester.tap(find.widgetWithText(TextButton, 'HOME'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('WIREGUARD CONFIGURATION'), findsNothing); // modal closed
+      expect(find.text('open'), findsOneWidget); // back at the root host
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('watchdog ENABLE and DELETE are greyed for an empty slot', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({}), c)); // all empty
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      expect(_btn(tester, 'slot_enable').onPressed, isNull);
+      expect(_btn(tester, 'slot_delete').onPressed, isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('watchdog ENABLE stops any other active watchdog', (tester) async {
+      final c = _controller()
+        ..piaUsername = 'p1234567'
+        ..piaPassword = 'secret';
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('wgc2_wd_primary_ip')) return '8.8.8.8';
+        if (cmd.contains('wgc2_wd_secondary_ip')) return '1.1.1.1';
+        if (cmd.contains('wgc2_wd_check_interval')) return '5';
+        return '';
+      });
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.watchdog,
+        _slots({
+          1: _slot(1, desc: 'aus_melbourne', watchdog: true),
+          2: _slot(2, desc: 'us_east'),
+        }),
+        c,
+      ));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_2')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_enable')));
+      await tester.tap(find.byKey(const Key('slot_enable')));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran('cru d watchdog_wgc1'), isTrue); // other watchdog stopped
+      expect(ssh.ran('cru a watchdog_wgc2'), isTrue); // target deployed
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('watchdog DELETE confirm shows the region warning', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester
+          .pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_delete')));
+      await tester.tap(find.byKey(const Key('slot_delete')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('This will also delete and disable the underlying region.'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
 }

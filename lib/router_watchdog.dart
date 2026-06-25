@@ -367,7 +367,8 @@ class RouterWatchdog {
         await _runHeredoc(heredocWrite('/jffs/scripts/watchdog_wgc$slot.sh', buildWatchdogScript(config)),
             '/jffs/scripts/watchdog_wgc$slot.sh');
         await _run('chmod +x /jffs/scripts/watchdog_wgc$slot.sh');
-        await _logRouter('Deployed watchdog script for wgc$slot');
+        final desc = await _run('nvram get wgc${slot}_desc');
+        await _logRouter('Deployed watchdog script for wgc$slot${desc.isEmpty ? '' : ', $desc'}');
         onLog?.call('Watchdog scripts deployed for wgc$slot.', isSuccess: true);
       });
 

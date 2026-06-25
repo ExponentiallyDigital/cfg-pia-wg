@@ -59,6 +59,26 @@ Future<void> closeApp(SessionController controller) async {
   await SystemNavigator.pop();
 }
 
+/// Confirms before wiping + exiting. Wired to every exit path (back key, menu + drawer "Exit app").
+Future<void> confirmAndExit(BuildContext context, SessionController controller) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: kSurface,
+      title: const Text('Exit application?', style: TextStyle(color: kText, fontSize: 15)),
+      content: const Text('All credentials and configuration will be wiped from memory.',
+          style: TextStyle(color: kMuted, fontSize: 13)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('EXIT', style: TextStyle(color: kError, fontWeight: FontWeight.w700))),
+      ],
+    ),
+  );
+  if (ok == true) await closeApp(controller);
+}
+
 class AppDrawer extends StatelessWidget {
   final GlobalKey<NavigatorState> navigatorKey;
   final SessionController controller;
@@ -85,18 +105,29 @@ class AppDrawer extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 24, 20, 16),
-              child: Text('HOME',
-                  style: TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+            const SizedBox(height: 12),
+            // HOME: grey normally, house-green when the main menu is the current screen.
+            ListTile(
+              key: const Key('drawer_menu'),
+              title: const Text('HOME', style: TextStyle(fontSize: 13)),
+              textColor: kMuted,
+              selectedColor: kHighlight,
+              selected: controller.currentDestination == AppDestination.menu,
+              onTap: () {
+                onCloseDrawer();
+                final navContext = navigatorKey.currentContext;
+                if (navContext != null) navigateToDestination(navContext, controller, AppDestination.menu);
+              },
             ),
             const Divider(color: kBorder, height: 1),
             for (final d in _destinations)
               ListTile(
                 key: Key('drawer_${d.routeName}'),
-                title: Text(d.title, style: const TextStyle(color: kText, fontSize: 13)),
-                selected: controller.currentDestination == d,
+                // No explicit text colour here so selectedColor (active = green) takes effect.
+                title: Text(d.title, style: const TextStyle(fontSize: 13)),
+                textColor: kText,
                 selectedColor: kHighlight,
+                selected: controller.currentDestination == d,
                 onTap: () {
                   onCloseDrawer();
                   final navContext = navigatorKey.currentContext;
@@ -110,7 +141,8 @@ class AppDrawer extends StatelessWidget {
               title: const Text('Exit app', style: TextStyle(color: kError, fontSize: 13)),
               onTap: () {
                 onCloseDrawer();
-                closeApp(controller);
+                final navContext = navigatorKey.currentContext;
+                if (navContext != null) confirmAndExit(navContext, controller);
               },
             ),
           ],
