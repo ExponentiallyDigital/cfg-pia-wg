@@ -60,12 +60,14 @@ class SlotInfo {
   final bool killSwitch; // wgcN_enforce == 1
   final bool enabled; // wgcN_enable == 1
   final bool watchdogActive; // cru has watchdog_wgcN (Merlin only)
+  final bool emailAlerting; // wgcN_wd_email_enabled == 1 (only meaningful while watchdogActive)
   const SlotInfo({
     required this.index,
     required this.desc,
     required this.killSwitch,
     required this.enabled,
     required this.watchdogActive,
+    this.emailAlerting = false,
   });
 
   bool get isEmpty => desc.trim().isEmpty;
@@ -114,7 +116,10 @@ class RouterSlotService {
       final killSwitch = (await _run('nvram get wgc${i}_enforce')) == '1';
       final enabled = (await _run('nvram get wgc${i}_enable')) == '1';
       final watchdog = isMerlin && (await _run('cru l | grep -qw watchdog_wgc$i && echo 1 || echo 0')) == '1';
-      slots[i] = SlotInfo(index: i, desc: desc, killSwitch: killSwitch, enabled: enabled, watchdogActive: watchdog);
+      // Email alerting is a watchdog feature; only read it for an active watchdog.
+      final emailAlerting = watchdog && (await _run('nvram get wgc${i}_wd_email_enabled')) == '1';
+      slots[i] = SlotInfo(
+          index: i, desc: desc, killSwitch: killSwitch, enabled: enabled, watchdogActive: watchdog, emailAlerting: emailAlerting);
     }
 
     final ifaceOutput = await _run('wg show interfaces');

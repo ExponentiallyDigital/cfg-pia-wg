@@ -3,12 +3,15 @@
 ## Backlog
 
 - Release to Play Store, **closed test** w 12 testers over 14 continuous days (keep installed, run min. once)
-- port `build.sh` functionality to `build.ps1`
-- added indicator to slot display if email alerting is enabled
 
 ---
 
 ## Changes
+
+2026-06-25 version: 0.6.13 build 343
+
+- added indicator to slot display if email alerting is enabled
+- line-by-line port of `build.sh` to `build.ps1`
 
 2026-06-25 version: 0.6.12 build 342
 

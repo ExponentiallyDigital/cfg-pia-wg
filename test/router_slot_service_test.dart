@@ -24,13 +24,14 @@ RouterSlotService svc(
 
 void main() {
   group('fetchSlots', () {
-    test('parses desc, kill switch, enabled, watchdog, active slot and Merlin', () async {
+    test('parses desc, kill switch, enabled, watchdog, email alerting, active slot and Merlin', () async {
       final c = RecordingSSHClient(responder: (cmd) {
         if (cmd.contains('3rd-party')) return 'merlin';
         if (cmd.contains('wgc1_desc')) return 'aus_melbourne';
         if (cmd.contains('wgc1_enforce')) return '1';
         if (cmd.contains('wgc1_enable')) return '1';
         if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+        if (cmd.contains('wgc1_wd_email_enabled')) return '1';
         if (cmd.contains('wg show interfaces')) return 'wgc1';
         return '';
       });
@@ -41,8 +42,22 @@ void main() {
       expect(result.slots[1]!.killSwitch, isTrue);
       expect(result.slots[1]!.enabled, isTrue);
       expect(result.slots[1]!.watchdogActive, isTrue);
+      expect(result.slots[1]!.emailAlerting, isTrue);
       expect(result.slots[1]!.isEmpty, isFalse);
       expect(result.slots[2]!.isEmpty, isTrue);
+    });
+
+    test('email alerting is not reported when the watchdog is inactive', () async {
+      // email_enabled lingers in nvram but the watchdog cron is gone -> no email badge.
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('3rd-party')) return 'merlin';
+        if (cmd.contains('wgc1_desc')) return 'aus_melbourne';
+        if (cmd.contains('wgc1_wd_email_enabled')) return '1';
+        return ''; // cru l -> '' (watchdog inactive)
+      });
+      final result = await svc(c).fetchSlots();
+      expect(result.slots[1]!.watchdogActive, isFalse);
+      expect(result.slots[1]!.emailAlerting, isFalse);
     });
 
     test('logs "unconfigured" when every slot is empty and reports success', () async {

@@ -28,8 +28,15 @@ class _FakePia extends PiaService {
 
 SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
 
-SlotInfo _slot(int i, {String desc = '', bool killSwitch = false, bool enabled = false, bool watchdog = false}) =>
-    SlotInfo(index: i, desc: desc, killSwitch: killSwitch, enabled: enabled, watchdogActive: watchdog);
+SlotInfo _slot(int i,
+        {String desc = '', bool killSwitch = false, bool enabled = false, bool watchdog = false, bool emailAlerting = false}) =>
+    SlotInfo(
+        index: i,
+        desc: desc,
+        killSwitch: killSwitch,
+        enabled: enabled,
+        watchdogActive: watchdog,
+        emailAlerting: emailAlerting);
 
 RouterSlots _slots(Map<int, SlotInfo> override, {int? active, bool merlin = true}) {
   final m = {for (var i = 1; i <= 5; i++) i: _slot(i)};
@@ -306,6 +313,42 @@ void main() {
       expect(_btn(tester, 'slot_enable').onPressed, isNotNull);
       expect(_btn(tester, 'slot_disable').onPressed, isNull);
       expect(_btn(tester, 'slot_view_log').onPressed, isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('EMAIL ALERTING badge shows next to WATCHDOG ACTIVE when email alerts are enabled', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.watchdog,
+        _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true, emailAlerting: true)}),
+        c,
+      ));
+      await _open(tester);
+
+      expect(find.text('◆ WATCHDOG ACTIVE'), findsOneWidget);
+      expect(find.text('✉ EMAIL ALERTING'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('EMAIL ALERTING badge is hidden when email alerts are disabled', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.watchdog,
+        _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}),
+        c,
+      ));
+      await _open(tester);
+
+      expect(find.text('◆ WATCHDOG ACTIVE'), findsOneWidget);
+      expect(find.text('✉ EMAIL ALERTING'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

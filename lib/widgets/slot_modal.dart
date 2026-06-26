@@ -522,6 +522,10 @@ class _SlotModalState extends State<SlotModal> {
                             if (info.watchdogActive)
                               const SlotBadge(
                                   label: '◆ WATCHDOG ACTIVE', text: kHighlight, border: kHighlight, bg: Color(0xFF0F2E3D)),
+                            // Shown next to WATCHDOG ACTIVE when the watchdog will send email alerts.
+                            if (info.watchdogActive && info.emailAlerting)
+                              const SlotBadge(
+                                  label: '✉ EMAIL ALERTING', text: kHighlight, border: kHighlight, bg: Color(0xFF0F2E3D)),
                           ]),
                         ],
                       ],
