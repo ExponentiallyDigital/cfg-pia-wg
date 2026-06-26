@@ -274,7 +274,10 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       backgroundColor: kSurface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 640),
+        constraints: BoxConstraints(
+          maxWidth: 480,
+          maxHeight: MediaQuery.of(context).size.height * 1,
+        ),
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(24),

@@ -1,28 +1,26 @@
 # Changelog
 
-## "to do"
+## Backlog
 
-### Long term
-
-- Release to Play Store, needs 12 **closed test** testers over 14 continuous days (keep installed, run min. once)
-- New app to set up an Asus router in the most secure/private way possible
-- Add patreon/paypal donation via app/GitHub
-- Edit hosts from VPN client
-
-### Short term
-
-- update play store app name from `pia_wireguard_cfga` to `cfg_pia_wireguard`
+- Release to Play Store, **closed test** w 12 testers over 14 continuous days (keep installed, run min. once)
 - port `build.sh` functionality to `build.ps1`
-- new UI: modals need to be resized with tablet/large screen
-- confirm private datastore contains 0 sensitive data, examine output from
-
-```bash
-`C:\Users\andrew\AppData\Local\Android\sdk\platform-tools\adb.exe exec-out "run-as com.exponentiallydigital.cfg_pia_wireguard tar c ." > C:\Users\andrew\Desktop\app_dump.tar`
-```
+- added indicator to slot display if email alerting is enabled
+- Add patreon/paypal donation via app/GitHub
 
 ---
 
 ## Changes
+
+2026-06-25 version: 0.6.11 build 340
+
+- no functional changes
+- modified modals to use 100% of vertical screen (was pixel based)
+- updated _human visible_ play store app name from `pia_wireguard_cfga` to `cfg_pia_wireguard`, internal name retained (v painful if change in G Store)
+- confirmed private app datastore contains 0 sensitive data, examined output from
+
+```bash
+`C:\Users\andrew\AppData\Local\Android\sdk\platform-tools\adb.exe exec-out "run-as com.exponentiallydigital.pia_wireguard_cfga tar c ." > C:\Users\andrew\Desktop\app_dump.tar`
+```
 
 2026-06-25 version: 0.6.10 build 340
 
