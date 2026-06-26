@@ -406,85 +406,32 @@ class _SlotModalState extends State<SlotModal> {
   // ── Sub-dialogs ─────────────────────────────────────────────────────────────────
   // PIA username/password/DNS form (prefilled from session) for CREATE.
   Future<(String, String, String)?> _piaCredsDialog() async {
-    final userCtrl = TextEditingController(text: _c.piaUsername);
-    final passCtrl = TextEditingController(text: _c.piaPassword);
-    final dnsCtrl = TextEditingController(text: _c.dns);
-    var visible = false;
-    final result = await showDialog<bool>(
+    final result = await showDialog<(String, String, String)?>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          backgroundColor: kSurface,
-          title: const Text('PIA credentials', style: TextStyle(color: kHighlight, fontSize: 14)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              PiaUsernameField(controller: userCtrl),
-              const SizedBox(height: 10),
-              PiaPasswordField(controller: passCtrl, visible: visible, onToggle: () => setLocal(() => visible = !visible)),
-              const SizedBox(height: 10),
-              DnsField(controller: dnsCtrl),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('CONTINUE')),
-          ],
-        ),
+      builder: (ctx) => _PiaCredsDialog(
+        initialUsername: _c.piaUsername,
+        initialPassword: _c.piaPassword,
+        initialDns: _c.dns,
       ),
     );
-    final out = (result == true && userCtrl.text.trim().isNotEmpty && passCtrl.text.trim().isNotEmpty)
-        ? (userCtrl.text.trim(), passCtrl.text.trim(), dnsCtrl.text.trim())
-        : null;
-    if (out != null) {
-      _c.piaUsername = out.$1;
-      _c.piaPassword = out.$2;
-      _c.dns = out.$3;
-    } else if (result == true) {
-      if (mounted) await AppErrors.inputs(context, _c, ['PIA username and password are required.']);
+    if (result != null) {
+      _c.piaUsername = result.$1;
+      _c.piaPassword = result.$2;
+      _c.dns = result.$3;
+      return result;
     }
-    userCtrl.dispose();
-    passCtrl.dispose();
-    dnsCtrl.dispose();
-    return out;
+    return null;
   }
 
   // Editable primary/secondary ping targets for the manage ENABLE check.
   Future<(String, String)?> _promptPingTargets(String primary, String secondary) async {
-    final pCtrl = TextEditingController(text: primary);
-    final sCtrl = TextEditingController(text: secondary);
-    final result = await showDialog<bool>(
+    return await showDialog<(String, String)?>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: kSurface,
-        title: const Text('Connectivity check targets', style: TextStyle(color: kHighlight, fontSize: 14)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                key: const Key('enable_primary_ip'),
-                controller: pCtrl,
-                style: const TextStyle(color: kText, fontFamily: 'monospace'),
-                decoration: const InputDecoration(labelText: 'Primary ping IP')),
-            const SizedBox(height: 10),
-            TextField(
-                key: const Key('enable_secondary_ip'),
-                controller: sCtrl,
-                style: const TextStyle(color: kText, fontFamily: 'monospace'),
-                decoration: const InputDecoration(labelText: 'Secondary ping IP')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ENABLE')),
-        ],
-      ),
+      builder: (ctx) => _PingTargetsDialog(primary: primary, secondary: secondary),
     );
-    final out = result == true ? (pCtrl.text.trim(), sCtrl.text.trim()) : null;
-    pCtrl.dispose();
-    sCtrl.dispose();
-    return out;
   }
+
+  // ── UI ────────────────────────────────────────────────────────────────────────────
 
   // ── UI ────────────────────────────────────────────────────────────────────────────
   @override
@@ -514,7 +461,8 @@ class _SlotModalState extends State<SlotModal> {
                       alignment: Alignment.centerRight,
                       child: TextButton(
                         // HOME returns to the main menu (closes the modal + intermediate screens).
-                        onPressed: _processing ? null : () => Navigator.of(context, rootNavigator: true).popUntil((r) => r.isFirst),
+                        onPressed:
+                            _processing ? null : () => Navigator.of(context, rootNavigator: true).popUntil((r) => r.isFirst),
                         child: const Text('HOME', style: TextStyle(color: kMuted)),
                       ),
                     ),
@@ -617,5 +565,127 @@ class _SlotModalState extends State<SlotModal> {
       btn('slot_delete', 'DELETE', hasDesc ? _deleteWatchdog : null),
       btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (hasDesc && wdActive) ? _viewWatchdogLog : null),
     ];
+  }
+}
+
+class _PiaCredsDialog extends StatefulWidget {
+  final String initialUsername;
+  final String initialPassword;
+  final String initialDns;
+
+  const _PiaCredsDialog({
+    required this.initialUsername,
+    required this.initialPassword,
+    required this.initialDns,
+  });
+
+  @override
+  State<_PiaCredsDialog> createState() => _PiaCredsDialogState();
+}
+
+class _PiaCredsDialogState extends State<_PiaCredsDialog> {
+  late final TextEditingController _userCtrl = TextEditingController(text: widget.initialUsername);
+  late final TextEditingController _passCtrl = TextEditingController(text: widget.initialPassword);
+  late final TextEditingController _dnsCtrl = TextEditingController(text: widget.initialDns);
+  bool _visible = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _userCtrl.dispose();
+    _passCtrl.dispose();
+    _dnsCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onContinue() {
+    final username = _userCtrl.text.trim();
+    final password = _passCtrl.text.trim();
+    final dns = _dnsCtrl.text.trim();
+    if (username.isEmpty || password.isEmpty) {
+      setState(() => _error = 'PIA username and password are required.');
+      return;
+    }
+    Navigator.of(context).pop((username, password, dns));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: kSurface,
+      title: const Text('PIA credentials', style: TextStyle(color: kHighlight, fontSize: 14)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PiaUsernameField(controller: _userCtrl),
+          const SizedBox(height: 10),
+          PiaPasswordField(controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
+          const SizedBox(height: 10),
+          DnsField(controller: _dnsCtrl),
+          if (_error != null) ...[
+            const SizedBox(height: 14),
+            Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
+        TextButton(onPressed: _onContinue, child: const Text('CONTINUE')),
+      ],
+    );
+  }
+}
+
+class _PingTargetsDialog extends StatefulWidget {
+  final String primary;
+  final String secondary;
+
+  const _PingTargetsDialog({required this.primary, required this.secondary});
+
+  @override
+  State<_PingTargetsDialog> createState() => _PingTargetsDialogState();
+}
+
+class _PingTargetsDialogState extends State<_PingTargetsDialog> {
+  late final TextEditingController _primaryCtrl = TextEditingController(text: widget.primary);
+  late final TextEditingController _secondaryCtrl = TextEditingController(text: widget.secondary);
+
+  @override
+  void dispose() {
+    _primaryCtrl.dispose();
+    _secondaryCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onEnable() {
+    Navigator.of(context).pop((_primaryCtrl.text.trim(), _secondaryCtrl.text.trim()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: kSurface,
+      title: const Text('Connectivity check targets', style: TextStyle(color: kHighlight, fontSize: 14)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+              key: const Key('enable_primary_ip'),
+              controller: _primaryCtrl,
+              style: const TextStyle(color: kText, fontFamily: 'monospace'),
+              decoration: const InputDecoration(labelText: 'Primary ping IP')),
+          const SizedBox(height: 10),
+          TextField(
+              key: const Key('enable_secondary_ip'),
+              controller: _secondaryCtrl,
+              style: const TextStyle(color: kText, fontFamily: 'monospace'),
+              decoration: const InputDecoration(labelText: 'Secondary ping IP')),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
+        TextButton(onPressed: _onEnable, child: const Text('ENABLE')),
+      ],
+    );
   }
 }
