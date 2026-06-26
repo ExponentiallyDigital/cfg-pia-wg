@@ -4,205 +4,215 @@
 
 ---
 
-A native Android GUI app built with Flutter and Dart that generates a ready-to-use WireGuard configuration file for the Private Internet Access (PIA) VPN service. It authenticates with PIA's official provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and allows you to save the complete `.conf` to the clipboard or share/save to a user specified app/location. If you have an ASUS router running [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) firmware, you can optionally "push" the new config directly to your router!
+A native Android app that generates, and optionally applies, ready-to-use WireGuard configuration files for the Private Internet Access (PIA) VPN service. It authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and allows saving the complete `.conf` to the clipboard or share/save to a user specified app/location.
 
-This app is a GUI Android APK equivalent of my [Windows 11/Linux command line app](https://github.com/ExponentiallyDigital/pia-wireguard-cfg).
+If you have an ASUS router running [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) firmware, you can also **manage** WireGuard configs directly on your router and deploy a **_self-healing_** watchdog with optional email alerting that makes your configuration truly "set and forget"!
+
+This app is based on my standalone [pia-wireguard-cfg](https://github.com/ExponentiallyDigital/pia-wireguard-cfg) command line tool.
 
 ## Why use this?
 
-Manually creating a WireGuard configuration for PIA requires authenticating against multiple APIs, parsing server lists, performing key exchange, and assembling the config by hand. **cfg-pia-wg** automates the entire process.
+Creating a valid PIA WireGuard config manually requires authenticating with several live APIs, writing WireGuard keys, and assembling connection metadata correctly. **cfg-pia-wg** automates that work and adds router-side **_slot management_** and **_self-healing_** watchdog support for Merlin-firmware ASUS routers.
 
 ## Features
 
-- **Automated lowest-latency server selection:** measures live TCP latency against port 1337 across all available servers in your selected target region, ensuring that you provision with the fastest node.
-- **Cryptographically secure keypair generation:** dynamically generates an ephemeral WireGuard keypair using `x25519` with proper RFC 7748 scalar clamping directly inside the runtime environment.
-- **Dynamic certificate pinning:** fetches PIA's trusted root CA certificate dynamically at runtime from the `pia-foss/manual-connections` repository. No hardcoded certificates ensure operations continue smoothly even if PIA rotates authority roots.
-- **Zero-persistence local footprint:** sensitive keys, usernames, and passwords reside exclusively as short-lived volatile variables inside system RAM (`AppState`). Config payloads are written to a named temporary file solely to preserve the correct filename through the OS share pipeline, then deleted immediately in a `finally` block once `share()` returns -- whether the share completes, is cancelled, or throws. No unencrypted files are permanently cached or retained in local storage.
-- **Credential safety:** your PIA password is entered interactively at execution and used strictly to request a short-lived HTTP Basic Auth provisioning token. Credentials are never written to disk, stored, or logged.
-- **Automatic session wipe:** includes an automatic 3-minute safety countdown timer. If the app is left idle for 3 continuous minutes while displaying a configuration, the screen UI, form states, and memory addresses are wiped. Active screen interactions reset the timer to 3 minutes.
-- **Automated clipboard protection:** copies the generated config securely to the clipboard and triggers an independent 60-second real-time countdown visible under the button. After 60 seconds, or immediately if the user triggers a manual session wipe, the system clipboard is overwritten with an empty string to prevent background clipboard-scraping apps from harvesting your config.
-- **Native task-switcher protection (`FLAG_SECURE`):** enforces native OS-level window flags to block third-party screenshot capturing and automatically obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
-- **Input field hardening:** user credential entry textboxes disable predictive dictionary caching, auto-correction tracking assistance, and keyboard learning behaviours, alongside native selection overrides to block background clipboard scraping.
-- **Modern adaptive styling:** fully supports Android 8.0+ Adaptive Icons using a native multi-layered presentation conforming to a dark-mode theme aesthetic (`#12141A`).
+- **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
+- **Secure clipboard handling:** copying generated config starts a visible 60-second countdown, then clears the clipboard automatically.
+- **Share/save support:** share generated `.conf` via Android share sheet and save it to a file location of your choice.
+- **Router slot management:** connect to an ASUS router over SSH, inspect `wgc1`–`wgc5` slots, and `CREATE`, `ENABLE`, `EDIT`, `DISABLE`, or `DELETE` WireGuard slot configurations.
+- **Merlin watchdog management:** configure and deploy a router-side watchdog to periodically verify and self-heal VPN connectivity, manage cron/script deployment, and view router-side watchdog logs.
+- **No persistent credential storage:** PIA credentials, router SSH credentials, and generated configs are stored only in volatile application memory and are never written to permanent storage.
+- **Automated lowest-latency server selection**: measures live TCP latency against port 1337 across all available servers in your selected target region, ensuring that you provision with the fastest node.
+- **Native task-switcher protection** `(FLAG_SECURE)`: enforces native OS-level window flags to block third-party screenshot capturing and automatically obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
+- **Input field hardening**: user credential entry textboxes disable predictive dictionary caching, auto-correction tracking assistance, and keyboard learning behaviours, alongside native selection overrides to block background clipboard scraping.
+- **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials/clipboard.
 
 ---
 
 ## Pre-built releases
 
-This app has been submitted to the Google Play Store, when their process concludes, a link will be placed **`<here>`**.
+This app has been submitted to the Google Play Store; a link will be placed **`<here>`** when it is available.
 
 If you want to download a pre-built release from [GitHub](https://github.com/ExponentiallyDigital/cfg-pia-wg/releases), the file you need is **`cfg_pia_wireguard-<version>_release.apk`**.
 
 Each release includes the following versioned files:
 
-- **`cfg_pia_wireguard-<version>_release.apk`** – optimised signed release APK
-- **`cfg_pia_wireguard-<version>_debug.apk`** – debug APK for testing
-- **`cfg_pia_wireguard-<version>_google-play-store.aab`** – an Android App Bundle for the Play Store
-- **`cfg-pia-wg-<version>_sbom.spdx.json`** – software bill of materials (SPDX format)
-- **`README.html`** – offline documentation (generated from this README)
-- **`LICENSE`** – license file
+| file                                                    | description                                        |
+| ------------------------------------------------------- | -------------------------------------------------- |
+| **`cfg_pia_wireguard-<version>_release.apk`**           | optimized signed release APK                       |
+| **`cfg_pia_wireguard-<version>_debug.apk`**             | debug APK for testing                              |
+| **`cfg_pia_wireguard-<version>_google-play-store.aab`** | Android App Bundle for the Play Store              |
+| **`cfg-pia-wg-<version>_sbom.spdx.json`**               | software bill of materials (SPDX format)           |
+| **`README.html`**                                       | offline documentation (generated from this README) |
+| **`LICENSE`**                                           | license file                                       |
 
-The installlable pre-built apps above have [GitHub Attestations](https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations) for [build provenance](https://slsa.dev/spec/draft/build-provenance) verification.
+The installable pre-built apps above have [GitHub Attestations](https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations) for [build provenance](https://slsa.dev/spec/draft/build-provenance) verification.
 
 ---
+
+## Prerequisites
+
+1. Optionally enable the SSH server on your router. This is used by the **Manage** and **Watchdog** functions. To enable, on your router go to
+
+```text
+Administration\System\Service -> "Enable SSH" (LAN only is recommended).
+```
+
+2. For **Manage** and **Watchdog**, you must be running Merlin Firmware with the `JFFS` partition enabled. To enable, on your router go to
+
+```text
+Administration\System\Basic Config -> "Enable JFFS custom scripts and config"
+```
+
+3. App functionality requires the ability to use ICMP ping from the router WAN and WireGuard interfaces
 
 ## Using the app
 
-1. Enter a region or tap the icon to the right and select from a dynamically updated alpha sorted filterable list of available PIA regions:
+The app opens to a main menu with five choices:
 
-<table>
-<tr>
-<td align="center">
-<img src="./images/01-interface.png" width="350"><br>
-<strong>Configure PIA WireGuard App UI</strong>
-</td>
-<td align="center">
-<img src="./images/02-region-selection.png" width="350"><br>
-<strong>Region Selection Screen</strong>
-</td>
-</tr>
-</table>
-
-2. Add/paste your PIA username/password details:
+- Generate standalone PIA WireGuard configuration
+- Manage router PIA WireGuard configuration
+- Watchdog WireGuard management
+- View app log
+- Exit app
 
 <p align="center">
-  <img src="./images/03-interface-fields.png"
-       alt="Interface fields"
-       width="350">
-</p>
-<p align="center">
-  <strong>Interface Fields</strong>
+  <img src="./images/main-menu.png" alt="Main menu" width="300">
+  <figcaption><center>Main menu</center></figcaption>
 </p>
 
-3. Optional - accept the default DNS servers (Quad 9: 9.9.9.9, 149.112.112.12) or enter your choice (e.g.,Cloudflare: 1.1.1.1, 1.0.0.1 ), use a comma to separate entries.
+### 1. Generate a PIA WireGuard configuration
 
-4. Tap the **GENERATE CONFIG** button.
-
-5. After successful PIA authentication your chosen region's config file is displayed in the **GENERATED CONFIG** window. You can select specific text from this window or tap **COPY** to send the window contents to the clipboard (clipboard is cleared after 60 seconds).
-   Use **SHARE / SAVE** to send the config file to a specific app e.g. your favourite file system app to save the generated conf file to a location of choice:
-
-<table>
-<tr>
-<td align="center">
-<img src="./images/04-generated-config.png" width="350"><br>
-<strong>Generated config</strong>
-</td>
-<td align="center">
-<img src="./images/06-share.png" width="350"><br>
-<strong>Share</strong>
-</td>
-</tr>
-</table>
-
-6. Conf files are named per the region name (agreed, PIA isn't consistent with the region name format!)
-7. Above the **GENERATED CONFIG** window there's a **CLEAR ALL** button that removes your WireGuard credentials (config data, PIA username/password) from your device's screen and securely overwrites these variables from system memory. Next to that there's a countdown timer. After no activity for 3 minutes, your credentials are automatically wiped. The timer is reset when there's in app activity (scrolling, tapping etc).
-   If you use the **COPY** button, the clipboard is cleared after 60 seconds automatically regardless of activity.
+1. Tap **Generate PIA WireGuard configuration**.
+2. Choose a region from the filterable region list.
+3. Enter your PIA username, password, and DNS values.
+4. Tap **GENERATE CONFIG** once all required fields are filled.
+5. The generated WireGuard configuration is displayed in a selectable but read-only text area.
 
 <p align="center">
-  <img src="./images/06b-clipboard clearing.png"
-       alt="Automated clipboard clear"
-       width="350">
-</p>
-<p align="center">
-  <strong>Automated clipboard clear</strong>
+  <img src="./images/standalone-config.png" alt="Standalone config generation" width="300">
+  <figcaption><center>Standalone config generation</center></figcaption>
 </p>
 
-8. As above, at the bottom of the screen there's a scrollable "LOG" of processing/activity that can be cleared.
+6. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing.
 
-## Pushing the config to an ASUS router
+### 2. Manage router PIA WireGuard configuration
 
-Once a config has been generated, you can push it to an **ASUS router running [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) firmware** over SSH without copying the `.conf` by hand!
+This enables full management of WireGuard slots.
 
-1. Generate a config as described above
-2. In the **GENERATED CONFIG** section tap **PUSH CONFIG TO ROUTER...**
+1. Tap **Manage router PIA WireGuard configuration**.
+2. Enter router IP, SSH username, and SSH password (defaults are prefilled if available).
+3. Tap **CONNECT TO ROUTER**.
 
 <p align="center">
-  <img src="./images/07-push-config-button.png"
-       alt="Generated Config"
-       width="350">
-</p>
-<p align="center">
-  <strong>Router push dialog</strong>
-</p>
-   
-3. On the **ROUTER SSH LOGIN** window, enter the router **IP**, **SSH username** and **SSH password**, then tap **CONNECT**. The app reads all five slots and flags the currently **ACTIVE** and **KILL SWITCH** slot.
-
-<p align="center">
-  <img src="./images/08-router-login.png"
-       alt="Router login"
-       width="350">
-</p>
-<p align="center">
-  <strong>Router login</strong>
+  <img src="./images/router-slot-management.png" alt="Router slot management" width="300">
+  <figcaption><center>Router slot management</center></figcaption>
 </p>
 
-4. Select your target `wgc1`–`wgc5` slot, existing slot descriptions are shown so you can avoid overwriting one you want to keep, then tap **CONFIRM WRITE TO ROUTER**.
+4. Select a slot and choose one of the slot actions:
+
+- **CREATE**:
+  - first, select a region:<p align="center"><img src="./images/region-selection.png" alt="App log" width="250"><figcaption><center>Region selection</center></figcaption></p>
+  - Then supply PIA credentials and preferred DNS server addresses:<p align="center">
+    <img src="./images/pia-creds.png" alt="App log" width="250"><figcaption><center>Supply credentials and DNS</center></figcaption></p>
+  - The slot's configuration is then generated and saved, but <u>**not**</u> enabled.
+    <br>
+
+- **ENABLE**: activates the slot and verifies the interface by using two ping targets over the new VPN interface, not the WAN interface. If the connectivity check fails, the slot is reverted to disabled. Recommended connectivity checking addresses are
+  - `8.8.8.8` or `8.8.4.4` (Google primary and secondary DNS)
+  - `1.1.1.1` or `1.0.0.1` (CloudFlare primary and secondary DNS)
 
 <p align="center">
-  <img src="./images/09-select-slot.png"
-       alt="Write to router"
-       width="350">
-</p>
-<p align="center">
-  <strong>Write to router</strong>
+  <img src="./images/ping-targets.png" alt="App log" width="175">
+  <figcaption><center>Ping targets</center></figcaption>
 </p>
 
-5. Below in the **LOG** you'll see the app stopping the active tunnel, backing up the chosen slot, writing the new configuration to NVRAM, starting the new tunnel, then verifying that the `wgc<slot>` appears in `wg show interfaces` (retried for up to 60 seconds) and reports the assigned local and public IP addresses.
+- **EDIT**: allows updating WireGuard slot parameters and saves them back to router NVRAM.
 
 <p align="center">
-  <img src="./images/10-waiting-for-tunnel.png"
-       alt="Write to router"
-       width="350">
-</p>
-<p align="center">
-  <strong>Write to router</strong>
+  <img src="./images/editing-slot.png" alt="App log" width="300">
+  <figcaption><center>Editing a slot</center></figcaption>
 </p>
 
-6. On success the dialog closes and the router is running your new tunnel. On failure the previous slot config and the previously active tunnel are restored automatically, check the **LOG** for details.
+- **DISABLE**: disable the selected slot.
+- **DELETE**: remove the slot configuration and disable any associated watchdog.
+
+### 3. Watchdog WireGuard management
+
+This manages a self-healing watchdog. In the event that your WireGuard configuration expires, it is automatically renewed and an optional email alert sent when connectivity has been restored.
+
+1. Tap **Watchdog WireGuard management**.
+2. Enter router IP, SSH username, and SSH password.
+3. Tap **CONNECT TO ROUTER**.
 
 <p align="center">
-  <img src="./images/11-push-complete.png"
-       alt="Push complete"
-       width="350">
-</p>
-<p align="center">
-  <strong>Push complete</strong>
+  <img src="./images/watchdog-management.png" alt="Watchdog management" width="300">
+  <figcaption><center>Watchdog management</center></figcaption>
 </p>
 
-All app processing is reported live in the in-app **LOG** panel including SSH commands, active-interface detection, slot backup, the NVRAM write/commit, the start sequence, and the up-to-60-second verification, so you always know exactly what is happening and what was done. If any step fails, the app automatically restores both the target slot's previous contents and the previously active tunnel, and logs the recovery so the router isn't left in a broken state.
+4. Select a slot and use the watchdog actions:
+   - **ENABLE**: deploy router-side watchdog scripts and cron jobs for the selected slot.
+   - **EDIT**: save watchdog settings and region metadata to NVRAM.
+
+<p align="center">
+  <img src="./images/configuring-watchdog.png" alt="App log" width="300">
+  <figcaption><center>Configuring a watchdog</center></figcaption>
+</p>
 
 > [!TIP]
-> Activity during the push to router continually resets the 3-minute idle timer, so a long verification will not trigger the automatic session wipe.
+> See [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md) for email troubleshooting approaches.
 
-### Push to router prerequisites
+- **DISABLE**: remove watchdog jobs and scripts for the slot.
+- **DELETE**: remove the watchdog and clear the slot configuration.
+- **VIEW WATCHDOG LOG**: inspect the router-side watchdog log. Logs are rotated at midnight retaining the current and previous logs and do not persist if the router is rebooted or a power loss occurs.
 
-- An ASUS router running **Asuswrt-Merlin** firmware with WireGuard **client** support (slots `wgc1`–`wgc5`).
-- **SSH access enabled** on the router (Administration → System → enable the _SSH Daemon_; LAN-only is recommended) and reachable from your device.
-- The router's **LAN IP**, plus an **SSH username** and **password** (defaults to `192.168.0.254` / `admin`).
-- A config already generated in the app, the **PUSH CONFIG TO ROUTER...** button only appears once a config is generated.
+### 4. View app log
 
-## Notes
+Use the **View app log** screen to inspect in-app log entries and clear them with **CLEAR LOG**.
 
-- **Pre-shared keys**: PIA WireGuard does not (ASAICT) employ pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
-- **Time-to-live constraints**: PIA WireGuard configurations expire every week or so per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
-- **Key safety**: the generated config contains private encryption keys. Treat them like a password and manage them securely.
-  > [!CAUTION]
-  >
-  > **Push to router**: the app assumes that <b>only one WireGuard VPN is active at any time</b>, when you save the config to your router that "slot" will become the active VPN replacing any previously active slot and any slot with a <b>kill switch</b> will be deactivated and the kill switch together with NAT and firewalling will be applied to the newly created slot.
+<p align="center">
+  <img src="./images/app-log.png" alt="App log" width="300">
+  <figcaption><center>App log</center></figcaption>
+</p>
+
+### 5. Exit app
+
+The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard.
+
+### Hamburger menu
+
+You can quickly jump between functions via a hamburger menu, always shown in the <span style="color: green; font-weight: bold;">top left corner</span> of each screen:
+
+<img src="./images/hamburger-menu.png" alt="App log" width="300">
+
+This can be useful to check the application's log during operations.
+
+<p align="center">
+  <img src="./images/hamburger-menu-details.png" alt="App log" width="300">
+  <figcaption><center>Hamburger Menu</center></figcaption>
+</p>
 
 ---
 
-## What does push to router do to the router?
+## Notes
 
-A great question to ask as anything that talks to your router programatically should be under extreme scrutiny. A lot of thinking, research, and analysis went into implementing this feature. It runs exactly the same sequence of activities that the web UI performs.
+- **No persistent credential storage:** PIA credentials and generated configs are held in memory only while the app is running.
+- **Clipboard auto-clear:** copied config is cleared after 60 seconds.
+- **Pre-shared keys**: PIA WireGuard does not use pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
+- **Time-to-live constraints**: PIA WireGuard configs expire every few weeks per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
+- **Key safety**: generated configs contains private encryption keys. Treat them like passwords and manage them securely.
 
-### In summary...
+> [!WARNING]
+> This app assumes that only one WireGuard VPN is active at any time. When you save a config to your router, that "slot" will become the active VPN **replacing** any previously active slot and any slot with a kill switch will be **deactivated** and the kill switch together with NAT and firewalling will be applied to the **newly** enabled slot.
 
-When you select a PIA region and push it to your router, the app connects directly to your router over your home network and switches your VPN tunnel to the new location. It first checks whether a VPN tunnel is already running, stops it cleanly, writes the new VPN server details into the router's permanent memory, and then starts the new tunnel. The app watches the router until it confirms the tunnel is active, then checks that internet traffic is actually flowing through it by verifying the public IP address your router is using. If anything goes wrong at any point, the app restores the router to exactly the state it was in before you started.
+> [!DANGER]
+> If you manually add a VPNs via the ASUS web GUI, the watchdog function requires that the VPN description exactly match the PIA region name eg `aus_melbourne`.
 
-### In detail...
+---
 
-The push operation establishes an SSH session to the router and uses `wg show interfaces` to detect any currently active WireGuard client slot. If an existing slot config is present in NVRAM, the current `wgcN_*` keys are snapshotted as a backup before any changes are made. The active tunnel is stopped by disabling its `enforce` and `enable` NVRAM flags, committing, then issuing `service "stop_wgc N"; service start_vpnrouting0` targeted at that specific slot. The new configuration is written across the full set of NVRAM keys for the target slot, with `ep_addr_r` and `rip` explicitly cleared since these are populated dynamically by the firmware after tunnel establishment. After a single nvram commit, the new tunnel is started via `service "restart_wgc N"; service start_vpnrouting0`. The app then polls `wg show interfaces` for up to 60 seconds to confirm the interface is active, followed by polling `ipv4.icanhazip.com` (a service run and hosted by [Cloudflare](https://www.cloudflare.com/)) via curl through the tunnel to confirm routed connectivity. On any failure, independent recovery blocks restore the backed-up NVRAM keys and re-enable the previously active slot as appropriate to the failure scenario.
+## What does `cfg-pia-wireguard` "do" to my router?
+
+A great question to ask as anything that talks to your router programatically should be under extreme scrutiny. A lot of thinking, research, and analysis went into implementing the two features to manage your router's VPN configuration and deploy a watchdog. Please see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) for full details including a flow chart of user interactions and two diagrams showing network calls and representative IP traffic flows.
 
 ---
 
@@ -271,7 +281,7 @@ This tool is unsupported and may cause objects in mirrors to be closer than they
 
 ## Trademark and affiliation notice
 
-This is an independent, open-source utility released under the GNU General Public License v3.0. It requires an active Private Internet Access (PIA) account subscription to authenticate with the provisioning endpoints. This application is not affiliated with, endorsed by, sponsored by, or associated with Private Internet Access or WireGuard. WireGuard® is a registered trademark of Jason A. Donenfeld. Private Internet Access and PIA are trademarks of their respective owner.
+This is an independent, open-source utility released under the GNU General Public License v3.0. It requires an active Private Internet Access (PIA) account subscription to authenticate with the provisioning endpoints. This application is not affiliated with, endorsed by, sponsored by, or associated with Private Internet Access, WireGuard or ASUS. WireGuard® is a registered trademark of Jason A. Donenfeld. Private Internet Access and PIA are trademarks of their respective owner. ASUS is a trademark of ASUSTek Computer Inc.
 
 ---
 

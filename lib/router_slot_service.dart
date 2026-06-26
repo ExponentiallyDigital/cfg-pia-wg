@@ -20,31 +20,29 @@
 // owned by the caller (mirroring RouterWatchdog), so RecordingSSHClient drives these in tests.
 
 import 'dart:convert';
-
 import 'package:dartssh2/dartssh2.dart';
-
 import 'router_watchdog.dart' show shellSingleQuote, kWatchdogLogTag;
 
 // The per-slot WireGuard NVRAM keys (without the `wgcN_` prefix), in the order router_push.dart
 // wrote them. Used for backup/restore, delete, and the parameter editor.
 const List<String> kSlotNvramKeys = [
-  'addr',
-  'alive',
-  'desc',
-  'dns',
-  'enable',
-  'enforce',
-  'ep_addr',
-  'ep_addr_r',
-  'ep_port',
-  'fw',
-  'mtu',
-  'nat',
-  'ppub',
-  'priv',
-  'psk',
-  'rip',
-  'aips',
+  'addr', // This is the local tunnel IP address assigned to the router by the VPN server in CIDR notation (e.g., `10.x.x.x/32`). This field is user editable.
+  'alive', // The persistent keepalive interval, set to 25 (seconds) by default. This field is user editable.
+  'desc', // The slot's PIA region name. This must match the actual PIA region name for the watchdog function to operate. _(include that as a comment next to this field)_. This field is user editable.
+  'dns', // The two DNS servers to use. Optional, but defaults to `"9.9.9.9, 149.112.112.112"`. This field is user editable.
+  'enable', // When set to `1` this enables this slot; when set to `0` this slot is disabled. This field is not user editable and its value is set by the ENABLE and DISABLE buttons in 2.1.2.
+  'enforce', // When set to `1` this enables the killswitch on this slot; when set to `0` it is disabled. The killswitch blocks routed clients if the tunnel goes down. This field is user editable.
+  'ep_addr', // The domain name (FQDN) or public IP address of the remote PIA WireGuard server (peer endpoint) you are connecting to. This field is user editable.
+  'ep_addr_r', // If `wgcN_ep_addr` contains either a DNS name or an IP address, this is the resolved numeric IP address; if `wgcN_ep_addr` contains a direct IP address, this field will hold an identical value. This field is not user editable and is set when the interface is initialised.
+  'ep_port', // The endpoint port, defaulting to `1337` for PIA. This field is user editable.
+  'fw', // Set to `1` to enable the inbound firewall on this slot; set to `0` to disable it. This field is user editable.
+  'mtu', // The MTU (Maximum Transmission Unit), set to `1420` by default. This field is user editable.
+  'nat', // Set to `1` to enable network address translation (NAT); set to `0` to disable NAT. This field is user editable.
+  'ppub', // The PIA VPN server public key. This field is user editable.
+  'priv', // The PIA user's private key. This field should be rendered as an obscured input (like a password field) with a show/hide toggle, consistent with how SSH and PIA credentials are handled elsewhere in the app. This field is user editable.
+  'psk', // This value is not used by PIA and is read-only for the user (reserved for a preshared key). This field is not user editable.
+  'rip', // Stores the router's current external public IP address as seen by the internet. This field is not user editable.
+  'aips', //The allowed IP addresses, defaults to `0.0.0.0/0`. This field is user editable.
 ];
 
 /// Opens a real SSH client to the router. Screens inject a test factory instead in tests.
@@ -232,8 +230,7 @@ class RouterSlotService {
     }
     if (!up) {
       await _revertEnable(slot);
-      throw Exception(
-          'wgc$slot did not come up — the configuration may have expired. Recreate it with CREATE, then ENABLE.');
+      throw Exception('wgc$slot did not come up — the configuration may have expired. Recreate it with CREATE, then ENABLE.');
     }
 
     final primaryOk = await pingViaSlot(primaryIp, slot);
@@ -275,6 +272,9 @@ class RouterSlotService {
     for (final key in kSlotNvramKeys) {
       await _run('nvram unset wgc${slot}_$key');
     }
+    // also clear ping target keys
+    await _run('nvram unset wgc${slot}_wd_primary_ip');
+    await _run('nvram unset wgc${slot}_wd_secondary_ip');
     await _run('nvram commit');
     await _logRouter('Deleted wgc$slot configuration');
     onLog?.call('wgc$slot configuration cleared.', isSuccess: true);

@@ -139,8 +139,8 @@ void main() {
       expect(nv['wgc2_wd_secondary_ip'], '1.1.1.1');
       expect(nv['wgc2_wd_email_enabled'], '1');
       expect(nv['wgc2_wd_smtp_server'], 'smtp.example.com:465');
-      expect(nv.containsKey('pia_wg_cfga_user'), isFalse);
-      expect(nv.containsKey('pia_wg_cfga_password'), isFalse);
+      expect(nv.containsKey('cfg_pia_wg_user'), isFalse);
+      expect(nv.containsKey('cfg_pia_wg_password'), isFalse);
     });
 
     test('email_enabled is 0 when disabled', () {
@@ -159,8 +159,8 @@ void main() {
         'wgc3_wd_smtp_server': 'mail.x.com:587',
         'wgc3_wd_smtp_user': 'su',
         'wgc3_wd_smtp_pass': 'sp',
-        'pia_wg_cfga_user': 'pu',
-        'pia_wg_cfga_password': 'pp',
+        'cfg_pia_wg_user': 'pu',
+        'cfg_pia_wg_password': 'pp',
       };
       final c = WatchdogConfig.fromNvram(3, nv);
       expect(c.slotIndex, 3);
@@ -269,8 +269,8 @@ void main() {
 
     test('reads global PIA credentials from NVRAM', () {
       final s = buildWatchdogScript(_valid(slot: 1));
-      expect(s, contains('nvram get pia_wg_cfga_user'));
-      expect(s, contains('nvram get pia_wg_cfga_password'));
+      expect(s, contains('nvram get cfg_pia_wg_user'));
+      expect(s, contains('nvram get cfg_pia_wg_password'));
     });
 
     test('pings via the VPN interface, primary then secondary', () {

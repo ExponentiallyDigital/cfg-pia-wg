@@ -56,8 +56,8 @@ void main() {
       await RouterWatchdog(c).deployWatchdogScripts(cfg(slot: 1));
       expect(c.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
       expect(c.ran("nvram set wgc1_wd_secondary_ip='1.1.1.1'"), isTrue);
-      expect(c.ran("nvram set pia_wg_cfga_user='p1234567'"), isTrue);
-      expect(c.ran("nvram set pia_wg_cfga_password='secret'"), isTrue);
+      expect(c.ran("nvram set cfg_pia_wg_user='p1234567'"), isTrue);
+      expect(c.ran("nvram set cfg_pia_wg_password='secret'"), isTrue);
       expect(c.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
       expect(c.ran('chmod +x /jffs/scripts/watchdog_wgc1.sh'), isTrue);
       expect(c.ran('logger -t cfg-pia-wg'), isTrue);
@@ -126,8 +126,8 @@ void main() {
       if (cmd.contains('wgc1_wd_secondary_ip')) return '1.1.1.1';
       if (cmd.contains('wgc1_wd_email_enabled')) return '1';
       if (cmd.contains('wgc1_wd_smtp_server')) return 'mail.x.com:465';
-      if (cmd.contains('pia_wg_cfga_user')) return 'pu';
-      if (cmd.contains('pia_wg_cfga_password')) return 'pp';
+      if (cmd.contains('cfg_pia_wg_user')) return 'pu';
+      if (cmd.contains('cfg_pia_wg_password')) return 'pp';
       return '';
     });
     final config = await RouterWatchdog(c).loadConfig(1);

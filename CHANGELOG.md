@@ -13,24 +13,24 @@
 
 - update play store app name from `pia_wireguard_cfga` to `cfg_pia_wireguard`
 - port `build.sh` functionality to `build.ps1`
-- update README.md with
-  - the new program interface and menu structure
-  - watchdog documentation
-  - how-to with screenshots
-  - note: when manually adding VPNs via the Asus web GUI, the watchdog function requires the VPN description match the PIA region name eg `aus_melbourne`
-  - note: watchdog/WG VPN is only active on one interface at a time
-  - requires outbound ICMP over VPN
-  - reconfigure in ~7 seconds
-  - logfile rotated at midnight, it does not persist across reboots
-  - to reduce on router log data, only the current and previous log are ever retained before a reboot
-- create app process flow chart, add to `ARCHITECTURE.md`
 - new UI: modals need to be resized with tablet/large screen
-- confirm private datastore contains 0 sensitive data, use `C:\Users\andrew\AppData\Local\Android\sdk\platform-tools\adb.exe exec-out "run-as com.exponentiallydigital.cfg_pia_wireguard tar c ." > C:\Users\andrew\Desktop\app_dump.tar`
-- after creating a watchdog, add a popup reminding user to ENABLE it
+- confirm private datastore contains 0 sensitive data, examine output from
+
+```bash
+`C:\Users\andrew\AppData\Local\Android\sdk\platform-tools\adb.exe exec-out "run-as com.exponentiallydigital.cfg_pia_wireguard tar c ." > C:\Users\andrew\Desktop\app_dump.tar`
+```
 
 ---
 
 ## Changes
+
+2026-06-25 version: 0.6.06 build 334
+
+- updated build SHAs
+- added field descriptions to kSlotNvramKeys
+- extensive updates to README, SECURITY, and TESTING documentation, added new app screenshots
+- renamed nvram variable from `pia_wg_cfga` to `cfg-pia-wg`
+- FIX deleting a managed slot does not unset: `wgcN_wd_primary_ip` and `wgcN_wd_secondary_ip`
 
 2026-06-25 version: 0.6.05 build 334
 

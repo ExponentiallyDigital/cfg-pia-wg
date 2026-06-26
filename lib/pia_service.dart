@@ -58,6 +58,7 @@ class RegResponse {
 }
 
 class PiaService {
+  // ─── PIA negotiation endpoints (mirrored from router_watchdog.dart) ─────────────────
   static const _serverListUrl = 'https://serverlist.piaservers.net/vpninfo/servers/v6';
   static const _tokenUrl = 'https://www.privateinternetaccess.com/gtoken/generateToken';
   static const _caCertUrl = 'https://raw.githubusercontent.com/pia-foss/manual-connections/master/ca.rsa.4096.crt';

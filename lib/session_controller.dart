@@ -16,7 +16,7 @@
 // Holds the credentials, generated config, application log, and the 60-second clipboard
 // auto-clear timer that must persist while the user moves between the workflow screens. NOTHING
 // here is ever written to device storage — it lives only in memory and is wiped on "Exit app"
-// and when the app is backed out of from the main menu.
+// and when the app is backed out via the main menu.
 
 import 'dart:async';
 

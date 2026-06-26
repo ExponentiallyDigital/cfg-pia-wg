@@ -150,7 +150,11 @@ void main() {
       expect(c.ran('service "stop_wgc 3"'), isTrue);
       expect(c.ran('nvram unset wgc3_desc'), isTrue);
       expect(c.ran('nvram unset wgc3_priv'), isTrue);
-      expect(c.count('nvram unset wgc3_'), kSlotNvramKeys.length);
+      // also include ping target keys
+      expect(c.ran('nvram unset wgc3_wd_primary_ip'), isTrue);
+      expect(c.ran('nvram unset wgc3_wd_secondary_ip'), isTrue);
+      // the +2 accounts for the extra two manual keys being deleted
+      expect(c.count('nvram unset wgc3_'), kSlotNvramKeys.length + 2);
       expect(c.ran('nvram commit'), isTrue);
     });
   });

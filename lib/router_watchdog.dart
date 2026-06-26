@@ -154,8 +154,8 @@ class WatchdogConfig {
       cronIntervalMinutes: (interval == null || interval <= 0) ? 5 : interval,
       primaryIp: g('primary_ip'),
       secondaryIp: g('secondary_ip'),
-      piaUsername: nv['pia_wg_cfga_user'] ?? '',
-      piaPassword: nv['pia_wg_cfga_password'] ?? '',
+      piaUsername: nv['cfg_pia_wg_user'] ?? '',
+      piaPassword: nv['cfg_pia_wg_password'] ?? '',
       emailAlertsEnabled: g('email_enabled') == '1',
       emailFrom: g('email_from'),
       emailTo: g('email_to'),
@@ -344,8 +344,8 @@ class RouterWatchdog {
     for (final e in config.toNvram().entries) {
       await _run('nvram set ${e.key}=${shellSingleQuote(e.value)}');
     }
-    await _run('nvram set pia_wg_cfga_user=${shellSingleQuote(config.piaUsername.trim())}');
-    await _run('nvram set pia_wg_cfga_password=${shellSingleQuote(config.piaPassword)}');
+    await _run('nvram set cfg_pia_wg_user=${shellSingleQuote(config.piaUsername.trim())}');
+    await _run('nvram set cfg_pia_wg_password=${shellSingleQuote(config.piaPassword)}');
     if (desc != null && desc.isNotEmpty) {
       await _run('nvram set wgc${config.slotIndex}_desc=${shellSingleQuote(desc)}');
     }
@@ -418,8 +418,8 @@ class RouterWatchdog {
         await _run('nvram unset wgc${slot}_wd_smtp_pass');
         await _run('nvram unset wgc${slot}_wd_smtp_server');
         await _run('nvram unset wgc${slot}_wd_smtp_user');
-        await _run('nvram unset pia_wg_cfga_password');
-        await _run('nvram unset pia_wg_cfga_user');
+        await _run('nvram unset cfg_pia_wg_password');
+        await _run('nvram unset cfg_pia_wg_user');
         await _run('nvram commit');
         onLog?.call('NVRAM committed.', isSuccess: true);
         // below was commented out, which leaves interface in prior state,
@@ -456,8 +456,8 @@ class RouterWatchdog {
     for (final k in keys) {
       nv['wgc${slot}_wd_$k'] = await _run('nvram get wgc${slot}_wd_$k');
     }
-    nv['pia_wg_cfga_user'] = await _run('nvram get pia_wg_cfga_user');
-    nv['pia_wg_cfga_password'] = await _run('nvram get pia_wg_cfga_password');
+    nv['cfg_pia_wg_user'] = await _run('nvram get cfg_pia_wg_user');
+    nv['cfg_pia_wg_password'] = await _run('nvram get cfg_pia_wg_password');
     return WatchdogConfig.fromNvram(slot, nv);
   }
 
@@ -586,8 +586,8 @@ SMTP_PASS="$(nvram get ${K}wd_smtp_pass)"
 SMTP_HOST="${SMTP_SERVER%:*}"
 SMTP_PORT="${SMTP_SERVER##*:}"
 DESC="$(nvram get ${K}desc)"
-PIA_USER="$(nvram get pia_wg_cfga_user)"
-PIA_PASS="$(nvram get pia_wg_cfga_password)"
+PIA_USER="$(nvram get cfg_pia_wg_user)"
+PIA_PASS="$(nvram get cfg_pia_wg_password)"
 
 log "Watchdog started for $IFACE"
 

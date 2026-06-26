@@ -56,7 +56,7 @@ EOF
 ```
 
 > [!NOTE]
-> **Message-ID**: Google will likely silently non-deliver the test email if you reuse the same test message without updating the `Message-ID:` by recreating `/tmp/test-email.txt`.
+> **Message-ID**: Google may silently **not** deliver the test email if you reuse the same test message without updating the `Message-ID:` by recreating `/tmp/test-email.txt`.
 
 > [!TIP]
 > **EOF**: Using `EOF` without single quotes allows variable expansion. Typically you would use `'EOF'`, but we need the `date` and `hostnames` expanded, which is why we use `cat << EOF >`.
@@ -102,7 +102,7 @@ sendmail: send:'From: Sender Name <sender@example.com>'
 sendmail: send:'To: Recipient Name <recipient@example.com>'
 sendmail: send:'Subject: Test Email from Command Line - 2026-06-20 11:58:38'
 sendmail: send:'Date: Sat, 20 Jun 2026 11:58:38 +1000'
-sendmail: send:'Message-ID: <1781920718.test@arcgate>'
+sendmail: send:'Message-ID: <1781920718.test@host>'
 sendmail: send:'MIME-Version: 1.0'
 sendmail: send:'Content-Type: text/plain; charset=utf-8'
 sendmail: send:'Content-Transfer-Encoding: 7bit'
@@ -138,17 +138,19 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
     -showcerts < /dev/null
 ```
 
+---
+
 ## Testing the watchdog feature
 
-When you invoke `PUSH TO ROUTER` and if your roiuter is using Merlin firmware a new button appears "WATCHDOG CONFIG".
+These notes exist because this function requires manual testing for code verification.
 
 ### Checks
 
-1. check that `/tmp/scripts/services-start` contains (1m watchdog)
+1. check that `/tmp/scripts/services-start` contains (5m watchdog)
 
 ```bash
 #!/bin/sh
-cru a watchdog_wgc1 "*/1 * * * *" /tmp/scripts/watchdog_wgc1.sh
+cru a watchdog_wgc1 "*/5 * * * *" /tmp/scripts/watchdog_wgc1.sh
 cru a watchdog_log_rotate_wgc1 "0 0 * * *" "mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log"
 ```
 
@@ -164,7 +166,9 @@ user@host:/tmp/home/root# cru l
 0 0 * * * mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
 ```
 
-3. check that `/tmp/scripts/watchdog_wgcN.sh` is valid
+3. Is the deployed watchdog script correct?
+
+Compare a post processed instance of `const String _kWatchdogScriptTemplate` in `lib\router_watchdog.dart` with `/tmp/scripts/watchdog_wgcN.sh`
 
 4. check NVRAM is set correctly
 
@@ -183,42 +187,46 @@ wgc1_wd_smtp_user=
 ```
 
 ```bash
-user@host:/tmp/home/root# nvram show | grep pia_wg
-pia_wg_cfga_password=REDACTED
-pia_wg_cfga_user=REDACTED
+user@host:/tmp/home/root# nvram show | grep cfg_pia_wg
+cfg_pia_wg_password=REDACTED
+cfg_pia_wg_user=REDACTED
 ```
 
 5. Check `/tmp/watchdog_backoff_wgcN`
 
+Force a reconfiguration by supplying invalid ping targets, then check that the file is created.
+
+<br>
+
 6. Check `/tmp/watchdog_last_ping_success_wgcN`
+
+Check that this file is created when a ping succeeds.
 
 7. Check logs are generated
 
-- /tmp/watchdog_wgcN.log
+Check `/tmp/watchdog_wgcN.log` is generated
 
-6. Check router syslog entries are created
+8. Check router syslog entries are created
 
-deploy
-delete
-reconfigure
+Conduct, deploy, delete, reconfigure actions. Ensure these are logged to syslog.
 
-7. Update `check interval` from 1 to 100 ensure NVRAM written, `cron` and `crontab` updated
+9. Update `check interval` from 1 to 100 ensure NVRAM written, `cron` and `crontab` updated
 
-8. Check cleanup ocurs when `DISABLE` selected in UI
+10. Check cleanup ocurs when `DISABLE`/`DELETE` selected in UI
 
 - cron jobs removed, check with `crontab -l` and `cru l`
 - `/tmp/scripts/services-start` should only contain `#!/bin/sh`
 - add a comment to `/tmp/scripts/services-start`, start watchdog and remove watchdog, comment should persist
 - all files deleted
 
-9. File permissions
+11. File permissions
 
 Check `/tmp/scripts/services-start` permission is 777 `-rwxrwxrwx`
 Check `/tmp/scripts/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
 
-10. Reboot and check that cron and crontab are correct
+12. Reboot and check that cron and crontab are correct
 
-11. Force a reconfigure to occur
+13. Force a reconfigure to occur
 
 Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Address Blocks Reserved for Documentation](https://www.iana.org/go/rfc5737) these blocks should never respond:
 
@@ -228,7 +236,7 @@ Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Ad
 203.0.113.0/24 (TEST-NET-3)
 ```
 
-set thesde via NVRAM eg
+set these via NVRAM eg
 
 ```bash
 # valid entries
@@ -240,13 +248,18 @@ nvram set wgc1_wd_primary_ip=192.0.2.1
 nvram set wgc1_wd_secondary_ip=198.51.100.1
 ```
 
-12. Apply a new config to a blank slot
+14. Apply a new config to a blank slot
 
-13. Overwrite an existing slot with a different region's config
+15. Overwrite an existing slot with a different region's config
 
-14. Overwrite an existing slot with the same region's config
+16. Overwrite an existing slot with the same region's config
 
-15. check all NVRAM settings are cleared on script disable
+17. check all NVRAM settings are cleared on script & watchdog disable
+
+```bash
+nvram show | grep pia_wg | sort
+nvram show | grep qgc | sort
+```
 
 ### RAM usage
 
