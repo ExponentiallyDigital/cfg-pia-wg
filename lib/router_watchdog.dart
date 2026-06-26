@@ -545,6 +545,10 @@ class RouterWatchdog {
 //
 // There is a ~7 KB heredoc size limitation for the following payload.
 //
+// NB /usr/sbin/curl creates /jffs/curllst with 666 permissions, this file contains every
+// curl command line executed (!) and there is no way to diuable this, so after every
+// curl invocation, the curllst log file is flushed with "echo -n > /jffs/curllst" :)
+//
 const String _kWatchdogScriptTemplate = r'''#!/bin/sh
 # watchdog_wgc__SLOT__.sh - auto-generated; do not edit.
 # Monitors wgc__SLOT__; re-negotiates PIA WireGuard on ping failure.
@@ -723,6 +727,7 @@ which jq >/dev/null 2>&1 || abort "jq is not installed"
 if [ ! -f "$CACERT" ]; then
   log "CA certificate not cached; downloading"
   $CURL "$CACERT_URL" -o "$CACERT" || abort "failed to download CA certificate"
+  echo -n > /jffs/curllst
   openssl x509 -noout -in "$CACERT" >/dev/null 2>&1 || abort "CA certificate is not valid PEM"
   log "CA certificate cached at $CACERT"
 else
@@ -732,12 +737,14 @@ fi
 log "Requesting PIA token for user $PIA_USER"
 TOKEN="$($CURL -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" | jq -r '.token // empty')"
 [ -n "$TOKEN" ] || abort "failed to obtain PIA token"
+echo -n > /jffs/curllst
 log "PIA token obtained (len=$(echo -n "$TOKEN" | wc -c))"
 
 log "Fetching server list for region $DESC"
 SERVERS="$($CURL "$SERVERLIST_URL" | head -1 | jq -r --arg id "$DESC" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"')"
 [ -n "$SERVERS" ] || abort "no servers found for region $DESC"
 log "Servers: $(echo "$SERVERS" | wc -l | tr -d ' ') candidates"
+echo -n > /jffs/curllst
 
 # Latency sweep
 echo "$SERVERS" > "$TMPSRV"
@@ -769,6 +776,7 @@ PUB="$(echo "$PRIV" | wg pubkey)"
 log "Registering public key with $BEST_IP ($BEST_CN)"
 
 REG="$($CURL --cacert "$CACERT" --resolve "$BEST_CN:1337:$BEST_IP" -G --data-urlencode "pt=$TOKEN" --data-urlencode "pubkey=$PUB" "https://$BEST_CN:1337/addKey")" || abort "curl addKey request failed"
+echo -n > /jffs/curllst
 log "addKey response received"
 RSTATUS="$(echo "$REG" | jq -r '.status // empty')"
 [ "$RSTATUS" = "OK" ] || abort "addKey failed (status: $RSTATUS)"

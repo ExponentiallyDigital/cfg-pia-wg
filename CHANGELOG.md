@@ -8,6 +8,10 @@
 
 ## Changes
 
+2026-06-25 version: 0.6.14 build 344
+
+- after auditing the router's file system, it was found that `/usr/sbin/curl` writes a command line history to `/jffs/curllst` with file permissions 666 (!), this log file is also rotated and my exist as `/jffs/curllst.1`. There appears to be no way to stop this file being generated/used, so the bash script empties the file after every `curl` execution ;)
+
 2026-06-25 version: 0.6.13 build 343
 
 - added indicator to slot display if email alerting is enabled
