@@ -32,6 +32,9 @@ void main() {
     expect(find.byKey(const Key('menu_close_app')), findsOneWidget);
     expect(find.text('* requires SSH connectivity to an Asus router.'), findsOneWidget);
     expect(find.textContaining('Select from the above'), findsOneWidget); // green hint
+    expect(find.text('Support development:'), findsOneWidget);
+    expect(find.byKey(const Key('donate_paypal')), findsOneWidget);
+    expect(find.byKey(const Key('donate_patreon')), findsOneWidget);
 
     await _teardown(tester, c);
   });

@@ -5,11 +5,14 @@
 - Release to Play Store, **closed test** w 12 testers over 14 continuous days (keep installed, run min. once)
 - port `build.sh` functionality to `build.ps1`
 - added indicator to slot display if email alerting is enabled
-- Add patreon/paypal donation via app/GitHub
 
 ---
 
 ## Changes
+
+2026-06-25 version: 0.6.12 build 342
+
+- added patreon/paypal donation buttons
 
 2026-06-25 version: 0.6.11 build 340
 

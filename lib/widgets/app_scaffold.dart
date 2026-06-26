@@ -143,18 +143,34 @@ class AppHeaderBar extends StatelessWidget {
 class AppScaffold extends StatelessWidget {
   final Widget child;
   final bool showClose;
-  const AppScaffold({super.key, required this.child, this.showClose = true});
+  final bool fillViewport;
+  const AppScaffold({super.key, required this.child, this.showClose = true, this.fillViewport = false});
 
   @override
   Widget build(BuildContext context) {
+    const bodyPadding = EdgeInsets.all(20);
+
     return ColoredBox(
       color: kBg,
       child: Column(
         children: [
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: child,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final minHeight = constraints.maxHeight > bodyPadding.vertical
+                    ? constraints.maxHeight - bodyPadding.vertical
+                    : 0.0;
+
+                return SingleChildScrollView(
+                  padding: bodyPadding,
+                  child: fillViewport
+                      ? ConstrainedBox(
+                          constraints: BoxConstraints(minHeight: minHeight),
+                          child: IntrinsicHeight(child: child),
+                        )
+                      : child,
+                );
+              },
             ),
           ),
           if (showClose)
