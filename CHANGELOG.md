@@ -24,6 +24,10 @@
 
 ## Changes
 
+2026-06-26 version: 0.6.08 build 338
+
+- merge development to main
+
 2026-06-26 version: 0.6.07 build 336
 
 - FIX disposed-controller crash when the app prompts for PIA username/password and DNS during router slot creation (only occurs if PIA username/pwd not cached in RAM).
