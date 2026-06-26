@@ -24,6 +24,11 @@
 
 ## Changes
 
+2026-06-26 version: 0.6.09 build 339
+
+- released: complete UI overhaul + self healing watchdog function
+- fix deployemny yamls
+
 2026-06-26 version: 0.6.08 build 338
 
 - merge development to main
