@@ -69,8 +69,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+// untold pain and suffering if you try to rename a project: reverted back to
+// "com.exponentiallydigital.pia_wireguard_cfga" from "com.exponentiallydigital.cfg_pia_wireguard"
+// now I understand why signal is from "thought crimes" :)
     defaultConfig {
-        applicationId = "com.exponentiallydigital.cfg_pia_wireguard"
+        applicationId = "com.exponentiallydigital.pia_wireguard_cfga"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

@@ -24,6 +24,12 @@
 
 ## Changes
 
+2026-06-25 version: 0.6.10 build 340
+
+- no functional changes
+- changed internal build name back to "com.exponentiallydigital.pia_wireguard_cfga" from "com.exponentiallydigital.cfg_pia_wireguard". Google does not allow a project name change, doing so would require an entirely new app store listing :/
+- added 512x512 icon for Play Store
+
 2026-06-26 version: 0.6.09 build 339
 
 - released: complete UI overhaul + self healing watchdog function
