@@ -97,17 +97,17 @@ jobs:
              cfg-pia-wg-${GITHUB_REF_NAME}_sbom.spdx.json
 
       - name: Attest release APK
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: build/cfg_pia_wireguard-${{ github.ref_name }}_release.apk
 
       - name: Attest debug APK
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: build/cfg_pia_wireguard-${{ github.ref_name }}_debug.apk
 
       - name: Attest AAB
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: build/cfg_pia_wireguard-${{ github.ref_name }}_google-play-store.aab
 
