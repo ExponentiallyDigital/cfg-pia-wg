@@ -26,7 +26,7 @@
 - remove the 10 minute timer and all it's associated logic and code
 - set defaults for router ip = "192.168.0.254" and router username = "admin"
 - warn the user when pressing the back key IFF it will exit the application
-- on the main menu screen, show text below "\* requires SSH connectivity to an Asus router". This additional text will use the house green style with vertical padding from the existiong text, it will say "Select from the above and/or use the top left <\insert reduced image of hambuger menu> menu."
+- on the main menu screen, show text below "\* requires SSH connectivity to an ASUS router". This additional text will use the house green style with vertical padding from the existiong text, it will say "Select from the above and/or use the top left <\insert reduced image of hambuger menu> menu."
 - in the hamburger menu, there is text marked "HOME" in green, make this grey and make it navigate to the main menu screen when pressed
 - in the hamburger menu, make the currently active menu item appear in house GREEN. eg if the user is currently in the "Watchdog WireGuard management" menu item it's modal, display that in house GREE on the manhurger meny. The "Close app" colour does not change and remains red.
 - if there is an existing SSH connection to the router, display the "connect to router" screen in the background but skip to the modal window which is displayed in the "Manage router PIA WireGuard Configuration" and "Watchdog WireGuard management" menu options.

@@ -24,7 +24,7 @@ navigation between destinations; the active destination is highlighted in green 
 4. **View app log** — scrollable in-memory application log with CLEAR LOG.
 5. **Exit app** — confirms, then wipes all credentials, config and the clipboard, and exits.
 
-\* requires SSH connectivity to an Asus router. Once connected, re-entering a router screen
+\* requires SSH connectivity to an ASUS router. Once connected, re-entering a router screen
 auto-reconnects and opens its slot modal. Router-side actions are also logged to the router syslog
 (tag `cfg-pia-wg`).
 

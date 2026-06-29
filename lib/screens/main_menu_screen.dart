@@ -21,8 +21,7 @@ import '../session_controller.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/app_scaffold.dart';
 
-const _paypalDonationUrl =
-    'https://www.paypal.com/donate/?hosted_button_id=QJYPGRLG2RPBS';
+const _paypalDonationUrl = 'https://www.paypal.com/donate/?hosted_button_id=QJYPGRLG2RPBS';
 const _patreonDonationUrl = 'https://www.patreon.com/cw/ExponentiallyDigital';
 const _scaffoldBodyPadding = 20.0;
 
@@ -39,19 +38,15 @@ class MainMenuScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = SessionScope.of(context);
-    final spacer =
-        2 * (Theme.of(context).textTheme.bodyMedium?.fontSize ?? 14.0);
+    final spacer = 2 * (Theme.of(context).textTheme.bodyMedium?.fontSize ?? 14.0);
     final targetBottomGap = MediaQuery.sizeOf(context).height * 0.05;
-    final donationBottomGap = targetBottomGap > _scaffoldBodyPadding
-        ? targetBottomGap - _scaffoldBodyPadding
-        : 0.0;
+    final donationBottomGap = targetBottomGap > _scaffoldBodyPadding ? targetBottomGap - _scaffoldBodyPadding : 0.0;
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        await confirmAndExit(
-            context, controller); // confirm before the back key exits (round-2)
+        await confirmAndExit(context, controller); // confirm before the back key exits (round-2)
       },
       child: AppScaffold(
         showClose: false,
@@ -62,29 +57,25 @@ class MainMenuScreen extends StatelessWidget {
             _MenuButton(
               keyValue: 'menu_standalone',
               label: AppDestination.standalone.title,
-              onTap: () => navigateToDestination(
-                  context, controller, AppDestination.standalone),
+              onTap: () => navigateToDestination(context, controller, AppDestination.standalone),
             ),
             const SizedBox(height: 12),
             _MenuButton(
               keyValue: 'menu_manage_router',
               label: '${AppDestination.manageRouter.title}*',
-              onTap: () => navigateToDestination(
-                  context, controller, AppDestination.manageRouter),
+              onTap: () => navigateToDestination(context, controller, AppDestination.manageRouter),
             ),
             const SizedBox(height: 12),
             _MenuButton(
               keyValue: 'menu_watchdog',
               label: '${AppDestination.watchdog.title}*',
-              onTap: () => navigateToDestination(
-                  context, controller, AppDestination.watchdog),
+              onTap: () => navigateToDestination(context, controller, AppDestination.watchdog),
             ),
             const SizedBox(height: 12),
             _MenuButton(
               keyValue: 'menu_log',
               label: AppDestination.log.title,
-              onTap: () => navigateToDestination(
-                  context, controller, AppDestination.log),
+              onTap: () => navigateToDestination(context, controller, AppDestination.log),
             ),
             const SizedBox(height: 12),
             SizedBox(
@@ -100,15 +91,13 @@ class MainMenuScreen extends StatelessWidget {
               ),
             ),
             SizedBox(height: spacer),
-            const Text('* requires SSH connectivity to an Asus router.',
-                style: TextStyle(color: kMuted, fontSize: 12)),
+            const Text('* requires SSH connectivity to an ASUS router.', style: TextStyle(color: kMuted, fontSize: 12)),
             const SizedBox(height: 12),
             Text.rich(
               TextSpan(
                 style: const TextStyle(color: kHighlight, fontSize: 12),
                 children: const [
-                  TextSpan(
-                      text: 'Select from the above and/or use the top left '),
+                  TextSpan(text: 'Select from the above and/or use the top left '),
                   WidgetSpan(
                     alignment: PlaceholderAlignment.middle,
                     child: Icon(Icons.menu, size: 16, color: kHighlight),
@@ -139,8 +128,7 @@ class _DonationBlock extends StatelessWidget {
         Text(
           'Support development:',
           textAlign: TextAlign.center,
-          style: TextStyle(
-              color: kMuted, fontSize: 12, fontWeight: FontWeight.w600),
+          style: TextStyle(color: kMuted, fontSize: 12, fontWeight: FontWeight.w600),
         ),
         SizedBox(height: 8),
         Row(
@@ -169,8 +157,7 @@ class _DonationButton extends StatelessWidget {
   final String keyValue;
   final String label;
   final String url;
-  const _DonationButton(
-      {required this.keyValue, required this.label, required this.url});
+  const _DonationButton({required this.keyValue, required this.label, required this.url});
 
   @override
   Widget build(BuildContext context) {
@@ -195,8 +182,7 @@ class _MenuButton extends StatelessWidget {
   final String keyValue;
   final String label;
   final VoidCallback onTap;
-  const _MenuButton(
-      {required this.keyValue, required this.label, required this.onTap});
+  const _MenuButton({required this.keyValue, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

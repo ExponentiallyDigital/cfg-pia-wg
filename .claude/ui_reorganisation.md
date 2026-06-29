@@ -20,7 +20,7 @@ Create a new main opening screen. On this main screen create these five buttons:
 - "View app log"
 - "Close app"
 
-After the last menu button, add a vertical spacing widget that is equivalent to two lines of the default body text height (e.g., `height: 2 * Theme.of(context).textTheme.bodyMedium!.fontSize!`). On the line immediately below this spacer, add this text "\* requires SSH connectivity to an Asus router."
+After the last menu button, add a vertical spacing widget that is equivalent to two lines of the default body text height (e.g., `height: 2 * Theme.of(context).textTheme.bodyMedium!.fontSize!`). On the line immediately below this spacer, add this text "\* requires SSH connectivity to an ASUS router."
 
 Each selected button will open in a new screen, not a modal window, except the "Close app" button which will immediately close the app.
 

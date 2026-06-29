@@ -129,7 +129,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     if (slots == null || !mounted) return;
 
     if (widget.mode == SlotModalMode.watchdog && !slots.isMerlin) {
-      await AppErrors.system(context, _c, 'The VPN watchdog requires Asus-Merlin firmware on the router.');
+      await AppErrors.system(context, _c, 'The VPN watchdog requires Merlin firmware on your router.');
       return;
     }
 
