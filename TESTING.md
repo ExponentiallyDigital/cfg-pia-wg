@@ -142,7 +142,7 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
 
 ## Testing the watchdog feature
 
-These notes exist because this function requires manual testing for code verification.
+Manual router tests:
 
 ### Checks
 
@@ -196,8 +196,6 @@ cfg_pia_wg_user=REDACTED
 
 Force a reconfiguration by supplying invalid ping targets, then check that the file is created.
 
-<br>
-
 6. Check `/tmp/watchdog_last_ping_success_wgcN`
 
 Check that this file is created when a ping succeeds.
@@ -225,7 +223,7 @@ Check `/tmp/scripts/services-start` permission is 777 `-rwxrwxrwx`
 Check `/tmp/scripts/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
 
 12. Reboot and check that cron and crontab are correct
-
+    <br>
 13. Force a reconfigure to occur
 
 Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Address Blocks Reserved for Documentation](https://www.iana.org/go/rfc5737) these blocks should never respond:
@@ -249,11 +247,11 @@ nvram set wgc1_wd_secondary_ip=198.51.100.1
 ```
 
 14. Apply a new config to a blank slot
-
+    <br>
 15. Overwrite an existing slot with a different region's config
-
+    <br>
 16. Overwrite an existing slot with the same region's config
-
+    <br>
 17. check all NVRAM settings are cleared on script & watchdog disable
 
 ```bash
@@ -261,18 +259,18 @@ nvram show | grep pia_wg | sort
 nvram show | grep qgc | sort
 ```
 
-### RAM usage
+18. Files deployed to router
 
-1. With scripts deployed and watchdog active
+Check these get created/cleaned up
 
-   Total :882.34 MB
-   Used :384.00 MB
-   Available :457.09 MB
-   Free :465.82 MB
-   Buffers :0.00 MB
-   Cache :30.73 MB
+```bash
+/jffs/scripts/services-start
+/jffs/scripts/watchdog_wgcN.sh
+/tmp/watchdog_wgcN.log
+/tmp/watchdog_last_ping_success_wgcN
+/tmp/watchdog_backoff_wgcN
+```
 
-2. NVRAM usage
+Where `N` is the slot number
 
-   watchdog active:
-   wwatchdog disabled:
+---
