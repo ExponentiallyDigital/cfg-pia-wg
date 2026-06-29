@@ -205,6 +205,8 @@ This can be useful to check the application's log during operations.
 > [!WARNING]
 > This app assumes that only one WireGuard VPN is active at any time. When you save a config to your router, that "slot" will become the active VPN **replacing** any previously active slot and any slot with a kill switch will be **deactivated** and the kill switch together with NAT and firewalling will be applied to the **newly** enabled slot.
 
+<br>
+
 > [!DANGER]
 > If you manually add a VPNs via the ASUS web GUI, the watchdog function requires that the VPN description exactly match the PIA region name eg `aus_melbourne`.
 
