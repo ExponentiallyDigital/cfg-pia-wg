@@ -8,6 +8,10 @@
 
 ## Changes
 
+2026-06-29 version 0.6.16+346
+
+- updated GitHub actions dependency versions
+
 2026-06-29 version 0.6.15+345
 
 - modified readme formatting, added build chain details, normalised brand name convention
