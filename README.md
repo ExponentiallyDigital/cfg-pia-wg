@@ -1,6 +1,6 @@
 # cfg-pia-wg<img src="./assets/icon/icon.png" alt="PIA WireGuard CFGA" width="150" />
 
-<a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-%20Android%20-blue" alt="Platform"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/cfg-pia-wg" alt="Release"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/tags" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/last-commit/ExponentiallyDigital/cfg-pia-wg" alt="Last Commit"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/cfg-pia-wg" alt="License"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/downloads/ExponentiallyDigital/cfg-pia-wg/total" alt="Downloads"></a><br><a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=security_rating" alt="Security Rating"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=reliability_rating" alt="Reliability"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=sqale_rating" alt="Maintainability"> <a href="https://github.com/ExponentiallyDigital/ExponentiallyDigital/security/policy" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Security-Policy-blue" alt="Security Policy"></a></a><br><a href="https://sonarcloud.io/summary/new_code?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=alert_status" alt="Quality"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=vulnerabilities" alt="Vulnerabilities"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=bugs" alt="Bugs"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=coverage" alt="Coverage"></a>
+<a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/cfg-pia-wg" alt="Release"></a> <a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-%20Android%20-blue" alt="Platform"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/cfg-pia-wg" alt="License"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/downloads/ExponentiallyDigital/cfg-pia-wg/total" alt="Downloads"></a><br><a href="https://github.com/ExponentiallyDigital/ExponentiallyDigital/security/policy" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Security-Policy-blue" alt="Security Policy"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=security_rating" alt="Security Rating"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=reliability_rating" alt="Reliability"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=sqale_rating" alt="Maintainability"><br><a href="https://sonarcloud.io/summary/new_code?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=alert_status" alt="Quality"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=vulnerabilities" alt="Vulnerabilities"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=bugs" alt="Bugs"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=coverage" alt="Coverage"></a>
 
 ---
 
@@ -22,10 +22,11 @@ Creating a valid PIA WireGuard config manually requires authenticating with seve
 - **Router slot management:** connect to an ASUS router over SSH, inspect `wgc1`–`wgc5` slots, and `CREATE`, `ENABLE`, `EDIT`, `DISABLE`, or `DELETE` WireGuard slot configurations.
 - **Merlin watchdog management:** configure and deploy a router-side watchdog to periodically verify and self-heal VPN connectivity, manage cron/script deployment, and view router-side watchdog logs.
 - **No persistent credential storage:** PIA credentials, router SSH credentials, and generated configs are stored only in volatile application memory and are never written to permanent storage.
-- **Automated lowest-latency server selection**: measures live TCP latency against port 1337 across all available servers in your selected target region, ensuring that you provision with the fastest node.
+- **Automated lowest-latency server selection**: measures live latency across all available servers in your selected target region, ensuring that you provision with the fastest node.
 - **Native task-switcher protection** `(FLAG_SECURE)`: enforces native OS-level window flags to block third-party screenshot capturing and automatically obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
 - **Input field hardening**: user credential entry textboxes disable predictive dictionary caching, auto-correction tracking assistance, and keyboard learning behaviours, alongside native selection overrides to block background clipboard scraping.
 - **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials/clipboard.
+- **Industrial-strength professional build chain**: all releases undergo automated [SonarQube](https://docs.sonarsource.com/sonarqube-server) compliance (checks code quality and test coverage), open-source dependency scanning via [OSV](https://github.com/google/osv-scanner) (Google's vulnerability database that flags out-of-date third-party packages), automated version updates via [Dependabot](https://docs.github.com/code-security/dependabot) (monitors and patches insecure or outdated dependencies), binary analysis via [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) (scans compiled mobile binaries for platform-specific security flaws), and static analysis using [CodeQL](https://github.com/github/codeql-action) (analyses code structure to catch semantic gaps and injection risks). Locked action hashes ensure that automated builds execute with specific tool versions.
 
 ---
 
@@ -39,7 +40,7 @@ Each release includes the following versioned files:
 
 | file                                                    | description                                        |
 | ------------------------------------------------------- | -------------------------------------------------- |
-| **`cfg_pia_wireguard-<version>_release.apk`**           | optimized signed release APK                       |
+| **`cfg_pia_wireguard-<version>_release.apk`**           | optimised signed release APK                       |
 | **`cfg_pia_wireguard-<version>_debug.apk`**             | debug APK for testing                              |
 | **`cfg_pia_wireguard-<version>_google-play-store.aab`** | Android App Bundle for the Play Store              |
 | **`cfg-pia-wg-<version>_sbom.spdx.json`**               | software bill of materials (SPDX format)           |
@@ -50,27 +51,29 @@ The installable pre-built apps above have [GitHub Attestations](https://github.c
 
 ---
 
-## Prerequisites
+## Prerequisites & requirements
 
-1. Optionally enable the SSH server on your router. This is used by the **Manage** and **Watchdog** functions. To enable, on your router go to
+For anything more than basic copy/past config generation with **Generate PIA WireGuard configuration**, this tool requires [Merlin Firmware](https://www.asuswrt-merlin.net/) on your ASUS router. Additionally:
+
+1. Enable the SSH server. This is used by the **Manage** and **Watchdog** functions. Enable this on your router via
 
 ```text
 Administration\System\Service -> "Enable SSH" (LAN only is recommended).
 ```
 
-2. For **Manage** and **Watchdog**, you must be running Merlin Firmware with the `JFFS` partition enabled. To enable, on your router go to
+2. Enable the `JFFS` partition. Used by **Manage** and **Watchdog** functions:
 
 ```text
 Administration\System\Basic Config -> "Enable JFFS custom scripts and config"
 ```
 
-3. App functionality requires the ability to use ICMP ping from the router WAN and WireGuard interfaces
+3. Watchdog and tunnel verification use ICMP ping from the router's WAN and WireGuard interfaces.
 
 ## Using the app
 
 The app opens to a main menu with five choices:
 
-- Generate standalone PIA WireGuard configuration
+- Generate PIA WireGuard configuration
 - Manage router PIA WireGuard configuration
 - Watchdog WireGuard management
 - View app log
@@ -202,11 +205,15 @@ This can be useful to check the application's log during operations.
 - **Time-to-live constraints**: PIA WireGuard configs expire every few weeks per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
 - **Key safety**: generated configs contains private encryption keys. Treat them like passwords and manage them securely.
 
-> [!WARNING]
-> This app assumes that only one WireGuard VPN is active at any time. When you save a config to your router, that "slot" will become the active VPN **replacing** any previously active slot and any slot with a kill switch will be **deactivated** and the kill switch together with NAT and firewalling will be applied to the **newly** enabled slot.
+> [!IMPORTANT]
+> This app supports a maximum of one active WireGuard VPN at any time
+>
+> When you save a config to your router, that "slot" will become the active VPN **replacing** any previously active slot.
+>
+> Any slot with a kill switch will be **deactivated** and the kill switch, NAT, and firewalling (if enabled) will be applied to the **newly** enabled slot.
 
-> [!DANGER]
-> If you manually add a VPNs via the ASUS web GUI, the watchdog function requires that the VPN description exactly match the PIA region name eg `aus_melbourne`.
+> [!WARNING]
+> When manually adding a VPN via the router's web GUI, the watchdog function requires the VPN description match the PIA region name exactly eg `aus_melbourne`.
 
 ---
 
@@ -270,6 +277,12 @@ This application does not collect analytics, advertising identifiers, or persona
 ## Bugs and feature requests
 
 Found a bug or want to request a feature? [Open an issue here](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues).
+
+---
+
+## Donations
+
+Kindly consider a [PayPal](https://www.paypal.com/donate/?hosted_button_id=QJYPGRLG2RPBS) or [Patreon](https://www.patreon.com/cw/ExponentiallyDigital) donation to help support development.
 
 ---
 
