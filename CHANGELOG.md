@@ -8,6 +8,10 @@
 
 ## Changes
 
+2026-07-06 v0.6.17 build 347
+
+- temporary change to allow screenshots to be taken (to allow Android testers to prove that they have the app installed and are testing it - "SwapTest - 12 Testers")
+
 2026-06-29 version 0.6.16+346
 
 - updated GitHub actions dependency versions
