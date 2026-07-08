@@ -8,6 +8,15 @@
 
 ## Changes
 
+2026-07-06 v0.6.18 build 348
+
+- set minSdk = 24 (Android 24, Android 7.0 Nougat) in android\app\build.gradle.kts
+- source code grammer and spelling (non functional changes)
+- reverted internal name space to "com.exponentiallydigital.pia_wireguard_cfga" in MainActivity.kt, proguard-rules.pro, build.gradle.kts, and settings.gradle.kts. This nwasd part of the rename several commits ago but I found taht thjis would have forced a complete restart of the Google Play closed test.
+- upadted actions/setup-java SHA to latest version
+- updated dependency locks with "cd android; ./gradlew dependencies --write-locks"
+- updated BUILDING.md to note how to upgrade flutter packages to their latest compatible build
+
 2026-07-06 v0.6.17 build 347
 
 - temporary change to allow screenshots to be taken (to allow Android testers to prove that they have the app installed and are testing it - "SwapTest - 12 Testers")

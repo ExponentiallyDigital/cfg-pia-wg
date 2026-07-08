@@ -213,7 +213,7 @@ Pinning workflows to a specific commit SHA, rather than a mutable version tag li
 
   ```cmd
   flutter upgrade
-  flutter pub upgrade
+  flutter pub upgrade --major-versions
   .\android\gradlew -p android :dependencies :app:dependencies --write-locks
   ```
 

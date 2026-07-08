@@ -79,10 +79,10 @@ The app opens to a main menu with five choices:
 - View app log
 - Exit app
 
-<p align="center">
+<figure align="center">
   <img src="./images/main-menu.png" alt="Main menu" width="300">
-  <figcaption><center>Main menu</center></figcaption>
-</p>
+  <figcaption>Main menu</figcaption>
+</figure>
 
 ### 1. Generate a PIA WireGuard configuration
 
@@ -92,10 +92,10 @@ The app opens to a main menu with five choices:
 4. Tap **GENERATE CONFIG** once all required fields are filled.
 5. The generated WireGuard configuration is displayed in a selectable but read-only text area.
 
-<p align="center">
+<figure align="center">
   <img src="./images/standalone-config.png" alt="Standalone config generation" width="300">
-  <figcaption><center>Standalone config generation</center></figcaption>
-</p>
+  <figcaption>Standalone config generation</figcaption>
+</figure>
 
 6. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing.
 
@@ -107,10 +107,10 @@ This enables full management of WireGuard slots.
 2. Enter router IP, SSH username, and SSH password (defaults are prefilled if available).
 3. Tap **CONNECT TO ROUTER**.
 
-<p align="center">
+<figure align="center">
   <img src="./images/router-slot-management.png" alt="Router slot management" width="300">
-  <figcaption><center>Router slot management</center></figcaption>
-</p>
+  <figcaption>Router slot management</figcaption>
+</figure>
 
 4. Select a slot and choose one of the slot actions:
 

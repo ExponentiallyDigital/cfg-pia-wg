@@ -54,7 +54,7 @@ if (keyPropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.exponentiallydigital.cfg_pia_wireguard"
+    namespace = "com.exponentiallydigital.pia_wireguard_cfga"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -74,7 +74,8 @@ android {
 // now I understand why signal is from "thought crimes" :)
     defaultConfig {
         applicationId = "com.exponentiallydigital.pia_wireguard_cfga"
-        minSdk = flutter.minSdkVersion
+//        minSdk = flutter.minSdkVersion
+        minSdk = 24 // Android 24: "Android 7.0 (Nougat)"
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

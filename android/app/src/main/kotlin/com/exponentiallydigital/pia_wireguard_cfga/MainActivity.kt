@@ -1,4 +1,4 @@
-package com.exponentiallydigital.cfg_pia_wireguard
+package com.exponentiallydigital.pia_wireguard_cfga
 
 import android.os.Bundle
 import android.view.WindowManager

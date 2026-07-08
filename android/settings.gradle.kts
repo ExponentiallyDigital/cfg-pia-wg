@@ -26,7 +26,7 @@ plugins {
 include(":app")
 rootProject.name = "cfg_pia_wireguard"
 
-// Uncomment the below to esnure that dependency locking is active, adding a dependency with a version that is NOT in my current lockfiles
+// Uncomment the below to ensure that dependency locking is active, adding a dependency with a version that is NOT in my current lockfiles
 //dependencies {
 //    implementation("androidx.core:core-ktx:1.12.0") 
 //}
