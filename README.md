@@ -1,5 +1,14 @@
 # pia-wireguard-cfg
-<a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/pia-wireguard-cfg" alt="Release"></a> <a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-%20Android%20-blue" alt="Platform"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfg/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/pia-wireguard-cfg" alt="License"></a> <a href="https://github.com/ExponentiallyDigital/pia-wireguard-cfg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/downloads/ExponentiallyDigital/pia-wireguard-cfg/total" alt="Downloads"></a><br><a href="https://github.com/ExponentiallyDigital/ExponentiallyDigital/security/policy" target="_blank" rel="noopener noreferrer">
+
+[![Release](https://img.shields.io/github/v/release/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square&color=blue)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/releases)
+[![Linux](https://img.shields.io/badge/Platform-Linux-FCC624?style=flat-square&logo=linux&logoColor=black)](https://www.linux.org/)
+[![Windows](https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/)
+[![License](https://img.shields.io/github/license/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/blob/main/LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/ExponentiallyDigital/pia-wireguard-cfg/total?style=flat-square&color=success)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/releases)
+[![Total Commits](https://img.shields.io/github/commit-activity/t/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square&color=blueviolet)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/commits/main)
+[![Top Language](https://img.shields.io/github/languages/top/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square&color=orange)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg)
+[![Last Commit](https://img.shields.io/github/last-commit/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square&color=important)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/commits/main)
+[![Code Size](https://img.shields.io/github/languages/code-size/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square&color=lightgrey)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg)
 
 A lightweight command-line tool written in Go that generates a ready-to-use WireGuard configuration file for the Private Internet Access (PIA) VPN service. It authenticates with PIA's official provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and writes a complete `.conf` file to your Windows desktop or current directory on Android.
 
