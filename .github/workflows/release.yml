@@ -1,4 +1,4 @@
-name: Package Addon
+name: "Build and release"
 
 on:
   push:
@@ -9,124 +9,139 @@ on:
       dry_run:
         description: "Run without creating a release"
         required: false
-        default: "false"
+        default: "true" # Defaulting to true — manual runs are dry by default for safety
 
-permissions:
-  contents: write
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  build:
+  release:
+    name: Build and release
+
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
     runs-on: ubuntu-latest
-
+    if: |
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.event_name == 'workflow_dispatch'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 0 # required for full git history
+          fetch-depth: 0
 
-      - name: Create addon directory
+      - name: Set up Java
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          ADDON="${{ github.event.repository.name }}"
-          mkdir -p build/$ADDON
-          cp LICENSE build/$ADDON/
-          cp pia-wireguard-cfg.exe build/$ADDON/
-          cp pia-wireguard-cfg build/$ADDON/
-          cp README.md build/$ADDON/
-          cp README.html build/$ADDON/ || true
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "Missing KEYSTORE_BASE64" && exit 1; fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/release.jks
+          cat > android/key.properties <<EOF
+          storeFile=../release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Build release APK
+        run: |
+          flutter pub get --enforce-lockfile
+          dart run flutter_launcher_icons
+          flutter build apk --release
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             build/cfg_pia_wireguard-${GITHUB_REF_NAME}_release.apk
+
+      - name: Build debug APK
+        run: |
+          flutter build apk --debug
+          mv build/app/outputs/flutter-apk/app-debug.apk \
+             build/cfg_pia_wireguard-${GITHUB_REF_NAME}_debug.apk
+
+      - name: Build AAB
+        run: |
+          flutter build appbundle --release
+          mv build/app/outputs/bundle/release/cfg_pia_wireguard-release.aab \
+             build/cfg_pia_wireguard-${GITHUB_REF_NAME}_google-play-store.aab
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: cfg-pia-wg-sbom.spdx.json
+
+      - name: Rename SBOM
+        run: |
+          mv cfg-pia-wg-sbom.spdx.json \
+             cfg-pia-wg-${GITHUB_REF_NAME}_sbom.spdx.json
+
+      - name: Attest release APK
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: build/cfg_pia_wireguard-${{ github.ref_name }}_release.apk
+
+      - name: Attest debug APK
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: build/cfg_pia_wireguard-${{ github.ref_name }}_debug.apk
+
+      - name: Attest AAB
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: build/cfg_pia_wireguard-${{ github.ref_name }}_google-play-store.aab
 
       - name: Install Pandoc
         run: sudo apt-get update && sudo apt-get install -y pandoc
 
-      - name: Convert README.md to HTML (self-contained)
+      - name: Prepare release assets
         run: |
-          ADDON="${{ github.event.repository.name }}"
-          pandoc README.md -f gfm -t html -s --self-contained \
-            -o build/$ADDON/README.html
+          VERSION="${GITHUB_REF_NAME}"
 
-      - name: Generate release_history.txt
-        run: |
-          git log \
-            --pretty=format:"COMMIT %ad %s" \
-            --date=short \
-            --numstat \
-            | awk '
-              /^COMMIT / {
-                  if (started) print "";
-                  started=1;
-                  sub(/^COMMIT /, "— ");
-                  print;
-                  next;
-              }
-              /^[0-9-]/ {
-                  ins=$1; del=$2;
-                  file=$3;
-                  for (i=4; i<=NF; i++) file = file " " $i;
+          # Strip badges and inject version under the README.html title
+          grep -v 'img.shields.io\|sonarcloud.io/api/project_badges' README.md \
+            | sed "s/^# \(.*\)/# \1\n\n**Version:** ${VERSION}/" \
+            > /tmp/README.md
 
-                  if (ins=="-" && del=="-") {
-                      printf "    %s | added\n", file;
-                      next;
-                  }
+          # --embed-resources replaces the deprecated --self-contained flag (Pandoc 3.x+)
+          pandoc /tmp/README.md -f gfm -t html -s --embed-resources --standalone -o build/README.html
 
-                  printf "    %s | %s insertion%s, %s deletion%s\n",
-                      file,
-                      ins, (ins=="1"?"":"s"),
-                      del, (del=="1"?"":"s");
-                  next;
-              }
-            ' > release_history.txt
-
-      # ---------------------------------------------------------
-      # FIX: Commit release_history.txt BEFORE switching branches
-      # ---------------------------------------------------------
-      - name: Commit updated release_history.txt
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
-          git add release_history.txt
-
-          if ! git diff --cached --quiet; then
-            git commit -m "Update release_history.txt for ${{ github.ref_name }}"
-          else
-            echo "No changes to commit."
-          fi
-
-      # ---------------------------------------------------------
-      # Now it is safe to switch branches
-      # ---------------------------------------------------------
-      - name: Switch to current branch
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        run: |
-          REF=${GITHUB_REF}
-          if [[ "$REF" == refs/tags/* ]]; then
-            BRANCH=$(git remote show origin | awk '/HEAD branch/ {print $NF}')
-            git checkout "$BRANCH"
-          else
-            BRANCH="${GITHUB_REF#refs/heads/}"
-            git checkout "$BRANCH"
-          fi
-
-      - name: Push commit
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        run: git push
-
-      - name: Create ZIP
-        run: |
-          ADDON="${{ github.event.repository.name }}"
-          cd build
-          zip -r "$ADDON-${GITHUB_REF_NAME}.zip" "$ADDON"
+          cp LICENSE build/LICENSE
 
       - name: Dry run notice
         if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: echo "Dry run completed — no release was created."
+        run: echo "Dry run completed -- no release was created."
 
-      - name: Upload Release Asset
+      - name: Upload release assets
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           files: |
-            build/${{ github.event.repository.name }}-${{ github.ref_name }}.zip
-            release_history.txt
+            build/README.html
+            build/LICENSE
+            build/cfg_pia_wireguard-${{ github.ref_name }}_release.apk
+            build/cfg_pia_wireguard-${{ github.ref_name }}_debug.apk
+            build/cfg_pia_wireguard-${{ github.ref_name }}_google-play-store.aab
+            cfg-pia-wg-${{ github.ref_name }}_sbom.spdx.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

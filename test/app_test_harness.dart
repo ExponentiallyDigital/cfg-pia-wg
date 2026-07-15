@@ -1,0 +1,35 @@
+// test/app_test_harness.dart - shared helpers for full-app widget tests.
+//
+// The clipboard auto-clear timer ticks at 1 Hz once a COPY arms it; pushing the tick interval far
+// out keeps pumpAndSettle from hanging in tests that exercise the clipboard. Dispose the injected
+// controller at the end of the test body (cancels the timer).
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wireguard/app_shell.dart';
+import 'package:cfg_pia_wireguard/session_controller.dart';
+
+SessionController quietController({
+  Duration tickInterval = const Duration(hours: 1),
+}) =>
+    SessionController(
+      tickInterval: tickInterval,
+      clipboardWriter: (_) async {},
+    );
+
+Future<void> pumpApp(WidgetTester tester, SessionController c) async {
+  await tester.pumpWidget(PiaWgApp(controller: c));
+  await tester.pumpAndSettle();
+}
+
+/// Pumps the app then navigates from the main menu into the standalone generate screen.
+Future<void> pumpAppAtStandalone(WidgetTester tester, SessionController c) async {
+  await pumpApp(tester, c);
+  await tester.tap(find.byKey(const Key('menu_standalone')));
+  await tester.pumpAndSettle();
+}
+
+/// Unmounts the app and disposes the injected controller (cancels its pending tick timer).
+Future<void> disposeApp(WidgetTester tester, SessionController c) async {
+  await tester.pumpWidget(const SizedBox());
+  c.dispose();
+}

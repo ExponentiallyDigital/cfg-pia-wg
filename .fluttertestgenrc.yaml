@@ -1,0 +1,34 @@
+# Flutter Test Generator Configuration
+# https://github.com/yourrepo/flutter-test-gen
+
+version: 1
+
+# Anthropic API settings
+api:
+  model: claude-sonnet-4-20250514  # or claude-opus-4-5-20251101 for complex projects
+
+# Test output directories (relative to project root)
+output:
+  unit: test/unit
+  widget: test/widget
+  integration: integration_test
+  fixtures: test/fixtures
+
+# Key naming convention for widgets
+keys:
+  prefix: ""                        # Optional prefix, e.g., "test_"
+  style: snake_case                 # snake_case | camelCase
+
+# Test generation preferences
+generation:
+  include_golden_tests: false       # Generate golden/snapshot tests
+  mocking_library: mockito          # mockito | mocktail
+  coverage_target: 80               # Target code coverage percentage
+  group_by_feature: true            # Group tests by feature/module
+
+# Files and patterns to ignore
+ignore:
+  - "**/*.g.dart"                   # Generated files
+  - "**/*.freezed.dart"             # Freezed generated
+  - "**/generated/**"               # Generated folder
+  - "**/.dart_tool/**"              # Dart tools

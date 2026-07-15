@@ -1,0 +1,213 @@
+name: "Quality & security"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "25 17 * * 1" # Weekly on Monday — catches newly published CVEs
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  packages: read
+
+jobs:
+  # ============================================================
+  # Job 1: Static analysis, tests, and code quality
+  # Push to main only — not on PRs or scheduled runs
+  # ============================================================
+  quality:
+    name: Quality & static analysis
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a  # v5.5.0
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2.23.0
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Fetch dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      # ======================
+      # Flutter static analysis
+      # ======================
+      - name: Flutter analyze
+        run: flutter analyze --fatal-infos
+
+      # ======================
+      # Flutter analyze
+      # ======================
+      - name: Flutter analyze
+        run: flutter analyze
+
+      # ======================
+      # Tests + coverage
+      # ======================
+      - name: Flutter tests with coverage
+        run: flutter test --coverage
+
+      # ======================
+      # SonarQube scan
+      # Uses coverage/lcov.info from the test step above
+      # ======================
+      - name: SonarQube scan
+        uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e  # v8.2.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # ============================================================
+  # Job 2: OSV dependency vulnerability scan
+  # Must be a top-level job — osv-scanner-action is a reusable
+  # workflow, not a composite action, so it cannot be a step.
+  # Use osv-scanner-reusable.yml (not the -pr variant, which
+  # diffs against a base branch and requires a PR context).
+  # Push to main only — use osv-scanner-reusable-pr.yml for PRs
+  # if dependency diffing is wanted in future.
+  # ============================================================
+  osv-scan:
+    name: OSV dependency scan
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2  # v2.3.8
+    with:
+      # Scan repo root recursively — matches `osv-scanner .` locally.
+      # OSV auto-discovery finds pubspec.lock but not android/app/gradle.lockfile
+      # (Gradle lockfiles are not in OSV's auto-discovery format list), so the
+      # build-tool noise is excluded without needing explicit scoping.
+      # Future lockfiles (Cargo, npm, etc.) will be picked up automatically.
+      scan-args: .
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+  # ============================================================
+  # Job 3: Mobile security scanning (MobSF)
+  # Push to main only — not on PRs or scheduled runs
+  # ============================================================
+  security:
+    name: MobSF security scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a  # v5.5.0
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2.23.0
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Fetch dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
+
+      # Debug build intentional — avoids needing keystore secrets in this job.
+      # MobSF static analysis does not require a release-signed APK.
+      - name: Build debug APK for MobSF
+        run: flutter build apk --debug
+
+      - name: Run mobsfscan
+        uses: MobSF/mobsfscan@3d87bc570c4614d705547bddb521395663dba353  # 0.4.5
+        with:
+          args: "build/app/outputs/flutter-apk/app-debug.apk --sarif --output mobsfscan.sarif || true"
+
+      - name: Upload MobSF results to Security tab
+        uses: github/codeql-action/upload-sarif@c35d1b164463ee62a100735382aaaa525c5d3496  # codeql-bundle-v2.25.6
+        with:
+          sarif_file: mobsfscan.sarif
+
+  # ============================================================
+  # Job 4: CodeQL analysis
+  # Runs on push, PRs, and weekly schedule.
+  # Two languages analysed in parallel via matrix:
+  #   - actions: scans the GitHub Actions workflow files
+  #   - java-kotlin: scans the Android wrapper code
+  # ============================================================
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: java-kotlin
+            build-mode: manual # "autobuild" fails :/
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@c35d1b164463ee62a100735382aaaa525c5d3496  # codeql-bundle-v2.25.6
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      # ==========================================================
+      # ADDED: Manual build steps for java-kotlin
+      # These only run for the java-kotlin matrix job.
+      # ==========================================================
+      - name: Set up Java
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a  # v5.5.0
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Set up Flutter
+        if: matrix.language == 'java-kotlin'
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2  # v2.23.0
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Fetch dependencies
+        if: matrix.language == 'java-kotlin'
+        run: flutter pub get --enforce-lockfile
+
+      - name: Build Android app to compile Java/Kotlin for CodeQL
+        if: matrix.language == 'java-kotlin'
+        run: flutter build apk --debug
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@c35d1b164463ee62a100735382aaaa525c5d3496  # codeql-bundle-v2.25.6
+        with:
+          category: "/language:${{ matrix.language }}"

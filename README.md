@@ -1,235 +1,302 @@
-# pia-wireguard-cfg
+# cfg-pia-wg<img src="./assets/icon/icon.png" alt="PIA WireGuard CFGA" width="150" />
 
-[![Release](https://img.shields.io/github/v/release/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square&color=blue)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/releases)
-[![Linux](https://img.shields.io/badge/Platform-Linux-FCC624?style=flat-square&logo=linux&logoColor=black)](https://www.linux.org/)
-[![Windows](https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/)
-[![License](https://img.shields.io/github/license/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/blob/main/LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/ExponentiallyDigital/pia-wireguard-cfg/total?style=flat-square&color=success)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/releases)
-[![Total Commits](https://img.shields.io/github/commit-activity/t/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square&color=blueviolet)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/commits/main)
-[![Top Language](https://img.shields.io/github/languages/top/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square&color=orange)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg)
-[![Last Commit](https://img.shields.io/github/last-commit/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square&color=important)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/commits/main)
-[![Code Size](https://img.shields.io/github/languages/code-size/ExponentiallyDigital/pia-wireguard-cfg?style=flat-square&color=lightgrey)](https://github.com/ExponentiallyDigital/pia-wireguard-cfg)
+<a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/cfg-pia-wg" alt="Release"></a> <a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white" alt="Platform"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/cfg-pia-wg" alt="License"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/downloads/ExponentiallyDigital/cfg-pia-wg/total" alt="Downloads"></a> <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/commits/main" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/commit-activity/t/ExponentiallyDigital/cfg-pia-wg?color=blueviolet" alt="Total Commits"></a><br><a href="https://github.com/ExponentiallyDigital/ExponentiallyDigital/security/policy" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Security-Policy-blue" alt="Security Policy"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=security_rating" alt="Security Rating"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=reliability_rating" alt="Reliability"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=sqale_rating" alt="Maintainability"><br><a href="https://sonarcloud.io/summary/new_code?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=alert_status" alt="Quality"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=vulnerabilities" alt="Vulnerabilities"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=bugs" alt="Bugs"></a> <a href="https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg" target="_blank" rel="noopener noreferrer"><img src="https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=coverage" alt="Coverage"></a>
 
-A lightweight command-line tool written in Go that generates a ready-to-use WireGuard configuration file for the Private Internet Access (PIA) VPN service. It authenticates with PIA's official provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and writes a complete `.conf` file to your Windows desktop or current directory on Android.
+---
+
+A native Android app that generates, and optionally applies, ready-to-use WireGuard configuration files for the Private Internet Access (PIA) VPN service. It authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and allows saving the complete `.conf` to the clipboard or share/save to a user specified app/location.
+
+If you have an ASUS router running [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) firmware, you can also **manage** WireGuard configs directly on your router and deploy a **_self-healing_** watchdog with optional email alerting that makes your configuration truly "set and forget"!
+
+This app is based on my standalone [pia-wireguard-cfg](https://github.com/ExponentiallyDigital/pia-wireguard-cfg) command line tool.
 
 ## Why use this?
 
-Manually creating a PIA WireGuard configuration requires authenticating against multiple APIs, parsing server lists, performing key exchange, and assembling the config by hand. **pia-wireguard-cfg** automates the entire process end-to-end in a single command.
-
-- **No manual API calls:** the full PIA WireGuard provisioning flow is handled automatically
-- **Fresh keypair every run:** a new WireGuard keypair is cryptographically generated each time
-- **Lowest-latency server selection:** TCP latency is measured against all available servers in the region before connecting
-- **Router and Android compatible:** config files are written with Unix line endings as required by WireGuard
-- **No credentials stored:** your PIA password is entered interactively and never written to disk
-- **Cross-platform:** runs on Windows 11 and Android (via Termux)
+Creating a valid PIA WireGuard config manually requires authenticating with several live APIs, writing WireGuard keys, and assembling connection metadata correctly. **cfg-pia-wg** automates that work and adds router-side **_slot management_** and **_self-healing_** watchdog support for Merlin-firmware ASUS routers.
 
 ## Features
 
-- **Automatic server selection:** measures TCP latency to all WireGuard servers in the chosen region and selects the fastest one
-- **Full region support:** works with any PIA region -- use `-list-regions` to display all options
-- **Interactive or flag-driven:** supply username and region via command-line flags or be prompted interactively for each
-- **Configurable DNS:** use any DNS servers you choose, with Quad9 as the default
-- **Verbose diagnostic mode:** optionally prints server IP, CN, measured latency, and raw PIA registration response for troubleshooting
-- **Safe overwrite handling:** prompts before overwriting an existing config file
-- **Single binary:** compiles to a single executable with no runtime dependencies
-- **Android/Termux support:** works on ARM64 Android devices with correct DNS and TLS handling for the Android environment
+- **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
+- **Secure clipboard handling:** copying generated config starts a visible 60-second countdown, then clears the clipboard automatically.
+- **Share/save support:** share generated `.conf` via Android share sheet and save it to a file location of your choice.
+- **Router slot management:** connect to an ASUS router over SSH, inspect `wgc1`–`wgc5` slots, and `CREATE`, `ENABLE`, `EDIT`, `DISABLE`, or `DELETE` WireGuard slot configurations.
+- **Merlin watchdog management:** configure and deploy a router-side watchdog to periodically verify and self-heal VPN connectivity, manage cron/script deployment, and view router-side watchdog logs.
+- **No persistent credential storage:** PIA credentials, router SSH credentials, and generated configs are stored only in volatile application memory and are never written to permanent storage.
+- **Automated lowest-latency server selection**: measures live latency across all available servers in your selected target region, ensuring that you provision with the fastest node.
+- **Native task-switcher protection** `(FLAG_SECURE)`: enforces native OS-level window flags to block third-party screenshot capturing and automatically obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
+- **Input field hardening**: user credential entry textboxes disable predictive dictionary caching, auto-correction tracking assistance, and keyboard learning behaviours, alongside native selection overrides to block background clipboard scraping.
+- **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials/clipboard.
+- **Industrial-strength professional build chain**: all releases undergo automated [SonarQube](https://docs.sonarsource.com/sonarqube-server) compliance (checks code quality and test coverage), open-source dependency scanning via [OSV](https://github.com/google/osv-scanner) (Google's vulnerability database that flags out-of-date third-party packages), automated version updates via [Dependabot](https://docs.github.com/code-security/dependabot) (monitors and patches insecure or outdated dependencies), binary analysis via [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) (performs static security analysis on the app's source code, checking for platform-specific vulnerabilities), and static analysis using [CodeQL](https://github.com/github/codeql-action) (analyses code structure to catch semantic gaps and injection risks). Locked action hashes ensure that automated builds execute with specific tool versions.
 
-## Requirements
+---
 
-- Go 1.21 or later (for building)
-- Windows 11 or Android (via Termux) for running
-- A valid Private Internet Access account with an active subscription
-- Android only: `pkg install ca-certificates` in Termux
+## Pre-built releases
 
-## Installation
+This app has been submitted to the Google Play Store; a link will be placed **`<here>`** when it is available.
 
-Download the release zip file from https://github.com/ExponentiallyDigital/pia-wireguard-cfg/releases, extract the contents to somewhere on your Windows/Linux file system.
+If you want to download a pre-built release from [GitHub](https://github.com/ExponentiallyDigital/cfg-pia-wg/releases), the file you need is **`cfg_pia_wireguard-<version>_release.apk`**.
 
-## Building
+Each release includes the following versioned files:
 
-Clone the repository and build both binaries using the included build script:
+| file                                                    | description                                        |
+| ------------------------------------------------------- | -------------------------------------------------- |
+| **`cfg_pia_wireguard-<version>_release.apk`**           | optimised signed release APK                       |
+| **`cfg_pia_wireguard-<version>_debug.apk`**             | debug APK for testing                              |
+| **`cfg_pia_wireguard-<version>_google-play-store.aab`** | Android App Bundle for the Play Store              |
+| **`cfg-pia-wg-<version>_sbom.spdx.json`**               | software bill of materials (SPDX format)           |
+| **`README.html`**                                       | offline documentation (generated from this README) |
+| **`LICENSE`**                                           | license file                                       |
 
-```
-git clone https://github.com/ExponentiallyDigital/pia-wireguard-cfg.git
-cd pia-wireguard-cfg
-go mod tidy
-build.bat
-```
+The installable pre-built apps above have [GitHub Attestations](https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations) for [build provenance](https://slsa.dev/spec/draft/build-provenance) verification.
 
-This produces:
+---
 
-- `pia-wireguard-cfg.exe` -- Windows binary
-- `pia-wireguard-cfg` -- Linux/Android ARM64 binary
+## Prerequisites & requirements
 
-Both binaries can be placed anywhere on your system. No installer is required.
+For anything more than basic copy/past config generation with **Generate PIA WireGuard configuration**, this tool requires [Merlin Firmware](https://www.asuswrt-merlin.net/) on your ASUS router. Additionally:
 
-## Android/Termux setup
+1. Enable the SSH server. This is used by the **Manage** and **Watchdog** functions. Enable this on your router via
 
-1. Install Termux from [F-Droid](https://f-droid.org/packages/com.termux/) (not the Play Store version)
-2. In Termux, install CA certificates: `pkg install ca-certificates`
-3. Transfer `pia-wireguard-cfg` to your device (via USB, `scp`, or any file manager)
-4. In Termux, make it executable: `chmod +x pia-wireguard-cfg`
-5. Run it from your Termux home directory (`~/`) so the output file is written to an accessible location
-
-## Usage
-
-**Windows:**
-
-```
-pia-wireguard-cfg.exe [-username PIA_username] [-region region_id] [-list-regions]
-                      [-dns "dns_servers"] [-verbose] [-help] [-?]
+```text
+Administration\System\Service -> "Enable SSH" (LAN only is recommended).
 ```
 
-**Android/Termux:**
+2. Enable the `JFFS` partition. Used by **Manage** and **Watchdog** functions:
 
-```
-./pia-wireguard-cfg [-username PIA_username] [-region region_id] [-list-regions]
-                    [-dns "dns_servers"] [-verbose] [-help]
-```
-
-With no arguments, you will be prompted interactively for the region, username, and password.
-
-## Command-line options
-
-| Option                          | Description                                                                                                                                              |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-username`                     | Your PIA account username (e.g. `p1234567`). If omitted you will be prompted interactively.                                                              |
-| `-region`                       | PIA region ID to connect through (e.g. `aus_melbourne`). If omitted you will be prompted interactively. Run `-list-regions` to see all valid region IDs. |
-| `-list-regions`                 | Prints all available PIA regions and their WireGuard server counts, sorted alphabetically, then exits. Does not require credentials.                     |
-| `-dns`                          | DNS servers to write into the config file, comma-separated. Default: `9.9.9.9, 149.112.112.112` (Quad9).                                                 |
-| `-verbose`                      | Prints diagnostic output to stderr: resolved server IP and CN, measured latency, and raw PIA registration response.                                      |
-| `-help` / `-?` / `/help` / `/?` | Shows the help message and exits.                                                                                                                        |
-
-## Examples
-
-Generate a config for Melbourne, Australia, prompting for all credentials:
-
-```
-pia-wireguard-cfg.exe -region aus_melbourne
+```text
+Administration\System\Basic Config -> "Enable JFFS custom scripts and config"
 ```
 
-Supply username on the command line (password is always prompted):
+3. Watchdog and tunnel verification use ICMP ping from the router's WAN and WireGuard interfaces.
 
-```
-pia-wireguard-cfg.exe -username p1234567 -region aus_melbourne
-```
+## Using the app
 
-Use a different region:
+The app opens to a main menu with five choices:
 
-```
-pia-wireguard-cfg.exe -username p1234567 -region us_new_york_city
-```
+- Generate PIA WireGuard configuration
+- Manage router PIA WireGuard configuration
+- Watchdog WireGuard management
+- View app log
+- Exit app
 
-Use Cloudflare DNS instead of the default Quad9:
+<figure align="center">
+  <img src="./images/main-menu.png" alt="Main menu" width="300">
+  <figcaption>Main menu</figcaption>
+</figure>
 
-```
-pia-wireguard-cfg.exe -username p1234567 -region aus_melbourne -dns "1.1.1.1, 1.0.0.1"
-```
+### 1. Generate a PIA WireGuard configuration
 
-Use Google DNS with verbose output for troubleshooting:
+1. Tap **Generate PIA WireGuard configuration**.
+2. Choose a region from the filterable region list.
+3. Enter your PIA username, password, and DNS values.
+4. Tap **GENERATE CONFIG** once all required fields are filled.
+5. The generated WireGuard configuration is displayed in a selectable but read-only text area.
 
-```
-pia-wireguard-cfg.exe -username p1234567 -region aus_melbourne -dns "8.8.8.8, 8.8.4.4" -verbose
-```
+<figure align="center">
+  <img src="./images/standalone-config.png" alt="Standalone config generation" width="300">
+  <figcaption>Standalone config generation</figcaption>
+</figure>
 
-Display all available PIA regions before choosing one:
+6. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing.
 
-```
-pia-wireguard-cfg.exe -list-regions
-```
+### 2. Manage router PIA WireGuard configuration
 
-## DNS options
+This enables full management of WireGuard slots.
 
-The default DNS servers are Quad9, a privacy-focused, malware-blocking resolver:
+1. Tap **Manage router PIA WireGuard configuration**.
+2. Enter router IP, SSH username, and SSH password (defaults are prefilled if available).
+3. Tap **CONNECT TO ROUTER**.
 
-| Server          | Address           |
-| --------------- | ----------------- |
-| Quad9 primary   | `9.9.9.9`         |
-| Quad9 secondary | `149.112.112.112` |
+<figure align="center">
+  <img src="./images/router-slot-management.png" alt="Router slot management" width="300">
+  <figcaption>Router slot management</figcaption>
+</figure>
 
-Common alternatives:
+4. Select a slot and choose one of the slot actions:
 
-| Provider   | Primary   | Secondary |
-| ---------- | --------- | --------- |
-| Cloudflare | `1.1.1.1` | `1.0.0.1` |
-| Google     | `8.8.8.8` | `8.8.4.4` |
+- **CREATE**:
+  - first, select a region:<p align="center"><img src="./images/region-selection.png" alt="App log" width="250"><figcaption><center>Region selection</center></figcaption></p>
+  - Then supply PIA credentials and preferred DNS server addresses:<p align="center">
+    <img src="./images/pia-creds.png" alt="App log" width="250"><figcaption><center>Supply credentials and DNS</center></figcaption></p>
+  - The slot's configuration is then generated and saved, but <u>**not**</u> enabled.
+    <br>
 
-Pass multiple servers as a quoted comma-separated string: `-dns "1.1.1.1, 1.0.0.1"`
+- **ENABLE**: activates the slot and verifies the interface by using two ping targets over the new VPN interface, not the WAN interface. If the connectivity check fails, the slot is reverted to disabled. Recommended connectivity checking addresses are
+  - `8.8.8.8` or `8.8.4.4` (Google primary and secondary DNS)
+  - `1.1.1.1` or `1.0.0.1` (CloudFlare primary and secondary DNS)
 
-## Output
+<p align="center">
+  <img src="./images/ping-targets.png" alt="App log" width="175">
+  <figcaption><center>Ping targets</center></figcaption>
+</p>
 
-The generated config file is written to a platform-specific location:
+- **EDIT**: allows updating WireGuard slot parameters and saves them back to router NVRAM.
 
-| Platform       | Output path                                     |
-| -------------- | ----------------------------------------------- |
-| Windows        | `%USERPROFILE%\Desktop\pia-<region>.conf`       |
-| Android/Termux | `<current working directory>/pia-<region>.conf` |
+<p align="center">
+  <img src="./images/editing-slot.png" alt="App log" width="300">
+  <figcaption><center>Editing a slot</center></figcaption>
+</p>
 
-For example, selecting region `aus_melbourne` produces `pia-aus_melbourne.conf`. If a file with that name already exists, you will be prompted before it is overwritten.
+- **DISABLE**: disable the selected slot.
+- **DELETE**: remove the slot configuration and disable any associated watchdog.
 
-The config file follows this structure, with all dynamic fields populated from the PIA registration response:
+### 3. Watchdog WireGuard management
 
-```ini
-[Interface]
-PrivateKey = <freshly generated private key>
-Address    = <client IP assigned by PIA>
-DNS        = <from -dns flag or default>
-MTU        = 1420
+This manages a self-healing watchdog. In the event that your WireGuard configuration expires, it is automatically renewed and an optional email alert sent when connectivity has been restored.
 
-[Peer]
-PublicKey           = <server public key from PIA>
-Endpoint            = <server IP:port from PIA>
-PersistentKeepalive = 25
-AllowedIPs          = 0.0.0.0/0
-```
+1. Tap **Watchdog WireGuard management**.
+2. Enter router IP, SSH username, and SSH password.
+3. Tap **CONNECT TO ROUTER**.
 
-## Authentication
+<p align="center">
+  <img src="./images/watchdog-management.png" alt="Watchdog management" width="300">
+  <figcaption><center>Watchdog management</center></figcaption>
+</p>
 
-- Your PIA password is **always** entered interactively at runtime and is **never** stored, logged, or written to disk
-- Credentials are used solely to obtain a short-lived PIA authentication token for the WireGuard key registration step
-- The WireGuard private key is written only to the output `.conf` file -- treat this file as a secret
+4. Select a slot and use the watchdog actions:
+   - **ENABLE**: deploy router-side watchdog scripts and cron jobs for the selected slot.
+   - **EDIT**: save watchdog settings and region metadata to NVRAM.
 
-## How it works
+<p align="center">
+  <img src="./images/configuring-watchdog.png" alt="App log" width="300">
+  <figcaption><center>Configuring a watchdog</center></figcaption>
+</p>
 
-1. Fetches the PIA server list from `serverlist.piaservers.net/vpninfo/servers/v6`
-2. Filters servers to the chosen region and measures TCP latency to port 1337 on each candidate
-3. Authenticates against the PIA token API using your credentials to obtain a short-lived token
-4. Generates a fresh WireGuard keypair using `golang.org/x/crypto/curve25519` with correct RFC 7748 scalar clamping
-5. Fetches PIA's CA certificate dynamically from the PIA manual-connections repository (always current, never hardcoded)
-6. Registers the generated public key with the lowest-latency server via its local HTTPS API (port 1337), using PIA's own CA certificate for TLS verification
-7. Assembles the complete WireGuard config from the registration response and writes it to the output path
+> [!TIP]
+> See [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md) for email troubleshooting approaches.
 
-This follows the same provisioning flow as PIA's official open-source manual connection scripts at [github.com/pia-foss/manual-connections](https://github.com/pia-foss/manual-connections).
+- **DISABLE**: remove watchdog jobs and scripts for the slot.
+- **DELETE**: remove the watchdog and clear the slot configuration.
+- **VIEW WATCHDOG LOG**: inspect the router-side watchdog log. Logs are rotated at midnight retaining the current and previous logs and do not persist if the router is rebooted or a power loss occurs.
 
-## Technical details
+### 4. View app log
 
-- **Key generation:** uses `golang.org/x/crypto/curve25519` directly; no dependency on the `wg` binary or kernel WireGuard modules
-- **PIA CA certificate:** fetched dynamically at runtime from the PIA manual-connections repository so it is always current; never hardcoded
-- **TLS:** the port 1337 registration API uses HTTPS with PIA's own CA certificate and `ServerName` set to the server's CN from the server list
-- **Android DNS:** Android does not run a local DNS resolver, so all HTTP clients and TCP latency probes use a custom dialer that bypasses the system resolver and uses Google DNS (`8.8.8.8`) directly
-- **Android TLS:** Android does not store CA certificates in standard Linux locations; the app loads certificates from all known locations including the Termux-specific path (`/data/data/com.termux/files/usr/etc/tls/cert.pem`) which is hardcoded because the `$PREFIX` environment variable is not reliably inherited by child processes on Android
-- **Line endings:** the output config file always uses Unix line endings (`\n`) regardless of platform
-- **Timeouts:** 10-second timeout on all HTTP clients; 2-second timeout on TCP latency probes
-- **Cross-compilation:** both binaries are built from Windows using `CGO_ENABLED=0` via `build.bat`
+Use the **View app log** screen to inspect in-app log entries and clear them with **CLEAR LOG**.
 
-## Contributing
+<p align="center">
+  <img src="./images/app-log.png" alt="App log" width="300">
+  <figcaption><center>App log</center></figcaption>
+</p>
 
-Contributions are welcome. To contribute:
+### 5. Exit app
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Ensure the code passes `go vet` cleanly
-5. Submit a pull request with a clear description of the change
+The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard.
+
+### Hamburger menu
+
+You can quickly jump between functions via a hamburger menu, always shown in the <span style="color: green; font-weight: bold;">top left corner</span> of each screen:
+
+<img src="./images/hamburger-menu.png" alt="App log" width="300">
+
+This can be useful to check the application's log during operations.
+
+<p align="center">
+  <img src="./images/hamburger-menu-details.png" alt="App log" width="300">
+  <figcaption><center>Hamburger Menu</center></figcaption>
+</p>
+
+---
+
+## Notes
+
+- **No persistent credential storage:** PIA credentials and generated configs are held in memory only while the app is running.
+- **Clipboard auto-clear:** copied config is cleared after 60 seconds.
+- **Pre-shared keys**: PIA WireGuard does not use pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
+- **Time-to-live constraints**: PIA WireGuard configs expire every few weeks per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
+- **Key safety**: generated configs contains private encryption keys. Treat them like passwords and manage them securely.
+
+> [!IMPORTANT]
+> This app supports a maximum of one active WireGuard VPN at any time
+>
+> When you save a config to your router, that "slot" will become the active VPN **replacing** any previously active slot.
+>
+> Any slot with a kill switch will be **deactivated** and the kill switch, NAT, and firewalling (if enabled) will be applied to the **newly** enabled slot.
+
+> [!WARNING]
+> When manually adding a VPN via the router's web GUI, the watchdog function requires the VPN description match the PIA region name exactly eg `aus_melbourne`.
+
+---
+
+## What does `cfg-pia-wireguard` "do" to my router?
+
+A great question to ask as anything that talks to your router programatically should be under extreme scrutiny. A lot of thinking, research, and analysis went into implementing the two features to manage your router's VPN configuration and deploy a watchdog. Please see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) for full details including a flow chart of user interactions and two diagrams showing network calls and representative IP traffic flows.
+
+---
+
+## App permissions
+
+The app uses the following Android permissions:
+
+### Internet (android.permission.INTERNET)
+
+Required to:
+
+- authenticate with Private Internet Access (PIA)
+- retrieve VPN server information
+- generate WireGuard configuration profiles
+- perform latency and connectivity tests
+
+No user traffic is routed through this application. The app communicates only with PIA provisioning and API endpoints required to generate configuration files.
+
+### Network state (android.permission.ACCESS_NETWORK_STATE)
+
+Required to:
+
+- detect whether the device currently has network connectivity
+- avoid unnecessary network requests when offline
+- provide better error handling and diagnostics
+
+### Storage access
+
+The application can export generated WireGuard configuration files to the device.
+
+#### Write external storage (android.permission.WRITE_EXTERNAL_STORAGE)
+
+- used only on legacy Android versions (Android 9 and earlier)
+- allows exported configuration files to be written to the Downloads folder
+
+#### Read external storage (android.permission.READ_EXTERNAL_STORAGE)
+
+- used only on older Android versions where required by the operating system
+- allows the application to verify exported configuration files
+
+---
+
+## Security
+
+We take credential safety and application hardening seriously. Please see the [SECURITY.md](./SECURITY.md) for details on our secure development practices, data handling lifecycle, and instructions on how to privately report potential vulnerabilities.
+
+---
+
+## Privacy
+
+This application does not collect analytics, advertising identifiers, or personal usage data. Authentication credentials are used only to communicate with Private Internet Access services required to generate configuration files.
+
+---
 
 ## Bugs and feature requests
 
-Found a bug or want to request a feature?
-[Open an issue here](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/issues)
+Found a bug or want to request a feature? [Open an issue here](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues).
+
+---
+
+## Donations
+
+Kindly consider a [PayPal](https://www.paypal.com/donate/?hosted_button_id=QJYPGRLG2RPBS) or [Patreon](https://www.patreon.com/cw/ExponentiallyDigital) donation to help support development.
+
+---
 
 ## Support
 
 This tool is unsupported and may cause objects in mirrors to be closer than they appear. Batteries not included.
+
+---
+
+## Trademark and affiliation notice
+
+This is an independent, open-source utility released under the GNU General Public License v3.0. It requires an active Private Internet Access (PIA) account subscription to authenticate with the provisioning endpoints. This application is not affiliated with, endorsed by, sponsored by, or associated with Private Internet Access, WireGuard or ASUS. WireGuard® is a registered trademark of Jason A. Donenfeld. Private Internet Access and PIA are trademarks of their respective owner. ASUS is a trademark of ASUSTek Computer Inc.
+
+---
 
 ## License
 
@@ -239,4 +306,4 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 
 You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-Copyright (C) 2026 Andrew Newbury
+Copyright (C) 2026 Andrew Newbury.
