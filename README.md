@@ -33,6 +33,10 @@ Manually creating a PIA WireGuard configuration requires authenticating against 
 
 ## Installation
 
+Download the release zip file from https://github.com/ExponentiallyDigital/pia-wireguard-cfg/releases, extract the contents to somewhere on your Windows/Linux file system.
+
+## Building
+
 Clone the repository and build both binaries using the included build script:
 
 ```
