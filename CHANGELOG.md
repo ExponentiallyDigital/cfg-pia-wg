@@ -4,6 +4,9 @@
 
 - Release to Play Store, **closed test** w 12 testers over 14 continuous days (keep installed, run min. once)
 - DOC: find a new way to force a reconfigure and update TESTING.md with details - v0.6.20 build 350 now uses ping targets to check if a reconfigure can occur, ie do we have WAN Internet connectivity?. If ping targets are set to TEST-NET-1, TEST-NET-2, or TEST-NET-3 we get "no Internet on WAN interface, exiting" from the shell script in `_kWatchdogScriptTemplate`.
+- DOC: fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file
+- DOC: only for GitHub display, fix centering of images in examples for Main menu, Standalone config generation, Router slot management. Centers perfectly in README.html.
+- DOC: only for GitHub dispaly, fix centering titles under images for Supply credentials and DNS, Ping targets, Editing a slot, Watchdog management, Configuring a watchdog, App log, Hamburger Menu. Centers perfectly in README.html.
 - CHG: PIA username and password are not reusable if entered via lib\watchdog_dialog.dart, elsewhere they are cached.
 - CHG: watchdog email alert fields are finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
 - CHG: add ping tests when vpn slot is created via watchdog - reuse existing logic from `Manage router PIA WireGuard configuration`.
