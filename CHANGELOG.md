@@ -3,22 +3,31 @@
 ## Backlog
 
 - Release to Play Store, **closed test** w 12 testers over 14 continuous days (keep installed, run min. once)
-- allow copy/paste from router log
-- check for Internet access before attempting repair to avoid issues like this:
-  2024-01-01 11:05:00 Using cached CA certificate
-  2024-01-01 11:05:00 Requesting PIA token for user p1234567890
-  2024-01-01 11:05:01 ERROR: failed to obtain PIA token
-  2024-01-01 11:05:01 Email FAILED (sendmail exit=1) stderr=[4150288400:error:2008F002:lib(32):func(143):reason(2):NA:0:Temporary failure in name resolution|connect:errno=11|sendmail: helper exited (1)|]
-  2024-01-01 11:05:01 Email diag: TCP smtp.gmail.com:465 UNREACHABLE
-  2024-01-01 11:05:01 Email diag: TLS probe (exit=0) detail=[s_client: must not provide both -connect option and target parameter|s_client: Use -help for summary.|]
+- DOC: find a new way to force a reconfigure and update TESTING.md with details - v0.6.20 build 350 now uses ping targets to check if a reconfigure can occur, ie do we have WAN Internet connectivity?. If ping targets are set to TEST-NET-1, TEST-NET-2, or TEST-NET-3 we get "no Internet on WAN interface, exiting" from the shell script in `_kWatchdogScriptTemplate`.
+- CHG: PIA username and password are not reusable if entered via lib\watchdog_dialog.dart, elsewhere they are cached.
+- CHG: watchdog email alert fields are finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
+- CHG: add ping tests when vpn slot is created via watchdog - reuse existing logic from `Manage router PIA WireGuard configuration`.
+- FIX: if a watchdog slot is disabled, when you click "ENABLE", you are prompted for ping targets & PIA credentials without a dialogue box to enter them. Short term fix: use EDIT to enter PIA creds (ping targets are alreday supplied) or delete then re-create the watchdog - workaround, don't use DISABLE.
+- FIX: Restructure logic in calls to `startWatchdog` from `saveWatchdogConfig` & `deployWatchdogScripts` - cosmetic, causes double log entry.
 
 ---
 
 ## Changes
 
+2026-07-20 v0.6.20 build 350
+
+- ADD: added updating of dependencies to build.ps1/.sh (NB major versions are **not** upgraded automatically)
+- ADD: allow copy/paste from router log
+- ADD: COPY button to the router log display screen
+- MOD: optimised, and reduced size of kWatchdogScriptTemplate by 123 chars
+- ADD: watchdog shell script now checks for Internet access before attempting repair
+- CHG: router watchdog shell script does not ping secondary target if primary is sucessful
+- FIX: updating the watchdog timeout in the UI did not update a pre-existing cron schedule
+- FIX: if you created a VPN via the watchdog interface, it was showing as enabled when it was not. Removed reminder to set it to active; when saving, the watchdog script is deployed and runs immediately.
+
 2026-07-20 v0.6.19 build 349
 
-- updated GitHub actions SHAs to latest versions
+- updated GitHub action SHAs to latest versions
 - updated tests test\screens\standalone_config_screen_test.dart and test\screens\standalone_config_screen_test.dart to run in parallel
 - added update-shas.sh, a direct conversion of the update-shas.ps1 script
 - build.ps1/.sh scripts now run update-shas.ps1/.sh ahead of building to ensure these are always up-to-date

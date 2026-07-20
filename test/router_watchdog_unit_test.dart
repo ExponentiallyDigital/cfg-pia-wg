@@ -279,6 +279,13 @@ void main() {
       expect(s, contains(r'ping -I "$IFACE" -c 3 -W 2 "$SECONDARY_IP"'));
     });
 
+    test('performs a compact WAN reachability check before renegotiation', () {
+      final s = buildWatchdogScript(_valid(slot: 1));
+      expect(s, contains(r'ping -c 1 -W 2 "$PRIMARY_IP"'));
+      expect(s, contains(r'ping -c 1 -W 2 "$SECONDARY_IP"'));
+      expect(s, contains('no Internet on WAN interface, exiting'));
+    });
+
     test('writes all 16 Step-4 NVRAM vars but NOT wgcN_dns', () {
       final s = buildWatchdogScript(_valid(slot: 3));
 

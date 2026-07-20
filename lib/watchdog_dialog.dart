@@ -237,24 +237,12 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       return true;
     });
     if (saved != true || !mounted) return;
-    // Configured a previously-empty slot: remind the user to ENABLE it (matches manage CREATE).
     if (widget.slotIsEmpty && !enabled) {
-      await _remindToEnable();
+      await _withService((svc) => svc.enableVpnSlot(widget.slotIndex));
       if (!mounted) return;
     }
     Navigator.of(context).pop();
   }
-
-  Future<void> _remindToEnable() => showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: kSurface,
-          title: const Text('Watchdog configured', style: TextStyle(color: kHighlight, fontSize: 15)),
-          content: Text('wgc${widget.slotIndex} has been configured. Remember to ENABLE it via the ENABLE button.',
-              style: const TextStyle(color: kText, fontSize: 13)),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-        ),
-      );
 
   Future<void> _testEmail() async {
     final cfg = _currentConfig().copyWith(emailAlertsEnabled: true);

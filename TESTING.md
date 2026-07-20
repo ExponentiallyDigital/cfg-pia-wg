@@ -226,6 +226,10 @@ Check `/tmp/scripts/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
     <br>
 13. Force a reconfigure to occur
 
+> [!WARNING]
+>
+> This no longer works as ping targets are now used to check WAN connectivity, setting these values will make the shell script believe that it has no Internet connectivity.
+
 Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Address Blocks Reserved for Documentation](https://www.iana.org/go/rfc5737) these blocks should never respond:
 
 ```text
@@ -238,12 +242,10 @@ set these via NVRAM eg
 
 ```bash
 # valid entries
-nvram set wgc1_wd_primary_ip=8.8.8.8
-nvram set wgc1_wd_secondary_ip=1.1.1.1
+nvram set wgc1_wd_primary_ip=8.8.8.8; nvram set wgc1_wd_secondary_ip=1.1.1.1
 
 # invalid entries
-nvram set wgc1_wd_primary_ip=192.0.2.1
-nvram set wgc1_wd_secondary_ip=198.51.100.1
+nvram set wgc1_wd_primary_ip=192.0.2.1; nvram set wgc1_wd_secondary_ip=198.51.100.1
 ```
 
 14. Apply a new config to a blank slot

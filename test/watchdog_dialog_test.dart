@@ -1,4 +1,4 @@
-// test/watchdog_dialog_test.dart - widget tests for the watchdog EDIT dialog (save-not-deploy).
+// test/watchdog_dialog_test.dart - widget tests for the watchdog EDIT dialog (save-redeploy).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -100,12 +100,14 @@ void main() {
     expect(ssh.ran("nvram set wgc1_wd_primary_ip="), isFalse);
   });
 
-  testWidgets('valid save on an enabled watchdog writes NVRAM but does NOT deploy', (tester) async {
+  testWidgets('valid save on an enabled watchdog writes NVRAM and redeploys the script', (tester) async {
     final c = _controller();
     addTearDown(c.dispose);
     final ssh = RecordingSSHClient(responder: (cmd) {
       if (cmd.contains('which jq')) return '/opt/bin/jq';
       if (cmd.contains('cru l')) return '1'; // already enabled -> no region pick
+      if (cmd.contains('nvram get wgc1_enable')) return '1';
+      if (cmd.contains('wg show interfaces')) return 'wgc1';
       if (cmd.contains('ping')) return 'OK';
       return '';
     });
@@ -117,8 +119,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(ssh.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
-    expect(ssh.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isFalse); // not deployed
-    expect(ssh.ran('cru a watchdog_wgc1'), isFalse);
+    expect(ssh.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
+    expect(ssh.ran('cru a watchdog_wgc1'), isTrue);
   });
 
   testWidgets('save on a disabled empty slot picks a region and writes wgcN_desc', (tester) async {
@@ -127,6 +129,8 @@ void main() {
     final ssh = RecordingSSHClient(responder: (cmd) {
       if (cmd.contains('which jq')) return '/opt/bin/jq';
       if (cmd.contains('cru l')) return '0'; // disabled -> region selection
+      if (cmd.contains('nvram get wgc1_enable')) return '0';
+      if (cmd.contains('wg show interfaces')) return '';
       if (cmd.contains('ping')) return 'OK';
       return '';
     });
@@ -143,12 +147,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(ssh.ran("nvram set wgc1_desc='aus_melbourne'"), isTrue);
-    expect(ssh.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isFalse); // still not deployed
+    expect(ssh.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
 
-    // Empty-slot create shows the "remember to ENABLE" reminder.
-    expect(find.text('Watchdog configured'), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, 'OK'));
-    await tester.pumpAndSettle();
+    // Empty-slot create is enabled immediately; no reminder dialog is shown.
+    expect(find.text('Watchdog configured'), findsNothing);
   });
 
   testWidgets('test email sends with the supplied SMTP settings', (tester) async {

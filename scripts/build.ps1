@@ -169,8 +169,9 @@ try { & gradle --refresh-dependencies 2>$null } catch { } # Native equivalent of
 ###############################################################################
 # Fetch dependencies + icons in parallel
 ###############################################################################
-Write-Host "${CYAN}Fetching dependencies and generating icons (parallel)...${RESET}"
-flutter pub get --enforce-lockfile
+Write-Host "${CYAN}Upgrading minor versions, fetching dependencies, and generating icons (parallel)...${RESET}"
+flutter pub upgrade
+# flutter pub get --enforce-lockfile
 
 if (-not $SKIP_ICONS) {
     dart run flutter_launcher_icons
@@ -181,6 +182,7 @@ if (-not $SKIP_ICONS) {
 ###############################################################################
 # Update GitHub action scripts to latest versions
 ###############################################################################
+Write-Host "${CYAN}Updating GitHub action SHAs to latest versions...${RESET}"
 .\scripts\update-shas.ps1
 
 ###############################################################################

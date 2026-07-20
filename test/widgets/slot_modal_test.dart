@@ -31,12 +31,7 @@ SessionController _controller() => SessionController(tickInterval: const Duratio
 SlotInfo _slot(int i,
         {String desc = '', bool killSwitch = false, bool enabled = false, bool watchdog = false, bool emailAlerting = false}) =>
     SlotInfo(
-        index: i,
-        desc: desc,
-        killSwitch: killSwitch,
-        enabled: enabled,
-        watchdogActive: watchdog,
-        emailAlerting: emailAlerting);
+        index: i, desc: desc, killSwitch: killSwitch, enabled: enabled, watchdogActive: watchdog, emailAlerting: emailAlerting);
 
 RouterSlots _slots(Map<int, SlotInfo> override, {int? active, bool merlin = true}) {
   final m = {for (var i = 1; i <= 5; i++) i: _slot(i)};
@@ -388,6 +383,33 @@ void main() {
 
       expect(find.byKey(const Key('watchdog_log_text')), findsOneWidget);
       expect(find.textContaining('LOG-DATA-XYZ'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('COPY button copies the watchdog log text', (tester) async {
+      String? copiedText;
+      final c = SessionController(
+        tickInterval: const Duration(hours: 1),
+        clipboardWriter: (text) async => copiedText = text,
+      );
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'LOG-DATA-XYZ' : '');
+      await tester
+          .pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_view_log')));
+      await tester.tap(find.byKey(const Key('slot_view_log')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SelectableText), findsOneWidget);
+      await tester.tap(find.byKey(const Key('watchdog_log_copy')));
+      await tester.pumpAndSettle();
+
+      expect(copiedText, 'LOG-DATA-XYZ');
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

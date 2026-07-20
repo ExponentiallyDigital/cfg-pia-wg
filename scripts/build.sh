@@ -166,8 +166,9 @@ gradle --refresh-dependencies >/dev/null 2>&1 || true
 ###############################################################################
 # Fetch dependencies + icons in parallel
 ###############################################################################
-echo -e "${CYAN}Fetching dependencies and generating icons (parallel)...${RESET}"
-flutter pub get --enforce-lockfile
+echo -e "${CYAN}Upgrading minor versions, fetching dependencies, and generating icons (parallel)...${RESET}"
+flutter pub upgrade
+# flutter pub get --enforce-lockfile
 
 if ! $SKIP_ICONS; then
     dart run flutter_launcher_icons

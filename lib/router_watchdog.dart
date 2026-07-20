@@ -352,11 +352,23 @@ class RouterWatchdog {
     await _run('nvram commit');
   }
 
-  // EDIT-save (spec 2.1.3 decision #1): persist the watchdog parameters (+ optional region desc)
-  // to NVRAM WITHOUT deploying the script or cron jobs. ENABLE deploys later.
+  // EDIT-save: persist the watchdog params, enable the VPN slot first, then deploy the
+  // runtime artifacts so the watchdog script can run against an existing interface on its
+  // next scheduled interval.
   Future<void> saveWatchdogConfig(WatchdogConfig config, {String? desc}) => _guard('save', () async {
+        await enableJffsScripts();
         await _writeWatchdogNvram(config, desc: desc);
+        await enableVpnSlot(config.slotIndex);
+        await _runHeredoc(heredocWrite('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh', buildWatchdogScript(config)),
+            '/jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
+        await _run('chmod +x /jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
+        await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
+        await _run(buildCronRotateLine(config.slotIndex));
+        await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
         onLog?.call('Watchdog settings saved for wgc${config.slotIndex}.', isSuccess: true);
+        await _logRouter('Running /jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
+        await _run('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
+        onLog?.call('Ran /jffs/scripts/watchdog_wgc${config.slotIndex}.sh', isSuccess: true);
       });
 
   // Writes nvram config (per-slot + global PIA creds) and uploads the slot-specific script.
@@ -367,21 +379,32 @@ class RouterWatchdog {
         await _runHeredoc(heredocWrite('/jffs/scripts/watchdog_wgc$slot.sh', buildWatchdogScript(config)),
             '/jffs/scripts/watchdog_wgc$slot.sh');
         await _run('chmod +x /jffs/scripts/watchdog_wgc$slot.sh');
+        await _run('/jffs/scripts/watchdog_wgc$slot.sh');
         final desc = await _run('nvram get wgc${slot}_desc');
         await _logRouter('Deployed watchdog script for wgc$slot${desc.isEmpty ? '' : ', $desc'}');
         onLog?.call('Watchdog scripts deployed for wgc$slot.', isSuccess: true);
       });
 
-  // Full enable: JFFS -> deploy -> cron jobs -> services-start persistence.
+  // Full enable: JFFS -> enable the VPN slot -> deploy -> cron jobs -> services-start persistence.
   Future<void> startWatchdog(WatchdogConfig config) => _guard('enable', () async {
         final slot = config.slotIndex;
         await enableJffsScripts();
+        await enableVpnSlot(slot);
         await deployWatchdogScripts(config);
         await _run(buildCronCheckLine(slot, config.cronIntervalMinutes));
         await _run(buildCronRotateLine(slot));
         await _ensureServicesStart(slot, config.cronIntervalMinutes);
         await _logRouter('Watchdog enabled for wgc$slot (every ${config.cronIntervalMinutes}m)');
         onLog?.call('Watchdog enabled for wgc$slot.', isSuccess: true);
+      });
+
+  // Enables the underlying WireGuard slot
+  Future<void> enableVpnSlot(int slot) => _guard('enable VPN slot', () async {
+        await _run('nvram set wgc${slot}_enable=1');
+        await _run('nvram commit');
+        await _run('service "start_wgc $slot"; service restart_vpnrouting0');
+        await _logRouter('Enabled wgc$slot via watchdog interface');
+        onLog?.call('wgc$slot enabled.', isSuccess: true);
       });
 
   // Creates services-start if absent, strips any prior entries for this slot, appends fresh ones.
@@ -429,9 +452,25 @@ class RouterWatchdog {
         onLog?.call('Watchdog disabled for wgc$slot.', isSuccess: true);
       });
 
-  // Enabled state is derived from cron, not stored. Last ping comes from the status file.
+  Future<bool> waitForWatchdogReady(
+    int slot, {
+    Duration pollInterval = const Duration(seconds: 1),
+    int maxAttempts = 10,
+  }) async {
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final status = await getWatchdogStatus(slot);
+      if (status.isEnabled) return true;
+      await Future.delayed(pollInterval);
+    }
+    return false;
+  }
+
+  // Enabled state requires both the watchdog cron entry and the actual WireGuard interface.
   Future<WatchdogStatus> getWatchdogStatus(int slot) async {
-    final enabled = (await _run('cru l | grep -qw watchdog_wgc$slot && echo 1 || echo 0')) == '1';
+    final cronEnabled = (await _run('cru l | grep -qw watchdog_wgc$slot && echo 1 || echo 0')) == '1';
+    final interfaceEnabled = (await _run('nvram get wgc${slot}_enable')) == '1';
+    final interfacePresent = (await _run('wg show interfaces')).contains('wgc$slot');
+    final enabled = cronEnabled && interfaceEnabled && interfacePresent;
     final ping = await _run('cat /tmp/watchdog_last_ping_success_wgc$slot 2>/dev/null');
     return WatchdogStatus(isEnabled: enabled, lastSuccessfulPing: parseLastPing(ping));
   }
@@ -550,8 +589,7 @@ class RouterWatchdog {
 // curl invocation, the curllst log file is flushed with "echo -n > /jffs/curllst" :)
 //
 const String _kWatchdogScriptTemplate = r'''#!/bin/sh
-# watchdog_wgc__SLOT__.sh - auto-generated; do not edit.
-# Monitors wgc__SLOT__; re-negotiates PIA WireGuard on ping failure.
+# watchdog_wgc__SLOT__.sh - auto-generated; *do* *not* edit. re-negotiates PIA WireGuard on ping failure
 
 SLOT=__SLOT__
 IFACE="wgc__SLOT__"
@@ -565,7 +603,6 @@ CACERT="/jffs/pia_ca.rsa.4096.crt"
 CURL="curl -s --max-time 15 --connect-timeout 8 --tlsv1.3 --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
 TMPSRV="/tmp/${IFACE}_servers.txt"
-
 SERVERLIST_URL="https://serverlist.piaservers.net/vpninfo/servers/v6"
 TOKEN_URL="https://www.privateinternetaccess.com/gtoken/generateToken"
 CACERT_URL="https://raw.githubusercontent.com/pia-foss/manual-connections/master/ca.rsa.4096.crt"
@@ -577,7 +614,7 @@ log() {
 
 nvset() { nvram set "${K}$1"; }
 
-# --- Read NVRAM configuration ---
+# Read NVRAM config
 PRIMARY_IP="$(nvram get ${K}wd_primary_ip)"
 SECONDARY_IP="$(nvram get ${K}wd_secondary_ip)"
 EMAIL_ON="$(nvram get ${K}wd_email_enabled)"
@@ -595,7 +632,7 @@ PIA_PASS="$(nvram get cfg_pia_wg_password)"
 
 log "Watchdog started for $IFACE"
 
-# --- Email alert helper ---
+# Email alert
 send_alert() {
   [ "$EMAIL_ON" = "1" ] || return 0
   [ -n "$SMTP_HOST" ] || { log "Email enabled but SMTP server is not configured"; return 0; }
@@ -659,47 +696,33 @@ abort() {
   exit 1
 }
 
-# --- Connectivity check ---
+# Connectivity check
 FAIL=1
 log "Checking $IFACE $DESC connectivity"
 
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then
   log "Interface $IFACE is down or absent"
-  FAIL=1
 else
-  primary_ok=1
-  secondary_ok=1
-
   if ping -I "$IFACE" -c 3 -W 2 "$PRIMARY_IP" >/dev/null 2>&1; then
-    primary_ok=0
     log "Primary ping OK ($PRIMARY_IP)"
-  else
-    log "Primary ping FAILED ($PRIMARY_IP)"
-  fi
-
-  if ping -I "$IFACE" -c 3 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
-    secondary_ok=0
+    FAIL=0
+  elif ping -I "$IFACE" -c 3 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
     log "Secondary ping OK ($SECONDARY_IP)"
-  else
-    log "Secondary ping FAILED ($SECONDARY_IP)"
-  fi
-
-  if [ $primary_ok -eq 0 ] || [ $secondary_ok -eq 0 ]; then
     FAIL=0
   else
-    FAIL=1
+    log "Primary and Secondary pings FAILED ($PRIMARY_IP, $SECONDARY_IP)"
     log "Both ping targets unreachable via $IFACE"
   fi
 fi
 
-# --- Success: update status ---
+# Success: update status
 if [ "$FAIL" = "0" ]; then
   date '+%Y-%m-%d %H:%M:%S' > "$STATUSFILE"
   printf '0\n0\n' > "$BACKOFFFILE"
   exit 0
 fi
 
-# --- Backoff handling ---
+# Backoff handling
 CNT=0
 LAST=0
 if [ -f "$BACKOFFFILE" ]; then
@@ -718,20 +741,28 @@ fi
 printf '%s\n%s\n' "$CNT" "$NOW" > "$BACKOFFFILE"
 log "Connectivity lost; reconfiguring (attempt #$CNT)"
 
-# --- Preflight checks ---
+# Preflight checks
 [ -n "$DESC" ] || abort "${K}desc is empty"
 which jq >/dev/null 2>&1 || abort "jq is not installed"
 [ -n "$PIA_USER" ] || abort "PIA username is not set"
 
-# --- PIA re-negotiation ---
-if [ ! -f "$CACERT" ]; then
-  log "CA certificate not cached; downloading"
-  $CURL "$CACERT_URL" -o "$CACERT" || abort "failed to download CA certificate"
-  echo -n > /jffs/curllst
-  openssl x509 -noout -in "$CACERT" >/dev/null 2>&1 || abort "CA certificate is not valid PEM"
-  log "CA certificate cached at $CACERT"
+# Check connectivity
+if ping -c 1 -W 2 "$PRIMARY_IP" >/dev/null 2>&1 || ping -c 1 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
+  log "WAN has internet connectivity"
 else
-  log "Using cached CA certificate"
+  log "no Internet on WAN interface, exiting."
+  exit 0
+fi
+
+# PIA re-negotiation
+if [ ! -f "$CACERT" ]; then
+  log "CA cert not cached; downloading"
+  $CURL "$CACERT_URL" -o "$CACERT" || abort "failed to download CA cert"
+  echo -n > /jffs/curllst
+  openssl x509 -noout -in "$CACERT" >/dev/null 2>&1 || abort "CA cert is not valid PEM"
+  log "CA cert cached at $CACERT"
+else
+  log "Using cached CA cert"
 fi
 
 log "Requesting PIA token for user $PIA_USER"
@@ -785,7 +816,7 @@ $(echo "$REG" | jq -r '[(.peer_ip // "" | split("/")[0]), (.server_key // ""), (
 EOF
 [ -n "$PEER_IP" ] && [ -n "$SERVER_KEY" ] && [ -n "$SERVER_PORT" ] || abort "incomplete addKey response"
 
-# --- Write new config to NVRAM ---
+# Write new config to NVRAM
 log "Writing config to NVRAM"
 nvset "addr=$PEER_IP/32"
 nvset "alive=25"
@@ -806,7 +837,7 @@ nvset "aips=0.0.0.0/0"
 nvram commit
 log "NVRAM write complete"
 
-# --- Restart interface ---
+# Restart interface
 # Increase sleeps on slow routers
 log "Stopping $IFACE"
 service "stop_wgc $SLOT"
@@ -823,7 +854,7 @@ if ! ifconfig "$IFACE" >/dev/null 2>&1; then
 fi
 log "Interface $IFACE is up"
 
-log "Reconfiguration SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
+log "Reconfig SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
 send_alert "SUCCESS"
 exit 0
 ''';

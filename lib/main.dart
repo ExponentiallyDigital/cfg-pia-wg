@@ -17,9 +17,7 @@
 // here so `import 'package:cfg_pia_wireguard/main.dart'` keeps resolving the root widget.
 
 import 'package:flutter/material.dart';
-
 import 'app_shell.dart';
-
 export 'app_shell.dart' show PiaWgApp;
 
 void main() => runApp(const PiaWgApp());

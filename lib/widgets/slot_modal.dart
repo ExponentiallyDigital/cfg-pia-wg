@@ -323,6 +323,10 @@ class _SlotModalState extends State<SlotModal> {
       }
       await wd.startWatchdog(cfg);
     });
+
+    if (mounted) {
+      await _refresh();
+    }
   }
 
   Future<void> _disableWatchdog() => _runWatchdog((wd) => wd.stopWatchdog(_selected));
@@ -390,15 +394,25 @@ class _SlotModalState extends State<SlotModal> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
+        actionsAlignment: MainAxisAlignment.spaceBetween,
         title: Text('WATCHDOG LOG · wgc$slot', style: const TextStyle(color: kHighlight, fontSize: 13)),
         content: SizedBox(
           width: 460,
           child: SingleChildScrollView(
-            child: Text(logText,
+            child: SelectableText(logText,
                 key: const Key('watchdog_log_text'), style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace')),
           ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE'))],
+        actions: [
+          TextButton(
+            key: const Key('watchdog_log_copy'),
+            onPressed: () async {
+              await _c.copyToClipboard(logText);
+            },
+            child: const Text('COPY'),
+          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE')),
+        ],
       ),
     );
   }
@@ -495,6 +509,7 @@ class _SlotModalState extends State<SlotModal> {
           final info = entry.value;
           final desc = info.isEmpty ? '<empty slot>' : info.desc;
           final isActive = _slots.activeSlot == slotNum;
+          final badgeLabel = isActive ? '● ACTIVE' : null;
           return InkWell(
             key: Key('slot_row_$slotNum'),
             onTap: _processing ? null : () => setState(() => _selected = slotNum),
@@ -515,7 +530,7 @@ class _SlotModalState extends State<SlotModal> {
                         if (isActive || info.killSwitch || info.watchdogActive) ...[
                           const SizedBox(height: 5),
                           Wrap(spacing: 6, runSpacing: 4, children: [
-                            if (isActive)
+                            if (badgeLabel != null)
                               const SlotBadge(label: '● ACTIVE', text: kHighlight, border: kHighlight, bg: Color(0xFF0F3D2E)),
                             if (info.killSwitch)
                               const SlotBadge(label: '⚑ KILL SWITCH', text: kWarn, border: kWarn, bg: Color(0xFF2A1F0E)),

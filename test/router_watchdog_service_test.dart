@@ -60,7 +60,32 @@ void main() {
       expect(c.ran("nvram set cfg_pia_wg_password='secret'"), isTrue);
       expect(c.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
       expect(c.ran('chmod +x /jffs/scripts/watchdog_wgc1.sh'), isTrue);
+      expect(c.commands.any((cmd) => cmd == '/jffs/scripts/watchdog_wgc1.sh'), isTrue);
       expect(c.ran('logger -t cfg-pia-wg'), isTrue);
+    });
+  });
+
+  group('saveWatchdogConfig', () {
+    test('redeploys the script and cron entries after saving', () async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
+      await RouterWatchdog(c).saveWatchdogConfig(cfg(slot: 1, interval: 5));
+      expect(c.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
+      expect(c.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
+      expect(c.ran('chmod +x /jffs/scripts/watchdog_wgc1.sh'), isTrue);
+      expect(c.ran('cru a watchdog_wgc1 "*/5 * * * *"'), isTrue);
+      expect(c.ran('cru a watchdog_log_rotate_wgc1'), isTrue);
+      expect(c.ran('/jffs/scripts/services-start'), isTrue);
+      expect(c.ran('/jffs/scripts/watchdog_wgc1.sh'), isTrue);
+    });
+
+    test('enables the VPN slot before deploying the watchdog scripts', () async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
+      await RouterWatchdog(c).saveWatchdogConfig(cfg(slot: 1, interval: 5));
+      final enableIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc1_enable=1'));
+      final deployIndex = c.commands.indexWhere((cmd) => cmd.contains("cat > '/jffs/scripts/watchdog_wgc1.sh'"));
+      expect(enableIndex, isNot(-1));
+      expect(deployIndex, isNot(-1));
+      expect(enableIndex, lessThan(deployIndex));
     });
   });
 
@@ -74,6 +99,15 @@ void main() {
       expect(c.ran('cru a watchdog_log_rotate_wgc1'), isTrue);
       expect(c.ran('/jffs/scripts/services-start'), isTrue);
       expect(c.ran('logger -t cfg-pia-wg'), isTrue);
+    });
+  });
+
+  group('enableVpnSlot', () {
+    test('activates the underlying VPN slot and restarts vpn routing', () async {
+      final c = RecordingSSHClient();
+      await RouterWatchdog(c).enableVpnSlot(1);
+      expect(c.ran("nvram set wgc1_enable=1"), isTrue);
+      expect(c.ran('service "start_wgc 1"; service restart_vpnrouting0'), isTrue);
     });
   });
 
@@ -94,16 +128,41 @@ void main() {
     });
   });
 
+  test('waitForWatchdogReady resolves once the interface becomes present', () async {
+    var attempts = 0;
+    final c = RecordingSSHClient(responder: (cmd) {
+      if (cmd.contains('cru l')) return '1';
+      if (cmd.contains('nvram get wgc1_enable')) return '1';
+      if (cmd.contains('wg show interfaces')) return attempts++ > 0 ? 'wgc1' : '';
+      return '';
+    });
+    final ready = await RouterWatchdog(c).waitForWatchdogReady(1, pollInterval: const Duration(milliseconds: 1), maxAttempts: 3);
+    expect(ready, isTrue);
+  });
+
   group('getWatchdogStatus', () {
     test('enabled with a parsed last-ping timestamp', () async {
       final c = RecordingSSHClient(responder: (cmd) {
         if (cmd.contains('cru l')) return '1';
+        if (cmd.contains('nvram get wgc1_enable')) return '1';
+        if (cmd.contains('wg show interfaces')) return 'wgc1';
         if (cmd.contains('watchdog_last_ping_success_wgc1')) return '2026-06-19 14:30:00';
         return '';
       });
       final st = await RouterWatchdog(c).getWatchdogStatus(1);
       expect(st.isEnabled, isTrue);
       expect(st.lastSuccessfulPing, DateTime(2026, 6, 19, 14, 30, 0));
+    });
+
+    test('disabled when the interface is not present even if the cron exists', () async {
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('cru l')) return '1';
+        if (cmd.contains('nvram get wgc1_enable')) return '1';
+        if (cmd.contains('wg show interfaces')) return '';
+        return '';
+      });
+      final st = await RouterWatchdog(c).getWatchdogStatus(1);
+      expect(st.isEnabled, isFalse);
     });
 
     test('disabled with null last-ping', () async {
