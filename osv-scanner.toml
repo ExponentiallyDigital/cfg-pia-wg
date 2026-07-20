@@ -1,7 +1,0 @@
-# osv-scanner.toml
-
-# Ignore Go standard library vulnerabilities coming from the GitHub Actions host environment.
-# Since this project is built with Flutter/Dart, Go is only present on the runner image itself.
-[[IgnoredVulnerabilities]]
-package = { name = "stdlib", ecosystem = "Go" }
-reason = "Go is part of the GitHub Actions host runner environment and not included in application artifacts."

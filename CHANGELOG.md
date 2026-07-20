@@ -3,6 +3,14 @@
 ## Backlog
 
 - Release to Play Store, **closed test** w 12 testers over 14 continuous days (keep installed, run min. once)
+- allow copy/paste from router log
+- check for Internet access before attempting repair to avoid issues like this:
+  2024-01-01 11:05:00 Using cached CA certificate
+  2024-01-01 11:05:00 Requesting PIA token for user p1234567890
+  2024-01-01 11:05:01 ERROR: failed to obtain PIA token
+  2024-01-01 11:05:01 Email FAILED (sendmail exit=1) stderr=[4150288400:error:2008F002:lib(32):func(143):reason(2):NA:0:Temporary failure in name resolution|connect:errno=11|sendmail: helper exited (1)|]
+  2024-01-01 11:05:01 Email diag: TCP smtp.gmail.com:465 UNREACHABLE
+  2024-01-01 11:05:01 Email diag: TLS probe (exit=0) detail=[s_client: must not provide both -connect option and target parameter|s_client: Use -help for summary.|]
 
 ---
 
