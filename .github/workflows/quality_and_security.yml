@@ -88,14 +88,16 @@ jobs:
   osv-scan:
     name: OSV dependency scan
     if: github.event_name == 'push' || github.event_name == 'schedule'
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2  # v2.3.8
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
     with:
-      # Scan repo root recursively — matches `osv-scanner .` locally.
-      # OSV auto-discovery finds pubspec.lock but not android/app/gradle.lockfile
-      # (Gradle lockfiles are not in OSV's auto-discovery format list), so the
-      # build-tool noise is excluded without needing explicit scoping.
-      # Future lockfiles (Cargo, npm, etc.) will be picked up automatically.
-      scan-args: .
+      # Scans the entire repository root recursively (-r ./) to catch all present
+      # and future project lockfiles (pubspec.lock, package-lock.json, Cargo.lock, etc.).
+      # The --exclude flags bypass the host runner's pre-installed Go toolchain paths
+      # (/usr/local/go and /opt/hostedtoolcache/go) to prevent system Go false positives.
+      scan-args: |-
+        -r ./
+        --exclude=/usr/local/go
+        --exclude=/opt/hostedtoolcache/go
     permissions:
       contents: read
       security-events: write
