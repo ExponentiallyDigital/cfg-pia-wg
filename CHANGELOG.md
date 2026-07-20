@@ -16,6 +16,13 @@
 
 ## Changes
 
+2026-07-20 v0.6.19 build 349
+
+- updated GitHub actions SHAs to latest versions
+- updated tests test\screens\standalone_config_screen_test.dart and test\screens\standalone_config_screen_test.dart to run in parallel
+- added update-shas.sh, a direct conversion of the update-shas.ps1 script
+- build.ps1/.sh scripts now run update-shas.ps1/.sh ahead of building to ensure these are always up-to-date
+
 2026-07-06 v0.6.18 build 348
 
 - set minSdk = 24 (Android 24, Android 7.0 Nougat) in android\app\build.gradle.kts

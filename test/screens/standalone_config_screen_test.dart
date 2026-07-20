@@ -55,16 +55,30 @@ void main() {
   });
 
   group('full generate path', () {
-    late ServerSocket probeServer;
-    late StreamSubscription<Socket> sub;
+    ServerSocket? probeServer;
+    StreamSubscription<Socket>? sub;
 
     setUp(() async {
-      probeServer = await ServerSocket.bind(InternetAddress.loopbackIPv4, 1337);
-      sub = probeServer.listen((s) => s.destroy());
+      final stopwatch = Stopwatch()..start();
+
+      // Retry until port 1337 is freed by another parallel test worker
+      while (probeServer == null) {
+        try {
+          probeServer = await ServerSocket.bind(InternetAddress.loopbackIPv4, 1337);
+        } on SocketException {
+          if (stopwatch.elapsedMilliseconds > 5000) rethrow; // Timeout safety (5s)
+          await Future.delayed(const Duration(milliseconds: 50));
+        }
+      }
+
+      sub = probeServer!.listen((s) => s.destroy());
     });
+
     tearDown(() async {
-      await sub.cancel();
-      await probeServer.close();
+      await sub?.cancel();
+      sub = null;
+      await probeServer?.close();
+      probeServer = null;
     });
 
     testWidgets('generates a config and reveals COPY + SHARE/SAVE (no push button)', (tester) async {
@@ -90,7 +104,7 @@ void main() {
         expect(find.byKey(const Key('generated_config_text')), findsOneWidget);
         expect(find.text('COPY'), findsOneWidget);
         expect(find.text('SHARE / SAVE'), findsOneWidget);
-        expect(find.text('PUSH CONFIG TO ROUTER...'), findsNothing); // dropped (spec 2.1.1)
+        expect(find.text('PUSH CONFIG TO ROUTER...'), findsNothing);
 
         await tester.tap(find.text('COPY'));
         await tester.pump();

@@ -24,17 +24,32 @@ void main() {
     await disposeApp(tester, c);
   });
 
-  group('full generate path through the app', () {
-    late ServerSocket probeServer;
-    late StreamSubscription<Socket> sub;
+  group('full generate path through the app menu...', () {
+    ServerSocket? probeServer;
+    StreamSubscription<Socket>? sub;
 
     setUp(() async {
-      probeServer = await ServerSocket.bind(InternetAddress.loopbackIPv4, 1337);
-      sub = probeServer.listen((s) => s.destroy());
+      final stopwatch = Stopwatch()..start();
+
+      // Wait and retry if another test currently holds port 1337
+      while (probeServer == null) {
+        try {
+          probeServer = await ServerSocket.bind(InternetAddress.loopbackIPv4, 1337);
+        } on SocketException {
+          if (stopwatch.elapsedMilliseconds > 5000) rethrow; // Timeout safety
+          await Future.delayed(const Duration(milliseconds: 50));
+        }
+      }
+
+      sub = probeServer!.listen((s) => s.destroy());
     });
+
     tearDown(() async {
-      await sub.cancel();
-      await probeServer.close();
+      // Null-safe cleanup prevents LateInitializationError
+      await sub?.cancel();
+      sub = null;
+      await probeServer?.close();
+      probeServer = null;
     });
 
     testWidgets('menu -> standalone -> generate -> config shown and logged', (tester) async {
