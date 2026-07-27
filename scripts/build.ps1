@@ -170,8 +170,8 @@ try { & gradle --refresh-dependencies 2>$null } catch { } # Native equivalent of
 # Fetch dependencies + icons in parallel
 ###############################################################################
 Write-Host "${CYAN}Upgrading minor versions, fetching dependencies, and generating icons (parallel)...${RESET}"
-flutter pub upgrade
-# flutter pub get --enforce-lockfile
+#flutter pub upgrade
+flutter pub get --enforce-lockfile
 
 if (-not $SKIP_ICONS) {
     dart run flutter_launcher_icons

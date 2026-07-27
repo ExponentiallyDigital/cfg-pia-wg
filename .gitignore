@@ -1,3 +1,6 @@
+# Git PAT caching
+.github/pin-cache.json
+
 # Miscellaneous
 *.class
 *.log
