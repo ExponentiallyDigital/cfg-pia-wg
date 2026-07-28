@@ -2,24 +2,54 @@
 
 ## Backlog
 
+- CHG: rename app from 'Configure PIA Wireguard' to something 'snappier' - CPW?
+- BUG: Deploying a watchdog to slot 5 doesn't disable an active VPN on slot 1, so you end up with two VPNs running at the same time , and the display incorrectly shows one as active when it should show two as active (even after refreshing the display) - apply same logic from 'Manage Router PIA WG Cfg' to disable any other active VPN slots.
+- CHG: update all minor version dependencies & release publock on jini 1.0.0; test if 1.0.2 fixes the Gradle bug exposed by 1.0.1
+- REL: Deploy to 'open testing' on Google Play Store
+- ADD: ABOUT display to app menu system, include EULA, privacy policy & full GNU GPL text.
+- ADD: parse changelog entries via matching against the pushed tag, and insert as release text.
+- ADD When editing a watchdog, display what the current region is in the modal, and allow changing this via the region selection screen, can then drop call to region selection which fires on save.
 - DOC: find a new way to force a test reconfigure and update TESTING.md with details - v0.6.20 build 350 now uses ping targets to check if a reconfigure can occur, ie do we have WAN Internet connectivity?. If ping targets are set to TEST-NET-1, TEST-NET-2, or TEST-NET-3 we get "no Internet on WAN interface, exiting" from the shell script in `_kWatchdogScriptTemplate`.
-- DOC: fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file
+- DOC: fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file.
 - DOC: only for GitHub display, fix centering of images in examples for Main menu, Standalone config generation, Router slot management. Centers perfectly in README.html.
 - DOC: only for GitHub dispaly, fix centering titles under images for Supply credentials and DNS, Ping targets, Editing a slot, Watchdog management, Configuring a watchdog, App log, Hamburger Menu. Centers perfectly in README.html.
+- DOC: add to README the PIA url to check if you are on their network.
+- DOC: note that if you delete all VPNs from the router web GUI, any watchdogs will remain active and they can only be removed via the app, if left alone for the check interval they will recreate the VPN on the slot which they were created for.
+- DOC: add practical workflows to achieve specific outcomes.
+- UI: in generate `PIA WireGuard config` modal, add text to say which region the currently displayed config is for, add this next to GENERATED CONFIG header
+- UI: when switching back and forth to app to copy and paste details into email alert config, the modal became reduced in size, could still enter and edit fields. While writing this and returning to the modal it was full sized again. Check for remnants of prior config that didn't set the modal to fully populate the screen. Repeatable: happened again when in email alert details screen and switching back and forth to app, fixed by switching to another app then back again.
 - CHG: PIA username and password are not reusable if entered via lib\watchdog_dialog.dart, elsewhere they are cached.
-- CHG: watchdog email alert fields are finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
+- CHG: watchdog email alert `SMTP username field` is finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
 - CHG: add ping tests when vpn slot is created via watchdog - reuse existing logic from `Manage router PIA WireGuard configuration`.
-- FIX: if a watchdog slot is disabled, when you click "ENABLE", you are prompted for ping targets & PIA credentials without a dialogue box to enter them. Short term fix: use EDIT to enter PIA creds (ping targets are alreday supplied) or delete then re-create the watchdog - workaround, don't use DISABLE.
+- CHG: no message is written to the router log if you change the watchdog's cronIntervalMinutes.
+- CHG: remove 'WATCHDOG_EOF' text from test email:
+         This is a test email from the cfg-pia-wg watchdog (slot wgcX).
+         WATCHDOG_EOF
+- CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes.
+- CHG: When you save an edited watchdog, you are always prompted for the region. Update the prompt to says that this will set the current VPN to this region, AFTER hitting SAVE you are asked "Overwrite wgc1? This will set this watchdog to the newly chosen region". Add the region name so it becomes "Overwrite wgc1 - au_melbourne? This will set the watchdog to your newly chosen region."
+- CHG: If you deploy a VPN via the watchdog the check interval isn't written to the router log - write a router log message via function enableVpnSlot.
+
+- FIX: if a watchdog slot is disabled, when you click "ENABLE", you are prompted for ping targets & PIA credentials without a dialogue box to enter them. Short term fix: use EDIT to enter PIA creds (ping targets are already supplied) or delete then re-create the watchdog - workaround, don't use DISABLE. See below.
+- FIX: if you ENABLE a watchdog you are always prompted to edit it first as it can't find the primary and secondary ping targets. See above.
 - FIX: Restructure logic in calls to `startWatchdog` from `saveWatchdogConfig` & `deployWatchdogScripts` - cosmetic, causes double log entry.
+- FIX: disabling a slot deletes a watchdog on that slot in WIREGUARD CONFIGURATION - workaround, don't use disable.
+- BUG(?): if router stops accepting commands (hung web UI, ASUS Android app, and SSH) but is still routing, and an SSH socket times out creating a watchdog, you are incorrectly told that the slot had been created. Occurred once when router web GUI, ASUS app, and SSH access failed, a router process had died but there was no way to access and check. Probably a router firmware bug, power cycling fixed it, nothing useful in router log though. Retained for completeness.
 
 ---
 
 ## Changes
 
+2026-07-28 v0.6.22 build 352
+
+- FIX: resequenced release.yaml to only run after quality_and_security.yaml sucessfully completes
+- CHG: re-enabled FLAG_SECURE to disable in-app screenshots, hides screen display from taskswitcher (was disabled during closed testing to allow screenshots)
+- DOC: updated Play Store descriptions
+- TST: end-to-end manual retest of the entire appcls
+
 2026-07-27 v0.6.21 build 351
 
-- Released to Google Play Store
-- ADD: update-shas.ps1 now uses a 24 hour cache
+- Google Play Store release candidate (not deployed)
+- ADD: update-shas.ps1 now uses a 24-hour cache
 - ADD: update-shas.ps1 added `-ForceRefresh` switch
 - FIX: update-shas.ps1 trailing comments
 

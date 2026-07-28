@@ -12,7 +12,7 @@
 // If not, see https://www.gnu.org/licenses/.
 //
 // Copyright (C) 2026 Andrew Newbury.
-//
+
 // Navigating via the hamburger intentionally GROWS the route stack (spec 2.1 / 3.1) so the
 // Android back button can retrace steps and return to a modal that was left open. Selecting the
 // current destination is a no-op.

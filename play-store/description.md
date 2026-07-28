@@ -1,45 +1,57 @@
-App Name: Configure PIA WireGuard
+# App Name: Configure PIA WireGuard
+Short name: The simplest way to manage and maintain PIA WireGuard configs on your router.
+Full description (3,956/4000 characters):
 
-Short name: The simplest way to manage & maintain PIA WireGuard configs on your router.
+WireGuard (WG) configuration application for Private Internet Access (PIA) users.
 
-Full description: Automated WireGuard configuration utility for Private Internet Access (PIA) users.
+▶ Enjoy the peace of mind that comes from a persistent VPN on your router
+▶ Deploy a self-healing watchdog to automatically re-create your VPN (Asuswrt-Merlin firmware)
+▶ Send optional reconfig email alerts
+▶ Manage router WG VPNs
+▶ Create a standalone config file
+▶ Extensive in-app and router-based logging
 
-Now features a _self-healing_ watchdog that maintains a persistent VPN with email alerting!
+AUTOMATE
 
-When your VPN configurations expire, PIA WireGuard Config App replaces manual scripts with a streamlined workflow. It connects to PIA's provisioning API, benchmarks latency, and exports a .conf payload in seconds. For compatible home networks, write configurations directly into Asuswrt-Merlin router client slots seamlessly, no computer required.
+When your WG VPN config expires, as it periodically does, this app replaces manual scripts with a streamlined workflow. It connects to PIA's provisioning API, benchmarks latency, and exports a .conf payload in seconds. For Asuswrt-Merlin-based routers, write configs directly into client slots seamlessly, no computer required.
 
-The simplicity breakthrough: couch-to-router in seconds
+SIMPLICITY: couch-to-router in seconds
 
-Generating PIA WireGuard configurations by hand requires significant expertise. Official scripts require a steep learning curve and a desktop terminal. Other workarounds require running desktop software to capture keys from local storage. This utility makes the migration to high-speed WireGuard completely effortless without needing a computer. The app wraps enterprise-grade automation into a simple mobile interface: tap your desired region from a live latency list, enter your credentials, and deploy directly to your router. Your encrypted tunnel is active before you can even stand up from the couch. Optionally, deploy a self-healing script and never touch your WireGuard config ever again!
+Generating configs by hand requires significant expertise. Official scripts require a steep learning curve. Other workarounds require running desktop software to capture keys. This app makes the migration to high-speed WG completely effortless without needing a computer. The app wraps enterprise-grade automation into a simple mobile interface: tap your desired region from a live latency list, enter your credentials, and deploy directly to your router. An encrypted tunnel is active before you can even stand up from the couch. Optionally, deploy a self-healing script and never touch your WG config again!
 
-Why run a VPN on your router?
+WHY RUN A VPN ON YOUR ROUTER?
 
-Configuring a VPN at the router level secures your entire household at the source, instantly protecting devices like smart TVs and consoles that cannot run VPN software. While OpenVPN offers stability, it is resource-intensive, capping speeds at around 100 Mbps on mid-range hardware and pinning the router CPU at 100%. Switching your router to WireGuard reduces overhead, allowing your hardware to operate closer to actual ISP speed. Testing on a 500 Mbps HFC connection saw speeds jump from 154 Mbps under OpenVPN to 323 Mbps under WireGuard on identical hardware.
+Configuring a VPN at the router level secures your entire household, protecting devices like smart TVs and consoles that cannot run VPN software. While OpenVPN offers stability, it is resource-intensive, capping speeds at around 100 Mbps on mid-range hardware and pinning the router CPU at 100%. Switching to WG reduces overhead, allowing your hardware to operate closer to your actual ISP speed. Testing on a 500 Mbps connection saw speeds jump from 154 Mbps under OpenVPN to 323 Mbps with WG on identical hardware.
 
-Core functionality and security
+CORE FUNCTIONALITY & SECURITY
 
-The app measures live TCP latency across available target nodes to ensure your profile targets the fastest path. It safely pushes configurations directly into router slots wgc1 to wgc5 with automated snapshot backups and state rollback recovery if verification fails. Because PIA WireGuard tokens expire periodically, this tool simplifies recurring file regeneration down to a few taps.
+The app measures latency across available region nodes to ensure your profile targets the fastest path. It pushes configs directly into your router with automated snapshot backup and state rollback recovery if verification fails. Because PIA WG tokens expire, this app simplifies recurring regeneration down to a few taps or deploy the watchdog and make it set-and-forget!
 
-Built with a strict zero-persistence footprint to protect credentials and private keys, volatile variables reside exclusively in system RAM and are never written to storage or logged. The app enforces the native Android FLAG_SECURE flag to block screenshots and blank the app view in the Recent Apps interface. Interactive textboxes explicitly disable predictive dictionary caching, auto-correction tracking, and keyboard learning behaviours.
+Built with a strict zero-persistence footprint to protect credentials and private keys, volatile variables reside exclusively in system RAM and are never written to device storage or logged. Android FLAG_SECURE blocks screenshots and blanks the app view in the Recent Apps interface. Predictive dictionary caching, auto-correction tracking, and keyboard learning behaviours are disabled in interactive textboxes.
 
-Open source and disclaimers
+OPEN SOURCE & DISCLAIMERS
 
-This application features verifiable build provenance, pinned dependencies to mitigate vulnerabilities, and open source code available for public audit. Comprehensive deployment flows, local build steps, architecture and diagrams are available for review on GitHub.
+Verifiable build provenance, pinned dependencies to mitigate vulnerabilities, and open-source code are available for public audit. Comprehensive deployment flows, local build steps, architecture and diagrams are available on GitHub.
 
-Requires an active PIA subscription. Router push requires an ASUS router running Asuswrt-Merlin firmware with WireGuard client support and SSH access enabled. Speeds depend on your router CPU and ISP plan.
+Requires an active PIA subscription. Router push requires an ASUS router running Asuswrt-Merlin firmware with WG client support and SSH access enabled. Speeds depend on your router CPU & ISP plan.
 
-This is an independent, open-source utility released under the GNU General Public License v3.0. It requires an active Private Internet Access (PIA) account subscription to authenticate with the provisioning endpoints. This application is not affiliated with, endorsed by, sponsored by, or associated with Private Internet Access, WireGuard or ASUS. WireGuard® is a registered trademark of Jason A. Donenfeld. Private Internet Access and PIA are trademarks of their respective owner. ASUS is a trademark of ASUSTek Computer Inc.
+This is a free, independent, open-source app released under the GNU General Public License v3.0. It requires an active Private Internet Access (PIA) account subscription to authenticate with the provisioning endpoints. This app is not affiliated with, endorsed by, sponsored by, or associated with Private Internet Access, WireGuard or ASUS. WireGuard® is a registered trademark of Jason A. Donenfeld. Private Internet Access & PIA are trademarks of their respective owner. ASUS is a trademark of ASUSTek Computer Inc.
 
-GitHub repo: https://github.com/ExponentiallyDigital/cfg-pia-wg
-
+Source code & README: https://github.com/ExponentiallyDigital/cfg-pia-wg
+Privacy Policy: https://exponentiallydigital.com/pia-wireguard-cfga/privacy.html
+© 2026 Andrew Newbury, Exponentially Digital
 ===================
 
 ## Play Store releases
 
-340 (0.6.10) new UI, self-healing wd + router mgmt
-
+2. Open testing: 352 (0.6.22) Open testing for feedback
 <en-AU>
-This release delivers a fundamental and extensive redesign of the entire user interface and, for ASUS Merlin-based routers, provides a *self-healing* watchdog with email alerting and full WireGuard client router management.
+This is the first Google Play Store public test release. Please provide feedback as necessary.
+</en-AU>
+
+1. Closed testing: 340 (0.6.10) new UI, self-healing wd + router mgmt
+<en-AU>
+This release delivers a fundamental & extensive redesign of the entire user interface and, for ASUS Merlin-based routers, provides a *self-healing* watchdog with email alerting & full WireGuard client router management.
 
 What's new
 Rebuilt the entire interface with a focus on user workflows. Moved to three main workflows: standalone cfg, router-based WireGuard VPN mgmt, & self-healing watchdog with alerting.
