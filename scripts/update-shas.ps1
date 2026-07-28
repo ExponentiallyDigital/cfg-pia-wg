@@ -169,7 +169,7 @@ foreach ($file in $files) {
             }
 
             # 🟢 Replace the whole comment with the new version tag
-            $newLine = "$prefix$action@$sha  # $latestTag"
+            $newLine = "$prefix$action@$sha # $latestTag"
 
             if ($newLine -ne $line) {
                 Write-Host ("[Update] {0,-45} {1} -> {2}  ({3})" -f $action, $currentRef, $latestTag, $sha.Substring(0,12) + "...") -ForegroundColor Green

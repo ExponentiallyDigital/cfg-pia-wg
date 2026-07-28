@@ -355,8 +355,13 @@ class RouterWatchdog {
   // EDIT-save: persist the watchdog params, enable the VPN slot first, then deploy the
   // runtime artifacts so the watchdog script can run against an existing interface on its
   // next scheduled interval.
+  //
+  // deactivateOtherSlots MUST run before _writeWatchdogNvram: stopWatchdog unsets the GLOBAL
+  // cfg_pia_wg_user / cfg_pia_wg_password keys, so sweeping afterwards would wipe the PIA
+  // credentials this save just wrote.
   Future<void> saveWatchdogConfig(WatchdogConfig config, {String? desc}) => _guard('save', () async {
         await enableJffsScripts();
+        await deactivateOtherSlots(config.slotIndex);
         await _writeWatchdogNvram(config, desc: desc);
         await enableVpnSlot(config.slotIndex);
         await _runHeredoc(heredocWrite('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh', buildWatchdogScript(config)),
@@ -385,10 +390,13 @@ class RouterWatchdog {
         onLog?.call('Watchdog scripts deployed for wgc$slot.', isSuccess: true);
       });
 
-  // Full enable: JFFS -> enable the VPN slot -> deploy -> cron jobs -> services-start persistence.
+  // Full enable: JFFS -> tear down any other active slot -> enable the VPN slot -> deploy ->
+  // cron jobs -> services-start persistence. The sweep precedes deployWatchdogScripts for the
+  // same reason as in saveWatchdogConfig (stopWatchdog clears the global PIA credentials).
   Future<void> startWatchdog(WatchdogConfig config) => _guard('enable', () async {
         final slot = config.slotIndex;
         await enableJffsScripts();
+        await deactivateOtherSlots(slot);
         await enableVpnSlot(slot);
         await deployWatchdogScripts(config);
         await _run(buildCronCheckLine(slot, config.cronIntervalMinutes));
@@ -406,6 +414,47 @@ class RouterWatchdog {
         await _logRouter('Enabled wgc$slot via watchdog interface');
         onLog?.call('wgc$slot enabled.', isSuccess: true);
       });
+
+  // Disables the underlying WireGuard slot (mirrors RouterSlotService.disableSlot). Clearing
+  // the enable flag matters as much as stopping the service: without it the slot comes back on
+  // the next start_vpnrouting0 or reboot.
+  Future<void> disableVpnSlot(int slot) => _guard('disable VPN slot', () => _disableVpnSlot(slot));
+
+  // Unguarded body, so stopWatchdog can reuse it without nesting _guard (which would log the
+  // same failure twice).
+  Future<void> _disableVpnSlot(int slot) async {
+    await _run('nvram set wgc${slot}_enable=0');
+    await _run('nvram commit');
+    await _run('service "stop_wgc $slot"; service start_vpnrouting0');
+    await _logRouter('Disabled wgc$slot');
+    onLog?.call('wgc$slot disabled.', isSuccess: true);
+  }
+
+  // Only one watchdog / WireGuard interface may ever be active at a time (same rule the manage
+  // ENABLE path applies in slot_modal.dart). Scans wgc1..5 and tears down every slot except
+  // [keepSlot]: its watchdog first (cron + script + tmp files), then the interface itself.
+  //
+  // Deliberately not wrapped in _guard: stopWatchdog and disableVpnSlot are guarded already and
+  // every caller is too, so an extra layer would log the same failure three times.
+  Future<void> deactivateOtherSlots(int keepSlot) async {
+    final iface = await _run('wg show interfaces');
+    for (var slot = 1; slot <= 5; slot++) {
+      if (slot == keepSlot) continue;
+      final hasWatchdog = (await _run('cru l | grep -qw watchdog_wgc$slot && echo 1 || echo 0')) == '1';
+      final enabled = (await _run('nvram get wgc${slot}_enable')) == '1';
+      // The interface check is a superset of the nvram flag: it also catches a tunnel that is
+      // still up while wgcN_enable already reads 0.
+      if (!hasWatchdog && !enabled && !iface.contains('wgc$slot')) continue;
+      onLog?.call('Only one watchdog may be active - deactivating wgc$slot...');
+      // stopWatchdog tears the interface down as part of its own teardown; a bare slot only
+      // needs the interface disabling.
+      if (hasWatchdog) {
+        await stopWatchdog(slot);
+      } else {
+        await disableVpnSlot(slot);
+      }
+    }
+  }
 
   // Creates services-start if absent, strips any prior entries for this slot, appends fresh ones.
   Future<void> _ensureServicesStart(int slot, int intervalMin) async {
@@ -445,9 +494,10 @@ class RouterWatchdog {
         await _run('nvram unset cfg_pia_wg_user');
         await _run('nvram commit');
         onLog?.call('NVRAM committed.', isSuccess: true);
-        // below was commented out, which leaves interface in prior state,
-        // instead stop that interface
-        await _run('service "stop_wgc wgc$slot"; service start_vpnrouting0');
+        // Bring the tunnel down too, otherwise disabling the watchdog leaves an unsupervised VPN
+        // running. This previously issued `service "stop_wgc wgc$slot"` — the service expects the
+        // bare slot index (see ARCHITECTURE.md), so the interface was never actually stopped.
+        await _disableVpnSlot(slot);
         await _logRouter('Watchdog disabled for wgc$slot');
         onLog?.call('Watchdog disabled for wgc$slot.', isSuccess: true);
       });

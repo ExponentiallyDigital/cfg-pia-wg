@@ -111,6 +111,112 @@ void main() {
     });
   });
 
+  group('disableVpnSlot', () {
+    test('clears the enable flag and stops the interface with the bare slot index', () async {
+      final c = RecordingSSHClient();
+      await RouterWatchdog(c).disableVpnSlot(3);
+      expect(c.ran('nvram set wgc3_enable=0'), isTrue);
+      expect(c.ran('service "stop_wgc 3"; service start_vpnrouting0'), isTrue);
+    });
+  });
+
+  group('deactivateOtherSlots', () {
+    // wgc1 has a live watchdog + interface; wgc4 is enabled without a watchdog; the rest are idle.
+    RecordingSSHClient busyRouter() => RecordingSSHClient(responder: (cmd) {
+          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+          if (cmd.contains('nvram get wgc1_enable')) return '1';
+          if (cmd.contains('nvram get wgc4_enable')) return '1';
+          return '';
+        });
+
+    test('stops the other watchdog and disables its interface', () async {
+      final c = busyRouter();
+      await RouterWatchdog(c).deactivateOtherSlots(2);
+      expect(c.ran('cru d watchdog_wgc1'), isTrue);
+      expect(c.ran('rm -f /jffs/scripts/watchdog_wgc1.sh'), isTrue);
+      expect(c.ran('nvram set wgc1_enable=0'), isTrue);
+      expect(c.ran('service "stop_wgc 1"'), isTrue);
+    });
+
+    test('disables an enabled slot that has no watchdog', () async {
+      final c = busyRouter();
+      await RouterWatchdog(c).deactivateOtherSlots(2);
+      expect(c.ran('nvram set wgc4_enable=0'), isTrue);
+      expect(c.ran('cru d watchdog_wgc4'), isFalse); // no watchdog to stop
+    });
+
+    test('never touches the slot being kept', () async {
+      final c = busyRouter();
+      await RouterWatchdog(c).deactivateOtherSlots(1);
+      expect(c.ran('nvram set wgc1_enable=0'), isFalse);
+      expect(c.ran('cru d watchdog_wgc1'), isFalse);
+    });
+
+    test('leaves idle slots alone', () async {
+      final c = busyRouter();
+      await RouterWatchdog(c).deactivateOtherSlots(2);
+      for (final idle in [3, 5]) {
+        expect(c.ran('nvram set wgc${idle}_enable=0'), isFalse);
+        expect(c.ran('cru d watchdog_wgc$idle'), isFalse);
+      }
+    });
+
+    test('does nothing when no other slot is active', () async {
+      final c = RecordingSSHClient(responder: (_) => '');
+      await RouterWatchdog(c).deactivateOtherSlots(1);
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram set')), isFalse);
+      expect(c.commands.any((cmd) => cmd.startsWith('cru d')), isFalse);
+    });
+  });
+
+  group('one-active-at-a-time on the enable paths', () {
+    // Slot 2 is the other active slot in both scenarios below.
+    RecordingSSHClient otherSlotActive() => RecordingSSHClient(responder: (cmd) {
+          if (cmd.contains('jffs2')) return '0';
+          if (cmd.contains('wg show interfaces')) return 'wgc2';
+          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc2')) return '1';
+          if (cmd.contains('nvram get wgc2_enable')) return '1';
+          return '';
+        });
+
+    test('saveWatchdogConfig tears down the other slot before enabling its own', () async {
+      final c = otherSlotActive();
+      await RouterWatchdog(c).saveWatchdogConfig(cfg(slot: 1, interval: 5));
+      expect(c.ran('cru d watchdog_wgc2'), isTrue);
+      expect(c.ran('nvram set wgc2_enable=0'), isTrue);
+      final downIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc2_enable=0'));
+      final upIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc1_enable=1'));
+      expect(downIndex, isNot(-1));
+      expect(upIndex, isNot(-1));
+      expect(downIndex, lessThan(upIndex));
+    });
+
+    test('startWatchdog tears down the other slot before enabling its own', () async {
+      final c = otherSlotActive();
+      await RouterWatchdog(c).startWatchdog(cfg(slot: 1, interval: 5));
+      expect(c.ran('cru d watchdog_wgc2'), isTrue);
+      final downIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc2_enable=0'));
+      final upIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc1_enable=1'));
+      expect(downIndex, isNot(-1)); // -1 would satisfy lessThan vacuously
+      expect(upIndex, isNot(-1));
+      expect(downIndex, lessThan(upIndex));
+    });
+
+    // Regression guard: stopWatchdog unsets the GLOBAL cfg_pia_wg_* keys, so the sweep must run
+    // before the new config's NVRAM is written or the PIA credentials are silently wiped.
+    test('sweeping other slots does not wipe the PIA credentials being saved', () async {
+      final c = otherSlotActive();
+      await RouterWatchdog(c).saveWatchdogConfig(cfg(slot: 1, interval: 5));
+      final unsetIndex = c.commands.indexWhere((cmd) => cmd.contains('nvram unset cfg_pia_wg_user'));
+      final setIndex = c.commands.indexWhere((cmd) => cmd.contains("nvram set cfg_pia_wg_user='p1234567'"));
+      expect(unsetIndex, isNot(-1)); // the sweep did stop the other watchdog
+      expect(setIndex, isNot(-1));
+      expect(unsetIndex, lessThan(setIndex));
+      expect(c.commands.lastIndexWhere((cmd) => cmd.contains('nvram unset cfg_pia_wg_user')), lessThan(setIndex));
+    });
+  });
+
   group('stopWatchdog', () {
     test('removes cron, script, services-start lines and all per-slot files, leaves JFFS', () async {
       final c = RecordingSSHClient();
@@ -125,6 +231,15 @@ void main() {
       expect(c.ran('logger -t cfg-pia-wg'), isTrue);
       // JFFS must NOT be disabled.
       expect(c.commands.any((cmd) => cmd.contains('jffs2_scripts=0') || cmd.contains('jffs2_on=0')), isFalse);
+    });
+
+    test('brings the tunnel down with the bare slot index and clears the enable flag', () async {
+      final c = RecordingSSHClient();
+      await RouterWatchdog(c).stopWatchdog(1);
+      expect(c.ran('nvram set wgc1_enable=0'), isTrue);
+      expect(c.ran('service "stop_wgc 1"; service start_vpnrouting0'), isTrue);
+      // The old form targeted "stop_wgc wgc1", which the service silently ignored.
+      expect(c.ran('stop_wgc wgc1'), isFalse);
     });
   });
 

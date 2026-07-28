@@ -63,6 +63,17 @@ class PiaService {
   static const _tokenUrl = 'https://www.privateinternetaccess.com/gtoken/generateToken';
   static const _caCertUrl = 'https://raw.githubusercontent.com/pia-foss/manual-connections/master/ca.rsa.4096.crt';
 
+  // PIA WireGuard servers listen on 1337; probeLatency measures TCP connect time to it.
+  static const int defaultProbePort = 1337;
+
+  // Injectable purely as a test seam. Faking a "responding" server means binding the probe port
+  // on loopback, and `flutter test` runs test files in parallel workers — with a hard-coded port
+  // the files collide (errno 10048 / EADDRINUSE). Tests bind port 0 and pass the ephemeral port
+  // back in, so no two workers ever contend.
+  final int probePort;
+
+  PiaService({this.probePort = defaultProbePort});
+
   final HttpClient _client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
 
   // Helper for native GET request strings
@@ -113,7 +124,7 @@ class PiaService {
     final tasks = servers.map((server) async {
       try {
         final start = DateTime.now();
-        final socket = await Socket.connect(server.ip, 1337, timeout: const Duration(seconds: 2));
+        final socket = await Socket.connect(server.ip, probePort, timeout: const Duration(seconds: 2));
         final latency = DateTime.now().difference(start);
         await socket.close();
         onProgress?.call(' ${server.ip} responded in ${latency.inMilliseconds}ms');

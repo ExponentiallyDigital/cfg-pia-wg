@@ -73,8 +73,10 @@ class TestPiaService extends PiaService {
   }
 }
 
+// Binds an ephemeral port (0) rather than PiaService.defaultProbePort, so parallel test workers
+// never contend for one fixed port. Pass `server.port` to PiaService(probePort:).
 Future<ServerSocket> _bindLatencyServer() async {
-  final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 1337);
+  final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
   server.listen((socket) => socket.destroy());
   return server;
 }
@@ -476,9 +478,9 @@ void main() {
       const responding = WgServer(ip: '127.0.0.1', cn: 'local');
       const failing = WgServer(ip: '192.0.2.1', cn: 'dead');
       final progress = <String>[];
-      final service = PiaService();
 
       final server = await _bindLatencyServer();
+      final service = PiaService(probePort: server.port);
       try {
         final results = await service.probeLatency(
           [responding, failing],
@@ -497,9 +499,9 @@ void main() {
       const first = WgServer(ip: '127.0.0.1', cn: 'local-a');
       const second = WgServer(ip: '127.0.0.1', cn: 'local-b');
       final progress = <String>[];
-      final service = PiaService();
 
       final server = await _bindLatencyServer();
+      final service = PiaService(probePort: server.port);
       try {
         final results = await service.probeLatency(
           [first, second],
@@ -533,9 +535,9 @@ void main() {
       const responding = WgServer(ip: '127.0.0.1', cn: 'local');
       const failing = WgServer(ip: '192.0.2.99', cn: 'unreachable');
       final progress = <String>[];
-      final service = PiaService();
 
       final server = await _bindLatencyServer();
+      final service = PiaService(probePort: server.port);
       try {
         final results = await service.probeLatency(
           [responding, failing],

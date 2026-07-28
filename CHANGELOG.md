@@ -3,8 +3,6 @@
 ## Backlog
 
 - CHG: rename app from 'Configure PIA Wireguard' to something 'snappier' - CPW?
-- BUG: Deploying a watchdog to slot 5 doesn't disable an active VPN on slot 1, so you end up with two VPNs running at the same time , and the display incorrectly shows one as active when it should show two as active (even after refreshing the display) - apply same logic from 'Manage Router PIA WG Cfg' to disable any other active VPN slots.
-- CHG: update all minor version dependencies & release publock on jini 1.0.0; test if 1.0.2 fixes the Gradle bug exposed by 1.0.1
 - REL: Deploy to 'open testing' on Google Play Store
 - ADD: ABOUT display to app menu system, include EULA, privacy policy & full GNU GPL text.
 - ADD: parse changelog entries via matching against the pushed tag, and insert as release text.
@@ -28,7 +26,6 @@
 - CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes.
 - CHG: When you save an edited watchdog, you are always prompted for the region. Update the prompt to says that this will set the current VPN to this region, AFTER hitting SAVE you are asked "Overwrite wgc1? This will set this watchdog to the newly chosen region". Add the region name so it becomes "Overwrite wgc1 - au_melbourne? This will set the watchdog to your newly chosen region."
 - CHG: If you deploy a VPN via the watchdog the check interval isn't written to the router log - write a router log message via function enableVpnSlot.
-
 - FIX: if a watchdog slot is disabled, when you click "ENABLE", you are prompted for ping targets & PIA credentials without a dialogue box to enter them. Short term fix: use EDIT to enter PIA creds (ping targets are already supplied) or delete then re-create the watchdog - workaround, don't use DISABLE. See below.
 - FIX: if you ENABLE a watchdog you are always prompted to edit it first as it can't find the primary and secondary ping targets. See above.
 - FIX: Restructure logic in calls to `startWatchdog` from `saveWatchdogConfig` & `deployWatchdogScripts` - cosmetic, causes double log entry.
@@ -39,12 +36,23 @@
 
 ## Changes
 
+2026-07-28 v0.6.23 build 353
+
+- FIX: update-shas.sh/ps1 were writing two spaces after the SHA eg. "...890  # v1.01"
+- CHG: updated SHAs
+- FIX: update all minor version dependencies & release publock on jini 1.0.0; test if 1.0.2 fixes the Gradle bug exposed by 1.0.1 - OK
+- FIX: when saving a new watchdog, scan for other watchdogs and delete them before the new watchdog is activated: eg. deploying a watchdog to slot 5 does not disable an active VPN on slot 1, so you end up with two VPNs running at the same time - apply same logic from 'Manage Router PIA WG Cfg' to disable any other active VPN slots. `RouterWatchdog.deactivateOtherSlots` now sweeps wgc1-5 on both `saveWatchdogConfig` and `startWatchdog`, stopping any other watchdog and disabling its interface. The sweep runs *before* the new config's NVRAM write because `stopWatchdog` unsets the global `cfg_pia_wg_*` credentials.
+- ADD: `RouterWatchdog.disableVpnSlot`, mirroring `RouterSlotService.disableSlot` - clears `wgcN_enable`, commits, then stops the interface.
+- FIX: `stopWatchdog` issued `service "stop_wgc wgcN"` where the service expects the bare slot index (`stop_wgc N`, per ARCHITECTURE.md), so watchdog DISABLE never actually brought the tunnel down and left an unsupervised VPN running. It now delegates to `disableVpnSlot`, which also clears `wgcN_enable` so the slot cannot return on the next `start_vpnrouting0` or reboot.
+- FIX: `probeLatency reports failed probe with progress callback` failed intermittently in the full suite (errno 10048). `probeLatency` dialled a hard-coded port 1337, so faking a responding server meant binding that one global port; three test files need it and `flutter test` runs test files in parallel workers, so they collided.
+- ADD: `PiaService.probePort` (default `PiaService.defaultProbePort` = 1337), injectable via `PiaService({probePort})`. Tests now bind an ephemeral port (0) and pass it back in, removing the contention at source rather than serialising the binds behind retry loops. pia_service_test.dart and standalone_config_screen_test.dart were converted and their retry loops deleted; unit/main_unit_test.dart still binds the default port because it drives the real `PiaWgApp` shell, which constructs `StandaloneConfigScreen` itself (app_drawer.dart) and so offers no injection seam - harmless, as it is now the only file binding it.
+
 2026-07-28 v0.6.22 build 352
 
 - FIX: resequenced release.yaml to only run after quality_and_security.yaml sucessfully completes
 - CHG: re-enabled FLAG_SECURE to disable in-app screenshots, hides screen display from taskswitcher (was disabled during closed testing to allow screenshots)
 - DOC: updated Play Store descriptions
-- TST: end-to-end manual retest of the entire appcls
+- TST: end-to-end manual retest of the entire app
 
 2026-07-27 v0.6.21 build 351
 

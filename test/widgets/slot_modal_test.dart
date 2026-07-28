@@ -349,7 +349,7 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('DISABLE runs stopWatchdog', (tester) async {
+    testWidgets('DISABLE runs stopWatchdog and takes the tunnel down with it', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
       await tester
@@ -363,6 +363,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(ssh.ran('cru d watchdog_wgc1'), isTrue);
+      expect(ssh.ran('nvram set wgc1_enable=0'), isTrue); // no unsupervised VPN left running
+      expect(ssh.ran('service "stop_wgc 1"'), isTrue);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -558,7 +560,7 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('watchdog ENABLE stops any other active watchdog', (tester) async {
+    testWidgets('watchdog ENABLE stops any other active watchdog and disables its interface', (tester) async {
       final c = _controller()
         ..piaUsername = 'p1234567'
         ..piaPassword = 'secret';
@@ -566,6 +568,10 @@ void main() {
         if (cmd.contains('wgc2_wd_primary_ip')) return '8.8.8.8';
         if (cmd.contains('wgc2_wd_secondary_ip')) return '1.1.1.1';
         if (cmd.contains('wgc2_wd_check_interval')) return '5';
+        // wgc1 is the other active slot: watchdog cron present and interface up.
+        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+        if (cmd.contains('nvram get wgc1_enable')) return '1';
+        if (cmd.contains('wg show interfaces')) return 'wgc1';
         return '';
       });
       await tester.pumpWidget(_host(
@@ -586,7 +592,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(ssh.ran('cru d watchdog_wgc1'), isTrue); // other watchdog stopped
+      expect(ssh.ran('nvram set wgc1_enable=0'), isTrue); // other VPN interface disabled too
+      expect(ssh.ran('service "stop_wgc 1"'), isTrue); // ...and actually stopped (bare slot index)
       expect(ssh.ran('cru a watchdog_wgc2'), isTrue); // target deployed
+      expect(ssh.ran('nvram set wgc2_enable=1'), isTrue); // target enabled
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

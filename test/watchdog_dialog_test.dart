@@ -105,7 +105,8 @@ void main() {
     addTearDown(c.dispose);
     final ssh = RecordingSSHClient(responder: (cmd) {
       if (cmd.contains('which jq')) return '/opt/bin/jq';
-      if (cmd.contains('cru l')) return '1'; // already enabled -> no region pick
+      // Scoped to wgc1 so the one-active-at-a-time sweep doesn't see phantom watchdogs on 2-5.
+      if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1'; // already enabled -> no region pick
       if (cmd.contains('nvram get wgc1_enable')) return '1';
       if (cmd.contains('wg show interfaces')) return 'wgc1';
       if (cmd.contains('ping')) return 'OK';
@@ -128,7 +129,7 @@ void main() {
     addTearDown(c.dispose);
     final ssh = RecordingSSHClient(responder: (cmd) {
       if (cmd.contains('which jq')) return '/opt/bin/jq';
-      if (cmd.contains('cru l')) return '0'; // disabled -> region selection
+      if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '0'; // disabled -> region selection
       if (cmd.contains('nvram get wgc1_enable')) return '0';
       if (cmd.contains('wg show interfaces')) return '';
       if (cmd.contains('ping')) return 'OK';

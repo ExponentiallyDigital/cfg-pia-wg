@@ -1,7 +1,8 @@
 // test/pia_generate_harness.dart - shared scaffolding to drive PiaService.generateConfig in tests.
 //
-// generateConfig needs: a real loopback socket on 127.0.0.1:1337 (probeLatency), a real cert PEM
-// (registerKey parses it), and FakeHttpClient for the four HTTP calls.
+// generateConfig needs: a real loopback socket on the service's probe port (probeLatency), a real
+// cert PEM (registerKey parses it), and FakeHttpClient for the four HTTP calls. Prefer binding an
+// ephemeral port and passing it via PiaService(probePort:) so parallel test workers don't collide.
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';

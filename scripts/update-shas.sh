@@ -174,7 +174,7 @@ for file in "${files[@]}"; do
                 continue
             fi
 
-            new_line="${prefix}${action}@${sha}  # ${latest_tag}"
+            new_line="${prefix}${action}@${sha} # ${latest_tag}"
 
             if [[ "$new_line" != "$line" ]]; then
                 short_sha="${sha:0:12}..."

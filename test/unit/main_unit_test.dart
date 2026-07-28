@@ -1,13 +1,14 @@
 // test/unit/main_unit_test.dart - full-app integration of the standalone generate flow.
 //
 // Drives the real PiaWgApp shell (menu -> standalone -> generate) with the shared generate harness
-// (loopback 1337 + cert PEM + FakeHttpClient). Complements standalone_config_screen_test, which
-// exercises the screen in isolation.
+// (loopback probe listener + cert PEM + FakeHttpClient). Complements standalone_config_screen_test,
+// which exercises the screen in isolation.
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wireguard/pia_service.dart';
 
 import '../app_test_harness.dart';
 import '../http_test_helpers.dart';
@@ -28,19 +29,12 @@ void main() {
     ServerSocket? probeServer;
     StreamSubscription<Socket>? sub;
 
+    // This drives the real PiaWgApp shell, which constructs StandaloneConfigScreen itself (see
+    // app_drawer.dart), so there is no seam to inject PiaService(probePort:) through — unlike the
+    // other probe tests it must bind the real default port. That is safe because it is now the
+    // only file to do so; everything else binds an ephemeral port.
     setUp(() async {
-      final stopwatch = Stopwatch()..start();
-
-      // Wait and retry if another test currently holds port 1337
-      while (probeServer == null) {
-        try {
-          probeServer = await ServerSocket.bind(InternetAddress.loopbackIPv4, 1337);
-        } on SocketException {
-          if (stopwatch.elapsedMilliseconds > 5000) rethrow; // Timeout safety
-          await Future.delayed(const Duration(milliseconds: 50));
-        }
-      }
-
+      probeServer = await ServerSocket.bind(InternetAddress.loopbackIPv4, PiaService.defaultProbePort);
       sub = probeServer!.listen((s) => s.destroy());
     });
 

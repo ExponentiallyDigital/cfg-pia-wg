@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wireguard/pia_service.dart';
 import 'package:cfg_pia_wireguard/session_controller.dart';
 import 'package:cfg_pia_wireguard/screens/standalone_config_screen.dart';
 
@@ -15,9 +16,9 @@ SessionController _controller(List<String> clipWrites) =>
 
 // In the real app AppChrome's Scaffold provides the Material ancestor every route shares; in
 // isolation we supply one here.
-Widget _host(SessionController c) => SessionScope(
+Widget _host(SessionController c, {PiaService? service}) => SessionScope(
       controller: c,
-      child: const MaterialApp(home: Scaffold(body: StandaloneConfigScreen())),
+      child: MaterialApp(home: Scaffold(body: StandaloneConfigScreen(service: service))),
     );
 
 void main() {
@@ -58,19 +59,10 @@ void main() {
     ServerSocket? probeServer;
     StreamSubscription<Socket>? sub;
 
+    // Ephemeral port (0) + PiaService(probePort:) — no fixed port, so nothing to contend with
+    // when flutter test runs this file alongside the others in parallel workers.
     setUp(() async {
-      final stopwatch = Stopwatch()..start();
-
-      // Retry until port 1337 is freed by another parallel test worker
-      while (probeServer == null) {
-        try {
-          probeServer = await ServerSocket.bind(InternetAddress.loopbackIPv4, 1337);
-        } on SocketException {
-          if (stopwatch.elapsedMilliseconds > 5000) rethrow; // Timeout safety (5s)
-          await Future.delayed(const Duration(milliseconds: 50));
-        }
-      }
-
+      probeServer = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       sub = probeServer!.listen((s) => s.destroy());
     });
 
@@ -90,7 +82,7 @@ void main() {
       final clip = <String>[];
       final c = _controller(clip);
       await withFakeHttpClient(() async {
-        await tester.pumpWidget(_host(c));
+        await tester.pumpWidget(_host(c, service: PiaService(probePort: probeServer!.port)));
         await tester.pumpAndSettle();
 
         await tester.enterText(find.widgetWithText(TextFormField, 'Region ID'), kTestRegion);
