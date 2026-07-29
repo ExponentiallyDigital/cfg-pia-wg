@@ -21,6 +21,11 @@ jobs:
   quality-and-security:
     name: Quality & security checks
     uses: ./.github/workflows/quality_and_security.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      packages: read
     secrets: inherit
 
   # ============================================================

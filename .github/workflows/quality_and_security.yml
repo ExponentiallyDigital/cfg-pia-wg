@@ -24,7 +24,7 @@ jobs:
   quality:
     name: Quality & static analysis
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_call'
+    if: github.event_name == 'push' || github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,7 +65,7 @@ jobs:
   # ============================================================
   osv-scan:
     name: OSV dependency scan
-    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_call'
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch'
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
     with:
       scan-args: |-
@@ -83,7 +83,7 @@ jobs:
   security:
     name: MobSF security scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_call'
+    if: github.event_name == 'push' || github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
