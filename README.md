@@ -1,4 +1,4 @@
-# cfg-pia-wg<img src="./assets/icon/icon.png" alt="PIA WireGuard CFGA" width="150" />
+# CFG-PIA-WG<img src="./assets/icon/icon.png" alt="PIA WireGuard CFGA" width="150" />
 <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/cfg-pia-wg?color=0969DA" alt="Release"></a> 
 <a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-Android-57606A?logo=android&logoColor=white" alt="Platform"></a> 
 <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/cfg-pia-wg?color=0969DA" alt="License"></a> 
@@ -19,17 +19,46 @@
 
 ---
 
+- [1. Why use this?](#1-why-use-this)
+- [2. Features](#2-features)
+- [3. Pre-built releases](#3-pre-built-releases)
+- [4. Prerequisites \& requirements](#4-prerequisites--requirements)
+- [5. Using the app](#5-using-the-app)
+  - [5.1. Generate a PIA WireGuard configuration](#51-generate-a-pia-wireguard-configuration)
+  - [5.2. Manage router PIA WireGuard configuration](#52-manage-router-pia-wireguard-configuration)
+  - [5.3. Watchdog WireGuard management](#53-watchdog-wireguard-management)
+  - [5.4. View app log](#54-view-app-log)
+  - [5.5. Exit app](#55-exit-app)
+  - [5.6. Hamburger menu](#56-hamburger-menu)
+  - [5.7. About](#57-about)
+- [6. Notes](#6-notes)
+- [7. What does `cfg-pia-wireguard` "do" to my router?](#7-what-does-cfg-pia-wireguard-do-to-my-router)
+- [8. App permissions](#8-app-permissions)
+  - [8.1. Internet (android.permission.INTERNET)](#81-internet-androidpermissioninternet)
+  - [8.2. Network state (android.permission.ACCESS\_NETWORK\_STATE)](#82-network-state-androidpermissionaccess_network_state)
+  - [8.3. Storage access](#83-storage-access)
+    - [8.3.1. Write external storage (android.permission.WRITE\_EXTERNAL\_STORAGE)](#831-write-external-storage-androidpermissionwrite_external_storage)
+    - [8.3.2. Read external storage (android.permission.READ\_EXTERNAL\_STORAGE)](#832-read-external-storage-androidpermissionread_external_storage)
+- [9. Security](#9-security)
+- [10. Privacy](#10-privacy)
+- [11. Bugs and feature requests](#11-bugs-and-feature-requests)
+- [12. Donations](#12-donations)
+- [13. Support](#13-support)
+- [14. Trademark and affiliation notice](#14-trademark-and-affiliation-notice)
+- [15. License](#15-license)
+
+
 A native Android app that generates, and optionally applies, ready-to-use WireGuard configuration files for the Private Internet Access (PIA) VPN service. It authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and allows saving the complete `.conf` to the clipboard or share/save to a user specified app/location.
 
 If you have an ASUS router running [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) firmware, you can also **manage** WireGuard configs directly on your router and deploy a **_self-healing_** watchdog with optional email alerting that makes your configuration truly "set and forget"!
 
 This app is based on my standalone [pia-wireguard-cfg](https://github.com/ExponentiallyDigital/pia-wireguard-cfg) command line tool.
 
-## Why use this?
+## 1. Why use this?
 
 Creating a valid PIA WireGuard config manually requires authenticating with several live APIs, writing WireGuard keys, and assembling connection metadata correctly. **cfg-pia-wg** automates that work and adds router-side **_slot management_** and **_self-healing_** watchdog support for Merlin-firmware ASUS routers.
 
-## Features
+## 2. Features
 
 - **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
 - **Secure clipboard handling:** copying generated config starts a visible 60-second countdown, then clears the clipboard automatically.
@@ -45,19 +74,19 @@ Creating a valid PIA WireGuard config manually requires authenticating with seve
 
 ---
 
-## Pre-built releases
+## 3. Pre-built releases
 
 This app has been submitted to the Google Play Store; a link will be placed **`<here>`** when it is available.
 
-If you want to download a pre-built release from [GitHub](https://github.com/ExponentiallyDigital/cfg-pia-wg/releases), the file you need is **`cfg_pia_wireguard-<version>_release.apk`**.
+If you want to download a pre-built release from [GitHub](https://github.com/ExponentiallyDigital/cfg-pia-wg/releases), the file you need is **`cfg-pia-wg-<version>_release.apk`**.
 
 Each release includes the following versioned files:
 
 | file                                                    | description                                        |
 | ------------------------------------------------------- | -------------------------------------------------- |
-| **`cfg_pia_wireguard-<version>_release.apk`**           | optimised signed release APK                       |
-| **`cfg_pia_wireguard-<version>_debug.apk`**             | debug APK for testing                              |
-| **`cfg_pia_wireguard-<version>_google-play-store.aab`** | Android App Bundle for the Play Store              |
+| **`cfg-pia-wg-<version>_release.apk`**                  | optimised signed release APK                       |
+| **`cfg-pia-wg-<version>_debug.apk`**                    | debug APK for testing                              |
+| **`cfg-pia-wg-<version>_google-play-store.aab`**        | Android App Bundle for the Play Store              |
 | **`cfg-pia-wg-<version>_sbom.spdx.json`**               | software bill of materials (SPDX format)           |
 | **`README.html`**                                       | offline documentation (generated from this README) |
 | **`LICENSE`**                                           | license file                                       |
@@ -66,7 +95,7 @@ The installable pre-built apps above have [GitHub Attestations](https://github.c
 
 ---
 
-## Prerequisites & requirements
+## 4. Prerequisites & requirements
 
 For anything more than basic copy/past config generation with **Generate PIA WireGuard configuration**, this tool requires [Merlin Firmware](https://www.asuswrt-merlin.net/) on your ASUS router. Additionally:
 
@@ -84,7 +113,7 @@ Administration\System\Basic Config -> "Enable JFFS custom scripts and config"
 
 3. Watchdog and tunnel verification use ICMP ping from the router's WAN and WireGuard interfaces.
 
-## Using the app
+## 5. Using the app
 
 The app opens to a main menu with five choices:
 
@@ -99,7 +128,7 @@ The app opens to a main menu with five choices:
   <figcaption>Main menu</figcaption>
 </figure>
 
-### 1. Generate a PIA WireGuard configuration
+### 5.1. Generate a PIA WireGuard configuration
 
 1. Tap **Generate PIA WireGuard configuration**.
 2. Choose a region from the filterable region list.
@@ -114,7 +143,7 @@ The app opens to a main menu with five choices:
 
 6. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing.
 
-### 2. Manage router PIA WireGuard configuration
+### 5.2. Manage router PIA WireGuard configuration
 
 This enables full management of WireGuard slots.
 
@@ -155,7 +184,7 @@ This enables full management of WireGuard slots.
 - **DISABLE**: disable the selected slot.
 - **DELETE**: remove the slot configuration and disable any associated watchdog.
 
-### 3. Watchdog WireGuard management
+### 5.3. Watchdog WireGuard management
 
 This manages a self-healing watchdog. In the event that your WireGuard configuration expires, it is automatically renewed and an optional email alert sent when connectivity has been restored.
 
@@ -184,7 +213,7 @@ This manages a self-healing watchdog. In the event that your WireGuard configura
 - **DELETE**: remove the watchdog and clear the slot configuration.
 - **VIEW WATCHDOG LOG**: inspect the router-side watchdog log. Logs are rotated at midnight retaining the current and previous logs and do not persist if the router is rebooted or a power loss occurs.
 
-### 4. View app log
+### 5.4. View app log
 
 Use the **View app log** screen to inspect in-app log entries and clear them with **CLEAR LOG**.
 
@@ -193,13 +222,13 @@ Use the **View app log** screen to inspect in-app log entries and clear them wit
   <figcaption><center>App log</center></figcaption>
 </p>
 
-### 5. Exit app
+### 5.5. Exit app
 
 The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard.
 
-### Hamburger menu
+### 5.6. Hamburger menu
 
-You can quickly jump between functions via a hamburger menu, always shown in the <span style="color: green; font-weight: bold;">top left corner</span> of each screen:
+You can quickly jump between functions via the hamburger menu, always shown in the <span style="color: green; font-weight: bold;">top left corner</span> of each screen:
 
 <img src="./images/hamburger-menu.png" alt="App log" width="300">
 
@@ -210,9 +239,21 @@ This can be useful to check the application's log during operations.
   <figcaption><center>Hamburger Menu</center></figcaption>
 </p>
 
+
+### 5.7. About
+
+Build information and documentation links live in the hamburger menu's **About** screen:
+
+<p align="center">
+  <img src="./images/about.png" alt="App log" width="300">
+  <figcaption><center>About</center></figcaption>
+</p>
+
+
+
 ---
 
-## Notes
+## 6. Notes
 
 - **No persistent credential storage:** PIA credentials and generated configs are held in memory only while the app is running.
 - **Clipboard auto-clear:** copied config is cleared after 60 seconds.
@@ -232,17 +273,17 @@ This can be useful to check the application's log during operations.
 
 ---
 
-## What does `cfg-pia-wireguard` "do" to my router?
+## 7. What does `cfg-pia-wireguard` "do" to my router?
 
 A great question to ask as anything that talks to your router programatically should be under extreme scrutiny. A lot of thinking, research, and analysis went into implementing the two features to manage your router's VPN configuration and deploy a watchdog. Please see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) for full details including a flow chart of user interactions and two diagrams showing network calls and representative IP traffic flows.
 
 ---
 
-## App permissions
+## 8. App permissions
 
 The app uses the following Android permissions:
 
-### Internet (android.permission.INTERNET)
+### 8.1. Internet (android.permission.INTERNET)
 
 Required to:
 
@@ -253,7 +294,7 @@ Required to:
 
 No user traffic is routed through this application. The app communicates only with PIA provisioning and API endpoints required to generate configuration files.
 
-### Network state (android.permission.ACCESS_NETWORK_STATE)
+### 8.2. Network state (android.permission.ACCESS_NETWORK_STATE)
 
 Required to:
 
@@ -261,59 +302,59 @@ Required to:
 - avoid unnecessary network requests when offline
 - provide better error handling and diagnostics
 
-### Storage access
+### 8.3. Storage access
 
 The application can export generated WireGuard configuration files to the device.
 
-#### Write external storage (android.permission.WRITE_EXTERNAL_STORAGE)
+#### 8.3.1. Write external storage (android.permission.WRITE_EXTERNAL_STORAGE)
 
 - used only on legacy Android versions (Android 9 and earlier)
 - allows exported configuration files to be written to the Downloads folder
 
-#### Read external storage (android.permission.READ_EXTERNAL_STORAGE)
+#### 8.3.2. Read external storage (android.permission.READ_EXTERNAL_STORAGE)
 
 - used only on older Android versions where required by the operating system
 - allows the application to verify exported configuration files
 
 ---
 
-## Security
+## 9. Security
 
 We take credential safety and application hardening seriously. Please see the [SECURITY.md](./SECURITY.md) for details on our secure development practices, data handling lifecycle, and instructions on how to privately report potential vulnerabilities.
 
 ---
 
-## Privacy
+## 10. Privacy
 
 This application does not collect analytics, advertising identifiers, or personal usage data. Authentication credentials are used only to communicate with Private Internet Access services required to generate configuration files.
 
 ---
 
-## Bugs and feature requests
+## 11. Bugs and feature requests
 
 Found a bug or want to request a feature? [Open an issue here](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues).
 
 ---
 
-## Donations
+## 12. Donations
 
 Kindly consider a [PayPal](https://www.paypal.com/donate/?hosted_button_id=QJYPGRLG2RPBS) or [Patreon](https://www.patreon.com/cw/ExponentiallyDigital) donation to help support development.
 
 ---
 
-## Support
+## 13. Support
 
 This tool is unsupported and may cause objects in mirrors to be closer than they appear. Batteries not included.
 
 ---
 
-## Trademark and affiliation notice
+## 14. Trademark and affiliation notice
 
 This is an independent, open-source utility released under the GNU General Public License v3.0. It requires an active Private Internet Access (PIA) account subscription to authenticate with the provisioning endpoints. This application is not affiliated with, endorsed by, sponsored by, or associated with Private Internet Access, WireGuard or ASUS. WireGuard® is a registered trademark of Jason A. Donenfeld. Private Internet Access and PIA are trademarks of their respective owner. ASUS is a trademark of ASUSTek Computer Inc.
 
 ---
 
-## License
+## 15. License
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 

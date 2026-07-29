@@ -7,11 +7,17 @@ import 'package:cfg_pia_wireguard/widgets/error_presenter.dart';
 SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
 
 Widget _host(SessionController c, void Function(BuildContext) onReady) => SessionScope(
-      controller: c,
-      child: MaterialApp(home: Scaffold(body: Builder(builder: (ctx) {
-        return ElevatedButton(onPressed: () => onReady(ctx), child: const Text('go'));
-      }))),
-    );
+  controller: c,
+  child: MaterialApp(
+    home: Scaffold(
+      body: Builder(
+        builder: (ctx) {
+          return ElevatedButton(onPressed: () => onReady(ctx), child: const Text('go'));
+        },
+      ),
+    ),
+  ),
+);
 
 void main() {
   testWidgets('input errors are batched into a single dialog and logged', (tester) async {

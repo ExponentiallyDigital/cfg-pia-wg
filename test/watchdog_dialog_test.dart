@@ -12,8 +12,11 @@ import 'watchdog_test_utils.dart';
 class _FakePia extends PiaService {
   @override
   Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async => const [
-        Region(id: 'aus_melbourne', wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')])
-      ];
+    Region(
+      id: 'aus_melbourne',
+      wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')],
+    ),
+  ];
 }
 
 SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
@@ -103,15 +106,17 @@ void main() {
   testWidgets('valid save on an enabled watchdog writes NVRAM and redeploys the script', (tester) async {
     final c = _controller();
     addTearDown(c.dispose);
-    final ssh = RecordingSSHClient(responder: (cmd) {
-      if (cmd.contains('which jq')) return '/opt/bin/jq';
-      // Scoped to wgc1 so the one-active-at-a-time sweep doesn't see phantom watchdogs on 2-5.
-      if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1'; // already enabled -> no region pick
-      if (cmd.contains('nvram get wgc1_enable')) return '1';
-      if (cmd.contains('wg show interfaces')) return 'wgc1';
-      if (cmd.contains('ping')) return 'OK';
-      return '';
-    });
+    final ssh = RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains('which jq')) return '/opt/bin/jq';
+        // Scoped to wgc1 so the one-active-at-a-time sweep doesn't see phantom watchdogs on 2-5.
+        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1'; // already enabled -> no region pick
+        if (cmd.contains('nvram get wgc1_enable')) return '1';
+        if (cmd.contains('wg show interfaces')) return 'wgc1';
+        if (cmd.contains('ping')) return 'OK';
+        return '';
+      },
+    );
     await tester.pumpWidget(_host(ssh, c));
     await tester.pumpAndSettle();
 
@@ -127,14 +132,16 @@ void main() {
   testWidgets('save on a disabled empty slot picks a region and writes wgcN_desc', (tester) async {
     final c = _controller();
     addTearDown(c.dispose);
-    final ssh = RecordingSSHClient(responder: (cmd) {
-      if (cmd.contains('which jq')) return '/opt/bin/jq';
-      if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '0'; // disabled -> region selection
-      if (cmd.contains('nvram get wgc1_enable')) return '0';
-      if (cmd.contains('wg show interfaces')) return '';
-      if (cmd.contains('ping')) return 'OK';
-      return '';
-    });
+    final ssh = RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains('which jq')) return '/opt/bin/jq';
+        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '0'; // disabled -> region selection
+        if (cmd.contains('nvram get wgc1_enable')) return '0';
+        if (cmd.contains('wg show interfaces')) return '';
+        if (cmd.contains('ping')) return 'OK';
+        return '';
+      },
+    );
     await tester.pumpWidget(_host(ssh, c, slotIsEmpty: true));
     await tester.pumpAndSettle();
 

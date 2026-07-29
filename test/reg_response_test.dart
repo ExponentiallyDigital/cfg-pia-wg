@@ -3,12 +3,7 @@ import 'package:cfg_pia_wireguard/pia_service.dart';
 
 void main() {
   test('RegResponse parses json', () {
-    final response = RegResponse.fromJson({
-      'status': 'OK',
-      'server_key': 'abc',
-      'peer_ip': '10.0.0.1',
-      'server_port': 1337,
-    });
+    final response = RegResponse.fromJson({'status': 'OK', 'server_key': 'abc', 'peer_ip': '10.0.0.1', 'server_port': 1337});
 
     expect(response.status, 'OK');
     expect(response.serverKey, 'abc');

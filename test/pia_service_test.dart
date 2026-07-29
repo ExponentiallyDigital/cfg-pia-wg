@@ -51,8 +51,11 @@ class TestPiaService extends PiaService {
   }
 
   @override
-  Future<List<ProbeResult>> probeLatency(List<WgServer> servers,
-      {void Function(String)? onProgress, required String regionId}) async {
+  Future<List<ProbeResult>> probeLatency(
+    List<WgServer> servers, {
+    void Function(String)? onProgress,
+    required String regionId,
+  }) async {
     onProgress?.call('probing');
     return probeResults;
   }
@@ -96,25 +99,25 @@ void main() {
           return FakeHttpClientResponse(
             200,
             '${jsonEncode({
-                  'regions': [
-                    {
-                      'id': 'b_region',
-                      'servers': {
-                        'wg': [
-                          {'ip': '2.2.2.2', 'cn': 'b-server'}
-                        ]
-                      }
-                    },
-                    {
-                      'id': 'a_region',
-                      'servers': {
-                        'wg': [
-                          {'ip': '1.1.1.1', 'cn': 'a-server'}
-                        ]
-                      }
-                    }
-                  ]
-                })}\n',
+              'regions': [
+                {
+                  'id': 'b_region',
+                  'servers': {
+                    'wg': [
+                      {'ip': '2.2.2.2', 'cn': 'b-server'},
+                    ],
+                  },
+                },
+                {
+                  'id': 'a_region',
+                  'servers': {
+                    'wg': [
+                      {'ip': '1.1.1.1', 'cn': 'a-server'},
+                    ],
+                  },
+                },
+              ],
+            })}\n',
           );
         },
       );
@@ -125,13 +128,10 @@ void main() {
 
     test('fetchRegions throws for malformed server list', () async {
       await expectLater(
-        withFakeHttpClient(
-          () {
-            final service = PiaService();
-            return service.fetchRegions();
-          },
-          (url, method) => FakeHttpClientResponse(200, 'no newline here'),
-        ),
+        withFakeHttpClient(() {
+          final service = PiaService();
+          return service.fetchRegions();
+        }, (url, method) => FakeHttpClientResponse(200, 'no newline here')),
         throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('Server list error'))),
       );
     });
@@ -140,13 +140,10 @@ void main() {
       final progress = <String>[];
 
       await expectLater(
-        withFakeHttpClient(
-          () {
-            final service = PiaService();
-            return service.fetchRegions(onProgress: progress.add);
-          },
-          (url, method) => FakeHttpClientResponse(503, 'unavailable'),
-        ),
+        withFakeHttpClient(() {
+          final service = PiaService();
+          return service.fetchRegions(onProgress: progress.add);
+        }, (url, method) => FakeHttpClientResponse(503, 'unavailable')),
         throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('HTTP 503'))),
       );
 
@@ -162,22 +159,22 @@ void main() {
         (url, method) => FakeHttpClientResponse(
           200,
           '${jsonEncode({
-                'regions': [
-                  {'id': 'missing_servers'},
-                  {
-                    'id': 'empty_wg',
-                    'servers': {'wg': []}
-                  },
-                  {
-                    'id': 'usable',
-                    'servers': {
-                      'wg': [
-                        {'ip': '10.0.0.1', 'cn': 'usable-cn'}
-                      ]
-                    }
-                  },
-                ],
-              })}\n',
+            'regions': [
+              {'id': 'missing_servers'},
+              {
+                'id': 'empty_wg',
+                'servers': {'wg': []},
+              },
+              {
+                'id': 'usable',
+                'servers': {
+                  'wg': [
+                    {'ip': '10.0.0.1', 'cn': 'usable-cn'},
+                  ],
+                },
+              },
+            ],
+          })}\n',
         ),
       );
 
@@ -188,69 +185,51 @@ void main() {
 
     test('getToken returns token on successful authentication', () async {
       final progress = <String>[];
-      final token = await withFakeHttpClient(
-        () {
-          final service = PiaService();
-          return service.getToken('p123', 'password', onProgress: progress.add);
-        },
-        (url, method) => FakeHttpClientResponse(200, jsonEncode({'token': 'abc123'})),
-      );
+      final token = await withFakeHttpClient(() {
+        final service = PiaService();
+        return service.getToken('p123', 'password', onProgress: progress.add);
+      }, (url, method) => FakeHttpClientResponse(200, jsonEncode({'token': 'abc123'})));
 
       expect(token, 'abc123');
-      expect(progress, [
-        'Authenticating with PIA...',
-        'Authentication successful.',
-      ]);
+      expect(progress, ['Authenticating with PIA...', 'Authentication successful.']);
     });
 
     test('getToken throws clean auth error when server rejects credentials', () async {
       await expectLater(
-        withFakeHttpClient(
-          () {
-            final service = PiaService();
-            return service.getToken('p123', 'wrong');
-          },
-          (url, method) => FakeHttpClientResponse(401, jsonEncode({'message': 'Bad credentials'})),
-        ),
+        withFakeHttpClient(() {
+          final service = PiaService();
+          return service.getToken('p123', 'wrong');
+        }, (url, method) => FakeHttpClientResponse(401, jsonEncode({'message': 'Bad credentials'}))),
         throwsA(predicate((e) => e is String && e.contains('Auth error: HTTP 401 - Bad credentials'))),
       );
     });
 
     test('getToken uses error field from rejected JSON response', () async {
       await expectLater(
-        withFakeHttpClient(
-          () {
-            final service = PiaService();
-            return service.getToken('p123', 'wrong');
-          },
-          (url, method) => FakeHttpClientResponse(403, jsonEncode({'error': 'Forbidden'})),
-        ),
+        withFakeHttpClient(() {
+          final service = PiaService();
+          return service.getToken('p123', 'wrong');
+        }, (url, method) => FakeHttpClientResponse(403, jsonEncode({'error': 'Forbidden'}))),
         throwsA(predicate((e) => e is String && e.contains('Auth error: HTTP 403 - Forbidden'))),
       );
     });
 
     test('getToken keeps plain text body when rejected response is not JSON', () async {
       await expectLater(
-        withFakeHttpClient(
-          () {
-            final service = PiaService();
-            return service.getToken('p123', 'wrong');
-          },
-          (url, method) => FakeHttpClientResponse(429, 'Too many attempts'),
-        ),
+        withFakeHttpClient(() {
+          final service = PiaService();
+          return service.getToken('p123', 'wrong');
+        }, (url, method) => FakeHttpClientResponse(429, 'Too many attempts')),
         throwsA(predicate((e) => e is String && e.contains('Auth error: HTTP 429 - Too many attempts'))),
       );
     });
 
     test('getToken throws when success response has no token', () async {
       await expectLater(
-        withFakeHttpClient(
-          () {
-            final service = PiaService();
-            return service.getToken('p123', 'password');
-          },
-          (url, method) => FakeHttpClientResponse(200, jsonEncode({})),
-        ),
+        withFakeHttpClient(() {
+          final service = PiaService();
+          return service.getToken('p123', 'password');
+        }, (url, method) => FakeHttpClientResponse(200, jsonEncode({}))),
         throwsA(predicate((e) => e is String && e.contains('Auth error: Empty token received'))),
       );
     });
@@ -280,12 +259,7 @@ void main() {
           expect(url.queryParameters['pubkey'], 'public/key=');
           return FakeHttpClientResponse(
             200,
-            jsonEncode({
-              'status': 'OK',
-              'server_key': 'server-key',
-              'peer_ip': '10.10.0.2',
-              'server_port': 1337,
-            }),
+            jsonEncode({'status': 'OK', 'server_key': 'server-key', 'peer_ip': '10.10.0.2', 'server_port': 1337}),
           );
         },
       );
@@ -295,10 +269,7 @@ void main() {
       expect(response.serverKey, 'server-key');
       expect(response.peerIP, '10.10.0.2');
       expect(response.serverPort, 1337);
-      expect(progress, [
-        'Registering key with 10.0.0.2...',
-        'Key registered. Peer IP: 10.10.0.2',
-      ]);
+      expect(progress, ['Registering key with 10.0.0.2...', 'Key registered. Peer IP: 10.10.0.2']);
     });
 
     test('registerKey throws when server returns error status', () async {
@@ -306,11 +277,7 @@ void main() {
         withFakeHttpClient(
           () {
             final service = PiaService();
-            return service.registerKey(
-              const WgServer(ip: '10.0.0.2', cn: 'server-cn'),
-              'token',
-              'public',
-            );
+            return service.registerKey(const WgServer(ip: '10.0.0.2', cn: 'server-cn'), 'token', 'public');
           },
           (url, method) {
             if (url.toString().contains('ca.rsa.4096.crt')) {
@@ -318,12 +285,7 @@ void main() {
             }
             return FakeHttpClientResponse(
               200,
-              jsonEncode({
-                'status': 'FAILED',
-                'server_key': 'server-key',
-                'peer_ip': '10.10.0.2',
-                'server_port': 1337,
-              }),
+              jsonEncode({'status': 'FAILED', 'server_key': 'server-key', 'peer_ip': '10.10.0.2', 'server_port': 1337}),
             );
           },
         ),
@@ -336,11 +298,7 @@ void main() {
         withFakeHttpClient(
           () {
             final service = PiaService();
-            return service.registerKey(
-              const WgServer(ip: '10.0.0.2', cn: 'server-cn'),
-              'token',
-              'public',
-            );
+            return service.registerKey(const WgServer(ip: '10.0.0.2', cn: 'server-cn'), 'token', 'public');
           },
           (url, method) {
             if (url.toString().contains('ca.rsa.4096.crt')) {
@@ -356,21 +314,24 @@ void main() {
     test('generateConfig throws when region is missing', () async {
       final service = TestPiaService(
         regions: [
-          Region(id: 'us', wgServers: [const WgServer(ip: '1.1.1.1', cn: 'server')]),
+          Region(
+            id: 'us',
+            wgServers: [const WgServer(ip: '1.1.1.1', cn: 'server')],
+          ),
         ],
-        probeResults: [const ProbeResult(server: WgServer(ip: '1.1.1.1', cn: 'server'), latency: Duration(milliseconds: 10))],
+        probeResults: [
+          const ProbeResult(
+            server: WgServer(ip: '1.1.1.1', cn: 'server'),
+            latency: Duration(milliseconds: 10),
+          ),
+        ],
         token: 'token',
         regResponse: const RegResponse(status: 'OK', serverKey: 'serverkey', peerIP: '10.0.0.1', serverPort: 1337),
         keypair: ('private', 'public'),
       );
 
       await expectLater(
-        service.generateConfig(
-          region: 'aus_melbourne',
-          username: 'p123456',
-          password: 'secret',
-          dns: '1.1.1.1',
-        ),
+        service.generateConfig(region: 'aus_melbourne', username: 'p123456', password: 'secret', dns: '1.1.1.1'),
         throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('Region "aus_melbourne" not found.'))),
       );
     });
@@ -393,9 +354,16 @@ void main() {
     test('generateConfig throws when all latency probes fail', () async {
       final service = TestPiaService(
         regions: [
-          Region(id: 'aus_melbourne', wgServers: const [WgServer(ip: '1.1.1.1', cn: 'server')])
+          Region(
+            id: 'aus_melbourne',
+            wgServers: const [WgServer(ip: '1.1.1.1', cn: 'server')],
+          ),
         ],
-        probeResults: const [ProbeResult(server: WgServer(ip: '1.1.1.1', cn: 'server'))],
+        probeResults: const [
+          ProbeResult(
+            server: WgServer(ip: '1.1.1.1', cn: 'server'),
+          ),
+        ],
         token: 'token',
         regResponse: const RegResponse(status: 'OK', serverKey: 'serverkey', peerIP: '10.0.0.1', serverPort: 1337),
         keypair: ('private', 'public'),
@@ -410,9 +378,17 @@ void main() {
     test('generateConfig returns expected WireGuard config when pipeline succeeds', () async {
       final service = TestPiaService(
         regions: [
-          Region(id: 'aus_melbourne', wgServers: const [WgServer(ip: '1.1.1.1', cn: 'server')])
+          Region(
+            id: 'aus_melbourne',
+            wgServers: const [WgServer(ip: '1.1.1.1', cn: 'server')],
+          ),
         ],
-        probeResults: const [ProbeResult(server: WgServer(ip: '1.1.1.1', cn: 'server'), latency: Duration(milliseconds: 3))],
+        probeResults: const [
+          ProbeResult(
+            server: WgServer(ip: '1.1.1.1', cn: 'server'),
+            latency: Duration(milliseconds: 3),
+          ),
+        ],
         token: 'token',
         regResponse: const RegResponse(status: 'OK', serverKey: 'serverkey', peerIP: '10.0.0.1', serverPort: 1337),
         keypair: ('private', 'public'),
@@ -434,9 +410,17 @@ void main() {
       final progress = <String>[];
       final service = TestPiaService(
         regions: [
-          Region(id: 'aus_melbourne', wgServers: const [WgServer(ip: '1.1.1.1', cn: 'MELBOURNE')])
+          Region(
+            id: 'aus_melbourne',
+            wgServers: const [WgServer(ip: '1.1.1.1', cn: 'MELBOURNE')],
+          ),
         ],
-        probeResults: const [ProbeResult(server: WgServer(ip: '1.1.1.1', cn: 'MELBOURNE'), latency: Duration(milliseconds: 7))],
+        probeResults: const [
+          ProbeResult(
+            server: WgServer(ip: '1.1.1.1', cn: 'MELBOURNE'),
+            latency: Duration(milliseconds: 7),
+          ),
+        ],
         token: 'token',
         regResponse: const RegResponse(status: 'OK', serverKey: 'serverkey', peerIP: '10.0.0.1/24', serverPort: 1337),
         keypair: ('private', 'public'),
@@ -482,11 +466,7 @@ void main() {
       final server = await _bindLatencyServer();
       final service = PiaService(probePort: server.port);
       try {
-        final results = await service.probeLatency(
-          [responding, failing],
-          onProgress: progress.add,
-          regionId: 'test_region',
-        );
+        final results = await service.probeLatency([responding, failing], onProgress: progress.add, regionId: 'test_region');
         expect(results.first.server.ip, '127.0.0.1');
         expect(results.last.failed, true);
         expect(progress.any((msg) => msg.contains('192.0.2.1 failed')), true);
@@ -503,11 +483,7 @@ void main() {
       final server = await _bindLatencyServer();
       final service = PiaService(probePort: server.port);
       try {
-        final results = await service.probeLatency(
-          [first, second],
-          onProgress: progress.add,
-          regionId: 'test_region',
-        );
+        final results = await service.probeLatency([first, second], onProgress: progress.add, regionId: 'test_region');
 
         expect(results, hasLength(2));
         expect(results.every((r) => !r.failed), true);
@@ -539,11 +515,7 @@ void main() {
       final server = await _bindLatencyServer();
       final service = PiaService(probePort: server.port);
       try {
-        final results = await service.probeLatency(
-          [responding, failing],
-          onProgress: progress.add,
-          regionId: 'test_region',
-        );
+        final results = await service.probeLatency([responding, failing], onProgress: progress.add, regionId: 'test_region');
 
         // Verify the progress callback was called for failed probe
         // This covers: onProgress?.call('  ${server.ip} failed: $e');
@@ -563,24 +535,16 @@ void main() {
         withFakeHttpClient(
           () {
             final service = PiaService();
-            return service.registerKey(
-              const WgServer(ip: '10.0.0.2', cn: 'server-cn'),
-              'token',
-              'public',
-            );
+            return service.registerKey(const WgServer(ip: '10.0.0.2', cn: 'server-cn'), 'token', 'public');
           },
           (url, method) {
             if (url.toString().contains('ca.rsa.4096.crt')) {
               return FakeHttpClientResponse(200, _testCaPem);
             }
             return FakeHttpClientResponse(
-                200,
-                jsonEncode({
-                  'status': 'OK',
-                  'server_key': 'server-key',
-                  'peer_ip': '10.10.0.2',
-                  'server_port': 1337,
-                }));
+              200,
+              jsonEncode({'status': 'OK', 'server_key': 'server-key', 'peer_ip': '10.10.0.2', 'server_port': 1337}),
+            );
           },
         ),
         completes,
@@ -593,11 +557,7 @@ void main() {
         withFakeHttpClient(
           () {
             final service = PiaService();
-            return service.registerKey(
-              const WgServer(ip: '10.0.0.2', cn: 'server-cn'),
-              'token',
-              'public',
-            );
+            return service.registerKey(const WgServer(ip: '10.0.0.2', cn: 'server-cn'), 'token', 'public');
           },
           (url, method) {
             if (url.toString().contains('ca.rsa.4096.crt')) {
@@ -606,26 +566,18 @@ void main() {
             return FakeHttpClientResponse(500, 'registration failed\ninternal error');
           },
         ),
-        throwsA(isA<Exception>().having(
-          (e) => e.toString(),
-          'message',
-          allOf([
-            contains('HTTP 500'),
-            contains('registration failed'),
-          ]),
-        )),
+        throwsA(
+          isA<Exception>().having((e) => e.toString(), 'message', allOf([contains('HTTP 500'), contains('registration failed')])),
+        ),
       );
     });
 
     test('getToken calls onProgress with Authenticating and successful messages', () async {
       final progress = <String>[];
-      await withFakeHttpClient(
-        () {
-          final service = PiaService();
-          return service.getToken('user', 'pass', onProgress: progress.add);
-        },
-        (url, method) => FakeHttpClientResponse(200, jsonEncode({'token': 'token123'})),
-      );
+      await withFakeHttpClient(() {
+        final service = PiaService();
+        return service.getToken('user', 'pass', onProgress: progress.add);
+      }, (url, method) => FakeHttpClientResponse(200, jsonEncode({'token': 'token123'})));
 
       // Covers: onProgress?.call('Authenticating with PIA...');
       expect(progress, contains('Authenticating with PIA...'));

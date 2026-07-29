@@ -1,13 +1,13 @@
-# App Name: Configure PIA WireGuard
+# App Name: cfg-pia-wg
 Short name: The simplest way to manage and maintain PIA WireGuard configs on your router.
-Full description (3,956/4000 characters):
+Full description (3,965/4000 characters):
 
 WireGuard (WG) configuration application for Private Internet Access (PIA) users.
 
 ▶ Enjoy the peace of mind that comes from a persistent VPN on your router
 ▶ Deploy a self-healing watchdog to automatically re-create your VPN (Asuswrt-Merlin firmware)
 ▶ Send optional reconfig email alerts
-▶ Manage router WG VPNs
+▶ Manage ASUS router WG VPNs
 ▶ Create a standalone config file
 ▶ Extensive in-app and router-based logging
 

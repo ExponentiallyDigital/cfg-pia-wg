@@ -8,13 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wireguard/app_shell.dart';
 import 'package:cfg_pia_wireguard/session_controller.dart';
 
-SessionController quietController({
-  Duration tickInterval = const Duration(hours: 1),
-}) =>
-    SessionController(
-      tickInterval: tickInterval,
-      clipboardWriter: (_) async {},
-    );
+SessionController quietController({Duration tickInterval = const Duration(hours: 1)}) =>
+    SessionController(tickInterval: tickInterval, clipboardWriter: (_) async {});
 
 Future<void> pumpApp(WidgetTester tester, SessionController c) async {
   await tester.pumpWidget(PiaWgApp(controller: c));

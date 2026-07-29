@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app_colors.dart';
+import '../screens/about_screen.dart';
 import '../screens/log_screen.dart';
 import '../screens/main_menu_screen.dart';
 import '../screens/manage_router_screen.dart';
@@ -41,6 +42,8 @@ Widget screenForDestination(AppDestination dest) {
       return const WatchdogManagementScreen();
     case AppDestination.log:
       return const LogScreen();
+    case AppDestination.about:
+      return const AboutScreen();
   }
 }
 
@@ -95,6 +98,7 @@ class AppDrawer extends StatelessWidget {
     AppDestination.manageRouter,
     AppDestination.watchdog,
     AppDestination.log,
+    AppDestination.about,
   ];
 
   @override

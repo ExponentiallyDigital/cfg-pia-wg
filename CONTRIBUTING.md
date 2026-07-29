@@ -1,12 +1,31 @@
-# Contributing to pia‑wireguard‑cfga
+# Contributing to cfg-pia-wg
 
-Thank you for your interest in contributing to **pia‑wireguard‑cfga** — a security‑sensitive, reproducible‑build Android application that generates Private Internet Access (PIA) WireGuard configurations and optionally deploys them to Asuswrt‑Merlin routers.
+- [1. Project expectations](#1-project-expectations)
+- [2. How to contribute](#2-how-to-contribute)
+  - [2.1. Fork the repository](#21-fork-the-repository)
+  - [2.2. Create a feature branch](#22-create-a-feature-branch)
+  - [2.3. Set up your development environment](#23-set-up-your-development-environment)
+  - [2.4. Follow code style \& quality rules](#24-follow-code-style--quality-rules)
+  - [2.5. Respect dependency pinning](#25-respect-dependency-pinning)
+  - [2.6. GitHub Actions security requirements](#26-github-actions-security-requirements)
+  - [2.7. Commit your changes](#27-commit-your-changes)
+  - [2.8. Push and open a pull request](#28-push-and-open-a-pull-request)
+- [3. Security‑sensitive contributions](#3-securitysensitive-contributions)
+- [4. Testing guidelines](#4-testing-guidelines)
+- [5. Build determinism requirements](#5-build-determinism-requirements)
+- [6. Documentation contributions](#6-documentation-contributions)
+- [7. Bugs \& feature requests](#7-bugs--feature-requests)
+- [8. Code of conduct](#8-code-of-conduct)
+- [9. Licensing](#9-licensing)
+- [10. Thank you](#10-thank-you)
+
+Thank you for your interest in contributing to **cfg-pia-wg**. A security‑sensitive, reproducible‑build Android application that generates Private Internet Access (PIA) WireGuard configurations and optionally deploys them to Asuswrt‑Merlin routers.
 
 This document explains how to contribute safely, consistently, and in a way that aligns with the project’s security and build‑determinism goals.
 
 ---
 
-## Project expectations
+## 1. Project expectations
 
 This project places strong emphasis on:
 
@@ -20,13 +39,13 @@ Contributions must respect these principles.
 
 ---
 
-## How to contribute
+## 2. How to contribute
 
-### 1. Fork the repository
+### 2.1. Fork the repository
 
 Create your own fork on GitHub and clone it locally.
 
-### 2. Create a feature branch
+### 2.2. Create a feature branch
 
 Use a descriptive branch name:
 
@@ -40,7 +59,7 @@ Examples:
 - `fix/latency-probe-timeout`
 - `docs/update-build-instructions`
 
-### 3. Set up your development environment
+### 2.3. Set up your development environment
 
 Follow the build instructions from the README:
 
@@ -56,7 +75,7 @@ flutter pub get --enforce-lockfile
 dart run flutter_launcher_icons
 ```
 
-### 4. Follow code style & quality rules
+### 2.4. Follow code style & quality rules
 
 Before committing:
 
@@ -82,7 +101,7 @@ flutter test --coverage
 > This project targets **>90% test coverage**.  
 > New features must include tests; PRs without tests will not be accepted.
 
-### 5. Respect dependency pinning
+### 2.5. Respect dependency pinning
 
 This project uses **Gradle dependency locking in strict mode** and pinned Dart dependencies.
 
@@ -99,7 +118,7 @@ If you add or update dependencies:
 
 PRs that modify dependencies **without updated lockfiles will fail CI**.
 
-### 6. **GitHub Actions security requirements**
+### 2.6. GitHub Actions security requirements
 
 All GitHub Actions must be pinned to **full commit SHAs**, not tags.
 
@@ -108,7 +127,7 @@ If you modify workflows:
 - Run the repository’s `update-shgas.ps1` script to regenerate pinned SHAs.
 - Commit the updated workflow files.
 
-### 7. Commit your changes
+### 2.7. Commit your changes
 
 Use clear, conventional commit messages:
 
@@ -118,7 +137,7 @@ git commit -m "fix: correct CA pinning fallback logic"
 git commit -m "docs: update screenshots for tablet layout"
 ```
 
-### 8. Push and open a pull request
+### 2.8. Push and open a pull request
 
 ```bash
 git push origin feature/<short-description>
@@ -136,7 +155,7 @@ Your PR **must include**:
 
 ---
 
-## Security‑sensitive contributions
+## 3. Security‑sensitive contributions
 
 Because this app handles:
 
@@ -154,7 +173,7 @@ Please **do not open a public issue.** Follow the private reporting process in *
 
 ---
 
-## Testing guidelines
+## 4. Testing guidelines
 
 All new features must include:
 
@@ -172,7 +191,7 @@ fcr coverage/lcov.info --open
 
 ---
 
-## Build determinism requirements
+## 5. Build determinism requirements
 
 To maintain reproducible builds:
 
@@ -186,7 +205,7 @@ If a PR breaks reproducibility, it will be rejected.
 
 ---
 
-## Documentation contributions
+## 6. Documentation contributions
 
 Documentation updates are welcome.  
 When updating screenshots:
@@ -197,7 +216,7 @@ When updating screenshots:
 
 ---
 
-## Bugs & feature requests
+## 7. Bugs & feature requests
 
 Use the GitHub Issues page:
 
@@ -208,7 +227,7 @@ Use the GitHub Issues page:
 
 ---
 
-## Code of conduct
+## 8. Code of conduct
 
 Be respectful, constructive, and security‑minded.  
 This project values:
@@ -220,13 +239,13 @@ This project values:
 
 ---
 
-## Licensing
+## 9. Licensing
 
 By contributing, you agree that your contributions will be licensed under the **GNU GPLv3**, the same license as the project.
 
 ---
 
-## Thank you
+## 10. Thank you
 
 We deeply appreciate security researchers and contributors who help keep this project safe.
 Your efforts directly protect users’ privacy, routers, and VPN credentials. If you have questions about this policy, please [open an issue](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues) and/or see **SECURITY.md**.

@@ -5,20 +5,20 @@ import 'package:cfg_pia_wireguard/router_watchdog.dart';
 import 'watchdog_test_utils.dart';
 
 WatchdogConfig cfg({int slot = 1, int interval = 5, bool email = false}) => WatchdogConfig(
-      slotIndex: slot,
-      cronIntervalMinutes: interval,
-      primaryIp: '8.8.8.8',
-      secondaryIp: '1.1.1.1',
-      piaUsername: 'p1234567',
-      piaPassword: 'secret',
-      emailAlertsEnabled: email,
-      emailFrom: email ? 'from@example.com' : '',
-      emailTo: email ? 'to@example.com' : '',
-      emailSubject: email ? 'Alert' : '',
-      smtpServer: email ? 'smtp.example.com:465' : '',
-      smtpUsername: email ? 'smtpuser' : '',
-      smtpPassword: email ? 'smtppass' : '',
-    );
+  slotIndex: slot,
+  cronIntervalMinutes: interval,
+  primaryIp: '8.8.8.8',
+  secondaryIp: '1.1.1.1',
+  piaUsername: 'p1234567',
+  piaPassword: 'secret',
+  emailAlertsEnabled: email,
+  emailFrom: email ? 'from@example.com' : '',
+  emailTo: email ? 'to@example.com' : '',
+  emailSubject: email ? 'Alert' : '',
+  smtpServer: email ? 'smtp.example.com:465' : '',
+  smtpUsername: email ? 'smtpuser' : '',
+  smtpPassword: email ? 'smtppass' : '',
+);
 
 void main() {
   group('detection', () {
@@ -122,13 +122,15 @@ void main() {
 
   group('deactivateOtherSlots', () {
     // wgc1 has a live watchdog + interface; wgc4 is enabled without a watchdog; the rest are idle.
-    RecordingSSHClient busyRouter() => RecordingSSHClient(responder: (cmd) {
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
-          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
-          if (cmd.contains('nvram get wgc1_enable')) return '1';
-          if (cmd.contains('nvram get wgc4_enable')) return '1';
-          return '';
-        });
+    RecordingSSHClient busyRouter() => RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains('wg show interfaces')) return 'wgc1';
+        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+        if (cmd.contains('nvram get wgc1_enable')) return '1';
+        if (cmd.contains('nvram get wgc4_enable')) return '1';
+        return '';
+      },
+    );
 
     test('stops the other watchdog and disables its interface', () async {
       final c = busyRouter();
@@ -172,13 +174,15 @@ void main() {
 
   group('one-active-at-a-time on the enable paths', () {
     // Slot 2 is the other active slot in both scenarios below.
-    RecordingSSHClient otherSlotActive() => RecordingSSHClient(responder: (cmd) {
-          if (cmd.contains('jffs2')) return '0';
-          if (cmd.contains('wg show interfaces')) return 'wgc2';
-          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc2')) return '1';
-          if (cmd.contains('nvram get wgc2_enable')) return '1';
-          return '';
-        });
+    RecordingSSHClient otherSlotActive() => RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains('jffs2')) return '0';
+        if (cmd.contains('wg show interfaces')) return 'wgc2';
+        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc2')) return '1';
+        if (cmd.contains('nvram get wgc2_enable')) return '1';
+        return '';
+      },
+    );
 
     test('saveWatchdogConfig tears down the other slot before enabling its own', () async {
       final c = otherSlotActive();
@@ -245,37 +249,43 @@ void main() {
 
   test('waitForWatchdogReady resolves once the interface becomes present', () async {
     var attempts = 0;
-    final c = RecordingSSHClient(responder: (cmd) {
-      if (cmd.contains('cru l')) return '1';
-      if (cmd.contains('nvram get wgc1_enable')) return '1';
-      if (cmd.contains('wg show interfaces')) return attempts++ > 0 ? 'wgc1' : '';
-      return '';
-    });
+    final c = RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains('cru l')) return '1';
+        if (cmd.contains('nvram get wgc1_enable')) return '1';
+        if (cmd.contains('wg show interfaces')) return attempts++ > 0 ? 'wgc1' : '';
+        return '';
+      },
+    );
     final ready = await RouterWatchdog(c).waitForWatchdogReady(1, pollInterval: const Duration(milliseconds: 1), maxAttempts: 3);
     expect(ready, isTrue);
   });
 
   group('getWatchdogStatus', () {
     test('enabled with a parsed last-ping timestamp', () async {
-      final c = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('cru l')) return '1';
-        if (cmd.contains('nvram get wgc1_enable')) return '1';
-        if (cmd.contains('wg show interfaces')) return 'wgc1';
-        if (cmd.contains('watchdog_last_ping_success_wgc1')) return '2026-06-19 14:30:00';
-        return '';
-      });
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('cru l')) return '1';
+          if (cmd.contains('nvram get wgc1_enable')) return '1';
+          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('watchdog_last_ping_success_wgc1')) return '2026-06-19 14:30:00';
+          return '';
+        },
+      );
       final st = await RouterWatchdog(c).getWatchdogStatus(1);
       expect(st.isEnabled, isTrue);
       expect(st.lastSuccessfulPing, DateTime(2026, 6, 19, 14, 30, 0));
     });
 
     test('disabled when the interface is not present even if the cron exists', () async {
-      final c = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('cru l')) return '1';
-        if (cmd.contains('nvram get wgc1_enable')) return '1';
-        if (cmd.contains('wg show interfaces')) return '';
-        return '';
-      });
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('cru l')) return '1';
+          if (cmd.contains('nvram get wgc1_enable')) return '1';
+          if (cmd.contains('wg show interfaces')) return '';
+          return '';
+        },
+      );
       final st = await RouterWatchdog(c).getWatchdogStatus(1);
       expect(st.isEnabled, isFalse);
     });
@@ -294,16 +304,18 @@ void main() {
   });
 
   test('loadConfig maps nvram keys to fields (per-slot + global PIA)', () async {
-    final c = RecordingSSHClient(responder: (cmd) {
-      if (cmd.contains('wgc1_wd_check_interval')) return '7';
-      if (cmd.contains('wgc1_wd_primary_ip')) return '8.8.8.8';
-      if (cmd.contains('wgc1_wd_secondary_ip')) return '1.1.1.1';
-      if (cmd.contains('wgc1_wd_email_enabled')) return '1';
-      if (cmd.contains('wgc1_wd_smtp_server')) return 'mail.x.com:465';
-      if (cmd.contains('cfg_pia_wg_user')) return 'pu';
-      if (cmd.contains('cfg_pia_wg_password')) return 'pp';
-      return '';
-    });
+    final c = RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains('wgc1_wd_check_interval')) return '7';
+        if (cmd.contains('wgc1_wd_primary_ip')) return '8.8.8.8';
+        if (cmd.contains('wgc1_wd_secondary_ip')) return '1.1.1.1';
+        if (cmd.contains('wgc1_wd_email_enabled')) return '1';
+        if (cmd.contains('wgc1_wd_smtp_server')) return 'mail.x.com:465';
+        if (cmd.contains('cfg_pia_wg_user')) return 'pu';
+        if (cmd.contains('cfg_pia_wg_password')) return 'pp';
+        return '';
+      },
+    );
     final config = await RouterWatchdog(c).loadConfig(1);
     expect(config.cronIntervalMinutes, 7);
     expect(config.primaryIp, '8.8.8.8');

@@ -11,8 +11,11 @@ import '../watchdog_test_utils.dart';
 class _FakePia extends PiaService {
   @override
   Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async => const [
-        Region(id: 'aus_melbourne', wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')])
-      ];
+    Region(
+      id: 'aus_melbourne',
+      wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')],
+    ),
+  ];
 
   @override
   Future<String> generateConfig({
@@ -28,10 +31,21 @@ class _FakePia extends PiaService {
 
 SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
 
-SlotInfo _slot(int i,
-        {String desc = '', bool killSwitch = false, bool enabled = false, bool watchdog = false, bool emailAlerting = false}) =>
-    SlotInfo(
-        index: i, desc: desc, killSwitch: killSwitch, enabled: enabled, watchdogActive: watchdog, emailAlerting: emailAlerting);
+SlotInfo _slot(
+  int i, {
+  String desc = '',
+  bool killSwitch = false,
+  bool enabled = false,
+  bool watchdog = false,
+  bool emailAlerting = false,
+}) => SlotInfo(
+  index: i,
+  desc: desc,
+  killSwitch: killSwitch,
+  enabled: enabled,
+  watchdogActive: watchdog,
+  emailAlerting: emailAlerting,
+);
 
 RouterSlots _slots(Map<int, SlotInfo> override, {int? active, bool merlin = true}) {
   final m = {for (var i = 1; i <= 5; i++) i: _slot(i)};
@@ -200,13 +214,15 @@ void main() {
 
     testWidgets('ENABLE with stored ping targets enables the slot', (tester) async {
       final c = _controller();
-      final ssh = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
-        if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
-        if (cmd.contains('wg show interfaces')) return 'wgc1';
-        if (cmd.contains('ping')) return 'OK';
-        return '';
-      });
+      final ssh = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
+          if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
+          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ping')) return 'OK';
+          return '';
+        },
+      );
       await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
       await _open(tester);
 
@@ -225,11 +241,13 @@ void main() {
 
     testWidgets('ENABLE prompts for ping targets when none are stored', (tester) async {
       final c = _controller();
-      final ssh = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('wg show interfaces')) return 'wgc1';
-        if (cmd.contains('ping')) return 'OK';
-        return ''; // wd_*_ip empty -> prompt
-      });
+      final ssh = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ping')) return 'OK';
+          return ''; // wd_*_ip empty -> prompt
+        },
+      );
       await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
       await _open(tester);
 
@@ -284,15 +302,14 @@ void main() {
     testWidgets('button enablement follows watchdog-active state', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
-      await tester.pumpWidget(_host(
-        ssh,
-        SlotModalMode.watchdog,
-        _slots({
-          1: _slot(1, desc: 'aus_melbourne', watchdog: true),
-          2: _slot(2, desc: 'us_east'),
-        }),
-        c,
-      ));
+      await tester.pumpWidget(
+        _host(
+          ssh,
+          SlotModalMode.watchdog,
+          _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true), 2: _slot(2, desc: 'us_east')}),
+          c,
+        ),
+      );
       await _open(tester);
 
       // Watchdog active slot -> DISABLE + VIEW LOG, not ENABLE.
@@ -316,12 +333,9 @@ void main() {
     testWidgets('EMAIL ALERTING badge shows next to WATCHDOG ACTIVE when email alerts are enabled', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
-      await tester.pumpWidget(_host(
-        ssh,
-        SlotModalMode.watchdog,
-        _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true, emailAlerting: true)}),
-        c,
-      ));
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true, emailAlerting: true)}), c),
+      );
       await _open(tester);
 
       expect(find.text('◆ WATCHDOG ACTIVE'), findsOneWidget);
@@ -334,12 +348,9 @@ void main() {
     testWidgets('EMAIL ALERTING badge is hidden when email alerts are disabled', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
-      await tester.pumpWidget(_host(
-        ssh,
-        SlotModalMode.watchdog,
-        _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}),
-        c,
-      ));
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c),
+      );
       await _open(tester);
 
       expect(find.text('◆ WATCHDOG ACTIVE'), findsOneWidget);
@@ -352,8 +363,9 @@ void main() {
     testWidgets('DISABLE runs stopWatchdog and takes the tunnel down with it', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
-      await tester
-          .pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c),
+      );
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));
@@ -373,8 +385,9 @@ void main() {
     testWidgets('VIEW ROUTER WATCHDOG LOG fetches and displays the log', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'LOG-DATA-XYZ' : '');
-      await tester
-          .pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c),
+      );
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));
@@ -392,13 +405,11 @@ void main() {
 
     testWidgets('COPY button copies the watchdog log text', (tester) async {
       String? copiedText;
-      final c = SessionController(
-        tickInterval: const Duration(hours: 1),
-        clipboardWriter: (text) async => copiedText = text,
-      );
+      final c = SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (text) async => copiedText = text);
       final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'LOG-DATA-XYZ' : '');
-      await tester
-          .pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c),
+      );
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));
@@ -438,8 +449,9 @@ void main() {
     testWidgets('DELETE confirms then removes the watchdog and clears the slot', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
-      await tester
-          .pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c),
+      );
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));
@@ -477,22 +489,23 @@ void main() {
 
     testWidgets('manage ENABLE disables the previously-active interface (and its watchdog)', (tester) async {
       final c = _controller();
-      final ssh = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
-        if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
-        if (cmd.contains('wg show interfaces')) return 'wgc2';
-        if (cmd.contains('ping')) return 'OK';
-        return '';
-      });
-      await tester.pumpWidget(_host(
-        ssh,
-        SlotModalMode.manage,
-        _slots({
-          1: _slot(1, desc: 'aus_melbourne', enabled: true, watchdog: true),
-          2: _slot(2, desc: 'us_east'),
-        }, active: 1),
-        c,
-      ));
+      final ssh = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
+          if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
+          if (cmd.contains('wg show interfaces')) return 'wgc2';
+          if (cmd.contains('ping')) return 'OK';
+          return '';
+        },
+      );
+      await tester.pumpWidget(
+        _host(
+          ssh,
+          SlotModalMode.manage,
+          _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true, watchdog: true), 2: _slot(2, desc: 'us_east')}, active: 1),
+          c,
+        ),
+      );
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_2')));
@@ -564,25 +577,26 @@ void main() {
       final c = _controller()
         ..piaUsername = 'p1234567'
         ..piaPassword = 'secret';
-      final ssh = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('wgc2_wd_primary_ip')) return '8.8.8.8';
-        if (cmd.contains('wgc2_wd_secondary_ip')) return '1.1.1.1';
-        if (cmd.contains('wgc2_wd_check_interval')) return '5';
-        // wgc1 is the other active slot: watchdog cron present and interface up.
-        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
-        if (cmd.contains('nvram get wgc1_enable')) return '1';
-        if (cmd.contains('wg show interfaces')) return 'wgc1';
-        return '';
-      });
-      await tester.pumpWidget(_host(
-        ssh,
-        SlotModalMode.watchdog,
-        _slots({
-          1: _slot(1, desc: 'aus_melbourne', watchdog: true),
-          2: _slot(2, desc: 'us_east'),
-        }),
-        c,
-      ));
+      final ssh = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('wgc2_wd_primary_ip')) return '8.8.8.8';
+          if (cmd.contains('wgc2_wd_secondary_ip')) return '1.1.1.1';
+          if (cmd.contains('wgc2_wd_check_interval')) return '5';
+          // wgc1 is the other active slot: watchdog cron present and interface up.
+          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+          if (cmd.contains('nvram get wgc1_enable')) return '1';
+          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          return '';
+        },
+      );
+      await tester.pumpWidget(
+        _host(
+          ssh,
+          SlotModalMode.watchdog,
+          _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true), 2: _slot(2, desc: 'us_east')}),
+          c,
+        ),
+      );
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_2')));
@@ -604,8 +618,9 @@ void main() {
     testWidgets('watchdog DELETE confirm shows the region warning', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
-      await tester
-          .pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c),
+      );
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));

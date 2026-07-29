@@ -17,9 +17,11 @@ SessionController _controller(List<String> clipWrites) =>
 // In the real app AppChrome's Scaffold provides the Material ancestor every route shares; in
 // isolation we supply one here.
 Widget _host(SessionController c, {PiaService? service}) => SessionScope(
-      controller: c,
-      child: MaterialApp(home: Scaffold(body: StandaloneConfigScreen(service: service))),
-    );
+  controller: c,
+  child: MaterialApp(
+    home: Scaffold(body: StandaloneConfigScreen(service: service)),
+  ),
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

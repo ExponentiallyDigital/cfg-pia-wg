@@ -2,26 +2,21 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wireguard/router_watchdog.dart';
 
-WatchdogConfig _valid({
-  int slot = 1,
-  int interval = 5,
-  bool email = false,
-}) =>
-    WatchdogConfig(
-      slotIndex: slot,
-      cronIntervalMinutes: interval,
-      primaryIp: '8.8.8.8',
-      secondaryIp: '1.1.1.1',
-      piaUsername: 'p1234567',
-      piaPassword: 'secret',
-      emailAlertsEnabled: email,
-      emailFrom: email ? 'from@example.com' : '',
-      emailTo: email ? 'to@example.com' : '',
-      emailSubject: email ? 'Alert' : '',
-      smtpServer: email ? 'smtp.example.com:465' : '',
-      smtpUsername: email ? 'smtpuser' : '',
-      smtpPassword: email ? 'smtppass' : '',
-    );
+WatchdogConfig _valid({int slot = 1, int interval = 5, bool email = false}) => WatchdogConfig(
+  slotIndex: slot,
+  cronIntervalMinutes: interval,
+  primaryIp: '8.8.8.8',
+  secondaryIp: '1.1.1.1',
+  piaUsername: 'p1234567',
+  piaPassword: 'secret',
+  emailAlertsEnabled: email,
+  emailFrom: email ? 'from@example.com' : '',
+  emailTo: email ? 'to@example.com' : '',
+  emailSubject: email ? 'Alert' : '',
+  smtpServer: email ? 'smtp.example.com:465' : '',
+  smtpUsername: email ? 'smtpuser' : '',
+  smtpPassword: email ? 'smtppass' : '',
+);
 
 void main() {
   group('validation helpers', () {
@@ -66,13 +61,7 @@ void main() {
     });
 
     test('requires both IPs', () {
-      final c = WatchdogConfig(
-        slotIndex: 1,
-        primaryIp: '',
-        secondaryIp: '',
-        piaUsername: 'u',
-        piaPassword: 'p',
-      );
+      final c = WatchdogConfig(slotIndex: 1, primaryIp: '', secondaryIp: '', piaUsername: 'u', piaPassword: 'p');
       final errors = c.validate();
       expect(errors.any((e) => e.contains('Primary ping IP is required')), isTrue);
       expect(errors.any((e) => e.contains('Secondary ping IP is required')), isTrue);
@@ -119,11 +108,7 @@ void main() {
     });
 
     test('email rejects invalid addresses and smtp without colon', () {
-      final c = _valid(email: true).copyWith(
-        emailFrom: 'bad',
-        emailTo: 'alsobad',
-        smtpServer: 'hostonly',
-      );
+      final c = _valid(email: true).copyWith(emailFrom: 'bad', emailTo: 'alsobad', smtpServer: 'hostonly');
       final errors = c.validate();
       expect(errors.any((e) => e.contains('"From" is not a valid')), isTrue);
       expect(errors.any((e) => e.contains('"To" is not a valid')), isTrue);
@@ -232,7 +217,7 @@ void main() {
       expect(cmd, contains('/usr/sbin/sendmail'));
       expect(cmd, contains('exec openssl s_client -quiet -tls1_3'));
       expect(cmd, contains('-connect smtp.example.com:587'));
-//      expect(cmd, contains('-amLOGIN'));
+      //      expect(cmd, contains('-amLOGIN'));
       expect(cmd, contains("-au'smtpuser'"));
       expect(cmd, contains("-ap'smtppass'"));
       expect(cmd, contains('< /tmp/mail.txt'));
@@ -341,7 +326,7 @@ void main() {
       final s = buildWatchdogScript(_valid(slot: 1));
       expect(s, contains(r'[ "$EMAIL_ON" = "1" ]'));
       expect(s, contains('exec openssl s_client -quiet -tls1_3'));
-//      expect(s, contains('-amLOGIN'));
+      //      expect(s, contains('-amLOGIN'));
     });
 
     test('has abort gates for empty desc, missing jq and missing PIA user', () {

@@ -15,28 +15,22 @@ RouterSlotService _fastSvc(SSHClient c, SessionController ctrl) =>
     RouterSlotService(c, onLog: ctrl.onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: 1);
 
 Widget _manage(RecordingSSHClient ssh, SessionController c) => SessionScope(
-      controller: c,
-      child: MaterialApp(
-        home: Scaffold(
-          body: ManageRouterScreen(
-            testClientFactory: (ip, u, p) async => ssh,
-            slotServiceFactory: (cl) => _fastSvc(cl, c),
-          ),
-        ),
-      ),
-    );
+  controller: c,
+  child: MaterialApp(
+    home: Scaffold(
+      body: ManageRouterScreen(testClientFactory: (ip, u, p) async => ssh, slotServiceFactory: (cl) => _fastSvc(cl, c)),
+    ),
+  ),
+);
 
 Widget _watchdog(RecordingSSHClient ssh, SessionController c) => SessionScope(
-      controller: c,
-      child: MaterialApp(
-        home: Scaffold(
-          body: WatchdogManagementScreen(
-            testClientFactory: (ip, u, p) async => ssh,
-            slotServiceFactory: (cl) => _fastSvc(cl, c),
-          ),
-        ),
-      ),
-    );
+  controller: c,
+  child: MaterialApp(
+    home: Scaffold(
+      body: WatchdogManagementScreen(testClientFactory: (ip, u, p) async => ssh, slotServiceFactory: (cl) => _fastSvc(cl, c)),
+    ),
+  ),
+);
 
 Future<void> _fillCreds(WidgetTester tester) async {
   await tester.enterText(find.widgetWithText(TextFormField, 'Router IP'), '192.168.0.254');
@@ -107,11 +101,13 @@ void main() {
 
   testWidgets('manage CONNECT opens the slot modal', (tester) async {
     final c = _controller();
-    final ssh = RecordingSSHClient(responder: (cmd) {
-      if (cmd.contains('3rd-party')) return 'merlin';
-      if (cmd.contains('wgc1_desc')) return 'aus_melbourne';
-      return '';
-    });
+    final ssh = RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains('3rd-party')) return 'merlin';
+        if (cmd.contains('wgc1_desc')) return 'aus_melbourne';
+        return '';
+      },
+    );
     await tester.pumpWidget(_manage(ssh, c));
     await tester.pumpAndSettle();
 

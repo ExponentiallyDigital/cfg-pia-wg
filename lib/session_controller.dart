@@ -33,7 +33,8 @@ enum AppDestination {
   standalone('standalone', 'Generate PIA WireGuard configuration'),
   manageRouter('manage_router', 'Manage router PIA WireGuard configuration'),
   watchdog('watchdog', 'Watchdog WireGuard management'),
-  log('log', 'View app log');
+  log('log', 'View app log'),
+  about('about', 'About');
 
   const AppDestination(this.routeName, this.title);
   final String routeName, title;

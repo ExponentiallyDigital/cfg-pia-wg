@@ -187,9 +187,9 @@ wgc1_wd_smtp_user=
 ```
 
 ```bash
-user@host:/tmp/home/root# nvram show | grep cfg_pia_wg
-cfg_pia_wg_password=REDACTED
-cfg_pia_wg_user=REDACTED
+user@host:/tmp/home/root# nvram show | grep cfg-pia-wg
+cfg-pia-wg_password=REDACTED
+cfg-pia-wg_user=REDACTED
 ```
 
 5. Check `/tmp/watchdog_backoff_wgcN`

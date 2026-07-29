@@ -6,10 +6,7 @@ import 'package:cfg_pia_wireguard/session_controller.dart';
 
 // A controller whose 1 Hz countdown tick is pushed far into the future so the live countdown
 // does not schedule frames during the test (otherwise pumpAndSettle would never settle).
-SessionController _quietController() => SessionController(
-      tickInterval: const Duration(hours: 1),
-      clipboardWriter: (_) async {},
-    );
+SessionController _quietController() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
 
 // Unmounts the app and disposes the injected controller (cancelling its pending tick timer).
 Future<void> _teardown(WidgetTester tester, SessionController c) async {
@@ -103,6 +100,29 @@ void main() {
     await tester.tap(find.byKey(const Key('drawer_log')));
     await tester.pumpAndSettle();
     expect(find.text('CLEAR LOG'), findsOneWidget); // log screen
+
+    await _teardown(tester, c);
+  });
+
+  testWidgets('the drawer About entry sits below the log entry and navigates', (tester) async {
+    final c = _quietController();
+    await tester.pumpWidget(PiaWgApp(controller: c));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('app_hamburger')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('drawer_about')), findsOneWidget);
+    // Ordering: About is the last destination, directly under "View app log".
+    final logY = tester.getCenter(find.byKey(const Key('drawer_log'))).dy;
+    final aboutY = tester.getCenter(find.byKey(const Key('drawer_about'))).dy;
+    expect(aboutY, greaterThan(logY));
+
+    // No mock handler here, so the build-info channel raises MissingPluginException and the
+    // screen must still render (this is the path every full-app test takes).
+    await tester.tap(find.byKey(const Key('drawer_about')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Build runner ID:', findRichText: true), findsOneWidget);
+    expect(find.textContaining('GNU GENERAL PUBLIC LICENSE'), findsOneWidget);
 
     await _teardown(tester, c);
   });

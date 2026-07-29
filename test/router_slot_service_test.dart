@@ -4,7 +4,8 @@ import 'package:cfg_pia_wireguard/router_slot_service.dart';
 
 import 'watchdog_test_utils.dart';
 
-const _sampleConfig = '[Interface]\n'
+const _sampleConfig =
+    '[Interface]\n'
     'PrivateKey = privkey==\n'
     'Address = 10.0.0.2/32\n'
     'DNS = 1.1.1.1\n'
@@ -19,22 +20,23 @@ RouterSlotService svc(
   RecordingSSHClient c, {
   void Function(String, {bool isError, bool isSuccess})? onLog,
   int verifyMaxAttempts = 2,
-}) =>
-    RouterSlotService(c, onLog: onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts);
+}) => RouterSlotService(c, onLog: onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts);
 
 void main() {
   group('fetchSlots', () {
     test('parses desc, kill switch, enabled, watchdog, email alerting, active slot and Merlin', () async {
-      final c = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('3rd-party')) return 'merlin';
-        if (cmd.contains('wgc1_desc')) return 'aus_melbourne';
-        if (cmd.contains('wgc1_enforce')) return '1';
-        if (cmd.contains('wgc1_enable')) return '1';
-        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
-        if (cmd.contains('wgc1_wd_email_enabled')) return '1';
-        if (cmd.contains('wg show interfaces')) return 'wgc1';
-        return '';
-      });
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('3rd-party')) return 'merlin';
+          if (cmd.contains('wgc1_desc')) return 'aus_melbourne';
+          if (cmd.contains('wgc1_enforce')) return '1';
+          if (cmd.contains('wgc1_enable')) return '1';
+          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+          if (cmd.contains('wgc1_wd_email_enabled')) return '1';
+          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          return '';
+        },
+      );
       final result = await svc(c).fetchSlots();
       expect(result.isMerlin, isTrue);
       expect(result.activeSlot, 1);
@@ -49,12 +51,14 @@ void main() {
 
     test('email alerting is not reported when the watchdog is inactive', () async {
       // email_enabled lingers in nvram but the watchdog cron is gone -> no email badge.
-      final c = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('3rd-party')) return 'merlin';
-        if (cmd.contains('wgc1_desc')) return 'aus_melbourne';
-        if (cmd.contains('wgc1_wd_email_enabled')) return '1';
-        return ''; // cru l -> '' (watchdog inactive)
-      });
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('3rd-party')) return 'merlin';
+          if (cmd.contains('wgc1_desc')) return 'aus_melbourne';
+          if (cmd.contains('wgc1_wd_email_enabled')) return '1';
+          return ''; // cru l -> '' (watchdog inactive)
+        },
+      );
       final result = await svc(c).fetchSlots();
       expect(result.slots[1]!.watchdogActive, isFalse);
       expect(result.slots[1]!.emailAlerting, isFalse);
@@ -102,8 +106,10 @@ void main() {
         throwOn: ['wgc1_alive=25'], // fail mid-write, after backup
       );
       await expectLater(
-        svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
-            .createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        svc(
+          c,
+          onLog: (m, {isError = false, isSuccess = false}) => logs.add(m),
+        ).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
         throwsA(isA<Exception>()),
       );
       expect(logs.any((m) => m.contains('Backing up existing wgc1')), isTrue);
@@ -113,11 +119,13 @@ void main() {
 
   group('enableSlot', () {
     test('enables, verifies the interface, pings both targets and succeeds', () async {
-      final c = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('wg show interfaces')) return 'wgc1';
-        if (cmd.contains('ping -I wgc1')) return 'OK';
-        return '';
-      });
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ping -I wgc1')) return 'OK';
+          return '';
+        },
+      );
       await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
       expect(c.ran('nvram set wgc1_enable=1'), isTrue);
       expect(c.ran('service "start_wgc 1"'), isTrue);
@@ -128,24 +136,20 @@ void main() {
 
     test('reverts and throws when the interface never comes up', () async {
       final c = RecordingSSHClient(responder: (_) => ''); // wg show interfaces empty
-      await expectLater(
-        svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
-        throwsA(isA<Exception>()),
-      );
+      await expectLater(svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
       expect(c.ran('nvram set wgc1_enable=0'), isTrue); // reverted
       expect(c.ran('service "stop_wgc 1"'), isTrue);
     });
 
     test('reverts and throws when a ping target is unreachable', () async {
-      final c = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('wg show interfaces')) return 'wgc1';
-        if (cmd.contains('ping -I wgc1')) return 'FAIL';
-        return '';
-      });
-      await expectLater(
-        svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
-        throwsA(isA<Exception>()),
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ping -I wgc1')) return 'FAIL';
+          return '';
+        },
       );
+      await expectLater(svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
       expect(c.ran('nvram set wgc1_enable=0'), isTrue);
     });
   });
@@ -176,11 +180,13 @@ void main() {
 
   group('readSlotParams / writeSlotParams', () {
     test('readSlotParams returns a bare-keyed map', () async {
-      final c = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('wgc1_addr')) return '10.0.0.2/32';
-        if (cmd.contains('wgc1_mtu')) return '1420';
-        return '';
-      });
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('wgc1_addr')) return '10.0.0.2/32';
+          if (cmd.contains('wgc1_mtu')) return '1420';
+          return '';
+        },
+      );
       final params = await svc(c).readSlotParams(1);
       expect(params['addr'], '10.0.0.2/32');
       expect(params['mtu'], '1420');
@@ -198,11 +204,13 @@ void main() {
 
   group('watchdog ping targets + pingViaSlot', () {
     test('reads and writes wgcN_wd_*_ip', () async {
-      final c = RecordingSSHClient(responder: (cmd) {
-        if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
-        if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
-        return '';
-      });
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
+          if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
+          return '';
+        },
+      );
       final s = svc(c);
       expect(await s.readWatchdogPingTargets(1), ('8.8.8.8', '1.1.1.1'));
       await s.writeWatchdogPingTargets(1, '9.9.9.9', '1.0.0.1');

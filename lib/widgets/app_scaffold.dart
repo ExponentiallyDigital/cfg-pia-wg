@@ -88,14 +88,21 @@ class AppHeaderBar extends StatelessWidget {
             icon: const Icon(Icons.menu, color: kText),
             onPressed: onMenu,
           ),
-          Container(width: 8, height: 8, decoration: const BoxDecoration(color: kHighlight, shape: BoxShape.circle)),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(color: kHighlight, shape: BoxShape.circle),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Configure PIA WireGuard', style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w600)),
+                const Text(
+                  'Configure PIA WireGuard',
+                  style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w600),
+                ),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -106,8 +113,10 @@ class AppHeaderBar extends StatelessWidget {
                         onTap: () => _launch('https://www.exponentiallydigital.com'),
                         child: const Padding(
                           padding: EdgeInsets.symmetric(vertical: 2),
-                          child: Text('Exponentially Digital',
-                              style: TextStyle(color: kMuted, fontSize: 10, decoration: TextDecoration.underline)),
+                          child: Text(
+                            'Exponentially Digital',
+                            style: TextStyle(color: kMuted, fontSize: 10, decoration: TextDecoration.underline),
+                          ),
                         ),
                       ),
                     ),
@@ -135,7 +144,6 @@ class AppHeaderBar extends StatelessWidget {
       ),
     );
   }
-
 }
 
 /// Per-screen body wrapper: a scrollable padded content area plus an optional HOME button that
@@ -181,9 +189,10 @@ class AppScaffold extends StatelessWidget {
                 child: OutlinedButton(
                   key: const Key('screen_close'),
                   style: OutlinedButton.styleFrom(
-                      foregroundColor: kMuted,
-                      side: const BorderSide(color: kBorder),
-                      padding: const EdgeInsets.symmetric(vertical: 14)),
+                    foregroundColor: kMuted,
+                    side: const BorderSide(color: kBorder),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
                   onPressed: () => navigateToDestination(context, SessionScope.of(context), AppDestination.menu),
                   child: const Text('HOME'),
                 ),
