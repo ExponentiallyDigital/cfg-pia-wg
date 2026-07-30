@@ -32,7 +32,7 @@
   - [5.6. Hamburger menu](#56-hamburger-menu)
   - [5.7. About](#57-about)
 - [6. Notes](#6-notes)
-- [7. What does `cfg-pia-wireguard` "do" to my router?](#7-what-does-cfg-pia-wireguard-do-to-my-router)
+- [7. What does `cfg-pia-wg` "do" to my router?](#7-what-does-cfg-pia-wg-do-to-my-router)
 - [8. App permissions](#8-app-permissions)
   - [8.1. Internet (android.permission.INTERNET)](#81-internet-androidpermissioninternet)
   - [8.2. Network state (android.permission.ACCESS\_NETWORK\_STATE)](#82-network-state-androidpermissionaccess_network_state)
@@ -46,7 +46,6 @@
 - [13. Support](#13-support)
 - [14. Trademark and affiliation notice](#14-trademark-and-affiliation-notice)
 - [15. License](#15-license)
-
 
 A native Android app that generates, and optionally applies, ready-to-use WireGuard configuration files for the Private Internet Access (PIA) VPN service. It authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and allows saving the complete `.conf` to the clipboard or share/save to a user specified app/location.
 
@@ -239,7 +238,6 @@ This can be useful to check the application's log during operations.
   <figcaption><center>Hamburger Menu</center></figcaption>
 </p>
 
-
 ### 5.7. About
 
 Build information and documentation links live in the hamburger menu's **About** screen:
@@ -248,8 +246,6 @@ Build information and documentation links live in the hamburger menu's **About**
   <img src="./images/about.png" alt="App log" width="300">
   <figcaption><center>About</center></figcaption>
 </p>
-
-
 
 ---
 
@@ -273,7 +269,7 @@ Build information and documentation links live in the hamburger menu's **About**
 
 ---
 
-## 7. What does `cfg-pia-wireguard` "do" to my router?
+## 7. What does `cfg-pia-wg` "do" to my router?
 
 A great question to ask as anything that talks to your router programatically should be under extreme scrutiny. A lot of thinking, research, and analysis went into implementing the two features to manage your router's VPN configuration and deploy a watchdog. Please see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) for full details including a flow chart of user interactions and two diagrams showing network calls and representative IP traffic flows.
 

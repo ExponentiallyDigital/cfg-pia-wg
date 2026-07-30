@@ -2,6 +2,8 @@
 
 - [1. Backlog](#1-backlog)
 - [2. Changes](#2-changes)
+  - [2.1. Pending](#21-pending)
+  - [2.2. Implemented](#22-implemented)
 
 ## 1. Backlog
 
@@ -38,6 +40,15 @@
 ---
 
 ## 2. Changes
+
+### 2.1. Pending
+
+- DOC: updated README app name
+- CHG: removed Watchdog screen's DISABLE and ENABLE menu options - storing this data would use up flash RAM, it is causing issues when disabling and enabling the interface's required params not avalable.
+- CHG: renamed "EDIT" button in Watchod to "CREATE/EDIT"
+  - update screenshot
+
+### 2.2. Implemented
 
 2026-07-29 v0.6.28 build 358
 
