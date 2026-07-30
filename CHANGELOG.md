@@ -3,7 +3,6 @@
 - [1. Backlog](#1-backlog)
 - [2. Changes](#2-changes)
 
-
 ## 1. Backlog
 
 - FIX: if a watchdog slot is disabled, when you click "ENABLE", you are prompted for ping targets & PIA credentials without a dialogue box to enter them. Workaround: use EDIT to enter PIA creds (ping targets are already supplied) or delete/disable then re-create/enable the watchdog. See below.
@@ -31,16 +30,23 @@
         Deleted wgc1 configuration -> Deleted wgc1 configuration (was region_abc)
 - DOC: disabling a slot in WIREGUARD CONFIGURATION disables any watchdog and VPN on that slot; disabling a slot in WATCHDOG CONFIGURATION disables any a VPN on that slot and its watchdog - workaround, don't use disable.
 - FIX: "home" button is not in green text with a green button border, after activating any of the four main menu items - Manage and Watchdog screens have a modal on top so that's actually correct (for those two use cases only).
+
 - REL: Deploy to 'production' on Google Play Store
 - REL: Create a GitHub actions release and verify build data in the new "About" screen.
+- REL: release.yaml, cannot stat 'build/app/outputs/bundle/release/cfg_pia_wg-release.aab': No such file or directory
+- REL: re-use debug build binary actross  quality_and_security.yml and release.yaml (reduce build runtime)
 
 ---
 
 ## 2. Changes
 
-2026-07-28 v0.6.25 build 355
+2026-07-29 v0.6.26 build 356
 
-- FIX: updated qquality_and_security.yml to grant permissions required by the reusable workflow
+- FIX: build artifact naming in release.yml
+
+2026-07-29 v0.6.25 build 355
+
+- FIX: updated quality_and_security.yml to grant permissions required by the reusable workflow
 - FIX: prevented release.yml from skipping checks on manual runs.
 
 2026-07-28 v0.6.24 build 354 (pre Google Play Store release)
