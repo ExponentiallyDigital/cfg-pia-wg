@@ -39,6 +39,10 @@
 
 ## 2. Changes
 
+2026-07-29 v0.6.28 build 358
+
+- REL: release.yaml already calls quality_and_security.yml directly via workflow_call whenever a tag is pushed, quality_and_security.yml should not listen for tag pushes directly.
+
 2026-07-29 v0.6.27 build 357, sync build
 
 - REL: current GitHub pipeline runs on commit and tag. Reorganise to run quality_and_security.yml on every commit, and on release, run quality_and_security.yml then release.yaml using shared build artifacts so we don't rebuild the app multiple times in the same workflow run.

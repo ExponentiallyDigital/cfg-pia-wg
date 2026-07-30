@@ -6,14 +6,14 @@ on:
       - main
       - "feature/**"
       - "fix/**"
-    tags:
-      - "v*"
+    # REMOVED: tags: ['v*'] — release.yaml handles tag triggers via workflow_call
   pull_request:
     branches:
       - main
   schedule:
-    - cron: "25 17 * * 1" # Weekly on Monday — catches newly published CVEs
-  workflow_call: # <--- Allows release.yaml to call this directly
+    - cron: "25 17 * * 1"
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
