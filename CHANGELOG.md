@@ -5,6 +5,7 @@
 
 ## 1. Backlog
 
+- DOC: update to note that screenshotting isn't disabled.
 - FIX: if a watchdog slot is disabled, when you click "ENABLE", you are prompted for ping targets & PIA credentials without a dialogue box to enter them. Workaround: use EDIT to enter PIA creds (ping targets are already supplied) or delete/disable then re-create/enable the watchdog. See below.
 - FIX: if you ENABLE a watchdog you are prompted to edit it first as it can't find the primary and secondary ping targets. See above.
 - ADD: If you deploy a VPN via the watchdog the check interval isn't written to the router log - write a router log message via function enableVpnSlot.
@@ -30,17 +31,19 @@
         Deleted wgc1 configuration -> Deleted wgc1 configuration (was region_abc)
 - DOC: disabling a slot in WIREGUARD CONFIGURATION disables any watchdog and VPN on that slot; disabling a slot in WATCHDOG CONFIGURATION disables any a VPN on that slot and its watchdog - workaround, don't use disable.
 - FIX: "home" button is not in green text with a green button border, after activating any of the four main menu items - Manage and Watchdog screens have a modal on top so that's actually correct (for those two use cases only).
-
-- REL: Deploy to 'production' on Google Play Store
+- CHG: remove DISABLE & ENABLE functions from watchdog menu modal screen.
 - REL: Create a GitHub actions release and verify build data in the new "About" screen.
-- REL: release.yaml, cannot stat 'build/app/outputs/bundle/release/cfg_pia_wg-release.aab': No such file or directory
-- REL: re-use debug build binary actross  quality_and_security.yml and release.yaml (reduce build runtime)
+- REL: Deploy to 'production' on Google Play Store
 
 ---
 
 ## 2. Changes
 
-2026-07-29 v0.6.26 build 356
+2026-07-29 v0.6.27 build 357, sync build
+
+- REL: current GitHub pipeline runs on commit and tag. Reorganise to run quality_and_security.yml on every commit, and on release, run quality_and_security.yml then release.yaml using shared build artifacts so we don't rebuild the app multiple times in the same workflow run.
+
+2026-07-29 v0.6.26 build 356, sync build
 
 - FIX: build artifact naming in release.yml
 
