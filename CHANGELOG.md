@@ -7,35 +7,40 @@
 
 ## 1. Backlog
 
-- DOC: update to note that screenshotting isn't disabled.
-- FIX: if a watchdog slot is disabled, when you click "ENABLE", you are prompted for ping targets & PIA credentials without a dialogue box to enter them. Workaround: use EDIT to enter PIA creds (ping targets are already supplied) or delete/disable then re-create/enable the watchdog. See below.
-- FIX: if you ENABLE a watchdog you are prompted to edit it first as it can't find the primary and secondary ping targets. See above.
-- ADD: If you deploy a VPN via the watchdog the check interval isn't written to the router log - write a router log message via function enableVpnSlot.
-- ADD: Parse changelog entries by matching against the pushed tag, and insert as release text.
+- REL: Parse changelog entries by matching against the pushed tag, and insert as release text.
 - DOC: describe how to test a reconfigure event - v0.6.20+ uses ping targets to check if a reconfigure can occur, ie do we have WAN Internet connectivity? If ping targets are set to TEST-NET-1, TEST-NET-2, or TEST-NET-3 you get "no Internet on WAN interface, exiting" from the shell script in `_kWatchdogScriptTemplate`. A working manual test scenario is: remove a slot's config via the Web UI, apply that, then enter a valid region name as the slot description and apply that, or the reconfigure won't occur. Add a warning about that to README.md as well as TESTING.md: leaving 'ghost' watchdogs. "Deleting a slot via the Web UI can leave a watchdog running that can't connect to anything as it has no region name as a title: "ERROR: wgc4_desc is empty". Fix by adding a valid region name eg "au_adelaide-pf" to that slot in the Web UI (only that field is needed) which enables the VPN to be reloaded at the next `cronIntervalMinutes`, then remove the watchdog via the app.
 - DOC: Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file.
 - DOC: Only for GitHub display, fix centering of images in examples for Main menu, Standalone config generation, Router slot management. Centers perfectly in README.html.
-- DOC: Only for GitHub dispaly, fix centering titles under images for Supply credentials and DNS, Ping targets, Editing a slot, Watchdog management, Configuring a watchdog, App log, Hamburger Menu. Centers perfectly in README.html.
-- DOC: Add to README the PIA url to check if you are on their network.
+- DOC: update privacy.html to note that URLs in ABout screen go to various places like Gi
+- DOC: Only for GitHub display, fix centering titles under images for Supply credentials and DNS, Ping targets, Editing a slot, Watchdog management, Configuring a watchdog, App log, Hamburger Menu. Centers perfectly in README.html.
 - DOC: Add note that PIA sometimes takes regions offline for maintenance so you might be expecting to have a POP in Perth but online tools may show you coming from Adelaide.
 - DOC: Add practical workflows to achieve specific outcomes.
-- ADD: Note that services like https://www.privateinternetaccess.com/what-is-my-ip, https://ipaddress.my/?lang=en_US, https://2ip.io/, and https://www.showmyip.com/ may cache your loaction in the browser. To be absolutley sure, close your browser rather than just refreshing the page.
+- ADD: add in text about how to check you POP, but note that services like https://www.privateinternetaccess.com/what-is-my-ip, https://ipaddress.my/?lang=en_US, https://2ip.io/, and https://www.showmyip.com/ may cache your location in the browser (they sometimes return a stale POP if used multiple times). To be absolutley sure, close your browser rather than just refreshing the page.
 - UI: When switching back and forth to/from the app to copy/paste details into email alert config, the modal became reduced in size, could still enter and edit fields. Cosmetic, fixed by switching to another app then back again.
 - CHG: watchdog email alert `SMTP username field` is finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
-- CHG: no message is written to the router log if you edit and save the watchdog's `cronIntervalMinutes` - the cron job is updated, cosmetic.
 - CHG: remove 'WATCHDOG_EOF' text from test email:
          This is a test email from the cfg-pia-wg watchdog (slot wgcX).
          WATCHDOG_EOF
 - CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes.
-- CHG: When you save an edited watchdog, you are always prompted for the region. Update the prompt to say that this will set the current VPN to this region, AFTER hitting SAVE you are asked "Overwrite wgc1? This will set this watchdog to the newly chosen region". Add the region name so it becomes "Overwrite wgc1 - au_melbourne? This will set the watchdog to region au_melbourne."
-- CHG when you disable/delete a slot, add to the router log the region that slot was previously using eg.
-        Disabled wgc1 -> Disabled wgc1 (was region_abc)
-        Deleted wgc1 configuration -> Deleted wgc1 configuration (was region_abc)
-- DOC: disabling a slot in WIREGUARD CONFIGURATION disables any watchdog and VPN on that slot; disabling a slot in WATCHDOG CONFIGURATION disables any a VPN on that slot and its watchdog - workaround, don't use disable.
-- FIX: "home" button is not in green text with a green button border, after activating any of the four main menu items - Manage and Watchdog screens have a modal on top so that's actually correct (for those two use cases only).
-- CHG: remove DISABLE & ENABLE functions from watchdog menu modal screen.
-- REL: Create a GitHub actions release and verify build data in the new "About" screen.
-- REL: Deploy to 'production' on Google Play Store
+- CHG when you enable/disable/delete a slot, add to the router log the region that slot was previously using eg.
+        Enabled wgc1 -> 01 cfg-pia-wg: Enabled wgc1 (region-name)
+        Disabled wgc1 -> Disabled wgc1 (region-name)
+        Deleted wgc1 configuration -> Deleted wgc1 configuration (region-name)
+- CHG: on disable, log lines are repeated (and needs the region name per above)
+        cfg-pia-wg: Disabled wgc1
+        cfg-pia-wg: Watchdog disabled for wgc1
+        cfg-pia-wg: Disabled wgc1
+- CHG: if a Conf slot is already disabled, grey out the DISABLE button (only gets logged once to router log though vs above)
+- INF: Creating writes the region name to router log, deleting/disabling does not, review code path for
+        Deleted wgc1 configuration
+        Created wgc1 configuration (aus_melbourne)
+- GUI: change colour of region name from GREY to WHITE in WG Config and Watchdog modals
+- ???: log message "kernel: jffs2: warning: (27325) jffs2_sum_write_data: Summary too big (-32 data, -877 pad) in eraseblock at 00280000", only seen once...no activity from app around that time though...
+- FIX: "home" button is not in green text with a green button border, after activating any of the four main menu items - Manage and Watchdog screens have a modal on top so that's actually correct (for those two situations only).
+- GUI: app log has no carriage return/line feed when copied tgo clipboard. Text copied from Watchdog log has line terminators, as does the Router Config conf file.
+- GUI: can't copy/paste text from About screen
+- GUI: add text next to the "GENERATED CONFIG" with the region name the config is for
+- FIX: if editing an existing watchdog slot, at save you are asked if you want to overwrite, but if you create a watchdog on an empty slot you aren't prompted.
 
 ---
 
@@ -43,12 +48,28 @@
 
 ### 2.1. Pending
 
-- DOC: updated README app name
-- CHG: removed Watchdog screen's DISABLE and ENABLE menu options - storing this data would use up flash RAM, it is causing issues when disabling and enabling the interface's required params not avalable.
-- CHG: renamed "EDIT" button in Watchod to "CREATE/EDIT"
-  - update screenshot
+- none.
+
 
 ### 2.2. Implemented
+
+2026-07-30 v0.7.01 build 361
+
+- REL: Deploy to 'production' on Google Play Store
+- CHG: add updated watchdog modal screenshot to Play Store
+- REL: Create a GitHub actions release and verify build data in the new "About" screen.
+- CHG: removed Watchdog DISABLE and ENABLE menu options + services, rolled capability to CREATE/EDIT.
+- CHG: renamed watchdog "EDIT" button to "CREATE/EDIT".
+- CHG: PIA username/password now cached while the app is running, no need to keep entering it (this matches the router username/pwd cacheing).
+- CHG: updated text displayed when editing a watchdog slot.
+- GUI: app name had reverted from yesterday's backed out changes -> cfg-pia-wg.
+- DOC: updated app name in README.
+- GUI: updated text when deleting a watchdog.
+- CHG: updated watchdog modal screenshot in docs.
+- DOC: updated Watchdog functionality changes.
+- CHG: no message is written to the router log if you edit and save the watchdog's `cronIntervalMinutes` - the cron job is updated, cosmetic.
+- DOC: updated `(FLAG_SECURE)` entry in README.
+- DOC: updated Privacy Policy noting in-app links to the app's source code & documentation.
 
 2026-07-29 v0.6.28 build 358
 

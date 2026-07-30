@@ -312,18 +312,16 @@ void main() {
       );
       await _open(tester);
 
-      // Watchdog active slot -> DISABLE + VIEW LOG, not ENABLE.
+      // Watchdog active slot -> CREATE/EDIT + VIEW LOG.
       await tester.tap(find.byKey(const Key('slot_row_1')));
       await tester.pump();
-      expect(_btn(tester, 'slot_enable').onPressed, isNull);
-      expect(_btn(tester, 'slot_disable').onPressed, isNotNull);
+      expect(_btn(tester, 'slot_edit').onPressed, isNotNull);
       expect(_btn(tester, 'slot_view_log').onPressed, isNotNull);
 
-      // Watchdog inactive slot -> ENABLE, not DISABLE / VIEW LOG.
+      // Watchdog inactive slot -> CREATE/EDIT stays live, VIEW LOG is greyed.
       await tester.tap(find.byKey(const Key('slot_row_2')));
       await tester.pump();
-      expect(_btn(tester, 'slot_enable').onPressed, isNotNull);
-      expect(_btn(tester, 'slot_disable').onPressed, isNull);
+      expect(_btn(tester, 'slot_edit').onPressed, isNotNull);
       expect(_btn(tester, 'slot_view_log').onPressed, isNull);
 
       await tester.pumpWidget(const SizedBox());
@@ -355,28 +353,6 @@ void main() {
 
       expect(find.text('◆ WATCHDOG ACTIVE'), findsOneWidget);
       expect(find.text('✉ EMAIL ALERTING'), findsNothing);
-
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
-    });
-
-    testWidgets('DISABLE runs stopWatchdog and takes the tunnel down with it', (tester) async {
-      final c = _controller();
-      final ssh = RecordingSSHClient(responder: (_) => '');
-      await tester.pumpWidget(
-        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c),
-      );
-      await _open(tester);
-
-      await tester.tap(find.byKey(const Key('slot_row_1')));
-      await tester.pump();
-      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
-      await tester.tap(find.byKey(const Key('slot_disable')));
-      await tester.pumpAndSettle();
-
-      expect(ssh.ran('cru d watchdog_wgc1'), isTrue);
-      expect(ssh.ran('nvram set wgc1_enable=0'), isTrue); // no unsupervised VPN left running
-      expect(ssh.ran('service "stop_wgc 1"'), isTrue);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -428,11 +404,19 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('EDIT opens the watchdog dialog', (tester) async {
+    // CREATE/EDIT is the only way to bring a watchdog up; ENABLE / DISABLE no longer exist here.
+    testWidgets('CREATE/EDIT is the only action button and opens the watchdog dialog', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
       await tester.pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
       await _open(tester);
+
+      expect(find.text('CREATE/EDIT'), findsOneWidget);
+      expect(find.text('EDIT'), findsNothing);
+      expect(find.text('ENABLE'), findsNothing);
+      expect(find.text('DISABLE'), findsNothing);
+      expect(find.byKey(const Key('slot_enable')), findsNothing);
+      expect(find.byKey(const Key('slot_disable')), findsNothing);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));
       await tester.pump();
@@ -558,7 +542,8 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('watchdog ENABLE and DELETE are greyed for an empty slot', (tester) async {
+    // CREATE/EDIT must stay live on an empty slot — that is the CREATE half of the action.
+    testWidgets('watchdog DELETE is greyed for an empty slot but CREATE/EDIT is not', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
       await tester.pumpWidget(_host(ssh, SlotModalMode.watchdog, _slots({}), c)); // all empty
@@ -566,50 +551,8 @@ void main() {
 
       await tester.tap(find.byKey(const Key('slot_row_1')));
       await tester.pump();
-      expect(_btn(tester, 'slot_enable').onPressed, isNull);
       expect(_btn(tester, 'slot_delete').onPressed, isNull);
-
-      await tester.pumpWidget(const SizedBox());
-      c.dispose();
-    });
-
-    testWidgets('watchdog ENABLE stops any other active watchdog and disables its interface', (tester) async {
-      final c = _controller()
-        ..piaUsername = 'p1234567'
-        ..piaPassword = 'secret';
-      final ssh = RecordingSSHClient(
-        responder: (cmd) {
-          if (cmd.contains('wgc2_wd_primary_ip')) return '8.8.8.8';
-          if (cmd.contains('wgc2_wd_secondary_ip')) return '1.1.1.1';
-          if (cmd.contains('wgc2_wd_check_interval')) return '5';
-          // wgc1 is the other active slot: watchdog cron present and interface up.
-          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
-          if (cmd.contains('nvram get wgc1_enable')) return '1';
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
-          return '';
-        },
-      );
-      await tester.pumpWidget(
-        _host(
-          ssh,
-          SlotModalMode.watchdog,
-          _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true), 2: _slot(2, desc: 'us_east')}),
-          c,
-        ),
-      );
-      await _open(tester);
-
-      await tester.tap(find.byKey(const Key('slot_row_2')));
-      await tester.pump();
-      await tester.ensureVisible(find.byKey(const Key('slot_enable')));
-      await tester.tap(find.byKey(const Key('slot_enable')));
-      await tester.pumpAndSettle();
-
-      expect(ssh.ran('cru d watchdog_wgc1'), isTrue); // other watchdog stopped
-      expect(ssh.ran('nvram set wgc1_enable=0'), isTrue); // other VPN interface disabled too
-      expect(ssh.ran('service "stop_wgc 1"'), isTrue); // ...and actually stopped (bare slot index)
-      expect(ssh.ran('cru a watchdog_wgc2'), isTrue); // target deployed
-      expect(ssh.ran('nvram set wgc2_enable=1'), isTrue); // target enabled
+      expect(_btn(tester, 'slot_edit').onPressed, isNotNull);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

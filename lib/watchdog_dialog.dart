@@ -13,9 +13,10 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// This is the slot modal's EDIT action for the watchdog screen. Per decision #1 it SAVES the
-// watchdog parameters (and, when the watchdog is not yet active, selects/overwrites the region as
-// wgcN_desc) to NVRAM but does NOT deploy — the slot modal's ENABLE deploys the script + cron.
+// This is the slot modal's CREATE/EDIT action for the watchdog screen. SAVE writes the watchdog
+// parameters (and, when the watchdog is not yet active, selects/overwrites the region as wgcN_desc)
+// to NVRAM and then deploys the script + cron via RouterWatchdog.deployWatchdog — this is the only
+// path that brings a watchdog up, so there is no separate ENABLE action.
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
@@ -84,8 +85,21 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     _load();
   }
 
+  // Mirrors the PIA credentials back into the session so every other screen and dialog that needs
+  // them pre-fills, the same way the SSH credentials are retained (see session_controller.dart).
+  // Non-empty guards only: closing this dialog with a blank field must not discard a credential we
+  // already know. Volatile like the rest of the session — SessionController.wipeAll clears it.
+  void _rememberPiaCreds() {
+    final user = _piaUserCtrl.text.trim();
+    final pass = _piaPassCtrl.text;
+    if (user.isNotEmpty) _c.piaUsername = user;
+    if (pass.isNotEmpty) _c.piaPassword = pass;
+  }
+
   @override
   void dispose() {
+    // Runs on every exit path (SAVE, CLOSE, barrier dismiss), so whatever was typed is retained.
+    _rememberPiaCreds();
     for (final c in [
       _intervalCtrl,
       _primaryCtrl,
@@ -151,6 +165,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     _smtpServerCtrl.text = c.smtpServer;
     _smtpUserCtrl.text = c.smtpUsername;
     _smtpPassCtrl.text = c.smtpPassword;
+    // Credentials recovered from NVRAM count as session-known too, so a user who never typed them
+    // still gets them pre-filled elsewhere.
+    _rememberPiaCreds();
   }
 
   WatchdogConfig _currentConfig() => WatchdogConfig(
@@ -187,8 +204,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
         title: Text('Overwrite wgc${widget.slotIndex}?', style: const TextStyle(color: kText, fontSize: 15)),
-        content:
-            const Text('This will set this watchdog to the newly chosen region', style: TextStyle(color: kMuted, fontSize: 13)),
+        content: const Text('This will reset both this watchdog and any underlying VPN region. CONTINUE chooses the new region',
+            style: TextStyle(color: kMuted, fontSize: 13)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('CONTINUE')),
@@ -198,7 +215,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     return ok ?? false;
   }
 
-  // Spec 2.1.3: SAVE persists the parameters; ENABLE (in the slot modal) deploys.
+  // Spec 2.1.3: SAVE persists the parameters and deploys them in one step.
   Future<void> _save() async {
     if (_jqMissing) {
       await AppErrors.system(context, _c, 'Cannot save: jq is not installed on the router.');
@@ -233,7 +250,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       if (warnings.isNotEmpty && mounted) {
         await AppErrors.inputs(context, _c, [...warnings, 'The settings will still be saved.']);
       }
-      await svc.saveWatchdogConfig(cfg, desc: newDesc);
+      await svc.deployWatchdog(cfg, desc: newDesc);
       return true;
     });
     if (saved != true || !mounted) return;

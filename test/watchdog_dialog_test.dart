@@ -185,4 +185,57 @@ void main() {
     expect(ssh.ran('/usr/sbin/sendmail'), isTrue);
     expect(ssh.ran('config test'), isTrue);
   });
+
+  group('PIA credential retention', () {
+    testWidgets('typed PIA credentials are retained in the session when the dialog closes', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+      await tester.pumpWidget(_host(ssh, c, piaUser: '', piaPass: ''));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(const Key('wd_pia_user')), 'p9999999');
+      await tester.enterText(find.byKey(const Key('wd_pia_pass')), 'typedpass');
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(const SizedBox()); // CLOSE / dismiss disposes the dialog
+      await tester.pumpAndSettle();
+
+      expect(c.piaUsername, 'p9999999');
+      expect(c.piaPassword, 'typedpass');
+    });
+
+    testWidgets('PIA credentials recovered from NVRAM land in the session', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('which jq')) return '/opt/bin/jq';
+          if (cmd.contains('nvram get cfg_pia_wg_user')) return 'p7654321';
+          if (cmd.contains('nvram get cfg_pia_wg_password')) return 'nvrampass';
+          return '';
+        },
+      );
+      await tester.pumpWidget(_host(ssh, c, piaUser: '', piaPass: ''));
+      await tester.pumpAndSettle();
+
+      expect(c.piaUsername, 'p7654321');
+      expect(c.piaPassword, 'nvrampass');
+    });
+
+    testWidgets('closing with a blank field does not discard a known credential', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+      await tester.pumpWidget(_host(ssh, c, piaUser: 'keepme', piaPass: 'keeppass'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(const Key('wd_pia_user')), '');
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+
+      expect(c.piaUsername, 'keepme');
+    });
+  });
 }

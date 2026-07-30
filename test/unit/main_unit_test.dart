@@ -20,7 +20,7 @@ void main() {
   testWidgets('app shell builds with the main menu', (tester) async {
     final c = quietController();
     await pumpApp(tester, c);
-    expect(find.text('Configure PIA WireGuard'), findsOneWidget);
+    expect(find.text('cfg-pia-wg'), findsOneWidget);
     expect(find.byKey(const Key('menu_standalone')), findsOneWidget);
     await disposeApp(tester, c);
   });

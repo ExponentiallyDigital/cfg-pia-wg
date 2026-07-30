@@ -66,7 +66,7 @@ Creating a valid PIA WireGuard config manually requires authenticating with seve
 - **Merlin watchdog management:** configure and deploy a router-side watchdog to periodically verify and self-heal VPN connectivity, manage cron/script deployment, and view router-side watchdog logs.
 - **No persistent credential storage:** PIA credentials, router SSH credentials, and generated configs are stored only in volatile application memory and are never written to permanent storage.
 - **Automated lowest-latency server selection**: measures live latency across all available servers in your selected target region, ensuring that you provision with the fastest node.
-- **Native task-switcher protection** `(FLAG_SECURE)`: enforces native OS-level window flags to block third-party screenshot capturing and automatically obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
+- **Native task-switcher protection** `(FLAG_SECURE)`: obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
 - **Input field hardening**: user credential entry textboxes disable predictive dictionary caching, auto-correction tracking assistance, and keyboard learning behaviours, alongside native selection overrides to block background clipboard scraping.
 - **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials/clipboard.
 - **Industrial-strength professional build chain**: all releases undergo automated [SonarQube](https://docs.sonarsource.com/sonarqube-server) compliance (checks code quality and test coverage), open-source dependency scanning via [OSV](https://github.com/google/osv-scanner) (Google's vulnerability database that flags out-of-date third-party packages), automated version updates via [Dependabot](https://docs.github.com/code-security/dependabot) (monitors and patches insecure or outdated dependencies), binary analysis via [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) (performs static security analysis on the app's source code, checking for platform-specific vulnerabilities), and static analysis using [CodeQL](https://github.com/github/codeql-action) (analyses code structure to catch semantic gaps and injection risks). Locked action hashes ensure that automated builds execute with specific tool versions.
@@ -197,8 +197,7 @@ This manages a self-healing watchdog. In the event that your WireGuard configura
 </p>
 
 4. Select a slot and use the watchdog actions:
-   - **ENABLE**: deploy router-side watchdog scripts and cron jobs for the selected slot.
-   - **EDIT**: save watchdog settings and region metadata to NVRAM.
+   - **CREATE/EDIT**: deploy router-side watchdog scripts and cron jobs for the selected slot.
 
 <p align="center">
   <img src="./images/configuring-watchdog.png" alt="App log" width="300">
@@ -208,7 +207,6 @@ This manages a self-healing watchdog. In the event that your WireGuard configura
 > [!TIP]
 > See [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md) for email troubleshooting approaches.
 
-- **DISABLE**: remove watchdog jobs and scripts for the slot.
 - **DELETE**: remove the watchdog and clear the slot configuration.
 - **VIEW WATCHDOG LOG**: inspect the router-side watchdog log. Logs are rotated at midnight retaining the current and previous logs and do not persist if the router is rebooted or a power loss occurs.
 

@@ -48,44 +48,44 @@ class DestinationObserver extends NavigatorObserver {
 }
 
 ThemeData buildAppTheme() => ThemeData(
-  colorScheme: const ColorScheme.dark(
-    primary: kHighlight,
-    secondary: kSecondary,
-    surface: kSurface,
-    error: kError,
-    onPrimary: kOnPrimary,
-    onSurface: kText,
-  ),
-  useMaterial3: true,
-  fontFamily: 'monospace',
-  inputDecorationTheme: InputDecorationTheme(
-    filled: true,
-    fillColor: kField,
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(color: kBorder),
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(color: kBorder),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(color: kHighlight, width: 1.5),
-    ),
-    labelStyle: const TextStyle(color: kMuted),
-    hintStyle: const TextStyle(color: kHint),
-  ),
-  elevatedButtonTheme: ElevatedButtonThemeData(
-    style: ElevatedButton.styleFrom(
-      backgroundColor: kHighlight,
-      foregroundColor: kOnPrimary,
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 0.5),
-    ),
-  ),
-);
+      colorScheme: const ColorScheme.dark(
+        primary: kHighlight,
+        secondary: kSecondary,
+        surface: kSurface,
+        error: kError,
+        onPrimary: kOnPrimary,
+        onSurface: kText,
+      ),
+      useMaterial3: true,
+      fontFamily: 'monospace',
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: kField,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: kBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: kBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: kHighlight, width: 1.5),
+        ),
+        labelStyle: const TextStyle(color: kMuted),
+        hintStyle: const TextStyle(color: kHint),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: kHighlight,
+          foregroundColor: kOnPrimary,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+        ),
+      ),
+    );
 
 class PiaWgApp extends StatefulWidget {
   // Injectable for tests so timers can run on short intervals.
@@ -125,7 +125,7 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
     return SessionScope(
       controller: _controller,
       child: MaterialApp(
-        title: 'Configure PIA WireGuard',
+        title: 'cfg-pia-wg',
         debugShowCheckedModeBanner: false,
         theme: buildAppTheme(),
         navigatorKey: _navigatorKey,

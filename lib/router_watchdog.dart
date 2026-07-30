@@ -133,17 +133,17 @@ class WatchdogConfig {
 
   // Per-slot watchdog nvram keys (wgcN_wd_*). PIA creds are global and written separately.
   Map<String, String> toNvram() => {
-    'wgc${slotIndex}_wd_check_interval': '$cronIntervalMinutes',
-    'wgc${slotIndex}_wd_primary_ip': primaryIp.trim(),
-    'wgc${slotIndex}_wd_secondary_ip': secondaryIp.trim(),
-    'wgc${slotIndex}_wd_email_enabled': emailAlertsEnabled ? '1' : '0',
-    'wgc${slotIndex}_wd_email_from': emailFrom.trim(),
-    'wgc${slotIndex}_wd_email_to': emailTo.trim(),
-    'wgc${slotIndex}_wd_email_subject': emailSubject.trim(),
-    'wgc${slotIndex}_wd_smtp_server': smtpServer.trim(),
-    'wgc${slotIndex}_wd_smtp_user': smtpUsername.trim(),
-    'wgc${slotIndex}_wd_smtp_pass': smtpPassword,
-  };
+        'wgc${slotIndex}_wd_check_interval': '$cronIntervalMinutes',
+        'wgc${slotIndex}_wd_primary_ip': primaryIp.trim(),
+        'wgc${slotIndex}_wd_secondary_ip': secondaryIp.trim(),
+        'wgc${slotIndex}_wd_email_enabled': emailAlertsEnabled ? '1' : '0',
+        'wgc${slotIndex}_wd_email_from': emailFrom.trim(),
+        'wgc${slotIndex}_wd_email_to': emailTo.trim(),
+        'wgc${slotIndex}_wd_email_subject': emailSubject.trim(),
+        'wgc${slotIndex}_wd_smtp_server': smtpServer.trim(),
+        'wgc${slotIndex}_wd_smtp_user': smtpUsername.trim(),
+        'wgc${slotIndex}_wd_smtp_pass': smtpPassword,
+      };
 
   // Rebuilds a config from a map of nvram values (per-slot wgcN_wd_* + global PIA keys).
   static WatchdogConfig fromNvram(int slot, Map<String, String> nv) {
@@ -180,21 +180,22 @@ class WatchdogConfig {
     String? smtpServer,
     String? smtpUsername,
     String? smtpPassword,
-  }) => WatchdogConfig(
-    slotIndex: slotIndex ?? this.slotIndex,
-    cronIntervalMinutes: cronIntervalMinutes ?? this.cronIntervalMinutes,
-    primaryIp: primaryIp ?? this.primaryIp,
-    secondaryIp: secondaryIp ?? this.secondaryIp,
-    piaUsername: piaUsername ?? this.piaUsername,
-    piaPassword: piaPassword ?? this.piaPassword,
-    emailAlertsEnabled: emailAlertsEnabled ?? this.emailAlertsEnabled,
-    emailFrom: emailFrom ?? this.emailFrom,
-    emailTo: emailTo ?? this.emailTo,
-    emailSubject: emailSubject ?? this.emailSubject,
-    smtpServer: smtpServer ?? this.smtpServer,
-    smtpUsername: smtpUsername ?? this.smtpUsername,
-    smtpPassword: smtpPassword ?? this.smtpPassword,
-  );
+  }) =>
+      WatchdogConfig(
+        slotIndex: slotIndex ?? this.slotIndex,
+        cronIntervalMinutes: cronIntervalMinutes ?? this.cronIntervalMinutes,
+        primaryIp: primaryIp ?? this.primaryIp,
+        secondaryIp: secondaryIp ?? this.secondaryIp,
+        piaUsername: piaUsername ?? this.piaUsername,
+        piaPassword: piaPassword ?? this.piaPassword,
+        emailAlertsEnabled: emailAlertsEnabled ?? this.emailAlertsEnabled,
+        emailFrom: emailFrom ?? this.emailFrom,
+        emailTo: emailTo ?? this.emailTo,
+        emailSubject: emailSubject ?? this.emailSubject,
+        smtpServer: smtpServer ?? this.smtpServer,
+        smtpUsername: smtpUsername ?? this.smtpUsername,
+        smtpPassword: smtpPassword ?? this.smtpPassword,
+      );
 
   // Splits "host:port" on the LAST colon; defaults the port to 465 (implicit TLS).
   (String host, int port) get smtpHostPort {
@@ -227,8 +228,7 @@ String buildCronCheckLine(int slot, int intervalMin) =>
     'cru a watchdog_wgc$slot "*/$intervalMin * * * *" /jffs/scripts/watchdog_wgc$slot.sh';
 
 // The daily log-rotation cron job line.
-String buildCronRotateLine(int slot) =>
-    'cru a watchdog_log_rotate_wgc$slot "0 0 * * *" '
+String buildCronRotateLine(int slot) => 'cru a watchdog_log_rotate_wgc$slot "0 0 * * *" '
     '"mv /tmp/watchdog_wgc$slot.log /tmp/watchdog_wgc$slot.log.old && touch /tmp/watchdog_wgc$slot.log"';
 
 // The two cru lines appended to /jffs/scripts/services-start for reboot persistence.
@@ -270,8 +270,7 @@ String buildMailBody(WatchdogConfig c, {required bool success, bool testMode = f
 }
 
 // The BusyBox sendmail implicit-TLS command for the one-off test email (concrete values).
-String buildSendmailCommand(String host, int port, WatchdogConfig c) =>
-    '/usr/sbin/sendmail '
+String buildSendmailCommand(String host, int port, WatchdogConfig c) => '/usr/sbin/sendmail '
     '-H "exec openssl s_client -quiet -tls1_3 '
     '-CAfile /etc/ssl/certs/ca-certificates.crt '
     '-verify_return_error '
@@ -342,7 +341,7 @@ class RouterWatchdog {
   }
 
   // Writes the per-slot watchdog NVRAM + global PIA creds (and optionally wgcN_desc), then commits.
-  // Shared by deploy (ENABLE) and the EDIT save path (which writes params without deploying).
+  // Called only by deployWatchdog, the single create-or-update path.
   Future<void> _writeWatchdogNvram(WatchdogConfig config, {String? desc}) async {
     for (final e in config.toNvram().entries) {
       await _run('nvram set ${e.key}=${shellSingleQuote(e.value)}');
@@ -355,72 +354,42 @@ class RouterWatchdog {
     await _run('nvram commit');
   }
 
-  // EDIT-save: persist the watchdog params, enable the VPN slot first, then deploy the
-  // runtime artifacts so the watchdog script can run against an existing interface on its
-  // next scheduled interval.
+  // The single CREATE/EDIT path: persist the watchdog params, enable the VPN slot, then deploy
+  // every runtime artifact (script, both cron jobs, services-start persistence) and run the script
+  // once so the watchdog is live immediately rather than at its next scheduled interval.
   //
   // deactivateOtherSlots MUST run before _writeWatchdogNvram: stopWatchdog unsets the GLOBAL
   // cfg_pia_wg_user / cfg_pia_wg_password keys, so sweeping afterwards would wipe the PIA
-  // credentials this save just wrote.
-  Future<void> saveWatchdogConfig(WatchdogConfig config, {String? desc}) => _guard('save', () async {
-    await enableJffsScripts();
-    await deactivateOtherSlots(config.slotIndex);
-    await _writeWatchdogNvram(config, desc: desc);
-    await enableVpnSlot(config.slotIndex);
-    await _runHeredoc(
-      heredocWrite('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh', buildWatchdogScript(config)),
-      '/jffs/scripts/watchdog_wgc${config.slotIndex}.sh',
-    );
-    await _run('chmod +x /jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
-    await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
-    await _run(buildCronRotateLine(config.slotIndex));
-    await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
-    onLog?.call('Watchdog settings saved for wgc${config.slotIndex}.', isSuccess: true);
-    await _logRouter('Running /jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
-    await _run('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
-    onLog?.call('Ran /jffs/scripts/watchdog_wgc${config.slotIndex}.sh', isSuccess: true);
-  });
-
-  // Writes nvram config (per-slot + global PIA creds) and uploads the slot-specific script.
-  Future<void> deployWatchdogScripts(WatchdogConfig config) => _guard('script deployment', () async {
-    final slot = config.slotIndex;
-    await _writeWatchdogNvram(config);
-    onLog?.call('NVRAM committed.', isSuccess: true);
-    await _runHeredoc(
-      heredocWrite('/jffs/scripts/watchdog_wgc$slot.sh', buildWatchdogScript(config)),
-      '/jffs/scripts/watchdog_wgc$slot.sh',
-    );
-    await _run('chmod +x /jffs/scripts/watchdog_wgc$slot.sh');
-    await _run('/jffs/scripts/watchdog_wgc$slot.sh');
-    final desc = await _run('nvram get wgc${slot}_desc');
-    await _logRouter('Deployed watchdog script for wgc$slot${desc.isEmpty ? '' : ', $desc'}');
-    onLog?.call('Watchdog scripts deployed for wgc$slot.', isSuccess: true);
-  });
-
-  // Full enable: JFFS -> tear down any other active slot -> enable the VPN slot -> deploy ->
-  // cron jobs -> services-start persistence. The sweep precedes deployWatchdogScripts for the
-  // same reason as in saveWatchdogConfig (stopWatchdog clears the global PIA credentials).
-  Future<void> startWatchdog(WatchdogConfig config) => _guard('enable', () async {
-    final slot = config.slotIndex;
-    await enableJffsScripts();
-    await deactivateOtherSlots(slot);
-    await enableVpnSlot(slot);
-    await deployWatchdogScripts(config);
-    await _run(buildCronCheckLine(slot, config.cronIntervalMinutes));
-    await _run(buildCronRotateLine(slot));
-    await _ensureServicesStart(slot, config.cronIntervalMinutes);
-    await _logRouter('Watchdog enabled for wgc$slot (every ${config.cronIntervalMinutes}m)');
-    onLog?.call('Watchdog enabled for wgc$slot.', isSuccess: true);
-  });
+  // credentials this deploy just wrote.
+  Future<void> deployWatchdog(WatchdogConfig config, {String? desc}) => _guard('deploy', () async {
+        await enableJffsScripts();
+        await deactivateOtherSlots(config.slotIndex);
+        await _writeWatchdogNvram(config, desc: desc);
+        await enableVpnSlot(config.slotIndex);
+        await _runHeredoc(
+          heredocWrite('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh', buildWatchdogScript(config)),
+          '/jffs/scripts/watchdog_wgc${config.slotIndex}.sh',
+        );
+        await _run('chmod +x /jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
+        await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
+        await _run(buildCronRotateLine(config.slotIndex));
+        await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
+        onLog?.call('Watchdog settings saved for wgc${config.slotIndex}.', isSuccess: true);
+        await _logRouter('Running /jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
+        await _run('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
+        onLog?.call('Ran /jffs/scripts/watchdog_wgc${config.slotIndex}.sh', isSuccess: true);
+        await _logRouter('Watchdog deployed for wgc${config.slotIndex} (check interval is ${config.cronIntervalMinutes}m)');
+        onLog?.call('Watchdog deployed for wgc${config.slotIndex}.', isSuccess: true);
+      });
 
   // Enables the underlying WireGuard slot
   Future<void> enableVpnSlot(int slot) => _guard('enable VPN slot', () async {
-    await _run('nvram set wgc${slot}_enable=1');
-    await _run('nvram commit');
-    await _run('service "start_wgc $slot"; service restart_vpnrouting0');
-    await _logRouter('Enabled wgc$slot via watchdog interface');
-    onLog?.call('wgc$slot enabled.', isSuccess: true);
-  });
+        await _run('nvram set wgc${slot}_enable=1');
+        await _run('nvram commit');
+        await _run('service "start_wgc $slot"; service restart_vpnrouting0');
+        await _logRouter('Enabled wgc$slot via watchdog interface');
+        onLog?.call('wgc$slot enabled.', isSuccess: true);
+      });
 
   // Disables the underlying WireGuard slot (mirrors RouterSlotService.disableSlot). Clearing
   // the enable flag matters as much as stopping the service: without it the slot comes back on
@@ -479,41 +448,41 @@ class RouterWatchdog {
   // Full disable: unset NVRAM, remove cron jobs and service-start script
   // JFFS is intentionally left enabled.
   Future<void> stopWatchdog(int slot) => _guard('disable', () async {
-    await _run('cru d watchdog_wgc$slot');
-    await _run('cru d watchdog_log_rotate_wgc$slot');
-    await _run('rm -f /jffs/scripts/watchdog_wgc$slot.sh');
-    const path = '/jffs/scripts/services-start';
-    // strip out cron jobs added when watchdog installed, reinstate 700 permission
-    await _run(
-      "[ -f '$path' ] && grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' "
-      "> '$path.tmp' && mv '$path.tmp' '$path' && chmod 700 '$path'",
-    );
-    await _run(
-      'rm -f /tmp/watchdog_wgc$slot.log /tmp/watchdog_wgc$slot.log.old '
-      '/tmp/watchdog_last_ping_success_wgc$slot /tmp/watchdog_backoff_wgc$slot',
-    );
-    // nvram command doesn't allow multiple values in one command
-    await _run('nvram unset wgc${slot}_wd_check_interval');
-    await _run('nvram unset wgc${slot}_wd_email_enabled');
-    await _run('nvram unset wgc${slot}_wd_email_from');
-    await _run('nvram unset wgc${slot}_wd_email_subject');
-    await _run('nvram unset wgc${slot}_wd_email_to');
-    await _run('nvram unset wgc${slot}_wd_primary_ip');
-    await _run('nvram unset wgc${slot}_wd_secondary_ip');
-    await _run('nvram unset wgc${slot}_wd_smtp_pass');
-    await _run('nvram unset wgc${slot}_wd_smtp_server');
-    await _run('nvram unset wgc${slot}_wd_smtp_user');
-    await _run('nvram unset cfg_pia_wg_password');
-    await _run('nvram unset cfg_pia_wg_user');
-    await _run('nvram commit');
-    onLog?.call('NVRAM committed.', isSuccess: true);
-    // Bring the tunnel down too, otherwise disabling the watchdog leaves an unsupervised VPN
-    // running. This previously issued `service "stop_wgc wgc$slot"` — the service expects the
-    // bare slot index (see ARCHITECTURE.md), so the interface was never actually stopped.
-    await _disableVpnSlot(slot);
-    await _logRouter('Watchdog disabled for wgc$slot');
-    onLog?.call('Watchdog disabled for wgc$slot.', isSuccess: true);
-  });
+        await _run('cru d watchdog_wgc$slot');
+        await _run('cru d watchdog_log_rotate_wgc$slot');
+        await _run('rm -f /jffs/scripts/watchdog_wgc$slot.sh');
+        const path = '/jffs/scripts/services-start';
+        // strip out cron jobs added when watchdog installed, reinstate 700 permission
+        await _run(
+          "[ -f '$path' ] && grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' "
+          "> '$path.tmp' && mv '$path.tmp' '$path' && chmod 700 '$path'",
+        );
+        await _run(
+          'rm -f /tmp/watchdog_wgc$slot.log /tmp/watchdog_wgc$slot.log.old '
+          '/tmp/watchdog_last_ping_success_wgc$slot /tmp/watchdog_backoff_wgc$slot',
+        );
+        // nvram command doesn't allow multiple values in one command
+        await _run('nvram unset wgc${slot}_wd_check_interval');
+        await _run('nvram unset wgc${slot}_wd_email_enabled');
+        await _run('nvram unset wgc${slot}_wd_email_from');
+        await _run('nvram unset wgc${slot}_wd_email_subject');
+        await _run('nvram unset wgc${slot}_wd_email_to');
+        await _run('nvram unset wgc${slot}_wd_primary_ip');
+        await _run('nvram unset wgc${slot}_wd_secondary_ip');
+        await _run('nvram unset wgc${slot}_wd_smtp_pass');
+        await _run('nvram unset wgc${slot}_wd_smtp_server');
+        await _run('nvram unset wgc${slot}_wd_smtp_user');
+        await _run('nvram unset cfg_pia_wg_password');
+        await _run('nvram unset cfg_pia_wg_user');
+        await _run('nvram commit');
+        onLog?.call('NVRAM committed.', isSuccess: true);
+        // Bring the tunnel down too, otherwise disabling the watchdog leaves an unsupervised VPN
+        // running. This previously issued `service "stop_wgc wgc$slot"` — the service expects the
+        // bare slot index (see ARCHITECTURE.md), so the interface was never actually stopped.
+        await _disableVpnSlot(slot);
+        await _logRouter('Watchdog disabled for wgc$slot');
+        onLog?.call('Watchdog disabled for wgc$slot.', isSuccess: true);
+      });
 
   Future<bool> waitForWatchdogReady(int slot, {Duration pollInterval = const Duration(seconds: 1), int maxAttempts = 10}) async {
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
@@ -561,47 +530,48 @@ class RouterWatchdog {
 
   // Sends a one-off test email (subject "config test") using the supplied SMTP settings.
   Future<void> testEmail(WatchdogConfig config) => _guard('test email', () async {
-    final (host, port) = config.smtpHostPort;
+        final (host, port) = config.smtpHostPort;
 
-    await _runHeredoc(heredocWrite('/tmp/mail.txt', buildMailBody(config, success: true, testMode: true)), '/tmp/mail.txt');
+        await _runHeredoc(heredocWrite('/tmp/mail.txt', buildMailBody(config, success: true, testMode: true)), '/tmp/mail.txt');
 
-    // Redirect stderr to file; echo exit code into stdout so _run can return it.
-    final result = await _run('${buildSendmailCommand(host, port, config)} 2>/tmp/wd_smtp_err; echo "EXITCODE:\$?"');
+        // Redirect stderr to file; echo exit code into stdout so _run can return it.
+        final result = await _run('${buildSendmailCommand(host, port, config)} 2>/tmp/wd_smtp_err; echo "EXITCODE:\$?"');
 
-    final exitCode = _parseExitCode(result);
+        final exitCode = _parseExitCode(result);
 
-    if (exitCode == 0) {
-      await _run('rm -f /tmp/mail.txt /tmp/wd_smtp_err');
-      await _logRouter('Test email sent to ${config.emailTo}');
-      onLog?.call('Test email sent.', isSuccess: true);
-      return;
-    }
+        if (exitCode == 0) {
+          await _run('rm -f /tmp/mail.txt /tmp/wd_smtp_err');
+          await _logRouter('Test email sent to ${config.emailTo}');
+          onLog?.call('Test email sent.', isSuccess: true);
+          return;
+        }
 
-    // Layer 1: sendmail stderr
-    final stderrRaw = await _run('cat /tmp/wd_smtp_err 2>/dev/null | head -20 | tr "\\n" "|"');
-    await _logRouter('Email FAILED (exit=$exitCode) stderr=[${stderrRaw.trim()}]');
+        // Layer 1: sendmail stderr
+        final stderrRaw = await _run('cat /tmp/wd_smtp_err 2>/dev/null | head -20 | tr "\\n" "|"');
+        await _logRouter('Email FAILED (exit=$exitCode) stderr=[${stderrRaw.trim()}]');
 
-    // Layer 2: TCP reachability
-    final ncResult = await _run('nc -w 5 $host $port </dev/null >/dev/null 2>&1; echo "EXITCODE:\$?"');
-    final tcpOk = _parseExitCode(ncResult) == 0;
-    await _logRouter(tcpOk ? 'TCP diag: $host:$port is reachable' : 'TCP diag: $host:$port is UNREACHABLE - check host and port');
+        // Layer 2: TCP reachability
+        final ncResult = await _run('nc -w 5 $host $port </dev/null >/dev/null 2>&1; echo "EXITCODE:\$?"');
+        final tcpOk = _parseExitCode(ncResult) == 0;
+        await _logRouter(
+            tcpOk ? 'TCP diag: $host:$port is reachable' : 'TCP diag: $host:$port is UNREACHABLE - check host and port');
 
-    // Layer 3: TLS handshake probe (only worth running if TCP is up)
-    if (tcpOk) {
-      final tlsOut = await _run(
-        'printf "QUIT\\r\\n" | openssl s_client '
-        '-connect $host:$port '
-        '-tls1_3 '
-        '-CAfile /etc/ssl/certs/ca-certificates.crt '
-        '-timeout 10 '
-        '2>&1 | head -40 | tr "\\n" "|"',
-      );
-      await _logRouter('TLS probe: ${tlsOut.trim()}');
-    }
+        // Layer 3: TLS handshake probe (only worth running if TCP is up)
+        if (tcpOk) {
+          final tlsOut = await _run(
+            'printf "QUIT\\r\\n" | openssl s_client '
+            '-connect $host:$port '
+            '-tls1_3 '
+            '-CAfile /etc/ssl/certs/ca-certificates.crt '
+            '-timeout 10 '
+            '2>&1 | head -40 | tr "\\n" "|"',
+          );
+          await _logRouter('TLS probe: ${tlsOut.trim()}');
+        }
 
-    await _run('rm -f /tmp/mail.txt /tmp/wd_smtp_err');
-    onLog?.call('Test email failed - see router log for details.', isSuccess: false);
-  });
+        await _run('rm -f /tmp/mail.txt /tmp/wd_smtp_err');
+        onLog?.call('Test email failed - see router log for details.', isSuccess: false);
+      });
 
   int _parseExitCode(String output) {
     final match = RegExp(r'EXITCODE:(\d+)').firstMatch(output);

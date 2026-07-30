@@ -8,7 +8,7 @@ void main() {
     final c = quietController();
     await pumpApp(tester, c);
 
-    expect(find.text('Configure PIA WireGuard'), findsOneWidget); // static header
+    expect(find.text('cfg-pia-wg'), findsOneWidget); // static header
     expect(find.byKey(const Key('menu_standalone')), findsOneWidget);
     expect(find.byKey(const Key('menu_manage_router')), findsOneWidget);
     expect(find.byKey(const Key('menu_watchdog')), findsOneWidget);

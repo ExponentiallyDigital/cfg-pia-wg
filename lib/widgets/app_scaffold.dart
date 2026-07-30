@@ -100,7 +100,7 @@ class AppHeaderBar extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Configure PIA WireGuard',
+                  'cfg-pia-wg',
                   style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 Row(
@@ -165,9 +165,8 @@ class AppScaffold extends StatelessWidget {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final minHeight = constraints.maxHeight > bodyPadding.vertical
-                    ? constraints.maxHeight - bodyPadding.vertical
-                    : 0.0;
+                final minHeight =
+                    constraints.maxHeight > bodyPadding.vertical ? constraints.maxHeight - bodyPadding.vertical : 0.0;
 
                 return SingleChildScrollView(
                   padding: bodyPadding,

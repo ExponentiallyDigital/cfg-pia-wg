@@ -5,20 +5,20 @@ import 'package:cfg_pia_wireguard/router_watchdog.dart';
 import 'watchdog_test_utils.dart';
 
 WatchdogConfig cfg({int slot = 1, int interval = 5, bool email = false}) => WatchdogConfig(
-  slotIndex: slot,
-  cronIntervalMinutes: interval,
-  primaryIp: '8.8.8.8',
-  secondaryIp: '1.1.1.1',
-  piaUsername: 'p1234567',
-  piaPassword: 'secret',
-  emailAlertsEnabled: email,
-  emailFrom: email ? 'from@example.com' : '',
-  emailTo: email ? 'to@example.com' : '',
-  emailSubject: email ? 'Alert' : '',
-  smtpServer: email ? 'smtp.example.com:465' : '',
-  smtpUsername: email ? 'smtpuser' : '',
-  smtpPassword: email ? 'smtppass' : '',
-);
+      slotIndex: slot,
+      cronIntervalMinutes: interval,
+      primaryIp: '8.8.8.8',
+      secondaryIp: '1.1.1.1',
+      piaUsername: 'p1234567',
+      piaPassword: 'secret',
+      emailAlertsEnabled: email,
+      emailFrom: email ? 'from@example.com' : '',
+      emailTo: email ? 'to@example.com' : '',
+      emailSubject: email ? 'Alert' : '',
+      smtpServer: email ? 'smtp.example.com:465' : '',
+      smtpUsername: email ? 'smtpuser' : '',
+      smtpPassword: email ? 'smtppass' : '',
+    );
 
 void main() {
   group('detection', () {
@@ -50,55 +50,47 @@ void main() {
     });
   });
 
-  group('deployWatchdogScripts', () {
-    test('writes per-slot nvram, global PIA keys, the script and chmod, and logs to syslog', () async {
-      final c = RecordingSSHClient();
-      await RouterWatchdog(c).deployWatchdogScripts(cfg(slot: 1));
+  group('deployWatchdog', () {
+    test('enables JFFS, writes nvram, deploys the script and both cron entries', () async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      expect(c.ran('nvram set jffs2_scripts=1'), isTrue);
       expect(c.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
       expect(c.ran("nvram set wgc1_wd_secondary_ip='1.1.1.1'"), isTrue);
       expect(c.ran("nvram set cfg_pia_wg_user='p1234567'"), isTrue);
       expect(c.ran("nvram set cfg_pia_wg_password='secret'"), isTrue);
       expect(c.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
       expect(c.ran('chmod +x /jffs/scripts/watchdog_wgc1.sh'), isTrue);
-      expect(c.commands.any((cmd) => cmd == '/jffs/scripts/watchdog_wgc1.sh'), isTrue);
-      expect(c.ran('logger -t cfg-pia-wg'), isTrue);
-    });
-  });
-
-  group('saveWatchdogConfig', () {
-    test('redeploys the script and cron entries after saving', () async {
-      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
-      await RouterWatchdog(c).saveWatchdogConfig(cfg(slot: 1, interval: 5));
-      expect(c.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
-      expect(c.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
-      expect(c.ran('chmod +x /jffs/scripts/watchdog_wgc1.sh'), isTrue);
       expect(c.ran('cru a watchdog_wgc1 "*/5 * * * *"'), isTrue);
       expect(c.ran('cru a watchdog_log_rotate_wgc1'), isTrue);
       expect(c.ran('/jffs/scripts/services-start'), isTrue);
-      expect(c.ran('/jffs/scripts/watchdog_wgc1.sh'), isTrue);
+      expect(c.commands.any((cmd) => cmd == '/jffs/scripts/watchdog_wgc1.sh'), isTrue);
     });
 
     test('enables the VPN slot before deploying the watchdog scripts', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
-      await RouterWatchdog(c).saveWatchdogConfig(cfg(slot: 1, interval: 5));
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
       final enableIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc1_enable=1'));
       final deployIndex = c.commands.indexWhere((cmd) => cmd.contains("cat > '/jffs/scripts/watchdog_wgc1.sh'"));
       expect(enableIndex, isNot(-1));
       expect(deployIndex, isNot(-1));
       expect(enableIndex, lessThan(deployIndex));
     });
-  });
 
-  group('startWatchdog', () {
-    test('enables JFFS, deploys, adds both cron jobs and persists to services-start', () async {
+    // The completion line is the router-side record that the deploy finished, not just started.
+    test('writes a completion message to the router syslog once deployed', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
-      await RouterWatchdog(c).startWatchdog(cfg(slot: 1, interval: 5));
-      expect(c.ran('nvram set jffs2_scripts=1'), isTrue);
-      expect(c.ran('chmod +x /jffs/scripts/watchdog_wgc1.sh'), isTrue);
-      expect(c.ran('cru a watchdog_wgc1 "*/5 * * * *"'), isTrue);
-      expect(c.ran('cru a watchdog_log_rotate_wgc1'), isTrue);
-      expect(c.ran('/jffs/scripts/services-start'), isTrue);
-      expect(c.ran('logger -t cfg-pia-wg'), isTrue);
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      expect(
+        c.commands.any(
+            (cmd) => cmd.contains('logger -t cfg-pia-wg') && cmd.contains('Watchdog deployed for wgc1 (check interval is 5m)')),
+        isTrue,
+      );
+      // ...and it lands after the script has actually been written and run.
+      final scriptIndex = c.commands.lastIndexWhere((cmd) => cmd == '/jffs/scripts/watchdog_wgc1.sh');
+      final doneIndex = c.commands.indexWhere((cmd) => cmd.contains('Watchdog deployed for wgc1'));
+      expect(scriptIndex, isNot(-1));
+      expect(scriptIndex, lessThan(doneIndex));
     });
   });
 
@@ -123,14 +115,14 @@ void main() {
   group('deactivateOtherSlots', () {
     // wgc1 has a live watchdog + interface; wgc4 is enabled without a watchdog; the rest are idle.
     RecordingSSHClient busyRouter() => RecordingSSHClient(
-      responder: (cmd) {
-        if (cmd.contains('wg show interfaces')) return 'wgc1';
-        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
-        if (cmd.contains('nvram get wgc1_enable')) return '1';
-        if (cmd.contains('nvram get wgc4_enable')) return '1';
-        return '';
-      },
-    );
+          responder: (cmd) {
+            if (cmd.contains('wg show interfaces')) return 'wgc1';
+            if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+            if (cmd.contains('nvram get wgc1_enable')) return '1';
+            if (cmd.contains('nvram get wgc4_enable')) return '1';
+            return '';
+          },
+        );
 
     test('stops the other watchdog and disables its interface', () async {
       final c = busyRouter();
@@ -172,34 +164,23 @@ void main() {
     });
   });
 
-  group('one-active-at-a-time on the enable paths', () {
+  group('one-active-at-a-time on the deploy path', () {
     // Slot 2 is the other active slot in both scenarios below.
     RecordingSSHClient otherSlotActive() => RecordingSSHClient(
-      responder: (cmd) {
-        if (cmd.contains('jffs2')) return '0';
-        if (cmd.contains('wg show interfaces')) return 'wgc2';
-        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc2')) return '1';
-        if (cmd.contains('nvram get wgc2_enable')) return '1';
-        return '';
-      },
-    );
+          responder: (cmd) {
+            if (cmd.contains('jffs2')) return '0';
+            if (cmd.contains('wg show interfaces')) return 'wgc2';
+            if (cmd.contains('cru l') && cmd.contains('watchdog_wgc2')) return '1';
+            if (cmd.contains('nvram get wgc2_enable')) return '1';
+            return '';
+          },
+        );
 
-    test('saveWatchdogConfig tears down the other slot before enabling its own', () async {
+    test('deployWatchdog tears down the other slot before enabling its own', () async {
       final c = otherSlotActive();
-      await RouterWatchdog(c).saveWatchdogConfig(cfg(slot: 1, interval: 5));
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
       expect(c.ran('cru d watchdog_wgc2'), isTrue);
       expect(c.ran('nvram set wgc2_enable=0'), isTrue);
-      final downIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc2_enable=0'));
-      final upIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc1_enable=1'));
-      expect(downIndex, isNot(-1));
-      expect(upIndex, isNot(-1));
-      expect(downIndex, lessThan(upIndex));
-    });
-
-    test('startWatchdog tears down the other slot before enabling its own', () async {
-      final c = otherSlotActive();
-      await RouterWatchdog(c).startWatchdog(cfg(slot: 1, interval: 5));
-      expect(c.ran('cru d watchdog_wgc2'), isTrue);
       final downIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc2_enable=0'));
       final upIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc1_enable=1'));
       expect(downIndex, isNot(-1)); // -1 would satisfy lessThan vacuously
@@ -211,7 +192,7 @@ void main() {
     // before the new config's NVRAM is written or the PIA credentials are silently wiped.
     test('sweeping other slots does not wipe the PIA credentials being saved', () async {
       final c = otherSlotActive();
-      await RouterWatchdog(c).saveWatchdogConfig(cfg(slot: 1, interval: 5));
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
       final unsetIndex = c.commands.indexWhere((cmd) => cmd.contains('nvram unset cfg_pia_wg_user'));
       final setIndex = c.commands.indexWhere((cmd) => cmd.contains("nvram set cfg_pia_wg_user='p1234567'"));
       expect(unsetIndex, isNot(-1)); // the sweep did stop the other watchdog
@@ -362,7 +343,7 @@ void main() {
     final c = RecordingSSHClient(throwOn: ['chmod']);
     final appLog = <String>[];
     final svc = RouterWatchdog(c, onLog: (m, {isError = false, isSuccess = false}) => appLog.add(m));
-    await expectLater(svc.deployWatchdogScripts(cfg(slot: 1)), throwsA(isA<Exception>()));
+    await expectLater(svc.deployWatchdog(cfg(slot: 1)), throwsA(isA<Exception>()));
     expect(c.commands.any((cmd) => cmd.contains('logger -t cfg-pia-wg') && cmd.contains('ERROR')), isTrue);
     expect(appLog.any((m) => m.contains('failed')), isTrue);
   });

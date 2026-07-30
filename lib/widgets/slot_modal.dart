@@ -15,7 +15,7 @@
 //
 // One modal serves both router screens (spec 3.2). The button set + actions vary by [mode]:
 //   manage   -> CREATE, ENABLE, EDIT, DISABLE, DELETE
-//   watchdog -> ENABLE, EDIT, DISABLE, DELETE, VIEW ROUTER WATCHDOG LOG
+//   watchdog -> CREATE/EDIT, DELETE, VIEW ROUTER WATCHDOG LOG
 // A short-lived SSH client is opened for each action (so a dropped connection self-heals), the
 // slot list is refreshed after every action, and a processing overlay covers the modal while busy.
 
@@ -94,23 +94,6 @@ class _SlotModalState extends State<SlotModal> {
     try {
       client = await widget.connect();
       await op(_slotSvc(client));
-    } catch (e) {
-      error = e;
-    } finally {
-      client?.close();
-    }
-    await _refresh();
-    if (mounted) setState(() => _processing = false);
-    if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
-  }
-
-  Future<void> _runWatchdog(Future<void> Function(RouterWatchdog) op) async {
-    setState(() => _processing = true);
-    SSHClient? client;
-    Object? error;
-    try {
-      client = await widget.connect();
-      await op(_wdSvc(client));
     } catch (e) {
       error = e;
     } finally {
@@ -301,36 +284,8 @@ class _SlotModalState extends State<SlotModal> {
   }
 
   // ── Watchdog-mode actions ────────────────────────────────────────────────────────
-  Future<void> _enableWatchdog() async {
-    final slot = _selected;
-    final info = _selectedInfo;
-    if (info != null && info.isEmpty) {
-      await AppErrors.system(context, _c, 'Slot wgc$slot is empty. Configure the watchdog (region + parameters) via EDIT first.');
-      return;
-    }
-    await _runWatchdog((wd) async {
-      // Only one watchdog active at a time: stop any other active watchdog first.
-      for (final other in _slots.slots.values) {
-        if (other.index != slot && other.watchdogActive) await wd.stopWatchdog(other.index);
-      }
-      var cfg = await wd.loadConfig(slot);
-      if (_c.piaUsername.isNotEmpty) cfg = cfg.copyWith(piaUsername: _c.piaUsername);
-      if (_c.piaPassword.isNotEmpty) cfg = cfg.copyWith(piaPassword: _c.piaPassword);
-      final errors = cfg.validate();
-      if (errors.isNotEmpty) {
-        if (mounted) await AppErrors.inputs(context, _c, ['Complete the watchdog settings via EDIT first:', ...errors]);
-        return;
-      }
-      await wd.startWatchdog(cfg);
-    });
-
-    if (mounted) {
-      await _refresh();
-    }
-  }
-
-  Future<void> _disableWatchdog() => _runWatchdog((wd) => wd.stopWatchdog(_selected));
-
+  // CREATE/EDIT: the dialog both creates (region pick on an empty slot) and updates, and its SAVE
+  // deploys via RouterWatchdog.deployWatchdog — there is no separate enable step.
   Future<void> _editWatchdog() async {
     final slot = _selected;
     await showDialog<void>(
@@ -352,7 +307,7 @@ class _SlotModalState extends State<SlotModal> {
 
   Future<void> _deleteWatchdog() async {
     final slot = _selected;
-    final ok = await _confirm('Delete watchdog + wgc$slot?', 'This will also delete and disable the underlying region.',
+    final ok = await _confirm('Delete watchdog wgc$slot?', 'This will also delete and disable the underlying region.',
         confirmLabel: 'DELETE', destructive: true);
     if (!ok) return;
     setState(() => _processing = true);
@@ -579,11 +534,10 @@ class _SlotModalState extends State<SlotModal> {
         btn('slot_delete', 'DELETE', hasDesc ? _deleteManage : null),
       ];
     }
-    // Watchdog mode: ENABLE + DELETE require a non-empty slot (spec round-2).
+    // Watchdog mode: CREATE/EDIT creates-or-updates and deploys, so it is live for an empty slot
+    // too; DELETE and VIEW LOG still require a non-empty slot (spec round-2).
     return [
-      btn('slot_enable', 'ENABLE', (hasDesc && !wdActive) ? _enableWatchdog : null),
-      btn('slot_edit', 'EDIT', info != null ? _editWatchdog : null),
-      btn('slot_disable', 'DISABLE', (hasDesc && wdActive) ? _disableWatchdog : null),
+      btn('slot_edit', 'CREATE/EDIT', info != null ? _editWatchdog : null),
       btn('slot_delete', 'DELETE', hasDesc ? _deleteWatchdog : null),
       btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (hasDesc && wdActive) ? _viewWatchdogLog : null),
     ];
