@@ -7,7 +7,7 @@
 
 ## 1. Backlog
 
-- REL: Parse changelog entries by matching against the pushed tag, and insert as release text.
+- REL: Parse changelog entries by matching against the pushed tag, and insert as release text, sort by type and insert under a type heading.
 - DOC: describe how to test a reconfigure event - v0.6.20+ uses ping targets to check if a reconfigure can occur, ie do we have WAN Internet connectivity? If ping targets are set to TEST-NET-1, TEST-NET-2, or TEST-NET-3 you get "no Internet on WAN interface, exiting" from the shell script in `_kWatchdogScriptTemplate`. A working manual test scenario is: remove a slot's config via the Web UI, apply that, then enter a valid region name as the slot description and apply that, or the reconfigure won't occur. Add a warning about that to README.md as well as TESTING.md: leaving 'ghost' watchdogs. "Deleting a slot via the Web UI can leave a watchdog running that can't connect to anything as it has no region name as a title: "ERROR: wgc4_desc is empty". Fix by adding a valid region name eg "au_adelaide-pf" to that slot in the Web UI (only that field is needed) which enables the VPN to be reloaded at the next `cronIntervalMinutes`, then remove the watchdog via the app.
 - DOC: Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file.
 - DOC: Only for GitHub display, fix centering of images in examples for Main menu, Standalone config generation, Router slot management. Centers perfectly in README.html.
@@ -41,6 +41,24 @@
 - GUI: can't copy/paste text from About screen
 - GUI: add text next to the "GENERATED CONFIG" with the region name the config is for
 - FIX: if editing an existing watchdog slot, at save you are asked if you want to overwrite, but if you create a watchdog on an empty slot you aren't prompted.
+- DOC: Add note that screenshots are disabled.
+- FTR: Add a timeout of 20m, if app unused it clears all credentials?
+- GUI: Make Manage and Watchdog deletion prompt msg consistent.
+- FIX: When viewing the router watchdog log, if you COPY the log and then enter the conf menu it will detect that and start the clear timer as it only knows that something from this app placed data in the clipboard.
+- INF: If you click on the reveal password button then you can copy the password
+- FIX: In generate, if you delete DNS entries then go to another screen then reenter generate, the default DNS addresses are not displayed but are still used when generating a new conf file. Add a check that if that field is ever blank, then the quad 9 defaults are inserted.
+- GUI: Display the quad 9 default DNS addresses next to the CloudFlare ones in generate
+- GUI: The clipboard is cleared by copying a null entry to it, so you'll see a system dialogue from your device "copied" when the timer runs down and always when you exit the app as well as it doesn't know what is on the clipboard. Replace the app exit behaviour with clearPrimaryClip().
+- CHG: router IP address, blank by default and retained when entered. 
+- GUI: change info prompt after slot created "remember to enable it via the enable button" 
+- GUI: enlarge WireGuard Configuration prompt for PIA credentials so that you can see the example DNS addresses, display is truncated. 
+- GUI: watchdog, when adding watchdog to an existing skir, make the prompt more intelligible tst it will see the underlying region as well. It's a mouthful ATM. 
+- DOC: note that you can create and apply a VPN slot by adding a watchdog in one step. If you do that the watchdog will immediately run and see that the VPN is not active and tell you that it failed to do a ping over the tunnel so it is reconfiguring the slot as though a periodic PIA renewal of the registration was needed. If you already have a VPN running on that slot the immediate deployment of the script see the slot is active and the ICMP over the WG interface succeeds.
+- DOC: Update security.md to hotlink for reporting an issue, fix US spellings, remove Inactivity session self-destruct
+	- DOC: Several typos in changelog
+	- DOC: update ipv4.icanhazip.com In detail section in architecture.md
+	- DOC: spellcheck architecture.md
+	- DOC: add note to use data from About screen when filing a big, update GitHub workflow to note that too
 
 ---
 
@@ -48,8 +66,8 @@
 
 ### 2.1. Pending
 
-- none.
-
+- DOC: Update readme with the new name of command line tool.
+- FIX: app name is showing incorrectly in launchers, update AndroidManifest.xml from "Configure PIA WireGuard", and pubspec.yaml "name: cfg_pia_wireguard".
 
 ### 2.2. Implemented
 
