@@ -55,10 +55,10 @@
 - GUI: watchdog, when adding watchdog to an existing skir, make the prompt more intelligible tst it will see the underlying region as well. It's a mouthful ATM. 
 - DOC: note that you can create and apply a VPN slot by adding a watchdog in one step. If you do that the watchdog will immediately run and see that the VPN is not active and tell you that it failed to do a ping over the tunnel so it is reconfiguring the slot as though a periodic PIA renewal of the registration was needed. If you already have a VPN running on that slot the immediate deployment of the script see the slot is active and the ICMP over the WG interface succeeds.
 - DOC: Update security.md to hotlink for reporting an issue, fix US spellings, remove Inactivity session self-destruct
-	- DOC: Several typos in changelog
-	- DOC: update ipv4.icanhazip.com In detail section in architecture.md
-	- DOC: spellcheck architecture.md
-	- DOC: add note to use data from About screen when filing a big, update GitHub workflow to note that too
+- DOC: Several typos in changelog
+- DOC: update ipv4.icanhazip.com In detail section in architecture.md
+- DOC: spellcheck architecture.md
+- DOC: add note to use data from About screen when filing a big, update GitHub workflow to note that too
 
 ---
 
