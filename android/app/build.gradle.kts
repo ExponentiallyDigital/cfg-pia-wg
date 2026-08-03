@@ -182,17 +182,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-// untold pain and suffering if you try to rename a project: reverted back to
-// "com.exponentiallydigital.pia_wireguard_cfga" from "com.exponentiallydigital.cfg_pia_wireguard"
-// now I understand why signal is from "thought crimes" :)
     defaultConfig {
-        applicationId = "com.exponentiallydigital.pia_wireguard_cfga"
+        applicationId = "com.exponentiallydigital.pia_wireguard_cfga" // do not change, tied to Play Store unique identifier.
 //        minSdk = flutter.minSdkVersion
         minSdk = 24 // Android 24: "Android 7.0 (Nougat)"
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        base.archivesName.set("cfg_pia_wireguard")
+        base.archivesName.set("cfg_pia_wg") // sets the base name of the .AAB output file.
 
         // --- "About" screen provenance; helpers are above the android {} block. ---
         // BUILD_TYPE / VERSION_NAME / VERSION_CODE / APPLICATION_ID / DEBUG are NOT listed

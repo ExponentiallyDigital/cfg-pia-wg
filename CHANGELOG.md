@@ -2,13 +2,13 @@
 
 - [1. Backlog](#1-backlog)
   - [1.1. All](#11-all)
-    - [1.1.1. DOC](#111-doc)
-    - [1.1.2. GUI](#112-gui)
-    - [1.1.3. CHG](#113-chg)
-    - [1.1.4. FIX](#114-fix)
-    - [1.1.5. FTR](#115-ftr)
-    - [1.1.6. TST](#116-tst)
-    - [1.1.7. REL](#117-rel)
+    - [1.1.1. DOC - documentation updates](#111-doc---documentation-updates)
+    - [1.1.2. GUI - changes to the user interface](#112-gui---changes-to-the-user-interface)
+    - [1.1.3. CHG - functional code changes](#113-chg---functional-code-changes)
+    - [1.1.4. FIX - bug fixes](#114-fix---bug-fixes)
+    - [1.1.5. FTR - future implementation](#115-ftr---future-implementation)
+    - [1.1.6. TST - testing changes](#116-tst---testing-changes)
+    - [1.1.7. REL - release process changes](#117-rel---release-process-changes)
   - [1.2. v0.8.xx freemium](#12-v08xx-freemium)
     - [1.2.1. Accounts \& Play Console setup](#121-accounts--play-console-setup)
     - [1.2.2. RevenueCat dashboard setup](#122-revenuecat-dashboard-setup)
@@ -18,14 +18,14 @@
     - [1.2.6. Documentation and publicity](#126-documentation-and-publicity)
     - [1.2.7. Launch \& post-launch](#127-launch--post-launch)
 - [2. Changes](#2-changes)
-  - [2.1. Pending](#21-pending)
-  - [2.2. Implemented](#22-implemented)
+  - [2.1. Pending - things next in line for implementation](#21-pending---things-next-in-line-for-implementation)
+  - [2.2. Implemented - chronological change history](#22-implemented---chronological-change-history)
 
 ## 1. Backlog
 
 ### 1.1. All
 
-#### 1.1.1. DOC
+#### 1.1.1. DOC - documentation updates
 
 - DOC: describe how to test a reconfigure event - v0.6.20+ uses ping targets to check if a reconfigure can occur, i.e. do we have WAN Internet connectivity? If ping targets are set to TEST-NET-1, TEST-NET-2, or TEST-NET-3 you get "no Internet on WAN interface, exiting" from the shell script in `_kWatchdogScriptTemplate`. A working manual test scenario is: remove a slot's config via the Web UI, apply that, then enter a valid region name as the slot description and apply that, or the reconfigure won't occur. Add a warning about that to README.md as well as TESTING.md: leaving 'ghost' watchdogs. "Deleting a slot via the Web UI can leave a watchdog running that can't connect to anything as it has no region name as a title: "ERROR: wgc4_desc is empty". Fix by adding a valid region name e.g. "au_adelaide-pf" to that slot in the Web UI (only that field is needed) which enables the VPN to be reloaded at the next `cronIntervalMinutes`, then remove the watchdog via the app.
 - DOC: Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file.
@@ -35,8 +35,9 @@
 - DOC: Add practical workflows to achieve specific outcomes.
 - DOC: Add text about how to check your POP, but note that services like https://www.privateinternetaccess.com/what-is-my-ip, https://ipaddress.my/?lang=en_US, https://2ip.io/, and https://www.showmyip.com/ may cache your location in the browser (they sometimes return a stale POP if used multiple times). To be absolutely sure, close your browser rather than just refreshing the page.
 - DOC: Note that you can create and apply a VPN slot by adding a watchdog in one step. If you do that the watchdog will immediately run and see that the VPN is not active and tell you that it failed to do a ping over the tunnel so it is reconfiguring the slot as though a periodic PIA renewal of the registration was needed. If you already have a VPN running on that slot the immediate deployment of the script will see the slot is active and the ICMP over the WG interface succeeds.
+- DOC: add to TESTING.md: `wgcX_rip` is updated by the Web GUI via an unknown method (review Asus_WRT src), router log shows no `service` script(s) were were run to display this in the web GUI. It is not the public IP address (which is served from a pool to external sites), it is the router's IP address on PIA's infrastructure (?) and always differs from `wgc1_ep_addr` and `wgcX_ep_addr_r` (except PIA's webiste shows the public IP address as `wgc1_ep_addr*` vs other sites which showed `wgcX_rip` as the public ip address).
 
-#### 1.1.2. GUI
+#### 1.1.2. GUI - changes to the user interface
 
 - GUI: When switching back and forth to/from the app to copy/paste details into email alert config, the modal became reduced in size, could still enter and edit fields. Cosmetic, fixed by switching to another app then back again.
 - GUI: Change colour of region name from GREY to WHITE in WG Config and Watchdog modals.
@@ -47,7 +48,7 @@
 - GUI: Change info prompt after slot created "remember to enable it via the enable button".
 - GUI: Watchdog, when creating on a slot which has an config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
 
-#### 1.1.3. CHG
+#### 1.1.3. CHG - functional code changes
 
 - CHG: Watchdog email alert `SMTP username field` is finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
 - CHG: Remove 'WATCHDOG_EOF' text from test email:
@@ -68,22 +69,23 @@
         Created wgc1 configuration (aus_melbourne)
 - CHG: Replace app exit and config clipboard copy timer expiration behaviours with clearPrimaryClip(), and remove the two associated comments in README.md.
 
-#### 1.1.4. FIX
+#### 1.1.4. FIX - bug fixes
 
 - FIX: "home" button is not in green text with a green button border, after activating any of the four main menu items - Manage and Watchdog screens have a modal on top so that's actually correct (for those two situations only).
 - FIX: If editing an existing watchdog slot, at save you are asked if you want to overwrite, but if you create a watchdog on an empty slot you aren't prompted.
 - FIX: When viewing the router watchdog log, if you COPY the log and then enter the conf menu it will detect that and start the clear timer as it only knows that something from this app placed data in the clipboard.
 - FIX: In generate, if you delete DNS entries then go to another screen then re-enter generate, the default DNS addresses are not displayed but are still used when generating a new conf file. Add a check that if that field is ever blank, then the quad 9 defaults are inserted.
 
-#### 1.1.5. FTR
+#### 1.1.5. FTR - future implementation
 
-- FTR: Add a timeout of 20m, if app unused it clears all credentials?
+- FTR: Consider adding back an idle app timeout of of XX minutes, if timer expires clear all credentials. This would defuse the ability to reveal passwords and copy/paste if app is left idle. Consider calling session destruction through exit path but don't actually exit when timer expires. Had originally implemented this in **pre 0.6.05 build 334**, was set to 10m.
+- FTR: enable creation of a GitHub issue from ABOUT screen, open on GitHub with build info of running app.
 
-#### 1.1.6. TST
+#### 1.1.6. TST - testing changes
 
 - TST: reiew opportunities to increase code base testing, examnine `ftr` report form functions with low coverage
 
-#### 1.1.7. REL
+#### 1.1.7. REL - release process changes
 
 - REL: Parse changelog entries by matching against the pushed tag, and insert as release text, sort by type and insert under a type heading.
 
@@ -135,29 +137,35 @@
 
   - **Changelog:** Add to v0.8.00 changelog, explain why watchdog is monetised.
   - **Store optimisation (ASO):** include high-intent keywords: *Asuswrt-Merlin, PIA WireGuard token auto-renew, Asus router VPN, NVRAM SSH scripts*.
-  - **Reconfigure review prompt:** add link to reconfigure email seeking an app review.
+  - **Reconfigure review prompt:** add link to reconfigure email seeking an app review (add an NVRAM timestamp when watchdog first deployed and increment an NVRAM counter when a reconfigure occurs).
 
 ---
 
 ## 2. Changes
 
-### 2.1. Pending
+### 2.1. Pending - things next in line for implementation
 
-- FIX: `AndroidManifest.xml`- app name was showing incorrectly in launchers, updated from "Configure PIA WireGuard" to "cfg-pia-wg".
-- REL: Rename "cfg_pia_wireguard" to "cfg_pia_wg" in all dart module and test names.
-- CHG: Implement `flutter_windowmanager` to allow screen shots from all screens & modals except Config
-- DOC: Add note to use data from About screen when filing a bug.
-- FIX: can't paste into password fields, and can't "q"uit debug running in any screen showing password fields, also causing screen `D/EGL_emulation(24795): app_time_stats: avg=499.58ms min=498.77ms max=500.27ms count=3` count to increment; revert build 363 changes.
+- DOC: Add note to use data from About screen when creating an issue on GitHub, add to ISSUE_TEMPLATEs.
 - TST: Reinstall stock ASUS router firmware and check Manage and Watchdog operate; remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
 
-### 2.2. Implemented
+### 2.2. Implemented - chronological change history
+
+2026-08-03 v0.7.05 build 365
+
+- CHG: updated SHAs.
+- CHG: updated `android\app\build.gradle.kts` to `base.archivesName.set("cfg_pia_wg") // this sets the name of the .AAB output file`.
+- CHG: removed postscript from in app LICENSE display.
+- DOC: updated CHANGELOG format.
+- DOC: added how to upgrade dependency versions in BUILDING.md "4.1.2. When to regenerate lockfiles"
+- REL: updated dependencies: `dartssh2` 2.22.5 & `jni` 1.0.3
+- REL: tagged for release.
 
 2026-08-03 v0.7.04 build 364
 
-- FIX: renamed app from *cfg_pia_wireguard* -> *cfg_pia_wg* (must use underscores, *cannot* use hyphens)
+- REL: renamed app from *cfg_pia_wireguard* -> *cfg_pia_wg* (must use underscores, *cannot* use hyphens)
   1. update `pubspec.yaml` -> name: cfg_pia_wg
   2. search and replace in .dart files -> "import 'package:cfg_pia_wg/"
-  3. `android/settings.gradle.kts` -> rootProject.name = "cfg_pia_wg"
+  3. update `android/settings.gradle.kts` -> rootProject.name = "cfg_pia_wg"
   4. check tests run and app compiles
   5. update `.github\workflows\release.yml` -> mv build/app/outputs/bundle/release/cfg_pia_wg-release.aab
   6. update `scripts\build.ps1`
@@ -168,9 +176,9 @@
      1. TARGET_APK="build/cfg_pia_wg-v${VERSION}_release.apk"
      2. APK_RELEASE="build/cfg_pia_wg-v${VERSION}_release.apk"
      3. AAB_RELEASE="build/app/outputs/bundle/release/cfg_pia_wg-release.aab"
-  8. save and exit VS Code, check tests run and app compiles with .\scriptys\build all
+  8. save and exit VS Code, check tests run and app compiles with .\scripts\build all
   9. check app builds on GitHub dev branch
-- FIX: can't paste into password fields, and can't "q"uit debug running in any screen showing password fields, also causing screen `D/EGL_emulation(24795): app_time_stats: avg=499.58ms min=498.77ms max=500.27ms count=3` count to increment; **revert build 363 changes** to `lib\widgets\common_fields.dart` and `lib\watchdog_dialog.dart`. Tested and now operating corectly ie can "q"uit debugger, no incrementing count and can paste.
+- FIX: can't paste into password fields, and can't "q"uit debug running in any screen showing password fields, also causing screen `D/EGL_emulation(24795): app_time_stats: avg=499.58ms min=498.77ms max=500.27ms count=3` count to increment; **revert build 363 changes** to `lib\widgets\common_fields.dart` and `lib\watchdog_dialog.dart`. Tested and now operating corectly: can "q"uit debugger, no incrementing count and can paste.
 
 2026-08-03 v0.7.03 build 363
 

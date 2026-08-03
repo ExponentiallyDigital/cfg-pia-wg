@@ -181,7 +181,7 @@ This is expected and correct behavior designed to block untracked dependency upd
 You must regenerate the Gradle lockfiles whenever you:
 
 1. Add a new package or dependency to build.gradle.
-2. Update the version of an existing package.
+2. Update the version of an existing package. eg via `flutter pub upgrade | flutter pub upgrade --major-versions`.
 3. Modify or upgrade build plugins.
 
 #### 4.1.3. How to regenerate lockfiles
