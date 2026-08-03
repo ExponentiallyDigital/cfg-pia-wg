@@ -1,64 +1,141 @@
 # CHANGELOG.md
 
 - [1. Backlog](#1-backlog)
+  - [1.1. All](#11-all)
+    - [1.1.1. DOC](#111-doc)
+    - [1.1.2. GUI](#112-gui)
+    - [1.1.3. CHG](#113-chg)
+    - [1.1.4. FIX](#114-fix)
+    - [1.1.5. FTR](#115-ftr)
+    - [1.1.6. TST](#116-tst)
+    - [1.1.7. REL](#117-rel)
+  - [1.2. v0.8.xx freemium](#12-v08xx-freemium)
+    - [1.2.1. Accounts \& Play Console setup](#121-accounts--play-console-setup)
+    - [1.2.2. RevenueCat dashboard setup](#122-revenuecat-dashboard-setup)
+    - [1.2.3. Codebase integration](#123-codebase-integration)
+    - [1.2.4. Security \& router diagnostics](#124-security--router-diagnostics)
+    - [1.2.5. Sandbox testing \& QA](#125-sandbox-testing--qa)
+    - [1.2.6. Documentation and publicity](#126-documentation-and-publicity)
+    - [1.2.7. Launch \& post-launch](#127-launch--post-launch)
 - [2. Changes](#2-changes)
   - [2.1. Pending](#21-pending)
   - [2.2. Implemented](#22-implemented)
 
 ## 1. Backlog
 
-- REL: Parse changelog entries by matching against the pushed tag, and insert as release text, sort by type and insert under a type heading.
-- DOC: describe how to test a reconfigure event - v0.6.20+ uses ping targets to check if a reconfigure can occur, ie do we have WAN Internet connectivity? If ping targets are set to TEST-NET-1, TEST-NET-2, or TEST-NET-3 you get "no Internet on WAN interface, exiting" from the shell script in `_kWatchdogScriptTemplate`. A working manual test scenario is: remove a slot's config via the Web UI, apply that, then enter a valid region name as the slot description and apply that, or the reconfigure won't occur. Add a warning about that to README.md as well as TESTING.md: leaving 'ghost' watchdogs. "Deleting a slot via the Web UI can leave a watchdog running that can't connect to anything as it has no region name as a title: "ERROR: wgc4_desc is empty". Fix by adding a valid region name eg "au_adelaide-pf" to that slot in the Web UI (only that field is needed) which enables the VPN to be reloaded at the next `cronIntervalMinutes`, then remove the watchdog via the app.
+### 1.1. All
+
+#### 1.1.1. DOC
+
+- DOC: describe how to test a reconfigure event - v0.6.20+ uses ping targets to check if a reconfigure can occur, i.e. do we have WAN Internet connectivity? If ping targets are set to TEST-NET-1, TEST-NET-2, or TEST-NET-3 you get "no Internet on WAN interface, exiting" from the shell script in `_kWatchdogScriptTemplate`. A working manual test scenario is: remove a slot's config via the Web UI, apply that, then enter a valid region name as the slot description and apply that, or the reconfigure won't occur. Add a warning about that to README.md as well as TESTING.md: leaving 'ghost' watchdogs. "Deleting a slot via the Web UI can leave a watchdog running that can't connect to anything as it has no region name as a title: "ERROR: wgc4_desc is empty". Fix by adding a valid region name e.g. "au_adelaide-pf" to that slot in the Web UI (only that field is needed) which enables the VPN to be reloaded at the next `cronIntervalMinutes`, then remove the watchdog via the app.
 - DOC: Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file.
-- DOC: Only for GitHub display, fix centering of images in examples for Main menu, Standalone config generation, Router slot management. Centers perfectly in README.html.
-- DOC: update privacy.html to note that URLs in ABout screen go to various places like Gi
-- DOC: Only for GitHub display, fix centering titles under images for Supply credentials and DNS, Ping targets, Editing a slot, Watchdog management, Configuring a watchdog, App log, Hamburger Menu. Centers perfectly in README.html.
+- DOC: Only for GitHub display, fix centring of images in examples for Main menu, Standalone config generation, Router slot management. Centres perfectly in README.html.
+- DOC: Only for GitHub display, fix centring titles under images for Supply credentials and DNS, Ping targets, Editing a slot, Watchdog management, Configuring a watchdog, App log, Hamburger Menu. Centres perfectly in README.html.
 - DOC: Add note that PIA sometimes takes regions offline for maintenance so you might be expecting to have a POP in Perth but online tools may show you coming from Adelaide.
 - DOC: Add practical workflows to achieve specific outcomes.
-- ADD: add in text about how to check you POP, but note that services like https://www.privateinternetaccess.com/what-is-my-ip, https://ipaddress.my/?lang=en_US, https://2ip.io/, and https://www.showmyip.com/ may cache your location in the browser (they sometimes return a stale POP if used multiple times). To be absolutley sure, close your browser rather than just refreshing the page.
-- UI: When switching back and forth to/from the app to copy/paste details into email alert config, the modal became reduced in size, could still enter and edit fields. Cosmetic, fixed by switching to another app then back again.
-- CHG: watchdog email alert `SMTP username field` is finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
-- CHG: remove 'WATCHDOG_EOF' text from test email:
+- DOC: Add text about how to check your POP, but note that services like https://www.privateinternetaccess.com/what-is-my-ip, https://ipaddress.my/?lang=en_US, https://2ip.io/, and https://www.showmyip.com/ may cache your location in the browser (they sometimes return a stale POP if used multiple times). To be absolutely sure, close your browser rather than just refreshing the page.
+- DOC: Note that you can create and apply a VPN slot by adding a watchdog in one step. If you do that the watchdog will immediately run and see that the VPN is not active and tell you that it failed to do a ping over the tunnel so it is reconfiguring the slot as though a periodic PIA renewal of the registration was needed. If you already have a VPN running on that slot the immediate deployment of the script will see the slot is active and the ICMP over the WG interface succeeds.
+
+#### 1.1.2. GUI
+
+- GUI: When switching back and forth to/from the app to copy/paste details into email alert config, the modal became reduced in size, could still enter and edit fields. Cosmetic, fixed by switching to another app then back again.
+- GUI: Change colour of region name from GREY to WHITE in WG Config and Watchdog modals.
+- GUI: App log has no carriage return/line feed when copied to clipboard. Text copied from Watchdog log has line terminators, as does the Router Config conf file.
+- GUI: Can't copy/paste text from About screen.
+- GUI: Add text next to the "GENERATED CONFIG" with the region name the config is for.
+- GUI: Make Manage and Watchdog deletion prompt msg consistent.
+- GUI: Change info prompt after slot created "remember to enable it via the enable button".
+- GUI: Watchdog, when creating on a slot which has an config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
+
+#### 1.1.3. CHG
+
+- CHG: Watchdog email alert `SMTP username field` is finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
+- CHG: Remove 'WATCHDOG_EOF' text from test email:
          This is a test email from the cfg-pia-wg watchdog (slot wgcX).
          WATCHDOG_EOF
 - CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes.
-- CHG when you enable/disable/delete a slot, add to the router log the region that slot was previously using eg.
+- CHG when you enable/disable/delete a slot, add to the router log the region that slot was previously using e.g.
         Enabled wgc1 -> 01 cfg-pia-wg: Enabled wgc1 (region-name)
         Disabled wgc1 -> Disabled wgc1 (region-name)
         Deleted wgc1 configuration -> Deleted wgc1 configuration (region-name)
-- CHG: on disable, log lines are repeated (and needs the region name per above)
+- CHG: On disable, log lines are repeated (and needs the region name per above)
         cfg-pia-wg: Disabled wgc1
         cfg-pia-wg: Watchdog disabled for wgc1
         cfg-pia-wg: Disabled wgc1
-- CHG: if a Conf slot is already disabled, grey out the DISABLE button (only gets logged once to router log though vs above)
-- INF: Creating writes the region name to router log, deleting/disabling does not, review code path for
+- CHG: If a Conf slot is already disabled, grey out the DISABLE button (only gets logged once to router log though vs above).
+- CHG: Creating writes the region name to router log, deleting/disabling does not, review code path for
         Deleted wgc1 configuration
         Created wgc1 configuration (aus_melbourne)
-- GUI: change colour of region name from GREY to WHITE in WG Config and Watchdog modals
-- ???: log message "kernel: jffs2: warning: (27325) jffs2_sum_write_data: Summary too big (-32 data, -877 pad) in eraseblock at 00280000", only seen once...no activity from app around that time though...
+- CHG: Replace app exit and config clipboard copy timer expiration behaviours with clearPrimaryClip(), and remove the two associated comments in README.md.
+
+#### 1.1.4. FIX
+
 - FIX: "home" button is not in green text with a green button border, after activating any of the four main menu items - Manage and Watchdog screens have a modal on top so that's actually correct (for those two situations only).
-- GUI: app log has no carriage return/line feed when copied tgo clipboard. Text copied from Watchdog log has line terminators, as does the Router Config conf file.
-- GUI: can't copy/paste text from About screen
-- GUI: add text next to the "GENERATED CONFIG" with the region name the config is for
-- FIX: if editing an existing watchdog slot, at save you are asked if you want to overwrite, but if you create a watchdog on an empty slot you aren't prompted.
-- DOC: Add note that screenshots are disabled.
-- FTR: Add a timeout of 20m, if app unused it clears all credentials?
-- GUI: Make Manage and Watchdog deletion prompt msg consistent.
+- FIX: If editing an existing watchdog slot, at save you are asked if you want to overwrite, but if you create a watchdog on an empty slot you aren't prompted.
 - FIX: When viewing the router watchdog log, if you COPY the log and then enter the conf menu it will detect that and start the clear timer as it only knows that something from this app placed data in the clipboard.
-- INF: If you click on the reveal password button then you can copy the password
-- FIX: In generate, if you delete DNS entries then go to another screen then reenter generate, the default DNS addresses are not displayed but are still used when generating a new conf file. Add a check that if that field is ever blank, then the quad 9 defaults are inserted.
-- GUI: Display the quad 9 default DNS addresses next to the CloudFlare ones in generate
-- GUI: The clipboard is cleared by copying a null entry to it, so you'll see a system dialogue from your device "copied" when the timer runs down and always when you exit the app as well as it doesn't know what is on the clipboard. Replace the app exit behaviour with clearPrimaryClip().
-- CHG: router IP address, blank by default and retained when entered. 
-- GUI: change info prompt after slot created "remember to enable it via the enable button" 
-- GUI: enlarge WireGuard Configuration prompt for PIA credentials so that you can see the example DNS addresses, display is truncated. 
-- GUI: watchdog, when adding watchdog to an existing skir, make the prompt more intelligible tst it will see the underlying region as well. It's a mouthful ATM. 
-- DOC: note that you can create and apply a VPN slot by adding a watchdog in one step. If you do that the watchdog will immediately run and see that the VPN is not active and tell you that it failed to do a ping over the tunnel so it is reconfiguring the slot as though a periodic PIA renewal of the registration was needed. If you already have a VPN running on that slot the immediate deployment of the script see the slot is active and the ICMP over the WG interface succeeds.
-- DOC: Update security.md to hotlink for reporting an issue, fix US spellings, remove Inactivity session self-destruct
-- DOC: Several typos in changelog
-- DOC: update ipv4.icanhazip.com In detail section in architecture.md
-- DOC: spellcheck architecture.md
-- DOC: add note to use data from About screen when filing a big, update GitHub workflow to note that too
+- FIX: In generate, if you delete DNS entries then go to another screen then re-enter generate, the default DNS addresses are not displayed but are still used when generating a new conf file. Add a check that if that field is ever blank, then the quad 9 defaults are inserted.
+
+#### 1.1.5. FTR
+
+- FTR: Add a timeout of 20m, if app unused it clears all credentials?
+
+#### 1.1.6. TST
+
+- TST: reiew opportunities to increase code base testing, examnine `ftr` report form functions with low coverage
+
+#### 1.1.7. REL
+
+- REL: Parse changelog entries by matching against the pushed tag, and insert as release text, sort by type and insert under a type heading.
+
+### 1.2. v0.8.xx freemium
+
+- CHG: freemium version, move Watchdog function to once-off lifetime paid function. Implementation plan:
+
+  #### 1.2.1. Accounts & Play Console setup
+
+  - **Google Merchant account:** Activate Payment Account in **Google Play Console**.
+  - **In-app product creation:** Create a **Non-consumable** in-app product (e.g., `cfg-pia-wg_pro_unlock`) set to US$x.yy.
+  - **Play Store compliance:** Complete **Data safety form** to reflect RevenueCat, and add to Privacy Policy.
+
+  #### 1.2.2. RevenueCat dashboard setup
+
+  - **Link accounts:** Connect Google Play Console credentials to RevenueCat via service account keys.
+  - **Configure entitlements:** Create an **Entitlement** named `pro_feature` and map to `cfg-pia-wg_pro_unlock`.
+
+  #### 1.2.3. Codebase integration
+
+  - **Flutter dependencies:** Add `purchases_flutter` and `flutter_secure_storage` to `pubspec.yaml`.
+  - **Billing service singleton:** Implement RevenueCat initialisation, real-time entitlement status updates, purchase triggers, and purchase restoration.
+  - **Paywall UI modal:** Build a `PaywallBottomSheet` highlighting watchdog's zero-touch automation, PIA key renewal fix, and lifetime access model.
+  - **PayPal/Patreon:** remove links from main app screen.
+
+  #### 1.2.4. Security & router diagnostics
+
+  - **Pre-flight diagnostic:** Verify SSH connectivity and JFFS script execution readiness *before* displaying unlock feature to prevent purchases on incompatible setups.
+
+  #### 1.2.5. Sandbox testing & QA
+
+  - **Licence testing:** Add developer Gmail under *Google Play Console -> Licence testing*.
+  - **Internal test track:** Build and upload `flutter build appbundle` (`.aab`) to the Internal Testing track.
+  - **Sandbox verification:** Run `flutter run` on device to test:
+  - **E2E test:** Generate and Manage execute freely; watchdog invokes unlock feature.
+  - **Purchase flow:** complete test transaction via Google’s *"Test card, always approves"*.
+  - **Declined card handling:** Test error handling using *"Test card, always declines"*.
+  - **Restoration flow:** test "Restore Purchases" button.
+  - **Offline access:** disconnect internet and verify cached local entitlements allow watchdog to execute.
+
+  #### 1.2.6. Documentation and publicity
+
+  - **Update screenshots:** create & upload phone and tablet screenshots x8.
+  - **Trademark protection:** add to README that app name, logos, and branding are reserved trademarks.
+  - **Transparency:** explain in README that pre-built convenience binaries are available via the Google Play Store to defray development costs and support ongoing app updates.
+  - **Publicise**: update Play Store description. Post to SNB and Reddit (r/AsuswrtMerlin, r/PrivateInternetAccess, r/WireGuard).
+
+  #### 1.2.7. Launch & post-launch
+
+  - **Changelog:** Add to v0.8.00 changelog, explain why watchdog is monetised.
+  - **Store optimisation (ASO):** include high-intent keywords: *Asuswrt-Merlin, PIA WireGuard token auto-renew, Asus router VPN, NVRAM SSH scripts*.
+  - **Reconfigure review prompt:** add link to reconfigure email seeking an app review.
 
 ---
 
@@ -66,10 +143,37 @@
 
 ### 2.1. Pending
 
-- DOC: Update readme with the new name of command line tool.
-- FIX: app name is showing incorrectly in launchers, update AndroidManifest.xml from "Configure PIA WireGuard", and pubspec.yaml "name: cfg_pia_wireguard".
+- FIX: `AndroidManifest.xml`- app name was showing incorrectly in launchers, updated from "Configure PIA WireGuard" to "cfg-pia-wg".
+- REL: Rename "cfg_pia_wireguard" to "cfg_pia_wg" in all dart module and test names.
+- CHG: Implement `flutter_windowmanager` to allow screen shots from all screens & modals except Config
+- DOC: Add note to use data from About screen when filing a bug.
+- FIX: If you click on the reveal password button then you can copy the password.
+- TST: Reinstall stock ASUS router firmware and check Manage and Watchdog operate; remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
 
 ### 2.2. Implemented
+
+2026-08-03 v0.7.02 build 362
+
+- DOC: Update readme with the new name of command line tool - `cfg-pia-wg`.
+- FIX: Updated `pubspec.yaml` - app name was showing incorrectly in launchers, updated from "Configure PIA WireGuard" to "cfg-pia-wg".
+- DOC: Spellcheck ARCHITECTURE, CHANGELOG, and README.md.
+- DOC: Replace ipv4.icanhazip.com in architecture.md, now using ping targets.
+- DOC: Add to README.md that screenshots are disabled.
+- DOC: Update security.md hotlink for reporting an issue, fix US spellings, remove Inactivity session self-destruct.
+- CHG: Router IP address, 192.168.1.1 by default (matches SVG examples) and retained when entered.
+- DOC: Add copies of all Claude plans to repo.
+- GUI: Display the quad 9 default DNS addresses next to the Cloudflare ones in generate.
+- GUI: suggested DNS address help text is truncated.
+- BLD: Added warning to understand what the build optimisation script does **before** use.
+- DOC: clarified README.md reason for `JFFS` partition enablement for storage of the watchdog script and settings between reboots.
+- REL: Drop debug and release builds from Actions workflows, update README.md to account for this
+- DOC: added TOC and section numbering to TESTING.md
+- ARC: per TESTING.md, the architecture only deploys `/jffs/scripts/services-start` and `/jffs/scripts/watchdog_wgcN.sh` to NVRAM. Other files are written to volatile storage: `/tmp/watchdog_wgcN.log`, `/tmp/watchdog_last_ping_success_wgcN`, and `/tmp/watchdog_backoff_wgcN`. This reduces NVRAM write wear. The watchdog log is not persistent and is rotated at midnight to reduce volatile storage.
+- DOC: added note to test that VPN is active after a firmware update (JFFS may be recreated by flashing process).
+- GUI: enlarge WireGuard Configuration prompt for PIA credentials so that you can see the example DNS addresses, display is truncated.
+- DOC: Update privacy.html to note that URLs in About screen go to locations on the Internet.
+- INF: log message "kernel: jffs2: warning: (27325) jffs2_sum_write_data: Summary too big (-32 data, -877 pad) in eraseblock at 00280000", only seen once. No activity from app or script around that time. Checked deployed artifact sizes: 8,346 bytes (watchdog script), 205 bytes (services-start), 2,719 bytes (pia_ca.rsa.4096.crt), 181 bytes (cron entries) -> 11,451 bytes total used by app (typical). Web searches show that this can be ignored: created during NVRAM housekeeping. Likely occured as a result of extensive app testing.
+- ARC: check all non critical data written to tmp not JFFS
 
 2026-07-30 v0.7.01 build 361
 
@@ -78,7 +182,7 @@
 - REL: Create a GitHub actions release and verify build data in the new "About" screen.
 - CHG: removed Watchdog DISABLE and ENABLE menu options + services, rolled capability to CREATE/EDIT.
 - CHG: renamed watchdog "EDIT" button to "CREATE/EDIT".
-- CHG: PIA username/password now cached while the app is running, no need to keep entering it (this matches the router username/pwd cacheing).
+- CHG: PIA username/password now cached while the app is running, no need to keep entering it (this matches the router username/pwd caching).
 - CHG: updated text displayed when editing a watchdog slot.
 - GUI: app name had reverted from yesterday's backed out changes -> cfg-pia-wg.
 - DOC: updated app name in README.
@@ -106,9 +210,9 @@
 - FIX: updated quality_and_security.yml to grant permissions required by the reusable workflow
 - FIX: prevented release.yml from skipping checks on manual runs.
 
-2026-07-28 v0.6.24 build 354 (pre Google Play Store release)
+2026-07-28 v0.6.24 build 354 (pre–Google Play Store release)
 
-- FIX: **every url_launcher link in the app was dead** (About screen links, and the header bar's "Exponentially Digital" and version/GitHub links, which last worked in v0.6.21) with `PlatformException(channel-error, Unable to establish connection on channel: "dev.flutter.pigeon.url_launcher_android.UrlLauncherApi.canLaunchUrl")`. Not a url_launcher fault: `android/app/gradle.lockfile` pinned `kotlinx-coroutines-android` to 1.8.1 on the runtime classpaths, but share_plus 13.3.0 declares 1.11.0 and compiles `Dispatchers.IO.limitedParallelism(1)` against it, emitting a call to the `limitedParallelism$default(..., int, String, ...)` bridge whose `name` parameter only exists in coroutines 1.10+. STRICT dependency locking silently downgraded the runtime dependency, so `SharePlusPlugin.onAttachedToEngine` threw `NoSuchMethodError` on startup. Because that is an `Error` and not an `Exception`, `GeneratedPluginRegistrant.registerWith`'s per-plugin `catch (Exception e)` did not catch it: registration aborted at plugin 4 of 5 and `url_launcher_android` was never registered. `package_info_plus` is plugin 3 and registered before the throw, which is why the header still showed a version string and made this look link-specific rather than global. SHARE was broken by the same fault. Fixed by regenerating the lockfiles (`gradlew -p android :dependencies :app:dependencies --write-locks`), which moves the four coroutines artifacts to 1.11.0 on the runtime/lint classpaths - a 4-line lockfile change, nothing else altered. Verified on-device: plugin registration is clean and all eight links open in the browser.
+- FIX: every url_launcher link in the app was dead (About screen links, and the header bar's "Exponentially Digital" and version/GitHub links, which last worked in v0.6.21) with `PlatformException(channel-error, Unable to establish connection on channel: "dev.flutter.pigeon.url_launcher_android.UrlLauncherApi.canLaunchUrl")`. Not a url_launcher fault: `android/app/gradle.lockfile` pinned `kotlinx-coroutines-android` to 1.8.1 on the runtime classpaths, but share_plus 13.3.0 declares 1.11.0 and compiles `Dispatchers.IO.limitedParallelism(1)` against it, emitting a call to the `limitedParallelism$default(..., int, String, ...)` bridge whose `name` parameter only exists in coroutines 1.10+. STRICT dependency locking silently downgraded the runtime dependency, so `SharePlusPlugin.onAttachedToEngine` threw `NoSuchMethodError` on startup. Because that is an `Error` and not an `Exception`, `GeneratedPluginRegistrant.registerWith`'s per-plugin `catch (Exception e)` did not catch it: registration aborted at plugin 4 of 5 and `url_launcher_android` was never registered. `package_info_plus` is plugin 3 and registered before the throw, which is why the header still showed a version string and made this look link-specific rather than global. SHARE was broken by the same fault. Fixed by regenerating the lockfiles (`gradlew -p android :dependencies :app:dependencies --write-locks`), which moves the four coroutines artifacts to 1.11.0 on the runtime/lint classpaths - a 4-line lockfile change, nothing else altered. Verified on-device: plugin registration is clean and all eight links open in the browser.
 - CHG: rebranded to "cfg-pia-wg": updated all text, icons, and diagrams.
 - ADD: added to repo a local copy of the .\play-store\privacy.html file.
 - ADD: "About" menu option to the hamburger menu, directly below "View app log". New `AppDestination.about` + `lib/screens/about_screen.dart`, so the drawer tile, route name, selected-state highlight and no-op-on-current behaviour all come from the existing generated-tile machinery. Shows build provenance, tappable links to the repo/README/changelog/architecture/security/privacy documents, and the full GPL v3 text. The security policy link uses `/blob/main/SECURITY.md` - the bare `/SECURITY.md` form 404s.
@@ -124,17 +228,17 @@
 - UI: In generate `PIA WireGuard config` modal, add text to say which region the currently displayed config is for, add this next to the GENERATED CONFIG header
 - ADD: When editing a watchdog, display what the current region is in the modal, and allow changing this via the region selection screen, can then drop call to region selection which fires on save.
 - BUG: from a blank slate when creating a watchdog from scratch, with no underlying VPN created on the slot, causes NVRAM to not be correctly updated and slot status to display incorrectly.
-- BUG: unable to reporduce (setting to done): if router stops accepting commands (hung web UI, ASUS Android app, and SSH) but is still routing, and an SSH socket times out creating a watchdog, you are incorrectly told that the slot had been created. Occurred once when router web GUI, ASUS app, and SSH access failed, a router process had died but there was no way to access and check. Probably a router firmware bug, power cycling fixed it, nothing useful in router log though. Retained for completeness.
+- BUG: unable to reproduce (setting to done): if router stops accepting commands (hung web UI, ASUS Android app, and SSH) but is still routing, and an SSH socket times out creating a watchdog, you are incorrectly told that the slot had been created. Occurred once when router web GUI, ASUS app, and SSH access failed, a router process had died but there was no way to access and check. Probably a router firmware bug, power cycling fixed it, nothing useful in router log though. Retained for completeness.
 - ADD: TOCs to ARCHITECTURE, BUILDING, CHANGELOG, CONTRIBUTING, README, SECURITY, and TESTING.
 - DOC: Added **About** menu screen to README.
-- REL: safety committ save ahead of testing GitHub build with new pipelines
+- REL: safety commit save ahead of testing GitHub build with new pipelines
 
 2026-07-28 v0.6.23 build 353
 
-- FIX: update-shas.sh/ps1 were writing two spaces after the SHA eg. "...890  # v1.01"
+- FIX: update-shas.sh/ps1 were writing two spaces after the SHA e.g. "...890  # v1.01"
 - CHG: updated SHAs
 - FIX: update all minor version dependencies & release publock on jini 1.0.0; test if 1.0.2 fixes the Gradle bug exposed by 1.0.1 - OK
-- FIX: when saving a new watchdog, scan for other watchdogs and delete them before the new watchdog is activated: eg. deploying a watchdog to slot 5 does not disable an active VPN on slot 1, so you end up with two VPNs running at the same time - apply same logic from 'Manage Router PIA WG Cfg' to disable any other active VPN slots. `RouterWatchdog.deactivateOtherSlots` now sweeps wgc1-5 on both `saveWatchdogConfig` and `startWatchdog`, stopping any other watchdog and disabling its interface. The sweep runs *before* the new config's NVRAM write because `stopWatchdog` unsets the global `cfg-pia-wg_*` credentials.
+- FIX: when saving a new watchdog, scan for other watchdogs and delete them before the new watchdog is activated: e.g. deploying a watchdog to slot 5 does not disable an active VPN on slot 1, so you end up with two VPNs running at the same time - apply same logic from 'Manage Router PIA WG Cfg' to disable any other active VPN slots. `RouterWatchdog.deactivateOtherSlots` now sweeps wgc1-5 on both `saveWatchdogConfig` and `startWatchdog`, stopping any other watchdog and disabling its interface. The sweep runs *before* the new config's NVRAM write because `stopWatchdog` unsets the global `cfg-pia-wg_*` credentials.
 - ADD: `RouterWatchdog.disableVpnSlot`, mirroring `RouterSlotService.disableSlot` - clears `wgcN_enable`, commits, then stops the interface.
 - FIX: `stopWatchdog` issued `service "stop_wgc wgcN"` where the service expects the bare slot index (`stop_wgc N`, per ARCHITECTURE.md), so watchdog DISABLE never actually brought the tunnel down and left an unsupervised VPN running. It now delegates to `disableVpnSlot`, which also clears `wgcN_enable` so the slot cannot return on the next `start_vpnrouting0` or reboot.
 - FIX: `probeLatency reports failed probe with progress callback` failed intermittently in the full suite (errno 10048). `probeLatency` dialled a hard-coded port 1337, so faking a responding server meant binding that one global port; three test files need it and `flutter test` runs test files in parallel workers, so they collided.
@@ -142,8 +246,8 @@
 
 2026-07-28 v0.6.22 build 352
 
-- FIX: resequenced release.yaml to only run after quality_and_security.yaml sucessfully completes
-- CHG: re-enabled FLAG_SECURE to disable in-app screenshots, hides screen display from taskswitcher (was disabled during closed testing to allow screenshots)
+- FIX: sequenced release.yaml to only run after quality_and_security.yaml successfully completes
+- CHG: re-enabled FLAG_SECURE to disable in-app screenshots, hides screen display from task switcher (was disabled during closed testing to allow screenshots)
 - DOC: updated Play Store descriptions
 - TST: end-to-end manual retest of the entire app
 
@@ -161,7 +265,7 @@
 - ADD: COPY button to the router log display screen
 - MOD: optimised, and reduced size of kWatchdogScriptTemplate by 123 chars
 - ADD: watchdog shell script now checks for Internet access before attempting repair
-- CHG: router watchdog shell script does not ping secondary target if primary is sucessful
+- CHG: router watchdog shell script does not ping secondary target if primary is successful
 - FIX: updating the watchdog timeout in the UI did not update a pre-existing cron schedule
 - FIX: if you created a VPN via the watchdog interface, it was showing as enabled when it was not. Removed reminder to set it to active; when saving, the watchdog script is deployed and runs immediately.
 
@@ -175,9 +279,9 @@
 2026-07-06 v0.6.18 build 348
 
 - set minSdk = 24 (Android 24, Android 7.0 Nougat) in android\app\build.gradle.kts
-- source code grammer and spelling (non functional changes)
-- reverted internal name space to "com.exponentiallydigital.pia_wireguard_cfga" in MainActivity.kt, proguard-rules.pro, build.gradle.kts, and settings.gradle.kts. This was part of the rename several commits ago but I found taht thjis would have forced a complete restart of the Google Play closed test.
-- upadted actions/setup-java SHA to latest version
+- source code grammar and spelling (non-functional changes)
+- reverted internal name space to "com.exponentiallydigital.pia_wireguard_cfga" in MainActivity.kt, proguard-rules.pro, build.gradle.kts, and settings.gradle.kts. This was part of the rename several commits ago but I found that this would have forced a complete restart of the Google Play closed test.
+- updated actions/setup-java SHA to latest version
 - updated dependency locks with "cd android; ./gradlew dependencies --write-locks"
 - updated BUILDING.md to note how to upgrade flutter packages to their latest compatible build
 
@@ -225,8 +329,8 @@
 
 2026-06-26 version: 0.6.09 build 339
 
-- released: complete UI overhaul + self healing watchdog function
-- fix deployemny yamls
+- released: complete UI overhaul + self-healing watchdog function
+- fix deployment yamls
 
 2026-06-26 version: 0.6.08 build 338
 
@@ -274,16 +378,16 @@
 - updated slot edit text
 - renamed menu entry from "VPN watchdog management" -> "Watchdog WireGuard management"
 - watchdog shell script, changed log message from "Checking wgc1 connectivity" to "Checking wgc1 aus_melbourne connectivity"
-- updated text for overwrting watchdog config with a different region
-- droped "standalone" from menu item name
-- renamed modal screens from wireguard/watchdog "slots" to "configuration"
+- updated text for overwriting watchdog config with a different region
+- dropped "standalone" from menu item name
+- renamed modal screens from WireGuard/watchdog "slots" to "configuration"
 - hamburger menu "Close app" -> "Exit app"
 - slot modal "(Empty Slot)" -> "<\empty slot>"
 - change "CLOSE" button on each of the 4 option screens -> "HOME"
 
 2026-06-24 version: 0.6.03
 
-- no code changes, upadted extensive to do list
+- no code changes, updated extensive to do list
 
 2026-06-23 version: 0.6.02
 
@@ -337,12 +441,12 @@
 2026-06-21 version: 0.5.08
 
 - ??? pushing to wgc5 (perth) did not disable wgc1 (Melb), due to a change I made...where was that!
-- found it, `stopWatchdog`, in `lib\router_watchdog.dart`: had commented out `await _run('service "stop_wgc wgc$slot"; service start_vpnrouting0');` now re-enabled that line (and it works again, no more multiple VPNs running concurently!)
+- found it, `stopWatchdog`, in `lib\router_watchdog.dart`: had commented out `await _run('service "stop_wgc wgc$slot"; service start_vpnrouting0');` now re-enabled that line (and it works again, no more multiple VPNs running concurrently!)
 
 > [!NOTE]
 > If slot 1 was active and a watchdog was deployed to it, it remained active even if slot 5 was made active and a watchdog deployed to that slot, so we end up with multiple watchdogs, added to the `to do` list to note in the docs that the watchdog is only for one slot at a time. Who runs multiple VPNs on different slots? Maybe someone does, just like having more than one WG VPN active concurrently. Ping me if this is an issue!
 
-- fix new sendmail commands causing errors: moved `-CAfile` and `-verify_return_error` back inside the openssl quoted string, replaced `timeout 10 openssl` with `openssl -timeout 10`
+- fix new sendmail commands causing errors: moved `-CAfile` and `-verify_return_error` back inside the OpenSSL quoted string, replaced `timeout 10 openssl` with `openssl -timeout 10`
 
 2026-06-20 version: 0.5.07
 
@@ -350,11 +454,11 @@
 - fixed unit tests (testing on prior version's value)
 - removed unnecessary `nvram commit` x2
 - restart interface to flush routing on watchdog removal
-- on failed write of currrent slot restart only that slot, not a full WG restart
+- on failed write of current slot restart only that slot, not a full WG restart
 - added warning to `scripts\build-optimisation.sh` header (caveat emptor)
 - fix services-start permission is 777 on uninstall
-- normalised router send email command: resequenced, added -verify_return_error, addec space after "H", removed -amLOGIN, removed test from messageID
-- added 3 layer mail send failure: sendmail exit code, sendmail's stderr, and any detail from the underlying openssl handshake
+- normalised router send email command: re-sequenced, added -verify_return_error, added space after "H", removed -amLOGIN, removed test from messageID
+- added 3-layer mail send failure: sendmail exit code, sendmail's stderr, and any detail from the underlying openssl handshake
 - added same error checking to test email send function invoked by the UI through `buildSendmailCommand` and `testEmail`
 - updated test email header and body generation per RFC-822, now matches shell script
 - renamed "DEPLOY WATCHDOG" to "WATCHDOG CONFIG" because you can set/unset from there not just deploy
@@ -377,7 +481,7 @@
 2026-06-20 version: 0.5.05
 
 - fix, added encoding of PUB and PVT keys with `/jffs/scripts/watchdog_wgcN.sh` script curl
-- fix transient error, added sleep to final interface up comamnds in `/jffs/scripts/watchdog_wgcN.sh` script
+- fix transient error, added sleep to final interface up commands in `/jffs/scripts/watchdog_wgcN.sh` script
 - fix transient error, removed unnecessary `wg setconf "$IFACE" "$TMPCONF"` from `/jffs/scripts/watchdog_wgcN.sh`
 
 2026-06-20 version: 0.5.04
@@ -412,7 +516,7 @@
 2026-06-19 version: 0.4.35+325
 
 - fix typo in lib\router_push.dart array for the 'psk'
-- formating of license header in dart modules
+- formatting of license header in dart modules
 - updated context.md
 - added watchdog.md, requirements and spec for setting up the new watchdog feature
 
@@ -438,7 +542,7 @@
 - split out build info to separate file
 - moved additional scripts to own folder
 - added build environment optimisation script
-- added playstore folder to version track submitted description
+- added play store folder to version track submitted description
 - moved documentation sections from README to ARCHITECTURE.md, BUILDING.md, and CHANGELOG.md
 
 2026-06-13 to 2026-05-31

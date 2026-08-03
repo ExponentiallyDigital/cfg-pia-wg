@@ -82,8 +82,9 @@ class DnsField extends StatelessWidget {
           labelText: 'DNS servers',
           hintText: kDefaultDns,
           prefixIcon: Icon(Icons.dns_outlined, color: kMuted, size: 18),
-          helperText: 'Default: Quad9 | Cloudflare: 1.1.1.1, 1.0.0.1',
+          helperText: 'Quad9: 9.9.9.9, 149.112.112.112 | Cloudflare: 1.1.1.1, 1.0.0.1',
           helperStyle: TextStyle(color: kHighlight, fontSize: 11),
+          helperMaxLines: 2, // <-- allows wrapping on small screens
         ),
       );
 }
@@ -149,8 +150,7 @@ class RouterIpField extends StatelessWidget {
   Widget build(BuildContext context) => TextFormField(
         controller: controller,
         style: _kMono,
-        decoration: const InputDecoration(
-            labelText: 'Router IP', prefixIcon: Icon(Icons.router, color: kMuted, size: 18)),
+        decoration: const InputDecoration(labelText: 'Router IP', prefixIcon: Icon(Icons.router, color: kMuted, size: 18)),
       );
 }
 
@@ -163,8 +163,7 @@ class SshUsernameField extends StatelessWidget {
   Widget build(BuildContext context) => TextFormField(
         controller: controller,
         style: _kMono,
-        decoration: const InputDecoration(
-            labelText: 'SSH Username', prefixIcon: Icon(Icons.person, color: kMuted, size: 18)),
+        decoration: const InputDecoration(labelText: 'SSH Username', prefixIcon: Icon(Icons.person, color: kMuted, size: 18)),
       );
 }
 
@@ -206,8 +205,7 @@ class ClearButton extends StatelessWidget {
           children: [
             Icon(icon, size: 12, color: kError),
             const SizedBox(width: 4),
-            Text(label,
-                style: const TextStyle(color: kError, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+            Text(label, style: const TextStyle(color: kError, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
           ],
         ),
       ),
@@ -253,8 +251,7 @@ class SlotBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(color: bg, border: Border.all(color: border, width: 0.5), borderRadius: BorderRadius.circular(4)),
       child: Text(label,
-          style: TextStyle(
-              color: text, fontSize: 10, fontFamily: 'monospace', fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+          style: TextStyle(color: text, fontSize: 10, fontFamily: 'monospace', fontWeight: FontWeight.w600, letterSpacing: 0.5)),
     );
   }
 }

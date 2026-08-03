@@ -4,10 +4,10 @@
 
 **We use GitHub's Private Vulnerability Reporting feature.**
 
-1.  Go to the **Security** tab of this repository.
-2.  Click **Report a vulnerability**.
-3.  Fill out the form with as much detail as possible. You can use [this template](https://github.com/github/securitylab/blob/main/docs/report-template.md) as a guide.
-4.  Click **Submit report**.
+1. Go to the **Security** tab of this repository.
+2. Click **Report a vulnerability**.
+3. Fill out [this form](https://github.com/ExponentiallyDigital/cfg-pia-wg/security/advisories/new) with as much detail as possible.
+4. Click **Submit report**.
 
 We will be notified immediately and will respond to your report as soon as possible.
 
@@ -72,10 +72,10 @@ View them at: https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations
 
 ## Data handling & privacy
 
-**cfg-pia-wg** is architected to operate with a zero-retention, zero-persistence local data footprint to maximize user privacy:
+**cfg-pia-wg** is architected to operate with a zero-retention, zero-persistence local data footprint to maximise user privacy:
 
 - **Zero permanent footprint:** the application does not maintain long-term local telemetry, profiling metrics, or databases (`shared_preferences`, secure storage, or SQLite).
 - **Volatile file lifecycles:** when generating WireGuard configuration artifacts (`.conf`), the underlying code writes the payload payload to a transient workspace directory solely to satisfy the operating system's native file sharing framework requirements. This temporary file is wrapped within an explicit, defensive `try/finally` block that guarantees physical deletion from disk blocks immediately upon completion or cancellation of the share sequence.
-- **Inactivity session self-destruct:** the application integrates a proactive 3-minute idle countdown sequence. If the device remains inactive for 180 continuous seconds while a sensitive configuration is displayed on screen, the user interface buffers, internal form memory fields, and active memory allocation addresses are thoroughly purged.
 - **Automated clipboard overwrite:** to neutralise background memory/clipboard scraping malwares operating on the host device, successful clipboard transfers trigger a 60-second real-time countdown timer. Once expired, the app automatically overwrites the system clipboard with a blank string.
+- **Native task-switcher protection** `(FLAG_SECURE)`: enforces native OS-level window flags to block third-party screenshot capturing and automatically obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
 - **Native screen capture protection:** the implementation forces native Android system window attributes (`FLAG_SECURE`). This explicitly instructs the host OS kernel to block third-party screenshot captures and automatically obfuscates or blanks the active UI presentation when viewing screens inside the system's Recent Apps / Task Switcher interface.

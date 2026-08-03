@@ -23,7 +23,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Configure PIA WireGuard"
+        android:label="cfg-pia-wg"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false"

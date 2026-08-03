@@ -21,7 +21,7 @@
 
 - [1. Why use this?](#1-why-use-this)
 - [2. Features](#2-features)
-- [3. Pre-built releases](#3-pre-built-releases)
+- [3. Pre-built release](#3-pre-built-release)
 - [4. Prerequisites \& requirements](#4-prerequisites--requirements)
 - [5. Using the app](#5-using-the-app)
   - [5.1. Generate a PIA WireGuard configuration](#51-generate-a-pia-wireguard-configuration)
@@ -51,7 +51,7 @@ A native Android app that generates, and optionally applies, ready-to-use WireGu
 
 If you have an ASUS router running [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) firmware, you can also **manage** WireGuard configs directly on your router and deploy a **_self-healing_** watchdog with optional email alerting that makes your configuration truly "set and forget"!
 
-This app is based on my standalone [pia-wireguard-cfg](https://github.com/ExponentiallyDigital/pia-wireguard-cfg) command line tool.
+This app is based on my standalone [cfg-pia-wg-cmd](https://github.com/ExponentiallyDigital/cfg-pia-wg-cmd) command line tool.
 
 ## 1. Why use this?
 
@@ -66,31 +66,18 @@ Creating a valid PIA WireGuard config manually requires authenticating with seve
 - **Merlin watchdog management:** configure and deploy a router-side watchdog to periodically verify and self-heal VPN connectivity, manage cron/script deployment, and view router-side watchdog logs.
 - **No persistent credential storage:** PIA credentials, router SSH credentials, and generated configs are stored only in volatile application memory and are never written to permanent storage.
 - **Automated lowest-latency server selection**: measures live latency across all available servers in your selected target region, ensuring that you provision with the fastest node.
-- **Native task-switcher protection** `(FLAG_SECURE)`: obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
+- **Native task-switcher protection** `(FLAG_SECURE)`: enforces native OS-level window flags to block third-party screenshot capturing and automatically obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
 - **Input field hardening**: user credential entry textboxes disable predictive dictionary caching, auto-correction tracking assistance, and keyboard learning behaviours, alongside native selection overrides to block background clipboard scraping.
 - **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials/clipboard.
 - **Industrial-strength professional build chain**: all releases undergo automated [SonarQube](https://docs.sonarsource.com/sonarqube-server) compliance (checks code quality and test coverage), open-source dependency scanning via [OSV](https://github.com/google/osv-scanner) (Google's vulnerability database that flags out-of-date third-party packages), automated version updates via [Dependabot](https://docs.github.com/code-security/dependabot) (monitors and patches insecure or outdated dependencies), binary analysis via [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) (performs static security analysis on the app's source code, checking for platform-specific vulnerabilities), and static analysis using [CodeQL](https://github.com/github/codeql-action) (analyses code structure to catch semantic gaps and injection risks). Locked action hashes ensure that automated builds execute with specific tool versions.
 
 ---
 
-## 3. Pre-built releases
+## 3. Pre-built release
 
-This app has been submitted to the Google Play Store; a link will be placed **`<here>`** when it is available.
+This app is available from the Google Play Store -> [cfg-pia-wg](https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga).
 
-If you want to download a pre-built release from [GitHub](https://github.com/ExponentiallyDigital/cfg-pia-wg/releases), the file you need is **`cfg-pia-wg-<version>_release.apk`**.
-
-Each release includes the following versioned files:
-
-| file                                                    | description                                        |
-| ------------------------------------------------------- | -------------------------------------------------- |
-| **`cfg-pia-wg-<version>_release.apk`**                  | optimised signed release APK                       |
-| **`cfg-pia-wg-<version>_debug.apk`**                    | debug APK for testing                              |
-| **`cfg-pia-wg-<version>_google-play-store.aab`**        | Android App Bundle for the Play Store              |
-| **`cfg-pia-wg-<version>_sbom.spdx.json`**               | software bill of materials (SPDX format)           |
-| **`README.html`**                                       | offline documentation (generated from this README) |
-| **`LICENSE`**                                           | license file                                       |
-
-The installable pre-built apps above have [GitHub Attestations](https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations) for [build provenance](https://slsa.dev/spec/draft/build-provenance) verification.
+If you want to build your own, see [BUILDING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BUILDING.md).
 
 ---
 
@@ -104,11 +91,14 @@ For anything more than basic copy/past config generation with **Generate PIA Wir
 Administration\System\Service -> "Enable SSH" (LAN only is recommended).
 ```
 
-2. Enable the `JFFS` partition. Used by **Manage** and **Watchdog** functions:
+2. Enable the `JFFS` partition. Used by **Manage** and **Watchdog** functions (this _should_ be enabled by default on ASUS routers running firmware version 378.50 or newer). This allows the watchdog script and settings to survive reboots/power cycling:
 
 ```text
 Administration\System\Basic Config -> "Enable JFFS custom scripts and config"
 ```
+
+> [!TIP]
+> Firmware flashing (upgrading the router's software) [may require redeployment](https://github-wiki-see.page/m/RMerl/asuswrt-merlin.ng/wiki/JFFS) of PIA WireGuard configs. Test your VPN is active after applying a new firmware version.
 
 3. Watchdog and tunnel verification use ICMP ping from the router's WAN and WireGuard interfaces.
 
@@ -140,7 +130,7 @@ The app opens to a main menu with five choices:
   <figcaption>Standalone config generation</figcaption>
 </figure>
 
-6. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing.
+6. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing. Copying a config to the clipboard starts a 60 second timer, displayed on screen, after which the clipboard is automatically cleared by copying an empty string to it, so you'll see a system dialogue like "copied" when the timer expires.
 
 ### 5.2. Manage router PIA WireGuard configuration
 
@@ -221,7 +211,7 @@ Use the **View app log** screen to inspect in-app log entries and clear them wit
 
 ### 5.5. Exit app
 
-The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard.
+The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard. The clipboard is cleared by copying an empty string to it, so you'll see a system dialogue like "copied" when you exit the app.
 
 ### 5.6. Hamburger menu
 
@@ -256,7 +246,7 @@ Build information and documentation links live in the hamburger menu's **About**
 - **Key safety**: generated configs contains private encryption keys. Treat them like passwords and manage them securely.
 
 > [!IMPORTANT]
-> This app supports a maximum of one active WireGuard VPN at any time
+> This app supports a maximum of one active WireGuard VPN at any time.
 >
 > When you save a config to your router, that "slot" will become the active VPN **replacing** any previously active slot.
 >

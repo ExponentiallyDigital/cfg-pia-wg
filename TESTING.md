@@ -1,6 +1,14 @@
 # Notes on testing cfg-pia-wg
 
-## Testing email send from SSH
+- [1. Testing email send from SSH](#1-testing-email-send-from-ssh)
+  - [1.1. Construct the command line](#11-construct-the-command-line)
+  - [1.2. Construct the test email](#12-construct-the-test-email)
+  - [1.3. How the Commands Work](#13-how-the-commands-work)
+  - [1.4. Certificate information](#14-certificate-information)
+- [2. Testing the watchdog feature](#2-testing-the-watchdog-feature)
+  - [2.1. Checks](#21-checks)
+
+## 1. Testing email send from SSH
 
 If the watchdog feature is used, cfg-pia-wg employs the below commands to send emails. If you are having issues with sending email alerts you can test locally via SSH with the following examples.
 
@@ -8,7 +16,7 @@ As a fully blown `sendmail` is not available, cfg-pia-wg uses the built-in BusyB
 
 This ensures that emails are sent without exposing account credentials to eavesdropping or man-in-the-middle attacks.
 
-### Construct the command line
+### 1.1. Construct the command line
 
 Replace `sender@example.com`, `recipient@example.com`, and `APP_PASSWORD` in the below:
 
@@ -24,7 +32,7 @@ sendmail -v \
 >
 > **APP PASSWORD**: the above example exposes your app password to bash history, `ps`, and process lists. These are cleared at reboot though. Remember, this is **only** for testing purposes. A more secure approach uses input stuffing from a file eg. one-time setup with `nano /tmp/.smtp-pass` enter your password then save the file, secure the file with `chmod 600 /tmp/.smtp-pass` the `sendmail` command line would then be modified with `-ap$(cat /tmp/.smtp-pass)`.
 
-### Construct the test email
+### 1.2. Construct the test email
 
 Replace `sender@example.com`, `Sender Name`, `Recipient Name`, and `recipient@example.com` in the below:
 
@@ -61,7 +69,7 @@ EOF
 > [!TIP]
 > **EOF**: Using `EOF` without single quotes allows variable expansion. Typically you would use `'EOF'`, but we need the `date` and `hostnames` expanded, which is why we use `cat << EOF >`.
 
-### How the Commands Work
+### 1.3. How the Commands Work
 
 The first command constructs a valid, raw RFC-compliant email body inside a temporary file (/tmp/test-email.txt) using dynamic variables to inject an accurate timestamp, a globally unique Message-ID, and local hostname metadata. The second command executes sendmail in verbose mode (-v), using a custom network handler string (-H) to launch OpenSSL instead of a standard socket connection. The OpenSSL utility wraps the session in TLS 1.3 encryption, cross-references Gmail's public certificates against the router's trusted system authorities (-CAfile), and immediately kills the transmission (-verify_return_error) if any intermediate certificate is missing or invalid. Once a secure channel is verified, sendmail submits the authentication flags (-au and -ap), passes the envelope routing details, and pipes the payload text directly into the authenticated SMTP session.
 
@@ -127,7 +135,7 @@ read:errno=0
 sendmail: recv:'221 2.0.0 closing connection a-very-long-session-id-string - gsmtp'
 ```
 
-### Certificate information
+### 1.4. Certificate information
 
 If you want to verify certificate use (and it's a _lot_ of information), use
 
@@ -140,11 +148,11 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
 
 ---
 
-## Testing the watchdog feature
+## 2. Testing the watchdog feature
 
 Manual router tests:
 
-### Checks
+### 2.1. Checks
 
 1. check that `/tmp/scripts/services-start` contains (5m watchdog)
 

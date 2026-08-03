@@ -18,9 +18,7 @@
   - [6.3. Gradle-side notes](#63-gradle-side-notes)
   - [6.4. The licence text](#64-the-licence-text)
 
-
-
- ## 1. How it works
+## 1. How it works
 
 The provisioning logic in `lib/pia_service.dart` is a direct Dart translation of the command line version's [Go code](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/blob/main/main.go), implementing the same steps in the same order:
 
@@ -32,7 +30,7 @@ The provisioning logic in `lib/pia_service.dart` is a direct Dart translation of
 5. **Secure registration**: submits the dynamic public key configuration to the chosen low-latency endpoint via an HTTPS API (port 1337). The step utilises the dynamically resolved PIA root certificate, matching the specific Common Name (CN) mapping fields rather than raw IP routing addresses. The certificate is not hardcoded, so that it stays current when PIA rotates it.
 6. **Config assembly**: transforms payload metadata returns into localised .conf specifications utilising Unix line endings (\n) for cross-compatibility.
 
-##  2. <a name='Appprocessingflow'></a>App processing flow
+## 2. <a name='Appprocessingflow'></a>App processing flow
 
 ```mermaid
 graph TD
@@ -115,15 +113,15 @@ graph TD
 > [!NOTE]
 > WireGuard configuration is backed up before any destructive/configuration activity, and restored if any issue is detected.
 
-###  2.1. <a name='Insummary...'></a>In summary...
+### 2.1. <a name='Insummary...'></a>In summary...
 
 When you select a PIA region and push it to your router, the app connects directly to your router over your home network and switches your VPN tunnel to the new location. It first checks whether a VPN tunnel is already running, stops it cleanly, writes the new VPN server details into the router's permanent memory, and then starts the new tunnel. The app watches the router until it confirms the tunnel is active, then checks that internet traffic is actually flowing through it by verifying the public IP address your router is using. If anything goes wrong at any point, the app restores the router to exactly the state it was in before you started.
 
-###  2.2. <a name='Indetail...'></a>In detail...
+### 2.2. <a name='Indetail...'></a>In detail...
 
-The push operation establishes an SSH session to the router and uses `wg show interfaces` to detect any currently active WireGuard client slot. If an existing slot config is present in NVRAM, the current `wgcN_*` keys are snapshotted as a backup before any changes are made. The active tunnel is stopped by disabling its `enforce` and `enable` NVRAM flags, committing, then issuing `service "stop_wgc N"; service start_vpnrouting0` targeted at that specific slot. The new configuration is written across the full set of NVRAM keys for the target slot, with `ep_addr_r` and `rip` explicitly cleared since these are populated dynamically by the firmware after tunnel establishment. After a single nvram commit, the new tunnel is started via `service "restart_wgc N"; service start_vpnrouting0`. The app then polls `wg show interfaces` for up to 60 seconds to confirm the interface is active, followed by polling `ipv4.icanhazip.com` (a service run and hosted by [Cloudflare](https://www.cloudflare.com/)) via curl through the tunnel to confirm routed connectivity. On any failure, independent recovery blocks restore the backed-up NVRAM keys and re-enable the previously active slot as appropriate to the failure scenario.
+The push operation establishes an SSH session to the router and uses `wg show interfaces` to detect any currently active WireGuard client slot. If an existing slot config is present in NVRAM, the current `wgcN_*` keys are snapshotted as a backup before any changes are made. The active tunnel is stopped by disabling its `enforce` and `enable` NVRAM flags, committing, then issuing `service "stop_wgc N"; service start_vpnrouting0` targeted at that specific slot. The new configuration is written across the full set of NVRAM keys for the target slot, with `ep_addr_r` and `rip` explicitly cleared since these are populated dynamically by the firmware after tunnel establishment. After a single nvram commit, the new tunnel is started via `service "restart_wgc N"; service start_vpnrouting0`. The app then polls `wg show interfaces` for up to 60 seconds to confirm the interface is active, followed by pinging the user supplied ping targets (defaults to 8.8.8.8 & 1.1.1.1) through the tunnel to confirm routed connectivity. On any failure, independent recovery blocks restore the backed-up NVRAM keys and re-enable the previously active slot as appropriate to the failure scenario.
 
-###  2.3. <a name='RouterWireGuardNVRAMfields'></a>Router WireGuard NVRAM fields
+### 2.3. <a name='RouterWireGuardNVRAMfields'></a>Router WireGuard NVRAM fields
 
 ```text
 wgcN_addr=the local tunnel IP address assigned to the router by the VPN server in CIDR notation (e.g., `10.x.x.x/32`).
@@ -147,25 +145,25 @@ wgcN_aips=allowed IP addresses, defaults to `0.0.0.0/0`.
 
 ---
 
-##  3. <a name='Watchdogdetails'></a>Watchdog details
+## 3. <a name='Watchdogdetails'></a>Watchdog details
 
 On Merlin firmware routers, enabling the watchdog deploys
 
 1. a slot-specific shell script `/jffs/scripts/watchdog_wgcN.sh`
 2. cron entries via `/jffs/scripts/services-start`.
 
-###  3.1. <a name='Shellscript'></a>Shell script
+### 3.1. <a name='Shellscript'></a>Shell script
 
 The shell script checks connectivity via the VPN tunnel on a periodic basis using two ping targets
 
 - `8.8.8.8` (Google)
 - `1.1.1.1` (Cloudflare)
 
-If connectivity fail, the interface is reconfigured with back off.
+If connectivity fails, the interface is reconfigured with back off.
 
 ### 3.2. <a name='Cronentries'></a>Cron entries
 
-A `crontab`/`cru` entry drives the configurable periodic health check. An additinal job rotates the watchdog router log file at midnight, retaining the prior log. To avoid filling the JFFS partition, all logging is stored in `/tmp`. Watchdog logging does not persist after a reboot or power loss.
+A `crontab`/`cru` entry drives the configurable periodic health check. An additional job rotates the watchdog router log file at midnight, retaining the prior log. To avoid filling the JFFS partition, all logging is stored in `/tmp`. Watchdog logging does not persist after a reboot or power loss.
 
 ```bash
 */5 * * * * /jffs/scripts/watchdog_wgc1.sh #watchdog_wgc1#
@@ -217,7 +215,7 @@ AllowedIPs          = 0.0.0.0/0
 
 ---
 
-##  4. <a name='Networktraffic'></a>Network traffic
+## 4. <a name='Networktraffic'></a>Network traffic
 
 Below are detailed representations of the app's network calls, with illustrative, not real, IP addresses.
 
@@ -227,22 +225,22 @@ Below are detailed representations of the app's network calls, with illustrative
 
 ---
 
-##  5. <a name='Outputsessiondestruction'></a>Output & session destruction
+## 5. <a name='Outputsessiondestruction'></a>Output & session destruction
 
 Generated configuration data is managed via:
 
 - **Ephemeral verification:** displayed on-screen inside a text viewport for visual validation.
 - **Transient streaming:** shareable using Android's system share sheet (e.g., via "Save to Files" or encrypted side-channels).
 - **Clipboard sanitisation:** tapping **COPY** invokes a 60-second timer that clears the clipboard storage space automatically.
-- **Application exit:** all applicaation exit paths flush credentials and scrub configs from memory before application shutdown.
+- **Application exit:** all application exit paths flush credentials and scrub configs from memory before application shutdown.
 
 ---
 
-##  6. <a name='BuildprovenancetheAboutscreen'></a>Build provenance (the About screen)
+## 6. <a name='BuildprovenancetheAboutscreen'></a>Build provenance (the About screen)
 
 `lib/screens/about_screen.dart` exists so a bug report can identify exactly which binary the reporter is running. Once an APK ships, the commit, branch/tag, CI run, build type and install source are otherwise invisible.
 
-###  6.1. <a name='Thechannel'></a>The channel
+### 6.1. <a name='Thechannel'></a>The channel
 
 `com.exponentiallydigital.pia_wireguard_cfga/build_info`, registered in `MainActivity.configureFlutterEngine` and answering a single method, `getBuildInfo`, with a flat `Map<String, String>`.
 
@@ -251,7 +249,7 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 `loadBuildInfo()` swallows `MissingPluginException` and `PlatformException`, returning `BuildInfo.unknown()`.
 This is load-bearing, not defensive padding: under `flutter test` no native side is registered at all, so every full-app widget test takes that path.
 
-###  6.2. <a name='Whereeachfieldcomesfrom'></a>Where each field comes from
+### 6.2. <a name='Whereeachfieldcomesfrom'></a>Where each field comes from
 
 | Field | Source |
 | --- | --- |
@@ -262,7 +260,7 @@ This is load-bearing, not defensive padding: under `flutter test` no native side
 | `osVersion` | `RELEASE_OR_CODENAME` on API 30+, else `RELEASE`, plus `SDK_INT` |
 | `buildTimestamp`, `commitHash`, `commitDate`, `gitBranch`, `runnerId`, `compileSdk`, `kotlinVersion` | `BuildConfig`, injected by `android/app/build.gradle.kts` at configuration time |
 
-###  6.3. <a name='Gradle-sidenotes'></a>Gradle-side notes
+### 6.3. <a name='Gradle-sidenotes'></a>Gradle-side notes
 
 `buildFeatures { buildConfig = true }` is required, AGP 8+ defaults it to `false`, and AGP 9 removed the
 `android.defaults.buildfeatures.buildconfig` escape hatch. Once enabled, AGP generates `DEBUG`,
@@ -288,11 +286,9 @@ declared by hand.
 - No new dependencies, so the STRICT `gradle.lockfile` set is untouched. This is also why the Kotlin side
   hand-rolls the `longVersionCode` branch rather than using `androidx.core`'s `PackageInfoCompat`.
 
-###  6.4. <a name='Thelicencetext'></a>The licence text
+### 6.4. <a name='Thelicencetext'></a>The licence text
 
 `lib/license_text.dart` holds `./LICENSE` verbatim as a raw-string constant, and is generated at development time, not loaded at runtime and not registered as an asset. The About screen therefore has no I/O path and no way to
 display a licence that differs from the one in the repository.
 
 **If `./LICENSE` changes, regenerate that constant.**
-
----
