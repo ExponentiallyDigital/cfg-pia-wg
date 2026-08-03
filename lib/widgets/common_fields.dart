@@ -97,7 +97,7 @@ class ObscuredField extends StatelessWidget {
   final IconData prefixIcon;
   final bool visible;
   final VoidCallback onToggle;
-  final bool enableInteractiveSelection; // disable copy if password field is revealed
+//  final bool enableInteractiveSelection; // disable copy if password field is revealed
   const ObscuredField({
     super.key,
     required this.controller,
@@ -105,7 +105,7 @@ class ObscuredField extends StatelessWidget {
     required this.prefixIcon,
     required this.visible,
     required this.onToggle,
-    this.enableInteractiveSelection = true, // disable copy if password field is revealed
+//    this.enableInteractiveSelection = true, // disable copy if password field is revealed
   });
 
   @override
@@ -113,7 +113,7 @@ class ObscuredField extends StatelessWidget {
         controller: controller,
         obscureText: !visible,
         style: _kMono,
-        enableInteractiveSelection: enableInteractiveSelection, // disable copy if password field is revealed
+//        enableInteractiveSelection: enableInteractiveSelection, // disable copy if password field is revealed
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: Icon(prefixIcon, color: kMuted, size: 18),
@@ -140,7 +140,7 @@ class PiaPasswordField extends StatelessWidget {
         label: 'PIA password',
         prefixIcon: Icons.lock_outline,
         visible: visible,
-        enableInteractiveSelection: false, // disable copy if password field is revealed
+//        enableInteractiveSelection: false, // disable copy if password field is revealed
         onToggle: onToggle,
       );
 }
@@ -184,7 +184,7 @@ class SshPasswordField extends StatelessWidget {
         label: 'SSH Password',
         prefixIcon: Icons.lock,
         visible: visible,
-        enableInteractiveSelection: false, // disable copy if password field is revealed
+//        enableInteractiveSelection: false, // disable copy if password field is revealed
         onToggle: onToggle,
       );
 }

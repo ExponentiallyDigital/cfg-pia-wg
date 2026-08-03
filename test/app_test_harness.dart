@@ -5,8 +5,8 @@
 // controller at the end of the test body (cancels the timer).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cfg_pia_wireguard/app_shell.dart';
-import 'package:cfg_pia_wireguard/session_controller.dart';
+import 'package:cfg_pia_wg/app_shell.dart';
+import 'package:cfg_pia_wg/session_controller.dart';
 
 SessionController quietController({Duration tickInterval = const Duration(hours: 1)}) =>
     SessionController(tickInterval: tickInterval, clipboardWriter: (_) async {});

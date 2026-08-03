@@ -5,8 +5,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cfg_pia_wireguard/build_info_service.dart';
-import 'package:cfg_pia_wireguard/screens/about_screen.dart';
+import 'package:cfg_pia_wg/build_info_service.dart';
+import 'package:cfg_pia_wg/screens/about_screen.dart';
 
 // Deliberately unmistakable values so a passing assertion cannot be a coincidence.
 const _hostReply = <String, String>{

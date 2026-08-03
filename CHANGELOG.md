@@ -147,14 +147,34 @@
 - REL: Rename "cfg_pia_wireguard" to "cfg_pia_wg" in all dart module and test names.
 - CHG: Implement `flutter_windowmanager` to allow screen shots from all screens & modals except Config
 - DOC: Add note to use data from About screen when filing a bug.
-
+- FIX: can't paste into password fields, and can't "q"uit debug running in any screen showing password fields, also causing screen `D/EGL_emulation(24795): app_time_stats: avg=499.58ms min=498.77ms max=500.27ms count=3` count to increment; revert build 363 changes.
 - TST: Reinstall stock ASUS router firmware and check Manage and Watchdog operate; remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
 
 ### 2.2. Implemented
 
+2026-08-03 v0.7.04 build 364
+
+- FIX: renamed app from *cfg_pia_wireguard* -> *cfg_pia_wg* (must use underscores, *cannot* use hyphens)
+  1. update `pubspec.yaml` -> name: cfg_pia_wg
+  2. search and replace in .dart files -> "import 'package:cfg_pia_wg/"
+  3. `android/settings.gradle.kts` -> rootProject.name = "cfg_pia_wg"
+  4. check tests run and app compiles
+  5. update `.github\workflows\release.yml` -> mv build/app/outputs/bundle/release/cfg_pia_wg-release.aab
+  6. update `scripts\build.ps1`
+     1. $TARGET_APK = "build/cfg_pia_wg-v${VERSION}_release.apk"
+     2. $APK_RELEASE = "build/cfg_pia_wg-v${VERSION}_release.apk"
+     3. $AAB_RELEASE = "build/app/outputs/bundle/release/cfg_pia_wg-release.aab"
+  7. update `scripts\build.sh`
+     1. TARGET_APK="build/cfg_pia_wg-v${VERSION}_release.apk"
+     2. APK_RELEASE="build/cfg_pia_wg-v${VERSION}_release.apk"
+     3. AAB_RELEASE="build/app/outputs/bundle/release/cfg_pia_wg-release.aab"
+  8. save and exit VS Code, check tests run and app compiles with .\scriptys\build all
+  9. check app builds on GitHub dev branch
+- FIX: can't paste into password fields, and can't "q"uit debug running in any screen showing password fields, also causing screen `D/EGL_emulation(24795): app_time_stats: avg=499.58ms min=498.77ms max=500.27ms count=3` count to increment; **revert build 363 changes** to `lib\widgets\common_fields.dart` and `lib\watchdog_dialog.dart`. Tested and now operating corectly ie can "q"uit debugger, no incrementing count and can paste.
+
 2026-08-03 v0.7.03 build 363
 
-- FIX: Disabled ability to copy a password when the field is revealed.
+- FIX: Disabled ability to copy a password when the field is revealed. (didn't check could paste which is now broken when testing build 364, **reverted changes** in build 364)
 
 2026-08-03 v0.7.02 build 362
 

@@ -1,11 +1,10 @@
 // test/router_slot_service_test.dart - RouterSlotService tests over a fake SSH client.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cfg_pia_wireguard/router_slot_service.dart';
+import 'package:cfg_pia_wg/router_slot_service.dart';
 
 import 'watchdog_test_utils.dart';
 
-const _sampleConfig =
-    '[Interface]\n'
+const _sampleConfig = '[Interface]\n'
     'PrivateKey = privkey==\n'
     'Address = 10.0.0.2/32\n'
     'DNS = 1.1.1.1\n'
@@ -20,7 +19,8 @@ RouterSlotService svc(
   RecordingSSHClient c, {
   void Function(String, {bool isError, bool isSuccess})? onLog,
   int verifyMaxAttempts = 2,
-}) => RouterSlotService(c, onLog: onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts);
+}) =>
+    RouterSlotService(c, onLog: onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts);
 
 void main() {
   group('fetchSlots', () {

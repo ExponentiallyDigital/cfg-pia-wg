@@ -8,7 +8,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cfg_pia_wireguard/pia_service.dart';
+import 'package:cfg_pia_wg/pia_service.dart';
 
 import '../app_test_harness.dart';
 import '../http_test_helpers.dart';

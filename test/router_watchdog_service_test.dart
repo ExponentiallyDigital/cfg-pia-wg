@@ -1,6 +1,6 @@
 // test/router_watchdog_service_test.dart - RouterWatchdog service tests over a fake SSH client.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cfg_pia_wireguard/router_watchdog.dart';
+import 'package:cfg_pia_wg/router_watchdog.dart';
 
 import 'watchdog_test_utils.dart';
 

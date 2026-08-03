@@ -210,7 +210,7 @@ if [[ "$MODE" == "release" || "$MODE" == "all" ]]; then
     START=$(date +%s)
     flutter build apk --release
     DEFAULT_APK="build/app/outputs/flutter-apk/app-release.apk"
-    TARGET_APK="build/cfg_pia_wireguard-v${VERSION}_release.apk"
+    TARGET_APK="build/cfg_pia_wg-v${VERSION}_release.apk"
     if [[ -f "$DEFAULT_APK" ]]; then
         mv "$DEFAULT_APK" "$TARGET_APK"
         echo -e "${GREEN}Renamed release APK to: $TARGET_APK${RESET}"
@@ -234,8 +234,8 @@ echo ""
 echo -e "${MAGENTA}-------------------------------------------------------------------------------${RESET}"
 
 APK_DEBUG="build/app/outputs/flutter-apk/app-debug.apk"
-APK_RELEASE="build/cfg_pia_wireguard-v${VERSION}_release.apk"
-AAB_RELEASE="build/app/outputs/bundle/release/cfg_pia_wireguard-release.aab"
+APK_RELEASE="build/cfg_pia_wg-v${VERSION}_release.apk"
+AAB_RELEASE="build/app/outputs/bundle/release/cfg_pia_wg-release.aab"
 
 echo -e "${WHITE}Build artefacts:${RESET}"
 

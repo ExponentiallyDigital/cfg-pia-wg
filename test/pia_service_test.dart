@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cfg_pia_wireguard/main.dart' as app;
-import 'package:cfg_pia_wireguard/pia_service.dart';
+import 'package:cfg_pia_wg/main.dart' as app;
+import 'package:cfg_pia_wg/pia_service.dart';
 
 import 'http_test_helpers.dart';
 
@@ -99,25 +99,25 @@ void main() {
           return FakeHttpClientResponse(
             200,
             '${jsonEncode({
-              'regions': [
-                {
-                  'id': 'b_region',
-                  'servers': {
-                    'wg': [
-                      {'ip': '2.2.2.2', 'cn': 'b-server'},
-                    ],
-                  },
-                },
-                {
-                  'id': 'a_region',
-                  'servers': {
-                    'wg': [
-                      {'ip': '1.1.1.1', 'cn': 'a-server'},
-                    ],
-                  },
-                },
-              ],
-            })}\n',
+                  'regions': [
+                    {
+                      'id': 'b_region',
+                      'servers': {
+                        'wg': [
+                          {'ip': '2.2.2.2', 'cn': 'b-server'},
+                        ],
+                      },
+                    },
+                    {
+                      'id': 'a_region',
+                      'servers': {
+                        'wg': [
+                          {'ip': '1.1.1.1', 'cn': 'a-server'},
+                        ],
+                      },
+                    },
+                  ],
+                })}\n',
           );
         },
       );
@@ -159,22 +159,22 @@ void main() {
         (url, method) => FakeHttpClientResponse(
           200,
           '${jsonEncode({
-            'regions': [
-              {'id': 'missing_servers'},
-              {
-                'id': 'empty_wg',
-                'servers': {'wg': []},
-              },
-              {
-                'id': 'usable',
-                'servers': {
-                  'wg': [
-                    {'ip': '10.0.0.1', 'cn': 'usable-cn'},
-                  ],
-                },
-              },
-            ],
-          })}\n',
+                'regions': [
+                  {'id': 'missing_servers'},
+                  {
+                    'id': 'empty_wg',
+                    'servers': {'wg': []},
+                  },
+                  {
+                    'id': 'usable',
+                    'servers': {
+                      'wg': [
+                        {'ip': '10.0.0.1', 'cn': 'usable-cn'},
+                      ],
+                    },
+                  },
+                ],
+              })}\n',
         ),
       );
 

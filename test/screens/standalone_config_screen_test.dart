@@ -4,9 +4,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cfg_pia_wireguard/pia_service.dart';
-import 'package:cfg_pia_wireguard/session_controller.dart';
-import 'package:cfg_pia_wireguard/screens/standalone_config_screen.dart';
+import 'package:cfg_pia_wg/pia_service.dart';
+import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/screens/standalone_config_screen.dart';
 
 import '../http_test_helpers.dart';
 import '../pia_generate_harness.dart';
@@ -17,11 +17,11 @@ SessionController _controller(List<String> clipWrites) =>
 // In the real app AppChrome's Scaffold provides the Material ancestor every route shares; in
 // isolation we supply one here.
 Widget _host(SessionController c, {PiaService? service}) => SessionScope(
-  controller: c,
-  child: MaterialApp(
-    home: Scaffold(body: StandaloneConfigScreen(service: service)),
-  ),
-);
+      controller: c,
+      child: MaterialApp(
+        home: Scaffold(body: StandaloneConfigScreen(service: service)),
+      ),
+    );
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

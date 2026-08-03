@@ -118,7 +118,7 @@ jobs:
 
           # 1. Always build App Bundle (.aab)
           flutter build appbundle --release
-          mv build/app/outputs/bundle/release/cfg_pia_wireguard-release.aab \
+          mv build/app/outputs/bundle/release/cfg_pia_wg-release.aab \
              build/cfg-pia-wg-${TAG}_google-play-store.aab
 
           # 2. Conditionally build release APK if requested

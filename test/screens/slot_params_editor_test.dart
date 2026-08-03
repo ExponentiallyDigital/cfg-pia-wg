@@ -1,28 +1,28 @@
 // test/screens/slot_params_editor_test.dart - WireGuard slot parameter editor (spec 3.3).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cfg_pia_wireguard/screens/slot_params_editor.dart';
+import 'package:cfg_pia_wg/screens/slot_params_editor.dart';
 
 // initial values with addr/desc/ep_addr/ppub/priv blank (no defaults) so SAVE starts disabled.
 Map<String, String> _initial() => {
-  'addr': '',
-  'alive': '25',
-  'desc': '',
-  'dns': '9.9.9.9, 149.112.112.112',
-  'enable': '1',
-  'enforce': '1',
-  'ep_addr': '',
-  'ep_addr_r': '203.0.113.9',
-  'ep_port': '1337',
-  'fw': '0',
-  'mtu': '1420',
-  'nat': '1',
-  'ppub': '',
-  'priv': '',
-  'psk': '',
-  'rip': '198.51.100.7',
-  'aips': '0.0.0.0/0',
-};
+      'addr': '',
+      'alive': '25',
+      'desc': '',
+      'dns': '9.9.9.9, 149.112.112.112',
+      'enable': '1',
+      'enforce': '1',
+      'ep_addr': '',
+      'ep_addr_r': '203.0.113.9',
+      'ep_port': '1337',
+      'fw': '0',
+      'mtu': '1420',
+      'nat': '1',
+      'ppub': '',
+      'priv': '',
+      'psk': '',
+      'rip': '198.51.100.7',
+      'aips': '0.0.0.0/0',
+    };
 
 void main() {
   testWidgets('SAVE is disabled until every editable text field is filled', (tester) async {

@@ -213,7 +213,7 @@ if ($MODE -in "release", "all") {
     $START = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     flutter build apk --release
     $DEFAULT_APK = "build/app/outputs/flutter-apk/app-release.apk"
-    $TARGET_APK = "build/cfg_pia_wireguard-v${VERSION}_release.apk"
+    $TARGET_APK = "build/cfg_pia_wg-v${VERSION}_release.apk"
     if (Test-Path $DEFAULT_APK) {
         Move-Item -Path $DEFAULT_APK -Destination $TARGET_APK -Force
         Write-Host "${GREEN}Renamed release APK to: $TARGET_APK${RESET}"
@@ -237,8 +237,8 @@ Write-Host ""
 Write-Host "${MAGENTA}-------------------------------------------------------------------------------${RESET}"
 
 $APK_DEBUG = "build/app/outputs/flutter-apk/app-debug.apk"
-$APK_RELEASE = "build/cfg_pia_wireguard-v${VERSION}_release.apk"
-$AAB_RELEASE = "build/app/outputs/bundle/release/cfg_pia_wireguard-release.aab"
+$APK_RELEASE = "build/cfg_pia_wg-v${VERSION}_release.apk"
+$AAB_RELEASE = "build/app/outputs/bundle/release/cfg_pia_wg-release.aab"
 
 Write-Host "${WHITE}Build artefacts:${RESET}"
 

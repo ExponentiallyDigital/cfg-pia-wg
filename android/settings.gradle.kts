@@ -24,7 +24,7 @@ plugins {
 }
 
 include(":app")
-rootProject.name = "cfg_pia_wireguard"
+rootProject.name = "cfg_pia_wg"
 
 // Uncomment the below to ensure that dependency locking is active, adding a dependency with a version that is NOT in my current lockfiles
 //dependencies {

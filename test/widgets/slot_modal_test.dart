@@ -1,21 +1,21 @@
 // test/widgets/slot_modal_test.dart - the parameterised slot modal (manage + watchdog modes).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cfg_pia_wireguard/pia_service.dart';
-import 'package:cfg_pia_wireguard/router_slot_service.dart';
-import 'package:cfg_pia_wireguard/session_controller.dart';
-import 'package:cfg_pia_wireguard/widgets/slot_modal.dart';
+import 'package:cfg_pia_wg/pia_service.dart';
+import 'package:cfg_pia_wg/router_slot_service.dart';
+import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/widgets/slot_modal.dart';
 
 import '../watchdog_test_utils.dart';
 
 class _FakePia extends PiaService {
   @override
   Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async => const [
-    Region(
-      id: 'aus_melbourne',
-      wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')],
-    ),
-  ];
+        Region(
+          id: 'aus_melbourne',
+          wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')],
+        ),
+      ];
 
   @override
   Future<String> generateConfig({
@@ -38,14 +38,15 @@ SlotInfo _slot(
   bool enabled = false,
   bool watchdog = false,
   bool emailAlerting = false,
-}) => SlotInfo(
-  index: i,
-  desc: desc,
-  killSwitch: killSwitch,
-  enabled: enabled,
-  watchdogActive: watchdog,
-  emailAlerting: emailAlerting,
-);
+}) =>
+    SlotInfo(
+      index: i,
+      desc: desc,
+      killSwitch: killSwitch,
+      enabled: enabled,
+      watchdogActive: watchdog,
+      emailAlerting: emailAlerting,
+    );
 
 RouterSlots _slots(Map<int, SlotInfo> override, {int? active, bool merlin = true}) {
   final m = {for (var i = 1; i <= 5; i++) i: _slot(i)};
