@@ -339,6 +339,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                 _field(_piaUserCtrl, 'PIA username', const Key('wd_pia_user')),
                 _field(_piaPassCtrl, 'PIA password', const Key('wd_pia_pass'),
                     obscure: !_piaPassVisible,
+                    enableInteractiveSelection: false, // disable copy if password field is revealed
                     onToggle: () => setState(() => _piaPassVisible = !_piaPassVisible),
                     visible: _piaPassVisible),
                 const SizedBox(height: 4),
@@ -398,6 +399,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     bool obscure = false,
     TextInputType? keyboard,
     VoidCallback? onToggle,
+    bool enableInteractiveSelection = true, // disable copy if password field is revealed
     bool visible = false,
   }) {
     return Padding(
@@ -406,6 +408,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         key: key,
         controller: ctrl,
         obscureText: obscure,
+        enableInteractiveSelection: enableInteractiveSelection, // disable copy if password field is revealed
         keyboardType: keyboard,
         autocorrect: false,
         enableSuggestions: false,

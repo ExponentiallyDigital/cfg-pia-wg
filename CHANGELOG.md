@@ -147,10 +147,14 @@
 - REL: Rename "cfg_pia_wireguard" to "cfg_pia_wg" in all dart module and test names.
 - CHG: Implement `flutter_windowmanager` to allow screen shots from all screens & modals except Config
 - DOC: Add note to use data from About screen when filing a bug.
-- FIX: If you click on the reveal password button then you can copy the password.
+
 - TST: Reinstall stock ASUS router firmware and check Manage and Watchdog operate; remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
 
 ### 2.2. Implemented
+
+2026-08-03 v0.7.03 build 363
+
+- FIX: Disabled ability to copy a password when the field is revealed.
 
 2026-08-03 v0.7.02 build 362
 
