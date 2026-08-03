@@ -146,9 +146,15 @@
 ### 2.1. Pending - things next in line for implementation
 
 - DOC: Add note to use data from About screen when creating an issue on GitHub, add to ISSUE_TEMPLATEs.
+- DOC: Add "GB" to "...8, 16, 32, 64 RAM configuations..." in BUILDING.md
 - TST: Reinstall stock ASUS router firmware and check Manage and Watchdog operate; remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
 
 ### 2.2. Implemented - chronological change history
+
+2026-08-03 v0.7.06 build 366
+
+- REL: Upgraded Flutter to 3.44.8 from 3.44.5 with `flutter upgrade --force`
+- REL: Buildchain updated with `flutter pub upgrade --major-versions` & `.\android\gradlew -p android :dependencies :app:dependencies --write-locks`
 
 2026-08-03 v0.7.05 build 365
 
