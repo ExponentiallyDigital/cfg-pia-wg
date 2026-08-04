@@ -1,3 +1,7 @@
+# =================================================================
+# GitHub Actions Workflow: Build, Release, and Deploy to Play Store
+# Triggers on git tag pushes matching "v*" (e.g. v0.7.06)
+# =================================================================
 name: "Build and release"
 
 on:
@@ -25,9 +29,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  # ============================================================
-  # Step 1: Force Quality & Security to run first on tag push
-  # ============================================================
+  # =================================================================
+  # Step 1: Force Quality & Security checks to run first on tag push
+  # =================================================================
   quality-and-security:
     name: Quality & security checks
     uses: ./.github/workflows/quality_and_security.yml
@@ -38,9 +42,9 @@ jobs:
       packages: read
     secrets: inherit
 
-  # ============================================================
+  # =================================================================
   # Step 2: Build and release (only runs if quality checks succeed)
-  # ============================================================
+  # =================================================================
   release:
     name: Build and release
     needs: quality-and-security
@@ -53,17 +57,25 @@ jobs:
       contents: write
       attestations: write
       id-token: write
+
     runs-on: ubuntu-latest
     if: |
       always() &&
       needs.quality-and-security.result == 'success' &&
       (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+
     steps:
+      # ------------------------------------------------------------
+      # Step A: Checkout repository source code
+      # ------------------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
+      # ------------------------------------------------------------
+      # Step B: Download debug APK from quality checks workflow (if requested)
+      # ------------------------------------------------------------
       - name: Download debug APK from quality checks
         if: ${{ inputs.build_apk == 'release-apk' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -71,8 +83,11 @@ jobs:
           name: app-debug-apk
           path: build/app/outputs/flutter-apk/
 
+      # ------------------------------------------------------------
+      # Step C: Set up Java & Flutter execution environments
+      # ------------------------------------------------------------
       - name: Set up Java
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        uses: actions/setup-java@0f62d2ad8407a414cddd4790bed06fd9ebda0f56 # v1.4.5
         with:
           distribution: "zulu"
           java-version: "21"
@@ -83,6 +98,9 @@ jobs:
           channel: "stable"
           cache: true
 
+      # ------------------------------------------------------------
+      # Step D: Decode Android Keystore secrets for signing release binaries
+      # ------------------------------------------------------------
       - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -99,6 +117,9 @@ jobs:
           keyPassword=$KEY_PASSWORD
           EOF
 
+      # ------------------------------------------------------------
+      # Step E: Determine and store target git tag name
+      # ------------------------------------------------------------
       - name: Set target tag name
         id: tag
         env:
@@ -108,6 +129,9 @@ jobs:
           TAG="${INPUT_TAG_NAME:-$REF_NAME}"
           echo "val=$TAG" >> $GITHUB_OUTPUT
 
+      # ------------------------------------------------------------
+      # Step F: Build Flutter App Bundle (.aab) and optional APKs
+      # ------------------------------------------------------------
       - name: Build release assets
         env:
           BUILD_APK: ${{ inputs.build_apk }}
@@ -121,7 +145,7 @@ jobs:
           mv build/app/outputs/bundle/release/cfg_pia_wg-release.aab \
              build/cfg-pia-wg-${TAG}_google-play-store.aab
 
-          # 2. Conditionally build release APK if requested
+          # 2. Conditionally build release/debug APKs if requested via workflow inputs
           if [ "$BUILD_APK" = "release-apk" ]; then
             echo "Building Release APK..."
             flutter build apk --release
@@ -134,19 +158,9 @@ jobs:
             fi
           fi
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
-        with:
-          path: .
-          format: spdx-json
-          output-file: cfg-pia-wg-sbom.spdx.json
-
-      - name: Rename SBOM
-        run: |
-          TAG="${{ steps.tag.outputs.val }}"
-          mv cfg-pia-wg-sbom.spdx.json \
-             cfg-pia-wg-${TAG}_sbom.spdx.json
-
+      # ------------------------------------------------------------
+      # Step G: Attest build provenance for built binaries
+      # ------------------------------------------------------------
       - name: Attest AAB
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -164,36 +178,183 @@ jobs:
         with:
           subject-path: build/cfg-pia-wg-${{ steps.tag.outputs.val }}_debug.apk
 
-      - name: Install Pandoc
-        run: sudo apt-get update && sudo apt-get install -y pandoc
-
-      - name: Prepare release assets
+      # ------------------------------------------------------------
+      # Step H: Parse version information directly from built .aab binary
+      # ------------------------------------------------------------
+      - name: Extract AAB version details
+        id: play_info
         run: |
           TAG="${{ steps.tag.outputs.val }}"
+          AAB_FILE="build/cfg-pia-wg-${TAG}_google-play-store.aab"
 
-          # Strip badges and inject version under the README.html title
-          grep -v 'img.shields.io\|sonarcloud.io/api/project_badges' README.md \
-            | sed "s/^# \(.*\)/# \1\n\n**Version:** ${TAG}/" \
-            > /tmp/README.md
+          # Locate aapt2 tool in pre-installed Android SDK
+          AAPT2_PATH=$(find $ANDROID_SDK_ROOT/build-tools -name "aapt2" | sort -r | head -n 1)
 
-          pandoc /tmp/README.md -f gfm -t html -s --embed-resources --standalone -o build/README.html
+          # Extract badging info containing versionCode and versionName
+          BADGING_INFO=$($AAPT2_PATH dump badging "$AAB_FILE" | grep "package:")
 
-          cp LICENSE build/LICENSE
+          # Parse versionCode and versionName values
+          VERSION_CODE=$(echo "$BADGING_INFO" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")
+          VERSION_NAME=$(echo "$BADGING_INFO" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
 
+          # Clean version string (strip leading 'v' if present)
+          CLEAN_VER="${VERSION_NAME#v}"
+
+          # Formats Play Store track release name: e.g. "366 (v0.7.06)"
+          PLAY_RELEASE_NAME="${VERSION_CODE} (v${CLEAN_VER})"
+          echo "play_release_name=$PLAY_RELEASE_NAME" >> $GITHUB_OUTPUT
+
+          # Formats GitHub release title: e.g. "v0.7.06 (build 366)"
+          GH_RELEASE_NAME="v${CLEAN_VER} (build ${VERSION_CODE})"
+          echo "gh_release_name=$GH_RELEASE_NAME" >> $GITHUB_OUTPUT
+
+          # Create distribution directory for Google Play Store release notes
+          mkdir -p distribution/whatsnew
+          cat <<'EOF' > distribution/whatsnew/whatsnew-en-AU
+          Please see https://exponentiallydigital.com/cfg-pia-wg/changelog
+          EOF
+
+      # ------------------------------------------------------------
+      # Step I: Parse unreleased blocks from CHANGELOG.md & sort items
+      # ------------------------------------------------------------
+      - name: Parse and sort release notes from CHANGELOG.md
+        id: changelog_parser
+        env:
+          TARGET_TAG: ${{ steps.tag.outputs.val }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: python
+        run: |
+          import re
+          import os
+          import json
+          import urllib.request
+
+          changelog_path = "CHANGELOG.md"
+          target_tag = os.environ.get("TARGET_TAG", "")
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          token = os.environ.get("GITHUB_TOKEN", "")
+
+          # Helper function checking if a tag is already associated with a published release
+          def is_already_released(tag_name):
+              if not repo or not token or not tag_name:
+                  return False
+              url = f"https://api.github.com/repos/{repo}/releases/tags/{tag_name}"
+              req = urllib.request.Request(url, headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "GitHub-Actions-Release-Script"
+              })
+              try:
+                  with urllib.request.urlopen(req) as response:
+                      return response.status == 200
+              except Exception:
+                  return False
+
+          header_heading = "1.2. Implemented - chronological change history"
+          version_header_re = re.compile(r'^\d{4}-\d{2}-\d{2}\s+(v\d+\.\d+\.\d+.*)')
+
+          blocks = []
+          current_block = None
+          in_target_section = False
+
+          if os.path.exists(changelog_path):
+              with open(changelog_path, "r", encoding="utf-8") as f:
+                  for line in f:
+                      stripped = line.strip()
+
+                      # 1. Scan down until reaching history section header
+                      if header_heading in stripped:
+                          in_target_section = True
+                          continue
+
+                      if not in_target_section:
+                          continue
+
+                      # 2. Match version release header (e.g. 2026-08-03 v0.7.06 build 366)
+                      m = version_header_re.match(stripped)
+                      if m:
+                          tag_match = re.search(r'v\d+\.\d+\.\d+', stripped)
+                          extracted_tag = tag_match.group(0) if tag_match else ""
+
+                          # Stop scanning if reaching an older release that is ALREADY published
+                          if current_block and extracted_tag and extracted_tag != target_tag:
+                              if is_already_released(extracted_tag):
+                                  break
+
+                          current_block = {"header": stripped, "lines": []}
+                          blocks.append(current_block)
+                          continue
+
+                      # 3. Collect change log items under active block
+                      if current_block is not None and stripped:
+                          current_block["lines"].append(stripped)
+
+          # 4. Sort contents alphabetically within each individual release block
+          formatted_output = []
+          for block in blocks:
+              block["lines"].sort()
+              block_text = block["header"] + "\n\n" + "\n".join(block["lines"])
+              formatted_output.append(block_text)
+
+          final_notes = "\n\n".join(formatted_output) if formatted_output else f"Release {target_tag}"
+
+          with open("github_release_notes.txt", "w", encoding="utf-8") as f:
+              f.write(final_notes)
+
+      # ------------------------------------------------------------
+      # Step J: Deploy App Bundle (.aab) to Google Play Internal Testing Track
+      # ------------------------------------------------------------
+      - name: Upload release to Google Play Store
+        if: ${{ inputs.dry_run != true }}
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_CONSOLE_JSON_KEY }}
+          packageName: com.exponentiallydigital.pia_wireguard_cfga
+          releaseFiles: build/cfg-pia-wg-${{ steps.tag.outputs.val }}_google-play-store.aab
+          track: internal
+          releaseName: ${{ steps.play_info.outputs.play_release_name }}
+          whatsNewDirectory: distribution/whatsnew/
+
+      # ------------------------------------------------------------
+      # Step K: Delete local .aab file after successful Google Play upload
+      # ------------------------------------------------------------
+      - name: Delete AAB file
+        run: |
+          echo "Cleaning up local AAB binary..."
+          rm -f build/cfg-pia-wg-${{ steps.tag.outputs.val }}_google-play-store.aab
+
+      # ------------------------------------------------------------
+      # Step L: Generate and rename Software Bill of Materials (SBOM)
+      # ------------------------------------------------------------
+      - name: Generate SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: cfg-pia-wg-sbom.spdx.json
+
+      - name: Rename SBOM
+        run: |
+          TAG="${{ steps.tag.outputs.val }}"
+          mv cfg-pia-wg-sbom.spdx.json \
+             cfg-pia-wg-${TAG}_sbom.spdx.json
+
+      # ------------------------------------------------------------
+      # Step M: Publish GitHub Release with parsed notes & SBOM asset only
+      # ------------------------------------------------------------
       - name: Dry run notice
         if: ${{ inputs.dry_run == true }}
         run: echo "Dry run completed -- no release was created."
 
-      - name: Upload release assets
+      - name: Upload release assets to GitHub
         if: ${{ inputs.dry_run != true }}
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ steps.tag.outputs.val }}
+          name: ${{ steps.play_info.outputs.gh_release_name }}
+          body_path: github_release_notes.txt
           files: |
-            build/README.html
-            build/LICENSE
-            build/cfg-pia-wg-${{ steps.tag.outputs.val }}_google-play-store.aab
             cfg-pia-wg-${{ steps.tag.outputs.val }}_sbom.spdx.json
-            build/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

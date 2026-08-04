@@ -1,0 +1,48 @@
+# =================================================================================
+# GitHub Actions Workflow: Promote Release to Production
+# Trigger manually via Actions tab after verifying testing build on physical device
+# =================================================================================
+name: "Promote Release to Production"
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_track:
+        description: "Source track to promote FROM"
+        type: choice
+        required: true
+        default: "internal"
+        options:
+          - internal
+          - alpha
+          - beta
+      target_track:
+        description: "Target track to promote TO"
+        type: choice
+        required: true
+        default: "production"
+        options:
+          - production
+          - beta
+          - alpha
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  promote:
+    name: Promote Google Play Track
+    runs-on: ubuntu-latest
+
+    steps:
+      # ------------------------------------------------------------
+      # Send API call to Google Play Console to move latest build
+      # from internal track directly to production track (no rebuilding required)
+      # ------------------------------------------------------------
+      - name: Promote track on Google Play
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_CONSOLE_JSON_KEY }}
+          packageName: com.exponentiallydigital.pia_wireguard_cfga
+          track: ${{ inputs.target_track }}
+          status: completed
