@@ -1,6 +1,6 @@
 name: cfg_pia_wg
 description: Configure PIA WireGuard
-version: 0.7.07+367
+version: 0.7.08+368
 environment:
   sdk: ">=3.0.0 <4.0.0"
   flutter: ">=3.10.0"

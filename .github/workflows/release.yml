@@ -87,7 +87,7 @@ jobs:
       # Step C: Set up Java & Flutter execution environments
       # ------------------------------------------------------------
       - name: Set up Java
-        uses: actions/setup-java@0f62d2ad8407a414cddd4790bed06fd9ebda0f56 # v1.4.5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: "zulu"
           java-version: "21"
@@ -179,23 +179,23 @@ jobs:
           subject-path: build/cfg-pia-wg-${{ steps.tag.outputs.val }}_debug.apk
 
       # ------------------------------------------------------------
-      # Step H: Parse version information directly from built .aab binary
+      # Step H: Parse version information from pubspec.yaml
       # ------------------------------------------------------------
       - name: Extract AAB version details
         id: play_info
         run: |
           TAG="${{ steps.tag.outputs.val }}"
-          AAB_FILE="build/cfg-pia-wg-${TAG}_google-play-store.aab"
 
-          # Locate aapt2 tool in pre-installed Android SDK
-          AAPT2_PATH=$(find $ANDROID_SDK_ROOT/build-tools -name "aapt2" | sort -r | head -n 1)
+          # pubspec.yaml version line looks like: version: 0.7.07+366
+          PUBSPEC_VERSION=$(grep -m1 '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//')
 
-          # Extract badging info containing versionCode and versionName
-          BADGING_INFO=$($AAPT2_PATH dump badging "$AAB_FILE" | grep "package:")
+          # Split into versionName (before +) and versionCode (after +)
+          VERSION_NAME="${PUBSPEC_VERSION%+*}"
+          VERSION_CODE="${PUBSPEC_VERSION#*+}"
 
-          # Parse versionCode and versionName values
-          VERSION_CODE=$(echo "$BADGING_INFO" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")
-          VERSION_NAME=$(echo "$BADGING_INFO" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
+          if [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ] || [ "$VERSION_NAME" = "$VERSION_CODE" ]; then
+            echo "Could not parse version from pubspec.yaml: '$PUBSPEC_VERSION'" && exit 1
+          fi
 
           # Clean version string (strip leading 'v' if present)
           CLEAN_VER="${VERSION_NAME#v}"

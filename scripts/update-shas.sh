@@ -89,6 +89,21 @@ now_iso() {
     date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
+# is_older <candidate> <current>
+# Returns 0 (true) if candidate is an older version than current.
+# Non-semver-looking values (e.g. a commit SHA with no comment tag) are
+# treated as "unknown", never blocked, since there is nothing to compare.
+is_older() {
+    local candidate="${1#v}" current="${2#v}"
+    [[ -z "$candidate" || -z "$current" ]] && return 1
+    [[ "$candidate" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || return 1
+    [[ "$current" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || return 1
+    [[ "$candidate" == "$current" ]] && return 1
+    local highest
+    highest=$(printf '%s\n%s\n' "$candidate" "$current" | sort -V | tail -n1)
+    [[ "$highest" == "$current" ]]
+}
+
 seconds_since() {
     # seconds_since <iso8601 timestamp>
     local ts_epoch now_epoch
@@ -113,15 +128,60 @@ get_latest_tag() {
         fi
     fi
 
-    local resp tag
-    resp=$(curl -sf -H "$AUTH_HEADER" -H "$UA_HEADER" \
-        "https://api.github.com/repos/$action/releases/latest" || true)
-    tag=$(echo "${resp:-}" | jq -r '.tag_name // empty' 2>/dev/null || true)
+    local tag http_status
+
+    # Primary source of truth: scan the FULL tag list and pick the highest
+    # semantic version with `sort -V`. We deliberately do NOT trust
+    # /releases/latest as authoritative here: that endpoint returns the
+    # release with the most recent *publish event*, not the highest
+    # version number. If a maintainer edits or re-publishes an old release
+    # (changelog fix, security note, archival cleanup, etc.), its
+    # published_at timestamp bumps and GitHub will report it as "latest"
+    # even though far newer tags exist - which is exactly what happened
+    # with actions/setup-java returning v1.4.5 while v5.7.0 existed.
+    local page=1 max_pages=10 all_tags_file
+    all_tags_file=$(mktemp)
+    : > "$all_tags_file"
+    while (( page <= max_pages )); do
+        http_status=$(curl -s -o /tmp/pin-tags-resp.json -w "%{http_code}" \
+            -H "$AUTH_HEADER" -H "$UA_HEADER" \
+            "https://api.github.com/repos/$action/tags?per_page=100&page=$page" || echo "000")
+        if [[ "$http_status" != "200" ]]; then
+            echo "Warning: GET /repos/$action/tags (page $page) returned HTTP $http_status" >&2
+            if [[ "$http_status" == "403" ]]; then
+                grep -qi "rate limit" /tmp/pin-tags-resp.json 2>/dev/null \
+                    && echo "  -> looks like a rate limit (check GITHUB_TOKEN is valid and authenticating)." >&2
+            fi
+            break
+        fi
+        jq -r '.[].name' /tmp/pin-tags-resp.json 2>/dev/null >> "$all_tags_file"
+        local page_count
+        page_count=$(jq 'length' /tmp/pin-tags-resp.json 2>/dev/null || echo 0)
+        (( page_count < 100 )) && break
+        page=$((page + 1))
+    done
+
+    tag=$(grep -E '^v?[0-9]+(\.[0-9]+){0,2}$' "$all_tags_file" 2>/dev/null \
+        | sort -V \
+        | tail -n1)
+    rm -f "$all_tags_file"
+
+    # Fallback: repo has no semver-looking tags at all (rare - e.g. an
+    # action that only ever cuts GitHub Releases without matching git
+    # tags). Only in that case do we trust /releases/latest.
+    if [[ -z "$tag" ]]; then
+        http_status=$(curl -s -o /tmp/pin-releases-resp.json -w "%{http_code}" \
+            -H "$AUTH_HEADER" -H "$UA_HEADER" \
+            "https://api.github.com/repos/$action/releases/latest" || echo "000")
+        if [[ "$http_status" == "200" ]]; then
+            tag=$(jq -r '.tag_name // empty' /tmp/pin-releases-resp.json 2>/dev/null || true)
+        else
+            echo "Warning: GET /repos/$action/releases/latest returned HTTP $http_status" >&2
+        fi
+    fi
 
     if [[ -z "$tag" ]]; then
-        resp=$(curl -sf -H "$AUTH_HEADER" -H "$UA_HEADER" \
-            "https://api.github.com/repos/$action/tags?per_page=1" || true)
-        tag=$(echo "${resp:-}" | jq -r '.[0].name // empty' 2>/dev/null || true)
+        echo "Warning: could not determine a usable tag for $action from tags or releases." >&2
     fi
 
     if [[ -n "$tag" ]]; then
@@ -154,9 +214,16 @@ get_commit_sha() {
         return 0
     fi
 
-    resp=$(curl -sf -H "$AUTH_HEADER" -H "$UA_HEADER" \
-        "https://api.github.com/repos/$action/commits/$ref" || true)
-    sha=$(echo "${resp:-}" | jq -r '.sha // empty' 2>/dev/null || true)
+    local http_status
+    http_status=$(curl -s -o /tmp/pin-commit-resp.json -w "%{http_code}" \
+        -H "$AUTH_HEADER" -H "$UA_HEADER" \
+        "https://api.github.com/repos/$action/commits/$ref" || echo "000")
+    if [[ "$http_status" == "200" ]]; then
+        sha=$(jq -r '.sha // empty' /tmp/pin-commit-resp.json 2>/dev/null || true)
+    else
+        sha=""
+        echo "Warning: GET /repos/$action/commits/$ref returned HTTP $http_status" >&2
+    fi
 
     if [[ -n "$sha" ]]; then
         cache_set "$action" "sha" "$sha"
@@ -195,6 +262,8 @@ for file in "$WORKFLOW_DIR"/*.yml; do
             prefix="${BASH_REMATCH[1]}"
             action="${BASH_REMATCH[3]}"
             current_ref="${BASH_REMATCH[5]}"
+            current_comment="${BASH_REMATCH[6]}"
+            current_tag=$(echo "$current_comment" | grep -oE 'v?[0-9]+(\.[0-9]+){0,2}' | head -n1)
 
             if [[ "$action" == ./* ]]; then
                 echo "$line" >> "$tmpfile"
@@ -205,6 +274,12 @@ for file in "$WORKFLOW_DIR"/*.yml; do
 
             latest_tag=$(get_latest_tag "$repo" || true)
             if [[ -z "$latest_tag" ]]; then
+                echo "$line" >> "$tmpfile"
+                continue
+            fi
+
+            if [[ -n "$current_tag" ]] && is_older "$latest_tag" "$current_tag"; then
+                echo "Warning: resolved tag $latest_tag for $action is older than currently pinned $current_tag - skipping to avoid a downgrade." >&2
                 echo "$line" >> "$tmpfile"
                 continue
             fi

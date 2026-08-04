@@ -12,6 +12,11 @@
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-05 v0.7.08 build 368
+
+- REL: `release.yml` now uses `pubspec.yaml` to parse current build and release.
+- REL: Updated `./scripts/update-shas.sh` to stop using API returned "latest" SHA version (setup java's tag was touched today returning v1.4.5 instead of v5.7.0!), now pulls all versions, sorts, and picks highest release.
+
 2026-08-05 v0.7.07 build 367
 
 - REL: Updated `release.yal` to push aab to PS via API.
