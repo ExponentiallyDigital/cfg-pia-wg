@@ -88,8 +88,11 @@
 
 #### 1.1.7. REL - release process changes
 
+- REL: ./scripts/pin-actions-latest.* chokes if comment missing
 - REL: check build-config/gradle.properties default values are still suitable.
 - REL: Improve memory and performance with R8 optimisation, review: optimisation rate 41%, obfuscation rate 42%, shrinking rate 42%.
+- REL: Fix `.github/workflows/quality_and_security.yml` warning "CodeQL (java-kotlin) Cannot build an overlay-base database because build-mode is set to "manual" instead of "none". Falling back to creating a normal full database instead."
+- REL: Fix `.github/workflows/release.yml` "Warning: WARNING!! 'track' is deprecated and will be removed in a future release. Please migrate to 'tracks'".
 
 ### 1.2. v0.8.xx freemium
 

@@ -9,8 +9,14 @@
 ### 1.1. Pending - see [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for complete list
 
 - TST: Reinstall stock ASUS router firmware and check Manage and Watchdog operate; remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
+- REL: convert update-shas.ps1 to ./scripts/pin-actions-latest.ps1, updates reference in build.ps1
 
 ### 1.2. Implemented - chronological change history
+
+2026-08-05 v0.7.09 build 369
+
+- REL: `promote.yml` now uses kevin-david/promote-play-release
+- REL: Renamed update-shas.sh to ./scripts/pin-actions-latest.sh, updated reference in build.sh
 
 2026-08-05 v0.7.08 build 368
 
