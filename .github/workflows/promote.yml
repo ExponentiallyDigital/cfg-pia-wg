@@ -1,8 +1,8 @@
-# =================================================================================
-# GitHub Actions Workflow: Promote Release to Production
-# Trigger manually via Actions tab after verifying testing build on physical device
-# =================================================================================
-name: "Promote Release to Production"
+# ==========================================================================
+# GitHub Actions Workflow: Promote release to production
+# Trigger manually via Actions tab after verifying build on physical devices
+# ==========================================================================
+name: "Promote release"
 
 on:
   workflow_dispatch:

@@ -9,9 +9,15 @@
 ### 1.1. Pending - see [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for complete list
 
 - TST: Reinstall stock ASUS router firmware and check Manage and Watchdog operate; remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
-- REL: convert update-shas.ps1 to ./scripts/pin-actions-latest.ps1, updates reference in build.ps1
+- REL: convert update-shas.ps1 to ./scripts/pin-actions-latest.ps1, update reference in build.ps1
+- REL: add sbom metadata
 
 ### 1.2. Implemented - chronological change history
+
+2026-08-05 v0.7.10 build 370
+
+- REL: sequenced backlog
+- REL: renamed promote.yml job name from "Promote Release to Production" to "Promote release"
 
 2026-08-05 v0.7.09 build 369
 
