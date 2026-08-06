@@ -358,7 +358,7 @@ We take credential safety and application hardening seriously. Please see the [S
 
 ## 10. Privacy
 
-This application does not collect analytics, advertising identifiers, or personal usage data. Authentication credentials are used only to communicate with Private Internet Access services required to generate configuration files. See [privacy.md](https://exponentiallydigital.com/cfg-pia-wg/changelog).
+This application does not collect analytics, advertising identifiers, or personal usage data. Authentication credentials are used only to communicate with Private Internet Access services required to generate configuration files. See [Privacy Policy](https://exponentiallydigital.com/cfg-pia-wg/privacy.html).
 
 ---
 
