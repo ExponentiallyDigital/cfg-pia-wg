@@ -11,8 +11,20 @@
 - TST: Reinstall stock ASUS router firmware and check Manage and Watchdog operate; remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
 - REL: convert update-shas.ps1 to ./scripts/pin-actions-latest.ps1, update reference in build.ps1
 - REL: add sbom metadata
+- GUI: Change colour of region name from GREY to WHITE in WG Config and Watchdog modals.
+- GUI: Add text next to the "GENERATED CONFIG" with the region name the config is for.
+- GUI: Make Manage and Watchdog deletion prompt messages consistent.
+- GUI: Change info prompt after slot created "remember to enable it via the enable button".
+- GUI: Watchdog, when creating on a slot which has an config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
+- REL: Continue RevenueCta set up.
 
 ### 1.2. Implemented - chronological change history
+
+2026-08-06 v0.7.12 build 372
+
+- DOC: minor edits to README, fixed URLs
+- DOC: CLOSED - nolonger converting to html -> Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file to HTML.
+- ...
 
 2026-08-06 v0.7.11 build 371
 

@@ -26,16 +26,10 @@
 
 - DOC: Add practical workflows to achieve specific outcomes.
 - DOC: describe how to test a reconfigure event: remove a slot's config via the Web UI, apply that, then enter a valid region name as the slot description and apply that, or the reconfigure won't occur. Add a warning about that to README.md as well as TESTING.md: leaving 'ghost' watchdogs. "Deleting a slot via the Web UI can leave a watchdog running that can't connect to anything as it has no region name as a title: "ERROR: wgc4_desc is empty". Fix by adding a valid region name e.g. "au_adelaide-pf" to that slot in the Web UI (only that field is needed) which enables the VPN to be reloaded at the next `cronIntervalMinutes`, then remove the watchdog via the app.
-- DOC: Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file.
 - DOC: add to TESTING.md: `wgcX_rip` is updated by the Web GUI via an unknown method (review Asus_WRT src), router log shows no `service` script(s) were were run to display this in the web GUI. It is not the public IP address (which is served from a pool to external sites), it is the router's IP address on PIA's infrastructure (?) and always differs from `wgc1_ep_addr` and `wgcX_ep_addr_r` (except PIA's webiste shows the public IP address as `wgc1_ep_addr*` vs other sites which showed `wgcX_rip` as the public ip address).
 
 #### 1.1.2. GUI - changes to the user interface
 
-- GUI: Change colour of region name from GREY to WHITE in WG Config and Watchdog modals.
-- GUI: Add text next to the "GENERATED CONFIG" with the region name the config is for.
-- GUI: Make Manage and Watchdog deletion prompt messages consistent.
-- GUI: Change info prompt after slot created "remember to enable it via the enable button".
-- GUI: Watchdog, when creating on a slot which has an config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
 - GUI: App log has no carriage return/line feed when copied to clipboard. Text copied from Watchdog log has line terminators, as does the Router Config conf file.
 - GUI: Can't copy/paste text from About screen (not required if implement GH issue creation from About, but that requires a GH account)
 - GUI: When switching back and forth to/from the app to copy/paste details into email alert config, the modal became reduced in size, could still enter and edit fields. Cosmetic, fixed by switching to another app then back again.
@@ -46,7 +40,7 @@
 - CHG: Remove 'WATCHDOG_EOF' text from test email:
          This is a test email from the cfg-pia-wg watchdog (slot wgcX).
          WATCHDOG_EOF
-- CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes.
+- CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes; add lifetime number of reconfigure events (write start date and update total count to NVRAM).
 - CHG when you enable/disable/delete a slot, add to the router log the region that slot was previously using e.g.
         Enabled wgc1 -> 01 cfg-pia-wg: Enabled wgc1 (region-name)
         Disabled wgc1 -> Disabled wgc1 (region-name)
@@ -60,21 +54,21 @@
         Deleted wgc1 configuration
         Created wgc1 configuration (aus_melbourne)
 - CHG: Replace app exit and config clipboard copy timer expiration behaviours with clearPrimaryClip(), and remove the two associated comments in README.md.
-- CHG: Add option to remove/update cached ca cert.
+- CHG: Add option to remove/update cached ca cert (in case it becomes stale).
 - CHG: Watchdog email alert `SMTP username field` is finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
 
 #### 1.1.4. FIX - bug fixes
 
 - FIX: If editing an existing watchdog slot, at save you are asked if you want to overwrite, but if you create a watchdog on an empty slot you aren't prompted and that removes any existing watchdog. Add a prompt explaining that!
 - FIX: "home" button is not in green text with a green button border, after activating any of the four main menu items - Manage and Watchdog screens have a modal on top so that's actually correct (for those two situations only).
-- FIX: When viewing the router watchdog log, if you COPY the log and then enter the conf menu it will detect that and start the clear timer as it only knows that something from this app placed data in the clipboard.
+- FIX: When viewing the router watchdog log, if you COPY the log and then enter the conf menu it will detect that and start the clear timer as it only knows that something from this app placed data on the clipboard.
 - FIX: In generate, if you delete DNS entries then go to another screen then re-enter generate, the default DNS addresses are not displayed but are still used when generating a new conf file. Add a check that if that field is ever blank, then the quad 9 defaults are inserted.
 
 #### 1.1.5. FTR - future implementation
 
 - FTR: Consider adding back an idle app timeout of of XX minutes, if timer expires clear all credentials. This would defuse the ability to reveal passwords and copy/paste if app is left idle. Consider calling session destruction through exit path but don't actually exit when timer expires. Had originally implemented this in **pre 0.6.05 build 334**, was set to 10m.
-- FTR: Enable creation of a GitHub issue from ABOUT screen, open on GitHub with build info of running app.
-- FTR: Add localisation strings.
+- FTR: Enable creation of a GitHub issue from ABOUT screen, open on GitHub with build info of running app (but that requires a GitHub login/account).
+- FTR: Add localisation strings: French, Spanish, after that decide which ones next. (Google auto transations break charcater limits of PS Description)
 - FTR: iOS release...which requires a different license, move to GPL v2 or MIT/Apache 2?
 
 #### 1.1.6. TST - testing changes
@@ -137,4 +131,4 @@
 
   - **Changelog:** Add to v0.8.00 changelog, explain why watchdog is monetised.
   - **Store optimisation (ASO):** include high-intent keywords: *Asuswrt-Merlin, PIA WireGuard token auto-renew, Asus router VPN, NVRAM SSH scripts*.
-  - **Reconfigure review prompt:** add link to reconfigure email seeking an app review (add an NVRAM timestamp when watchdog first deployed and increment an NVRAM counter when a reconfigure occurs).
+  - **Reconfigure review prompt:** add link to reconfigure email seeking an app review (add an NVRAM timestamp when watchdog first deployed and increment an NVRAM counter when a reconfigure occurs - see CHG backlog item).
