@@ -14,6 +14,16 @@
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-06 v0.7.11 build 371
+
+- DOC: rewrote README.md section 1-3, added data from an indicative test comparing OpenVN throughput with WireGuard, added "why use wireguard" heading.
+- DOC: Add note that PIA sometimes takes regions offline for maintenance so you might be expecting to have a POP in Perth but online tools may show you coming from Adelaide.
+- DOC: Add README note on tools to check your exit note
+- DOC: Fix broken centerng of images and headings
+- DOC: Added README note on "Watchdog shortcut"
+- DOC: Format change for bold bullets
+- REL: built and tested OpenWRT under Hyper-V as a potential future port to support TP-Link routers (which have no user accessible SSH or dropbear).
+
 2026-08-05 v0.7.10 build 370
 
 - REL: sequenced backlog

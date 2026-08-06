@@ -21,7 +21,7 @@ Generating configs by hand requires significant expertise. Official scripts requ
 
 WHY RUN A VPN ON YOUR ROUTER?
 
-Configuring a VPN at the router level secures your entire household, protecting devices like smart TVs and consoles that cannot run VPN software. While OpenVPN offers stability, it is resource-intensive, capping speeds at around 100 Mbps on mid-range hardware and pinning the router CPU at 100%. Switching to WG reduces overhead, allowing your hardware to operate closer to your actual ISP speed. Testing on a 500 Mbps connection saw speeds jump from 154 Mbps under OpenVPN to 323 Mbps with WG on identical hardware.
+Configuring a VPN at the router level secures your entire household, protecting devices like smart TVs and consoles that cannot run VPN software. While OpenVPN offers stability, it is resource-intensive, capping speeds at around 100 Mbps on mid-range hardware and pinning the router CPU at 100%. Switching to WG reduces overhead, allowing your hardware to operate closer to your actual ISP speed. Testing on a 500 Mbps connection (actual 546 Mbps) saw speeds jump from 135 Mbps under OpenVPN to 498 Mbps with WG on identical hardware.
 
 CORE FUNCTIONALITY & SECURITY
 
