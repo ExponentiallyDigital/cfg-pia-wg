@@ -159,24 +159,12 @@ jobs:
           fi
 
       # ------------------------------------------------------------
-      # Step G: Attest build provenance for built binaries
+      # Step G: Attest build provenance for the AAB
       # ------------------------------------------------------------
       - name: Attest AAB
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.2.2
         with:
           subject-path: build/cfg-pia-wg-${{ steps.tag.outputs.val }}_google-play-store.aab
-
-      - name: Attest release APK
-        if: ${{ inputs.build_apk == 'release-apk' }}
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
-        with:
-          subject-path: build/cfg-pia-wg-${{ steps.tag.outputs.val }}_release.apk
-
-      - name: Attest debug APK
-        if: ${{ inputs.build_apk == 'release-apk' }}
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
-        with:
-          subject-path: build/cfg-pia-wg-${{ steps.tag.outputs.val }}_debug.apk
 
       # ------------------------------------------------------------
       # Step H: Parse version information from pubspec.yaml
@@ -325,23 +313,146 @@ jobs:
           rm -f build/cfg-pia-wg-${{ steps.tag.outputs.val }}_google-play-store.aab
 
       # ------------------------------------------------------------
-      # Step L: Generate and rename Software Bill of Materials (SBOM)
+      # Step L: Generate a Dart/Flutter license report
+      # Syft cannot read license data for Dart packages: pubspec.yaml
+      # and pubspec.lock have no license field, so the SBOM's licence
+      # fields would otherwise come back empty for every pub.dev
+      # dependency. This pulls the real license text from each
+      # package's LICENSE file in the pub cache instead.
+      # Requires dart_pubspec_licenses as a dev_dependency in pubspec.yaml.
+      # ------------------------------------------------------------
+      - name: Generate Dart license report
+        run: |
+          dart run dart_pubspec_licenses:generate -o dart_licenses.json --json
+
+      # ------------------------------------------------------------
+      # Step M: Generate Software Bill of Materials (SBOM)
+      # source-* env vars supply the app's own identity (name, version,
+      # supplier) so the SBOM properly describes cfg-pia-wg itself, not
+      # just its dependencies. license-content embeds detected license
+      # text where Syft does find it (npm/pub.dev-adjacent ecosystems).
       # ------------------------------------------------------------
       - name: Generate SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        env:
+          SYFT_SOURCE_NAME: "cfg-pia-wg"
+          SYFT_SOURCE_VERSION: ${{ steps.tag.outputs.val }}
+          SYFT_SOURCE_SUPPLIER: "Exponentially Digital"
+          SYFT_LICENSE_CONTENT: "all"
+          SYFT_LICENSE_COVERAGE: "75"
         with:
           path: .
           format: spdx-json
           output-file: cfg-pia-wg-sbom.spdx.json
+
+      # ------------------------------------------------------------
+      # Step N: Merge the Dart license report into the SBOM, then rename
+      # dart_pubspec_licenses gives raw license TEXT, not an SPDX id, so
+      # this pattern-matches common OSS licenses to their SPDX id, and
+      # falls back to a proper SPDX LicenseRef (with the text attached
+      # in hasExtractedLicensingInfos) for anything it can't identify.
+      # ------------------------------------------------------------
+      - name: Merge Dart licenses into SBOM
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import re
+
+          def detect_spdx_id(text):
+              if not text:
+                  return None
+              t = text.lower()
+              if "apache license" in t and "2.0" in t:
+                  return "Apache-2.0"
+              if "gnu lesser general public license" in t:
+                  if "version 3" in t:
+                      return "LGPL-3.0-only"
+                  if "version 2.1" in t:
+                      return "LGPL-2.1-only"
+                  return "LGPL-2.0-only"
+              if "gnu general public license" in t:
+                  if "version 3" in t:
+                      return "GPL-3.0-only"
+                  if "version 2" in t:
+                      return "GPL-2.0-only"
+              if "mozilla public license" in t and "2.0" in t:
+                  return "MPL-2.0"
+              if "permission to use, copy, modify, and/or distribute" in t:
+                  return "ISC"
+              if "redistribution and use in source and binary forms" in t:
+                  if "endorse or promote" in t and "neither the name" in t:
+                      return "BSD-3-Clause"
+                  return "BSD-2-Clause"
+              if "permission is hereby granted, free of charge" in t and "redistribution" not in t:
+                  return "MIT"
+              return None
+
+          def slug(name):
+              return re.sub(r"[^A-Za-z0-9.-]+", "-", name).strip("-")
+
+          with open("dart_licenses.json", encoding="utf-8") as f:
+              dart_packages = json.load(f)
+
+          license_by_name_version = {}
+          for pkg in dart_packages:
+              key = (pkg.get("name"), pkg.get("version"))
+              license_by_name_version[key] = {
+                  "text": pkg.get("license"),
+                  "spdx_id": detect_spdx_id(pkg.get("license")),
+              }
+
+          with open("cfg-pia-wg-sbom.spdx.json", encoding="utf-8") as f:
+              sbom = json.load(f)
+
+          extracted_licensing_infos = sbom.setdefault("hasExtractedLicensingInfos", [])
+          seen_license_refs = {info["licenseId"] for info in extracted_licensing_infos}
+
+          matched, fallback = 0, 0
+          for package in sbom.get("packages", []):
+              key = (package.get("name"), package.get("versionInfo"))
+              entry = license_by_name_version.get(key)
+              if not entry or not entry["text"]:
+                  continue
+              if package.get("licenseConcluded", "NOASSERTION") != "NOASSERTION":
+                  continue
+
+              if entry["spdx_id"]:
+                  license_value = entry["spdx_id"]
+                  matched += 1
+              else:
+                  ref_id = f"LicenseRef-{slug(package['name'])}"
+                  if ref_id not in seen_license_refs:
+                      extracted_licensing_infos.append({
+                          "licenseId": ref_id,
+                          "extractedText": entry["text"],
+                          "name": f"{package['name']} declared license",
+                      })
+                      seen_license_refs.add(ref_id)
+                  license_value = ref_id
+                  fallback += 1
+
+              package["licenseConcluded"] = license_value
+              package["licenseDeclared"] = license_value
+
+          if not extracted_licensing_infos:
+              sbom.pop("hasExtractedLicensingInfos", None)
+
+          with open("cfg-pia-wg-sbom.spdx.json", "w", encoding="utf-8") as f:
+              json.dump(sbom, f, indent=2)
+
+          print(f"Matched {matched} package(s) to an SPDX id, {fallback} fell back to a LicenseRef with extracted text.")
 
       - name: Rename SBOM
         run: |
           TAG="${{ steps.tag.outputs.val }}"
           mv cfg-pia-wg-sbom.spdx.json \
              cfg-pia-wg-${TAG}_sbom.spdx.json
+          mv dart_licenses.json \
+             cfg-pia-wg-${TAG}_dart-licenses.json
 
       # ------------------------------------------------------------
-      # Step M: Publish GitHub Release with parsed notes & SBOM asset only
+      # Step O: Publish GitHub Release with parsed notes, SBOM and license report
       # ------------------------------------------------------------
       - name: Dry run notice
         if: ${{ inputs.dry_run == true }}
@@ -356,5 +467,6 @@ jobs:
           body_path: github_release_notes.txt
           files: |
             cfg-pia-wg-${{ steps.tag.outputs.val }}_sbom.spdx.json
+            cfg-pia-wg-${{ steps.tag.outputs.val }}_dart-licenses.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

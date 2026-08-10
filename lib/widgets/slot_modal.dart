@@ -481,7 +481,14 @@ class _SlotModalState extends State<SlotModal> {
                       children: [
                         Text('wgc$slotNum',
                             style: const TextStyle(color: kHighlight, fontFamily: 'monospace', fontWeight: FontWeight.bold)),
-                        Text(desc, style: const TextStyle(color: kMuted, fontSize: 12)),
+                        // configured region for this slot appears in white
+                        Text(
+                          desc,
+                          style: TextStyle(
+                            color: info.isEmpty ? kMuted : Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
                         if (isActive || info.killSwitch || info.watchdogActive) ...[
                           const SizedBox(height: 5),
                           Wrap(spacing: 6, runSpacing: 4, children: [

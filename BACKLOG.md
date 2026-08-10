@@ -27,6 +27,9 @@
 - DOC: Add practical workflows to achieve specific outcomes.
 - DOC: describe how to test a reconfigure event: remove a slot's config via the Web UI, apply that, then enter a valid region name as the slot description and apply that, or the reconfigure won't occur. Add a warning about that to README.md as well as TESTING.md: leaving 'ghost' watchdogs. "Deleting a slot via the Web UI can leave a watchdog running that can't connect to anything as it has no region name as a title: "ERROR: wgc4_desc is empty". Fix by adding a valid region name e.g. "au_adelaide-pf" to that slot in the Web UI (only that field is needed) which enables the VPN to be reloaded at the next `cronIntervalMinutes`, then remove the watchdog via the app.
 - DOC: add to TESTING.md: `wgcX_rip` is updated by the Web GUI via an unknown method (review Asus_WRT src), router log shows no `service` script(s) were were run to display this in the web GUI. It is not the public IP address (which is served from a pool to external sites), it is the router's IP address on PIA's infrastructure (?) and always differs from `wgc1_ep_addr` and `wgcX_ep_addr_r` (except PIA's webiste shows the public IP address as `wgc1_ep_addr*` vs other sites which showed `wgcX_rip` as the public ip address).
+- DOC: once stock firmware version operating, remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
+- DOC: NB factory restore does **not** remove custom NVRAM values! Exposure of credentials (PIA & smtp) if router is sold/given away.
+- ASUS default router ip is 192.168.50.1 - code uses 192.168.1.1 as default
 
 #### 1.1.2. GUI - changes to the user interface
 
@@ -69,7 +72,6 @@
 - FTR: Consider adding back an idle app timeout of of XX minutes, if timer expires clear all credentials. This would defuse the ability to reveal passwords and copy/paste if app is left idle. Consider calling session destruction through exit path but don't actually exit when timer expires. Had originally implemented this in **pre 0.6.05 build 334**, was set to 10m.
 - FTR: Enable creation of a GitHub issue from ABOUT screen, open on GitHub with build info of running app (but that requires a GitHub login/account).
 - FTR: Add localisation strings: French, Spanish, after that decide which ones next. (Google auto transations break charcater limits of PS Description)
-- FTR: iOS release...which requires a different license, move to GPL v2 or MIT/Apache 2?
 
 #### 1.1.6. TST - testing changes
 
@@ -82,14 +84,16 @@
 - REL: Improve memory and performance with R8 optimisation, review: optimisation rate 41%, obfuscation rate 42%, shrinking rate 42%.
 - REL: Fix `.github/workflows/quality_and_security.yml` warning "CodeQL (java-kotlin) Cannot build an overlay-base database because build-mode is set to "manual" instead of "none". Falling back to creating a normal full database instead."
 - REL: Fix `.github/workflows/release.yml` "Warning: WARNING!! 'track' is deprecated and will be removed in a future release. Please migrate to 'tracks'".
+- REL: Add README note that SBOM (build provenance) is for the aab pushed to the PS.
+
+---
 
 ### 1.2. v0.8.xx freemium
 
-- CHG: freemium version, move Watchdog function to once-off lifetime paid function. Implementation plan:
+- CHG: freemium version, move all but conf generation to a one-off lifetime paid function. Implementation plan:
 
   #### 1.2.1. Accounts & Play Console setup
 
-  - **Google Merchant account:** Activate Payment Account in **Google Play Console**.
   - **In-app product creation:** Create a **Non-consumable** in-app product (e.g., `cfg-pia-wg_pro_unlock`) set to US$x.yy.
   - **Play Store compliance:** Complete **Data safety form** to reflect RevenueCat, and add to Privacy Policy.
 

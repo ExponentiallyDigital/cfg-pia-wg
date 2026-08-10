@@ -42,7 +42,7 @@ From: Sender Name <sender@example.com>
 To: Recipient Name <recipient@example.com>
 Subject: Test Email from Command Line - $(date '+%Y-%m-%d %H:%M:%S')
 Date: $(date -R)
-Message-ID: <$(date +%s).test@$(hostname)>
+Message-ID: <$(date +%s).test@$(uname -n)>
 MIME-Version: 1.0
 Content-Type: text/plain; charset=utf-8
 Content-Transfer-Encoding: 7bit
@@ -52,7 +52,7 @@ Hello,
 This is a test email created via command line.
 
 ✓ Created at: $(date '+%Y-%m-%d %H:%M:%S')
-✓ Host: $(hostname)
+✓ Host: $(uname -n)
 ✓ Purpose: Testing email delivery
 
 Best regards,

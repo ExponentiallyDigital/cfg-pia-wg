@@ -106,7 +106,7 @@ jobs:
   # ============================================================
   osv-scan:
     name: OSV dependency scan
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.5.0
     with:
       scan-args: |-
         -r ./
@@ -140,7 +140,7 @@ jobs:
           args: "build/app/outputs/flutter-apk/app-debug.apk --sarif --output mobsfscan.sarif || true"
 
       - name: Upload MobSF results to Security tab
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        uses: github/codeql-action/upload-sarif@18420e3271f74589575af831a523c833acda327f # v4.37.6
         with:
           sarif_file: mobsfscan.sarif
 
@@ -168,7 +168,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        uses: github/codeql-action/init@18420e3271f74589575af831a523c833acda327f # v4.37.6
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -196,6 +196,6 @@ jobs:
         run: flutter build apk --debug
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        uses: github/codeql-action/analyze@18420e3271f74589575af831a523c833acda327f # v4.37.6
         with:
           category: "/language:${{ matrix.language }}"

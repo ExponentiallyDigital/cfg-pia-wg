@@ -4,37 +4,59 @@
   - [1.1. Pending - see BACKLOG.md for complete list](#11-pending---see-backlogmd-for-complete-list)
   - [1.2. Implemented - chronological change history](#12-implemented---chronological-change-history)
 
+---
+
 ## 1. Changes
 
 ### 1.1. Pending - see [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for complete list
 
-- TST: Reinstall stock ASUS router firmware and check Manage and Watchdog operate; remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
-- REL: convert update-shas.ps1 to ./scripts/pin-actions-latest.ps1, update reference in build.ps1
-- REL: add sbom metadata
-- GUI: Change colour of region name from GREY to WHITE in WG Config and Watchdog modals.
-- GUI: Add text next to the "GENERATED CONFIG" with the region name the config is for.
+- CHG: Find a way to run a script on boot: save cru? examine boot path...there must be a way to hook into the boot process
+- CHG: Convert to use `sendmail-go` (**no** mta on stock firmware)
+- CHG: enable multiple concurrent WireGuard slots
+- CHG: enable multiple concurrent WireGuard watchdogs, ADD disable function (CFG in NVRAM + unset cron)
+- REL: Continue RevenueCat set up.
+- CHG: on Merlin w app, deleting a watchdog also deletes the underlying WG slot - modify to only delete the cron job and retain the underlying VPN slot config
+- DOC: Add note to use data from About screen when creating an issue on GitHub, add to ISSUE_TEMPLATEs.
+- GUI: In Conf function "GENERATED CONFIG", add display of region name config is for.
 - GUI: Make Manage and Watchdog deletion prompt messages consistent.
 - GUI: Change info prompt after slot created "remember to enable it via the enable button".
-- GUI: Watchdog, when creating on a slot which has an config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
-- REL: Continue RevenueCta set up.
+- GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
+
+WIP: 2026-08-10 v0.8.02 build 372 (not released - partial conversion to stock firmware target)
+
+- CHG: "// DISABLED MERLIN" - removed gating check for watchdog function on stock.
+- CHG: In watchdog script now using `uname -n` instead of `hostname` (not in stock firmware).
+
+---
 
 ### 1.2. Implemented - chronological change history
 
-2026-08-06 v0.7.12 build 372
+2026-08-10 v0.7.12 build 372
 
-- DOC: minor edits to README, fixed URLs
-- DOC: CLOSED - nolonger converting to html -> Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file to HTML.
-- ...
+- DOC: minor edits to README, fixed URLs.
+- DOC: CLOSED - nolonger converting to html - Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file to HTML.
+- REL: Activated Payment Account in **Google Play Console**.
+- REL: Added `scripts\get-bins.sh` script - downloads latest `jq` and `sendmail-go` binaries and installs to `/jffs/bin` (for testing with stock firmware).
+- REL: Added `scripts\mailsend-go_test.sh` script - sends a test email alert using `sendmail-go` (for testing with stock firmware).
+- TST: Reinstall stock ASUS router firmware - found replacements for `jq` and `sendmail` (`mailsend-go`), see see https://github.com/jqlang/jq/releases and https://github.com/muquit/mailsend-go.
+- REL: Converted `update-shas.ps1` to `./scripts/pin-actions-latest.ps1`, updated reference in `build.ps1`.
+- CHG: CLOSED - not relicensing under GPLv2/MIT/Apache.
+- REL: Added `THIRD-PARTY-NOTICES.md`.
+- CHG: Added "Open source licences" display to ABOUT screen.
+- GUI: Hamburger menu item spacing normalised by reducing text (configuration -> config).
+- GUI: Changed colour of region name from GREY to WHITE in WG Config and Watchdog modals.
+- REL: Added dart_pubspec_licenses for SBOM attestation.
+- REL: Add sbom metadata and license info.
 
 2026-08-06 v0.7.11 build 371
 
 - DOC: rewrote README.md section 1-3, added data from an indicative test comparing OpenVN throughput with WireGuard, added "why use wireguard" heading.
-- DOC: Add note that PIA sometimes takes regions offline for maintenance so you might be expecting to have a POP in Perth but online tools may show you coming from Adelaide.
-- DOC: Add README note on tools to check your exit note
-- DOC: Fix broken centerng of images and headings
+- DOC: Add README note that PIA sometimes takes regions offline for maintenance
+- DOC: Add README note on tools to check your exit node
+- DOC: Fix broken centering of images and headings
 - DOC: Added README note on "Watchdog shortcut"
-- DOC: Format change for bold bullets
-- REL: built and tested OpenWRT under Hyper-V as a potential future port to support TP-Link routers (which have no user accessible SSH or dropbear).
+- DOC: README format change to bullets
+- REL: built and tested OpenWRT under Hyper-V as a potential future port to support TP-Link routers (which have no user accessible SSH or dropbear), deferred.
 
 2026-08-05 v0.7.10 build 370
 
@@ -49,13 +71,16 @@
 2026-08-05 v0.7.08 build 368
 
 - REL: `release.yml` now uses `pubspec.yaml` to parse current build and release.
+- REL: `release.yaml`, discards AAB after sucessful upload to PS
 - REL: Updated `./scripts/update-shas.sh` to stop using API returned "latest" SHA version (setup java's tag was touched today returning v1.4.5 instead of v5.7.0!), now pulls all versions, sorts, and picks highest release.
+- REL: automated update of PS "what's new" with release notes -> "See https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md for changes since last release".
+
 
 2026-08-05 v0.7.07 build 367
 
-- REL: Updated `release.yal` to push aab to PS via API.
+- REL: Updated `release.yal` push aab to PS via API.
 - REL: Parse changelog entries by matching against the pushed tag, sort by type and insert as GH release text.
-- REL: Added `promote.yml`, promotes PS aab from `internal` track to `production`.
+- REL: Added `promote.yml`, promotes PS aab from `internal` track to `production` (configurable under manual workflow run condition).
 - TST: Added `test/release/release-notes.sh` to test new automated GH release notes, run from repo root.
 - DOC: Split out backlog from `CHANGELOG.md` to `BACKLOG.md`.
 - REL: Updated scripts/update-shas.sh

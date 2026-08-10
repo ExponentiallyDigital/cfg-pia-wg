@@ -183,7 +183,7 @@ if (-not $SKIP_ICONS) {
 # Update GitHub action scripts to latest versions
 ###############################################################################
 Write-Host "${CYAN}Updating GitHub action SHAs to latest versions...${RESET}"
-.\scripts\update-shas.ps1
+.\scripts\pin-actions-latest.ps1
 
 ###############################################################################
 # Tests

@@ -30,8 +30,8 @@ const String kDefaultDns = '9.9.9.9, 149.112.112.112';
 /// destination observer to track which screen is on top (for the drawer's no-op-on-current).
 enum AppDestination {
   menu('main_menu', 'Main menu'),
-  standalone('standalone', 'Generate PIA WireGuard configuration'),
-  manageRouter('manage_router', 'Manage router PIA WireGuard configuration'),
+  standalone('standalone', 'Generate PIA WireGuard config'),
+  manageRouter('manage_router', 'Manage PIA WireGuard config'),
   watchdog('watchdog', 'Watchdog WireGuard management'),
   log('log', 'View app log'),
   about('about', 'About');
