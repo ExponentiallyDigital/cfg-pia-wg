@@ -328,7 +328,16 @@ class RouterWatchdog {
 
   Future<bool> isMerlinRouter() async => (await _run('nvram get 3rd-party')) == 'merlin';
 
+// DISABLED MERLIN", to disable Merlin comment out below, uncomment next block
   Future<bool> isJqInstalled() async => (await _run('which jq')).isNotEmpty;
+//  Future<bool> isJqInstalled() async {
+//    try {
+//      final output = await _run('/jffs/bin/jq --version');
+//      return output.isNotEmpty;
+//    } catch (e) {
+//      return false;
+//    }
+//  }
 
   // Ensures JFFS custom scripts are enabled
   Future<void> enableJffsScripts() async {
@@ -663,7 +672,7 @@ send_alert() {
     echo "To: $EMAIL_TO"
     echo "Subject: $EMAIL_SUBJECT - $1"
     echo "Date: $(date -R 2>/dev/null || date)"
-    echo "Message-ID: $(date +%s)@$(hostname)"
+    echo "Message-ID: $(date +%s)@$(uname -n)"
     echo "MIME-Version: 1.0"
     echo "Content-Type: text/plain; charset=utf-8"
     echo ""

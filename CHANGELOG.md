@@ -22,41 +22,45 @@
 - GUI: Change info prompt after slot created "remember to enable it via the enable button".
 - GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
 
-WIP: 2026-08-10 v0.8.02 build 372 (not released - partial conversion to stock firmware target)
+WIP:
 
-- CHG: "// DISABLED MERLIN" - removed gating check for watchdog function on stock.
-- CHG: In watchdog script now using `uname -n` instead of `hostname` (not in stock firmware).
+- CHG: refactor About screen.
 
 ---
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-13 v0.8.03 build 373 (not released, exploring conversion to stock firmware target)
+
+- CHG: Added "// DISABLED MERLIN" with comments to remove gating check for watchdog function on stock & use downloaded jq, not implemented, just a placeholder for now, still requires Merlin to function.
+- CHG: Watchdog script now using `uname -n` instead of `hostname`, as `hostname` not in stock firmware.
+- CHG: Added "Open source licences" display to ABOUT screen (was supposed to be in 372 but got missed, reimplemented in 373).
+
 2026-08-10 v0.7.12 build 372
 
+- CHG: CLOSED - not relicensing under GPLv2/MIT/Apache.
+- DOC: CLOSED - no longer converting to html - Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file to HTML.
 - DOC: minor edits to README, fixed URLs.
-- DOC: CLOSED - nolonger converting to html - Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file to HTML.
+- GUI: Changed colour of region name from GREY to WHITE in WG Config and Watchdog modals.
+- GUI: Hamburger menu item spacing normalised by reducing text (configuration -> config).
 - REL: Activated Payment Account in **Google Play Console**.
+- REL: Add sbom metadata and license info.
 - REL: Added `scripts\get-bins.sh` script - downloads latest `jq` and `sendmail-go` binaries and installs to `/jffs/bin` (for testing with stock firmware).
 - REL: Added `scripts\mailsend-go_test.sh` script - sends a test email alert using `sendmail-go` (for testing with stock firmware).
-- TST: Reinstall stock ASUS router firmware - found replacements for `jq` and `sendmail` (`mailsend-go`), see see https://github.com/jqlang/jq/releases and https://github.com/muquit/mailsend-go.
-- REL: Converted `update-shas.ps1` to `./scripts/pin-actions-latest.ps1`, updated reference in `build.ps1`.
-- CHG: CLOSED - not relicensing under GPLv2/MIT/Apache.
 - REL: Added `THIRD-PARTY-NOTICES.md`.
-- CHG: Added "Open source licences" display to ABOUT screen.
-- GUI: Hamburger menu item spacing normalised by reducing text (configuration -> config).
-- GUI: Changed colour of region name from GREY to WHITE in WG Config and Watchdog modals.
 - REL: Added dart_pubspec_licenses for SBOM attestation.
-- REL: Add sbom metadata and license info.
+- REL: Converted `update-shas.ps1` to `./scripts/pin-actions-latest.ps1`, updated reference in `build.ps1`.
+- TST: Reinstall stock ASUS router firmware - found replacements for `jq` and `sendmail` (`mailsend-go`), see see https://github.com/jqlang/jq/releases and https://github.com/muquit/mailsend-go.
 
 2026-08-06 v0.7.11 build 371
 
-- DOC: rewrote README.md section 1-3, added data from an indicative test comparing OpenVN throughput with WireGuard, added "why use wireguard" heading.
-- DOC: Add README note that PIA sometimes takes regions offline for maintenance
 - DOC: Add README note on tools to check your exit node
-- DOC: Fix broken centering of images and headings
+- DOC: Add README note that PIA sometimes takes regions offline for maintenance
 - DOC: Added README note on "Watchdog shortcut"
+- DOC: Fix broken centering of images and headings
 - DOC: README format change to bullets
-- REL: built and tested OpenWRT under Hyper-V as a potential future port to support TP-Link routers (which have no user accessible SSH or dropbear), deferred.
+- DOC: Rewrote README.md section 1-3, added data from an indicative test comparing OpenVN throughput with WireGuard, added "why use wireguard" heading.
+- REL: Built and tested OpenWRT under Hyper-V as a potential future port to support TP-Link routers (which have no user accessible SSH or dropbear), deferred.
 
 2026-08-05 v0.7.10 build 370
 

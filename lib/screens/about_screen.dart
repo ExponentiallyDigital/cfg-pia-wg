@@ -43,6 +43,13 @@ const List<(String, String)> _kLinks = [
 // not jump once it does.
 const String _kPending = '...';
 
+void _showOpenSourceLicences(BuildContext context) {
+  showLicensePage(
+    context: context,
+    applicationName: 'cfg-pia-wg',
+  );
+}
+
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
 
@@ -116,6 +123,20 @@ class _AboutScreenState extends State<AboutScreen> {
               ),
             ),
           const SizedBox(height: 20),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                alignment: Alignment.centerLeft,
+              ),
+              onPressed: () => _showOpenSourceLicences(context),
+              child: const Text('Open source licences'),
+            ),
+          ),
+          const SizedBox(height: 8),
           const Text(
             kLicenseText,
             style: TextStyle(color: Colors.white70, fontSize: 10, height: 1.4),
