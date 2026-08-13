@@ -24,13 +24,13 @@
 
 WIP:
 
-2026-08-13 v0.8.03 build 373
-
-- CHG: refactor About screen.
-
 ---
 
 ### 1.2. Implemented - chronological change history
+
+2026-08-13 v0.8.03 build 373
+
+- CHG: refactor About screen.
 
 2026-08-13 v0.8.03 build 373 (not released, exploring conversion to stock firmware target)
 
