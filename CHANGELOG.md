@@ -28,7 +28,7 @@ WIP:
 
 ### 1.2. Implemented - chronological change history
 
-2026-08-13 v0.8.03 build 373
+2026-08-13 v0.8.04 build 374 (dev)
 
 - CHG: refactor About screen.
 
