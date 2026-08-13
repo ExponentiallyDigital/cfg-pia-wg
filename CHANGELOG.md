@@ -24,6 +24,8 @@
 
 WIP:
 
+2026-08-13 v0.8.03 build 373
+
 - CHG: refactor About screen.
 
 ---

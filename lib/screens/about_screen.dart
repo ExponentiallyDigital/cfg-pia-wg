@@ -43,6 +43,10 @@ const List<(String, String)> _kLinks = [
 // not jump once it does.
 const String _kPending = '...';
 
+// Separate recogniser for the "Open source: licenses" link, so it shows the license page
+// instead of launching a GitHub URL.
+late final TapGestureRecognizer _licencesRecognizer;
+
 void _showOpenSourceLicences(BuildContext context) {
   showLicensePage(
     context: context,
@@ -67,6 +71,10 @@ class _AboutScreenState extends State<AboutScreen> {
   // on a narrow phone while keeping the tap target on the URL itself.
   final List<TapGestureRecognizer> _recognisers = [];
 
+  // Separate recogniser for the "Open source: licenses" link, so it shows the license page
+  // instead of launching a GitHub URL.
+  late final TapGestureRecognizer _licencesRecognizer;
+
   @override
   void initState() {
     super.initState();
@@ -74,6 +82,8 @@ class _AboutScreenState extends State<AboutScreen> {
     for (final (_, url) in _kLinks) {
       _recognisers.add(TapGestureRecognizer()..onTap = () => _launch(url));
     }
+    // Add a dedicated recogniser for the licenses link (index 6, after the 5 kLinks entries).
+    _licencesRecognizer = TapGestureRecognizer()..onTap = () => _showOpenSourceLicences(context);
   }
 
   @override
@@ -102,6 +112,7 @@ class _AboutScreenState extends State<AboutScreen> {
             future: _buildInfo,
             builder: (context, snap) => _BuildInfoBlock(info: snap.data),
           ),
+          // url links display
           const SizedBox(height: 20),
           for (var i = 0; i < _kLinks.length; i++)
             Padding(
@@ -122,20 +133,30 @@ class _AboutScreenState extends State<AboutScreen> {
                 ]),
               ),
             ),
+          // "Open source: licenses" display
           const SizedBox(height: 20),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                alignment: Alignment.centerLeft,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: RichText(
+                text: TextSpan(children: [
+                  TextSpan(text: 'Open source: ', style: _labelStyle),
+                  TextSpan(
+                    text: 'licenses',
+                    style: const TextStyle(
+                      color: kHighlight,
+                      fontSize: 12,
+                      decoration: TextDecoration.underline,
+                      decorationColor: kHighlight,
+                    ),
+                    recognizer: _licencesRecognizer,
+                  ),
+                ]),
               ),
-              onPressed: () => _showOpenSourceLicences(context),
-              child: const Text('Open source licences'),
             ),
           ),
+          // "GNU GPL license" display:
           const SizedBox(height: 8),
           const Text(
             kLicenseText,
