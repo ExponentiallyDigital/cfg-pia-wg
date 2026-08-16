@@ -52,7 +52,7 @@ WIP:
 - REL: Added `THIRD-PARTY-NOTICES.md`.
 - REL: Added dart_pubspec_licenses for SBOM attestation.
 - REL: Converted `update-shas.ps1` to `./scripts/pin-actions-latest.ps1`, updated reference in `build.ps1`.
-- TST: Reinstall stock ASUS router firmware - found replacements for `jq` and `sendmail` (`mailsend-go`), see see https://github.com/jqlang/jq/releases and https://github.com/muquit/mailsend-go.
+- TST: Reinstall stock ASUS router firmware - found replacements for `jq` and `sendmail` (`mailsend-go`), see see github.com/jqlang/jq/releases and github.com/muquit/mailsend-go.
 
 2026-08-06 v0.7.11 build 371
 
@@ -79,8 +79,7 @@ WIP:
 - REL: `release.yml` now uses `pubspec.yaml` to parse current build and release.
 - REL: `release.yaml`, discards AAB after sucessful upload to PS
 - REL: Updated `./scripts/update-shas.sh` to stop using API returned "latest" SHA version (setup java's tag was touched today returning v1.4.5 instead of v5.7.0!), now pulls all versions, sorts, and picks highest release.
-- REL: automated update of PS "what's new" with release notes -> "See https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md for changes since last release".
-
+- REL: automated update of PS "what's new" with release notes -> "See github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md for changes since last release".
 
 2026-08-05 v0.7.07 build 367
 
@@ -90,7 +89,7 @@ WIP:
 - TST: Added `test/release/release-notes.sh` to test new automated GH release notes, run from repo root.
 - DOC: Split out backlog from `CHANGELOG.md` to `BACKLOG.md`.
 - REL: Updated scripts/update-shas.sh
-- REL: Added URL redirect from https://exponentiallydigital.com/cfg-pia-wg/changelog to https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+- REL: Added URL redirect from exponentiallydigital.com/cfg-pia-wg/changelog to github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
 - DOC: Added "GB" to "...8, 16, 32, 64 RAM configuations..." in BUILDING.md
 
 2026-08-03 v0.7.06 build 366
