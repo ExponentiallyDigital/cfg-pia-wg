@@ -16,6 +16,7 @@
 // Exists so a bug report can identify exactly which binary the reporter is running: the commit,
 // branch/tag, CI run, build type and install source are otherwise invisible once the APK ships.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -43,14 +44,10 @@ const List<(String, String)> _kLinks = [
 // not jump once it does.
 const String _kPending = '...';
 
-// Separate recogniser for the "Open source: licenses" link, so it shows the license page
-// instead of launching a GitHub URL.
-late final TapGestureRecognizer _licencesRecognizer;
-
 void _showOpenSourceLicences(BuildContext context) {
-  showLicensePage(
+  showDialog<void>(
     context: context,
-    applicationName: 'cfg-pia-wg',
+    builder: (_) => const _LicensesDialog(),
   );
 }
 
@@ -117,7 +114,7 @@ class _AboutScreenState extends State<AboutScreen> {
           for (var i = 0; i < _kLinks.length; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: Text.rich(
+              child: SelectableText.rich(
                 TextSpan(children: [
                   TextSpan(text: '${_kLinks[i].$1}: ', style: _labelStyle),
                   TextSpan(
@@ -139,8 +136,8 @@ class _AboutScreenState extends State<AboutScreen> {
             padding: const EdgeInsets.only(bottom: 6),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: RichText(
-                text: TextSpan(children: [
+              child: SelectableText.rich(
+                TextSpan(children: [
                   TextSpan(text: 'Open source: ', style: _labelStyle),
                   TextSpan(
                     text: 'licenses',
@@ -157,8 +154,8 @@ class _AboutScreenState extends State<AboutScreen> {
             ),
           ),
           // "GNU GPL license" display:
-          const SizedBox(height: 8),
-          const Text(
+          const SizedBox(height: 20),
+          const SelectableText(
             kLicenseText,
             style: TextStyle(color: Colors.white70, fontSize: 10, height: 1.4),
           ),
@@ -184,7 +181,7 @@ class _BuildInfoBlock extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
+        SelectableText(
           'cfg-pia-wg v${v((b) => b.versionName)} build ${v((b) => b.buildNumber)}',
           style: const TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w600),
         ),
@@ -214,11 +211,88 @@ class _MetaRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: Text.rich(
+      child: SelectableText.rich(
         TextSpan(children: [
           TextSpan(text: '$label: ', style: _labelStyle),
           TextSpan(text: value, style: _valueStyle),
         ]),
+      ),
+    );
+  }
+}
+
+// ── Open-source license dialog ─────────────────────────────────────────────────
+// Replaces Flutter's built-in showLicensePage so the page inherits the app's
+// dark palette, has a teal back arrow, no app-name title, and no
+// "Powered by Flutter" footer.
+
+class _LicensesDialog extends StatefulWidget {
+  const _LicensesDialog();
+
+  @override
+  State<_LicensesDialog> createState() => _LicensesDialogState();
+}
+
+class _LicensesDialogState extends State<_LicensesDialog> {
+  late final Future<List<LicenseEntry>> _licenses;
+
+  @override
+  void initState() {
+    super.initState();
+    _licenses = LicenseRegistry.licenses.toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBg,
+      appBar: AppBar(
+        backgroundColor: kBg,
+        title: const SizedBox.shrink(),
+        iconTheme: const IconThemeData(color: kHighlight, size: 24),
+      ),
+      body: FutureBuilder<List<LicenseEntry>>(
+        future: _licenses,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(
+              child: SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight),
+              ),
+            );
+          }
+          if (snapshot.hasError) {
+            return const Center(
+              child: Text(
+                'Unable to load license information.',
+                style: TextStyle(color: kMuted, fontSize: 12),
+              ),
+            );
+          }
+
+          return ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            children: [
+              for (final entry in snapshot.data!) ...[
+                Text(
+                  entry.packages.join(', '),
+                  style: const TextStyle(
+                    color: kText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SelectableText(
+                  entry.paragraphs.map((p) => p.text).join('\n\n'),
+                  style: const TextStyle(color: kMuted, fontSize: 10, height: 1.4),
+                ),
+                const Divider(color: kBorder, height: 24),
+              ],
+            ],
+          );
+        },
       ),
     );
   }

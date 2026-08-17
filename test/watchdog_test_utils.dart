@@ -36,7 +36,7 @@ class RecordingSSHClient implements SSHClient {
   }
 
   @override
-  void close() {}
+  Future<void> close() async {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

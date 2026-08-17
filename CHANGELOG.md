@@ -10,7 +10,7 @@
 
 ### 1.1. Pending - see [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for complete list
 
-- CHG: Find a way to run a script on boot: save cru? examine boot path...there must be a way to hook into the boot process
+- CHG: Find a way to run a script on boot: save cru? examine boot path...there must be a way to hook into the boot process - no method exists on stock firmware, but Merlin has a hook for this. Need to find a way to run a script on boot on stock firmware.
 - CHG: Convert to use `sendmail-go` (**no** mta on stock firmware)
 - CHG: enable multiple concurrent WireGuard slots
 - CHG: enable multiple concurrent WireGuard watchdogs, ADD disable function (CFG in NVRAM + unset cron)
@@ -24,15 +24,24 @@
 
 WIP:
 
-- REL: fix compile warning
-WARNING: A restricted method in java.lang.System has been called
-WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/home/andrew/.gradle/wrapper/dists/gradle-9.1.0-all/7wzd0jkjit61aq2p43wpjgij9/gradle-9.1.0/lib/native-platform-0.22-milestone-28.jar)
-WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+- REL: fix compile warning on laptop under Ubuntu
+  WARNING: A restricted method in java.lang.System has been called
+  WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/home/andrew/.gradle/wrapper/dists/gradle-9.1.0-all/7wzd0jkjit61aq2p43wpjgij9/gradle-9.1.0/lib/native-platform-0.22-milestone-28.jar)
+  WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+  WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
 ---
 
 ### 1.2. Implemented - chronological change history
+
+2026-08-17 v0.8.06 build 376 (dev)
+
+- REL: updated dependency dartssh2 3.0.2 (was 2.22.5).
+- TST: fix 'RecordingSSHClient.close' ('void Function()') isn't a valid override of 'SSHClient.close'.
+- CHG: fix double declaration of '_licencesRecognizer'.
+- GUI: fix About open source license font size, format now consistent with other text in the screen.
+- GUI: reformatted License screen to match the About screen, added scrollable text, and added a back button to return to the About screen.
+- GUI: enable About screen text selection and copy to the clipboard.
 
 2026-08-16 v0.8.05 build 375 (dev)
 
