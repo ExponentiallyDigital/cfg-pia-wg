@@ -35,6 +35,10 @@ WIP:
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-17 v0.8.08 build 378
+
+- REL: merged dev to main
+
 2026-08-17 v0.8.07 build 377 (dev)
 
 - REL: upgraded W11 from Flutter 3.44.8 to 3.47.0 (Dart 3.13.0 DevTools 2.60.0) with `flutter upgrade --force`
@@ -49,11 +53,11 @@ WIP:
 - CHG: fix double declaration of '_licencesRecognizer'.
 - GUI: fix About open source license font size, format now consistent with other text in the screen.
 - GUI: reformatted License screen to match the About screen, added scrollable text, and added a back button to return to the About screen.
-- GUI: enable About screen text selection and copy to the clipboard.
+- GUI: enable About screen text selection and copy to the clipboard (only one line at a time :/).
 
 2026-08-16 v0.8.05 build 375 (dev)
 
-- codeql-action updated
+- REL: codeql-action updated
 
 2026-08-13 v0.8.04 build 374 (dev)
 
