@@ -173,10 +173,10 @@ packages:
     dependency: "direct main"
     description:
       name: dartssh2
-      sha256: fdc8e5e47c88473525e90ba11fbc2234a47d3788de010061d0b49de7e12a3c24
+      sha256: "8e464a4952bcf36b9e844521b4d05b6e30ed0491d00df98276b3cd5deec324c9"
       url: "https://pub.dev"
     source: hosted
-    version: "3.0.2"
+    version: "3.3.0"
   fake_async:
     dependency: transitive
     description:
@@ -268,10 +268,10 @@ packages:
     dependency: transitive
     description:
       name: hooks
-      sha256: "9a62a50b50b769a737bc0a8ff381f333529df3ab746b2f6b02e83760231455ba"
+      sha256: eaac480a35ec0814146c2c48d96aaa829e0e44a7662c88ae84c9edf4bc35651f
       url: "https://pub.dev"
     source: hosted
-    version: "2.0.2"
+    version: "2.2.0"
   html:
     dependency: transitive
     description:
@@ -620,10 +620,10 @@ packages:
     dependency: transitive
     description:
       name: record_use
-      sha256: "2551bd8eecfe95d14ae75f6021ad0248be5c27f138c2ec12fcb52b500b3ba1ed"
+      sha256: "1cb8564af8d43b464294411db9217f5ec04891c6f22ee2c32d73ae05e88a6bd2"
       url: "https://pub.dev"
     source: hosted
-    version: "0.6.0"
+    version: "1.1.1"
   retry:
     dependency: transitive
     description:
