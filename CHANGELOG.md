@@ -29,10 +29,18 @@ WIP:
   WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/home/andrew/.gradle/wrapper/dists/gradle-9.1.0-all/7wzd0jkjit61aq2p43wpjgij9/gradle-9.1.0/lib/native-platform-0.22-milestone-28.jar)
   WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
   WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+- GUI: (backed out) allow selecting multiple lines of text in About screen.
 
 ---
 
 ### 1.2. Implemented - chronological change history
+
+2026-08-17 v0.8.07 build 377 (dev)
+
+- REL: upgraded W11 from Flutter 3.44.8 to 3.47.0 (Dart 3.13.0 DevTools 2.60.0) with `flutter upgrade --force`
+- REL: updated Flutter dependencies with `flutter pub upgrade --major-versions`
+- REL: fix `pubspec.lock`
+- REL: added `analysis_options.yaml` exclusions
 
 2026-08-17 v0.8.06 build 376 (dev)
 
