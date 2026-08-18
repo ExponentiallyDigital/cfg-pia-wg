@@ -35,6 +35,10 @@ WIP:
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-17 v0.8.10 build 380
+
+- REL: updated pubspec.lock
+
 2026-08-17 v0.8.09 build 379
 
 - REL: updated pubspec.lock to reflect latest dependency versions
