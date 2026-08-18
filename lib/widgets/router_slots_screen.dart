@@ -128,6 +128,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     }
     if (slots == null || !mounted) return;
 
+    // DISABLED MERLIN, comment out below to disable Merlin check
     if (widget.mode == SlotModalMode.watchdog && !slots.isMerlin) {
       await AppErrors.system(context, _c, 'The VPN watchdog requires Merlin firmware on your router.');
       return;

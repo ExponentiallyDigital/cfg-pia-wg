@@ -10,7 +10,7 @@
 
 ### 1.1. Pending - see [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for complete list
 
-- CHG: Find a way to run a script on boot: save cru? examine boot path...there must be a way to hook into the boot process
+- CHG: Find a way to run a script on boot: save cru? examine boot path...there must be a way to hook into the boot process - no method exists on stock firmware, but Merlin has a hook for this. Need to find a way to run a script on boot on stock firmware.
 - CHG: Convert to use `sendmail-go` (**no** mta on stock firmware)
 - CHG: enable multiple concurrent WireGuard slots
 - CHG: enable multiple concurrent WireGuard watchdogs, ADD disable function (CFG in NVRAM + unset cron)
@@ -22,41 +22,78 @@
 - GUI: Change info prompt after slot created "remember to enable it via the enable button".
 - GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
 
-WIP: 2026-08-10 v0.8.02 build 372 (not released - partial conversion to stock firmware target)
+WIP:
 
-- CHG: "// DISABLED MERLIN" - removed gating check for watchdog function on stock.
-- CHG: In watchdog script now using `uname -n` instead of `hostname` (not in stock firmware).
+- REL: fix compile warning on laptop under Ubuntu
+  WARNING: A restricted method in java.lang.System has been called
+  WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/home/andrew/.gradle/wrapper/dists/gradle-9.1.0-all/7wzd0jkjit61aq2p43wpjgij9/gradle-9.1.0/lib/native-platform-0.22-milestone-28.jar)
+  WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+  WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+- GUI: (backed out) allow selecting multiple lines of text in About screen.
 
 ---
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-17 v0.8.08 build 378
+
+- REL: merged dev to main
+
+2026-08-17 v0.8.07 build 377 (dev)
+
+- REL: upgraded W11 from Flutter 3.44.8 to 3.47.0 (Dart 3.13.0 DevTools 2.60.0) with `flutter upgrade --force`
+- REL: updated Flutter dependencies with `flutter pub upgrade --major-versions`
+- REL: fix `pubspec.lock`
+- REL: added `analysis_options.yaml` exclusions
+
+2026-08-17 v0.8.06 build 376 (dev)
+
+- REL: updated dependency dartssh2 3.0.2 (was 2.22.5).
+- TST: fix 'RecordingSSHClient.close' ('void Function()') isn't a valid override of 'SSHClient.close'.
+- CHG: fix double declaration of '_licencesRecognizer'.
+- GUI: fix About open source license font size, format now consistent with other text in the screen.
+- GUI: reformatted License screen to match the About screen, added scrollable text, and added a back button to return to the About screen.
+- GUI: enable About screen text selection and copy to the clipboard (only one line at a time :/).
+
+2026-08-16 v0.8.05 build 375 (dev)
+
+- REL: codeql-action updated
+
+2026-08-13 v0.8.04 build 374 (dev)
+
+- CHG: refactor About screen.
+
+2026-08-13 v0.8.03 build 373 (not released, exploring conversion to stock firmware target)
+
+- CHG: Added "// DISABLED MERLIN" with comments to remove gating check for watchdog function on stock & use downloaded jq, not implemented, just a placeholder for now, still requires Merlin to function.
+- CHG: Watchdog script now using `uname -n` instead of `hostname`, as `hostname` not in stock firmware.
+- CHG: Added "Open source licences" display to ABOUT screen (was supposed to be in 372 but got missed, reimplemented in 373).
+
 2026-08-10 v0.7.12 build 372
 
+- CHG: CLOSED - not relicensing under GPLv2/MIT/Apache.
+- DOC: CLOSED - no longer converting to html - Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file to HTML.
 - DOC: minor edits to README, fixed URLs.
-- DOC: CLOSED - nolonger converting to html - Fix display of TIP, WARNING, and IMPORTANT in README.md after pandoc converts the file to HTML.
+- GUI: Changed colour of region name from GREY to WHITE in WG Config and Watchdog modals.
+- GUI: Hamburger menu item spacing normalised by reducing text (configuration -> config).
 - REL: Activated Payment Account in **Google Play Console**.
+- REL: Add sbom metadata and license info.
 - REL: Added `scripts\get-bins.sh` script - downloads latest `jq` and `sendmail-go` binaries and installs to `/jffs/bin` (for testing with stock firmware).
 - REL: Added `scripts\mailsend-go_test.sh` script - sends a test email alert using `sendmail-go` (for testing with stock firmware).
-- TST: Reinstall stock ASUS router firmware - found replacements for `jq` and `sendmail` (`mailsend-go`), see see https://github.com/jqlang/jq/releases and https://github.com/muquit/mailsend-go.
-- REL: Converted `update-shas.ps1` to `./scripts/pin-actions-latest.ps1`, updated reference in `build.ps1`.
-- CHG: CLOSED - not relicensing under GPLv2/MIT/Apache.
 - REL: Added `THIRD-PARTY-NOTICES.md`.
-- CHG: Added "Open source licences" display to ABOUT screen.
-- GUI: Hamburger menu item spacing normalised by reducing text (configuration -> config).
-- GUI: Changed colour of region name from GREY to WHITE in WG Config and Watchdog modals.
 - REL: Added dart_pubspec_licenses for SBOM attestation.
-- REL: Add sbom metadata and license info.
+- REL: Converted `update-shas.ps1` to `./scripts/pin-actions-latest.ps1`, updated reference in `build.ps1`.
+- TST: Reinstall stock ASUS router firmware - found replacements for `jq` and `sendmail` (`mailsend-go`), see see github.com/jqlang/jq/releases and github.com/muquit/mailsend-go.
 
 2026-08-06 v0.7.11 build 371
 
-- DOC: rewrote README.md section 1-3, added data from an indicative test comparing OpenVN throughput with WireGuard, added "why use wireguard" heading.
-- DOC: Add README note that PIA sometimes takes regions offline for maintenance
 - DOC: Add README note on tools to check your exit node
-- DOC: Fix broken centering of images and headings
+- DOC: Add README note that PIA sometimes takes regions offline for maintenance
 - DOC: Added README note on "Watchdog shortcut"
+- DOC: Fix broken centering of images and headings
 - DOC: README format change to bullets
-- REL: built and tested OpenWRT under Hyper-V as a potential future port to support TP-Link routers (which have no user accessible SSH or dropbear), deferred.
+- DOC: Rewrote README.md section 1-3, added data from an indicative test comparing OpenVN throughput with WireGuard, added "why use wireguard" heading.
+- REL: Built and tested OpenWRT under Hyper-V as a potential future port to support TP-Link routers (which have no user accessible SSH or dropbear), deferred.
 
 2026-08-05 v0.7.10 build 370
 
@@ -73,8 +110,7 @@ WIP: 2026-08-10 v0.8.02 build 372 (not released - partial conversion to stock fi
 - REL: `release.yml` now uses `pubspec.yaml` to parse current build and release.
 - REL: `release.yaml`, discards AAB after sucessful upload to PS
 - REL: Updated `./scripts/update-shas.sh` to stop using API returned "latest" SHA version (setup java's tag was touched today returning v1.4.5 instead of v5.7.0!), now pulls all versions, sorts, and picks highest release.
-- REL: automated update of PS "what's new" with release notes -> "See https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md for changes since last release".
-
+- REL: automated update of PS "what's new" with release notes -> "See github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md for changes since last release".
 
 2026-08-05 v0.7.07 build 367
 
@@ -84,7 +120,7 @@ WIP: 2026-08-10 v0.8.02 build 372 (not released - partial conversion to stock fi
 - TST: Added `test/release/release-notes.sh` to test new automated GH release notes, run from repo root.
 - DOC: Split out backlog from `CHANGELOG.md` to `BACKLOG.md`.
 - REL: Updated scripts/update-shas.sh
-- REL: Added URL redirect from https://exponentiallydigital.com/cfg-pia-wg/changelog to https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+- REL: Added URL redirect from exponentiallydigital.com/cfg-pia-wg/changelog to github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
 - DOC: Added "GB" to "...8, 16, 32, 64 RAM configuations..." in BUILDING.md
 
 2026-08-03 v0.7.06 build 366
