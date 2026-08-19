@@ -31,7 +31,7 @@
 WIP:
 
 - CHG: determine and branch if Stock vs Merlin or call different methods on a class - abstract how to from code calls.
-- CHG: enable support for multiple concurrent VPN slots.
+- CHG: enable support for multiple concurrent VPN slots - then update S50downloadmaster to pull default interval fromn NVRAM, see OneNote "get from NVRAM" page.
 - CHG: on stock add watchdog (wd) script and tie to `cru` entry, convert wd script to use `/jffs/bin/mailsend-go` and `/jffs/bin/jq` (store binaries on `opt`?).
 - CHG: on stock add test for DownloadMaster installed, then backup `scripts\S50downloadmaster.sh`, install replacement `S50downloadmaster.sh`.
 - CHG: on stock implement stock firmware slot naming with NVRAM variable `vpnc_clientlist`
@@ -42,6 +42,11 @@ WIP:
 ---
 
 ### 1.2. Implemented - chronological change history
+
+2026-08-19 v0.8.12 build 382
+
+- CHG: optimised scripts/S50downloadmaster.sh, fixed DEBUG bug.
+- REL: set workflow permissions, add 5m timeout, limit concurrency, and validate inputs in `promote.yml`
 
 2026-08-19 v0.8.11 build 381
 
