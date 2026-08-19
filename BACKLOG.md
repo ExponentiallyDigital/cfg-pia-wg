@@ -90,6 +90,8 @@
 
 ### 1.2. v0.8.xx freemium
 
+- CHG: as we are now using Download Master to run the watchdog cru add script at boot, if people want to use Download Master, find a way to hook my changes into the original Download Master script? But they won't persist across firmware updates...to be resolved.
+
 - CHG: freemium version, move all but conf generation to a one-off lifetime paid function. Implementation plan:
 
   #### 1.2.1. Accounts & Play Console setup

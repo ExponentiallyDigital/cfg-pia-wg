@@ -21,9 +21,6 @@
 - GUI: Make Manage and Watchdog deletion prompt messages consistent.
 - GUI: Change info prompt after slot created "remember to enable it via the enable button".
 - GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
-
-WIP:
-
 - REL: fix compile warning on laptop under Ubuntu
   WARNING: A restricted method in java.lang.System has been called
   WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/home/andrew/.gradle/wrapper/dists/gradle-9.1.0-all/7wzd0jkjit61aq2p43wpjgij9/gradle-9.1.0/lib/native-platform-0.22-milestone-28.jar)
@@ -31,9 +28,29 @@ WIP:
   WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 - GUI: (backed out) allow selecting multiple lines of text in About screen.
 
+WIP:
+
+- CHG: determine and branch if Stock vs Merlin or call different methods on a class - abstract how to from code calls.
+- CHG: enable support for multiple concurrent VPN slots.
+- CHG: on stock add watchdog (wd) script and tie to `cru` entry, convert wd script to use `/jffs/bin/mailsend-go` and `/jffs/bin/jq` (store binaries on `opt`?).
+- CHG: on stock add test for DownloadMaster installed, then backup `scripts\S50downloadmaster.sh`, install replacement `S50downloadmaster.sh`.
+- CHG: on stock implement stock firmware slot naming with NVRAM variable `vpnc_clientlist`
+- CHG: preface slot descriptions with "pia-" to avoid confusion with other VPNs on the router.
+- CHG: on stock migrate all GUI display names for slot descriptions to use stock firmware descriptions.
+- DOC: add to `README.md` how to get and install `jq` and `sendmail-go` on stock firmware, plus how to install & cfg Download Master and use the replacement script.
+
 ---
 
 ### 1.2. Implemented - chronological change history
+
+2026-08-19 v0.8.11 build 381
+
+- Solved: (but not implemented) we now have a way to run the watchdog script on stock firmware.
+- Solved: (but not implemented) we now have tools to replace `jq` and `sendmail` on stock firmware.
+- Solved: (but not implemented) can now support all app functionality on stock firmware, including watchdogs, email alerts.
+- CHG: added `scripts\S50downloadmaster.sh` - example of how to add a cron job to run the watchdog script every 5 minutes, triggered by installing Download Master. This is a workaround for stock firmware which has no boot hook. Curently just prints a msg to the router log every 5 minutes.
+- CHG: added `scripts\extract-with-context.ps1` to extract a section of a router log file with 1 lines before and after the match "cfg-pia-wg_cru", used for checking `S50downloadmaster` is running correctly.
+- REL: material_color_utilities maintainers have fixed the issue with their package resolving to different versions on Windows/Linux.
 
 2026-08-17 v0.8.10 build 380
 
