@@ -27,6 +27,8 @@
   WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
   WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 - GUI: (backed out) allow selecting multiple lines of text in About screen.
+- REL: add tests to lib/screens/about_screen.dart, as code coverage is 37.8% on 23 new code lines in this module.
+- stash and merge above from main to dev.
 
 WIP:
 
