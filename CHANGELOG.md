@@ -43,7 +43,8 @@ WIP:
 
 2026-08-28 v0.8.14 build 385
 
-- CHG: updated `.claude\plan_add_stock_support.md`.
+- CHG: updated `.claude\plan_add_stock_support.md` - added services-start workaround to prompt.
+- CHG: removed DISABLED MERLIN placeholders from code.
 
 2026-08-28 v0.8.14 build 384
 

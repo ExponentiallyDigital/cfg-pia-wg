@@ -295,7 +295,7 @@ class RouterWatchdog {
   // Run a command and return trimmed stdout (mirrors router_push.dart `_run`).
   Future<String> _run(String cmd) async => utf8.decode(await client.run(cmd)).trim();
 
-  // Heredoc writes can stall if the SSH channel hangs; bound them at 30s (spec §3) and
+  // Heredoc writes can stall if the SSH channel hangs; bound them at 30s and
   // surface a troubleshooting message on timeout.
   Future<String> _runHeredoc(String cmd, String path) async {
     try {
@@ -303,7 +303,7 @@ class RouterWatchdog {
     } on TimeoutException {
       throw Exception(
         'Timed out after 30s writing to "$path" via SSH heredoc. '
-        'Check SSH connectivity and that the router filesystem (JFFS / /tmp) is writable.',
+        'Check SSH connectivity and that the router filesystem (JFFS and/or /tmp) is writable.',
       );
     }
   }
@@ -328,16 +328,7 @@ class RouterWatchdog {
 
   Future<bool> isMerlinRouter() async => (await _run('nvram get 3rd-party')) == 'merlin';
 
-// DISABLED MERLIN", to disable Merlin comment out below, uncomment next block
   Future<bool> isJqInstalled() async => (await _run('which jq')).isNotEmpty;
-//  Future<bool> isJqInstalled() async {
-//    try {
-//      final output = await _run('/jffs/bin/jq --version');
-//      return output.isNotEmpty;
-//    } catch (e) {
-//      return false;
-//    }
-//  }
 
   // Ensures JFFS custom scripts are enabled
   Future<void> enableJffsScripts() async {
