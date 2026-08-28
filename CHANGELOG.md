@@ -45,6 +45,12 @@ WIP:
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-28 v0.8.13 build 383
+
+- DOC: generated new CONTEXT.md
+- DOC: add .claude plans for context creation.
+- ADD: ./scripts/get-latest-tag.sh - gets the latest tag from GitHub, used to confirm latest tags for specific GitHub actions, e.g. kevin-david/promote-play-release
+
 2026-08-19 v0.8.12 build 382
 
 - CHG: optimised scripts/S50downloadmaster.sh, fixed DEBUG bug.

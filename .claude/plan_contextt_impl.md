@@ -1,6 +1,41 @@
+# Plan: rewrite `.claude/CONTEXT.md` from the actual code
+
+## Context
+
+`.claude/CONTEXT.md` is loaded at the start of every session and is used as the ground truth before
+code changes. It has drifted: it omits the About screen, `app_colors.dart`, `build_info_service.dart`
+and `license_text.dart` entirely, and it describes a watchdog button set (ENABLE / DISABLE / EDIT
+"saved but not deployed") that does not exist in `lib/widgets/slot_modal.dart`. Acting on it today
+would produce wrong changes.
+
+This plan replaces it with a reference-style document derived only from the 24 Dart files under
+[lib/](lib/), `pubspec.yaml`, `analysis_options.yaml`, `.vscode/settings.json`, and the `test/` file
+listing (test contents not read, per instruction).
+
+**Target path:** overwrite the existing `.claude/CONTEXT.md` (keeping its current uppercase name —
+there is no lowercase `context.md`). Single file write; no code changes.
+
+**Note on scope:** the request said 26 Dart files in `./lib`; there are **24**. There are 26
+`*_test.dart` files under `test/`. All 24 lib files were read in full.
+
+---
+
+## Verification
+
+1. `flutter analyze` — unchanged (doc-only change; sanity check the tree is clean).
+2. Cross-check every file/line citation in the new doc resolves:
+   `grep -n` the cited symbol at each `file:line` referenced in §5 and §3.
+3. Confirm no code/test files were modified: `git status --porcelain` shows only `.claude/CONTEXT.md`.
+
+---
+
+## Proposed full contents of `.claude/CONTEXT.md`
+
+````markdown
 # CONTEXT.md
 
-Android (Flutter) app that provisions Private Internet Access WireGuard configurations and manages PIA WireGuard slots + a self-healing watchdog on an ASUS / Asus-Merlin router over SSH.
+Android (Flutter) app that provisions Private Internet Access WireGuard configurations and manages
+PIA WireGuard slots + a self-healing watchdog on an ASUS / Asus-Merlin router over SSH.
 
 ## 1. Working agreements
 
@@ -8,8 +43,8 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
   `test/widgets/`, `test/unit/`). Run `flutter test`; coverage is tracked via `coverage/lcov.info`.
   Every widget that a test needs to reach already carries a `Key` (`snake_case`, e.g.
   `Key('slot_create')`, `Key('wd_save')`) — add one when you add a control.
-- **Update this file in the same change as any architecture or behaviour change.** A change that moves
-  a file, renames a destination, alters a button set, or adds/removes an NVRAM key must edit the
+- **Update this file in the same change as any architecture or behaviour change.** A PR that moves a
+  file, renames a destination, changes a button set, or adds/removes an NVRAM key must edit the
   matching section here.
 - **Flag conflicts, do not silently resolve them.** If this file disagrees with the code, or with
   `ARCHITECTURE.md` / `BACKLOG.md` / a `.claude/plan_*.md`, say so and ask. Do not "fix" the code to
@@ -19,7 +54,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 ### Conventions in force (observed, not aspirational)
 
 | Area | What the codebase actually does |
-| --- | --- |
+|---|---|
 | Lint | `package:flutter_lints/flutter.yaml` (`flutter_lints ^6.0.0`), **no custom rules enabled or disabled**. `analyzer.exclude` drops `build/`, `android/`, `ios/`, `web/`, desktop dirs. |
 | Line length | 130 (`.vscode/settings.json` `dart.lineLength`, `.prettierrc` `printWidth`). Format on save via Dart-Code. |
 | State management | No package. `SessionController extends ChangeNotifier`, published through the `SessionScope` `InheritedWidget`; subtrees that must repaint wrap `ListenableBuilder`. Screens are `StatefulWidget` + `setState` for local form state. **No Provider/Riverpod/Bloc — do not introduce one.** |
@@ -32,14 +67,23 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 
 ## 2. Snapshot
 
-The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit app"; a hamburger drawer rendered *above* the Navigator adds an **About** destination and duplicates the rest. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and drive a shared `wgc1..wgc5` slot modal: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode (Merlin firmware only) does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. Screen 4 shows the in-memory app log. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
+The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit app"; a hamburger
+drawer rendered *above* the Navigator adds an **About** destination and duplicates the rest. Screen 1
+generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second
+clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and drive a shared
+`wgc1..wgc5` slot modal: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard
+slots; *watchdog* mode (Merlin firmware only) does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and
+deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. Screen 4 shows the
+in-memory app log. All credentials and generated config are volatile — held only in `SessionController`
+and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in
+plaintext when a watchdog is deployed.
 
 ## 3. Architecture — `lib/` (24 files)
 
 ### Root
 
 | File | Role |
-| --- | --- |
+|---|---|
 | `main.dart` | 23 lines. `void main() => runApp(const PiaWgApp())`; re-exports `PiaWgApp` from `app_shell.dart`. |
 | `app_shell.dart` | `PiaWgApp` (root `StatefulWidget`, `WidgetsBindingObserver`) owns the `SessionController`, `MaterialApp`, `buildAppTheme()`, and installs `AppChrome` via `MaterialApp.builder`. `DestinationObserver` (a `NavigatorObserver`) updates `controller.currentDestination`, **ignoring non-`PageRoute`s** so dialogs don't change drawer highlighting. `didChangeAppLifecycleState(resumed)` → `resyncOnResume()`. Disposes the controller only if it created it. |
 | `session_controller.dart` | `AppDestination` enum (6 values), `LogEntry`, `SessionController extends ChangeNotifier`, `SessionScope extends InheritedWidget`, `kDefaultDns`. Holds all volatile state, the 1 Hz clipboard countdown, modal depth, `wipeAll()`. `SessionScope.updateShouldNotify` compares controller identity only, so it does **not** rebuild on every tick. |
@@ -54,7 +98,7 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 ### `lib/screens/`
 
 | File | Role |
-| --- | --- |
+|---|---|
 | `main_menu_screen.dart` | 5 buttons + `* requires SSH connectivity` footnote + a PayPal/Patreon donation block. `PopScope(canPop: false)` routes the Android back key to `confirmAndExit`. |
 | `standalone_config_screen.dart` | Region row / PIA username / password / DNS → `GENERATE CONFIG`; renders the generated config with COPY (+ countdown) and SHARE / SAVE. |
 | `manage_router_screen.dart` | 47 lines — thin wrapper: `RouterSlotsScreen(mode: SlotModalMode.manage, …)`. |
@@ -66,7 +110,7 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 ### `lib/widgets/`
 
 | File | Role |
-| --- | --- |
+|---|---|
 | `app_scaffold.dart` | `AppChrome` (drawer host + static header, sits above the Navigator so the hamburger stays live under dialogs), `AppHeaderBar` (two-line title, author link, `v<version>` from `PackageInfo`), `AppScaffold` (scrollable padded body + optional `HOME` button; `fillViewport` for the menu). |
 | `app_drawer.dart` | `screenForDestination()`, `navigateToDestination()` (no-op on current; **pushes**, growing the stack by design), `closeApp()`, `confirmAndExit()`, `AppDrawer`. |
 | `slot_modal.dart` | 674 lines. `SlotModalMode` enum + `SlotModal` (slot list, badges, mode-dependent button set, all router actions) + `_PiaCredsDialog` + `_PingTargetsDialog`. |
@@ -94,7 +138,7 @@ RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fet
 ### 4.1 Navigation & destinations
 
 | `AppDestination` | `routeName` | `title` | On main menu? | In drawer? |
-| --- | --- | --- | --- | --- |
+|---|---|---|---|---|
 | `menu` | `main_menu` | Main menu | — (is the menu) | yes, as **HOME** |
 | `standalone` | `standalone` | Generate PIA WireGuard config | yes | yes |
 | `manageRouter` | `manage_router` | Manage PIA WireGuard config | yes (`*` suffix) | yes |
@@ -111,7 +155,7 @@ RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fet
 ### 4.2 Session state (`SessionController`)
 
 | Field | Notes |
-| --- | --- |
+|---|---|
 | `piaUsername`, `piaPassword`, `dns` | `dns` defaults to `kDefaultDns` = `'9.9.9.9, 149.112.112.112'`. |
 | `routerIp`, `sshUsername`, `sshPassword` | Router form pre-fills `192.168.1.1` / `admin` on a fresh session. |
 | `generatedConfig`, `generatedRegionId` | Survive navigation; wiped by `wipeAll`. |
@@ -127,7 +171,7 @@ then logs. Injectable seams: `clipboardTimeout`, `tickInterval`, `clipboardWrite
 ### 4.3 Standalone generation — `PiaService`
 
 | Step | Detail |
-| --- | --- |
+|---|---|
 | `fetchRegions` | GET `https://serverlist.piaservers.net/vpninfo/servers/v6`; parses only the **first line** (up to `\n`); keeps regions with ≥1 `wg` server; sorted by id. |
 | `probeLatency` | Concurrent `Socket.connect(ip, probePort, timeout: 2s)`. `defaultProbePort = 1337`; `probePort` is injectable so parallel test workers don't collide on the port. Failures sort last. |
 | `getToken` | POST `https://www.privateinternetaccess.com/gtoken/generateToken`, HTTP Basic. Non-200 → extracts `message`/`error` from a JSON body. Throws a **`String`** (`'Auth error: …'`), not an `Exception`. |
@@ -146,7 +190,7 @@ COPY → `copyToClipboard` + snackbar + countdown. SHARE writes `pia-<region>.co
 `hasDesc` = `wgcN_desc` non-empty; `enabled` = `wgcN_enable == 1`; `wdActive` = cron entry present.
 
 | Mode | Key | Label | Enabled when |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | manage | `slot_create` | CREATE | a slot is selected |
 | manage | `slot_enable` | ENABLE | `hasDesc && !enabled` |
 | manage | `slot_edit` | EDIT | `hasDesc` |
@@ -164,7 +208,7 @@ Row badges: `● ACTIVE` (`activeSlot`), `⚑ KILL SWITCH` (`enforce==1`, amber)
 ### 4.5 Manage-mode action semantics
 
 | Action | Behaviour |
-| --- | --- |
+|---|---|
 | CREATE | Overwrite confirm if `!isEmpty` → region picker → `_PiaCredsDialog` → `generateConfig` → `createConfigToSlot`. Backs up the 17 existing keys first and restores them on failure. Writes `enable=0`, `enforce=0`, `fw=1`, `nat=1`, `psk=""`, `rip=""`, `ep_addr_r=""`. Ends with an info dialog telling the user to press ENABLE. |
 | ENABLE | Reads `wgcN_wd_primary_ip` / `_secondary_ip`; if either is blank, prompts (`_PingTargetsDialog`, defaults `8.8.8.8` / `1.1.1.1`) and writes them. Then stops any *other* enabled slot (and its watchdog) and calls `enableSlot`. |
 | `enableSlot` | `enable=1` → commit → `service "start_wgc N"; service restart_vpnrouting0` → polls `wg show interfaces` up to `verifyMaxAttempts` (30) × `verifyPollInterval` (2 s) → pings **both** targets via `-I wgcN -c 1 -W 5`. **Both must pass**; any failure reverts to `enable=0` and throws. |
@@ -232,7 +276,7 @@ s_client` TLS probe) and writes each to the **router syslog**; the app only says
 ### 4.8 Router-side script `_kWatchdogScriptTemplate` (POSIX sh, `__SLOT__` is the only placeholder)
 
 | Aspect | Value |
-| --- | --- |
+|---|---|
 | Paths | `/jffs/scripts/watchdog_wgcN.sh`, log `/tmp/watchdog_wgcN.log`, status `/tmp/watchdog_last_ping_success_wgcN`, backoff `/tmp/watchdog_backoff_wgcN`, CA cache `/jffs/pia_ca.rsa.4096.crt` |
 | Health check | `ping -I wgcN -c 3 -W 2` primary, **else** secondary — **either** passing is success (contrast: app ENABLE requires **both**) |
 | Backoff | `COOLDOWN=120` s between reconfiguration attempts; counter+timestamp in the backoff file, reset to `0\n0` on success |
@@ -248,7 +292,7 @@ s_client` TLS probe) and writes each to the **router syslog**; the app only says
 **Per-slot WireGuard (`kSlotNvramKeys`, `router_slot_service.dart:28-46`) — `wgcN_` prefix, N = 1..5:**
 
 | Key | Meaning | User-editable |
-| --- | --- | --- |
+|---|---|---|
 | `addr` | local tunnel IP, CIDR | yes |
 | `alive` | persistent keepalive (25) | yes |
 | `desc` | **PIA region id** — must match a real PIA region or the watchdog cannot re-negotiate | yes |
@@ -305,7 +349,7 @@ Links: repo, ReadMe, Change log, Architecture, Security policy, Privacy policy, 
 ### 4.12 Security posture (as implemented)
 
 | Claim | Reality |
-| --- | --- |
+|---|---|
 | Credentials on the device | Volatile only — `SessionController` fields, wiped by `wipeAll` on every exit path. No `SharedPreferences`, no file persistence. |
 | Generated config on the device | In memory, **except** SHARE, which writes `pia-<region>.conf` to the temp dir and deletes it in a `finally`. |
 | Credentials on the router | PIA username/password go to router NVRAM in **plaintext** (`cfg_pia_wg_user`/`_password`) whenever a watchdog is deployed; SMTP password likewise (`wgcN_wd_smtp_pass`). Removed by `stopWatchdog`. |
@@ -315,7 +359,7 @@ Links: repo, ReadMe, Change log, Architecture, Security policy, Privacy policy, 
 ## 5. Doc-vs-code discrepancies (previous CONTEXT.md)
 
 | # | The old doc said | The code actually does | Where |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | 1 | Watchdog screen has **ENABLE, EDIT, DISABLE, DELETE, VIEW WATCHDOG LOG** | Watchdog mode has exactly **three** buttons: `CREATE/EDIT`, `DELETE`, `VIEW ROUTER WATCHDOG LOG`. No ENABLE, no DISABLE. | `slot_modal.dart:546-550` |
 | 2 | Watchdog EDIT saves parameters "**but not deployed**"; "the slot modal's ENABLE performs the deploy" | `WatchdogDialog._save` deploys directly — `deployWatchdog` writes NVRAM, the script, both cron jobs, `services-start`, and runs the script. There is no separate deploy step. | `watchdog_dialog.dart:253`, `router_watchdog.dart:373-392` |
 | 3 | "ENABLE/DELETE require a non-empty slot" | `CREATE/EDIT` is deliberately live on an **empty** slot; `DELETE` needs `hasDesc`; `VIEW LOG` needs `hasDesc && wdActive`. | `slot_modal.dart:544-550` |
@@ -330,5 +374,4 @@ Links: repo, ReadMe, Change log, Architecture, Security policy, Privacy policy, 
 | 12 | Doc mentions no idle timeout, but `standalone_config_screen.dart:18` claims "the global **10-minute idle wipe**" | **No idle timer exists.** `SessionController` has only the clipboard countdown; the sole wipe trigger is `confirmAndExit`. The code comment is stale, not the doc. | `session_controller.dart:124-183` |
 | 13 | "five options. Each (except Exit app) opens its own screen" — implies the drawer mirrors the menu | The drawer has **six** entries (HOME + 5 destinations incl. About) + Exit app; the menu has four destinations + Exit app. | `app_drawer.dart:96-102` |
 | 14 | Doc says CREATE sets "kill-switch off" (correct) but says nothing about the script | The router script re-writes `enforce=1` on every successful re-negotiation, so a slot created kill-switch-off ends up kill-switch-on once the watchdog fires. | `router_watchdog.dart:855` |
-
-Note: ignore all .claude\plan_*.md files, they are historical and not part of the current codebase. This .claude\CONTEXT.md file is the authoritative source for doc-vs-code discrepancies.
+````
