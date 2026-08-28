@@ -41,7 +41,11 @@ WIP:
 
 ### 1.2. Implemented - chronological change history
 
-2026-08-28 v0.8.13 build 384
+2026-08-28 v0.8.14 build 385
+
+- CHG: updated `.claude\plan_add_stock_support.md`.
+
+2026-08-28 v0.8.14 build 384
 
 - ADD: added `S50downloadmaster.stock.sh` to the repo, this is the original stock firmware script + added a "properly" formatted version, my eyes were bleeding re-reading the stock script!
 - CHG: set `sleep 10` (seconds) in `S50downloadmaster.sh`, 60 caused issues with blocking as this script runs whenever the firewall is restarted, 0 also caused issues, and 10 is a compromise. Try 5, but might not work well on lower powered processors.

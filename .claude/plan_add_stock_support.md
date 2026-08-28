@@ -1,37 +1,59 @@
-Purpose of this change: add support for "stock" firmware while retaining "Merlin" firmware support.
+Purpose: add stock ASUS firmware support alongside the existing Merlin support.
 
-Context: read ./claude/CONTEXT.md
+Context: read ./claude/CONTEXT.md and ./ARCHITECTURE.md section 2.3 (Router WireGuard NVRAM fields) before starting.
 
-As the app currently supports Merlin only, I want you to add support for stock by using if/then/else blocks to surround the existing logic in the `manage_router_screen.dart` and `watchdog_management_screen.dart` files. NB this is an interim step to get this feature enabled, in a future version this will be converted to a FirmwareService/RouterCommandStrategy abstraction - do not implement that now.
+Approach: this is an interim step. Wrap the existing Merlin logic in manage_router_screen.dart and watchdog_management_screen.dart in if/else blocks branching on firmware type. Do not build a FirmwareService/RouterCommandStrategy abstraction yet, that comes in a later change.
 
-Implement firmware detection that triggers exclusively when the user navigates to `manage_router_screen.dart` or `watchdog_management_screen.dart`. Use `nvram get 3rd-party` do a case insensitive check for the word "merlin". If the command fails (non-zero exit code, empty/unexpected output, SSH connection failure, timeout etc), fall back to an error message then return to the previous menu. If successful, set/update an application flag in memory. Once this flag has been set, skip rechecking until the app is exited.
+## Firmware detection
 
-After you have detected the firmware type:
+- Runs only on navigation to manage_router_screen.dart or watchdog_management_screen.dart, once per app session (cache the result in an in-memory flag, don't recheck until the app exits).
+- Command: `nvram get 3rd-party`. Case-insensitive match for "merlin" in the output.
+- Command failure (non-zero exit, empty/unexpected output, SSH failure, timeout) → show an error, return to the previous menu, do not set the flag.
+- Success → set the flag to stock or merlin accordingly.
 
-1. if stock
-	1.1. Check binaries exist
- 		1.1.1. /jffs/cfg-pia-wg/jq
-		1.1.2. /jffs/cfg-pia-wg/mailsend-go
-	1.2. Display a dismissible warning if either binary is missing explicitly say which file(s) could not be found and display this with a tappable link then return to the previous menu. If only one binary is missing use "Unable to locate: $BINARY1<newline>See [Prerequisites in README.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#4-prerequisites--requirements)". If two are missing use this "Unable to locate: $BINARY1, $BINARY2<newline>See [Prerequisites in README.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#4-prerequisites--requirements)".
-	1.3. Stock uses both nvram entries `wgcN_` and a new entity called `vpnc_clientlist`, you must see ARCHITECTURE.md section "2.3. Router WireGuard NVRAM fields" for details of these.
-	1.4. Use `mailsend-go` instead of `sendmail` for sending emails. Here is the command line for sending an email (it is an accepted risk passing the user name and password via the command line):
-		/jffs/cfg-pia-wg/mailsend-go -debug -ssl -verifyCert \
-		  -smtp "$SMTP_HOST" \
-		  -port "$SMTP_PORT" \
-		  -sub "Email subject" \
-		  -f "$EMAIL_FROM" \
-		  -t "$EMAIL_TO" \
-		  auth -user "$SMTP_USER" -pass "$SMTP_PASS" \
-		  body -file "$TMPMAIL"
-	1.5. Instead of `jq` in the path which exists under merlin, as you have determined that we are on Stock, use `/jffs/cfg-pia-wg/jq`.
-		1.5.1. `jq` is called in these files, wrap these in a conditional using the firmware detection flag you've added.
-			/lib/watchdog_dialog.dart - this runs after the `watchdog_management_screen.dart`.
-			/lib/router_watchdog.dart - this runs after the `watchdog_management_screen.dart`.
-			/test/router_watchdog_service_test.dart - update this test file to cover both the stock and Merlin branches once the source is wrapped.
-		1.5.2. There are calls to `jq` in the watchdog script that is generated from `const String _kWatchdogScriptTemplate` and deployed to the router, as there is a heredoc size limit pushing the script to the router, hardcode the location of `jq` based on what firmware we are running on - do not add conditional logic to `_kWatchdogScriptTemplate`.
-2. Else if merlin use existing code logic
-3. Catch, anything else display an error "Your firmware type is not supported, see [README.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#4-prerequisites--requirements)" (make that a tappable link), then return to the previous menu.
+## Branch: stock
 
-You must scan for existing tests in the ./test folder that need to be updated after you have made your changes. For new code, create/extend tests, including but not limited to widget tests for the two new dismissible warnings (missing-binary and unsupported-firmware) and their tappable links. Coverage and test information is contained in ./claude/CONTEXT.md.
+1. Check these binaries exist on the router:
+   - /jffs/cfg-pia-wg/jq
+   - /jffs/cfg-pia-wg/mailsend-go
 
-Success criteria: I will manually test on real hardware that the code is functioning as required (I won't give you credentials to login to my router).
+   If either is missing, show a dismissible warning and return to the previous menu:
+   - One missing: "Unable to locate: $BINARY\nSee [Prerequisites in README.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#4-prerequisites--requirements)"
+   - Both missing: "Unable to locate: $BINARY1, $BINARY2\nSee [Prerequisites in README.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#4-prerequisites--requirements)"
+   - The README link must be tappable.
+
+2. Stock reads/writes both wgcN_ nvram entries and vpnc_clientlist. See ARCHITECTURE.md 2.3 for the field layout of both.
+
+3. Send email via mailsend-go instead of sendmail:
+
+   /jffs/cfg-pia-wg/mailsend-go -debug -ssl -verifyCert \
+     -smtp "$SMTP_HOST" -port "$SMTP_PORT" -sub "Email subject" \
+     -f "$EMAIL_FROM" -t "$EMAIL_TO" \
+     auth -user "$SMTP_USER" -pass "$SMTP_PASS" \
+     body -file "$TMPMAIL"
+
+   Passing credentials on the command line is an accepted risk here, no change needed.
+
+4. jq path is /jffs/cfg-pia-wg/jq on stock (vs the Merlin path already in use).
+   - Dart-level jq calls live in lib/watchdog_dialog.dart and lib/router_watchdog.dart (both only run after watchdog_management_screen.dart, so the flag is guaranteed to be set). Wrap these in a conditional on the firmware flag. Update test/router_watchdog_service_test.dart to cover both branches.
+   - Separately, the watchdog script generated from const String _kWatchdogScriptTemplate and deployed to the router also calls jq. Because of the heredoc size limit, do not add conditional logic inside the template itself, instead hardcode the correct jq path into the generated string at build time, based on the detected firmware.
+
+## Branch: merlin
+
+Use the existing logic unchanged.
+
+## Branch: anything else
+
+Show: "Your firmware type is not supported, see [README.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#4-prerequisites--requirements)" (tappable link), then return to the previous menu.
+
+## Tests
+
+Scan ./test for anything these changes affect and update it. For new code, add tests, including widget tests for both new dismissible warnings (missing-binary and unsupported-firmware) and their tappable links. Test/coverage conventions are in ./claude/CONTEXT.md.
+
+## Docs
+
+Update ARCHITECTURE.md and CONTEXT.md to reflect the new stock firmware support once the change is complete.
+
+## Success criteria
+
+I'll manually verify on real hardware, no router credentials will be provided. All automated tests must pass before that.
