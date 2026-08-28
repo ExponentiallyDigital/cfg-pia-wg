@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/screens/slot_params_editor.dart';
 
+import '../watchdog_test_utils.dart';
+
 // initial values with addr/desc/ep_addr/ppub/priv blank (no defaults) so SAVE starts disabled.
 Map<String, String> _initial() => {
       'addr': '',
@@ -124,5 +126,38 @@ void main() {
     expect(find.text('198.51.100.7'), findsOneWidget); // rip
     expect(find.text('203.0.113.9'), findsOneWidget); // ep_addr_r
     expect(find.text('YES'), findsOneWidget); // Enabled (enable == '1')
+  });
+
+  // Stock exposes 12 of the 17 fields (ARCHITECTURE.md 2.3.1); the four the app cannot write are
+  // hidden rather than shown as controls that silently do nothing.
+  testWidgets('the Merlin-only fields are hidden on stock', (tester) async {
+    useStock();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) => ElevatedButton(
+              onPressed: () => showDialog<bool>(
+                context: ctx,
+                builder: (_) => SlotParamsEditor(slot: 1, initial: _initial(), onSave: (_) async {}),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('slot_enforce')), findsNothing);
+    expect(find.byKey(const Key('slot_fw')), findsNothing);
+    expect(find.text('198.51.100.7'), findsNothing); // rip
+    expect(find.text('203.0.113.9'), findsNothing); // ep_addr_r
+
+    // Everything stock does have is still there.
+    expect(find.byKey(const Key('slot_nat')), findsOneWidget);
+    expect(find.byKey(const Key('slot_desc')), findsOneWidget);
+    expect(find.text('YES'), findsOneWidget); // Enabled
   });
 }

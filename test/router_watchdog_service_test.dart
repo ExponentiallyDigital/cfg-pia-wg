@@ -1,6 +1,8 @@
 // test/router_watchdog_service_test.dart - RouterWatchdog service tests over a fake SSH client.
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
+import 'package:cfg_pia_wg/s50_template.dart';
 
 import 'watchdog_test_utils.dart';
 
@@ -32,6 +34,16 @@ void main() {
     test('isJqInstalled reflects which jq output', () async {
       expect(await RouterWatchdog(RecordingSSHClient(responder: (_) => '/opt/bin/jq')).isJqInstalled(), isTrue);
       expect(await RouterWatchdog(RecordingSSHClient(responder: (_) => '')).isJqInstalled(), isFalse);
+    });
+
+    test(r'isJqInstalled probes the install path on stock, not $PATH', () async {
+      useStock();
+      final present = RecordingSSHClient(responder: (_) => '1');
+      expect(await RouterWatchdog(present).isJqInstalled(), isTrue);
+      expect(present.ran("[ -x '$kStockJqPath' ]"), isTrue);
+      expect(present.ran('which jq'), isFalse);
+
+      expect(await RouterWatchdog(RecordingSSHClient(responder: (_) => '0')).isJqInstalled(), isFalse);
     });
   });
 
@@ -336,6 +348,138 @@ void main() {
       final boom = RecordingSSHClient(throwOn: ['ping']);
       expect(await RouterWatchdog(boom).pingHostViaWan('8.8.8.8'), isFalse);
       expect(await RouterWatchdog(boom).pingHostViaVpn('8.8.8.8', 1), isFalse);
+    });
+  });
+
+  // ── Stock firmware ────────────────────────────────────────────────────────────────
+  group('stock deploy', () {
+    // Stock answers '' to everything unless a test says otherwise; jffs2 reads are irrelevant here.
+    RecordingSSHClient stockRouter({String s50 = ''}) => RecordingSSHClient(
+          responder: (cmd) => cmd.startsWith("cat '$kS50Path'") ? s50 : '',
+        );
+
+    test('creates the script directory instead of setting the Merlin JFFS flags', () async {
+      useStock();
+      final c = stockRouter();
+      await RouterWatchdog(c).enableJffsScripts();
+      expect(c.ran('mkdir -p /jffs/scripts'), isTrue);
+      expect(c.ran('nvram set jffs2_scripts=1'), isFalse);
+      expect(c.ran('nvram set jffs2_on=1'), isFalse);
+    });
+
+    test('persists cron via S50downloadmaster and runs it immediately', () async {
+      useStock();
+      final c = stockRouter();
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+
+      expect(c.ran("cat > '$kS50Path'"), isTrue);
+      expect(c.ran("chmod +x '$kS50Path'"), isTrue);
+      // Installs the entries now rather than waiting for the next boot.
+      expect(c.ran("'$kS50Path' start"), isTrue);
+      // Merlin's persistence file is never touched.
+      expect(c.ran(kServicesStartPath), isFalse);
+    });
+
+    test('the deployed script carries both cru lines inside the replacement block', () async {
+      useStock();
+      final c = stockRouter();
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+
+      final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '$kS50Path'"));
+      expect(extractS50CruLines(write), [buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
+      // The stock scaffolding must survive verbatim.
+      expect(write, contains('log_debug "START /opt/etc/init.d/S50downloadmaster, trigger: \$1"'));
+      expect(write, contains('PATH=/bin:/sbin:/usr/sbin:/usr/bin:/opt/bin'));
+    });
+
+    test('redeploying replaces this slot\'s lines and keeps another slot\'s', () async {
+      useStock();
+      const otherSlot = 'cru a watchdog_wgc3 "*/9 * * * *" /jffs/scripts/watchdog_wgc3.sh';
+      final existing = buildS50Script([otherSlot, buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
+      final c = stockRouter(s50: existing);
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 15));
+
+      final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '$kS50Path'"));
+      expect(extractS50CruLines(write), [otherSlot, buildCronCheckLine(1, 15), buildCronRotateLine(1)]);
+      expect(write, isNot(contains('*/5 * * * *')), reason: 'the stale interval must be gone');
+    });
+
+    test('the watchdog script points jq at the install path', () async {
+      useStock();
+      final c = stockRouter();
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+
+      final write = c.commands.firstWhere((cmd) => cmd.contains("cat > '/jffs/scripts/watchdog_wgc1.sh'"));
+      expect(write, contains('JQ="$kStockJqPath"'));
+      expect(write, contains(kStockMailsendPath));
+      expect(write, isNot(contains('/usr/sbin/sendmail')));
+    });
+  });
+
+  group('stock stopWatchdog', () {
+    test('strips this slot from S50downloadmaster without shredding the template', () async {
+      useStock();
+      const otherSlot = 'cru a watchdog_wgc3 "*/9 * * * *" /jffs/scripts/watchdog_wgc3.sh';
+      final existing = buildS50Script([otherSlot, buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
+      final c = RecordingSSHClient(responder: (cmd) => cmd.startsWith("cat '$kS50Path'") ? existing : '');
+      await RouterWatchdog(c).stopWatchdog(1);
+
+      final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '$kS50Path'"));
+      expect(extractS50CruLines(write), [otherSlot]);
+      expect(write, contains('esac'));
+      expect(c.ran("chmod 700 '$kS50Path'"), isTrue);
+      expect(c.ran(kServicesStartPath), isFalse);
+    });
+
+    test('leaves the hijacked script in place with an empty block when nothing remains', () async {
+      useStock();
+      final existing = buildS50Script([buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
+      final c = RecordingSSHClient(responder: (cmd) => cmd.startsWith("cat '$kS50Path'") ? existing : '');
+      await RouterWatchdog(c).stopWatchdog(1);
+
+      final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '$kS50Path'"));
+      expect(extractS50CruLines(write), isEmpty);
+      expect(write, contains('#!/bin/sh'));
+      // Removing a stock init script outright would be worse than emptying its block.
+      expect(c.ran("rm -f '$kS50Path'"), isFalse);
+    });
+
+    test('still removes the cron jobs, script and tmp files', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (_) => '');
+      await RouterWatchdog(c).stopWatchdog(2);
+      expect(c.ran('cru d watchdog_wgc2'), isTrue);
+      expect(c.ran('cru d watchdog_log_rotate_wgc2'), isTrue);
+      expect(c.ran('rm -f /jffs/scripts/watchdog_wgc2.sh'), isTrue);
+      expect(c.ran('/tmp/watchdog_backoff_wgc2'), isTrue);
+      expect(c.ran('nvram set wgc2_enable=0'), isTrue);
+    });
+  });
+
+  group('stock testEmail', () {
+    test('sends via mailsend-go with a headerless body', () async {
+      useStock();
+      final c = RecordingSSHClient();
+      await RouterWatchdog(c).testEmail(cfg(slot: 1, email: true));
+
+      expect(c.ran("cat > '/tmp/mail.txt'"), isTrue);
+      expect(c.ran('$kStockMailsendPath -debug -ssl -verifyCert'), isTrue);
+      expect(c.ran("-sub 'watchdog config test'"), isTrue);
+      expect(c.ran("auth -user 'smtpuser' -pass 'smtppass'"), isTrue);
+      expect(c.ran('body -file /tmp/mail.txt'), isTrue);
+      expect(c.ran('/usr/sbin/sendmail'), isFalse);
+      // No RFC-822 headers in the body file — mailsend-go writes its own.
+      final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '/tmp/mail.txt'"));
+      expect(write, isNot(contains('MIME-Version')));
+      expect(c.ran('rm -f /tmp/mail.txt'), isTrue);
+    });
+
+    test('a failed send still runs the TCP and TLS diagnostics', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('EXITCODE') ? 'EXITCODE:1' : '');
+      await RouterWatchdog(c).testEmail(cfg(slot: 1, email: true));
+      expect(c.ran('nc -w 5 smtp.example.com 465'), isTrue);
+      expect(c.commands.any((cmd) => cmd.contains('logger') && cmd.contains('Email FAILED')), isTrue);
     });
   });
 

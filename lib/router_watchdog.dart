@@ -18,6 +18,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
+import 'firmware.dart';
+import 's50_template.dart';
+
 // ─── PIA negotiation endpoints (mirrored from pia_service.dart) ─────────────────
 // Kept in one place so the Bash re-negotiation and the Dart app stay in sync.
 const String kPiaServerListUrl = 'https://serverlist.piaservers.net/vpninfo/servers/v6';
@@ -269,6 +272,25 @@ String buildMailBody(WatchdogConfig c, {required bool success, bool testMode = f
       '$line\r\n';
 }
 
+// Headerless message body for mailsend-go, which takes the subject as a flag and the body as a
+// plain file — unlike BusyBox sendmail, which needs the RFC-822 headers inline.
+String buildMailPlainBody(WatchdogConfig c, {required bool success, bool testMode = false}) => testMode
+    ? 'This is a test email from the cfg-pia-wg watchdog (slot wgc${c.slotIndex}).\r\n'
+    : 'Watchdog wgc${c.slotIndex} reconfiguration ${success ? 'succeeded' : 'failed'}.\r\n';
+
+// The subject line for a given send, shared by both mail transports.
+String buildMailSubject(WatchdogConfig c, {required bool success, bool testMode = false}) =>
+    testMode ? 'watchdog config test' : '${c.emailSubject} - ${success ? 'SUCCESS' : 'FAILED'}';
+
+// The mailsend-go implicit-TLS command used on stock, where BusyBox sendmail is not viable.
+// Credentials on the command line are an accepted risk here (see .claude/CONTEXT.md 4.12).
+String buildMailsendGoCommand(String host, int port, WatchdogConfig c, {required String subject}) =>
+    '$kStockMailsendPath -debug -ssl -verifyCert '
+    '-smtp ${shellSingleQuote(host)} -port $port -sub ${shellSingleQuote(subject)} '
+    '-f ${shellSingleQuote(c.emailFrom)} -t ${shellSingleQuote(c.emailTo)} '
+    'auth -user ${shellSingleQuote(c.smtpUsername)} -pass ${shellSingleQuote(c.smtpPassword)} '
+    'body -file /tmp/mail.txt';
+
 // The BusyBox sendmail implicit-TLS command for the one-off test email (concrete values).
 String buildSendmailCommand(String host, int port, WatchdogConfig c) => '/usr/sbin/sendmail '
     '-H "exec openssl s_client -quiet -tls1_3 '
@@ -281,8 +303,55 @@ String buildSendmailCommand(String host, int port, WatchdogConfig c) => '/usr/sb
     '${shellSingleQuote(c.emailTo)} '
     '< /tmp/mail.txt';
 
-// The full /jffs/scripts/watchdog_wgcN.sh body. Slot-parameterised via __SLOT__.
-String buildWatchdogScript(WatchdogConfig c) => _kWatchdogScriptTemplate.replaceAll('__SLOT__', '${c.slotIndex}');
+// The router-side mail blocks, substituted into the template at build time. Conditional logic
+// inside the script itself is not an option: the deploy heredoc has a ~7 KB ceiling, and the
+// firmware is already known here.
+const String _kMailBodyMerlin = r'''  {
+    echo "From: $EMAIL_FROM"
+    echo "To: $EMAIL_TO"
+    echo "Subject: $EMAIL_SUBJECT - $1"
+    echo "Date: $(date -R 2>/dev/null || date)"
+    echo "Message-ID: $(date +%s)@$(uname -n)"
+    echo "MIME-Version: 1.0"
+    echo "Content-Type: text/plain; charset=utf-8"
+    echo ""
+    echo "Watchdog $IFACE reconfiguration: $1"
+    echo "Region: $DESC"
+    echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
+  } > "$TMPMAIL"''';
+
+// mailsend-go builds its own headers, so the file holds the body only.
+const String _kMailBodyStock = r'''  {
+    echo "Watchdog $IFACE reconfiguration: $1"
+    echo "Region: $DESC"
+    echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
+  } > "$TMPMAIL"''';
+
+const String _kMailCmdMerlin = r'''  /usr/sbin/sendmail \
+    -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt \
+    -verify_return_error -connect $SMTP_HOST:$SMTP_PORT" \
+    -au"$SMTP_USER" \
+    -ap"$SMTP_PASS" \
+    -f"$EMAIL_FROM" \
+    "$EMAIL_TO" < "$TMPMAIL" 2>"$TMPERR"''';
+
+const String _kMailCmdStock = '''  $kStockMailsendPath -debug -ssl -verifyCert \\
+    -smtp "\$SMTP_HOST" -port "\$SMTP_PORT" -sub "\$EMAIL_SUBJECT - \$1" \\
+    -f "\$EMAIL_FROM" -t "\$EMAIL_TO" \\
+    auth -user "\$SMTP_USER" -pass "\$SMTP_PASS" \\
+    body -file "\$TMPMAIL" 2>"\$TMPERR"''';
+
+// The full /jffs/scripts/watchdog_wgcN.sh body. Slot-parameterised via __SLOT__; the jq path and
+// the two mail blocks are resolved from [firmware] (the detected one by default).
+String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
+  final fw = firmware ?? routerFirmware;
+  final stock = fw == RouterFirmware.stock;
+  return _kWatchdogScriptTemplate
+      .replaceAll('__SLOT__', '${c.slotIndex}')
+      .replaceAll('__JQ__', jqCommand(fw))
+      .replaceAll('__MAILBODY__', stock ? _kMailBodyStock : _kMailBodyMerlin)
+      .replaceAll('__MAILCMD__', stock ? _kMailCmdStock : _kMailCmdMerlin);
+}
 
 // ─── Service ─────────────────────────────────────────────────────────────────────
 
@@ -328,10 +397,18 @@ class RouterWatchdog {
 
   Future<bool> isMerlinRouter() async => (await _run('nvram get 3rd-party')) == 'merlin';
 
-  Future<bool> isJqInstalled() async => (await _run('which jq')).isNotEmpty;
+  // Merlin ships jq on $PATH; on stock the user installs it under /jffs/cfg-pia-wg (README §4).
+  Future<bool> isJqInstalled() async => isStockFirmware
+      ? (await _run("[ -x '$kStockJqPath' ] && echo 1 || echo 0")) == '1'
+      : (await _run('which jq')).isNotEmpty;
 
-  // Ensures JFFS custom scripts are enabled
+  // Ensures the watchdog script has somewhere to live. jffs2_scripts / jffs2_on are a Merlin
+  // custom-scripts feature; on stock only the directory matters.
   Future<void> enableJffsScripts() async {
+    if (isStockFirmware) {
+      await _run('mkdir -p /jffs/scripts');
+      return;
+    }
     final scripts = await _run('nvram get jffs2_scripts');
     final on = await _run('nvram get jffs2_on');
     if (scripts == '1' && on == '1') return;
@@ -432,9 +509,21 @@ class RouterWatchdog {
     }
   }
 
-  // Creates services-start if absent, strips any prior entries for this slot, appends fresh ones.
+  // True for any cru line belonging to [slot], on either firmware.
+  static bool _cruLineForSlot(String line, int slot) =>
+      line.contains('watchdog_wgc$slot ') || line.contains('watchdog_log_rotate_wgc$slot ');
+
+  // Makes the two cron entries survive a reboot. Merlin appends them to services-start; stock has
+  // no equivalent, so the app owns the replacement block of an init script the firmware already
+  // runs at boot and on a firewall restart.
   Future<void> _ensureServicesStart(int slot, int intervalMin) async {
-    const path = '/jffs/scripts/services-start';
+    if (isStockFirmware) {
+      await _writeS50(slot, extra: [buildCronCheckLine(slot, intervalMin), buildCronRotateLine(slot)]);
+      // Install the entries now rather than waiting for the next boot.
+      await _run("'$kS50Path' start");
+      return;
+    }
+    const path = kServicesStartPath;
     await _run("[ -f '$path' ] || { echo '#!/bin/sh' > '$path'; chmod +x '$path'; }");
     await _run(
       "grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' > '$path.tmp' 2>/dev/null; "
@@ -445,18 +534,39 @@ class RouterWatchdog {
     await _run("chmod +x '$path'");
   }
 
+  // Rebuilds S50downloadmaster from the embedded template: drops [slot]'s existing cru lines,
+  // keeps every other slot's (a later release runs several watchdogs at once), then appends
+  // [extra]. Rebuilding rather than grep -v is what keeps the template scaffolding intact.
+  Future<void> _writeS50(int slot, {List<String> extra = const []}) async {
+    final existing = await _run("cat '$kS50Path' 2>/dev/null");
+    final lines = [
+      for (final line in extractS50CruLines(existing))
+        if (!_cruLineForSlot(line, slot)) line,
+      ...extra,
+    ];
+    await _runHeredoc(heredocWrite(kS50Path, buildS50Script(lines)), kS50Path);
+    await _run("chmod +x '$kS50Path'");
+  }
+
   // Full disable: unset NVRAM, remove cron jobs and service-start script
   // JFFS is intentionally left enabled.
   Future<void> stopWatchdog(int slot) => _guard('disable', () async {
         await _run('cru d watchdog_wgc$slot');
         await _run('cru d watchdog_log_rotate_wgc$slot');
         await _run('rm -f /jffs/scripts/watchdog_wgc$slot.sh');
-        const path = '/jffs/scripts/services-start';
         // strip out cron jobs added when watchdog installed, reinstate 700 permission
-        await _run(
-          "[ -f '$path' ] && grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' "
-          "> '$path.tmp' && mv '$path.tmp' '$path' && chmod 700 '$path'",
-        );
+        if (isStockFirmware) {
+          // Rewrite with this slot's lines gone. The file itself stays: it is a hijacked stock
+          // init script, so removing it is worse than leaving an empty replacement block.
+          await _writeS50(slot);
+          await _run("chmod 700 '$kS50Path'");
+        } else {
+          const path = kServicesStartPath;
+          await _run(
+            "[ -f '$path' ] && grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' "
+            "> '$path.tmp' && mv '$path.tmp' '$path' && chmod 700 '$path'",
+          );
+        }
         await _run(
           'rm -f /tmp/watchdog_wgc$slot.log /tmp/watchdog_wgc$slot.log.old '
           '/tmp/watchdog_last_ping_success_wgc$slot /tmp/watchdog_backoff_wgc$slot',
@@ -531,11 +641,20 @@ class RouterWatchdog {
   // Sends a one-off test email (subject "config test") using the supplied SMTP settings.
   Future<void> testEmail(WatchdogConfig config) => _guard('test email', () async {
         final (host, port) = config.smtpHostPort;
+        final stock = isStockFirmware;
 
-        await _runHeredoc(heredocWrite('/tmp/mail.txt', buildMailBody(config, success: true, testMode: true)), '/tmp/mail.txt');
+        // sendmail wants the RFC-822 headers inline; mailsend-go takes them as flags.
+        final body = stock
+            ? buildMailPlainBody(config, success: true, testMode: true)
+            : buildMailBody(config, success: true, testMode: true);
+        await _runHeredoc(heredocWrite('/tmp/mail.txt', body), '/tmp/mail.txt');
+
+        final sendCmd = stock
+            ? buildMailsendGoCommand(host, port, config, subject: buildMailSubject(config, success: true, testMode: true))
+            : buildSendmailCommand(host, port, config);
 
         // Redirect stderr to file; echo exit code into stdout so _run can return it.
-        final result = await _run('${buildSendmailCommand(host, port, config)} 2>/tmp/wd_smtp_err; echo "EXITCODE:\$?"');
+        final result = await _run('$sendCmd 2>/tmp/wd_smtp_err; echo "EXITCODE:\$?"');
 
         final exitCode = _parseExitCode(result);
 
@@ -546,7 +665,7 @@ class RouterWatchdog {
           return;
         }
 
-        // Layer 1: sendmail stderr
+        // Layer 1: mailer stderr
         final stderrRaw = await _run('cat /tmp/wd_smtp_err 2>/dev/null | head -20 | tr "\\n" "|"');
         await _logRouter('Email FAILED (exit=$exitCode) stderr=[${stderrRaw.trim()}]');
 
@@ -621,6 +740,7 @@ STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"
 BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
 COOLDOWN=120
 CACERT="/jffs/pia_ca.rsa.4096.crt"
+JQ="__JQ__"
 CURL="curl -s --max-time 15 --connect-timeout 8 --tlsv1.3 --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
 TMPSRV="/tmp/${IFACE}_servers.txt"
@@ -658,35 +778,17 @@ send_alert() {
   [ "$EMAIL_ON" = "1" ] || return 0
   [ -n "$SMTP_HOST" ] || { log "Email enabled but SMTP server is not configured"; return 0; }
 
-  {
-    echo "From: $EMAIL_FROM"
-    echo "To: $EMAIL_TO"
-    echo "Subject: $EMAIL_SUBJECT - $1"
-    echo "Date: $(date -R 2>/dev/null || date)"
-    echo "Message-ID: $(date +%s)@$(uname -n)"
-    echo "MIME-Version: 1.0"
-    echo "Content-Type: text/plain; charset=utf-8"
-    echo ""
-    echo "Watchdog $IFACE reconfiguration: $1"
-    echo "Region: $DESC"
-    echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
-  } > "$TMPMAIL"
+__MAILBODY__
 
   TMPERR="/tmp/wd_smtp_err_$$"
-  /usr/sbin/sendmail \
-    -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt \
-    -verify_return_error -connect $SMTP_HOST:$SMTP_PORT" \
-    -au"$SMTP_USER" \
-    -ap"$SMTP_PASS" \
-    -f"$EMAIL_FROM" \
-    "$EMAIL_TO" < "$TMPMAIL" 2>"$TMPERR"
+__MAILCMD__
 
   MAIL_EXIT=$?
   rm -f "$TMPMAIL"
 
   if [ "$MAIL_EXIT" -ne 0 ]; then
     SMTP_ERR=$(cat "$TMPERR" 2>/dev/null | head -20 | tr '\n' '|')
-    log "Email FAILED (sendmail exit=$MAIL_EXIT) stderr=[${SMTP_ERR:-none}]"
+    log "Email FAILED (mailer exit=$MAIL_EXIT) stderr=[${SMTP_ERR:-none}]"
 
     nc -w 5 "$SMTP_HOST" "$SMTP_PORT" </dev/null >/dev/null 2>&1 \
       && log "Email diag: TCP $SMTP_HOST:$SMTP_PORT reachable" \
@@ -764,7 +866,7 @@ log "Connectivity lost; reconfiguring (attempt #$CNT)"
 
 # Preflight checks
 [ -n "$DESC" ] || abort "${K}desc is empty"
-which jq >/dev/null 2>&1 || abort "jq is not installed"
+[ -x "$JQ" ] || command -v "$JQ" >/dev/null 2>&1 || abort "jq is not installed"
 [ -n "$PIA_USER" ] || abort "PIA username is not set"
 
 # Check connectivity
@@ -787,13 +889,13 @@ else
 fi
 
 log "Requesting PIA token for user $PIA_USER"
-TOKEN="$($CURL -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" | jq -r '.token // empty')"
+TOKEN="$($CURL -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" | "$JQ" -r '.token // empty')"
 [ -n "$TOKEN" ] || abort "failed to obtain PIA token"
 echo -n > /jffs/curllst
 log "PIA token obtained (len=$(echo -n "$TOKEN" | wc -c))"
 
 log "Fetching server list for region $DESC"
-SERVERS="$($CURL "$SERVERLIST_URL" | head -1 | jq -r --arg id "$DESC" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"')"
+SERVERS="$($CURL "$SERVERLIST_URL" | head -1 | "$JQ" -r --arg id "$DESC" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"')"
 [ -n "$SERVERS" ] || abort "no servers found for region $DESC"
 log "Servers: $(echo "$SERVERS" | wc -l | tr -d ' ') candidates"
 echo -n > /jffs/curllst
@@ -830,10 +932,10 @@ log "Registering public key with $BEST_IP ($BEST_CN)"
 REG="$($CURL --cacert "$CACERT" --resolve "$BEST_CN:1337:$BEST_IP" -G --data-urlencode "pt=$TOKEN" --data-urlencode "pubkey=$PUB" "https://$BEST_CN:1337/addKey")" || abort "curl addKey request failed"
 echo -n > /jffs/curllst
 log "addKey response received"
-RSTATUS="$(echo "$REG" | jq -r '.status // empty')"
+RSTATUS="$(echo "$REG" | "$JQ" -r '.status // empty')"
 [ "$RSTATUS" = "OK" ] || abort "addKey failed (status: $RSTATUS)"
 read -r PEER_IP SERVER_KEY SERVER_PORT <<EOF
-$(echo "$REG" | jq -r '[(.peer_ip // "" | split("/")[0]), (.server_key // ""), (.server_port // "")] | @tsv')
+$(echo "$REG" | "$JQ" -r '[(.peer_ip // "" | split("/")[0]), (.server_key // ""), (.server_port // "")] | @tsv')
 EOF
 [ -n "$PEER_IP" ] && [ -n "$SERVER_KEY" ] && [ -n "$SERVER_PORT" ] || abort "incomplete addKey response"
 

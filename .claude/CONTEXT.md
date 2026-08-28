@@ -4,7 +4,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 
 ## 1. Working agreements
 
-- **Tests are required for every change.** 26 test files live under `test/` (`test/`, `test/screens/`, `test/widgets/`, `test/unit/`). Run `flutter test`; coverage is tracked via `coverage/lcov.info`. Every widget that a test needs to reach already carries a `Key` (`snake_case`, e.g. `Key('slot_create')`, `Key('wd_save')`) — add one when you add a control.
+- **Tests are required for every change.** 29 test files live under `test/` (`test/`, `test/screens/`, `test/widgets/`, `test/unit/`). Run `flutter test`; coverage is tracked via `coverage/lcov.info`. Every widget that a test needs to reach already carries a `Key` (`snake_case`, e.g. `Key('slot_create')`, `Key('wd_save')`) — add one when you add a control.
 - **Test coverage.** This app requires a minumum 80% code covered by tests.
 - **Update this file in the same change as any architecture or behaviour change.** A change that moves
   a file, renames a destination, alters a button set, or adds/removes an NVRAM key must edit the
@@ -30,15 +30,17 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 
 ## 2. Snapshot
 
-The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit app"; a hamburger drawer rendered *above* the Navigator adds an **About** destination and duplicates the rest. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and drive a shared `wgc1..wgc5` slot modal: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode (Merlin firmware only) does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. Screen 4 shows the in-memory app log. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
+The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit app"; a hamburger drawer rendered *above* the Navigator adds an **About** destination and duplicates the rest. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and drive a shared `wgc1..wgc5` slot modal: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. **Both Merlin and stock ASUS firmware are supported** — the firmware is detected once per session on entry to either router screen and every router command branches on it (§4.13). Screen 4 shows the in-memory app log. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
 
-## 3. Architecture — `lib/` (24 files)
+## 3. Architecture — `lib/` (26 files)
 
 ### Root
 
 | File | Role |
 | --- | --- |
 | `main.dart` | 23 lines. `void main() => runApp(const PiaWgApp())`; re-exports `PiaWgApp` from `app_shell.dart`. |
+| `firmware.dart` | `RouterFirmware` enum, the once-per-session detection flag (a library global — see §4.13), `classifyFirmwareTag()`, `jqCommand()`, and the stock paths (`kStockJqPath`, `kStockMailsendPath`, `kS50Path`, `kServicesStartPath`, `kReadmePrereqUrl`). |
+| `s50_template.dart` | `kS50DownloadmasterTemplate` — verbatim LF copy of `./scripts/S50downloadmaster-TEMPLATE.sh` (same mirroring pattern as `license_text.dart`) — plus `buildS50Script()` / `extractS50CruLines()`, which own the block between the REPLACEMENT markers. A test fails if the copy drifts. |
 | `app_shell.dart` | `PiaWgApp` (root `StatefulWidget`, `WidgetsBindingObserver`) owns the `SessionController`, `MaterialApp`, `buildAppTheme()`, and installs `AppChrome` via `MaterialApp.builder`. `DestinationObserver` (a `NavigatorObserver`) updates `controller.currentDestination`, **ignoring non-`PageRoute`s** so dialogs don't change drawer highlighting. `didChangeAppLifecycleState(resumed)` → `resyncOnResume()`. Disposes the controller only if it created it. |
 | `session_controller.dart` | `AppDestination` enum (6 values), `LogEntry`, `SessionController extends ChangeNotifier`, `SessionScope extends InheritedWidget`, `kDefaultDns`. Holds all volatile state, the 1 Hz clipboard countdown, modal depth, `wipeAll()`. `SessionScope.updateShouldNotify` compares controller identity only, so it does **not** rebuild on every tick. |
 | `app_colors.dart` | 13 `const Color` tokens: `kHighlight` teal `#00D4AA`, `kSecondary`, `kBg`, `kSurface`, `kField`, `kBorder`, `kText`, `kMuted`, `kHint`, `kError`, `kOnPrimary`, `kConfigBg`, `kWarn`. |
@@ -68,7 +70,8 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 | `app_scaffold.dart` | `AppChrome` (drawer host + static header, sits above the Navigator so the hamburger stays live under dialogs), `AppHeaderBar` (two-line title, author link, `v<version>` from `PackageInfo`), `AppScaffold` (scrollable padded body + optional `HOME` button; `fillViewport` for the menu). |
 | `app_drawer.dart` | `screenForDestination()`, `navigateToDestination()` (no-op on current; **pushes**, growing the stack by design), `closeApp()`, `confirmAndExit()`, `AppDrawer`. |
 | `slot_modal.dart` | 674 lines. `SlotModalMode` enum + `SlotModal` (slot list, badges, mode-dependent button set, all router actions) + `_PiaCredsDialog` + `_PingTargetsDialog`. |
-| `router_slots_screen.dart` | Shared router-IP/SSH form + `CONNECT TO ROUTER` for both router screens; auto-reconnects when `routerConnected`; enforces the Merlin gate for watchdog mode; opens `SlotModal`. |
+| `router_slots_screen.dart` | Shared router-IP/SSH form + `CONNECT TO ROUTER` for both router screens; auto-reconnects when `routerConnected`; runs the firmware gate (§4.13) before `fetchSlots`; opens `SlotModal`. `_FirmwareGate` carries the outcome so a dialog is only awaited after the connect spinner clears. |
+| `firmware_notice.dart` | `showFirmwareNotice` + the two wrappers `showMissingBinariesNotice` / `showUnsupportedFirmwareNotice`. A dismissible warning whose README link is a tappable `TextSpan` (`AppErrors` renders plain text and cannot carry a link). Keys `firmware_notice`, `firmware_notice_link`, `firmware_notice_ok`. |
 | `common_fields.dart` | `RegionRow`, `PiaUsernameField`, `DnsField`, `ObscuredField`, `PiaPasswordField`, `RouterIpField`, `SshUsernameField`, `SshPasswordField`, `ClearButton`, `IconActionButton`, `SlotBadge`, `LogPanel`. |
 | `error_presenter.dart` | `AppErrors.system` / `AppErrors.inputs` + `_ErrorDialog`. Static `_token`/`_openErrorNav` let a newer error dismiss an older one. |
 | `region_picker_sheet.dart` | `RegionPickerSheet` — filterable `DraggableScrollableSheet` region list, shared by standalone / CREATE / watchdog EDIT. |
@@ -182,10 +185,10 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 
 ### 4.7 Watchdog
 
-**Preconditions.** Merlin firmware (`nvram get 3rd-party == 'merlin'`) — enforced at
-`router_slots_screen.dart:132-134`, error `'The VPN watchdog requires Merlin firmware on your router.'`
-And `jq` (`which jq`, `router_watchdog.dart:332`): if absent, the dialog shows a red banner and SAVE
-is disabled. Both checks have a `// DISABLED MERLIN` comment marking how to bypass them.
+**Preconditions.** The watchdog runs on **both** firmwares. The old Merlin-only gate in
+`router_slots_screen.dart` is gone, replaced by the firmware gate in §4.13. `jq` is still required:
+`isJqInstalled()` checks `which jq` on Merlin and `[ -x /jffs/cfg-pia-wg/jq ]` on stock; if absent
+the dialog shows a red banner naming the expected path and SAVE is disabled.
 
 **`WatchdogDialog` fields:** check interval (min, default 5), primary IP (8.8.8.8), secondary IP
 (1.1.1.1), PIA username/password (pre-filled from session, mirrored back on every exit path via
@@ -274,7 +277,31 @@ during manage-ENABLE, read by both the ENABLE check and the router script, and u
 `deleteSlot` and `stopWatchdog`.
 
 **Global (not slot-scoped):** `cfg_pia_wg_user`, `cfg_pia_wg_password` — plaintext PIA credentials
-shared by every slot's watchdog. Also read: `3rd-party` (Merlin detection), `jffs2_scripts`, `jffs2_on`.
+shared by every slot's watchdog. Also read: `3rd-party` (firmware detection), `jffs2_scripts`,
+`jffs2_on` (Merlin only), `vpnc_clientlist` (stock only).
+
+**Stock `vpnc_clientlist`** (see ARCHITECTURE.md 2.3.2 for the full schema). Stock exposes only 12
+of the 17 `wgcN_` keys; the region name and the active flag live instead in one delimited string of
+up to five profiles — records separated by `<` (no leading delimiter), fields by `>`. The app owns
+exactly two fields and copies every other one through untouched:
+
+| Field | Meaning | App behaviour |
+| --- | --- | --- |
+| 1 | description | written — the PIA region id |
+| 2 | protocol | `WireGuard` on a record the app creates |
+| 3 | slot number | how a record is matched to `wgcN_` |
+| 6 | active state | written by ENABLE / DISABLE / CREATE |
+| 7 | iptables ID | `10 - slot` on a record the app creates; **preserved** on an existing one |
+| 12 | fixed | `Web` on a record the app creates |
+| 4, 5, 8, 9, 10, 11 | unknown / ignored | left empty when creating; preserved when updating |
+
+Modelled by `VpncRecord` + `parseVpncClientlist` / `serialiseVpncClientlist` / `buildVpncRecord` /
+`upsertVpncRecord` / `removeVpncRecord` in `router_slot_service.dart` (all pure).
+
+**`wgcN_desc` on stock** is not a real firmware field. The app writes it anyway as a key of its own,
+mirroring `vpnc_clientlist` field 1, because the router-side watchdog script needs the region name
+from a bare `nvram get` — the same practice already used for the invented `wgcN_wd_*` keys. Both
+copies are kept in step by `createConfigToSlot` and `writeSlotParams`.
 
 ### 4.10 About screen & build info
 
@@ -309,5 +336,58 @@ Links: repo, ReadMe, Change log, Architecture, Security policy, Privacy policy, 
 | Credentials on the router | PIA username/password go to router NVRAM in **plaintext** (`cfg_pia_wg_user`/`_password`) whenever a watchdog is deployed; SMTP password likewise (`wgcN_wd_smtp_pass`). Removed by `stopWatchdog`. |
 | TLS | PIA `addKey` is CA-pinned (`withTrustedRoots: false`) with a CN check; SMTP uses `openssl s_client -tls1_3 -verify_return_error`. |
 | Shell injection | All interpolated user values go through `shellSingleQuote` — **except** `createConfigToSlot`, which uses `"…"` double quotes for the parsed-config values (`router_slot_service.dart:177-193`). |
+
+### 4.13 Firmware detection & the stock branch
+
+**Interim design, deliberately.** Every difference is an `if (isStockFirmware) … else …` inside the
+existing classes. There is no `FirmwareService` / `RouterCommandStrategy` abstraction yet — that is
+a later release. `lib/firmware.dart` is the seam to delete when it lands.
+
+**Detection** runs on entry to either router screen (`RouterSlotsScreen._checkFirmware`), once per
+app session — the answer is cached in a library global, not on `SessionController`, because
+`RouterSlotService` and `RouterWatchdog` have no controller. It must precede `fetchSlots`, whose
+reads differ per firmware.
+
+| `nvram get 3rd-party` | Verdict |
+| --- | --- |
+| contains `merlin` (any case) | Merlin |
+| empty (the key does not exist on stock) | stock |
+| any other value | unsupported → `showUnsupportedFirmwareNotice`, flag left **unset** |
+| non-zero exit / SSH error / 5 s timeout | `AppErrors.system`, flag left **unset** (next entry retries) |
+
+**Stock precondition:** `jq` must exist at `/jffs/cfg-pia-wg/jq`; the watchdog screen additionally
+requires `/jffs/cfg-pia-wg/mailsend-go` (manage mode never sends email). Missing binaries →
+`showMissingBinariesNotice`, back to the connect screen.
+
+**What differs on stock:**
+
+| Concern | Merlin | Stock |
+| --- | --- | --- |
+| Region + active state | `wgcN_desc`, `wgcN_enable` | `vpnc_clientlist` fields 1 and 6 (plus the `wgcN_desc` mirror and `wgcN_enable`) |
+| Per-slot keys written | all 17 | 13 — `enforce`, `fw`, `ep_addr_r`, `rip` skipped (`kMerlinOnlySlotKeys`) |
+| Kill-switch badge / editor controls | shown | hidden (no `enforce` field) |
+| `jq` | `which jq` | `/jffs/cfg-pia-wg/jq` |
+| Mail transport | BusyBox `sendmail` + `openssl s_client` | `mailsend-go` (credentials on the command line — accepted risk) |
+| Script directory | `jffs2_scripts=1` / `jffs2_on=1` | `mkdir -p /jffs/scripts` |
+| Cron persistence | append to `/jffs/scripts/services-start` | rewrite the REPLACEMENT block of `/opt/etc/init.d/S50downloadmaster`, then run it with `start` |
+| Service calls | identical on both (`service "start_wgc N"` etc.) | |
+| Watchdog script path | identical on both (`/jffs/scripts/watchdog_wgcN.sh`) | |
+
+**S50downloadmaster** is a stock init script the firmware already runs at boot and on a firewall
+restart; stock has no `services-start` and bare `cru` entries do not survive a power cycle, so the
+app hijacks it. Only the region between the two REPLACEMENT markers is ever rewritten, and it
+accumulates one check + one rotate line **per watchdog** (one today, several later). `stopWatchdog`
+rebuilds the file with that slot's lines dropped rather than `grep -v`-ing them out, so the stock
+scaffolding survives; the file itself is never deleted.
+
+**Watchdog script generation.** The deploy heredoc has a practical size ceiling (~8.3 KB in
+production), so the script carries **no runtime firmware branching**. `buildWatchdogScript` resolves
+four placeholders at build time: `__SLOT__`, `__JQ__` (into a `JQ=` variable every call site reads),
+`__MAILBODY__` and `__MAILCMD__`. A unit test asserts no placeholder survives on either firmware and
+that the stock variant is no larger than the Merlin one.
+
+**Tests.** The detection flag is a library global, so any suite touching router code must reset it —
+use `useMerlin()` / `useStock()` / `resetRouterFirmware()` from `test/watchdog_test_utils.dart`. A
+leaked flag produces confusing cross-file failures under parallel workers.
 
 Note: ignore all .claude\plan_*.md files, they are historical and not part of the current codebase. This .claude\CONTEXT.md file is the authoritative source for doc-vs-code discrepancies.

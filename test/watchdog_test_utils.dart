@@ -1,7 +1,21 @@
 // test/watchdog_test_utils.dart - shared SSH fake for watchdog tests.
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:cfg_pia_wg/firmware.dart';
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// Pins the detected-firmware flag for one test and restores the unset default afterwards.
+///
+/// The flag is a library global (see lib/firmware.dart), so a test that leaves it set will leak
+/// into the next one. Every test touching router code should call this or [useMerlin].
+void useFirmware(RouterFirmware firmware) {
+  setRouterFirmware(firmware);
+  addTearDown(resetRouterFirmware);
+}
+
+void useMerlin() => useFirmware(RouterFirmware.merlin);
+void useStock() => useFirmware(RouterFirmware.stock);
 
 /// A fake [SSHClient] that records every command and returns canned output.
 ///

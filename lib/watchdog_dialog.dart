@@ -22,6 +22,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
+import 'firmware.dart';
 import 'pia_service.dart';
 import 'router_watchdog.dart';
 import 'session_controller.dart';
@@ -148,9 +149,12 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       });
     });
     if (_jqMissing && mounted) {
-      await AppErrors.system(context, _c, 'jq is not installed on the router; the watchdog cannot be configured.');
+      await AppErrors.system(context, _c, '$_jqLabel is not installed on the router; the watchdog cannot be configured.');
     }
   }
+
+  // Names the actual path on stock, where jq lives outside $PATH and the user installs it by hand.
+  String get _jqLabel => isStockFirmware ? kStockJqPath : 'jq';
 
   void _applyConfig(WatchdogConfig c) {
     _intervalCtrl.text = '${c.cronIntervalMinutes}';
@@ -218,7 +222,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   // Spec 2.1.3: SAVE persists the parameters and deploys them in one step.
   Future<void> _save() async {
     if (_jqMissing) {
-      await AppErrors.system(context, _c, 'Cannot save: jq is not installed on the router.');
+      await AppErrors.system(context, _c, 'Cannot save: $_jqLabel is not installed on the router.');
       return;
     }
     final cfg = _currentConfig();
@@ -329,8 +333,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                 ),
                 if (_jqMissing) ...[
                   const SizedBox(height: 12),
-                  const Text('jq is not installed on the router — install jq before enabling.',
-                      style: TextStyle(color: kError, fontSize: 12)),
+                  Text('$_jqLabel is not installed on the router — install jq before enabling.',
+                      style: const TextStyle(color: kError, fontSize: 12)),
                 ],
                 const SizedBox(height: 16),
                 _field(_intervalCtrl, 'Check interval (minutes)', const Key('wd_interval'), keyboard: TextInputType.number),

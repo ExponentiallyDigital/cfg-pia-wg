@@ -41,10 +41,15 @@ WIP:
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-28 v0.8.17 build 387
+
+- CHG: implemement stock support.
+- CHG: updated get-pins.sh to point to new install location `/jffs/cfg-pia-wg`.
+
 2026-08-28 v0.8.16 build 386
 
-- CHG: pre-implemement stock support
-- FIX: version and build number
+- CHG: pre-implemement stock support.
+- FIX: version and build number.
 
 2026-08-28 v0.8.15 build 385
 

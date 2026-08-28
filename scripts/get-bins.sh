@@ -1,12 +1,12 @@
 #!/bin/sh
-# Installs latest jq and mailsend-go to /jffs/bin
+# Installs latest jq and mailsend-go to /jffs/cfg-pia-wg
 
 set -e
 
 ARCH=$(uname -m)
 echo "Detected architecture: $ARCH"
 
-mkdir -p /jffs/bin
+mkdir -p /jffs/cfg-pia-wg
 
 # Function to fetch the latest download URL from GitHub API
 get_latest_url() {
@@ -53,9 +53,9 @@ if [ -z "$BINARY" ]; then
 fi
 
 # Move and rename to 'mailsend-go'
-mv "$BINARY" /jffs/bin/mailsend-go
-chmod 755 /jffs/bin/mailsend-go
-chown 0:0 /jffs/bin/mailsend-go
+mv "$BINARY" /jffs/cfg-pia-wg/mailsend-go
+chmod 755 /jffs/cfg-pia-wg/mailsend-go
+chown 0:0 /jffs/cfg-pia-wg/mailsend-go
 
 # Clean up temporary files
 rm -f /tmp/mailsend-go.tar.gz
@@ -63,10 +63,10 @@ rm -rf "$EXTRACT_DIR"
 
 # --- Install jq (raw binary, no archive) ---
 echo "Downloading jq from: $JQ_URL"
-wget -O /jffs/bin/jq "$JQ_URL"
-chmod 755 /jffs/bin/jq
+wget -O /jffs/cfg-pia-wg/jq "$JQ_URL"
+chmod 755 /jffs/cfg-pia-wg/jq
 
 echo "Installation complete."
-echo "Binaries installed to /jffs/bin/"
-echo "  - /jffs/bin/mailsend-go"
-echo "  - /jffs/bin/jq"
+echo "Binaries installed to /jffs/cfg-pia-wg/"
+echo "  - /jffs/cfg-pia-wg/mailsend-go"
+echo "  - /jffs/cfg-pia-wg/jq"

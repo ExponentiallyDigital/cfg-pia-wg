@@ -1,5 +1,6 @@
 // test/router_watchdog_unit_test.dart - pure-function unit tests for the watchdog module.
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 
 WatchdogConfig _valid({int slot = 1, int interval = 5, bool email = false}) => WatchdogConfig(
@@ -331,9 +332,93 @@ void main() {
 
     test('has abort gates for empty desc, missing jq and missing PIA user', () {
       final s = buildWatchdogScript(_valid(slot: 1));
-      expect(s, contains('which jq'));
+      expect(s, contains(r'[ -x "$JQ" ] || command -v "$JQ"'));
       expect(s, contains(r'[ -n "$DESC" ]'));
       expect(s, contains(r'[ -n "$PIA_USER" ]'));
+    });
+  });
+
+  // The heredoc ceiling rules out runtime branching, so the firmware differences are baked in
+  // when the script is generated.
+  group('buildWatchdogScript per firmware', () {
+    test('jq resolves to the bare command on Merlin and the install path on stock', () {
+      expect(buildWatchdogScript(_valid(), firmware: RouterFirmware.merlin), contains('JQ="jq"'));
+      expect(buildWatchdogScript(_valid(), firmware: RouterFirmware.stock), contains('JQ="$kStockJqPath"'));
+    });
+
+    test(r'every jq call site goes through $JQ, so nothing hardcodes the Merlin path', () {
+      final s = buildWatchdogScript(_valid(), firmware: RouterFirmware.stock);
+      expect(RegExp(r'"\$JQ" -r').allMatches(s).length, 4);
+      expect(s, isNot(contains('| jq ')));
+      expect(s, isNot(contains('which jq')));
+    });
+
+    test('Merlin sends via BusyBox sendmail with RFC-822 headers inline', () {
+      final s = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin);
+      expect(s, contains('/usr/sbin/sendmail'));
+      expect(s, contains(r'echo "Subject: $EMAIL_SUBJECT - $1"'));
+      expect(s, contains('exec openssl s_client -quiet -tls1_3'));
+      expect(s, isNot(contains('mailsend-go')));
+    });
+
+    test('stock sends via mailsend-go with a headerless body', () {
+      final s = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock);
+      expect(s, contains('$kStockMailsendPath -debug -ssl -verifyCert'));
+      expect(s, contains(r'-smtp "$SMTP_HOST" -port "$SMTP_PORT" -sub "$EMAIL_SUBJECT - $1"'));
+      expect(s, contains(r'auth -user "$SMTP_USER" -pass "$SMTP_PASS"'));
+      expect(s, contains(r'body -file "$TMPMAIL"'));
+      expect(s, isNot(contains('/usr/sbin/sendmail')));
+      expect(s, isNot(contains('echo "MIME-Version: 1.0"')));
+    });
+
+    test('no placeholder survives substitution on either firmware', () {
+      for (final fw in RouterFirmware.values) {
+        final s = buildWatchdogScript(_valid(email: true), firmware: fw);
+        for (final marker in ['__SLOT__', '__JQ__', '__MAILBODY__', '__MAILCMD__']) {
+          expect(s, isNot(contains(marker)), reason: '$marker survived on ${fw.name}');
+        }
+      }
+    });
+
+    // The deploy heredoc has a practical size ceiling, which is why the firmware differences are
+    // substituted in rather than branched at runtime. The Merlin payload is the known-good
+    // baseline (8.3 KB in production), so the guard is that neither variant grows past it by more
+    // than a rounding error — stock in particular must not balloon.
+    test('neither variant grows the deploy payload', () {
+      final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
+      final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
+      expect(merlin, lessThan(8600));
+      expect(stock, lessThanOrEqualTo(merlin));
+    });
+  });
+
+  group('mailsend-go builders (stock)', () {
+    test('buildMailsendGoCommand matches the documented invocation', () {
+      final cmd = buildMailsendGoCommand('smtp.x.com', 465, _valid(email: true), subject: 'watchdog config test');
+      expect(cmd, startsWith('$kStockMailsendPath -debug -ssl -verifyCert'));
+      expect(cmd, contains("-smtp 'smtp.x.com' -port 465"));
+      expect(cmd, contains("-sub 'watchdog config test'"));
+      expect(cmd, contains("-f 'from@example.com' -t 'to@example.com'"));
+      expect(cmd, contains("auth -user 'smtpuser' -pass 'smtppass'"));
+      expect(cmd, endsWith('body -file /tmp/mail.txt'));
+    });
+
+    test('credentials are shell-quoted so a quote in a password cannot break out', () {
+      final cmd = buildMailsendGoCommand('h', 1, _valid(email: true).copyWith(smtpPassword: "it's"), subject: 's');
+      expect(cmd, contains(r"-pass 'it'\''s'"));
+    });
+
+    test('buildMailPlainBody carries no RFC-822 headers', () {
+      final test = buildMailPlainBody(_valid(email: true), success: true, testMode: true);
+      expect(test, contains('test email from the cfg-pia-wg watchdog'));
+      expect(test, isNot(contains('Subject:')));
+      expect(buildMailPlainBody(_valid(email: true), success: false), contains('failed'));
+    });
+
+    test('buildMailSubject matches the sendmail body subject', () {
+      expect(buildMailSubject(_valid(email: true), success: true, testMode: true), 'watchdog config test');
+      expect(buildMailSubject(_valid(email: true), success: true), 'Alert - SUCCESS');
+      expect(buildMailSubject(_valid(email: true), success: false), 'Alert - FAILED');
     });
   });
 }

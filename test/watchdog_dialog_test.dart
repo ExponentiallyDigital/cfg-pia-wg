@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
@@ -184,6 +185,60 @@ void main() {
 
     expect(ssh.ran('/usr/sbin/sendmail'), isTrue);
     expect(ssh.ran('config test'), isTrue);
+  });
+
+  group('stock firmware', () {
+    testWidgets('jq is probed at the install path and SAVE stays live when it is there', (tester) async {
+      useStock();
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains(kStockJqPath) ? '1' : '');
+      await tester.pumpWidget(_host(ssh, c));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran("[ -x '$kStockJqPath' ]"), isTrue);
+      expect(ssh.ran('which jq'), isFalse);
+      expect(find.textContaining('is not installed'), findsNothing);
+      expect(tester.widget<ElevatedButton>(find.byKey(const Key('wd_save'))).onPressed, isNotNull);
+    });
+
+    testWidgets('a missing jq names the stock path in the banner', (tester) async {
+      useStock();
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (_) => '0');
+      await tester.pumpWidget(_host(ssh, c));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('$kStockJqPath is not installed'), findsWidgets);
+      expect(tester.widget<ElevatedButton>(find.byKey(const Key('wd_save'))).onPressed, isNull);
+    });
+
+    testWidgets('TEST EMAIL goes through mailsend-go', (tester) async {
+      useStock();
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains(kStockJqPath) ? '1' : '');
+      await tester.pumpWidget(_host(ssh, c));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('wd_email_switch')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('wd_from')), 'f@x.com');
+      await tester.enterText(find.byKey(const Key('wd_to')), 't@x.com');
+      await tester.enterText(find.byKey(const Key('wd_subject')), 'Subj');
+      await tester.enterText(find.byKey(const Key('wd_smtp_server')), 'smtp.x.com:465');
+      await tester.enterText(find.byKey(const Key('wd_smtp_user')), 'su');
+      await tester.enterText(find.byKey(const Key('wd_smtp_pass')), 'sp');
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.byKey(const Key('wd_test_email')));
+      await tester.tap(find.byKey(const Key('wd_test_email')));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran(kStockMailsendPath), isTrue);
+      expect(ssh.ran('/usr/sbin/sendmail'), isFalse);
+    });
   });
 
   group('PIA credential retention', () {

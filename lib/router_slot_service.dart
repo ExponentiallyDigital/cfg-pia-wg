@@ -19,8 +19,10 @@
 // full slot-parameter read/write used by the EDIT screen (spec 3.3). The connection itself is
 // owned by the caller (mirroring RouterWatchdog), so RecordingSSHClient drives these in tests.
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
+import 'firmware.dart';
 import 'router_watchdog.dart' show shellSingleQuote, kWatchdogLogTag;
 
 // The per-slot WireGuard NVRAM keys (without the `wgcN_` prefix), in the order router_push.dart
@@ -45,6 +47,92 @@ const List<String> kSlotNvramKeys = [
   'aips', //The allowed IP addresses, defaults to `0.0.0.0/0`. This field is user editable.
 ];
 
+// The five keys Merlin exposes that stock firmware does not (ARCHITECTURE.md 2.3.1). `desc` is
+// absent from stock too, but the app writes it anyway as a private key of its own — the router-side
+// watchdog needs the region name somewhere it can read with a bare `nvram get`, exactly as it
+// already does for the invented `wgcN_wd_*` keys. Stock therefore skips only these four.
+const List<String> kMerlinOnlySlotKeys = ['enforce', 'ep_addr_r', 'fw', 'rip'];
+
+/// The per-slot NVRAM keys worth writing on [firmware]: all 17 on Merlin, 13 on stock.
+List<String> slotKeysFor(RouterFirmware firmware) => firmware == RouterFirmware.stock
+    ? [
+        for (final k in kSlotNvramKeys)
+          if (!kMerlinOnlySlotKeys.contains(k)) k,
+      ]
+    : kSlotNvramKeys;
+
+// ─── vpnc_clientlist (stock only) ────────────────────────────────────────────────
+// Stock consolidates the region name and the active flag into one delimited nvram string holding
+// up to five profiles: records separated by '<' (no leading delimiter), fields by '>'.
+// See ARCHITECTURE.md 2.3.2 for the field schema.
+
+/// One `vpnc_clientlist` profile. Field numbers in the docs are 1-based; [fields] is 0-based.
+class VpncRecord {
+  static const int fieldCount = 12;
+  static const int _descIdx = 0, _protocolIdx = 1, _slotIdx = 2, _activeIdx = 5, _iptablesIdx = 6, _tailIdx = 11;
+
+  final List<String> fields;
+
+  VpncRecord(List<String> fields) : fields = List.unmodifiable(_sized(fields));
+
+  // Pads short records so field access is total; longer records keep their extra fields, since
+  // the app must never discard something a future firmware appended.
+  static List<String> _sized(List<String> f) =>
+      f.length >= fieldCount ? List.of(f) : [...f, ...List.filled(fieldCount - f.length, '')];
+
+  String get desc => fields[_descIdx];
+  String get protocol => fields[_protocolIdx];
+  int? get slot => int.tryParse(fields[_slotIdx].trim());
+  bool get active => fields[_activeIdx] == '1';
+
+  /// Rewrites only the two fields the app owns; everything else is carried through untouched.
+  VpncRecord copyWith({String? desc, bool? active}) {
+    final next = List.of(fields);
+    if (desc != null) next[_descIdx] = desc;
+    if (active != null) next[_activeIdx] = active ? '1' : '0';
+    return VpncRecord(next);
+  }
+
+  String serialise() => fields.join('>');
+}
+
+/// Builds a record for a slot that has none yet. Fields 4, 5, 8, 9, 10 and 11 are left empty; the
+/// iptables ID (field 7) follows the `10 - slot` pattern observed on stock hardware.
+VpncRecord buildVpncRecord({required int slot, required String desc, required bool active}) {
+  final fields = List.filled(VpncRecord.fieldCount, '');
+  fields[VpncRecord._descIdx] = desc;
+  fields[VpncRecord._protocolIdx] = 'WireGuard';
+  fields[VpncRecord._slotIdx] = '$slot';
+  fields[VpncRecord._activeIdx] = active ? '1' : '0';
+  fields[VpncRecord._iptablesIdx] = '${10 - slot}';
+  fields[VpncRecord._tailIdx] = 'Web';
+  return VpncRecord(fields);
+}
+
+List<VpncRecord> parseVpncClientlist(String raw) => [
+      for (final chunk in raw.trim().split('<'))
+        if (chunk.isNotEmpty) VpncRecord(chunk.split('>')),
+    ];
+
+String serialiseVpncClientlist(List<VpncRecord> records) => records.map((r) => r.serialise()).join('<');
+
+/// Updates the record for [slot] in place, or appends a fresh one when the slot has none.
+List<VpncRecord> upsertVpncRecord(List<VpncRecord> records, {required int slot, String? desc, bool? active}) {
+  final out = List.of(records);
+  final idx = out.indexWhere((r) => r.slot == slot);
+  if (idx >= 0) {
+    out[idx] = out[idx].copyWith(desc: desc, active: active);
+  } else {
+    out.add(buildVpncRecord(slot: slot, desc: desc ?? '', active: active ?? false));
+  }
+  return out;
+}
+
+List<VpncRecord> removeVpncRecord(List<VpncRecord> records, int slot) => [
+      for (final r in records)
+        if (r.slot != slot) r,
+    ];
+
 /// Opens a real SSH client to the router. Screens inject a test factory instead in tests.
 Future<SSHClient> openSshClient(String ip, String user, String pass) async {
   final socket = await SSHSocket.connect(ip, 22, timeout: const Duration(seconds: 5));
@@ -57,9 +145,9 @@ Future<SSHClient> openSshClient(String ip, String user, String pass) async {
 class SlotInfo {
   final int index;
   final String desc; // wgcN_desc (region name); empty => unconfigured
-  final bool killSwitch; // wgcN_enforce == 1
-  final bool enabled; // wgcN_enable == 1
-  final bool watchdogActive; // cru has watchdog_wgcN (Merlin only)
+  final bool killSwitch; // wgcN_enforce == 1 (Merlin only; always false on stock)
+  final bool enabled; // wgcN_enable == 1 on Merlin, vpnc_clientlist field 6 on stock
+  final bool watchdogActive; // cru has watchdog_wgcN
   final bool emailAlerting; // wgcN_wd_email_enabled == 1 (only meaningful while watchdogActive)
   const SlotInfo({
     required this.index,
@@ -77,6 +165,8 @@ class SlotInfo {
 class RouterSlots {
   final Map<int, SlotInfo> slots; // keys 1..5
   final int? activeSlot; // slot whose interface is up (`wg show interfaces`)
+  // Informational only — branching reads the session flag in firmware.dart. Kept so the two do not
+  // silently disagree; folding them together is a job for the planned firmware abstraction.
   final bool isMerlin;
   const RouterSlots({required this.slots, required this.activeSlot, required this.isMerlin});
 }
@@ -105,17 +195,61 @@ class RouterSlotService {
     } catch (_) {}
   }
 
+  // ── Firmware detection (spec: once per app session, on entry to either router screen) ────
+  // Raw `nvram get 3rd-party` output for firmware.dart's classifyFirmwareTag. Throws on a non-zero
+  // exit, an SSH failure, or a stalled channel; the caller treats any of those as "not detected".
+  Future<String> readFirmwareTag() async => _run('nvram get 3rd-party').timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw Exception('Timed out after 5s reading the router firmware type.'),
+      );
+
+  /// Which of the stock helper binaries are absent, in probe order. [needMailsend] is false on the
+  /// manage screen, which never sends email.
+  Future<List<String>> missingStockBinaries({required bool needMailsend}) async {
+    final missing = <String>[];
+    for (final path in [kStockJqPath, if (needMailsend) kStockMailsendPath]) {
+      if ((await _run("[ -x '$path' ] && echo 1 || echo 0")) != '1') missing.add(path);
+    }
+    return missing;
+  }
+
+  // Reads vpnc_clientlist and indexes it by slot number (stock only).
+  Future<Map<int, VpncRecord>> _readVpncBySlot() async {
+    final records = parseVpncClientlist(await _run('nvram get vpnc_clientlist'));
+    return {
+      for (final r in records)
+        if (r.slot != null) r.slot!: r,
+    };
+  }
+
+  // Read/modify/write of vpnc_clientlist. The caller commits.
+  Future<void> _editVpncClientlist(List<VpncRecord> Function(List<VpncRecord>) edit) async {
+    final current = parseVpncClientlist(await _run('nvram get vpnc_clientlist'));
+    await _run('nvram set vpnc_clientlist=${shellSingleQuote(serialiseVpncClientlist(edit(current)))}');
+  }
+
+  // Mirrors an enable/disable into the stock active flag; a no-op on Merlin.
+  Future<void> _setVpncActive(int slot, bool active) async {
+    if (!isStockFirmware) return;
+    await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, active: active));
+  }
+
   // ── Read ─────────────────────────────────────────────────────────────────────
   Future<RouterSlots> fetchSlots() async {
     onLog?.call('Reading router configuration...');
     final isMerlin = (await _run('nvram get 3rd-party')) == 'merlin';
+    final stock = isStockFirmware;
+    // On stock the region name and active flag live in vpnc_clientlist, not in per-slot keys.
+    final vpnc = stock ? await _readVpncBySlot() : const <int, VpncRecord>{};
 
     final slots = <int, SlotInfo>{};
     for (int i = 1; i <= 5; i++) {
-      final desc = await _run('nvram get wgc${i}_desc');
-      final killSwitch = (await _run('nvram get wgc${i}_enforce')) == '1';
-      final enabled = (await _run('nvram get wgc${i}_enable')) == '1';
-      final watchdog = isMerlin && (await _run('cru l | grep -qw watchdog_wgc$i && echo 1 || echo 0')) == '1';
+      final desc = stock ? (vpnc[i]?.desc ?? '') : await _run('nvram get wgc${i}_desc');
+      // Stock exposes no kill switch (ARCHITECTURE.md 2.3.1), so the badge never lights there.
+      final killSwitch = stock ? false : (await _run('nvram get wgc${i}_enforce')) == '1';
+      final enabled = stock ? (vpnc[i]?.active ?? false) : (await _run('nvram get wgc${i}_enable')) == '1';
+      // cru exists on both firmwares, so the watchdog probe is firmware-independent.
+      final watchdog = (await _run('cru l | grep -qw watchdog_wgc$i && echo 1 || echo 0')) == '1';
       // Email alerting is a watchdog feature; only read it for an active watchdog.
       final emailAlerting = watchdog && (await _run('nvram get wgc${i}_wd_email_enabled')) == '1';
       slots[i] = SlotInfo(
@@ -133,10 +267,12 @@ class RouterSlotService {
     return RouterSlots(slots: slots, activeSlot: activeSlot, isMerlin: isMerlin);
   }
 
-  // Reads every per-slot NVRAM value (bare-keyed map) for the parameter editor.
+  // Reads every per-slot NVRAM value (bare-keyed map) for the parameter editor. Keys the running
+  // firmware does not have resolve to '' so the editor can key off presence without a null check.
   Future<Map<String, String>> readSlotParams(int slot) async {
-    final m = <String, String>{};
-    for (final k in kSlotNvramKeys) {
+    final live = slotKeysFor(routerFirmware);
+    final m = {for (final k in kSlotNvramKeys) k: ''};
+    for (final k in live) {
       m[k] = await _run('nvram get wgc${slot}_$k');
     }
     return m;
@@ -162,35 +298,54 @@ class RouterSlotService {
     final epIp = epParts.isNotEmpty ? epParts[0] : '';
     final epPort = epParts.length > 1 ? epParts[1] : '1337';
 
+    // Written in kSlotNvramKeys order; stock skips the four keys its firmware does not have.
+    final values = <String, String>{
+      'addr': '"${wgMap['Address'] ?? ''}"',
+      'alive': '25',
+      'desc': '"$regionId"',
+      'dns': '"${wgMap['DNS'] ?? ''}"',
+      'enable': '0', // created but not active (spec 2.1.2)
+      'enforce': '0', // kill switch off on create (round-2)
+      'ep_addr': '"$epIp"',
+      'ep_addr_r': '""',
+      'ep_port': '"$epPort"',
+      'fw': '1',
+      'mtu': '"${wgMap['MTU'] ?? '1420'}"',
+      'nat': '1',
+      'ppub': '"${wgMap['PublicKey'] ?? ''}"',
+      'priv': '"${wgMap['PrivateKey'] ?? ''}"',
+      'psk': '""',
+      'rip': '""',
+      'aips': '"${wgMap['AllowedIPs'] ?? '0.0.0.0/0'}"',
+    };
+    final stock = isStockFirmware;
+    final keys = slotKeysFor(routerFirmware);
+
     Map<String, String>? backup;
+    String? vpncBackup;
     try {
+      // On stock the desc mirror is only present for slots this app created — a profile made in
+      // the router web UI shows up in vpnc_clientlist alone, and must still be backed up.
       final existingDesc = await _run('nvram get wgc${slot}_desc');
-      if (existingDesc.isNotEmpty) {
+      final existingVpnc = stock ? await _run('nvram get vpnc_clientlist') : '';
+      final occupied = existingDesc.isNotEmpty || (stock && parseVpncClientlist(existingVpnc).any((r) => r.slot == slot));
+      if (occupied) {
         onLog?.call('Backing up existing wgc$slot config...');
         backup = {};
-        for (final key in kSlotNvramKeys) {
+        for (final key in keys) {
           backup['wgc${slot}_$key'] = await _run('nvram get wgc${slot}_$key');
         }
+        if (stock) vpncBackup = existingVpnc;
       }
 
       onLog?.call('Writing NVRAM for wgc$slot...');
-      await _run('nvram set wgc${slot}_addr="${wgMap['Address'] ?? ''}"');
-      await _run('nvram set wgc${slot}_alive=25');
-      await _run('nvram set wgc${slot}_desc="$regionId"');
-      await _run('nvram set wgc${slot}_dns="${wgMap['DNS'] ?? ''}"');
-      await _run('nvram set wgc${slot}_enable=0'); // created but not active (spec 2.1.2)
-      await _run('nvram set wgc${slot}_enforce=0'); // kill switch off on create (round-2)
-      await _run('nvram set wgc${slot}_ep_addr="$epIp"');
-      await _run('nvram set wgc${slot}_ep_addr_r=""');
-      await _run('nvram set wgc${slot}_ep_port="$epPort"');
-      await _run('nvram set wgc${slot}_fw=1');
-      await _run('nvram set wgc${slot}_mtu="${wgMap['MTU'] ?? '1420'}"');
-      await _run('nvram set wgc${slot}_nat=1');
-      await _run('nvram set wgc${slot}_ppub="${wgMap['PublicKey'] ?? ''}"');
-      await _run('nvram set wgc${slot}_priv="${wgMap['PrivateKey'] ?? ''}"');
-      await _run('nvram set wgc${slot}_psk=""');
-      await _run('nvram set wgc${slot}_rip=""');
-      await _run('nvram set wgc${slot}_aips="${wgMap['AllowedIPs'] ?? '0.0.0.0/0'}"');
+      for (final key in keys) {
+        await _run('nvram set wgc${slot}_$key=${values[key]}');
+      }
+      // Stock keeps the region name and active flag here, so the router web UI sees the slot too.
+      if (stock) {
+        await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, desc: regionId, active: false));
+      }
       await _run('nvram commit');
       onLog?.call('NVRAM committed.', isSuccess: true);
       onLog?.call('Config written to wgc$slot (disabled).', isSuccess: true);
@@ -201,6 +356,9 @@ class RouterSlotService {
         try {
           for (final entry in backup.entries) {
             await client.run('nvram set ${entry.key}="${entry.value}"');
+          }
+          if (vpncBackup != null) {
+            await client.run('nvram set vpnc_clientlist=${shellSingleQuote(vpncBackup)}');
           }
           await client.run('nvram commit');
           onLog?.call('wgc$slot config restored.', isSuccess: true);
@@ -218,6 +376,7 @@ class RouterSlotService {
   Future<void> enableSlot(int slot, {required String primaryIp, required String secondaryIp}) async {
     onLog?.call('Enabling wgc$slot...');
     await _run('nvram set wgc${slot}_enable=1');
+    await _setVpncActive(slot, true);
     await _run('nvram commit');
     await _run('service "start_wgc $slot"; service restart_vpnrouting0');
 
@@ -255,6 +414,7 @@ class RouterSlotService {
   Future<void> _revertEnable(int slot) async {
     onLog?.call('Reverting wgc$slot to disabled...', isError: true);
     await _run('nvram set wgc${slot}_enable=0');
+    await _setVpncActive(slot, false);
     await _run('nvram commit');
     await _run('service "stop_wgc $slot"; service start_vpnrouting0');
   }
@@ -263,6 +423,7 @@ class RouterSlotService {
   Future<void> disableSlot(int slot) async {
     onLog?.call('Disabling wgc$slot...');
     await _run('nvram set wgc${slot}_enable=0');
+    await _setVpncActive(slot, false);
     await _run('nvram commit');
     await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     await _logRouter('Disabled wgc$slot');
@@ -274,12 +435,15 @@ class RouterSlotService {
     onLog?.call('Deleting wgc$slot configuration...');
     await _run('nvram set wgc${slot}_enable=0');
     await _run('service "stop_wgc $slot"; service start_vpnrouting0');
-    for (final key in kSlotNvramKeys) {
+    for (final key in slotKeysFor(routerFirmware)) {
       await _run('nvram unset wgc${slot}_$key');
     }
     // also clear ping target keys
     await _run('nvram unset wgc${slot}_wd_primary_ip');
     await _run('nvram unset wgc${slot}_wd_secondary_ip');
+    if (isStockFirmware) {
+      await _editVpncClientlist((recs) => removeVpncRecord(recs, slot));
+    }
     await _run('nvram commit');
     await _logRouter('Deleted wgc$slot configuration');
     onLog?.call('wgc$slot configuration cleared.', isSuccess: true);
@@ -289,8 +453,15 @@ class RouterSlotService {
   // [params] keys are bare (e.g. 'addr', 'priv'). Values are shell-escaped.
   Future<void> writeSlotParams(int slot, Map<String, String> params) async {
     onLog?.call('Saving wgc$slot parameters...');
+    final live = slotKeysFor(routerFirmware);
     for (final e in params.entries) {
+      if (!live.contains(e.key)) continue; // stock has no enforce / fw / ep_addr_r / rip
       await _run('nvram set wgc${slot}_${e.key}=${shellSingleQuote(e.value)}');
+    }
+    // On stock the region must stay in step with its vpnc_clientlist record, which is what the
+    // router web UI and fetchSlots both read.
+    if (isStockFirmware && params.containsKey('desc')) {
+      await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, desc: params['desc']));
     }
     await _run('nvram commit');
     onLog?.call('wgc$slot parameters saved.', isSuccess: true);

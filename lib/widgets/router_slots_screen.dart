@@ -20,6 +20,7 @@
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
+import '../firmware.dart';
 import '../pia_service.dart';
 import '../router_slot_service.dart';
 import '../router_watchdog.dart';
@@ -27,7 +28,37 @@ import '../session_controller.dart';
 import 'app_scaffold.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
+import 'firmware_notice.dart';
 import 'slot_modal.dart';
+
+/// Outcome of the firmware gate. Carries what to show rather than showing it, so the connect
+/// spinner can be cleared before any dialog is awaited.
+class _FirmwareGate {
+  final bool passed;
+  final String? errorMessage; // system error (detection failed)
+  final List<String> missingBinaries; // stock helper binaries that are absent
+
+  const _FirmwareGate.ok()
+      : passed = true,
+        errorMessage = null,
+        missingBinaries = const [];
+  const _FirmwareGate.error(this.errorMessage)
+      : passed = false,
+        missingBinaries = const [];
+  const _FirmwareGate.unsupported()
+      : passed = false,
+        errorMessage = null,
+        missingBinaries = const [];
+  const _FirmwareGate.missingBinaries(this.missingBinaries)
+      : passed = false,
+        errorMessage = null;
+
+  Future<void> present(BuildContext context, SessionController c) {
+    if (errorMessage != null) return AppErrors.system(context, c, errorMessage!);
+    if (missingBinaries.isNotEmpty) return showMissingBinariesNotice(context, c, missingBinaries);
+    return showUnsupportedFirmwareNotice(context, c);
+  }
+}
 
 class RouterSlotsScreen extends StatefulWidget {
   final SlotModalMode mode;
@@ -109,30 +140,60 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
 
   RouterSlotService _slotSvc(SSHClient c) => widget.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
 
+  // Firmware detection + the stock precondition checks. Pure SSH work: the outcome is reported
+  // back so the caller can present it once the connect spinner has been cleared.
+  //
+  // Detection runs once per app session; any failure leaves the flag unset so the next navigation
+  // to a router screen retries it.
+  Future<_FirmwareGate> _checkFirmware(RouterSlotService svc) async {
+    if (!firmwareDetected) {
+      final String tag;
+      try {
+        tag = await svc.readFirmwareTag();
+      } catch (e) {
+        return _FirmwareGate.error(
+            'Unable to determine router firmware type: ${e.toString().replaceAll('Exception: ', '')}');
+      }
+      final detected = classifyFirmwareTag(tag);
+      if (detected == null) return const _FirmwareGate.unsupported();
+      setRouterFirmware(detected);
+      _c.logEntry('Router firmware detected: ${detected.name}.');
+    }
+
+    if (!isStockFirmware) return const _FirmwareGate.ok();
+    // The manage screen never sends email, so it does not need the mail binary.
+    final missing = await svc.missingStockBinaries(needMailsend: widget.mode == SlotModalMode.watchdog);
+    return missing.isEmpty ? const _FirmwareGate.ok() : _FirmwareGate.missingBinaries(missing);
+  }
+
   Future<void> _onConnect() async {
     setState(() => _connecting = true);
     _c.logEntry('Connecting to router at ${_ipCtrl.text.trim()} via SSH...');
     SSHClient? client;
     RouterSlots? slots;
+    _FirmwareGate? gate;
+    String? connectError;
     try {
       client = await _connect();
-      slots = await _slotSvc(client).fetchSlots();
-      _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
-    } catch (e) {
-      if (mounted) {
-        await AppErrors.system(context, _c, 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}');
+      final svc = _slotSvc(client);
+      // Detection has to precede fetchSlots: on stock the slot list comes from vpnc_clientlist.
+      gate = await _checkFirmware(svc);
+      if (gate.passed) {
+        slots = await svc.fetchSlots();
+        _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
       }
+    } catch (e) {
+      connectError = 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}';
     } finally {
       client?.close();
       if (mounted) setState(() => _connecting = false);
     }
-    if (slots == null || !mounted) return;
+    if (!mounted) return;
 
-    // DISABLED MERLIN, comment out below to disable Merlin check
-    if (widget.mode == SlotModalMode.watchdog && !slots.isMerlin) {
-      await AppErrors.system(context, _c, 'The VPN watchdog requires Merlin firmware on your router.');
-      return;
-    }
+    // Spinner is off, so it is safe to await a modal (see .claude/CONTEXT.md, "Async + UI").
+    if (connectError != null) return AppErrors.system(context, _c, connectError);
+    if (gate != null && !gate.passed) return gate.present(context, _c);
+    if (slots == null) return;
 
     _c.enterModal();
     await showDialog<void>(

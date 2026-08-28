@@ -20,6 +20,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
+import '../firmware.dart';
 import '../widgets/common_fields.dart';
 
 // Default values for editable fields that have one (spec 3.3), pre-filled when NVRAM is blank.
@@ -120,14 +121,17 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 _text('alive', 'Persistent keepalive (s)', keyboard: TextInputType.number),
                 _text('aips', 'Allowed IPs'),
                 const SizedBox(height: 4),
-                _switch('Kill switch', _enforce, (v) => setState(() => _enforce = v), const Key('slot_enforce')),
-                _switch('Inbound firewall', _fw, (v) => setState(() => _fw = v), const Key('slot_fw')),
+                // enforce / fw / ep_addr_r / rip do not exist on stock (ARCHITECTURE.md 2.3.1).
+                if (!isStockFirmware) ...[
+                  _switch('Kill switch', _enforce, (v) => setState(() => _enforce = v), const Key('slot_enforce')),
+                  _switch('Inbound firewall', _fw, (v) => setState(() => _fw = v), const Key('slot_fw')),
+                ],
                 _switch('NAT', _nat, (v) => setState(() => _nat = v), const Key('slot_nat')),
                 const SizedBox(height: 8),
                 _readOnly('Enabled', widget.initial['enable'] == '1' ? 'YES' : 'NO'),
-                _readOnly('Resolved endpoint IP (ep_addr_r)', widget.initial['ep_addr_r'] ?? ''),
+                if (!isStockFirmware) _readOnly('Resolved endpoint IP (ep_addr_r)', widget.initial['ep_addr_r'] ?? ''),
                 _readOnly('Preshared key (psk, unused by PIA)', widget.initial['psk'] ?? ''),
-                _readOnly('Router public IP (rip)', widget.initial['rip'] ?? ''),
+                if (!isStockFirmware) _readOnly('Router public IP (rip)', widget.initial['rip'] ?? ''),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   key: const Key('slot_params_save'),
