@@ -41,7 +41,12 @@ WIP:
 
 ### 1.2. Implemented - chronological change history
 
-2026-08-28 v0.8.14 build 385
+2026-08-28 v0.8.16 build 386
+
+- CHG: pre-implemement stock support
+- FIX: version and build number
+
+2026-08-28 v0.8.15 build 385
 
 - CHG: updated `.claude\plan_add_stock_support.md` - added services-start workaround to prompt.
 - CHG: removed DISABLED MERLIN placeholders from code.
