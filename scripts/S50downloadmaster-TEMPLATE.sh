@@ -46,7 +46,6 @@ APPS_INSTALL_PATH="$APPS_MOUNTED_PATH/$APPS_INSTALL_FOLDER"
 case "$1" in
   start)
     log_debug "exec via trigger: $1"
-
     # Add cru jobs back after rebooting or power cycle
     # ********** REPLACEMENT START **********
     # 1 to N cruCheckLine entries
