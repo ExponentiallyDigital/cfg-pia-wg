@@ -2,6 +2,7 @@
 .github/pin-cache.json
 
 # Miscellaneous
+0*
 *.class
 *.log
 *.pyc
@@ -29,7 +30,7 @@ migrate_working_dir/
 # formatting
 .prettierrc
 
-# Flutter/Dart/Pub related
+# Flutter/Dart/Pub/Gradle related
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
@@ -39,6 +40,7 @@ migrate_working_dir/
 /build/
 android/build/
 /coverage/
+**/.gradle/
 
 # Symbolication related
 app.*.symbols

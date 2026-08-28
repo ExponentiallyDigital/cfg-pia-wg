@@ -68,7 +68,7 @@ Future<void> confirmAndExit(BuildContext context, SessionController controller) 
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: kSurface,
-      title: const Text('Exit application?', style: TextStyle(color: kText, fontSize: 15)),
+      title: const Text('Exit cfg-pia-wg?', style: TextStyle(color: kText, fontSize: 15)),
       content: const Text('All credentials and configuration will be wiped from memory.',
           style: TextStyle(color: kMuted, fontSize: 13)),
       actions: [

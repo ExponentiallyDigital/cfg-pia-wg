@@ -62,7 +62,7 @@ void main() {
 
     await tester.binding.handlePopRoute(); // simulate the back button on the main menu
     await tester.pumpAndSettle();
-    expect(find.text('Exit application?'), findsOneWidget);
+    expect(find.text('Exit cfg-pia-wg?'), findsOneWidget);
 
     // Cancel keeps the app open.
     await tester.tap(find.widgetWithText(TextButton, 'CANCEL'));

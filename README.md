@@ -24,6 +24,7 @@
 - [2. Features](#2-features)
 - [3. Pre-built release](#3-pre-built-release)
 - [4. Prerequisites \& requirements](#4-prerequisites--requirements)
+  - [4.1. Enabling prequisites](#41-enabling-prequisites)
 - [5. Using the app](#5-using-the-app)
   - [5.1. Generate a PIA WireGuard configuration](#51-generate-a-pia-wireguard-configuration)
   - [5.2. Manage router PIA WireGuard configuration](#52-manage-router-pia-wireguard-configuration)
@@ -105,26 +106,39 @@ If you want to build your own, see [BUILDING.md](https://github.com/Exponentiall
 
 ## 4. Prerequisites & requirements
 
-For anything more than basic copy/past config generation with **Generate PIA WireGuard configuration**, this app requires [Merlin Firmware](https://www.asuswrt-merlin.net/) on your ASUS router. Additionally:
+From version 0.9, this app extends support to Stock ASUS firmware; [Merlin Firmware](https://www.asuswrt-merlin.net/) continues to be supported.
 
-1. Enable the SSH server. This is used by the **Manage** and **Watchdog** functions. Enable this on your router via
+If you don't have an ASUS router, you can still use the `Generate PIA WireGuard configuration` function to create standalone PIA configuration files from your phone/tablet. If that's you, you can skip to [5. Using the app](#5-using-the-app).
+
+### 4.1. Enabling prequisites
+
+To manage WireGuard configs and/or deploy a watchdog, you'll need to do a one time set up:
+
+1. Enable the SSH server via your web browser - this setting is not available in the ASUS app - go to
 
 ```text
-Administration\System\Service -> "Enable SSH" (LAN only is recommended).
+Advanced Settings\Administration\System\Service -> "Enable SSH" (LAN only is recommended).
 ```
 
-2. Enable the `JFFS` partition. Used by **Manage** and **Watchdog** functions (this _should_ be enabled by default on ASUS routers running firmware version 378.50 or newer). This allows the watchdog script and settings to survive reboots/power cycling:
+2. If your'e on recent stock firmware skip to the next step. If you're using Merlin, enable the `JFFS` partition. This _should_ be enabled by default on ASUS routers running firmware version 378.50 or newer. This allows the watchdog script and settings to survive reboots/power cycling:
 
 ```text
-Administration\System\Basic Config -> "Enable JFFS custom scripts and config"
+Advanced Settings\Administration\System\Basic Config -> "Enable JFFS custom scripts and config"
 ```
 
+3. Install the `jq` and `sendmail-go` helper apps.
+
+`<************** PLACEHOLDER **************>`
+  
 > [!TIP]
-> Firmware flashing (upgrading the router's software) [may require redeployment](https://github-wiki-see.page/m/RMerl/asuswrt-merlin.ng/wiki/JFFS) of PIA WG configs. Test your VPN is active after applying a new firmware version.
+> Firmware flashing (upgrading your router's software) [_may_ require redeployment](https://github-wiki-see.page/m/RMerl/asuswrt-merlin.ng/wiki/JFFS) of PIA WG configs. Always test your VPN is active after applying a new firmware version.
 
-3. Watchdog and tunnel verification use ICMP ping from the router's WAN and WG interfaces.
+4. Watchdog and tunnel verification use ICMP ping from the router's WAN and WG interfaces. You shouldn't need to do anything here, but it is required.
 
 ## 5. Using the app
+
+> [!TIP]
+> Before using the `Manage PIA WireGuard config` or `Watchdog WireGuard management` functions for the first time, it's recommended that you make a backup of your router configuration via the WebUI -> Advanced Settings -> Administration -> Restore/Save/Upload Setting -> Save setting.
 
 The app opens to a main menu with five choices:
 

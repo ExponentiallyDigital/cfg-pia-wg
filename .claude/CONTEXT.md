@@ -4,10 +4,8 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 
 ## 1. Working agreements
 
-- **Tests are required for every change.** 26 test files live under `test/` (`test/`, `test/screens/`,
-  `test/widgets/`, `test/unit/`). Run `flutter test`; coverage is tracked via `coverage/lcov.info`.
-  Every widget that a test needs to reach already carries a `Key` (`snake_case`, e.g.
-  `Key('slot_create')`, `Key('wd_save')`) — add one when you add a control.
+- **Tests are required for every change.** 26 test files live under `test/` (`test/`, `test/screens/`, `test/widgets/`, `test/unit/`). Run `flutter test`; coverage is tracked via `coverage/lcov.info`. Every widget that a test needs to reach already carries a `Key` (`snake_case`, e.g. `Key('slot_create')`, `Key('wd_save')`) — add one when you add a control.
+- **Test coverage.** This app requires a minumum 80% code covered by tests.
 - **Update this file in the same change as any architecture or behaviour change.** A change that moves
   a file, renames a destination, alters a button set, or adds/removes an NVRAM key must edit the
   matching section here.
@@ -311,24 +309,5 @@ Links: repo, ReadMe, Change log, Architecture, Security policy, Privacy policy, 
 | Credentials on the router | PIA username/password go to router NVRAM in **plaintext** (`cfg_pia_wg_user`/`_password`) whenever a watchdog is deployed; SMTP password likewise (`wgcN_wd_smtp_pass`). Removed by `stopWatchdog`. |
 | TLS | PIA `addKey` is CA-pinned (`withTrustedRoots: false`) with a CN check; SMTP uses `openssl s_client -tls1_3 -verify_return_error`. |
 | Shell injection | All interpolated user values go through `shellSingleQuote` — **except** `createConfigToSlot`, which uses `"…"` double quotes for the parsed-config values (`router_slot_service.dart:177-193`). |
-
-## 5. Doc-vs-code discrepancies (previous CONTEXT.md)
-
-| # | The old doc said | The code actually does | Where |
-| --- | --- | --- | --- |
-| 1 | Watchdog screen has **ENABLE, EDIT, DISABLE, DELETE, VIEW WATCHDOG LOG** | Watchdog mode has exactly **three** buttons: `CREATE/EDIT`, `DELETE`, `VIEW ROUTER WATCHDOG LOG`. No ENABLE, no DISABLE. | `slot_modal.dart:546-550` |
-| 2 | Watchdog EDIT saves parameters "**but not deployed**"; "the slot modal's ENABLE performs the deploy" | `WatchdogDialog._save` deploys directly — `deployWatchdog` writes NVRAM, the script, both cron jobs, `services-start`, and runs the script. There is no separate deploy step. | `watchdog_dialog.dart:253`, `router_watchdog.dart:373-392` |
-| 3 | "ENABLE/DELETE require a non-empty slot" | `CREATE/EDIT` is deliberately live on an **empty** slot; `DELETE` needs `hasDesc`; `VIEW LOG` needs `hasDesc && wdActive`. | `slot_modal.dart:544-550` |
-| 4 | No mention of an **About** screen | `AppDestination.about` is a full destination in the drawer with `screens/about_screen.dart` (299 lines) + `build_info_service.dart` + `license_text.dart`. | `session_controller.dart:37`, `app_drawer.dart:45-46,101` |
-| 5 | Architecture list omits four files | `app_colors.dart`, `build_info_service.dart`, `license_text.dart`, `screens/about_screen.dart` are all absent from the old map. | `lib/` |
-| 6 | "The app opens on a main menu with five options" (nothing else) | The menu also renders a **PayPal / Patreon donation block** and a hamburger hint line. | `main_menu_screen.dart:96-154` |
-| 7 | "**No** generated configuration is ever written to device storage" | SHARE / SAVE writes `pia-<region>.conf` to `getTemporaryDirectory()` before sharing (deleted in `finally`, but it does hit disk). | `standalone_config_screen.dart:152-166` |
-| 8 | "No SSH or PIA credentials … ever written to device storage" | True for the **device**; but PIA credentials and the SMTP password are written to **router NVRAM in plaintext** on every watchdog deploy. | `router_watchdog.dart:358-359`, `:135-146` |
-| 9 | Router ENABLE described only as "a per-slot connectivity check" | The app requires **both** ping targets to pass (else revert); the router-side script treats **either** target passing as healthy. Deliberate asymmetry, easy to "fix" wrongly. | `router_slot_service.dart:241-250` vs `router_watchdog.dart:736-745` |
-| 10 | No mention of a `jq` precondition | The watchdog dialog blocks SAVE and shows a red banner when `which jq` is empty. | `watchdog_dialog.dart:150-153, 220-222, 330-334` |
-| 11 | Doc positions `router_watchdog.dart` as "deploy/enable/disable" only | It also owns `deactivateOtherSlots`, which enforces one-active-slot across `wgc1..5` **inside** deploy, and whose ordering constraint (before the NVRAM write) is a real footgun. | `router_watchdog.dart:370-375, 424-442` |
-| 12 | Doc mentions no idle timeout, but `standalone_config_screen.dart:18` claims "the global **10-minute idle wipe**" | **No idle timer exists.** `SessionController` has only the clipboard countdown; the sole wipe trigger is `confirmAndExit`. The code comment is stale, not the doc. | `session_controller.dart:124-183` |
-| 13 | "five options. Each (except Exit app) opens its own screen" — implies the drawer mirrors the menu | The drawer has **six** entries (HOME + 5 destinations incl. About) + Exit app; the menu has four destinations + Exit app. | `app_drawer.dart:96-102` |
-| 14 | Doc says CREATE sets "kill-switch off" (correct) but says nothing about the script | The router script re-writes `enforce=1` on every successful re-negotiation, so a slot created kill-switch-off ends up kill-switch-on once the watchdog fires. | `router_watchdog.dart:855` |
 
 Note: ignore all .claude\plan_*.md files, they are historical and not part of the current codebase. This .claude\CONTEXT.md file is the authoritative source for doc-vs-code discrepancies.

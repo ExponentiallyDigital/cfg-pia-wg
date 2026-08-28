@@ -5,6 +5,8 @@
   - [2.1. In summary...](#21-in-summary)
   - [2.2. In detail...](#22-in-detail)
   - [2.3. Router WireGuard NVRAM fields](#23-router-wireguard-nvram-fields)
+    - [2.3.1. Field reference](#231-field-reference)
+    - [2.3.2. Stock `vpnc_clientlist`](#232-stock-vpnc_clientlist)
 - [3. Watchdog details](#3-watchdog-details)
   - [3.1. Shell script](#31-shell-script)
   - [3.2. Cron entries](#32-cron-entries)
@@ -123,27 +125,79 @@ The push operation establishes an SSH session to the router and uses `wg show in
 
 ### 2.3. <a name='RouterWireGuardNVRAMfields'></a>Router WireGuard NVRAM fields
 
+Merlin exposes 17 nvram fields per WireGuard slot, stock exposes 12.
+
+#### 2.3.1. Field reference
+
+| Field | Merlin | Stock | Default | Description |
+|---|:-:|:-:|---|---|
+| `wgcN_addr` | Yes | Yes | – | Local tunnel IP address assigned by the VPN server, in CIDR notation (e.g. `10.1.2.3`). |
+| `wgcN_aips` | Yes | Yes | `0.0.0.0/0` | Allowed IP addresses. |
+| `wgcN_alive` | Yes | Yes | `25` (seconds) | Persistent keepalive interval. |
+| `wgcN_desc` | Yes | **No** | – | Slot's PIA region name. Must match the actual PIA region name for the watchdog function to operate. |
+| `wgcN_dns` | Yes | Yes | `"9.9.9.9, 149.112.112.112"` | Two DNS servers to use, actual values are set in thecfg-pia-wg app. |
+| `wgcN_enable` | Yes | Yes | – | `1` enables this slot, `0` disables it. |
+| `wgcN_enforce` | Yes | **No** | – | `1` enables the killswitch on this slot, `0` disables it. Blocks routed clients if the tunnel goes down. Stock exposes no UI to alter this - when running on stock this field will be ignored. |
+| `wgcN_ep_addr` | Yes | Yes | – | FQDN or public IP of the remote PIA WireGuard peer endpoint. |
+| `wgcN_ep_addr_r` | Yes | **No** | – | Resolved numeric IP if `wgcN_ep_addr` is a DNS name (identical value if `wgcN_ep_addr` is already an IP). Set when the interface initialises. |
+| `wgcN_ep_port` | Yes | Yes | `1337` | Endpoint port. |
+| `wgcN_fw` | Yes | **No** | – | `1` enables the inbound firewall on this slot, `0` disables it. |
+| `wgcN_mtu` | Yes | Yes | `1420` | Maximum transmission unit. |
+| `wgcN_nat` | Yes | Yes | – | `1` enables NAT, `0` disables it. |
+| `wgcN_ppub` | Yes | Yes | – | PIA VPN server public key. |
+| `wgcN_priv` | Yes | Yes | – | PIA user's private key. |
+| `wgcN_psk` | Yes | Yes | – | Reserved for a preshared key, not used by PIA. |
+| `wgcN_rip` | Yes | **No** | – | Router's current external public IP address as seen by the internet. |
+
+**Note: `wgcN_alive`:** Merlin sets this to 25 by default. Stock only defaults to 25 if the field is not explicitly set; the field itself is otherwise optional.
+
+#### 2.3.2. Stock `vpnc_clientlist`
+
+On stock firmware, several WireGuard slot parameters are consolidated into a single nvram setting, `vpnc_clientlist`, rather than being stored as individual `wgcN_` values. This setting is a delimited string holding up to five VPN profiles, one per slot.
+
+**Delimiters:**
+
+- Records (profiles) are separated by `<`. The first record has no leading delimiter; each subsequent record is prefixed by `<`.
+- Fields within a record are separated by `>`.
+
+**Field schema** (applies to every record):
+
+| Index | Field | Meaning |
+| :-: | - | - |
+| 1 | description | slot's PIA region name |
+| 2 | protocol | always `WireGuard` |
+| 3 | slot number | maps to `wgcN_` (e.g. `5` = `wgc5_`) |
+| 4 | (unused) | always empty |
+| 5 | admin password | ignored |
+| 6 | active state | `1` = active, `0` = disabled |
+| 7 | iptables ID | ignored |
+| 8 | binding | ignored |
+| 9 | _DNS mode?_ | ignored, purpose unconfirmed |
+| 10 | unknown | ignored, always `0` |
+| 11 | _killswitch?_ | ignored, purpose unconfirmed |
+| 12 | fixed value | always `Web` |
+
+**Worked example:**
+
 ```text
-wgcN_addr=the local tunnel IP address assigned to the router by the VPN server in CIDR notation (e.g., `10.x.x.x/32`).
-wgcN_alive=the persistent keepalive interval, set to 25 (seconds) by default. This field is user editable.
-wgcN_desc=the slot's PIA region name. This must match the actual PIA region name for the watchdog function to operate.
-wgcN_dns=two DNS servers to use. Optional, but defaults to `"9.9.9.9, 149.112.112.112"`.
-wgcN_enable=set to `1` this enables this slot; when set to `0` this slot is disabled.
-wgcN_enforce=set to `1` this enables the killswitch on this slot; when set to `0` it is disabled. The killswitch blocks routed clients if the tunnel goes down.
-wgcN_ep_addr=the domain name (FQDN) or public IP address of the remote PIA WireGuard server (peer endpoint) you are connecting to.
-wgcN_ep_addr_r=if `wgcN_ep_addr` contains either a DNS name or an IP address, this is the resolved numeric IP address; if `wgcN_ep_addr` contains a direct IP address, this field will hold an identical value. This field is set when the interface is initialised.
-wgcN_ep_port=the endpoint port, defaulting to `1337` for PIA.
-wgcN_fw=set to `1` to enable the inbound firewall on this slot; set to `0` to disable it.
-wgcN_mtu=the MTU (Maximum Transmission Unit), set to `1420` by default.
-wgcN_nat=set to `1` to enable network address translation (NAT); set to `0` to disable NAT.
-wgcN_ppub=The PIA VPN server public key.
-wgcN_priv=the PIA user's private key. This field should be rendered as an obscured input (like a password field) with a show/hide toggle, consistent with how SSH and PIA credentials are handled elsewhere in the app.
-wgcN_psk=this value is not used by PIA and is read-only for the user (reserved for a preshared key).
-wgcN_rip=stores the router's current external public IP address as seen by the internet.
-wgcN_aips=allowed IP addresses, defaults to `0.0.0.0/0`.
+$nvram show vpnc_clientlist
+pia-aus_melbourne>WireGuard>5>>mel-pwd>1>5>>>0>0>Web<pia-aus>WireGuard>4>>aus-pwd>0>6>>>0>0>Web<pia-au_brisbane-pf>WireGuard>3>>bris-pwd>0>7>>>0>0>Web<pia-au_adelaide-pf>WireGuard>2>>adf-pwd>0>8>>>0>0>Web<pia-aus_perth>WireGuard>1>>perth-pwd>0>9>>>0>0>Web
 ```
 
----
+| Index | Web UI slot 1 | Web UI slot 2 | Web UI slot 3 | Web UI slot 4 | Web UI slot 5 |
+|:---:|---|---|---|---|---|
+| 1 | pia-aus_melbourne | pia-aus | pia-au_brisbane-pf | pia-au_adelaide-pf | pia-aus_perth |
+| 2 | WireGuard | WireGuard | WireGuard | WireGuard | WireGuard |
+| 3 | 5 | 4 | 3 | 2 | 1 |
+| 4 | – | – | – | – | – |
+| 5 | mel-pwd | aus-pwd | bris-pwd | adf-pwd | perth-pwd |
+| 6 | 1 | 0 | 0 | 0 | 0 |
+| 7 | 5 | 6 | 7 | 8 | 9 |
+| 8 | – | – | – | – | – |
+| 9 | – | – | – | – | – |
+| 10 | 0 | 0 | 0 | 0 | 0 |
+| 11 | 0 | 0 | 0 | 0 | 0 |
+| 12 | Web | Web | Web | Web | Web |
 
 ## 3. <a name='Watchdogdetails'></a>Watchdog details
 
@@ -163,7 +217,7 @@ If connectivity fails, the interface is reconfigured with back off.
 
 ### 3.2. <a name='Cronentries'></a>Cron entries
 
-A `crontab`/`cru` entry drives the configurable periodic health check. An additional job rotates the watchdog router log file at midnight, retaining the prior log. To avoid filling the JFFS partition, all logging is stored in `/tmp`. Watchdog logging does not persist after a reboot or power loss.
+A `cru` (`crontab`) entry drives the configurable periodic health check. An additional job rotates the watchdog router log file at midnight. To avoid filling the JFFS partition, all logging is stored in `/tmp`. Watchdog logs do not persist after a reboot or power loss.
 
 ```bash
 */5 * * * * /jffs/scripts/watchdog_wgc1.sh #watchdog_wgc1#
@@ -246,8 +300,7 @@ Generated configuration data is managed via:
 
 Everything is a `String` deliberately: a uniform map crosses `StandardMessageCodec` without mixed-type surprises and needs no per-key casting in `lib/build_info_service.dart`. Any field the host cannot determine comes back as the literal `unknown` rather than null.
 
-`loadBuildInfo()` swallows `MissingPluginException` and `PlatformException`, returning `BuildInfo.unknown()`.
-This is load-bearing, not defensive padding: under `flutter test` no native side is registered at all, so every full-app widget test takes that path.
+`loadBuildInfo()` swallows `MissingPluginException` and `PlatformException`, returning `BuildInfo.unknown()`. This is load-bearing, not defensive padding: under `flutter test` no native side is registered at all, so every full-app widget test takes that path.
 
 ### 6.2. <a name='Whereeachfieldcomesfrom'></a>Where each field comes from
 
@@ -262,33 +315,17 @@ This is load-bearing, not defensive padding: under `flutter test` no native side
 
 ### 6.3. <a name='Gradle-sidenotes'></a>Gradle-side notes
 
-`buildFeatures { buildConfig = true }` is required, AGP 8+ defaults it to `false`, and AGP 9 removed the
-`android.defaults.buildfeatures.buildconfig` escape hatch. Once enabled, AGP generates `DEBUG`,
-`APPLICATION_ID`, `BUILD_TYPE`, `VERSION_CODE` and `VERSION_NAME` itself; only the seven custom fields are
-declared by hand.
+`buildFeatures { buildConfig = true }` is required, AGP 8+ defaults it to `false`, and AGP 9 removed the `android.defaults.buildfeatures.buildconfig` escape hatch. Once enabled, AGP generates `DEBUG`, `APPLICATION_ID`, `BUILD_TYPE`, `VERSION_CODE` and `VERSION_NAME` itself; only the seven custom fields are declared by hand.
 
-- **git** runs through `providers.exec` (a raw `ProcessBuilder` would be a configuration-cache violation) as
-  `git -C <android/>`, so it never depends on the daemon's working directory. Every failure path: git absent
-  from `PATH`, no `.git` in a source tarball, degrades to `unknown` instead of failing the build.
-- **`gitBranch`** prefers `GITHUB_REF_NAME` and rejects a literal `HEAD` from the git fallback: `release.yml`
-  triggers on tag pushes, which leaves a detached HEAD where `rev-parse --abbrev-ref` returns `HEAD`, never
-  the tag.
-- **`buildTimestamp`** is wall-clock at configuration time, which means `GenerateBuildConfig` is never up to
-  date and every build recompiles and repackages the app module. That is an accepted trade for exact build
-  provenance; `GIT_COMMIT_DATE` is delivered alongside it as a reproducible cross-check.
-- **`kotlinVersion`** comes from `getKotlinPluginVersion()`, falling back to `KotlinBasePlugin.pluginVersion`.
-  The Kotlin plugin is deliberately *not* added to the app's `plugins {}` block as Flutter's Gradle plugin
-  applies it, and declaring it again makes Flutter log an AGP-9 migration warning at error level on every
-  build.
-- **`buildConfigField`'s value is emitted verbatim** into `BuildConfig.java`, so `javaStringLiteral()` escapes
-  every string. These values come from git and the environment: a branch named `foo"bar` would otherwise
-  produce uncompilable generated Java.
-- No new dependencies, so the STRICT `gradle.lockfile` set is untouched. This is also why the Kotlin side
-  hand-rolls the `longVersionCode` branch rather than using `androidx.core`'s `PackageInfoCompat`.
+- **git** runs through `providers.exec` (a raw `ProcessBuilder` would be a configuration-cache violation) as `git -C <android/>`, so it never depends on the daemon's working directory. Every failure path: git absent from `PATH`, no `.git` in a source tarball, degrades to `unknown` instead of failing the build.
+- **`gitBranch`** prefers `GITHUB_REF_NAME` and rejects a literal `HEAD` from the git fallback: `release.yml` triggers on tag pushes, which leaves a detached HEAD where `rev-parse --abbrev-ref` returns `HEAD`, never the tag.
+- **`buildTimestamp`** is wall-clock at configuration time, which means `GenerateBuildConfig` is never up to date and every build recompiles and repackages the app module. That is an accepted trade for exact build provenance; `GIT_COMMIT_DATE` is delivered alongside it as a reproducible cross-check.
+- **`kotlinVersion`** comes from `getKotlinPluginVersion()`, falling back to `KotlinBasePlugin.pluginVersion`. The Kotlin plugin is deliberately *not* added to the app's `plugins {}` block as Flutter's Gradle plugin applies it, and declaring it again makes Flutter log an AGP-9 migration warning at error level on every build.
+- **`buildConfigField`'s value is emitted verbatim** into `BuildConfig.java`, so `javaStringLiteral()` escapes every string. These values come from git and the environment: a branch named `foo"bar` would otherwise produce uncompilable generated Java.
+- No new dependencies, so the STRICT `gradle.lockfile` set is untouched. This is also why the Kotlin side hand-rolls the `longVersionCode` branch rather than using `androidx.core`'s `PackageInfoCompat`.
 
 ### 6.4. <a name='Thelicencetext'></a>The licence text
 
-`lib/license_text.dart` holds `./LICENSE` verbatim as a raw-string constant, and is generated at development time, not loaded at runtime and not registered as an asset. The About screen therefore has no I/O path and no way to
-display a licence that differs from the one in the repository.
+`lib/license_text.dart` holds `./LICENSE` verbatim as a raw-string constant, and is generated at development time, not loaded at runtime and not registered as an asset.
 
-**If `./LICENSE` changes, regenerate that constant.**
+---

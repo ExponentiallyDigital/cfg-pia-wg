@@ -10,7 +10,6 @@
 
 ### 1.1. Pending - see [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for complete list
 
-- CHG: Find a way to run a script on boot: save cru? examine boot path...there must be a way to hook into the boot process - no method exists on stock firmware, but Merlin has a hook for this. Need to find a way to run a script on boot on stock firmware.
 - CHG: Convert to use `sendmail-go` (**no** mta on stock firmware)
 - CHG: enable multiple concurrent WireGuard slots
 - CHG: enable multiple concurrent WireGuard watchdogs, ADD disable function (CFG in NVRAM + unset cron)
@@ -21,35 +20,46 @@
 - GUI: Make Manage and Watchdog deletion prompt messages consistent.
 - GUI: Change info prompt after slot created "remember to enable it via the enable button".
 - GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
-- REL: fix compile warning on laptop under Ubuntu
-  WARNING: A restricted method in java.lang.System has been called
-  WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/home/andrew/.gradle/wrapper/dists/gradle-9.1.0-all/7wzd0jkjit61aq2p43wpjgij9/gradle-9.1.0/lib/native-platform-0.22-milestone-28.jar)
-  WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
-  WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 - GUI: (backed out) allow selecting multiple lines of text in About screen.
 - REL: add tests to lib/screens/about_screen.dart, as code coverage is 37.8% on 23 new code lines in this module.
 - stash and merge above from main to dev.
+- BUG: router script re-writes enforce=1 on every successful re-negotiation, so a slot created kill-switch-off ends up kill-switch-on once the watchdog fires.
 
 WIP:
 
-- CHG: determine and branch if Stock vs Merlin or call different methods on a class - abstract how to from code calls.
 - CHG: enable support for multiple concurrent VPN slots - then update S50downloadmaster to pull default interval fromn NVRAM, see OneNote "get from NVRAM" page.
 - CHG: on stock add watchdog (wd) script and tie to `cru` entry, convert wd script to use `/jffs/bin/mailsend-go` and `/jffs/bin/jq` (store binaries on `opt`?).
-- CHG: on stock add test for DownloadMaster installed, then backup `scripts\S50downloadmaster.sh`, install replacement `S50downloadmaster.sh`.
+- CHG: on stock add test for DownloadMaster installed , then backup `scripts\S50downloadmaster.sh`, install replacement `S50downloadmaster.sh`.
 - CHG: on stock implement stock firmware slot naming with NVRAM variable `vpnc_clientlist`
 - CHG: preface slot descriptions with "pia-" to avoid confusion with other VPNs on the router.
 - CHG: on stock migrate all GUI display names for slot descriptions to use stock firmware descriptions.
 - DOC: add to `README.md` how to get and install `jq` and `sendmail-go` on stock firmware, plus how to install & cfg Download Master and use the replacement script.
+- CHG: `router_watchdog.dart` also owns `deactivateOtherSlots`, which enforces one-active-slot across wgc1..5 inside deploy, and whose ordering constraint (before the NVRAM write) is a real footgun (thanks Claude!).
+- REL: upadte version to 0.9 branch when first releasing stock support
 
 ---
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-28 v0.8.13 build 384
+
+- ADD: added `S50downloadmaster.stock.sh` to the repo, this is the original stock firmware script + added a "properly" formatted version, my eyes were bleeding re-reading the stock script!
+- CHG: set `sleep 10` (seconds) in `S50downloadmaster.sh`, 60 caused issues with blocking as this script runs whenever the firewall is restarted, 0 also caused issues, and 10 is a compromise. Try 5, but might not work well on lower powered processors.
+- DOC: added `.claude\plan_add_stock_support.md`.
+- DOC: extensive updates to `ARCHITECTURE.md` to account for the nvram differences between Merlin and stock.
+- DOC: updated `.claude\context.md`, a complete rewrite.
+- DOC: updated `BUILDING.md` with name of new `scripts\pin-actions-latest.sh`.
+- DOC: updates to README.md on enabling support for Stock firmware.
+- GUI: changed wording of exit app confirmation screen to "Exit cfg-pia-wg?"
+- NOTE: having more than two concurrent WireGuard slots is not supported on stock firmware but can be overridden by `nvram set vpnc_max_conn=X; nvram commit` - enabling 5 causes issues at boot (no VPNs connect).
+- REL: added .gitignore exclusion for `./gradle` folder
+- REL: ported `build.ps1` to `build.sh` (bash version wasn't in sync with the PowerShell version).
+
 2026-08-28 v0.8.13 build 383
 
-- DOC: generated new CONTEXT.md
+- DOC: generated new `CONTEXT.md`
 - DOC: add .claude plans for context creation.
-- ADD: ./scripts/get-latest-tag.sh - gets the latest tag from GitHub, used to confirm latest tags for specific GitHub actions, e.g. kevin-david/promote-play-release
+- ADD: `./scripts/get-latest-tag.sh` - gets the latest tag from GitHub, used to confirm latest tags for specific GitHub actions, e.g. kevin-david/promote-play-release
 
 2026-08-19 v0.8.12 build 382
 
@@ -60,7 +70,7 @@ WIP:
 
 - Solved: (but not implemented) we now have a way to run the watchdog script on stock firmware.
 - Solved: (but not implemented) we now have tools to replace `jq` and `sendmail` on stock firmware.
-- Solved: (but not implemented) can now support all app functionality on stock firmware, including watchdogs, email alerts.
+- Solved: (but not implemented) can now support all app functionality on stock firmware, including watchdogs, and email alerts.
 - CHG: added `scripts\S50downloadmaster.sh` - example of how to add a cron job to run the watchdog script every 5 minutes, triggered by installing Download Master. This is a workaround for stock firmware which has no boot hook. Curently just prints a msg to the router log every 5 minutes.
 - CHG: added `scripts\extract-with-context.ps1` to extract a section of a router log file with 1 lines before and after the match "cfg-pia-wg_cru", used for checking `S50downloadmaster` is running correctly.
 - REL: material_color_utilities maintainers have fixed the issue with their package resolving to different versions on Windows/Linux.
@@ -295,7 +305,7 @@ WIP:
 2026-07-28 v0.6.22 build 352
 
 - FIX: sequenced release.yaml to only run after quality_and_security.yaml successfully completes
-- CHG: re-enabled FLAG_SECURE to disable in-app screenshots, hides screen display from task switcher (was disabled during closed testing to allow screenshots)
+- CHG: re-enabled FLAG_SECURE to disable in-app screenshots, hides screen display from task switcher (was disabled during closed testing to allow screenshots), set in `android\app\src\main\kotlin\com\exponentiallydigital\pia_wireguard_cfga\MainActivity.kt`.
 - DOC: updated Play Store descriptions
 - TST: end-to-end manual retest of the entire app
 

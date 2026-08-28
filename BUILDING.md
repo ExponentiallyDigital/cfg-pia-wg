@@ -205,7 +205,7 @@ Linux
 
 ## 5. Updating GitHub action SHAs
 
-The `update-shgas.ps1` script, located in the repository root, automates the process of hardening GitHub Actions by pinning them to secure commit SHAs.
+The `scripts\pin-actions-latest.sh/ps1` scripts automate the process of hardening GitHub Actions by pinning them to secure commit SHAs.
 The script queries the GitHub API for the latest release tags, resolves them to full SHAs across all `.github/workflows/*.yml` files, and rewrites the workflows in-place. Any previously pinned SHAs are automatically re-evaluated and updated if a newer version is available.
 
 ### 5.1. Example transformation

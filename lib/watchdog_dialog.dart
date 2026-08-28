@@ -329,7 +329,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                 ),
                 if (_jqMissing) ...[
                   const SizedBox(height: 12),
-                  const Text('jq is not installed on the router — install Entware jq before enabling.',
+                  const Text('jq is not installed on the router — install jq before enabling.',
                       style: TextStyle(color: kError, fontSize: 12)),
                 ],
                 const SizedBox(height: 16),
@@ -339,7 +339,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                 _field(_piaUserCtrl, 'PIA username', const Key('wd_pia_user')),
                 _field(_piaPassCtrl, 'PIA password', const Key('wd_pia_pass'),
                     obscure: !_piaPassVisible,
-//                    enableInteractiveSelection: false, // disable copy if password field is revealed
+//                    enableInteractiveSelection: false, // disable copy if password field is revealed - also this also disabled paste :/
                     onToggle: () => setState(() => _piaPassVisible = !_piaPassVisible),
                     visible: _piaPassVisible),
                 const SizedBox(height: 4),

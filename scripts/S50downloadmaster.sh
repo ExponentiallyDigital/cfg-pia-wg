@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# v0.0.19 cfg-pia-wg_cru (S50downloadmaster) - install a cron entry to maintain a persistent WireGuard VPN
+# v0.0.20 cfg-pia-wg_cru (S50downloadmaster) - install a cron entry to maintain a persistent WireGuard VPN
 #
 # Stock router firmware blocks extra scripts from exec in /opt/etc/init.d,
 # this script *must* be named S50downloadmaster.
@@ -12,8 +12,8 @@ set -u
 WATCHDOG_INTERVAL=5   # minutes between watchdog pings
 
 # Delay to allow NTP to converge so cron job timestamps are meaningful.
-# 60s is a pragmatic upper bound on stock-firmware boot sequencing.
-sleep 60
+# NB sleeping affects every call to this script, eg called everytime a firewall restart is requested.
+sleep 10
 
 DEBUG=on
 log_debug() {
