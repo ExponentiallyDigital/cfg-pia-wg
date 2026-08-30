@@ -1,2 +1,0 @@
-# set to 1 below if tests cannot be run in parallel eg using the same port (1337) etc.
-#concurrency: 1

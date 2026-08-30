@@ -1,8 +1,0 @@
-<en-AU>
-Welcome to the initial Play Store release of cfg-pia-wg! Easily generate and manage PIA WireGuard configurations directly from your Android device.
-
-▶ Self-healing watchdog: automated router "set and forget" uptime.
-▶ Fastest server node: automated live latency testing across PIA regional servers.
-▶ Asuswrt-Merlin integration: deploy and manage VPN slots directly to your compatible router.
-▶ Zero-persistence security: credentials and keys stay in volatile memory and are never written to disk.
-</en-AU>
