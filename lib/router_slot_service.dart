@@ -66,7 +66,7 @@ List<String> slotKeysFor(RouterFirmware firmware) => firmware == RouterFirmware.
 // up to five profiles: records separated by '<' (no leading delimiter), fields by '>'.
 // See ARCHITECTURE.md 2.3.2 for the field schema.
 
-/// One `vpnc_clientlist` profile. Field numbers in the docs are 1-based; [fields] is 0-based.
+/// One `vpnc_clientlist` profile. Field numbers in the docs are 1-based; [fields] is **0-based**.
 class VpncRecord {
   static const int fieldCount = 12;
   static const int _descIdx = 0, _protocolIdx = 1, _slotIdx = 2, _activeIdx = 5, _iptablesIdx = 6, _tailIdx = 11;
@@ -378,8 +378,12 @@ class RouterSlotService {
     await _run('nvram set wgc${slot}_enable=1');
     await _setVpncActive(slot, true);
     await _run('nvram commit');
-    await _run('service "start_wgc $slot"; service restart_vpnrouting0');
-
+    // stock requires a different start command to Merlin
+    if (isStockFirmware) {
+      await _run('service restart_vpnc');
+    } else {
+      await _run('service "start_wgc $slot"; service restart_vpnrouting0');
+    }
     onLog?.call('Verifying wgc$slot interface comes up...');
     var up = false;
     for (var retry = 0; retry < verifyMaxAttempts; retry++) {
@@ -480,11 +484,30 @@ class RouterSlotService {
     await _run('nvram commit');
   }
 
-  // Ping bound to the VPN interface with a 5s timeout (spec 2.1.2).
+// Ping bound to the VPN interface with a 5s timeout (spec 2.1.2).
   Future<bool> pingViaSlot(String ip, int slot) async {
+    final safeIp = shellSingleQuote(ip);
+    final String cmd;
+
+    if (isStockFirmware) {
+      // Stock BusyBox ping requires a source IP address instead of an interface name.
+      cmd = '''
+      ADDR=\$(ip -4 addr show wgc$slot 2>/dev/null)
+      case "\$ADDR" in
+        *inet*)
+          IP=\${ADDR#*inet }
+          ping -I \${IP%%/*} -c 1 -w 5 $safeIp >/dev/null 2>&1 && echo OK
+          ;;
+      esac
+      ''';
+    } else {
+      // Custom firmware ping accepts interface names directly.
+      cmd = 'ping -I wgc$slot -c 1 -w 5 $safeIp >/dev/null 2>&1 && echo OK';
+    }
+
     try {
-      final out = await _run('ping -I wgc$slot -c 1 -W 5 ${shellSingleQuote(ip)} >/dev/null 2>&1 && echo OK || echo FAIL');
-      return out == 'OK';
+      final out = await _run(cmd);
+      return out.trim() == 'OK';
     } catch (_) {
       return false;
     }

@@ -1,18 +1,12 @@
 #!/bin/sh
 #
-# v0.1.0 S50downloadmaster-TEMPLATE - install two cru entries to maintain a persistent WireGuard VPN
+# v0.1.1 S50downloadmaster-TEMPLATE - install two cru entries to maintain a persistent WireGuard VPN
 #
-# Stock router firmware blocks extra scripts from exec in /opt/etc/init.d,
-# this script *must* be named S50downloadmaster.
+# Stock router firmware blocks extra scripts from exec in /opt/etc/init.d, this script *must* be named S50downloadmaster
 #
 # Retains variables set by stock Download Master script, but Download Master is *not* enabled.
 
 set -u
-
-# Delay to allow NTP to converge at boot so log timestamps are meaningful.
-# NB sleeping affects every call to this script, eg called everytime a firewall restart is requested.
-sleep 10
-
 DEBUG=on
 log_debug() {
     if [ "$DEBUG" = "on" ]; then

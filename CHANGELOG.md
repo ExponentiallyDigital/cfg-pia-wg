@@ -2,6 +2,9 @@
 
 - [1. Changes](#1-changes)
   - [1.1. Pending - see BACKLOG.md for complete list](#11-pending---see-backlogmd-for-complete-list)
+    - [Merlin to Stock WIP](#merlin-to-stock-wip)
+      - [MANAGE](#manage)
+        - [WATCHDOG](#watchdog)
   - [1.2. Implemented - chronological change history](#12-implemented---chronological-change-history)
 
 ---
@@ -10,9 +13,7 @@
 
 ### 1.1. Pending - see [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for complete list
 
-- CHG: Convert to use `sendmail-go` (**no** mta on stock firmware)
-- CHG: enable multiple concurrent WireGuard slots
-- CHG: enable multiple concurrent WireGuard watchdogs, ADD disable function (CFG in NVRAM + unset cron)
+- CHG: enable multiple concurrent WireGuard slots nwatchdogs, ADD disable function (CFG in NVRAM + unset cron) - (ASUS limit, max limit 2 concurrent wiregaurd VPNs)
 - REL: Continue RevenueCat set up.
 - CHG: on Merlin w app, deleting a watchdog also deletes the underlying WG slot - modify to only delete the cron job and retain the underlying VPN slot config
 - DOC: Add note to use data from About screen when creating an issue on GitHub, add to ISSUE_TEMPLATEs.
@@ -21,42 +22,77 @@
 - GUI: Change info prompt after slot created "remember to enable it via the enable button".
 - GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
 - GUI: (backed out) allow selecting multiple lines of text in About screen.
-- REL: add tests to lib/screens/about_screen.dart, as code coverage is 37.8% on 23 new code lines in this module.
-- stash and merge above from main to dev.
 - BUG: router script re-writes enforce=1 on every successful re-negotiation, so a slot created kill-switch-off ends up kill-switch-on once the watchdog fires.
-
-WIP:
-
 - CHG: enable support for multiple concurrent VPN slots - then update S50downloadmaster to pull default interval fromn NVRAM, see OneNote "get from NVRAM" page.
-- CHG: on stock add watchdog (wd) script and tie to `cru` entry, convert wd script to use `/jffs/bin/mailsend-go` and `/jffs/bin/jq` (store binaries on `opt`?).
-- CHG: on stock add test for DownloadMaster installed , then backup `scripts\S50downloadmaster.sh`, install replacement `S50downloadmaster.sh`.
-- CHG: on stock implement stock firmware slot naming with NVRAM variable `vpnc_clientlist`
+- CHG: on stock add test for DownloadMaster installed , then backup `scripts\S50downloadmaster.sh`
 - CHG: preface slot descriptions with "pia-" to avoid confusion with other VPNs on the router.
 - CHG: on stock migrate all GUI display names for slot descriptions to use stock firmware descriptions.
 - DOC: add to `README.md` how to get and install `jq` and `sendmail-go` on stock firmware, plus how to install & cfg Download Master and use the replacement script.
 - CHG: `router_watchdog.dart` also owns `deactivateOtherSlots`, which enforces one-active-slot across wgc1..5 inside deploy, and whose ordering constraint (before the NVRAM write) is a real footgun (thanks Claude!).
-- REL: upadte version to 0.9 branch when first releasing stock support
+- REL: update version to 0.9 branch when first releasing stock support
+
+#### Merlin to Stock WIP
+
+##### MANAGE
+
+- Implement gating on > 2 slots. Attempting to start a 3rd should throw an error msg.
+- **Enabling a second slot makes the first slot stop, second enabled target does not get `wgcN_wd_primary_ip` and `wgcN_wd_secondary_ip` set.
+- App UI not showing if two slots are active
+- `wgcN_desc` being set, should be using vpnc_clientlist
+- `wgcN_ep_addr_r` being set, should not be
+- EDIT dialogue box not picking up `Region name` from vpnc_clientlist, trying to use `wgcN_desc`.
+- ENABLE not enabling if > 1 VPN exists
+- SLOT modal is showing items in reverse order and misnaming these
+  - on Stock the first created slot is wgc5, then 4, to 1.
+  - on Merlin the first created slot is wgc_1 then 2 to 5.
+
+###### WATCHDOG
+
+- Stock watchdog_wgcN.sh, should be using vpnc_clientlist for the region name.
+- Stock watchdog_wgcN.sh, stop using nvram settings for:
+  `wgcN_desc`
+  `wgcN_enforce`
+  `wgcN_ep_addr_r`
+  `wgcN_fw`
+  `wgcN_rip`
 
 ---
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-28 v0.8.18 build 388 - WIP stock support for Manage function only
+
+- CHG: updated `scripts\read-vpnc_clientlist.sh` to read from nvram, field names shown too.
+- CHG: updated comment in `scripts\S50downloadmaster.sh` header - this is only a test script, used to mimic Download Master running, setting its env variables, posting a log message every 5 minutes, and exiting with a 0. Router fails to load at boot (blocking behaviour) unless this script execs and exits with a 0.
+- CHG: updated `enableSlot` in `router_slot_service.dart` - Merlin uses per vpn start commands `start_wgc 5; restart_vpnrouting`, WebUI uses whole of vpn restart with `service restart_vpnc`.
+- CHG: `pingViaSlot` in `router_slot_service.dart` - stock ping does not honour pinging by interface name, must use IP address instead.
+- INF: deleting a slot when on stock leaves behind **all** nvram keys, cfg-pia-wg removes them (as it should!).
+- INF: `wgcN_desc` is set on stock as the watchdog needs somewhere easily accessible to get the slot name from, otherwise we'd need to implement parsing nvram's `vpnc_clientlist` in the router deployed script (which is getting close to the heredoc size limit).
+- CHG: v0.1.1 `S50downloadmaster-TEMPLATE` & , removed `sleep 10` was nice to have correct router log timestamps but this script gets called often by the router and was unnecessarily slowing exec down.
+- INF: if S50downloadmaster-TEMPLATE has 0 sleep, router blocked if a VPN is set active, try sleep 3, try 5, try 9 OK!. Polling `nvram get success_start_service=1` with a 1s interval fails as it is likely set after kernel init completes. The issue is that the script execs in the boot process and stalls other services if there is no delay after it runs.
+- FIX: `scripts\S50downloadmaster.stock.sh` had mangled lines, re-extracted. Created `scripts\S50downloadmaster.stock-logging.sh` to log sleep functions in original script.
+- ADD: added `scripts\S50asuslighttpd*` for testing: use that instead of DM?
+
 2026-08-28 v0.8.17 build 387
 
 - CHG: implemement stock support.
 - CHG: updated get-pins.sh to point to new install location `/jffs/cfg-pia-wg`.
+- CHG: on stock implement stock firmware slot naming with NVRAM variable `vpnc_clientlist`
+- CHG: on stock add watchdog (wd) script and tie to `cru` entry, convert wd script to use `/jffs/bin/mailsend-go` and `/jffs/bin/jq` (store binaries on `opt`?).
+- CHG: Convert to use `sendmail-go` (**no** mta on stock firmware)
+- CHG: install replacement `S50downloadmaster.sh`.
 
-2026-08-28 v0.8.16 build 386
+2026-08-29 v0.8.16 build 386
 
 - CHG: pre-implemement stock support.
 - FIX: version and build number.
 
-2026-08-28 v0.8.15 build 385
+2026-08-29 v0.8.15 build 385
 
 - CHG: updated `.claude\plan_add_stock_support.md` - added services-start workaround to prompt.
 - CHG: removed DISABLED MERLIN placeholders from code.
 
-2026-08-28 v0.8.14 build 384
+2026-08-29 v0.8.14 build 384
 
 - ADD: added `S50downloadmaster.stock.sh` to the repo, this is the original stock firmware script + added a "properly" formatted version, my eyes were bleeding re-reading the stock script!
 - CHG: set `sleep 10` (seconds) in `S50downloadmaster.sh`, 60 caused issues with blocking as this script runs whenever the firewall is restarted, 0 also caused issues, and 10 is a compromise. Try 5, but might not work well on lower powered processors.

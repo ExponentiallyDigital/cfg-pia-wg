@@ -1,43 +1,57 @@
 #!/bin/bash
 #
-# take an input and split into arrays by ">" and "<" and print each entry with an index
+# Parse vpnc_clientlist NVRAM string into indexed entries with field labels.
 #
-# example usage: cat vpnc_clientlist.txt | ./scripts/read-vpnc_clientlist.sh
-# example usage: echo 'pia-aus_melbourne>WireGuard>5>>pwd1>1>5>>>0>0>Web<pia-aus>WireGuard>4>>pwd2>1>6>>>0>0>Web' | ./scripts/read-vpnc_clientlist.sh
+# Usage:
+#   ./read-vpnc_clientlist.sh  # Reads from `nvram get vpnc_clientlist`
+#   cat vpnc_clientlist.txt | ./read-vpnc_clientlist.sh
+#   echo 'pia-aus_melbourne>WireGuard>...' | ./read-vpnc_clientlist.sh
+#   ./read-vpnc_clientlist.sh 'pia-aus_melbourne>WireGuard>...'
 
-input=$(cat)
+if [ -n "$1" ]; then
+    input="$1"
+elif [ ! -t 0 ]; then
+    input=$(cat)
+else
+    input=$(nvram get vpnc_clientlist 2>/dev/null)
+fi
 
-# Split by ">"
-IFS='>' read -ra parts <<< "$input"
+if [ -z "$input" ]; then
+    exit 0
+fi
 
-entry_index=1
-first_array=true
+printf "%s\n" "$input" | awk '
+BEGIN {
+    FS = ">"
+    RS = "<"
+    labels[1] = "description"
+    labels[2] = "protocol"
+    labels[3] = "slot"
+    labels[4] = "unused"
+    labels[5] = "pwd"
+    labels[6] = "state"
+    labels[7] = "tables ID"
+    labels[8] = "binding"
+    labels[9] = "dns"
+    labels[10] = "unknown"
+    labels[11] = "unknown"
+    labels[12] = "source"
+}
+{
+    gsub(/[\r\n]+$/, "")
+    if (length($0) == 0) next
 
-for part in "${parts[@]}"; do
-    if [[ "$part" == *"<"* ]]; then
-        # Split at "<"
-        before="${part%<*}"
-        after="${part#*<}"
-        
-        # Print the "before" part as the last entry of current array
-        echo "[$entry_index] $before"
-        ((entry_index++))
-        
-        # Blank line between arrays and reset counter
-        if [[ "$first_array" == false ]]; then
-            echo
-        fi
-        entry_index=1
-        first_array=false
-        
-        # Print the "after" part as first entry of new array
-        echo "[$entry_index] $after"
-        ((entry_index++))
-    else
-        # Regular field - print even if empty
-        echo "[$entry_index] $part"
-        ((entry_index++))
-    fi
-done
+    if (count > 0) print ""
+    count++
 
-echo  # trailing blank line
+    for (i = 1; i <= NF; i++) {
+        lbl = (i in labels) ? labels[i] : "unknown"
+        tag = "[" i " " lbl "]"
+        tabs = (length(tag) < 8) ? "\t\t" : "\t"
+        print tag tabs $i
+    }
+}
+END {
+    if (count > 0) print ""
+}
+'
