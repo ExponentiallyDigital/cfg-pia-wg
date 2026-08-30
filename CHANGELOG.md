@@ -60,7 +60,12 @@
 
 ### 1.2. Implemented - chronological change history
 
-2026-08-28 v0.8.18 build 388 - WIP stock support for Manage function only
+2026-08-31 v0.8.19 build 389 - WIP stock support for Manage function only
+
+- DOC: reorganised files, moved `.\scripts\S50*` to `.\.watchdog-implementation`
+- REL: set LF as default with `.gitattributes`
+
+2026-08-30 v0.8.18 build 388 - WIP stock support for Manage function only
 
 - CHG: updated `scripts\read-vpnc_clientlist.sh` to read from nvram, field names shown too.
 - CHG: updated comment in `scripts\S50downloadmaster.sh` header - this is only a test script, used to mimic Download Master running, setting its env variables, posting a log message every 5 minutes, and exiting with a 0. Router fails to load at boot (blocking behaviour) unless this script execs and exits with a 0.

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze *)",
+      "Bash(flutter test *)",
+      "Bash(awk ' *)",
+      "Bash(flutter --version)",
+      "PowerShell(flutter test 2>&1)",
+      "PowerShell(.\\\\android\\\\gradlew.bat -p android :app:generateDebugBuildConfig --console=plain 2>&1)",
+      "PowerShell(flutter analyze --fatal-infos 2>&1)",
+      "PowerShell(flutter build apk --debug 2>&1)",
+      "PowerShell(adb install -r build\\\\app\\\\outputs\\\\flutter-apk\\\\app-debug.apk 2>&1)",
+      "PowerShell(adb logcat -c)",
+      "PowerShell(adb shell am start -n com.exponentiallydigital.pia_wireguard_cfga/.MainActivity 2>&1)",
+      "PowerShell(\"\")"
+    ]
+  }
+}

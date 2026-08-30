@@ -1,22 +1,18 @@
 #! /bin/sh
+DEBUG=on
+log_debug() {
+    if [ "$DEBUG" = "on" ]; then
+        logger -t *****DM-STOCK***** "$@"
+    fi
+}
+log_debug "START S50downloadmaster, trigger: $1"
+
 unset LD_LIBRARY_PATH
 is_arm_machine=`uname -m |grep arm`
 APP_UCLIBC_VERSION=0.9.28
 PATH=/bin:/sbin:/usr/sbin:/usr/bin:/opt/bin
-
-DEBUG=on
-log_debug() {
-    if [ "$DEBUG" = "on" ]; then
-        logger -t DOSNLOADMASTER "$@"
-    fi
-}
-log() {
-    logger -t DOWNLOADMASTER "$@"
-}
-log_debug "START /opt/etc/init.d/S50downloadmaster, trigger: $1"
-
 if [ "$1" == "firewall-restart" ]; then
-log_debug "********** trigger: $1 **********"
+log_debug "triggered by: $1, line 14"
 rm -rf /tmp/dm2_firewall_tag
 fi
 if [  -f "/bin/nice" ]; then
@@ -82,7 +78,7 @@ mkdir -p /tmp/asus_app
 chmod -R 777 /tmp/asus_app
 fi
 if [ "$1" == "start" ] || [ "$1" == "restart" ] || [ "$1" == "stop" ]; then
-log_debug "********** trigger: $1 **********"
+    log_debug "triggered by: $1 line: 80"
 server_name=`nvram get apps_ipkg_server | grep arm_new`
 if [ -z "$server_name" ]; then
                 nvram set apps_ipkg_server=http://nw-dlcdnet.asus.com/asusware/arm_new/stable
@@ -100,18 +96,18 @@ chmod -R 777 /tmp/APPS
 fi
 fi
 if [ "$1" == "start" ] || [ "$1" == "restart" ]; then
-log_debug "********** trigger: $1 **********"
+    log_debug "triggered by: $1 line: 98"
 sh /tmp/APPS/Lighttpd/Script/asus_check_general general-check
 fi
 dir_control_file=$APPS_INSTALL_PATH/etc/dm2_general.conf
 if [ "$1" == "start" ] || [ "$1" == "restart" ] || [ ! -f "$dir_control_file" ]; then
-log_debug "********** trigger: $1 **********"
+log_debug "triggered by: $1 line: 103"
 sh /tmp/APPS/DM2/Script/dm2_check_general general-check
 fi
 #echo $MISC_HTTP_X
 #echo $APPS_DL_SHARE
 if [ "$1" == "start" ] || [ "$1" == "restart" ]; then
-log_debug "********** trigger: $1 **********"
+log_debug "triggered by: $1 line: 109"
 dir_btcontrol_file=$APPS_INSTALL_PATH/etc/dm2_transmission.conf
 NVRAM_CHECK_TRS=`nvram get trs_peer_port`
 if [ ! -f "$dir_btcontrol_file" ]; then
@@ -147,7 +143,7 @@ fi
 fi
 apps_dl_share_port=`nvram get trs_peer_port`
 if [ "$1" == "start" ] || [ "$1" == "restart" ]; then
-log_debug "********** trigger: $1 **********"
+log_debug "triggered by: $1 line: 145"
 dir_ed2k_file=$APPS_INSTALL_PATH/etc/dm2_ed2k.conf
 NVRAM_CHECK_ED2K=`nvram get ed2k_ip`
 if [ ! -f "$dir_ed2k_file" ]; then
@@ -180,7 +176,7 @@ ED2K_SERVER_IP=`nvram get ed2k_ip`
 ED2K_SERVER_PORT=`nvram get ed2k_port`
 while [ ! -f "$dir_control_file" ]
 do
-log_debug "********** trigger: $1 SLEEP 2 **********"
+log_debug "triggered by: $1 line: 180 (sleep 2)"
 sleep 2
 done
 #DEVICE_TYPE_CHECK_TMP=`cat "$dir_control_file" |grep "DEVICE_TYPE="`
@@ -209,7 +205,7 @@ DOWNLOAD_PATH=${DOWNLOAD_PATH_TMP:13}
 DOWNLOAD_PATH_ED2K=`echo $DOWNLOAD_PATH|sed -n 's/\//\\\\\//pg'`
 #sed -i "32s/^.*$/IncomingDir=\/tmp\/mnt\/$BASE_PATH\/$DOWNLOAD_PATH_ED2K/" /opt/etc/dm2_amule/dm2_amule.conf
 if [ "$1" == "start" ] || [ "$1" == "restart" ]; then
-log_debug "********** trigger: $1 **********"
+log_debug "triggered by: $1 line: 207"
 #general nvram save
 sh /tmp/APPS/DM2/Script/dm2_backup generalnvram-save
 #nzb nvram-save/recover
@@ -242,7 +238,7 @@ fi
 }
 case "$1" in
   start|force-reload|restart)
-  log_debug "********** trigger: $1 **********"
+  log_debug "triggered by: $1 line: 240"
 APPS_MOUNTED_TYPE=`mount |grep "/dev/$APPS_DEV on " |awk '{print $5}'`
 APP_LINK_LIB=/tmp/opt/lib
 APP_LIB=$APPS_INSTALL_PATH/lib
@@ -312,7 +308,6 @@ echo "downloadmaster_start" > /tmp/asus_app/downloadmaster_start
 
 if [ -z "$APPS_MOUNTED_PATH" ]; then
 nvram set apps_state_error=2
-log_debug "********** trigger: $1 EXIT 1**********"
 exit 1
 fi
 APP_BIN=$APPS_INSTALL_PATH/bin
@@ -445,7 +440,7 @@ fi
 if [  -f "$dir_ed2k_file" ]; then
 amulenum=`ps | grep -c 'dm2_amuled'`
 if [ $amulenum -lt 4 ]; then
-log_debug "********** trigger: $1 SLEEP 8 **********"
+log_debug "triggered by: $1 line: 444 (sleep 8)"
 sleep 8
 fi
 #/opt/bin/dm2_amulecmd -h $LAN_IP -P admin -c "add ed2k://|server|$ED2K_SERVER_IP|$ED2K_SERVER_PORT|"
@@ -458,10 +453,9 @@ sh /tmp/APPS/Lighttpd/Script/S50asuslighttpd start
 else
 killall -SIGUSR2 asus_lighttpd&
 fi
-log_debug "********** trigger: $1 SLEEP 2 **********"
+log_debug "triggered by: $1 line: 457 (sleep 2)"
 sleep 2
 echo "have_dm2" > /tmp/have_dm2
-log_debug "********** trigger: $1 EXIT 0**********"
 exit 0
 fi
 # libuClibc                                                                                                                                                     
@@ -674,7 +668,6 @@ fi
 if [  -f "$dir_ed2k_file" ]; then
 amulenum=`ps | grep -c 'dm2_amuled'`
 if [ $amulenum -lt 4 ]; then
-log_debug "********** trigger: $1 SLEEP 8 **********"
 sleep 8
 fi
 #/opt/bin/dm2_amulecmd -h $LAN_IP -P admin -c "add ed2k://|server|$ED2K_SERVER_IP|$ED2K_SERVER_PORT|"
@@ -687,7 +680,7 @@ sh /tmp/APPS/Lighttpd/Script/S50asuslighttpd start
 else
 killall -SIGUSR2 asus_lighttpd&
 fi
-log_debug "********** trigger: $1 SLEEP 2 **********"
+log_debug "triggered by: $1 line: 684 (sleep 2)"
 sleep 2
 echo "have_dm2" > /tmp/have_dm2
     #echo "DM2.0."
@@ -935,7 +928,7 @@ killall -SIGTERM asus_lighttpd&
 #killall -SIGUSR2 dm2_detect&
 rm -rf /tmp/APPS/DM2/Config/dm2_general_protected &
 rm -rf /tmp/APPS/DM2/Config/dm2_detect_protected &
-log_debug "********** trigger: $1 SLEEP 2 **********"
+log_debug "triggered by: $1 line: 932 (sleep 2)"
 sleep 2
 cd /opt/bin && ./asus_lighttpd -Df /opt/etc/asus_lighttpd.conf &
     ;;
@@ -1000,7 +993,7 @@ done
 ;;
   *)
     #echo "Usage: /opt/etc/init.d/dm {start|stop|restart|force-reload|firewall-start|firewall-stop|firewall-restart|lighttpd-restart|general-renew}"
-    log_debug "********** trigger: $1 EXIT 1**********"
     exit 1
     ;;
 esac
+log_debug "END S50downloadmaster, trigger: $1"
