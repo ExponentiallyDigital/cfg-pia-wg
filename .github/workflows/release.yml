@@ -1,0 +1,472 @@
+# =================================================================
+# GitHub Actions Workflow: Build, Release, and Deploy to Play Store
+# Triggers on git tag pushes matching "v*" (e.g. v0.7.06)
+# =================================================================
+name: "Build and release"
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run without creating a release"
+        type: boolean
+        required: false
+        default: false
+      tag_name:
+        description: "Tag name for manual release (e.g. v1.0.0)"
+        type: string
+        required: false
+      build_apk:
+        description: "Specify 'release-apk' to also build and package APKs"
+        type: string
+        required: false
+        default: ""
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  # =================================================================
+  # Step 1: Force Quality & Security checks to run first on tag push
+  # =================================================================
+  quality-and-security:
+    name: Quality & security checks
+    uses: ./.github/workflows/quality_and_security.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      packages: read
+    secrets: inherit
+
+  # =================================================================
+  # Step 2: Build and release (only runs if quality checks succeed)
+  # =================================================================
+  release:
+    name: Build and release
+    needs: quality-and-security
+
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+
+    runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.quality-and-security.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+
+    steps:
+      # ------------------------------------------------------------
+      # Step A: Checkout repository source code
+      # ------------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # ------------------------------------------------------------
+      # Step B: Download debug APK from quality checks workflow (if requested)
+      # ------------------------------------------------------------
+      - name: Download debug APK from quality checks
+        if: ${{ inputs.build_apk == 'release-apk' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: app-debug-apk
+          path: build/app/outputs/flutter-apk/
+
+      # ------------------------------------------------------------
+      # Step C: Set up Java & Flutter execution environments
+      # ------------------------------------------------------------
+      - name: Set up Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: "stable"
+          cache: true
+
+      # ------------------------------------------------------------
+      # Step D: Decode Android Keystore secrets for signing release binaries
+      # ------------------------------------------------------------
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "Missing KEYSTORE_BASE64" && exit 1; fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/release.jks
+          cat > android/key.properties <<EOF
+          storeFile=../release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      # ------------------------------------------------------------
+      # Step E: Determine and store target git tag name
+      # ------------------------------------------------------------
+      - name: Set target tag name
+        id: tag
+        env:
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          TAG="${INPUT_TAG_NAME:-$REF_NAME}"
+          echo "val=$TAG" >> $GITHUB_OUTPUT
+
+      # ------------------------------------------------------------
+      # Step F: Build Flutter App Bundle (.aab) and optional APKs
+      # ------------------------------------------------------------
+      - name: Build release assets
+        env:
+          BUILD_APK: ${{ inputs.build_apk }}
+        run: |
+          TAG="${{ steps.tag.outputs.val }}"
+          flutter pub get --enforce-lockfile
+          dart run flutter_launcher_icons
+
+          # 1. Always build App Bundle (.aab)
+          flutter build appbundle --release
+          mv build/app/outputs/bundle/release/cfg_pia_wg-release.aab \
+             build/cfg-pia-wg-${TAG}_google-play-store.aab
+
+          # 2. Conditionally build release/debug APKs if requested via workflow inputs
+          if [ "$BUILD_APK" = "release-apk" ]; then
+            echo "Building Release APK..."
+            flutter build apk --release
+            mv build/app/outputs/flutter-apk/app-release.apk \
+               build/cfg-pia-wg-${TAG}_release.apk
+
+            if [ -f "build/app/outputs/flutter-apk/app-debug.apk" ]; then
+              mv build/app/outputs/flutter-apk/app-debug.apk \
+                 build/cfg-pia-wg-${TAG}_debug.apk
+            fi
+          fi
+
+      # ------------------------------------------------------------
+      # Step G: Attest build provenance for the AAB
+      # ------------------------------------------------------------
+      - name: Attest AAB
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: build/cfg-pia-wg-${{ steps.tag.outputs.val }}_google-play-store.aab
+
+      # ------------------------------------------------------------
+      # Step H: Parse version information from pubspec.yaml
+      # ------------------------------------------------------------
+      - name: Extract AAB version details
+        id: play_info
+        run: |
+          TAG="${{ steps.tag.outputs.val }}"
+
+          # pubspec.yaml version line looks like: version: 0.7.07+366
+          PUBSPEC_VERSION=$(grep -m1 '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//')
+
+          # Split into versionName (before +) and versionCode (after +)
+          VERSION_NAME="${PUBSPEC_VERSION%+*}"
+          VERSION_CODE="${PUBSPEC_VERSION#*+}"
+
+          if [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ] || [ "$VERSION_NAME" = "$VERSION_CODE" ]; then
+            echo "Could not parse version from pubspec.yaml: '$PUBSPEC_VERSION'" && exit 1
+          fi
+
+          # Clean version string (strip leading 'v' if present)
+          CLEAN_VER="${VERSION_NAME#v}"
+
+          # Formats Play Store track release name: e.g. "366 (v0.7.06)"
+          PLAY_RELEASE_NAME="${VERSION_CODE} (v${CLEAN_VER})"
+          echo "play_release_name=$PLAY_RELEASE_NAME" >> $GITHUB_OUTPUT
+
+          # Formats GitHub release title: e.g. "v0.7.06 (build 366)"
+          GH_RELEASE_NAME="v${CLEAN_VER} (build ${VERSION_CODE})"
+          echo "gh_release_name=$GH_RELEASE_NAME" >> $GITHUB_OUTPUT
+
+          # Create distribution directory for Google Play Store release notes
+          mkdir -p distribution/whatsnew
+          cat <<'EOF' > distribution/whatsnew/whatsnew-en-AU
+          Please see https://exponentiallydigital.com/cfg-pia-wg/changelog
+          EOF
+
+      # ------------------------------------------------------------
+      # Step I: Parse unreleased blocks from CHANGELOG.md & sort items
+      # ------------------------------------------------------------
+      - name: Parse and sort release notes from CHANGELOG.md
+        id: changelog_parser
+        env:
+          TARGET_TAG: ${{ steps.tag.outputs.val }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: python
+        run: |
+          import re
+          import os
+          import json
+          import urllib.request
+
+          changelog_path = "CHANGELOG.md"
+          target_tag = os.environ.get("TARGET_TAG", "")
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          token = os.environ.get("GITHUB_TOKEN", "")
+
+          # Helper function checking if a tag is already associated with a published release
+          def is_already_released(tag_name):
+              if not repo or not token or not tag_name:
+                  return False
+              url = f"https://api.github.com/repos/{repo}/releases/tags/{tag_name}"
+              req = urllib.request.Request(url, headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "GitHub-Actions-Release-Script"
+              })
+              try:
+                  with urllib.request.urlopen(req) as response:
+                      return response.status == 200
+              except Exception:
+                  return False
+
+          header_heading = "1.2. Implemented - chronological change history"
+          version_header_re = re.compile(r'^\d{4}-\d{2}-\d{2}\s+(v\d+\.\d+\.\d+.*)')
+
+          blocks = []
+          current_block = None
+          in_target_section = False
+
+          if os.path.exists(changelog_path):
+              with open(changelog_path, "r", encoding="utf-8") as f:
+                  for line in f:
+                      stripped = line.strip()
+
+                      # 1. Scan down until reaching history section header
+                      if header_heading in stripped:
+                          in_target_section = True
+                          continue
+
+                      if not in_target_section:
+                          continue
+
+                      # 2. Match version release header (e.g. 2026-08-03 v0.7.06 build 366)
+                      m = version_header_re.match(stripped)
+                      if m:
+                          tag_match = re.search(r'v\d+\.\d+\.\d+', stripped)
+                          extracted_tag = tag_match.group(0) if tag_match else ""
+
+                          # Stop scanning if reaching an older release that is ALREADY published
+                          if current_block and extracted_tag and extracted_tag != target_tag:
+                              if is_already_released(extracted_tag):
+                                  break
+
+                          current_block = {"header": stripped, "lines": []}
+                          blocks.append(current_block)
+                          continue
+
+                      # 3. Collect change log items under active block
+                      if current_block is not None and stripped:
+                          current_block["lines"].append(stripped)
+
+          # 4. Sort contents alphabetically within each individual release block
+          formatted_output = []
+          for block in blocks:
+              block["lines"].sort()
+              block_text = block["header"] + "\n\n" + "\n".join(block["lines"])
+              formatted_output.append(block_text)
+
+          final_notes = "\n\n".join(formatted_output) if formatted_output else f"Release {target_tag}"
+
+          with open("github_release_notes.txt", "w", encoding="utf-8") as f:
+              f.write(final_notes)
+
+      # ------------------------------------------------------------
+      # Step J: Deploy App Bundle (.aab) to Google Play Internal Testing Track
+      # ------------------------------------------------------------
+      - name: Upload release to Google Play Store
+        if: ${{ inputs.dry_run != true }}
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_CONSOLE_JSON_KEY }}
+          packageName: com.exponentiallydigital.pia_wireguard_cfga
+          releaseFiles: build/cfg-pia-wg-${{ steps.tag.outputs.val }}_google-play-store.aab
+          track: internal
+          releaseName: ${{ steps.play_info.outputs.play_release_name }}
+          whatsNewDirectory: distribution/whatsnew/
+
+      # ------------------------------------------------------------
+      # Step K: Delete local .aab file after successful Google Play upload
+      # ------------------------------------------------------------
+      - name: Delete AAB file
+        run: |
+          echo "Cleaning up local AAB binary..."
+          rm -f build/cfg-pia-wg-${{ steps.tag.outputs.val }}_google-play-store.aab
+
+      # ------------------------------------------------------------
+      # Step L: Generate a Dart/Flutter license report
+      # Syft cannot read license data for Dart packages: pubspec.yaml
+      # and pubspec.lock have no license field, so the SBOM's licence
+      # fields would otherwise come back empty for every pub.dev
+      # dependency. This pulls the real license text from each
+      # package's LICENSE file in the pub cache instead.
+      # Requires dart_pubspec_licenses as a dev_dependency in pubspec.yaml.
+      # ------------------------------------------------------------
+      - name: Generate Dart license report
+        run: |
+          dart run dart_pubspec_licenses:generate -o dart_licenses.json --json
+
+      # ------------------------------------------------------------
+      # Step M: Generate Software Bill of Materials (SBOM)
+      # source-* env vars supply the app's own identity (name, version,
+      # supplier) so the SBOM properly describes cfg-pia-wg itself, not
+      # just its dependencies. license-content embeds detected license
+      # text where Syft does find it (npm/pub.dev-adjacent ecosystems).
+      # ------------------------------------------------------------
+      - name: Generate SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.1
+        env:
+          SYFT_SOURCE_NAME: "cfg-pia-wg"
+          SYFT_SOURCE_VERSION: ${{ steps.tag.outputs.val }}
+          SYFT_SOURCE_SUPPLIER: "Exponentially Digital"
+          SYFT_LICENSE_CONTENT: "all"
+          SYFT_LICENSE_COVERAGE: "75"
+        with:
+          path: .
+          format: spdx-json
+          output-file: cfg-pia-wg-sbom.spdx.json
+
+      # ------------------------------------------------------------
+      # Step N: Merge the Dart license report into the SBOM, then rename
+      # dart_pubspec_licenses gives raw license TEXT, not an SPDX id, so
+      # this pattern-matches common OSS licenses to their SPDX id, and
+      # falls back to a proper SPDX LicenseRef (with the text attached
+      # in hasExtractedLicensingInfos) for anything it can't identify.
+      # ------------------------------------------------------------
+      - name: Merge Dart licenses into SBOM
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import re
+
+          def detect_spdx_id(text):
+              if not text:
+                  return None
+              t = text.lower()
+              if "apache license" in t and "2.0" in t:
+                  return "Apache-2.0"
+              if "gnu lesser general public license" in t:
+                  if "version 3" in t:
+                      return "LGPL-3.0-only"
+                  if "version 2.1" in t:
+                      return "LGPL-2.1-only"
+                  return "LGPL-2.0-only"
+              if "gnu general public license" in t:
+                  if "version 3" in t:
+                      return "GPL-3.0-only"
+                  if "version 2" in t:
+                      return "GPL-2.0-only"
+              if "mozilla public license" in t and "2.0" in t:
+                  return "MPL-2.0"
+              if "permission to use, copy, modify, and/or distribute" in t:
+                  return "ISC"
+              if "redistribution and use in source and binary forms" in t:
+                  if "endorse or promote" in t and "neither the name" in t:
+                      return "BSD-3-Clause"
+                  return "BSD-2-Clause"
+              if "permission is hereby granted, free of charge" in t and "redistribution" not in t:
+                  return "MIT"
+              return None
+
+          def slug(name):
+              return re.sub(r"[^A-Za-z0-9.-]+", "-", name).strip("-")
+
+          with open("dart_licenses.json", encoding="utf-8") as f:
+              dart_packages = json.load(f)
+
+          license_by_name_version = {}
+          for pkg in dart_packages:
+              key = (pkg.get("name"), pkg.get("version"))
+              license_by_name_version[key] = {
+                  "text": pkg.get("license"),
+                  "spdx_id": detect_spdx_id(pkg.get("license")),
+              }
+
+          with open("cfg-pia-wg-sbom.spdx.json", encoding="utf-8") as f:
+              sbom = json.load(f)
+
+          extracted_licensing_infos = sbom.setdefault("hasExtractedLicensingInfos", [])
+          seen_license_refs = {info["licenseId"] for info in extracted_licensing_infos}
+
+          matched, fallback = 0, 0
+          for package in sbom.get("packages", []):
+              key = (package.get("name"), package.get("versionInfo"))
+              entry = license_by_name_version.get(key)
+              if not entry or not entry["text"]:
+                  continue
+              if package.get("licenseConcluded", "NOASSERTION") != "NOASSERTION":
+                  continue
+
+              if entry["spdx_id"]:
+                  license_value = entry["spdx_id"]
+                  matched += 1
+              else:
+                  ref_id = f"LicenseRef-{slug(package['name'])}"
+                  if ref_id not in seen_license_refs:
+                      extracted_licensing_infos.append({
+                          "licenseId": ref_id,
+                          "extractedText": entry["text"],
+                          "name": f"{package['name']} declared license",
+                      })
+                      seen_license_refs.add(ref_id)
+                  license_value = ref_id
+                  fallback += 1
+
+              package["licenseConcluded"] = license_value
+              package["licenseDeclared"] = license_value
+
+          if not extracted_licensing_infos:
+              sbom.pop("hasExtractedLicensingInfos", None)
+
+          with open("cfg-pia-wg-sbom.spdx.json", "w", encoding="utf-8") as f:
+              json.dump(sbom, f, indent=2)
+
+          print(f"Matched {matched} package(s) to an SPDX id, {fallback} fell back to a LicenseRef with extracted text.")
+
+      - name: Rename SBOM
+        run: |
+          TAG="${{ steps.tag.outputs.val }}"
+          mv cfg-pia-wg-sbom.spdx.json \
+             cfg-pia-wg-${TAG}_sbom.spdx.json
+          mv dart_licenses.json \
+             cfg-pia-wg-${TAG}_dart-licenses.json
+
+      # ------------------------------------------------------------
+      # Step O: Publish GitHub Release with parsed notes, SBOM and license report
+      # ------------------------------------------------------------
+      - name: Dry run notice
+        if: ${{ inputs.dry_run == true }}
+        run: echo "Dry run completed -- no release was created."
+
+      - name: Upload release assets to GitHub
+        if: ${{ inputs.dry_run != true }}
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ steps.tag.outputs.val }}
+          name: ${{ steps.play_info.outputs.gh_release_name }}
+          body_path: github_release_notes.txt
+          files: |
+            cfg-pia-wg-${{ steps.tag.outputs.val }}_sbom.spdx.json
+            cfg-pia-wg-${{ steps.tag.outputs.val }}_dart-licenses.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

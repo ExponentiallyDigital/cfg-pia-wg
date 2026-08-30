@@ -1,0 +1,32 @@
+Bootup without an active VPN:
+
+May  5 15:05:17 asusware: done.
+May  5 15:05:17 disk monitor: done
+May  5 15:05:18 rc_service: udhcpc_wan 1671:notify_rc start_samba
+May  5 15:05:19 *****LH-STOCK*****: START S50asuslighttpd, trigger: start
+May  5 15:05:19 *****LH-STOCK*****: triggered by: start, line 39
+May  5 15:05:19 *****LH-STOCK*****: triggered by: start, line 52
+May  5 15:05:19 *****LH-STOCK*****: triggered by: start, line 91-92
+May  5 15:05:19 *****LH-STOCK*****: triggered by: start line: 118 (sleep 3)
+May  5 15:05:22 *****DM-STOCK*****: START S50downloadmaster, trigger: start
+May  5 15:05:22 WAN(0) Connection: WAN was restored.
+May  5 15:05:22 rc_service: wanduck 1139:notify_rc start_apps_update
+May  5 15:05:22 *****DM-STOCK*****: triggered by: start line: 80
+May  5 15:05:22 *****DM-STOCK*****: triggered by: start line: 98
+May  5 15:05:22 *****DM-STOCK*****: triggered by: start line: 103
+May  5 15:05:23 *****DM-STOCK*****: triggered by: start line: 109
+May  5 15:05:23 *****DM-STOCK*****: triggered by: start line: 145
+May  5 15:05:23 *****DM-STOCK*****: triggered by: start line: 207
+May  5 15:05:23 kernel: SHN Release Version: 2.0.2 36f59aa
+May  5 15:05:23 kernel: UDB Core Version: 0.2.20
+May  5 15:05:23 kernel: sizeof forward pkt param = 280
+May  5 15:05:23 BWDPI: fun bitmap = 43f
+May  5 15:05:23 *****DM-STOCK*****: triggered by: start line: 240
+May  5 15:05:24 *****DM-STOCK*****: triggered by: start line: 444 (sleep 8)
+May  5 15:05:25 ntp: start NTP update
+Aug 31 06:25:04 rc_service: ntp 1748:notify_rc restart_stubby
+Aug 31 06:25:04 rc_service: ntp 1748:notify_rc restart_diskmon
+Aug 31 06:25:04 rc_service: waitting "restart_stubby" via ntp ...
+Aug 31 06:25:05 transmission-daemon[3408]: UDP Failed to set receive buffer: requested 4194304, got 1048576 (tr-udp.c:84)
+Aug 31 06:25:05 disk_monitor: Finish
+...

@@ -1,0 +1,30 @@
+name: cfg_pia_wg
+description: cfg-pia-wg
+version: 0.8.19+389
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.10.0"
+dependencies:
+  dartssh2: ^3.0.2
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  package_info_plus: ^10.1.0
+  path_provider: ^2.1.0
+  share_plus: ^13.1.0
+  url_launcher: ^6.3.2
+  x25519: 0.1.1
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.0
+  mocktail: ^1.0.4
+  dart_pubspec_licenses: ^3.2.0
+flutter:
+  uses-material-design: true
+flutter_launcher_icons:
+  android: true
+  image_path: assets/icon/icon.png
+  adaptive_icon_background: "#12141A"
+  adaptive_icon_foreground: assets/icon/icon_foreground.png
