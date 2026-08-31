@@ -387,9 +387,10 @@ void main() {
 
       final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '$kS50Path'"));
       expect(extractS50CruLines(write), [buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
-      // The stock scaffolding must survive verbatim.
-      expect(write, contains('log_debug "START /opt/etc/init.d/S50downloadmaster, trigger: \$1"'));
-      expect(write, contains('PATH=/bin:/sbin:/usr/sbin:/usr/bin:/opt/bin'));
+      // The minimal template scaffolding must survive verbatim.
+      expect(write, contains('#!/bin/sh'));
+      expect(write, contains('BOOT_FLAG=/tmp/.dm_boot_delay_done'));
+      expect(write, contains(r'[ "$1" = "start" ] || exit 0'));
     });
 
     test('redeploying replaces this slot\'s lines and keeps another slot\'s', () async {
@@ -426,7 +427,8 @@ void main() {
 
       final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '$kS50Path'"));
       expect(extractS50CruLines(write), [otherSlot]);
-      expect(write, contains('esac'));
+      expect(write, contains('#!/bin/sh'));
+      expect(write, contains('BOOT_FLAG=/tmp/.dm_boot_delay_done'));
       expect(c.ran("chmod 700 '$kS50Path'"), isTrue);
       expect(c.ran(kServicesStartPath), isFalse);
     });

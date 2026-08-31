@@ -170,7 +170,7 @@ void main() {
       await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
       expect(c.ran('nvram set wgc1_enable=1'), isTrue);
       expect(c.ran('service "start_wgc 1"'), isTrue);
-      expect(c.ran('ping -I wgc1 -c 1 -W 5'), isTrue);
+      expect(c.ran('ping -I wgc1 -c 1 -w 5'), isTrue);
       // No revert on success.
       expect(c.ran('nvram set wgc1_enable=0'), isFalse);
     });
@@ -262,7 +262,7 @@ void main() {
     test('pingViaSlot binds to the interface with a 5s timeout', () async {
       final ok = RecordingSSHClient(responder: (_) => 'OK');
       expect(await svc(ok).pingViaSlot('8.8.8.8', 2), isTrue);
-      expect(ok.ran('ping -I wgc2 -c 1 -W 5'), isTrue);
+      expect(ok.ran('ping -I wgc2 -c 1 -w 5'), isTrue);
       final fail = RecordingSSHClient(responder: (_) => 'FAIL');
       expect(await svc(fail).pingViaSlot('8.8.8.8', 2), isFalse);
     });
@@ -435,7 +435,9 @@ void main() {
         responder: (cmd) {
           if (cmd.contains('vpnc_clientlist')) return 'pia-aus>WireGuard>1>>pw>0>9>>>0>0>Web';
           if (cmd.contains('wg show interfaces')) return 'wgc1';
-          if (cmd.contains('ping -I wgc1')) return 'OK';
+          // These need to be checked in reverse order of specificity: ping -I first
+          if (cmd.contains('ping -I')) return 'OK';
+          if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
           return '';
         },
       );

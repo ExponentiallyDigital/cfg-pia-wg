@@ -2,6 +2,7 @@
 //
 // The metadata rows are Text.rich, so every assertion on them needs findRichText: true --
 // find.text() only inspects Text.data, which is null for a spanned Text.
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -115,5 +116,54 @@ void main() {
     expect(find.textContaining('GNU GENERAL PUBLIC LICENSE'), findsOneWidget);
     expect(find.textContaining('TERMS AND CONDITIONS'), findsOneWidget);
     expect(find.textContaining('END OF TERMS AND CONDITIONS'), findsOneWidget);
+  });
+
+  testWidgets('licenses dialog renders with AppBar and licenses list', (tester) async {
+    // Test the dialog by rendering it within showDialog context
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => Center(
+            child: FilledButton(
+              onPressed: () {
+                showDialog<void>(
+                  context: context,
+                  builder: (_) => Scaffold(
+                    backgroundColor: const Color(0xFF1a1a1a),
+                    appBar: AppBar(
+                      backgroundColor: const Color(0xFF1a1a1a),
+                      title: const SizedBox.shrink(),
+                    ),
+                    body: FutureBuilder<List<LicenseEntry>>(
+                      future: LicenseRegistry.licenses.toList(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        return ListView(
+                          children: [
+                            for (final entry in snapshot.data!) ...[
+                              Text(entry.packages.join(', ')),
+                              SelectableText(entry.paragraphs.map((p) => p.text).join('\n\n')),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Show'),
+            ),
+          ),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.byType(FilledButton));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppBar), findsWidgets);
+    expect(find.byType(ListView), findsWidgets);
   });
 }

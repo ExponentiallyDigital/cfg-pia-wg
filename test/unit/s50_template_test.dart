@@ -32,10 +32,10 @@ void main() {
   group('buildS50Script', () {
     test('inserts the cru lines between the markers, matching the case-arm indent', () {
       final out = buildS50Script([_check, _rotate]);
-      expect(out, contains('    # ********** REPLACEMENT START **********\n'
-          '    $_check\n'
-          '    $_rotate\n'
-          '    # ********** REPLACEMENT END **********'));
+      expect(out, contains('  # ********** REPLACEMENT START **********\n'
+          '  $_check\n'
+          '  $_rotate\n'
+          '  # ********** REPLACEMENT END **********'));
     });
 
     test('drops the placeholder comments', () {
@@ -46,8 +46,8 @@ void main() {
 
     test('an empty list leaves the block empty but keeps the markers', () {
       final out = buildS50Script(const []);
-      expect(out, contains('    # ********** REPLACEMENT START **********\n'
-          '    # ********** REPLACEMENT END **********'));
+      expect(out, contains('  # ********** REPLACEMENT START **********\n'
+          '  # ********** REPLACEMENT END **********'));
     });
 
     // Everything outside the markers belongs to the stock script and must survive untouched.
@@ -55,17 +55,21 @@ void main() {
       final out = buildS50Script([_check, _rotate]);
       for (final line in [
         '#!/bin/sh',
-        'set -u',
+        '# Minimal replacement for the stock Download Master init script.',
+        '# Sole purpose: install our cron job once at boot.',
+        'BOOT_FLAG=/tmp/.dm_boot_delay_done',
+        r'[ "$1" = "start" ] || exit 0',
         'sleep 10',
-        'unset LD_LIBRARY_PATH',
-        'PATH=/bin:/sbin:/usr/sbin:/usr/bin:/opt/bin',
-        r'APPS_INSTALL_PATH="$APPS_MOUNTED_PATH/$APPS_INSTALL_FOLDER"',
-        '  restart|force-reload|stop|firewall-start|firewall-restart|lighttpd-restart|dir-change)',
-        'esac',
+        r'touch "$BOOT_FLAG"',
         'exit 0',
       ]) {
         expect(out, contains(line), reason: 'lost: $line');
       }
+    });
+
+    test('the output can be parsed with extractS50CruLines', () {
+      final out = buildS50Script([_check, _rotate]);
+      expect(extractS50CruLines(out), [_check, _rotate]);
     });
   });
 

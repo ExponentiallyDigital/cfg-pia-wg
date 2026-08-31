@@ -10,5 +10,8 @@
   "dart.lineLength": 130,
   "omnisharp.sdkIncludePrereleases": false,
   "snyk.advanced.organization": "8469d44f-3f41-43d3-ac33-6ef9145fd73a",
-  "snyk.advanced.autoSelectOrganization": true
+  "snyk.advanced.autoSelectOrganization": true,
+  "chat.tools.terminal.autoApprove": {
+    "flutter": true
+  }
 }

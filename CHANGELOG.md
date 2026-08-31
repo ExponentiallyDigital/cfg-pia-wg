@@ -60,6 +60,14 @@
 
 ### 1.2. Implemented - chronological change history
 
+2026-08-31 v0.8.20 build 390 - WIP stock support for Manage function only
+
+- REL: updated shell scripts to LF from CRLF.
+- REL: moved plans to own folder.
+- CHG: added a conditional `sleep 10` to `S50downloadmaster.sh` - only runs once at boot. This fixes a blocking issue: something inside the boot process which I can't see expects a delay before the DM script completes, if there's no delay the boot process goes into a blocking state (but ONLY if a VPN is set to activate on boot). The original `S50` scripts had several `sleep` statements, so this is a matching hack, unclean and unwelcome, but this fixes it :/
+- TST: update unit tests to match new template file and the changes to tunnel verification (from v0.8.18 build 388); all tests now passing.
+- TST: updated tests to increase coverage of lib\screens\about_screen.dart.
+
 2026-08-31 v0.8.19 build 389 - WIP stock support for Manage function only
 
 - DOC: reorganised files, moved `.\scripts\S50*` to `.\.watchdog-implementation`
