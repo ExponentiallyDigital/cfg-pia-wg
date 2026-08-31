@@ -114,7 +114,7 @@ RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fet
 | Field | Notes |
 | --- | --- |
 | `piaUsername`, `piaPassword`, `dns` | `dns` defaults to `kDefaultDns` = `'9.9.9.9, 149.112.112.112'`. |
-| `routerIp`, `sshUsername`, `sshPassword` | Router form pre-fills `192.168.1.1` / `admin` on a fresh session. |
+| `routerIp`, `sshUsername`, `sshPassword` | Router form pre-fills `192.168.0.254` / `admin` on a fresh session. |
 | `generatedConfig`, `generatedRegionId` | Survive navigation; wiped by `wipeAll`. |
 | `log` (`List<LogEntry>`) | `[HH:MM:SS] msg`, flags `isError` / `isSuccess`. |
 | `clipboardSeconds`, `_clipboardDeadline` | 60 s default (`clipboardTimeout`), 1 s tick; `resyncOnResume()` re-evaluates after background. |

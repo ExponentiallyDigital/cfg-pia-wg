@@ -116,22 +116,39 @@ List<VpncRecord> parseVpncClientlist(String raw) => [
 
 String serialiseVpncClientlist(List<VpncRecord> records) => records.map((r) => r.serialise()).join('<');
 
-/// Updates the record for [slot] in place, or appends a fresh one when the slot has none.
+/// Updates the record for [slot] in place, or creates a fresh one — always at list
+/// index `slot - 1`. The router assigns the wgcN interface by *position* in
+/// vpnc_clientlist, not by the value stored in a record's own slot field, so
+/// position and slot must be kept in lock-step or ENABLE ends up toggling
+/// whichever slot happens to occupy that position (see enableSlot bug notes).
 List<VpncRecord> upsertVpncRecord(List<VpncRecord> records, {required int slot, String? desc, bool? active}) {
   final out = List.of(records);
-  final idx = out.indexWhere((r) => r.slot == slot);
-  if (idx >= 0) {
-    out[idx] = out[idx].copyWith(desc: desc, active: active);
-  } else {
-    out.add(buildVpncRecord(slot: slot, desc: desc ?? '', active: active ?? false));
+  final existingIdx = out.indexWhere((r) => r.slot == slot);
+  final record = existingIdx >= 0
+      ? out.removeAt(existingIdx).copyWith(desc: desc, active: active)
+      : buildVpncRecord(slot: slot, desc: desc ?? '', active: active ?? false);
+  while (out.length < slot - 1) {
+    out.add(buildVpncRecord(slot: out.length + 1, desc: '', active: false));
   }
+  out.insert(slot - 1, record);
   return out;
 }
 
-List<VpncRecord> removeVpncRecord(List<VpncRecord> records, int slot) => [
-      for (final r in records)
-        if (r.slot != slot) r,
-    ];
+/// Clears [slot]'s record without disturbing any other slot's list position. A
+/// trailing record can simply be dropped; anything earlier in the list is
+/// replaced in place with an empty placeholder so slots after it don't shift
+/// down and end up pointing at the wrong wgcN interface.
+List<VpncRecord> removeVpncRecord(List<VpncRecord> records, int slot) {
+  final idx = records.indexWhere((r) => r.slot == slot);
+  if (idx < 0) return records;
+  final out = List.of(records);
+  if (idx == out.length - 1) {
+    out.removeAt(idx);
+  } else {
+    out[idx] = buildVpncRecord(slot: slot, desc: '', active: false);
+  }
+  return out;
+}
 
 /// Opens a real SSH client to the router. Screens inject a test factory instead in tests.
 Future<SSHClient> openSshClient(String ip, String user, String pass) async {
@@ -183,7 +200,8 @@ class RouterSlotService {
     this.client, {
     this.onLog,
     this.verifyPollInterval = const Duration(seconds: 2),
-    this.verifyMaxAttempts = 30,
+    // how many times to try to connect on this interface before pronouncing it dead
+    this.verifyMaxAttempts = 5,
   });
 
   Future<String> _run(String cmd) async => utf8.decode(await client.run(cmd)).trim();
@@ -380,6 +398,7 @@ class RouterSlotService {
     await _run('nvram commit');
     // stock requires a different start command to Merlin
     if (isStockFirmware) {
+      await _run('service "start_wgc $slot"; service restart_vpnrouting0'); // added to test wrong device being brought up
       await _run('service restart_vpnc');
     } else {
       await _run('service "start_wgc $slot"; service restart_vpnrouting0');
@@ -420,7 +439,12 @@ class RouterSlotService {
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
     await _run('nvram commit');
-    await _run('service "stop_wgc $slot"; service start_vpnrouting0');
+    // stock requires a different stop command to Merlin
+    if (isStockFirmware) {
+      await _run('service stop_vpnc');
+    } else {
+      await _run('service "stop_wgc $slot"; service start_vpnrouting0');
+    }
   }
 
   // ── Disable ─────────────────────────────────────────────────────────────────────
@@ -429,7 +453,12 @@ class RouterSlotService {
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
     await _run('nvram commit');
-    await _run('service "stop_wgc $slot"; service start_vpnrouting0');
+    // stock requires a different stop command to Merlin
+    if (isStockFirmware) {
+      await _run('service stop_vpnc');
+    } else {
+      await _run('service "stop_wgc $slot"; service start_vpnrouting0');
+    }
     await _logRouter('Disabled wgc$slot');
     onLog?.call('wgc$slot disabled.', isSuccess: true);
   }

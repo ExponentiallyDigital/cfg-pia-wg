@@ -3,8 +3,8 @@
 - [1. Changes](#1-changes)
   - [1.1. Pending - see BACKLOG.md for complete list](#11-pending---see-backlogmd-for-complete-list)
     - [Merlin to Stock WIP](#merlin-to-stock-wip)
-      - [MANAGE](#manage)
-        - [WATCHDOG](#watchdog)
+      - [WATCHDOG issues](#watchdog-issues)
+      - [MANAGE issues](#manage-issues)
   - [1.2. Implemented - chronological change history](#12-implemented---chronological-change-history)
 
 ---
@@ -33,20 +33,7 @@
 
 #### Merlin to Stock WIP
 
-##### MANAGE
-
-- Implement gating on > 2 slots. Attempting to start a 3rd should throw an error msg.
-- **Enabling a second slot makes the first slot stop, second enabled target does not get `wgcN_wd_primary_ip` and `wgcN_wd_secondary_ip` set.
-- App UI not showing if two slots are active
-- `wgcN_desc` being set, should be using vpnc_clientlist
-- `wgcN_ep_addr_r` being set, should not be
-- EDIT dialogue box not picking up `Region name` from vpnc_clientlist, trying to use `wgcN_desc`.
-- ENABLE not enabling if > 1 VPN exists
-- SLOT modal is showing items in reverse order and misnaming these
-  - on Stock the first created slot is wgc5, then 4, to 1.
-  - on Merlin the first created slot is wgc_1 then 2 to 5.
-
-###### WATCHDOG
+##### WATCHDOG issues
 
 - Stock watchdog_wgcN.sh, should be using vpnc_clientlist for the region name.
 - Stock watchdog_wgcN.sh, stop using nvram settings for:
@@ -56,9 +43,32 @@
   `wgcN_fw`
   `wgcN_rip`
 
+##### MANAGE issues
+
+- Implement gating on > 2 slots. Attempting to start a 3rd should throw an error msg.
+- App UI not showing if two slots are active.
+- SLOT modal is showing items in reverse order
+  - on Stock the first created slot is wgc5, then 4, to 1.
+  - on Merlin the first created slot is wgc_1 then 2 to 5.
+- **Enabling a second slot makes the first slot stop, second enabled target does not get `wgcN_wd_primary_ip` and `wgcN_wd_secondary_ip` set.
+- EDIT dialogue box using wgcN instead of `Region name` from vpnc_clientlist.
+- ENABLE not enabling if > 1 VPN exists
+- FIX: need to refresh slot display after a disable, flag still shows until modal reopened.
+- FIX: ACTIVE flag is incorrect (slot 3 not 1)
+- TST: `enableSlot` check `isStockFirmware` is usable.
+- FIX: tests failing: test/router_slot_service_test.dart - 2x vpnc_clientlist parsing, 1x stock slot mutations disableSlot.
+
 ---
 
 ### 1.2. Implemented - chronological change history
+
+2026-08-31 v0.8.21 build 391 - WIP stock support for Manage function only
+
+- TST: accepted 70% coverage on about_screen: 27 lines are in private implementation details `_LicensesDialog`, `_LicensesDialogState` build methods and `_launch()` method with URL launcher calls. Hard to test because GestureRecognizers inside TextSpans cannot be tapped in widget tests and URL launcher requires platform channel mocking that conflicts with tap simulation.
+- CHG: altered verifyMaxAttempts to 5 (10s), was 30 (60s) then 15 (30)s; how many times to try to connect on this interface before pronouncing it dead.
+- FIX: Updated `lib\router_slot_service.dart` as stock requires a different stop command to Merlin; updated in `disableSlot` and `_revertEnable` (now using `service stop_vpnc` instead of `service "stop_wgc $slot"; service restart_vpnrouting0` - retained Merlin behaviour).
+- FIX: enabling a slot in manage fails with attempt to start incorrect device number.
+- FIX: reverted `enableSlot` check `isStockFirmware` - to be retested.
 
 2026-08-31 v0.8.20 build 390 - WIP stock support for Manage function only
 

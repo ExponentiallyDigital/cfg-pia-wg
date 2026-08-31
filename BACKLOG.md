@@ -29,7 +29,7 @@
 - DOC: add to TESTING.md: `wgcX_rip` is updated by the Web GUI via an unknown method (review Asus_WRT src), router log shows no `service` script(s) were were run to display this in the web GUI. It is not the public IP address (which is served from a pool to external sites), it is the router's IP address on PIA's infrastructure (?) and always differs from `wgc1_ep_addr` and `wgcX_ep_addr_r` (except PIA's webiste shows the public IP address as `wgc1_ep_addr*` vs other sites which showed `wgcX_rip` as the public ip address).
 - DOC: once stock firmware version operating, remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
 - DOC: NB factory restore does **not** remove custom NVRAM values! Exposure of credentials (PIA & smtp) if router is sold/given away.
-- ASUS default router ip is 192.168.50.1 - code uses 192.168.1.1 as default
+- ASUS default router ip is 192.168.50.1 - code uses 192.168.0.254 as default
 
 #### 1.1.2. GUI - changes to the user interface
 

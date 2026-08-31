@@ -401,8 +401,6 @@ class _SlotModalState extends State<SlotModal> {
   }
 
   // ── UI ────────────────────────────────────────────────────────────────────────────
-
-  // ── UI ────────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Dialog(
