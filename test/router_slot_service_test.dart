@@ -360,15 +360,18 @@ void main() {
 
     test('upsert appends a new record when the slot has none', () {
       final updated = upsertVpncRecord(const [], slot: 2, desc: 'pia-aus', active: false);
-      expect(updated, hasLength(1));
-      expect(updated.single.slot, 2);
-      expect(updated.single.fields[6], '8');
+      expect(updated, hasLength(2));
+      expect(updated[0].slot, 1);
+      expect(updated[1].slot, 2);
+      expect(updated[1].fields[6], '8');
     });
 
     test('remove drops just that slot', () {
       final updated = removeVpncRecord(parseVpncClientlist(sample), 3);
-      expect(updated, hasLength(4));
-      expect(updated.any((r) => r.slot == 3), isFalse);
+      expect(updated, hasLength(5));
+      expect(updated[2].desc, isEmpty);
+      expect(updated[2].active, isFalse);
+      expect(updated.where((r) => r.desc.isNotEmpty).map((r) => r.slot), [5, 4, 2, 1]);
     });
   });
 
@@ -450,7 +453,7 @@ void main() {
       useStock();
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus>WireGuard>2>>pw>1>8>>>0>0>Web' : '');
       await svc(c).disableSlot(2);
-      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>2>>pw>0>8>>>0>0>Web'"), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='>WireGuard>1>>>0>9>>>>>Web<pia-aus>WireGuard>2>>pw>0>8>>>0>0>Web'"), isTrue);
     });
 
     test('deleteSlot removes the vpnc record and skips the Merlin-only keys', () async {

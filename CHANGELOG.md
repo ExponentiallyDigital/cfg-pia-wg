@@ -30,6 +30,7 @@
 - DOC: add to `README.md` how to get and install `jq` and `sendmail-go` on stock firmware, plus how to install & cfg Download Master and use the replacement script.
 - CHG: `router_watchdog.dart` also owns `deactivateOtherSlots`, which enforces one-active-slot across wgc1..5 inside deploy, and whose ordering constraint (before the NVRAM write) is a real footgun (thanks Claude!).
 - REL: update version to 0.9 branch when first releasing stock support
+- DOC: instead of calling them "slots", I should consider calling them "units" - that's a lot of risky search and replace though...
 
 #### Merlin to Stock WIP
 
@@ -61,6 +62,12 @@
 ---
 
 ### 1.2. Implemented - chronological change history
+
+2026-09-01 v0.8.22 build 392 - WIP stock support for Manage function only
+
+- FIX: `router_slot_service_test.dart` - 2x vpnc_clientlist parsing, 1x stock slot mutations disableSlot; caused by buiuld 391 change to serialisation of vpnc_clientlist.
+- DOC: extensive updates to `ARCHITECTURE.md` describing stock flows, commands, parameters, and settings.
+- REL: all tests passing.
 
 2026-08-31 v0.8.21 build 391 - WIP stock support for Manage function only
 

@@ -7,6 +7,13 @@
   - [2.3. Router WireGuard NVRAM fields](#23-router-wireguard-nvram-fields)
     - [2.3.1. Field reference](#231-field-reference)
     - [2.3.2. Stock `vpnc_clientlist`](#232-stock-vpnc_clientlist)
+  - [2.4 Wireguard SSH commands](#24-wireguard-ssh-commands)
+  - [2.4.1 Merlin](#241-merlin)
+  - [2.4.2 Stock](#242-stock)
+    - [2.4.2.1 Create and enable a slot](#2421-create-and-enable-a-slot)
+    - [2.4.2.2 Enable existing slot](#2422-enable-existing-slot)
+    - [2.4.2.3 Stop](#2423-stop)
+    - [2.4.2.4 Delete](#2424-delete)
 - [3. Watchdog details](#3-watchdog-details)
   - [3.1. Shell script](#31-shell-script)
   - [3.2. Cron entries](#32-cron-entries)
@@ -18,7 +25,7 @@
   - [6.1. The channel](#61-the-channel)
   - [6.2. Where each field comes from](#62-where-each-field-comes-from)
   - [6.3. Gradle-side notes](#63-gradle-side-notes)
-  - [6.4. The licence text](#64-the-licence-text)
+  - [6.4. GNU licence text](#64-gnu-licence-text)
 
 ## 1. How it works
 
@@ -27,10 +34,12 @@ The provisioning logic in `lib/pia_service.dart` is a direct Dart translation of
 1. **Server discovery**: pulls the complete endpoints mapping directly from serverlist.piaservers.net/vpninfo/servers/v6. The payload splits at the first newline boundary to discard the payload block signature.
 2. **Latency probes**: dispatches immediate TCP probes to port 1337 across regional candidate blocks to calculate routing latency.
 3. **Session tokens**: challenges the central API through a standard POST request over TLS, securing an execution token from basic user parameters.
-4. **Keypair issuance**: generate WireGuard keypair using X25519 with RFC 7748 scalar clamping  
+4. **Keypair issuance**: generate WireGuard (WG) keypair using X25519 with RFC 7748 scalar clamping  
    (k[0] &= 248, k[31] &= 127, k[31] |= 64)
 5. **Secure registration**: submits the dynamic public key configuration to the chosen low-latency endpoint via an HTTPS API (port 1337). The step utilises the dynamically resolved PIA root certificate, matching the specific Common Name (CN) mapping fields rather than raw IP routing addresses. The certificate is not hardcoded, so that it stays current when PIA rotates it.
 6. **Config assembly**: transforms payload metadata returns into localised .conf specifications utilising Unix line endings (\n) for cross-compatibility.
+
+---
 
 ## 2. <a name='Appprocessingflow'></a>App processing flow
 
@@ -135,11 +144,11 @@ Merlin exposes 17 nvram fields per WireGuard slot, stock exposes 12.
 | `wgcN_aips` | Yes | Yes | `0.0.0.0/0` | Allowed IP addresses. |
 | `wgcN_alive` | Yes | Yes | `25` (seconds) | Persistent keepalive interval. |
 | `wgcN_desc` | Yes | **No** | – | Slot's PIA region name. Must match the actual PIA region name for the watchdog function to operate. |
-| `wgcN_dns` | Yes | Yes | `"9.9.9.9, 149.112.112.112"` | Two DNS servers to use, actual values are set in thecfg-pia-wg app. |
+| `wgcN_dns` | Yes | Yes | `"9.9.9.9, 149.112.112.112"` | Two DNS servers to use, actual values are set in the cfg-pia-wg app. |
 | `wgcN_enable` | Yes | Yes | – | `1` enables this slot, `0` disables it. |
 | `wgcN_enforce` | Yes | **No** | – | `1` enables the killswitch on this slot, `0` disables it. Blocks routed clients if the tunnel goes down. Stock exposes no UI to alter this - when running on stock this field will be ignored. |
 | `wgcN_ep_addr` | Yes | Yes | – | FQDN or public IP of the remote PIA WireGuard peer endpoint. |
-| `wgcN_ep_addr_r` | Yes | **No** | – | Resolved numeric IP if `wgcN_ep_addr` is a DNS name (identical value if `wgcN_ep_addr` is already an IP). Set when the interface initialises. |
+| `wgcN_ep_addr_r` | Yes | Yes | – | Resolved numeric IP if `wgcN_ep_addr` is a DNS name (identical value if `wgcN_ep_addr` is already an IP). Set when the interface initialises. |
 | `wgcN_ep_port` | Yes | Yes | `1337` | Endpoint port. |
 | `wgcN_fw` | Yes | **No** | – | `1` enables the inbound firewall on this slot, `0` disables it. |
 | `wgcN_mtu` | Yes | Yes | `1420` | Maximum transmission unit. |
@@ -162,20 +171,20 @@ On stock firmware, several WireGuard slot parameters are consolidated into a sin
 
 **Field schema** (applies to every record):
 
-| Index | Field | Meaning |
-| :-: | - | - |
-| 1 | description | slot's PIA region name |
-| 2 | protocol | always `WireGuard` |
-| 3 | slot number | maps to `wgcN_` (e.g. `5` = `wgc5_`) |
-| 4 | (unused) | always empty |
-| 5 | admin password | ignored |
-| 6 | active state | `1` = active, `0` = disabled |
-| 7 | iptables ID | ignored |
-| 8 | binding | ignored |
-| 9 | _DNS mode?_ | ignored, purpose unconfirmed |
-| 10 | unknown | ignored, always `0` |
-| 11 | _killswitch?_ | ignored, purpose unconfirmed |
-| 12 | fixed value | always `Web` |
+| Index | Field        | Meaning                                   |
+| :---: | ------------ | ----------------------------------------- |
+|   1   | description  | slot description (set to PIA region name) |
+|   2   | protocol     | always `WireGuard`                        |
+|   3   | slot number  | maps to `wgcN_` (e.g. `5` = `wgc5_`)      |
+|   4   | vpn username | ignore                                    |
+|   5   | vpn password | ignore, WebUI sets to router admin pwd    |
+|   6   | vpn state    | `1` = active, `0` = disabled              |
+|   7   | vpnc_idx     | `10 - slot number`, maps to `vpncN_*`     |
+|   8   | region?      | ignore, always empty, purpose unconfirmed |
+|   9   | conn type?   | ignore, always empty, purpose unconfirmed |
+|  10   | tunnel?      | always `0`, purpose unconfirmed           |
+|  11   | wan index?   | always `0`, purpose unconfirmed           |
+|  12   | caller       | Gui created = `Web`                       |
 
 **Worked example:**
 
@@ -184,20 +193,204 @@ $nvram show vpnc_clientlist
 pia-aus_melbourne>WireGuard>5>>mel-pwd>1>5>>>0>0>Web<pia-aus>WireGuard>4>>aus-pwd>0>6>>>0>0>Web<pia-au_brisbane-pf>WireGuard>3>>bris-pwd>0>7>>>0>0>Web<pia-au_adelaide-pf>WireGuard>2>>adf-pwd>0>8>>>0>0>Web<pia-aus_perth>WireGuard>1>>perth-pwd>0>9>>>0>0>Web
 ```
 
-| Index | Web UI slot 1 | Web UI slot 2 | Web UI slot 3 | Web UI slot 4 | Web UI slot 5 |
-|:---:|---|---|---|---|---|
-| 1 | pia-aus_melbourne | pia-aus | pia-au_brisbane-pf | pia-au_adelaide-pf | pia-aus_perth |
-| 2 | WireGuard | WireGuard | WireGuard | WireGuard | WireGuard |
-| 3 | 5 | 4 | 3 | 2 | 1 |
-| 4 | – | – | – | – | – |
-| 5 | mel-pwd | aus-pwd | bris-pwd | adf-pwd | perth-pwd |
-| 6 | 1 | 0 | 0 | 0 | 0 |
-| 7 | 5 | 6 | 7 | 8 | 9 |
-| 8 | – | – | – | – | – |
-| 9 | – | – | – | – | – |
-| 10 | 0 | 0 | 0 | 0 | 0 |
-| 11 | 0 | 0 | 0 | 0 | 0 |
-| 12 | Web | Web | Web | Web | Web |
+| Index | Web UI slot 1     | Web UI slot 2 | Web UI slot 3      | Web UI slot 4      | Web UI slot 5 |
+| :---: | ----------------- | ------------- | ------------------ | ------------------ | ------------- |
+|   1   | pia-aus_melbourne | pia-aus       | pia-au_brisbane-pf | pia-au_adelaide-pf | pia-aus_perth |
+|   2   | WireGuard         | WireGuard     | WireGuard          | WireGuard          | WireGuard     |
+|   3   | 5                 | 4             | 3                  | 2                  | 1             |
+|   4   | –                 | –             | –                  | –                  | –             |
+|   5   | mel-pwd           | aus-pwd       | bris-pwd           | adf-pwd            | perth-pwd     |
+|   6   | 1                 | 0             | 0                  | 0                  | 0             |
+|   7   | 5                 | 6             | 7                  | 8                  | 9             |
+|   8   | –                 | –             | –                  | –                  | –             |
+|   9   | –                 | –             | –                  | –                  | –             |
+|  10   | 0                 | 0             | 0                  | 0                  | 0             |
+|  11   | 0                 | 0             | 0                  | 0                  | 0             |
+|  12   | Web               | Web           | Web                | Web                | Web           |
+
+### 2.4 Wireguard SSH commands
+
+To manage Wireguard Merlin uses VPN Director, stock ASUS uses VPN Fusion. These are similar but different: using nvram settings to store configuration parameters, but differs in how these are applied and used. There's scant reference detail I could find on how stock officially manages things and a **lot** more by having access to Merlin's source code, so the below is my understanding which may be incorrect and have gaps.
+
+I've used the below to examine WG on ASUS routers, and your best source of information is the system log `tail -f /tmp/syslog.log`. This shows calls to the `service` command wrapper with commands like `service restart_vpnc`. `service` command parameters are not user accessible files.
+
+- Manipulate/see WG configs:
+
+```bash
+wg                  # get/set WG settings
+wg show interfaces  # show WG device interface names
+```
+
+- Poll and display active WG interfaces (substitute `usleep 500000` for `sleep 1` for half-second logging; syslogd can't show microseconds):
+
+```bash
+i=1; while [ $i -le 60 ]; do echo "$(date +%H:%M:%S) - $(wg show interfaces)"; sleep 1; i=$((i+1)); done
+```
+
+- as above but for `vpnc_unit` whose content changes depending on which slot is being targetted:
+
+```bash
+i=1; while [ $i -le 9999 ]; do echo "$(date +%H:%M:%S) - $(nvram get vpnc_unit)"; usleep 500000; i=$((i+1)); done
+```
+
+- Show all commands run when a VPN comes up/down or is created/deleted, half second resolution:
+
+ ```bash
+ i=1; while [ $i -le 30000 ]; do echo "$(date +%H:%M:%S) - $(ps | grep -E "vpnc|vpn|openvpn|wg" | grep -v grep | head -5)"; usleep 200000; i=$((i+1)); done
+ ```
+
+> [!WARNING]
+> Setting `usleep` to very low values will likely crash syslogd and/or your router.
+
+- Show the contents of all WG slot settings stored in nvram:
+
+```bash
+nvram show | grep -E "wgc[1-9]_" | sort
+```
+
+- Display the contents of `vpnc_clientlist`:
+
+```bash
+nvram get vpnc_clientlist | tr "<" "\n"
+```
+
+- Clear all wgc5 values (the first WG VPN slot created in the WebUI is always named #5):
+
+```bash
+for v in wgc5_addr wgc5_aips wgc5_alive wgc5_dns wgc5_enable wgc5_ep_addr wgc5_ep_addr_r wgc5_ep_port wgc5_mtu wgc5_nat wgc5_ppub wgc5_priv wgc5_psk; do nvram unset "$v"; done; nvram commit
+```
+
+- Show `vpnc_` (where N is 5-9) for WireGuard:
+
+ ```bash
+ nvram show | grep -E "vpnc([1-9]|1[0-6])_" | sort
+ ```
+
+- Show `vpnc_`, this includes `vpnc_unit` (the unit being acted on) and `vpnc_max_conn` the maximum number of concurrent VPNs:
+
+ ```bash
+ nvram show | grep -E "vpnc_" | sort
+ ```
+
+### 2.4.1 Merlin
+
+Operations are performed by setting nvram fields on specific slots and making calls with service commands...
+
+`<************** PLACEHOLDER - add full details here **************>`
+
+### 2.4.2 Stock
+
+VPN Fusion abstracts the underlying WG calls to manipulate WG VPNs:
+
+```text
+        vpnc_clientlist
+              │
+              ├── profile
+              │    ├── protocol = WireGuard
+              │    ├── slot = 5
+              │    └── active = ...
+              │
+        set vpnc_unit=0
+              │
+              ▼
+   stop_vpnc OR restart_vpnc
+              │
+              ▼
+            VPN Fusion
+              │
+              ▼
+             wgc5
+```
+
+In the above, wgc5 is vpnc_unit 0 (wgc4 is unit 1, wgc3 is unit 2 etc).
+
+#### 2.4.2.1 Create and enable a slot
+
+Creating the first slot in the WebUI adds the below keys and populates settings.
+
+The below examples are for `wgc5`, which is the first WG VPN created. **NB** the first slot created is numbered `5` and the last is `1`.
+
+  1. set `wgcN_*` values:
+
+  ```bash
+  # Primary keys
+  wgc5_addr=10.119.0.18/32          # local tunnel IP address assigned by the VPN server
+  wgc5_aips=0.0.0.0/0               # allowed IP addresses
+  wgc5_alive=25                     # tunnel keep alive in seconds
+  wgc5_dns=9.9.9.9,149.112.112.112  # two DNS servers
+  wgc5_enable=1                     # 1=enable, 0=disable
+  wgc5_ep_addr=45.130.141.215       # FQDN or public IP of the remote PIA WireGuard peer endpoint
+  wgc5_ep_addr_r=45.130.141.215     # resolved numeric IP if `wgcN_ep_addr` is a DNS name; set when the interface initialises
+  wgc5_ep_port=1337                 # end point port; PIA WG uses port 1337
+  wgc5_mtu=                         # maximum transmission unit, picked up from the conf file that created this slot (defaults to??)
+  wgc5_nat=1                        # 1=enable, 0=disabled
+  wgc5_ppub=PUBLIC_KEY              # PIA VPN server public key
+  wgc5_priv=PRIVATE_KEY             # PIA user's private key
+  wgc5_psk=                         # preshared key, not used by PIA.
+  
+  # VPN Fusion keys
+  vpnc5_dns=9.9.9.9 149.112.112.112 # DNS servers, set when slot is enabled, unset when disabled
+  vpnc5_dut_disc=5                  # unknown, unset when slot is enabled, when disabled this is the slot #
+  vpnc5_sbstate_t=0                 # unknown
+  vpnc5_state_t=2                   # unknown
+  vpnc_unit=0                       # the unit being acted on where 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1; retains last set value.
+  ```
+
+  2. `vpnc_clientlist` is created and contains
+
+  ```bash
+  pia-aus_melbourne>WireGuard>5>>ROUTER_ADMIN_PWD>1>5>>>0>0>Web
+  ```
+
+  3. exec `service restart_vpnc`
+
+#### 2.4.2.2 Enable existing slot
+
+  1. set `wgc5_enable=1`
+  2. set `vpnc_unit=0` where `N` is `0`=wgc5, `1`=wgc4, `2`=wgc3, `3`=wgc2, `4`=wgc1
+  3. set `vpnc_clientlist` field 6 (vpn state) to `1` (active)
+  4. exec `service restart_vpnc`
+
+  `service restart_default_wan` is run by the UI when "apply to all devices" is enabled/disabled.
+
+There is **no** `start_vpnc` command.
+
+#### 2.4.2.3 Stop/Disable
+
+  1. set `wgcN_enable=0`
+  2. set `vpnc_unit=N` where `N` is `0`=wgc5, `1`=wgc4, `2`=wgc3, `3`=wgc2, `4`=wgc1
+  3. set `vpnc_clientlist` field 6 (vpn state) to `0` (disabled)
+  4. exec `service stop_vpnc`
+
+#### 2.4.2.4 Delete
+
+Deleting a slot set to `apply to all devices` executes
+
+```bash
+service restart_default_wan
+service restart_vpnc_dev_policy
+```
+
+Deleting the last WG slot executes
+
+```bash
+service restart_vpnc_dev_policy
+```
+
+`<************** PLACEHOLDER **************>`
+ARE THE BELOW SET BY VPN FUSION CALLS?
+
+ `vpncN_*` values are
+
+  ```bash
+  vpnc5_dut_disc=5   # retained after reboot
+  vpnc5_sbstate_t=0  # removed after reboot
+  vpnc5_state_t=2    # removed after reboot
+
+`wgcN_*` are **not** removed when a profile is deleted.
+```
+
+---
 
 ## 3. <a name='Watchdogdetails'></a>Watchdog details
 
@@ -247,7 +440,6 @@ cfg-pia-wg_user=
 
 (where `N` is the slot number 1-5)
 
----
 
 ### 3.4. Sample `cfg-pia-wg` output
 
@@ -292,7 +484,7 @@ Generated configuration data is managed via:
 
 ## 6. <a name='BuildprovenancetheAboutscreen'></a>Build provenance (the About screen)
 
-`lib/screens/about_screen.dart` exists so a bug report can identify exactly which binary the reporter is running. Once an APK ships, the commit, branch/tag, CI run, build type and install source are otherwise invisible.
+`lib/screens/about_screen.dart` exists so a bug reportor can identify which binary is running. Displays the commit, branch/tag, CI run, build type, and install source.
 
 ### 6.1. <a name='Thechannel'></a>The channel
 
@@ -300,7 +492,7 @@ Generated configuration data is managed via:
 
 Everything is a `String` deliberately: a uniform map crosses `StandardMessageCodec` without mixed-type surprises and needs no per-key casting in `lib/build_info_service.dart`. Any field the host cannot determine comes back as the literal `unknown` rather than null.
 
-`loadBuildInfo()` swallows `MissingPluginException` and `PlatformException`, returning `BuildInfo.unknown()`. This is load-bearing, not defensive padding: under `flutter test` no native side is registered at all, so every full-app widget test takes that path.
+`loadBuildInfo()` handles `MissingPluginException` and `PlatformException`, returning `BuildInfo.unknown()`. With `flutter test` no native side is registered, so every test takes that path.
 
 ### 6.2. <a name='Whereeachfieldcomesfrom'></a>Where each field comes from
 
@@ -324,8 +516,8 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 - **`buildConfigField`'s value is emitted verbatim** into `BuildConfig.java`, so `javaStringLiteral()` escapes every string. These values come from git and the environment: a branch named `foo"bar` would otherwise produce uncompilable generated Java.
 - No new dependencies, so the STRICT `gradle.lockfile` set is untouched. This is also why the Kotlin side hand-rolls the `longVersionCode` branch rather than using `androidx.core`'s `PackageInfoCompat`.
 
-### 6.4. <a name='Thelicencetext'></a>The licence text
+### 6.4. <a name='Thelicencetext'></a>GNU licence text
 
-`lib/license_text.dart` holds `./LICENSE` verbatim as a raw-string constant, and is generated at development time, not loaded at runtime and not registered as an asset.
+`lib/license_text.dart` holds `./LICENSE` a verbatim raw-string constant, generated at development time, not loaded at runtime and not registered as an asset.
 
 ---
