@@ -7,6 +7,7 @@
   - [1.4. Certificate information](#14-certificate-information)
 - [2. Testing the watchdog feature](#2-testing-the-watchdog-feature)
   - [2.1. Checks](#21-checks)
+- [3. Examining nvram settings](#3-examining-nvram-settings)
 
 ## 1. Testing email send from SSH
 
@@ -29,7 +30,6 @@ sendmail -v \
 ```
 
 > [!CAUTION]
->
 > **APP PASSWORD**: the above example exposes your app password to bash history, `ps`, and process lists. These are cleared at reboot though. Remember, this is **only** for testing purposes. A more secure approach uses input stuffing from a file eg. one-time setup with `nano /tmp/.smtp-pass` enter your password then save the file, secure the file with `chmod 600 /tmp/.smtp-pass` the `sendmail` command line would then be modified with `-ap$(cat /tmp/.smtp-pass)`.
 
 ### 1.2. Construct the test email
@@ -65,7 +65,6 @@ EOF
 
 > [!NOTE]
 > **Message-ID**: Google may silently **not** deliver the test email if you reuse the same test message without updating the `Message-ID:` by recreating `/tmp/test-email.txt`.
-
 > [!TIP]
 > **EOF**: Using `EOF` without single quotes allows variable expansion. Typically you would use `'EOF'`, but we need the `date` and `hostnames` expanded, which is why we use `cat << EOF >`.
 
@@ -235,7 +234,6 @@ Check `/tmp/scripts/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
 13. Force a reconfigure to occur
 
 > [!WARNING]
->
 > This no longer works as ping targets are now used to check WAN connectivity, setting these values will make the shell script believe that it has no Internet connectivity.
 
 Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Address Blocks Reserved for Documentation](https://www.iana.org/go/rfc5737) these blocks should never respond:
@@ -284,3 +282,69 @@ Check these get created/cleaned up
 Where `N` is the slot number
 
 ---
+
+## 3. Examining nvram settings
+
+I've used the below to examine WG on ASUS routers.
+
+Your best source of information is the system log with `tail -f /tmp/syslog.log`. This shows calls to the `service` command wrapper with commands like `service restart_vpnc`. `service` command parameters are not user accessible files.
+
+- Manipulate/see WG configs:
+
+    ```bash
+    wg                  # get/set WG settings
+    wg show interfaces  # show WG device interface names
+    ```
+
+- Poll and display active WG interfaces (substitute `usleep 500000` for `sleep 1` for half-second logging; syslogd can't show microseconds):
+
+    ```bash
+    i=1; while [ $i -le 60 ]; do echo "$(date +%H:%M:%S) - $(wg show interfaces)"; sleep 1; i=$((i+1)); done
+    ```
+
+- as above but for `vpnc_unit` whose content changes depending on which slot is being targetted:
+
+    ```bash
+    i=1; while [ $i -le 9999 ]; do echo "$(date +%H:%M:%S) - $(nvram get vpnc_unit)"; usleep 500000; i=$((i+1)); done
+    ```
+
+- Show all commands run when a VPN comes up/down or is created/deleted, half second resolution:
+
+    ```bash
+    i=1; while [ $i -le 30000 ]; do echo "$(date +%H:%M:%S) - $(ps | grep -E "vpnc|vpn|openvpn|wg" | grep -v grep | head -5)"; usleep 200000; i=$((i+1)); done
+    ```
+
+    > [!WARNING]
+    > Very small `usleep` values may crash syslogd and/or your router.
+
+- Display the contents of `vpnc_clientlist`:
+
+    ```bash
+    nvram get vpnc_clientlist | tr "<" "\n"
+    ```
+
+- Show the contents of all WG slot settings stored in nvram:
+
+    ```bash
+    nvram show | grep -E "wgc[1-9]_" | sort
+    ```
+
+- Clear all wgc5 values (the first WG VPN slot created in the WebUI is always named #5):
+
+    ```bash
+    for v in wgc5_addr wgc5_aips wgc5_alive wgc5_dns wgc5_enable wgc5_ep_addr wgc5_ep_addr_r wgc5_ep_port wgc5_mtu wgc5_nat wgc5_ppub wgc5_priv wgc5_psk; do nvram unset "$v"; done; nvram commit
+    ```
+
+- Show `vpnc_` (where N is 5-9) for WireGuard:
+
+    ```bash
+    nvram show | grep -E "vpnc([1-9]|1[0-6])_" | sort
+    ```
+
+- Show `vpnc_`, this includes `vpnc_unit` (the unit being acted on) and `vpnc_max_conn` the maximum number of concurrent VPNs:
+
+    ```bash
+    nvram show | grep -E "vpnc_" | sort
+    ```
+
+ ---

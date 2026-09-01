@@ -47,13 +47,13 @@ const List<String> kSlotNvramKeys = [
   'aips', //The allowed IP addresses, defaults to `0.0.0.0/0`. This field is user editable.
 ];
 
-// The five keys Merlin exposes that stock firmware does not (ARCHITECTURE.md 2.3.1). `desc` is
+// The five keys Merlin exposes that stock firmware does not (ARCHITECTURE.md). `desc` is
 // absent from stock too, but the app writes it anyway as a private key of its own — the router-side
 // watchdog needs the region name somewhere it can read with a bare `nvram get`, exactly as it
-// already does for the invented `wgcN_wd_*` keys. Stock therefore skips only these four.
-const List<String> kMerlinOnlySlotKeys = ['enforce', 'ep_addr_r', 'fw', 'rip'];
+// already does for the extra `wgcN_wd_*` keys. Stock therefore skips only these three.
+const List<String> kMerlinOnlySlotKeys = ['enforce', 'fw', 'rip'];
 
-/// The per-slot NVRAM keys worth writing on [firmware]: all 17 on Merlin, 13 on stock.
+// The per-slot NVRAM keys worth writing on [firmware]: all 17 on Merlin, 13 on stock.
 List<String> slotKeysFor(RouterFirmware firmware) => firmware == RouterFirmware.stock
     ? [
         for (final k in kSlotNvramKeys)
@@ -61,15 +61,23 @@ List<String> slotKeysFor(RouterFirmware firmware) => firmware == RouterFirmware.
       ]
     : kSlotNvramKeys;
 
-// ─── vpnc_clientlist (stock only) ────────────────────────────────────────────────
+// ─── vpnc_clientlist (stock only) ─────────────────────────────────────────────────────
 // Stock consolidates the region name and the active flag into one delimited nvram string holding
 // up to five profiles: records separated by '<' (no leading delimiter), fields by '>'.
 // See ARCHITECTURE.md 2.3.2 for the field schema.
 
-/// One `vpnc_clientlist` profile. Field numbers in the docs are 1-based; [fields] is **0-based**.
+// One `vpnc_clientlist` profile. Field numbers in the ARCHITECTURE.md are 1-based; [fields] is **0-based**.
 class VpncRecord {
   static const int fieldCount = 12;
-  static const int _descIdx = 0, _protocolIdx = 1, _slotIdx = 2, _activeIdx = 5, _iptablesIdx = 6, _tailIdx = 11;
+  static const int _descIdx = 0,
+      _protocolIdx = 1,
+      _slotIdx = 2,
+      _routerPwd = 4,
+      _activeIdx = 5,
+      _iptablesIdx = 6,
+      _tunnelIdx = 9,
+      _wanIdx = 10,
+      _tailIdx = 11;
 
   final List<String> fields;
 
@@ -85,7 +93,7 @@ class VpncRecord {
   int? get slot => int.tryParse(fields[_slotIdx].trim());
   bool get active => fields[_activeIdx] == '1';
 
-  /// Rewrites only the two fields the app owns; everything else is carried through untouched.
+  // Rewrites only the two fields the app owns; everything else is carried through untouched.
   VpncRecord copyWith({String? desc, bool? active}) {
     final next = List.of(fields);
     if (desc != null) next[_descIdx] = desc;
@@ -96,16 +104,19 @@ class VpncRecord {
   String serialise() => fields.join('>');
 }
 
-/// Builds a record for a slot that has none yet. Fields 4, 5, 8, 9, 10 and 11 are left empty; the
-/// iptables ID (field 7) follows the `10 - slot` pattern observed on stock hardware.
+// Builds a record for a slot that has none yet. Fields 4, 5, 8 and 9 are left empty; the
+// iptables ID (field 7) follows the `10 - slot` pattern observed on stock hardware.
 VpncRecord buildVpncRecord({required int slot, required String desc, required bool active}) {
   final fields = List.filled(VpncRecord.fieldCount, '');
   fields[VpncRecord._descIdx] = desc;
   fields[VpncRecord._protocolIdx] = 'WireGuard';
   fields[VpncRecord._slotIdx] = '$slot';
+  fields[VpncRecord._routerPwd] = 'password';
   fields[VpncRecord._activeIdx] = active ? '1' : '0';
   fields[VpncRecord._iptablesIdx] = '${10 - slot}';
-  fields[VpncRecord._tailIdx] = 'Web';
+  fields[VpncRecord._tunnelIdx] = '0';
+  fields[VpncRecord._wanIdx] = '0';
+  fields[VpncRecord._tailIdx] = 'cfg-pia-wg';
   return VpncRecord(fields);
 }
 
@@ -116,41 +127,24 @@ List<VpncRecord> parseVpncClientlist(String raw) => [
 
 String serialiseVpncClientlist(List<VpncRecord> records) => records.map((r) => r.serialise()).join('<');
 
-/// Updates the record for [slot] in place, or creates a fresh one — always at list
-/// index `slot - 1`. The router assigns the wgcN interface by *position* in
-/// vpnc_clientlist, not by the value stored in a record's own slot field, so
-/// position and slot must be kept in lock-step or ENABLE ends up toggling
-/// whichever slot happens to occupy that position (see enableSlot bug notes).
+/// Updates the record for [slot] in place, or appends a fresh one when the slot has none.
 List<VpncRecord> upsertVpncRecord(List<VpncRecord> records, {required int slot, String? desc, bool? active}) {
   final out = List.of(records);
-  final existingIdx = out.indexWhere((r) => r.slot == slot);
-  final record = existingIdx >= 0
-      ? out.removeAt(existingIdx).copyWith(desc: desc, active: active)
-      : buildVpncRecord(slot: slot, desc: desc ?? '', active: active ?? false);
-  while (out.length < slot - 1) {
-    out.add(buildVpncRecord(slot: out.length + 1, desc: '', active: false));
-  }
-  out.insert(slot - 1, record);
-  return out;
-}
-
-/// Clears [slot]'s record without disturbing any other slot's list position. A
-/// trailing record can simply be dropped; anything earlier in the list is
-/// replaced in place with an empty placeholder so slots after it don't shift
-/// down and end up pointing at the wrong wgcN interface.
-List<VpncRecord> removeVpncRecord(List<VpncRecord> records, int slot) {
-  final idx = records.indexWhere((r) => r.slot == slot);
-  if (idx < 0) return records;
-  final out = List.of(records);
-  if (idx == out.length - 1) {
-    out.removeAt(idx);
+  final idx = out.indexWhere((r) => r.slot == slot);
+  if (idx >= 0) {
+    out[idx] = out[idx].copyWith(desc: desc, active: active);
   } else {
-    out[idx] = buildVpncRecord(slot: slot, desc: '', active: false);
+    out.add(buildVpncRecord(slot: slot, desc: desc ?? '', active: active ?? false));
   }
   return out;
 }
 
-/// Opens a real SSH client to the router. Screens inject a test factory instead in tests.
+List<VpncRecord> removeVpncRecord(List<VpncRecord> records, int slot) => [
+      for (final r in records)
+        if (r.slot != slot) r,
+    ];
+
+// Opens a real SSH client to the router. Screens inject a test factory instead in tests.
 Future<SSHClient> openSshClient(String ip, String user, String pass) async {
   final socket = await SSHSocket.connect(ip, 22, timeout: const Duration(seconds: 5));
   final client = SSHClient(socket, username: user, onPasswordRequest: () => pass);
@@ -158,7 +152,7 @@ Future<SSHClient> openSshClient(String ip, String user, String pass) async {
   return client;
 }
 
-/// Per-slot summary shown in the slot modal.
+// Per-slot summary shown in the slot modal.
 class SlotInfo {
   final int index;
   final String desc; // wgcN_desc (region name); empty => unconfigured
@@ -178,7 +172,7 @@ class SlotInfo {
   bool get isEmpty => desc.trim().isEmpty;
 }
 
-/// Result of [RouterSlotService.fetchSlots].
+// Result of [RouterSlotService.fetchSlots].
 class RouterSlots {
   final Map<int, SlotInfo> slots; // keys 1..5
   final int? activeSlot; // slot whose interface is up (`wg show interfaces`)
@@ -221,8 +215,8 @@ class RouterSlotService {
         onTimeout: () => throw Exception('Timed out after 5s reading the router firmware type.'),
       );
 
-  /// Which of the stock helper binaries are absent, in probe order. [needMailsend] is false on the
-  /// manage screen, which never sends email.
+  // Which of the stock helper binaries are absent, in probe order. [needMailsend] is false on the
+  // manage screen, which never sends email.
   Future<List<String>> missingStockBinaries({required bool needMailsend}) async {
     final missing = <String>[];
     for (final path in [kStockJqPath, if (needMailsend) kStockMailsendPath]) {
@@ -252,7 +246,7 @@ class RouterSlotService {
     await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, active: active));
   }
 
-  // ── Read ─────────────────────────────────────────────────────────────────────
+  // ── Read ────────────────────────────────────────────────────────────────────────────
   Future<RouterSlots> fetchSlots() async {
     onLog?.call('Reading router configuration...');
     final isMerlin = (await _run('nvram get 3rd-party')) == 'merlin';
@@ -296,7 +290,7 @@ class RouterSlotService {
     return m;
   }
 
-  // ── Parse helper (from router_push.dart) ──────────────────────────────────────
+  // ── Parse helper (from router_push.dart) ────────────────────────────────────────────
   Map<String, String> parseWgConfig(String conf) {
     final map = <String, String>{};
     for (final line in conf.split('\n')) {
@@ -308,7 +302,7 @@ class RouterSlotService {
     return map;
   }
 
-  // ── Create (write to NVRAM, leave DISABLED, do not touch the active tunnel) ─────
+  // ── Create (write to NVRAM, leave DISABLED, do not touch the active tunnel) ─────────
   // Mirrors router_push.dart Step 4 but sets enable=0 and skips the stop/start/verify.
   Future<void> createConfigToSlot({required int slot, required String config, required String regionId}) async {
     final wgMap = parseWgConfig(config);
@@ -388,26 +382,32 @@ class RouterSlotService {
     }
   }
 
-  // ── Enable (with connectivity check + revert-on-failure) ────────────────────────
+  // ── Enable (with connectivity check + revert-on-failure) ────────────────────────────
   // Brings the interface up, waits for it to appear, then pings BOTH watchdog targets via
-  // the slot interface (5s). Any failure reverts enable=0 and throws (spec 2.1.2, decision #2).
+  // the slot interface (5s). Any failure reverts enable=0 and throws.
   Future<void> enableSlot(int slot, {required String primaryIp, required String secondaryIp}) async {
     onLog?.call('Enabling wgc$slot...');
+    await _logRouter('Enabling wgc$slot...');
     await _run('nvram set wgc${slot}_enable=1');
     await _setVpncActive(slot, true);
-    await _run('nvram commit');
     // stock requires a different start command to Merlin
     if (isStockFirmware) {
-      await _run('service "start_wgc $slot"; service restart_vpnrouting0'); // added to test wrong device being brought up
+      onLog?.call('DEBUG: nvram set vpnc_unit=${5 - slot}'); // DEBUG
+      await _logRouter('DEBUG: nvram set vpnc_unit=${5 - slot}'); // DEBUG
+      await _run('nvram set vpnc_unit=${5 - slot}'); // vpnc_unit=N where N is 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1
       await _run('service restart_vpnc');
     } else {
       await _run('service "start_wgc $slot"; service restart_vpnrouting0');
     }
+    await _run('nvram commit');
+
     onLog?.call('Verifying wgc$slot interface comes up...');
     var up = false;
     for (var retry = 0; retry < verifyMaxAttempts; retry++) {
       await Future.delayed(verifyPollInterval);
       final out = await _run('wg show interfaces');
+      onLog?.call('DEBUG: wg show interfaces - $out'); // DEBUG
+      await _logRouter('DEBUG: wg show interfaces - $out'); // DEBUG
       if (out.contains('wgc$slot')) {
         up = true;
         onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: wgc$slot is active');
@@ -441,13 +441,14 @@ class RouterSlotService {
     await _run('nvram commit');
     // stock requires a different stop command to Merlin
     if (isStockFirmware) {
-      await _run('service stop_vpnc');
+      await _run('nvram set vpnc_unit=${5 - slot}'); // vpnc_unit=N where N is 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1
+      await _run('service restart_vpnc');
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
   }
 
-  // ── Disable ─────────────────────────────────────────────────────────────────────
+  // ── Disable ─────────────────────────────────────────────────────────────────────────
   Future<void> disableSlot(int slot) async {
     onLog?.call('Disabling wgc$slot...');
     await _run('nvram set wgc${slot}_enable=0');
@@ -455,7 +456,8 @@ class RouterSlotService {
     await _run('nvram commit');
     // stock requires a different stop command to Merlin
     if (isStockFirmware) {
-      await _run('service stop_vpnc');
+      await _run('nvram set vpnc_unit=${5 - slot}'); // vpnc_unit=N where N is 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1
+      await _run('service restart_vpnc');
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
@@ -463,11 +465,17 @@ class RouterSlotService {
     onLog?.call('wgc$slot disabled.', isSuccess: true);
   }
 
-  // ── Delete (clear the slot's WireGuard config) ────────────────────────────────────
+  // ── Delete (clear the slot's WireGuard config) ──────────────────────────────────────
   Future<void> deleteSlot(int slot) async {
     onLog?.call('Deleting wgc$slot configuration...');
     await _run('nvram set wgc${slot}_enable=0');
-    await _run('service "stop_wgc $slot"; service start_vpnrouting0');
+    // stock requires a different stop command to Merlin
+    if (isStockFirmware) {
+      await _run('nvram set vpnc_unit=${5 - slot}'); // vpnc_unit=N where N is 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1
+      await _run('service restart_vpnc');
+    } else {
+      await _run('service "stop_wgc $slot"; service start_vpnrouting0');
+    }
     for (final key in slotKeysFor(routerFirmware)) {
       await _run('nvram unset wgc${slot}_$key');
     }
@@ -482,7 +490,7 @@ class RouterSlotService {
     onLog?.call('wgc$slot configuration cleared.', isSuccess: true);
   }
 
-  // ── Edit: write the user-editable slot parameters back ────────────────────────────
+  // ── Edit: write the user-editable slot parameters back ──────────────────────────────
   // [params] keys are bare (e.g. 'addr', 'priv'). Values are shell-escaped.
   Future<void> writeSlotParams(int slot, Map<String, String> params) async {
     onLog?.call('Saving wgc$slot parameters...');
@@ -513,7 +521,7 @@ class RouterSlotService {
     await _run('nvram commit');
   }
 
-// Ping bound to the VPN interface with a 5s timeout (spec 2.1.2).
+// ── Ping bound to the VPN interface with a 5s timeout ─────────────────────────────────
   Future<bool> pingViaSlot(String ip, int slot) async {
     final safeIp = shellSingleQuote(ip);
     final String cmd;
@@ -530,7 +538,7 @@ class RouterSlotService {
       esac
       ''';
     } else {
-      // Custom firmware ping accepts interface names directly.
+      // Merlin firmware ping accepts interface name.
       cmd = 'ping -I wgc$slot -c 1 -w 5 $safeIp >/dev/null 2>&1 && echo OK';
     }
 

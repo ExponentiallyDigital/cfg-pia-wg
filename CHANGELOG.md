@@ -56,12 +56,26 @@
 - ENABLE not enabling if > 1 VPN exists
 - FIX: need to refresh slot display after a disable, flag still shows until modal reopened.
 - FIX: ACTIVE flag is incorrect (slot 3 not 1)
-- TST: `enableSlot` check `isStockFirmware` is usable.
-- FIX: tests failing: test/router_slot_service_test.dart - 2x vpnc_clientlist parsing, 1x stock slot mutations disableSlot.
+- Check `wgcN_rip is not on stock, if it is: remove from `kMerlinOnlySlotKeys`
+- FIX: slot still shows as active when slot disabled
 
 ---
 
 ### 1.2. Implemented - chronological change history
+
+2026-09-02 v0.8.23 build 393 - WIP stock support for Manage function only
+
+- FIX: updated enable and disable with correct stock calls, set `vpnc_unit` then calling `service restart_vpnc`.
+- FIX: reverted 391 "enabling a slot in manage fails with attempt to start incorrect device number", restored `upsertVpncRecord` & `removeVpncRecord` (Claude).
+- FIX: reverted 392 `router_slot_service_test.dart`: `upsert appends a new record when the slot has none` and `disableSlot clears the vpnc active flag`.
+- CHG: set source in `vpnc_clientlist` to cfg-pia-wg, and password (field 5) to password
+- FIX: sets `vpnc_clientlist` fields 10 (tunnel) and 11 (wan_idx) to 0 to match creating via WebUI.
+- FIX: now removes `ep_addr_r` on slot delete.
+- CHG: updated `scripts\read-vpnc_clientlist.sh` displayed field names.
+- FIX: updated `test\router_slot_service_test.dart` to account for vpnc_client list fields being set (4 - password, 9 - tunnel, and 10 - wan_idx).
+- CHG: updated ARCHITECTURE.md field schema & worked example to be zero based (to match code) and updated field contents to match code.
+- ADD: slot enable DEBUG print showing `vpnc_unit` and `wg show interfaces`. Also added logrouter to match applog "Enabling wgc$slot...".
+- REL: all tests passing.
 
 2026-09-01 v0.8.22 build 392 - WIP stock support for Manage function only
 

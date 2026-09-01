@@ -87,7 +87,7 @@ void main() {
     RecordingSSHClient stockRouter() => RecordingSSHClient(
           responder: (cmd) {
             if (cmd.contains('vpnc_clientlist')) {
-              return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>Web<pia-aus_perth>WireGuard>3>>pw2>0>7>>>0>0>Web';
+              return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg<pia-aus_perth>WireGuard>3>>pw2>0>7>>>0>0>cfg-pia-wg';
             }
             if (cmd.contains('cru l') && cmd.contains('watchdog_wgc3')) return '1';
             if (cmd.contains('wg show interfaces')) return 'wgc1';
@@ -301,11 +301,11 @@ void main() {
 
   group('vpnc_clientlist parsing (pure)', () {
     // Verbatim from ARCHITECTURE.md 2.3.2.
-    const sample = 'pia-aus_melbourne>WireGuard>5>>mel-pwd>1>5>>>0>0>Web'
-        '<pia-aus>WireGuard>4>>aus-pwd>0>6>>>0>0>Web'
-        '<pia-au_brisbane-pf>WireGuard>3>>bris-pwd>0>7>>>0>0>Web'
-        '<pia-au_adelaide-pf>WireGuard>2>>adf-pwd>0>8>>>0>0>Web'
-        '<pia-aus_perth>WireGuard>1>>perth-pwd>0>9>>>0>0>Web';
+    const sample = 'pia-aus_melbourne>WireGuard>5>>mel-pwd>1>5>>>0>0>cfg-pia-wg'
+        '<pia-aus>WireGuard>4>>aus-pwd>0>6>>>0>0>cfg-pia-wg'
+        '<pia-au_brisbane-pf>WireGuard>3>>bris-pwd>0>7>>>0>0>cfg-pia-wg'
+        '<pia-au_adelaide-pf>WireGuard>2>>adf-pwd>0>8>>>0>0>cfg-pia-wg'
+        '<pia-aus_perth>WireGuard>1>>perth-pwd>0>9>>>0>0>cfg-pia-wg';
 
     test('parses the documented worked example', () {
       final recs = parseVpncClientlist(sample);
@@ -337,13 +337,16 @@ void main() {
 
     test('buildVpncRecord fills only the fields we understand', () {
       final f = buildVpncRecord(slot: 3, desc: 'pia-aus', active: true).fields;
-      expect(f[0], 'pia-aus'); // 1 description
-      expect(f[1], 'WireGuard'); // 2 protocol
-      expect(f[2], '3'); // 3 slot
-      expect(f[5], '1'); // 6 active
-      expect(f[6], '7'); // 7 iptables ID = 10 - slot
-      expect(f[11], 'Web'); // 12 fixed
-      for (final idx in [3, 4, 7, 8, 9, 10]) {
+      expect(f[0], 'pia-aus'); // description
+      expect(f[1], 'WireGuard'); // protocol
+      expect(f[2], '3'); // slot
+      expect(f[4], 'password'); // password
+      expect(f[5], '1'); // active
+      expect(f[6], '7'); // iptables ID = 10 - slot
+      expect(f[9], '0'); // tunnel = 0
+      expect(f[10], '0'); // wan_idx = 0
+      expect(f[11], 'cfg-pia-wg'); // 12 fixed
+      for (final idx in [3, 7, 8]) {
         expect(f[idx], '', reason: 'field ${idx + 1} must be empty');
       }
     });
@@ -360,36 +363,32 @@ void main() {
 
     test('upsert appends a new record when the slot has none', () {
       final updated = upsertVpncRecord(const [], slot: 2, desc: 'pia-aus', active: false);
-      expect(updated, hasLength(2));
-      expect(updated[0].slot, 1);
-      expect(updated[1].slot, 2);
-      expect(updated[1].fields[6], '8');
+      expect(updated, hasLength(1));
+      expect(updated.single.slot, 2);
+      expect(updated.single.fields[6], '8');
     });
 
     test('remove drops just that slot', () {
       final updated = removeVpncRecord(parseVpncClientlist(sample), 3);
-      expect(updated, hasLength(5));
-      expect(updated[2].desc, isEmpty);
-      expect(updated[2].active, isFalse);
-      expect(updated.where((r) => r.desc.isNotEmpty).map((r) => r.slot), [5, 4, 2, 1]);
+      expect(updated, hasLength(4));
+      expect(updated.any((r) => r.slot == 3), isFalse);
     });
   });
 
   group('stock slot mutations', () {
-    test('createConfigToSlot writes 13 keys and upserts vpnc_clientlist as inactive', () async {
+    test('createConfigToSlot writes 14 keys and upserts vpnc_clientlist as inactive', () async {
       useStock();
       final c = RecordingSSHClient(responder: (_) => '');
       await svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'aus_melbourne');
-
       expect(c.count('nvram set wgc1_'), slotKeysFor(RouterFirmware.stock).length);
-      expect(c.count('nvram set wgc1_'), 13);
+      expect(c.count('nvram set wgc1_'), 14);
       // The region mirror the router-side watchdog reads with a bare `nvram get`.
       expect(c.ran('nvram set wgc1_desc="aus_melbourne"'), isTrue);
       // Fields stock does not have are never written.
       for (final key in kMerlinOnlySlotKeys) {
         expect(c.ran('nvram set wgc1_$key='), isFalse, reason: '$key is Merlin-only');
       }
-      expect(c.ran("nvram set vpnc_clientlist='aus_melbourne>WireGuard>1>>>0>9>>>>>Web'"), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='aus_melbourne>WireGuard>1>>password>0>9>>>0>0>cfg-pia-wg'"), isTrue);
     });
 
     // A profile created in the router web UI has a vpnc_clientlist record but no desc mirror; it
@@ -398,7 +397,7 @@ void main() {
       useStock();
       final logs = <String>[];
       final c = RecordingSSHClient(
-        responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus>WireGuard>1>>pw>1>9>>>0>0>Web' : '',
+        responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg' : '',
         throwOn: ['wgc1_alive=25'],
       );
       await expectLater(
@@ -407,7 +406,7 @@ void main() {
         throwsA(isA<Exception>()),
       );
       expect(logs.any((m) => m.contains('Backing up existing wgc1')), isTrue);
-      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>1>9>>>0>0>Web'"), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg'"), isTrue);
     });
 
     test('does not back up a genuinely empty stock slot', () async {
@@ -436,7 +435,7 @@ void main() {
       useStock();
       final c = RecordingSSHClient(
         responder: (cmd) {
-          if (cmd.contains('vpnc_clientlist')) return 'pia-aus>WireGuard>1>>pw>0>9>>>0>0>Web';
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
           if (cmd.contains('wg show interfaces')) return 'wgc1';
           // These need to be checked in reverse order of specificity: ping -I first
           if (cmd.contains('ping -I')) return 'OK';
@@ -446,24 +445,26 @@ void main() {
       );
       await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
       expect(c.ran('nvram set wgc1_enable=1'), isTrue);
-      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>1>9>>>0>0>Web'"), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg'"), isTrue);
     });
 
     test('disableSlot clears the vpnc active flag', () async {
       useStock();
-      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus>WireGuard>2>>pw>1>8>>>0>0>Web' : '');
+      final c = RecordingSSHClient(
+          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus>WireGuard>2>>pw>1>8>>>0>0>cfg-pia-wg' : '');
       await svc(c).disableSlot(2);
-      expect(c.ran("nvram set vpnc_clientlist='>WireGuard>1>>>0>9>>>>>Web<pia-aus>WireGuard>2>>pw>0>8>>>0>0>Web'"), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>2>>pw>0>8>>>0>0>cfg-pia-wg'"), isTrue);
     });
 
     test('deleteSlot removes the vpnc record and skips the Merlin-only keys', () async {
       useStock();
       final c = RecordingSSHClient(
-        responder: (cmd) =>
-            cmd.contains('vpnc_clientlist') ? 'a>WireGuard>1>>pw>1>9>>>0>0>Web<b>WireGuard>3>>pw>0>7>>>0>0>Web' : '',
+        responder: (cmd) => cmd.contains('vpnc_clientlist')
+            ? 'a>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg<b>WireGuard>3>>pw>0>7>>>0>0>cfg-pia-wg'
+            : '',
       );
       await svc(c).deleteSlot(3);
-      expect(c.ran("nvram set vpnc_clientlist='a>WireGuard>1>>pw>1>9>>>0>0>Web'"), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='a>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg'"), isTrue);
       expect(c.ran('nvram unset wgc3_desc'), isTrue); // the mirror is ours to clean up
       expect(c.ran('nvram unset wgc3_enforce'), isFalse);
       expect(c.count('nvram unset wgc3_'), slotKeysFor(RouterFirmware.stock).length + 2);
@@ -483,13 +484,14 @@ void main() {
 
     test('writeSlotParams skips Merlin-only keys and keeps the vpnc desc in step', () async {
       useStock();
-      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'old>WireGuard>1>>pw>1>9>>>0>0>Web' : '');
+      final c = RecordingSSHClient(
+          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'old>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg' : '');
       await svc(c).writeSlotParams(1, {'mtu': '1420', 'desc': 'pia-aus', 'enforce': '1', 'fw': '1'});
       expect(c.ran("nvram set wgc1_mtu='1420'"), isTrue);
       expect(c.ran("nvram set wgc1_desc='pia-aus'"), isTrue);
       expect(c.ran('nvram set wgc1_enforce'), isFalse);
       expect(c.ran('nvram set wgc1_fw'), isFalse);
-      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>1>9>>>0>0>Web'"), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg'"), isTrue);
     });
 
     test('Merlin leaves vpnc_clientlist alone entirely', () async {
