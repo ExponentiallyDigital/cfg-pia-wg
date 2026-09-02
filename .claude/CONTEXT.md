@@ -162,6 +162,15 @@ COPY → `copyToClipboard` + snackbar + countdown. SHARE writes `pia-<region>.co
 Row badges: `● ACTIVE` (`activeSlots.contains(n)`), `⚑ KILL SWITCH` (`enforce==1`, amber),
 `◆ WATCHDOG ACTIVE`, `✉ EMAIL ALERTING` (only alongside WATCHDOG ACTIVE).
 
+**Slot naming.** Every app-log and router-syslog line names a slot as `wgcN:<description>` via
+`slotLabel` / `fetchSlotLabel` (`router_slot_service.dart`), so a message says *which* VPN it is
+about. The description comes from `vpnc_clientlist` field 0 on stock (a WebUI-created profile has no
+`wgcN_desc` mirror) and from `wgcN_desc` on Merlin. Both services cache it per instance, so it costs
+one extra read per action however many lines mention it, and the lookup is best-effort - a failure
+degrades to the bare `wgcN` rather than breaking the action being logged. Raw router output echoed
+into the log (`wg show interfaces: wgc1`) is left verbatim. The EDIT modal heading uses the same
+label (`EDIT wgc1:pia-aus_melbourne`).
+
 **Slots run concurrently.** Manage ENABLE used to disable every other slot first ("one active at a
 time"); it no longer does. Stock caps how many may run at once - `RouterSlots.maxActiveSlots`, read
 from `nvram get vpnc_max_conn` and falling back to `kDefaultStockMaxActiveSlots` (2) when the key is
@@ -267,7 +276,7 @@ s_client` TLS probe) and writes each to the **router syslog**; the app only says
 | --- | --- | --- |
 | `addr` | local tunnel IP, CIDR | yes |
 | `alive` | persistent keepalive (25) | yes |
-| `desc` | **PIA region id** — must match a real PIA region or the watchdog cannot re-negotiate | yes |
+| `desc` | **`pia-` + PIA region id** (e.g. `pia-aus_melbourne`). The prefix marks the VPN as this app's among any others on the router; the router script strips it (`${DESC#pia-}` -> `REGION`) before its `select(.id==$id)` lookup, so the bare id must still be a real PIA region. `slotDescFor` / `regionIdFromDesc` are the Dart side. | yes |
 | `dns` | DNS servers | yes |
 | `enable` | 1/0 interface enabled | no (ENABLE/DISABLE only) |
 | `enforce` | 1/0 kill switch | yes |

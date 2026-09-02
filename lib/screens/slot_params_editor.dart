@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
 import '../firmware.dart';
+import '../router_slot_service.dart' show slotLabel;
 import '../widgets/common_fields.dart';
 
 // Default values for editable fields that have one (spec 3.3), pre-filled when NVRAM is blank.
@@ -35,8 +36,13 @@ const Map<String, String> _kEditableDefaults = {
 class SlotParamsEditor extends StatefulWidget {
   final int slot;
   final Map<String, String> initial; // bare-keyed nvram values (addr, alive, ...)
+  // The slot's description, for the heading. Passed in rather than read from [initial] because on
+  // stock the authoritative copy is vpnc_clientlist field 0 - a slot created in the router WebUI
+  // has no wgcN_desc mirror for readSlotParams to find.
+  final String desc;
   final Future<void> Function(Map<String, String> editableParams) onSave;
-  const SlotParamsEditor({super.key, required this.slot, required this.initial, required this.onSave});
+  const SlotParamsEditor(
+      {super.key, required this.slot, required this.initial, required this.onSave, this.desc = ''});
 
   @override
   State<SlotParamsEditor> createState() => _SlotParamsEditorState();
@@ -107,7 +113,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('EDIT wgc${widget.slot}',
+                Text('EDIT ${slotLabel(widget.slot, widget.desc)}',
                     style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
                 const SizedBox(height: 16),
                 _text('addr', 'Local tunnel IP (CIDR)', hint: 'e.g. 10.x.x.x/32'),

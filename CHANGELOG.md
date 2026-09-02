@@ -27,8 +27,6 @@
 #### Merlin to Stock WIP
 
 - CHG: on stock add test for DownloadMaster installed , then backup `scripts\S50downloadmaster.sh`
-- CHG: preface slot descriptions with "pia-" to avoid confusion with other VPNs on the router.
-- EDIT dialogue box using wgcN instead of `Region name` from vpnc_clientlist.
 
 ##### WATCHDOG issues
 
@@ -41,6 +39,14 @@
 ---
 
 ### 1.2. Implemented - chronological change history
+
+2026-09-02 v0.8.26 build 396 - WIP stock support for Manage function only
+
+- GUI: append all router and app log messages to include the description (region name), eg "Enabling wgc1..." -> "Enabling wgc1:pia-aus_melbourne...". New `slotLabel` / `fetchSlotLabel` in `router_slot_service.dart`; the description is read from `vpnc_clientlist` field 0 on stock and `wgcN_desc` on Merlin, cached per service instance so it costs one extra nvram read per action however many lines mention it. Best-effort: a failed lookup degrades to the bare `wgcN` rather than breaking the action or masking its error. Raw router output echoed into the log (`wg show interfaces: wgc1`) is left verbatim.
+- GUI: alter EDIT dialogue box heading to show the slot:description eg wgc1:pia-aus_melbourne. The description is passed in from `fetchSlots` rather than read from the nvram map, because on stock a WebUI-created slot has no `wgcN_desc` mirror to read.
+- GUI: preface slot descriptions with "pia-" to avoid confusion with other VPNs on the router. Applied by one helper (`slotDescFor`) at both write sites - MANAGE create and the watchdog dialog's region pick - so the two cannot disagree on naming. Idempotent, so re-saving an existing slot never yields "pia-pia-".
+- FIX: that prefix would have broken the watchdog. `wgcN_desc` doubles as the PIA region id for the router script's `select(.id==$id)` lookup, so the script now derives `REGION="${DESC#pia-}"` and looks up on that, while its logs and its NVRAM write-back keep the full stored name. Tolerates descriptions written before the prefix existed. Payload grew 8376 -> 8496 bytes (Merlin), 8206 (stock).
+- TST: +16 tests (311 -> 327), coverage 93.8%. Covers prefix add/strip round-tripping, label formatting and both firmware lookups, the best-effort fallback, the enable/disable/delete log lines, the EDIT heading, and the script's region strip.
 
 2026-09-02 v0.8.25 build 395 - WIP stock support for Manage function only
 

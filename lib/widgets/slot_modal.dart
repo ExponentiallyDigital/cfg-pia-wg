@@ -271,6 +271,7 @@ class _SlotModalState extends State<SlotModal> {
       builder: (ctx) => SlotParamsEditor(
         slot: slot,
         initial: params!,
+        desc: _slots.slots[slot]?.desc ?? '',
         onSave: (editable) => _runSlot((svc) => svc.writeSlotParams(slot, editable)),
       ),
     );

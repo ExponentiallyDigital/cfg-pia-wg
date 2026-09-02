@@ -155,7 +155,7 @@ void main() {
     await tester.tap(find.text('aus_melbourne').last);
     await tester.pumpAndSettle();
 
-    expect(ssh.ran("nvram set wgc1_desc='aus_melbourne'"), isTrue);
+    expect(ssh.ran("nvram set wgc1_desc='pia-aus_melbourne'"), isTrue); // same prefix as MANAGE
     expect(ssh.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
 
     // Empty-slot create is enabled immediately; no reminder dialog is shown.

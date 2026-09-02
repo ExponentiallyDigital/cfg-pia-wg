@@ -57,6 +57,59 @@ const List<String> kMerlinOnlySlotKeys = ['enforce', 'fw', 'rip'];
 /// router is possible, but values above 2 are documented to break boot.
 const int kDefaultStockMaxActiveSlots = 2;
 
+// ─── Slot description / label ─────────────────────────────────────────────────────────
+// A router can hold VPNs this app knows nothing about, so every description it writes carries a
+// prefix. The description is ALSO the PIA region id the router-side watchdog looks up, so the
+// script strips the prefix again before its jq `select(.id==$id)` - see regionIdFromDesc and the
+// REGION line in _kWatchdogScriptTemplate. Change one and you must change the other.
+
+/// Marks a slot description as written by this app.
+const String kSlotDescPrefix = 'pia-';
+
+/// The description to store for [regionId]. Idempotent, so re-saving a slot never compounds the
+/// prefix into 'pia-pia-...'.
+String slotDescFor(String regionId) {
+  final id = regionId.trim();
+  return (id.isEmpty || id.startsWith(kSlotDescPrefix)) ? id : '$kSlotDescPrefix$id';
+}
+
+/// The bare PIA region id behind a stored description - the inverse of [slotDescFor], and tolerant
+/// of descriptions written before the prefix existed. Mirrors `${DESC#pia-}` in the router script.
+String regionIdFromDesc(String desc) {
+  final d = desc.trim();
+  return d.startsWith(kSlotDescPrefix) ? d.substring(kSlotDescPrefix.length) : d;
+}
+
+/// How a slot is named in every app-log and router-syslog line: 'wgcN', or `wgcN:<description>`
+/// once one is known, so a message says which VPN it is about.
+String slotLabel(int slot, String desc) => desc.trim().isEmpty ? 'wgc$slot' : 'wgc$slot:${desc.trim()}';
+
+/// Reads a slot's description from the router and formats it with [slotLabel].
+///
+/// Stock keeps the authoritative description in vpnc_clientlist field 0 - a profile created in the
+/// router WebUI has no `wgcN_desc` mirror at all. Merlin has no clientlist, so `wgcN_desc` is it.
+///
+/// Best-effort by design: a label is decoration, so a failed lookup degrades to the bare 'wgcN'
+/// rather than breaking the action being logged or masking the real error.
+Future<String> fetchSlotLabel(int slot, Future<String> Function(String cmd) run) async {
+  try {
+    var desc = '';
+    if (isStockFirmware) {
+      for (final r in parseVpncClientlist(await run('nvram get vpnc_clientlist'))) {
+        if (r.slot == slot) {
+          desc = r.desc;
+          break;
+        }
+      }
+    } else {
+      desc = await run('nvram get wgc${slot}_desc');
+    }
+    return slotLabel(slot, desc);
+  } catch (_) {
+    return 'wgc$slot';
+  }
+}
+
 // The per-slot NVRAM keys worth writing on [firmware]: all 17 on Merlin, 13 on stock.
 List<String> slotKeysFor(RouterFirmware firmware) => firmware == RouterFirmware.stock
     ? [
@@ -230,6 +283,11 @@ class RouterSlotService {
 
   Future<String> _run(String cmd) async => utf8.decode(await client.run(cmd)).trim();
 
+  // 'wgcN:<description>' for log lines. Cached because a service instance is short-lived (one
+  // per user action), so the description is read at most once however many lines it appears in.
+  final Map<int, String> _labelCache = {};
+  Future<String> _label(int slot) async => _labelCache[slot] ??= await fetchSlotLabel(slot, _run);
+
   // Best-effort router syslog entry (mirrors RouterWatchdog._logRouter); never fails the action.
   Future<void> _logRouter(String msg) async {
     try {
@@ -300,7 +358,7 @@ class RouterSlotService {
       onLog?.call('wgc$slot has no vpnc_clientlist profile; nothing to stop.');
       return false;
     }
-    final msg = 'wgc$slot is vpnc_clientlist row $unit; nvram set vpnc_unit=$unit, service $serviceCmd';
+    final msg = '${await _label(slot)} is vpnc_clientlist row $unit; nvram set vpnc_unit=$unit, service $serviceCmd';
     onLog?.call(msg);
     await _logRouter(msg);
     await _run('nvram set vpnc_unit=$unit');
@@ -372,6 +430,9 @@ class RouterSlotService {
   // ── Create (write to NVRAM, leave DISABLED, do not touch the active tunnel) ─────────
   // Mirrors router_push.dart Step 4 but sets enable=0 and skips the stop/start/verify.
   Future<void> createConfigToSlot({required int slot, required String config, required String regionId}) async {
+    // Stored descriptions carry the app's prefix so they stand out among any other VPNs on the
+    // router; the router script strips it again before using the value as a PIA region id.
+    final desc = slotDescFor(regionId);
     final wgMap = parseWgConfig(config);
     final epParts = wgMap['Endpoint']?.split(':') ?? [];
     final epIp = epParts.isNotEmpty ? epParts[0] : '';
@@ -381,7 +442,7 @@ class RouterSlotService {
     final values = <String, String>{
       'addr': '"${wgMap['Address'] ?? ''}"',
       'alive': '25',
-      'desc': '"$regionId"',
+      'desc': '"$desc"',
       'dns': '"${wgMap['DNS'] ?? ''}"',
       'enable': '0', // created but not active (spec 2.1.2)
       'enforce': '0', // kill switch off on create (round-2)
@@ -400,6 +461,9 @@ class RouterSlotService {
     final stock = isStockFirmware;
     final keys = slotKeysFor(routerFirmware);
 
+    // Names the slot as it is NOW - the restore path puts this configuration back.
+    final oldLabel = await _label(slot);
+
     Map<String, String>? backup;
     String? vpncBackup;
     try {
@@ -409,7 +473,7 @@ class RouterSlotService {
       final existingVpnc = stock ? await _run('nvram get vpnc_clientlist') : '';
       final occupied = existingDesc.isNotEmpty || (stock && parseVpncClientlist(existingVpnc).any((r) => r.slot == slot));
       if (occupied) {
-        onLog?.call('Backing up existing wgc$slot config...');
+        onLog?.call('Backing up existing ${await _label(slot)} config...');
         backup = {};
         for (final key in keys) {
           backup['wgc${slot}_$key'] = await _run('nvram get wgc${slot}_$key');
@@ -417,21 +481,22 @@ class RouterSlotService {
         if (stock) vpncBackup = existingVpnc;
       }
 
-      onLog?.call('Writing NVRAM for wgc$slot...');
+      _labelCache[slot] = slotLabel(slot, desc); // later lines name the slot by its new region
+      onLog?.call('Writing NVRAM for ${_labelCache[slot]}...');
       for (final key in keys) {
         await _run('nvram set wgc${slot}_$key=${values[key]}');
       }
       // Stock keeps the region name and active flag here, so the router web UI sees the slot too.
       if (stock) {
-        await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, desc: regionId, active: false));
+        await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, desc: desc, active: false));
       }
       await _run('nvram commit');
       onLog?.call('NVRAM committed.', isSuccess: true);
-      onLog?.call('Config written to wgc$slot (disabled).', isSuccess: true);
-      await _logRouter('Created wgc$slot configuration ($regionId)');
+      onLog?.call('Config written to ${await _label(slot)} (disabled).', isSuccess: true);
+      await _logRouter('Created ${await _label(slot)} configuration');
     } catch (e) {
       if (backup != null) {
-        onLog?.call('Create failed, restoring wgc$slot config...', isError: true);
+        onLog?.call('Create failed, restoring $oldLabel config...', isError: true);
         try {
           for (final entry in backup.entries) {
             await client.run('nvram set ${entry.key}="${entry.value}"');
@@ -440,9 +505,9 @@ class RouterSlotService {
             await client.run('nvram set vpnc_clientlist=${shellSingleQuote(vpncBackup)}');
           }
           await client.run('nvram commit');
-          onLog?.call('wgc$slot config restored.', isSuccess: true);
+          onLog?.call('$oldLabel config restored.', isSuccess: true);
         } catch (_) {
-          onLog?.call('CRITICAL: could not restore wgc$slot. Check router manually.', isError: true);
+          onLog?.call('CRITICAL: could not restore $oldLabel. Check router manually.', isError: true);
         }
       }
       rethrow;
@@ -453,8 +518,9 @@ class RouterSlotService {
   // Brings the interface up, waits for it to appear, then pings BOTH watchdog targets via
   // the slot interface (5s). Any failure reverts enable=0 and throws.
   Future<void> enableSlot(int slot, {required String primaryIp, required String secondaryIp}) async {
-    onLog?.call('Enabling wgc$slot...');
-    await _logRouter('Enabling wgc$slot...');
+    final label = await _label(slot);
+    onLog?.call('Enabling $label...');
+    await _logRouter('Enabling $label...');
     await _run('nvram set wgc${slot}_enable=1');
     await _setVpncActive(slot, true);
     // Commit before the service call, so the service can never read a half-written slot.
@@ -468,7 +534,7 @@ class RouterSlotService {
       await _run('service "start_wgc $slot"; service restart_vpnrouting0');
     }
 
-    onLog?.call('Verifying wgc$slot interface comes up...');
+    onLog?.call('Verifying $label interface comes up...');
     var up = false;
     for (var retry = 0; retry < verifyMaxAttempts; retry++) {
       await Future.delayed(verifyPollInterval);
@@ -477,32 +543,32 @@ class RouterSlotService {
       await _logRouter('wg show interfaces: ${out.isEmpty ? '(none)' : out}');
       if (out.contains('wgc$slot')) {
         up = true;
-        onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: wgc$slot is active');
+        onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: $label is active');
         break;
       }
-      onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: wgc$slot not yet active');
+      onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: $label not yet active');
     }
     if (!up) {
       await _revertEnable(slot);
-      throw Exception('wgc$slot did not come up — the configuration may have expired. Recreate it with CREATE, then ENABLE.');
+      throw Exception('$label did not come up - the configuration may have expired. Recreate it with CREATE, then ENABLE.');
     }
 
     final primaryOk = await pingViaSlot(primaryIp, slot);
     final secondaryOk = await pingViaSlot(secondaryIp, slot);
-    await _logRouter('wgc$slot ENABLE connectivity check: '
+    await _logRouter('$label ENABLE connectivity check: '
         'primary $primaryIp ${primaryOk ? 'OK' : 'FAIL'}, secondary $secondaryIp ${secondaryOk ? 'OK' : 'FAIL'}');
     if (!primaryOk || !secondaryOk) {
       await _revertEnable(slot);
-      throw Exception('Connectivity check failed via wgc$slot '
+      throw Exception('Connectivity check failed via $label '
           '(primary $primaryIp ${primaryOk ? 'OK' : 'FAIL'}, secondary $secondaryIp ${secondaryOk ? 'OK' : 'FAIL'}). '
           'Slot left disabled.');
     }
-    await _logRouter('Enabled wgc$slot');
-    onLog?.call('wgc$slot enabled and verified.', isSuccess: true);
+    await _logRouter('Enabled $label');
+    onLog?.call('$label enabled and verified.', isSuccess: true);
   }
 
   Future<void> _revertEnable(int slot) async {
-    onLog?.call('Reverting wgc$slot to disabled...', isError: true);
+    onLog?.call('Reverting ${await _label(slot)} to disabled...', isError: true);
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
     await _run('nvram commit');
@@ -516,7 +582,7 @@ class RouterSlotService {
 
   // ── Disable ─────────────────────────────────────────────────────────────────────────
   Future<void> disableSlot(int slot) async {
-    onLog?.call('Disabling wgc$slot...');
+    onLog?.call('Disabling ${await _label(slot)}...');
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
     await _run('nvram commit');
@@ -528,13 +594,15 @@ class RouterSlotService {
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
-    await _logRouter('Disabled wgc$slot');
-    onLog?.call('wgc$slot disabled.', isSuccess: true);
+    await _logRouter('Disabled ${await _label(slot)}');
+    onLog?.call('${await _label(slot)} disabled.', isSuccess: true);
   }
 
   // ── Delete (clear the slot's WireGuard config) ──────────────────────────────────────
   Future<void> deleteSlot(int slot) async {
-    onLog?.call('Deleting wgc$slot configuration...');
+    // Read the label before the description is unset, so the later lines can still name the slot.
+    final label = await _label(slot);
+    onLog?.call('Deleting $label configuration...');
     await _run('nvram set wgc${slot}_enable=0');
     // stock requires a different stop command to Merlin. Must precede removeVpncRecord below:
     // the unit is the row's index, so dropping the row first would lose it.
@@ -553,14 +621,14 @@ class RouterSlotService {
       await _editVpncClientlist((recs) => removeVpncRecord(recs, slot));
     }
     await _run('nvram commit');
-    await _logRouter('Deleted wgc$slot configuration');
-    onLog?.call('wgc$slot configuration cleared.', isSuccess: true);
+    await _logRouter('Deleted $label configuration');
+    onLog?.call('$label configuration cleared.', isSuccess: true);
   }
 
   // ── Edit: write the user-editable slot parameters back ──────────────────────────────
   // [params] keys are bare (e.g. 'addr', 'priv'). Values are shell-escaped.
   Future<void> writeSlotParams(int slot, Map<String, String> params) async {
-    onLog?.call('Saving wgc$slot parameters...');
+    onLog?.call('Saving ${await _label(slot)} parameters...');
     final live = slotKeysFor(routerFirmware);
     for (final e in params.entries) {
       if (!live.contains(e.key)) continue; // stock has no enforce / fw / ep_addr_r / rip
@@ -568,11 +636,14 @@ class RouterSlotService {
     }
     // On stock the region must stay in step with its vpnc_clientlist record, which is what the
     // router web UI and fetchSlots both read.
-    if (isStockFirmware && params.containsKey('desc')) {
-      await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, desc: params['desc']));
+    if (params.containsKey('desc')) {
+      _labelCache.remove(slot); // the slot may have just been renamed
+      if (isStockFirmware) {
+        await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, desc: params['desc']));
+      }
     }
     await _run('nvram commit');
-    onLog?.call('wgc$slot parameters saved.', isSuccess: true);
+    onLog?.call('${await _label(slot)} parameters saved.', isSuccess: true);
   }
 
   // ── Watchdog ping-target NVRAM (shared with the ENABLE check & the watchdog script) ─

@@ -149,7 +149,7 @@ void main() {
       await svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'aus_melbourne');
 
       expect(c.ran('nvram set wgc1_enable=0'), isTrue);
-      expect(c.ran('nvram set wgc1_desc="aus_melbourne"'), isTrue);
+      expect(c.ran('nvram set wgc1_desc="pia-aus_melbourne"'), isTrue); // stored with the app prefix
       expect(c.ran('nvram set wgc1_addr="10.0.0.2/32"'), isTrue);
       expect(c.ran('nvram set wgc1_ep_addr="203.0.113.5"'), isTrue);
       expect(c.ran('nvram set wgc1_ep_port="1337"'), isTrue);
@@ -176,7 +176,7 @@ void main() {
         throwsA(isA<Exception>()),
       );
       expect(logs.any((m) => m.contains('Backing up existing wgc1')), isTrue);
-      expect(logs.any((m) => m.contains('wgc1 config restored')), isTrue);
+      expect(logs.any((m) => m.contains('config restored')), isTrue);
     });
   });
 
@@ -356,6 +356,127 @@ void main() {
     });
   });
 
+  group('slot description prefix (pure)', () {
+    test('slotDescFor adds the prefix', () {
+      expect(slotDescFor('aus_melbourne'), 'pia-aus_melbourne');
+      expect(kSlotDescPrefix, 'pia-');
+    });
+
+    // CREATE over an existing slot re-saves whatever is there; the prefix must not compound.
+    test('slotDescFor is idempotent and leaves an empty id alone', () {
+      expect(slotDescFor('pia-aus_melbourne'), 'pia-aus_melbourne');
+      expect(slotDescFor(''), '');
+      expect(slotDescFor('  aus_perth '), 'pia-aus_perth');
+    });
+
+    // The router script does the same with the shell's ${DESC#pia-}; they must agree.
+    test('regionIdFromDesc is the inverse, and tolerates unprefixed descriptions', () {
+      expect(regionIdFromDesc('pia-aus_melbourne'), 'aus_melbourne');
+      expect(regionIdFromDesc('aus_melbourne'), 'aus_melbourne'); // written before the prefix existed
+      expect(regionIdFromDesc(''), '');
+      for (final id in ['aus_melbourne', 'us_east', 'uk_london']) {
+        expect(regionIdFromDesc(slotDescFor(id)), id, reason: id);
+      }
+    });
+  });
+
+  group('slotLabel (pure)', () {
+    test('names the slot with its description when there is one', () {
+      expect(slotLabel(1, 'pia-aus_melbourne'), 'wgc1:pia-aus_melbourne');
+      expect(slotLabel(5, ' pia-aus_perth '), 'wgc5:pia-aus_perth');
+    });
+
+    test('falls back to the bare slot for an unconfigured one', () {
+      expect(slotLabel(3, ''), 'wgc3');
+      expect(slotLabel(3, '   '), 'wgc3');
+    });
+  });
+
+  group('fetchSlotLabel', () {
+    test('stock reads the description from vpnc_clientlist, not the desc mirror', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus_perth>WireGuard>5>>pw>1>5>>>0>0>cfg-pia-wg' : 'MIRROR',
+      );
+      expect(await fetchSlotLabel(5, (cmd) async => c.responder!(cmd)), 'wgc5:pia-aus_perth');
+    });
+
+    test('Merlin reads wgcN_desc, having no clientlist', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('wgc2_desc') ? 'pia-us_east' : '');
+      expect(await fetchSlotLabel(2, (cmd) async => c.responder!(cmd)), 'wgc2:pia-us_east');
+    });
+
+    test('an unknown slot degrades to the bare name', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (_) => '');
+      expect(await fetchSlotLabel(4, (cmd) async => c.responder!(cmd)), 'wgc4');
+    });
+
+    // A label is decoration: a lookup failure must never break or mask the action being logged.
+    test('a failed lookup degrades to the bare name rather than throwing', () async {
+      expect(await fetchSlotLabel(1, (_) async => throw Exception('ssh down')), 'wgc1');
+    });
+  });
+
+  group('log messages name the slot', () {
+    test('enable, disable and delete all carry the description', () async {
+      useStock();
+      for (final probe in [
+        ('Enabling wgc1:pia-aus_perth...', (RouterSlotService s) => s.enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1')),
+        ('Disabling wgc1:pia-aus_perth...', (RouterSlotService s) => s.disableSlot(1)),
+        ('Deleting wgc1:pia-aus_perth configuration...', (RouterSlotService s) => s.deleteSlot(1)),
+      ]) {
+        final logs = <String>[];
+        final c = RecordingSSHClient(
+          responder: (cmd) {
+            if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+            if (cmd.contains('wg show interfaces')) return 'wgc1';
+            if (cmd.contains('ping -I')) return 'OK';
+            if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
+            return '';
+          },
+        );
+        try {
+          await probe.$2(svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)));
+        } catch (_) {
+          // The message content is what matters here, not whether the action succeeded.
+        }
+        expect(logs, contains(probe.$1));
+        // No line still names the slot bare. Raw router output (`wg show interfaces: wgc1`) is
+        // excluded - that is the router's own text, not the app naming a slot.
+        final appLines = logs.where((m) => !m.contains('wg show interfaces:'));
+        expect(appLines.any((m) => m.contains(RegExp(r'wgc1(?!:)'))), isFalse, reason: probe.$1);
+      }
+    });
+
+    test('the router syslog gets the same label', () async {
+      useStock();
+      final c = RecordingSSHClient(
+          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus_perth>WireGuard>2>>pw>1>8>>>0>0>cfg-pia-wg' : '');
+      await svc(c).disableSlot(2);
+      expect(c.commands.any((cmd) => cmd.contains('logger') && cmd.contains('wgc2:pia-aus_perth')), isTrue);
+    });
+
+    test('an unconfigured slot still logs, just without a description', () async {
+      useMerlin();
+      final logs = <String>[];
+      final c = RecordingSSHClient(responder: (_) => '');
+      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)).disableSlot(3);
+      expect(logs.any((m) => m.contains('Disabling wgc3...')), isTrue);
+    });
+
+    test('the description is read once however many lines mention it', () async {
+      useStock();
+      final c = RecordingSSHClient(
+          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus_perth>WireGuard>2>>pw>1>8>>>0>0>cfg-pia-wg' : '');
+      await svc(c).disableSlot(2);
+      // disableSlot logs 3 lines naming the slot; _setVpncActive and _runVpncService read the
+      // clientlist for their own reasons, so only assert the label did not add a read per line.
+      expect(c.count('nvram get vpnc_clientlist'), lessThanOrEqualTo(3));
+    });
+  });
+
   group('vpnc_clientlist parsing (pure)', () {
     // Verbatim from ARCHITECTURE.md 2.3.2.
     const sample = 'pia-aus_melbourne>WireGuard>5>>mel-pwd>1>5>>>0>0>cfg-pia-wg'
@@ -469,12 +590,12 @@ void main() {
       expect(c.count('nvram set wgc1_'), slotKeysFor(RouterFirmware.stock).length);
       expect(c.count('nvram set wgc1_'), 14);
       // The region mirror the router-side watchdog reads with a bare `nvram get`.
-      expect(c.ran('nvram set wgc1_desc="aus_melbourne"'), isTrue);
+      expect(c.ran('nvram set wgc1_desc="pia-aus_melbourne"'), isTrue); // stored with the app prefix
       // Fields stock does not have are never written.
       for (final key in kMerlinOnlySlotKeys) {
         expect(c.ran('nvram set wgc1_$key='), isFalse, reason: '$key is Merlin-only');
       }
-      expect(c.ran("nvram set vpnc_clientlist='aus_melbourne>WireGuard>1>>password>0>9>>>0>0>cfg-pia-wg'"), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus_melbourne>WireGuard>1>>password>0>9>>>0>0>cfg-pia-wg'"), isTrue);
     });
 
     // A profile created in the router web UI has a vpnc_clientlist record but no desc mirror; it

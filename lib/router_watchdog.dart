@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
 import 'firmware.dart';
+import 'router_slot_service.dart' show fetchSlotLabel, slotDescFor;
 import 's50_template.dart';
 
 // ─── PIA negotiation endpoints (mirrored from pia_service.dart) ─────────────────
@@ -377,6 +378,10 @@ class RouterWatchdog {
     }
   }
 
+  // 'wgcN:<description>' for log lines; cached, since a service instance serves one action.
+  final Map<int, String> _labelCache = {};
+  Future<String> _label(int slot) async => _labelCache[slot] ??= await fetchSlotLabel(slot, _run);
+
   // Best-effort native syslog entry on the router.
   Future<void> _logRouter(String msg) async => _run('logger -t $kWatchdogLogTag ${shellSingleQuote(msg)}');
 
@@ -426,7 +431,7 @@ class RouterWatchdog {
     await _run('nvram set cfg_pia_wg_user=${shellSingleQuote(config.piaUsername.trim())}');
     await _run('nvram set cfg_pia_wg_password=${shellSingleQuote(config.piaPassword)}');
     if (desc != null && desc.isNotEmpty) {
-      await _run('nvram set wgc${config.slotIndex}_desc=${shellSingleQuote(desc)}');
+      await _run('nvram set wgc${config.slotIndex}_desc=${shellSingleQuote(slotDescFor(desc))}');
     }
     await _run('nvram commit');
   }
@@ -451,12 +456,12 @@ class RouterWatchdog {
         await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
         await _run(buildCronRotateLine(config.slotIndex));
         await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
-        onLog?.call('Watchdog settings saved for wgc${config.slotIndex}.', isSuccess: true);
+        onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
         await _logRouter('Running /jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
         await _run('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
         onLog?.call('Ran /jffs/scripts/watchdog_wgc${config.slotIndex}.sh', isSuccess: true);
-        await _logRouter('Watchdog deployed for wgc${config.slotIndex} (check interval is ${config.cronIntervalMinutes}m)');
-        onLog?.call('Watchdog deployed for wgc${config.slotIndex}.', isSuccess: true);
+        await _logRouter('Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
+        onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
       });
 
   // Enables the underlying WireGuard slot
@@ -464,8 +469,8 @@ class RouterWatchdog {
         await _run('nvram set wgc${slot}_enable=1');
         await _run('nvram commit');
         await _run('service "start_wgc $slot"; service restart_vpnrouting0');
-        await _logRouter('Enabled wgc$slot via watchdog interface');
-        onLog?.call('wgc$slot enabled.', isSuccess: true);
+        await _logRouter('Enabled ${await _label(slot)} via watchdog interface');
+        onLog?.call('${await _label(slot)} enabled.', isSuccess: true);
       });
 
   // Disables the underlying WireGuard slot (mirrors RouterSlotService.disableSlot). Clearing
@@ -479,8 +484,8 @@ class RouterWatchdog {
     await _run('nvram set wgc${slot}_enable=0');
     await _run('nvram commit');
     await _run('service "stop_wgc $slot"; service start_vpnrouting0');
-    await _logRouter('Disabled wgc$slot');
-    onLog?.call('wgc$slot disabled.', isSuccess: true);
+    await _logRouter('Disabled ${await _label(slot)}');
+    onLog?.call('${await _label(slot)} disabled.', isSuccess: true);
   }
 
   // Only one watchdog / WireGuard interface may ever be active at a time (same rule the manage
@@ -498,7 +503,7 @@ class RouterWatchdog {
       // The interface check is a superset of the nvram flag: it also catches a tunnel that is
       // still up while wgcN_enable already reads 0.
       if (!hasWatchdog && !enabled && !iface.contains('wgc$slot')) continue;
-      onLog?.call('Only one watchdog may be active - deactivating wgc$slot...');
+      onLog?.call('Only one watchdog may be active - deactivating ${await _label(slot)}...');
       // stopWatchdog tears the interface down as part of its own teardown; a bare slot only
       // needs the interface disabling.
       if (hasWatchdog) {
@@ -551,6 +556,8 @@ class RouterWatchdog {
   // Full disable: unset NVRAM, remove cron jobs and service-start script
   // JFFS is intentionally left enabled.
   Future<void> stopWatchdog(int slot) => _guard('disable', () async {
+        // Read before the nvram unsets below wipe the description.
+        final label = await _label(slot);
         await _run('cru d watchdog_wgc$slot');
         await _run('cru d watchdog_log_rotate_wgc$slot');
         await _run('rm -f /jffs/scripts/watchdog_wgc$slot.sh');
@@ -590,8 +597,8 @@ class RouterWatchdog {
         // running. This previously issued `service "stop_wgc wgc$slot"` — the service expects the
         // bare slot index (see ARCHITECTURE.md), so the interface was never actually stopped.
         await _disableVpnSlot(slot);
-        await _logRouter('Watchdog disabled for wgc$slot');
-        onLog?.call('Watchdog disabled for wgc$slot.', isSuccess: true);
+        await _logRouter('Watchdog disabled for $label');
+        onLog?.call('Watchdog disabled for $label.', isSuccess: true);
       });
 
   Future<bool> waitForWatchdogReady(int slot, {Duration pollInterval = const Duration(seconds: 1), int maxAttempts = 10}) async {
@@ -768,6 +775,8 @@ SMTP_PASS="$(nvram get ${K}wd_smtp_pass)"
 SMTP_HOST="${SMTP_SERVER%:*}"
 SMTP_PORT="${SMTP_SERVER##*:}"
 DESC="$(nvram get ${K}desc)"
+# PIA region ids carry no prefix; strip the app's for the lookup (tolerates older names).
+REGION="${DESC#pia-}"
 PIA_USER="$(nvram get cfg_pia_wg_user)"
 PIA_PASS="$(nvram get cfg_pia_wg_password)"
 
@@ -894,9 +903,9 @@ TOKEN="$($CURL -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" | "$JQ" -r '.token // empty
 echo -n > /jffs/curllst
 log "PIA token obtained (len=$(echo -n "$TOKEN" | wc -c))"
 
-log "Fetching server list for region $DESC"
-SERVERS="$($CURL "$SERVERLIST_URL" | head -1 | "$JQ" -r --arg id "$DESC" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"')"
-[ -n "$SERVERS" ] || abort "no servers found for region $DESC"
+log "Fetching server list for region $REGION"
+SERVERS="$($CURL "$SERVERLIST_URL" | head -1 | "$JQ" -r --arg id "$REGION" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"')"
+[ -n "$SERVERS" ] || abort "no servers found for region $REGION"
 log "Servers: $(echo "$SERVERS" | wc -l | tr -d ' ') candidates"
 echo -n > /jffs/curllst
 
@@ -921,7 +930,7 @@ if [ -z "$BEST_IP" ]; then
   BEST_IP="$(echo "$SERVERS" | head -1 | awk '{print $1}')"
   BEST_CN="$(echo "$SERVERS" | head -1 | awk '{print $2}')"
 fi
-[ -n "$BEST_IP" ] || abort "could not select a server for region $DESC"
+[ -n "$BEST_IP" ] || abort "could not select a server for region $REGION"
 log "Selected server $BEST_IP ($BEST_CN) for region $DESC"
 
 log "Generating WireGuard keypair"

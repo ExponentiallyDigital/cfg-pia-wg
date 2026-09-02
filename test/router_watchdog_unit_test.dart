@@ -371,6 +371,19 @@ void main() {
       expect(s, isNot(contains('echo "MIME-Version: 1.0"')));
     });
 
+    // The app stores 'pia-<region>' but PIA's region ids carry no prefix, so the script strips it
+    // for the lookup only. regionIdFromDesc in router_slot_service.dart does the same in Dart.
+    test('the region lookup strips the app prefix, the logged name keeps it', () {
+      final s = buildWatchdogScript(_valid(slot: 1));
+      expect(s, contains(r'DESC="$(nvram get ${K}desc)"'));
+      expect(s, contains(r'REGION="${DESC#pia-}"'));
+      // jq selects on the bare region id...
+      expect(s, contains(r'--arg id "$REGION"'));
+      expect(s, isNot(contains(r'--arg id "$DESC"')));
+      // ...while the NVRAM write-back keeps the full stored name.
+      expect(s, contains(r'nvset "desc=$DESC"'));
+    });
+
     test('no placeholder survives substitution on either firmware', () {
       for (final fw in RouterFirmware.values) {
         final s = buildWatchdogScript(_valid(email: true), firmware: fw);
@@ -387,7 +400,7 @@ void main() {
     test('neither variant grows the deploy payload', () {
       final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
       final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
-      expect(merlin, lessThan(8600));
+      expect(merlin, lessThan(8700));
       expect(stock, lessThanOrEqualTo(merlin));
     });
   });

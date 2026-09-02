@@ -152,7 +152,7 @@ Merlin exposes 17 nvram fields per WireGuard slot, stock exposes 12.
 | `wgcN_addr` | Yes | Yes | – | Local tunnel IP address assigned by the VPN server, in CIDR notation (e.g. `10.1.2.3`). |
 | `wgcN_aips` | Yes | Yes | `0.0.0.0/0` | Allowed IP addresses. |
 | `wgcN_alive` | Yes | Yes | `25` (seconds) | Persistent keepalive interval. |
-| `wgcN_desc` | Yes | **No** | – | Slot's PIA region name. Must match the actual PIA region name for the watchdog function to operate. |
+| `wgcN_desc` | Yes | **No** | – | Slot's PIA region name, stored with a `pia-` prefix (e.g. `pia-aus_melbourne`) so the app's VPNs stand out among any others on the router. The watchdog strips the prefix (`REGION="${DESC#pia-}"`) before its region lookup, so the remainder must still match a real PIA region name. |
 | `wgcN_dns` | Yes | Yes | `"9.9.9.9, 149.112.112.112"` | Two DNS servers to use, actual values are set in the cfg-pia-wg app. |
 | `wgcN_enable` | Yes | Yes | – | `1` enables this slot, `0` disables it. |
 | `wgcN_enforce` | Yes | **No** | – | `1` enables the killswitch on this slot, `0` disables it. Blocks routed clients if the tunnel goes down. Stock exposes no UI to alter this - when running on stock this field will be ignored. |

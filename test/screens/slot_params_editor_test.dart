@@ -5,6 +5,20 @@ import 'package:cfg_pia_wg/screens/slot_params_editor.dart';
 
 import '../watchdog_test_utils.dart';
 
+Widget _editor({String desc = ''}) => MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (ctx) => ElevatedButton(
+            onPressed: () => showDialog<bool>(
+              context: ctx,
+              builder: (_) => SlotParamsEditor(slot: 1, initial: _initial(), desc: desc, onSave: (_) async {}),
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+
 // initial values with addr/desc/ep_addr/ppub/priv blank (no defaults) so SAVE starts disabled.
 Map<String, String> _initial() => {
       'addr': '',
@@ -126,6 +140,23 @@ void main() {
     expect(find.text('198.51.100.7'), findsOneWidget); // rip
     expect(find.text('203.0.113.9'), findsOneWidget); // ep_addr_r
     expect(find.text('YES'), findsOneWidget); // Enabled (enable == '1')
+  });
+
+  // The heading names the VPN, not just the slot, so the user can see what they are editing.
+  group('heading', () {
+    testWidgets('shows the slot and its description', (tester) async {
+      await tester.pumpWidget(_editor(desc: 'pia-aus_melbourne'));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text('EDIT wgc1:pia-aus_melbourne'), findsOneWidget);
+    });
+
+    testWidgets('falls back to the bare slot when there is no description', (tester) async {
+      await tester.pumpWidget(_editor());
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text('EDIT wgc1'), findsOneWidget);
+    });
   });
 
   // Stock exposes 12 of the 17 fields (ARCHITECTURE.md 2.3.1); the four the app cannot write are
