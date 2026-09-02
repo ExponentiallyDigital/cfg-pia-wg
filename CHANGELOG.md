@@ -4,7 +4,7 @@
   - [1.1. Pending - see BACKLOG.md for complete list](#11-pending---see-backlogmd-for-complete-list)
     - [Merlin to Stock WIP](#merlin-to-stock-wip)
       - [WATCHDOG issues](#watchdog-issues)
-      - [MANAGE issues](#manage-issues)
+      - [GENERATE CONFIG](#generate-config)
   - [1.2. Implemented - chronological change history](#12-implemented---chronological-change-history)
 
 ---
@@ -13,32 +13,66 @@
 
 ### 1.1. Pending - see [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for complete list
 
-- CHG: enable two concurrent watchdogs, ADD disable function (CFG in NVRAM + unset cron). _(The MANAGE half landed in 395: slots now run concurrently, capped by `vpnc_max_conn` on stock. `RouterWatchdog.deactivateOtherSlots` still collapses to one slot on deploy, so the WATCHDOG half remains.)_
 - DOC: Add note to use data from About screen when creating an issue on GitHub, add to ISSUE_TEMPLATEs.
-- GUI: In Conf function "GENERATED CONFIG", add display of region name config is for.
-- GUI: Make Manage and Watchdog deletion prompt messages consistent.
-- GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
-- GUI: allow selecting multiple lines of text in About screen.
-- BUG: router script re-writes enforce=1 on every successful re-negotiation, so a slot created kill-switch-off ends up kill-switch-on once the watchdog fires.
 - DOC: add to `README.md` how to get and install `jq` and `sendmail-go` on stock firmware, plus how to install & cfg Download Master and use the replacement script.
-- CHG: `router_watchdog.dart` also owns `deactivateOtherSlots`, which enforces one-active-slot across wgc1..5 inside deploy, and whose ordering constraint (before the NVRAM write) is a real footgun (thanks Claude!).
+- GUI: In Conf function "GENERATED CONFIG", add display of region name config is for.
+- GUI: allow selecting multiple lines of text in About screen.
+- DOC: once stock firmware version operating, remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md.
 - REL: update version to 0.9 branch when first releasing stock support
 
 #### Merlin to Stock WIP
 
 - CHG: on stock add test for DownloadMaster installed , then backup `scripts\S50downloadmaster.sh`
+- TBC: stale `vpncN_state_t` / `vpncN_dns` / `vpncN_sbstate_t` survived a disable in the 393 test log. Recheck after 394: `stop_vpnc` may clear them, so no speculative cleanup was written.
 
 ##### WATCHDOG issues
 
-- ...
+- CHG: enable two concurrent watchdogs, ADD disable function (CFG in NVRAM + unset cron). _(The MANAGE half landed in 395: slots now run concurrently, capped by `vpnc_max_conn` on stock. `RouterWatchdog.deactivateOtherSlots` still collapses to one slot on deploy, so the WATCHDOG half remains.)_
+- CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes; add lifetime number of reconfigure events (write start date and update total count to NVRAM).
+- CHG: On disable, log lines are repeated (and needs the region name per above)
+        cfg-pia-wg: Disabled wgc1
+        cfg-pia-wg: Watchdog disabled for wgc1
+        cfg-pia-wg: Disabled wgc1
+- GUI: Make Manage and Watchdog deletion prompt messages consistent.
+- GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.  
+- BUG: router script re-writes enforce=1 on every successful re-negotiation, so a slot created kill-switch-off ends up kill-switch-on once the watchdog fires.
+- FIX: If editing an existing watchdog slot, at save you are asked if you want to overwrite, but if you create a watchdog on an empty slot you aren't prompted and that removes any existing watchdog. Add a prompt explaining that!
+- CHG: Remove 'WATCHDOG_EOF' text from test email:
+         This is a test email from the cfg-pia-wg watchdog (slot wgcX).
+         WATCHDOG_EOF
 
-##### MANAGE issues
+##### GENERATE CONFIG
 
-- Stale `vpncN_state_t` / `vpncN_dns` / `vpncN_sbstate_t` survived a disable in the 393 test log. Recheck after 394: `stop_vpnc` may clear them, so no speculative cleanup was written.
+- FIX: When viewing the router watchdog log, if you COPY the log and then enter the conf menu it will detect that and start the clear timer as it only knows that something from this app placed data on the clipboard.
+- FIX: In generate, if you delete DNS entries then go to another screen then re-enter generate, the default DNS addresses are not displayed but are still used when generating a new conf file. Add a check that if that field is ever blank, then the quad 9 defaults are inserted.
+- CHG: Replace app exit and config clipboard copy timer expiration behaviours with clearPrimaryClip(), and remove the two associated comments in README.md. WHy? After the app exits the user sees "cleared" which is the system clipboard being cleared, they may wonder what that was, so we'll use clearPrimaryClip() which shouldn't throw a "cleared" message to the user after teh app exits.
 
 ---
 
+WIP:
+
+- ADD: to slot edit modal "apply to all devices" - this sets XX and runs "service  restart_default_wan".
+- GUI: App log has no carriage return/line feed when copied to clipboard. Text copied from Watchdog log has line terminators, as does the Router Config conf file.
+- GUI: Edge-to-edge may not display for all users. From Android 15, apps targeting SDK 35 will display edge-to-edge by default. Apps targeting SDK 35 should handle insets to make sure that their app displays correctly on Android 15 and later. Investigate this issue and allow time to test edge-to-edge and make the required updates. Alternatively, call enableEdgeToEdge() for Kotlin or EdgeToEdge.enable() for Java for backward compatibility.
+- CHG: Add option to remove/update cached ca cert (in case it becomes stale).
+
+- GUI: in the ABOUT screen remove "Architecture" entry, and move "GitHub source code repositiry" line to below "Privacy Policy".
+- ADD: Enable creation of a GitHub issue from ABOUT screen, open on GitHub with build info of running app (but that requires a GitHub login/account).  
+- GUI: Can't copy/paste text from About screen (not required if implement GH issue creation from About, but that requires a GH account).
+
 ### 1.2. Implemented - chronological change history
+
+2026-09-02 v0.8.27 build 397 - WIP stock support for Manage function only
+
+- FIX: update "HOME" button grey -> teal in slot modal, and the screen HOME button in `app_scaffold.dart` (text and border) to match.
+- FIX: DELETE left `wgcN_enable` behind. It was already being unset, but `stop_vpnc` returns as soon as `notify_rc` queues it, so the firmware rewrote the key afterwards. DELETE now waits for the slot to leave `wg show interfaces` first, bounded by `verifyPollInterval` / `verifyMaxAttempts`.
+- FIX: DELETE now also unsets `vpncN_dut_disc` / `vpncN_sbstate_t` / `vpncN_state_t` (`kVpncRuntimeKeys`), stock only - Merlin does not use VPN Fusion.
+- FIX: runtime keys are indexed by `vpnc_clientlist` field 7, not the slot number - wgc1 leaves `vpnc9_*`. New `vpncStateIndexForSlot`, read from the record before it is removed, falling back to `10 - slot`. The earlier slot-number reading came from wgc5, where both are 5.
+- INF: one profile carries three indexes - slot number, clientlist row (`vpnc_unit`), and field 7. See ARCHITECTURE.md 4.2.
+- INF: `vpncN_dns` also survives a stop; deliberately left out of the sweep.
+- FIX: ACTIVE badge stayed on a slot after DISABLE until the modal was reopened. The modal did refresh; `disableSlot` just returned before the tunnel was down, so the refresh read a stale `wg show interfaces`. It now settles first, as DELETE does. `_revertEnable` too.
+- CHG: DISABLE is greyed once a MANAGE slot is down; it stays live if the interface is up even when the enable flag reads 0, so a running tunnel is never stranded behind a greyed button.
+- TST: +25 tests (327 -> 352), coverage 93.8%. Includes regressions for the reported cases: deleting wgc1 clears `vpnc9_*` not `vpnc1_*`, and the ACTIVE badge clears after DISABLE without reopening the modal.
 
 2026-09-02 v0.8.26 build 396 - WIP stock support for Manage function only
 

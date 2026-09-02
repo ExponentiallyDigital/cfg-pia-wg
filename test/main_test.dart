@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/app_shell.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 
@@ -48,6 +49,21 @@ void main() {
         await tester.tap(find.byKey(const Key('screen_close')));
         await tester.pumpAndSettle();
       }
+
+      await disposeApp(tester, c);
+    });
+
+    // The screen HOME button matches the slot modal's: teal text and border, not muted/grey.
+    testWidgets('screen HOME is teal', (tester) async {
+      final c = quietController();
+      await pumpApp(tester, c);
+      await tester.tap(find.byKey(const Key('menu_log')));
+      await tester.pumpAndSettle();
+
+      final style = tester.widget<OutlinedButton>(find.byKey(const Key('screen_close'))).style!;
+      const states = <WidgetState>{};
+      expect(style.foregroundColor!.resolve(states), kHighlight);
+      expect(style.side!.resolve(states)!.color, kHighlight);
 
       await disposeApp(tester, c);
     });

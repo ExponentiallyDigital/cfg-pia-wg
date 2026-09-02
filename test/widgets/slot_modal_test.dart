@@ -1,6 +1,7 @@
 // test/widgets/slot_modal_test.dart - the parameterised slot modal (manage + watchdog modes).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
@@ -56,7 +57,8 @@ RouterSlots _slots(Map<int, SlotInfo> override,
   return RouterSlots(slots: m, activeSlots: active, isMerlin: merlin, maxActiveSlots: maxActive);
 }
 
-Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, SessionController c) {
+Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, SessionController c,
+    {int verifyMaxAttempts = 1}) {
   return SessionScope(
     controller: c,
     child: MaterialApp(
@@ -72,7 +74,7 @@ Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, Se
                 initialSlots: initial,
                 piaService: _FakePia(),
                 slotServiceFactory: (cl) =>
-                    RouterSlotService(cl, onLog: c.onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: 1),
+                    RouterSlotService(cl, onLog: c.onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts),
               ),
             ),
             child: const Text('open'),
@@ -108,13 +110,13 @@ void main() {
       expect(_btn(tester, 'slot_create').onPressed, isNotNull);
       expect(_btn(tester, 'slot_enable').onPressed, isNull);
 
-      // Configured slot selected -> all enabled.
+      // Configured but stopped -> everything except DISABLE, which has nothing to stop.
       await tester.tap(find.byKey(const Key('slot_row_1')));
       await tester.pump();
       expect(_btn(tester, 'slot_create').onPressed, isNotNull);
       expect(_btn(tester, 'slot_enable').onPressed, isNotNull);
       expect(_btn(tester, 'slot_edit').onPressed, isNotNull);
-      expect(_btn(tester, 'slot_disable').onPressed, isNotNull);
+      expect(_btn(tester, 'slot_disable').onPressed, isNull);
       expect(_btn(tester, 'slot_delete').onPressed, isNotNull);
 
       await tester.pumpWidget(const SizedBox());
@@ -124,7 +126,8 @@ void main() {
     testWidgets('DISABLE runs disableSlot', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
-      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
+      await tester.pumpWidget(
+          _host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}), c));
       await _open(tester);
 
       await tester.tap(find.byKey(const Key('slot_row_1')));
@@ -522,6 +525,46 @@ void main() {
       c.dispose();
     });
 
+    // Reported: after DISABLE the ACTIVE badge stayed until the modal was reopened, because the
+    // refresh read `wg show interfaces` before the router had finished stopping the tunnel.
+    testWidgets('the badge clears after DISABLE without reopening the modal', (tester) async {
+      final c = _controller();
+      var stopped = false;
+      var pollsSinceStop = 0;
+      final ssh = RecordingSSHClient(
+        responder: (cmd) {
+          // notify_rc returns immediately; the interface lingers for a moment after that, which is
+          // exactly the window the old code refreshed in.
+          if (cmd.contains('service') && cmd.contains('stop')) stopped = true;
+          if (cmd.contains('wg show interfaces')) {
+            if (!stopped) return 'wgc1';
+            return pollsSinceStop++ < 2 ? 'wgc1' : '';
+          }
+          if (cmd.contains('wgc1_desc')) return 'pia-aus_melbourne';
+          return '';
+        },
+      );
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'pia-aus_melbourne', enabled: true)}, active: {1}), c,
+            verifyMaxAttempts: 5),
+      );
+      await _open(tester);
+      expect(find.text('● ACTIVE'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+
+      // Still the same open modal - no reopen.
+      expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+      expect(find.text('● ACTIVE'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
     testWidgets('no badge when nothing is up, even for a configured slot', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
@@ -534,6 +577,65 @@ void main() {
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
+    });
+  });
+
+  group('HOME button', () {
+    for (final mode in SlotModalMode.values) {
+      testWidgets('is teal, not muted, in ${mode.name} mode', (tester) async {
+        final c = _controller();
+        addTearDown(c.dispose);
+        await tester.pumpWidget(
+          _host(RecordingSSHClient(responder: (_) => ''), mode, _slots({1: _slot(1, desc: 'pia-aus')}), c),
+        );
+        await _open(tester);
+
+        final home = tester.widget<Text>(find.text('HOME'));
+        expect(home.style?.color, kHighlight);
+        expect(home.style?.color, isNot(kMuted));
+
+        await tester.pumpWidget(const SizedBox());
+      });
+    }
+  });
+
+  group('DISABLE gating', () {
+    Future<ElevatedButton> disableBtn(WidgetTester tester, SlotInfo slot, {Set<int> active = const {}}) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        _host(RecordingSSHClient(responder: (_) => ''), SlotModalMode.manage, _slots({1: slot}, active: active), c),
+      );
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      return _btn(tester, 'slot_disable');
+    }
+
+    testWidgets('live for an enabled slot', (tester) async {
+      final b = await disableBtn(tester, _slot(1, desc: 'pia-aus', enabled: true), active: {1});
+      expect(b.onPressed, isNotNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('greyed once the slot is down', (tester) async {
+      final b = await disableBtn(tester, _slot(1, desc: 'pia-aus'));
+      expect(b.onPressed, isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('greyed for an empty slot', (tester) async {
+      final b = await disableBtn(tester, _slot(1));
+      expect(b.onPressed, isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    // The flag and the interface can disagree. Gating on the flag alone would strand a user with a
+    // running tunnel and no way to stop it.
+    testWidgets('live when the interface is up even though the flag reads 0', (tester) async {
+      final b = await disableBtn(tester, _slot(1, desc: 'pia-aus'), active: {1});
+      expect(b.onPressed, isNotNull);
+      await tester.pumpWidget(const SizedBox());
     });
   });
 

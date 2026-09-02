@@ -261,7 +261,18 @@ VPN Fusion abstracts the underlying per slot calls to manipulate WG VPNs. Find t
 >
 > Row index is a strict generalisation — it agrees with `5 - slot` on every WebUI-ordered list.
 
-The runtime state keys are indexed differently again: `vpncN_state_t` / `vpncN_dns` / `vpncN_sbstate_t` use the **slot** number, so enabling wgc5 (row 0) sets `vpnc_unit=0` and `vpnc5_state_t=2`.
+The runtime state keys are indexed differently again: `vpncN_state_t` / `vpncN_dns` / `vpncN_sbstate_t` use **field 7** of the profile's `vpnc_clientlist` record, *not* the slot number and *not* `vpnc_unit`.
+
+> [!IMPORTANT]
+> One profile carries three different indexes. For `aus_perth` in slot 1, sitting at row 1 with field 7 = 9:
+>
+> | Index | Value | Used by |
+> |---|:-:|---|
+> | slot number | 1 | `wgc1_*` keys, `service` targets |
+> | clientlist row | 1 | `vpnc_unit` |
+> | field 7 | 9 | `vpnc9_state_t`, `vpnc9_sbstate_t`, `vpnc9_dut_disc` |
+>
+> Measured: enabling then deleting wgc1 left `vpnc9_*` behind. Slot 5 is the trap - there the slot number and field 7 are both 5, so a reading taken only from wgc5 cannot tell them apart.
 
 #### 4.2.1 Create and enable a slot
 

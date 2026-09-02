@@ -217,6 +217,44 @@ void main() {
     });
   });
 
+  // The caller refreshes as soon as these return, so they must not return while the interface is
+  // still listed - that is what left the ACTIVE badge on a just-disabled slot.
+  group('stop paths wait for the interface', () {
+    RecordingSSHClient router({required int upFor}) {
+      var polls = 0;
+      return RecordingSSHClient(
+        responder: (cmd) => cmd.contains('wg show interfaces') ? (polls++ < upFor ? 'wgc2' : '') : '',
+      );
+    }
+
+    test('disableSlot returns only once the slot has gone', () async {
+      final c = router(upFor: 2);
+      await svc(c, verifyMaxAttempts: 5).disableSlot(2);
+      expect(c.count('wg show interfaces'), 3); // two while up, one confirming it went
+    });
+
+    test('an already-stopped slot costs a single poll', () async {
+      final c = router(upFor: 0);
+      await svc(c).disableSlot(2);
+      expect(c.count('wg show interfaces'), 1);
+    });
+
+    test('disableSlot gives up rather than hanging, and still reports', () async {
+      final logs = <String>[];
+      final c = router(upFor: 99);
+      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m), verifyMaxAttempts: 2).disableSlot(2);
+      expect(logs.any((m) => m.contains('still up after the stop')), isTrue);
+      expect(logs.any((m) => m.contains('disabled.')), isTrue);
+    });
+
+    test('a failed enable reverts and waits too', () async {
+      // Interface never comes up -> _revertEnable, whose stop must also settle.
+      final c = RecordingSSHClient(responder: (_) => '');
+      await expectLater(svc(c).enableSlot(2, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
+      expect(c.ran('nvram set wgc2_enable=0'), isTrue);
+    });
+  });
+
   group('disable / delete', () {
     test('disableSlot sets enable=0, commits and stops the interface', () async {
       final c = RecordingSSHClient(responder: (_) => '');
@@ -238,6 +276,105 @@ void main() {
       // the +2 accounts for the extra two manual keys being deleted
       expect(c.count('nvram unset wgc3_'), kSlotNvramKeys.length + 2);
       expect(c.ran('nvram commit'), isTrue);
+    });
+  });
+
+  // The stop is asynchronous, so DELETE waits for the tunnel to actually go before clearing keys -
+  // otherwise the firmware re-creates wgcN_enable behind the unset.
+  group('deleteSlot cleanup', () {
+    // Interface reported up for [upFor] polls, then gone.
+    RecordingSSHClient router({int upFor = 0, String clientlist = ''}) {
+      var polls = 0;
+      return RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return clientlist;
+          if (cmd.contains('wg show interfaces')) return polls++ < upFor ? 'wgc3' : '';
+          return '';
+        },
+      );
+    }
+
+    test('waits for the interface to go before unsetting anything', () async {
+      useStock();
+      final c = router(upFor: 2, clientlist: 'a>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
+      await svc(c, verifyMaxAttempts: 5).deleteSlot(3);
+
+      final lastPoll = c.commands.lastIndexOf('wg show interfaces');
+      final firstUnset = c.commands.indexWhere((cmd) => cmd.startsWith('nvram unset'));
+      expect(lastPoll, isNot(-1));
+      expect(firstUnset, isNot(-1));
+      expect(lastPoll, lessThan(firstUnset), reason: 'cleanup must not race the stop');
+    });
+
+    test('an already-stopped slot costs a single poll', () async {
+      useStock();
+      final c = router();
+      await svc(c).deleteSlot(3);
+      expect(c.count('wg show interfaces'), 1);
+    });
+
+    // Giving up must still clear the configuration - that is what the user asked for.
+    test('clears anyway, with a warning, if the interface never goes', () async {
+      useStock();
+      final logs = <String>[];
+      final c = router(upFor: 99, clientlist: 'pia-aus_perth>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
+      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m), verifyMaxAttempts: 2).deleteSlot(3);
+
+      expect(logs.any((m) => m.contains('wgc3:pia-aus_perth is still up after the stop')), isTrue);
+      expect(c.ran('nvram unset wgc3_enable'), isTrue);
+      expect(c.ran('nvram commit'), isTrue);
+    });
+
+    test('unsets wgcN_enable and the VPN Fusion runtime keys on stock', () async {
+      useStock();
+      // Slot 3's field 7 is 7, so its runtime keys are vpnc7_*, not vpnc3_*.
+      final c = router(clientlist: 'a>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
+      await svc(c).deleteSlot(3);
+
+      expect(c.ran('nvram unset wgc3_enable'), isTrue);
+      for (final key in kVpncRuntimeKeys) {
+        expect(c.ran('nvram unset vpnc7_$key'), isTrue, reason: key);
+      }
+      expect(kVpncRuntimeKeys, ['dut_disc', 'sbstate_t', 'state_t']);
+      // Nothing else's runtime state is touched.
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram unset vpnc') && !cmd.contains('vpnc7_')), isFalse);
+    });
+
+    // Reproduces the hardware report: create + enable + delete wgc1 left vpnc9_* behind, because
+    // the keys are indexed by field 7 (9 for slot 1), not by the slot number.
+    test('wgc1 clears vpnc9_*, not vpnc1_*', () async {
+      useStock();
+      var polls = 0;
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+          if (cmd.contains('wg show interfaces')) return polls++ < 1 ? 'wgc1' : '';
+          return '';
+        },
+      );
+      await svc(c).deleteSlot(1);
+
+      for (final key in kVpncRuntimeKeys) {
+        expect(c.ran('nvram unset vpnc9_$key'), isTrue, reason: key);
+        expect(c.ran('nvram unset vpnc1_$key'), isFalse, reason: 'slot number is the wrong index');
+      }
+    });
+
+    // vpncN_* is VPN Fusion state; Merlin does not drive WireGuard through it.
+    test('leaves the VPN Fusion keys alone on Merlin', () async {
+      useMerlin();
+      final c = router();
+      await svc(c).deleteSlot(3);
+      expect(c.ran('nvram unset wgc3_enable'), isTrue);
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram unset vpnc')), isFalse);
+    });
+
+    // Deliberately excluded from the sweep.
+    test('does not unset vpncN_dns', () async {
+      useStock();
+      final c = router(clientlist: 'a>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
+      await svc(c).deleteSlot(3);
+      expect(c.ran('nvram unset vpnc3_dns'), isFalse);
     });
   });
 
@@ -376,6 +513,49 @@ void main() {
       expect(regionIdFromDesc(''), '');
       for (final id in ['aus_melbourne', 'us_east', 'uk_london']) {
         expect(regionIdFromDesc(slotDescFor(id)), id, reason: id);
+      }
+    });
+  });
+
+  // Three different indexes exist on one profile: the slot number, the clientlist row
+  // (vpnc_unit), and field 7 (the vpncN_* runtime keys). They coincide often enough to mislead.
+  group('vpncStateIndexForSlot (pure)', () {
+    const sample = 'a>WireGuard>5>>pw>1>5>>>0>0>Web<b>WireGuard>1>>pw>0>9>>>0>0>Web';
+
+    test('reads field 7, which is not the slot number', () {
+      final recs = parseVpncClientlist(sample);
+      expect(vpncStateIndexForSlot(recs, 1), 9); // the hardware case: wgc1 -> vpnc9_*
+      expect(vpncStateIndexForSlot(recs, 5), 5); // slot 5 is where the two rules coincide
+    });
+
+    test('falls back to 10 - slot when the slot has no record', () {
+      expect(vpncStateIndexForSlot(const [], 1), 9);
+      expect(vpncStateIndexForSlot(const [], 4), 6);
+    });
+
+    test('honours a field 7 that does not follow 10 - slot', () {
+      // Reading the record beats computing it: a profile carrying an unexpected value still
+      // resolves to the keys the firmware actually created.
+      final recs = parseVpncClientlist('a>WireGuard>2>>pw>1>3>>>0>0>Web');
+      expect(vpncStateIndexForSlot(recs, 2), 3);
+    });
+
+    test('falls back when field 7 is blank or unparseable', () {
+      expect(vpncStateIndexForSlot(parseVpncClientlist('a>WireGuard>2>>pw>1>>>>0>0>Web'), 2), 8);
+      expect(vpncStateIndexForSlot(parseVpncClientlist('a>WireGuard>2>>pw>1>x>>>0>0>Web'), 2), 8);
+    });
+
+    test('is a different index from vpnc_unit and from the slot', () {
+      final recs = parseVpncClientlist(sample);
+      expect(vpncUnitForSlot(recs, 1), 1); // clientlist row
+      expect(vpncStateIndexForSlot(recs, 1), 9); // field 7
+      // and the slot itself is 1 - three distinct numbers for one profile.
+    });
+
+    test('buildVpncRecord writes a field 7 the helper reads back', () {
+      for (final slot in [1, 2, 3, 4, 5]) {
+        final rec = buildVpncRecord(slot: slot, desc: 'x', active: false);
+        expect(vpncStateIndexForSlot([rec], slot), 10 - slot, reason: 'slot $slot');
       }
     });
   });

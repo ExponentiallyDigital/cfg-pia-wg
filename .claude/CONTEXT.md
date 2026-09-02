@@ -12,6 +12,11 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 - **Flag conflicts, do not silently resolve them.** If this file disagrees with the code, or with
   `ARCHITECTURE.md` / `BACKLOG.md` / a `.claude/plan_*.md`, say so and ask. Do not "fix" the code to
   match the doc or vice versa without confirmation.
+- **CHANGELOG.md entries must be flat and short.** The release GitHub Action *sorts* the lines within
+  a release block, so an indented sub-bullet is separated from its parent and ends up under the wrong
+  entry. Every line item is therefore a standalone top-level `- ` bullet that reads correctly on its
+  own, in the existing `- FIX:` / `- CHG:` / `- ADD:` / `- TST:` / `- DOC:` / `- INF:` style. Keep each
+  to a sentence or two — detail belongs in the code comments or `ARCHITECTURE.md`, not here.
 - Do not read `.claude/plan_*.md` as current state — they are historical design notes.
 
 ### Conventions in force (observed, not aspirational)
@@ -67,7 +72,7 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 
 | File | Role |
 | --- | --- |
-| `app_scaffold.dart` | `AppChrome` (drawer host + static header, sits above the Navigator so the hamburger stays live under dialogs), `AppHeaderBar` (two-line title, author link, `v<version>` from `PackageInfo`), `AppScaffold` (scrollable padded body + optional `HOME` button; `fillViewport` for the menu). |
+| `app_scaffold.dart` | `AppChrome` (drawer host + static header, sits above the Navigator so the hamburger stays live under dialogs), `AppHeaderBar` (two-line title, author link, `v<version>` from `PackageInfo`), `AppScaffold` (scrollable padded body + optional `HOME` button, teal text and border to match the slot modal's; `fillViewport` for the menu). |
 | `app_drawer.dart` | `screenForDestination()`, `navigateToDestination()` (no-op on current; **pushes**, growing the stack by design), `closeApp()`, `confirmAndExit()`, `AppDrawer`. |
 | `slot_modal.dart` | 674 lines. `SlotModalMode` enum + `SlotModal` (slot list, badges, mode-dependent button set, all router actions) + `_PiaCredsDialog` + `_PingTargetsDialog`. |
 | `router_slots_screen.dart` | Shared router-IP/SSH form + `CONNECT TO ROUTER` for both router screens; auto-reconnects when `routerConnected`; runs the firmware gate (§4.13) before `fetchSlots`; opens `SlotModal`. `_FirmwareGate` carries the outcome so a dialog is only awaited after the connect spinner clears. |
@@ -144,14 +149,16 @@ COPY → `copyToClipboard` + snackbar + countdown. SHARE writes `pia-<region>.co
 
 ### 4.4 Slot modal button matrix (`slot_modal.dart:520-551`)
 
-`hasDesc` = `wgcN_desc` non-empty; `enabled` = `wgcN_enable == 1`; `wdActive` = cron entry present.
+`hasDesc` = `wgcN_desc` non-empty; `enabled` = `wgcN_enable == 1` (vpnc_clientlist field 6 on stock);
+`wdActive` = cron entry present. DISABLE also accepts an interface that is up while the flag reads 0 —
+the two can disagree, and gating on the flag alone would strand a running tunnel behind a greyed button.
 
 | Mode | Key | Label | Enabled when |
 | --- | --- | --- | --- |
 | manage | `slot_create` | CREATE | a slot is selected |
 | manage | `slot_enable` | ENABLE | `hasDesc && !enabled` |
 | manage | `slot_edit` | EDIT | `hasDesc` |
-| manage | `slot_disable` | DISABLE | `hasDesc` |
+| manage | `slot_disable` | DISABLE | `hasDesc && (enabled \|\| activeSlots.contains(n))` |
 | manage | `slot_delete` | DELETE | `hasDesc` |
 | watchdog | `slot_edit` | **CREATE/EDIT** | a slot is selected (works on an **empty** slot) |
 | watchdog | `slot_delete` | DELETE | `hasDesc` |
@@ -194,8 +201,8 @@ the flag means *it is configured on*. They can legitimately disagree while an ac
 | ENABLE | Reads `wgcN_wd_primary_ip` / `_secondary_ip`; if either is blank, prompts (`_PingTargetsDialog`, defaults `8.8.8.8` / `1.1.1.1`) and writes them. Applies the concurrency gate (below), then calls `enableSlot`. **Other slots are left running** - it no longer tears anything down. |
 | `enableSlot` | `enable=1` → commit → `service "start_wgc N"; service restart_vpnrouting0` → polls `wg show interfaces` up to `verifyMaxAttempts` (30) × `verifyPollInterval` (2 s) → pings **both** targets via `-I wgcN -c 1 -W 5`. **Both must pass**; any failure reverts to `enable=0` and throws. |
 | EDIT | `readSlotParams` → `SlotParamsEditor` → `writeSlotParams` (values shell-single-quoted). |
-| DISABLE | `stopWatchdog` if `wdActive`, then `enable=0` + commit + `service "stop_wgc N"; service start_vpnrouting0`. |
-| DELETE | Confirm (destructive) → `stopWatchdog` if `wdActive` → `enable=0`, stop service, `nvram unset` all 17 keys **plus** `wd_primary_ip` / `wd_secondary_ip`, commit. |
+| DISABLE | `stopWatchdog` if `wdActive`, then `enable=0` + commit + the firmware's stop, then **waits for the interface to leave `wg show interfaces`** before returning. The wait is what keeps the ACTIVE badge honest: `_runSlot` refreshes as soon as this returns, and the stop is queued through `notify_rc`, so without it the refresh reads a tunnel that is still up. Same for `_revertEnable`. |
+| DELETE | Confirm (destructive) → `stopWatchdog` if `wdActive` → `enable=0`, stop service, **wait for the interface to leave `wg show interfaces`** (bounded by `verifyPollInterval`/`verifyMaxAttempts`), then `nvram unset` all 17 keys **plus** `wd_primary_ip` / `wd_secondary_ip`, plus `kVpncRuntimeKeys` on stock, then commit. Those runtime keys are indexed by the profile's **clientlist field 7**, not the slot — wgc1 leaves `vpnc9_*` — so `vpncStateIndexForSlot` resolves it from the record while it is still present, falling back to `10 - slot`. The wait is load-bearing: the stop is queued through `notify_rc` and returns immediately, so unsetting straight away lets the firmware re-create `wgcN_enable` behind it. If the interface never goes, the keys are cleared anyway and a warning is logged. |
 
 All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the router syslog (best-effort).
 
@@ -315,7 +322,7 @@ exactly two fields and copies every other one through untouched:
 | 2 | protocol | `WireGuard` on a record the app creates |
 | 3 | slot number | how a record is matched to `wgcN_` |
 | 6 | active state | written by ENABLE / DISABLE / CREATE |
-| 7 | iptables ID | `10 - slot` on a record the app creates; **preserved** on an existing one |
+| 7 | iptables ID — also indexes the profile's `vpncN_*` runtime keys (`9` -> `vpnc9_state_t`) | `10 - slot` on a record the app creates; **preserved** on an existing one |
 | 12 | fixed | `Web` on a record the app creates |
 | 4, 5, 8, 9, 10, 11 | unknown / ignored | left empty when creating; preserved when updating |
 

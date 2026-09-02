@@ -188,8 +188,8 @@ class AppScaffold extends StatelessWidget {
                 child: OutlinedButton(
                   key: const Key('screen_close'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: kMuted,
-                    side: const BorderSide(color: kBorder),
+                    foregroundColor: kHighlight,
+                    side: const BorderSide(color: kHighlight),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   onPressed: () => navigateToDestination(context, SessionScope.of(context), AppDestination.menu),

@@ -53,6 +53,14 @@ const List<String> kSlotNvramKeys = [
 // already does for the extra `wgcN_wd_*` keys. Stock therefore skips only these three.
 const List<String> kMerlinOnlySlotKeys = ['enforce', 'fw', 'rip'];
 
+/// VPN Fusion runtime state the firmware writes per slot while a profile is up, and leaves behind
+/// when it stops. Indexed by SLOT (`vpnc5_*` for wgc5), unlike `vpnc_unit`, which indexes the
+/// vpnc_clientlist row. Stock only - Merlin does not drive WireGuard through VPN Fusion.
+///
+/// `vpncN_dns` is deliberately not here: it survives a stop too, but was left out of the DELETE
+/// sweep by choice.
+const List<String> kVpncRuntimeKeys = ['dut_disc', 'sbstate_t', 'state_t'];
+
 /// Concurrent-tunnel cap assumed on stock when `vpnc_max_conn` cannot be read. Raising it on the
 /// router is possible, but values above 2 are documented to break boot.
 const int kDefaultStockMaxActiveSlots = 2;
@@ -150,6 +158,11 @@ class VpncRecord {
   int? get slot => int.tryParse(fields[_slotIdx].trim());
   bool get active => fields[_activeIdx] == '1';
 
+  /// Field 7. Documented as an "iptables ID", but it is also what VPN Fusion uses to index this
+  /// profile's runtime state keys - `vpnc9_state_t` for a record whose field 7 is 9.
+  /// See [vpncStateIndexForSlot].
+  int? get vpncStateIndex => int.tryParse(fields[_iptablesIdx].trim());
+
   // Rewrites only the two fields the app owns; everything else is carried through untouched.
   VpncRecord copyWith({String? desc, bool? active}) {
     final next = List.of(fields);
@@ -200,6 +213,24 @@ List<VpncRecord> removeVpncRecord(List<VpncRecord> records, int slot) => [
       for (final r in records)
         if (r.slot != slot) r,
     ];
+
+/// The index VPN Fusion uses for [slot]'s runtime state keys (`vpnc<N>_state_t` and friends), taken
+/// from the profile's vpnc_clientlist field 7.
+///
+/// NOT the slot number, and not [vpncUnitForSlot] - three different indexes on the same profile.
+/// Measured: wgc1, whose field 7 is 9, leaves `vpnc9_*` behind. An earlier reading of "slot number"
+/// came from wgc5, where slot and field 7 are both 5 and so cannot tell the two apart.
+///
+/// Falls back to `10 - slot` when the slot has no record - what [buildVpncRecord] and the WebUI
+/// both write. Reading the field rather than always computing it is a strict generalisation: the
+/// two agree on every record seen so far, and reading stays right if one ever carries something
+/// else.
+int vpncStateIndexForSlot(List<VpncRecord> records, int slot) {
+  for (final r in records) {
+    if (r.slot == slot) return r.vpncStateIndex ?? (10 - slot);
+  }
+  return 10 - slot;
+}
 
 /// The 0-based position of [slot]'s record in vpnc_clientlist — what stock's `vpnc_unit` selects.
 /// Null when the slot has no profile.
@@ -578,6 +609,8 @@ class RouterSlotService {
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
+    // Same reason as disableSlot: the caller refreshes as soon as this returns.
+    await _awaitInterfaceDown(slot);
   }
 
   // ── Disable ─────────────────────────────────────────────────────────────────────────
@@ -594,6 +627,10 @@ class RouterSlotService {
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
+    // Return only once the tunnel is really down. The stop is queued through notify_rc and returns
+    // at once, so a caller that refreshes straight away reads `wg show interfaces` while the
+    // interface is still listed and leaves the ACTIVE badge on a slot it just disabled.
+    await _awaitInterfaceDown(slot);
     await _logRouter('Disabled ${await _label(slot)}');
     onLog?.call('${await _label(slot)} disabled.', isSuccess: true);
   }
@@ -611,6 +648,11 @@ class RouterSlotService {
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
+    // `service stop_vpnc` / `stop_wgc` return as soon as notify_rc is queued, and the firmware
+    // writes slot state as it tears the tunnel down. Unsetting before that lands leaves keys
+    // re-created behind us - wgcN_enable in particular - so wait for the interface to go first.
+    await _awaitInterfaceDown(slot);
+
     for (final key in slotKeysFor(routerFirmware)) {
       await _run('nvram unset wgc${slot}_$key');
     }
@@ -618,11 +660,29 @@ class RouterSlotService {
     await _run('nvram unset wgc${slot}_wd_primary_ip');
     await _run('nvram unset wgc${slot}_wd_secondary_ip');
     if (isStockFirmware) {
+      // Resolve the runtime-state index from the record while it is still there - it is field 7,
+      // not the slot number, so wgc1 leaves vpnc9_* behind.
+      final stateIdx = vpncStateIndexForSlot(parseVpncClientlist(await _run('nvram get vpnc_clientlist')), slot);
+      for (final key in kVpncRuntimeKeys) {
+        await _run('nvram unset vpnc${stateIdx}_$key');
+      }
       await _editVpncClientlist((recs) => removeVpncRecord(recs, slot));
     }
     await _run('nvram commit');
     await _logRouter('Deleted $label configuration');
     onLog?.call('$label configuration cleared.', isSuccess: true);
+  }
+
+  // Bounded wait for [slot]'s interface to leave `wg show interfaces`. Checks before sleeping, so
+  // an already-stopped slot costs one command and tests stay instant. Reuses the same injectable
+  // cadence as the enable-side verification.
+  Future<void> _awaitInterfaceDown(int slot) async {
+    for (var attempt = 0; attempt < verifyMaxAttempts; attempt++) {
+      if (!(await _run('wg show interfaces')).contains('wgc$slot')) return;
+      await Future.delayed(verifyPollInterval);
+    }
+    // Clearing the configuration is still the right thing to do; say so rather than fail the delete.
+    onLog?.call('${await _label(slot)} is still up after the stop; clearing its configuration anyway.', isError: true);
   }
 
   // ── Edit: write the user-editable slot parameters back ──────────────────────────────

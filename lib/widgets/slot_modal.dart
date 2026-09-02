@@ -442,7 +442,7 @@ class _SlotModalState extends State<SlotModal> {
                         // HOME returns to the main menu (closes the modal + intermediate screens).
                         onPressed:
                             _processing ? null : () => Navigator.of(context, rootNavigator: true).popUntil((r) => r.isFirst),
-                        child: const Text('HOME', style: TextStyle(color: kMuted)),
+                        child: const Text('HOME', style: TextStyle(color: kHighlight)),
                       ),
                     ),
                   ],
@@ -529,6 +529,9 @@ class _SlotModalState extends State<SlotModal> {
     final hasDesc = info != null && !info.isEmpty;
     final enabled = info?.enabled ?? false;
     final wdActive = info?.watchdogActive ?? false;
+    // There is something to stop if the flag says so OR the interface is up. The two can disagree,
+    // and gating on the flag alone would strand a user with a running tunnel and a greyed DISABLE.
+    final stoppable = enabled || (info != null && _slots.activeSlots.contains(info.index));
 
     Widget btn(String key, String label, VoidCallback? onTap) => Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -544,7 +547,8 @@ class _SlotModalState extends State<SlotModal> {
         // ENABLE is greyed when the slot is already active (only one interface active at a time).
         btn('slot_enable', 'ENABLE', (hasDesc && !enabled) ? _enableManage : null),
         btn('slot_edit', 'EDIT', hasDesc ? _editManage : null),
-        btn('slot_disable', 'DISABLE', hasDesc ? _disableManage : null),
+        // Greyed once the slot is down - nothing left to stop.
+        btn('slot_disable', 'DISABLE', (hasDesc && stoppable) ? _disableManage : null),
         btn('slot_delete', 'DELETE', hasDesc ? _deleteManage : null),
       ];
     }
