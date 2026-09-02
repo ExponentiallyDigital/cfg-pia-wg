@@ -229,18 +229,17 @@ Operations are performed by setting nvram fields on specific slots and making ca
 
 ### 4.2. Stock
 
-VPN Fusion abstracts the underlying per slot calls to manipulate WG VPNs. Parse the slot from `vpnc_client_list` and set the `vpnc_unit` to be acted on, then exec the `service` command:
+VPN Fusion abstracts the underlying per slot calls to manipulate WG VPNs. Find the profile's **row** in `vpnc_clientlist`, set `vpnc_unit` to that row's 0-based index, then exec the `service` command:
 
 ```text
         vpnc_clientlist
               │
-              ├── parse profile
-              │    ├── protocol = WireGuard
-              │    ├── slot = N
-              │    └── ...
-              │
-             set
-    vpnc_unit=(5 - slot)
+              ├── row 0 ── slot 5 ─┐
+              ├── row 1 ── slot 1  │  find the row whose
+              └── row N ── slot M  │  field 3 == target slot
+              │                    │
+             set ◄─────────────────┘
+   vpnc_unit=(row index)
               │
               ▼
             exec
@@ -250,10 +249,19 @@ VPN Fusion abstracts the underlying per slot calls to manipulate WG VPNs. Parse 
           VPN Fusion
               │
               ▼
-             wgc5
+             wgcN
 ```
 
-In the above, wgc5 is vpnc_unit 0 (wgc4 is unit 1, wgc3 is unit 2 etc).
+> [!IMPORTANT]
+> `vpnc_unit` is the **row index**, not `5 - slot`.
+>
+> The WebUI can only create profiles in slot order 5,4,3,2,1, so in any list it built row 0 is slot 5, row 1 is slot 4, and so on — the row index and `5 - slot` are the same number, which is why the `5 - slot` rule looked correct.
+>
+> `cfg-pia-wg` lets the user pick any slot, so its lists can be in any order and only the row index holds. Measured: with rows `[slot 5, slot 1]`, enabling the slot-1 profile from the WebUI writes `vpnc_unit=1`; `5 - slot` would give `4`, a row that does not exist, and nothing comes up.
+>
+> Row index is a strict generalisation — it agrees with `5 - slot` on every WebUI-ordered list.
+
+The runtime state keys are indexed differently again: `vpncN_state_t` / `vpncN_dns` / `vpncN_sbstate_t` use the **slot** number, so enabling wgc5 (row 0) sets `vpnc_unit=0` and `vpnc5_state_t=2`.
 
 #### 4.2.1 Create and enable a slot
 
@@ -283,7 +291,7 @@ The below examples are for `wgc5`, which is the first WG VPN created. **NB** the
   vpnc5_dns=9.9.9.9 149.112.112.112 # DNS servers, set when slot is enabled, unset when disabled
   vpnc5_dut_disc=5                  # unknown, unset when slot is enabled, when disabled this is the slot #
   vpnc5_sbstate_t=0                 # unknown
-  vpnc5_state_t=2                   # unknown
+  vpnc5_state_t=2                   # TBC. interface exists=2
   vpnc_unit=0                       # the unit being acted on where 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1; retains last set value.
   ```
 
@@ -297,21 +305,24 @@ The below examples are for `wgc5`, which is the first WG VPN created. **NB** the
 
 #### 4.2.2 Enable existing slot
 
-  1. set `wgc5_enable=1`
-  2. set `vpnc_unit=0` where `N` is `0`=wgc5, `1`=wgc4, `2`=wgc3, `3`=wgc2, `4`=wgc1
-  3. set `vpnc_clientlist` field 6 (vpn state) to `1` (active)
+  1. set `wgcN_enable=1`
+  2. set `vpnc_clientlist` field 6 (vpn state) to `1` (active) — do this **before** step 3, since a slot with no profile gains a new row here and the unit is that row's index
+  3. set `vpnc_unit=N` where `N` is the 0-based index of the slot's row in `vpnc_clientlist` (see 4.2)
   4. exec `service restart_vpnc`
 
   `service restart_default_wan` is run by the UI when "apply to all devices" is enabled/disabled.
 
-There is **no** `start_vpnc` command.
+There is **no** `start_vpnc` command, which is why enable uses `restart_vpnc`.
 
 #### 4.2.3 Stop/Disable
 
   1. set `wgcN_enable=0`
-  2. set `vpnc_unit=N` where `N` is `0`=wgc5, `1`=wgc4, `2`=wgc3, `3`=wgc2, `4`=wgc1
-  3. set `vpnc_clientlist` field 6 (vpn state) to `0` (disabled)
+  2. set `vpnc_clientlist` field 6 (vpn state) to `0` (disabled)
+  3. set `vpnc_unit=N` where `N` is the 0-based index of the slot's row in `vpnc_clientlist` (see 4.2)
   4. exec `service stop_vpnc`
+
+> [!WARNING]
+> `restart_vpnc` does **not** stop a tunnel. Using it here clears `wgcN_enable` and field 6 — so the WebUI reports the profile disconnected — while the interface stays up and keeps appearing in `wg show interfaces`. Deleting a slot must issue `stop_vpnc` too, and must resolve `vpnc_unit` *before* the row is removed from `vpnc_clientlist`.
 
 #### 4.2.4 Delete
 

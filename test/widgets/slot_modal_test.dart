@@ -48,10 +48,11 @@ SlotInfo _slot(
       emailAlerting: emailAlerting,
     );
 
-RouterSlots _slots(Map<int, SlotInfo> override, {int? active, bool merlin = true}) {
+// [active] names every slot whose interface is up — more than one may be.
+RouterSlots _slots(Map<int, SlotInfo> override, {Set<int> active = const {}, bool merlin = true}) {
   final m = {for (var i = 1; i <= 5; i++) i: _slot(i)};
   override.forEach((k, v) => m[k] = v);
-  return RouterSlots(slots: m, activeSlot: active, isMerlin: merlin);
+  return RouterSlots(slots: m, activeSlots: active, isMerlin: merlin);
 }
 
 Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, SessionController c) {
@@ -456,6 +457,86 @@ void main() {
     });
   });
 
+  // Regression: the badge came from RegExp.firstMatch over `wg show interfaces`, so only one slot
+  // could ever be marked ACTIVE however many tunnels were actually up.
+  group('ACTIVE badge', () {
+    testWidgets('every slot whose interface is up is badged', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(
+        _host(
+          ssh,
+          SlotModalMode.manage,
+          _slots(
+            {1: _slot(1, desc: 'aus_melbourne', enabled: true), 3: _slot(3, desc: 'aus_perth', enabled: true)},
+            active: {1, 3},
+          ),
+          c,
+        ),
+      );
+      await _open(tester);
+
+      expect(find.text('● ACTIVE'), findsNWidgets(2));
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // The two sources can disagree — a tunnel left up while its flag already reads 0. Sweeping on
+    // the flag alone skipped it, so the new slot came up alongside the old one.
+    testWidgets('ENABLE tears down a slot whose interface is up despite its flag reading 0', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('wg show interfaces')) return 'wgc2';
+          if (cmd.contains('ping')) return 'OK';
+          if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
+          if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
+          return '';
+        },
+      );
+      await tester.pumpWidget(
+        _host(
+          ssh,
+          SlotModalMode.manage,
+          // wgc5 reports enabled:false yet its interface is up.
+          _slots(
+            {5: _slot(5, desc: 'aus_perth'), 2: _slot(2, desc: 'us_east')},
+            active: {5},
+          ),
+          c,
+        ),
+      );
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_2')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_enable')));
+      await tester.tap(find.byKey(const Key('slot_enable')));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran('nvram set wgc5_enable=0'), isTrue); // the stray tunnel was stopped
+      expect(ssh.ran('nvram set wgc2_enable=1'), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('no badge when nothing is up, even for a configured slot', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.manage, _slots({5: _slot(5, desc: 'aus_perth')}), c),
+      );
+      await _open(tester);
+
+      expect(find.text('● ACTIVE'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
   group('round-2 behaviours', () {
     testWidgets('manage ENABLE is greyed when the slot is already enabled', (tester) async {
       final c = _controller();
@@ -487,7 +568,8 @@ void main() {
         _host(
           ssh,
           SlotModalMode.manage,
-          _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true, watchdog: true), 2: _slot(2, desc: 'us_east')}, active: 1),
+          _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true, watchdog: true), 2: _slot(2, desc: 'us_east')},
+              active: {1}),
           c,
         ),
       );

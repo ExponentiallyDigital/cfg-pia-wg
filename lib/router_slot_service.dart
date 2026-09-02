@@ -144,6 +144,22 @@ List<VpncRecord> removeVpncRecord(List<VpncRecord> records, int slot) => [
         if (r.slot != slot) r,
     ];
 
+/// The 0-based position of [slot]'s record in vpnc_clientlist — what stock's `vpnc_unit` selects.
+/// Null when the slot has no profile.
+///
+/// Measured against the WebUI, which is the reference implementation: with rows
+/// `[slot 5, slot 1]`, enabling the slot-1 profile makes the WebUI write `vpnc_unit=1`.
+///
+/// This is NOT `5 - slot`. The WebUI can only create profiles in slot order 5,4,3,2,1, so for any
+/// list it built the row index and `5 - slot` are the same number — which is how the wrong rule
+/// went unnoticed. The app lets the user pick any slot, so its lists can be out of that order, and
+/// there only the row index holds. Row index is a strict generalisation: it agrees with `5 - slot`
+/// on every WebUI-ordered list, so it cannot regress the case that already worked.
+int? vpncUnitForSlot(List<VpncRecord> records, int slot) {
+  final idx = records.indexWhere((r) => r.slot == slot);
+  return idx < 0 ? null : idx;
+}
+
 // Opens a real SSH client to the router. Screens inject a test factory instead in tests.
 Future<SSHClient> openSshClient(String ip, String user, String pass) async {
   final socket = await SSHSocket.connect(ip, 22, timeout: const Duration(seconds: 5));
@@ -175,11 +191,13 @@ class SlotInfo {
 // Result of [RouterSlotService.fetchSlots].
 class RouterSlots {
   final Map<int, SlotInfo> slots; // keys 1..5
-  final int? activeSlot; // slot whose interface is up (`wg show interfaces`)
+  // Every slot whose interface is up per `wg show interfaces`. A Set, not a single index: stock
+  // permits more than one tunnel at a time (vpnc_max_conn), and reporting only the first hid that.
+  final Set<int> activeSlots;
   // Informational only — branching reads the session flag in firmware.dart. Kept so the two do not
   // silently disagree; folding them together is a job for the planned firmware abstraction.
   final bool isMerlin;
-  const RouterSlots({required this.slots, required this.activeSlot, required this.isMerlin});
+  const RouterSlots({required this.slots, required this.activeSlots, required this.isMerlin});
 }
 
 class RouterSlotService {
@@ -246,6 +264,31 @@ class RouterSlotService {
     await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, active: active));
   }
 
+  // Stock drives WireGuard through VPN Fusion: point `vpnc_unit` at the profile's ROW in
+  // vpnc_clientlist (see vpncUnitForSlot), then issue the service command.
+  //
+  // Callers must get the ordering right: read the unit AFTER any upsert that could append the
+  // row (enable), and BEFORE any removal that drops it (delete).
+  //
+  // Returns false when the slot has no profile. [required] turns that into an error — enabling a
+  // slot that VPN Fusion does not know about cannot work, whereas stopping one is already a no-op.
+  Future<bool> _runVpncService(int slot, String serviceCmd, {bool required = false}) async {
+    final unit = vpncUnitForSlot(parseVpncClientlist(await _run('nvram get vpnc_clientlist')), slot);
+    if (unit == null) {
+      if (required) {
+        throw Exception('wgc$slot has no vpnc_clientlist profile on the router. Create it with CREATE first.');
+      }
+      onLog?.call('wgc$slot has no vpnc_clientlist profile; nothing to stop.');
+      return false;
+    }
+    final msg = 'wgc$slot is vpnc_clientlist row $unit; nvram set vpnc_unit=$unit, service $serviceCmd';
+    onLog?.call(msg);
+    await _logRouter(msg);
+    await _run('nvram set vpnc_unit=$unit');
+    await _run('service $serviceCmd');
+    return true;
+  }
+
   // ── Read ────────────────────────────────────────────────────────────────────────────
   Future<RouterSlots> fetchSlots() async {
     onLog?.call('Reading router configuration...');
@@ -268,15 +311,16 @@ class RouterSlotService {
           index: i, desc: desc, killSwitch: killSwitch, enabled: enabled, watchdogActive: watchdog, emailAlerting: emailAlerting);
     }
 
+    // allMatches, not firstMatch: more than one tunnel can be up, and taking only the first
+    // silently badged an arbitrary one of them.
     final ifaceOutput = await _run('wg show interfaces');
-    final activeMatch = RegExp(r'wgc(\d)').firstMatch(ifaceOutput);
-    final activeSlot = activeMatch != null ? int.tryParse(activeMatch.group(1)!) : null;
+    final activeSlots = RegExp(r'wgc(\d)').allMatches(ifaceOutput).map((m) => int.parse(m.group(1)!)).toSet();
 
     if (slots.values.every((s) => s.isEmpty)) {
       onLog?.call('All WireGuard slots are unconfigured.');
     }
     onLog?.call('Successfully retrieved router config.', isSuccess: true);
-    return RouterSlots(slots: slots, activeSlot: activeSlot, isMerlin: isMerlin);
+    return RouterSlots(slots: slots, activeSlots: activeSlots, isMerlin: isMerlin);
   }
 
   // Reads every per-slot NVRAM value (bare-keyed map) for the parameter editor. Keys the running
@@ -390,24 +434,24 @@ class RouterSlotService {
     await _logRouter('Enabling wgc$slot...');
     await _run('nvram set wgc${slot}_enable=1');
     await _setVpncActive(slot, true);
+    // Commit before the service call, so the service can never read a half-written slot.
+    await _run('nvram commit');
     // stock requires a different start command to Merlin
     if (isStockFirmware) {
-      onLog?.call('DEBUG: nvram set vpnc_unit=${5 - slot}'); // DEBUG
-      await _logRouter('DEBUG: nvram set vpnc_unit=${5 - slot}'); // DEBUG
-      await _run('nvram set vpnc_unit=${5 - slot}'); // vpnc_unit=N where N is 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1
-      await _run('service restart_vpnc');
+      // Must follow _setVpncActive: upsert appends a row for a slot that had none, and the unit
+      // is that row's index. There is no start_vpnc on stock (ARCHITECTURE.md 4.2.2).
+      await _runVpncService(slot, 'restart_vpnc', required: true);
     } else {
       await _run('service "start_wgc $slot"; service restart_vpnrouting0');
     }
-    await _run('nvram commit');
 
     onLog?.call('Verifying wgc$slot interface comes up...');
     var up = false;
     for (var retry = 0; retry < verifyMaxAttempts; retry++) {
       await Future.delayed(verifyPollInterval);
       final out = await _run('wg show interfaces');
-      onLog?.call('DEBUG: wg show interfaces - $out'); // DEBUG
-      await _logRouter('DEBUG: wg show interfaces - $out'); // DEBUG
+      onLog?.call('  wg show interfaces: ${out.isEmpty ? '(none)' : out}');
+      await _logRouter('wg show interfaces: ${out.isEmpty ? '(none)' : out}');
       if (out.contains('wgc$slot')) {
         up = true;
         onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: wgc$slot is active');
@@ -441,8 +485,7 @@ class RouterSlotService {
     await _run('nvram commit');
     // stock requires a different stop command to Merlin
     if (isStockFirmware) {
-      await _run('nvram set vpnc_unit=${5 - slot}'); // vpnc_unit=N where N is 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1
-      await _run('service restart_vpnc');
+      await _runVpncService(slot, 'stop_vpnc');
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
@@ -454,10 +497,11 @@ class RouterSlotService {
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
     await _run('nvram commit');
-    // stock requires a different stop command to Merlin
+    // stock requires a different stop command to Merlin. `restart_vpnc` clears the nvram flags but
+    // leaves the interface up (ARCHITECTURE.md 4.2.3 specifies stop_vpnc) — that mismatch is what
+    // left a tunnel running behind a WebUI that reported it disconnected.
     if (isStockFirmware) {
-      await _run('nvram set vpnc_unit=${5 - slot}'); // vpnc_unit=N where N is 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1
-      await _run('service restart_vpnc');
+      await _runVpncService(slot, 'stop_vpnc');
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
@@ -469,10 +513,10 @@ class RouterSlotService {
   Future<void> deleteSlot(int slot) async {
     onLog?.call('Deleting wgc$slot configuration...');
     await _run('nvram set wgc${slot}_enable=0');
-    // stock requires a different stop command to Merlin
+    // stock requires a different stop command to Merlin. Must precede removeVpncRecord below:
+    // the unit is the row's index, so dropping the row first would lose it.
     if (isStockFirmware) {
-      await _run('nvram set vpnc_unit=${5 - slot}'); // vpnc_unit=N where N is 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1
-      await _run('service restart_vpnc');
+      await _runVpncService(slot, 'stop_vpnc');
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }

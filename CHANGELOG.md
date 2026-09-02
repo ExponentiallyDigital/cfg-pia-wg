@@ -46,22 +46,30 @@
 
 ##### MANAGE issues
 
-- Implement gating on > 2 slots. Attempting to start a 3rd should throw an error msg.
-- App UI not showing if two slots are active.
+- Implement gating on > 2 slots. Attempting to start a 3rd should throw an error msg (`vpnc_max_conn=2`).
 - SLOT modal is showing items in reverse order
   - on Stock the first created slot is wgc5, then 4, to 1.
   - on Merlin the first created slot is wgc_1 then 2 to 5.
-- **Enabling a second slot makes the first slot stop, second enabled target does not get `wgcN_wd_primary_ip` and `wgcN_wd_secondary_ip` set.
 - EDIT dialogue box using wgcN instead of `Region name` from vpnc_clientlist.
-- ENABLE not enabling if > 1 VPN exists
-- FIX: need to refresh slot display after a disable, flag still shows until modal reopened.
-- FIX: ACTIVE flag is incorrect (slot 3 not 1)
-- Check `wgcN_rip is not on stock, if it is: remove from `kMerlinOnlySlotKeys`
-- FIX: slot still shows as active when slot disabled
+- Check `wgcN_rip` is not on stock, if it is: remove from `kMerlinOnlySlotKeys`.
+- FIX: need to refresh slot display after a disable, flag still shows until modal reopened. _(retest after 394 — the modal already calls `_refresh()`, so this may have been a symptom of disable never stopping the tunnel.)_
+- Stale `vpncN_state_t` / `vpncN_dns` / `vpncN_sbstate_t` survived a disable in the 393 test log. Recheck after 394: `stop_vpnc` may clear them, so no speculative cleanup was written.
 
 ---
 
 ### 1.2. Implemented - chronological change history
+
+2026-09-02 v0.8.24 build 394 - WIP stock support for Manage function only
+
+- FIX: stock disable never stopped the tunnel. `disableSlot`, `_revertEnable` and `deleteSlot` issued `service restart_vpnc`, which clears `wgcN_enable` and `vpnc_clientlist` field 6 - so the WebUI reads "disconnected" - while leaving the interface up in `wg show interfaces`. Now `service stop_vpnc` per `ARCHITECTURE.md` 4.2.3. This is the root cause of "wgc5 shows ACTIVE with no tunnel running": the badge was telling the truth.
+- FIX: `vpnc_unit` is the 0-based **row index** of the slot's record in `vpnc_clientlist`, not `5 - slot`. The WebUI can only create profiles in slot order 5,4,3,2,1, so on any list it built the two agree - which is how the wrong rule went unnoticed. The app lets the user pick any slot: with rows `[slot 5, slot 1]` the old rule asked for unit 4, a row that does not exist, and wgc1 never came up. Measured against the WebUI (rows `[slot5, slot1]` -> it writes `vpnc_unit=1`). New pure helper `vpncUnitForSlot`; all four stock service calls now route through `RouterSlotService._runVpncService`.
+- FIX: `RouterSlots.activeSlot` (`int?`) is now `activeSlots` (`Set<int>`), built from `allMatches` rather than `firstMatch` of `wgc(\d)` in `wg show interfaces`. More than one tunnel can be up (`vpnc_max_conn=2`) and only one was ever badged.
+- FIX: manage ENABLE now sweeps other slots on `enabled || activeSlots.contains(n)`. The flag alone missed a tunnel that was still up while its flag already read 0.
+- CHG: `enableSlot` commits NVRAM **before** the service call, matching the other three paths, so the service can never read a half-written slot.
+- CHG: replaced the temporary `DEBUG:` log lines with permanent, readable ones naming the resolved unit and its row.
+- ADD: enabling a slot with no `vpnc_clientlist` profile now fails with an actionable message instead of silently poking a non-existent unit; stopping such a slot is a no-op.
+- TST: +17 tests (286 -> 303), all passing; coverage 93.7%. Covers both `stop_vpnc` vs `restart_vpnc`, the row-index derivation including the out-of-order case that reproduces this bug, multi-interface `activeSlots`, and the ENABLE sweep.
+- DOC: `ARCHITECTURE.md` 4.2 / 4.2.2 / 4.2.3 corrected - `vpnc_unit` diagram, ordering constraints, and a warning that `restart_vpnc` does not stop a tunnel. `.claude/CONTEXT.md` 4.4 / 4.5 / 4.13 updated.
 
 2026-09-02 v0.8.23 build 393 - WIP stock support for Manage function only
 

@@ -159,15 +159,21 @@ COPY → `copyToClipboard` + snackbar + countdown. SHARE writes `pia-<region>.co
 
 **There is no ENABLE or DISABLE button in watchdog mode.** All buttons are disabled while `_processing`.
 
-Row badges: `● ACTIVE` (`activeSlot`), `⚑ KILL SWITCH` (`enforce==1`, amber), `◆ WATCHDOG ACTIVE`,
-`✉ EMAIL ALERTING` (only alongside WATCHDOG ACTIVE).
+Row badges: `● ACTIVE` (`activeSlots.contains(n)`), `⚑ KILL SWITCH` (`enforce==1`, amber),
+`◆ WATCHDOG ACTIVE`, `✉ EMAIL ALERTING` (only alongside WATCHDOG ACTIVE).
+
+`RouterSlots.activeSlots` is a **`Set<int>`** built from *all* matches of `wgc(\d)` in
+`wg show interfaces` — more than one tunnel can be up at once (stock `vpnc_max_conn`), and the
+previous `firstMatch` silently badged an arbitrary one of them. It is independent of
+`SlotInfo.enabled` (the NVRAM / `vpnc_clientlist` flag): the badge means *the interface is up*,
+the flag means *it is configured on*. They can legitimately disagree while an action is in flight.
 
 ### 4.5 Manage-mode action semantics
 
 | Action | Behaviour |
 | --- | --- |
 | CREATE | Overwrite confirm if `!isEmpty` → region picker → `_PiaCredsDialog` → `generateConfig` → `createConfigToSlot`. Backs up the 17 existing keys first and restores them on failure. Writes `enable=0`, `enforce=0`, `fw=1`, `nat=1`, `psk=""`, `rip=""`, `ep_addr_r=""`. Ends with an info dialog telling the user to press ENABLE. |
-| ENABLE | Reads `wgcN_wd_primary_ip` / `_secondary_ip`; if either is blank, prompts (`_PingTargetsDialog`, defaults `8.8.8.8` / `1.1.1.1`) and writes them. Then stops any *other* enabled slot (and its watchdog) and calls `enableSlot`. |
+| ENABLE | Reads `wgcN_wd_primary_ip` / `_secondary_ip`; if either is blank, prompts (`_PingTargetsDialog`, defaults `8.8.8.8` / `1.1.1.1`) and writes them. Then stops any *other* slot that is **enabled or whose interface is up** (and its watchdog) and calls `enableSlot`. Checking both sources matters: a tunnel can be left running while its flag already reads 0. |
 | `enableSlot` | `enable=1` → commit → `service "start_wgc N"; service restart_vpnrouting0` → polls `wg show interfaces` up to `verifyMaxAttempts` (30) × `verifyPollInterval` (2 s) → pings **both** targets via `-I wgcN -c 1 -W 5`. **Both must pass**; any failure reverts to `enable=0` and throws. |
 | EDIT | `readSlotParams` → `SlotParamsEditor` → `writeSlotParams` (values shell-single-quoted). |
 | DISABLE | `stopWatchdog` if `wdActive`, then `enable=0` + commit + `service "stop_wgc N"; service start_vpnrouting0`. |
@@ -370,8 +376,22 @@ requires `/jffs/cfg-pia-wg/mailsend-go` (manage mode never sends email). Missing
 | Mail transport | BusyBox `sendmail` + `openssl s_client` | `mailsend-go` (credentials on the command line — accepted risk) |
 | Script directory | `jffs2_scripts=1` / `jffs2_on=1` | `mkdir -p /jffs/scripts` |
 | Cron persistence | append to `/jffs/scripts/services-start` | rewrite the REPLACEMENT block of `/opt/etc/init.d/S50downloadmaster`, then run it with `start` |
-| Service calls | identical on both (`service "start_wgc N"` etc.) | |
+| Enable a slot | `service "start_wgc N"; service restart_vpnrouting0` | set `vpnc_unit`, then `service restart_vpnc` (there is no `start_vpnc`) |
+| Disable / delete / revert | `service "stop_wgc N"; service start_vpnrouting0` | set `vpnc_unit`, then `service **stop_vpnc**` |
 | Watchdog script path | identical on both (`/jffs/scripts/watchdog_wgcN.sh`) | |
+
+**`vpnc_unit` is the 0-based ROW INDEX of the slot's record in `vpnc_clientlist`** — see
+`vpncUnitForSlot` in `router_slot_service.dart` and ARCHITECTURE.md §4.2. It is *not* `5 - slot`:
+the WebUI can only create profiles in slot order 5,4,3,2,1, so on any list it built the two happen
+to agree, but the app lets the user pick any slot. All four stock service calls go through
+`RouterSlotService._runVpncService`, which resolves the row and throws an actionable error on
+enable when the slot has no profile (a stop is a silent no-op instead). **Ordering is
+load-bearing:** resolve the unit *after* the upsert that may append the row (enable) and *before*
+the removal that drops it (delete).
+
+**`restart_vpnc` does not stop a tunnel.** It clears `wgcN_enable` and `vpnc_clientlist` field 6 —
+so the WebUI reports "disconnected" — while the interface stays up in `wg show interfaces`. Stock
+disable/delete/revert must use `stop_vpnc` (ARCHITECTURE.md §4.2.3).
 
 **S50downloadmaster** is a stock init script the firmware already runs at boot and on a firewall
 restart; stock has no `services-start` and bare `cru` entries do not survive a power cycle, so the

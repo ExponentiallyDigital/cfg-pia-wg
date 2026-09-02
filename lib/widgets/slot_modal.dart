@@ -214,7 +214,9 @@ class _SlotModalState extends State<SlotModal> {
       final svc = _slotSvc(client);
       final wd = _wdSvc(client);
       for (final other in _slots.slots.values) {
-        if (other.index != slot && other.enabled) {
+        // Sweep on the interface as well as the flag: the two can disagree (a tunnel left up while
+        // its nvram/vpnc_clientlist flag already reads 0), and only checking the flag skipped it.
+        if (other.index != slot && (other.enabled || _slots.activeSlots.contains(other.index))) {
           if (other.watchdogActive) await wd.stopWatchdog(other.index);
           await svc.disableSlot(other.index);
         }
@@ -461,7 +463,7 @@ class _SlotModalState extends State<SlotModal> {
           final slotNum = entry.key;
           final info = entry.value;
           final desc = info.isEmpty ? '<empty slot>' : info.desc;
-          final isActive = _slots.activeSlot == slotNum;
+          final isActive = _slots.activeSlots.contains(slotNum);
           final badgeLabel = isActive ? '● ACTIVE' : null;
           return InkWell(
             key: Key('slot_row_$slotNum'),
