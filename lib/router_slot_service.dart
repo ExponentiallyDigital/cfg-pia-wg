@@ -53,6 +53,10 @@ const List<String> kSlotNvramKeys = [
 // already does for the extra `wgcN_wd_*` keys. Stock therefore skips only these three.
 const List<String> kMerlinOnlySlotKeys = ['enforce', 'fw', 'rip'];
 
+/// Concurrent-tunnel cap assumed on stock when `vpnc_max_conn` cannot be read. Raising it on the
+/// router is possible, but values above 2 are documented to break boot.
+const int kDefaultStockMaxActiveSlots = 2;
+
 // The per-slot NVRAM keys worth writing on [firmware]: all 17 on Merlin, 13 on stock.
 List<String> slotKeysFor(RouterFirmware firmware) => firmware == RouterFirmware.stock
     ? [
@@ -196,8 +200,16 @@ class RouterSlots {
   final Set<int> activeSlots;
   // Informational only — branching reads the session flag in firmware.dart. Kept so the two do not
   // silently disagree; folding them together is a job for the planned firmware abstraction.
+  // How many tunnels may run at once, or null for no limit. Stock enforces a cap (vpnc_max_conn,
+  // normally 2); Merlin has no equivalent setting and is left unlimited.
+  final int? maxActiveSlots;
   final bool isMerlin;
-  const RouterSlots({required this.slots, required this.activeSlots, required this.isMerlin});
+  const RouterSlots({
+    required this.slots,
+    required this.activeSlots,
+    required this.isMerlin,
+    this.maxActiveSlots,
+  });
 }
 
 class RouterSlotService {
@@ -250,6 +262,13 @@ class RouterSlotService {
       for (final r in records)
         if (r.slot != null) r.slot!: r,
     };
+  }
+
+  // Stock's cap on simultaneous tunnels. Falls back to [kDefaultStockMaxActiveSlots] when the key
+  // is missing or unparseable.
+  Future<int> _readMaxActiveSlots() async {
+    final raw = int.tryParse(await _run('nvram get vpnc_max_conn'));
+    return (raw == null || raw < 1) ? kDefaultStockMaxActiveSlots : raw;
   }
 
   // Read/modify/write of vpnc_clientlist. The caller commits.
@@ -316,11 +335,15 @@ class RouterSlotService {
     final ifaceOutput = await _run('wg show interfaces');
     final activeSlots = RegExp(r'wgc(\d)').allMatches(ifaceOutput).map((m) => int.parse(m.group(1)!)).toSet();
 
+    // Stock caps concurrent tunnels; follow the router's own setting rather than assuming 2, so a
+    // user who changed it gets what they configured. Merlin has no such key, so no limit.
+    final maxActiveSlots = stock ? await _readMaxActiveSlots() : null;
+
     if (slots.values.every((s) => s.isEmpty)) {
       onLog?.call('All WireGuard slots are unconfigured.');
     }
     onLog?.call('Successfully retrieved router config.', isSuccess: true);
-    return RouterSlots(slots: slots, activeSlots: activeSlots, isMerlin: isMerlin);
+    return RouterSlots(slots: slots, activeSlots: activeSlots, isMerlin: isMerlin, maxActiveSlots: maxActiveSlots);
   }
 
   // Reads every per-slot NVRAM value (bare-keyed map) for the parameter editor. Keys the running

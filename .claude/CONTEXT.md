@@ -162,6 +162,15 @@ COPY → `copyToClipboard` + snackbar + countdown. SHARE writes `pia-<region>.co
 Row badges: `● ACTIVE` (`activeSlots.contains(n)`), `⚑ KILL SWITCH` (`enforce==1`, amber),
 `◆ WATCHDOG ACTIVE`, `✉ EMAIL ALERTING` (only alongside WATCHDOG ACTIVE).
 
+**Slots run concurrently.** Manage ENABLE used to disable every other slot first ("one active at a
+time"); it no longer does. Stock caps how many may run at once - `RouterSlots.maxActiveSlots`, read
+from `nvram get vpnc_max_conn` and falling back to `kDefaultStockMaxActiveSlots` (2) when the key is
+missing or unparseable. Merlin has no such key, so `maxActiveSlots` is null there and nothing is
+capped. `SlotModal._enableManage` counts the *other* interfaces that are up and, when that reaches
+the cap, shows a "VPN limit reached" dialog naming the ASUS limit and asking the user to disable a
+slot - it makes no router writes in that case. The watchdog's own `deactivateOtherSlots` still
+collapses to one slot on deploy; that is the deferred watchdog half of the change.
+
 `RouterSlots.activeSlots` is a **`Set<int>`** built from *all* matches of `wgc(\d)` in
 `wg show interfaces` — more than one tunnel can be up at once (stock `vpnc_max_conn`), and the
 previous `firstMatch` silently badged an arbitrary one of them. It is independent of
@@ -173,7 +182,7 @@ the flag means *it is configured on*. They can legitimately disagree while an ac
 | Action | Behaviour |
 | --- | --- |
 | CREATE | Overwrite confirm if `!isEmpty` → region picker → `_PiaCredsDialog` → `generateConfig` → `createConfigToSlot`. Backs up the 17 existing keys first and restores them on failure. Writes `enable=0`, `enforce=0`, `fw=1`, `nat=1`, `psk=""`, `rip=""`, `ep_addr_r=""`. Ends with an info dialog telling the user to press ENABLE. |
-| ENABLE | Reads `wgcN_wd_primary_ip` / `_secondary_ip`; if either is blank, prompts (`_PingTargetsDialog`, defaults `8.8.8.8` / `1.1.1.1`) and writes them. Then stops any *other* slot that is **enabled or whose interface is up** (and its watchdog) and calls `enableSlot`. Checking both sources matters: a tunnel can be left running while its flag already reads 0. |
+| ENABLE | Reads `wgcN_wd_primary_ip` / `_secondary_ip`; if either is blank, prompts (`_PingTargetsDialog`, defaults `8.8.8.8` / `1.1.1.1`) and writes them. Applies the concurrency gate (below), then calls `enableSlot`. **Other slots are left running** - it no longer tears anything down. |
 | `enableSlot` | `enable=1` → commit → `service "start_wgc N"; service restart_vpnrouting0` → polls `wg show interfaces` up to `verifyMaxAttempts` (30) × `verifyPollInterval` (2 s) → pings **both** targets via `-I wgcN -c 1 -W 5`. **Both must pass**; any failure reverts to `enable=0` and throws. |
 | EDIT | `readSlotParams` → `SlotParamsEditor` → `writeSlotParams` (values shell-single-quoted). |
 | DISABLE | `stopWatchdog` if `wdActive`, then `enable=0` + commit + `service "stop_wgc N"; service start_vpnrouting0`. |
@@ -378,6 +387,7 @@ requires `/jffs/cfg-pia-wg/mailsend-go` (manage mode never sends email). Missing
 | Cron persistence | append to `/jffs/scripts/services-start` | rewrite the REPLACEMENT block of `/opt/etc/init.d/S50downloadmaster`, then run it with `start` |
 | Enable a slot | `service "start_wgc N"; service restart_vpnrouting0` | set `vpnc_unit`, then `service restart_vpnc` (there is no `start_vpnc`) |
 | Disable / delete / revert | `service "stop_wgc N"; service start_vpnrouting0` | set `vpnc_unit`, then `service **stop_vpnc**` |
+| Concurrent tunnels | unlimited (no cap key exists) | capped by `vpnc_max_conn` (default 2); the third ENABLE is refused with a dialog |
 | Watchdog script path | identical on both (`/jffs/scripts/watchdog_wgcN.sh`) | |
 
 **`vpnc_unit` is the 0-based ROW INDEX of the slot's record in `vpnc_clientlist`** — see

@@ -13,57 +13,48 @@
 
 ### 1.1. Pending - see [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for complete list
 
-- CHG: enable multiple concurrent WireGuard slots nwatchdogs, ADD disable function (CFG in NVRAM + unset cron) - (ASUS limit, max limit 2 concurrent wiregaurd VPNs)
-- REL: Continue RevenueCat set up.
-- CHG: on Merlin w app, deleting a watchdog also deletes the underlying WG slot - modify to only delete the cron job and retain the underlying VPN slot config
+- CHG: enable two concurrent watchdogs, ADD disable function (CFG in NVRAM + unset cron). _(The MANAGE half landed in 395: slots now run concurrently, capped by `vpnc_max_conn` on stock. `RouterWatchdog.deactivateOtherSlots` still collapses to one slot on deploy, so the WATCHDOG half remains.)_
 - DOC: Add note to use data from About screen when creating an issue on GitHub, add to ISSUE_TEMPLATEs.
 - GUI: In Conf function "GENERATED CONFIG", add display of region name config is for.
 - GUI: Make Manage and Watchdog deletion prompt messages consistent.
-- GUI: Change info prompt after slot created "remember to enable it via the enable button".
 - GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.
-- GUI: (backed out) allow selecting multiple lines of text in About screen.
+- GUI: allow selecting multiple lines of text in About screen.
 - BUG: router script re-writes enforce=1 on every successful re-negotiation, so a slot created kill-switch-off ends up kill-switch-on once the watchdog fires.
-- CHG: enable support for multiple concurrent VPN slots - then update S50downloadmaster to pull default interval fromn NVRAM, see OneNote "get from NVRAM" page.
-- CHG: on stock add test for DownloadMaster installed , then backup `scripts\S50downloadmaster.sh`
-- CHG: preface slot descriptions with "pia-" to avoid confusion with other VPNs on the router.
-- CHG: on stock migrate all GUI display names for slot descriptions to use stock firmware descriptions.
 - DOC: add to `README.md` how to get and install `jq` and `sendmail-go` on stock firmware, plus how to install & cfg Download Master and use the replacement script.
 - CHG: `router_watchdog.dart` also owns `deactivateOtherSlots`, which enforces one-active-slot across wgc1..5 inside deploy, and whose ordering constraint (before the NVRAM write) is a real footgun (thanks Claude!).
 - REL: update version to 0.9 branch when first releasing stock support
-- DOC: instead of calling them "slots", I should consider calling them "units" - that's a lot of risky search and replace though...
 
 #### Merlin to Stock WIP
 
+- CHG: on stock add test for DownloadMaster installed , then backup `scripts\S50downloadmaster.sh`
+- CHG: preface slot descriptions with "pia-" to avoid confusion with other VPNs on the router.
+- EDIT dialogue box using wgcN instead of `Region name` from vpnc_clientlist.
+
 ##### WATCHDOG issues
 
-- Stock watchdog_wgcN.sh, should be using vpnc_clientlist for the region name.
-- Stock watchdog_wgcN.sh, stop using nvram settings for:
-  `wgcN_desc`
-  `wgcN_enforce`
-  `wgcN_ep_addr_r`
-  `wgcN_fw`
-  `wgcN_rip`
+- ...
 
 ##### MANAGE issues
 
-- Implement gating on > 2 slots. Attempting to start a 3rd should throw an error msg (`vpnc_max_conn=2`).
-- SLOT modal is showing items in reverse order
-  - on Stock the first created slot is wgc5, then 4, to 1.
-  - on Merlin the first created slot is wgc_1 then 2 to 5.
-- EDIT dialogue box using wgcN instead of `Region name` from vpnc_clientlist.
-- Check `wgcN_rip` is not on stock, if it is: remove from `kMerlinOnlySlotKeys`.
-- FIX: need to refresh slot display after a disable, flag still shows until modal reopened. _(retest after 394 — the modal already calls `_refresh()`, so this may have been a symptom of disable never stopping the tunnel.)_
 - Stale `vpncN_state_t` / `vpncN_dns` / `vpncN_sbstate_t` survived a disable in the 393 test log. Recheck after 394: `stop_vpnc` may clear them, so no speculative cleanup was written.
 
 ---
 
 ### 1.2. Implemented - chronological change history
 
+2026-09-02 v0.8.25 build 395 - WIP stock support for Manage function only
+
+- CHG: MANAGE slots now run concurrently. `_enableManage` no longer disables every other slot first - the "one active at a time" sweep is gone from both firmwares. Hardware step 7 (enable wgc5 while wgc1 is up) failed because that sweep was doing exactly what it was written to do; the sweep, not the badge, was the thing to change.
+- ADD: concurrency gate. Stock caps simultaneous tunnels, so ENABLE counts the other interfaces that are up and refuses beyond the cap with a "VPN limit reached" dialog naming the ASUS limit and asking the user to disable a slot. No router writes happen when it refuses. Merlin has no cap key, so it is never gated.
+- ADD: `RouterSlots.maxActiveSlots` (`int?`, null = unlimited) read from `nvram get vpnc_max_conn`, falling back to `kDefaultStockMaxActiveSlots` (2) when missing or unparseable - follows the router's own setting rather than hardcoding 2.
+- TST: +8 tests (303 -> 311). Two tests that encoded the old one-active rule were inverted; new cases cover the cap at 2, refusal of the third, a non-default cap, the target slot not counting against itself, and Merlin being uncapped.
+- DOC: `.claude/CONTEXT.md` 4.4 / 4.5 / 4.13 updated for concurrent slots and the cap.
+
 2026-09-02 v0.8.24 build 394 - WIP stock support for Manage function only
 
 - FIX: stock disable never stopped the tunnel. `disableSlot`, `_revertEnable` and `deleteSlot` issued `service restart_vpnc`, which clears `wgcN_enable` and `vpnc_clientlist` field 6 - so the WebUI reads "disconnected" - while leaving the interface up in `wg show interfaces`. Now `service stop_vpnc` per `ARCHITECTURE.md` 4.2.3. This is the root cause of "wgc5 shows ACTIVE with no tunnel running": the badge was telling the truth.
 - FIX: `vpnc_unit` is the 0-based **row index** of the slot's record in `vpnc_clientlist`, not `5 - slot`. The WebUI can only create profiles in slot order 5,4,3,2,1, so on any list it built the two agree - which is how the wrong rule went unnoticed. The app lets the user pick any slot: with rows `[slot 5, slot 1]` the old rule asked for unit 4, a row that does not exist, and wgc1 never came up. Measured against the WebUI (rows `[slot5, slot1]` -> it writes `vpnc_unit=1`). New pure helper `vpncUnitForSlot`; all four stock service calls now route through `RouterSlotService._runVpncService`.
-- FIX: `RouterSlots.activeSlot` (`int?`) is now `activeSlots` (`Set<int>`), built from `allMatches` rather than `firstMatch` of `wgc(\d)` in `wg show interfaces`. More than one tunnel can be up (`vpnc_max_conn=2`) and only one was ever badged.
+- FIX: `RouterSlots.activeSlot` (`int?`) is now `activeSlots` (`Set<int>`), built from `allMatches` rather than `firstMatch` of `wgc(\d)` in `wg show interfaces`. `firstMatch` badged whichever interface `wg` happened to print first - the "ACTIVE flag is incorrect (slot 3 not 1)" symptom. NB manage ENABLE still enforces one active slot at a time, so this is groundwork for the planned two-concurrent-slot support rather than a visible change today.
 - FIX: manage ENABLE now sweeps other slots on `enabled || activeSlots.contains(n)`. The flag alone missed a tunnel that was still up while its flag already read 0.
 - CHG: `enableSlot` commits NVRAM **before** the service call, matching the other three paths, so the service can never read a half-written slot.
 - CHG: replaced the temporary `DEBUG:` log lines with permanent, readable ones naming the resolved unit and its row.

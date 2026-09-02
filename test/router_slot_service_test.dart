@@ -290,6 +290,41 @@ void main() {
     });
   });
 
+  // Stock caps concurrent tunnels via vpnc_max_conn; Merlin has no such key.
+  group('fetchSlots concurrency cap', () {
+    Future<int?> cap({required bool stock, String maxConn = ''}) async {
+      stock ? useStock() : useMerlin();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_max_conn')) return maxConn;
+          if (cmd.contains('3rd-party')) return stock ? '' : 'merlin';
+          return '';
+        },
+      );
+      return (await svc(c).fetchSlots()).maxActiveSlots;
+    }
+
+    test('stock follows the router setting', () async {
+      expect(await cap(stock: true, maxConn: '2'), 2);
+      expect(await cap(stock: true, maxConn: '3'), 3);
+      expect(await cap(stock: true, maxConn: '1'), 1);
+    });
+
+    test('stock falls back to the documented default when unreadable', () async {
+      expect(await cap(stock: true), kDefaultStockMaxActiveSlots);
+      expect(await cap(stock: true, maxConn: 'not-a-number'), kDefaultStockMaxActiveSlots);
+      expect(await cap(stock: true, maxConn: '0'), kDefaultStockMaxActiveSlots);
+      expect(kDefaultStockMaxActiveSlots, 2);
+    });
+
+    test('Merlin reports no cap and is never asked', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('3rd-party') ? 'merlin' : '');
+      expect((await svc(c).fetchSlots()).maxActiveSlots, isNull);
+      expect(c.ran('vpnc_max_conn'), isFalse);
+    });
+  });
+
   group('firmware detection + binary probes', () {
     test('readFirmwareTag returns the raw nvram value', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('3rd-party') ? 'merlin' : '');

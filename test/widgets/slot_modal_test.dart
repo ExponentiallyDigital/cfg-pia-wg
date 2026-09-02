@@ -49,10 +49,11 @@ SlotInfo _slot(
     );
 
 // [active] names every slot whose interface is up — more than one may be.
-RouterSlots _slots(Map<int, SlotInfo> override, {Set<int> active = const {}, bool merlin = true}) {
+RouterSlots _slots(Map<int, SlotInfo> override,
+    {Set<int> active = const {}, bool merlin = true, int? maxActive}) {
   final m = {for (var i = 1; i <= 5; i++) i: _slot(i)};
   override.forEach((k, v) => m[k] = v);
-  return RouterSlots(slots: m, activeSlots: active, isMerlin: merlin);
+  return RouterSlots(slots: m, activeSlots: active, isMerlin: merlin, maxActiveSlots: maxActive);
 }
 
 Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, SessionController c) {
@@ -482,9 +483,8 @@ void main() {
       c.dispose();
     });
 
-    // The two sources can disagree — a tunnel left up while its flag already reads 0. Sweeping on
-    // the flag alone skipped it, so the new slot came up alongside the old one.
-    testWidgets('ENABLE tears down a slot whose interface is up despite its flag reading 0', (tester) async {
+    // Slots run side by side now: enabling one must not disturb another.
+    testWidgets('ENABLE leaves a slot whose interface is up alone', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(
         responder: (cmd) {
@@ -515,8 +515,8 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_enable')));
       await tester.pumpAndSettle();
 
-      expect(ssh.ran('nvram set wgc5_enable=0'), isTrue); // the stray tunnel was stopped
-      expect(ssh.ran('nvram set wgc2_enable=1'), isTrue);
+      expect(ssh.ran('nvram set wgc2_enable=1'), isTrue); // target enabled
+      expect(ssh.ran('nvram set wgc5_enable=0'), isFalse); // the other tunnel keeps running
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -531,6 +531,124 @@ void main() {
       await _open(tester);
 
       expect(find.text('● ACTIVE'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
+  // Slots run concurrently now. Stock caps how many via vpnc_max_conn; Merlin has no cap.
+  group('concurrency gate', () {
+    RecordingSSHClient enableReady() => RecordingSSHClient(
+          responder: (cmd) {
+            if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
+            if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
+            if (cmd.contains('wg show interfaces')) return 'wgc3';
+            if (cmd.contains('ping')) return 'OK';
+            return '';
+          },
+        );
+
+    Future<void> tapEnable(WidgetTester tester, int row) async {
+      await tester.tap(find.byKey(Key('slot_row_$row')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_enable')));
+      await tester.tap(find.byKey(const Key('slot_enable')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a second slot is allowed under the stock cap of 2', (tester) async {
+      final c = _controller();
+      final ssh = enableReady();
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.manage,
+            _slots({1: _slot(1, desc: 'a', enabled: true), 3: _slot(3, desc: 'b')}, active: {1}, maxActive: 2), c),
+      );
+      await _open(tester);
+      await tapEnable(tester, 3);
+
+      expect(find.text('VPN limit reached'), findsNothing);
+      expect(ssh.ran('nvram set wgc3_enable=1'), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a third slot is refused with the ASUS-limit dialog and no router write', (tester) async {
+      final c = _controller();
+      final ssh = enableReady();
+      await tester.pumpWidget(
+        _host(
+            ssh,
+            SlotModalMode.manage,
+            _slots({1: _slot(1, desc: 'a', enabled: true), 2: _slot(2, desc: 'b', enabled: true), 3: _slot(3, desc: 'c')},
+                active: {1, 2}, maxActive: 2),
+            c),
+      );
+      await _open(tester);
+      await tapEnable(tester, 3);
+
+      expect(find.text('VPN limit reached'), findsOneWidget);
+      expect(find.textContaining('at most 2 WireGuard VPNs'), findsOneWidget);
+      expect(find.textContaining('Disable another slot'), findsOneWidget);
+      expect(ssh.ran('nvram set wgc3_enable=1'), isFalse); // nothing was written
+      expect(ssh.ran('nvram set wgc1_enable=0'), isFalse); // and nothing was torn down
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('the cap follows the router, not a hardcoded 2', (tester) async {
+      final c = _controller();
+      final ssh = enableReady();
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.manage,
+            _slots({1: _slot(1, desc: 'a', enabled: true), 3: _slot(3, desc: 'b')}, active: {1}, maxActive: 1), c),
+      );
+      await _open(tester);
+      await tapEnable(tester, 3);
+
+      expect(find.textContaining('at most 1 WireGuard VPNs'), findsOneWidget);
+      expect(ssh.ran('nvram set wgc3_enable=1'), isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // Re-enabling a slot that is already up must not count itself against the cap.
+    testWidgets('the target slot is excluded from the count', (tester) async {
+      final c = _controller();
+      final ssh = enableReady();
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.manage, _slots({3: _slot(3, desc: 'b')}, active: {3}, maxActive: 1), c),
+      );
+      await _open(tester);
+      await tapEnable(tester, 3);
+
+      expect(find.text('VPN limit reached'), findsNothing);
+      expect(ssh.ran('nvram set wgc3_enable=1'), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('Merlin has no cap, so any number may be enabled', (tester) async {
+      final c = _controller();
+      final ssh = enableReady();
+      await tester.pumpWidget(
+        _host(
+            ssh,
+            SlotModalMode.manage,
+            // maxActive omitted => null => unlimited, which is what fetchSlots reports on Merlin.
+            _slots({1: _slot(1, desc: 'a', enabled: true), 2: _slot(2, desc: 'b', enabled: true), 3: _slot(3, desc: 'c')},
+                active: {1, 2}),
+            c),
+      );
+      await _open(tester);
+      await tapEnable(tester, 3);
+
+      expect(find.text('VPN limit reached'), findsNothing);
+      expect(ssh.ran('nvram set wgc3_enable=1'), isTrue);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -553,7 +671,7 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('manage ENABLE disables the previously-active interface (and its watchdog)', (tester) async {
+    testWidgets('manage ENABLE leaves the previously-active interface (and its watchdog) running', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(
         responder: (cmd) {
@@ -581,9 +699,10 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_enable')));
       await tester.pumpAndSettle();
 
-      expect(ssh.ran('cru d watchdog_wgc1'), isTrue); // other slot's watchdog stopped
-      expect(ssh.ran('nvram set wgc1_enable=0'), isTrue); // other slot disabled
       expect(ssh.ran('nvram set wgc2_enable=1'), isTrue); // target enabled
+      // Slots now run side by side, so nothing else is torn down.
+      expect(ssh.ran('cru d watchdog_wgc1'), isFalse);
+      expect(ssh.ran('nvram set wgc1_enable=0'), isFalse);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

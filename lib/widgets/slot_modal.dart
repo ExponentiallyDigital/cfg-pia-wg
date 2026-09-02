@@ -204,23 +204,29 @@ class _SlotModalState extends State<SlotModal> {
       secondary = targets.$2;
     }
 
-    // 3) Disable any other active interface (one active at a time), write targets if prompted,
-    //    then enable with the connectivity check.
+    // 3) Concurrency gate. Slots now run side by side, but stock caps how many (vpnc_max_conn);
+    //    Merlin reports no limit. Counted from interfaces that are actually up, since that is what
+    //    the router's cap applies to.
+    final maxActive = _slots.maxActiveSlots;
+    final othersUp = _slots.activeSlots.where((i) => i != slot).length;
+    if (maxActive != null && othersUp >= maxActive) {
+      await _info(
+        'VPN limit reached',
+        'Stock ASUS firmware allows at most $maxActive WireGuard VPNs to run at the same time, and '
+            '$othersUp ${othersUp == 1 ? 'is' : 'are'} already active. '
+            'Disable another slot, then enable wgc$slot.',
+      );
+      return;
+    }
+
+    // 4) Write targets if prompted, then enable with the connectivity check. Other slots are left
+    //    running - they no longer have to be torn down first.
     setState(() => _processing = true);
     client = null;
     Object? error;
     try {
       client = await widget.connect();
       final svc = _slotSvc(client);
-      final wd = _wdSvc(client);
-      for (final other in _slots.slots.values) {
-        // Sweep on the interface as well as the flag: the two can disagree (a tunnel left up while
-        // its nvram/vpnc_clientlist flag already reads 0), and only checking the flag skipped it.
-        if (other.index != slot && (other.enabled || _slots.activeSlots.contains(other.index))) {
-          if (other.watchdogActive) await wd.stopWatchdog(other.index);
-          await svc.disableSlot(other.index);
-        }
-      }
       if (!haveTargets) await svc.writeWatchdogPingTargets(slot, primary, secondary);
       await svc.enableSlot(slot, primaryIp: primary, secondaryIp: secondary);
     } catch (e) {

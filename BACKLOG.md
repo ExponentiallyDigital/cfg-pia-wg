@@ -30,6 +30,7 @@
 - DOC: once stock firmware version operating, remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
 - DOC: NB factory restore does **not** remove custom NVRAM values! Exposure of credentials (PIA & smtp) if router is sold/given away.
 - ASUS default router ip is 192.168.50.1 - code uses 192.168.0.254 as default
+- DOC: instead of calling them "slots", I should consider calling them "units" - that's a lot of risky search and replace though...
 
 #### 1.1.2. GUI - changes to the user interface
 
@@ -59,6 +60,7 @@
 - CHG: Replace app exit and config clipboard copy timer expiration behaviours with clearPrimaryClip(), and remove the two associated comments in README.md.
 - CHG: Add option to remove/update cached ca cert (in case it becomes stale).
 - CHG: Watchdog email alert `SMTP username field` is finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
+- CHG: on Merlin w app, deleting a watchdog also deletes the underlying WG slot - modify to only delete the cron job and retain the underlying VPN slot config
 
 #### 1.1.4. FIX - bug fixes
 
@@ -90,7 +92,7 @@
 
 ### 1.2. v0.8.xx freemium
 
-- CHG: as we are now using Download Master to run the watchdog cru add script at boot, if people want to use Download Master, find a way to hook my changes into the original Download Master script? But they won't persist across firmware updates...to be resolved.
+- NEW: RevenueCat set up.
 
 - CHG: freemium version, move all but conf generation to a one-off lifetime paid function. Implementation plan:
 
