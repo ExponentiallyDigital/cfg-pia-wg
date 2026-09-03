@@ -19,10 +19,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_colors.dart';
 import '../build_info_service.dart';
+import '../firmware.dart';
 import '../license_text.dart';
 import '../widgets/app_scaffold.dart';
 
@@ -32,10 +34,8 @@ const String _kPrivacyUrl = 'https://www.exponentiallydigital.com/cfg-pia-wg/pri
 
 /// Label/URL pairs, rendered in this order.
 const List<(String, String)> _kLinks = [
-  ('GitHub source code repository', _kRepoUrl),
   ('ReadMe', '$_kRepoBlobUrl/README.md'),
   ('Change log', '$_kRepoBlobUrl/CHANGELOG.md'),
-  ('Architecture', '$_kRepoBlobUrl/ARCHITECTURE.md'),
   ('Security policy', '$_kRepoBlobUrl/SECURITY.md'),
   ('Privacy policy', _kPrivacyUrl),
 ];
@@ -79,7 +79,7 @@ class _AboutScreenState extends State<AboutScreen> {
     for (final (_, url) in _kLinks) {
       _recognisers.add(TapGestureRecognizer()..onTap = () => _launch(url));
     }
-    // Add a dedicated recogniser for the licenses link (index 6, after the 5 kLinks entries).
+    // A dedicated recogniser for the licences link, which is not one of the _kLinks entries.
     _licencesRecognizer = TapGestureRecognizer()..onTap = () => _showOpenSourceLicences(context);
   }
 
@@ -89,6 +89,15 @@ class _AboutScreenState extends State<AboutScreen> {
       recogniser.dispose();
     }
     super.dispose();
+  }
+
+  // Straight to the clipboard rather than SessionController.copyToClipboard: that arms the 60s
+  // auto-clear meant for credentials, and build info is not a secret.
+  Future<void> _copyBuildInfo(BuildContext context, BuildInfo? info) async {
+    await Clipboard.setData(ClipboardData(text: _BuildInfoBlock.asPlainText(info)));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Build info copied.')));
+    }
   }
 
   /// Same pattern as the header bar's author/repo links: guard, launch, silently no-op.
@@ -102,64 +111,98 @@ class _AboutScreenState extends State<AboutScreen> {
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          FutureBuilder<BuildInfo>(
-            future: _buildInfo,
-            builder: (context, snap) => _BuildInfoBlock(info: snap.data),
-          ),
-          // url links display
-          const SizedBox(height: 20),
-          for (var i = 0; i < _kLinks.length; i++)
+      // One selection region for the whole screen, so a drag - or the long-press "Select all" -
+      // spans the build info, the links and the licence text, and copies to the system clipboard.
+      // Children below are plain Text on purpose: a SelectableText nested in a SelectionArea keeps
+      // its own private selection and the region skips over it.
+      child: SelectionArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FutureBuilder<BuildInfo>(
+              future: _buildInfo,
+              builder: (context, snap) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _BuildInfoBlock(info: snap.data),
+                  const SizedBox(height: 8),
+                  // Wrap, not Row: the two labels together overflow a narrow phone, so they sit
+                  // side by side when there is room and fall to a second line when there is not.
+                  Wrap(
+                    spacing: 4,
+                    children: [
+                      // A copy path that does not depend on the Android selection toolbar, which is
+                      // awkward to reach for a selection this close to the top of the screen.
+                      TextButton.icon(
+                        key: const Key('about_copy_build_info'),
+                        onPressed: () => _copyBuildInfo(context, snap.data),
+                        icon: const Icon(Icons.copy, size: 16, color: kHighlight),
+                        label: const Text('COPY BUILD INFO', style: TextStyle(color: kHighlight, fontSize: 12)),
+                      ),
+                      TextButton.icon(
+                        key: const Key('about_create_issue'),
+                        onPressed: () => _launch(bugReportUrl(snap.data)),
+                        icon: const Icon(Icons.bug_report_outlined, size: 16, color: kHighlight),
+                        label: const Text('CREATE GITHUB ISSUE', style: TextStyle(color: kHighlight, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            // url links display
+            const SizedBox(height: 20),
+            for (var i = 0; i < _kLinks.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: '${_kLinks[i].$1}: ', style: _labelStyle),
+                    TextSpan(
+                      text: _kLinks[i].$2,
+                      style: const TextStyle(
+                        color: kHighlight,
+                        fontSize: 12,
+                        decoration: TextDecoration.underline,
+                        decorationColor: kHighlight,
+                      ),
+                      recognizer: _recognisers[i],
+                    ),
+                  ]),
+                ),
+              ),
+            // "Open source: licenses" display
+            const SizedBox(height: 20),
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: SelectableText.rich(
-                TextSpan(children: [
-                  TextSpan(text: '${_kLinks[i].$1}: ', style: _labelStyle),
-                  TextSpan(
-                    text: _kLinks[i].$2,
-                    style: const TextStyle(
-                      color: kHighlight,
-                      fontSize: 12,
-                      decoration: TextDecoration.underline,
-                      decorationColor: kHighlight,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text.rich(
+                  key: const Key('about_licenses_link'),
+                  TextSpan(children: [
+                    TextSpan(text: 'Open source: ', style: _labelStyle),
+                    TextSpan(
+                      text: 'licenses',
+                      style: const TextStyle(
+                        color: kHighlight,
+                        fontSize: 12,
+                        decoration: TextDecoration.underline,
+                        decorationColor: kHighlight,
+                      ),
+                      recognizer: _licencesRecognizer,
                     ),
-                    recognizer: _recognisers[i],
-                  ),
-                ]),
+                  ]),
+                ),
               ),
             ),
-          // "Open source: licenses" display
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SelectableText.rich(
-                TextSpan(children: [
-                  TextSpan(text: 'Open source: ', style: _labelStyle),
-                  TextSpan(
-                    text: 'licenses',
-                    style: const TextStyle(
-                      color: kHighlight,
-                      fontSize: 12,
-                      decoration: TextDecoration.underline,
-                      decorationColor: kHighlight,
-                    ),
-                    recognizer: _licencesRecognizer,
-                  ),
-                ]),
-              ),
+            // "GNU GPL license" display:
+            const SizedBox(height: 20),
+            const Text(
+              kLicenseText,
+              style: TextStyle(color: Colors.white70, fontSize: 10, height: 1.4),
             ),
-          ),
-          // "GNU GPL license" display:
-          const SizedBox(height: 20),
-          const SelectableText(
-            kLicenseText,
-            style: TextStyle(color: Colors.white70, fontSize: 10, height: 1.4),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -169,57 +212,135 @@ const TextStyle _labelStyle = TextStyle(color: kText, fontSize: 12, fontWeight: 
 const TextStyle _valueStyle = TextStyle(color: kText, fontSize: 12);
 
 /// The metadata block. [info] is null while the channel call is in flight.
+///
+/// Rendered as ONE Text.rich rather than a widget per row. SelectionArea joins the text of separate
+/// widgets with no separator, so a row-per-widget layout copied as one run-on line; keeping the
+/// newlines inside a single Text is what carries them to the clipboard.
 class _BuildInfoBlock extends StatelessWidget {
   final BuildInfo? info;
   const _BuildInfoBlock({required this.info});
 
+  /// `label: value` pairs in display order. [i] is null while the channel call is in flight.
+  static List<(String, String)> rows(BuildInfo? i) {
+    String v(String Function(BuildInfo) field) => i == null ? _kPending : field(i);
+    return [
+      ('Built by', '${v((b) => b.installer)} at ${v((b) => b.buildTimestamp)}'),
+      ('Build type', v((b) => b.buildType)),
+      ('Commit hash', v((b) => b.commitHash)),
+      ('Git branch/tag', v((b) => b.gitBranch)),
+      ('Build runner ID', v((b) => b.runnerId)),
+      ('CPU Architecture (ABI)', v((b) => b.cpuAbi)),
+      ('Target Android version', v((b) => b.osVersion)),
+      ('Compile SDK', v((b) => b.compileSdk)),
+      ('Kotlin', v((b) => b.kotlinVersion)),
+    ];
+  }
+
+  static String headline(BuildInfo? i) {
+    String v(String Function(BuildInfo) field) => i == null ? _kPending : field(i);
+    return 'cfg-pia-wg v${v((b) => b.versionName)} build ${v((b) => b.buildNumber)}';
+  }
+
+  /// Exactly what selecting this block yields, and what the COPY button writes to the clipboard.
+  static String asPlainText(BuildInfo? i) => '${headline(i)}\n\n${rows(i).map((r) => '${r.$1}: ${r.$2}').join('\n')}';
+
   @override
   Widget build(BuildContext context) {
-    final i = info;
-    String v(String Function(BuildInfo) field) => i == null ? _kPending : field(i);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SelectableText(
-          'cfg-pia-wg v${v((b) => b.versionName)} build ${v((b) => b.buildNumber)}',
+    final data = rows(info);
+    return Text.rich(
+      TextSpan(children: [
+        TextSpan(
+          text: headline(info),
           style: const TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w600),
         ),
-        const SizedBox(height: 8),
-        _MetaRow('Built by', '${v((b) => b.installer)} at ${v((b) => b.buildTimestamp)}'),
-        _MetaRow('Build type', v((b) => b.buildType)),
-        _MetaRow('Commit hash', v((b) => b.commitHash)),
-        _MetaRow('Git branch/tag', v((b) => b.gitBranch)),
-        _MetaRow('Build runner ID', v((b) => b.runnerId)),
-        _MetaRow('CPU Architecture (ABI)', v((b) => b.cpuAbi)),
-        _MetaRow('Target Android version', v((b) => b.osVersion)),
-        _MetaRow('Compile SDK', v((b) => b.compileSdk)),
-        _MetaRow('Kotlin', v((b) => b.kotlinVersion)),
-      ],
+        const TextSpan(text: '\n\n'),
+        for (var n = 0; n < data.length; n++) ...[
+          TextSpan(text: '${data[n].$1}: ', style: _labelStyle),
+          TextSpan(text: data[n].$2, style: _valueStyle),
+          if (n < data.length - 1) const TextSpan(text: '\n'),
+        ],
+      ]),
+      // Stands in for the old per-row 4px padding, now that the rows share one paragraph.
+      style: const TextStyle(height: 1.45),
     );
   }
 }
 
-/// A `Label: value` line. Text.rich rather than a fixed-width label column so a long value wraps
-/// instead of being clipped on a narrow screen.
-class _MetaRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _MetaRow(this.label, this.value);
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: SelectableText.rich(
-        TextSpan(children: [
-          TextSpan(text: '$label: ', style: _labelStyle),
-          TextSpan(text: value, style: _valueStyle),
-        ]),
-      ),
-    );
-  }
+/// A prefilled "new bug report" URL for the running build.
+///
+/// Mirrors the section headings of `.github/ISSUE_TEMPLATE/bug_report.md`: GitHub applies a
+/// template OR a `body` parameter, never both, so passing the build info means reproducing the
+/// headings here. test/screens/about_screen_test.dart fails if the two drift apart.
+///
+/// The template's own Environment bullets are not reproduced - they still ask for an addon and a
+/// game version - so that section carries the build info plus the router fields instead.
+String bugReportUrl(BuildInfo? info) {
+  final firmware = firmwareDetected ? routerFirmware.name : 'not detected this session';
+  final body = '''
+**Describe the bug**
+A clear and concise description of what the bug is.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+
+1. Go to '...'
+2. Click on '....'
+3. Scroll down to '....'
+4. See error
+
+**Expected behavior**
+A clear and concise description of what you expected to happen.
+
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
+
+**Environment (please complete the following information):**
+
+```text
+${_BuildInfoBlock.asPlainText(info)}
+Router firmware: $firmware
+```
+
+- Router model: [e.g. RT-AX86U]
+- Router firmware version: [e.g. 3.0.0.4.388_24762]
+
+**Additional context**
+Add any other context about the problem here.
+''';
+  return Uri.parse('$_kRepoUrl/issues/new')
+      .replace(queryParameters: {'title': '[BUG] ...insert a short title...', 'body': body})
+      .toString();
 }
+
+
+
+/// Licence notices grouped by package, sorted by package name. Each notice is one entry's
+/// paragraphs, kept intact so [LicenseParagraph.indent] survives to the renderer.
+///
+/// LicenseRegistry yields one entry per licence TEXT, each naming every package that text covers.
+/// Rendering entries directly therefore repeats a package once per distinct notice -
+/// `accessibility` appeared 16 times, once per Chromium copyright year. Grouping the other way
+/// round lists each package once, which is what Flutter's own licence page does.
+///
+/// Identical notices within a package collapse to one; ones differing only by year do not, since
+/// they are genuinely different notices.
+List<(String, List<List<LicenseParagraph>>)> groupLicensesByPackage(List<LicenseEntry> entries) {
+  final byPackage = <String, List<List<LicenseParagraph>>>{};
+  final seen = <String, Set<String>>{};
+  for (final entry in entries) {
+    // paragraphs is documented as expensive, so resolve it once per entry, not once per package.
+    final paragraphs = entry.paragraphs.toList();
+    final key = paragraphs.map((p) => '${p.indent}:${p.text}').join('\n');
+    for (final package in entry.packages) {
+      final notices = byPackage.putIfAbsent(package, () => <List<LicenseParagraph>>[]);
+      if (seen.putIfAbsent(package, () => <String>{}).add(key)) notices.add(paragraphs);
+    }
+  }
+  final packages = byPackage.keys.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  return [for (final p in packages) (p, byPackage[p]!)];
+}
+
 
 // ── Open-source license dialog ─────────────────────────────────────────────────
 // Replaces Flutter's built-in showLicensePage so the page inherits the app's
@@ -271,28 +392,55 @@ class _LicensesDialogState extends State<_LicensesDialog> {
             );
           }
 
-          return ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            children: [
-              for (final entry in snapshot.data!) ...[
-                Text(
-                  entry.packages.join(', '),
-                  style: const TextStyle(
-                    color: kText,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+          final grouped = groupLicensesByPackage(snapshot.data!);
+          // Its own selection region: the About screen's does not extend into this dialog.
+          return SelectionArea(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              children: [
+                for (final (package, notices) in grouped) ...[
+                  Text(
+                    package,
+                    style: const TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600),
                   ),
-                ),
-                const SizedBox(height: 6),
-                SelectableText(
-                  entry.paragraphs.map((p) => p.text).join('\n\n'),
-                  style: const TextStyle(color: kMuted, fontSize: 10, height: 1.4),
-                ),
-                const Divider(color: kBorder, height: 24),
+                  for (var n = 0; n < notices.length; n++) ...[
+                    if (n > 0) const SizedBox(height: 12),
+                    // Paragraph by paragraph, honouring indent and the centred-header marker, the
+                    // way the framework's own licence page does. Text is never altered: hard line
+                    // breaks inside a paragraph are already lost upstream, where
+                    // LicenseEntryWithLineBreaks joins a paragraph's lines with spaces.
+                    for (final paragraph in notices[n]) _LicenceParagraph(paragraph),
+                  ],
+                  const Divider(color: kBorder, height: 24),
+                ],
               ],
-            ],
+            ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// One licence paragraph, indented or centred per [LicenseParagraph.indent].
+class _LicenceParagraph extends StatelessWidget {
+  final LicenseParagraph paragraph;
+  const _LicenceParagraph(this.paragraph);
+
+  @override
+  Widget build(BuildContext context) {
+    final centered = paragraph.indent == LicenseParagraph.centeredIndent;
+    return Padding(
+      padding: EdgeInsets.only(top: 8, left: centered ? 0 : 16.0 * paragraph.indent),
+      child: Text(
+        paragraph.text,
+        textAlign: centered ? TextAlign.center : TextAlign.start,
+        style: TextStyle(
+          color: kMuted,
+          fontSize: 10,
+          height: 1.4,
+          fontWeight: centered ? FontWeight.bold : FontWeight.normal,
+        ),
       ),
     );
   }

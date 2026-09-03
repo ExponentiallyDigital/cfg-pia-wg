@@ -66,7 +66,8 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 | `watchdog_management_screen.dart` | 47 lines — thin wrapper: `RouterSlotsScreen(mode: SlotModalMode.watchdog, …)`. |
 | `log_screen.dart` | `ListenableBuilder` over the controller → `LogPanel` + `CLEAR LOG`. |
 | `slot_params_editor.dart` | Modal editor for the 17 per-slot NVRAM values (spec 3.3). |
-| `about_screen.dart` | Build provenance from `loadBuildInfo()`, 6 project links, an open-source `_LicensesDialog` (custom dark replacement for `showLicensePage`), and the full GPL text. |
+| `about_screen.dart` | Build info is ONE `Text.rich` with `
+` between rows, not a widget per row — `SelectionArea` joins separate widgets with no separator, so a row-per-widget layout copies as one run-on line. `COPY BUILD INFO` (`Key('about_copy_build_info')`) and `CREATE GITHUB ISSUE` (`Key('about_create_issue')`) share a `Wrap`. The latter opens `bugReportUrl()`: `<repo>/issues/new` with `title` and `body` prefilled, reproducing the headings of `.github/ISSUE_TEMPLATE/bug_report.md` (GitHub honours a template **or** a `body`, never both) and filling Environment with `asPlainText` plus the detected firmware. A test fails if the template's headings drift. COPY writes `_BuildInfoBlock.asPlainText` via `Clipboard.setData`, deliberately not `SessionController.copyToClipboard` (that arms the 60s credential auto-clear). Whole body wrapped in one `SelectionArea` (drag or Select all copies build info + links + licence together), so its children are plain `Text`, not `SelectableText`. Build provenance from `loadBuildInfo()`, 6 project links, an open-source `_LicensesDialog` (custom dark replacement for `showLicensePage`) whose entries go through `groupLicensesByPackage` — one heading per package, not per `LicenseEntry`, since the registry emits an entry per licence text naming every package it covers, and the full GPL text. The dialog keeps notices as `LicenseParagraph` lists and renders each through `_LicenceParagraph` (`centeredIndent` ⇒ centred + bold, else `16.0 * indent` padding), and carries its own `SelectionArea` — the screen's region does not reach into a dialog route. Hard line breaks inside a notice are already gone before we see it (`LicenseEntryWithLineBreaks` joins a paragraph's lines with a space), so expat's ASCII art reads as run-on text here exactly as it does in Flutter's own licence page. |
 
 ### `lib/widgets/`
 
@@ -347,7 +348,7 @@ Values come from `android/app/build.gradle.kts` (`buildConfigField` for `BUILD_T
 plus device-side facts added by
 `android/app/src/main/kotlin/com/exponentiallydigital/pia_wireguard_cfga/MainActivity.kt`.
 
-Links: repo, ReadMe, Change log, Architecture, Security policy, Privacy policy, plus an
+Links, in order: ReadMe, Change log, Security policy, Privacy policy, plus an
 `Open source: licenses` link opening `_LicensesDialog` (dark-themed `LicenseRegistry` list).
 
 ### 4.11 Errors, logging, clipboard
@@ -356,6 +357,8 @@ Links: repo, ReadMe, Change log, Architecture, Security policy, Privacy policy, 
 - `AppErrors.system(msg)` — title *"Error"*; a new error pops any error dialog already open.
 - Both log every message with `isError: true` first, and bracket the dialog with `enterModal`/`exitModal`.
 - `LogPanel` colours: success → white + check icon, error → `kError` + error icon, otherwise `kHighlight` + info icon. Empty log renders `Ready.`
+- `LogPanel` renders the whole log as ONE `Text.rich` inside a `SelectionArea`, entries separated by `'
+'`, icons as `WidgetSpan`s. Never a widget per entry: `SelectionArea` joins separate widgets' text with no separator, so that layout copies as one run-on line. Same trap as the About screen's build info block; a placeholder splits the paragraph into selectable fragments but adds no character to the copy.
 - Clipboard: `copyToClipboard` arms a 60 s deadline; the 1 Hz tick clears it and logs `Clipboard auto cleared.`
 
 ### 4.12 Security posture (as implemented)
