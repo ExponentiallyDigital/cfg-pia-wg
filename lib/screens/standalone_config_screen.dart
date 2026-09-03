@@ -62,6 +62,10 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
       _usernameCtrl.addListener(_onCredChanged);
       _passwordCtrl.addListener(_onCredChanged);
       _dnsCtrl.addListener(() => _controller.dns = _dnsCtrl.text);
+      // Clearing the field stores a blank in the session, so coming back showed an empty field
+      // while PiaService quietly generated with the Quad9 defaults anyway. Put them back where
+      // the user can see them, so the field always says what a generate will use.
+      _restoreDefaultDns();
       _regionCtrl.addListener(() => setState(() {}));
     }
   }
@@ -74,6 +78,13 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     super.dispose();
   }
 
+  // Fills the DNS field with the Quad9 defaults whenever it is blank. Called on entry and again
+  // just before generating - not on every keystroke, which would stop the field being cleared to
+  // retype it. The listener mirrors the value into the session.
+  void _restoreDefaultDns() {
+    if (_dnsCtrl.text.trim().isEmpty) _dnsCtrl.text = kDefaultDns;
+  }
+
   // Mirror PIA credentials into the shared session so other screens pre-fill them.
   void _onCredChanged() {
     _controller.piaUsername = _usernameCtrl.text;
@@ -82,9 +93,7 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
   }
 
   bool get _canGenerate =>
-      _regionCtrl.text.trim().isNotEmpty &&
-      _usernameCtrl.text.trim().isNotEmpty &&
-      _passwordCtrl.text.trim().isNotEmpty;
+      _regionCtrl.text.trim().isNotEmpty && _usernameCtrl.text.trim().isNotEmpty && _passwordCtrl.text.trim().isNotEmpty;
 
   Future<void> _loadRegions() async {
     setState(() => _loadingRegions = true);
@@ -112,6 +121,7 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
   }
 
   Future<void> _generate() async {
+    _restoreDefaultDns(); // generate with what the field shows, never with a hidden default
     final region = _regionCtrl.text.trim(),
         username = _usernameCtrl.text.trim(),
         password = _passwordCtrl.text.trim(),
@@ -130,8 +140,8 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     _controller.setGeneratedConfig(null, region);
     _controller.logEntry('Starting...');
     try {
-      final config =
-          await _service.generateConfig(region: region, username: username, password: password, dns: dns, onProgress: _controller.onLog);
+      final config = await _service.generateConfig(
+          region: region, username: username, password: password, dns: dns, onProgress: _controller.onLog);
       if (!mounted) return;
       _controller.setGeneratedConfig(config, region);
       _controller.logEntry('Config generated successfully.', isSuccess: true);
@@ -149,8 +159,12 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     }
   }
 
+  // The region the on-screen config belongs to. The controller's value is authoritative once a
+  // config exists; the field is the fallback for the moment before it is stored.
+  String get _configRegion => _controller.generatedRegionId.isEmpty ? _regionCtrl.text.trim() : _controller.generatedRegionId;
+
   Future<void> _share(String config) async {
-    final region = _controller.generatedRegionId.isEmpty ? _regionCtrl.text.trim() : _controller.generatedRegionId;
+    final region = _configRegion;
     final filename = 'pia-$region.conf';
     final dir = await getTemporaryDirectory();
     final tempFile = File('${dir.path}/$filename');
@@ -200,6 +214,7 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
               if (config == null) return const SizedBox.shrink();
               return _GeneratedConfigSection(
                 config: config,
+                region: _configRegion,
                 clipboardSeconds: _controller.clipboardSeconds,
                 onCopy: () => _copy(config),
                 onShare: () => _share(config),
@@ -214,10 +229,12 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
 
 class _GeneratedConfigSection extends StatelessWidget {
   final String config;
+  final String region;
   final int clipboardSeconds;
   final VoidCallback onCopy, onShare;
   const _GeneratedConfigSection({
     required this.config,
+    required this.region,
     required this.clipboardSeconds,
     required this.onCopy,
     required this.onShare,
@@ -229,8 +246,10 @@ class _GeneratedConfigSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 24),
-        const Text('GENERATED CONFIG',
-            style: TextStyle(color: kHighlight, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+        // Named after the region, matching the pia-<region>.conf that SHARE / SAVE writes.
+        Text(region.isEmpty ? 'GENERATED CONFIG' : 'GENERATED CONFIG: pia-$region',
+            key: const Key('generated_config_label'),
+            style: const TextStyle(color: kHighlight, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
         const SizedBox(height: 8),
         Container(
           padding: const EdgeInsets.all(14),
@@ -260,7 +279,8 @@ class _GeneratedConfigSection extends StatelessWidget {
                   if (clipboardSeconds > 0) ...[
                     const SizedBox(height: 6),
                     Text('Clearing clipboard in $clipboardSeconds seconds',
-                        style: const TextStyle(color: kError, fontSize: 10, fontFamily: 'monospace'), textAlign: TextAlign.center),
+                        style: const TextStyle(color: kError, fontSize: 10, fontFamily: 'monospace'),
+                        textAlign: TextAlign.center),
                   ],
                 ],
               ),

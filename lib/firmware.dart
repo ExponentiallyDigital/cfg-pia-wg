@@ -52,9 +52,11 @@ RouterFirmware? classifyFirmwareTag(String raw) {
 
 // ─── Paths ───────────────────────────────────────────────────────────────────────
 // Stock has no jq or mail binary on $PATH; the user installs both here (README §4).
-const String kStockBinDir = '/jffs/cfg-pia-wg';
-const String kStockJqPath = '$kStockBinDir/jq';
-const String kStockMailsendPath = '$kStockBinDir/mailsend-go';
+/// The app's own directory on the router. Holds the binaries the user installs for stock
+/// (`jq`, `mailsend-go`) and the cached PIA CA certificate, on both firmwares.
+const String kRouterAppDir = '/jffs/cfg-pia-wg';
+const String kStockJqPath = '$kRouterAppDir/jq';
+const String kStockMailsendPath = '$kRouterAppDir/mailsend-go';
 
 /// Merlin runs cron entries from services-start; stock has no equivalent, so the app hijacks an
 /// unused init script that the firmware already executes at boot and on firewall restart.

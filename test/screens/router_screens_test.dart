@@ -319,7 +319,7 @@ void main() {
       await tester.tap(find.byKey(const Key('connect_router')));
       await tester.pumpAndSettle();
 
-      expect(ssh.ran(kStockBinDir), isFalse);
+      expect(ssh.ran(kRouterAppDir), isFalse);
       expect(find.text('WATCHDOG CONFIGURATION'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());

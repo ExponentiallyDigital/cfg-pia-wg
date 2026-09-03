@@ -262,7 +262,10 @@ class SlotInfo {
   final String desc; // wgcN_desc (region name); empty => unconfigured
   final bool killSwitch; // wgcN_enforce == 1 (Merlin only; always false on stock)
   final bool enabled; // wgcN_enable == 1 on Merlin, vpnc_clientlist field 6 on stock
-  final bool watchdogActive; // cru has watchdog_wgcN
+  final bool watchdogActive; // cru has watchdog_wgcN - i.e. it is SCHEDULED
+  // wgcN_wd_check_interval is set: the watchdog's settings are on the router even if its cron
+  // entry is not. That is what DISABLE leaves behind, and what ENABLE needs to put it back.
+  final bool watchdogConfigured;
   final bool emailAlerting; // wgcN_wd_email_enabled == 1 (only meaningful while watchdogActive)
   const SlotInfo({
     required this.index,
@@ -270,6 +273,7 @@ class SlotInfo {
     required this.killSwitch,
     required this.enabled,
     required this.watchdogActive,
+    this.watchdogConfigured = false,
     this.emailAlerting = false,
   });
 
@@ -413,10 +417,19 @@ class RouterSlotService {
       final enabled = stock ? (vpnc[i]?.active ?? false) : (await _run('nvram get wgc${i}_enable')) == '1';
       // cru exists on both firmwares, so the watchdog probe is firmware-independent.
       final watchdog = (await _run('cru l | grep -qw watchdog_wgc$i && echo 1 || echo 0')) == '1';
+      // Settings can outlive the cron entry: DISABLE removes the schedule and keeps the config.
+      final watchdogConfigured = (await _run('nvram get wgc${i}_wd_check_interval')).isNotEmpty;
       // Email alerting is a watchdog feature; only read it for an active watchdog.
       final emailAlerting = watchdog && (await _run('nvram get wgc${i}_wd_email_enabled')) == '1';
       slots[i] = SlotInfo(
-          index: i, desc: desc, killSwitch: killSwitch, enabled: enabled, watchdogActive: watchdog, emailAlerting: emailAlerting);
+        index: i,
+        desc: desc,
+        killSwitch: killSwitch,
+        enabled: enabled,
+        watchdogActive: watchdog,
+        watchdogConfigured: watchdogConfigured,
+        emailAlerting: emailAlerting,
+      );
     }
 
     // allMatches, not firstMatch: more than one tunnel can be up, and taking only the first

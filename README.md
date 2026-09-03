@@ -168,7 +168,7 @@ The app opens to a main menu with five choices:
   Standalone config generation
 </p>
 
-1. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing. Copying a config to the clipboard starts a 60 second timer, displayed on screen, after which the clipboard is automatically cleared by copying an empty string to it, so you'll see a system dialogue like "copied" when the timer expires.
+1. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing. Copying a config to the clipboard starts a 60 second timer, displayed on screen, after which the clipboard is automatically cleared.
 
 ### 5.2. Manage router PIA WireGuard configuration
 
@@ -264,7 +264,7 @@ Use the **View app log** screen to inspect in-app log entries and clear them wit
 
 ### 5.5. Exit app
 
-The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard. The clipboard is cleared by copying an empty string to it, so you'll see a system dialogue like "copied" when you exit the app.
+The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard.
 
 ### 5.6. Hamburger menu
 

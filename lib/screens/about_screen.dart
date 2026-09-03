@@ -19,14 +19,19 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:dartssh2/dartssh2.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_colors.dart';
 import '../build_info_service.dart';
 import '../firmware.dart';
 import '../license_text.dart';
+import '../router_slot_service.dart';
+import '../router_watchdog.dart';
 import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/common_fields.dart';
+import '../widgets/error_presenter.dart';
 
 const String _kRepoUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg';
 const String _kRepoBlobUrl = '$_kRepoUrl/blob/main';
@@ -52,7 +57,9 @@ void _showOpenSourceLicences(BuildContext context) {
 }
 
 class AboutScreen extends StatefulWidget {
-  const AboutScreen({super.key});
+  /// Injected by tests so DEL CACHED PIA CERT can run without a router.
+  final Future<SSHClient> Function(String ip, String user, String pass)? testClientFactory;
+  const AboutScreen({super.key, this.testClientFactory});
 
   @override
   State<AboutScreen> createState() => _AboutScreenState();
@@ -62,6 +69,9 @@ class _AboutScreenState extends State<AboutScreen> {
   // Held in state rather than created inline in the FutureBuilder, which would re-invoke the
   // channel on every rebuild.
   late final Future<BuildInfo> _buildInfo;
+
+  // True while the SSH round trip for DEL CACHED PIA CERT is in flight.
+  bool _deletingCert = false;
 
   // One recogniser per link, owned by this State so they can be disposed. A tappable TextSpan
   // (rather than an InkWell around the whole row) is what lets a long GitHub URL wrap mid-line
@@ -100,6 +110,76 @@ class _AboutScreenState extends State<AboutScreen> {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Build info copied.')));
     }
+  }
+
+  // The cached PIA CA lives on the router, so this needs the SSH details the router screens
+  // collect. They are session state, not stored, so the button says so rather than failing.
+  Future<void> _deletePiaCert(BuildContext context) async {
+    final controller = SessionScope.of(context);
+    var ip = controller.routerIp.trim(), user = controller.sshUsername.trim(), pass = controller.sshPassword;
+    if (ip.isEmpty || user.isEmpty || pass.isEmpty) {
+      // ABOUT is reachable without ever visiting a router screen, so ask here rather than sending
+      // the user away. Anything already in the session prefills the form.
+      final entered = await showDialog<(String, String, String)?>(
+        context: context,
+        builder: (_) => _SshCredsDialog(initialIp: ip, initialUser: user, initialPass: pass),
+      );
+      if (entered == null || !context.mounted) return;
+      (ip, user, pass) = entered;
+      controller
+        ..routerIp = ip
+        ..sshUsername = user
+        ..sshPassword = pass;
+    }
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: kSurface,
+            title: const Text('Delete cached PIA certificate?', style: TextStyle(color: kHighlight, fontSize: 14)),
+            content: const Text(
+              'Removes $kPiaCaCertPath from the router. The watchdog downloads a fresh copy on its '
+              'next run. Nothing else is changed.',
+              style: TextStyle(color: kText, fontSize: 12),
+            ),
+            actions: [
+              TextButton(
+                key: const Key('about_del_cert_cancel'),
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('CANCEL'),
+              ),
+              TextButton(
+                key: const Key('about_del_cert_confirm'),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('DELETE', style: TextStyle(color: kError)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+
+    setState(() => _deletingCert = true);
+    SSHClient? client;
+    String? error;
+    var deleted = false;
+    try {
+      client = await (widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      deleted = await RouterWatchdog(client, onLog: controller.onLog).deleteCachedPiaCert();
+    } catch (e) {
+      error = e.toString().replaceAll('Exception: ', '');
+    } finally {
+      client?.close();
+      if (mounted) setState(() => _deletingCert = false);
+    }
+    if (!context.mounted) return;
+    if (error != null) {
+      await AppErrors.system(context, controller, 'Could not delete the cached certificate: $error');
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(deleted ? 'Cached PIA certificate deleted.' : 'No cached PIA certificate on the router.'),
+    ));
   }
 
   /// Same pattern as the header bar's author/repo links: guard, launch, silently no-op.
@@ -146,6 +226,17 @@ class _AboutScreenState extends State<AboutScreen> {
                         onPressed: () => _launch(bugReportUrl(snap.data)),
                         icon: const Icon(Icons.bug_report_outlined, size: 16, color: kHighlight),
                         label: const Text('CREATE GITHUB ISSUE', style: TextStyle(color: kHighlight, fontSize: 12)),
+                      ),
+                      TextButton.icon(
+                        key: const Key('about_del_pia_cert'),
+                        onPressed: _deletingCert ? null : () => _deletePiaCert(context),
+                        icon: _deletingCert
+                            ? const SizedBox.square(
+                                dimension: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight),
+                              )
+                            : const Icon(Icons.gpp_bad_outlined, size: 16, color: kHighlight),
+                        label: const Text('DEL PIA CERT', style: TextStyle(color: kHighlight, fontSize: 12)),
                       ),
                     ],
                   ),
@@ -268,7 +359,6 @@ class _BuildInfoBlock extends StatelessWidget {
   }
 }
 
-
 /// A prefilled "new bug report" URL for the running build.
 ///
 /// Mirrors the section headings of `.github/ISSUE_TEMPLATE/bug_report.md`: GitHub applies a
@@ -311,11 +401,8 @@ Router firmware: $firmware
 Add any other context about the problem here.
 ''';
   return Uri.parse('$_kRepoUrl/issues/new')
-      .replace(queryParameters: {'title': '[BUG] ...insert a short title...', 'body': body})
-      .toString();
+      .replace(queryParameters: {'title': '[BUG] ...insert a short title...', 'body': body}).toString();
 }
-
-
 
 /// Licence notices grouped by package, sorted by package name. Each notice is one entry's
 /// paragraphs, kept intact so [LicenseParagraph.indent] survives to the renderer.
@@ -342,7 +429,6 @@ List<(String, List<List<LicenseParagraph>>)> groupLicensesByPackage(List<License
   final packages = byPackage.keys.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   return [for (final p in packages) (p, byPackage[p]!)];
 }
-
 
 // ── Open-source license dialog ─────────────────────────────────────────────────
 // Replaces Flutter's built-in showLicensePage so the page inherits the app's
@@ -444,6 +530,74 @@ class _LicenceParagraph extends StatelessWidget {
           fontWeight: centered ? FontWeight.bold : FontWeight.normal,
         ),
       ),
+    );
+  }
+}
+
+/// Router SSH details, asked for inline when the session has none.
+///
+/// The router screens normally collect these, but ABOUT is reachable without visiting one and its
+/// DEL PIA CERT button needs them. Whatever the session already holds is prefilled; what the user
+/// enters goes back into the session, so a later router screen starts connected.
+class _SshCredsDialog extends StatefulWidget {
+  final String initialIp, initialUser, initialPass;
+  const _SshCredsDialog({required this.initialIp, required this.initialUser, required this.initialPass});
+
+  @override
+  State<_SshCredsDialog> createState() => _SshCredsDialogState();
+}
+
+class _SshCredsDialogState extends State<_SshCredsDialog> {
+  late final TextEditingController _ipCtrl = TextEditingController(text: widget.initialIp);
+  late final TextEditingController _userCtrl = TextEditingController(text: widget.initialUser);
+  late final TextEditingController _passCtrl = TextEditingController(text: widget.initialPass);
+  bool _visible = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _ipCtrl.dispose();
+    _userCtrl.dispose();
+    _passCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onContinue() {
+    final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
+    if (ip.isEmpty || user.isEmpty || pass.isEmpty) {
+      setState(() => _error = 'Router IP, SSH username and SSH password are all required.');
+      return;
+    }
+    Navigator.of(context).pop((ip, user, pass));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: kSurface,
+      title: const Text('Router SSH details', style: TextStyle(color: kHighlight, fontSize: 14)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RouterIpField(controller: _ipCtrl),
+          const SizedBox(height: 10),
+          SshUsernameField(controller: _userCtrl),
+          const SizedBox(height: 10),
+          SshPasswordField(controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
+          if (_error != null) ...[
+            const SizedBox(height: 14),
+            Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          key: const Key('about_ssh_cancel'),
+          onPressed: () => Navigator.pop(context, null),
+          child: const Text('CANCEL', style: TextStyle(color: kMuted)),
+        ),
+        TextButton(key: const Key('about_ssh_continue'), onPressed: _onContinue, child: const Text('CONTINUE')),
+      ],
     );
   }
 }

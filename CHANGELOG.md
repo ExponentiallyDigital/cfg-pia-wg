@@ -3,7 +3,6 @@
 - [1. Changes](#1-changes)
   - [1.1. Pending](#11-pending)
     - [WATCHDOG issues](#watchdog-issues)
-    - [GENERATE CONFIG](#generate-config)
   - [1.2. Implemented - chronological change history](#12-implemented---chronological-change-history)
 
 ---
@@ -21,33 +20,49 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 #### WATCHDOG issues
 
-- CHG: enable two concurrent watchdogs, ADD disable function (CFG in NVRAM + unset cron). _(The MANAGE half landed in 395: slots now run concurrently, capped by `vpnc_max_conn` on stock. `RouterWatchdog.deactivateOtherSlots` still collapses to one slot on deploy, so the WATCHDOG half remains.)_
+- GUI: Make Manage and Watchdog deletion prompt messages consistent.
+- GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible.
+- GUI: Watchdog, when creating one, show the name of any pre-existing region that will be overwritten.
 - CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes; add lifetime number of reconfigure events (write start date and update total count to NVRAM).
+- CHG: Remove 'WATCHDOG_EOF' text from test email:
+         This is a test email from the cfg-pia-wg watchdog (slot wgcX).
+         WATCHDOG_EOF
 - CHG: On disable, log lines are repeated (and needs the region name per above)
         cfg-pia-wg: Disabled wgc1
         cfg-pia-wg: Watchdog disabled for wgc1
         cfg-pia-wg: Disabled wgc1
-- GUI: Make Manage and Watchdog deletion prompt messages consistent.
-- GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible, also show the name of the pre-existing region that will be overwritten.  
-- BUG: Router script re-writes enforce=1 on every successful re-negotiation, so a slot created kill-switch-off ends up kill-switch-on once the watchdog fires.
-- CHG: Remove 'WATCHDOG_EOF' text from test email:
-         This is a test email from the cfg-pia-wg watchdog (slot wgcX).
-         WATCHDOG_EOF
 - CHG: on stock add test for DownloadMaster installed, on first run rename `router:/opt/etc/init.d/S50downloadmaster` and `router:/opt/etc/init.d/S50asuslighttpd` to .old.
-- CHG: Add a button on the ABOUT screen next to "CREATE GITHUB ISSUE" and call it `<insert appropriate icon>`"DEL CACHED PIA CERT", this button deletes the router file `router:/jffs/pia_ca.rsa.4096.crt`; modify the location of that file from `/jffs` to `/jffs/cfg-pia-wg` and update the codebase to reference the new location.
 - CHG: on Merlin w app, deleting a watchdog also deletes the underlying WG slot - modify to only delete the cron job and retain the underlying VPN slot config
-
-#### GENERATE CONFIG
-
-- GUI: In Conf function "GENERATED CONFIG", add display of region name config is for.
-- FIX: In generate, if you delete DNS entries then go to another screen then re-enter generate, the default DNS addresses are not displayed but are still used when generating a new conf file. Add a check that if that field is ever blank, then the quad 9 defaults are inserted.
-- CHG: Replace app exit and config clipboard copy timer expiration behaviours with clearPrimaryClip(), and remove the two associated comments in README.md. WHy? After the app exits the user sees "cleared" which is the system clipboard being cleared, they may wonder what that was, so we'll use clearPrimaryClip() which shouldn't throw a "cleared" message to the user after teh app exits.
 
 ---
 
+### 1.2. Implemented - chronological change history
+
 WIP:
 
-### 1.2. Implemented - chronological change history
+  1. E2E test all MANAGE functions
+  2. move watchdog scripts from /jffs/scripts to /jffs/cfg-pia-wg
+  3. where will we put the watchdog log file?
+  4. check we now store all cfg-pia files in out own jffs directory
+  5. E2E test all WATCHDOG functions
+  6. fix addkey error
+  7. check watchdog script size
+
+2026-09-03 v0.8.30 build 400 - WIP stock support for Watchdog function
+
+- **NB: watchdog script fails with an addkey error - this has been ongoing since first implemented in v0.8.17 build 387.**
+- CHG: watchdogs are no longer mutually exclusive. Deploying one used to tear down every other slot (`deactivateOtherSlots`, now gone); two can run side by side, capped by the same `vpnc_max_conn` gate MANAGE's ENABLE uses - CREATE/EDIT checks it before opening the dialog rather than after it is filled in.
+- FIX: the router script rewrote `wgcN_enforce=1` on every successful re-negotiation, so a slot created with the kill switch OFF came back ON once the watchdog fired. It now reads the current value before the config write and puts it back; empty - which is always the case on stock, where there is no kill switch - means off.
+- ADD: `⏸ WATCHDOG PAUSED` badge in the slot modal for a watchdog whose settings are on the router but whose schedule has been removed - muted grey, since nothing is running. Without it a paused watchdog looked like one that was never configured.
+- ADD: watchdog ENABLE / DISABLE buttons, acting on the cron schedule rather than the tunnel. DISABLE drops the two `cru` entries and their boot persistence, keeping the settings, the script and the running VPN; ENABLE puts the schedule back at the interval stored in `wgcN_wd_check_interval`. ENABLE lights up only for a slot with settings and no schedule.
+- FIX: DELETE unset the GLOBAL `cfg_pia_wg_user` / `cfg_pia_wg_password` unconditionally, which with two watchdogs would leave the survivor unable to authenticate with PIA. They are now cleared only by the last watchdog standing.
+- CHG: the router's cached PIA CA moved from `/jffs/pia_ca.rsa.4096.crt` to `/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt` (`kPiaCaCertPath`, built from the renamed `kRouterAppDir`). The watchdog script now `mkdir -p`s that directory before downloading - it exists on stock, where the user installs jq into it, but not necessarily on Merlin. An old copy at the previous path is simply ignored.
+- ADD: `DEL PIA CERT` button on the ABOUT screen, after CREATE GITHUB ISSUE. Confirms, then deletes the cached certificate over SSH, reporting whether one was there. With no router credentials in the session it asks for them inline (prefilled from whatever is there, and kept for later screens) rather than sending the user to a router screen.
+- CHG: the clipboard is now emptied through `ClipboardManager.clearPrimaryClip()` on the host instead of by copying an empty string, so exiting the app and the 60s countdown no longer flash Android's "copied" popup at a user who copied nothing. New `clipboard_service.dart` + channel; API 24..27 has no `clearPrimaryClip()`, so MainActivity reports an error and Dart falls back to the old write.
+- DOC: dropped the two README notes explaining the "copied" popup on exit and at timer expiry.
+- FIX: clearing the DNS field left it blank on re-entry while a generate still quietly used the Quad9 defaults. The field is refilled with `kDefaultDns` on entry and again just before generating, so what it shows is what the config gets. It can still be cleared to retype.
+- GUI: the generated config heading now names its region - "GENERATED CONFIG: pia-aus_melbourne" - matching the `pia-<region>.conf` that SHARE / SAVE writes. No region known, no suffix.
+- TST: +33 tests (388 -> 420), coverage 96.2%. The deploy-payload ceiling moved 8700 -> 9000 bytes: the CA `mkdir` and the kill-switch read-back cost a line each. `pia_service_test` pins the service's own blank-DNS fallback to `kDefaultDns`, and a new test reads `MainActivity.kt` so the clipboard channel name and method cannot drift from Dart's.
 
 2026-09-03 v0.8.29 build 399 - WIP stock support for Watchdog function
 

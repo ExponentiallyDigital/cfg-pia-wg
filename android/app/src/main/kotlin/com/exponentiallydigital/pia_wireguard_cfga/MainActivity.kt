@@ -1,5 +1,7 @@
 package com.exponentiallydigital.pia_wireguard_cfga
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
@@ -30,13 +32,49 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CLIPBOARD_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    METHOD_CLEAR_CLIPBOARD -> clearClipboard(result)
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        // Detach the handler so the engine does not retain this Activity.
+        // Detach the handlers so the engine does not retain this Activity.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler(null)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CLIPBOARD_CHANNEL)
+            .setMethodCallHandler(null)
         super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    /**
+     * Empties the system clipboard silently.
+     *
+     * Dart used to do this by copying an empty string, but Android shows its clipboard preview
+     * for any copy, so exiting the app - or the 60-second countdown expiring - flashed a
+     * "copied" popup at a user who had not copied anything.
+     *
+     * clearPrimaryClip() arrived at API 28 (P) and minSdk here is 24. Below that there is no
+     * silent option, so this reports an error and Dart falls back to writing an empty string,
+     * popup and all. Any failure is reported the same way rather than swallowed, so the
+     * clipboard is emptied one way or the other.
+     */
+    private fun clearClipboard(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            result.error(ERROR_UNSUPPORTED, "clearPrimaryClip() requires API 28", null)
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        if (clipboard == null) {
+            result.error(ERROR_UNAVAILABLE, "No ClipboardManager", null)
+            return
+        }
+        clipboard.clearPrimaryClip()
+        result.success(null)
     }
 
     /**
@@ -158,6 +196,11 @@ class MainActivity : FlutterActivity() {
     private companion object {
         const val CHANNEL = "com.exponentiallydigital.pia_wireguard_cfga/build_info"
         const val METHOD_GET_BUILD_INFO = "getBuildInfo"
+        // Mirrored in lib/clipboard_service.dart; a test fails if the two drift apart.
+        const val CLIPBOARD_CHANNEL = "com.exponentiallydigital.pia_wireguard_cfga/clipboard"
+        const val METHOD_CLEAR_CLIPBOARD = "clearClipboard"
+        const val ERROR_UNSUPPORTED = "unsupported"
+        const val ERROR_UNAVAILABLE = "unavailable"
         const val UNKNOWN = "unknown"
 
         val INSTALLER_LABELS: Map<String, String> = mapOf(

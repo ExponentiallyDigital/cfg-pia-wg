@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/screens/standalone_config_screen.dart';
+import 'package:cfg_pia_wg/widgets/common_fields.dart';
 
 import '../http_test_helpers.dart';
 import '../pia_generate_harness.dart';
@@ -22,6 +23,11 @@ Widget _host(SessionController c, {PiaService? service}) => SessionScope(
         home: Scaffold(body: StandaloneConfigScreen(service: service)),
       ),
     );
+
+// By type, not by text: kDefaultDns also appears in the DNS field's hint and helper, so a text
+// finder matches three widgets.
+Finder dnsField() => find.byType(DnsField);
+String dnsText(WidgetTester tester) => tester.widget<DnsField>(dnsField()).controller.text;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +48,66 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();
+  });
+
+  // A config restored from the session (navigating back to the screen) carries its region with it.
+  testWidgets('the heading names the region of a config restored from the session', (tester) async {
+    final c = _controller([])
+      ..generatedConfig = '[Interface]'
+      ..generatedRegionId = 'aus_melbourne';
+    await tester.pumpWidget(_host(c));
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Text>(find.byKey(const Key('generated_config_label'))).data, 'GENERATED CONFIG: pia-aus_melbourne');
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  // Defensive: a config with no region anywhere still gets a sensible heading rather than
+  // "GENERATED CONFIG: pia-".
+  testWidgets('the heading drops the suffix when no region is known', (tester) async {
+    final c = _controller([])..generatedConfig = '[Interface]';
+    await tester.pumpWidget(_host(c));
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Text>(find.byKey(const Key('generated_config_label'))).data, 'GENERATED CONFIG');
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  // Reported: clear the DNS field, leave the screen, come back - the field is empty but a
+  // generate still quietly used the Quad9 defaults, so what was shown was not what was used.
+  group('DNS defaults', () {
+    testWidgets('a blank DNS in the session is refilled with the Quad9 defaults on entry', (tester) async {
+      final c = _controller([])..dns = '';
+      await tester.pumpWidget(_host(c));
+      await tester.pumpAndSettle();
+
+      expect(dnsText(tester), kDefaultDns);
+      expect(c.dns, kDefaultDns, reason: 'the session is corrected too, so other screens agree');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('the field can still be cleared to retype it', (tester) async {
+      final c = _controller([]);
+      await tester.pumpWidget(_host(c));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(dnsField(), '');
+      await tester.pump();
+      expect(dnsText(tester), isEmpty, reason: 'not refilled mid-edit');
+
+      await tester.enterText(dnsField(), '1.1.1.1');
+      await tester.pump();
+      expect(c.dns, '1.1.1.1');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
   });
 
   testWidgets('PIA credentials pre-fill from the shared session', (tester) async {
@@ -96,6 +162,9 @@ void main() {
         await driveUntil(tester, () => find.byKey(const Key('generated_config_text')).evaluate().isNotEmpty);
 
         expect(find.byKey(const Key('generated_config_text')), findsOneWidget);
+        // The heading names the region, in the same form as the pia-<region>.conf that
+        // SHARE / SAVE writes, so it is obvious which region the config on screen is for.
+        expect(tester.widget<Text>(find.byKey(const Key('generated_config_label'))).data, 'GENERATED CONFIG: pia-$kTestRegion');
         expect(find.text('COPY'), findsOneWidget);
         expect(find.text('SHARE / SAVE'), findsOneWidget);
         expect(find.text('PUSH CONFIG TO ROUTER...'), findsNothing);
@@ -105,6 +174,37 @@ void main() {
         expect(clip, isNotEmpty);
         expect(clip.last, contains('[Interface]'));
         expect(find.text('Config copied'), findsOneWidget);
+      }, fakeGenerateResponses);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // The whole point of the fix: with the field cleared, the config must use what the field ends
+    // up showing, not a default hidden inside PiaService.
+    testWidgets('a blank DNS field is filled in before generating, and that is what the config uses', (tester) async {
+      tester.view.physicalSize = const Size(1200, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final c = _controller([]);
+      await withFakeHttpClient(() async {
+        await tester.pumpWidget(_host(c, service: PiaService(probePort: probeServer!.port)));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.widgetWithText(TextFormField, 'Region ID'), kTestRegion);
+        await tester.enterText(find.widgetWithText(TextFormField, 'PIA username'), 'p1234567');
+        await tester.enterText(find.widgetWithText(TextFormField, 'PIA password'), 'secret');
+        await tester.enterText(dnsField(), '');
+        await tester.pump();
+        expect(dnsText(tester), isEmpty);
+
+        await tester.tap(find.byKey(const Key('generate_config')));
+        await driveUntil(tester, () => find.byKey(const Key('generated_config_text')).evaluate().isNotEmpty);
+
+        expect(dnsText(tester), kDefaultDns);
+        expect(c.generatedConfig, contains('DNS = $kDefaultDns'));
       }, fakeGenerateResponses);
 
       await tester.pumpWidget(const SizedBox());
