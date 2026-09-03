@@ -204,20 +204,8 @@ class _SlotModalState extends State<SlotModal> {
       secondary = targets.$2;
     }
 
-    // 3) Concurrency gate. Slots now run side by side, but stock caps how many (vpnc_max_conn);
-    //    Merlin reports no limit. Counted from interfaces that are actually up, since that is what
-    //    the router's cap applies to.
-    final maxActive = _slots.maxActiveSlots;
-    final othersUp = _slots.activeSlots.where((i) => i != slot).length;
-    if (maxActive != null && othersUp >= maxActive) {
-      await _info(
-        'VPN limit reached',
-        'Stock ASUS firmware allows at most $maxActive WireGuard VPNs to run at the same time, and '
-            '$othersUp ${othersUp == 1 ? 'is' : 'are'} already active. '
-            'Disable another slot, then enable wgc$slot.',
-      );
-      return;
-    }
+    // 3) Concurrency gate.
+    if (!await _withinVpnLimit(slot)) return;
 
     // 4) Write targets if prompted, then enable with the connectivity check. Other slots are left
     //    running - they no longer have to be torn down first.
@@ -292,11 +280,31 @@ class _SlotModalState extends State<SlotModal> {
     });
   }
 
+  // Slots run side by side, but stock caps how many (vpnc_max_conn); Merlin reports no limit.
+  // Counted from interfaces that are actually up, since that is what the router's cap applies to.
+  // Shared by MANAGE ENABLE and by the watchdog paths, which bring a tunnel up as a side effect.
+  Future<bool> _withinVpnLimit(int slot) async {
+    final maxActive = _slots.maxActiveSlots;
+    final othersUp = _slots.activeSlots.where((i) => i != slot).length;
+    if (maxActive == null || othersUp < maxActive) return true;
+    await _info(
+      'VPN limit reached',
+      'Stock ASUS firmware allows at most $maxActive WireGuard VPNs to run at the same time, and '
+          '$othersUp ${othersUp == 1 ? 'is' : 'are'} already active. '
+          'Disable another slot, then enable wgc$slot.',
+    );
+    return false;
+  }
+
   // ── Watchdog-mode actions ────────────────────────────────────────────────────────
   // CREATE/EDIT: the dialog both creates (region pick on an empty slot) and updates, and its SAVE
   // deploys via RouterWatchdog.deployWatchdog — there is no separate enable step.
   Future<void> _editWatchdog() async {
     final slot = _selected;
+    // Deploying brings the slot's tunnel up, so it counts against the same limit ENABLE does.
+    // Checked before the dialog, so the user is not made to fill it in for nothing.
+    if (!(_slots.activeSlots.contains(slot)) && !await _withinVpnLimit(slot)) return;
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (ctx) => WatchdogDialog(
@@ -312,6 +320,26 @@ class _SlotModalState extends State<SlotModal> {
       ),
     );
     await _refresh();
+  }
+
+  // DISABLE: stop supervising, keep the settings. Only the cron entries go, so ENABLE can put
+  // the schedule straight back without asking for the configuration again.
+  Future<void> _disableWatchdog() async {
+    final slot = _selected;
+    final ok = await _confirm(
+      'Disable watchdog wgc$slot?',
+      'Removes its scheduled checks. The settings stay on the router and the VPN keeps running, '
+          'just unsupervised - ENABLE puts the schedule back.',
+      confirmLabel: 'DISABLE',
+    );
+    if (!ok) return;
+    await _runSlot((svc) => _wdSvc(svc.client).disableWatchdog(slot));
+  }
+
+  // ENABLE: re-add the cron entries from the settings already in NVRAM.
+  Future<void> _enableWatchdog() async {
+    final slot = _selected;
+    await _runSlot((svc) => _wdSvc(svc.client).enableWatchdog(slot));
   }
 
   Future<void> _deleteWatchdog() async {
@@ -498,7 +526,9 @@ class _SlotModalState extends State<SlotModal> {
                             fontSize: 12,
                           ),
                         ),
-                        if (isActive || info.killSwitch || info.watchdogActive) ...[
+                        // A watchdog whose schedule has been removed still has its settings on
+                        // the router, so it gets a badge of its own rather than disappearing.
+                        if (isActive || info.killSwitch || info.watchdogActive || (info.watchdogConfigured && !info.isEmpty)) ...[
                           const SizedBox(height: 5),
                           Wrap(spacing: 6, runSpacing: 4, children: [
                             if (badgeLabel != null)
@@ -512,6 +542,10 @@ class _SlotModalState extends State<SlotModal> {
                             if (info.watchdogActive && info.emailAlerting)
                               const SlotBadge(
                                   label: '✉ EMAIL ALERTING', text: kHighlight, border: kHighlight, bg: Color(0xFF0F2E3D)),
+                            // Configured but unscheduled: DISABLE keeps the settings, so ENABLE can
+                            // put the schedule straight back. Muted, not teal - nothing is running.
+                            if (info.watchdogConfigured && !info.watchdogActive && !info.isEmpty)
+                              const SlotBadge(label: '⏸ WATCHDOG PAUSED', text: kMuted, border: kMuted, bg: Color(0xFF1F242D)),
                           ]),
                         ],
                       ],
@@ -556,8 +590,14 @@ class _SlotModalState extends State<SlotModal> {
     }
     // Watchdog mode: CREATE/EDIT creates-or-updates and deploys, so it is live for an empty slot
     // too; DELETE and VIEW LOG still require a non-empty slot (spec round-2).
+    //
+    // ENABLE / DISABLE act on the SCHEDULE, not the tunnel: DISABLE drops the cron entries and
+    // keeps the settings, so ENABLE only lights up for a slot that has settings but no schedule.
+    final wdConfigured = info?.watchdogConfigured ?? false;
     return [
       btn('slot_edit', 'CREATE/EDIT', info != null ? _editWatchdog : null),
+      btn('slot_wd_enable', 'ENABLE', (hasDesc && wdConfigured && !wdActive) ? _enableWatchdog : null),
+      btn('slot_wd_disable', 'DISABLE', (hasDesc && wdActive) ? _disableWatchdog : null),
       btn('slot_delete', 'DELETE', hasDesc ? _deleteWatchdog : null),
       btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (hasDesc && wdActive) ? _viewWatchdogLog : null),
     ];

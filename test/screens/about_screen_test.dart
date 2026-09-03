@@ -12,7 +12,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/build_info_service.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/screens/about_screen.dart';
+import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
+
+import '../watchdog_test_utils.dart';
 
 // Deliberately unmistakable values so a passing assertion cannot be a coincidence.
 const _hostReply = <String, String>{
@@ -40,8 +43,7 @@ void _mockChannel(WidgetTester tester, Future<Object?>? Function(MethodCall)? ha
 
 // The controller COPY BUILD INFO writes through. Its 1 Hz countdown tick is pushed far out so
 // pumpAndSettle still settles.
-SessionController _quietController() =>
-    SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
+SessionController _quietController() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
 
 Future<void> _pumpAbout(WidgetTester tester, {SessionController? controller}) async {
   // Scaffold mirrors production, where AppChrome supplies one above the Navigator; the COPY
@@ -64,8 +66,7 @@ void main() {
   group('groupLicensesByPackage', () {
     LicenseEntry entry(List<String> packages, String text) => LicenseEntryWithLineBreaks(packages, text);
     // Notices are kept as paragraphs so indent survives; flatten them for readable assertions.
-    List<String> texts(List<List<LicenseParagraph>> notices) =>
-        notices.map((n) => n.map((p) => p.text).join(' ')).toList();
+    List<String> texts(List<List<LicenseParagraph>> notices) => notices.map((n) => n.map((p) => p.text).join(' ')).toList();
 
     test('lists a package once however many entries name it', () {
       final grouped = groupLicensesByPackage([
@@ -364,6 +365,187 @@ void main() {
       expect(launched, hasLength(1));
       expect(launched.single, startsWith('https://github.com/ExponentiallyDigital/cfg-pia-wg/issues/new?'));
       expect(Uri.parse(launched.single).queryParameters['body'], contains('cfg-pia-wg v9.9.9 build 999'));
+    });
+  });
+
+  // The cached PIA CA lives on the router, so this button is the only part of ABOUT that needs
+  // SSH. Session-only credentials, so it has to cope with not having them.
+  group('DEL PIA CERT', () {
+    Future<void> pumpWithSsh(WidgetTester tester, SessionController c, RecordingSSHClient ssh) async {
+      _mockChannel(tester, (call) async => _hostReply);
+      addTearDown(() => c.dispose());
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(
+          controller: c,
+          child: Scaffold(body: AboutScreen(testClientFactory: (_, __, ___) async => ssh)),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    SessionController connectedController() => SessionController(tickInterval: const Duration(hours: 1))
+      ..routerIp = '192.168.0.254'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw';
+
+    testWidgets('follows CREATE GITHUB ISSUE, on the same row where there is width for it', (tester) async {
+      tester.view.physicalSize = const Size(1400, 2000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      _mockChannel(tester, (call) async => _hostReply);
+      await _pumpAbout(tester);
+
+      expect(find.text('DEL PIA CERT'), findsOneWidget);
+      final issue = tester.getCenter(find.byKey(const Key('about_create_issue')));
+      final del = tester.getCenter(find.byKey(const Key('about_del_pia_cert')));
+      expect(del.dy, issue.dy);
+      expect(del.dx, greaterThan(issue.dx), reason: 'it sits to the right of CREATE GITHUB ISSUE');
+    });
+
+    // At phone width each of the three buttons takes its own line - CREATE GITHUB ISSUE alone is
+    // 282px of a ~320px body. That is what the Wrap is for; the alternative is an overflow.
+    testWidgets('wraps to the next line on a phone rather than overflowing', (tester) async {
+      tester.view.physicalSize = const Size(400, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      _mockChannel(tester, (call) async => _hostReply);
+      await _pumpAbout(tester);
+
+      final issue = tester.getCenter(find.byKey(const Key('about_create_issue')));
+      final del = tester.getCenter(find.byKey(const Key('about_del_pia_cert')));
+      expect(del.dy, greaterThan(issue.dy));
+      expect(tester.takeException(), isNull, reason: 'no overflow');
+    });
+
+    // ABOUT is reachable without ever visiting a router screen, so the credentials are asked for
+    // here rather than sending the user away to fetch them.
+    testWidgets('asks for router credentials inline when the session has none', (tester) async {
+      final ssh = RecordingSSHClient(responder: (_) => 'DELETED');
+      final c = SessionController(tickInterval: const Duration(hours: 1)); // no ip/user/pass
+      await pumpWithSsh(tester, c, ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Router SSH details'), findsOneWidget);
+      await tester.enterText(find.widgetWithText(TextFormField, 'Router IP'), '192.168.0.254');
+      await tester.enterText(find.widgetWithText(TextFormField, 'SSH Username'), 'admin');
+      await tester.enterText(find.widgetWithText(TextFormField, 'SSH Password'), 'pw');
+      await tester.tap(find.byKey(const Key('about_ssh_continue')));
+      await tester.pumpAndSettle();
+
+      // Straight on to the confirmation, then the delete.
+      await tester.tap(find.byKey(const Key('about_del_cert_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran(kPiaCaCertPath), isTrue);
+      // Kept in the session, so a router screen opened afterwards is already filled in.
+      expect(c.routerIp, '192.168.0.254');
+      expect(c.sshUsername, 'admin');
+      expect(c.sshPassword, 'pw');
+    });
+
+    testWidgets('an incomplete credentials form is refused', (tester) async {
+      final ssh = RecordingSSHClient();
+      await pumpWithSsh(tester, SessionController(tickInterval: const Duration(hours: 1)), ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextFormField, 'Router IP'), '192.168.0.254');
+      await tester.tap(find.byKey(const Key('about_ssh_continue')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('are all required'), findsOneWidget);
+      expect(ssh.commands, isEmpty);
+    });
+
+    testWidgets('cancelling the credentials form touches nothing', (tester) async {
+      final ssh = RecordingSSHClient();
+      final c = SessionController(tickInterval: const Duration(hours: 1));
+      await pumpWithSsh(tester, c, ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('about_ssh_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(ssh.commands, isEmpty);
+      expect(c.routerIp, isEmpty);
+      expect(find.byKey(const Key('about_del_cert_confirm')), findsNothing);
+    });
+
+    testWidgets('credentials already in the session go straight to the confirmation', (tester) async {
+      final ssh = RecordingSSHClient(responder: (_) => 'DELETED');
+      await pumpWithSsh(tester, connectedController(), ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Router SSH details'), findsNothing);
+      expect(find.byKey(const Key('about_del_cert_confirm')), findsOneWidget);
+    });
+
+    testWidgets('CANCEL leaves the router alone', (tester) async {
+      final ssh = RecordingSSHClient();
+      await pumpWithSsh(tester, connectedController(), ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('about_del_cert_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(ssh.commands, isEmpty);
+    });
+
+    testWidgets('DELETE removes the cert from the app directory and confirms', (tester) async {
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('pia_ca') ? 'DELETED' : '');
+      final c = connectedController();
+      await pumpWithSsh(tester, c, ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('about_del_cert_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran(kPiaCaCertPath), isTrue);
+      expect(ssh.ran('/jffs/pia_ca.rsa.4096.crt'), isFalse, reason: 'the cert moved into the app directory');
+      expect(find.text('Cached PIA certificate deleted.'), findsOneWidget);
+      expect(c.log.any((e) => e.message.contains('Deleted cached PIA certificate')), isTrue);
+    });
+
+    testWidgets('reports when there was nothing cached', (tester) async {
+      final ssh = RecordingSSHClient(responder: (_) => 'ABSENT');
+      await pumpWithSsh(tester, connectedController(), ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('about_del_cert_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('No cached PIA certificate on the router.'), findsOneWidget);
+    });
+
+    testWidgets('a failed SSH round trip is reported, not swallowed', (tester) async {
+      final ssh = RecordingSSHClient(throwOn: ['pia_ca']);
+      await pumpWithSsh(tester, connectedController(), ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('about_del_cert_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Could not delete the cached certificate'), findsOneWidget);
     });
   });
 

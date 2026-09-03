@@ -23,6 +23,8 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'clipboard_service.dart';
+
 // Default DNS servers (Quad9), matching the value the standalone form pre-fills.
 const String kDefaultDns = '9.9.9.9, 149.112.112.112';
 
@@ -59,7 +61,10 @@ class SessionController extends ChangeNotifier {
         _tickInterval = tickInterval,
         _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter;
 
-  static Future<void> _defaultClipboardWriter(String text) => Clipboard.setData(ClipboardData(text: text));
+  // An empty write means "clear", and clearing goes through the host so Android does not show
+  // its clipboard popup for it - see clipboard_service.dart.
+  static Future<void> _defaultClipboardWriter(String text) =>
+      text.isEmpty ? clearSystemClipboard() : Clipboard.setData(ClipboardData(text: text));
 
   // ── Credentials & config (volatile) ─────────────────────────────────────────
   String piaUsername = '';

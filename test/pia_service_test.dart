@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/main.dart' as app;
 import 'package:cfg_pia_wg/pia_service.dart';
+import 'package:cfg_pia_wg/session_controller.dart' show kDefaultDns;
 
 import 'http_test_helpers.dart';
 
@@ -434,7 +435,9 @@ void main() {
         onProgress: progress.add,
       );
 
-      expect(config, contains('DNS = 9.9.9.9, 149.112.112.112'));
+      // The service's own fallback must match the default the UI shows, or a blank field
+      // silently generates with different servers than the screen claims.
+      expect(config, contains('DNS = $kDefaultDns'));
       expect(config, contains('Address = 10.0.0.1/32'));
       expect(progress, contains('fetching'));
       expect(progress, contains('probing'));

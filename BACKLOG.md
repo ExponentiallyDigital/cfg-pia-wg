@@ -45,21 +45,22 @@
 
 #### 1.1.5. FTR - future implementation
 
-- menu changes:
-  - "Generate PIA WireGuard config" rename to "Create PIA WireGuard config".
-  - "Manage PIA WireGuard config" no change.
-  - "Watchdog Wireguard management" no change.
-  - "VPN device assignment" <- new entry.
-  - "View app log" no change.
-  - "Exit app" no change.
-- Underneath "Select from the above..." add a new line "Online `<appropriate icon>`HELP". Tapping "HELP" opens https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#5-using-the-app.
-- ADD: additional menu item "VPN device assignment" functionality is
-  - get the device names from nvram via "nvram get custom_clientlist" & display the
-    - custom_clientlist=ArcNAS>00:08:9B:C7:2F:DB>0>4>>>>><ArcBerry-plug>78:42:1C:F2:78:30>0>60>>>>><ArcSpeed-plug>78:42:1C:F2:77:5F>0>60>>>>><ArcDroidPro>B2:F2:C4:7E:5F:C4>0>9>>>>>
-    - dhcp_staticlist=<00:08:9B:C7:2F:DB>192.168.0.200>><78:42:1C:F2:78:30>192.168.0.230>>ArcBerry-plug<78:42:1C:F2:77:5F>192.168.0.240>>ArcSpeed-plug<A0:AD:9F:10:9A:75>192.168.0.250>>ArcSpeed
-  - select a device the slot applies to
-  - provide "apply to all devices"
-  - sets XX then run "service  restart_default_wan"
+Implement "kill switch" into stock firmware:
+
+  1. menu changes:
+    - "Generate PIA WireGuard config" rename to "Create PIA WireGuard config".
+    - "Manage PIA WireGuard config" no change.
+    - "Watchdog Wireguard management" no change.
+    - "VPN device assignment" **<- new entry**.
+    - "View app log" no change.
+    - "Exit app" no change.
+  2. ADD: additional menu item "VPN device assignment" functionality is
+    - get the device names from nvram via "nvram get custom_clientlist" & allow devices to be assigned to VPN slots.
+      - `<PLACEHOLDER - ADD dhcp_staticlist and custom_clientlist mappings>`
+      - select a device the slot applies to
+      - provide "apply to all devices"
+      - sets XX then run "service restart_default_wan"
+
 - FTR: Add localisation strings: French, Spanish, Spanish (latin), after that decide which ones next. (Google auto transations break character limits of PS Description)
 
 #### 1.1.6. TST - testing changes

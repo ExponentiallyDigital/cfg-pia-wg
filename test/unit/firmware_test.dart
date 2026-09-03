@@ -65,7 +65,7 @@ void main() {
     });
 
     test('the stock binaries live under the documented directory', () {
-      expect(kStockBinDir, '/jffs/cfg-pia-wg');
+      expect(kRouterAppDir, '/jffs/cfg-pia-wg');
       expect(kStockJqPath, '/jffs/cfg-pia-wg/jq');
       expect(kStockMailsendPath, '/jffs/cfg-pia-wg/mailsend-go');
     });

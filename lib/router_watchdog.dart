@@ -26,6 +26,11 @@ import 's50_template.dart';
 // Kept in one place so the Bash re-negotiation and the Dart app stay in sync.
 const String kPiaServerListUrl = 'https://serverlist.piaservers.net/vpninfo/servers/v6';
 const String kPiaTokenUrl = 'https://www.privateinternetaccess.com/gtoken/generateToken';
+
+/// Where the router caches the PIA CA. Under the app's own directory so a stale copy can be
+/// deleted from the ABOUT screen without touching anything else in /jffs.
+const String kPiaCaCertPath = '$kRouterAppDir/pia_ca.rsa.4096.crt';
+
 const String kPiaCaCertUrl = 'https://raw.githubusercontent.com/pia-foss/manual-connections/master/ca.rsa.4096.crt';
 
 // Syslog tag used by every router-side log line (Bash scripts + Dart deploy/delete).
@@ -350,6 +355,7 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
   return _kWatchdogScriptTemplate
       .replaceAll('__SLOT__', '${c.slotIndex}')
       .replaceAll('__JQ__', jqCommand(fw))
+      .replaceAll('__CACERT__', kPiaCaCertPath)
       .replaceAll('__MAILBODY__', stock ? _kMailBodyStock : _kMailBodyMerlin)
       .replaceAll('__MAILCMD__', stock ? _kMailCmdStock : _kMailCmdMerlin);
 }
@@ -402,10 +408,21 @@ class RouterWatchdog {
 
   Future<bool> isMerlinRouter() async => (await _run('nvram get 3rd-party')) == 'merlin';
 
+  /// Deletes the cached PIA CA certificate, so the next watchdog run downloads a fresh one.
+  ///
+  /// Returns true if a file was there to delete. The test is done on the router in one command:
+  /// two round trips could disagree, and `rm -f` alone cannot tell "removed" from "never there".
+  Future<bool> deleteCachedPiaCert() async {
+    final out = await _run("[ -f '$kPiaCaCertPath' ] && rm -f '$kPiaCaCertPath' && echo DELETED || echo ABSENT");
+    final deleted = out.contains('DELETED');
+    onLog?.call(deleted ? 'Deleted cached PIA certificate ($kPiaCaCertPath).' : 'No cached PIA certificate to delete.',
+        isSuccess: deleted);
+    return deleted;
+  }
+
   // Merlin ships jq on $PATH; on stock the user installs it under /jffs/cfg-pia-wg (README §4).
-  Future<bool> isJqInstalled() async => isStockFirmware
-      ? (await _run("[ -x '$kStockJqPath' ] && echo 1 || echo 0")) == '1'
-      : (await _run('which jq')).isNotEmpty;
+  Future<bool> isJqInstalled() async =>
+      isStockFirmware ? (await _run("[ -x '$kStockJqPath' ] && echo 1 || echo 0")) == '1' : (await _run('which jq')).isNotEmpty;
 
   // Ensures the watchdog script has somewhere to live. jffs2_scripts / jffs2_on are a Merlin
   // custom-scripts feature; on stock only the directory matters.
@@ -440,12 +457,11 @@ class RouterWatchdog {
   // every runtime artifact (script, both cron jobs, services-start persistence) and run the script
   // once so the watchdog is live immediately rather than at its next scheduled interval.
   //
-  // deactivateOtherSlots MUST run before _writeWatchdogNvram: stopWatchdog unsets the GLOBAL
-  // cfg_pia_wg_user / cfg_pia_wg_password keys, so sweeping afterwards would wipe the PIA
-  // credentials this deploy just wrote.
+  // Concurrent watchdogs are allowed, so this no longer tears down the other slots. How many may
+  // run at once is a firmware limit (vpnc_max_conn on stock), enforced by the caller before it
+  // gets here - the same gate the MANAGE ENABLE path applies.
   Future<void> deployWatchdog(WatchdogConfig config, {String? desc}) => _guard('deploy', () async {
         await enableJffsScripts();
-        await deactivateOtherSlots(config.slotIndex);
         await _writeWatchdogNvram(config, desc: desc);
         await enableVpnSlot(config.slotIndex);
         await _runHeredoc(
@@ -460,7 +476,8 @@ class RouterWatchdog {
         await _logRouter('Running /jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
         await _run('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
         onLog?.call('Ran /jffs/scripts/watchdog_wgc${config.slotIndex}.sh', isSuccess: true);
-        await _logRouter('Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
+        await _logRouter(
+            'Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
         onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
       });
 
@@ -486,32 +503,6 @@ class RouterWatchdog {
     await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     await _logRouter('Disabled ${await _label(slot)}');
     onLog?.call('${await _label(slot)} disabled.', isSuccess: true);
-  }
-
-  // Only one watchdog / WireGuard interface may ever be active at a time (same rule the manage
-  // ENABLE path applies in slot_modal.dart). Scans wgc1..5 and tears down every slot except
-  // [keepSlot]: its watchdog first (cron + script + tmp files), then the interface itself.
-  //
-  // Deliberately not wrapped in _guard: stopWatchdog and disableVpnSlot are guarded already and
-  // every caller is too, so an extra layer would log the same failure three times.
-  Future<void> deactivateOtherSlots(int keepSlot) async {
-    final iface = await _run('wg show interfaces');
-    for (var slot = 1; slot <= 5; slot++) {
-      if (slot == keepSlot) continue;
-      final hasWatchdog = (await _run('cru l | grep -qw watchdog_wgc$slot && echo 1 || echo 0')) == '1';
-      final enabled = (await _run('nvram get wgc${slot}_enable')) == '1';
-      // The interface check is a superset of the nvram flag: it also catches a tunnel that is
-      // still up while wgcN_enable already reads 0.
-      if (!hasWatchdog && !enabled && !iface.contains('wgc$slot')) continue;
-      onLog?.call('Only one watchdog may be active - deactivating ${await _label(slot)}...');
-      // stopWatchdog tears the interface down as part of its own teardown; a bare slot only
-      // needs the interface disabling.
-      if (hasWatchdog) {
-        await stopWatchdog(slot);
-      } else {
-        await disableVpnSlot(slot);
-      }
-    }
   }
 
   // True for any cru line belonging to [slot], on either firmware.
@@ -553,6 +544,66 @@ class RouterWatchdog {
     await _run("chmod +x '$kS50Path'");
   }
 
+  // Cron entries only: removes this slot's two cru jobs and its boot-persistence lines, and
+  // leaves everything else alone - the script, the NVRAM settings and the tunnel itself.
+  //
+  // This is the difference between DISABLE and DELETE. DELETE (stopWatchdog) tears the whole
+  // thing down; DISABLE stops the supervision and keeps the configuration, so ENABLE can put the
+  // schedule back without asking the user for the settings again.
+  Future<void> disableWatchdog(int slot) => _guard('disable watchdog', () async {
+        final label = await _label(slot);
+        await _run('cru d watchdog_wgc$slot');
+        await _run('cru d watchdog_log_rotate_wgc$slot');
+        await _removeCronPersistence(slot);
+        await _logRouter('Watchdog schedule removed for $label (settings kept)');
+        onLog?.call('Watchdog disabled for $label; its settings are kept.', isSuccess: true);
+      });
+
+  // Puts the schedule back from the settings already in NVRAM. The interval is read from the
+  // router rather than passed in, so ENABLE cannot silently reschedule at a different interval
+  // from the one the user configured.
+  Future<void> enableWatchdog(int slot) => _guard('enable watchdog', () async {
+        final label = await _label(slot);
+        final stored = await _run('nvram get wgc${slot}_wd_check_interval');
+        final interval = int.tryParse(stored);
+        if (interval == null || interval <= 0) {
+          throw Exception('wgc$slot has no stored watchdog settings - use CREATE/EDIT first.');
+        }
+        await enableJffsScripts();
+        await _run(buildCronCheckLine(slot, interval));
+        await _run(buildCronRotateLine(slot));
+        await _ensureServicesStart(slot, interval);
+        await _logRouter('Watchdog schedule restored for $label (check interval is ${interval}m)');
+        onLog?.call('Watchdog enabled for $label (checks every ${interval}m).', isSuccess: true);
+      });
+
+  // Drops [slot]'s cron lines from whichever boot-persistence file this firmware uses.
+  Future<void> _removeCronPersistence(int slot) async {
+    if (isStockFirmware) {
+      await _writeS50(slot);
+      await _run("chmod 700 '$kS50Path'");
+      return;
+    }
+    const path = kServicesStartPath;
+    await _run(
+      "[ -f '$path' ] && grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' "
+      "> '$path.tmp' && mv '$path.tmp' '$path' && chmod 700 '$path'",
+    );
+  }
+
+  /// True if any slot other than [slot] still has a watchdog cron entry.
+  ///
+  /// cfg_pia_wg_user / cfg_pia_wg_password are GLOBAL keys shared by every watchdog script, so a
+  /// teardown may only unset them once it is the last one standing. Getting this wrong leaves a
+  /// surviving watchdog unable to authenticate with PIA at its next renegotiation.
+  Future<bool> _otherWatchdogsRemain(int slot) async {
+    for (var other = 1; other <= 5; other++) {
+      if (other == slot) continue;
+      if ((await _run('cru l | grep -qw watchdog_wgc$other && echo 1 || echo 0')) == '1') return true;
+    }
+    return false;
+  }
+
   // Full disable: unset NVRAM, remove cron jobs and service-start script
   // JFFS is intentionally left enabled.
   Future<void> stopWatchdog(int slot) => _guard('disable', () async {
@@ -561,19 +612,10 @@ class RouterWatchdog {
         await _run('cru d watchdog_wgc$slot');
         await _run('cru d watchdog_log_rotate_wgc$slot');
         await _run('rm -f /jffs/scripts/watchdog_wgc$slot.sh');
-        // strip out cron jobs added when watchdog installed, reinstate 700 permission
-        if (isStockFirmware) {
-          // Rewrite with this slot's lines gone. The file itself stays: it is a hijacked stock
-          // init script, so removing it is worse than leaving an empty replacement block.
-          await _writeS50(slot);
-          await _run("chmod 700 '$kS50Path'");
-        } else {
-          const path = kServicesStartPath;
-          await _run(
-            "[ -f '$path' ] && grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' "
-            "> '$path.tmp' && mv '$path.tmp' '$path' && chmod 700 '$path'",
-          );
-        }
+        // strip out cron jobs added when watchdog installed, reinstate 700 permission. On stock
+        // the file itself stays: it is a hijacked init script, so removing it is worse than
+        // leaving an empty replacement block.
+        await _removeCronPersistence(slot);
         await _run(
           'rm -f /tmp/watchdog_wgc$slot.log /tmp/watchdog_wgc$slot.log.old '
           '/tmp/watchdog_last_ping_success_wgc$slot /tmp/watchdog_backoff_wgc$slot',
@@ -589,8 +631,16 @@ class RouterWatchdog {
         await _run('nvram unset wgc${slot}_wd_smtp_pass');
         await _run('nvram unset wgc${slot}_wd_smtp_server');
         await _run('nvram unset wgc${slot}_wd_smtp_user');
-        await _run('nvram unset cfg_pia_wg_password');
-        await _run('nvram unset cfg_pia_wg_user');
+        // GLOBAL keys, shared by every watchdog script. With concurrent watchdogs allowed, only
+        // the last one out may clear them - otherwise the survivor cannot authenticate with PIA
+        // at its next renegotiation. The cru entries for this slot are already gone above, so
+        // this sees the state after the removal.
+        if (await _otherWatchdogsRemain(slot)) {
+          onLog?.call('Another watchdog is still configured; keeping the shared PIA credentials.');
+        } else {
+          await _run('nvram unset cfg_pia_wg_password');
+          await _run('nvram unset cfg_pia_wg_user');
+        }
         await _run('nvram commit');
         onLog?.call('NVRAM committed.', isSuccess: true);
         // Bring the tunnel down too, otherwise disabling the watchdog leaves an unsupervised VPN
@@ -746,7 +796,7 @@ LOGFILE="/tmp/watchdog_${IFACE}.log"
 STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"
 BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
 COOLDOWN=120
-CACERT="/jffs/pia_ca.rsa.4096.crt"
+CACERT="__CACERT__"
 JQ="__JQ__"
 CURL="curl -s --max-time 15 --connect-timeout 8 --tlsv1.3 --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
@@ -777,6 +827,9 @@ SMTP_PORT="${SMTP_SERVER##*:}"
 DESC="$(nvram get ${K}desc)"
 # PIA region ids carry no prefix; strip the app's for the lookup (tolerates older names).
 REGION="${DESC#pia-}"
+# Kill switch: put back what the user set. Empty (always, on stock) means off.
+ENFORCE="$(nvram get ${K}enforce)"
+[ -n "$ENFORCE" ] || ENFORCE=0
 PIA_USER="$(nvram get cfg_pia_wg_user)"
 PIA_PASS="$(nvram get cfg_pia_wg_password)"
 
@@ -889,6 +942,7 @@ fi
 # PIA re-negotiation
 if [ ! -f "$CACERT" ]; then
   log "CA cert not cached; downloading"
+  mkdir -p "${CACERT%/*}" || abort "failed to create ${CACERT%/*}"
   $CURL "$CACERT_URL" -o "$CACERT" || abort "failed to download CA cert"
   echo -n > /jffs/curllst
   openssl x509 -noout -in "$CACERT" >/dev/null 2>&1 || abort "CA cert is not valid PEM"
@@ -954,7 +1008,7 @@ nvset "addr=$PEER_IP/32"
 nvset "alive=25"
 nvset "desc=$DESC"
 nvset "enable=1"
-nvset "enforce=1"
+nvset "enforce=$ENFORCE"
 nvset "ep_addr=$BEST_IP"
 nvset "ep_addr_r="
 nvset "ep_port=$SERVER_PORT"

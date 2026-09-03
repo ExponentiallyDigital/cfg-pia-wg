@@ -259,6 +259,19 @@ void main() {
       expect(s, contains('nvram get cfg_pia_wg_password'));
     });
 
+    // The CA cache moved from /jffs into the app's own directory, so the ABOUT screen's
+    // DEL CACHED PIA CERT can remove it without touching anything else in /jffs.
+    test('caches the PIA CA under the app directory, creating it if need be', () {
+      final s = buildWatchdogScript(_valid(slot: 1));
+      expect(s, contains('CACERT="$kPiaCaCertPath"'));
+      expect(kPiaCaCertPath, startsWith('$kRouterAppDir/'));
+      expect(s, isNot(contains('"/jffs/pia_ca.rsa.4096.crt"')));
+      // /jffs/cfg-pia-wg exists on stock (the user installs jq there) but not necessarily on
+      // Merlin, and curl will not create it.
+      expect(s, contains(r'mkdir -p "${CACERT%/*}"'));
+      expect(s.indexOf('mkdir -p'), lessThan(s.indexOf(r'$CURL "$CACERT_URL"')));
+    });
+
     test('pings via the VPN interface, primary then secondary', () {
       final s = buildWatchdogScript(_valid(slot: 1));
       expect(s, contains(r'ping -I "$IFACE" -c 3 -W 2 "$PRIMARY_IP"'));
@@ -270,6 +283,20 @@ void main() {
       expect(s, contains(r'ping -c 1 -W 2 "$PRIMARY_IP"'));
       expect(s, contains(r'ping -c 1 -W 2 "$SECONDARY_IP"'));
       expect(s, contains('no Internet on WAN interface, exiting'));
+    });
+
+    // Reported: a slot created with the kill switch OFF came back ON after the watchdog fired,
+    // because the re-negotiation wrote enforce=1 flat. It has to put back what it found.
+    test('preserves the kill switch across a re-negotiation instead of forcing it on', () {
+      final s = buildWatchdogScript(_valid(slot: 1));
+
+      expect(s, isNot(contains(r'nvset "enforce=1"')));
+      expect(s, contains(r'nvset "enforce=$ENFORCE"'));
+      expect(s, contains(r'ENFORCE="$(nvram get ${K}enforce)"'));
+      // Stock never sets the key - there is no kill switch there - so an empty read means off.
+      expect(s, contains(r'[ -n "$ENFORCE" ] || ENFORCE=0'));
+      // The read has to happen before the write block clobbers the value.
+      expect(s.indexOf(r'ENFORCE="$(nvram get'), lessThan(s.indexOf(r'nvset "enforce=')));
     });
 
     test('writes all 16 Step-4 NVRAM vars but NOT wgcN_dns', () {
@@ -395,12 +422,16 @@ void main() {
 
     // The deploy heredoc has a practical size ceiling, which is why the firmware differences are
     // substituted in rather than branched at runtime. The Merlin payload is the known-good
-    // baseline (8.3 KB in production), so the guard is that neither variant grows past it by more
-    // than a rounding error — stock in particular must not balloon.
+    // baseline, so the guard is that neither variant grows past it by more than a rounding error —
+    // stock in particular must not balloon.
+    //
+    // Ceiling raised from 8700 to 9000 in build 400: the CA cache moved into the app's own
+    // directory (so the script has to mkdir it) and the kill switch is now read back rather than
+    // forced on. Both are a line or two; anything that needs a further raise deserves a look.
     test('neither variant grows the deploy payload', () {
       final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
       final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
-      expect(merlin, lessThan(8700));
+      expect(merlin, lessThan(9000));
       expect(stock, lessThanOrEqualTo(merlin));
     });
   });
