@@ -370,10 +370,27 @@ class RouterSlotService {
     await _run('nvram set vpnc_clientlist=${shellSingleQuote(serialiseVpncClientlist(edit(current)))}');
   }
 
+  /// Writes the slot's description and/or active flag into `vpnc_clientlist`. A no-op on Merlin,
+  /// which keeps both in per-slot NVRAM keys instead.
+  ///
+  /// Public because the watchdog deploy path needs it too: on stock this list is where
+  /// [fetchSlots] reads the region name from, so a slot missing its row reads as unconfigured and
+  /// the modal greys out every button that needs a description.
+  Future<void> writeVpncProfile(int slot, {String? desc, bool? active}) async {
+    if (!isStockFirmware) return;
+    await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, desc: desc, active: active));
+  }
+
   // Mirrors an enable/disable into the stock active flag; a no-op on Merlin.
+  //
+  // Carries the description as well: upsert APPENDS a row for a slot that has none, and a row
+  // without a description shows as an empty slot in both this app and the router's own WebUI.
+  // wgcN_desc is written by every path that creates a slot on stock, so it is the source to
+  // repair from.
   Future<void> _setVpncActive(int slot, bool active) async {
     if (!isStockFirmware) return;
-    await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, active: active));
+    final desc = (await _run('nvram get wgc${slot}_desc')).trim();
+    await writeVpncProfile(slot, desc: desc.isEmpty ? null : desc, active: active);
   }
 
   // Stock drives WireGuard through VPN Fusion: point `vpnc_unit` at the profile's ROW in
@@ -384,7 +401,8 @@ class RouterSlotService {
   //
   // Returns false when the slot has no profile. [required] turns that into an error — enabling a
   // slot that VPN Fusion does not know about cannot work, whereas stopping one is already a no-op.
-  Future<bool> _runVpncService(int slot, String serviceCmd, {bool required = false}) async {
+  /// Public so `RouterWatchdog` starts and stops a stock tunnel exactly as MANAGE does.
+  Future<bool> runVpncService(int slot, String serviceCmd, {bool required = false}) async {
     final unit = vpncUnitForSlot(parseVpncClientlist(await _run('nvram get vpnc_clientlist')), slot);
     if (unit == null) {
       if (required) {
@@ -411,7 +429,12 @@ class RouterSlotService {
 
     final slots = <int, SlotInfo>{};
     for (int i = 1; i <= 5; i++) {
-      final desc = stock ? (vpnc[i]?.desc ?? '') : await _run('nvram get wgc${i}_desc');
+      // Stock keeps the region name in vpnc_clientlist, but fall back to wgcN_desc when the row
+      // is missing or blank: a watchdog deployed before the deploy path wrote that row leaves the
+      // slot looking empty, which greys out every button that needs a description. DELETE unsets
+      // wgcN_desc along with the row, so this cannot resurrect a deleted slot.
+      var desc = stock ? (vpnc[i]?.desc ?? '') : await _run('nvram get wgc${i}_desc');
+      if (stock && desc.trim().isEmpty) desc = await _run('nvram get wgc${i}_desc');
       // Stock exposes no kill switch (ARCHITECTURE.md 2.3.1), so the badge never lights there.
       final killSwitch = stock ? false : (await _run('nvram get wgc${i}_enforce')) == '1';
       final enabled = stock ? (vpnc[i]?.active ?? false) : (await _run('nvram get wgc${i}_enable')) == '1';
@@ -573,7 +596,7 @@ class RouterSlotService {
     if (isStockFirmware) {
       // Must follow _setVpncActive: upsert appends a row for a slot that had none, and the unit
       // is that row's index. There is no start_vpnc on stock (ARCHITECTURE.md 4.2.2).
-      await _runVpncService(slot, 'restart_vpnc', required: true);
+      await runVpncService(slot, 'restart_vpnc', required: true);
     } else {
       await _run('service "start_wgc $slot"; service restart_vpnrouting0');
     }
@@ -618,7 +641,7 @@ class RouterSlotService {
     await _run('nvram commit');
     // stock requires a different stop command to Merlin
     if (isStockFirmware) {
-      await _runVpncService(slot, 'stop_vpnc');
+      await runVpncService(slot, 'stop_vpnc');
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
@@ -636,7 +659,7 @@ class RouterSlotService {
     // leaves the interface up (ARCHITECTURE.md 4.2.3 specifies stop_vpnc) — that mismatch is what
     // left a tunnel running behind a WebUI that reported it disconnected.
     if (isStockFirmware) {
-      await _runVpncService(slot, 'stop_vpnc');
+      await runVpncService(slot, 'stop_vpnc');
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
@@ -657,7 +680,7 @@ class RouterSlotService {
     // stock requires a different stop command to Merlin. Must precede removeVpncRecord below:
     // the unit is the row's index, so dropping the row first would lose it.
     if (isStockFirmware) {
-      await _runVpncService(slot, 'stop_vpnc');
+      await runVpncService(slot, 'stop_vpnc');
     } else {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }

@@ -41,8 +41,7 @@ class SlotParamsEditor extends StatefulWidget {
   // has no wgcN_desc mirror for readSlotParams to find.
   final String desc;
   final Future<void> Function(Map<String, String> editableParams) onSave;
-  const SlotParamsEditor(
-      {super.key, required this.slot, required this.initial, required this.onSave, this.desc = ''});
+  const SlotParamsEditor({super.key, required this.slot, required this.initial, required this.onSave, this.desc = ''});
 
   @override
   State<SlotParamsEditor> createState() => _SlotParamsEditorState();
@@ -102,10 +101,11 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
       backgroundColor: kSurface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 480,
-          maxHeight: MediaQuery.of(context).size.height * 1,
-        ),
+        // Width only. The height must come from the incoming constraints - inside the app chrome
+        // the Scaffold has already taken the keyboard off the body, so any cap computed from the
+        // screen height is too large and the card spills down behind the keyboard. Unbounded here
+        // lets SingleChildScrollView shrink-wrap to the space it is given and scroll past that.
+        constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(20),

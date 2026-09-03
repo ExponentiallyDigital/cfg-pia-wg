@@ -448,6 +448,65 @@ void main() {
       expect(c.sshPassword, 'pw');
     });
 
+    // Reported from a device: the keyboard covered the credentials form. On a short viewport the
+    // form is allowed to scroll - what it must never do is overflow, or leave a field stranded
+    // under the keyboard with no way to reach it. (The in-chrome case, where the bug actually
+    // showed, is covered by edge_to_edge_test.dart.)
+    testWidgets('the credentials form scrolls rather than hiding under the keyboard', (tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 500);
+      addTearDown(tester.view.reset);
+
+      final ssh = RecordingSSHClient();
+      await pumpWithSsh(tester, SessionController(tickInterval: const Duration(hours: 1)), ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull, reason: 'no overflow');
+      const keyboardTop = 800.0 - 500.0;
+      final ip = find.widgetWithText(TextFormField, 'Router IP');
+      expect(tester.getRect(ip).height, greaterThan(0), reason: 'the form collapsed');
+      expect(tester.getRect(ip).bottom, lessThanOrEqualTo(keyboardTop));
+
+      // Everything below the fold has to be reachable by scrolling.
+      await tester.scrollUntilVisible(find.byKey(const Key('about_ssh_continue')), -60,
+          scrollable: find.byType(Scrollable).last);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byKey(const Key('about_ssh_continue'))).bottom, lessThanOrEqualTo(keyboardTop));
+    });
+
+    // Reported: the form opened empty while the router screens start from the usual defaults.
+    testWidgets('starts from the same defaults as the router screens', (tester) async {
+      final ssh = RecordingSSHClient();
+      await pumpWithSsh(tester, SessionController(tickInterval: const Duration(hours: 1)), ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(TextFormField, kDefaultRouterIp), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, kDefaultSshUsername), findsOneWidget);
+    });
+
+    testWidgets('a session value beats the default', (tester) async {
+      final ssh = RecordingSSHClient();
+      final c = SessionController(tickInterval: const Duration(hours: 1))
+        ..routerIp = '10.0.0.1'
+        ..sshUsername = 'root'; // no password, so the form still opens
+      await pumpWithSsh(tester, c, ssh);
+
+      await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(TextFormField, '10.0.0.1'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, 'root'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, kDefaultRouterIp), findsNothing);
+    });
+
     testWidgets('an incomplete credentials form is refused', (tester) async {
       final ssh = RecordingSSHClient();
       await pumpWithSsh(tester, SessionController(tickInterval: const Duration(hours: 1)), ssh);

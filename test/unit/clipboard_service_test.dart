@@ -96,4 +96,16 @@ void main() {
     expect(kotlin, contains('"$kClearClipboardMethod"'));
     expect(kotlin, contains('clearPrimaryClip()'));
   });
+
+  // Screen capture is blocked in a release build. A debug build skips FLAG_SECURE so the app can
+  // be captured on a device while testing; this fails if that ever widens to a release.
+  test('MainActivity.kt keeps FLAG_SECURE for release builds', () {
+    final kotlin = File('android/app/src/main/kotlin/com/exponentiallydigital/pia_wireguard_cfga/MainActivity.kt')
+        .readAsStringSync();
+
+    expect(kotlin, contains('FLAG_SECURE'));
+    expect(kotlin, contains(r'if (!BuildConfig.DEBUG && !allowScreenCaptureInRelease) {'));
+    expect(kotlin, contains('private val allowScreenCaptureInRelease = false'),
+        reason: 'the release escape hatch was left switched on');
+  });
 }

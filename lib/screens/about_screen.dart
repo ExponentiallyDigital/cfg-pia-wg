@@ -548,8 +548,11 @@ class _SshCredsDialog extends StatefulWidget {
 }
 
 class _SshCredsDialogState extends State<_SshCredsDialog> {
-  late final TextEditingController _ipCtrl = TextEditingController(text: widget.initialIp);
-  late final TextEditingController _userCtrl = TextEditingController(text: widget.initialUser);
+  // Same starting points as the router screens: session value if there is one, else the defaults.
+  late final TextEditingController _ipCtrl =
+      TextEditingController(text: widget.initialIp.isNotEmpty ? widget.initialIp : kDefaultRouterIp);
+  late final TextEditingController _userCtrl =
+      TextEditingController(text: widget.initialUser.isNotEmpty ? widget.initialUser : kDefaultSshUsername);
   late final TextEditingController _passCtrl = TextEditingController(text: widget.initialPass);
   bool _visible = false;
   String? _error;
@@ -573,31 +576,54 @@ class _SshCredsDialogState extends State<_SshCredsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    // A Dialog with its own scroll view, not an AlertDialog: an AlertDialog puts its content in a
+    // Flexible, and inside the app chrome (where the Scaffold has already taken the keyboard's
+    // height off the body) that Flexible collapses to zero and the fields spill out of the card.
+    // This is the same structure SlotParamsEditor uses.
+    return Dialog(
       backgroundColor: kSurface,
-      title: const Text('Router SSH details', style: TextStyle(color: kHighlight, fontSize: 14)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          RouterIpField(controller: _ipCtrl),
-          const SizedBox(height: 10),
-          SshUsernameField(controller: _userCtrl),
-          const SizedBox(height: 10),
-          SshPasswordField(controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
-          if (_error != null) ...[
-            const SizedBox(height: 14),
-            Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          key: const Key('about_ssh_cancel'),
-          onPressed: () => Navigator.pop(context, null),
-          child: const Text('CANCEL', style: TextStyle(color: kMuted)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        // Width only. The height must come from the incoming constraints - inside the app chrome
+        // the Scaffold has already taken the keyboard off the body, so any cap computed from the
+        // screen height is too large and the card spills down behind the keyboard. Unbounded here
+        // lets SingleChildScrollView shrink-wrap to the space it is given and scroll past that.
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Router SSH details', style: TextStyle(color: kHighlight, fontSize: 14)),
+                const SizedBox(height: 16),
+                RouterIpField(controller: _ipCtrl),
+                const SizedBox(height: 10),
+                SshUsernameField(controller: _userCtrl),
+                const SizedBox(height: 10),
+                SshPasswordField(controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
+                if (_error != null) ...[
+                  const SizedBox(height: 14),
+                  Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      key: const Key('about_ssh_cancel'),
+                      onPressed: () => Navigator.pop(context, null),
+                      child: const Text('CANCEL', style: TextStyle(color: kMuted)),
+                    ),
+                    TextButton(key: const Key('about_ssh_continue'), onPressed: _onContinue, child: const Text('CONTINUE')),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
-        TextButton(key: const Key('about_ssh_continue'), onPressed: _onContinue, child: const Text('CONTINUE')),
-      ],
+      ),
     );
   }
 }

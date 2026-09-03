@@ -57,7 +57,8 @@ void main() {
     await tester.pumpWidget(_host(ssh, c));
     await tester.pumpAndSettle();
 
-    expect(find.text('WATCHDOG · wgc1'), findsOneWidget);
+    // The heading names the region as well, the same shape the EDIT modal and the logs use.
+    expect(find.text('WATCHDOG · wgc1:aus_melbourne'), findsOneWidget);
     expect(find.byKey(const Key('wd_primary')), findsOneWidget);
     expect(find.byKey(const Key('wd_save')), findsOneWidget);
     // DISABLE / VIEW LOG are now slot-modal actions, not part of EDIT.
@@ -160,6 +161,9 @@ void main() {
 
     // Empty-slot create is enabled immediately; no reminder dialog is shown.
     expect(find.text('Watchdog configured'), findsNothing);
+    // Exactly once: deployWatchdog brings the slot up, and the dialog used to do it again
+    // afterwards - a second restart that bounced the tunnel the deploy had just established.
+    expect(ssh.commands.where((cmd) => cmd.contains('nvram set wgc1_enable=1')), hasLength(1));
   });
 
   testWidgets('test email sends with the supplied SMTP settings', (tester) async {

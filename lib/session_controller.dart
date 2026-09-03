@@ -28,6 +28,11 @@ import 'clipboard_service.dart';
 // Default DNS servers (Quad9), matching the value the standalone form pre-fills.
 const String kDefaultDns = '9.9.9.9, 149.112.112.112';
 
+// Starting points for the router SSH form, used wherever it appears - the router screens and
+// the ABOUT screen's DEL PIA CERT prompt - so the two never disagree.
+const String kDefaultRouterIp = '192.168.0.254';
+const String kDefaultSshUsername = 'admin';
+
 /// The navigable destinations. [routeName] doubles as the [RouteSettings] name used by the
 /// destination observer to track which screen is on top (for the drawer's no-op-on-current).
 enum AppDestination {

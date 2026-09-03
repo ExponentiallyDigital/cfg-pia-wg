@@ -62,6 +62,68 @@ void main() {
     });
   });
 
+  // Reported: with a watchdog active on stock, every button in both slot modals greyed out except
+  // CREATE. fetchSlots reads the region name from vpnc_clientlist there, and the watchdog deploy
+  // path only ever wrote wgcN_desc - so the slot read back as unconfigured.
+  group('deployWatchdog writes the stock profile row', () {
+    // A stock router that remembers what was written to vpnc_clientlist: the deploy reads the row
+    // back to resolve vpnc_unit, so a fake that forgets would fail for the wrong reason.
+    RecordingSSHClient stockClient() {
+      var list = '';
+      return RecordingSSHClient(responder: (cmd) {
+        if (cmd.startsWith('nvram set vpnc_clientlist=')) {
+          list = cmd.substring(cmd.indexOf('=') + 1).replaceAll("'", '');
+          return '';
+        }
+        if (cmd.contains('nvram get vpnc_clientlist')) return list;
+        if (cmd.contains('jffs2')) return '0';
+        return '';
+      });
+    }
+
+    test('adds the description to vpnc_clientlist on stock', () async {
+      useStock();
+      final c = stockClient();
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne');
+
+      final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_clientlist='), orElse: () => '');
+      expect(write, isNotEmpty, reason: 'no clientlist row was written');
+      expect(write, contains('pia-aus_melbourne'));
+      expect(c.ran("nvram set wgc1_desc='pia-aus_melbourne'"), isTrue, reason: 'the per-slot key still gets it');
+    });
+
+    test('marks the profile active when the slot is enabled', () async {
+      useStock();
+      final c = stockClient();
+      await RouterWatchdog(c).enableVpnSlot(1);
+
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram set vpnc_clientlist=')), isTrue);
+      // And it starts the tunnel the stock way, not Merlin's.
+      expect(c.ran('service restart_vpnc'), isTrue);
+      expect(c.ran('start_wgc'), isFalse);
+    });
+
+    test('stops a stock tunnel with stop_vpnc, not stop_wgc', () async {
+      useStock();
+      final c = stockClient();
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne'); // creates the row
+      c.commands.clear();
+      await RouterWatchdog(c).disableVpnSlot(1);
+
+      expect(c.ran('service stop_vpnc'), isTrue);
+      expect(c.ran('stop_wgc'), isFalse);
+    });
+
+    test('leaves vpnc_clientlist alone on Merlin, which has no such list', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne');
+
+      expect(c.commands.any((cmd) => cmd.contains('vpnc_clientlist')), isFalse);
+      expect(c.ran("nvram set wgc1_desc='pia-aus_melbourne'"), isTrue);
+    });
+  });
+
   group('deployWatchdog', () {
     test('enables JFFS, writes nvram, deploys the script and both cron entries', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
@@ -359,10 +421,21 @@ void main() {
 
   // ── Stock firmware ────────────────────────────────────────────────────────────────
   group('stock deploy', () {
-    // Stock answers '' to everything unless a test says otherwise; jffs2 reads are irrelevant here.
-    RecordingSSHClient stockRouter({String s50 = ''}) => RecordingSSHClient(
-          responder: (cmd) => cmd.startsWith("cat '$kS50Path'") ? s50 : '',
-        );
+    // Stock answers '' to everything unless a test says otherwise; jffs2 reads are irrelevant
+    // here. vpnc_clientlist has to read back what was written, though: the deploy resolves
+    // vpnc_unit from that row before starting the tunnel.
+    RecordingSSHClient stockRouter({String s50 = ''}) {
+      var list = '';
+      return RecordingSSHClient(responder: (cmd) {
+        if (cmd.startsWith("cat '$kS50Path'")) return s50;
+        if (cmd.startsWith('nvram set vpnc_clientlist=')) {
+          list = cmd.substring(cmd.indexOf('=') + 1).replaceAll("'", '');
+          return '';
+        }
+        if (cmd.contains('nvram get vpnc_clientlist')) return list;
+        return '';
+      });
+    }
 
     test('creates the script directory instead of setting the Merlin JFFS flags', () async {
       useStock();

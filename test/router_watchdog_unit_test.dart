@@ -299,6 +299,40 @@ void main() {
       expect(s.indexOf(r'ENFORCE="$(nvram get'), lessThan(s.indexOf(r'nvset "enforce=')));
     });
 
+    // A bare "curl addKey request failed" said nothing about why. The exit code alone separates
+    // a TLS handshake failure (35) from a CA problem (60), an HTTP error (22) and a connect
+    // failure (7) - which is what a stock router reporting this needs to tell us.
+    test('reports the curl exit code and message when addKey fails', () {
+      final s = buildWatchdogScript(_valid(slot: 1));
+
+      expect(s, contains(r'RC=$?'));
+      expect(s, contains(r'abort "curl addKey failed (exit $RC'));
+      expect(s, contains(r'-S --cacert'), reason: '-s alone swallows the reason');
+      expect(s, contains(r'2>"$TMPERR"'));
+      expect(s, contains(r'TMPERR="/tmp/${IFACE}_curl.err"'));
+      // No raw control characters in the script: the message is sanitised with a tr class.
+      expect(s, isNot(contains(String.fromCharCode(13))));
+    });
+
+    // Reported from a router: every addKey call failed with curl exit 35 (TLS handshake).
+    // --tlsv1.3 is a MINIMUM version, and PIA's addKey endpoint on :1337 does not offer 1.3, so
+    // the connection was refused before any request went out. 1.2 as the floor still negotiates
+    // 1.3 wherever the server supports it - the token and server-list hosts did all along.
+    test('requires TLS 1.2 as a floor, not 1.3', () {
+      final s = buildWatchdogScript(_valid(slot: 1));
+      expect(s, contains('--tlsv1.2'));
+      expect(s, isNot(contains('--tlsv1.3')));
+    });
+
+    // BusyBox tr has no character classes: `tr -d "[:cntrl:]"` deleted the literal characters
+    // c, n, t, r, l, [, ] and : instead, so "curl: (35) error:..." reached the log as
+    // "u (35) eo...". Take the first line and cut it - no escapes, no classes.
+    test('sanitises the curl error without relying on tr character classes', () {
+      final s = buildWatchdogScript(_valid(slot: 1));
+      expect(s, isNot(contains('[:cntrl:]')));
+      expect(s, contains(r'head -n 1 "$TMPERR" | cut -c1-160'));
+    });
+
     test('writes all 16 Step-4 NVRAM vars but NOT wgcN_dns', () {
       final s = buildWatchdogScript(_valid(slot: 3));
 

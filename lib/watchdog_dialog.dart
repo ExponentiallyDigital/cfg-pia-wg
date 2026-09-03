@@ -24,6 +24,7 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 import 'firmware.dart';
 import 'pia_service.dart';
+import 'router_slot_service.dart' show slotLabel;
 import 'router_watchdog.dart';
 import 'session_controller.dart';
 import 'widgets/error_presenter.dart';
@@ -258,10 +259,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       return true;
     });
     if (saved != true || !mounted) return;
-    if (widget.slotIsEmpty && !enabled) {
-      await _withService((svc) => svc.enableVpnSlot(widget.slotIndex));
-      if (!mounted) return;
-    }
+    // No enable here: deployWatchdog brings the slot up itself. This used to call enableVpnSlot
+    // again for a slot that started empty, which bounced the tunnel the deploy's immediate script
+    // run had just established - two `service restart_vpnc` calls on stock for one deploy.
     Navigator.of(context).pop();
   }
 
@@ -283,10 +283,11 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       backgroundColor: kSurface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 480,
-          maxHeight: MediaQuery.of(context).size.height * 1,
-        ),
+        // Width only. The height must come from the incoming constraints - inside the app chrome
+        // the Scaffold has already taken the keyboard off the body, so any cap computed from the
+        // screen height is too large and the card spills down behind the keyboard. Unbounded here
+        // lets SingleChildScrollView shrink-wrap to the space it is given and scroll past that.
+        constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -298,8 +299,13 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                   children: [
                     const Icon(Icons.shield_outlined, color: kHighlight, size: 18),
                     const SizedBox(width: 8),
-                    Text('WATCHDOG · wgc${widget.slotIndex}',
-                        style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+                    // slotLabel, so the heading reads "wgc5:pia-aus_perth" - the same shape the
+                    // EDIT modal and every log line use.
+                    Expanded(
+                      child: Text('WATCHDOG · ${slotLabel(widget.slotIndex, widget.regionDesc)}',
+                          style:
+                              const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 4),

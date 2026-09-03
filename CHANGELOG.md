@@ -47,11 +47,30 @@ WIP:
   5. E2E test all WATCHDOG functions
   6. fix addkey error
   7. check watchdog script size
+  8. add updated icon!
+
+2026-09-04 v0.8.31 build 401 - WIP stock support for Watchdog function
+
+- FIX: the watchdog's PIA re-negotiation always failed at addKey with curl exit 35. `--tlsv1.3` sets a MINIMUM version and PIA's addKey endpoint on :1337 does not offer 1.3, so the connection was refused before the request went out; the floor is now 1.2, which still negotiates 1.3 where the server supports it (the token and server-list hosts always did). This is the "ongoing since v0.8.17" addKey error.
+- FIX: the curl error reached the log mangled - "u (35) eo1409442Eib...". BusyBox `tr` has no character classes, so `tr -d "[:cntrl:]"` deleted every literal c, n, t, r and l from the message. It now takes the first line and cuts it.
+- FIX: deploying a watchdog on an empty slot enabled it twice - `deployWatchdog` brings the slot up, and the dialog then did it again, bouncing the tunnel the deploy's immediate script run had just established (two `service restart_vpnc` calls on stock). The dialog's second enable is gone; the immediate script run stays, so a failure still lands in the router log at deploy time rather than at the next cron tick.
+- GUI: the watchdog CREATE/EDIT heading names the region - "WATCHDOG - wgc5:pia-aus_perth" - matching the EDIT modal and the log lines.
+- CHG: `FLAG_SECURE` is now skipped for DEBUG builds so the app can be screenshotted on a device while testing. Release builds always set it; a test fails if that changes or if the release escape hatch (`allowScreenCaptureInRelease`) is left switched on.
+- FIX: opening the keyboard on a form dialog left only its buttons on screen, over "BOTTOM OVERFLOWED BY 38 PIXELS". An `AlertDialog` puts its content in a `Flexible`, and inside the app chrome - where the Scaffold has already taken the keyboard's height off the body - that Flexible collapses to zero height and the fields spill out of the card. The SSH credentials, PIA credentials and ping-target dialogs are now built on the scrolling `Dialog` structure `SlotParamsEditor` uses (new `_FormDialog`).
+- FIX: every dialog subtracted the keyboard's height TWICE, collapsing to a sliver. `AppChrome`'s `MediaQuery.removePadding` (added in 399 for the header) was handed the AppChrome context, which re-injected the outer MediaQuery below the Scaffold and undid the Scaffold's own `removeViewInsets`. It now takes the context from inside the body via a `Builder`.
+- INF: the same dialog pumped on its own lays out correctly, which is why the first test written for this passed against the broken code. The regression tests now drive the whole app.
+- FIX: the DEL PIA CERT credentials form opened empty. It now starts from the same defaults as the router screens (`kDefaultRouterIp` / `kDefaultSshUsername`, hoisted out of `router_slots_screen.dart` so the two cannot drift), with any session value taking precedence.
+- FIX: on stock, a slot with a watchdog read back as unconfigured, greying out every button in both slot modals except CREATE / CREATE-EDIT - VIEW ROUTER WATCHDOG LOG included. `fetchSlots` takes the region name from `vpnc_clientlist` there, and the watchdog deploy path only ever wrote `wgcN_desc`. It now writes the profile row too, and marks it active when it enables the slot.
+- FIX: `fetchSlots` on stock falls back to `wgcN_desc` when a slot has no `vpnc_clientlist` row, so a watchdog deployed by an earlier build stops showing as "<empty slot>" with every button greyed out. Enabling such a slot also repairs the row, description included.
+- FIX: on stock the watchdog started and stopped tunnels the Merlin way (`service start_wgc` / `stop_wgc`), which does nothing there. `enableVpnSlot` / `disableVpnSlot` now use VPN Fusion - `nvram set vpnc_unit=<row>` then `service restart_vpnc` / `stop_vpnc` - the same calls MANAGE makes, via a now-public `RouterSlotService.runVpncService`.
+- CHG: form dialogs take their height from the incoming constraints instead of capping it at the screen size, so the card fits the space the keyboard leaves and scrolls inside it.
+- TST: +12 tests (424 -> 436), coverage 96.3%. One asserts the slot is enabled exactly once per deploy. The keyboard regression tests drive the whole app; a test fails if `FLAG_SECURE` stops covering release builds, and the stock fakes now read `vpnc_clientlist` back so a missing row cannot pass unnoticed.
 
 2026-09-03 v0.8.30 build 400 - WIP stock support for Watchdog function
 
-- **NB: watchdog script fails with an addkey error - this has been ongoing since first implemented in v0.8.17 build 387.**
 - CHG: watchdogs are no longer mutually exclusive. Deploying one used to tear down every other slot (`deactivateOtherSlots`, now gone); two can run side by side, capped by the same `vpnc_max_conn` gate MANAGE's ENABLE uses - CREATE/EDIT checks it before opening the dialog rather than after it is filled in.
+- FIX: VIEW ROUTER WATCHDOG LOG was greyed out for a disabled watchdog. `/tmp/watchdog_wgcN.log` outlives the schedule, and the run that prompted the DISABLE is exactly the one worth reading, so it now needs the watchdog to be configured, not scheduled.
+- CHG: an addKey failure in the router script logged only "curl addKey request failed". It now reports curl's exit code and message (35 TLS, 60 CA, 22 HTTP, 7 connect), which is what a stock router failing here needs to say.
 - FIX: the router script rewrote `wgcN_enforce=1` on every successful re-negotiation, so a slot created with the kill switch OFF came back ON once the watchdog fired. It now reads the current value before the config write and puts it back; empty - which is always the case on stock, where there is no kill switch - means off.
 - ADD: `⏸ WATCHDOG PAUSED` badge in the slot modal for a watchdog whose settings are on the router but whose schedule has been removed - muted grey, since nothing is running. Without it a paused watchdog looked like one that was never configured.
 - ADD: watchdog ENABLE / DISABLE buttons, acting on the cron schedule rather than the tunnel. DISABLE drops the two `cru` entries and their boot persistence, keeping the settings, the script and the running VPN; ENABLE puts the schedule back at the interval stored in `wgcN_wd_check_interval`. ENABLE lights up only for a slot with settings and no schedule.
@@ -62,7 +81,7 @@ WIP:
 - DOC: dropped the two README notes explaining the "copied" popup on exit and at timer expiry.
 - FIX: clearing the DNS field left it blank on re-entry while a generate still quietly used the Quad9 defaults. The field is refilled with `kDefaultDns` on entry and again just before generating, so what it shows is what the config gets. It can still be cleared to retype.
 - GUI: the generated config heading now names its region - "GENERATED CONFIG: pia-aus_melbourne" - matching the `pia-<region>.conf` that SHARE / SAVE writes. No region known, no suffix.
-- TST: +33 tests (388 -> 420), coverage 96.2%. The deploy-payload ceiling moved 8700 -> 9000 bytes: the CA `mkdir` and the kill-switch read-back cost a line each. `pia_service_test` pins the service's own blank-DNS fallback to `kDefaultDns`, and a new test reads `MainActivity.kt` so the clipboard channel name and method cannot drift from Dart's.
+- TST: +36 tests (388 -> 424), coverage 96.2%. The deploy-payload ceiling moved 8700 -> 9000 bytes: the CA `mkdir` and the kill-switch read-back cost a line each. `pia_service_test` pins the service's own blank-DNS fallback to `kDefaultDns`, and a new test reads `MainActivity.kt` so the clipboard channel name and method cannot drift from Dart's.
 
 2026-09-03 v0.8.29 build 399 - WIP stock support for Watchdog function
 

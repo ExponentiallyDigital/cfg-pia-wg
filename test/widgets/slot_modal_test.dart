@@ -388,6 +388,34 @@ void main() {
       c.dispose();
     });
 
+    // /tmp/watchdog_wgcN.log outlives the schedule, and the run that prompted a DISABLE is
+    // exactly the one you want to read afterwards.
+    testWidgets('VIEW LOG stays available for a paused watchdog', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+          ssh,
+          SlotModalMode.watchdog,
+          _slots({
+            2: _slot(2, desc: 'aus_perth', watchdog: false, watchdogConfigured: true),
+            3: _slot(3, desc: 'aus_sydney'),
+          }),
+          c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_2')));
+      await tester.pump();
+      expect(_btn(tester, 'slot_view_log').onPressed, isNotNull);
+
+      // A slot that never had a watchdog has no log to show.
+      await tester.tap(find.byKey(const Key('slot_row_3')));
+      await tester.pump();
+      expect(_btn(tester, 'slot_view_log').onPressed, isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
     testWidgets('the two watchdog badges are mutually exclusive', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
@@ -655,7 +683,7 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_edit')));
       await tester.pumpAndSettle();
 
-      expect(find.text('WATCHDOG · wgc1'), findsOneWidget);
+      expect(find.text('WATCHDOG · wgc1:aus_melbourne'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

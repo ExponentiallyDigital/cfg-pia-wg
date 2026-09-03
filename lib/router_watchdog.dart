@@ -19,7 +19,7 @@ import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
 import 'firmware.dart';
-import 'router_slot_service.dart' show fetchSlotLabel, slotDescFor;
+import 'router_slot_service.dart' show RouterSlotService, fetchSlotLabel, slotDescFor;
 import 's50_template.dart';
 
 // ─── PIA negotiation endpoints (mirrored from pia_service.dart) ─────────────────
@@ -384,6 +384,12 @@ class RouterWatchdog {
     }
   }
 
+  // The slot's stored description, used to keep the stock clientlist row named.
+  Future<String?> _descFor(int slot) async {
+    final desc = (await _run('nvram get wgc${slot}_desc')).trim();
+    return desc.isEmpty ? null : desc;
+  }
+
   // 'wgcN:<description>' for log lines; cached, since a service instance serves one action.
   final Map<int, String> _labelCache = {};
   Future<String> _label(int slot) async => _labelCache[slot] ??= await fetchSlotLabel(slot, _run);
@@ -449,6 +455,10 @@ class RouterWatchdog {
     await _run('nvram set cfg_pia_wg_password=${shellSingleQuote(config.piaPassword)}');
     if (desc != null && desc.isNotEmpty) {
       await _run('nvram set wgc${config.slotIndex}_desc=${shellSingleQuote(slotDescFor(desc))}');
+      // Stock reads the region name from vpnc_clientlist, not wgcN_desc. Without this row a
+      // watchdog-created slot reads as unconfigured, and the slot modal greys out everything
+      // except CREATE - including VIEW ROUTER WATCHDOG LOG.
+      await RouterSlotService(client).writeVpncProfile(config.slotIndex, desc: slotDescFor(desc));
     }
     await _run('nvram commit');
   }
@@ -483,9 +493,19 @@ class RouterWatchdog {
 
   // Enables the underlying WireGuard slot
   Future<void> enableVpnSlot(int slot) => _guard('enable VPN slot', () async {
+        final slots = RouterSlotService(client, onLog: onLog);
         await _run('nvram set wgc${slot}_enable=1');
+        // Stock shows a profile as connected from its clientlist flag, not wgcN_enable - and the
+        // row has to exist before the service call, since vpnc_unit is that row's index.
+        await slots.writeVpncProfile(slot, desc: await _descFor(slot), active: true);
         await _run('nvram commit');
-        await _run('service "start_wgc $slot"; service restart_vpnrouting0');
+        // Stock drives WireGuard through VPN Fusion; start_wgc is Merlin's. Same calls MANAGE
+        // makes, so a watchdog-managed tunnel comes up the same way as a hand-enabled one.
+        if (isStockFirmware) {
+          await slots.runVpncService(slot, 'restart_vpnc', required: true);
+        } else {
+          await _run('service "start_wgc $slot"; service restart_vpnrouting0');
+        }
         await _logRouter('Enabled ${await _label(slot)} via watchdog interface');
         onLog?.call('${await _label(slot)} enabled.', isSuccess: true);
       });
@@ -498,9 +518,17 @@ class RouterWatchdog {
   // Unguarded body, so stopWatchdog can reuse it without nesting _guard (which would log the
   // same failure twice).
   Future<void> _disableVpnSlot(int slot) async {
+    final slots = RouterSlotService(client, onLog: onLog);
     await _run('nvram set wgc${slot}_enable=0');
+    await slots.writeVpncProfile(slot, active: false);
     await _run('nvram commit');
-    await _run('service "stop_wgc $slot"; service start_vpnrouting0');
+    // There is no start_vpnc on stock; stop_vpnc is what actually tears the interface down
+    // (ARCHITECTURE.md 4.2.3). restart_vpnc would leave it up.
+    if (isStockFirmware) {
+      await slots.runVpncService(slot, 'stop_vpnc');
+    } else {
+      await _run('service "stop_wgc $slot"; service start_vpnrouting0');
+    }
     await _logRouter('Disabled ${await _label(slot)}');
     onLog?.call('${await _label(slot)} disabled.', isSuccess: true);
   }
@@ -798,9 +826,11 @@ BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
 COOLDOWN=120
 CACERT="__CACERT__"
 JQ="__JQ__"
-CURL="curl -s --max-time 15 --connect-timeout 8 --tlsv1.3 --fail"
+# tlsv1.2 is a MINIMUM; requiring 1.3 failed addKey with curl 35 (handshake).
+CURL="curl -s --max-time 15 --connect-timeout 8 --tlsv1.2 --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
 TMPSRV="/tmp/${IFACE}_servers.txt"
+TMPERR="/tmp/${IFACE}_curl.err"
 SERVERLIST_URL="https://serverlist.piaservers.net/vpninfo/servers/v6"
 TOKEN_URL="https://www.privateinternetaccess.com/gtoken/generateToken"
 CACERT_URL="https://raw.githubusercontent.com/pia-foss/manual-connections/master/ca.rsa.4096.crt"
@@ -992,7 +1022,10 @@ PRIV="$(wg genkey)"
 PUB="$(echo "$PRIV" | wg pubkey)"
 log "Registering public key with $BEST_IP ($BEST_CN)"
 
-REG="$($CURL --cacert "$CACERT" --resolve "$BEST_CN:1337:$BEST_IP" -G --data-urlencode "pt=$TOKEN" --data-urlencode "pubkey=$PUB" "https://$BEST_CN:1337/addKey")" || abort "curl addKey request failed"
+# exit 35 TLS, 60 CA, 22 HTTP, 7 connect. -S so -s does not swallow the reason.
+REG="$($CURL -S --cacert "$CACERT" --resolve "$BEST_CN:1337:$BEST_IP" -G --data-urlencode "pt=$TOKEN" --data-urlencode "pubkey=$PUB" "https://$BEST_CN:1337/addKey" 2>"$TMPERR")"
+RC=$?
+[ $RC -eq 0 ] || abort "curl addKey failed (exit $RC: $(head -n 1 "$TMPERR" | cut -c1-160))"
 echo -n > /jffs/curllst
 log "addKey response received"
 RSTATUS="$(echo "$REG" | "$JQ" -r '.status // empty')"
