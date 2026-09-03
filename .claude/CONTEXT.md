@@ -199,7 +199,7 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 4. heredoc-write `/jffs/scripts/watchdog_wgcN.sh` (30 s timeout) + `chmod +x`
 5. `cru a watchdog_wgcN "*/M * * * *" …` and `cru a watchdog_log_rotate_wgcN "0 0 * * *" …`
 6. `_ensureServicesStart` — recreate `/jffs/scripts/services-start` if absent, strip prior entries for this slot, append both `cru` lines
-7. run the script once immediately
+7. run the script once immediately — deliberate: a failure lands in the router log now instead of at the next cron tick. The dialog must NOT enable the slot again afterwards; step 3 already did, and a second enable bounces the tunnel this run just established.
 
 **`stopWatchdog`:** `cru d` both jobs, `rm` the script, strip the `services-start` lines (`chmod 700`), `rm` `/tmp/watchdog_wgcN.log{,.old}`, `/tmp/watchdog_last_ping_success_wgcN`, `/tmp/watchdog_backoff_wgcN`, `nvram unset` all 10 `wgcN_wd_*` keys, commit, then `_disableVpnSlot`. JFFS is left enabled. The **global** `cfg_pia_wg_user` / `cfg_pia_wg_password` are unset **only when no other slot still has a watchdog cron entry** (`_otherWatchdogsRemain`) — with concurrent watchdogs, clearing them early leaves the survivor unable to authenticate with PIA at its next renegotiation.
 
@@ -219,6 +219,8 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 | Preflight | `wgcN_desc` non-empty, `jq` present, PIA user set, and WAN reachability of either target (no internet → exit 0, no alert) |
 | Re-negotiation | curl the CA (cached) → token via `jq -r '.token'` → server list filtered by `.regions[] \| select(.id==$DESC)` → ping-based latency sweep → `wg genkey`/`wg pubkey` → `curl --cacert --resolve <cn>:1337:<ip> …/addKey` → write 16 `wgcN_*` keys → `nvram commit` → `stop_wgc`/`sleep 2`/`start_wgc`/`restart_vpnrouting0`/`sleep 3` → verify `ifconfig wgcN` |
 | Kill switch on re-negotiation | **preserved**: the script reads `wgcN_enforce` into `$ENFORCE` at the top and writes that value back, defaulting to 0 when the key is unset (always, on stock). It used to write `enforce=1` flat, so a slot created kill-switch-off came back on once the watchdog fired. |
+| TLS floor | `--tlsv1.2` in `$CURL`. It is a MINIMUM, not a pin. `--tlsv1.3` made every addKey call fail with curl exit 35: PIA's addKey endpoint on :1337 does not offer 1.3, though the token and server-list hosts do. |
+| Error text | BusyBox `tr` has no character classes - `tr -d "[:cntrl:]"` deletes literal c/n/t/r/l/[/]/: instead. Sanitise with `head -n 1 ... | cut -c1-160`. |
 | Curl hygiene | `echo -n > /jffs/curllst` after every curl — `/usr/sbin/curl` logs every command line to that world-readable file |
 | Alerts | `send_alert SUCCESS` / `FAILED (<reason>)` when `wgcN_wd_email_enabled=1`; same 3-layer SMTP diagnostics as `testEmail` |
 | Size | ~7 KB heredoc ceiling — keep additions small. `router_watchdog_unit_test.dart` fails if either firmware variant exceeds 9000 bytes (raised from 8700 in build 400 for the CA `mkdir` and the kill-switch read-back). |
@@ -285,6 +287,14 @@ Links, in order: ReadMe, Change log, Security policy, Privacy policy, plus an `O
 - `RenderView._updateSystemChrome` samples the annotation at the centre of each bar, so a full-screen region wins over an `AppBar` inside a dialog.
 - `test/widgets/edge_to_edge_test.dart` drives this with `tester.view.padding` / `viewPadding` (`FakeViewPadding`). Three of its cases pass against the old single-`SafeArea` layout too - they are regression guards, not proofs.
 
+### 4.10b Dialogs that contain fields
+
+Use `_FormDialog` (`slot_modal.dart`) or the same structure by hand - `Dialog` > `ConstrainedBox(maxWidth: 480)` > `SingleChildScrollView` > `Padding` > `Column`, with the buttons as the last row of the scrolling column. **Width only**: the height must come from the incoming constraints, since inside the chrome the Scaffold has already taken the keyboard off the body and any cap computed from the screen height is too big. `SlotParamsEditor` and `WatchdogDialog` already do this.
+
+The chrome's header takes ~104 logical px off the top, so with a keyboard up a dialog only gets `screen - header - keyboard` (on a 731-tall phone with a 436 keyboard that is ~166 px). It scrolls; that is the space there is while the header stays above dialogs.
+
+**Never `AlertDialog` for a form.** It puts `content` in a `Flexible`; inside the app chrome the Scaffold has already removed the keyboard's height from the body (`removeViewInsets`) and shrunk it, and there that Flexible resolves to zero height - the fields paint outside the card and overflow, leaving only the actions row visible. `scrollable: true` does not help; the scroll view collapses the same way. A keyboard test that pumps the dialog on its own will NOT catch this: it lays out correctly when the route sits outside the resizing Scaffold. Drive the whole app (`test/widgets/edge_to_edge_test.dart`).
+
 ### 4.11 Errors, logging, clipboard
 
 - `AppErrors.inputs(list)` — one dialog titled *"Please correct the following"* with bullets; no-op on empty.
@@ -301,6 +311,7 @@ Links, in order: ReadMe, Change log, Security policy, Privacy policy, plus an `O
 | Credentials on the device | Volatile only — `SessionController` fields, wiped by `wipeAll` on every exit path. No `SharedPreferences`, no file persistence. |
 | Generated config on the device | In memory, **except** SHARE, which writes `pia-<region>.conf` to the temp dir and deletes it in a `finally`. |
 | Credentials on the router | PIA username/password go to router NVRAM in **plaintext** (`cfg_pia_wg_user`/`_password`) whenever a watchdog is deployed; SMTP password likewise (`wgcN_wd_smtp_pass`). Removed by `stopWatchdog`. |
+| Screen capture | `FLAG_SECURE` in `MainActivity.onCreate` blocks screenshots, screen recording and the Recent Apps preview - **release builds only**. A DEBUG build skips it so the app can be captured on a device while testing, and `allowScreenCaptureInRelease` is a manual escape hatch for capturing a release build. `test/unit/clipboard_service_test.dart` fails if the gate widens or the hatch is left on. |
 | TLS | PIA `addKey` is CA-pinned (`withTrustedRoots: false`) with a CN check; SMTP uses `openssl s_client -tls1_3 -verify_return_error`. |
 | Shell injection | All interpolated user values go through `shellSingleQuote` — **except** `createConfigToSlot`, which uses `"…"` double quotes for the parsed-config values (`router_slot_service.dart:177-193`). |
 
@@ -325,6 +336,8 @@ Links, in order: ReadMe, Change log, Security policy, Privacy policy, plus an `O
 | --- | --- | --- |
 | Region + active state | `wgcN_desc`, `wgcN_enable` | `vpnc_clientlist` fields 1 and 6 (plus the `wgcN_desc` mirror and `wgcN_enable`) |
 | Per-slot keys written | all 17 | 13 — `enforce`, `fw`, `ep_addr_r`, `rip` skipped (`kMerlinOnlySlotKeys`) |
+| Region name read from | `wgcN_desc` | `vpnc_clientlist` field 0, falling back to `wgcN_desc` when the row is missing — so ANY path that creates or renames a slot must call `RouterSlotService.writeVpncProfile`, the watchdog deploy included. Without the fallback a slot missing its row reads as unconfigured and the modal greys out every button that needs a description. `_setVpncActive` carries the description too, so enabling repairs a nameless row. |
+| Watchdog start / stop of the tunnel | `service start_wgc N` / `stop_wgc N` | `nvram set vpnc_unit=<row>` + `service restart_vpnc` / `stop_vpnc` (`RouterSlotService.runVpncService`) — the same calls MANAGE makes. The Merlin commands are inert on stock. |
 | Kill-switch badge / editor controls | shown | hidden (no `enforce` field) |
 | `jq` | `which jq` | `/jffs/cfg-pia-wg/jq` |
 | Mail transport | BusyBox `sendmail` + `openssl s_client` | `mailsend-go` (credentials on the command line — accepted risk) |

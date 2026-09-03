@@ -41,6 +41,25 @@ Map<String, String> _initial() => {
     };
 
 void main() {
+  // Reported from a device: the keyboard covered the editor. The dialog must fit the height the
+  // keyboard leaves and scroll inside it, never overflow.
+  testWidgets('fits above the keyboard and scrolls instead of overflowing', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 500);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_editor(desc: 'aus_melbourne'));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull, reason: 'no overflow');
+    const keyboardTop = 800.0 - 500.0;
+    // The card itself, not find.byType(Dialog) - that measures the full-screen padding wrapper.
+    expect(tester.getRect(find.byType(SingleChildScrollView)).bottom, lessThanOrEqualTo(keyboardTop));
+    expect(tester.getRect(find.text('EDIT wgc1:aus_melbourne')).bottom, lessThanOrEqualTo(keyboardTop));
+  });
+
   testWidgets('SAVE is disabled until every editable text field is filled', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

@@ -91,8 +91,9 @@ void main() {
             }
             if (cmd.contains('cru l') && cmd.contains('watchdog_wgc3')) return '1';
             if (cmd.contains('wg show interfaces')) return 'wgc1';
-            // Any wgcN_desc / _enable / _enforce read would return this and must NOT be used.
-            return 'STOCK-SHOULD-NOT-READ-THIS';
+            // Slot 1 HAS a clientlist row, so its per-slot key must never win.
+            if (cmd.contains('nvram get wgc1_desc')) return 'STOCK-SHOULD-NOT-READ-THIS';
+            return '';
           },
         );
 
@@ -108,10 +109,29 @@ void main() {
       expect(result.slots[2]!.isEmpty, isTrue);
       expect(result.activeSlots, {1});
       expect(result.slots[3]!.watchdogActive, isTrue);
-      // The Merlin-only per-slot reads must not happen at all.
+      // The Merlin-only per-slot reads must not happen for a slot that has a row.
       expect(c.ran('nvram get wgc1_desc'), isFalse);
       expect(c.ran('nvram get wgc1_enable'), isFalse);
       expect(c.ran('nvram get wgc1_enforce'), isFalse);
+    });
+
+    // Reported: a watchdog deployed before the deploy path wrote the clientlist row left the slot
+    // showing "<empty slot>" with every button greyed out but CREATE.
+    test('falls back to wgcN_desc when the slot has no clientlist row', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return ''; // no rows at all
+          if (cmd.contains('nvram get wgc4_desc')) return 'pia-aus_perth';
+          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc4')) return '1';
+          return '';
+        },
+      );
+      final result = await svc(c).fetchSlots();
+
+      expect(result.slots[4]!.desc, 'pia-aus_perth');
+      expect(result.slots[4]!.isEmpty, isFalse, reason: 'the slot must not read as unconfigured');
+      expect(result.slots[2]!.isEmpty, isTrue, reason: 'nothing to fall back to');
     });
 
     test('never reports a kill switch (stock has no enforce field)', () async {

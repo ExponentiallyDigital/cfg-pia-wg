@@ -599,7 +599,9 @@ class _SlotModalState extends State<SlotModal> {
       btn('slot_wd_enable', 'ENABLE', (hasDesc && wdConfigured && !wdActive) ? _enableWatchdog : null),
       btn('slot_wd_disable', 'DISABLE', (hasDesc && wdActive) ? _disableWatchdog : null),
       btn('slot_delete', 'DELETE', hasDesc ? _deleteWatchdog : null),
-      btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (hasDesc && wdActive) ? _viewWatchdogLog : null),
+      // Configured is enough: /tmp/watchdog_wgcN.log outlives the schedule, and the log of the
+      // run that prompted a DISABLE is exactly what you want to read afterwards.
+      btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (hasDesc && (wdActive || wdConfigured)) ? _viewWatchdogLog : null),
     ];
   }
 }
@@ -647,27 +649,25 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: kSurface,
-      title: const Text('PIA credentials', style: TextStyle(color: kHighlight, fontSize: 14)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PiaUsernameField(controller: _userCtrl),
-          const SizedBox(height: 10),
-          PiaPasswordField(controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
-          const SizedBox(height: 10),
-          DnsField(controller: _dnsCtrl),
-          if (_error != null) ...[
-            const SizedBox(height: 14),
-            Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
-          ],
+    // A Dialog with its own scroll view rather than an AlertDialog: an AlertDialog puts its content
+    // in a Flexible, and inside the app chrome - where the Scaffold has already taken the
+    // keyboard's height off the body - that Flexible collapses to zero and the fields spill out of
+    // the card. Same structure as SlotParamsEditor, which lays out correctly there.
+    return _FormDialog(
+      title: 'PIA credentials',
+      fields: [
+        PiaUsernameField(controller: _userCtrl),
+        const SizedBox(height: 10),
+        PiaPasswordField(controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
+        const SizedBox(height: 10),
+        DnsField(controller: _dnsCtrl),
+        if (_error != null) ...[
+          const SizedBox(height: 14),
+          Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
         ],
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-        TextButton(onPressed: _onContinue, child: const Text('CONTINUE')),
       ],
+      confirmLabel: 'CONTINUE',
+      onConfirm: _onContinue,
     );
   }
 }
@@ -699,29 +699,76 @@ class _PingTargetsDialogState extends State<_PingTargetsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: kSurface,
-      title: const Text('Connectivity check targets', style: TextStyle(color: kHighlight, fontSize: 14)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-              key: const Key('enable_primary_ip'),
-              controller: _primaryCtrl,
-              style: const TextStyle(color: kText, fontFamily: 'monospace'),
-              decoration: const InputDecoration(labelText: 'Primary ping IP')),
-          const SizedBox(height: 10),
-          TextField(
-              key: const Key('enable_secondary_ip'),
-              controller: _secondaryCtrl,
-              style: const TextStyle(color: kText, fontFamily: 'monospace'),
-              decoration: const InputDecoration(labelText: 'Secondary ping IP')),
-        ],
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-        TextButton(onPressed: _onEnable, child: const Text('ENABLE')),
+    return _FormDialog(
+      title: 'Connectivity check targets',
+      fields: [
+        TextField(
+            key: const Key('enable_primary_ip'),
+            controller: _primaryCtrl,
+            style: const TextStyle(color: kText, fontFamily: 'monospace'),
+            decoration: const InputDecoration(labelText: 'Primary ping IP')),
+        const SizedBox(height: 10),
+        TextField(
+            key: const Key('enable_secondary_ip'),
+            controller: _secondaryCtrl,
+            style: const TextStyle(color: kText, fontFamily: 'monospace'),
+            decoration: const InputDecoration(labelText: 'Secondary ping IP')),
       ],
+      confirmLabel: 'ENABLE',
+      onConfirm: _onEnable,
+    );
+  }
+}
+
+/// A dialog holding a form, laid out so the on-screen keyboard cannot squash it.
+///
+/// Deliberately NOT an `AlertDialog`: that puts its content in a `Flexible`, and inside the app
+/// chrome - where the Scaffold has already taken the keyboard's height off the body - the Flexible
+/// collapses to zero height and the fields spill out of the card, leaving only the buttons visible.
+/// This is the structure `SlotParamsEditor` uses, which lays out correctly in both places.
+class _FormDialog extends StatelessWidget {
+  final String title;
+  final List<Widget> fields;
+  final String confirmLabel;
+  final VoidCallback onConfirm;
+  const _FormDialog({required this.title, required this.fields, required this.confirmLabel, required this.onConfirm});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: kSurface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        // Width only. The height must come from the incoming constraints - inside the app chrome
+        // the Scaffold has already taken the keyboard off the body, so any cap computed from the
+        // screen height is too large and the card spills down behind the keyboard. Unbounded here
+        // lets SingleChildScrollView shrink-wrap to the space it is given and scroll past that.
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(title, style: const TextStyle(color: kHighlight, fontSize: 14)),
+                const SizedBox(height: 16),
+                ...fields,
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, null),
+                        child: const Text('CANCEL', style: TextStyle(color: kMuted))),
+                    TextButton(onPressed: onConfirm, child: Text(confirmLabel)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

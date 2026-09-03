@@ -95,8 +95,8 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     if (!_prefilled) {
       _prefilled = true;
       // Defaults for a fresh session; never overwrite values the user already entered.
-      _ipCtrl.text = _c.routerIp.isNotEmpty ? _c.routerIp : '192.168.0.254';
-      _userCtrl.text = _c.sshUsername.isNotEmpty ? _c.sshUsername : 'admin';
+      _ipCtrl.text = _c.routerIp.isNotEmpty ? _c.routerIp : kDefaultRouterIp;
+      _userCtrl.text = _c.sshUsername.isNotEmpty ? _c.sshUsername : kDefaultSshUsername;
       _passCtrl.text = _c.sshPassword;
       _c.routerIp = _ipCtrl.text;
       _c.sshUsername = _userCtrl.text;

@@ -12,11 +12,22 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-  override fun onCreate(savedInstanceState: Bundle?) {
-        window.setFlags(
-           WindowManager.LayoutParams.FLAG_SECURE,
-           WindowManager.LayoutParams.FLAG_SECURE
-        )
+    /**
+     * FLAG_SECURE blocks screenshots and screen recording, and blanks the app in the Recent Apps
+     * switcher. It is skipped for a DEBUG build so the app can be captured on a device while
+     * testing; a release build always sets it, which is the only thing that ships.
+     *
+     * To capture a RELEASE build temporarily, set this to true - and put it back.
+     */
+    private val allowScreenCaptureInRelease = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        if (!BuildConfig.DEBUG && !allowScreenCaptureInRelease) {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE
+            )
+        }
         super.onCreate(savedInstanceState)
     }
 

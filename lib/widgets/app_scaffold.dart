@@ -88,15 +88,23 @@ class _AppChromeState extends State<AppChrome> {
           children: [
             AppHeaderBar(onMenu: () => _scaffoldKey.currentState?.openDrawer()),
             Expanded(
-              // removeTop because the header has ALREADY cleared the status bar. Leaving the top
-              // padding in the navigator's MediaQuery makes anything below inset for it a second
-              // time - showDialog wraps its child in a SafeArea (useSafeArea defaults to true),
-              // which pushed the full-screen licences dialog down by the status bar height and
-              // left the About screen showing through the gap.
-              child: MediaQuery.removePadding(
-                context: context,
-                removeTop: true,
-                child: SafeArea(top: false, child: widget.child),
+              // The Builder is load-bearing: it puts the context BELOW the Scaffold, so
+              // removePadding copies the body's MediaQueryData - the one whose bottom viewInsets
+              // the Scaffold has already removed because it resized for the keyboard. Using the
+              // AppChrome context here re-injected the outer data, and every dialog then padded
+              // itself by the keyboard height a second time inside an already-shrunken box,
+              // collapsing to a sliver.
+              //
+              // removeTop because the header has ALREADY cleared the status bar; leaving it makes
+              // anything below inset for it twice - showDialog wraps its child in a SafeArea
+              // (useSafeArea defaults to true), which pushed the full-screen licences dialog down
+              // by the status bar height and left the screen behind showing through the gap.
+              child: Builder(
+                builder: (bodyContext) => MediaQuery.removePadding(
+                  context: bodyContext,
+                  removeTop: true,
+                  child: SafeArea(top: false, child: widget.child),
+                ),
               ),
             ),
           ],

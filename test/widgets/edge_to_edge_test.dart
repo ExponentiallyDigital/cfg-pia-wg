@@ -118,6 +118,74 @@ void main() {
     await disposeApp(tester, c);
   });
 
+  // Reported from a device: opening the keyboard on the DEL PIA CERT form left only CANCEL and
+  // CONTINUE on screen, with "BOTTOM OVERFLOWED BY 38 PIXELS" under them. An AlertDialog puts its
+  // content in a Flexible; in the app chrome - where the Scaffold has already taken the keyboard's
+  // height off the body - that Flexible collapses to zero and the fields spill out of the card.
+  //
+  // This has to be driven through the WHOLE app: the same dialog pumped on its own lays out
+  // correctly, which is why the first attempt at a test for this passed against the broken code.
+  testWidgets('a form dialog keeps its fields on screen when the keyboard opens', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(400, 900);
+    addTearDown(tester.view.reset);
+
+    final c = quietController();
+    await pumpApp(tester, c);
+
+    await tester.tap(find.byKey(const Key('app_hamburger')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('drawer_about')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
+    await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+    await tester.pumpAndSettle();
+
+    // The keyboard opens while the dialog is already up, as it does when a field is tapped.
+    tester.view.viewInsets = const FakeViewPadding(bottom: 450);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull, reason: 'no overflow');
+    const keyboardTop = 900.0 - 450.0;
+    for (final label in ['Router IP', 'SSH Username', 'SSH Password']) {
+      final field = find.widgetWithText(TextFormField, label);
+      expect(field, findsOneWidget, reason: label);
+      final rect = tester.getRect(field);
+      expect(rect.height, greaterThan(0), reason: '\$label collapsed');
+      expect(rect.bottom, lessThanOrEqualTo(keyboardTop), reason: '\$label is under the keyboard');
+    }
+    // The exact symptom: the buttons must be BELOW the fields, not stranded above them.
+    expect(tester.getRect(find.byKey(const Key('about_ssh_continue'))).top,
+        greaterThan(tester.getRect(find.widgetWithText(TextFormField, 'SSH Password')).bottom));
+
+    await disposeApp(tester, c);
+  });
+
+  // The Scaffold resizes the body for the keyboard and removes the bottom viewInsets from the
+  // body's MediaQuery. Anything that re-injects the OUTER MediaQuery below it - as
+  // MediaQuery.removePadding does when handed the AppChrome context rather than a body one -
+  // makes every dialog subtract the keyboard's height a second time inside an already-shrunken
+  // box, collapsing it to a sliver.
+  testWidgets('the navigator does not see the keyboard inset a second time', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(400, 800);
+    addTearDown(tester.view.reset);
+
+    final c = quietController();
+    await pumpApp(tester, c);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 400);
+    await tester.pumpAndSettle();
+
+    final context = tester.element(find.byKey(const Key('menu_log')));
+    expect(MediaQuery.viewInsetsOf(context).bottom, 0,
+        reason: 'the Scaffold already took the keyboard off the body');
+    // And the body really did shrink, so the space is accounted for exactly once.
+    expect(tester.getRect(find.byType(Navigator).first).bottom, lessThanOrEqualTo(400));
+
+    await disposeApp(tester, c);
+  });
+
   testWidgets('the system bars are transparent with light icons', (tester) async {
     final c = quietController();
     await pumpApp(tester, c);
