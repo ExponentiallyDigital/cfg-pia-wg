@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/build_info_service.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/screens/about_screen.dart';
+import 'package:cfg_pia_wg/session_controller.dart';
 
 // Deliberately unmistakable values so a passing assertion cannot be a coincidence.
 const _hostReply = <String, String>{
@@ -37,10 +38,22 @@ void _mockChannel(WidgetTester tester, Future<Object?>? Function(MethodCall)? ha
   addTearDown(() => messenger.setMockMethodCallHandler(buildInfoChannel, null));
 }
 
-Future<void> _pumpAbout(WidgetTester tester) async {
+// The controller COPY BUILD INFO writes through. Its 1 Hz countdown tick is pushed far out so
+// pumpAndSettle still settles.
+SessionController _quietController() =>
+    SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
+
+Future<void> _pumpAbout(WidgetTester tester, {SessionController? controller}) async {
   // Scaffold mirrors production, where AppChrome supplies one above the Navigator; the COPY
-  // confirmation snackbar needs it.
-  await tester.pumpWidget(const MaterialApp(home: Scaffold(body: AboutScreen())));
+  // confirmation snackbar needs it. SessionScope likewise - COPY BUILD INFO goes through the
+  // controller so it can stand down a countdown a config copy left running.
+  // A controller passed in belongs to the test, which disposes it inside the test body - the
+  // binding checks for pending timers before tearDowns run, and an armed countdown has one.
+  final c = controller ?? _quietController();
+  if (controller == null) addTearDown(c.dispose);
+  await tester.pumpWidget(
+    MaterialApp(home: SessionScope(controller: c, child: const Scaffold(body: AboutScreen()))),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -277,12 +290,16 @@ void main() {
       addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
 
       _mockChannel(tester, (call) async => _hostReply);
-      await _pumpAbout(tester);
+      // A controller with the real clipboard writer, so this exercises the whole path down to
+      // Clipboard.setData rather than stopping at an injected fake.
+      final c = SessionController(tickInterval: const Duration(hours: 1));
+      await _pumpAbout(tester, controller: c);
 
       await tester.ensureVisible(find.byKey(const Key('about_copy_build_info')));
       await tester.tap(find.byKey(const Key('about_copy_build_info')));
       await tester.pumpAndSettle();
 
+      addTearDown(c.dispose);
       expect(copied, isNotNull);
       expect(copied, startsWith('cfg-pia-wg v9.9.9 build 999\n\n'));
       expect(copied, contains('\nCommit hash: abc1234\n'));
@@ -290,22 +307,26 @@ void main() {
       expect(copied, isNot(contains('releaseCommit hash')));
     });
 
-    // Copying build info must not go through SessionController.copyToClipboard: that arms the 60s
-    // auto-clear meant for credentials. This tree has no SessionScope, so a switch to the
-    // controller would fail here rather than silently wiping what the user pasted.
-    testWidgets('copies without a SessionScope ancestor', (tester) async {
-      final messenger = tester.binding.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async => null);
-      addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    // Build info is not a secret: copying it must not arm the 60s auto-clear meant for
+    // credentials, and it must stand down a countdown an earlier config copy left running -
+    // otherwise that deadline wipes the build info the user just copied.
+    testWidgets('does not arm the auto-clear, and stands down a running one', (tester) async {
+      final c = _quietController();
+      await c.copyToClipboard('[Interface] secret');
+      expect(c.clipboardSeconds, greaterThan(0));
 
       _mockChannel(tester, (call) async => _hostReply);
-      await _pumpAbout(tester);
+      await _pumpAbout(tester, controller: c);
 
       await tester.ensureVisible(find.byKey(const Key('about_copy_build_info')));
       await tester.tap(find.byKey(const Key('about_copy_build_info')));
       await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull);
+      expect(c.clipboardSeconds, 0);
+      expect(c.log, isEmpty, reason: 'nothing was auto cleared');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose(); // in-body: the arming copy started a tick timer the binding would flag
     });
   });
 

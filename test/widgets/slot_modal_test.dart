@@ -385,9 +385,13 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('COPY button copies the watchdog log text', (tester) async {
+    testWidgets('COPY button copies the watchdog log text without arming the auto-clear', (tester) async {
       String? copiedText;
       final c = SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (text) async => copiedText = text);
+      // Pretend a config was copied first: the countdown it armed must be stood down, not left
+      // running over the log the user has just put on the clipboard.
+      await c.copyToClipboard('[Interface] secret');
+      expect(c.clipboardSeconds, greaterThan(0));
       final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'LOG-DATA-XYZ' : '');
       await tester.pumpWidget(
         _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c),
@@ -405,6 +409,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(copiedText, 'LOG-DATA-XYZ');
+      // A watchdog log is not a secret: no countdown, so the conf screen shows none and nothing
+      // wipes the clipboard 60 seconds later.
+      expect(c.clipboardSeconds, 0);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

@@ -34,12 +34,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
          This is a test email from the cfg-pia-wg watchdog (slot wgcX).
          WATCHDOG_EOF
 - CHG: on stock add test for DownloadMaster installed, on first run rename `router:/opt/etc/init.d/S50downloadmaster` and `router:/opt/etc/init.d/S50asuslighttpd` to .old.
-- CHG: Add a button on the ABOUT screen next to "CREATE GITHUB ISSUE" and call it `<insert appropriate icon>`"DEL CACHED PIA CERT", this button deletes the file `router:/jffs/pia_ca.rsa.4096.crt`
+- CHG: Add a button on the ABOUT screen next to "CREATE GITHUB ISSUE" and call it `<insert appropriate icon>`"DEL CACHED PIA CERT", this button deletes the router file `router:/jffs/pia_ca.rsa.4096.crt`; modify the location of that file from `/jffs` to `/jffs/cfg-pia-wg` and update the codebase to reference the new location.
+- CHG: on Merlin w app, deleting a watchdog also deletes the underlying WG slot - modify to only delete the cron job and retain the underlying VPN slot config
 
 #### GENERATE CONFIG
 
 - GUI: In Conf function "GENERATED CONFIG", add display of region name config is for.
-- FIX: When viewing the router watchdog log, if you COPY the log and then enter the conf menu it will detect that and start the clear timer as it only knows that something from this app placed data on the clipboard.
 - FIX: In generate, if you delete DNS entries then go to another screen then re-enter generate, the default DNS addresses are not displayed but are still used when generating a new conf file. Add a check that if that field is ever blank, then the quad 9 defaults are inserted.
 - CHG: Replace app exit and config clipboard copy timer expiration behaviours with clearPrimaryClip(), and remove the two associated comments in README.md. WHy? After the app exits the user sees "cleared" which is the system clipboard being cleared, they may wonder what that was, so we'll use clearPrimaryClip() which shouldn't throw a "cleared" message to the user after teh app exits.
 
@@ -47,10 +47,21 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 WIP:
 
-- ADD: to slot edit modal "apply to all devices" - this sets XX and runs "service  restart_default_wan".
-- GUI: Edge-to-edge may not display for all users. From Android 15, apps targeting SDK 35 will display edge-to-edge by default. Apps targeting SDK 35 should handle insets to make sure that their app displays correctly on Android 15 and later. Investigate this issue and allow time to test edge-to-edge and make the required updates. Alternatively, call enableEdgeToEdge() for Kotlin or EdgeToEdge.enable() for Java for backward compatibility.
-
 ### 1.2. Implemented - chronological change history
+
+2026-09-03 v0.8.29 build 399 - WIP stock support for Watchdog function
+
+- ADD: an app-wide `AnnotatedRegion<SystemUiOverlayStyle>` (`kSystemOverlayStyle`) making both system bars transparent with light icons, re-applied every frame. `MaterialApp` already pushes light icons for a dark theme, but leaves an opaque black navigation bar that shows against `kBg` on Android 14 and below.
+- ADD: main menu carries a "(?) How to use this app" link opening README section 5, "Using the app".
+- CHG: dropped the main menu's "Select from the above and/or use the top left (menu icon) menu." hint; the SSH footnote and the help link below it are now centred.
+- CHG: the header bar's `kSurface` now runs behind the status bar instead of leaving a `kBg` strip above it. The single `SafeArea` around the whole chrome became two: the header insets its own content, the navigator takes the bottom and the landscape cutouts.
+- FIX: "Open source: licenses" screen, bleeding through the About screen between the app header and the "<-" back button at the top of the "Open source: licenses" screen.
+- FIX: COPY BUILD INFO had the same gap from the other side - it bypassed the controller, so a countdown left running by a config copy still wiped the build info. It now goes through `copyToClipboard(armAutoClear: false)`, which needs `AboutScreen` to sit under a `SessionScope` (it always does in the app).
+- FIX: copying a watchdog log armed the 60s clipboard auto-clear, so the conf screen counted down over it and then wiped it. `copyToClipboard` takes `armAutoClear`; a non-secret copy arms nothing and stands down any countdown left by an earlier config copy.
+- FIX: the licences screen opened with a band of the About screen showing between the app header and its back arrow. `showDialog` wraps its child in a `SafeArea`, so the status bar inset still sitting in the navigator's `MediaQuery` was applied a second time below a header that had already cleared it; the navigator subtree now gets `MediaQuery.removePadding(removeTop: true)`.
+- INF: Google Play's edge-to-edge notice needs no `enableEdgeToEdge()` call. `flutter.targetSdkVersion` is already 36, where Android forces edge-to-edge with no opt-out, and Flutter enables it on every Android version regardless. Nothing in the manifest or either `styles.xml` sets `statusBarColor`, `navigationBarColor` or the opt-out flag.
+- TST: edge-to-edge tested on  on Android 15: gesture and 3-button navigation, landscape with a cutout, the keyboard over the SSH and PIA password fields, the drawer, and each dialog.
+- TST: +12 tests (376 -> 388), coverage 96.1%. Simulated status/navigation bar insets pin the header background at y=0, its content and the drawer below the status bar, the HOME button above the navigation bar, and the licences dialog flush under the header.
 
 2026-09-03 v0.8.28 build 398 - WIP stock support for Manage function only
 

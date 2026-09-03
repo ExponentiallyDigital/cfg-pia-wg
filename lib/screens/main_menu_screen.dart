@@ -13,6 +13,7 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -21,11 +22,13 @@ import '../session_controller.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/app_scaffold.dart';
 
+/// Deep link to the README section that walks through each screen.
+const kHelpUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#5-using-the-app';
 const _paypalDonationUrl = 'https://www.paypal.com/donate/?hosted_button_id=QJYPGRLG2RPBS';
 const _patreonDonationUrl = 'https://www.patreon.com/cw/ExponentiallyDigital';
 const _scaffoldBodyPadding = 20.0;
 
-Future<void> _launchDonationUrl(String urlStr) async {
+Future<void> _launchExternalUrl(String urlStr) async {
   final url = Uri.parse(urlStr);
   if (await canLaunchUrl(url)) {
     await launchUrl(url, mode: LaunchMode.platformDefault);
@@ -91,21 +94,10 @@ class MainMenuScreen extends StatelessWidget {
               ),
             ),
             SizedBox(height: spacer),
-            const Text('* requires SSH connectivity to an ASUS router.', style: TextStyle(color: kMuted, fontSize: 12)),
+            const Text('* requires SSH connectivity to an ASUS router',
+                textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 12)),
             const SizedBox(height: 12),
-            Text.rich(
-              TextSpan(
-                style: const TextStyle(color: kHighlight, fontSize: 12),
-                children: const [
-                  TextSpan(text: 'Select from the above and/or use the top left '),
-                  WidgetSpan(
-                    alignment: PlaceholderAlignment.middle,
-                    child: Icon(Icons.menu, size: 16, color: kHighlight),
-                  ),
-                  TextSpan(text: ' menu.'),
-                ],
-              ),
-            ),
+            const _HelpLink(),
             const Spacer(),
             const _DonationBlock(),
             SizedBox(height: donationBottomGap),
@@ -171,7 +163,7 @@ class _DonationButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
         ),
-        onPressed: () async => _launchDonationUrl(url),
+        onPressed: () async => _launchExternalUrl(url),
         child: Text(label, textAlign: TextAlign.center),
       ),
     );
@@ -198,6 +190,54 @@ class _MenuButton extends StatelessWidget {
         ),
         onPressed: onTap,
         child: Text(label, textAlign: TextAlign.center),
+      ),
+    );
+  }
+}
+
+/// Tappable "(?) How to use this app" line under the SSH footnote, opening the README section of
+/// the same name. The recogniser is owned by a State so it can be disposed; the same pattern as
+/// the About screen's links.
+class _HelpLink extends StatefulWidget {
+  const _HelpLink();
+
+  @override
+  State<_HelpLink> createState() => _HelpLinkState();
+}
+
+class _HelpLinkState extends State<_HelpLink> {
+  late final TapGestureRecognizer _recogniser;
+
+  @override
+  void initState() {
+    super.initState();
+    _recogniser = TapGestureRecognizer()..onTap = () => _launchExternalUrl(kHelpUrl);
+  }
+
+  @override
+  void dispose() {
+    _recogniser.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      key: const Key('menu_help'),
+      textAlign: TextAlign.center,
+      TextSpan(
+        style: const TextStyle(color: kHighlight, fontSize: 12),
+        children: [
+          const WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Icon(Icons.help_outline, size: 16, color: kHighlight),
+          ),
+          TextSpan(
+            text: ' How to use this app',
+            style: const TextStyle(decoration: TextDecoration.underline, decorationColor: kHighlight),
+            recognizer: _recogniser,
+          ),
+        ],
       ),
     );
   }

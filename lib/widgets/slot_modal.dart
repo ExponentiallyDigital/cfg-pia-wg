@@ -371,7 +371,9 @@ class _SlotModalState extends State<SlotModal> {
           TextButton(
             key: const Key('watchdog_log_copy'),
             onPressed: () async {
-              await _c.copyToClipboard(logText);
+              // Not a secret: copying a log must not arm the 60s auto-clear (it would count down
+              // on the conf screen and then wipe the log the user just copied).
+              await _c.copyToClipboard(logText, armAutoClear: false);
             },
             child: const Text('COPY'),
           ),
