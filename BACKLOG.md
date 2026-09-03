@@ -24,7 +24,6 @@
 
 #### 1.1.1. DOC - documentation updates
 
-- DOC: Add practical workflows to achieve specific outcomes.
 - DOC: Add README note that SBOM (build provenance) is for the aab pushed to the PS.
 - DOC: add to TESTING.md: `wgcX_rip` is updated by the Web GUI via an unknown method (review Asus_WRT src), router log shows no `service` script(s) were run to display this in the web GUI. It is not the public IP address (which is served from a pool to external sites), it is the router's IP address on PIA's infrastructure (?) and always differs from `wgc1_ep_addr` and `wgcX_ep_addr_r` (except PIA's webiste shows the public IP address as `wgc1_ep_addr*` vs other sites which showed `wgcX_rip` as the public ip address).
 - DOC: ASUS default router ip is 192.168.50.1 - code uses 192.168.0.254 as default
@@ -39,7 +38,6 @@
 #### 1.1.3. CHG - functional code changes
 
 - CHG: Watchdog email alert `SMTP username field` is finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
-- CHG: on Merlin w app, deleting a watchdog also deletes the underlying WG slot - modify to only delete the cron job and retain the underlying VPN slot config
 
 #### 1.1.4. FIX - bug fixes
 
@@ -47,6 +45,21 @@
 
 #### 1.1.5. FTR - future implementation
 
+- menu changes:
+  - "Generate PIA WireGuard config" rename to "Create PIA WireGuard config".
+  - "Manage PIA WireGuard config" no change.
+  - "Watchdog Wireguard management" no change.
+  - "VPN device assignment" <- new entry.
+  - "View app log" no change.
+  - "Exit app" no change.
+- Underneath "Select from the above..." add a new line "Online `<appropriate icon>`HELP". Tapping "HELP" opens https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#5-using-the-app.
+- ADD: additional menu item "VPN device assignment" functionality is
+  - get the device names from nvram via "nvram get custom_clientlist" & display the
+    - custom_clientlist=ArcNAS>00:08:9B:C7:2F:DB>0>4>>>>><ArcBerry-plug>78:42:1C:F2:78:30>0>60>>>>><ArcSpeed-plug>78:42:1C:F2:77:5F>0>60>>>>><ArcDroidPro>B2:F2:C4:7E:5F:C4>0>9>>>>>
+    - dhcp_staticlist=<00:08:9B:C7:2F:DB>192.168.0.200>><78:42:1C:F2:78:30>192.168.0.230>>ArcBerry-plug<78:42:1C:F2:77:5F>192.168.0.240>>ArcSpeed-plug<A0:AD:9F:10:9A:75>192.168.0.250>>ArcSpeed
+  - select a device the slot applies to
+  - provide "apply to all devices"
+  - sets XX then run "service  restart_default_wan"
 - FTR: Add localisation strings: French, Spanish, Spanish (latin), after that decide which ones next. (Google auto transations break character limits of PS Description)
 
 #### 1.1.6. TST - testing changes
@@ -57,8 +70,6 @@
 
 - REL: (?) `./scripts/pin-actions-latest.*` chokes if comment missing
 - REL: Check build-config/gradle.properties default values are still suitable.
-- REL: Improve memory and performance with R8 optimisation, review: optimisation rate 41%, obfuscation rate 42%, shrinking rate 42%.
-- REL: Fix `.github/workflows/quality_and_security.yml` warning "CodeQL (java-kotlin) Cannot build an overlay-base database because build-mode is set to "manual" instead of "none". Falling back to creating a normal full database instead."
 - REL: Fix `.github/workflows/release.yml` "Warning: WARNING!! 'track' is deprecated and will be removed in a future release. Please migrate to 'tracks'".
 
 ---

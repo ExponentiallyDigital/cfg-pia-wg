@@ -39,6 +39,45 @@ void main() {
       c.dispose();
     });
 
+    test('a non-secret copy writes the text but arms nothing', () async {
+      final writes = <String>[];
+      final c = SessionController(
+          clipboardTimeout: const Duration(seconds: 1),
+          tickInterval: const Duration(milliseconds: 10),
+          clipboardWriter: (t) async => writes.add(t));
+
+      await c.copyToClipboard('watchdog log', armAutoClear: false);
+      expect(writes, ['watchdog log']);
+      expect(c.clipboardSeconds, 0);
+
+      // Past the timeout: nothing wipes the clipboard and nothing is logged.
+      await Future<void>.delayed(const Duration(milliseconds: 1300));
+      expect(writes, ['watchdog log'], reason: 'the log must still be on the clipboard');
+      expect(c.log, isEmpty);
+      c.dispose();
+    });
+
+    // The reported bug: copy a watchdog log, open the conf screen, and it counts down over text
+    // that is not a secret - then clears it.
+    test('a non-secret copy stands down a countdown left by a secret one', () async {
+      final writes = <String>[];
+      final c = SessionController(
+          clipboardTimeout: const Duration(seconds: 1),
+          tickInterval: const Duration(milliseconds: 10),
+          clipboardWriter: (t) async => writes.add(t));
+
+      await c.copyToClipboard('[Interface] secret');
+      expect(c.clipboardSeconds, greaterThan(0));
+
+      await c.copyToClipboard('watchdog log', armAutoClear: false);
+      expect(c.clipboardSeconds, 0, reason: 'the secret is no longer on the clipboard');
+
+      await Future<void>.delayed(const Duration(milliseconds: 1300));
+      expect(writes, ['[Interface] secret', 'watchdog log']);
+      expect(c.log, isEmpty, reason: 'nothing was auto cleared');
+      c.dispose();
+    });
+
     test('clearClipboard writes empty and logs only when previously armed', () async {
       final writes = <String>[];
       final c = SessionController(clipboardWriter: (t) async => writes.add(t));

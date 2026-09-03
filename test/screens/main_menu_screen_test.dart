@@ -1,7 +1,10 @@
 // test/screens/main_menu_screen_test.dart - main menu + global chrome + drawer navigation.
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_shell.dart';
+import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 
 // A controller whose 1 Hz countdown tick is pushed far into the future so the live countdown
@@ -27,11 +30,56 @@ void main() {
     expect(find.byKey(const Key('menu_watchdog')), findsOneWidget);
     expect(find.byKey(const Key('menu_log')), findsOneWidget);
     expect(find.byKey(const Key('menu_close_app')), findsOneWidget);
-    expect(find.text('* requires SSH connectivity to an ASUS router.'), findsOneWidget);
-    expect(find.textContaining('Select from the above'), findsOneWidget); // green hint
+    expect(find.text('* requires SSH connectivity to an ASUS router'), findsOneWidget);
+    expect(find.byKey(const Key('menu_help')), findsOneWidget);
+    expect(find.textContaining('Select from the above'), findsNothing);
+    // Both trailing lines are centred; the Column stretches them, so alignment is the Text's job.
+    expect(tester.widget<Text>(find.text('* requires SSH connectivity to an ASUS router')).textAlign, TextAlign.center);
+    expect(tester.widget<Text>(find.byKey(const Key('menu_help'))).textAlign, TextAlign.center);
     expect(find.text('Support development:'), findsOneWidget);
     expect(find.byKey(const Key('donate_paypal')), findsOneWidget);
     expect(find.byKey(const Key('donate_patreon')), findsOneWidget);
+
+    await _teardown(tester, c);
+  });
+
+  testWidgets('the HELP link opens the README section for using the app', (tester) async {
+    final launched = <String>[];
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'launch') launched.add((call.arguments as Map)['url'] as String);
+      return true; // also answers canLaunch
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+
+    final c = _quietController();
+    await tester.pumpWidget(PiaWgApp(controller: c));
+    await tester.pumpAndSettle();
+
+    // A TextSpan target cannot be tapped by position, so drive its recogniser.
+    final span = tester.widget<Text>(find.byKey(const Key('menu_help'))).textSpan! as TextSpan;
+    final help = span.children!.last as TextSpan;
+    expect(help.text, ' How to use this app');
+    (help.recognizer! as TapGestureRecognizer).onTap!();
+    await tester.pumpAndSettle();
+
+    expect(launched, ['https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#5-using-the-app']);
+    expect(launched.single, kHelpUrl);
+
+    await _teardown(tester, c);
+  });
+
+  testWidgets('the help line is an icon followed by the whole label as one link', (tester) async {
+    final c = _quietController();
+    await tester.pumpWidget(PiaWgApp(controller: c));
+    await tester.pumpAndSettle();
+
+    final span = tester.widget<Text>(find.byKey(const Key('menu_help'))).textSpan! as TextSpan;
+    expect(span.children, hasLength(2));
+    expect(span.children!.first, isA<WidgetSpan>(), reason: 'the icon leads the line');
+    final help = span.children!.last as TextSpan;
+    expect(help.style?.decoration, TextDecoration.underline, reason: 'it has to read as a link');
+    expect(help.recognizer, isNotNull);
 
     await _teardown(tester, c);
   });

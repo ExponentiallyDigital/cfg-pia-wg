@@ -144,11 +144,21 @@ class SessionController extends ChangeNotifier {
   }
 
   // ── Clipboard ──────────────────────────────────────────────────────────────────
-  Future<void> copyToClipboard(String text) async {
+  // The 60-second auto-clear exists to get SECRETS off the clipboard - the generated config and
+  // the credentials in it. Pass armAutoClear: false for anything that is not one (a watchdog log):
+  // arming it there makes the conf screen count down over harmless text and then wipe whatever the
+  // user meant to paste. Such a copy also stands down a countdown left over from an earlier
+  // sensitive copy, because that secret is no longer on the clipboard - it has just been replaced.
+  Future<void> copyToClipboard(String text, {bool armAutoClear = true}) async {
     await _clipboardWriter(text);
-    _clipboardDeadline = DateTime.now().add(_clipboardTimeout);
-    clipboardSeconds = _clipboardTimeout.inSeconds;
-    _ensureTicking();
+    if (armAutoClear) {
+      _clipboardDeadline = DateTime.now().add(_clipboardTimeout);
+      clipboardSeconds = _clipboardTimeout.inSeconds;
+      _ensureTicking();
+    } else {
+      _clipboardDeadline = null;
+      clipboardSeconds = 0;
+    }
     notifyListeners();
   }
 

@@ -19,13 +19,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_colors.dart';
 import '../build_info_service.dart';
 import '../firmware.dart';
 import '../license_text.dart';
+import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
 
 const String _kRepoUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg';
@@ -91,10 +91,12 @@ class _AboutScreenState extends State<AboutScreen> {
     super.dispose();
   }
 
-  // Straight to the clipboard rather than SessionController.copyToClipboard: that arms the 60s
-  // auto-clear meant for credentials, and build info is not a secret.
+  // armAutoClear: false - build info is not a secret, so the 60s auto-clear meant for credentials
+  // must not be armed for it. Going through the controller rather than Clipboard directly also
+  // stands down a countdown left by an earlier config copy, which would otherwise wipe the build
+  // info the user has just copied.
   Future<void> _copyBuildInfo(BuildContext context, BuildInfo? info) async {
-    await Clipboard.setData(ClipboardData(text: _BuildInfoBlock.asPlainText(info)));
+    await SessionScope.of(context).copyToClipboard(_BuildInfoBlock.asPlainText(info), armAutoClear: false);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Build info copied.')));
     }
