@@ -21,16 +21,10 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 #### WATCHDOG issues
 
 - GUI: Make Manage and Watchdog deletion prompt messages consistent.
-- GUI: Watchdog, when creating on a slot which has an existing WG config, make the prompt more intelligible.
-- GUI: Watchdog, when creating one, show the name of any pre-existing region that will be overwritten.
 - CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes; add lifetime number of reconfigure events (write start date and update total count to NVRAM).
 - CHG: Remove 'WATCHDOG_EOF' text from test email:
          This is a test email from the cfg-pia-wg watchdog (slot wgcX).
          WATCHDOG_EOF
-- CHG: On disable, log lines are repeated (and needs the region name per above)
-        cfg-pia-wg: Disabled wgc1
-        cfg-pia-wg: Watchdog disabled for wgc1
-        cfg-pia-wg: Disabled wgc1
 - CHG: on stock add test for DownloadMaster installed, on first run rename `router:/opt/etc/init.d/S50downloadmaster` and `router:/opt/etc/init.d/S50asuslighttpd` to .old.
 - CHG: on Merlin w app, deleting a watchdog also deletes the underlying WG slot - modify to only delete the cron job and retain the underlying VPN slot config
 
@@ -40,14 +34,31 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 WIP:
 
-  1. E2E test all MANAGE functions
-  2. move watchdog scripts from /jffs/scripts to /jffs/cfg-pia-wg
-  3. where will we put the watchdog log file?
-  4. check we now store all cfg-pia files in out own jffs directory
-  5. E2E test all WATCHDOG functions
-  6. fix addkey error
-  7. check watchdog script size
-  8. add updated icon!
+  1. implement a capped exponential backoff on consecutive failures — 2 min, 4, 8, up to 30 minutes, see `.claude\plans\plan_watchdog-token-backoff.md`
+  2. implement `.claude\plans\plan_ssh-connection-reuse.md`
+  3. add updated icon!
+
+2026-09-04 v0.8.32 build 402 - beta test stock support for Watchdog function
+
+- FIX: ENABLE reported a slot ACTIVE when the tunnel was dead. `wg show interfaces` only says the device exists, and an expired PIA registration still produces one that sends and never receives - the router WebUI sits on "connecting" for ever. ENABLE now waits for a WireGuard handshake and reverts with "the PIA server never answered it" when none arrives.
+- FIX: on stock the watchdog reported "Primary and Secondary pings FAILED" on tunnels it had just negotiated, re-registering with PIA every cooldown until PIA refused to issue tokens. The router's own traffic is not routed into wgcN there, so `ping -I` can never succeed; the script now treats a handshake in the last 300s as proof of life and keeps the pings as a fallback for Merlin.
+- INF: the app's stock ping is the same trap in reverse - it pings from the tunnel's source address but routes over the WAN, so it answered OK for a tunnel the peer had never answered. On stock it is now logged, not enforced; on Merlin, where it is a real end-to-end test, a failure still blocks the enable.
+- FIX: DELETE left `wgcN_enforce` / `_fw` / `_rip` behind on stock. The app never writes them there (`kMerlinOnlySlotKeys`) so DELETE never unset them - but the watchdog script did. The stock script no longer writes them, nor `ep_addr_r`.
+- FIX: `WATCHDOG_EOF` was the last line of the deployed `S50downloadmaster`, and turned up in the test email. BusyBox ash reaches EOF before it recognises a here-document delimiter that has no newline after it, and writes the delimiter into the file; `heredocWrite` now terminates it properly.
+- FIX: the drawer stopped navigating to a screen after the back button was used over an open modal. Popping a page that sat above a dialog reported the DIALOG as the previous route, which the observer ignored, so `currentDestination` kept naming the page just left and the drawer no-opped. It now tracks the page stack itself.
+- CHG: the "VPN limit reached" refusal comes before the ping-target prompt, not after it. The gate needs no router round trip, so there is no reason to make the user fill in a form for an enable that will be refused.
+- DOC: `SECURITY.md` incorrectly stated that credentials are never written to disk. They are: deploying a watchdog writes the PIA username and password to router NVRAM, and the SMTP ones with email alerts, because the script re-authenticates on its own long after the app has gone. The section now says so, says NVRAM is not encrypted, and says how to avoid it.
+- FIX: every watchdog deploy failed with "SSH connection closed" the moment the script grew past 9000 bytes. That is dropbear's `MAX_CMD_LEN`: an exec request over it is refused outright and the connection dropped, after the slot had already been enabled - which is why the app showed ACTIVE + PAUSED and the WebUI sat on "connecting". The script is now written in ~4 KB chunks (`cat >` then `cat >>`), so its size no longer touches the SSH limit.
+- CHG: the S50 boot-persistence script goes through the same chunked, verified writer as the watchdog script (`_writeFile`) - one way to put a file on the router, so neither can outgrow dropbear's limit unnoticed or be left half-written. It still deploys to `/opt/etc/init.d/`, which is Entware's init directory and the only place it would run from.
+- FIX: a failed script write went unnoticed - the deploy carried on and added cru entries pointing at a file that was never created. The write is now verified against the expected byte count and the deploy stops with both sizes named.
+- CHG: the PIA token request no longer uses `--fail`. That flag suppresses the response body, which is the only thing that explains a refusal - a router saw HTTP 403 with nothing to say why. The status still comes from `-w '%{http_code}'`; every other call keeps `--fail`.
+- CHG: a failed PIA token request now reports curl's exit code and the HTTP status - "failed to obtain PIA token (exit 0, HTTP 429: ...)". Piping curl into jq discarded its exit status, so throttling, wrong credentials and a TLS failure all logged the same bare line. The body goes to a temp file that is removed as soon as it is parsed, since it holds a token, and its size and first line are reported too - a router answered `exit 0, HTTP none`, where curl succeeded and `-w '%{http_code}'` printed nothing, so the status alone could not distinguish throttling from a cut-down curl.
+- DOC: `TESTING.md` section 13 rewritten - the old "set the ping targets to unroutable addresses" method cannot force a reconfigure, because those targets are also the WAN reachability check, so the script concludes there is no internet and exits. Replaced with ways to break a tunnel that WireGuard cannot undo - replacing the interface's private key, removing the peer, taking the interface down - each with the log it should produce, plus why moving the peer's endpoint does NOT work (endpoint roaming puts it straight back), which method skips the 300s wait and which does not, plus what a healthy check looks like, the 300s handshake window to wait out, and a warning about PIA rate-limiting repeated re-registrations. Stale `/tmp/scripts` paths corrected throughout.
+- FIX: a running watchdog showed as PAUSED, so it could not be disabled. The new active probe asked the ROUTER to expand `$kRouterAppDir` - a Dart constant, escaped by mistake, that the shell knows nothing about - so the file test ran against `/watchdog_wgcN.sh` and always failed. `watchdogScriptPath` moved to `firmware.dart` so both services share one definition, and a test now fails on any escaped `\$` in front of a lower-case identifier anywhere in `lib/`: shell variables here are upper-case, so that pattern is always this mistake.
+- CHG: a watchdog counts as ACTIVE only if its cron entry AND its script are both present. The cron entry alone said ACTIVE for a watchdog that could never run.
+- CHG: the deployed watchdog script moved from `/jffs/scripts/` to `/jffs/cfg-pia-wg/` (`watchdogScriptPath`), alongside the CA cache and the stock binaries. `/jffs/scripts` is Merlin's hook directory and still holds `services-start`.
+- FIX: the working spinner was near-black in the watchdog dialog and on CONNECT. Those spinners appear while their button is DISABLED, so they sit on Material's disabled grey rather than the teal fill, and `kOnPrimary` is invisible there - they are all `kHighlight` now. One also hardcoded `Color(0xFF12141A)`.
+- TST: +22 tests (436 -> 458), coverage 96.1%. The script-size tripwire moved 9500 -> 10000 for the token diagnostics; it is a review prompt now, not an SSH limit, since the write is chunked. The payload ceiling moved 9000 -> 9500 for the handshake check.
 
 2026-09-04 v0.8.31 build 401 - WIP stock support for Watchdog function
 

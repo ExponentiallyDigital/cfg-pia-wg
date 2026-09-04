@@ -319,7 +319,10 @@ void main() {
       await tester.tap(find.byKey(const Key('connect_router')));
       await tester.pumpAndSettle();
 
-      expect(ssh.ran(kRouterAppDir), isFalse);
+      // The BINARIES, not the directory: the watchdog script lives under kRouterAppDir on both
+      // firmwares now, so the app legitimately names that path on Merlin too.
+      expect(ssh.ran(kStockJqPath), isFalse);
+      expect(ssh.ran(kStockMailsendPath), isFalse);
       expect(find.text('WATCHDOG CONFIGURATION'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());

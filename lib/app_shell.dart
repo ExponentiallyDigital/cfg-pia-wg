@@ -27,12 +27,18 @@ class DestinationObserver extends NavigatorObserver {
   final SessionController controller;
   DestinationObserver(this.controller);
 
-  void _update(Route<dynamic>? route) {
-    // Only page routes change the current destination; dialogs / bottom sheets (the slot modal,
-    // EDIT, error, region picker) must NOT, so the active drawer item stays highlighted while a
-    // modal is open.
-    if (route is! PageRoute) return;
-    final name = route.settings.name;
+  // The page routes only, in stack order. Dialogs (the slot modal, EDIT, error, region picker)
+  // are deliberately absent: they must not change the destination, so the active drawer item
+  // stays highlighted while a modal is open.
+  //
+  // Tracked rather than read off `previousRoute` on a pop. With a modal open under a pushed page,
+  // popping that page reports the DIALOG as the previous route, which used to be ignored - so
+  // `currentDestination` kept naming the page just left, and the drawer no-opped the next time
+  // that entry was tapped. Reported after mixing the back button with the hamburger menu.
+  final _pages = <Route<dynamic>>[];
+
+  void _sync() {
+    final name = _pages.isEmpty ? null : _pages.last.settings.name;
     controller.currentDestination = AppDestination.values.firstWhere(
       (d) => d.routeName == name,
       orElse: () => AppDestination.menu,
@@ -40,11 +46,33 @@ class DestinationObserver extends NavigatorObserver {
   }
 
   @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => _update(route);
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is! PageRoute) return;
+    _pages.add(route);
+    _sync();
+  }
+
   @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => _update(previousRoute);
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => _forget(route);
+
   @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) => _update(newRoute);
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) => _forget(route);
+
+  void _forget(Route<dynamic> route) {
+    if (route is! PageRoute) return;
+    _pages.remove(route);
+    _sync();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    final at = oldRoute == null ? -1 : _pages.indexOf(oldRoute);
+    if (at >= 0) _pages.removeAt(at);
+    if (newRoute is PageRoute) {
+      at >= 0 ? _pages.insert(at, newRoute) : _pages.add(newRoute);
+    }
+    _sync();
+  }
 }
 
 ThemeData buildAppTheme() => ThemeData(

@@ -124,6 +124,89 @@ void main() {
     });
   });
 
+  // Reported: every deploy died with "SSH connection closed" straight after the slot was enabled.
+  // The script had grown to 9055 bytes as a single `cat > ... <<EOF` command, and dropbear refuses
+  // an exec request over MAX_CMD_LEN (9000) - it does not truncate, it drops the connection.
+  group('heredoc chunking', () {
+    test('splits a long body into commands that stay well under dropbear s limit', () {
+      final body = List.generate(400, (i) => 'line $i ${'x' * 40}').join('\n');
+      final cmds = heredocWriteCommands('/tmp/big.sh', body);
+
+      expect(cmds.length, greaterThan(1));
+      for (final cmd in cmds) {
+        expect(cmd.length, lessThan(kMaxSshCommandBytes), reason: 'one command must never reach the limit');
+      }
+      // First truncates, the rest append - otherwise each chunk would wipe the last.
+      expect(cmds.first, startsWith("cat > '/tmp/big.sh'"));
+      for (final cmd in cmds.skip(1)) {
+        expect(cmd, startsWith("cat >> '/tmp/big.sh'"));
+      }
+    });
+
+    test('the chunks reassemble into exactly the original body', () {
+      final body = List.generate(400, (i) => 'line $i ${'x' * 40}').join('\n');
+      final written = heredocWriteCommands('/tmp/big.sh', body)
+          .map((cmd) => cmd.substring(cmd.indexOf('\n') + 1, cmd.length - "WATCHDOG_EOF\n".length))
+          .join();
+      expect(written, '$body\n');
+    });
+
+    test('a short body is still a single command', () {
+      expect(heredocWriteCommands('/tmp/x', 'hello').length, 1);
+    });
+
+    test('the real watchdog script needs more than one chunk', () {
+      final cmds = heredocWriteCommands('/tmp/w.sh', buildWatchdogScript(cfg(slot: 1)));
+      expect(cmds.length, greaterThan(1), reason: 'it is ~9 KB - one command would exceed MAX_CMD_LEN');
+    });
+  });
+
+  // Reported: cru entries existed, the UI said ACTIVE, and the script was not on the router at all.
+  group('deploy verifies the script landed', () {
+    test('throws when the file is missing or short, naming both sizes', () async {
+      final c = RecordingSSHClient(
+        responder: (cmd) => cmd.contains('wc -c') ? '12' : '', // a truncated write
+      );
+      await expectLater(
+        RouterWatchdog(c).deployWatchdog(cfg(slot: 1)),
+        throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('12 bytes'))),
+      );
+      // And it stops there rather than scheduling a script that is not there.
+      expect(c.ran('cru a watchdog_wgc1'), isFalse);
+    });
+
+    test('a good write is confirmed and the deploy carries on', () async {
+      final c = RecordingSSHClient();
+      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1));
+      expect(c.ran('cru a watchdog_wgc1'), isTrue);
+      expect(c.ran("wc -c < '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
+    });
+  });
+
+  // Every file the app puts on the router goes through the same writer, so neither can grow past
+  // dropbear's limit unnoticed or be left half-written.
+  test('the S50 boot script is written in chunks and verified too', () async {
+    useStock();
+    // Stock resolves vpnc_unit from the clientlist row, so the fake has to read back what it wrote.
+    var list = '';
+    final c = RecordingSSHClient(responder: (cmd) {
+      if (cmd.startsWith('nvram set vpnc_clientlist=')) {
+        list = cmd.substring(cmd.indexOf('=') + 1).replaceAll("'", '');
+        return '';
+      }
+      if (cmd.contains('nvram get vpnc_clientlist')) return list;
+      return '';
+    });
+    await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+
+    final writes = c.commands.where((cmd) => cmd.contains("'$kS50Path' <<'WATCHDOG_EOF'")).toList();
+    expect(writes, isNotEmpty);
+    for (final w in writes) {
+      expect(w.length, lessThan(kMaxSshCommandBytes));
+    }
+    expect(c.ran("wc -c < '$kS50Path'"), isTrue, reason: 'the write has to be proved, not assumed');
+  });
+
   group('deployWatchdog', () {
     test('enables JFFS, writes nvram, deploys the script and both cron entries', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
@@ -133,19 +216,19 @@ void main() {
       expect(c.ran("nvram set wgc1_wd_secondary_ip='1.1.1.1'"), isTrue);
       expect(c.ran("nvram set cfg_pia_wg_user='p1234567'"), isTrue);
       expect(c.ran("nvram set cfg_pia_wg_password='secret'"), isTrue);
-      expect(c.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
-      expect(c.ran('chmod +x /jffs/scripts/watchdog_wgc1.sh'), isTrue);
+      expect(c.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
+      expect(c.ran("chmod +x '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
       expect(c.ran('cru a watchdog_wgc1 "*/5 * * * *"'), isTrue);
       expect(c.ran('cru a watchdog_log_rotate_wgc1'), isTrue);
       expect(c.ran('/jffs/scripts/services-start'), isTrue);
-      expect(c.commands.any((cmd) => cmd == '/jffs/scripts/watchdog_wgc1.sh'), isTrue);
+      expect(c.commands.any((cmd) => cmd == '/jffs/cfg-pia-wg/watchdog_wgc1.sh'), isTrue);
     });
 
     test('enables the VPN slot before deploying the watchdog scripts', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
       await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
       final enableIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc1_enable=1'));
-      final deployIndex = c.commands.indexWhere((cmd) => cmd.contains("cat > '/jffs/scripts/watchdog_wgc1.sh'"));
+      final deployIndex = c.commands.indexWhere((cmd) => cmd.contains("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"));
       expect(enableIndex, isNot(-1));
       expect(deployIndex, isNot(-1));
       expect(enableIndex, lessThan(deployIndex));
@@ -161,7 +244,7 @@ void main() {
         isTrue,
       );
       // ...and it lands after the script has actually been written and run.
-      final scriptIndex = c.commands.lastIndexWhere((cmd) => cmd == '/jffs/scripts/watchdog_wgc1.sh');
+      final scriptIndex = c.commands.lastIndexWhere((cmd) => cmd == '/jffs/cfg-pia-wg/watchdog_wgc1.sh');
       final doneIndex = c.commands.indexWhere((cmd) => cmd.contains('Watchdog deployed for wgc1'));
       expect(scriptIndex, isNot(-1));
       expect(scriptIndex, lessThan(doneIndex));
@@ -207,7 +290,7 @@ void main() {
 
       expect(c.ran('cru d watchdog_wgc2'), isFalse);
       expect(c.ran('nvram set wgc2_enable=0'), isFalse);
-      expect(c.ran('rm -f /jffs/scripts/watchdog_wgc2.sh'), isFalse);
+      expect(c.ran('rm -f /jffs/cfg-pia-wg/watchdog_wgc2.sh'), isFalse);
       expect(c.ran('nvram set wgc1_enable=1'), isTrue, reason: 'its own slot still comes up');
     });
 
@@ -239,7 +322,7 @@ void main() {
       expect(c.ran('/jffs/scripts/services-start'), isTrue, reason: 'its boot lines go too');
       // Everything DELETE would remove has to survive: the settings, the script and the tunnel.
       expect(c.commands.any((cmd) => cmd.contains('nvram unset wgc1_wd_')), isFalse);
-      expect(c.ran('rm -f /jffs/scripts/watchdog_wgc1.sh'), isFalse);
+      expect(c.ran('rm -f /jffs/cfg-pia-wg/watchdog_wgc1.sh'), isFalse);
       expect(c.ran('nvram set wgc1_enable=0'), isFalse);
       expect(c.ran('nvram unset cfg_pia_wg_user'), isFalse);
     });
@@ -288,7 +371,7 @@ void main() {
       await RouterWatchdog(c).stopWatchdog(1);
       expect(c.ran('cru d watchdog_wgc1'), isTrue);
       expect(c.ran('cru d watchdog_log_rotate_wgc1'), isTrue);
-      expect(c.ran('rm -f /jffs/scripts/watchdog_wgc1.sh'), isTrue);
+      expect(c.ran('rm -f /jffs/cfg-pia-wg/watchdog_wgc1.sh'), isTrue);
       expect(c.ran('/jffs/scripts/services-start'), isTrue);
       expect(c.ran('/tmp/watchdog_wgc1.log'), isTrue);
       expect(c.ran('/tmp/watchdog_last_ping_success_wgc1'), isTrue);
@@ -441,7 +524,9 @@ void main() {
       useStock();
       final c = stockRouter();
       await RouterWatchdog(c).enableJffsScripts();
-      expect(c.ran('mkdir -p /jffs/scripts'), isTrue);
+      // The app's own directory, not Merlin's hook directory - that is where the script lives now.
+      expect(c.ran("mkdir -p '/jffs/cfg-pia-wg'"), isTrue);
+      expect(c.ran('mkdir -p /jffs/scripts'), isFalse);
       expect(c.ran('nvram set jffs2_scripts=1'), isFalse);
       expect(c.ran('nvram set jffs2_on=1'), isFalse);
     });
@@ -474,7 +559,7 @@ void main() {
 
     test('redeploying replaces this slot\'s lines and keeps another slot\'s', () async {
       useStock();
-      const otherSlot = 'cru a watchdog_wgc3 "*/9 * * * *" /jffs/scripts/watchdog_wgc3.sh';
+      const otherSlot = 'cru a watchdog_wgc3 "*/9 * * * *" /jffs/cfg-pia-wg/watchdog_wgc3.sh';
       final existing = buildS50Script([otherSlot, buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
       final c = stockRouter(s50: existing);
       await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 15));
@@ -489,7 +574,7 @@ void main() {
       final c = stockRouter();
       await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
 
-      final write = c.commands.firstWhere((cmd) => cmd.contains("cat > '/jffs/scripts/watchdog_wgc1.sh'"));
+      final write = c.commands.firstWhere((cmd) => cmd.contains("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"));
       expect(write, contains('JQ="$kStockJqPath"'));
       expect(write, contains(kStockMailsendPath));
       expect(write, isNot(contains('/usr/sbin/sendmail')));
@@ -499,7 +584,7 @@ void main() {
   group('stock stopWatchdog', () {
     test('strips this slot from S50downloadmaster without shredding the template', () async {
       useStock();
-      const otherSlot = 'cru a watchdog_wgc3 "*/9 * * * *" /jffs/scripts/watchdog_wgc3.sh';
+      const otherSlot = 'cru a watchdog_wgc3 "*/9 * * * *" /jffs/cfg-pia-wg/watchdog_wgc3.sh';
       final existing = buildS50Script([otherSlot, buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
       final c = RecordingSSHClient(responder: (cmd) => cmd.startsWith("cat '$kS50Path'") ? existing : '');
       await RouterWatchdog(c).stopWatchdog(1);
@@ -531,7 +616,7 @@ void main() {
       await RouterWatchdog(c).stopWatchdog(2);
       expect(c.ran('cru d watchdog_wgc2'), isTrue);
       expect(c.ran('cru d watchdog_log_rotate_wgc2'), isTrue);
-      expect(c.ran('rm -f /jffs/scripts/watchdog_wgc2.sh'), isTrue);
+      expect(c.ran('rm -f /jffs/cfg-pia-wg/watchdog_wgc2.sh'), isTrue);
       expect(c.ran('/tmp/watchdog_backoff_wgc2'), isTrue);
       expect(c.ran('nvram set wgc2_enable=0'), isTrue);
     });

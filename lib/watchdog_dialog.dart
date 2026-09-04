@@ -383,7 +383,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                   key: const Key('wd_save'),
                   onPressed: (_loading || _jqMissing) ? null : _save,
                   child: _loading
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kOnPrimary))
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
                       : const Text('SAVE'),
                 ),
                 const SizedBox(height: 8),

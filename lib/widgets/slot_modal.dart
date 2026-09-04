@@ -173,7 +173,12 @@ class _SlotModalState extends State<SlotModal> {
   Future<void> _enableManage() async {
     final slot = _selected;
 
-    // 1) Read stored ping targets (brief processing window).
+    // 1) Concurrency gate FIRST. It needs no router round trip, so refusing here spares the user
+    //    a ping-target prompt for an enable that was never going to happen.
+    if (!await _withinVpnLimit(slot)) return;
+    if (!mounted) return;
+
+    // 2) Read stored ping targets (brief processing window).
     var primary = '', secondary = '';
     var haveTargets = false;
     setState(() => _processing = true);
@@ -196,16 +201,13 @@ class _SlotModalState extends State<SlotModal> {
       return;
     }
 
-    // 2) Prompt for targets if none are stored (spinner is off while the prompt is open).
+    // 3) Prompt for targets if none are stored (spinner is off while the prompt is open).
     if (!haveTargets) {
       final targets = await _promptPingTargets(primary.isEmpty ? '8.8.8.8' : primary, secondary.isEmpty ? '1.1.1.1' : secondary);
       if (targets == null) return;
       primary = targets.$1;
       secondary = targets.$2;
     }
-
-    // 3) Concurrency gate.
-    if (!await _withinVpnLimit(slot)) return;
 
     // 4) Write targets if prompted, then enable with the connectivity check. Other slots are left
     //    running - they no longer have to be torn down first.

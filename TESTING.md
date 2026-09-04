@@ -153,11 +153,13 @@ Manual router tests:
 
 ### 2.1. Checks
 
-1. check that `/tmp/scripts/services-start` contains (5m watchdog)
+1. check that boot persistence contains the two cru lines (5m watchdog)
+
+On Merlin that is `/jffs/scripts/services-start`; on stock the app owns the replacement block of `/opt/etc/init.d/S50downloadmaster` instead, between the `REPLACEMENT START` / `REPLACEMENT END` markers.
 
 ```bash
 #!/bin/sh
-cru a watchdog_wgc1 "*/5 * * * *" /tmp/scripts/watchdog_wgc1.sh
+cru a watchdog_wgc1 "*/5 * * * *" /jffs/cfg-pia-wg/watchdog_wgc1.sh
 cru a watchdog_log_rotate_wgc1 "0 0 * * *" "mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log"
 ```
 
@@ -165,17 +167,17 @@ cru a watchdog_log_rotate_wgc1 "0 0 * * *" "mv /tmp/watchdog_wgc1.log /tmp/watch
 
 ```bash
 user@host:/tmp/home/root# crontab -l
-*/1 * * * * /tmp/scripts/watchdog_wgc1.sh #watchdog_wgc1#
+*/1 * * * * /jffs/cfg-pia-wg/watchdog_wgc1.sh #watchdog_wgc1#
 0 0 * * * mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
 
 user@host:/tmp/home/root# cru l
-*/1 * * * * /tmp/scripts/watchdog_wgc1.sh #watchdog_wgc1#
+*/1 * * * * /jffs/cfg-pia-wg/watchdog_wgc1.sh #watchdog_wgc1#
 0 0 * * * mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
 ```
 
 3. Is the deployed watchdog script correct?
 
-Compare a post processed instance of `const String _kWatchdogScriptTemplate` in `lib\router_watchdog.dart` with `/tmp/scripts/watchdog_wgcN.sh`
+Compare a post processed instance of `const String _kWatchdogScriptTemplate` in `lib\router_watchdog.dart` with `/jffs/cfg-pia-wg/watchdog_wgcN.sh`
 
 4. check NVRAM is set correctly
 
@@ -220,38 +222,146 @@ Conduct, deploy, delete, reconfigure actions. Ensure these are logged to syslog.
 10. Check cleanup ocurs when `DISABLE`/`DELETE` selected in UI
 
 - cron jobs removed, check with `crontab -l` and `cru l`
-- `/tmp/scripts/services-start` should only contain `#!/bin/sh`
-- add a comment to `/tmp/scripts/services-start`, start watchdog and remove watchdog, comment should persist
+- `/jffs/scripts/services-start` should only contain `#!/bin/sh`
+- add a comment to `/jffs/scripts/services-start`, start watchdog and remove watchdog, comment should persist
 - all files deleted
 
 11. File permissions
 
-Check `/tmp/scripts/services-start` permission is 777 `-rwxrwxrwx`
-Check `/tmp/scripts/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
+Check `/jffs/scripts/services-start` permission is 777 `-rwxrwxrwx`
+Check `/jffs/cfg-pia-wg/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
 
 12. Reboot and check that cron and crontab are correct
     <br>
 13. Force a reconfigure to occur
 
+The watchdog decides a tunnel is alive from its **WireGuard handshake**: `wg show wgcN latest-handshakes` reduced to its newest peer, healthy if under 300 seconds old. A ping bound to the interface is only a fallback, because on stock the router's own traffic is not policy-routed into `wgcN` and `ping -I` fails on a perfectly healthy tunnel.
+
+So a good test breaks the **crypto or the peer**, leaves the interface up, and touches neither the WAN nor NVRAM. Two things that look like good tests are not: disabling the interface in the WebUI exercises only the "interface down or absent" path and disturbs routing, and moving the peer's endpoint is undone within seconds by WireGuard's endpoint roaming (13.1.1).
+
+> [!IMPORTANT]
+> The clock runs from the **last handshake**, not from when you broke the tunnel. `wg show wgcN latest-handshakes` tells you exactly where you are; the watchdog reacts at the first check where that age exceeds 300 s, so worst case is 300 s **plus** one check interval. A check logging `Handshake 264s ago` after you broke it is the window working, not a failure - wait for the next one. Removing the peer (13.2) skips the wait entirely.
+
+> [!CAUTION]
+> Any LAN client policy-routed through the slot loses internet for the duration of the test - the tunnel really is dead. That is confirmation the test worked, but do not run it on a slot something depends on.
+
 > [!WARNING]
-> This no longer works as ping targets are now used to check WAN connectivity, setting these values will make the shell script believe that it has no Internet connectivity.
+> PIA rate-limits token requests. A failing watchdog re-registers every 120 s cooldown, and two failing watchdogs double that. If `failed to obtain PIA token` starts appearing, stop and wait 15-30 minutes - the log now carries the HTTP status, so `HTTP 429` confirms throttling rather than a fault. Test one slot at a time, and prefer a 5 m check interval over 1 m for reconfigure tests.
 
-Set NVRAM ping targets to values that doesn't respond. Per [RFC 5737 — IPv4 Address Blocks Reserved for Documentation](https://www.iana.org/go/rfc5737) these blocks should never respond:
+#### 13.1. Invalidate the registration (the important one)
 
-```text
-192.0.2.0/24 (TEST-NET-1)
-198.51.100.0/24 (TEST-NET-2)
-203.0.113.0/24 (TEST-NET-3)
-```
-
-set these via NVRAM eg
+The truest simulation of a PIA registration that has silently died: the interface stays up and keeps sending, the server no longer recognises us, and no handshake ever completes. Replace the interface's private key with a fresh one the server has never seen:
 
 ```bash
+wg genkey > /tmp/breakit
+wg set wgc1 private-key /tmp/breakit
+rm -f /tmp/breakit
+
+wg show wgc1 latest-handshakes    # stops advancing from here
+```
+
+Nothing can undo this from the far end - the server cannot authenticate a key it was never given - so the tunnel stays dead until the watchdog re-registers.
+
+Expected in `/tmp/watchdog_wgc1.log` once the handshake passes 300 s:
+
+```text
+2026-09-04 16:40:00 Checking wgc1 pia-aus_melbourne connectivity
+2026-09-04 16:40:08 No handshake and both pings failed (8.8.8.8, 1.1.1.1)
+2026-09-04 16:40:08 Connectivity lost; reconfiguring (attempt #1)
+2026-09-04 16:40:08 WAN has internet connectivity
+2026-09-04 16:40:09 Requesting PIA token for user pNNNNNNN
+2026-09-04 16:40:09 PIA token obtained (len=124)
+...
+2026-09-04 16:40:15 Reconfig SUCCESS: region pia-aus_melbourne via 45.130.141.215:1337
+```
+
+Recovery needs no cleanup: the re-negotiation generates a new keypair, registers it, rewrites `wgc1_*` in NVRAM and restarts the slot.
+
+#### 13.1.1. What does NOT work: moving the endpoint
+
+```bash
+# looks right, does nothing - do not use
+wg set wgc1 peer "$(nvram get wgc1_ppub)" endpoint 203.0.113.1:1337
+```
+
+`wg` accepts it and shows the new endpoint, then puts the real one back within seconds and no reconfigure ever happens. That is **endpoint roaming**, a WireGuard feature: a peer's endpoint is updated automatically whenever an authenticated packet arrives from a different source address. The PIA server is still sending, so the endpoint follows it home. Anything that leaves the keys intact will be undone the same way.
+
+#### 13.2. Peer removed (the fast one)
+
+Blunter, immune to roaming - there is no peer left for an inbound packet to update - and **detected at the very next check with no 300 s wait**, because removing the peer removes its handshake record too: `latest-handshakes` returns nothing, so the age test fails immediately.
+
+Do not wait for cron: run the script by hand straight after, and the check interval stops mattering.
+
+```bash
+wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
+wg show wgc1                     # no peer listed
+/jffs/cfg-pia-wg/watchdog_wgc1.sh
+```
+
+Verified on 2026-09-04 with a 5 m interval, reconfigured immediately:
+
+```text
+18:49:13 Checking wgc1 pia-aus_melbourne connectivity
+18:49:13 No handshake and both pings failed (8.8.8.8, 1.1.1.1)
+18:49:13 Connectivity lost; reconfiguring (attempt #1)
+18:49:14 PIA token obtained (len=124)
+18:49:14 Selected server 45.130.141.159 (Server-12444-0a) for region pia-aus_melbourne
+18:49:20 Interface wgc1 is up
+18:49:20 Reconfig SUCCESS: region pia-aus_melbourne via 45.130.141.159:1337
+18:50:00 Handshake 44s ago
+```
+
+Confirm the recovery, not just the log: `wg show wgc1` should list a peer again with a **different**
+public key from the one you removed, and the next scheduled check should read `Handshake Ns ago`.
+
+Running it twice inside two minutes gives `Cooldown Ns < 120s; skipping` - that is the guard
+working, not a fault.
+
+#### 13.3. Interface down
+
+The one the WebUI gives you. Detected immediately - no 300 s wait, because the script tests `ifconfig` before the handshake:
+
+```bash
+ifconfig wgc1 down
+```
+
+```text
+2026-09-04 16:45:00 Checking wgc1 pia-aus_melbourne connectivity
+2026-09-04 16:45:00 Interface wgc1 is down or absent
+2026-09-04 16:45:00 Connectivity lost; reconfiguring (attempt #1)
+```
+
+#### 13.4. What a healthy check looks like
+
+For contrast - this is every minute on a working tunnel, and no reconfigure should follow:
+
+```text
+2026-09-04 15:48:00 Checking wgc1 pia-aus_melbourne connectivity
+2026-09-04 15:48:00 Handshake 60s ago
+```
+
+#### 13.5. Cooldown and backoff
+
+`COOLDOWN=120`: a second failure inside two minutes is skipped rather than re-registering, which is what stops a broken tunnel hammering PIA.
+
+```text
+2026-09-04 16:41:00 No handshake and both pings failed (8.8.8.8, 1.1.1.1)
+2026-09-04 16:41:00 Cooldown 60s < 120s; skipping
+```
+
+Check `/tmp/watchdog_backoff_wgc1` is created and holds the attempt count and timestamp.
+
+#### 13.6. What no longer works
+
+> [!WARNING]
+> Setting the ping targets to unroutable addresses does **not** force a reconfigure. Those addresses are also the WAN reachability check, so the script concludes the router has no internet and exits 0 without alerting. Per [RFC 5737](https://www.iana.org/go/rfc5737), `192.0.2.0/24`, `198.51.100.0/24` and `203.0.113.0/24` never respond, which is what makes them tempting here - but see 13.1.1 for why pointing the tunnel at one does not work either.
+
+```bash
+# DO NOT use this to force a reconfigure - the script sees "no Internet" and exits
+nvram set wgc1_wd_primary_ip=192.0.2.1; nvram set wgc1_wd_secondary_ip=198.51.100.1
+
 # valid entries
 nvram set wgc1_wd_primary_ip=8.8.8.8; nvram set wgc1_wd_secondary_ip=1.1.1.1
-
-# invalid entries
-nvram set wgc1_wd_primary_ip=192.0.2.1; nvram set wgc1_wd_secondary_ip=198.51.100.1
 ```
 
 14. Apply a new config to a blank slot
@@ -272,8 +382,10 @@ nvram show | grep qgc | sort
 Check these get created/cleaned up
 
 ```bash
-/jffs/scripts/services-start
-/jffs/scripts/watchdog_wgcN.sh
+/jffs/scripts/services-start              # Merlin boot persistence
+/opt/etc/init.d/S50downloadmaster         # stock boot persistence (replacement block only)
+/jffs/cfg-pia-wg/watchdog_wgcN.sh
+/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt      # cached PIA CA, shared by all slots
 /tmp/watchdog_wgcN.log
 /tmp/watchdog_last_ping_success_wgcN
 /tmp/watchdog_backoff_wgcN

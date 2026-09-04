@@ -227,14 +227,48 @@ class WatchdogStatus {
 
 // `cat > '<path>' <<'EOF'` heredoc write. The single-quoted tag prevents the router
 // shell from expanding anything in the body during deployment.
+/// Dropbear's `MAX_CMD_LEN`. A single exec request longer than this is refused outright and the
+/// connection closes - the watchdog script crossed it at 9055 bytes and every deploy died with
+/// "SSH connection closed" after the slot had already been enabled.
+const int kMaxSshCommandBytes = 9000;
+
+/// Splits a file write into heredoc commands that each stay well clear of [kMaxSshCommandBytes].
+///
+/// The first truncates (`>`), the rest append (`>>`), so the script can grow without ever
+/// approaching the limit again. Splitting only ever happens at a line boundary.
+List<String> heredocWriteCommands(String path, String body, {int maxBytes = 4000}) {
+  final b = body.endsWith('\n') ? body : '$body\n';
+  final lines = b.split('\n')..removeLast(); // trailing '' from the final newline
+  final commands = <String>[];
+  final buf = StringBuffer();
+  var first = true;
+
+  void flush() {
+    if (buf.isEmpty) return;
+    commands.add("cat ${first ? '>' : '>>'} '$path' <<'WATCHDOG_EOF'\n${buf}WATCHDOG_EOF\n");
+    first = false;
+    buf.clear();
+  }
+
+  for (final line in lines) {
+    if (buf.length + line.length + 1 > maxBytes) flush();
+    buf.writeln(line);
+  }
+  flush();
+  return commands.isEmpty ? ["cat > '$path' <<'WATCHDOG_EOF'\nWATCHDOG_EOF\n"] : commands;
+}
+
 String heredocWrite(String path, String body) {
   final b = body.endsWith('\n') ? body : '$body\n';
-  return "cat > '$path' <<'WATCHDOG_EOF'\n${b}WATCHDOG_EOF";
+  // The delimiter needs its own newline-terminated line. Without the trailing newline BusyBox
+  // ash reaches EOF before it recognises the delimiter and writes WATCHDOG_EOF into the file -
+  // which is how it ended up as the last line of S50downloadmaster and inside the test email.
+  return "cat > '$path' <<'WATCHDOG_EOF'\n${b}WATCHDOG_EOF\n";
 }
 
 // The watchdog check cron job line (added via `cru a`).
 String buildCronCheckLine(int slot, int intervalMin) =>
-    'cru a watchdog_wgc$slot "*/$intervalMin * * * *" /jffs/scripts/watchdog_wgc$slot.sh';
+    'cru a watchdog_wgc$slot "*/$intervalMin * * * *" ${watchdogScriptPath(slot)}';
 
 // The daily log-rotation cron job line.
 String buildCronRotateLine(int slot) => 'cru a watchdog_log_rotate_wgc$slot "0 0 * * *" '
@@ -347,7 +381,7 @@ const String _kMailCmdStock = '''  $kStockMailsendPath -debug -ssl -verifyCert \
     auth -user "\$SMTP_USER" -pass "\$SMTP_PASS" \\
     body -file "\$TMPMAIL" 2>"\$TMPERR"''';
 
-// The full /jffs/scripts/watchdog_wgcN.sh body. Slot-parameterised via __SLOT__; the jq path and
+// The full watchdog_wgcN.sh body (see watchdogScriptPath). Slot-parameterised via __SLOT__; the jq path and
 // the two mail blocks are resolved from [firmware] (the detected one by default).
 String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
   final fw = firmware ?? routerFirmware;
@@ -356,6 +390,9 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       .replaceAll('__SLOT__', '${c.slotIndex}')
       .replaceAll('__JQ__', jqCommand(fw))
       .replaceAll('__CACERT__', kPiaCaCertPath)
+      // enforce / fw / rip / ep_addr_r are Merlin-only (kMerlinOnlySlotKeys). Writing them on
+      // stock creates keys nothing reads and DELETE does not clean up.
+      .replaceAll('__MERLINONLY__', stock ? '' : _kMerlinOnlyNvsets)
       .replaceAll('__MAILBODY__', stock ? _kMailBodyStock : _kMailBodyMerlin)
       .replaceAll('__MAILCMD__', stock ? _kMailCmdStock : _kMailCmdMerlin);
 }
@@ -373,6 +410,35 @@ class RouterWatchdog {
 
   // Heredoc writes can stall if the SSH channel hangs; bound them at 30s and
   // surface a troubleshooting message on timeout.
+  /// Writes the watchdog script and proves it landed.
+  ///
+  /// Deploy used to carry on regardless: a failed or truncated write left cru entries pointing at
+  /// a script that was not there, and the app reported the watchdog as active.
+  /// The one way to put a file on the router: chunked heredoc, then prove it landed.
+  ///
+  /// Chunked because dropbear refuses an exec request over [kMaxSshCommandBytes] and drops the
+  /// connection. Verified because a write that fails silently is worse than one that fails loudly:
+  /// a missing watchdog script still left cru entries pointing at it, and the app called that
+  /// ACTIVE. [what] names the file in the message the user sees.
+  Future<void> _writeFile(String path, String body, {required String what, String mode = '+x'}) async {
+    final expected = body.endsWith('\n') ? body.length : body.length + 1;
+    for (final cmd in heredocWriteCommands(path, body)) {
+      await _runHeredoc(cmd, path);
+    }
+    await _run("chmod $mode '$path'");
+    final size = int.tryParse(await _run("wc -c < '$path' 2>/dev/null | tr -d ' '")) ?? 0;
+    if (size != expected) {
+      throw Exception('Writing $path failed: the router has $size bytes of a $expected byte file. '
+          'The $what was NOT deployed - check free space on the router filesystem.');
+    }
+    onLog?.call('$what written to $path ($size bytes).', isSuccess: true);
+  }
+
+  Future<void> _writeScript(int slot, String body) async {
+    await _run("mkdir -p '$kRouterAppDir'");
+    await _writeFile(watchdogScriptPath(slot), body, what: 'Watchdog script');
+  }
+
   Future<String> _runHeredoc(String cmd, String path) async {
     try {
       return await _run(cmd).timeout(const Duration(seconds: 30));
@@ -434,7 +500,9 @@ class RouterWatchdog {
   // custom-scripts feature; on stock only the directory matters.
   Future<void> enableJffsScripts() async {
     if (isStockFirmware) {
-      await _run('mkdir -p /jffs/scripts');
+      // The app's own directory holds the watchdog script; /jffs/scripts is Merlin's hook
+      // directory and stock has no use for it.
+      await _run("mkdir -p '$kRouterAppDir'");
       return;
     }
     final scripts = await _run('nvram get jffs2_scripts');
@@ -474,18 +542,14 @@ class RouterWatchdog {
         await enableJffsScripts();
         await _writeWatchdogNvram(config, desc: desc);
         await enableVpnSlot(config.slotIndex);
-        await _runHeredoc(
-          heredocWrite('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh', buildWatchdogScript(config)),
-          '/jffs/scripts/watchdog_wgc${config.slotIndex}.sh',
-        );
-        await _run('chmod +x /jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
+        await _writeScript(config.slotIndex, buildWatchdogScript(config));
         await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
         await _run(buildCronRotateLine(config.slotIndex));
         await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
         onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
-        await _logRouter('Running /jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
-        await _run('/jffs/scripts/watchdog_wgc${config.slotIndex}.sh');
-        onLog?.call('Ran /jffs/scripts/watchdog_wgc${config.slotIndex}.sh', isSuccess: true);
+        await _logRouter('Running ${watchdogScriptPath(config.slotIndex)}');
+        await _run(watchdogScriptPath(config.slotIndex));
+        onLog?.call('Ran ${watchdogScriptPath(config.slotIndex)}', isSuccess: true);
         await _logRouter(
             'Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
         onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
@@ -568,8 +632,7 @@ class RouterWatchdog {
         if (!_cruLineForSlot(line, slot)) line,
       ...extra,
     ];
-    await _runHeredoc(heredocWrite(kS50Path, buildS50Script(lines)), kS50Path);
-    await _run("chmod +x '$kS50Path'");
+    await _writeFile(kS50Path, buildS50Script(lines), what: 'Boot persistence script');
   }
 
   // Cron entries only: removes this slot's two cru jobs and its boot-persistence lines, and
@@ -639,7 +702,7 @@ class RouterWatchdog {
         final label = await _label(slot);
         await _run('cru d watchdog_wgc$slot');
         await _run('cru d watchdog_log_rotate_wgc$slot');
-        await _run('rm -f /jffs/scripts/watchdog_wgc$slot.sh');
+        await _run('rm -f ${watchdogScriptPath(slot)}');
         // strip out cron jobs added when watchdog installed, reinstate 700 permission. On stock
         // the file itself stays: it is a hijacked init script, so removing it is worse than
         // leaving an empty replacement block.
@@ -690,7 +753,11 @@ class RouterWatchdog {
 
   // Enabled state requires both the watchdog cron entry and the actual WireGuard interface.
   Future<WatchdogStatus> getWatchdogStatus(int slot) async {
-    final cronEnabled = (await _run('cru l | grep -qw watchdog_wgc$slot && echo 1 || echo 0')) == '1';
+    // The script has to exist too: a deploy that failed to write it still left the cron entries,
+    // and reporting that as enabled is how a broken watchdog looked healthy.
+    final cronEnabled = (await _run("cru l | grep -qw watchdog_wgc$slot && [ -s '${watchdogScriptPath(slot)}' ] "
+            '&& echo 1 || echo 0')) ==
+        '1';
     final interfaceEnabled = (await _run('nvram get wgc${slot}_enable')) == '1';
     final interfacePresent = (await _run('wg show interfaces')).contains('wgc$slot');
     final enabled = cronEnabled && interfaceEnabled && interfacePresent;
@@ -803,6 +870,12 @@ class RouterWatchdog {
   }
 }
 
+// The per-slot keys only Merlin uses; omitted from the stock script (kMerlinOnlySlotKeys).
+const String _kMerlinOnlyNvsets = r'''nvset "enforce=$ENFORCE"
+nvset "ep_addr_r="
+nvset "fw=1"
+nvset "rip="''';
+
 // ─── Bash script template ────────────────────────────────────────────────────────
 // POSIX sh. __SLOT__ is the only placeholder; everything else is literal shell.
 // Logs to both /jffs/watchdog_wgcN.log and the router syslog (logger -t cfg-pia-wg).
@@ -827,10 +900,12 @@ COOLDOWN=120
 CACERT="__CACERT__"
 JQ="__JQ__"
 # tlsv1.2 is a MINIMUM; requiring 1.3 failed addKey with curl 35 (handshake).
-CURL="curl -s --max-time 15 --connect-timeout 8 --tlsv1.2 --fail"
+CURLB="curl -s --max-time 15 --connect-timeout 8 --tlsv1.2"
+CURL="$CURLB --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
 TMPSRV="/tmp/${IFACE}_servers.txt"
 TMPERR="/tmp/${IFACE}_curl.err"
+TMPTOK="/tmp/${IFACE}_token.json"
 SERVERLIST_URL="https://serverlist.piaservers.net/vpninfo/servers/v6"
 TOKEN_URL="https://www.privateinternetaccess.com/gtoken/generateToken"
 CACERT_URL="https://raw.githubusercontent.com/pia-foss/manual-connections/master/ca.rsa.4096.crt"
@@ -918,15 +993,21 @@ log "Checking $IFACE $DESC connectivity"
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then
   log "Interface $IFACE is down or absent"
 else
-  if ping -I "$IFACE" -c 3 -W 2 "$PRIMARY_IP" >/dev/null 2>&1; then
+  # A handshake is the peer answering; ping -I is not a liveness test on stock, where the
+  # router's own traffic is not routed into wgcN. Ping kept as a fallback for Merlin.
+  HS="$(wg show "$IFACE" latest-handshakes 2>/dev/null | awk '{if ($2 > m) m = $2} END {print m + 0}')"
+  AGE=$(( $(date +%s) - HS ))
+  if [ "$HS" -gt 0 ] && [ "$AGE" -lt 300 ]; then
+    log "Handshake ${AGE}s ago"
+    FAIL=0
+  elif ping -I "$IFACE" -c 3 -W 2 "$PRIMARY_IP" >/dev/null 2>&1; then
     log "Primary ping OK ($PRIMARY_IP)"
     FAIL=0
   elif ping -I "$IFACE" -c 3 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
     log "Secondary ping OK ($SECONDARY_IP)"
     FAIL=0
   else
-    log "Primary and Secondary pings FAILED ($PRIMARY_IP, $SECONDARY_IP)"
-    log "Both ping targets unreachable via $IFACE"
+    log "No handshake and both pings failed ($PRIMARY_IP, $SECONDARY_IP)"
   fi
 fi
 
@@ -982,8 +1063,18 @@ else
 fi
 
 log "Requesting PIA token for user $PIA_USER"
-TOKEN="$($CURL -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" | "$JQ" -r '.token // empty')"
-[ -n "$TOKEN" ] || abort "failed to obtain PIA token"
+# Body to a file, status to stdout: a pipe into jq would discard curl's exit status.
+HTTP="$($CURLB -S -o "$TMPTOK" -w '%{http_code}' -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" 2>"$TMPERR")"
+RC=$?
+TOKEN="$("$JQ" -r '.token // empty' < "$TMPTOK" 2>/dev/null)"
+if [ -z "$TOKEN" ]; then
+  # The body is the evidence when the status is not: seen once as exit 0 with no status at all.
+  BSZ="$(wc -c < "$TMPTOK" 2>/dev/null | tr -d ' ')"
+  BODY="$(head -n 1 "$TMPTOK" 2>/dev/null | cut -c1-60)"
+  rm -f "$TMPTOK"
+  abort "failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}, body ${BSZ:-0}B: ${BODY:-empty}) $(head -n 1 "$TMPERR" | cut -c1-80)"
+fi
+rm -f "$TMPTOK"
 echo -n > /jffs/curllst
 log "PIA token obtained (len=$(echo -n "$TOKEN" | wc -c))"
 
@@ -1041,18 +1132,15 @@ nvset "addr=$PEER_IP/32"
 nvset "alive=25"
 nvset "desc=$DESC"
 nvset "enable=1"
-nvset "enforce=$ENFORCE"
 nvset "ep_addr=$BEST_IP"
-nvset "ep_addr_r="
 nvset "ep_port=$SERVER_PORT"
-nvset "fw=1"
 nvset "mtu=1420"
 nvset "nat=1"
 nvset "ppub=$SERVER_KEY"
 nvset "priv=$PRIV"
 nvset "psk="
-nvset "rip="
 nvset "aips=0.0.0.0/0"
+__MERLINONLY__
 nvram commit
 log "NVRAM write complete"
 
