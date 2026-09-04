@@ -143,7 +143,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                   key: const Key('slot_params_save'),
                   onPressed: (_saving || !_canSave) ? null : _save,
                   child: _saving
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kOnPrimary))
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
                       : const Text('SAVE'),
                 ),
                 const SizedBox(height: 8),

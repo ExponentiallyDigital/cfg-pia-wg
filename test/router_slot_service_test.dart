@@ -134,6 +134,34 @@ void main() {
       expect(result.slots[2]!.isEmpty, isTrue, reason: 'nothing to fall back to');
     });
 
+    // Reported: a watchdog that was demonstrably running showed as PAUSED, so it could not be
+    // disabled. The active probe asked the ROUTER to expand $kRouterAppDir - a Dart constant the
+    // router knows nothing about - so the -s test ran against '/watchdog_wgcN.sh' and always
+    // failed. Any command the app sends must carry resolved paths.
+    test('the watchdog probe sends a resolved script path, not a Dart constant', () async {
+      final c = stockRouter();
+      await svc(c).fetchSlots();
+
+      final probe = c.commands.firstWhere((cmd) => cmd.contains('cru l'), orElse: () => '');
+      expect(probe, contains('/jffs/cfg-pia-wg/watchdog_wgc1.sh'));
+      expect(probe, isNot(contains(r'$kRouterAppDir')));
+    });
+
+    test('a watchdog counts as active only with BOTH a cron entry and its script', () async {
+      RecordingSSHClient router({required bool cron, required bool script}) => RecordingSSHClient(
+            responder: (cmd) {
+              if (cmd.contains('vpnc_clientlist')) return 'pia-x>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+              // The router evaluates the whole `cru l ... && [ -s ... ] && echo 1 || echo 0`.
+              if (cmd.contains('cru l')) return (cron && script) ? '1' : '0';
+              return '';
+            },
+          );
+
+      expect((await svc(router(cron: true, script: true)).fetchSlots()).slots[1]!.watchdogActive, isTrue);
+      expect((await svc(router(cron: true, script: false)).fetchSlots()).slots[1]!.watchdogActive, isFalse,
+          reason: 'cru pointing at a script that is not there is not a watchdog');
+    });
+
     test('never reports a kill switch (stock has no enforce field)', () async {
       useStock();
       final result = await svc(stockRouter()).fetchSlots();
@@ -215,6 +243,83 @@ void main() {
       expect(c.ran('ping -I wgc1 -c 1 -w 5'), isTrue);
       // No revert on success.
       expect(c.ran('nvram set wgc1_enable=0'), isFalse);
+    });
+
+    // Reported from hardware: a slot whose PIA registration had expired still produced a wgcN
+    // device, so ENABLE said ACTIVE while the router WebUI sat on "connecting" for ever. `wg` showed
+    // the tunnel sending and never receiving, with no handshake at all.
+    group('handshake gate', () {
+      RecordingSSHClient router({required String handshake}) => RecordingSSHClient(
+            responder: (cmd) {
+              if (cmd.contains('wg show interfaces')) return 'wgc1';
+              if (cmd.contains('latest-handshakes')) return handshake;
+              if (cmd.contains('date +%s')) return '$kFakeNow';
+              if (cmd.contains('ping -I wgc1')) return 'OK';
+              return '';
+            },
+          );
+
+      test('a tunnel the peer never answered is refused and reverted', () async {
+        final c = router(handshake: '0'); // wg reports 0 for "never"
+        await expectLater(
+          svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
+          throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('never answered'))),
+        );
+        expect(c.ran('nvram set wgc1_enable=0'), isTrue, reason: 'the slot must not be left half-up');
+      });
+
+      test('a fresh handshake is accepted', () async {
+        final c = router(handshake: '${kFakeNow - 5}');
+        await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
+        expect(c.ran('nvram set wgc1_enable=0'), isFalse);
+      });
+
+      test('handshakeAge takes the newest peer on the router and reports null for none', () async {
+        final c = RecordingSSHClient(
+          responder: (cmd) {
+            // The router reduces the peer list; the fake stands in for that awk.
+            if (cmd.contains('latest-handshakes')) return '${kFakeNow - 12}';
+            if (cmd.contains('date +%s')) return '$kFakeNow';
+            return '';
+          },
+        );
+        expect(await svc(c).handshakeAge(1), 12);
+        // The reduction has to be a max over the peers, not the first line.
+        expect(c.commands.firstWhere((cmd) => cmd.contains('latest-handshakes')), contains(r'if ($2 > m) m = $2'));
+
+        final never = RecordingSSHClient(responder: (cmd) => cmd.contains('latest-handshakes') ? '0' : '');
+        expect(await svc(never).handshakeAge(1), isNull, reason: 'wg reports 0 for a peer that never answered');
+      });
+
+      // On stock the ping is routed over the WAN from the tunnel's source address, so it answered
+      // OK for a dead tunnel. It must not be able to veto - or rescue - an enable there.
+      test('stock does not block an enable on a ping failure', () async {
+        useStock();
+        final c = RecordingSSHClient(
+          responder: (cmd) {
+            if (cmd.contains('vpnc_clientlist')) return 'pia-x>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+            if (cmd.contains('wg show interfaces')) return 'wgc1';
+            if (cmd.contains('latest-handshakes')) return '${kFakeNow - 3}';
+            if (cmd.contains('date +%s')) return '$kFakeNow';
+            return ''; // every ping fails
+          },
+        );
+        await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
+        expect(c.ran('nvram set wgc1_enable=0'), isFalse, reason: 'the handshake is the gate on stock');
+      });
+
+      test('stock still refuses when there is no handshake', () async {
+        useStock();
+        final c = RecordingSSHClient(
+          responder: (cmd) {
+            if (cmd.contains('vpnc_clientlist')) return 'pia-x>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+            if (cmd.contains('wg show interfaces')) return 'wgc1';
+            if (cmd.contains('latest-handshakes')) return '0';
+            return '';
+          },
+        );
+        await expectLater(svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
+      });
     });
 
     test('reverts and throws when the interface never comes up', () async {
@@ -623,7 +728,10 @@ void main() {
     test('enable, disable and delete all carry the description', () async {
       useStock();
       for (final probe in [
-        ('Enabling wgc1:pia-aus_perth...', (RouterSlotService s) => s.enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1')),
+        (
+          'Enabling wgc1:pia-aus_perth...',
+          (RouterSlotService s) => s.enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1')
+        ),
         ('Disabling wgc1:pia-aus_perth...', (RouterSlotService s) => s.disableSlot(1)),
         ('Deleting wgc1:pia-aus_perth configuration...', (RouterSlotService s) => s.deleteSlot(1)),
       ]) {

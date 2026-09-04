@@ -1,6 +1,7 @@
 // test/router_watchdog_unit_test.dart - pure-function unit tests for the watchdog module.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
+import 'package:cfg_pia_wg/router_slot_service.dart' show kMerlinOnlySlotKeys;
 import 'package:cfg_pia_wg/router_watchdog.dart';
 
 WatchdogConfig _valid({int slot = 1, int interval = 5, bool email = false}) => WatchdogConfig(
@@ -181,8 +182,8 @@ void main() {
 
   group('cron line generators', () {
     test('buildCronCheckLine', () {
-      expect(buildCronCheckLine(1, 5), 'cru a watchdog_wgc1 "*/5 * * * *" /jffs/scripts/watchdog_wgc1.sh');
-      expect(buildCronCheckLine(3, 10), 'cru a watchdog_wgc3 "*/10 * * * *" /jffs/scripts/watchdog_wgc3.sh');
+      expect(buildCronCheckLine(1, 5), 'cru a watchdog_wgc1 "*/5 * * * *" /jffs/cfg-pia-wg/watchdog_wgc1.sh');
+      expect(buildCronCheckLine(3, 10), 'cru a watchdog_wgc3 "*/10 * * * *" /jffs/cfg-pia-wg/watchdog_wgc3.sh');
     });
 
     test('buildCronRotateLine', () {
@@ -227,10 +228,16 @@ void main() {
 
   group('heredocWrite', () {
     test('wraps body in a single-quoted heredoc', () {
-      expect(heredocWrite('/tmp/x', 'hello'), "cat > '/tmp/x' <<'WATCHDOG_EOF'\nhello\nWATCHDOG_EOF");
+      expect(heredocWrite('/tmp/x', 'hello'), "cat > '/tmp/x' <<'WATCHDOG_EOF'\nhello\nWATCHDOG_EOF\n");
+    });
+    // Reported: WATCHDOG_EOF was the last line of the deployed S50downloadmaster, and turned up in
+    // the test email. BusyBox ash reaches EOF before it recognises a delimiter with no newline
+    // after it, and writes the delimiter into the file instead.
+    test('terminates the delimiter with a newline of its own', () {
+      expect(heredocWrite('/tmp/x', 'hello'), endsWith('WATCHDOG_EOF\n'));
     });
     test('does not double the trailing newline', () {
-      expect(heredocWrite('/tmp/x', 'hello\n'), "cat > '/tmp/x' <<'WATCHDOG_EOF'\nhello\nWATCHDOG_EOF");
+      expect(heredocWrite('/tmp/x', 'hello\n'), "cat > '/tmp/x' <<'WATCHDOG_EOF'\nhello\nWATCHDOG_EOF\n");
     });
   });
 
@@ -333,6 +340,47 @@ void main() {
       expect(s, contains(r'head -n 1 "$TMPERR" | cut -c1-160'));
     });
 
+    // Reported from hardware: on stock every check reported "Primary and Secondary pings FAILED"
+    // on a tunnel that had just been negotiated, so the watchdog re-registered with PIA every
+    // cooldown until PIA started refusing tokens. The router's own traffic is not routed into
+    // wgcN there, so ping -I can never succeed - the handshake is what says the peer is alive.
+    test('treats a recent WireGuard handshake as proof of life before pinging', () {
+      final s = buildWatchdogScript(_valid(slot: 1));
+
+      expect(s, contains(r'wg show "$IFACE" latest-handshakes'));
+      expect(s, contains(r'if [ "$HS" -gt 0 ] && [ "$AGE" -lt 300 ]; then'));
+      // Ping stays as a fallback - it is a real end-to-end test on Merlin.
+      expect(s, contains(r'elif ping -I "$IFACE" -c 3 -W 2 "$PRIMARY_IP"'));
+      // The handshake has to be checked FIRST, or stock still re-registers on every tick.
+      expect(s.indexOf('latest-handshakes'), lessThan(s.indexOf(r'ping -I "$IFACE"')));
+    });
+
+    // A 429 from PIA, wrong credentials and a TLS failure all logged the same bare "failed to
+    // obtain PIA token", because piping curl into jq throws away curl's exit status. Reported
+    // while testing reconfigures: repeated re-registrations get throttled and there was no way to
+    // tell that from a real fault.
+    test('reports the HTTP status and curl exit code when the token request fails', () {
+      final s = buildWatchdogScript(_valid(slot: 1));
+
+      expect(s, contains(r"-w '%{http_code}'"));
+      // --fail suppresses the response body, and the body is the only thing that says WHY PIA
+      // refused (a router saw HTTP 403 with nothing to explain it). The status comes from -w, so
+      // the token call does not need curl to turn an error into an exit code.
+      expect(s, contains(r'HTTP="$($CURLB -S -o "$TMPTOK"'), reason: 'the token call must not use --fail');
+      expect(s, contains(r'CURL="$CURLB --fail"'), reason: 'every other call still fails hard');
+      expect(s, contains(r'abort "failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}'));
+      // Body to a file, so jq never sees the status line and curl's status survives.
+      expect(s, contains(r'-o "$TMPTOK"'));
+      expect(s, contains(r'TMPTOK="/tmp/${IFACE}_token.json"'));
+      // The body is the evidence when the status is not enough - reported once as
+      // "exit 0, HTTP none", where curl succeeded and -w printed nothing at all.
+      expect(s, contains(r'body ${BSZ:-0}B: ${BODY:-empty}'));
+      expect(s, contains(r'BODY="$(head -n 1 "$TMPTOK" 2>/dev/null | cut -c1-60)"'));
+      // The token is a credential: the file must not outlive the parse, on either path.
+      expect(RegExp(r'rm -f "\$TMPTOK"').allMatches(s).length, 2);
+      expect(s.indexOf(r'rm -f "$TMPTOK"'), lessThan(s.indexOf('failed to obtain PIA token')));
+    });
+
     test('writes all 16 Step-4 NVRAM vars but NOT wgcN_dns', () {
       final s = buildWatchdogScript(_valid(slot: 3));
 
@@ -401,6 +449,27 @@ void main() {
 
   // The heredoc ceiling rules out runtime branching, so the firmware differences are baked in
   // when the script is generated.
+  // Reported: DELETE left wgcN_enforce / _fw / _rip behind on stock. The app never writes them
+  // there (kMerlinOnlySlotKeys) so DELETE never unsets them - but the watchdog script did.
+  group('Merlin-only NVRAM keys', () {
+    test('the stock script does not write them', () {
+      final s = buildWatchdogScript(_valid(slot: 1), firmware: RouterFirmware.stock);
+      for (final key in kMerlinOnlySlotKeys) {
+        expect(s, isNot(contains('nvset "$key=')), reason: key);
+      }
+      expect(s, isNot(contains('nvset "ep_addr_r=')));
+      expect(s, contains('nvset "enable=1"'), reason: 'the shared keys are still written');
+    });
+
+    test('the Merlin script still writes them', () {
+      final s = buildWatchdogScript(_valid(slot: 1), firmware: RouterFirmware.merlin);
+      for (final key in kMerlinOnlySlotKeys) {
+        expect(s, contains('nvset "$key='), reason: key);
+      }
+      expect(s, contains('nvset "ep_addr_r="'));
+    });
+  });
+
   group('buildWatchdogScript per firmware', () {
     test('jq resolves to the bare command on Merlin and the install path on stock', () {
       expect(buildWatchdogScript(_valid(), firmware: RouterFirmware.merlin), contains('JQ="jq"'));
@@ -459,13 +528,15 @@ void main() {
     // baseline, so the guard is that neither variant grows past it by more than a rounding error —
     // stock in particular must not balloon.
     //
-    // Ceiling raised from 8700 to 9000 in build 400: the CA cache moved into the app's own
-    // directory (so the script has to mkdir it) and the kill switch is now read back rather than
-    // forced on. Both are a line or two; anything that needs a further raise deserves a look.
+    // This is about JFFS space and reviewability, NOT about SSH: the deploy chunks the write, so
+    // the script can exceed dropbear's 9000-byte MAX_CMD_LEN without a single command doing so.
+    // (Crossing it as one command is what closed the connection mid-deploy in 402.) Raised
+    // 8700 -> 9000 in 400, then 9500 and 10000 in 402; prune the script's comments before raising
+    // it again.
     test('neither variant grows the deploy payload', () {
       final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
       final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
-      expect(merlin, lessThan(9000));
+      expect(merlin, lessThan(10000));
       expect(stock, lessThanOrEqualTo(merlin));
     });
   });

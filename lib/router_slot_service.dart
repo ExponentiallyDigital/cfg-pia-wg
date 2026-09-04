@@ -438,8 +438,11 @@ class RouterSlotService {
       // Stock exposes no kill switch (ARCHITECTURE.md 2.3.1), so the badge never lights there.
       final killSwitch = stock ? false : (await _run('nvram get wgc${i}_enforce')) == '1';
       final enabled = stock ? (vpnc[i]?.active ?? false) : (await _run('nvram get wgc${i}_enable')) == '1';
-      // cru exists on both firmwares, so the watchdog probe is firmware-independent.
-      final watchdog = (await _run('cru l | grep -qw watchdog_wgc$i && echo 1 || echo 0')) == '1';
+      // A cron entry alone is not a watchdog: a failed deploy left cru pointing at a script that
+      // was never written, and the app called that ACTIVE. Both have to be there.
+      final watchdog = (await _run("cru l | grep -qw watchdog_wgc$i && [ -s '${watchdogScriptPath(i)}' ] "
+              '&& echo 1 || echo 0')) ==
+          '1';
       // Settings can outlive the cron entry: DISABLE removes the schedule and keeps the config.
       final watchdogConfigured = (await _run('nvram get wgc${i}_wd_check_interval')).isNotEmpty;
       // Email alerting is a watchdog feature; only read it for an active watchdog.
@@ -620,15 +623,45 @@ class RouterSlotService {
       throw Exception('$label did not come up - the configuration may have expired. Recreate it with CREATE, then ENABLE.');
     }
 
+    // The interface existing proves nothing: a PIA registration that has expired still produces a
+    // wgcN device that sends and never receives, which is what leaves the router WebUI stuck on
+    // "connecting". A handshake is the peer answering, so that is what ENABLE waits for.
+    onLog?.call('Waiting for a WireGuard handshake on $label...');
+    var handshake = false;
+    for (var retry = 0; retry < verifyMaxAttempts; retry++) {
+      final age = await handshakeAge(slot);
+      if (age != null) {
+        handshake = true;
+        onLog?.call('  Handshake ${age}s ago.', isSuccess: true);
+        await _logRouter('$label handshake ${age}s ago');
+        break;
+      }
+      onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: no handshake yet');
+      await Future.delayed(verifyPollInterval);
+    }
+    if (!handshake) {
+      await _logRouter('$label came up but the peer never answered (no handshake)');
+      await _revertEnable(slot);
+      throw Exception('$label came up but the PIA server never answered it (no WireGuard handshake). '
+          'The configuration has most likely expired - DELETE the slot and CREATE it again.');
+    }
+
     final primaryOk = await pingViaSlot(primaryIp, slot);
     final secondaryOk = await pingViaSlot(secondaryIp, slot);
     await _logRouter('$label ENABLE connectivity check: '
         'primary $primaryIp ${primaryOk ? 'OK' : 'FAIL'}, secondary $secondaryIp ${secondaryOk ? 'OK' : 'FAIL'}');
-    if (!primaryOk || !secondaryOk) {
+    // On Merlin a ping bound to the tunnel is a real end-to-end test, so a failure still blocks
+    // the enable. On stock it is neither: it pings from the tunnel's source address but routes
+    // over the WAN, so it reported OK for a tunnel the peer had never answered. There the
+    // handshake above is the gate and this is only logged.
+    if (!isStockFirmware && (!primaryOk || !secondaryOk)) {
       await _revertEnable(slot);
       throw Exception('Connectivity check failed via $label '
           '(primary $primaryIp ${primaryOk ? 'OK' : 'FAIL'}, secondary $secondaryIp ${secondaryOk ? 'OK' : 'FAIL'}). '
           'Slot left disabled.');
+    }
+    if (isStockFirmware && !primaryOk && !secondaryOk) {
+      onLog?.call('Neither ping target answered via $label, but the tunnel has a handshake.', isError: true);
     }
     await _logRouter('Enabled $label');
     onLog?.call('$label enabled and verified.', isSuccess: true);
@@ -753,6 +786,28 @@ class RouterSlotService {
     await _run('nvram set wgc${slot}_wd_primary_ip=${shellSingleQuote(primaryIp)}');
     await _run('nvram set wgc${slot}_wd_secondary_ip=${shellSingleQuote(secondaryIp)}');
     await _run('nvram commit');
+  }
+
+  /// Seconds since the slot's most recent WireGuard handshake, or null if there has never been
+  /// one (`wg` reports 0) or the interface is absent.
+  ///
+  /// This is the only liveness signal that means the same thing on both firmwares. `wg show
+  /// interfaces` only says the device exists - an expired PIA registration still produces one that
+  /// sends and never receives - and a ping bound to the tunnel is unreliable on stock, where the
+  /// router's own traffic is not routed into wgcN.
+  Future<int?> handshakeAge(int slot) async {
+    try {
+      final out = await _run("wg show wgc$slot latest-handshakes 2>/dev/null | "
+          "awk '{if (\$2 > m) m = \$2} END {print m + 0}'");
+      final stamp = int.tryParse(out.trim()) ?? 0;
+      if (stamp <= 0) return null;
+      final now = int.tryParse((await _run('date +%s')).trim());
+      if (now == null) return null;
+      final age = now - stamp;
+      return age < 0 ? 0 : age;
+    } catch (_) {
+      return null;
+    }
   }
 
 // ── Ping bound to the VPN interface with a 5s timeout ─────────────────────────────────

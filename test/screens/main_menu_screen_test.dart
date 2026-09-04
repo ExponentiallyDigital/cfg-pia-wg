@@ -84,6 +84,45 @@ void main() {
     await _teardown(tester, c);
   });
 
+
+  // Reported: after using the back button and the hamburger menu in turn, the drawer's "View app
+  // log" entry stopped working - the app thought that screen was already current. Popping a page
+  // that sat above an open MODAL reported the dialog as the previous route, which the observer
+  // ignored, so currentDestination kept naming the page just left.
+  testWidgets('the drawer still navigates after a page is popped from above a dialog', (tester) async {
+    final c = _quietController();
+    await tester.pumpWidget(PiaWgApp(controller: c));
+    await tester.pumpAndSettle();
+
+    // A dialog over the main menu, then a page pushed on top of it from the drawer.
+    final ctx = tester.element(find.byKey(const Key('menu_log')));
+    showDialog<void>(context: ctx, builder: (_) => const AlertDialog(content: Text('a modal')));
+    await tester.pumpAndSettle();
+    expect(c.currentDestination, AppDestination.menu, reason: 'a dialog is not a destination');
+
+    await tester.tap(find.byKey(const Key('app_hamburger')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('drawer_log')));
+    await tester.pumpAndSettle();
+    expect(c.currentDestination, AppDestination.log);
+
+    // Back: the log page pops and the dialog is on top again. The Android back key, not a back
+    // button - these screens have no AppBar.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('a modal'), findsOneWidget);
+    expect(c.currentDestination, AppDestination.menu, reason: 'the page below the dialog is the menu');
+
+    // The drawer entry has to work again.
+    await tester.tap(find.byKey(const Key('app_hamburger')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('drawer_log')));
+    await tester.pumpAndSettle();
+    expect(find.text('CLEAR LOG'), findsOneWidget);
+
+    await _teardown(tester, c);
+  });
+
   testWidgets('drawer HOME returns to the main menu', (tester) async {
     final c = _quietController();
     await tester.pumpWidget(PiaWgApp(controller: c));

@@ -20,6 +20,7 @@
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
+import '../app_colors.dart';
 import '../firmware.dart';
 import '../pia_service.dart';
 import '../router_slot_service.dart';
@@ -233,7 +234,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
               onPressed: (_connecting || !_canConnect) ? null : _onConnect,
               child: _connecting
                   ? const SizedBox(
-                      height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF12141A)))
+                      height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
                   : const Text('CONNECT TO ROUTER'),
             ),
           ),

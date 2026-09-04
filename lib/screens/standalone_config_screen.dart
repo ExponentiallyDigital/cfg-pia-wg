@@ -203,7 +203,7 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
               key: const Key('generate_config'),
               onPressed: (_loading || !_canGenerate) ? null : _generate,
               child: _loading
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kOnPrimary))
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
                   : const Text('GENERATE CONFIG'),
             ),
           ),

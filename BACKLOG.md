@@ -38,6 +38,8 @@
 #### 1.1.3. CHG - functional code changes
 
 - CHG: Watchdog email alert `SMTP username field` is finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
+- CHG: back off when PIA refuses a token request. It answers HTTP 403 after sustained re-registration and clears on its own after tens of minutes; retrying every 120s indefinitely is what prolongs it. Grow the cooldown on consecutive failures, cap at 30 minutes, reset on success. Design in `.claude/plans/plan_watchdog-token-backoff.md`.
+- CHG: reuse the router SSH connection instead of opening one per action - removes a dropbear login line and a full handshake from every button press. Design in `.claude/plans/plan_ssh-connection-reuse.md`. Needs its own build number: a stale-connection bug would look like an intermittent action failure.
 
 #### 1.1.4. FIX - bug fixes
 

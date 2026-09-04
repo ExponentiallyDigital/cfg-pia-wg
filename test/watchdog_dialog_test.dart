@@ -127,7 +127,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(ssh.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
-    expect(ssh.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
+    expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
     expect(ssh.ran('cru a watchdog_wgc1'), isTrue);
   });
 
@@ -157,7 +157,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(ssh.ran("nvram set wgc1_desc='pia-aus_melbourne'"), isTrue); // same prefix as MANAGE
-    expect(ssh.ran("cat > '/jffs/scripts/watchdog_wgc1.sh'"), isTrue);
+    expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
 
     // Empty-slot create is enabled immediately; no reminder dialog is shown.
     expect(find.text('Watchdog configured'), findsNothing);

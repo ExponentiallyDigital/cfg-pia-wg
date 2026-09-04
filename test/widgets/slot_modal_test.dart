@@ -553,7 +553,7 @@ void main() {
 
         expect(ssh.ran('cru d watchdog_wgc1'), isTrue);
         expect(ssh.ran('cru d watchdog_log_rotate_wgc1'), isTrue);
-        expect(ssh.ran('rm -f /jffs/scripts/watchdog_wgc1.sh'), isFalse, reason: 'DELETE does that, not DISABLE');
+        expect(ssh.ran('rm -f /jffs/cfg-pia-wg/watchdog_wgc1.sh'), isFalse, reason: 'DELETE does that, not DISABLE');
         expect(ssh.commands.any((cmd) => cmd.contains('nvram unset wgc1_wd_')), isFalse);
         expect(ssh.ran('nvram set wgc1_enable=0'), isFalse, reason: 'the VPN keeps running, unsupervised');
 
@@ -948,6 +948,10 @@ void main() {
       expect(find.textContaining('Disable another slot'), findsOneWidget);
       expect(ssh.ran('nvram set wgc3_enable=1'), isFalse); // nothing was written
       expect(ssh.ran('nvram set wgc1_enable=0'), isFalse); // and nothing was torn down
+      // Reported: the refusal used to arrive AFTER the ping-target prompt. The gate needs no
+      // router round trip, so it comes first - and nothing is read from the router either.
+      expect(find.text('Connectivity check targets'), findsNothing);
+      expect(ssh.ran('nvram get wgc3_wd_primary_ip'), isFalse);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

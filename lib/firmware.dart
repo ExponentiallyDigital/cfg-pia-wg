@@ -58,6 +58,10 @@ const String kRouterAppDir = '/jffs/cfg-pia-wg';
 const String kStockJqPath = '$kRouterAppDir/jq';
 const String kStockMailsendPath = '$kRouterAppDir/mailsend-go';
 
+/// Where the watchdog script for [slot] lives. Not /jffs/scripts: that is Merlin's hook directory,
+/// and everything else the app puts on the router is already under [kRouterAppDir].
+String watchdogScriptPath(int slot) => '$kRouterAppDir/watchdog_wgc$slot.sh';
+
 /// Merlin runs cron entries from services-start; stock has no equivalent, so the app hijacks an
 /// unused init script that the firmware already executes at boot and on firewall restart.
 const String kServicesStartPath = '/jffs/scripts/services-start';
