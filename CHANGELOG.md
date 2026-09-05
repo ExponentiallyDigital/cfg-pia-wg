@@ -17,7 +17,6 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-- CHG: back off when PIA refuses a token request. It answers HTTP 403 after sustained re-registration and clears on its own after tens of minutes; retrying every 120s indefinitely is what prolongs it. Grow the cooldown on consecutive failures, start with 2 min, 4, 8, 16, 30, cap at 60 minutes, reset on success. Design in `.claude/plans/plan_watchdog-token-backoff.md` (needs to be updated with the new cooldown count shown in this change line).
 - commit then:
 - CHG: reuse the router SSH connection instead of opening one per action - removes a dropbear login line and a full handshake from every button press. Design in `.claude/plans/plan_ssh-connection-reuse.md`. Needs its own build number: a stale-connection bug would look like an intermittent action failure.
 - commit then:
@@ -26,6 +25,15 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-05 v0.8.35 build 405 - stock support implemented alongside Merlin
+
+- CHG: the watchdog now backs off when PIA refuses a token request. PIA answers HTTP 403 after sustained re-registration and clears on its own after tens of minutes, so retrying every 120s indefinitely is what prolonged it - with two watchdogs that was a request a minute between them. The wait now climbs 2, 4, 8, 16, 30 and 60 minutes on consecutive failures and caps at 90, resetting the moment a reconfigure succeeds. A single failure, the common case, is exactly as responsive as before.
+- FIX: the failure counter counted checks, not attempts. It incremented on runs the cooldown had already turned away, so how fast the wait grew depended on the check interval - a 1-minute watchdog would have escalated twice as fast as a 2-minute one. It now rises only when an attempt is actually made, which also makes the alert email's "Attempt: N" row mean what it says.
+- CHG: an alert now names the real wait before the next try - whichever of the backoff and the next cron tick comes later - rather than promising the bare check interval, which stopped being true the moment the backoff exceeded it.
+- CHG: a run inside the backoff window logs "Backing off after 3 failed attempts: 45s of 480s elapsed". A long silent gap in the watchdog log otherwise reads as a watchdog that has stopped.
+- TST: `test/unit/backoff_test.dart` - 12 tests over the ladder, the cap, the generated shell matching the Dart function, and the increment sitting after the early exit. The ladder is a lookup table generated from one list, because it stops being a clean doubling at 16 minutes.
+- DOC: `.claude/CONTEXT.md` records that Markdown is never line-wrapped - one logical unit per line, no hard wrap at any column. The 130-character limit is a Dart rule for `lib/` and `test/` only. Wrapped prose written earlier in 404 has been unwrapped to match.
 
 2026-09-05 v0.8.34 build 404 - stock support implemented alongside Merlin
 

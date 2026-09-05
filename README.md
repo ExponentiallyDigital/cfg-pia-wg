@@ -151,10 +151,7 @@ The app opens to a main menu with five choices:
 - View app log
 - Exit app
 
-Below those are two links: **how to use this app**, which opens this section of the README, and
-**add a Play Store app review**, which opens Google Play's in-app rating card without leaving the
-app. Play limits how often that card can be shown per user, so it may do nothing — that is Play's
-decision, not a fault.
+Below those are two links: **how to use this app**, which opens this section of the README, and **add a Play Store app review**, which opens Google Play's in-app rating card without leaving the app. Play limits how often that card can be shown per user, so it may do nothing — that is Play's decision, not a fault.
 
 <p align="center">
   <img src="./images/main-menu.png" alt="Main menu" width="300">
@@ -265,16 +262,11 @@ This manages a self-healing watchdog. When your WG configuration inevitably expi
 
 #### 5.3.1. Email alerts
 
-If you fill in the email fields when configuring a watchdog, the router sends you a plain-text alert
-whenever it rebuilds a tunnel — and one when it tries and fails. Alerts come from your own SMTP
-account (Gmail with an app password works well); nothing is routed through a third party, and the
-app has no server of its own.
+If you fill in the email fields when configuring a watchdog, the router sends you a plain-text alert whenever it rebuilds a tunnel — and one when it tries and fails. Alerts come from your own SMTP account (Gmail with an app password works well); nothing is routed through a third party, and the app has no server of its own.
 
-Use **TEST EMAIL** in the configuration dialog before you save. It sends the same kind of message
-through the same path, so a test that arrives is a real guarantee that alerts will too.
+Use **TEST EMAIL** in the configuration dialog before you save. It sends the same kind of message through the same path, so a test that arrives is a real guarantee that alerts will too.
 
-Every email carries the same sections: what happened, what to do about it (failures only), which
-router this is, and a running count of how well the watchdog has been doing.
+Every email carries the same sections: what happened, what to do about it (failures only), which router this is, and a running count of how well the watchdog has been doing.
 
 **When a tunnel is rebuilt:**
 
@@ -306,8 +298,7 @@ Thank you,
 cfg-pia-wg by Exponentially Digital
 ```
 
-**When it cannot be rebuilt**, two more sections appear — what to try, and the tail of the router's
-own watchdog log so you can see the attempt rather than take the summary on trust:
+**When it cannot be rebuilt**, two more sections appear — what to try, and the tail of the router's own watchdog log so you can see the attempt rather than take the summary on trust:
 
 ```text
 Subject: cfg-pia-wg alert: FAILED - wgc1:pia-aus_melbourne
@@ -348,20 +339,12 @@ ROUTER LOG (last 10 lines)
 
 Notes on reading these:
 
-- **Kill switch** answers the question that matters most when a tunnel drops — did anything leave
-  the router unprotected? It has three states: on, available but not enabled, and *not supported on
-  this firmware*. Stock ASUS firmware has no kill switch at all, so a dropped tunnel there means
-  unprotected traffic until the watchdog restores it.
-- **Interval** is read from the router, not from the form you are filling in, so it can never claim
-  a schedule that is not actually running.
-- **Since <date>** counts every re-configuration this router has made, across all slots, from the
-  day the app first configured it.
-- The router log excerpt includes your **PIA username** (never the password, and never the token).
-  The email travels through your own mail provider, but bear it in mind before forwarding one.
+- **Kill switch** answers the question that matters most when a tunnel drops — did anything leave the router unprotected? It has three states: on, available but not enabled, and *not supported on this firmware*. Stock ASUS firmware has no kill switch at all, so a dropped tunnel there means unprotected traffic until the watchdog restores it.
+- **Interval** is read from the router, not from the form you are filling in, so it can never claim a schedule that is not actually running.
+- **Since <date>** counts every re-configuration this router has made, across all slots, from the day the app first configured it.
+- The router log excerpt includes your **PIA username** (never the password, and never the token). The email travels through your own mail provider, but bear it in mind before forwarding one.
 
-The first email you receive will be the deployment itself — `Event: watchdog deployed` — sent even
-though there was nothing to fix. That is deliberate: it confirms the whole alerting path works, at
-the moment you set it up rather than months later during an outage.
+The first email you receive will be the deployment itself — `Event: watchdog deployed` — sent even though there was nothing to fix. That is deliberate: it confirms the whole alerting path works, at the moment you set it up rather than months later during an outage.
 
 ### 5.4. View app log
 

@@ -11,6 +11,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 - **Flag conflicts, do not silently resolve them.** If this file disagrees with the code, or with `ARCHITECTURE.md` / `BACKLOG.md` / a `.claude/plan_*.md`, say so and ask. Do not "fix" the code to match the doc or vice versa without confirmation.
 - **CHANGELOG.md entries must be flat and short.** The release GitHub Action *sorts* the lines within a release block, so an indented sub-bullet is separated from its parent and ends up under the wrong entry. Every line item is therefore a standalone top-level `- ` bullet that reads correctly on its own, in the existing `- FIX:` / `- CHG:` / `- ADD:` / `- TST:` / `- DOC:` / `- INF:` style. Keep each to a sentence or two — detail belongs in the code comments or `ARCHITECTURE.md`, not here.
 - Do not read `.claude/plan_*.md` as current state — they are historical design notes.
+- **Do not line-wrap Markdown.** `.md` files - this one, `README.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `BACKLOG.md`, `TESTING.md`, `SECURITY.md`, everything under `.claude/` - carry one logical unit per line and no hard wrap at any column. Wrapping makes a diff of a reworded sentence touch every following line, and a hard-wrapped table row breaks the table outright. The 130-character line length is a **Dart** rule and applies to `lib/` and `test/` only. Fenced code blocks inside Markdown keep whatever line breaks the code itself needs.
 
 ### Conventions in force (observed, not aspirational)
 
@@ -217,7 +218,7 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 | --- | --- |
 | Paths | `/jffs/cfg-pia-wg/watchdog_wgcN.sh` (`watchdogScriptPath`; moved off `/jffs/scripts` in 402, which is Merlin's hook directory and still holds `services-start`), log `/tmp/watchdog_wgcN.log`, status `/tmp/watchdog_last_ping_success_wgcN`, backoff `/tmp/watchdog_backoff_wgcN`, CA cache `/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt` (`kPiaCaCertPath`; the script `mkdir -p`s the directory before downloading, since Merlin has no reason to have created it) |
 | Health check | `ping -I wgcN -c 3 -W 2` primary, **else** secondary — **either** passing is success (contrast: app ENABLE requires **both**) |
-| Backoff | `COOLDOWN=120` s between reconfiguration attempts; counter+timestamp in the backoff file, reset to `0\n0` on success |
+| Backoff | `backoff_for()` - a ladder of 120, 240, 480, 960, 1800, 3600 s, capped at **5400 s (90 min)**, generated from `kBackoffLadder` by `buildBackoffCase()` so the shell and `backoffSeconds()` cannot drift. Counter+timestamp in the backoff file, reset to `0\n0` on success. **The counter counts attempts actually made, not checks that found a fault** - it used to increment on runs the cooldown turned away, which made the growth rate depend on the check interval (a 1-minute watchdog escalated twice as fast as a 2-minute one). A run inside the wait logs `Backing off after N failed attempts` and exits, because a long silent gap otherwise reads as a stopped watchdog. |
 | Preflight | `wgcN_desc` non-empty, `jq` present, PIA user set, and WAN reachability of either target (no internet → exit 0, no alert) |
 | Liveness | `wg show wgcN latest-handshakes` reduced to its max, healthy if under 300s old; `ping -I wgcN` only as a fallback. **`ping -I` is not a liveness test on stock** - the router's own traffic is not routed into wgcN, so it fails on a healthy tunnel and the watchdog re-registered with PIA every cooldown until PIA refused tokens. |
 | Re-negotiation | curl the CA (cached) → token via `jq -r '.token'` → server list filtered by `.regions[] \| select(.id==$DESC)` → ping-based latency sweep → `wg genkey`/`wg pubkey` → `curl --cacert --resolve <cn>:1337:<ip> …/addKey` → write 16 `wgcN_*` keys → `nvram commit` → `stop_wgc`/`sleep 2`/`start_wgc`/`restart_vpnrouting0`/`sleep 3` → verify `ifconfig wgcN` |
@@ -230,51 +231,27 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 | Size | The deploy writes the script in ~4 KB chunks (`heredocWriteCommands`: `cat >` then `cat >>`), because **dropbear refuses an exec request over `MAX_CMD_LEN` = 9000 bytes** and drops the connection - which it did at 9055, mid-deploy, after the slot was already enabled. Never send the script as one command. `router_watchdog_unit_test.dart` still caps the script at 9500 bytes, now for JFFS space and reviewability rather than SSH. |
 | Write verification | `_writeScript` compares `wc -c` against the expected byte count and throws. Without it a failed write left cru entries pointing at a script that did not exist, and the app called that ACTIVE. |
 
+**Why a ladder.** PIA answers **HTTP 403** after sustained re-registration and clears on its own after tens of minutes; retrying every 120 s indefinitely is what provokes and prolongs it, and with two watchdogs that was a request a minute between them. A single failure - the common case - is exactly as responsive as it was before. The cap is a ceiling, not a starting point for tuning upward: a genuinely broken tunnel does take longer to recover once it has failed repeatedly, and that is the trade being made.
+
+The failure email's `Attempt:` row names whichever of the backoff and the next cron tick comes later (`NEXTWAIT` vs `TICK`), so it never promises a retry sooner than one can happen.
+
 ### 4.8.1 Alert and test email layout
 
-**One layout, two languages.** Alert bodies are written in shell by the deployed script; the test
-email is written in Dart by `testEmail`. Everything both must agree on lives in constants in
-`router_watchdog.dart` - `kSectionWhatHappened` / `kSectionWhatToDo` / `kSectionRouter` /
-`kSectionHistory` / `kSectionRouterLog`, `kEmailWhatToDo`, `kEmailReviewLine`, `kEmailSignOff`,
-`kPlayStoreUrl` - and the script's copy is generated from them by `_echoBlock`, so the two cannot
-drift. `test/unit/email_layout_test.dart` asserts it.
+**One layout, two languages.** Alert bodies are written in shell by the deployed script; the test email is written in Dart by `testEmail`. Everything both must agree on lives in constants in `router_watchdog.dart` - `kSectionWhatHappened` / `kSectionWhatToDo` / `kSectionRouter` / `kSectionHistory` / `kSectionRouterLog`, `kEmailWhatToDo`, `kEmailReviewLine`, `kEmailSignOff`, `kPlayStoreUrl` - and the script's copy is generated from them by `_echoBlock`, so the two cannot drift. `test/unit/email_layout_test.dart` asserts it.
 
-Section order is the answer first, the action second, the evidence last: `WHAT HAPPENED`,
-`WHAT TO DO` (failures only), `ROUTER`, `HISTORY`, `ROUTER LOG (last 10 lines)` (failures only),
-then the review ask and sign-off. **Plain text only** - mailsend-go sends the file verbatim and the
-Merlin path declares `text/plain`, so `<br>` or a markdown link reaches the reader literally. Lines
-are left unwrapped for the client to fold, and values are never space-padded into columns because
-Gmail on Android renders `text/plain` in a proportional font.
+Section order is the answer first, the action second, the evidence last: `WHAT HAPPENED`, `WHAT TO DO` (failures only), `ROUTER`, `HISTORY`, `ROUTER LOG (last 10 lines)` (failures only), then the review ask and sign-off. **Plain text only** - mailsend-go sends the file verbatim and the Merlin path declares `text/plain`, so `<br>` or a markdown link reaches the reader literally. Lines are left unwrapped for the client to fold, and values are never space-padded into columns because Gmail on Android renders `text/plain` in a proportional font.
 
-A row whose value is empty is **dropped**, never printed as a dangling label - `row()` in the
-script, the `.where((r) => r.isNotEmpty)` filter in `buildEmailBody`.
+A row whose value is empty is **dropped**, never printed as a dangling label - `row()` in the script, the `.where((r) => r.isNotEmpty)` filter in `buildEmailBody`.
 
-Subject: `<wgcN_wd_email_subject>: <SUCCESS|FAILED|TEST email> - wgcN:<region>`. The user's own
-subject stays the prefix (default `cfg-pia-wg alert`), so anyone who changed it keeps their mail
-rules; the slot and region are appended so a client threads by VPN.
+Subject: `<wgcN_wd_email_subject>: <SUCCESS|FAILED|TEST email> - wgcN:<region>`. The user's own subject stays the prefix (default `cfg-pia-wg alert`), so anyone who changed it keeps their mail rules; the slot and region are appended so a client threads by VPN.
 
-**Run mode.** `deployWatchdog` runs the script as `<path> deploy`; cron passes nothing. The script
-reads `RUNMODE="${1:-cron}"` **at the top**, because `send_alert()` shadows `$1` with its own
-argument. A deploy run reports itself as a deployment rather than a re-configuration, and emails
-**even when it finds the tunnel already healthy** - that email is the user's proof that alerting
-works. On that path no addKey ran, so the endpoint comes from `wgcN_ep_addr`/`_ep_port` and there is
-no server name or latency to report.
+**Run mode.** `deployWatchdog` runs the script as `<path> deploy`; cron passes nothing. The script reads `RUNMODE="${1:-cron}"` **at the top**, because `send_alert()` shadows `$1` with its own argument. A deploy run reports itself as a deployment rather than a re-configuration, and emails **even when it finds the tunnel already healthy** - that email is the user's proof that alerting works. On that path no addKey ran, so the endpoint comes from `wgcN_ep_addr`/`_ep_port` and there is no server name or latency to report.
 
-**Kill switch has three states, not two:** ON, `OFF - the kill switch is available but is not
-enabled` (Merlin), and `not supported on this firmware` (stock, which has none). Baked per firmware
-as `KILLSW_UP` / `KILLSW_DOWN`, the pair differing by tense - the tunnel is up on a deploy run and
-was down on a recovery.
+**Kill switch has three states, not two:** ON, `OFF - the kill switch is available but is not enabled` (Merlin), and `not supported on this firmware` (stock, which has none). Baked per firmware as `KILLSW_UP` / `KILLSW_FIXED` / `KILLSW_DOWN` - three tenses, because the same fact reads wrong in the wrong one: the tunnel is up on a deploy run, was down on a recovery, and is still down on a failure. A failure takes the still-down wording whether or not the run was a deploy.
 
-**Outage duration** comes from `$STATUSFILE`, which now leads with an epoch
-(`date '+%s %Y-%m-%d %H:%M:%S'`) so `down_for()` can subtract. It is measured **before** the file is
-re-stamped, or every outage reads zero. The file lives in `/tmp`, so after a reboot there is nothing
-to subtract from and the email says `unknown (no successful check since the router last rebooted)`
-rather than inventing a duration. `parseLastPing` skips the epoch prefix and still reads a file
-written by an older build.
+**Outage duration** comes from `$STATUSFILE`, which now leads with an epoch (`date '+%s %Y-%m-%d %H:%M:%S'`) so `down_for()` can subtract. It is measured **before** the file is re-stamped, or every outage reads zero. The file lives in `/tmp`, so after a reboot there is nothing to subtract from and the email says `unknown (no successful check since the router last rebooted)` rather than inventing a duration. `parseLastPing` skips the epoch prefix and still reads a file written by an older build.
 
-The `ROUTER LOG` excerpt can contain the **PIA username** (`Requesting PIA token for user ...`). It
-never contains the password or the token - the script logs the token's *length*. A deliberate
-choice, since these emails traverse the user's own mail provider.
+The `ROUTER LOG` excerpt can contain the **PIA username** (`Requesting PIA token for user ...`). It never contains the password or the token - the script logs the token's *length*. A deliberate choice, since these emails traverse the user's own mail provider.
 
 ### 4.9 NVRAM variables
 

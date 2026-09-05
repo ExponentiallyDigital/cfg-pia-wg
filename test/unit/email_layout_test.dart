@@ -250,9 +250,11 @@ void main() {
       expect(script(RouterFirmware.merlin), contains('unknown (no successful check since the router last rebooted)'));
     });
 
-    test('a failure names the attempt and the schedule instead of a made-up retry time', () {
+    // The wait is whichever of the backoff and the next cron tick comes later - promising the bare
+    // check interval became a lie once the backoff ladder landed in 405. See backoff_test.dart.
+    test('a failure names the attempt and the real wait, not a made-up retry time', () {
       expect(script(RouterFirmware.merlin),
-          contains(r'ATTEMPTV="${CNT:-1} since the last success, retrying per schedule, $INTERVAL minutes"'));
+          contains(r'ATTEMPTV="${CNT:-1} since the last success, retrying per schedule, $((NEXTWAIT / 60)) minutes"'));
     });
 
     test('the app version is stamped in when known and left out when not', () {
