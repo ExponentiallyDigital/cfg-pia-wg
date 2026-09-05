@@ -1066,7 +1066,7 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('manage DELETE confirm shows the description', (tester) async {
+    testWidgets('manage DELETE confirm names the VPN being deleted', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
       await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
@@ -1078,7 +1078,9 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_delete')));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('("aus_melbourne")'), findsOneWidget); // desc in the confirm dialog
+      // One line, naming the slot and its region - no explanatory body repeating it.
+      expect(find.text('Delete VPN wgc1:aus_melbourne?'), findsOneWidget);
+      expect(find.textContaining('configuration on the router'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -1118,7 +1120,7 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('watchdog DELETE confirm shows the region warning', (tester) async {
+    testWidgets('watchdog DELETE confirm says the VPN goes too', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
       await tester.pumpWidget(
@@ -1132,7 +1134,9 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_delete')));
       await tester.pumpAndSettle();
 
-      expect(find.text('This will also delete and disable the underlying region.'), findsOneWidget);
+      // The old wording buried the consequence in a second line; the question carries it now.
+      expect(find.text('Delete watchdog and VPN wgc1:aus_melbourne?'), findsOneWidget);
+      expect(find.textContaining('underlying region'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

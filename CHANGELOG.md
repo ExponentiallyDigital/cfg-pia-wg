@@ -17,17 +17,45 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-- TBC: allow password entry from registered password helper app?
-- GUI: update delete MANAGE prompt from "Delete wgc1? This clears the wgc1 ("pia-aus_melbourne") configuration on the router" to "Delete VPN wgc1:pia-aus_melboure?"
-- GUI: update the delete WATCHDOG prompt from "Delete watchdog wgc1? This will also delete and disable the underlying region." to "Delete watchdog and VPN wgc1:pia-aus_melboure?".
-- CHG: rebuild test/reconfigure email. Design in `.claude\plans\plan_rebuild_test_configure_emails.md`.
-- ADD: in-app device assignment to VPN. Design in`.claude\plans\plan_vpn_device_assignments.md`.
-- CHG: back off when PIA refuses a token request. It answers HTTP 403 after sustained re-registration and clears on its own after tens of minutes; retrying every 120s indefinitely is what prolongs it. Grow the cooldown on consecutive failures, start with 2 min, 4, 8, 16, cap at 30 minutes, reset on success. Design in `.claude/plans/plan_watchdog-token-backoff.md` (needs to be  updated with the new cooldown count shown in this change line).
+- CHG: back off when PIA refuses a token request. It answers HTTP 403 after sustained re-registration and clears on its own after tens of minutes; retrying every 120s indefinitely is what prolongs it. Grow the cooldown on consecutive failures, start with 2 min, 4, 8, 16, 30, cap at 60 minutes, reset on success. Design in `.claude/plans/plan_watchdog-token-backoff.md` (needs to be updated with the new cooldown count shown in this change line).
+- commit then:
 - CHG: reuse the router SSH connection instead of opening one per action - removes a dropbear login line and a full handshake from every button press. Design in `.claude/plans/plan_ssh-connection-reuse.md`. Needs its own build number: a stale-connection bug would look like an intermittent action failure.
+- commit then:
+- ADD: in-app device assignment to VPN. Design in`.claude\plans\plan_vpn_device_assignments.md`.
 
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-05 v0.8.34 build 404 - stock support implemented alongside Merlin
+
+- FIX: the router syslog truncated long entries - the SMTP probe stopped mid-word at "SSL handshake has read 4104 byt". BusyBox syslogd caps a single message, and the diagnostics worth having are the long ones. `_logRouter` now splits at 200 characters into `(1/3)`-numbered parts, breaking on a `|` line boundary or a space where there is one near the limit, and sends them as one command so a split still costs one SSH call. Both services use it.
+- FIX: a failed test email reported almost nothing usable. The one app-log line was styled as a success and said "see router log for details"; the mailer's stderr, the TCP probe and the TLS probe all went to the router syslog only, and the screen said nothing at all. Every diagnostic now goes to the app log as an error, `testEmail` returns whether it sent, and the watchdog dialog raises a dismissible warning pointing at View app log.
+- FIX: the `nc -w 5 <host> <port>` reachability probe reported UNREACHABLE for every host on stock. BusyBox builds nc as `nc IPADDR PORT` with no options at all, so the `-w` made it exit on a usage error - and a host that delivered mail seconds later was reported as unreachable, in both the app and the deployed watchdog script. The probe is gone; `openssl s_client` answers the same question and says far more when it fails.
+- CHG: dropped `-debug` from the mailsend-go command and now capture the LAST 20 lines of stderr rather than the first. With debug on, the parser's chatter filled the capture and pushed the actual error off the end - which is why the first report of this bug carried nothing usable.
+- INF: the send failure itself turned out not to be the command line at all - the SMTP app password was a character short, which the router answered with `535 5.7.8` and the app had been swallowing. Found within a minute of the new diagnostics landing, which is the whole point of them.
+- ADD: an "add a Play Store app review" link on the home screen, above the donation block and clear of it, invoking Google Play's in-app rating card via `InAppReview.instance.requestReview()` - no trip to the Play Store. Where that flow does not exist, on a sideloaded or debug build, it opens the store listing instead so the tap is never dead.
+- INF: Play limits how often the rating card may be shown per user and never reports whether it drew one, so the app claims nothing about the outcome. Only a request that could not be made at all is logged.
+- GUI: "How to use this app" on the home screen is now "how to use this app".
+- INF: `android/app/gradle.lockfile` gains seven entries - the Play review library and its Play Services dependencies. Gradle dependency locking rejected the build until they were declared, which is the point of it; regenerated with `gradlew :app:dependencies --write-locks` rather than relaxing the lock.
+- CHG: rebuilt the watchdog alert and test emails. Three lines became a sectioned plain-text message answering the questions the alert actually raises: how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, how many attempts it took, when the next check runs, and - on a failure - what to do about it plus the last ten lines of the router log. Design in `.claude/plans/plan_rebuild_test_configure_emails.md`.
+- CHG: alert bodies are written in shell by the router script and the test email in Dart by the app, so every heading, step, review ask and sign-off now comes from shared constants in `router_watchdog.dart` and a test asserts the two agree. Wording changed in one language only is what this prevents.
+- ADD: three global NVRAM fields - `cfg_pia_wg_sdate`, `cfg_pia_wg_reconfig_ok`, `cfg_pia_wg_reconfig_fail` - giving every email a "Since <date>, N successful and M failed reconfigurations" line. Seeded by whichever of a watchdog deploy or a test email comes first, committed once per alert rather than once per check, because `nvram commit` writes flash.
+- FIX: the first run after a deploy reported a SUCCESSFUL RECONFIGURATION, having configured rather than re-configured anything. The app now runs the script as `<path> deploy` and it says "watchdog deployed"; cron runs are unaffected. It also emails on that run even when the tunnel is already healthy - that email is the proof that alerting works.
+- CHG: the email subject is now `<your subject>: SUCCESS - wgc1:pia-aus_melbourne`. The configurable subject stays the prefix, so an existing mail rule keeps working, and the slot and region are appended so a client can thread by VPN.
+- FIX: the kill-switch line claimed "OFF" on stock, which has no kill switch to be off. Three states now: on, available-but-disabled (Merlin), and not supported (stock).
+- ADD: the outage duration in an alert, measured from a `$STATUSFILE` that now leads with an epoch. It is read before the file is re-stamped, or every outage would read zero; after a reboot the file is gone and the email says so rather than inventing a number.
+- CHG: the deploy payload ceiling rises to 24576 bytes - the richer email took the script from about 9 KB to 15 KB. This was never an SSH limit once the write was chunked in 402; it is a notice-when-it-grows tripwire.
+- ADD: `test/unit/email_layout_test.dart` - 27 tests over the section order, the dropped-empty-row rule, the router-fact parsing and its fallbacks, and the script/app agreement.
+- CHG: `scripts/showall.sh` and `scripts/clearall.sh` cover the three new fields, and `ARCHITECTURE.md` section 3 now documents every global `cfg_pia_wg_*` field rather than mentioning the credentials in passing. It also had the credential keys written with hyphens; they are underscores.
+- GUI: the MANAGE delete prompt is now one line naming what goes - "Delete VPN wgc1:pia-aus_melbourne?" - instead of a title plus a body repeating the slot number.
+- GUI: the WATCHDOG delete prompt reads "Delete watchdog and VPN wgc1:pia-aus_melbourne?". The old wording buried the important half ("will also delete and disable the underlying region") in a second line.
+- CHG: `SlotModal._confirm` takes an optional `message`, so a question that already names the slot and its region shows no body at all.
+- ADD: credentials can be filled from the device's password manager (KeePass, Bitwarden, Google, anything registered as the autofill service). Every credential field now declares `autofillHints`; without them Android disables autofill for the field, so the app was invisible to every provider. Verified that `FLAG_SECURE` does not block the autofill overlay.
+- CHG: each login is its own `AutofillGroup` - PIA, router SSH, and SMTP - so a provider cannot offer the router password for the PIA field or save one mixed-up vault entry. The router IP, DNS servers, ping targets and mail addresses are deliberately left unhinted: they are not secrets and have no business in a password vault.
+- CHG: a "save this password?" prompt is offered only where the credentials have just been proven - after a successful config generation and a successful router connect. Every group is created with `onDisposeAction: cancel`, so leaving a screen or dismissing a dialog asks nothing.
+- DOC: `README.md` gains a Password manager support feature bullet, and a tip in section 5.2: Android only offers a suggestion for an EMPTY field, so the SSH username - prefilled with `admin` - has to be cleared before the manager will prompt. Left as is; the default is worth more than the prompt.
+- INF: this takes the clipboard out of the credential path, which is what the 60-second auto-clear exists to mitigate. Nothing about the app's zero-persistence model changes: it still stores no credential anywhere.
 
 2026-09-05 v0.8.33 build 403 - stock support implemented alongside Merlin
 

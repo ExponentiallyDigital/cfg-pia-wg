@@ -23,7 +23,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 import 'firmware.dart';
-import 'router_watchdog.dart' show shellSingleQuote, kWatchdogLogTag;
+import 'router_watchdog.dart' show buildLoggerCommand, shellSingleQuote;
 
 // The per-slot WireGuard NVRAM keys (without the `wgcN_` prefix), in the order router_push.dart
 // wrote them. Used for backup/restore, delete, and the parameter editor.
@@ -326,7 +326,7 @@ class RouterSlotService {
   // Best-effort router syslog entry (mirrors RouterWatchdog._logRouter); never fails the action.
   Future<void> _logRouter(String msg) async {
     try {
-      await _run('logger -t $kWatchdogLogTag ${shellSingleQuote(msg)}');
+      await _run(buildLoggerCommand(msg));
     } catch (_) {}
   }
 

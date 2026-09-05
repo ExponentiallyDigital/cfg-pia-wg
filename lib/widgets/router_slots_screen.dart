@@ -19,6 +19,7 @@
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app_colors.dart';
 import '../firmware.dart';
@@ -181,6 +182,8 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       if (gate.passed) {
         slots = await svc.fetchSlots();
         _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
+        // The router accepted these credentials: offer to save them, and only here.
+        TextInput.finishAutofillContext();
       }
     } catch (e) {
       connectError = 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}';
@@ -219,12 +222,22 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
         children: [
           RouterIpField(controller: _ipCtrl),
           const SizedBox(height: 12),
-          SshUsernameField(controller: _userCtrl),
-          const SizedBox(height: 12),
-          SshPasswordField(
-            controller: _passCtrl,
-            visible: _sshVisible,
-            onToggle: () => setState(() => _sshVisible = !_sshVisible),
+          // The router IP stays outside the group - it is not a secret, and a password manager
+          // has no business filling it.
+          AutofillGroup(
+            onDisposeAction: AutofillContextAction.cancel,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SshUsernameField(controller: _userCtrl),
+                const SizedBox(height: 12),
+                SshPasswordField(
+                  controller: _passCtrl,
+                  visible: _sshVisible,
+                  onToggle: () => setState(() => _sshVisible = !_sshVisible),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -233,8 +246,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
               key: const Key('connect_router'),
               onPressed: (_connecting || !_canConnect) ? null : _onConnect,
               child: _connecting
-                  ? const SizedBox(
-                      height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
                   : const Text('CONNECT TO ROUTER'),
             ),
           ),

@@ -29,6 +29,7 @@
   - [5.1. Generate a PIA WireGuard configuration](#51-generate-a-pia-wireguard-configuration)
   - [5.2. Manage router PIA WireGuard configuration](#52-manage-router-pia-wireguard-configuration)
   - [5.3. Watchdog WireGuard management](#53-watchdog-wireguard-management)
+    - [5.3.1. Email alerts](#531-email-alerts)
   - [5.4. View app log](#54-view-app-log)
   - [5.5. Exit app](#55-exit-app)
   - [5.6. Hamburger menu](#56-hamburger-menu)
@@ -80,10 +81,12 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
 - **Share/save support:** share generated `.conf` via the Android share function and save it to a file location of your choice.
 - **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WG slot configurations directly.
 - **Merlin watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log.
+- **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
 - **No persistent credential storage (app):** PIA credentials, router SSH credentials and generated configs are stored only in volatile application memory and are never written to your device's storage.
 - **Watchdog credential storage (router):** deploying the watchdog stores the necessary PIA credentials in router NVRAM so it can monitor and self-heal independently of the app. This is a deliberate trade-off for "set and forget" operation, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
 - **Automated lowest-latency server selection:** measures live latency across all available servers in your selected region, ensuring that you provision with the fastest node.
 - **Native task-switcher protection:** `(FLAG_SECURE)` enforces native OS-level window flags to block third-party screenshot capturing and automatically obscures the app layout view inside the Android Recent Apps / Task Switcher interface. Debug builds skip the flag so the app can be captured while testing; every release build sets it.
+- **Password manager support:** every credential field accepts autofill from your device's password manager (KeePass, Bitwarden, Google Password Manager - whatever is registered as the autofill service). PIA, router SSH and SMTP logins are kept in separate autofill groups, so your manager can hold a different entry for each and you pick between them. A "save password?" prompt is offered only after credentials have actually worked, never when you back out of a form.
 - **Input field hardening:** user credential entry textboxes disable predictive text caching, auto-correction, and keyboard learning behaviours.
 - **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials and the system clipboard.
 - **Professional-grade build chain:** all releases undergo automated security and quality checks with
@@ -148,6 +151,11 @@ The app opens to a main menu with five choices:
 - View app log
 - Exit app
 
+Below those are two links: **how to use this app**, which opens this section of the README, and
+**add a Play Store app review**, which opens Google Play's in-app rating card without leaving the
+app. Play limits how often that card can be shown per user, so it may do nothing — that is Play's
+decision, not a fault.
+
 <p align="center">
   <img src="./images/main-menu.png" alt="Main menu" width="300">
   <br>
@@ -177,6 +185,9 @@ This enables full management of WG slots.
 1. Tap **Manage router PIA WireGuard configuration**.
 2. Enter router IP, SSH username, and SSH password (defaults are prefilled if available).
 3. Tap **CONNECT TO ROUTER**.
+
+> [!TIP]
+> To fill the credentials from your password manager, tap a field and choose the entry it offers. Android only suggests for a field that is **empty**, so the SSH username - prefilled with `admin` - will not prompt until you clear it. The password field prompts straight away.
 
 <p align="center">
   <img src="./images/router-slot-management.png" alt="Router slot management" width="300">
@@ -251,6 +262,106 @@ This manages a self-healing watchdog. When your WG configuration inevitably expi
 
 - **DELETE:** remove the watchdog and clear the slot configuration.
 - **VIEW WATCHDOG LOG:** inspect the router-side watchdog log. Logs are rotated at midnight retaining the current and previous logs and do not persist if the router is rebooted or a power loss occurs.
+
+#### 5.3.1. Email alerts
+
+If you fill in the email fields when configuring a watchdog, the router sends you a plain-text alert
+whenever it rebuilds a tunnel — and one when it tries and fails. Alerts come from your own SMTP
+account (Gmail with an app password works well); nothing is routed through a third party, and the
+app has no server of its own.
+
+Use **TEST EMAIL** in the configuration dialog before you save. It sends the same kind of message
+through the same path, so a test that arrives is a real guarantee that alerts will too.
+
+Every email carries the same sections: what happened, what to do about it (failures only), which
+router this is, and a running count of how well the watchdog has been doing.
+
+**When a tunnel is rebuilt:**
+
+```text
+Subject: cfg-pia-wg alert: SUCCESS - wgc1:pia-aus_melbourne
+
+Connectivity was lost and the tunnel has been rebuilt.
+
+WHAT HAPPENED
+Event: reconfigured successfully on attempt 2
+Tunnel was down for: 6m 12s (last seen good 2026-09-05 14:26:41 AEST)
+Kill switch: ON - no traffic left the router while it was down
+Reconnected to: melbourne408 (45.134.140.101:1337), 9 ms
+Interval: 5 minutes
+
+ROUTER
+Name: my-router.asuscomm.com (192.168.1.1)
+Model: RT-AX88U, firmware 3.0.0.4.388_24762
+Time: 2026-09-05 14:32:53 AEST
+Uptime: 15:11:29 up 19:21, load average: 2.55, 2.39, 2.36
+Watchdog: wgc1:pia-aus_melbourne, deployed by cfg-pia-wg v0.8.34 build 404
+
+HISTORY
+Since 2026-09-01 this router has recorded 4 successful and 1 failed reconfigurations.
+
+If cfg-pia-wg is useful to you, please consider submitting a review by tapping on the home screen link or via https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga
+
+Thank you,
+cfg-pia-wg by Exponentially Digital
+```
+
+**When it cannot be rebuilt**, two more sections appear — what to try, and the tail of the router's
+own watchdog log so you can see the attempt rather than take the summary on trust:
+
+```text
+Subject: cfg-pia-wg alert: FAILED - wgc1:pia-aus_melbourne
+
+Connectivity was lost and the tunnel could NOT be rebuilt.
+
+WHAT HAPPENED
+Event: failed to obtain PIA token (exit 0, HTTP 403, body 34B: {"error":"rate limit exceeded"})
+Tunnel has been down for: 41m 09s (last seen good 2026-09-05 13:58:12 AEST)
+Kill switch: not supported on this firmware - traffic reached the internet without the VPN
+Attempt: 8 since the last success, retrying per schedule, 5 minutes
+
+WHAT TO DO
+1. Check your PIA username and password in the app, under WATCHDOG then CONFIGURE.
+2. Open VIEW WATCHDOG LOG in the app for the full history.
+3. PIA rate-limits repeated token requests; if the code above is 403, wait 30 minutes before intervening.
+4. Is your PIA billing account active?
+
+ROUTER
+Name: my-router.asuscomm.com (192.168.1.1)
+Model: RT-AX88U, firmware 3.0.0.4.388_24762
+Time: 2026-09-05 14:39:02 AEST
+Uptime: 15:17:38 up 19:27, load average: 1.02, 1.15, 1.09
+Watchdog: wgc1:pia-aus_melbourne, deployed by cfg-pia-wg v0.8.34 build 404
+
+HISTORY
+Since 2026-09-01 this router has recorded 4 successful and 2 failed reconfigurations.
+
+ROUTER LOG (last 10 lines)
+2026-09-05 14:38:41 Checking wgc1 pia-aus_melbourne connectivity
+2026-09-05 14:38:44 No handshake and both pings failed (9.9.9.9, 1.1.1.1)
+2026-09-05 14:38:44 Connectivity lost; reconfiguring (attempt #8)
+2026-09-05 14:38:44 WAN has internet connectivity
+2026-09-05 14:38:45 Using cached CA cert
+2026-09-05 14:38:45 Requesting PIA token for user p1234567
+2026-09-05 14:38:46 ERROR: failed to obtain PIA token (exit 0, HTTP 403)
+```
+
+Notes on reading these:
+
+- **Kill switch** answers the question that matters most when a tunnel drops — did anything leave
+  the router unprotected? It has three states: on, available but not enabled, and *not supported on
+  this firmware*. Stock ASUS firmware has no kill switch at all, so a dropped tunnel there means
+  unprotected traffic until the watchdog restores it.
+- **Interval** is read from the router, not from the form you are filling in, so it can never claim
+  a schedule that is not actually running.
+- **Since <date>** counts every re-configuration this router has made, across all slots, from the
+  day the app first configured it.
+- The router log excerpt includes your **PIA username** (never the password, and never the token).
+  The email travels through your own mail provider, but bear it in mind before forwarding one.
+
+The first email you receive will be the deployment itself — `Event: watchdog deployed` — sent even
+though there was nothing to fix. That is deliberate: it confirms the whole alerting path works, at
+the moment you set it up rather than months later during an outage.
 
 ### 5.4. View app log
 

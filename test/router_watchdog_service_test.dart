@@ -221,7 +221,8 @@ void main() {
       expect(c.ran('cru a watchdog_wgc1 "*/5 * * * *"'), isTrue);
       expect(c.ran('cru a watchdog_log_rotate_wgc1'), isTrue);
       expect(c.ran('/jffs/scripts/services-start'), isTrue);
-      expect(c.commands.any((cmd) => cmd == '/jffs/cfg-pia-wg/watchdog_wgc1.sh'), isTrue);
+      // `deploy`, so the first run reports itself as a deployment rather than a re-configuration.
+      expect(c.commands.any((cmd) => cmd == '/jffs/cfg-pia-wg/watchdog_wgc1.sh deploy'), isTrue);
     });
 
     test('enables the VPN slot before deploying the watchdog scripts', () async {
@@ -244,7 +245,7 @@ void main() {
         isTrue,
       );
       // ...and it lands after the script has actually been written and run.
-      final scriptIndex = c.commands.lastIndexWhere((cmd) => cmd == '/jffs/cfg-pia-wg/watchdog_wgc1.sh');
+      final scriptIndex = c.commands.lastIndexWhere((cmd) => cmd == '/jffs/cfg-pia-wg/watchdog_wgc1.sh deploy');
       final doneIndex = c.commands.indexWhere((cmd) => cmd.contains('Watchdog deployed for wgc1'));
       expect(scriptIndex, isNot(-1));
       expect(scriptIndex, lessThan(doneIndex));
@@ -470,14 +471,28 @@ void main() {
     expect(config.piaPassword, 'pp');
   });
 
-  test('testEmail writes mail, sends via sendmail with "config test", cleans up, logs', () async {
+  test('testEmail writes mail, sends via sendmail, cleans up, logs', () async {
     final c = RecordingSSHClient();
     await RouterWatchdog(c).testEmail(cfg(slot: 1, email: true));
     expect(c.ran("cat > '/tmp/mail.txt'"), isTrue);
-    expect(c.ran('config test'), isTrue);
+    expect(c.ran('TEST email'), isTrue, reason: 'the subject says what kind of mail this is');
     expect(c.ran('/usr/sbin/sendmail'), isTrue);
     expect(c.ran('rm -f /tmp/mail.txt'), isTrue);
     expect(c.ran('logger -t cfg-pia-wg'), isTrue);
+  });
+
+  // Every email opens with the counters seeded, so "Since <date>" is the day the user started
+  // rather than the day of their first reconfigure - which may be months later, or never.
+  test('testEmail seeds the lifetime counters and reads the router facts in one round trip', () async {
+    final c = RecordingSSHClient();
+    await RouterWatchdog(c).testEmail(cfg(slot: 1, email: true));
+    expect(c.ran('nvram set cfg_pia_wg_sdate='), isTrue);
+    expect(c.ran('nvram set cfg_pia_wg_reconfig_ok=0'), isTrue);
+    expect(c.ran('nvram set cfg_pia_wg_reconfig_fail=0'), isTrue);
+    final facts = c.commands.where((cmd) => cmd.contains('nvram get productid')).toList();
+    expect(facts, hasLength(1), reason: 'nine facts, one command');
+    expect(facts.single, contains('uptime'));
+    expect(facts.single, contains('wgc1_wd_check_interval'));
   });
 
   group('ping helpers', () {
@@ -574,7 +589,8 @@ void main() {
       final c = stockRouter();
       await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
 
-      final write = c.commands.firstWhere((cmd) => cmd.contains("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"));
+      // The script is written in chunks, so the assertions run against the whole payload.
+      final write = c.commands.where((cmd) => cmd.contains("/jffs/cfg-pia-wg/watchdog_wgc1.sh' <<")).join();
       expect(write, contains('JQ="$kStockJqPath"'));
       expect(write, contains(kStockMailsendPath));
       expect(write, isNot(contains('/usr/sbin/sendmail')));
@@ -629,8 +645,8 @@ void main() {
       await RouterWatchdog(c).testEmail(cfg(slot: 1, email: true));
 
       expect(c.ran("cat > '/tmp/mail.txt'"), isTrue);
-      expect(c.ran('$kStockMailsendPath -debug -ssl -verifyCert'), isTrue);
-      expect(c.ran("-sub 'watchdog config test'"), isTrue);
+      expect(c.ran('$kStockMailsendPath -ssl -verifyCert'), isTrue);
+      expect(c.ran("-sub 'Alert: TEST email - wgc1'"), isTrue);
       expect(c.ran("auth -user 'smtpuser' -pass 'smtppass'"), isTrue);
       expect(c.ran('body -file /tmp/mail.txt'), isTrue);
       expect(c.ran('/usr/sbin/sendmail'), isFalse);
@@ -640,11 +656,15 @@ void main() {
       expect(c.ran('rm -f /tmp/mail.txt'), isTrue);
     });
 
-    test('a failed send still runs the TCP and TLS diagnostics', () async {
+    // The nc layer is gone: BusyBox on stock builds nc as `nc IPADDR PORT` with no options, so
+    // `nc -w 5` failed on a usage error and declared every host unreachable - including one that
+    // delivered mail seconds later. openssl answers the same question and says more.
+    test('a failed send probes with openssl, never nc', () async {
       useStock();
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('EXITCODE') ? 'EXITCODE:1' : '');
       await RouterWatchdog(c).testEmail(cfg(slot: 1, email: true));
-      expect(c.ran('nc -w 5 smtp.example.com 465'), isTrue);
+      expect(c.ran('openssl s_client'), isTrue);
+      expect(c.ran('nc -w'), isFalse, reason: 'this option does not exist on the router');
       expect(c.commands.any((cmd) => cmd.contains('logger') && cmd.contains('Email FAILED')), isTrue);
     });
   });
@@ -656,5 +676,63 @@ void main() {
     await expectLater(svc.deployWatchdog(cfg(slot: 1)), throwsA(isA<Exception>()));
     expect(c.commands.any((cmd) => cmd.contains('logger -t cfg-pia-wg') && cmd.contains('ERROR')), isTrue);
     expect(appLog.any((m) => m.contains('failed')), isTrue);
+  });
+
+  // Reported from a router: a failed test email put one TEAL line in the app log saying "see router
+  // log for details", and nothing on screen. Everything the router reported has to reach the app
+  // log, marked as an error, and the user has to be told without being sent to an SSH session.
+  group('test email failure reporting', () {
+    /// A router where the mailer exits non-zero and the probe cannot reach the SMTP host.
+    RecordingSSHClient failingMailer() => RecordingSSHClient(
+          responder: (cmd) {
+            if (cmd.contains('mailsend-go') || cmd.contains('sendmail')) return 'EXITCODE:1';
+            if (cmd.contains('wd_smtp_err')) return 'dial tcp: i/o timeout';
+            if (cmd.contains('openssl s_client')) return 'connect: Connection refused|connect:errno=111';
+            return '';
+          },
+        );
+
+    test('returns false and reports every layer to the app log as an error', () async {
+      useStock();
+      final logs = <(String, bool)>[];
+      final c = failingMailer();
+      final ok = await RouterWatchdog(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add((m, isError)))
+          .testEmail(cfg(slot: 1, email: true));
+
+      expect(ok, isFalse);
+      final errors = logs.where((l) => l.$2).map((l) => l.$1).toList();
+      expect(errors.any((m) => m.contains('Test email FAILED (exit 1)')), isTrue);
+      expect(errors.any((m) => m.contains('dial tcp: i/o timeout')), isTrue, reason: 'the mailer said why');
+      expect(errors.any((m) => m.contains('Connection refused')), isTrue, reason: 'and so did the probe');
+      // The old behaviour: one line, not an error, pointing at the router log.
+      expect(logs.any((l) => l.$1.contains('see router log')), isFalse);
+      expect(logs.any((l) => !l.$2 && l.$1.toLowerCase().contains('failed')), isFalse,
+          reason: 'a failure must never be logged as anything but an error');
+    });
+
+    test('a successful send returns true and says where it went', () async {
+      useStock();
+      final logs = <String>[];
+      final c = RecordingSSHClient(responder: (_) => 'EXITCODE:0');
+      final ok = await RouterWatchdog(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
+          .testEmail(cfg(slot: 1, email: true));
+
+      expect(ok, isTrue);
+      expect(logs.any((m) => m.contains('Test email sent to to@example.com')), isTrue);
+      expect(c.ran('rm -f /tmp/mail.txt'), isTrue, reason: 'the body holds nothing secret, but tidy up anyway');
+    });
+
+    // One probe, always run. The old code gated the TLS handshake behind an nc check that could
+    // not succeed on this router, so the useful diagnostic never ran on the firmware that needed it.
+    test('the probe runs whatever the mailer said, and reaches the app log', () async {
+      useStock();
+      final logs = <String>[];
+      final c = failingMailer();
+      await RouterWatchdog(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
+          .testEmail(cfg(slot: 1, email: true));
+
+      expect(c.ran('openssl s_client'), isTrue);
+      expect(logs.any((m) => m.contains('probe smtp.example.com:465')), isTrue);
+    });
   });
 }

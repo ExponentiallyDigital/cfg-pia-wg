@@ -21,6 +21,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -145,6 +146,9 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
       if (!mounted) return;
       _controller.setGeneratedConfig(config, region);
       _controller.logEntry('Config generated successfully.', isSuccess: true);
+      // PIA accepted these credentials, so this is the one moment worth offering to save them.
+      // The AutofillGroups cancel on dispose, so nothing is offered on any other path.
+      TextInput.finishAutofillContext();
     } catch (e) {
       if (mounted) await AppErrors.system(context, _controller, e.toString().replaceAll('Exception: ', ''));
     } finally {
@@ -187,12 +191,22 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
         children: [
           RegionRow(controller: _regionCtrl, loading: _loadingRegions, onBrowse: _loadRegions),
           const SizedBox(height: 16),
-          PiaUsernameField(controller: _usernameCtrl),
-          const SizedBox(height: 12),
-          PiaPasswordField(
-            controller: _passwordCtrl,
-            visible: _passwordVisible,
-            onToggle: () => setState(() => _passwordVisible = !_passwordVisible),
+          // Its own AutofillGroup, holding ONLY the PIA credentials: a password manager must not
+          // be able to conflate these with the router's SSH login.
+          AutofillGroup(
+            onDisposeAction: AutofillContextAction.cancel,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                PiaUsernameField(controller: _usernameCtrl),
+                const SizedBox(height: 12),
+                PiaPasswordField(
+                  controller: _passwordCtrl,
+                  visible: _passwordVisible,
+                  onToggle: () => setState(() => _passwordVisible = !_passwordVisible),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           DnsField(controller: _dnsCtrl),

@@ -36,6 +36,42 @@ const String kPiaCaCertUrl = 'https://raw.githubusercontent.com/pia-foss/manual-
 // Syslog tag used by every router-side log line (Bash scripts + Dart deploy/delete).
 const String kWatchdogLogTag = 'cfg-pia-wg';
 
+/// The most a single `logger` call should carry. BusyBox syslogd truncates a long message - the
+/// SMTP probe output was cut mid-word in the router log - and the limit is not worth discovering
+/// per-firmware, so keep each line comfortably short and let [splitForSyslog] number the parts.
+const int kSyslogChunkChars = 200;
+
+/// Splits [message] into pieces small enough for syslog to keep whole.
+///
+/// One piece comes back unchanged; several come back prefixed `(n/total)` so the router log can be
+/// reassembled by eye. Breaks at the last `|` or space near the limit: `|` is what the diagnostics
+/// use to join the lines of a command's output, so parts land on line boundaries where they can.
+List<String> splitForSyslog(String message, {int max = kSyslogChunkChars}) {
+  if (message.length <= max) return [message];
+  final pieces = <String>[];
+  var rest = message;
+  while (rest.isNotEmpty) {
+    if (rest.length <= max) {
+      pieces.add(rest);
+      break;
+    }
+    // Prefer a line boundary, then a word boundary.
+    var cut = rest.lastIndexOf('|', max);
+    if (cut > 0) cut += 1; // keep the separator with the part it ends
+    if (cut < max - (max ~/ 4)) cut = rest.lastIndexOf(' ', max);
+    // Neither near the limit: a solid run (a URL, base64), so cut it square.
+    if (cut < max - (max ~/ 4)) cut = max;
+    pieces.add(rest.substring(0, cut).trimRight());
+    rest = rest.substring(cut).trimLeft();
+  }
+  final total = pieces.length;
+  return [for (var i = 0; i < total; i++) '(${i + 1}/$total) ${pieces[i]}'];
+}
+
+/// The `logger` invocation(s) for [message], joined so a split message still costs one SSH call.
+String buildLoggerCommand(String message) =>
+    splitForSyslog(message).map((p) => 'logger -t $kWatchdogLogTag ${shellSingleQuote(p)}').join('; ');
+
 // ─── Validation helpers (pure) ──────────────────────────────────────────────────
 
 // Validates a dotted-quad IPv4 address (0-255 per octet).
@@ -53,8 +89,12 @@ bool isValidEmail(String email) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatc
 
 // Parses the router status file timestamp ("YYYY-MM-DD HH:MM:SS") to a DateTime.
 DateTime? parseLastPing(String raw) {
-  final t = raw.trim();
+  var t = raw.trim();
   if (t.isEmpty) return null;
+  // The status file leads with an epoch so the script can compute an outage duration; the
+  // human-readable stamp follows it. Older files hold the stamp alone, so the prefix is optional.
+  final epoch = RegExp(r'^\d{9,}\s+').firstMatch(t);
+  if (epoch != null) t = t.substring(epoch.end);
   return DateTime.tryParse(t);
 }
 
@@ -292,40 +332,178 @@ String _rfc2822Date(DateTime dt) {
       '${utc.second.toString().padLeft(2, '0')} +0000';
 }
 
-// RFC-822 message body for the one-off "Test Email" (and the success/failure model).
-String buildMailBody(WatchdogConfig c, {required bool success, bool testMode = false}) {
-  final subject = testMode ? 'watchdog config test' : '${c.emailSubject} - ${success ? 'SUCCESS' : 'FAILED'}';
-  final line = testMode
-      ? 'This is a test email from the cfg-pia-wg watchdog (slot wgc${c.slotIndex}).'
-      : 'Watchdog wgc${c.slotIndex} reconfiguration ${success ? 'succeeded' : 'failed'}.';
-  final now = DateTime.now();
-  final epochSecs = now.millisecondsSinceEpoch ~/ 1000;
-  final (host, _) = c.smtpHostPort;
-  return 'From: ${c.emailFrom}\r\n'
-      'To: ${c.emailTo}\r\n'
-      'Subject: $subject\r\n'
-      'Date: ${_rfc2822Date(now)}\r\n'
-      'Message-ID: <$epochSecs.${c.slotIndex}@$host>\r\n'
-      'MIME-Version: 1.0\r\n'
-      'Content-Type: text/plain; charset=utf-8\r\n'
-      '\r\n'
-      '$line\r\n';
+// ─── Email layout ────────────────────────────────────────────────────────────────
+//
+// One layout, two languages: the deployed script writes alert bodies in shell, the app writes the
+// test email here in Dart. Everything both must agree on - the section headings and their order,
+// the WHAT TO DO steps, the review ask, the sign-off - lives in these constants, and a test asserts
+// the generated script reproduces them. Plain text throughout: mailsend-go sends the file verbatim
+// and the Merlin path declares text/plain, so markup would render literally. Lines are left
+// unwrapped for the reader's mail client to fold.
+
+const String kPlayStoreUrl =
+    'https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga&showAllReviews=true';
+
+/// Section headings, in the order every email presents them: the answer first, the action second,
+/// the evidence last. WHAT TO DO and ROUTER LOG appear on failures only.
+const String kSectionWhatHappened = 'WHAT HAPPENED';
+const String kSectionWhatToDo = 'WHAT TO DO';
+const String kSectionRouter = 'ROUTER';
+const String kSectionHistory = 'HISTORY';
+const String kSectionRouterLog = 'ROUTER LOG (last 10 lines)';
+
+const List<String> kEmailWhatToDo = [
+  '1. Check your PIA username and password in the app, under WATCHDOG then CONFIGURE.',
+  '2. Open VIEW WATCHDOG LOG in the app for the full history.',
+  '3. PIA rate-limits repeated token requests; if the code above is 403, wait 30 minutes before intervening.',
+  '4. Is your PIA billing account active?',
+];
+
+const String kEmailReviewLine = 'If cfg-pia-wg is useful to you, please consider submitting a review '
+    'by tapping on the home screen link or via $kPlayStoreUrl';
+
+const List<String> kEmailSignOff = ['Thank you,', 'cfg-pia-wg by Exponentially Digital'];
+
+/// The sentence used when a watchdog has never been saved, so no interval is actually scheduled.
+const String kIntervalNotSet = 'Interval: not set, watchdog has yet to be saved and deployed.';
+
+/// Assembles the plain-text body from already-rendered `Label: value` rows.
+String buildEmailBody({
+  required String opening,
+  required List<String> whatHappened,
+  required List<String> router,
+  required String history,
+  List<String> whatToDo = const [],
+  String? routerLog,
+}) {
+  final b = StringBuffer()
+    ..writeln(opening)
+    ..writeln();
+  void section(String heading, Iterable<String> rows) {
+    b.writeln(heading);
+    for (final r in rows) {
+      b.writeln(r);
+    }
+    b.writeln();
+  }
+
+  section(kSectionWhatHappened, whatHappened.where((r) => r.isNotEmpty));
+  if (whatToDo.isNotEmpty) section(kSectionWhatToDo, whatToDo);
+  section(kSectionRouter, router.where((r) => r.isNotEmpty));
+  section(kSectionHistory, [history]);
+  if (routerLog != null) section(kSectionRouterLog, [routerLog.trimRight()]);
+  b
+    ..writeln(kEmailReviewLine)
+    ..writeln();
+  for (final l in kEmailSignOff) {
+    b.writeln(l);
+  }
+  return b.toString();
 }
 
-// Headerless message body for mailsend-go, which takes the subject as a flag and the body as a
-// plain file — unlike BusyBox sendmail, which needs the RFC-822 headers inline.
-String buildMailPlainBody(WatchdogConfig c, {required bool success, bool testMode = false}) => testMode
-    ? 'This is a test email from the cfg-pia-wg watchdog (slot wgc${c.slotIndex}).\r\n'
-    : 'Watchdog wgc${c.slotIndex} reconfiguration ${success ? 'succeeded' : 'failed'}.\r\n';
+/// Router-side facts every email carries, read in a single round trip by [RouterWatchdog].
+/// The deployed script reads the same values for itself.
+class RouterEmailFacts {
+  final String name, lanIp, model, firmware, time, uptime, sinceDate, okCount, failCount, desc, interval;
 
-// The subject line for a given send, shared by both mail transports.
-String buildMailSubject(WatchdogConfig c, {required bool success, bool testMode = false}) =>
-    testMode ? 'watchdog config test' : '${c.emailSubject} - ${success ? 'SUCCESS' : 'FAILED'}';
+  const RouterEmailFacts({
+    this.name = '',
+    this.lanIp = '',
+    this.model = '',
+    this.firmware = '',
+    this.time = '',
+    this.uptime = '',
+    this.sinceDate = '',
+    this.okCount = '0',
+    this.failCount = '0',
+    this.desc = '',
+    this.interval = '',
+  });
+
+  /// Parses the marker-prefixed output of [kEmailFactsCommand]; a short reply leaves the rest empty
+  /// rather than throwing, because a missing uptime is no reason to fail a test email.
+  factory RouterEmailFacts.parse(String raw) {
+    final f = raw
+        .split('\n')
+        .map((l) => l.startsWith('|') ? l.substring(1).trim() : l.trim())
+        .toList();
+    String at(int i) => i < f.length ? f[i] : '';
+    final ddns = at(0), lanHost = at(1), lanIp = at(2);
+    return RouterEmailFacts(
+      name: ddns.isNotEmpty ? ddns : (lanHost.isNotEmpty ? lanHost : lanIp),
+      lanIp: lanIp,
+      model: at(3),
+      firmware: at(4),
+      time: at(5),
+      uptime: at(6),
+      sinceDate: at(7),
+      okCount: at(8).isEmpty ? '0' : at(8),
+      failCount: at(9).isEmpty ? '0' : at(9),
+      desc: at(10),
+      interval: at(11),
+    );
+  }
+
+  List<String> routerRows(int slot) => [
+        'Name: $name${lanIp.isEmpty || lanIp == name ? '' : ' ($lanIp)'}',
+        if (model.isNotEmpty || firmware.isNotEmpty) 'Model: $model, firmware $firmware',
+        if (time.isNotEmpty) 'Time: $time',
+        if (uptime.isNotEmpty) 'Uptime: $uptime',
+        'Watchdog: ${desc.isEmpty ? 'region not yet set, configuration pending deployment' : 'wgc$slot:$desc'}',
+      ];
+
+  String get historyLine => 'Since ${sinceDate.isEmpty ? 'today' : sinceDate} this router has recorded '
+      '$okCount successful and $failCount failed reconfigurations.';
+
+  /// Read from NVRAM, never from the unsaved dialog, so an email can never state a schedule that is
+  /// not actually running.
+  String get intervalRow => interval.isEmpty ? kIntervalNotSet : 'Interval: $interval minutes';
+}
+
+/// Seeds the lifetime counters the moment the app first touches a router, so `Since <date>` is the
+/// date the user actually started rather than the date of their first reconfigure.
+const String kSeedCountersCommand = '[ -n "\$(nvram get cfg_pia_wg_sdate)" ] || { '
+    "nvram set cfg_pia_wg_sdate=\"\$(date '+%Y-%m-%d')\"; "
+    'nvram set cfg_pia_wg_reconfig_ok=0; nvram set cfg_pia_wg_reconfig_fail=0; nvram commit; }';
+
+/// One round trip for every router fact an email needs. Each field is marker-prefixed so an empty
+/// one survives the trim that [RouterWatchdog._run] applies.
+String kEmailFactsCommand(int slot) => "printf '|%s\\n' "
+    '"\$(nvram get ddns_hostname_x)" "\$(nvram get lan_hostname)" "\$(nvram get lan_ipaddr)" '
+    '"\$(nvram get productid)" "\$(nvram get buildno)_\$(nvram get extendno)" '
+    '"\$(date \'+%Y-%m-%d %H:%M:%S %Z\')" "\$(uptime | sed \'s/^ *//\')" '
+    '"\$(nvram get cfg_pia_wg_sdate)" "\$(nvram get cfg_pia_wg_reconfig_ok)" '
+    '"\$(nvram get cfg_pia_wg_reconfig_fail)" '
+    '"\$(nvram get wgc${slot}_desc)" "\$(nvram get wgc${slot}_wd_check_interval)"';
+
+/// `<your subject>: STATUS - wgcN:region`. The subject field stays the user's, so anyone who
+/// changed it from the `cfg-pia-wg alert` default keeps their own prefix and their mail rules.
+String buildMailSubject(WatchdogConfig c, {required String status, String desc = ''}) {
+  final prefix = c.emailSubject.trim().isEmpty ? 'cfg-pia-wg alert' : c.emailSubject.trim();
+  final slot = desc.isEmpty ? 'wgc${c.slotIndex}' : 'wgc${c.slotIndex}:$desc';
+  return '$prefix: $status - $slot';
+}
+
+/// The RFC-822 headers BusyBox sendmail needs inline. mailsend-go builds its own from flags.
+String buildMailHeaders(WatchdogConfig c, {required String subject, DateTime? now}) {
+  final t = now ?? DateTime.now();
+  final (host, _) = c.smtpHostPort;
+  return 'From: ${c.emailFrom}\n'
+      'To: ${c.emailTo}\n'
+      'Subject: $subject\n'
+      'Date: ${_rfc2822Date(t)}\n'
+      'Message-ID: <${t.millisecondsSinceEpoch ~/ 1000}.${c.slotIndex}@$host>\n'
+      'MIME-Version: 1.0\n'
+      'Content-Type: text/plain; charset=utf-8\n'
+      '\n';
+}
 
 // The mailsend-go implicit-TLS command used on stock, where BusyBox sendmail is not viable.
 // Credentials on the command line are an accepted risk here (see .claude/CONTEXT.md 4.12).
+// No -debug: it writes the whole argument parse to stderr, which buried the actual error in the
+// captured output. Nothing else here differs from scripts/mailsend-go_test.sh.
 String buildMailsendGoCommand(String host, int port, WatchdogConfig c, {required String subject}) =>
-    '$kStockMailsendPath -debug -ssl -verifyCert '
+    '$kStockMailsendPath -ssl -verifyCert '
     '-smtp ${shellSingleQuote(host)} -port $port -sub ${shellSingleQuote(subject)} '
     '-f ${shellSingleQuote(c.emailFrom)} -t ${shellSingleQuote(c.emailTo)} '
     'auth -user ${shellSingleQuote(c.smtpUsername)} -pass ${shellSingleQuote(c.smtpPassword)} '
@@ -344,28 +522,44 @@ String buildSendmailCommand(String host, int port, WatchdogConfig c) => '/usr/sb
     '< /tmp/mail.txt';
 
 // The router-side mail blocks, substituted into the template at build time. Conditional logic
-// inside the script itself is not an option: the deploy heredoc has a ~7 KB ceiling, and the
-// firmware is already known here.
-const String _kMailBodyMerlin = r'''  {
+// inside the script itself is not an option: the firmware is already known here.
+//
+// mailsend-go builds its own headers from flags, so on stock the body file starts empty.
+const String _kMailHdrStock = r'''  : > "$TMPMAIL"
+''';
+
+const String _kMailHdrMerlin = r'''  {
     echo "From: $EMAIL_FROM"
     echo "To: $EMAIL_TO"
-    echo "Subject: $EMAIL_SUBJECT - $1"
+    echo "Subject: $EMAIL_SUBJECT: $STATUS - $IFACE:$DESC"
     echo "Date: $(date -R 2>/dev/null || date)"
-    echo "Message-ID: $(date +%s)@$(uname -n)"
+    echo "Message-ID: <$(date +%s).$SLOT@$(uname -n)>"
     echo "MIME-Version: 1.0"
     echo "Content-Type: text/plain; charset=utf-8"
     echo ""
-    echo "Watchdog $IFACE reconfiguration: $1"
-    echo "Region: $DESC"
-    echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
-  } > "$TMPMAIL"''';
+  } > "$TMPMAIL"
+''';
 
-// mailsend-go builds its own headers, so the file holds the body only.
-const String _kMailBodyStock = r'''  {
-    echo "Watchdog $IFACE reconfiguration: $1"
-    echo "Region: $DESC"
-    echo "Time: $(date '+%Y-%m-%d %H:%M:%S')"
-  } > "$TMPMAIL"''';
+// The kill switch has three states, not two: on, available-but-disabled (Merlin), and absent
+// (stock, which has none - revisit that wording once in-app device assignment lands, after which a
+// device assigned to a downed wgcN simply loses connectivity).
+//
+// Each also needs three tenses, because the same fact reads wrong in the wrong one: UP for a deploy
+// run where the tunnel is fine, FIXED for a recovery that is over, DOWN for a failure that is not.
+const String _kKillSwitchStock =
+    r'''KILLSW_UP="not supported on this firmware - if the tunnel drops, traffic reaches the internet without the VPN"
+KILLSW_FIXED="not supported on this firmware - traffic reached the internet without the VPN"
+KILLSW_DOWN="not supported on this firmware - traffic is reaching the internet without the VPN"''';
+
+const String _kKillSwitchMerlin = r'''if [ "$ENFORCE" = "1" ]; then
+  KILLSW_UP="ON - traffic is blocked if the tunnel drops"
+  KILLSW_FIXED="ON - no traffic left the router while it was down"
+  KILLSW_DOWN="ON - traffic is blocked while the tunnel is down"
+else
+  KILLSW_UP="OFF - the kill switch is available but is not enabled"
+  KILLSW_FIXED="$KILLSW_UP"
+  KILLSW_DOWN="$KILLSW_UP"
+fi''';
 
 const String _kMailCmdMerlin = r'''  /usr/sbin/sendmail \
     -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt \
@@ -375,11 +569,18 @@ const String _kMailCmdMerlin = r'''  /usr/sbin/sendmail \
     -f"$EMAIL_FROM" \
     "$EMAIL_TO" < "$TMPMAIL" 2>"$TMPERR"''';
 
-const String _kMailCmdStock = '''  $kStockMailsendPath -debug -ssl -verifyCert \\
-    -smtp "\$SMTP_HOST" -port "\$SMTP_PORT" -sub "\$EMAIL_SUBJECT - \$1" \\
+// No -debug: it writes the whole argument parse to stderr, burying the actual error in the
+// captured output - the same reason it came off buildMailsendGoCommand.
+const String _kMailCmdStock = '''  $kStockMailsendPath -ssl -verifyCert \\
+    -smtp "\$SMTP_HOST" -port "\$SMTP_PORT" -sub "\$EMAIL_SUBJECT: \$STATUS - \$IFACE:\$DESC" \\
     -f "\$EMAIL_FROM" -t "\$EMAIL_TO" \\
     auth -user "\$SMTP_USER" -pass "\$SMTP_PASS" \\
     body -file "\$TMPMAIL" 2>"\$TMPERR"''';
+
+// Shell appending a fixed block of lines. Generated from the same constants [buildEmailBody] uses,
+// so the script's wording and the app's cannot drift apart.
+String _echoBlock(Iterable<String> lines) =>
+    lines.map((l) => '  echo ${shellSingleQuote(l)} >> "\$TMPMAIL"').join('\n');
 
 // The full watchdog_wgcN.sh body (see watchdogScriptPath). Slot-parameterised via __SLOT__; the jq path and
 // the two mail blocks are resolved from [firmware] (the detected one by default).
@@ -393,7 +594,11 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       // enforce / fw / rip / ep_addr_r are Merlin-only (kMerlinOnlySlotKeys). Writing them on
       // stock creates keys nothing reads and DELETE does not clean up.
       .replaceAll('__MERLINONLY__', stock ? '' : _kMerlinOnlyNvsets)
-      .replaceAll('__MAILBODY__', stock ? _kMailBodyStock : _kMailBodyMerlin)
+      .replaceAll('__APPVER__', appVersionLabel)
+      .replaceAll('__KILLSW__', stock ? _kKillSwitchStock : _kKillSwitchMerlin)
+      .replaceAll('__MAILHDR__', stock ? _kMailHdrStock : _kMailHdrMerlin)
+      .replaceAll('__WHATTODO__', _echoBlock(['', kSectionWhatToDo, ...kEmailWhatToDo]))
+      .replaceAll('__SIGNOFF__', _echoBlock(['', kEmailReviewLine, '', ...kEmailSignOff]))
       .replaceAll('__MAILCMD__', stock ? _kMailCmdStock : _kMailCmdMerlin);
 }
 
@@ -461,7 +666,7 @@ class RouterWatchdog {
   Future<String> _label(int slot) async => _labelCache[slot] ??= await fetchSlotLabel(slot, _run);
 
   // Best-effort native syslog entry on the router.
-  Future<void> _logRouter(String msg) async => _run('logger -t $kWatchdogLogTag ${shellSingleQuote(msg)}');
+  Future<void> _logRouter(String msg) async => _run(buildLoggerCommand(msg));
 
   // Wraps a mutating action so failures are surfaced to the app log AND the router syslog.
   Future<T> _guard<T>(String action, Future<T> Function() body) async {
@@ -547,8 +752,11 @@ class RouterWatchdog {
         await _run(buildCronRotateLine(config.slotIndex));
         await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
         onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
-        await _logRouter('Running ${watchdogScriptPath(config.slotIndex)}');
-        await _run(watchdogScriptPath(config.slotIndex));
+        await _run(kSeedCountersCommand);
+        await _logRouter('Running ${watchdogScriptPath(config.slotIndex)} deploy');
+        // `deploy` makes this run report itself as a deployment rather than a re-configuration,
+        // and makes it email even when it finds the tunnel already healthy.
+        await _run('${watchdogScriptPath(config.slotIndex)} deploy');
         onLog?.call('Ran ${watchdogScriptPath(config.slotIndex)}', isSuccess: true);
         await _logRouter(
             'Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
@@ -791,18 +999,42 @@ class RouterWatchdog {
   }
 
   // Sends a one-off test email (subject "config test") using the supplied SMTP settings.
-  Future<void> testEmail(WatchdogConfig config) => _guard('test email', () async {
+  /// Sends the one-off test email. Returns true if the mailer exited 0.
+  ///
+  /// Every diagnostic goes to BOTH logs. It used to write only to the router syslog and tell the
+  /// user to go and read it there, which is a poor thing to ask of someone holding a phone - and
+  /// the one line it did put in the app log was styled as a success.
+  /// Reads every router fact an email carries, seeding the lifetime counters first so the
+  /// `Since ...` date is the day the user started, not the day of their first reconfigure.
+  Future<RouterEmailFacts> emailFacts(int slot) async {
+    await _run(kSeedCountersCommand);
+    return RouterEmailFacts.parse(await _run(kEmailFactsCommand(slot)));
+  }
+
+  Future<bool> testEmail(WatchdogConfig config) => _guard('test email', () async {
         final (host, port) = config.smtpHostPort;
         final stock = isStockFirmware;
+        final facts = await emailFacts(config.slotIndex);
+        final subject = buildMailSubject(config, status: 'TEST email', desc: facts.desc);
 
+        final body = buildEmailBody(
+          opening: 'This is a test email from cfg-pia-wg. Your SMTP settings work; watchdog alerts '
+              'will reach this address.',
+          whatHappened: [
+            'Event: test email sent by hand from the watchdog configuration screen',
+            facts.intervalRow,
+          ],
+          router: facts.routerRows(config.slotIndex),
+          history: facts.historyLine,
+        );
         // sendmail wants the RFC-822 headers inline; mailsend-go takes them as flags.
-        final body = stock
-            ? buildMailPlainBody(config, success: true, testMode: true)
-            : buildMailBody(config, success: true, testMode: true);
-        await _runHeredoc(heredocWrite('/tmp/mail.txt', body), '/tmp/mail.txt');
+        final file = stock ? body : '${buildMailHeaders(config, subject: subject)}$body';
+        for (final cmd in heredocWriteCommands('/tmp/mail.txt', file)) {
+          await _runHeredoc(cmd, '/tmp/mail.txt');
+        }
 
         final sendCmd = stock
-            ? buildMailsendGoCommand(host, port, config, subject: buildMailSubject(config, success: true, testMode: true))
+            ? buildMailsendGoCommand(host, port, config, subject: subject)
             : buildSendmailCommand(host, port, config);
 
         // Redirect stderr to file; echo exit code into stdout so _run can return it.
@@ -813,35 +1045,36 @@ class RouterWatchdog {
         if (exitCode == 0) {
           await _run('rm -f /tmp/mail.txt /tmp/wd_smtp_err');
           await _logRouter('Test email sent to ${config.emailTo}');
-          onLog?.call('Test email sent.', isSuccess: true);
-          return;
+          onLog?.call('Test email sent to ${config.emailTo}.', isSuccess: true);
+          return true;
         }
+
+        onLog?.call('Test email FAILED (exit $exitCode) sending to ${config.emailTo} via $host:$port.', isError: true);
 
         // Layer 1: mailer stderr
-        final stderrRaw = await _run('cat /tmp/wd_smtp_err 2>/dev/null | head -20 | tr "\\n" "|"');
+        final stderrRaw = await _run('cat /tmp/wd_smtp_err 2>/dev/null | tail -20 | tr "\\n" "|"');
         await _logRouter('Email FAILED (exit=$exitCode) stderr=[${stderrRaw.trim()}]');
+        if (stderrRaw.trim().isNotEmpty) onLog?.call('  mailer: ${stderrRaw.trim()}', isError: true);
 
-        // Layer 2: TCP reachability
-        final ncResult = await _run('nc -w 5 $host $port </dev/null >/dev/null 2>&1; echo "EXITCODE:\$?"');
-        final tcpOk = _parseExitCode(ncResult) == 0;
-        await _logRouter(
-            tcpOk ? 'TCP diag: $host:$port is reachable' : 'TCP diag: $host:$port is UNREACHABLE - check host and port');
-
-        // Layer 3: TLS handshake probe (only worth running if TCP is up)
-        if (tcpOk) {
-          final tlsOut = await _run(
-            'printf "QUIT\\r\\n" | openssl s_client '
-            '-connect $host:$port '
-            '-tls1_3 '
-            '-CAfile /etc/ssl/certs/ca-certificates.crt '
-            '-timeout 10 '
-            '2>&1 | head -40 | tr "\\n" "|"',
-          );
-          await _logRouter('TLS probe: ${tlsOut.trim()}');
-        }
+        // Layer 2: connect and hand-shake in one probe.
+        //
+        // There is no `nc` layer any more. BusyBox on stock builds nc as `nc IPADDR PORT` with no
+        // options at all, so `nc -w 5` failed on a usage error and reported UNREACHABLE for every
+        // host - including ones that were demonstrably delivering mail seconds later. openssl is
+        // already needed for the handshake, tells us the same thing about reachability, and says
+        // considerably more when it does fail.
+        final tlsOut = await _run(
+          'printf "QUIT\\r\\n" | openssl s_client '
+          '-connect $host:$port '
+          '-CAfile /etc/ssl/certs/ca-certificates.crt '
+          '2>&1 | tail -20 | tr "\\n" "|"',
+        );
+        final probe = tlsOut.trim();
+        await _logRouter('SMTP probe $host:$port: ${probe.isEmpty ? 'no output' : probe}');
+        if (probe.isNotEmpty) onLog?.call('  probe $host:$port: $probe', isError: true);
 
         await _run('rm -f /tmp/mail.txt /tmp/wd_smtp_err');
-        onLog?.call('Test email failed - see router log for details.', isSuccess: false);
+        return false;
       });
 
   int _parseExitCode(String output) {
@@ -889,6 +1122,10 @@ nvset "rip="''';
 const String _kWatchdogScriptTemplate = r'''#!/bin/sh
 # watchdog_wgc__SLOT__.sh - auto-generated; *do* *not* edit. re-negotiates PIA WireGuard on ping failure
 
+# `deploy` only when the app runs the script by hand just after writing it; cron passes nothing.
+# Read at the top, because send_alert() shadows $1 with its own argument.
+RUNMODE="${1:-cron}"
+APPVER="__APPVER__"
 SLOT=__SLOT__
 IFACE="wgc__SLOT__"
 K="${IFACE}_"
@@ -935,17 +1172,115 @@ REGION="${DESC#pia-}"
 # Kill switch: put back what the user set. Empty (always, on stock) means off.
 ENFORCE="$(nvram get ${K}enforce)"
 [ -n "$ENFORCE" ] || ENFORCE=0
+INTERVAL="$(nvram get ${K}wd_check_interval)"
+__KILLSW__
 PIA_USER="$(nvram get cfg_pia_wg_user)"
 PIA_PASS="$(nvram get cfg_pia_wg_password)"
 
 log "Watchdog started for $IFACE"
 
+# Lifetime counters. Reconfigures are rare, so one nvram commit per event is an acceptable flash
+# cost; a broken tunnel retrying forever is what the token backoff is for.
+bump() {
+  [ -n "$(nvram get cfg_pia_wg_sdate)" ] || nvram set cfg_pia_wg_sdate="$(date '+%Y-%m-%d')"
+  BN="$(nvram get $1)"
+  case "$BN" in ''|*[!0-9]*) BN=0 ;; esac
+  nvram set "$1=$((BN + 1))"
+  nvram commit
+}
+
+# "6m 12s (last seen good ...)". The status file lives in /tmp and does not survive a reboot, and
+# one written by an older build carries no epoch - say so rather than printing a made-up duration.
+down_for() {
+  if [ ! -f "$STATUSFILE" ]; then
+    echo "unknown (no successful check since the router last rebooted)"
+    return 0
+  fi
+  read -r LGE LGD < "$STATUSFILE"
+  case "$LGE" in ''|*[!0-9]*)
+    echo "unknown (no successful check since the router last rebooted)"
+    return 0 ;;
+  esac
+  D=$(( $(date +%s) - LGE ))
+  [ "$D" -ge 0 ] || D=0
+  printf '%dm %02ds (last seen good %s %s)\n' $((D / 60)) $((D % 60)) "$LGD" "$(date '+%Z')"
+}
+
 # Email alert
 send_alert() {
+  STATUS="$1"
+  DETAIL="$2"
   [ "$EMAIL_ON" = "1" ] || return 0
   [ -n "$SMTP_HOST" ] || { log "Email enabled but SMTP server is not configured"; return 0; }
 
-__MAILBODY__
+  if [ "$STATUS" != "SUCCESS" ]; then
+    KILLSW="$KILLSW_DOWN"
+  elif [ "$RUNMODE" = "deploy" ]; then
+    KILLSW="$KILLSW_UP"
+  else
+    KILLSW="$KILLSW_FIXED"
+  fi
+
+  if [ "$RUNMODE" = "deploy" ]; then
+    if [ "$STATUS" = "SUCCESS" ]; then
+      OPENING="Watchdog deployed and the tunnel is up."
+    else
+      OPENING="Watchdog deployed but the tunnel could NOT be brought up."
+    fi
+  else
+    if [ "$STATUS" = "SUCCESS" ]; then
+      OPENING="Connectivity was lost and the tunnel has been rebuilt."
+    else
+      OPENING="Connectivity was lost and the tunnel could NOT be rebuilt."
+    fi
+  fi
+
+  RNAME="$(nvram get ddns_hostname_x)"
+  LANIP="$(nvram get lan_ipaddr)"
+  [ -n "$RNAME" ] || RNAME="$(nvram get lan_hostname)"
+  [ -n "$RNAME" ] || RNAME="$LANIP"
+  SDATE="$(nvram get cfg_pia_wg_sdate)"
+  [ -n "$SDATE" ] || SDATE="$(date '+%Y-%m-%d')"
+  OKN="$(nvram get cfg_pia_wg_reconfig_ok)"
+  FAILN="$(nvram get cfg_pia_wg_reconfig_fail)"
+  case "$OKN" in ''|*[!0-9]*) OKN=0 ;; esac
+  case "$FAILN" in ''|*[!0-9]*) FAILN=0 ;; esac
+  WDROW="$IFACE:$DESC"
+  [ -n "$APPVER" ] && WDROW="$WDROW, deployed by cfg-pia-wg $APPVER"
+
+__MAILHDR__
+  # A row with no value is dropped rather than printed empty.
+  row() { [ -n "$2" ] && printf '%s: %s\n' "$1" "$2" >> "$TMPMAIL"; return 0; }
+
+  printf '%s\n\nWHAT HAPPENED\n' "$OPENING" >> "$TMPMAIL"
+  row "Event" "$DETAIL"
+  row "$CONNLABEL" "$CONNVALUE"
+  row "$DOWNLABEL" "$DOWNFOR"
+  row "Kill switch" "$KILLSW"
+  row "Attempt" "$ATTEMPTV"
+  row "Interval" "$INTERVALV"
+
+  if [ "$STATUS" != "SUCCESS" ]; then
+__WHATTODO__
+  fi
+
+  echo "" >> "$TMPMAIL"
+  echo "ROUTER" >> "$TMPMAIL"
+  row "Name" "$RNAME ($LANIP)"
+  row "Model" "$(nvram get productid), firmware $(nvram get buildno)_$(nvram get extendno)"
+  row "Time" "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+  row "Uptime" "$(uptime | sed 's/^ *//')"
+  row "Watchdog" "$WDROW"
+
+  printf '\nHISTORY\nSince %s this router has recorded %s successful and %s failed reconfigurations.\n' \
+    "$SDATE" "$OKN" "$FAILN" >> "$TMPMAIL"
+
+  if [ "$STATUS" != "SUCCESS" ]; then
+    printf '\nROUTER LOG (last 10 lines)\n' >> "$TMPMAIL"
+    tail -10 "$LOGFILE" >> "$TMPMAIL"
+  fi
+
+__SIGNOFF__
 
   TMPERR="/tmp/wd_smtp_err_$$"
 __MAILCMD__
@@ -954,26 +1289,21 @@ __MAILCMD__
   rm -f "$TMPMAIL"
 
   if [ "$MAIL_EXIT" -ne 0 ]; then
-    SMTP_ERR=$(cat "$TMPERR" 2>/dev/null | head -20 | tr '\n' '|')
+    SMTP_ERR=$(cat "$TMPERR" 2>/dev/null | tail -20 | tr '\n' '|')
     log "Email FAILED (mailer exit=$MAIL_EXIT) stderr=[${SMTP_ERR:-none}]"
 
-    nc -w 5 "$SMTP_HOST" "$SMTP_PORT" </dev/null >/dev/null 2>&1 \
-      && log "Email diag: TCP $SMTP_HOST:$SMTP_PORT reachable" \
-      || log "Email diag: TCP $SMTP_HOST:$SMTP_PORT UNREACHABLE"
-
+    # No nc probe: BusyBox here is `nc IPADDR PORT` with no options, so `nc -w 5` failed on a
+    # usage error and called every host unreachable. openssl answers the same question honestly.
     TMPDIAG="/tmp/wd_smtp_diag_$$"
     printf 'QUIT\r\n' | openssl s_client \
       -connect "$SMTP_HOST:$SMTP_PORT" \
-      -tls1_3 \
       -CAfile /etc/ssl/certs/ca-certificates.crt \
-      -timeout 10 \
-      2>&1 | head -40 > "$TMPDIAG"
-    TLS_EXIT=$?
+      2>&1 | tail -20 > "$TMPDIAG"
     TLS_OUT=$(cat "$TMPDIAG" 2>/dev/null | tr '\n' '|')
-    log "Email diag: TLS probe (exit=$TLS_EXIT) detail=[${TLS_OUT:-none}]"
+    log "Email diag: SMTP probe [${TLS_OUT:-none}]"
     rm -f "$TMPDIAG"
   else
-    log "Alert email sent ($1)"
+    log "Alert email sent ($STATUS)"
   fi
 
   rm -f "$TMPERR"
@@ -981,7 +1311,11 @@ __MAILCMD__
 
 abort() {
   log "ERROR: $1"
-  send_alert "FAILED ($1)"
+  bump cfg_pia_wg_reconfig_fail
+  DOWNLABEL="Tunnel has been down for"
+  DOWNFOR="$(down_for)"
+  ATTEMPTV="${CNT:-1} since the last success, retrying per schedule, $INTERVAL minutes"
+  send_alert FAILED "$1"
   rm -f "$TMPSRV"
   exit 1
 }
@@ -999,6 +1333,7 @@ else
   AGE=$(( $(date +%s) - HS ))
   if [ "$HS" -gt 0 ] && [ "$AGE" -lt 300 ]; then
     log "Handshake ${AGE}s ago"
+    HSDESC=" (handshake ${AGE}s ago)"
     FAIL=0
   elif ping -I "$IFACE" -c 3 -W 2 "$PRIMARY_IP" >/dev/null 2>&1; then
     log "Primary ping OK ($PRIMARY_IP)"
@@ -1013,8 +1348,17 @@ fi
 
 # Success: update status
 if [ "$FAIL" = "0" ]; then
-  date '+%Y-%m-%d %H:%M:%S' > "$STATUSFILE"
+  date '+%s %Y-%m-%d %H:%M:%S' > "$STATUSFILE"
   printf '0\n0\n' > "$BACKOFFFILE"
+  # A deploy run always emails, even with nothing to fix: it is the user's proof that alerting
+  # works. No addKey happened on this path, so the endpoint comes from NVRAM and there is no
+  # server name or latency to report.
+  if [ "$RUNMODE" = "deploy" ]; then
+    CONNLABEL="Connected to"
+    CONNVALUE="$(nvram get ${K}ep_addr):$(nvram get ${K}ep_port)$HSDESC"
+    INTERVALV="$INTERVAL minutes"
+    send_alert SUCCESS "watchdog deployed"
+  fi
   exit 0
 fi
 
@@ -1162,6 +1506,14 @@ fi
 log "Interface $IFACE is up"
 
 log "Reconfig SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
-send_alert "SUCCESS"
+bump cfg_pia_wg_reconfig_ok
+CONNLABEL="Reconnected to"
+CONNVALUE="$BEST_CN ($BEST_IP:$SERVER_PORT), ${BEST_RTT} ms"
+DOWNLABEL="Tunnel was down for"
+# Measure the outage before stamping the status file, or it always reads zero.
+DOWNFOR="$(down_for)"
+date '+%s %Y-%m-%d %H:%M:%S' > "$STATUSFILE"
+INTERVALV="$INTERVAL minutes"
+send_alert SUCCESS "reconfigured successfully on attempt $CNT"
 exit 0
 ''';

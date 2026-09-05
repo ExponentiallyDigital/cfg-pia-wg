@@ -272,7 +272,14 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       await AppErrors.inputs(context, _c, errors);
       return;
     }
-    await _withService((svc) => svc.testEmail(_currentConfig()));
+    final sent = await _withService((svc) => svc.testEmail(_currentConfig()));
+    if (!mounted) return;
+    // A failed send used to say nothing on screen and one teal line in the app log telling the
+    // user to go and read the ROUTER log. Every diagnostic now lands in the app log, and this
+    // says so - a phone is a poor place from which to go SSH into a router.
+    if (sent == false) {
+      await AppErrors.system(context, _c, 'The test email could not be sent. Open View app log for what the router reported.');
+    }
   }
 
   @override
@@ -346,12 +353,23 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                 _field(_intervalCtrl, 'Check interval (minutes)', const Key('wd_interval'), keyboard: TextInputType.number),
                 _field(_primaryCtrl, 'Primary ping IP', const Key('wd_primary')),
                 _field(_secondaryCtrl, 'Secondary ping IP', const Key('wd_secondary')),
-                _field(_piaUserCtrl, 'PIA username', const Key('wd_pia_user')),
-                _field(_piaPassCtrl, 'PIA password', const Key('wd_pia_pass'),
-                    obscure: !_piaPassVisible,
-//                    enableInteractiveSelection: false, // disable copy if password field is revealed - also this also disabled paste :/
-                    onToggle: () => setState(() => _piaPassVisible = !_piaPassVisible),
-                    visible: _piaPassVisible),
+                // PIA and SMTP credentials get a group each: two different logins on one form, and
+                // a provider that could not tell them apart would offer the wrong one for both.
+                AutofillGroup(
+                  onDisposeAction: AutofillContextAction.cancel,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _field(_piaUserCtrl, 'PIA username', const Key('wd_pia_user'),
+                          autofillHints: const [AutofillHints.username]),
+                      _field(_piaPassCtrl, 'PIA password', const Key('wd_pia_pass'),
+                          obscure: !_piaPassVisible,
+                          onToggle: () => setState(() => _piaPassVisible = !_piaPassVisible),
+                          visible: _piaPassVisible,
+                          autofillHints: const [AutofillHints.password]),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 4),
                 SwitchListTile(
                   key: const Key('wd_email_switch'),
@@ -365,11 +383,21 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                   _field(_toCtrl, 'To', const Key('wd_to')),
                   _field(_subjectCtrl, 'Subject', const Key('wd_subject')),
                   _field(_smtpServerCtrl, 'SMTP server (host:port)', const Key('wd_smtp_server')),
-                  _field(_smtpUserCtrl, 'SMTP username', const Key('wd_smtp_user')),
-                  _field(_smtpPassCtrl, 'SMTP password', const Key('wd_smtp_pass'),
-                      obscure: !_smtpPassVisible,
-                      onToggle: () => setState(() => _smtpPassVisible = !_smtpPassVisible),
-                      visible: _smtpPassVisible),
+                  AutofillGroup(
+                    onDisposeAction: AutofillContextAction.cancel,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _field(_smtpUserCtrl, 'SMTP username', const Key('wd_smtp_user'),
+                            autofillHints: const [AutofillHints.username]),
+                        _field(_smtpPassCtrl, 'SMTP password', const Key('wd_smtp_pass'),
+                            obscure: !_smtpPassVisible,
+                            onToggle: () => setState(() => _smtpPassVisible = !_smtpPassVisible),
+                            visible: _smtpPassVisible,
+                            autofillHints: const [AutofillHints.password]),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   OutlinedButton.icon(
                     key: const Key('wd_test_email'),
@@ -411,6 +439,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     VoidCallback? onToggle,
 //    bool enableInteractiveSelection = true, // disable copy if password field is revealed
     bool visible = false,
+    // Only the credentials carry hints. Ping targets, mail addresses and the SMTP host are not
+    // secrets and a password manager has no business filling them.
+    List<String> autofillHints = const <String>[],
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -418,6 +449,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         key: key,
         controller: ctrl,
         obscureText: obscure,
+        autofillHints: autofillHints,
 //        enableInteractiveSelection: enableInteractiveSelection, // disable copy if password field is revealed
         keyboardType: keyboard,
         autocorrect: false,

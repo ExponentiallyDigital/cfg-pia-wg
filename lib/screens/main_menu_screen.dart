@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_colors.dart';
+import '../review_service.dart';
 import '../session_controller.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/app_scaffold.dart';
@@ -99,6 +100,8 @@ class MainMenuScreen extends StatelessWidget {
             const SizedBox(height: 12),
             const _HelpLink(),
             const Spacer(),
+            const _ReviewLink(),
+            SizedBox(height: spacer),
             const _DonationBlock(),
             SizedBox(height: donationBottomGap),
           ],
@@ -195,7 +198,7 @@ class _MenuButton extends StatelessWidget {
   }
 }
 
-/// Tappable "(?) How to use this app" line under the SSH footnote, opening the README section of
+/// Tappable "(?) how to use this app" line under the SSH footnote, opening the README section of
 /// the same name. The recogniser is owned by a State so it can be disposed; the same pattern as
 /// the About screen's links.
 class _HelpLink extends StatefulWidget {
@@ -233,7 +236,64 @@ class _HelpLinkState extends State<_HelpLink> {
             child: Icon(Icons.help_outline, size: 16, color: kHighlight),
           ),
           TextSpan(
-            text: ' How to use this app',
+            text: ' how to use this app',
+            style: const TextStyle(decoration: TextDecoration.underline, decorationColor: kHighlight),
+            recognizer: _recogniser,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tappable "(*) add a Play Store app review" line above the donation block.
+///
+/// Google Play decides whether its rating card actually appears - the request is quota-limited per
+/// user - so a tap that shows nothing is normal and is not reported as a failure. Only a request
+/// that could not be made at all reaches the app log, which is where a tester would look.
+class _ReviewLink extends StatefulWidget {
+  const _ReviewLink();
+
+  @override
+  State<_ReviewLink> createState() => _ReviewLinkState();
+}
+
+class _ReviewLinkState extends State<_ReviewLink> {
+  late final TapGestureRecognizer _recogniser;
+
+  @override
+  void initState() {
+    super.initState();
+    _recogniser = TapGestureRecognizer()..onTap = _ask;
+  }
+
+  Future<void> _ask() async {
+    final controller = SessionScope.of(context);
+    if (!await requestAppReview()) {
+      controller.logEntry('Could not open the Play Store review flow on this device.', isError: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _recogniser.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      key: const Key('menu_review'),
+      textAlign: TextAlign.center,
+      TextSpan(
+        style: const TextStyle(color: kHighlight, fontSize: 12),
+        children: [
+          const WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Icon(Icons.star_outline, size: 16, color: kHighlight),
+          ),
+          TextSpan(
+            text: ' add a Play Store app review',
             style: const TextStyle(decoration: TextDecoration.underline, decorationColor: kHighlight),
             recognizer: _recogniser,
           ),

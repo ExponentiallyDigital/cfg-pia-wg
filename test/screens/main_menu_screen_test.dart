@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_shell.dart';
+import 'package:cfg_pia_wg/review_service.dart';
 import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 
@@ -36,6 +37,8 @@ void main() {
     // Both trailing lines are centred; the Column stretches them, so alignment is the Text's job.
     expect(tester.widget<Text>(find.text('* requires SSH connectivity to an ASUS router')).textAlign, TextAlign.center);
     expect(tester.widget<Text>(find.byKey(const Key('menu_help'))).textAlign, TextAlign.center);
+    expect(find.byKey(const Key('menu_review')), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const Key('menu_review'))).textAlign, TextAlign.center);
     expect(find.text('Support development:'), findsOneWidget);
     expect(find.byKey(const Key('donate_paypal')), findsOneWidget);
     expect(find.byKey(const Key('donate_patreon')), findsOneWidget);
@@ -59,7 +62,7 @@ void main() {
     // A TextSpan target cannot be tapped by position, so drive its recogniser.
     final span = tester.widget<Text>(find.byKey(const Key('menu_help'))).textSpan! as TextSpan;
     final help = span.children!.last as TextSpan;
-    expect(help.text, ' How to use this app');
+    expect(help.text, ' how to use this app');
     (help.recognizer! as TapGestureRecognizer).onTap!();
     await tester.pumpAndSettle();
 
@@ -213,4 +216,91 @@ void main() {
 
     await _teardown(tester, c);
   });
+
+  // The review ask sits between the help line and the donation block, and has to read as its own
+  // request rather than a third way to pay - so it keeps a clear gap above "Support development:".
+  group('the Play Store review link', () {
+    /// Answers the in_app_review plugin channel, recording what was asked of it.
+    List<String> mockReviewHost({bool available = true}) {
+      final calls = <String>[];
+      const channel = MethodChannel(kInAppReviewChannel);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call.method);
+        return call.method == 'isAvailable' ? available : null;
+      });
+      addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null));
+      return calls;
+    }
+
+    TextSpan reviewSpan(WidgetTester tester) =>
+        (tester.widget<Text>(find.byKey(const Key('menu_review'))).textSpan! as TextSpan).children!.last as TextSpan;
+
+    testWidgets('is an icon followed by the whole label as one link', (tester) async {
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      final span = tester.widget<Text>(find.byKey(const Key('menu_review'))).textSpan! as TextSpan;
+      expect(span.children, hasLength(2));
+      expect(span.children!.first, isA<WidgetSpan>(), reason: 'the icon leads the line');
+      final link = span.children!.last as TextSpan;
+      expect(link.text, ' add a Play Store app review');
+      expect(link.style?.decoration, TextDecoration.underline, reason: 'it has to read as a link');
+      expect(link.recognizer, isNotNull);
+
+      await _teardown(tester, c);
+    });
+
+    testWidgets('sits above the donation block, with a gap between them', (tester) async {
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      final review = tester.getBottomLeft(find.byKey(const Key('menu_review')));
+      final donate = tester.getTopLeft(find.text('Support development:'));
+      expect(review.dy, lessThan(donate.dy), reason: 'the ask comes first');
+      expect(donate.dy - review.dy, greaterThan(16), reason: 'a few lines of air, not a tight stack');
+
+      await _teardown(tester, c);
+    });
+
+    testWidgets('asks Play for the review card when the flow is available', (tester) async {
+      final calls = mockReviewHost();
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      (reviewSpan(tester).recognizer! as TapGestureRecognizer).onTap!();
+      await tester.pumpAndSettle();
+
+      expect(calls, ['isAvailable', 'requestReview']);
+      // Play decides whether a card is drawn and never says. Claiming otherwise would be a lie.
+      expect(c.log.any((e) => e.message.contains('review')), isFalse);
+
+      await _teardown(tester, c);
+    });
+
+    // Debug and sideloaded builds have no Play review flow, and a tap that does nothing at all is
+    // worse than one that opens the listing.
+    testWidgets('falls back to the store listing when the flow is unavailable', (tester) async {
+      final calls = mockReviewHost(available: false);
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      (reviewSpan(tester).recognizer! as TapGestureRecognizer).onTap!();
+      await tester.pumpAndSettle();
+
+      expect(calls.first, 'isAvailable');
+      expect(calls, isNot(contains('requestReview')));
+      // On a real device the fallback opens Play and says nothing. This host is not Android, so
+      // the plugin refuses the listing too - which is exactly the case that must reach the app
+      // log rather than leaving the user tapping a dead link.
+      expect(c.log.any((e) => e.message.contains('Could not open the Play Store review flow')), isTrue);
+
+      await _teardown(tester, c);
+    });
+  });
+
 }

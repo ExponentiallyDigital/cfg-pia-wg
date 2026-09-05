@@ -7,6 +7,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 - **Tests are required for every change.** 29 test files live under `test/` (`test/`, `test/screens/`, `test/widgets/`, `test/unit/`). Run `flutter test`; coverage is tracked via `coverage/lcov.info`. Every widget that a test needs to reach already carries a `Key` (`snake_case`, e.g. `Key('slot_create')`, `Key('wd_save')`) — add one when you add a control.
 - **Test coverage.** This app requires a minumum 80% code covered by tests.
 - **Update this file in the same change as any architecture or behaviour change.** A change that moves a file, renames a destination, alters a button set, or adds/removes an NVRAM key must edit the matching section here.
+- **Any NVRAM variable the app writes must be described in `ARCHITECTURE.md` section "3. Router WireGuard NVRAM fields"** — that section is the reference a user reads before letting the app near their router, so a key that only appears in the code is a key nobody can audit or clean up. Describe it in §4.9 here as well.
 - **Flag conflicts, do not silently resolve them.** If this file disagrees with the code, or with `ARCHITECTURE.md` / `BACKLOG.md` / a `.claude/plan_*.md`, say so and ask. Do not "fix" the code to match the doc or vice versa without confirmation.
 - **CHANGELOG.md entries must be flat and short.** The release GitHub Action *sorts* the lines within a release block, so an indented sub-bullet is separated from its parent and ends up under the wrong entry. Every line item is therefore a standalone top-level `- ` bullet that reads correctly on its own, in the existing `- FIX:` / `- CHG:` / `- ADD:` / `- TST:` / `- DOC:` / `- INF:` style. Keep each to a sentence or two — detail belongs in the code comments or `ARCHITECTURE.md`, not here.
 - Do not read `.claude/plan_*.md` as current state — they are historical design notes.
@@ -29,7 +30,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 
 The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit app"; a hamburger drawer rendered *above* the Navigator adds an **About** destination and duplicates the rest. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and drive a shared `wgc1..wgc5` slot modal: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. **Both Merlin and stock ASUS firmware are supported** — the firmware is detected once per session on entry to either router screen and every router command branches on it (§4.13). Screen 4 shows the in-memory app log. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
 
-## 3. Architecture — `lib/` (26 files)
+## 3. Architecture — `lib/` (27 files)
 
 ### Root
 
@@ -46,6 +47,7 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 | `router_watchdog.dart` | 890 lines. Validation helpers, `WatchdogConfig`, `WatchdogStatus`, pure Bash-template builders, `RouterWatchdog` service, and `_kWatchdogScriptTemplate` (the router-side sh script, ~7 KB heredoc ceiling). |
 | `watchdog_dialog.dart` | `WatchdogDialog` — the watchdog CREATE/EDIT form. Its `SAVE` validates, optionally picks a region, WAN-pings both targets (warn-only), then calls `deployWatchdog`. **This is the only path that brings a watchdog up.** |
 | `build_info_service.dart` | `BuildInfo` model + `loadBuildInfo()` over `MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/build_info')`, method `getBuildInfo`. One of the app's **two** platform channels. Falls back to `BuildInfo.unknown()` on `MissingPluginException`/`PlatformException` so widget tests render. |
+| `review_service.dart` | `requestAppReview()` over `in_app_review`: `isAvailable()` then `requestReview()`, falling back to `openStoreListing()`. Returns false only when neither could start (no Play Services, a sideloaded build, a desktop host, a plain test) - the caller logs that to the app log. Play is quota-limited and never says whether a card was drawn, so true means the request was made, nothing more. Never claim a review was left. |
 | `clipboard_service.dart` | `clearSystemClipboard()` over `MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/clipboard')`, method `clearClipboard` -> `ClipboardManager.clearPrimaryClip()` (API 28+). Falls back to writing `''` on `MissingPluginException`/`PlatformException`. A test reads `MainActivity.kt` so the names cannot drift. |
 | `license_text.dart` | 645 lines. `const String kLicenseText` — verbatim raw-string copy of `./LICENSE` (GPL v3). Regenerate by hand if `./LICENSE` changes. |
 
@@ -53,7 +55,7 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 
 | File | Role |
 | --- | --- |
-| `main_menu_screen.dart` | 5 buttons + `* requires SSH connectivity` footnote + a "(?) How to use this app" link (`Key('menu_help')`, `kHelpUrl` -> README section 5) + a PayPal/Patreon donation block. `PopScope(canPop: false)` routes the Android back key to `confirmAndExit`. |
+| `main_menu_screen.dart` | 5 buttons + `* requires SSH connectivity` footnote + a "(?) how to use this app" link (`Key('menu_help')`, `kHelpUrl` -> README section 5), then above the PayPal/Patreon donation block a "(*) add a Play Store app review" link (`Key('menu_review')` -> `review_service.dart`), separated from it by a `spacer` so the ask does not read as a third way to pay. `PopScope(canPop: false)` routes the Android back key to `confirmAndExit`. |
 | `standalone_config_screen.dart` | Region row / PIA username / password / DNS → `GENERATE CONFIG`; renders the generated config under a `GENERATED CONFIG: pia-<region>` heading (`Key('generated_config_label')`, same stem as the shared `pia-<region>.conf`) with COPY (+ countdown) and SHARE / SAVE. |
 | `manage_router_screen.dart` | 47 lines — thin wrapper: `RouterSlotsScreen(mode: SlotModalMode.manage, …)`. |
 | `watchdog_management_screen.dart` | 47 lines — thin wrapper: `RouterSlotsScreen(mode: SlotModalMode.watchdog, …)`. |
@@ -70,7 +72,7 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 | `slot_modal.dart` | 674 lines. `SlotModalMode` enum + `SlotModal` (slot list, badges, mode-dependent button set, all router actions) + `_PiaCredsDialog` + `_PingTargetsDialog`. |
 | `router_slots_screen.dart` | Shared router-IP/SSH form + `CONNECT TO ROUTER` for both router screens; auto-reconnects when `routerConnected`; runs the firmware gate (§4.13) before `fetchSlots`; opens `SlotModal`. `_FirmwareGate` carries the outcome so a dialog is only awaited after the connect spinner clears. |
 | `firmware_notice.dart` | `showFirmwareNotice` + the two wrappers `showMissingBinariesNotice` / `showUnsupportedFirmwareNotice`. A dismissible warning whose README link is a tappable `TextSpan` (`AppErrors` renders plain text and cannot carry a link). Keys `firmware_notice`, `firmware_notice_link`, `firmware_notice_ok`. |
-| `common_fields.dart` | `RegionRow`, `PiaUsernameField`, `DnsField`, `ObscuredField`, `PiaPasswordField`, `RouterIpField`, `SshUsernameField`, `SshPasswordField`, `ClearButton`, `IconActionButton`, `SlotBadge`, `LogPanel`. |
+| `common_fields.dart` | `RegionRow`, `PiaUsernameField`, `DnsField`, `ObscuredField`, `PiaPasswordField`, `RouterIpField`, `SshUsernameField`, `SshPasswordField`, `ClearButton`, `IconActionButton`, `SlotBadge`, `LogPanel`. The credential fields carry `autofillHints` (`username` / `password`); `ObscuredField` takes them as a parameter so both password fields can pass their own. Non-secrets (`RouterIpField`, `DnsField`) deliberately carry none - Android treats an absent hint list as "autofill disabled", which is what we want there. |
 | `error_presenter.dart` | `AppErrors.system` / `AppErrors.inputs` + `_ErrorDialog`. Static `_token`/`_openErrorNav` let a newer error dismiss an older one. |
 | `region_picker_sheet.dart` | `RegionPickerSheet` — filterable `DraggableScrollableSheet` region list, shared by standalone / CREATE / watchdog EDIT. |
 
@@ -207,7 +209,7 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 
 **`getWatchdogStatus`:** enabled ⇔ cron entry **and** `wgcN_enable==1` **and** `wgcN` in `wg show interfaces`. `lastSuccessfulPing` parsed from `/tmp/watchdog_last_ping_success_wgcN`.
 
-**`testEmail`:** writes `/tmp/mail.txt`, runs BusyBox `sendmail -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error -connect host:port"`. On non-zero exit it runs three diagnostic layers (sendmail stderr → `nc` TCP reachability → `openssl s_client` TLS probe) and writes each to the **router syslog**; the app only says "Test email failed - see router log for details." SMTP port defaults to **465** when unparseable.
+**BusyBox syslogd truncates a long `logger` message.** `_logRouter` goes through `buildLoggerCommand`, which splits at `kSyslogChunkChars` (200) into `(n/total)`-prefixed parts joined with `;` - one SSH call, nothing lost. Never hand `logger` an unbounded diagnostic. **BusyBox `nc` on stock takes no options** - it is `nc IPADDR PORT` and nothing else, so `nc -w 5 host port` exits on a usage error. Never use it as a reachability probe; `openssl s_client -connect` is the portable answer and reports why it failed. **`testEmail`:** returns `Future<bool>` (true = the mailer exited 0) and sends every diagnostic to the app log as well as the router syslog, marked `isError`. The dialog raises a dismissible warning on false. Never tell the user to go and read the router log - they are holding a phone. Writes `/tmp/mail.txt`, runs BusyBox `sendmail -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error -connect host:port"` on Merlin and `mailsend-go` on stock. On non-zero exit it reports two diagnostic layers - the mailer's stderr (`tail -20`, the error is the *last* thing said) and an `openssl s_client` probe - to **both** logs. SMTP port defaults to **465** when unparseable.
 
 ### 4.8 Router-side script `_kWatchdogScriptTemplate` (POSIX sh, `__SLOT__` is the only placeholder)
 
@@ -224,9 +226,55 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 | TLS floor | `--tlsv1.2` in `$CURL`. It is a MINIMUM, not a pin. `--tlsv1.3` made every addKey call fail with curl exit 35: PIA's addKey endpoint on :1337 does not offer 1.3, though the token and server-list hosts do. |
 | Error text | BusyBox `tr` has no character classes - `tr -d "[:cntrl:]"` deletes literal c/n/t/r/l/[/]/: instead. Sanitise with `head -n 1 ... | cut -c1-160`. |
 | Curl hygiene | `echo -n > /jffs/curllst` after every curl — `/usr/sbin/curl` logs every command line to that world-readable file |
-| Alerts | `send_alert SUCCESS` / `FAILED (<reason>)` when `wgcN_wd_email_enabled=1`; same 3-layer SMTP diagnostics as `testEmail` |
+| Alerts | `send_alert <SUCCESS\|FAILED> <event detail>` when `wgcN_wd_email_enabled=1`; same SMTP diagnostics as `testEmail` |
 | Size | The deploy writes the script in ~4 KB chunks (`heredocWriteCommands`: `cat >` then `cat >>`), because **dropbear refuses an exec request over `MAX_CMD_LEN` = 9000 bytes** and drops the connection - which it did at 9055, mid-deploy, after the slot was already enabled. Never send the script as one command. `router_watchdog_unit_test.dart` still caps the script at 9500 bytes, now for JFFS space and reviewability rather than SSH. |
 | Write verification | `_writeScript` compares `wc -c` against the expected byte count and throws. Without it a failed write left cru entries pointing at a script that did not exist, and the app called that ACTIVE. |
+
+### 4.8.1 Alert and test email layout
+
+**One layout, two languages.** Alert bodies are written in shell by the deployed script; the test
+email is written in Dart by `testEmail`. Everything both must agree on lives in constants in
+`router_watchdog.dart` - `kSectionWhatHappened` / `kSectionWhatToDo` / `kSectionRouter` /
+`kSectionHistory` / `kSectionRouterLog`, `kEmailWhatToDo`, `kEmailReviewLine`, `kEmailSignOff`,
+`kPlayStoreUrl` - and the script's copy is generated from them by `_echoBlock`, so the two cannot
+drift. `test/unit/email_layout_test.dart` asserts it.
+
+Section order is the answer first, the action second, the evidence last: `WHAT HAPPENED`,
+`WHAT TO DO` (failures only), `ROUTER`, `HISTORY`, `ROUTER LOG (last 10 lines)` (failures only),
+then the review ask and sign-off. **Plain text only** - mailsend-go sends the file verbatim and the
+Merlin path declares `text/plain`, so `<br>` or a markdown link reaches the reader literally. Lines
+are left unwrapped for the client to fold, and values are never space-padded into columns because
+Gmail on Android renders `text/plain` in a proportional font.
+
+A row whose value is empty is **dropped**, never printed as a dangling label - `row()` in the
+script, the `.where((r) => r.isNotEmpty)` filter in `buildEmailBody`.
+
+Subject: `<wgcN_wd_email_subject>: <SUCCESS|FAILED|TEST email> - wgcN:<region>`. The user's own
+subject stays the prefix (default `cfg-pia-wg alert`), so anyone who changed it keeps their mail
+rules; the slot and region are appended so a client threads by VPN.
+
+**Run mode.** `deployWatchdog` runs the script as `<path> deploy`; cron passes nothing. The script
+reads `RUNMODE="${1:-cron}"` **at the top**, because `send_alert()` shadows `$1` with its own
+argument. A deploy run reports itself as a deployment rather than a re-configuration, and emails
+**even when it finds the tunnel already healthy** - that email is the user's proof that alerting
+works. On that path no addKey ran, so the endpoint comes from `wgcN_ep_addr`/`_ep_port` and there is
+no server name or latency to report.
+
+**Kill switch has three states, not two:** ON, `OFF - the kill switch is available but is not
+enabled` (Merlin), and `not supported on this firmware` (stock, which has none). Baked per firmware
+as `KILLSW_UP` / `KILLSW_DOWN`, the pair differing by tense - the tunnel is up on a deploy run and
+was down on a recovery.
+
+**Outage duration** comes from `$STATUSFILE`, which now leads with an epoch
+(`date '+%s %Y-%m-%d %H:%M:%S'`) so `down_for()` can subtract. It is measured **before** the file is
+re-stamped, or every outage reads zero. The file lives in `/tmp`, so after a reboot there is nothing
+to subtract from and the email says `unknown (no successful check since the router last rebooted)`
+rather than inventing a duration. `parseLastPing` skips the epoch prefix and still reads a file
+written by an older build.
+
+The `ROUTER LOG` excerpt can contain the **PIA username** (`Requesting PIA token for user ...`). It
+never contains the password or the token - the script logs the token's *length*. A deliberate
+choice, since these emails traverse the user's own mail provider.
 
 ### 4.9 NVRAM variables
 
@@ -256,7 +304,7 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 
 `wd_primary_ip` / `wd_secondary_ip` are **shared**: written by `RouterSlotService.writeWatchdogPingTargets` during manage-ENABLE, read by both the ENABLE check and the router script, and unset by both `deleteSlot` and `stopWatchdog`.
 
-**Global (not slot-scoped):** `cfg_pia_wg_user`, `cfg_pia_wg_password` — plaintext PIA credentials shared by every slot's watchdog. Also read: `3rd-party` (firmware detection), `jffs2_scripts`, `jffs2_on` (Merlin only), `vpnc_clientlist` (stock only).
+**Global (not slot-scoped):** `cfg_pia_wg_user`, `cfg_pia_wg_password` — plaintext PIA credentials shared by every slot's watchdog. `cfg_pia_wg_sdate` (`yyyy-mm-dd` the app first configured this router), `cfg_pia_wg_reconfig_ok` and `cfg_pia_wg_reconfig_fail` — lifetime re-configuration counters across all slots, reported in the HISTORY section of every alert email. The three are seeded together by whichever of a watchdog deploy or a test email happens first (`kSeedCountersCommand`) and incremented by the router script's `bump()`, which commits once per alert — never per check, because `nvram commit` writes flash. Also read: `3rd-party` (firmware detection), `jffs2_scripts`, `jffs2_on` (Merlin only), `vpnc_clientlist` (stock only), and for email bodies `ddns_hostname_x`, `lan_hostname`, `lan_ipaddr`, `productid`, `buildno`, `extendno`.
 
 **Stock `vpnc_clientlist`** (see ARCHITECTURE.md 2.3.2 for the full schema). Stock exposes only 12 of the 17 `wgcN_` keys; the region name and the active flag live instead in one delimited string of up to five profiles — records separated by `<` (no leading delimiter), fields by `>`. The app owns exactly two fields and copies every other one through untouched:
 
@@ -314,6 +362,7 @@ The chrome's header takes ~104 logical px off the top, so with a keyboard up a d
 | Credentials on the device | Volatile only — `SessionController` fields, wiped by `wipeAll` on every exit path. No `SharedPreferences`, no file persistence. |
 | Generated config on the device | In memory, **except** SHARE, which writes `pia-<region>.conf` to the temp dir and deletes it in a `finally`. |
 | Credentials on the router | PIA username/password go to router NVRAM in **plaintext** (`cfg_pia_wg_user`/`_password`) whenever a watchdog is deployed; SMTP password likewise (`wgcN_wd_smtp_pass`). Removed by `stopWatchdog`. |
+| Password managers | Every credential field declares `autofillHints`, and each login is its own `AutofillGroup` - PIA, router SSH, SMTP - so a provider cannot conflate them or save one mixed entry. Groups use `onDisposeAction: cancel`; `TextInput.finishAutofillContext()` is called ONLY after a successful generate or connect, so a save prompt appears only for credentials that have been proven. `FLAG_SECURE` does not block the autofill overlay (verified on a Pixel with KeePass, which also switches cleanly between several entries saved against the app's package id). Android only suggests for an EMPTY field, so the `admin` default in the SSH username field suppresses its prompt until cleared - documented in README 5.2, not changed. Autofill needs API 26; `minSdk` is 24, so a 24/25 device just types as before. |
 | Screen capture | `FLAG_SECURE` in `MainActivity.onCreate` blocks screenshots, screen recording and the Recent Apps preview - **release builds only**. A DEBUG build skips it so the app can be captured on a device while testing, and `allowScreenCaptureInRelease` is a manual escape hatch for capturing a release build. `test/unit/clipboard_service_test.dart` fails if the gate widens or the hatch is left on. |
 | TLS | PIA `addKey` is CA-pinned (`withTrustedRoots: false`) with a CN check; SMTP uses `openssl s_client -tls1_3 -verify_return_error`. |
 | Shell injection | All interpolated user values go through `shellSingleQuote` — **except** `createConfigToSlot`, which uses `"…"` double quotes for the parsed-config values (`router_slot_service.dart:177-193`). |

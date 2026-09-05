@@ -600,9 +600,20 @@ class _SshCredsDialogState extends State<_SshCredsDialog> {
                 const SizedBox(height: 16),
                 RouterIpField(controller: _ipCtrl),
                 const SizedBox(height: 10),
-                SshUsernameField(controller: _userCtrl),
-                const SizedBox(height: 10),
-                SshPasswordField(controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
+                // Its own group, and the router IP is deliberately outside it - see
+                // plan_autofill-credentials.md. cancel: dismissing the dialog asks nothing.
+                AutofillGroup(
+                  onDisposeAction: AutofillContextAction.cancel,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SshUsernameField(controller: _userCtrl),
+                      const SizedBox(height: 10),
+                      SshPasswordField(
+                          controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
+                    ],
+                  ),
+                ),
                 if (_error != null) ...[
                   const SizedBox(height: 14),
                   Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
