@@ -191,3 +191,49 @@ Offer both silent auto-restore and a visible button.
 - Restore Behavior: https://www.revenuecat.com/docs/projects/restore-behavior
 - Flutter installation: https://www.revenuecat.com/docs/getting-started/installation/flutter
 - Implementation Responsibilities: https://www.revenuecat.com/docs/platform-resources/implementation-responsibilities
+---
+
+## Addendum 2026-09-05 — app-specific notes
+
+Everything above is RevenueCat mechanics from the advisory session. These are the things specific to *this* app, found while reviewing the backlog. Backlog item: `BACKLOG.md` section 1.2.
+
+### An unlocked watchdog cannot be re-locked, and that is accepted
+
+The watchdog runs **on the router**, on cron, with the app nowhere in the picture. Once deployed it keeps re-negotiating PIA for as long as the router is powered, whatever the entitlement says afterwards. There is no mechanism — and should be none — for the app to reach in and stop a watchdog because a purchase was refunded.
+
+**Decision (2026-09-05): accepted.** The point of the paid tier is cashflow to cover development costs, not enforcement. The source stays on GitHub and anyone can build it themselves for nothing; the charge buys not having to. A refund path that leaves a working watchdog behind is a rounding error against that.
+
+Two consequences worth keeping straight:
+
+- Section 3 above (offline access) is nearly free for the watchdog specifically — it needs no entitlement check at run time because it does not run in the app at all. The gate belongs on **deploying** one, not on it working.
+- Do not build revocation logic, a phone-home, or a licence check inside the deployed script. It would be defeatable in a text editor, it would add a failure mode to something whose whole job is to be reliable unattended, and it contradicts the decision above.
+
+### Gate the purchase behind the pre-flight check that already exists
+
+Section 1.2.4 of the backlog asks for a pre-flight diagnostic so nobody buys an unlock their router cannot use. Most of it is already written and running:
+
+| Check | Where it lives now |
+| --- | --- |
+| SSH reachable and credentials accepted | `RouterSlotsScreen._onConnect` |
+| Firmware identified (stock vs Merlin) | `RouterSlotService.readFirmwareTag` + `classifyFirmwareTag` |
+| Stock: `jq` and `mailsend-go` present | `RouterSlotService.missingStockBinaries` |
+| Merlin: JFFS custom scripts enabled | `RouterWatchdog.enableJffsScripts` reads `jffs2_scripts` / `jffs2_on` |
+| Stock: `/opt` present for boot persistence | not checked today — DownloadMaster installed? |
+
+The last row is the gap, and it is the one most likely to bite: without `/opt/etc/init.d/` the watchdog deploys and works, then silently loses its cron entries at the next reboot. Worth adding as a check regardless of freemium.
+
+Sequence the paywall **after** the pre-flight passes, not before, so the purchase button only appears to someone whose router can actually run the thing.
+
+### `flutter_secure_storage` versus the app's stated posture
+
+README and SECURITY.md both say plainly that nothing is written to device storage. An entitlement token is not a credential, so caching one is compatible with the *intent* — but the sentences are currently absolute and would read as contradicted.
+
+Fix the wording when the dependency lands, not after: SECURITY.md "Secret management" should distinguish *credentials* (never stored, still true) from *purchase state* (cached, not sensitive, and what it is used for). Getting caught overstating this would cost more than the feature is worth.
+
+### The home screen after PayPal and Patreon go
+
+Section 1.2.3 removes both donation buttons. That leaves the home screen's footer as just the two links — "how to use this app" and "add a Play Store app review" — with the `spacer` above them sized for a block that is no longer there. Small layout job, but do not forget the review link's own text: the alert emails say *"by tapping on the home screen link"*, so that link has to survive the redesign or the email wording goes stale.
+
+### Play Console data safety
+
+Adding RevenueCat means an SDK that sees a pseudonymous app-user id. The Data safety form and the privacy policy both need updating before the release that carries it — this is a store-rejection item, not a nicety.

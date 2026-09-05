@@ -149,12 +149,18 @@ adb install build/app/outputs/flutter-apk/app-release.apk
 
 ## 3. Package dependencies
 
+Direct dependencies only; see `pubspec.lock` for the resolved transitive graph and `THIRD-PARTY-NOTICES.md` for licences.
+
 | Package             | Purpose                                                                             |
 | ------------------- | ----------------------------------------------------------------------------------- |
+| `dartssh2`          | SSH connection to the router - every slot and watchdog operation runs over it       |
 | `http`              | HTTP REST connection pipelines to PIA APIs                                          |
-| `x25519`            | Ephemeral WireGuard keypair generation                                              |
-| `share_plus`        | Share/save config file via Android share sheet                                      |
+| `in_app_review`     | Opens the app's Play Store listing from the home-screen review link                 |
 | `package_info_plus` | Querying app package metadata dynamically from `pubspec.yaml` for version reporting |
+| `path_provider`     | Platform directories for saving a generated config                                  |
+| `share_plus`        | Share/save config file via Android share sheet                                      |
+| `url_launcher`      | Opens external links - help, GitHub issues, donations                               |
+| `x25519`            | Ephemeral WireGuard keypair generation                                              |
 
 ## 4. Dependency pinning & reproducible builds
 
@@ -181,8 +187,9 @@ This is expected and correct behavior designed to block untracked dependency upd
 You must regenerate the Gradle lockfiles whenever you:
 
 1. Add a new package or dependency to build.gradle.
-2. Update the version of an existing package. eg via `flutter pub upgrade | flutter pub upgrade --major-versions`.
-3. Modify or upgrade build plugins.
+2. **Add a Flutter plugin with native Android code** - `flutter pub add` alone is not enough. The plugin drags its own Android dependencies into the Gradle graph, and the build fails until they are locked. Adding `in_app_review` pulled in the Play review library and three Play Services artifacts.
+3. Update the version of an existing package. eg via `flutter pub upgrade | flutter pub upgrade --major-versions`.
+4. Modify or upgrade build plugins.
 
 #### 4.1.3. How to regenerate lockfiles
 

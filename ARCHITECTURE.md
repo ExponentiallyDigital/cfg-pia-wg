@@ -9,13 +9,21 @@
   - [3.2. Stock `vpnc_clientlist`](#32-stock-vpnc_clientlist)
 - [4. Wireguard SSH commands](#4-wireguard-ssh-commands)
   - [4.1. Merlin](#41-merlin)
+    - [4.1.1. Enable](#411-enable)
+    - [4.1.2. Disable](#412-disable)
+    - [4.1.3. Delete](#413-delete)
+    - [4.1.4. What only Merlin has](#414-what-only-merlin-has)
+    - [4.1.5. Firmware detection](#415-firmware-detection)
   - [4.2. Stock](#42-stock)
     - [4.2.1 Create and enable a slot](#421-create-and-enable-a-slot)
     - [4.2.2 Enable existing slot](#422-enable-existing-slot)
     - [4.2.3 Stop/Disable](#423-stopdisable)
     - [4.2.4 Delete](#424-delete)
+    - [4.2.5 VPN Fusion](#425-vpn-fusion)
 - [5. Watchdog details](#5-watchdog-details)
   - [5.1. Shell script](#51-shell-script)
+    - [5.1.1. Backoff](#511-backoff)
+    - [5.1.2. Email alerting](#512-email-alerting)
   - [5.2. Cron entries](#52-cron-entries)
   - [5.3. Watchdog NVRAM fields](#53-watchdog-nvram-fields)
   - [5.4. Sample `cfg-pia-wg` output](#54-sample-cfg-pia-wg-output)
@@ -101,14 +109,14 @@ graph TD
 
     E --> E1["Enter router IP, SSH user/password"]
     E1 --> E2["CONNECT TO ROUTER"]
-    E2 --> E3["fetchSlots: read wgc1–5 metadata, active slot, Merlin required"]
+    E2 --> E3["Detect firmware (stock or Merlin), then fetchSlots: read wgc1–5 metadata, active slots"]
     E3 --> E4["Open SlotModal (watchdog mode)"]
 
     subgraph WD["Watchdog flow"]
       E4 --> E5["Select slot + action"]
-      E5 --> E5a["ENABLE: stop other watchdogs, loadConfig, sync PIA creds, validate, startWatchdog (deploy scripts, cron, services-start)"]
-      E5 --> E5b["EDIT: open WatchdogDialog, save watchdog config to NVRAM"]
-      E5 --> E5c["DISABLE: stopWatchdog"]
+      E5 --> E5a["CREATE/EDIT: WatchdogDialog, validate, deployWatchdog (script, both cru jobs, boot persistence), run once as deploy"]
+      E5 --> E5b["ENABLE: restore the cru jobs at the interval stored on the router"]
+      E5 --> E5c["DISABLE: remove the cru jobs, leave the settings in NVRAM (PAUSED)"]
       E5 --> E5d["DELETE: stopWatchdog, deleteSlot"]
       E5 --> E5e["VIEW WATCHDOG LOG: getWatchdogLog"]
       E5a --> E5f["Refresh slots after action"]
@@ -147,38 +155,37 @@ Merlin exposes 17 nvram fields per WireGuard slot, stock exposes 12.
 
 Alongside the per-slot fields, the app keeps a handful of **global** `cfg_pia_wg_*` fields that are not tied to a slot. Every NVRAM variable the app writes must be described here.
 
-| Field | Written by | Default | Description |
-|---|---|---|---|
-| `cfg_pia_wg_user` | Watchdog deploy | – | Your PIA username. Needed on the router because the watchdog re-authenticates with PIA unattended; stored in plaintext (see SECURITY.md). |
-| `cfg_pia_wg_password` | Watchdog deploy | – | Your PIA password, same reasoning and same caveat. |
-| `cfg_pia_wg_sdate` | First watchdog deploy or test email | today's date | `yyyy-mm-dd` the app first configured this router. Reported as the "Since ..." date in the HISTORY section of every alert email, so the counters below have a period to be counted over. Seeded once and never rewritten. |
-| `cfg_pia_wg_reconfig_ok` | Watchdog script | `0` | Lifetime count of successful re-configurations, across all slots. Incremented by the deployed script when a tunnel is rebuilt. |
-| `cfg_pia_wg_reconfig_fail` | Watchdog script | `0` | Lifetime count of failed re-configuration attempts, across all slots. Incremented when the script aborts. |
+| Field                      | Written by                          | Default      | Description                                                                                                                                                                                                               |
+| -------------------------- | ----------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cfg_pia_wg_user`          | Watchdog deploy                     | –            | Your PIA username. Needed on the router because the watchdog re-authenticates with PIA unattended; stored in plaintext (see SECURITY.md).                                                                                 |
+| `cfg_pia_wg_password`      | Watchdog deploy                     | –            | Your PIA password, same reasoning and same caveat.                                                                                                                                                                        |
+| `cfg_pia_wg_sdate`         | First watchdog deploy or test email | today's date | `yyyy-mm-dd` the app first configured this router. Reported as the "Since ..." date in the HISTORY section of every alert email, so the counters below have a period to be counted over. Seeded once and never rewritten. |
+| `cfg_pia_wg_reconfig_ok`   | Watchdog script                     | `0`          | Lifetime count of successful re-configurations, across all slots. Incremented by the deployed script when a tunnel is rebuilt.                                                                                            |
+| `cfg_pia_wg_reconfig_fail` | Watchdog script                     | `0`          | Lifetime count of failed re-configuration attempts, across all slots. Incremented when the script aborts.                                                                                                                 |
 
 The two counters are committed once per alert, never per check: `nvram commit` writes flash, and a tunnel that is broken for hours would otherwise commit every cooldown.
 
-
 ### 3.1. Field reference
 
-| Field | Merlin | Stock | Default | Description |
-|---|:-:|:-:|---|---|
-| `wgcN_addr` | Yes | Yes | – | Local tunnel IP address assigned by the VPN server, in CIDR notation (e.g. `10.1.2.3`). |
-| `wgcN_aips` | Yes | Yes | `0.0.0.0/0` | Allowed IP addresses. |
-| `wgcN_alive` | Yes | Yes | `25` (seconds) | Persistent keepalive interval. |
-| `wgcN_desc` | Yes | **No** | – | Slot's PIA region name, stored with a `pia-` prefix (e.g. `pia-aus_melbourne`) so the app's VPNs stand out among any others on the router. The watchdog strips the prefix (`REGION="${DESC#pia-}"`) before its region lookup, so the remainder must still match a real PIA region name. |
-| `wgcN_dns` | Yes | Yes | `"9.9.9.9, 149.112.112.112"` | Two DNS servers to use, actual values are set in the cfg-pia-wg app. |
-| `wgcN_enable` | Yes | Yes | – | `1` enables this slot, `0` disables it. |
-| `wgcN_enforce` | Yes | **No** | – | `1` enables the killswitch on this slot, `0` disables it. Blocks routed clients if the tunnel goes down. Stock exposes no UI to alter this - when running on stock this field will be ignored. |
-| `wgcN_ep_addr` | Yes | Yes | – | FQDN or public IP of the remote PIA WireGuard peer endpoint. |
-| `wgcN_ep_addr_r` | Yes | Yes | – | Resolved numeric IP if `wgcN_ep_addr` is a DNS name (identical value if `wgcN_ep_addr` is already an IP). Set when the interface initialises. |
-| `wgcN_ep_port` | Yes | Yes | `1337` | Endpoint port. |
-| `wgcN_fw` | Yes | **No** | – | `1` enables the inbound firewall on this slot, `0` disables it. |
-| `wgcN_mtu` | Yes | Yes | `1420` | Maximum transmission unit. |
-| `wgcN_nat` | Yes | Yes | – | `1` enables NAT, `0` disables it. |
-| `wgcN_ppub` | Yes | Yes | – | PIA VPN server public key. |
-| `wgcN_priv` | Yes | Yes | – | PIA user's private key. |
-| `wgcN_psk` | Yes | Yes | – | Reserved for a preshared key, not used by PIA. |
-| `wgcN_rip` | Yes | **No** | – | Router's current external public IP address as seen by the internet. |
+| Field            | Merlin | Stock  | Default                      | Description                                                                                                                                                                                                                                                                             |
+| ---------------- | :----: | :----: | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wgcN_addr`      |  Yes   |  Yes   | –                            | Local tunnel IP address assigned by the VPN server, in CIDR notation (e.g. `10.1.2.3`).                                                                                                                                                                                                 |
+| `wgcN_aips`      |  Yes   |  Yes   | `0.0.0.0/0`                  | Allowed IP addresses.                                                                                                                                                                                                                                                                   |
+| `wgcN_alive`     |  Yes   |  Yes   | `25` (seconds)               | Persistent keepalive interval.                                                                                                                                                                                                                                                          |
+| `wgcN_desc`      |  Yes   | **No** | –                            | Slot's PIA region name, stored with a `pia-` prefix (e.g. `pia-aus_melbourne`) so the app's VPNs stand out among any others on the router. The watchdog strips the prefix (`REGION="${DESC#pia-}"`) before its region lookup, so the remainder must still match a real PIA region name. |
+| `wgcN_dns`       |  Yes   |  Yes   | `"9.9.9.9, 149.112.112.112"` | Two DNS servers to use, actual values are set in the cfg-pia-wg app.                                                                                                                                                                                                                    |
+| `wgcN_enable`    |  Yes   |  Yes   | –                            | `1` enables this slot, `0` disables it.                                                                                                                                                                                                                                                 |
+| `wgcN_enforce`   |  Yes   | **No** | –                            | `1` enables the killswitch on this slot, `0` disables it. Blocks routed clients if the tunnel goes down. Stock exposes no UI to alter this - when running on stock this field will be ignored.                                                                                          |
+| `wgcN_ep_addr`   |  Yes   |  Yes   | –                            | FQDN or public IP of the remote PIA WireGuard peer endpoint.                                                                                                                                                                                                                            |
+| `wgcN_ep_addr_r` |  Yes   |  Yes   | –                            | Resolved numeric IP if `wgcN_ep_addr` is a DNS name (identical value if `wgcN_ep_addr` is already an IP). Set when the interface initialises.                                                                                                                                           |
+| `wgcN_ep_port`   |  Yes   |  Yes   | `1337`                       | Endpoint port.                                                                                                                                                                                                                                                                          |
+| `wgcN_fw`        |  Yes   | **No** | –                            | `1` enables the inbound firewall on this slot, `0` disables it.                                                                                                                                                                                                                         |
+| `wgcN_mtu`       |  Yes   |  Yes   | `1420`                       | Maximum transmission unit.                                                                                                                                                                                                                                                              |
+| `wgcN_nat`       |  Yes   |  Yes   | –                            | `1` enables NAT, `0` disables it.                                                                                                                                                                                                                                                       |
+| `wgcN_ppub`      |  Yes   |  Yes   | –                            | PIA VPN server public key.                                                                                                                                                                                                                                                              |
+| `wgcN_priv`      |  Yes   |  Yes   | –                            | PIA user's private key.                                                                                                                                                                                                                                                                 |
+| `wgcN_psk`       |  Yes   |  Yes   | –                            | Reserved for a preshared key, not used by PIA.                                                                                                                                                                                                                                          |
+| `wgcN_rip`       |  Yes   | **No** | –                            | Router's current external public IP address as seen by the internet.                                                                                                                                                                                                                    |
 
 **Note: `wgcN_alive`:** Merlin sets this to 25 by default. Stock only defaults to 25 if the field is not explicitly set; the field itself is otherwise optional.
 
@@ -193,20 +200,20 @@ On stock firmware, several WireGuard slot parameters are consolidated into a sin
 
 **Field schema** (applies to every record):
 
-| Index | Field        | Meaning                                   |
-| :---: | ------------ | ----------------------------------------- |
-|   0   | description  | slot description (set to PIA region name) |
-|   1   | protocol     | always `WireGuard`                        |
-|   2   | slot number  | maps to `wgcN_` (e.g. `5` = `wgc5_`)      |
-|   3   | vpn username | ignore                                    |
-|   4   | vpn password | ignore, WebUI sets to router admin pwd    |
-|   5   | vpn state    | `1` = active, `0` = disabled              |
-|   6   | vpnc_idx     | `10 - slot number`, maps to `vpncN_*`     |
-|   7   | region       | ignore, always empty, purpose unconfirmed |
-|   8   | conn type    | ignore, always empty, purpose unconfirmed |
-|   9   | tunnel       | always `0`, purpose unconfirmed           |
-|  10   | wan_idx      | always `0`, purpose unconfirmed           |
-|  11   | source       | created by GUI = `Web`, app = `cfg-pia-wg`|
+| Index | Field        | Meaning                                    |
+| :---: | ------------ | ------------------------------------------ |
+|   0   | description  | slot description (set to PIA region name)  |
+|   1   | protocol     | always `WireGuard`                         |
+|   2   | slot number  | maps to `wgcN_` (e.g. `5` = `wgc5_`)       |
+|   3   | vpn username | ignore                                     |
+|   4   | vpn password | ignore, WebUI sets to router admin pwd     |
+|   5   | vpn state    | `1` = active, `0` = disabled               |
+|   6   | vpnc_idx     | `10 - slot number`, maps to `vpncN_*`      |
+|   7   | region       | ignore, always empty, purpose unconfirmed  |
+|   8   | conn type    | ignore, always empty, purpose unconfirmed  |
+|   9   | tunnel       | always `0`, purpose unconfirmed            |
+|  10   | wan_idx      | always `0`, purpose unconfirmed            |
+|  11   | source       | created by GUI = `Web`, app = `cfg-pia-wg` |
 
 **Worked example:**
 
@@ -236,9 +243,65 @@ To manage Wireguard Merlin uses VPN Director, stock ASUS uses VPN Fusion. These 
 
 ### 4.1. Merlin
 
-Operations are performed by setting nvram fields on specific slots and making calls with service commands...
+VPN Director exposes each slot directly: there is no clientlist and no unit indirection. Write the `wgcN_*` keys, commit, then act on the slot **by its own number**.
 
-`<************** PLACEHOLDER - add full details here **************>`
+```text
+   nvram set wgcN_*      (17 keys, section 3.1)
+          │
+   nvram commit          always BEFORE the service call, so the
+          │              service cannot read a half-written slot
+          ▼
+        exec
+  service "start_wgc N"  OR  service "stop_wgc N"
+          │
+          ▼
+  service restart_vpnrouting0   (start)
+  service start_vpnrouting0     (stop)
+          │
+          ▼
+        wgcN
+```
+
+#### 4.1.1. Enable
+
+```bash
+nvram set wgcN_enable=1
+nvram commit
+service "start_wgc N"; service restart_vpnrouting0
+```
+
+Then poll `wg show interfaces` until `wgcN` appears. The app tries five times at two-second intervals and reverts to disabled if it never comes up — the `service` call is queued through `notify_rc` and returns immediately, so a prompt return says nothing about the tunnel.
+
+#### 4.1.2. Disable
+
+```bash
+nvram set wgcN_enable=0
+nvram commit
+service "stop_wgc N"; service start_vpnrouting0
+```
+
+Note the asymmetry: **`restart_vpnrouting0` on the way up, `start_vpnrouting0` on the way down.** Then poll until `wgcN` leaves `wg show interfaces` — unsetting keys before it has gone lets the firmware re-create `wgcN_enable` behind you.
+
+#### 4.1.3. Delete
+
+Disable as above, wait for the interface to go, then `nvram unset` all 17 `wgcN_*` keys plus `wgcN_wd_primary_ip` / `wgcN_wd_secondary_ip`, and commit. There are no `vpncN_*` runtime keys to clean up on Merlin.
+
+#### 4.1.4. What only Merlin has
+
+- `wgcN_enforce` (kill switch), `wgcN_fw` (inbound firewall), `wgcN_rip` — `kMerlinOnlySlotKeys`. Writing them on stock creates keys nothing reads and DELETE does not clean up.
+- `wgcN_desc` as a real firmware field. On stock the app writes it anyway, as a key of its own, because the watchdog script needs the region name from a bare `nvram get`.
+- The JFFS custom-scripts partition, which the watchdog needs for reboot persistence:
+
+  ```bash
+  nvram get jffs2_scripts   # both must be 1
+  nvram get jffs2_on
+  ```
+
+  The app sets and commits them if they are not already on. Stock has no equivalent and no `/jffs/scripts` hook directory, so the watchdog persists its cron entries differently there — see section 5.2.
+
+#### 4.1.5. Firmware detection
+
+`nvram get 3rd-party` returns `merlin` on Merlin and is empty on stock. Detected once per app session; every router command branches on the result.
 
 ### 4.2. Stock
 
@@ -363,8 +426,7 @@ Deleting the last WG slot executes
 service restart_vpnc_dev_policy
 ```
 
-`<************** PLACEHOLDER **************>`
-ARE THE BELOW SET BY VPN FUSION CALLS?
+#### 4.2.5 VPN Fusion
 
  `vpncN_*` values are
 
@@ -372,38 +434,94 @@ ARE THE BELOW SET BY VPN FUSION CALLS?
   vpnc5_dut_disc=5   # retained after reboot
   vpnc5_sbstate_t=0  # removed after reboot
   vpnc5_state_t=2    # removed after reboot
+  ```
 
-`wgcN_*` are **not** removed when a profile is deleted.
-```
+  `wgcN_*` are **not** removed when a profile is deleted.
 
----•
+---
 
 ## 5. <a name='Watchdogdetails'></a>Watchdog details
 
-Enabling the watchdog deploys
+Deploying a watchdog writes three things to the router, plus the settings in section 5.3:
 
-`<************** PLACEHOLDER - update with stock details **************>`
+1. a slot-specific shell script, `/jffs/cfg-pia-wg/watchdog_wgcN.sh`
+2. two `cru` entries — the periodic check and a nightly log rotation
+3. reboot persistence for those entries, which differs by firmware (section 5.2)
 
-1. a slot-specific shell script `/jffs/scripts/watchdog_wgcN.sh`
-2. cron entries via `/jffs/scripts/services-start`.
+The app then runs the script once by hand, as `watchdog_wgcN.sh deploy`, so the watchdog is live immediately rather than at its next scheduled tick.
+
+`/jffs/cfg-pia-wg` is the app's own directory on both firmwares. It also holds the cached PIA CA certificate, and on stock the user-installed `jq` and `mailsend-go` binaries. It is deliberately **not** `/jffs/scripts`, which is Merlin's hook directory and does not exist on stock.
+
+Watchdogs run per slot and concurrently — two slots can each have their own, with independent intervals and email settings.
 
 ### 5.1. <a name='Shellscript'></a>Shell script
 
-The shell script checks connectivity via the VPN tunnel on a periodic basis using two ping targets
+Each run asks one question: is this tunnel carrying traffic?
 
-- `8.8.8.8` (Google)
-- `1.1.1.1` (Cloudflare)
+1. **Handshake.** `wg show wgcN latest-handshakes` — a handshake newer than 300 s means the peer is answering. This is the only firmware-independent liveness signal, and it is the primary one.
+2. **Ping fallback.** If there is no recent handshake, ping the two configured targets *through the interface* (`ping -I wgcN`), by default `8.8.8.8` and `1.1.1.1`. This is a Merlin fallback: on stock the router's own traffic is not routed into `wgcN`, so a failed ping there says nothing.
 
-If connectivity fails, the interface is reconfigured with back off.
+> [!NOTE]
+> Ping alone used to be the whole test. On stock it fails even when the tunnel is perfectly healthy, which produced reconfigure after reconfigure — and enough PIA token requests to get the account temporarily refused. The handshake check is what fixed it.
+
+A healthy check writes the time to `/tmp/watchdog_last_ping_success_wgcN`, resets the backoff counter and exits.
+
+A failed check reconfigures: fetch a PIA token, fetch the region's server list, ping every candidate and take the lowest latency, generate a fresh keypair, register the public key with `addKey`, write the 16 `wgcN_*` values, and restart the interface. Full flow in section 2.2.
+
+#### 5.1.1. Backoff
+
+PIA answers **HTTP 403** after sustained re-registration and clears on its own after tens of minutes. Retrying at a fixed interval is what provokes and prolongs that, so the wait grows with each consecutive failed attempt and resets on success:
+
+| Consecutive failures | Wait before the next attempt |
+| ---: | --- |
+| 1 | 2 min |
+| 2 | 4 min |
+| 3 | 8 min |
+| 4 | 16 min |
+| 5 | 30 min |
+| 6 | 60 min |
+| 7 and beyond | 90 min — the cap |
+
+The counter in `/tmp/watchdog_backoff_wgcN` counts attempts **actually made**, not checks that found a fault: a run the backoff turns away leaves it untouched, so a rung means the same thing whatever the check interval. A run inside the wait logs `Backing off after N failed attempts: Xs of Ys elapsed` and exits — a long silent gap in the log otherwise reads as a watchdog that has stopped.
+
+#### 5.1.2. Email alerting
+
+Optional, per slot, and sent from the user's own SMTP account — nothing is routed through a third party. Merlin uses BusyBox `sendmail` over `openssl s_client`; stock uses `mailsend-go`, since BusyBox sendmail is not viable there.
+
+Three events send mail:
+
+| Event | Subject | Notes |
+| --- | --- | --- |
+| Deploy | `<subject>: SUCCESS - wgcN:pia-<region>` | The `deploy` run always mails, **even when it finds the tunnel already healthy** — it is the user's proof that alerting works, at the moment they set it up rather than months later during an outage. No addKey ran on that path, so the endpoint comes from `wgcN_ep_addr`/`_ep_port` and there is no server name or latency to report. |
+| Reconfigure succeeded | `<subject>: SUCCESS - wgcN:pia-<region>` | Outage duration, kill-switch state, the new server and its latency, attempt number. |
+| Reconfigure failed | `<subject>: FAILED - wgcN:pia-<region>` | Adds a `WHAT TO DO` block and the last ten lines of the router-side watchdog log, so the evidence travels with the alert. |
+
+A fourth, the **test email**, is sent by the app from the watchdog configuration screen and uses the same layout.
+
+Every message is plain text with four sections — `WHAT HAPPENED`, `ROUTER`, `HISTORY`, and on failures `WHAT TO DO` and `ROUTER LOG` — ordered answer first, action second, evidence last. `HISTORY` reports the lifetime counters from section 3. Worked examples are in [README.md section 5.3.1](README.md#531-email-alerts).
+
+> [!NOTE]
+> The failure email's router-log excerpt can contain the PIA **username** (`Requesting PIA token for user ...`). It never contains the password or the token — the script logs the token's length only.
 
 ### 5.2. <a name='Cronentries'></a>Cron entries
 
 A `cru` (`crontab`) entry drives the configurable periodic health check. An additional job rotates the watchdog router log file at midnight. To avoid filling the JFFS partition, all logging is stored in `/tmp`. Watchdog logs do not persist after a reboot or power loss.
 
 ```bash
-*/5 * * * * /jffs/scripts/watchdog_wgc1.sh #watchdog_wgc1#
+*/5 * * * * /jffs/cfg-pia-wg/watchdog_wgc1.sh #watchdog_wgc1#
 0 0 * * * mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
 ```
+
+`cru` entries do not survive a reboot, so both lines are also written somewhere that runs at boot — and that is the one place the two firmwares differ:
+
+| Firmware | Boot hook |
+| --- | --- |
+| Merlin | `/jffs/scripts/services-start`, created and made executable if absent |
+| Stock | `/opt/etc/init.d/S50downloadmaster` — a script stock already runs at boot and on a firewall restart, which the app hijacks |
+
+Stock has no user-script hook of its own. Only the region between the `# ********** REPLACEMENT START/END **********` markers of S50downloadmaster is ever rewritten; everything else in the file is copied through untouched, and the app runs `S50downloadmaster start` immediately rather than waiting for the next boot. `/opt` is an Entware path, which on stock arrives by installing **DownloadMaster** from the ASUS WebUI — that is why DownloadMaster is a prerequisite for the watchdog on stock, and for nothing else the app does.
+
+The deployed copy is LF-terminated: the repo template `scripts/S50downloadmaster-TEMPLATE.sh` is CRLF, and a CRLF shebang makes the router's kernel refuse to exec it. `test/unit/s50_template_test.dart` fails if the two drift apart.
 
 ### 5.3. <a name='WatchdogNVRAMfields'></a>Watchdog NVRAM fields
 
@@ -486,14 +604,14 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 
 ### 8.2. <a name='Whereeachfieldcomesfrom'></a>Where each field comes from
 
-| Field | Source |
-| --- | --- |
-| `versionName`, `buildNumber` | `PackageManager` at runtime (`longVersionCode` on API 28+) |
-| `installer` | `getInstallSourceInfo()` on API 30+, else `getInstallerPackageName()`; mapped to a friendly label, falling back to the raw package name |
-| `buildType` | `BuildConfig.BUILD_TYPE` is AGP-generated; can be `debug`, `profile` (Flutter adds it) or `release` |
-| `cpuAbi` | `Build.SUPPORTED_ABIS[0]` is the *device's* preferred ABI, since `flutter build apk` ships a universal APK |
-| `osVersion` | `RELEASE_OR_CODENAME` on API 30+, else `RELEASE`, plus `SDK_INT` |
-| `buildTimestamp`, `commitHash`, `commitDate`, `gitBranch`, `runnerId`, `compileSdk`, `kotlinVersion` | `BuildConfig`, injected by `android/app/build.gradle.kts` at configuration time |
+| Field                                                                                                | Source                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `versionName`, `buildNumber`                                                                         | `PackageManager` at runtime (`longVersionCode` on API 28+)                                                                              |
+| `installer`                                                                                          | `getInstallSourceInfo()` on API 30+, else `getInstallerPackageName()`; mapped to a friendly label, falling back to the raw package name |
+| `buildType`                                                                                          | `BuildConfig.BUILD_TYPE` is AGP-generated; can be `debug`, `profile` (Flutter adds it) or `release`                                     |
+| `cpuAbi`                                                                                             | `Build.SUPPORTED_ABIS[0]` is the *device's* preferred ABI, since `flutter build apk` ships a universal APK                              |
+| `osVersion`                                                                                          | `RELEASE_OR_CODENAME` on API 30+, else `RELEASE`, plus `SDK_INT`                                                                        |
+| `buildTimestamp`, `commitHash`, `commitDate`, `gitBranch`, `runnerId`, `compileSdk`, `kotlinVersion` | `BuildConfig`, injected by `android/app/build.gradle.kts` at configuration time                                                         |
 
 ### 8.3. <a name='Gradle-sidenotes'></a>Gradle-side notes
 
