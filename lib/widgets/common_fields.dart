@@ -64,6 +64,7 @@ class PiaUsernameField extends StatelessWidget {
             labelText: 'PIA username',
             hintText: 'e.g. p1234567',
             prefixIcon: Icon(Icons.person_outline, color: kMuted, size: 18)),
+        autofillHints: const [AutofillHints.username],
         autocorrect: false,
         enableSuggestions: false,
       );
@@ -97,6 +98,10 @@ class ObscuredField extends StatelessWidget {
   final IconData prefixIcon;
   final bool visible;
   final VoidCallback onToggle;
+
+  /// Passed through to the platform so a password manager can offer to fill this field. Empty
+  /// means "no autofill" - on Android that is what an absent hint list already means.
+  final List<String> autofillHints;
 //  final bool enableInteractiveSelection; // disable copy if password field is revealed
   const ObscuredField({
     super.key,
@@ -105,6 +110,7 @@ class ObscuredField extends StatelessWidget {
     required this.prefixIcon,
     required this.visible,
     required this.onToggle,
+    this.autofillHints = const <String>[],
 //    this.enableInteractiveSelection = true, // disable copy if password field is revealed
   });
 
@@ -112,6 +118,7 @@ class ObscuredField extends StatelessWidget {
   Widget build(BuildContext context) => TextFormField(
         controller: controller,
         obscureText: !visible,
+        autofillHints: autofillHints,
         style: _kMono,
 //        enableInteractiveSelection: enableInteractiveSelection, // disable copy if password field is revealed
         decoration: InputDecoration(
@@ -140,6 +147,7 @@ class PiaPasswordField extends StatelessWidget {
         label: 'PIA password',
         prefixIcon: Icons.lock_outline,
         visible: visible,
+        autofillHints: const [AutofillHints.password],
 //        enableInteractiveSelection: false, // disable copy if password field is revealed
         onToggle: onToggle,
       );
@@ -168,6 +176,7 @@ class SshUsernameField extends StatelessWidget {
         controller: controller,
         style: _kMono,
         decoration: const InputDecoration(labelText: 'SSH Username', prefixIcon: Icon(Icons.person, color: kMuted, size: 18)),
+        autofillHints: const [AutofillHints.username],
       );
 }
 
@@ -184,6 +193,7 @@ class SshPasswordField extends StatelessWidget {
         label: 'SSH Password',
         prefixIcon: Icons.lock,
         visible: visible,
+        autofillHints: const [AutofillHints.password],
 //        enableInteractiveSelection: false, // disable copy if password field is revealed
         onToggle: onToggle,
       );

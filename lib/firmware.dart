@@ -62,6 +62,11 @@ const String kStockMailsendPath = '$kRouterAppDir/mailsend-go';
 /// and everything else the app puts on the router is already under [kRouterAppDir].
 String watchdogScriptPath(int slot) => '$kRouterAppDir/watchdog_wgc$slot.sh';
 
+/// Stamped into a deployed watchdog script and reported in its alert emails, e.g.
+/// `v0.8.34 build 404`. Set once at startup from PackageInfo; empty in tests and until that
+/// completes, where the provenance line is simply omitted rather than guessed at.
+String appVersionLabel = '';
+
 /// Merlin runs cron entries from services-start; stock has no equivalent, so the app hijacks an
 /// unused init script that the firmware already executes at boot and on firewall restart.
 const String kServicesStartPath = '/jffs/scripts/services-start';

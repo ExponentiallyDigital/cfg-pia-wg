@@ -105,13 +105,14 @@ class _SlotModalState extends State<SlotModal> {
   }
 
   // ── Generic dialog helpers ────────────────────────────────────────────────────────
-  Future<bool> _confirm(String title, String message, {String confirmLabel = 'CONFIRM', bool destructive = false}) async {
+  Future<bool> _confirm(String title, {String? message, String confirmLabel = 'CONFIRM', bool destructive = false}) async {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
         title: Text(title, style: const TextStyle(color: kText, fontSize: 15)),
-        content: Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
+        // A question that already names the slot and its region needs no explanatory body.
+        content: message == null ? null : Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
           TextButton(
@@ -152,8 +153,8 @@ class _SlotModalState extends State<SlotModal> {
     final slot = _selected;
     final info = _slots.slots[slot]!;
     if (!info.isEmpty) {
-      final ok = await _confirm(
-          'Overwrite wgc$slot?', 'Slot wgc$slot currently holds "${info.desc}". Creating a new configuration will overwrite it.');
+      final ok = await _confirm('Overwrite wgc$slot?',
+          message: 'Slot wgc$slot currently holds "${info.desc}". Creating a new configuration will overwrite it.');
       if (!ok) return;
     }
     final regionId = await _pickRegion();
@@ -271,10 +272,8 @@ class _SlotModalState extends State<SlotModal> {
   Future<void> _deleteManage() async {
     final slot = _selected;
     final info = _selectedInfo;
-    final desc = (info != null && !info.isEmpty) ? ' ("${info.desc}")' : '';
     final wdActive = info?.watchdogActive ?? false;
-    final ok = await _confirm('Delete wgc$slot?', 'This clears the wgc$slot$desc configuration on the router.',
-        confirmLabel: 'DELETE', destructive: true);
+    final ok = await _confirm('Delete VPN ${slotLabel(slot, info?.desc ?? '')}?', confirmLabel: 'DELETE', destructive: true);
     if (!ok) return;
     await _runSlot((svc) async {
       if (wdActive) await _wdSvc(svc.client).stopWatchdog(slot); // deleting also disables its watchdog
@@ -330,7 +329,7 @@ class _SlotModalState extends State<SlotModal> {
     final slot = _selected;
     final ok = await _confirm(
       'Disable watchdog wgc$slot?',
-      'Removes its scheduled checks. The settings stay on the router and the VPN keeps running, '
+      message: 'Removes its scheduled checks. The settings stay on the router and the VPN keeps running, '
           'just unsupervised - ENABLE puts the schedule back.',
       confirmLabel: 'DISABLE',
     );
@@ -346,7 +345,8 @@ class _SlotModalState extends State<SlotModal> {
 
   Future<void> _deleteWatchdog() async {
     final slot = _selected;
-    final ok = await _confirm('Delete watchdog wgc$slot?', 'This will also delete and disable the underlying region.',
+    // "and VPN": DELETE here tears down the underlying slot too, which the old wording buried.
+    final ok = await _confirm('Delete watchdog and VPN ${slotLabel(slot, _selectedInfo?.desc ?? '')}?',
         confirmLabel: 'DELETE', destructive: true);
     if (!ok) return;
     setState(() => _processing = true);
@@ -658,9 +658,17 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
     return _FormDialog(
       title: 'PIA credentials',
       fields: [
-        PiaUsernameField(controller: _userCtrl),
-        const SizedBox(height: 10),
-        PiaPasswordField(controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
+        AutofillGroup(
+          onDisposeAction: AutofillContextAction.cancel,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PiaUsernameField(controller: _userCtrl),
+              const SizedBox(height: 10),
+              PiaPasswordField(controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
+            ],
+          ),
+        ),
         const SizedBox(height: 10),
         DnsField(controller: _dnsCtrl),
         if (_error != null) ...[

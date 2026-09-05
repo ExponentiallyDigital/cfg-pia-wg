@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
@@ -209,6 +210,120 @@ void main() {
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
+    });
+
+    // Each login gets its own AutofillGroup. Sharing one would let a provider offer the router's SSH
+    // password for the PIA field and vice versa, and would save a single mixed-up vault entry.
+    group('each set of credentials is its own AutofillGroup', () {
+      /// The hint lists of every field inside [group], in order.
+      List<List<String>> hintsIn(WidgetTester tester, Element group) {
+        final hints = <List<String>>[];
+        void visit(Element el) {
+          final w = el.widget;
+          if (w is EditableText && (w.autofillHints?.isNotEmpty ?? false)) {
+            hints.add(w.autofillHints!.toList());
+          }
+          el.visitChildren(visit);
+        }
+
+        visit(group);
+        return hints;
+      }
+
+      testWidgets('the generate screen groups only the PIA credentials', (tester) async {
+        final c = _controller([]);
+        await tester.pumpWidget(_host(c));
+        await tester.pumpAndSettle();
+
+        final groups = find.byType(AutofillGroup).evaluate().toList();
+        expect(groups, hasLength(1));
+        expect(
+            hintsIn(tester, groups.single),
+            [
+              [AutofillHints.username],
+              [AutofillHints.password],
+            ],
+            reason: 'username and password, and nothing else - not the DNS field');
+
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
+      testWidgets('the group cancels on dispose, so leaving asks nothing', (tester) async {
+        final c = _controller([]);
+        await tester.pumpWidget(_host(c));
+        await tester.pumpAndSettle();
+
+        final group = tester.widget<AutofillGroup>(find.byType(AutofillGroup));
+        expect(group.onDisposeAction, AutofillContextAction.cancel);
+
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+    });
+
+    // A password manager only offers to save when the app finishes the autofill context. Doing that
+    // on success alone means the prompt appears when the credentials are known good, and never after
+    // a typo or a cancelled form.
+    group('save prompt', () {
+      /// Records `shouldSave` for every finishAutofillContext that reaches the platform. The
+      /// method fires on both paths - a cancelled group sends `shouldSave: false` - so the
+      /// argument is what decides whether the password manager offers to save anything.
+      List<bool> savePrompts(WidgetTester tester) {
+        final prompts = <bool>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.textInput, (call) async {
+          if (call.method == 'TextInput.finishAutofillContext') prompts.add(call.arguments as bool);
+          return null;
+        });
+        addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.textInput, null));
+        return prompts;
+      }
+
+      testWidgets('a successful generate offers to save the PIA credentials', (tester) async {
+        tester.view.physicalSize = const Size(1200, 3000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final prompts = savePrompts(tester);
+        final c = _controller([]);
+        await withFakeHttpClient(() async {
+          await tester.pumpWidget(_host(c, service: PiaService(probePort: probeServer!.port)));
+          await tester.pumpAndSettle();
+
+          await tester.enterText(find.widgetWithText(TextFormField, 'Region ID'), kTestRegion);
+          await tester.enterText(find.widgetWithText(TextFormField, 'PIA username'), 'p1234567');
+          await tester.enterText(find.widgetWithText(TextFormField, 'PIA password'), 'secret');
+          await tester.pump();
+
+          await tester.tap(find.byKey(const Key('generate_config')));
+          await driveUntil(tester, () => find.byKey(const Key('generated_config_text')).evaluate().isNotEmpty);
+
+          expect(prompts, contains(true), reason: 'PIA accepted them, so offer to save');
+        }, fakeGenerateResponses);
+
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
+      // Leaving the screen with credentials typed in must NOT raise a save prompt - that is what
+      // onDisposeAction.cancel buys, and without it a half-filled form would offer to save itself.
+      testWidgets('typing credentials and leaving offers nothing', (tester) async {
+        final prompts = savePrompts(tester);
+        final c = _controller([]);
+        await tester.pumpWidget(_host(c));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.widgetWithText(TextFormField, 'PIA username'), 'p1234567');
+        await tester.enterText(find.widgetWithText(TextFormField, 'PIA password'), 'secret');
+        await tester.pump();
+
+        await tester.pumpWidget(const SizedBox()); // leave the screen
+        await tester.pumpAndSettle();
+
+        expect(prompts, isNot(contains(true)), reason: 'nothing has been proven, so nothing is worth saving');
+        c.dispose();
+      });
     });
   });
 

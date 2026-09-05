@@ -16,5 +16,5 @@ wg show interfaces
 echo "== cru l =="
 cru l
 
-echo "== creds =="
-nvram show 2>/dev/null | grep -i cfg_pia
+echo "== cfg-pia-wg globals (credentials + lifetime counters) =="
+nvram show 2>/dev/null | grep -i cfg_pia | sort

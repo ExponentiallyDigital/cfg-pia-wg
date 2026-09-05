@@ -145,7 +145,17 @@ The push operation establishes an SSH session to the router and uses `wg show in
 
 Merlin exposes 17 nvram fields per WireGuard slot, stock exposes 12.
 
-If you use the watchdog function, your PIA username and password are stored in `cfg_pia_wg_user` and `cfg_pia_wg_password`.
+Alongside the per-slot fields, the app keeps a handful of **global** `cfg_pia_wg_*` fields that are not tied to a slot. Every NVRAM variable the app writes must be described here.
+
+| Field | Written by | Default | Description |
+|---|---|---|---|
+| `cfg_pia_wg_user` | Watchdog deploy | – | Your PIA username. Needed on the router because the watchdog re-authenticates with PIA unattended; stored in plaintext (see SECURITY.md). |
+| `cfg_pia_wg_password` | Watchdog deploy | – | Your PIA password, same reasoning and same caveat. |
+| `cfg_pia_wg_sdate` | First watchdog deploy or test email | today's date | `yyyy-mm-dd` the app first configured this router. Reported as the "Since ..." date in the HISTORY section of every alert email, so the counters below have a period to be counted over. Seeded once and never rewritten. |
+| `cfg_pia_wg_reconfig_ok` | Watchdog script | `0` | Lifetime count of successful re-configurations, across all slots. Incremented by the deployed script when a tunnel is rebuilt. |
+| `cfg_pia_wg_reconfig_fail` | Watchdog script | `0` | Lifetime count of failed re-configuration attempts, across all slots. Incremented when the script aborts. |
+
+The two counters are committed once per alert, never per check: `nvram commit` writes flash, and a tunnel that is broken for hours would otherwise commit every cooldown.
 
 
 ### 3.1. Field reference
@@ -411,9 +421,12 @@ wgcN_wd_secondary_ip=1.1.1.1
 wgcN_wd_smtp_pass=
 wgcN_wd_smtp_server=
 wgcN_wd_smtp_user=
-# global
-cfg-pia-wg_password=
-cfg-pia-wg_user=
+# global (see section 3 for the full description of each)
+cfg_pia_wg_password=
+cfg_pia_wg_user=
+cfg_pia_wg_sdate=
+cfg_pia_wg_reconfig_ok=0
+cfg_pia_wg_reconfig_fail=0
 ```
 
 (where `N` is the slot number 1-5)

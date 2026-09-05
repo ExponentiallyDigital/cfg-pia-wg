@@ -188,7 +188,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(ssh.ran('/usr/sbin/sendmail'), isTrue);
-    expect(ssh.ran('config test'), isTrue);
+    expect(ssh.ran('TEST email'), isTrue, reason: 'the subject says what kind of mail this is');
   });
 
   group('stock firmware', () {

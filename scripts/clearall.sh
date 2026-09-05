@@ -38,4 +38,9 @@ nvram commit
 # Clear PIA username and password
 nvram unset cfg_pia_wg_user
 nvram unset cfg_pia_wg_password
+
+# Clear the lifetime counters reported in watchdog alert emails
+nvram unset cfg_pia_wg_sdate
+nvram unset cfg_pia_wg_reconfig_ok
+nvram unset cfg_pia_wg_reconfig_fail
 nvram commit

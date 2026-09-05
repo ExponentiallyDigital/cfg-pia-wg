@@ -202,16 +202,13 @@ void main() {
   });
 
   group('email generators', () {
-    test('buildMailBody test mode uses "config test" subject', () {
-      final body = buildMailBody(_valid(email: true), success: true, testMode: true);
-      expect(body, contains('Subject: watchdog config test'));
-      expect(body, contains('From: from@example.com'));
-      expect(body, contains('To: to@example.com'));
-    });
-
-    test('buildMailBody success/failure subjects', () {
-      expect(buildMailBody(_valid(email: true), success: true), contains('Subject: Alert - SUCCESS'));
-      expect(buildMailBody(_valid(email: true), success: false), contains('Subject: Alert - FAILED'));
+    test('buildMailHeaders carries the RFC-822 set BusyBox sendmail needs inline', () {
+      final h = buildMailHeaders(_valid(email: true), subject: 'Alert: TEST email - wgc1');
+      expect(h, contains('Subject: Alert: TEST email - wgc1'));
+      expect(h, contains('From: from@example.com'));
+      expect(h, contains('To: to@example.com'));
+      expect(h, contains('Content-Type: text/plain; charset=utf-8'));
+      expect(h, endsWith('\n\n'), reason: 'a blank line has to separate the headers from the body');
     });
 
     test('buildSendmailCommand has implicit-TLS connection helper and auth flags', () {
@@ -486,15 +483,16 @@ void main() {
     test('Merlin sends via BusyBox sendmail with RFC-822 headers inline', () {
       final s = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin);
       expect(s, contains('/usr/sbin/sendmail'));
-      expect(s, contains(r'echo "Subject: $EMAIL_SUBJECT - $1"'));
+      expect(s, contains(r'echo "Subject: $EMAIL_SUBJECT: $STATUS - $IFACE:$DESC"'));
       expect(s, contains('exec openssl s_client -quiet -tls1_3'));
       expect(s, isNot(contains('mailsend-go')));
     });
 
     test('stock sends via mailsend-go with a headerless body', () {
       final s = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock);
-      expect(s, contains('$kStockMailsendPath -debug -ssl -verifyCert'));
-      expect(s, contains(r'-smtp "$SMTP_HOST" -port "$SMTP_PORT" -sub "$EMAIL_SUBJECT - $1"'));
+      expect(s, contains('$kStockMailsendPath -ssl -verifyCert'));
+      expect(s, isNot(contains('-debug')), reason: 'it buries the real error under the argument parse');
+      expect(s, contains(r'-smtp "$SMTP_HOST" -port "$SMTP_PORT" -sub "$EMAIL_SUBJECT: $STATUS - $IFACE:$DESC"'));
       expect(s, contains(r'auth -user "$SMTP_USER" -pass "$SMTP_PASS"'));
       expect(s, contains(r'body -file "$TMPMAIL"'));
       expect(s, isNot(contains('/usr/sbin/sendmail')));
@@ -531,12 +529,13 @@ void main() {
     // This is about JFFS space and reviewability, NOT about SSH: the deploy chunks the write, so
     // the script can exceed dropbear's 9000-byte MAX_CMD_LEN without a single command doing so.
     // (Crossing it as one command is what closed the connection mid-deploy in 402.) Raised
-    // 8700 -> 9000 in 400, then 9500 and 10000 in 402; prune the script's comments before raising
-    // it again.
+    // 8700 -> 9000 in 400, then 9500 and 10000 in 402, and 24576 in 404 when the alert emails grew
+    // a body worth reading (which took the script from ~9 KB to ~15 KB). Prune the script's
+    // comments before raising it again.
     test('neither variant grows the deploy payload', () {
       final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
       final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
-      expect(merlin, lessThan(10000));
+      expect(merlin, lessThan(24576));
       expect(stock, lessThanOrEqualTo(merlin));
     });
   });
@@ -544,7 +543,11 @@ void main() {
   group('mailsend-go builders (stock)', () {
     test('buildMailsendGoCommand matches the documented invocation', () {
       final cmd = buildMailsendGoCommand('smtp.x.com', 465, _valid(email: true), subject: 'watchdog config test');
-      expect(cmd, startsWith('$kStockMailsendPath -debug -ssl -verifyCert'));
+      // No -debug: it writes the whole argument parse to stderr, which buried the real error in
+      // the 20 lines we capture. scripts/mailsend-go_test.sh, which sends successfully from this
+      // router, does not use it either.
+      expect(cmd, startsWith('$kStockMailsendPath -ssl -verifyCert'));
+      expect(cmd, isNot(contains('-debug')));
       expect(cmd, contains("-smtp 'smtp.x.com' -port 465"));
       expect(cmd, contains("-sub 'watchdog config test'"));
       expect(cmd, contains("-f 'from@example.com' -t 'to@example.com'"));
@@ -557,17 +560,21 @@ void main() {
       expect(cmd, contains(r"-pass 'it'\''s'"));
     });
 
-    test('buildMailPlainBody carries no RFC-822 headers', () {
-      final test = buildMailPlainBody(_valid(email: true), success: true, testMode: true);
-      expect(test, contains('test email from the cfg-pia-wg watchdog'));
-      expect(test, isNot(contains('Subject:')));
-      expect(buildMailPlainBody(_valid(email: true), success: false), contains('failed'));
+    // The subject names the slot so a mail client threads by VPN, and keeps the user's own
+    // prefix - anyone who changed it from the default keeps their existing mail rules.
+    test('buildMailSubject is <prefix>: STATUS - wgcN:region', () {
+      final c = _valid(email: true);
+      expect(buildMailSubject(c, status: 'SUCCESS', desc: 'pia-aus_melbourne'),
+          'Alert: SUCCESS - wgc1:pia-aus_melbourne');
+      expect(buildMailSubject(c, status: 'FAILED', desc: 'pia-aus_melbourne'),
+          'Alert: FAILED - wgc1:pia-aus_melbourne');
+      expect(buildMailSubject(c, status: 'TEST email'), 'Alert: TEST email - wgc1',
+          reason: 'no region yet means no region in the subject, not an empty colon');
     });
 
-    test('buildMailSubject matches the sendmail body subject', () {
-      expect(buildMailSubject(_valid(email: true), success: true, testMode: true), 'watchdog config test');
-      expect(buildMailSubject(_valid(email: true), success: true), 'Alert - SUCCESS');
-      expect(buildMailSubject(_valid(email: true), success: false), 'Alert - FAILED');
+    test('an empty subject field falls back to the default rather than shipping ": SUCCESS"', () {
+      expect(buildMailSubject(_valid(email: true).copyWith(emailSubject: '  '), status: 'SUCCESS'),
+          'cfg-pia-wg alert: SUCCESS - wgc1');
     });
   });
 }
