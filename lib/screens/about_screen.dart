@@ -160,16 +160,18 @@ class _AboutScreenState extends State<AboutScreen> {
     if (!confirmed) return;
 
     setState(() => _deletingCert = true);
-    SSHClient? client;
     String? error;
     var deleted = false;
     try {
-      client = await (widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      // The shared session, like every other router action. The credentials above were written
+      // back to the controller first, so this either reuses the open connection or opens one
+      // against exactly what the user just typed.
+      final client = controller
+          .routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       deleted = await RouterWatchdog(client, onLog: controller.onLog).deleteCachedPiaCert();
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
     } finally {
-      client?.close();
       if (mounted) setState(() => _deletingCert = false);
     }
     if (!context.mounted) return;

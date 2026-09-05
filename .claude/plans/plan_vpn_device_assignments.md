@@ -7,26 +7,30 @@ Purpose: this functionality allows the user to see a list of LAN devices and cho
 To support this:
 
 1. CHG: menu changes
-   - "Generate PIA WireGuard config" rename to "Create PIA WireGuard config".
+   - "Generate PIA WireGuard config" rename to "Standalone PIA WireGuard config".
    - "Manage PIA WireGuard config" no change.
    - "Watchdog Wireguard management" no change.
-   - "VPN device assignment+" **<- new entry with a superscript "+" at the end of the line**.
+   - "VPN device assignment+" **<- new entry with a superscript `2` at the end of the line**.
    - "View app log" no change.
    - "Exit app" no change.
-   - Add text "superscript+ stock firmware only"
+   - Add text "superscript`2` stock firmware only" to appear underneath the home screen line "* requires ssh connectivity to an ASUS router"
+   - Alter "* requires ssh connectivity to an ASUS router" to be  "superscript`1` requires ssh connectivity to an ASUS router"
 2. ADD: additional menu item "VPN device assignment" functionality is
    - get the device names from nvram via "nvram get custom_clientlist" & allow devices to be assigned to VPN slots.
    - select a device the slot applies to
    - "apply to all devices" option - this is managed by nvram setting `vpnc_default_wan=9`
    - sets XX then run "service restart_default_wan"
 3. nvram format
-   1. nvram setting `vpnc_default_wan` stores a integer which represents the =9
+   1. nvram setting `vpnc_default_wan` stores a integer which represents `vpnc_clientlist``'s field 6 (0 based) aka `vpnc_idx` per `ARCHITECTURE.md` "3.2. Stock `vpnc_clientlist`". For example, with the following we can determine that the pia-aus_melbourne
 
-vpnc_clientlist=pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg
-
+      ```text
+      vpnc_default_wan=9
+      vpnc_clientlist=pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg
+      ```
 
    2. sample `custom_clientlist` contents
       hostname1>00:01:02:03:04:05>0>4>>>>><hostname2>05:04:03:02:01:00>0>60>>>>><hostname3>AA:BB:CC:DD:EE:FF>0>60>>>>><hostname4>FF:F0:E0:D0:C0:B0>0>9>>>>>
+
    3. sample `dhcp_staticlist` contents
       <00:01:02:03:04:05>192.168.1.2>><05:04:03:02:01:00>192.168.1.30>>hostname2<FF:F0:E0:D0:C0:B0>192.168.1.40>>hostname5<A0:AD:7F:23:A1:57>192.168.1.60>>hostname6
 

@@ -133,11 +133,13 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
 
   bool get _canConnect => _ipCtrl.text.trim().isNotEmpty && _userCtrl.text.trim().isNotEmpty && _passCtrl.text.trim().isNotEmpty;
 
-  // A fresh client each call (so a dropped connection self-heals on the next action).
-  Future<SSHClient> _connect() {
+  // The shared session, not a fresh client: one handshake and one dropbear login line per app
+  // session instead of per action. A dropped connection used to self-heal by virtue of the next
+  // action reconnecting; RouterSession.run now does that explicitly, with one retry.
+  Future<SSHClient> _connect() async {
     final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
-    if (widget.testClientFactory != null) return widget.testClientFactory!(ip, user, pass);
-    return openSshClient(ip, user, pass);
+    return _c.routerSession(() =>
+        widget.testClientFactory != null ? widget.testClientFactory!(ip, user, pass) : openSshClient(ip, user, pass));
   }
 
   RouterSlotService _slotSvc(SSHClient c) => widget.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
@@ -170,12 +172,11 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
   Future<void> _onConnect() async {
     setState(() => _connecting = true);
     _c.logEntry('Connecting to router at ${_ipCtrl.text.trim()} via SSH...');
-    SSHClient? client;
     RouterSlots? slots;
     _FirmwareGate? gate;
     String? connectError;
     try {
-      client = await _connect();
+      final client = await _connect();
       final svc = _slotSvc(client);
       // Detection has to precede fetchSlots: on stock the slot list comes from vpnc_clientlist.
       gate = await _checkFirmware(svc);
@@ -188,7 +189,6 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     } catch (e) {
       connectError = 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}';
     } finally {
-      client?.close();
       if (mounted) setState(() => _connecting = false);
     }
     if (!mounted) return;

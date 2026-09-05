@@ -318,8 +318,9 @@ class RouterSlotService {
 
   Future<String> _run(String cmd) async => utf8.decode(await client.run(cmd)).trim();
 
-  // 'wgcN:<description>' for log lines. Cached because a service instance is short-lived (one
-  // per user action), so the description is read at most once however many lines it appears in.
+  // 'wgcN:<description>' for log lines. Cached per service instance - one is built per user
+  // action, so the description is read at most once however many lines it appears in. (The SSH
+  // connection underneath is shared and long-lived; the service on top of it is not.)
   final Map<int, String> _labelCache = {};
   Future<String> _label(int slot) async => _labelCache[slot] ??= await fetchSlotLabel(slot, _run);
 

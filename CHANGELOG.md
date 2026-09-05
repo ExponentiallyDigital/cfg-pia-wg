@@ -17,14 +17,40 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-- commit then:
-- CHG: reuse the router SSH connection instead of opening one per action - removes a dropbear login line and a full handshake from every button press. Design in `.claude/plans/plan_ssh-connection-reuse.md`. Needs its own build number: a stale-connection bug would look like an intermittent action failure.
+- TST: full end-to-end manual app test.
+    1. Clear all configs & nvram, reboot router
+    2. Home screen
+    3. About
+    4. Standalone (generate)
+    5. Manage
+       1. create wgc1-5
+       2. enable wgc1 & 5
+       3. edit wgcN
+    6. Watchdog
+       1. Create wgc1 & wgc5 -  check test email
+       2. Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
+       3. force a reconfigure, check email alerting
+       4. ...
+    7. ...
+
+- FIX: V0.8.34 - can't tap on "add a Play Store app review", all other tappable links in app work
 - commit then:
 - ADD: in-app device assignment to VPN. Design in`.claude\plans\plan_vpn_device_assignments.md`.
 
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-05 v0.8.36 build 406 - stock support implemented alongside Merlin
+
+- CHG: the app now holds ONE SSH connection to the router and every action shares it, instead of opening and closing its own. That removes a full handshake from the front of every button press and a `dropbear[NNNN]: Password auth succeeded` line from the router log per action. Design in `.claude/plans/plan_ssh-connection-reuse.md`.
+- CHG: a dropped connection used to heal by accident, because the next action simply connected again. `RouterSession.run` now does it deliberately: on a transport failure it reconnects once and re-runs the command, and says so in the app log. Without that this change would have traded log noise for intermittent action failures, which is the worse bug.
+- CHG: only transport failures are retried - a closed connection, a reset, a broken pipe. An error the router itself raised is reported as-is, because re-running `nvram set` or a heredoc append over an error we did not understand is worse than the original failure.
+- CHG: the connection is keyed on router IP, SSH username and password, so editing any of them builds a new one rather than silently reusing a session pointed at a different box.
+- CHG: the connection closes when the app goes to the background and when credentials are wiped. An authenticated session held open behind a locked screen is a wider exposure than credentials sitting in memory; the next action reconnects.
+- FIX: `test/unit/no_escaped_constants_test.dart` - the guard added after the `\$kRouterAppDir` bug never actually ran. Its pattern was a literal backslash followed by the end-of-string anchor, which nothing can follow, so it had matched nothing since it was written. A real escaped-interpolation bug introduced in this change walked straight past it.
+- TST: 21 new tests - reuse, the reconnect-and-retry path, what must NOT be retried, teardown and ownership, plus a source scan that fails the build if any screen closes the shared connection again. The twenty per-action `client?.close()` calls are gone, and a stray one would break the next action rather than announce itself.
+- INF: `RouterSession` implements `SSHClient` rather than wrapping one, so the services, the call sites and every test fake were unchanged. Nothing downstream needed to know.
 
 2026-09-05 v0.8.35 build 405 - stock support implemented alongside Merlin
 

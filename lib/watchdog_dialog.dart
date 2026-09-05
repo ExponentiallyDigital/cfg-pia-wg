@@ -120,19 +120,18 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     super.dispose();
   }
 
-  // Opens a short-lived SSH client, runs the operation, always closes the client.
+  // Runs the operation on the session's shared SSH connection. Nothing is closed here: the
+  // connection outlives this dialog, and closing it would break the next action.
   Future<T?> _withService<T>(Future<T> Function(RouterWatchdog) op) async {
     setState(() => _loading = true);
-    SSHClient? client;
     try {
-      client = await widget.connect();
+      final client = await widget.connect();
       final svc = (widget.serviceFactory ?? (c) => RouterWatchdog(c, onLog: _c.onLog))(client);
       return await op(svc);
     } catch (e) {
       if (mounted) await AppErrors.system(context, _c, 'Watchdog error: ${e.toString().replaceAll('Exception: ', '')}');
       return null;
     } finally {
-      client?.close();
       if (mounted) setState(() => _loading = false);
     }
   }

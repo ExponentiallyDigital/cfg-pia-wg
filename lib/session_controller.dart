@@ -20,10 +20,12 @@
 
 import 'dart:async';
 
+import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'clipboard_service.dart';
+import 'router_session.dart';
 
 // Default DNS servers (Quad9), matching the value the standalone form pre-fills.
 const String kDefaultDns = '9.9.9.9, 149.112.112.112';
@@ -102,6 +104,35 @@ class SessionController extends ChangeNotifier {
 
   // True once a router SSH connect has succeeded this session (drives auto-reconnect on entry).
   bool routerConnected = false;
+
+  // ── Router SSH session ─────────────────────────────────────────────────────────
+  // One connection, reused by every action, rather than a handshake and a dropbear login line per
+  // button press. Owned here because this is what already owns the credentials and the session
+  // lifetime, so every existing exit path tears it down for free.
+  RouterSession? _routerSession;
+  String _routerSessionKey = '';
+
+  /// The shared router connection, opened lazily by [RouterSession] itself.
+  ///
+  /// A change of router IP, username or password gets a NEW session: the old one is pointed at a
+  /// different box, or authenticated as a different user, and reusing it would silently ignore
+  /// what the user just typed.
+  RouterSession routerSession(Future<SSHClient> Function() connect) {
+    final key = [routerIp, sshUsername, sshPassword].join('\u0000');
+    final existing = _routerSession;
+    if (existing != null && _routerSessionKey == key) return existing;
+    if (existing != null) unawaited(existing.close());
+    _routerSessionKey = key;
+    return _routerSession = RouterSession(connect: connect, onLog: onLog);
+  }
+
+  /// Drops the shared connection. Idempotent; the next action opens a fresh one.
+  Future<void> closeRouterSession() async {
+    final s = _routerSession;
+    _routerSession = null;
+    _routerSessionKey = '';
+    await s?.close();
+  }
 
   // ── Logging ────────────────────────────────────────────────────────────────────
   void logEntry(String msg, {bool isError = false, bool isSuccess = false}) {
@@ -195,6 +226,7 @@ class SessionController extends ChangeNotifier {
     generatedConfig = null;
     generatedRegionId = '';
     routerConnected = false;
+    await closeRouterSession();
     await clearClipboard();
     logEntry(reason == null
         ? 'All credentials and WireGuard configuration wiped from memory.'
