@@ -415,9 +415,10 @@ void main() {
       expect(RegExp(r'nvset "').allMatches(s).length, 16);
     });
 
-    test('contains backoff, cooldown, wg setconf, temp cleanup and restart', () {
+    test('contains backoff, wg setconf, temp cleanup and restart', () {
       final s = buildWatchdogScript(_valid(slot: 1));
-      expect(s, contains('COOLDOWN=120'));
+      // The fixed cooldown became a ladder in 405; test/unit/backoff_test.dart owns the detail.
+      expect(s, contains('backoff_for() {'));
       expect(s, contains(r'service "start_wgc $SLOT"'));
       expect(s, contains('service restart_vpnrouting0'));
     });

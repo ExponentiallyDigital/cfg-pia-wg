@@ -61,17 +61,9 @@ Note: something to consider, as the app execs the watchdog at deployment then th
 
 ### Decisions taken
 
-1. **Plain text, no HTML.** Every `<br>` above becomes a real line feed. mailsend-go sends the
-   `-file` body verbatim and the Merlin path already declares `Content-Type: text/plain`, so a `<br>`
-   would render literally. The Play Store link becomes a bare URL, which every modern client makes
-   clickable. Consequence: markdown link syntax `[the Play Store](...)` cannot be used either.
-2. **Script size ceiling raised 10000 -> 24576 bytes** in `test/router_watchdog_unit_test.dart`.
-   The old number was the dropbear `MAX_CMD_LEN` (9000) plus headroom; since the script is written
-   through `heredocWriteCommands` in chunks, that limit no longer applies and the assertion is now
-   only a "notice when it grows unexpectedly" tripwire. The rebuilt script measures ~15 KB, so 24576 leaves around 9 KB of padding.
-3. **Token backoff comes after this change**, so during a sustained outage the failure counter still
-   increments once per `COOLDOWN` (120 s). `nvram commit` writes flash, so the counters are
-   committed **once per alert**, never once per check.
+1. **Plain text, no HTML.** Every `<br>` above becomes a real line feed. mailsend-go sends the `-file` body verbatim and the Merlin path already declares `Content-Type: text/plain`, so a `<br>` would render literally. The Play Store link becomes a bare URL, which every modern client makes clickable. Consequence: markdown link syntax `[the Play Store](...)` cannot be used either.
+2. **Script size ceiling raised 10000 -> 24576 bytes** in `test/router_watchdog_unit_test.dart`. The old number was the dropbear `MAX_CMD_LEN` (9000) plus headroom; since the script is written through `heredocWriteCommands` in chunks, that limit no longer applies and the assertion is now only a "notice when it grows unexpectedly" tripwire. The rebuilt script measures ~15 KB, so 24576 leaves around 9 KB of padding.
+3. **Token backoff comes after this change**, so during a sustained outage the failure counter still increments once per `COOLDOWN` (120 s). `nvram commit` writes flash, so the counters are committed **once per alert**, never once per check.
 4. **First run reports a deploy, not a reconfigure** - see "Run mode" below.
 
 ### Run mode - answering the note at the end of the original plan
@@ -82,17 +74,13 @@ The app already execs the script itself at deploy time, so it can simply say so:
 /jffs/cfg-pia-wg/watchdog_wgc1.sh deploy
 ```
 
-The script captures the run mode on its **first line of executable code**, before `send_alert()` can
-shadow `$1` with its own argument:
+The script captures the run mode on its **first line of executable code**, before `send_alert()` can shadow `$1` with its own argument:
 
 ```sh
 RUNMODE="${1:-cron}"      # `deploy` only when the app runs it by hand after writing it
 ```
 
-Cron lines pass nothing and behave exactly as now. On a deploy run the event line reads
-`watchdog deployed` and the subject still says `SUCCESS`, which is what was asked for.
-`buildCronCheckLine` is unchanged, so a watchdog re-enabled from the app is a `cron` run, not a
-`deploy` one.
+Cron lines pass nothing and behave exactly as now. On a deploy run the event line reads `watchdog deployed` and the subject still says `SUCCESS`, which is what was asked for. `buildCronCheckLine` is unchanged, so a watchdog re-enabled from the app is a `cron` run, not a `deploy` one.
 
 ### Where each field comes from
 
@@ -112,8 +100,7 @@ Cron lines pass nothing and behave exactly as now. On a deploy run the event lin
 | Log excerpt | `tail -10 "$LOGFILE"` | none |
 | Counters + start date | the three new `cfg_pia_wg_*` keys | nvram |
 
-Nothing here needs a network call, so no alert gets slower and no third party learns the router's
-address. The public exit IP was considered and **rejected** for exactly that reason.
+Nothing here needs a network call, so no alert gets slower and no third party learns the router's address. The public exit IP was considered and **rejected** for exactly that reason.
 
 ### Layout
 

@@ -1,8 +1,12 @@
-# in-app device assignment to VPN
+# in-app device assignment to VPN slots
 
-- ADD: Implement "kill switch" like function in stock firmware (with Merlin this is managed by VPN Director, keeping out of scope - VPN assignments will only be done in our app on stocck firmware). This functionality allows the user to see a list of LAN devices and choose which VPN each will use choose a default VPN where all devices are assigned.
+Implement a "kill switch" like function in stock firmware (with Merlin this is managed by VPN Director, keeping out of scope - VPN assignments will only be done in our app on stock firmware).
 
-1. menu changes:
+Purpose: this functionality allows the user to see a list of LAN devices and choose which VPN each will use. Where unassigned, a default VPN will be used for. The default VPN is goverened by the nvram entry `vpnc_default_wan`.
+
+To support this:
+
+1. CHG: menu changes
    - "Generate PIA WireGuard config" rename to "Create PIA WireGuard config".
    - "Manage PIA WireGuard config" no change.
    - "Watchdog Wireguard management" no change.
@@ -16,9 +20,14 @@
    - "apply to all devices" option - this is managed by nvram setting `vpnc_default_wan=9`
    - sets XX then run "service restart_default_wan"
 3. nvram format
-   1. sample `custom_clientlist` contents
+   1. nvram setting `vpnc_default_wan` stores a integer which represents the =9
+
+vpnc_clientlist=pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg
+
+
+   2. sample `custom_clientlist` contents
       hostname1>00:01:02:03:04:05>0>4>>>>><hostname2>05:04:03:02:01:00>0>60>>>>><hostname3>AA:BB:CC:DD:EE:FF>0>60>>>>><hostname4>FF:F0:E0:D0:C0:B0>0>9>>>>>
-   2. sample `dhcp_staticlist` contents
+   3. sample `dhcp_staticlist` contents
       <00:01:02:03:04:05>192.168.1.2>><05:04:03:02:01:00>192.168.1.30>>hostname2<FF:F0:E0:D0:C0:B0>192.168.1.40>>hostname5<A0:AD:7F:23:A1:57>192.168.1.60>>hostname6
 
 4. update ARCHITECTURE.md, add a section called "3.3" per the below:

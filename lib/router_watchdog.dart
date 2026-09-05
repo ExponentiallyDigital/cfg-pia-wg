@@ -460,6 +460,32 @@ class RouterEmailFacts {
   String get intervalRow => interval.isEmpty ? kIntervalNotSet : 'Interval: $interval minutes';
 }
 
+/// Seconds to wait before the next reconfigure attempt, indexed by how many consecutive attempts
+/// have already failed: the 1st failure waits 2 minutes, the 2nd 4, then 8, 16, 30, 60, and every
+/// one after that the 90-minute cap.
+///
+/// PIA answers HTTP 403 after sustained re-registration and clears on its own after tens of
+/// minutes. Retrying every 120 s indefinitely is what provokes and prolongs that - with two
+/// watchdogs it was a request a minute between them. A single failure, which is the common case,
+/// is exactly as responsive as it was.
+const List<int> kBackoffLadder = [120, 240, 480, 960, 1800, 3600, 5400];
+
+/// The wait after [failures] consecutive failed attempts. The last rung is the cap, and 0 failures
+/// answers the first rung so a caller never has to special-case it.
+int backoffSeconds(int failures) => kBackoffLadder[failures.clamp(1, kBackoffLadder.length) - 1];
+
+/// The ladder as a POSIX `case`, so the script and [backoffSeconds] cannot drift apart. Kept as a
+/// lookup rather than arithmetic: the rungs are not a clean doubling past 16 minutes, and a table
+/// is the one form that stays obvious in `sh`.
+String buildBackoffCase() {
+  final arms = <String>[];
+  for (var i = 0; i < kBackoffLadder.length - 1; i++) {
+    arms.add('    ${i == 0 ? '0|1' : '${i + 1}'}) echo ${kBackoffLadder[i]} ;;');
+  }
+  arms.add('    *) echo ${kBackoffLadder.last} ;;');
+  return 'backoff_for() {\n  case "\$1" in\n${arms.join('\n')}\n  esac\n}';
+}
+
 /// Seeds the lifetime counters the moment the app first touches a router, so `Since <date>` is the
 /// date the user actually started rather than the date of their first reconfigure.
 const String kSeedCountersCommand = '[ -n "\$(nvram get cfg_pia_wg_sdate)" ] || { '
@@ -594,6 +620,7 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       // enforce / fw / rip / ep_addr_r are Merlin-only (kMerlinOnlySlotKeys). Writing them on
       // stock creates keys nothing reads and DELETE does not clean up.
       .replaceAll('__MERLINONLY__', stock ? '' : _kMerlinOnlyNvsets)
+      .replaceAll('__BACKOFF__', buildBackoffCase())
       .replaceAll('__APPVER__', appVersionLabel)
       .replaceAll('__KILLSW__', stock ? _kKillSwitchStock : _kKillSwitchMerlin)
       .replaceAll('__MAILHDR__', stock ? _kMailHdrStock : _kMailHdrMerlin)
@@ -1133,7 +1160,6 @@ LOGTAG="cfg-pia-wg"
 LOGFILE="/tmp/watchdog_${IFACE}.log"
 STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"
 BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
-COOLDOWN=120
 CACERT="__CACERT__"
 JQ="__JQ__"
 # tlsv1.2 is a MINIMUM; requiring 1.3 failed addKey with curl 35 (handshake).
@@ -1176,6 +1202,8 @@ INTERVAL="$(nvram get ${K}wd_check_interval)"
 __KILLSW__
 PIA_USER="$(nvram get cfg_pia_wg_user)"
 PIA_PASS="$(nvram get cfg_pia_wg_password)"
+
+__BACKOFF__
 
 log "Watchdog started for $IFACE"
 
@@ -1314,7 +1342,11 @@ abort() {
   bump cfg_pia_wg_reconfig_fail
   DOWNLABEL="Tunnel has been down for"
   DOWNFOR="$(down_for)"
-  ATTEMPTV="${CNT:-1} since the last success, retrying per schedule, $INTERVAL minutes"
+  # The next attempt is whichever comes later: the backoff expiring, or the next cron tick.
+  NEXTWAIT="$(backoff_for "${CNT:-1}")"
+  case "$INTERVAL" in ''|*[!0-9]*) TICK=300 ;; *) TICK=$((INTERVAL * 60)) ;; esac
+  [ "$NEXTWAIT" -ge "$TICK" ] || NEXTWAIT="$TICK"
+  ATTEMPTV="${CNT:-1} since the last success, retrying per schedule, $((NEXTWAIT / 60)) minutes"
   send_alert FAILED "$1"
   rm -f "$TMPSRV"
   exit 1
@@ -1362,22 +1394,25 @@ if [ "$FAIL" = "0" ]; then
   exit 0
 fi
 
-# Backoff handling
+# Backoff handling. CNT counts attempts actually MADE, not checks that found a fault: a run the
+# backoff turns away leaves it alone, so how fast the wait grows does not depend on the check
+# interval. Reset to 0 by the success path above.
 CNT=0
 LAST=0
 if [ -f "$BACKOFFFILE" ]; then
   { read -r CNT; read -r LAST; } < "$BACKOFFFILE"
-  [ -n "$CNT" ] || CNT=0
-  [ -n "$LAST" ] || LAST=0
+  case "$CNT" in ''|*[!0-9]*) CNT=0 ;; esac
+  case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
 fi
 NOW="$(date +%s)"
-CNT=$((CNT + 1))
+WAIT="$(backoff_for "$CNT")"
 ELAPSED=$((NOW - LAST))
-if [ "$LAST" -ne 0 ] && [ "$ELAPSED" -lt "$COOLDOWN" ]; then
-  printf '%s\n%s\n' "$CNT" "$LAST" > "$BACKOFFFILE"
-  log "Cooldown ${ELAPSED}s < ${COOLDOWN}s; skipping"
+if [ "$LAST" -ne 0 ] && [ "$ELAPSED" -lt "$WAIT" ]; then
+  # Say why nothing is happening; a long quiet gap otherwise reads as a stopped watchdog.
+  log "Backing off after $CNT failed attempts: ${ELAPSED}s of ${WAIT}s elapsed"
   exit 0
 fi
+CNT=$((CNT + 1))
 printf '%s\n%s\n' "$CNT" "$NOW" > "$BACKOFFFILE"
 log "Connectivity lost; reconfiguring (attempt #$CNT)"
 
