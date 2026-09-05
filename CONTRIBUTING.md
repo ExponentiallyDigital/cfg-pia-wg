@@ -19,7 +19,7 @@
 - [9. Licensing](#9-licensing)
 - [10. Thank you](#10-thank-you)
 
-Thank you for your interest in contributing to **cfg-pia-wg**. A security‑sensitive, reproducible‑build Android application that generates Private Internet Access (PIA) WireGuard configurations and optionally deploys them to Asuswrt‑Merlin routers.
+Thank you for your interest in contributing to **cfg-pia-wg**. A security‑sensitive, reproducible‑build Android application that generates Private Internet Access (PIA) WireGuard configurations and optionally deploys them to ASUS routers running stock or Asuswrt‑Merlin firmware.
 
 This document explains how to contribute safely, consistently, and in a way that aligns with the project’s security and build‑determinism goals.
 
@@ -98,7 +98,7 @@ flutter test --coverage
 ```
 
 > [!NOTE]
-> This project targets **>90% test coverage**.  
+> This project targets **>80% test coverage**.  
 > New features must include tests; PRs without tests will not be accepted.
 
 ### 2.5. Respect dependency pinning

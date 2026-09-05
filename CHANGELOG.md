@@ -17,29 +17,38 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-- TST: full end-to-end manual app test.
-    1. Clear all configs & nvram, reboot router
-    2. Home screen
-    3. About
-    4. Standalone (generate)
-    5. Manage
-       1. create wgc1-5
-       2. enable wgc1 & 5
-       3. edit wgcN
-    6. Watchdog
-       1. Create wgc1 & wgc5 -  check test email
-       2. Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
-       3. force a reconfigure, check email alerting
-       4. ...
-    7. ...
-
-- FIX: V0.8.34 - can't tap on "add a Play Store app review", all other tappable links in app work
-- commit then:
+- TST: full end-to-end manual app test, see `TESTING.md` section `4. Full end-end-to-end manual test`.
 - ADD: in-app device assignment to VPN. Design in`.claude\plans\plan_vpn_device_assignments.md`.
+- commit.
 
 ---
 
 ### 1.3. Implemented - chronological change history
+
+
+2026-09-05 v0.8.37 build 407 - fixed the reset/inspection scripts and the broken review link, and brought the docs up to date.
+
+- CHG: updated `scripts\clearall.sh` with additiooanl values to reset/delete all configs.
+- FIX: `scripts/clearall.sh` never removed a single cron entry. It called `cru d "{field}_wgc${slot}"` - a missing `$` - so it asked the router to delete a job literally named `{field}_wgc1`. A watchdog kept running after what looked like a clean wipe, which is exactly the state that makes a fresh test start dirty.
+- FIX: `scripts/clearall.sh` cleared `enforce`/`fw`/`rip` for slots 1 and 5 only, and hand-listed a partial set of `vpncN_` runtime keys. Both are now swept for every slot, and `vpncN_` across the whole 1-16 range those keys can occupy.
+- ADD: `scripts/clearall.sh` now also removes what it had only ever half-removed - the deployed watchdog scripts, the cached PIA CA, the `/tmp` log, last-good and backoff files, and our lines in `services-start` / `S50downloadmaster`. It deliberately leaves `jffs2_scripts` / `jffs2_on` and the user-installed `jq` / `mailsend-go` alone, and says so.
+- ADD: `scripts/showall.sh` shows what the NVRAM dump cannot - the contents of `/jffs/cfg-pia-wg`, the boot-persistence lines in both hook files, the `/tmp` watchdog state including the backoff counter, and the Merlin JFFS flags.
+- DOC: closed the `BACKLOG.md` 1.2.7 item "add link to reconfigure email seeking an app review, with an NVRAM timestamp when the watchdog is first deployed and a counter incremented on each reconfigure" - all three shipped in 404 as `cfg_pia_wg_sdate`, `cfg_pia_wg_reconfig_ok` and `cfg_pia_wg_reconfig_fail`, reported in the HISTORY section of every alert email alongside the review link.
+- DOC: `BACKLOG.md` sections 1.2, 1.3 and 1.4 record what the review turned up - the pre-flight check that is mostly already written and the one that is missing, the measured firmware-branch count and file sizes behind the cleanup, and what actually blocks iOS. Early thinking in three plans: `plan_revenuecat-implementation.md` (renamed from `pan_revenucat-...`, two typos), `plan_firmware-abstraction.md` and `plan_ios-port.md`, each cross-referenced from its backlog item.
+- DOC: `ARCHITECTURE.md` section 4.1 - the Merlin SSH commands were a placeholder. Now documents enable, disable and delete, the `restart_vpnrouting0` / `start_vpnrouting0` asymmetry, why `nvram commit` precedes every service call, and what only Merlin has (the kill switch, `wgcN_desc` as a real field, the JFFS partition).
+- DOC: `ARCHITECTURE.md` section 5 - the watchdog was described as ping-only, deploying to a path it stopped using in 402. Rewritten: the handshake is the primary liveness check with ping as the Merlin fallback, the script lives in `/jffs/cfg-pia-wg`, and reboot persistence is `services-start` on Merlin against a hijacked `S50downloadmaster` on stock (which is why DownloadMaster is a stock prerequisite).
+- DOC: `ARCHITECTURE.md` sections 5.1.1 and 5.1.2 are new - the backoff ladder with its table and why the counter tracks attempts rather than checks, and email alerting: the three sending events, the deploy email that fires even when nothing is wrong, and the note that a failure email's log excerpt carries the PIA username.
+- DOC: `ARCHITECTURE.md` flow diagram said the watchdog screen required Merlin and that ENABLE stops the other watchdogs. Neither has been true since 395.
+- DOC: `README.md` no longer frames router management and the watchdog as Merlin-only in the intro, section 1 and the feature list, which contradicted the stock support announced further down the same page. `CONTRIBUTING.md` said the same thing.
+- DOC: `README.md` section 5.7 documented the About screen with a screenshot and one sentence. Now covers COPY BUILD INFO, CREATE GITHUB ISSUE, DEL PIA CERT and the licences page.
+- DOC: the example emails in `README.md` named a specific build, which would go stale every release. Genericised.
+- DOC: `TESTING.md` quoted `Cooldown Ns < 120s; skipping`, a log line 405 removed, and described the fixed 120 s cooldown in three places. Replaced with the ladder, plus how to jump to a rung without waiting for it.
+- DOC: `TESTING.md` section 3 gains the global `cfg_pia_wg_*` keys - the lifetime counters an alert email reports - and `scripts/showall.sh` / `clearall.sh`.
+- DOC: `BUILDING.md` listed 4 of the 8 direct dependencies, missing `dartssh2`, which every router operation runs over. Also records that adding a Flutter plugin with native Android code needs the Gradle lockfiles regenerated - the trap `in_app_review` fell into in 406.
+- DOC: `SECURITY.md` records the SSH session introduced in 406: it is now held open for the app session rather than per action, and closed when the app is backgrounded and whenever credentials are wiped.
+- FIX: the home screen's "add a Play Store app review" link did nothing when tapped, on debug and release alike. It asked Play to draw its in-app rating card, and Play draws one only when it chooses to - quota-limited per user, and never at all on a build Play did not install - while reporting success either way, so the app could not tell a shown card from nothing happening. Google's own guidance is not to put that flow behind a button. The link now opens the Play Store listing, which always does something.
+- CHG: the whole review line is the tap target rather than just the underlined text. A 12px line of glyphs is a small thing to hit, and a `TextSpan` recogniser fires on nothing else.
+- TST: the review-link tests now TAP the widget instead of calling its recogniser directly, which bypassed hit-testing entirely - they would have passed against a link nobody could hit. One asserts a tap well off to the side of the centred text still counts.
 
 2026-09-05 v0.8.36 build 406 - stock support implemented alongside Merlin
 

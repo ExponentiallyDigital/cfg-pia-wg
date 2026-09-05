@@ -49,7 +49,7 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 | `router_watchdog.dart` | 890 lines. Validation helpers, `WatchdogConfig`, `WatchdogStatus`, pure Bash-template builders, `RouterWatchdog` service, and `_kWatchdogScriptTemplate` (the router-side sh script, ~7 KB heredoc ceiling). |
 | `watchdog_dialog.dart` | `WatchdogDialog` — the watchdog CREATE/EDIT form. Its `SAVE` validates, optionally picks a region, WAN-pings both targets (warn-only), then calls `deployWatchdog`. **This is the only path that brings a watchdog up.** |
 | `build_info_service.dart` | `BuildInfo` model + `loadBuildInfo()` over `MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/build_info')`, method `getBuildInfo`. One of the app's **two** platform channels. Falls back to `BuildInfo.unknown()` on `MissingPluginException`/`PlatformException` so widget tests render. |
-| `review_service.dart` | `requestAppReview()` over `in_app_review`: `isAvailable()` then `requestReview()`, falling back to `openStoreListing()`. Returns false only when neither could start (no Play Services, a sideloaded build, a desktop host, a plain test) - the caller logs that to the app log. Play is quota-limited and never says whether a card was drawn, so true means the request was made, nothing more. Never claim a review was left. |
+| `review_service.dart` | `openPlayStoreReview()` - opens the Play Store listing via `in_app_review`'s `openStoreListing()` (an ACTION_VIEW on the https URL, which the manifest `<queries>` already covers). Returns false when nothing could be opened, and the caller logs that. **Deliberately does NOT call `requestReview()`** - see 4.14. `debugReviewOverride` is the test seam: a method-channel mock is not enough, because the plugin branches on the host platform in Dart before the channel is reached. |
 | `clipboard_service.dart` | `clearSystemClipboard()` over `MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/clipboard')`, method `clearClipboard` -> `ClipboardManager.clearPrimaryClip()` (API 28+). Falls back to writing `''` on `MissingPluginException`/`PlatformException`. A test reads `MainActivity.kt` so the names cannot drift. |
 | `license_text.dart` | 645 lines. `const String kLicenseText` — verbatim raw-string copy of `./LICENSE` (GPL v3). Regenerate by hand if `./LICENSE` changes. |
 
@@ -267,6 +267,14 @@ Every action used to open its own connection: socket, handshake, password auth, 
 **Credentials key the session.** `SessionController.routerSession` rebuilds it whenever router IP, SSH username or password change; reusing a connection authenticated as someone else, or to a different box, would silently ignore what the user just typed.
 
 **Teardown.** `wipeAll()` closes it, so every existing exit path already tears it down, and `AppLifecycleState.paused` closes it too - an authenticated session held open behind a locked screen is a wider exposure than credentials sitting in memory. The next action reconnects.
+
+### 4.8.3 The Play Store review link
+
+The home-screen link opens the **store listing**, not Play's in-app rating card. 406 shipped `InAppReview.requestReview()` and 407 took it out: Play alone decides whether to draw that card, it is quota-limited per user, it never appears on a build Play did not install, and the API reports success either way - the plugin's own code says "the API does not indicate whether the user reviewed or if the dialog was shown". Debug and release both did nothing visible, and no fallback could fire because `isAvailable()` was true. Google's guidance is not to put that flow behind a button at all. `requestReview` would be right for an *unprompted* ask - after a successful watchdog deploy, say - and `review_service.dart` is where it would go back.
+
+The whole line is the tap target (a `GestureDetector` with `HitTestBehavior.opaque` and 8px of vertical padding), not just the underlined glyphs: a `TextSpan` recogniser fires on nothing else, and 12px of centred text is a small thing to hit.
+
+**Test the tap, not the recogniser.** The tests that shipped with the broken link called `recognizer.onTap!()` directly, which bypasses hit-testing entirely - they would have passed against a link nobody could reach. `test/screens/main_menu_screen_test.dart` now uses `tester.tap`, including one tap deliberately off to the side of the centred text.
 
 ### 4.9 NVRAM variables
 

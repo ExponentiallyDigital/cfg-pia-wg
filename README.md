@@ -52,13 +52,13 @@
 
 A native Android app that generates and optionally applies ready-to-use WireGuard (WG) configuration files for the Private Internet Access (PIA) VPN service. It authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WG keypair, and lets you copy the complete `.conf` to the clipboard, or share or save it to an app or location of your choice.
 
-If you have an ASUS router running [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) firmware, you can also **manage** WG configs directly on your router and deploy a **self-healing** watchdog with optional email alerting that makes your configuration truly "set and forget".
+If you have an ASUS router — stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) — you can also **manage** WG configs directly on your router and deploy a **self-healing** watchdog with optional email alerting that makes your configuration truly "set and forget".
 
 This app is based on my command line Windows/Linux app [cfg-pia-wg-cmd](https://github.com/ExponentiallyDigital/cfg-pia-wg-cmd).
 
 ## 1. Why use this?
 
-Creating a valid PIA WG config by hand requires expertise in API authentication, WG key generation and correctly assembling connection metadata. **cfg-pia-wg** automates that work and adds router-side **slot management** (organising WG configs across the router's five WG VPN client configuration slots) and **self-healing** watchdog support for Merlin-firmware ASUS routers.
+Creating a valid PIA WG config by hand requires expertise in API authentication, WG key generation and correctly assembling connection metadata. **cfg-pia-wg** automates that work and adds router-side **slot management** (organising WG configs across the router's five WG VPN client configuration slots) and **self-healing** watchdog support for ASUS routers running either stock or Merlin firmware.
 
 ### 1.1. Why use WireGuard?
 
@@ -80,7 +80,7 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
 - **Secure clipboard handling:** when copying a generated config, a visible 60-second countdown starts, then clears the clipboard automatically at expiry.
 - **Share/save support:** share generated `.conf` via the Android share function and save it to a file location of your choice.
 - **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WG slot configurations directly.
-- **Merlin watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log.
+- **Watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log. Works on stock and Merlin; on stock it additionally needs `jq`, `mailsend-go` and DownloadMaster (see [4. Prerequisites](#4-prerequisites--requirements)).
 - **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
 - **No persistent credential storage (app):** PIA credentials, router SSH credentials and generated configs are stored only in volatile application memory and are never written to your device's storage.
 - **Watchdog credential storage (router):** deploying the watchdog stores the necessary PIA credentials in router NVRAM so it can monitor and self-heal independently of the app. This is a deliberate trade-off for "set and forget" operation, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
@@ -129,7 +129,7 @@ Advanced Settings\Administration\System\Service -> "Enable SSH" (LAN only is rec
 Advanced Settings\Administration\System\Basic Config -> "Enable JFFS custom scripts and config"
 ```
 
-3. Install the `jq` and `sendmail-go` helper apps.
+3. Install the `jq` and `mailsend-go` helper apps.
 
 `<************** PLACEHOLDER **************>`
   
@@ -151,7 +151,7 @@ The app opens to a main menu with five choices:
 - View app log
 - Exit app
 
-Below those are two links: **how to use this app**, which opens this section of the README, and **add a Play Store app review**, which opens Google Play's in-app rating card without leaving the app. Play limits how often that card can be shown per user, so it may do nothing — that is Play's decision, not a fault.
+Below those are two links: **how to use this app**, which opens this section of the README, and **add a Play Store app review**, which opens the app's Play Store listing.
 
 <p align="center">
   <img src="./images/main-menu.png" alt="Main menu" width="300">
@@ -287,7 +287,7 @@ Name: my-router.asuscomm.com (192.168.1.1)
 Model: RT-AX88U, firmware 3.0.0.4.388_24762
 Time: 2026-09-05 14:32:53 AEST
 Uptime: 15:11:29 up 19:21, load average: 2.55, 2.39, 2.36
-Watchdog: wgc1:pia-aus_melbourne, deployed by cfg-pia-wg v0.8.34 build 404
+Watchdog: wgc1:pia-aus_melbourne, deployed by cfg-pia-wg <version> build <number>
 
 HISTORY
 Since 2026-09-01 this router has recorded 4 successful and 1 failed reconfigurations.
@@ -322,7 +322,7 @@ Name: my-router.asuscomm.com (192.168.1.1)
 Model: RT-AX88U, firmware 3.0.0.4.388_24762
 Time: 2026-09-05 14:39:02 AEST
 Uptime: 15:17:38 up 19:27, load average: 1.02, 1.15, 1.09
-Watchdog: wgc1:pia-aus_melbourne, deployed by cfg-pia-wg v0.8.34 build 404
+Watchdog: wgc1:pia-aus_melbourne, deployed by cfg-pia-wg <version> build <number>
 
 HISTORY
 Since 2026-09-01 this router has recorded 4 successful and 2 failed reconfigurations.
@@ -341,7 +341,7 @@ Notes on reading these:
 
 - **Kill switch** answers the question that matters most when a tunnel drops — did anything leave the router unprotected? It has three states: on, available but not enabled, and *not supported on this firmware*. Stock ASUS firmware has no kill switch at all, so a dropped tunnel there means unprotected traffic until the watchdog restores it.
 - **Interval** is read from the router, not from the form you are filling in, so it can never claim a schedule that is not actually running.
-- **Since <date>** counts every re-configuration this router has made, across all slots, from the day the app first configured it.
+- **Since `date`** counts every re-configuration this router has made, across all slots, from the day the app first configured it.
 - The router log excerpt includes your **PIA username** (never the password, and never the token). The email travels through your own mail provider, but bear it in mind before forwarding one.
 
 The first email you receive will be the deployment itself — `Event: watchdog deployed` — sent even though there was nothing to fix. That is deliberate: it confirms the whole alerting path works, at the moment you set it up rather than months later during an outage.
@@ -387,6 +387,13 @@ Build information and documentation links live in the hamburger menu's **About**
   <br>
   About
 </p>
+
+The screen shows the app version and build number, the build fingerprint and the licence, and offers four actions:
+
+- **COPY BUILD INFO** — copies the whole block as plain text, for pasting into a bug report. This is not a secret, so it does not start the 60-second clipboard countdown.
+- **CREATE GITHUB ISSUE** — opens a new issue against the repository in your browser.
+- **DEL PIA CERT** — deletes the cached PIA CA certificate (`/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt`) from the router; the watchdog downloads a fresh copy on its next run. Nothing else is changed. About is reachable without ever visiting a router screen, so if no SSH details are held for this session it asks for them here rather than sending you away.
+- **Open source: licenses** — the full licence text for every third-party component, via Flutter's licence page.
 
 ---
 

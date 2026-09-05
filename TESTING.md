@@ -7,7 +7,15 @@
   - [1.4. Certificate information](#14-certificate-information)
 - [2. Testing the watchdog feature](#2-testing-the-watchdog-feature)
   - [2.1. Checks](#21-checks)
+    - [2.1.1. Invalidate the registration (the important one)](#211-invalidate-the-registration-the-important-one)
+    - [2.1.2. What does NOT work: moving the endpoint](#212-what-does-not-work-moving-the-endpoint)
+    - [2.1.3. Peer removed (the fast one)](#213-peer-removed-the-fast-one)
+    - [2.1.4. Interface down](#214-interface-down)
+    - [2.1.5. What a healthy check looks like](#215-what-a-healthy-check-looks-like)
+    - [2.1.6. Backoff](#216-backoff)
+    - [2.1.7. What no longer works](#217-what-no-longer-works)
 - [3. Examining nvram settings](#3-examining-nvram-settings)
+- [4. Full end-end-to-end manual test](#4-full-end-end-to-end-manual-test)
 
 ## 1. Testing email send from SSH
 
@@ -246,9 +254,9 @@ So a good test breaks the **crypto or the peer**, leaves the interface up, and t
 > Any LAN client policy-routed through the slot loses internet for the duration of the test - the tunnel really is dead. That is confirmation the test worked, but do not run it on a slot something depends on.
 
 > [!WARNING]
-> PIA rate-limits token requests. A failing watchdog re-registers every 120 s cooldown, and two failing watchdogs double that. If `failed to obtain PIA token` starts appearing, stop and wait 15-30 minutes - the log now carries the HTTP status, so `HTTP 429` confirms throttling rather than a fault. Test one slot at a time, and prefer a 5 m check interval over 1 m for reconfigure tests.
+> PIA rate-limits token requests. Since 405 the watchdog backs off on consecutive failures - 2, 4, 8, 16, 30, 60 minutes, capped at 90 - which is what keeps a broken tunnel from provoking it, but two failing watchdogs still climb their ladders independently. If `failed to obtain PIA token` starts appearing, stop and wait 15-30 minutes; the log carries the HTTP status, so `HTTP 403` confirms throttling rather than a fault. Test one slot at a time, and prefer a 5 m check interval over 1 m for reconfigure tests.
 
-#### 13.1. Invalidate the registration (the important one)
+#### 2.1.1. Invalidate the registration (the important one)
 
 The truest simulation of a PIA registration that has silently died: the interface stays up and keeps sending, the server no longer recognises us, and no handshake ever completes. Replace the interface's private key with a fresh one the server has never seen:
 
@@ -277,7 +285,7 @@ Expected in `/tmp/watchdog_wgc1.log` once the handshake passes 300 s:
 
 Recovery needs no cleanup: the re-negotiation generates a new keypair, registers it, rewrites `wgc1_*` in NVRAM and restarts the slot.
 
-#### 13.1.1. What does NOT work: moving the endpoint
+#### 2.1.2. What does NOT work: moving the endpoint
 
 ```bash
 # looks right, does nothing - do not use
@@ -286,7 +294,7 @@ wg set wgc1 peer "$(nvram get wgc1_ppub)" endpoint 203.0.113.1:1337
 
 `wg` accepts it and shows the new endpoint, then puts the real one back within seconds and no reconfigure ever happens. That is **endpoint roaming**, a WireGuard feature: a peer's endpoint is updated automatically whenever an authenticated packet arrives from a different source address. The PIA server is still sending, so the endpoint follows it home. Anything that leaves the keys intact will be undone the same way.
 
-#### 13.2. Peer removed (the fast one)
+#### 2.1.3. Peer removed (the fast one)
 
 Blunter, immune to roaming - there is no peer left for an inbound packet to update - and **detected at the very next check with no 300 s wait**, because removing the peer removes its handshake record too: `latest-handshakes` returns nothing, so the age test fails immediately.
 
@@ -314,10 +322,9 @@ Verified on 2026-09-04 with a 5 m interval, reconfigured immediately:
 Confirm the recovery, not just the log: `wg show wgc1` should list a peer again with a **different**
 public key from the one you removed, and the next scheduled check should read `Handshake Ns ago`.
 
-Running it twice inside two minutes gives `Cooldown Ns < 120s; skipping` - that is the guard
-working, not a fault.
+Running it again inside the backoff window gives `Backing off after N failed attempts: Xs of Ys elapsed` - that is the guard working, not a fault.
 
-#### 13.3. Interface down
+#### 2.1.4. Interface down
 
 The one the WebUI gives you. Detected immediately - no 300 s wait, because the script tests `ifconfig` before the handshake:
 
@@ -331,7 +338,7 @@ ifconfig wgc1 down
 2026-09-04 16:45:00 Connectivity lost; reconfiguring (attempt #1)
 ```
 
-#### 13.4. What a healthy check looks like
+#### 2.1.5. What a healthy check looks like
 
 For contrast - this is every minute on a working tunnel, and no reconfigure should follow:
 
@@ -340,18 +347,29 @@ For contrast - this is every minute on a working tunnel, and no reconfigure shou
 2026-09-04 15:48:00 Handshake 60s ago
 ```
 
-#### 13.5. Cooldown and backoff
+#### 2.1.6. Backoff
 
-`COOLDOWN=120`: a second failure inside two minutes is skipped rather than re-registering, which is what stops a broken tunnel hammering PIA.
+The wait before the next reconfigure attempt grows with each **consecutive failed attempt** and resets the moment one succeeds:
+
+| Consecutive failures | 1 | 2 | 3 | 4 | 5 | 6 | 7+ |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Wait | 2 min | 4 min | 8 min | 16 min | 30 min | 60 min | 90 min (cap) |
+
+A check that arrives inside the wait is turned away and says so:
 
 ```text
 2026-09-04 16:41:00 No handshake and both pings failed (8.8.8.8, 1.1.1.1)
-2026-09-04 16:41:00 Cooldown 60s < 120s; skipping
+2026-09-04 16:41:00 Backing off after 3 failed attempts: 45s of 480s elapsed
 ```
 
-Check `/tmp/watchdog_backoff_wgc1` is created and holds the attempt count and timestamp.
+Check `/tmp/watchdog_backoff_wgc1` is created and holds the attempt count and timestamp. The count rises **only when an attempt is actually made** - a run the backoff turned away must leave it alone, or the ladder would climb faster on a 1 m interval than on a 5 m one. To watch a rung without waiting for it, write the count by hand and re-run the script:
 
-#### 13.6. What no longer works
+```bash
+printf '%s\n%s\n' 5 "$(( $(date +%s) - 5 ))" > /tmp/watchdog_backoff_wgc1
+/jffs/cfg-pia-wg/watchdog_wgc1.sh          # expect "Backing off after 5 failed attempts: 5s of 1800s elapsed"
+```
+
+#### 2.1.7. What no longer works
 
 > [!WARNING]
 > Setting the ping targets to unroutable addresses does **not** force a reconfigure. Those addresses are also the WAN reachability check, so the script concludes the router has no internet and exits 0 without alerting. Per [RFC 5737](https://www.iana.org/go/rfc5737), `192.0.2.0/24`, `198.51.100.0/24` and `203.0.113.0/24` never respond, which is what makes them tempting here - but see 13.1.1 for why pointing the tunnel at one does not work either.
@@ -459,4 +477,83 @@ Your best source of information is the system log with `tail -f /tmp/syslog.log`
     nvram show | grep -E "vpnc_" | sort
     ```
 
+- Show the app's **global** settings - the PIA credentials the watchdog re-authenticates with, and the lifetime counters reported in the HISTORY section of every alert email:
+
+    ```bash
+    nvram show | grep -i cfg_pia | sort
+    ```
+
+    ```text
+    cfg_pia_wg_password=...
+    cfg_pia_wg_reconfig_fail=1     # lifetime failed reconfigures, all slots
+    cfg_pia_wg_reconfig_ok=4       # lifetime successful reconfigures, all slots
+    cfg_pia_wg_sdate=2026-09-01    # the day the app first configured this router
+    cfg_pia_wg_user=...
+    ```
+
+    The three `sdate` / `reconfig_*` keys are seeded together by whichever of a watchdog deploy or a test email happens first, and committed once per alert rather than once per check - `nvram commit` writes flash.
+
+- Two helper scripts do the above wholesale, and are the fastest way to start a clean test run:
+
+    ```bash
+    ./showall.sh    # every wgcN_, vpncN_, vpnc_ and cfg_pia_wg_ key, plus wg interfaces and cru
+    ./clearall.sh   # unset all of them, including the counters, and commit
+    ```
+
+    Both live in `scripts/` in the repository; copy them to the router with `scp`.
+
  ---
+
+## 4. Full end-end-to-end manual test
+
+  1. Clear all configs & nvram, reboot router
+  2. Home screen
+     1. all five buttons navigate; HOME and the back key return here - stock OK
+     2. "how to use this app" opens the README section - stock OK
+     3. "add a Play Store app review" opens the Play listing - stock OK
+     4. PAYPAL and PATREON open - stock OK
+  3. About
+     1. COPY BUILD INFO - no clipboard countdown starts - stock OK
+     2. licences screen opens and does not bleed through the header - stock OK
+     3. DEL PIA CERT - credential prompt prefills IP and username, keyboard does not obscure it - stock OK
+     4. CREATE GITHUB ISSUE opens - stock OK
+  4. Standalone (generate)
+     1. create a config and apply manually
+     2. heading reads "GENERATED CONFIG: pia-region_name"
+     3. clear the DNS field, leave the screen, return - Quad9 defaults are back
+     4. COPY - 60s countdown, then the clipboard empties with no "cleared" popup
+     5. SHARE and SAVE
+  5. Manage
+     1. create wgc1-5
+     2. enable wgc1 & 5
+     3. edit wgcN
+     4. ACTIVE badge on every slot whose interface is up, not just one
+     5. DISABLE leaves `wg show interfaces` empty
+     6. stock: a third concurrent enable is refused with the VPN-limit dialog
+     7. DELETE prompt names the VPN being deleted
+  6. Watchdog
+     1. Create wgc1 & wgc5 - check test email
+     2. Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
+     3. force a reconfigure with, check email alerting
+        1. `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`
+        2. `/jffs/cfg-pia-wg/watchdog_wgc1.sh`
+     4. Check emails
+        1. deploy email says "watchdog deployed", subject SUCCESS, sent even though nothing was wrong
+        2. reconfigure email: outage duration, kill-switch line, new server and latency
+        3. failure email: WHAT TO DO, attempt count, last 10 router-log lines
+        4. HISTORY counters climb; `cfg_pia_wg_sdate` is set once and not rewritten
+        5. subject threads by slot: `cfg-pia-wg alert: SUCCESS - wgc1:pia-<region>`
+     5. DISABLE shows the PAUSED badge; ENABLE restores the same interval
+     6. keyboard does not obscure the configure dialog's fields
+     7. backoff: leave it failing and watch the log - "Backing off after N failed attempts", waits growing 2, 4, 8, 16, 30, 60, 90 min
+  7. App log
+     1. one connection exists per session
+     2. router log: one `dropbear ... Password auth succeeded` per app session, not per button press
+     3. COPY the log - no countdown armed, and paste keeps its line breaks
+     4. drop the connection mid-session (reboot the router, or `service restart_vpnc`) - app logs "connection dropped; reconnecting" and the action still completes
+  8. Credentials and exit
+     1. password manager fills PIA, SSH and SMTP logins (clear the field first - Android only offers on an empty one)
+     2. Exit app and the back key both prompt, then wipe credentials and clipboard
+     3. release build: screenshots blocked, task switcher obscured
+  9. Firmware coverage
+     1. repeat 5-7 on the other firmware (stock / Merlin)
