@@ -304,18 +304,17 @@ Build information and documentation links live in the hamburger menu's **About**
 - **PIA maintenance:** PIA occasionally take regions offline for maintenance so you might be expecting to have an exit node in say Perth, but online tools may show you as exiting from Adelaide.
 - **Check your VPN is working:** with services like [PIA what is my ip](https://www.privateinternetaccess.com/what-is-my-ip), [ipaddress.my](https://ipaddress.my/?lang=en_US), [2ip.io](https://2ip.io), and [showmyip.com](https://www.showmyip.com). However, these sites may cache your location in the browser and they sometimes return a stale exit region if used multiple times. To be absolutely sure, close your browser rather than just refreshing the page.
 - **Watchdog shortcut:** If you deploy a _watchdog_ on an empty slot, that will also create the config for that slot in one step.
+- ***Maximum VPN count:** ASUS limit two concurrent VPNs on stock firmware, this is enforced by the app. On Merlin, there is no VPN limit.
 
-> [!IMPORTANT]
-> This app supports a maximum of one active WG VPN at any time.
->
-> When you save a config to your router, that "slot" will become the active VPN **replacing** any previously active slot.
->
-> Any slot with a kill switch will be **deactivated** and the kill switch, NAT, and firewalling (if enabled) will be applied to the **newly** enabled slot.
+<br>
+
+> [!NOTE]
+> When manually adding a VPN via the router's web GUI, the watchdog function requires the VPN description match the PIA region name exactly eg `aus_melbourne`. If you use the watchdog function and manually set the slot description to something other than "pia-region_name", then the watchdog will fail to identify what region it should use when a reconfigure event occurs.
 
 <br>
 
 > [!WARNING]
-> When manually adding a VPN via the router's web GUI, the watchdog function requires the VPN description match the PIA region name exactly eg `aus_melbourne`.
+> If you sell/give away you router, be advised that a factory restore does **not** remove custom NVRAM values. If you use the watchdog function, this could lead to exposure of credentials (PIA & smtp). You can fix this by SSH'ing into your router and running these scripts: `scripts\showall.sh` & `scripts\clearall.sh`. These are avaiable in the app's [GitHub repo](https://github.com/ExponentiallyDigital/cfg-pia-wg) in the scripts folder. Or make sure that you delete all VPN slots and watchdogs before parting company with your router.
 
 ---
 

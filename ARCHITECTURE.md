@@ -145,6 +145,9 @@ The push operation establishes an SSH session to the router and uses `wg show in
 
 Merlin exposes 17 nvram fields per WireGuard slot, stock exposes 12.
 
+If you use the watchdog function, your PIA username and password are stored in `cfg_pia_wg_user` and `cfg_pia_wg_password`.
+
+
 ### 3.1. Field reference
 
 | Field | Merlin | Stock | Default | Description |

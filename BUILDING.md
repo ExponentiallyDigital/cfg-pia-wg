@@ -32,7 +32,7 @@ The scripts `build.ps1` / `build.sh` in the `./scripts` folder automate a local 
 
 ## 2. Building
 
-A shell script `build-optimisation` is included in the ./scripts folder, this can be used to set up the build environment for 8, 16, 32, 64 GB RAM configuations. It should significantly speed up building/debugging runs.
+A shell script `build-optimisation` is included in the ./scripts folder, this can be used to set up the build environment for 8, 16, 32, 64 GB RAM configuations. It could significantly speed up building/debugging runs.
 
 > [!CAUTION]
 > Please fully understand what the script does **before** use, as it makes fundamental changes to your build environment!
