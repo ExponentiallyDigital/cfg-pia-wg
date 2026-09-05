@@ -25,6 +25,9 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-06 v0.8.38 build 408 - sync commit ahead of e2e app test
+
+- REL: sync commit
 
 2026-09-05 v0.8.37 build 407 - fixed the reset/inspection scripts and the broken review link, and brought the docs up to date.
 
