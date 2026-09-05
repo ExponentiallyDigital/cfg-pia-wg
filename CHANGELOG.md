@@ -1,42 +1,49 @@
 # 1. CHANGELOG.md
 
 - [1. Changes](#1-changes)
-  - [1.1. Pending](#11-pending)
-    - [WATCHDOG issues](#watchdog-issues)
-  - [1.2. Implemented - chronological change history](#12-implemented---chronological-change-history)
+  - [1.1. Pending to do](#11-pending-to-do)
+  - [1.2. WIP](#12-wip)
+  - [1.3. Implemented - chronological change history](#13-implemented---chronological-change-history)
 
 ---
 
 ## 1. Changes
 
-### 1.1. Pending
+### 1.1. Pending to do
 
-See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for complete list.
+See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for "deep" backlog.
 
-- DOC: Add note to use data from About screen when creating an issue on GitHub, add to ISSUE_TEMPLATEs.
-- DOC: add to `README.md` how to get and install `jq` and `sendmail-go` on stock firmware, plus how to install & cfg Download Master and use the replacement script.
-- DOC: once stock firmware version operating, remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md.
-- REL: update version to 0.9 branch when first releasing stock support.
+- ADD: implement a function to get and deploy needed binaries (using `scripts\get-bins.sh` as template starting point), add test for DownloadMaster installed, on first run rename `router:/opt/etc/init.d/S50downloadmaster` and `router:/opt/etc/init.d/S50asuslighttpd` to `*.old`.
 
-#### WATCHDOG issues
+### 1.2. WIP
 
-- GUI: Make Manage and Watchdog deletion prompt messages consistent.
-- CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes; add lifetime number of reconfigure events (write start date and update total count to NVRAM).
-- CHG: Remove 'WATCHDOG_EOF' text from test email:
-         This is a test email from the cfg-pia-wg watchdog (slot wgcX).
-         WATCHDOG_EOF
-- CHG: on stock add test for DownloadMaster installed, on first run rename `router:/opt/etc/init.d/S50downloadmaster` and `router:/opt/etc/init.d/S50asuslighttpd` to .old.
-- CHG: on Merlin w app, deleting a watchdog also deletes the underlying WG slot - modify to only delete the cron job and retain the underlying VPN slot config
+- TBC: allow password entry from registered password helper app?
+- GUI: update delete MANAGE prompt from "Delete wgc1? This clears the wgc1 ("pia-aus_melbourne") configuration on the router" to "Delete VPN wgc1:pia-aus_melboure?"
+- GUI: update the delete WATCHDOG prompt from "Delete watchdog wgc1? This will also delete and disable the underlying region." to "Delete watchdog and VPN wgc1:pia-aus_melboure?".
+- CHG: rebuild test/reconfigure email. Design in `.claude\plans\plan_rebuild_test_configure_emails.md`.
+- ADD: in-app device assignment to VPN. Design in`.claude\plans\plan_vpn_device_assignments.md`.
+- CHG: back off when PIA refuses a token request. It answers HTTP 403 after sustained re-registration and clears on its own after tens of minutes; retrying every 120s indefinitely is what prolongs it. Grow the cooldown on consecutive failures, start with 2 min, 4, 8, 16, cap at 30 minutes, reset on success. Design in `.claude/plans/plan_watchdog-token-backoff.md` (needs to be  updated with the new cooldown count shown in this change line).
+- CHG: reuse the router SSH connection instead of opening one per action - removes a dropbear login line and a full handshake from every button press. Design in `.claude/plans/plan_ssh-connection-reuse.md`. Needs its own build number: a stale-connection bug would look like an intermittent action failure.
 
 ---
 
-### 1.2. Implemented - chronological change history
+### 1.3. Implemented - chronological change history
 
-WIP:
+2026-09-05 v0.8.33 build 403 - stock support implemented alongside Merlin
 
-  1. implement a capped exponential backoff on consecutive failures — 2 min, 4, 8, up to 30 minutes, see `.claude\plans\plan_watchdog-token-backoff.md`
-  2. implement `.claude\plans\plan_ssh-connection-reuse.md`
-  3. add updated icon!
+- CHG: Restructured `CHANGELOG.md` format - clearer pending and WIP.
+- CHG: Added draft freemium plan, code cleanup, and iOS to `BACKLOG.md`.
+- CHG: Extensively updated `BACKLOG.md`, sequenced and grouped changes.
+- CHG: Updated app icons to fix shield icon clipping, confirmed fixed.
+- ADD: Scripts to display and reset nvram settings: `scripts\showall.sh` & `scripts\clearall.sh`.
+- DOC: Added to `README.md` as a warning in section `## 6. Notes`, factory restore does **not** remove custom NVRAM values. Potential exposure of credentials (PIA & smtp) if router is sold/given away and the watchdog function is used; use `scripts\showall.sh` & `scripts\clearall.sh` scripts to display and unset nvram settings.
+- REL: CLOSED - not an issue `./scripts/pin-actions-latest.*` chokes if comment missing.
+- REL: CLOSED - not an issue `.github/workflows/release.yml` "Warning: WARNING!! 'track' is deprecated and will be removed in a future release. Please migrate to 'tracks'".
+- REL: CLOSED - check `build-config/gradle.properties` default values are still suitable. They were set up for my laptop, not desktop. Updated `build-config\gradle.properties` to match desktop hardware. Saved old version to OneNote.
+- DOC: CLOSED - not added, not needed: add README note that SBOM (build provenance) is for the aab pushed to the PS.
+- DOC: CLOSED - no action required. Add to TESTING.md: `wgcX_rip` is updated by the Web GUI via an unknown method (review Asus_WRT src), router log shows no `service` script(s) were run to display this in the web GUI. It is not the public IP address (which is served from a pool to external sites), it is the router's IP address on PIA's infrastructure (?) and always differs from `wgc1_ep_addr` and `wgcX_ep_addr_r` (except PIA's webiste shows the public IP address as `wgc1_ep_addr*` vs other sites which showed `wgcX_rip` as the public ip address).
+- TST: CLOSED - `lib\app_shell.dart` is the lowest at 86%. Overall Line Coverage 96.1% 2331 / 2426 lines, Function Coverage
+100.0%, Files 26 high 0 med 0 low coverage. Was "review opportunities to increase code base testing, examine `ftr` report for functions with low coverage".
 
 2026-09-04 v0.8.32 build 402 - beta test stock support for Watchdog function
 
