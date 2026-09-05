@@ -248,56 +248,43 @@ class _HelpLinkState extends State<_HelpLink> {
 
 /// Tappable "(*) add a Play Store app review" line above the donation block.
 ///
-/// Google Play decides whether its rating card actually appears - the request is quota-limited per
-/// user - so a tap that shows nothing is normal and is not reported as a failure. Only a request
-/// that could not be made at all reaches the app log, which is where a tester would look.
-class _ReviewLink extends StatefulWidget {
+/// The whole line is the target, not just the glyphs: this is a 12px row, and a `TextSpan`
+/// recogniser only fires on the text itself, which is a small thing to hit accurately. A plain
+/// GestureDetector rather than an InkWell so it still looks identical to the help link above.
+class _ReviewLink extends StatelessWidget {
   const _ReviewLink();
 
-  @override
-  State<_ReviewLink> createState() => _ReviewLinkState();
-}
-
-class _ReviewLinkState extends State<_ReviewLink> {
-  late final TapGestureRecognizer _recogniser;
-
-  @override
-  void initState() {
-    super.initState();
-    _recogniser = TapGestureRecognizer()..onTap = _ask;
-  }
-
-  Future<void> _ask() async {
+  Future<void> _open(BuildContext context) async {
     final controller = SessionScope.of(context);
-    if (!await requestAppReview()) {
-      controller.logEntry('Could not open the Play Store review flow on this device.', isError: true);
+    if (!await openPlayStoreReview()) {
+      controller.logEntry('Could not open the Play Store listing on this device.', isError: true);
     }
   }
 
   @override
-  void dispose() {
-    _recogniser.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Text.rich(
+    return GestureDetector(
       key: const Key('menu_review'),
-      textAlign: TextAlign.center,
-      TextSpan(
-        style: const TextStyle(color: kHighlight, fontSize: 12),
-        children: [
-          const WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Icon(Icons.star_outline, size: 16, color: kHighlight),
-          ),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _open(context),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Text.rich(
+          textAlign: TextAlign.center,
           TextSpan(
-            text: ' add a Play Store app review',
-            style: const TextStyle(decoration: TextDecoration.underline, decorationColor: kHighlight),
-            recognizer: _recogniser,
+            style: TextStyle(color: kHighlight, fontSize: 12),
+            children: [
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: Icon(Icons.star_outline, size: 16, color: kHighlight),
+              ),
+              TextSpan(
+                text: ' add a Play Store app review',
+                style: TextStyle(decoration: TextDecoration.underline, decorationColor: kHighlight),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

@@ -1,4 +1,4 @@
-// review_service.dart - asking for a Play Store review from inside the app.
+// review_service.dart - sending the user to the app's Play Store listing to leave a review.
 //
 // This program is free software: you can redistribute it and/or modify it under the terms
 // of the GNU General Public License as published by the Free Software Foundation, either
@@ -13,34 +13,41 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// Google Play's in-app review flow shows a rating card over the app rather than sending the user
-// to the Play Store. It is deliberately unobservable: `requestReview` reports success as soon as
-// the request is made, and Play decides on its own whether to draw anything - it is quota-limited
-// per user per app, so most taps legitimately show nothing at all. Never build UI that claims a
-// review was left, and never gate anything on the outcome.
+// This deliberately does NOT use `InAppReview.requestReview()`, which 406 shipped and 407 removed.
 //
-// The flow needs Play Services and an app installed by Play, so it is unavailable on a debug or
-// sideloaded build. There, [requestAppReview] opens the store listing instead, which is the only
-// way a tap can do something visible during testing.
+// That call asks Play to draw its in-app rating card, and Play alone decides whether to draw one.
+// It is quota-limited per user per app, and on a build Play did not install it never appears at
+// all - so debug and release alike did nothing visible when the home-screen link was tapped, and
+// the API cannot report that back: the plugin's own code says "the API does not indicate whether
+// the user reviewed or if the dialog was shown" and returns success either way. Nothing downstream
+// could tell a shown card from a silent no-op, so the link looked broken.
+//
+// Google's own guidance is that the in-app review flow must not be triggered by a button, for that
+// reason. A link the user taps on purpose has to do something, every time, so it opens the store
+// listing instead. `requestReview` would be right for an unprompted ask - after a successful
+// watchdog deploy, say - and this file is where it would go back.
 
+import 'package:flutter/foundation.dart';
 import 'package:in_app_review/in_app_review.dart';
 
-/// The channel the in_app_review plugin registers; exposed so a test can answer it.
+/// The channel the in_app_review plugin registers.
 const String kInAppReviewChannel = 'dev.britannio.in_app_review';
 
-/// Asks for a review, falling back to the store listing where the review flow is unavailable.
+/// Stands in for the plugin in tests. Mocking the method channel is not enough: `openStoreListing`
+/// picks its behaviour from the host platform in Dart, and a test host is not Android, so the
+/// channel is never reached.
+@visibleForTesting
+InAppReview? debugReviewOverride;
+
+/// Opens the app's Play Store listing so the user can leave a review.
 ///
-/// Returns false only when neither could be started - a plain widget test, a desktop host, a
-/// device with no Play Store. True means the request was made, never that the user saw a card.
-Future<bool> requestAppReview({InAppReview? review}) async {
-  final api = review ?? InAppReview.instance;
+/// Returns false when nothing could be opened - a desktop host, a device with no Play Store, a
+/// plain widget test - so the caller can say so rather than leave a tap with no effect.
+Future<bool> openPlayStoreReview({InAppReview? review}) async {
   try {
-    if (await api.isAvailable()) {
-      await api.requestReview();
-      return true;
-    }
-    // openStoreListing throws UnsupportedError off Android/iOS/Windows, which the catch handles.
-    await api.openStoreListing();
+    // Android: an ACTION_VIEW on the https listing URL, which the manifest's <queries> already
+    // covers. Throws UnsupportedError off Android/iOS/Windows, which the catch handles.
+    await (review ?? debugReviewOverride ?? InAppReview.instance).openStoreListing();
     return true;
   } catch (_) {
     return false;

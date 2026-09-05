@@ -1,4 +1,4 @@
-# CHANGELOG.md
+# BACKLOG.md
 
 - [1. Backlog](#1-backlog)
   - [1.1. All](#11-all)
@@ -24,10 +24,8 @@
 
 - DOC: Update `README.md` screenshots.
 - DOC: Update `README.md` [5. Using the app](https://github.com/ExponentiallyDigital/cfg-pia-wg#5-using-the-app).
-- DOC: Add to `README.md` the expanded About screen functionality: build info, create GitHub issue, and clear PIA cached cert.
 - DOC: Add to `README.md` requirements section, `jq` and `sendmail-go` on stock firmware.
 - DOC: Add to `README.md` requirements section, how to install `DownloadMaster` in ASUS WebUI.
-- DOC: Scan all `*.md` (`README.md`, and `ARCHITECTURE.md` + others) and remove references to Merlin firmware requirement.
 - DOC: Update Play Store description.
 - DOC: Update Play Store screenshots.
 - REL: Update version to 0.9 branch when first releasing stock support (and see the backlog item on performance profiling when sent to GPS alpha track).
@@ -53,12 +51,12 @@
 - NEW: Freemium version using RevenueCat, move all but conf generation to a one-off lifetime paid function, non-freemium makes screens accessible but read only, advise once per session when enterng a freemium gated function, explain how to unlock all capabilities.
 - TBC: Determine cost - smaller user base, higher investment.
 
-- Implementation plan, see (and update) detailed plan stored in `.claude\plans\pan_revenucat-implementation.md`, below are high level steps only:
+- Implementation plan, see (and update) detailed plan stored in `.claude\plans\plan_revenuecat-implementation.md`, below are high level steps only:
 
   #### 1.2.1. Accounts & Play Console setup
 
   - **In-app product creation:** Create a **Non-consumable** in-app product (e.g., `cfg-pia-wg_pro_unlock`) set to US$x.yy.
-  - **Play Store compliance:** Complete **Data safety form** to reflect RevenueCat, and add to Privacy Policy.
+  - **Play Store compliance:** Complete **Data safety form** to reflect RevenueCat, and add to Privacy Policy. Store-rejection item, not a nicety - the SDK sees a pseudonymous app-user id.
 
   #### 1.2.2. RevenueCat dashboard setup
 
@@ -70,11 +68,13 @@
   - **Flutter dependencies:** Add `purchases_flutter` and `flutter_secure_storage` to `pubspec.yaml`.
   - **Billing service singleton:** Implement RevenueCat initialisation, real-time entitlement status updates, purchase triggers, and purchase restoration.
   - **Paywall UI modal:** Build a `PaywallBottomSheet` highlighting watchdog's zero-touch automation, PIA key renewal fix, and lifetime access model.
-  - **PayPal/Patreon:** remove links from main app screen.
+  - **PayPal/Patreon:** remove links from main app screen. Re-space the home-screen footer afterwards - the `spacer` above it is sized for the donation block. Keep the "add a Play Store app review" link: the watchdog alert emails say "by tapping on the home screen link", so removing it makes that wording stale.
 
   #### 1.2.4. Security & router diagnostics
 
-  - **Pre-flight diagnostic:** Verify SSH connectivity and JFFS script execution readiness *before* displaying unlock feature to prevent purchases on incompatible setups.
+  - **Pre-flight diagnostic:** Verify SSH connectivity and JFFS script execution readiness *before* displaying unlock feature to prevent purchases on incompatible setups. Most of this already exists - see the table in the plan addendum. The one missing check is `/opt` on stock (DownloadMaster installed): without it the watchdog deploys, works, and then silently loses its cron entries at the next reboot. **Worth adding regardless of freemium.**
+  - **Do not build revocation into the deployed watchdog script.** A deployed watchdog runs on the router with the app nowhere in the picture, so entitlement cannot be enforced after the fact - accepted deliberately (see plan addendum). A licence check inside the script would be defeatable in a text editor and would add a failure mode to the one thing that has to be reliable unattended.
+  - **`flutter_secure_storage` versus the stated posture:** `README.md` and `SECURITY.md` both say absolutely that nothing is written to device storage. Caching an entitlement is compatible with the intent but contradicts the wording. Reword "Secret management" to separate *credentials* (never stored) from *purchase state* (cached, not sensitive) in the same change that adds the dependency.
 
   #### 1.2.5. Sandbox testing & QA
 
@@ -98,11 +98,15 @@
 
   - **Changelog:** Add to v0.9.00 changelog, explain why watchdog is monetised.
   - **Store optimisation (ASO):** include high-intent keywords: *Asuswrt-Merlin, PIA WireGuard token auto-renew, Asus router VPN, NVRAM SSH scripts*.
-  - **Reconfigure review prompt:** add link to reconfigure email seeking an app review (add an NVRAM timestamp when watchdog first deployed and increment an NVRAM counter when a reconfigure occurs - see CHG backlog item).
 
 ---
 
 ### 1.3. Codebase cleanup
+
+Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
+
+> [!IMPORTANT]
+> Do not start the firmware abstraction until stock support has soaked in release. It touches every path stock support just landed on, and a regression here would be indistinguishable from a stock-support bug - the same reasoning that gave SSH connection reuse its own build number.
 
 - Map codebase
   - By file and by function (done 2026-09-01, now in `CONTEXT.md`)
@@ -113,12 +117,25 @@
   - Complexity reduction/reduce lines of code
     - audit large/long/complex source files
     - audit naming of source code files
-- Abstract firmware from Manage and watchdog
+- Abstract firmware from Manage and watchdog. Measured 2026-09-05: 27 `isStockFirmware` branches across six files, 21 of them in `router_slot_service.dart` (14) and `router_watchdog.dart` (7). Both stock bugs found this session were "the stock branch does not match the Merlin branch's intent".
   - Create functions to act on classes of activities
   - Split out to functions
+  - Model on `buildWatchdogScript`, which already resolves firmware once and substitutes the differences (`__KILLSW__`, `__MAILHDR__`, `__MAILCMD__`) rather than branching at runtime
+  - Take it in slices, each on its own build: start/stop first, then slot reading, then cron persistence, then delete
+- Largest files, measured 2026-09-05: `router_watchdog.dart` 1,554 lines, `router_slot_service.dart` 842, `slot_modal.dart` 767. The email layout in `router_watchdog.dart` (`buildEmailBody`, `RouterEmailFacts`, the section constants) is self-contained and would move out with no behaviour change.
 
 ### 1.4. v1.0.0 iOS version
 
-- ...
+**Parked** - US$99/year Apple Developer Program against an unknown iOS user base. Early thinking, and what actually blocks it: `.claude/plans/plan_ios-port.md`.
+
+- The router half ports for free: `dartssh2` is pure Dart, and the watchdog script runs on the router, which does not care what phone deployed it.
+- The platform hardening does not. `FLAG_SECURE` has **no iOS equivalent** - screenshots cannot be blocked, only the task-switcher snapshot can be covered. `README.md` and `SECURITY.md` state that guarantee unconditionally today and would need to state it per-platform.
+- The silent clipboard clear is an Android method channel (`ClipboardManager.clearPrimaryClip()`); iOS needs `UIPasteboard.general.items = []` or the 60-second auto-clear regresses to the system copy popup that 403 removed.
+- Non-code costs: a Mac or hosted runner for signing, a materially stricter App Store review, and a release pipeline (`release.yml`, SBOM, Gradle lockfiles) that is Android-shaped throughout.
+
+**Worth doing whether or not iOS ever happens:**
+
+- FIX: `openPlayStoreReview()` fails **silently** on iOS today - `openStoreListing()` needs an `appStoreId` there and throws without one, which the catch swallows into a `false`. Latent now, on a platform we do not ship to, but it is still a silent catch.
+- DOC: phrase the hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
 
 ---

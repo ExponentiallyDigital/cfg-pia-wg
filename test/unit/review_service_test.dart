@@ -1,53 +1,62 @@
-// test/unit/review_service_test.dart - asking Play for a review card.
+// test/unit/review_service_test.dart - sending the user to the Play Store listing.
 //
-// The flow is deliberately unobservable: Play answers `requestReview` immediately and decides for
-// itself whether to draw anything, so the only thing worth asserting is which request was made.
-// The cases that matter are the ones where nothing can be shown - a debug or sideloaded build has
-// no review flow, and a tap that silently does nothing is worse than one that opens the listing.
-import 'package:flutter/services.dart';
+// Reported in 407: the home-screen link did nothing, on debug and release alike. 406 had used
+// `InAppReview.requestReview()`, which asks Play to draw its in-app rating card - and Play draws
+// one only when it feels like it (quota-limited, and never on a build it did not install), while
+// reporting success either way. Nothing could distinguish a shown card from a silent no-op.
+//
+// So the contract held here is the one the bug violated: a tap the user made on purpose asks for
+// something that always happens, and says so when it cannot.
 import 'package:flutter_test/flutter_test.dart';
+import 'package:in_app_review/in_app_review.dart';
 import 'package:cfg_pia_wg/review_service.dart';
 
-void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+/// Records what was asked of the plugin. Mocking the method channel would not do: the plugin picks
+/// its behaviour from the host platform in Dart before the channel is reached.
+class FakeInAppReview implements InAppReview {
+  final List<String> calls = [];
+  final Object? failWith;
 
-  final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-  const channel = MethodChannel(kInAppReviewChannel);
+  FakeInAppReview({this.failWith});
 
-  /// Answers the plugin channel, recording the methods asked of it. A null [available] leaves the
-  /// handler absent, which is what a plain test - or a host with no Play Store - looks like.
-  List<String> mockHost({bool? available}) {
-    final calls = <String>[];
-    messenger.setMockMethodCallHandler(
-      channel,
-      available == null
-          ? null
-          : (call) async {
-              calls.add(call.method);
-              return call.method == 'isAvailable' ? available : null;
-            },
-    );
-    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-    return calls;
+  @override
+  Future<bool> isAvailable() async {
+    calls.add('isAvailable');
+    return true;
   }
 
-  test('an available flow is asked for the review card', () async {
-    final calls = mockHost(available: true);
-    expect(await requestAppReview(), isTrue);
-    expect(calls, ['isAvailable', 'requestReview']);
+  @override
+  Future<void> requestReview() async => calls.add('requestReview');
+
+  @override
+  Future<void> openStoreListing({String? appStoreId, String? microsoftStoreId}) async {
+    calls.add('openStoreListing');
+    if (failWith != null) throw failWith!;
+  }
+}
+
+void main() {
+  test('opens the store listing', () async {
+    final fake = FakeInAppReview();
+    expect(await openPlayStoreReview(review: fake), isTrue);
+    expect(fake.calls, ['openStoreListing']);
   });
 
-  test('an unavailable flow falls back to the store listing', () async {
-    final calls = mockHost(available: false);
-    // The host here is not Android, so the plugin refuses the listing and the caller reports it
-    // could do nothing - on a real device this is the branch that opens Play.
-    expect(await requestAppReview(), isFalse);
-    expect(calls, ['isAvailable']);
-    expect(calls, isNot(contains('requestReview')), reason: 'asking anyway would throw');
+  // The regression itself. Play answers requestReview successfully whether or not it drew anything,
+  // so a link built on it cannot tell the user it failed - it just sits there doing nothing.
+  test('never asks for the in-app rating card', () async {
+    final fake = FakeInAppReview();
+    await openPlayStoreReview(review: fake);
+    expect(fake.calls, isNot(contains('requestReview')));
+    expect(fake.calls, isNot(contains('isAvailable')), reason: 'nothing left to gate on');
   });
 
-  test('no plugin at all is a false, never an exception out of the tap handler', () async {
-    mockHost();
-    expect(await requestAppReview(), isFalse);
+  test('a host that cannot open it returns false rather than throwing out of a tap handler', () async {
+    final fake = FakeInAppReview(failWith: UnsupportedError('Platform(linux) not supported'));
+    expect(await openPlayStoreReview(review: fake), isFalse);
+  });
+
+  test('with no plugin at all it is still a false, not an exception', () async {
+    expect(await openPlayStoreReview(), isFalse);
   });
 }
