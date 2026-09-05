@@ -16,8 +16,9 @@
 // One modal serves both router screens (spec 3.2). The button set + actions vary by [mode]:
 //   manage   -> CREATE, ENABLE, EDIT, DISABLE, DELETE
 //   watchdog -> CREATE/EDIT, DELETE, VIEW ROUTER WATCHDOG LOG
-// A short-lived SSH client is opened for each action (so a dropped connection self-heals), the
-// slot list is refreshed after every action, and a processing overlay covers the modal while busy.
+// Every action runs on the session's shared SSH connection (router_session.dart) - it is never
+// closed here; that would pull it out from under the next action. The slot list is refreshed after
+// every action, and a processing overlay covers the modal while busy.
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
@@ -73,31 +74,26 @@ class _SlotModalState extends State<SlotModal> {
 
   // ── Connection helpers ──────────────────────────────────────────────────────────
   Future<void> _refresh() async {
-    SSHClient? client;
     try {
-      client = await widget.connect();
+      final client = await widget.connect();
       final s = await _slotSvc(client).fetchSlots();
       if (mounted) setState(() => _slots = s);
     } catch (_) {
       // Non-fatal: keep the previous list.
-    } finally {
-      client?.close();
     }
   }
 
-  // Runs [op] with a fresh slot service, refreshes the slot list, then (with the processing overlay
-  // already cleared) surfaces any error — the spinner must not animate under an awaited modal.
+  // Runs [op] with a new slot service over the shared connection, refreshes the slot list, then
+  // (with the processing overlay already cleared) surfaces any error — the spinner must not
+  // animate under an awaited modal.
   Future<void> _runSlot(Future<void> Function(RouterSlotService) op) async {
     setState(() => _processing = true);
-    SSHClient? client;
     Object? error;
     try {
-      client = await widget.connect();
+      final client = await widget.connect();
       await op(_slotSvc(client));
     } catch (e) {
       error = e;
-    } finally {
-      client?.close();
     }
     await _refresh();
     if (mounted) setState(() => _processing = false);
@@ -183,18 +179,15 @@ class _SlotModalState extends State<SlotModal> {
     var primary = '', secondary = '';
     var haveTargets = false;
     setState(() => _processing = true);
-    SSHClient? client;
     Object? readError;
     try {
-      client = await widget.connect();
+      final client = await widget.connect();
       final t = await _slotSvc(client).readWatchdogPingTargets(slot);
       primary = t.$1;
       secondary = t.$2;
       haveTargets = primary.isNotEmpty && secondary.isNotEmpty;
     } catch (e) {
       readError = e;
-    } finally {
-      client?.close();
     }
     if (mounted) setState(() => _processing = false);
     if (readError != null) {
@@ -213,17 +206,14 @@ class _SlotModalState extends State<SlotModal> {
     // 4) Write targets if prompted, then enable with the connectivity check. Other slots are left
     //    running - they no longer have to be torn down first.
     setState(() => _processing = true);
-    client = null;
     Object? error;
     try {
-      client = await widget.connect();
+      final client = await widget.connect();
       final svc = _slotSvc(client);
       if (!haveTargets) await svc.writeWatchdogPingTargets(slot, primary, secondary);
       await svc.enableSlot(slot, primaryIp: primary, secondaryIp: secondary);
     } catch (e) {
       error = e;
-    } finally {
-      client?.close();
     }
     await _refresh();
     if (mounted) setState(() => _processing = false);
@@ -243,15 +233,13 @@ class _SlotModalState extends State<SlotModal> {
     final slot = _selected;
     Map<String, String>? params;
     setState(() => _processing = true);
-    SSHClient? client;
     Object? error;
     try {
-      client = await widget.connect();
+      final client = await widget.connect();
       params = await _slotSvc(client).readSlotParams(slot);
     } catch (e) {
       error = e;
     } finally {
-      client?.close();
       if (mounted) setState(() => _processing = false);
     }
     if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
@@ -350,16 +338,13 @@ class _SlotModalState extends State<SlotModal> {
         confirmLabel: 'DELETE', destructive: true);
     if (!ok) return;
     setState(() => _processing = true);
-    SSHClient? client;
     Object? error;
     try {
-      client = await widget.connect();
+      final client = await widget.connect();
       await _wdSvc(client).stopWatchdog(slot);
       await _slotSvc(client).deleteSlot(slot);
     } catch (e) {
       error = e;
-    } finally {
-      client?.close();
     }
     await _refresh();
     if (mounted) setState(() => _processing = false);
@@ -370,15 +355,13 @@ class _SlotModalState extends State<SlotModal> {
     final slot = _selected;
     String? log;
     setState(() => _processing = true);
-    SSHClient? client;
     Object? error;
     try {
-      client = await widget.connect();
+      final client = await widget.connect();
       log = await _wdSvc(client).getWatchdogLog(slot);
     } catch (e) {
       error = e;
     } finally {
-      client?.close();
       if (mounted) setState(() => _processing = false);
     }
     if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));

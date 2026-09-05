@@ -14,6 +14,8 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
@@ -146,6 +148,9 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) _controller.resyncOnResume();
+    // An authenticated router session held open behind a locked screen is a wider exposure than
+    // credentials sitting in memory. The next action reconnects.
+    if (state == AppLifecycleState.paused) unawaited(_controller.closeRouterSession());
   }
 
   @override

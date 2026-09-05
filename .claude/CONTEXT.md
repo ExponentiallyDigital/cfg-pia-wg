@@ -23,7 +23,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 | Dependency injection | Constructor-injected nullable factories used purely as test seams: `PiaService? service`, `Future<SSHClient> Function(...)? testClientFactory`, `RouterSlotService Function(SSHClient)? slotServiceFactory`, `RouterWatchdog Function(SSHClient)? watchdogServiceFactory`, `SessionController? controller`, `PiaService({int probePort})`, `RouterSlotService(..., verifyPollInterval, verifyMaxAttempts)`. Follow this pattern instead of a service locator. |
 | Error handling | Services `throw`; UI catches, strips `'Exception: '`, and routes through `AppErrors.system` (one at a time) or `AppErrors.inputs` (batched). Every error is also appended to the app log. Router mutations are additionally wrapped by `RouterWatchdog._guard`, which logs to the app log **and** the router syslog before rethrowing. Best-effort side calls (`_logRouter`, ping helpers) swallow with `catch (_)`. |
 | Async + UI | Every `await` across a widget boundary is followed by a `mounted` check. Spinners are cleared **before** awaiting a modal (a spinner must never animate under a dialog) — see `slot_modal.dart:99-104`. |
-| SSH lifetime | One short-lived `SSHClient` per action (`widget.connect()` → use → `client?.close()` in `finally`), so a dropped connection self-heals on the next action. |
+| SSH lifetime | **One connection per app session**, shared by every action - `RouterSession` in `router_session.dart`, owned by `SessionController`. Opened lazily, reused, reconnected once on a transport failure, and closed by `wipeAll()` and by `AppLifecycleState.paused`. Until 406 it was a fresh `SSHClient` per action, closed in a `finally`; **an action must never call `close()` now** - it would pull the connection out from under the next one, and a source scan in `test/unit/router_session_test.dart` fails the build if one appears. |
 | Licence header | Every `lib/` file opens with the GPL-v3 header block + `Copyright (C) 2026 Andrew Newbury.` Keep it on new files. |
 | Colours | Never inline a hex colour in a screen; use the constants in `lib/app_colors.dart`. |
 
@@ -31,7 +31,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 
 The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit app"; a hamburger drawer rendered *above* the Navigator adds an **About** destination and duplicates the rest. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and drive a shared `wgc1..wgc5` slot modal: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. **Both Merlin and stock ASUS firmware are supported** — the firmware is detected once per session on entry to either router screen and every router command branches on it (§4.13). Screen 4 shows the in-memory app log. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
 
-## 3. Architecture — `lib/` (27 files)
+## 3. Architecture — `lib/` (28 files)
 
 ### Root
 
@@ -44,6 +44,7 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 | `session_controller.dart` | `AppDestination` enum (6 values), `LogEntry`, `SessionController extends ChangeNotifier`, `SessionScope extends InheritedWidget`, `kDefaultDns`. Holds all volatile state, the 1 Hz clipboard countdown, modal depth, `wipeAll()`. `SessionScope.updateShouldNotify` compares controller identity only, so it does **not** rebuild on every tick. |
 | `app_colors.dart` | 13 `const Color` tokens: `kHighlight` teal `#00D4AA`, `kSecondary`, `kBg`, `kSurface`, `kField`, `kBorder`, `kText`, `kMuted`, `kHint`, `kError`, `kOnPrimary`, `kConfigBg`, `kWarn`. |
 | `pia_service.dart` | PIA provisioning engine. `WgServer`/`Region`/`ProbeResult`/`RegResponse` models + `PiaService`. Uses `dart:io` `HttpClient` (10 s connect timeout), not `package:http`. |
+| `router_session.dart` | `RouterSession implements SSHClient` - the shared router connection. `client()` opens on demand and coalesces concurrent opens; `run()` retries **once** after reconnecting when `isConnectionLost(e)`; `close()` is the session teardown. Implementing `SSHClient` rather than wrapping one is why nothing downstream changed: the services still take an `SSHClient` and the fakes still substitute for one. |
 | `router_slot_service.dart` | `kSlotNvramKeys` (17 keys), `openSshClient()`, `SlotInfo`, `RouterSlots`, `RouterSlotService`: fetch/read/create/enable/disable/delete/write slot params, ping-target NVRAM, `pingViaSlot`. |
 | `router_watchdog.dart` | 890 lines. Validation helpers, `WatchdogConfig`, `WatchdogStatus`, pure Bash-template builders, `RouterWatchdog` service, and `_kWatchdogScriptTemplate` (the router-side sh script, ~7 KB heredoc ceiling). |
 | `watchdog_dialog.dart` | `WatchdogDialog` — the watchdog CREATE/EDIT form. Its `SAVE` validates, optionally picks a region, WAN-pings both targets (warn-only), then calls `deployWatchdog`. **This is the only path that brings a watchdog up.** |
@@ -252,6 +253,20 @@ Subject: `<wgcN_wd_email_subject>: <SUCCESS|FAILED|TEST email> - wgcN:<region>`.
 **Outage duration** comes from `$STATUSFILE`, which now leads with an epoch (`date '+%s %Y-%m-%d %H:%M:%S'`) so `down_for()` can subtract. It is measured **before** the file is re-stamped, or every outage reads zero. The file lives in `/tmp`, so after a reboot there is nothing to subtract from and the email says `unknown (no successful check since the router last rebooted)` rather than inventing a duration. `parseLastPing` skips the epoch prefix and still reads a file written by an older build.
 
 The `ROUTER LOG` excerpt can contain the **PIA username** (`Requesting PIA token for user ...`). It never contains the password or the token - the script logs the token's *length*. A deliberate choice, since these emails traverse the user's own mail provider.
+
+### 4.8.2 The shared SSH connection
+
+Every action used to open its own connection: socket, handshake, password auth, a few commands, close. That is a `dropbear[NNNN]: Password auth succeeded` line in the router log per button press, and a handshake's latency before anything visibly happens. `RouterSession` holds one connection for the life of the session instead.
+
+**The property that had to be replaced.** A fresh client per action meant a dropped connection self-healed, because the next action simply connected again. That was real, and reuse throws it away unless it is put back deliberately - so `RouterSession.run` reconnects once and retries when `isConnectionLost(e)`. Without that we would have traded dropbear noise for intermittent action failures, which is a worse bug and a harder one to see. `service restart_vpnc` and `restart_firewall` can take the session down mid-action, so this path runs in normal use, not just in disasters.
+
+**What is NOT retried.** Only transport failures - `SSHStateError`, `SSHAuthAbortError`, and messages containing closed / connection reset / broken pipe / socketexception. `client.run` returns a failing command's output rather than throwing, so a throw is nearly always transport-level, but "nearly" is the point: re-running `nvram set` or a heredoc append because of an error we did not understand is worse than the original failure. A retried chunked append would double the file, which `_writeScript`'s byte-count check catches and reports.
+
+**Liveness is not `isClosed`.** It only goes true after a clean close, so a connection the router silently dropped still reports itself open - and the test fakes route it through `noSuchMethod`, where it throws. A failed command is the honest test, which is what the retry is for.
+
+**Credentials key the session.** `SessionController.routerSession` rebuilds it whenever router IP, SSH username or password change; reusing a connection authenticated as someone else, or to a different box, would silently ignore what the user just typed.
+
+**Teardown.** `wipeAll()` closes it, so every existing exit path already tears it down, and `AppLifecycleState.paused` closes it too - an authenticated session held open behind a locked screen is a wider exposure than credentials sitting in memory. The next action reconnects.
 
 ### 4.9 NVRAM variables
 

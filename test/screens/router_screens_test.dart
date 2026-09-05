@@ -118,6 +118,81 @@ void main() {
     c.dispose();
   });
 
+  // The point of the change in 406: a button press should not cost a handshake and a
+  // `dropbear[NNNN]: Password auth succeeded` line in the router log.
+  group('connection reuse', () {
+    /// Counts how many times a real connection would have been opened.
+    ({Widget widget, List<String> opens}) manageCounting(RecordingSSHClient ssh, SessionController c) {
+      final opens = <String>[];
+      return (
+        opens: opens,
+        widget: SessionScope(
+          controller: c,
+          child: MaterialApp(
+            home: Scaffold(
+              body: ManageRouterScreen(
+                testClientFactory: (ip, u, p) async {
+                  opens.add(ip);
+                  return ssh;
+                },
+                slotServiceFactory: (cl) => _fastSvc(cl, c),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('a second CONNECT reuses the open connection', (tester) async {
+      final c = _controller();
+      final ssh = _merlinSsh();
+      final h = manageCounting(ssh, c);
+      await tester.pumpWidget(h.widget);
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+      expect(h.opens, hasLength(1));
+
+      // Leave the modal and connect again - the old code opened a second connection here.
+      await tester.ensureVisible(find.widgetWithText(TextButton, 'HOME'));
+      await tester.tap(find.widgetWithText(TextButton, 'HOME'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      expect(h.opens, hasLength(1), reason: 'one handshake for the whole session');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('backgrounding the app drops the connection', (tester) async {
+      final c = _controller();
+      final h = manageCounting(_merlinSsh(), c);
+      await tester.pumpWidget(h.widget);
+      await tester.pumpAndSettle();
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      // An authenticated session held open behind a locked screen is a wider exposure than
+      // credentials in memory; PiaWgApp closes it on pause. Here the controller stands in for it.
+      await c.closeRouterSession();
+      await tester.ensureVisible(find.widgetWithText(TextButton, 'HOME'));
+      await tester.tap(find.widgetWithText(TextButton, 'HOME'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      expect(h.opens, hasLength(2), reason: 'and the next action reconnects');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
   testWidgets('manage CONNECT opens the slot modal', (tester) async {
     final c = _controller();
     final ssh = RecordingSSHClient(

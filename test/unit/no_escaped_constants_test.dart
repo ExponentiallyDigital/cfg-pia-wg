@@ -20,7 +20,10 @@ void main() {
       for (var i = 0; i < lines.length; i++) {
         // \$ followed by a lower-case k (a constant) or a lower-case identifier: Dart naming.
         // Shell variables in this codebase are upper-case ($IFACE, $SLOT, $BEST_IP).
-        if (RegExp(r'\\$[a-z]').hasMatch(lines[i])) {
+        // Both escapes matter. r'\\$' is a literal backslash followed by the end-of-string ANCHOR,
+        // which nothing can follow - written that way the guard matched nothing and passed
+        // vacuously, missing a real one in session_controller.dart in 406.
+        if (RegExp(r'\\\$[a-z]').hasMatch(lines[i])) {
           offenders.add('${file.path}:${i + 1}: ${lines[i].trim()}');
         }
       }
