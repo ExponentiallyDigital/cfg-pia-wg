@@ -72,6 +72,10 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
 
   bool _emailEnabled = false;
   bool _loading = false;
+
+  /// The SAVE button, so a save can scroll its own spinner into view. The dialog scrolls, and with
+  /// the keyboard up the button sits below the fold - which is what made a save look inert.
+  final _saveKey = GlobalKey();
   bool _jqMissing = false;
   bool _piaPassVisible = false;
   bool _smtpPassVisible = false;
@@ -207,7 +211,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
-        title: Text('Overwrite wgc${widget.slotIndex}?', style: const TextStyle(color: kText, fontSize: 15)),
+        // Names what is being overwritten, the same shape the delete prompts use.
+        title: Text('Overwrite ${slotLabel(widget.slotIndex, widget.regionDesc)}?',
+            style: const TextStyle(color: kText, fontSize: 15)),
         content: const Text('This will reset both this watchdog and any underlying VPN region. CONTINUE chooses the new region',
             style: TextStyle(color: kMuted, fontSize: 13)),
         actions: [
@@ -219,12 +225,29 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     return ok ?? false;
   }
 
+  /// Brings the SAVE button - and so its spinner - to the middle of the viewport.
+  ///
+  /// Dismissing the keyboard first resizes the dialog, so this runs on the next frame or it would
+  /// scroll to where the button used to be.
+  Future<void> _showSpinner() async {
+    await WidgetsBinding.instance.endOfFrame;
+    final ctx = _saveKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    await Scrollable.ensureVisible(ctx, alignment: 0.5, duration: const Duration(milliseconds: 200));
+  }
+
   // Spec 2.1.3: SAVE persists the parameters and deploys them in one step.
   Future<void> _save() async {
     if (_jqMissing) {
       await AppErrors.system(context, _c, 'Cannot save: $_jqLabel is not installed on the router.');
       return;
     }
+    // The keyboard was left up over a field that still had focus and a green border, while the
+    // spinner sat below the fold - so a save looked like nothing had happened, on a control the
+    // user had apparently just been editing. Drop focus first; _withService scrolls to the spinner.
+    FocusScope.of(context).unfocus();
+    await _showSpinner();
+    if (!mounted) return;
     final cfg = _currentConfig();
     final errors = cfg.validate();
     if (errors.isNotEmpty) {
@@ -406,12 +429,16 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                ElevatedButton(
-                  key: const Key('wd_save'),
-                  onPressed: (_loading || _jqMissing) ? null : _save,
-                  child: _loading
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
-                      : const Text('SAVE'),
+                KeyedSubtree(
+                  key: _saveKey,
+                  child: ElevatedButton(
+                    key: const Key('wd_save'),
+                    onPressed: (_loading || _jqMissing) ? null : _save,
+                    child: _loading
+                        ? const SizedBox(
+                            height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
+                        : const Text('SAVE'),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Align(

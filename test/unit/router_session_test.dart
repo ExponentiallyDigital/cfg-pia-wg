@@ -16,6 +16,8 @@ import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:cfg_pia_wg/app_shell.dart';
 import 'package:cfg_pia_wg/router_session.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 
@@ -253,6 +255,69 @@ void main() {
     test('closeRouterSession is safe when nothing was ever opened', () async {
       final c = _controller();
       await c.closeRouterSession();
+      c.dispose();
+    });
+  });
+
+  // 406 closed the session the instant the app was paused. The 2026-09-06 end-to-end test showed
+  // the cost: configuring a router means hopping to its WebUI and back, and every hop bought a
+  // fresh handshake - ten dropbear logins in one session, which is most of what sharing the
+  // connection was meant to remove. 409 added a grace period.
+  group('backgrounding', () {
+    /// A controller holding a live session, and the client behind it.
+    Future<(SessionController, _Opener)> connected() async {
+      final c = _controller();
+      final opener = _Opener();
+      await c.routerSession(opener.call).run('x');
+      return (c, opener);
+    }
+
+    testWidgets('a brief background leaves the connection open', (tester) async {
+      final (c, opener) = await connected();
+      await tester.pumpWidget(PiaWgApp(controller: c, sessionGrace: const Duration(minutes: 5)));
+      await tester.pumpAndSettle();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump(const Duration(minutes: 1));
+
+      expect(opener.opened.single.closed, isFalse, reason: 'a glance at the WebUI must not cost a reconnect');
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump(const Duration(minutes: 10));
+      expect(opener.opened.single.closed, isFalse, reason: 'coming back cancels the timer');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a long background closes it', (tester) async {
+      final (c, opener) = await connected();
+      await tester.pumpWidget(PiaWgApp(controller: c, sessionGrace: const Duration(minutes: 5)));
+      await tester.pumpAndSettle();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump(const Duration(minutes: 6));
+
+      expect(opener.opened.single.closed, isTrue, reason: 'not left open behind a locked screen');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // The grace is a convenience, not a loosening of the wipe guarantee.
+    testWidgets('a wipe closes it immediately, whatever the timer is doing', (tester) async {
+      final (c, opener) = await connected();
+      await tester.pumpWidget(PiaWgApp(controller: c, sessionGrace: const Duration(minutes: 5)));
+      await tester.pumpAndSettle();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump(const Duration(seconds: 1));
+      await c.wipeAll();
+
+      expect(opener.opened.single.closed, isTrue);
+
+      await tester.pump(const Duration(minutes: 10));
+      await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
   });

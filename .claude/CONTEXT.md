@@ -246,7 +246,15 @@ A row whose value is empty is **dropped**, never printed as a dangling label - `
 
 Subject: `<wgcN_wd_email_subject>: <SUCCESS|FAILED|TEST email> - wgcN:<region>`. The user's own subject stays the prefix (default `cfg-pia-wg alert`), so anyone who changed it keeps their mail rules; the slot and region are appended so a client threads by VPN.
 
+**The deploy waits for the interface.** `enableVpnSlot` issues its service call through `notify_rc`, which queues and returns at once - so the interface is not up when it returns. The deploy used to exec the script about a second later, find "Interface wgcN is down or absent" and perform a full reconfigure, costing a PIA token and an `addKey` on **every** deploy. `RouterWatchdog._awaitInterfaceUp` now polls first (`verifyPollInterval` x `verifyMaxAttempts`, injectable), and a slot that never comes up still deploys - the script rebuilds the tunnel, which is what it is for.
+
 **Run mode.** `deployWatchdog` runs the script as `<path> deploy`; cron passes nothing. The script reads `RUNMODE="${1:-cron}"` **at the top**, because `send_alert()` shadows `$1` with its own argument. A deploy run reports itself as a deployment rather than a re-configuration, and emails **even when it finds the tunnel already healthy** - that email is the user's proof that alerting works. On that path no addKey ran, so the endpoint comes from `wgcN_ep_addr`/`_ep_port` and there is no server name or latency to report.
+
+**A deploy is not a reconfigure.** `bump()` returns early when `RUNMODE=deploy`, so neither `cfg_pia_wg_reconfig_ok` nor `_fail` counts a deployment - they used to climb every time a watchdog was saved. The email says `Event: watchdog deployed` whichever path the run took, and omits the outage and attempt rows.
+
+**Times carry a numeric offset (`%z`), never a zone name.** Cron inherits `TZ` from init - `/etc/TZ` on ASUS, a POSIX string like `UTC-10DST,...` that literally names the zone "UTC" while offsetting +10 - so cron-fired alerts labelled a correct local time as UTC. A dropbear login shell sets no `TZ` and falls back to `/etc/localtime`, which is why manual runs looked right. Do not "fix" this by exporting `TZ` from nvram: it is the same string.
+
+**Undeliverable alerts are counted, not resent.** `/tmp/watchdog_unsent_wgcN` holds a count and a timestamp; the next email that gets through reports them and clears it. An alert about lost connectivity is the one most likely to be undeliverable - a downed default tunnel takes DNS with it.
 
 **Kill switch has three states, not two:** ON, `OFF - the kill switch is available but is not enabled` (Merlin), and `not supported on this firmware` (stock, which has none). Baked per firmware as `KILLSW_UP` / `KILLSW_FIXED` / `KILLSW_DOWN` - three tenses, because the same fact reads wrong in the wrong one: the tunnel is up on a deploy run, was down on a recovery, and is still down on a failure. A failure takes the still-down wording whether or not the run was a deploy.
 

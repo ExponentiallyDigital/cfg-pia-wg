@@ -1008,9 +1008,14 @@ void main() {
 
     test('a failed enable reverts with stop_vpnc', () async {
       useStock();
-      // Interface never comes up -> _revertEnable.
-      final c = RecordingSSHClient(
-          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg' : '');
+      // Interface never comes up -> _revertEnable. `wgs1` is the WireGuard SERVER interface, which
+      // a real router reports alongside the clients - so this says "something is up, but not wgc1"
+      // rather than leaving the answer empty, which the fake would fill in from the enable flag.
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('vpnc_clientlist')) return 'pia-aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+        if (cmd == 'wg show interfaces') return 'wgs1';
+        return '';
+      });
       await expectLater(svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
       expect(c.ran('service stop_vpnc'), isTrue);
       expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg'"), isTrue);

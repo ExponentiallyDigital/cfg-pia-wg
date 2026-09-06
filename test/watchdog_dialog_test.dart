@@ -89,6 +89,26 @@ void main() {
     expect(save.onPressed, isNull);
   });
 
+  // Reported 2026-09-06: the prompt said "Overwrite wgc4?" and left the user to remember which
+  // region that was. The delete prompts have named their slot since 404.
+  testWidgets('the overwrite prompt names the region, not just the slot', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c, slotIsEmpty: false));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('wd_save')));
+    await tester.tap(find.byKey(const Key('wd_save')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Overwrite wgc1:aus_melbourne?'), findsOneWidget);
+    expect(find.text('Overwrite wgc1?'), findsNothing);
+
+    await tester.tap(find.text('CANCEL'));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('save blocked with a batched error dialog when a required IP is empty', (tester) async {
     final c = _controller();
     addTearDown(c.dispose);

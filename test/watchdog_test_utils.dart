@@ -56,7 +56,12 @@ class RecordingSSHClient implements SSHClient {
       }
     }
     _rememberHeredoc(command);
+    _rememberEnabledSlot(command);
     var out = responder?.call(command) ?? '';
+    // A slot the app has just switched on reports as up. Since 409 the watchdog deploy waits for
+    // the interface before running the script, and a fake that never came up would make every
+    // deploy test sit through the full poll.
+    if (out.isEmpty && command == 'wg show interfaces') out = _enabledSlots.map((s) => 'wgc$s').join(' ');
     if (out.isEmpty && (command.contains('latest-handshakes') || command.contains('date +%s'))) {
       out = kFakeNow.toString();
     }
@@ -69,6 +74,17 @@ class RecordingSSHClient implements SSHClient {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  /// Slots switched on during this fake's lifetime, so `wg show interfaces` can answer honestly.
+  final Set<int> _enabledSlots = {};
+  static final _enableFlag = RegExp(r'nvram set wgc(\d)_enable=([01])');
+
+  void _rememberEnabledSlot(String command) {
+    for (final m in _enableFlag.allMatches(command)) {
+      final slot = int.parse(m.group(1)!);
+      m.group(2) == '1' ? _enabledSlots.add(slot) : _enabledSlots.remove(slot);
+    }
+  }
 
   /// Contents of the files written by heredoc, so `wc -c` can answer honestly - the deploy writes
   /// the script in chunks and then checks the size, and a fake that forgot would fail that check.

@@ -1,4 +1,5 @@
 // test/router_watchdog_service_test.dart - RouterWatchdog service tests over a fake SSH client.
+import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
@@ -22,41 +23,50 @@ WatchdogConfig cfg({int slot = 1, int interval = 5, bool email = false}) => Watc
       smtpPassword: email ? 'smtppass' : '',
     );
 
+/// A watchdog service whose interface-up poll does not wait on real time.
+///
+/// 409 made enableVpnSlot wait for `wgcN` to appear before the deploy runs the script - on a real
+/// router `notify_rc` queues the service call, so the interface is not up when it returns. The
+/// fakes here mostly never bring one up, so the production 2s x 5 would add half a minute to this
+/// file alone.
+RouterWatchdog _wd(SSHClient c, {void Function(String, {bool isError, bool isSuccess})? onLog}) =>
+    RouterWatchdog(c, onLog: onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: 3);
+
 void main() {
   group('detection', () {
     test('isMerlinRouter true only when 3rd-party == merlin', () async {
       final merlin = RecordingSSHClient(responder: (c) => c.contains('3rd-party') ? 'merlin' : '');
-      expect(await RouterWatchdog(merlin).isMerlinRouter(), isTrue);
+      expect(await _wd(merlin).isMerlinRouter(), isTrue);
       final stock = RecordingSSHClient(responder: (_) => 'asuswrt');
-      expect(await RouterWatchdog(stock).isMerlinRouter(), isFalse);
+      expect(await _wd(stock).isMerlinRouter(), isFalse);
     });
 
     test('isJqInstalled reflects which jq output', () async {
-      expect(await RouterWatchdog(RecordingSSHClient(responder: (_) => '/opt/bin/jq')).isJqInstalled(), isTrue);
-      expect(await RouterWatchdog(RecordingSSHClient(responder: (_) => '')).isJqInstalled(), isFalse);
+      expect(await _wd(RecordingSSHClient(responder: (_) => '/opt/bin/jq')).isJqInstalled(), isTrue);
+      expect(await _wd(RecordingSSHClient(responder: (_) => '')).isJqInstalled(), isFalse);
     });
 
     test(r'isJqInstalled probes the install path on stock, not $PATH', () async {
       useStock();
       final present = RecordingSSHClient(responder: (_) => '1');
-      expect(await RouterWatchdog(present).isJqInstalled(), isTrue);
+      expect(await _wd(present).isJqInstalled(), isTrue);
       expect(present.ran("[ -x '$kStockJqPath' ]"), isTrue);
       expect(present.ran('which jq'), isFalse);
 
-      expect(await RouterWatchdog(RecordingSSHClient(responder: (_) => '0')).isJqInstalled(), isFalse);
+      expect(await _wd(RecordingSSHClient(responder: (_) => '0')).isJqInstalled(), isFalse);
     });
   });
 
   group('enableJffsScripts', () {
     test('no commit when already enabled', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '1' : '');
-      await RouterWatchdog(c).enableJffsScripts();
+      await _wd(c).enableJffsScripts();
       expect(c.ran('nvram set jffs2_scripts=1'), isFalse);
     });
 
     test('sets both flags and commits when not enabled', () async {
       final c = RecordingSSHClient(responder: (_) => '0');
-      await RouterWatchdog(c).enableJffsScripts();
+      await _wd(c).enableJffsScripts();
       expect(c.ran('nvram set jffs2_scripts=1'), isTrue);
       expect(c.ran('nvram set jffs2_on=1'), isTrue);
     });
@@ -84,7 +94,7 @@ void main() {
     test('adds the description to vpnc_clientlist on stock', () async {
       useStock();
       final c = stockClient();
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne');
+      await _wd(c).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne');
 
       final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_clientlist='), orElse: () => '');
       expect(write, isNotEmpty, reason: 'no clientlist row was written');
@@ -95,7 +105,7 @@ void main() {
     test('marks the profile active when the slot is enabled', () async {
       useStock();
       final c = stockClient();
-      await RouterWatchdog(c).enableVpnSlot(1);
+      await _wd(c).enableVpnSlot(1);
 
       expect(c.commands.any((cmd) => cmd.startsWith('nvram set vpnc_clientlist=')), isTrue);
       // And it starts the tunnel the stock way, not Merlin's.
@@ -106,9 +116,9 @@ void main() {
     test('stops a stock tunnel with stop_vpnc, not stop_wgc', () async {
       useStock();
       final c = stockClient();
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne'); // creates the row
+      await _wd(c).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne'); // creates the row
       c.commands.clear();
-      await RouterWatchdog(c).disableVpnSlot(1);
+      await _wd(c).disableVpnSlot(1);
 
       expect(c.ran('service stop_vpnc'), isTrue);
       expect(c.ran('stop_wgc'), isFalse);
@@ -117,7 +127,7 @@ void main() {
     test('leaves vpnc_clientlist alone on Merlin, which has no such list', () async {
       useMerlin();
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne');
+      await _wd(c).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne');
 
       expect(c.commands.any((cmd) => cmd.contains('vpnc_clientlist')), isFalse);
       expect(c.ran("nvram set wgc1_desc='pia-aus_melbourne'"), isTrue);
@@ -168,7 +178,7 @@ void main() {
         responder: (cmd) => cmd.contains('wc -c') ? '12' : '', // a truncated write
       );
       await expectLater(
-        RouterWatchdog(c).deployWatchdog(cfg(slot: 1)),
+        _wd(c).deployWatchdog(cfg(slot: 1)),
         throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('12 bytes'))),
       );
       // And it stops there rather than scheduling a script that is not there.
@@ -177,7 +187,7 @@ void main() {
 
     test('a good write is confirmed and the deploy carries on', () async {
       final c = RecordingSSHClient();
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1));
+      await _wd(c).deployWatchdog(cfg(slot: 1));
       expect(c.ran('cru a watchdog_wgc1'), isTrue);
       expect(c.ran("wc -c < '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
     });
@@ -197,7 +207,7 @@ void main() {
       if (cmd.contains('nvram get vpnc_clientlist')) return list;
       return '';
     });
-    await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+    await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
 
     final writes = c.commands.where((cmd) => cmd.contains("'$kS50Path' <<'WATCHDOG_EOF'")).toList();
     expect(writes, isNotEmpty);
@@ -210,7 +220,7 @@ void main() {
   group('deployWatchdog', () {
     test('enables JFFS, writes nvram, deploys the script and both cron entries', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
       expect(c.ran('nvram set jffs2_scripts=1'), isTrue);
       expect(c.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
       expect(c.ran("nvram set wgc1_wd_secondary_ip='1.1.1.1'"), isTrue);
@@ -225,9 +235,41 @@ void main() {
       expect(c.commands.any((cmd) => cmd == '/jffs/cfg-pia-wg/watchdog_wgc1.sh deploy'), isTrue);
     });
 
+    // Reported 2026-09-06: every deploy performed a full reconfigure - a PIA token and an addKey -
+    // because `notify_rc` queues the service call and returns at once, so the script ran about a
+    // second later and found no interface. MANAGE's enableSlot has always waited; this path did not.
+    test('waits for the interface to come up before running the script', () async {
+      var interfaces = '';
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'wg show interfaces') return interfaces;
+        // The router brings it up shortly after the service call, not during it.
+        if (cmd.contains('restart_vpnc') || cmd.contains('start_wgc')) interfaces = 'wgc1';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
+
+      final polled = c.commands.lastIndexWhere((cmd) => cmd == 'wg show interfaces');
+      final ran = c.commands.indexWhere((cmd) => cmd.endsWith('watchdog_wgc1.sh deploy'));
+      expect(polled, isNot(-1), reason: 'the interface has to be checked at all');
+      expect(ran, isNot(-1));
+      expect(polled, lessThan(ran), reason: 'and checked BEFORE the script is exec-ed');
+    });
+
+    // The wait is bounded: a slot that never comes up must not hang the deploy, because the
+    // script's own check will rebuild the tunnel - that is what it is for.
+    test('a slot that never comes up still deploys, and says so', () async {
+      final logs = <(String, bool)>[];
+      final c = RecordingSSHClient(responder: (cmd) => cmd == 'wg show interfaces' ? 'wgs1' : '');
+      await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add((m, isError)))
+          .deployWatchdog(cfg(slot: 1, interval: 5));
+
+      expect(c.commands.any((cmd) => cmd.endsWith('watchdog_wgc1.sh deploy')), isTrue);
+      expect(logs.any((l) => l.$2 && l.$1.contains('has not come up yet')), isTrue);
+    });
+
     test('enables the VPN slot before deploying the watchdog scripts', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
       final enableIndex = c.commands.indexWhere((cmd) => cmd.contains('wgc1_enable=1'));
       final deployIndex = c.commands.indexWhere((cmd) => cmd.contains("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"));
       expect(enableIndex, isNot(-1));
@@ -238,7 +280,7 @@ void main() {
     // The completion line is the router-side record that the deploy finished, not just started.
     test('writes a completion message to the router syslog once deployed', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
       expect(
         c.commands.any(
             (cmd) => cmd.contains('logger -t cfg-pia-wg') && cmd.contains('Watchdog deployed for wgc1 (check interval is 5m)')),
@@ -255,7 +297,7 @@ void main() {
   group('enableVpnSlot', () {
     test('activates the underlying VPN slot and restarts vpn routing', () async {
       final c = RecordingSSHClient();
-      await RouterWatchdog(c).enableVpnSlot(1);
+      await _wd(c).enableVpnSlot(1);
       expect(c.ran("nvram set wgc1_enable=1"), isTrue);
       expect(c.ran('service "start_wgc 1"; service restart_vpnrouting0'), isTrue);
     });
@@ -264,7 +306,7 @@ void main() {
   group('disableVpnSlot', () {
     test('clears the enable flag and stops the interface with the bare slot index', () async {
       final c = RecordingSSHClient();
-      await RouterWatchdog(c).disableVpnSlot(3);
+      await _wd(c).disableVpnSlot(3);
       expect(c.ran('nvram set wgc3_enable=0'), isTrue);
       expect(c.ran('service "stop_wgc 3"; service start_vpnrouting0'), isTrue);
     });
@@ -287,7 +329,7 @@ void main() {
 
     test('deployWatchdog leaves an existing watchdog on another slot running', () async {
       final c = otherSlotActive();
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
 
       expect(c.ran('cru d watchdog_wgc2'), isFalse);
       expect(c.ran('nvram set wgc2_enable=0'), isFalse);
@@ -297,7 +339,7 @@ void main() {
 
     test('deployWatchdog never unsets the shared PIA credentials', () async {
       final c = otherSlotActive();
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
 
       expect(c.ran('nvram unset cfg_pia_wg_user'), isFalse);
       expect(c.ran("nvram set cfg_pia_wg_user='p1234567'"), isTrue);
@@ -305,7 +347,7 @@ void main() {
 
     test('leaves idle slots alone', () async {
       final c = otherSlotActive();
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
       for (final idle in [3, 4, 5]) {
         expect(c.ran('nvram set wgc${idle}_enable=0'), isFalse);
         expect(c.ran('cru d watchdog_wgc$idle'), isFalse);
@@ -316,7 +358,7 @@ void main() {
   group('disableWatchdog / enableWatchdog', () {
     test('DISABLE removes only the cron entries and the boot persistence', () async {
       final c = RecordingSSHClient();
-      await RouterWatchdog(c).disableWatchdog(1);
+      await _wd(c).disableWatchdog(1);
 
       expect(c.ran('cru d watchdog_wgc1'), isTrue);
       expect(c.ran('cru d watchdog_log_rotate_wgc1'), isTrue);
@@ -330,7 +372,7 @@ void main() {
 
     test('ENABLE restores the schedule at the interval stored on the router', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('wgc1_wd_check_interval') ? '15' : '');
-      await RouterWatchdog(c).enableWatchdog(1);
+      await _wd(c).enableWatchdog(1);
 
       expect(c.commands.any((cmd) => cmd.contains('cru a watchdog_wgc1') && cmd.contains('*/15')), isTrue);
       expect(c.ran('cru a watchdog_log_rotate_wgc1'), isTrue);
@@ -339,7 +381,7 @@ void main() {
 
     test('ENABLE refuses when no settings were stored', () async {
       final c = RecordingSSHClient(responder: (_) => '');
-      await expectLater(RouterWatchdog(c).enableWatchdog(1), throwsA(isA<Exception>()));
+      await expectLater(_wd(c).enableWatchdog(1), throwsA(isA<Exception>()));
       expect(c.commands.any((cmd) => cmd.startsWith('cru a')), isFalse);
     });
   });
@@ -352,7 +394,7 @@ void main() {
       final c = RecordingSSHClient(
         responder: (cmd) => cmd.contains('cru l') && cmd.contains('watchdog_wgc5') ? '1' : '',
       );
-      await RouterWatchdog(c).stopWatchdog(1);
+      await _wd(c).stopWatchdog(1);
 
       expect(c.ran('nvram unset cfg_pia_wg_user'), isFalse);
       expect(c.ran('nvram unset cfg_pia_wg_password'), isFalse);
@@ -361,7 +403,7 @@ void main() {
 
     test('clears the shared PIA credentials when it is the last watchdog', () async {
       final c = RecordingSSHClient(responder: (_) => '');
-      await RouterWatchdog(c).stopWatchdog(1);
+      await _wd(c).stopWatchdog(1);
 
       expect(c.ran('nvram unset cfg_pia_wg_user'), isTrue);
       expect(c.ran('nvram unset cfg_pia_wg_password'), isTrue);
@@ -369,7 +411,7 @@ void main() {
 
     test('removes cron, script, services-start lines and all per-slot files, leaves JFFS', () async {
       final c = RecordingSSHClient();
-      await RouterWatchdog(c).stopWatchdog(1);
+      await _wd(c).stopWatchdog(1);
       expect(c.ran('cru d watchdog_wgc1'), isTrue);
       expect(c.ran('cru d watchdog_log_rotate_wgc1'), isTrue);
       expect(c.ran('rm -f /jffs/cfg-pia-wg/watchdog_wgc1.sh'), isTrue);
@@ -384,7 +426,7 @@ void main() {
 
     test('brings the tunnel down with the bare slot index and clears the enable flag', () async {
       final c = RecordingSSHClient();
-      await RouterWatchdog(c).stopWatchdog(1);
+      await _wd(c).stopWatchdog(1);
       expect(c.ran('nvram set wgc1_enable=0'), isTrue);
       expect(c.ran('service "stop_wgc 1"; service start_vpnrouting0'), isTrue);
       // The old form targeted "stop_wgc wgc1", which the service silently ignored.
@@ -402,7 +444,7 @@ void main() {
         return '';
       },
     );
-    final ready = await RouterWatchdog(c).waitForWatchdogReady(1, pollInterval: const Duration(milliseconds: 1), maxAttempts: 3);
+    final ready = await _wd(c).waitForWatchdogReady(1, pollInterval: const Duration(milliseconds: 1), maxAttempts: 3);
     expect(ready, isTrue);
   });
 
@@ -417,7 +459,7 @@ void main() {
           return '';
         },
       );
-      final st = await RouterWatchdog(c).getWatchdogStatus(1);
+      final st = await _wd(c).getWatchdogStatus(1);
       expect(st.isEnabled, isTrue);
       expect(st.lastSuccessfulPing, DateTime(2026, 6, 19, 14, 30, 0));
     });
@@ -431,13 +473,13 @@ void main() {
           return '';
         },
       );
-      final st = await RouterWatchdog(c).getWatchdogStatus(1);
+      final st = await _wd(c).getWatchdogStatus(1);
       expect(st.isEnabled, isFalse);
     });
 
     test('disabled with null last-ping', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('cru l') ? '0' : '');
-      final st = await RouterWatchdog(c).getWatchdogStatus(1);
+      final st = await _wd(c).getWatchdogStatus(1);
       expect(st.isEnabled, isFalse);
       expect(st.lastSuccessfulPing, isNull);
     });
@@ -445,7 +487,7 @@ void main() {
 
   test('getWatchdogLog returns cat output', () async {
     final c = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'line1\nline2' : '');
-    expect(await RouterWatchdog(c).getWatchdogLog(1), 'line1\nline2');
+    expect(await _wd(c).getWatchdogLog(1), 'line1\nline2');
   });
 
   test('loadConfig maps nvram keys to fields (per-slot + global PIA)', () async {
@@ -461,7 +503,7 @@ void main() {
         return '';
       },
     );
-    final config = await RouterWatchdog(c).loadConfig(1);
+    final config = await _wd(c).loadConfig(1);
     expect(config.cronIntervalMinutes, 7);
     expect(config.primaryIp, '8.8.8.8');
     expect(config.secondaryIp, '1.1.1.1');
@@ -473,7 +515,7 @@ void main() {
 
   test('testEmail writes mail, sends via sendmail, cleans up, logs', () async {
     final c = RecordingSSHClient();
-    await RouterWatchdog(c).testEmail(cfg(slot: 1, email: true));
+    await _wd(c).testEmail(cfg(slot: 1, email: true));
     expect(c.ran("cat > '/tmp/mail.txt'"), isTrue);
     expect(c.ran('TEST email'), isTrue, reason: 'the subject says what kind of mail this is');
     expect(c.ran('/usr/sbin/sendmail'), isTrue);
@@ -485,7 +527,7 @@ void main() {
   // rather than the day of their first reconfigure - which may be months later, or never.
   test('testEmail seeds the lifetime counters and reads the router facts in one round trip', () async {
     final c = RecordingSSHClient();
-    await RouterWatchdog(c).testEmail(cfg(slot: 1, email: true));
+    await _wd(c).testEmail(cfg(slot: 1, email: true));
     expect(c.ran('nvram set cfg_pia_wg_sdate='), isTrue);
     expect(c.ran('nvram set cfg_pia_wg_reconfig_ok=0'), isTrue);
     expect(c.ran('nvram set cfg_pia_wg_reconfig_fail=0'), isTrue);
@@ -498,22 +540,22 @@ void main() {
   group('ping helpers', () {
     test('pingHostViaWan command shape and OK/FAIL parsing', () async {
       final ok = RecordingSSHClient(responder: (_) => 'OK');
-      expect(await RouterWatchdog(ok).pingHostViaWan('8.8.8.8'), isTrue);
+      expect(await _wd(ok).pingHostViaWan('8.8.8.8'), isTrue);
       expect(ok.ran('ping -c 1 -W 2'), isTrue);
       final fail = RecordingSSHClient(responder: (_) => 'FAIL');
-      expect(await RouterWatchdog(fail).pingHostViaWan('8.8.8.8'), isFalse);
+      expect(await _wd(fail).pingHostViaWan('8.8.8.8'), isFalse);
     });
 
     test('pingHostViaVpn binds to the interface', () async {
       final ok = RecordingSSHClient(responder: (_) => 'OK');
-      expect(await RouterWatchdog(ok).pingHostViaVpn('8.8.8.8', 2), isTrue);
+      expect(await _wd(ok).pingHostViaVpn('8.8.8.8', 2), isTrue);
       expect(ok.ran('ping -I wgc2 -c 1 -W 2'), isTrue);
     });
 
     test('ping returns false when the SSH command throws', () async {
       final boom = RecordingSSHClient(throwOn: ['ping']);
-      expect(await RouterWatchdog(boom).pingHostViaWan('8.8.8.8'), isFalse);
-      expect(await RouterWatchdog(boom).pingHostViaVpn('8.8.8.8', 1), isFalse);
+      expect(await _wd(boom).pingHostViaWan('8.8.8.8'), isFalse);
+      expect(await _wd(boom).pingHostViaVpn('8.8.8.8', 1), isFalse);
     });
   });
 
@@ -538,7 +580,7 @@ void main() {
     test('creates the script directory instead of setting the Merlin JFFS flags', () async {
       useStock();
       final c = stockRouter();
-      await RouterWatchdog(c).enableJffsScripts();
+      await _wd(c).enableJffsScripts();
       // The app's own directory, not Merlin's hook directory - that is where the script lives now.
       expect(c.ran("mkdir -p '/jffs/cfg-pia-wg'"), isTrue);
       expect(c.ran('mkdir -p /jffs/scripts'), isFalse);
@@ -549,7 +591,7 @@ void main() {
     test('persists cron via S50downloadmaster and runs it immediately', () async {
       useStock();
       final c = stockRouter();
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
 
       expect(c.ran("cat > '$kS50Path'"), isTrue);
       expect(c.ran("chmod +x '$kS50Path'"), isTrue);
@@ -562,7 +604,7 @@ void main() {
     test('the deployed script carries both cru lines inside the replacement block', () async {
       useStock();
       final c = stockRouter();
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
 
       final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '$kS50Path'"));
       expect(extractS50CruLines(write), [buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
@@ -577,7 +619,7 @@ void main() {
       const otherSlot = 'cru a watchdog_wgc3 "*/9 * * * *" /jffs/cfg-pia-wg/watchdog_wgc3.sh';
       final existing = buildS50Script([otherSlot, buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
       final c = stockRouter(s50: existing);
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 15));
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 15));
 
       final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '$kS50Path'"));
       expect(extractS50CruLines(write), [otherSlot, buildCronCheckLine(1, 15), buildCronRotateLine(1)]);
@@ -587,7 +629,7 @@ void main() {
     test('the watchdog script points jq at the install path', () async {
       useStock();
       final c = stockRouter();
-      await RouterWatchdog(c).deployWatchdog(cfg(slot: 1, interval: 5));
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
 
       // The script is written in chunks, so the assertions run against the whole payload.
       final write = c.commands.where((cmd) => cmd.contains("/jffs/cfg-pia-wg/watchdog_wgc1.sh' <<")).join();
@@ -603,7 +645,7 @@ void main() {
       const otherSlot = 'cru a watchdog_wgc3 "*/9 * * * *" /jffs/cfg-pia-wg/watchdog_wgc3.sh';
       final existing = buildS50Script([otherSlot, buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
       final c = RecordingSSHClient(responder: (cmd) => cmd.startsWith("cat '$kS50Path'") ? existing : '');
-      await RouterWatchdog(c).stopWatchdog(1);
+      await _wd(c).stopWatchdog(1);
 
       final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '$kS50Path'"));
       expect(extractS50CruLines(write), [otherSlot]);
@@ -617,7 +659,7 @@ void main() {
       useStock();
       final existing = buildS50Script([buildCronCheckLine(1, 5), buildCronRotateLine(1)]);
       final c = RecordingSSHClient(responder: (cmd) => cmd.startsWith("cat '$kS50Path'") ? existing : '');
-      await RouterWatchdog(c).stopWatchdog(1);
+      await _wd(c).stopWatchdog(1);
 
       final write = c.commands.firstWhere((cmd) => cmd.startsWith("cat > '$kS50Path'"));
       expect(extractS50CruLines(write), isEmpty);
@@ -629,7 +671,7 @@ void main() {
     test('still removes the cron jobs, script and tmp files', () async {
       useStock();
       final c = RecordingSSHClient(responder: (_) => '');
-      await RouterWatchdog(c).stopWatchdog(2);
+      await _wd(c).stopWatchdog(2);
       expect(c.ran('cru d watchdog_wgc2'), isTrue);
       expect(c.ran('cru d watchdog_log_rotate_wgc2'), isTrue);
       expect(c.ran('rm -f /jffs/cfg-pia-wg/watchdog_wgc2.sh'), isTrue);
@@ -642,7 +684,7 @@ void main() {
     test('sends via mailsend-go with a headerless body', () async {
       useStock();
       final c = RecordingSSHClient();
-      await RouterWatchdog(c).testEmail(cfg(slot: 1, email: true));
+      await _wd(c).testEmail(cfg(slot: 1, email: true));
 
       expect(c.ran("cat > '/tmp/mail.txt'"), isTrue);
       expect(c.ran('$kStockMailsendPath -ssl -verifyCert'), isTrue);
@@ -662,7 +704,7 @@ void main() {
     test('a failed send probes with openssl, never nc', () async {
       useStock();
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('EXITCODE') ? 'EXITCODE:1' : '');
-      await RouterWatchdog(c).testEmail(cfg(slot: 1, email: true));
+      await _wd(c).testEmail(cfg(slot: 1, email: true));
       expect(c.ran('openssl s_client'), isTrue);
       expect(c.ran('nc -w'), isFalse, reason: 'this option does not exist on the router');
       expect(c.commands.any((cmd) => cmd.contains('logger') && cmd.contains('Email FAILED')), isTrue);
@@ -672,7 +714,7 @@ void main() {
   test('a failing mutation logs an ERROR to syslog and the app log, then rethrows', () async {
     final c = RecordingSSHClient(throwOn: ['chmod']);
     final appLog = <String>[];
-    final svc = RouterWatchdog(c, onLog: (m, {isError = false, isSuccess = false}) => appLog.add(m));
+    final svc = _wd(c, onLog: (m, {isError = false, isSuccess = false}) => appLog.add(m));
     await expectLater(svc.deployWatchdog(cfg(slot: 1)), throwsA(isA<Exception>()));
     expect(c.commands.any((cmd) => cmd.contains('logger -t cfg-pia-wg') && cmd.contains('ERROR')), isTrue);
     expect(appLog.any((m) => m.contains('failed')), isTrue);
@@ -696,7 +738,7 @@ void main() {
       useStock();
       final logs = <(String, bool)>[];
       final c = failingMailer();
-      final ok = await RouterWatchdog(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add((m, isError)))
+      final ok = await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add((m, isError)))
           .testEmail(cfg(slot: 1, email: true));
 
       expect(ok, isFalse);
@@ -714,7 +756,7 @@ void main() {
       useStock();
       final logs = <String>[];
       final c = RecordingSSHClient(responder: (_) => 'EXITCODE:0');
-      final ok = await RouterWatchdog(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
+      final ok = await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
           .testEmail(cfg(slot: 1, email: true));
 
       expect(ok, isTrue);
@@ -728,7 +770,7 @@ void main() {
       useStock();
       final logs = <String>[];
       final c = failingMailer();
-      await RouterWatchdog(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
+      await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
           .testEmail(cfg(slot: 1, email: true));
 
       expect(c.ran('openssl s_client'), isTrue);

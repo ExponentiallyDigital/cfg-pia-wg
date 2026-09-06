@@ -9,6 +9,8 @@
 // the shell, so the two cannot disagree. And the counter must track attempts actually MADE, never
 // checks that found a fault - counting checks made the growth rate depend on the check interval,
 // so a 1-minute watchdog escalated twice as fast as a 2-minute one.
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
@@ -68,6 +70,26 @@ backoff_for() {
       }
       expect(shell, contains('*) echo ${backoffSeconds(99)} ;;'));
     });
+  });
+
+  // scripts/test-backoff.sh walks the ladder on the router. It hard-codes the expected waits, so
+  // a rung changed here would leave the hardware test quietly asserting the old values - which is
+  // the one place nobody would look, because it would still report PASS.
+  test('the hardware test script expects the same rungs', () {
+    final script = File('scripts/test-backoff.sh').readAsStringSync();
+    final line = RegExp(r'^LADDER="(.+)"', multiLine: true).firstMatch(script);
+    expect(line, isNotNull, reason: 'scripts/test-backoff.sh should declare LADDER=');
+
+    final pairs = {
+      for (final p in line!.group(1)!.split(' '))
+        int.parse(p.split(':').first): int.parse(p.split(':').last),
+    };
+    pairs.forEach((failures, want) {
+      expect(want, backoffSeconds(failures), reason: 'rung $failures disagrees with kBackoffLadder');
+    });
+    // Every rung, plus one past the cap.
+    expect(pairs.keys, containsAll(List.generate(kBackoffLadder.length, (i) => i + 1)));
+    expect(pairs.keys.reduce((a, b) => a > b ? a : b), greaterThan(kBackoffLadder.length));
   });
 
   group('the deployed script', () {

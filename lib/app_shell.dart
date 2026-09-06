@@ -19,6 +19,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
+import 'router_session.dart';
 import 'screens/main_menu_screen.dart';
 import 'session_controller.dart';
 import 'widgets/app_scaffold.dart';
@@ -120,7 +121,12 @@ ThemeData buildAppTheme() => ThemeData(
 class PiaWgApp extends StatefulWidget {
   // Injectable for tests so timers can run on short intervals.
   final SessionController? controller;
-  const PiaWgApp({super.key, this.controller});
+
+  /// How long backgrounding is tolerated before the router connection is dropped. Injectable so a
+  /// test does not have to wait five minutes to prove the timer fires.
+  final Duration sessionGrace;
+
+  const PiaWgApp({super.key, this.controller, this.sessionGrace = kBackgroundSessionGrace});
 
   @override
   State<PiaWgApp> createState() => _PiaWgAppState();
@@ -137,8 +143,11 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
 
+  Timer? _sessionCloseTimer;
+
   @override
   void dispose() {
+    _sessionCloseTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     // Only dispose a controller we created ourselves.
     if (widget.controller == null) _controller.dispose();
@@ -147,10 +156,23 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _controller.resyncOnResume();
+    if (state == AppLifecycleState.resumed) {
+      // Back before the grace expired: the connection was never closed, so nothing to reopen.
+      _sessionCloseTimer?.cancel();
+      _sessionCloseTimer = null;
+      _controller.resyncOnResume();
+    }
     // An authenticated router session held open behind a locked screen is a wider exposure than
-    // credentials sitting in memory. The next action reconnects.
-    if (state == AppLifecycleState.paused) unawaited(_controller.closeRouterSession());
+    // credentials sitting in memory - but closing it the instant the app is paused charges a
+    // reconnect for every glance at the router's WebUI. Hence the grace; see
+    // kBackgroundSessionGrace. A wipe closes it immediately regardless of this timer.
+    if (state == AppLifecycleState.paused) {
+      _sessionCloseTimer?.cancel();
+      _sessionCloseTimer = Timer(widget.sessionGrace, () {
+        _sessionCloseTimer = null;
+        unawaited(_controller.closeRouterSession());
+      });
+    }
   }
 
   @override

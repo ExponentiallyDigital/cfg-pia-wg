@@ -200,7 +200,9 @@ void main() {
       final s = script(RouterFirmware.merlin);
       expect(s, contains('Connectivity was lost and the tunnel has been rebuilt.'));
       expect(s, contains('Connectivity was lost and the tunnel could NOT be rebuilt.'));
-      expect(s, contains(r'send_alert SUCCESS "reconfigured successfully on attempt $CNT"'));
+      expect(s, contains(r'DETAILV="reconfigured successfully on attempt $CNT"'));
+      // A deploy that had to rebuild the tunnel still reports itself as a deployment.
+      expect(s, contains(r'DETAILV="watchdog deployed"'));
     });
 
     test('both counters are bumped on an outcome, and only on an outcome', () {
@@ -265,6 +267,58 @@ void main() {
     });
   });
 
+  // Everything below came out of the 2026-09-06 end-to-end test on hardware.
+  group('409 fixes', () {
+    String script([RouterFirmware fw = RouterFirmware.merlin]) => buildWatchdogScript(_cfg(), firmware: fw);
+
+    // A correct local time was labelled UTC. Cron inherits TZ from init, which holds /etc/TZ =
+    // 'UTC-10DST,...' - a POSIX string that NAMES the zone "UTC" while offsetting by +10. A login
+    // shell sets no TZ and falls back to /etc/localtime, which is why manual runs said AEST. The
+    // numeric offset is right whatever the zone is called, and reads the same either way.
+    test('times carry a numeric offset, never a zone name', () {
+      final s = script();
+      expect(s, contains("date '+%Y-%m-%d %H:%M:%S %z'"));
+      expect(s, isNot(contains('%H:%M:%S %Z')), reason: 'the zone NAME is what was wrong');
+      expect(s, contains("date '+%z'"), reason: 'the outage line too');
+      expect(kEmailFactsCommand(1), contains('%z'), reason: 'and the test email the app sends');
+    });
+
+    // Deploying a watchdog is not a reconfiguration, even when it had to build the tunnel to get
+    // going - which it always does, because the slot has only just been switched on.
+    test('a deploy run counts as neither a successful nor a failed reconfigure', () {
+      expect(script(), contains(r'[ "$RUNMODE" = "deploy" ] && return 0'));
+    });
+
+    test('a deploy reports no outage and no attempt count - there was neither', () {
+      final s = script();
+      expect(s, contains(r'if [ "$RUNMODE" != "deploy" ]; then'), reason: 'the abort path');
+      // The server and its latency are real on that path and stay.
+      expect(s, contains('CONNLABEL="Connected to"'));
+      expect(s, contains('CONNLABEL="Reconnected to"'));
+    });
+
+    // curl that could not resolve the host never creates the file, and `< "$TMPTOK"` fails in the
+    // SHELL - before the command runs - so the command's own 2>/dev/null cannot suppress it. Two
+    // raw shell errors reached the console.
+    test('a token file that was never created is not read', () {
+      final s = script();
+      expect(s, contains(r'[ -f "$TMPTOK" ] && TOKEN='));
+      expect(s, contains(r'if [ -f "$TMPTOK" ]; then'), reason: 'the diagnostics too');
+    });
+
+    // An alert about lost connectivity is the one most likely to be undeliverable: a downed
+    // default tunnel takes DNS with it. Rather than resend it late, the next email that gets
+    // through says how many were missed.
+    test('an undeliverable alert is counted and reported by the next one that lands', () {
+      final s = script();
+      expect(s, contains(r'UNSENTFILE="/tmp/watchdog_unsent_${IFACE}"'));
+      expect(s, contains(r'> "$UNSENTFILE"'), reason: 'recorded when the mailer fails');
+      expect(s, contains(r'rm -f "$UNSENTFILE"'), reason: 'and cleared once one gets through');
+      expect(s, contains('earlier alert(s) could not be sent'));
+      // Read before the body is built, so the line describes alerts missed BEFORE this one.
+      expect(s.indexOf('{ read -r MISSED; read -r MISSEDAT; }'), lessThan(s.indexOf('earlier alert(s)')));
+    });
+  });
   group('subject and headers', () {
     test('the slot and region are in the subject, so a mail client can thread by VPN', () {
       expect(buildMailSubject(_cfg(), status: 'FAILED', desc: 'pia-aus_melbourne'),

@@ -58,3 +58,7 @@ app.*.map.json
 key.properties
 **/*.keystore
 **/*.jks
+
+# Hardware test records. These are verbatim SSH/app session logs, so they carry real LAN
+# hostnames, IPs, MAC addresses and router logins by nature. Kept locally, never committed.
+.claude/testing/

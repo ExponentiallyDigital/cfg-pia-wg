@@ -79,11 +79,20 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     super.dispose();
   }
 
-  // Fills the DNS field with the Quad9 defaults whenever it is blank. Called on entry and again
+  // Tops the DNS field back up to two servers from the Quad9 defaults. Called on entry and again
   // just before generating - not on every keystroke, which would stop the field being cleared to
   // retype it. The listener mirrors the value into the session.
+  //
+  // Both servers, not just an empty field: deleting one of the two and leaving the screen used to
+  // keep the survivor, so the config was generated with a single DNS server and no fallback -
+  // silently, because a field with something in it looks deliberate.
   void _restoreDefaultDns() {
-    if (_dnsCtrl.text.trim().isEmpty) _dnsCtrl.text = kDefaultDns;
+    final entered = _dnsCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (entered.length >= 2) return;
+    final defaults = kDefaultDns.split(',').map((e) => e.trim());
+    // Whatever the user typed keeps its place; the gap is filled from the defaults, without
+    // repeating a server they have already entered.
+    _dnsCtrl.text = [...entered, ...defaults.where((s) => !entered.contains(s))].take(2).join(', ');
   }
 
   // Mirror PIA credentials into the shared session so other screens pre-fill them.
