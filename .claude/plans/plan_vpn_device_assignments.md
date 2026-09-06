@@ -19,7 +19,10 @@ Let the user see their LAN devices and choose which VPN each one uses. Unassigne
 
 Stock has no `wgcN_enforce`, so there is no kill switch: when a tunnel drops, traffic silently continues over the plain WAN. Device assignment is the nearest thing stock has to one.
 
-Observed on hardware 2026-09-05: with a tunnel set to "apply to all devices", taking that tunnel down cost the assigned devices their internet connectivity. That is **fail-closed** behaviour, and it is the justification for the whole feature.
+Observed on hardware 2026-09-05: with a tunnel set to **"apply to all devices"**, taking that tunnel down cost the affected devices their internet connectivity. That is **fail-closed** behaviour, and it is the justification for the whole feature.
+
+> [!CAUTION]
+> **That observation covers `vpnc_default_wan`, not per-device assignment.** They are different mechanisms - one is the default route for unassigned traffic, the other is an `ip rule` for one source address - and fail-closed has NOT been shown for the second. It was briefly written up as confirmed on the strength of the 09-05 run; that was a generalisation, not a measurement, and it is withdrawn. See item 10: if per-device assignment fails *open*, the security story for this feature is much weaker and the app has to say so plainly rather than imply a kill switch it does not have.
 
 Two consequences to carry through:
 
@@ -127,6 +130,26 @@ Trailing fields are treated as empty if absent, so `<MAC>IP` alone is valid and 
 > [!NOTE]
 > On 384.13 through the 386 branch, ASUS and Merlin briefly split hostnames into a separate `dhcp_hostnames` variable (`<MAC>hostname`). Current firmware is back on the reunified four-field layout, but any older script found on the forums may assume the split.
 
+#### 3.3.3a Reserved or not - the distinction the screen needs
+
+The WebUI client list carries an **IP Method** column with exactly two values, and it is the same split this feature turns on:
+
+| IP Method | Means | Source |
+| --- | --- | --- |
+| `MAC-IP Binding` | has a reservation | the MAC appears in `dhcp_staticlist` |
+| `Automatic IP` | plain lease | it does not |
+
+So the app derives it the same way the firmware does - membership of `dhcp_staticlist`, no extra source needed. Useful validation that the model is right, and the label is worth borrowing rather than inventing new wording.
+
+Two behaviours confirmed 2026-09-06:
+
+- **Removing a reservation is as disruptive as adding one.** Deleting one entry in the WebUI dropped a 5 GHz laptop hard enough to kill an RDP session running over it. Any `dhcp_staticlist` write goes through the heavy path, in both directions - which is what makes item 9 worth testing.
+- **A device keeps its address after its reservation is removed.** The tablet held the same IP on a plain lease afterwards, reappearing in the client list as `Automatic IP`. So removing a reservation does not immediately break an assignment keyed on that IP - it just stops guaranteeing it, and the breakage arrives silently at some later renewal. That is a worse failure than an immediate one, and it is an argument for the app never removing a reservation on unassign.
+
+> [!NOTE]
+> A real example of the fragile combination is sitting in the test data: a device with a **randomised MAC** (`B2:` - locally-administered bit set) that also holds a **reservation**. It looks pinned and is not; the reservation dies at the next MAC rotation and the assignment goes with it, silently. This is the case the 2.1 warning exists for.
+
+---
 ### 3.3.4 `custom_clientlist`
 
 Up to nine fields per record. The **first record has no leading `<`**, so split on `<` and discard empty chunks rather than assuming index 0 is junk:
@@ -153,7 +176,13 @@ Sample:
 hostname1>00:01:02:03:04:05>0>4>>>>><hostname2>05:04:03:02:01:00>0>60>>>>><hostname3>AA:BB:CC:DD:EE:FF>0>60>>>>><hostname4>FF:F0:E0:D0:C0:B0>0>9>>>>>
 ```
 
-The five trailing `>` on every record are the empty indexes 4 through 8; the UI writes them unconditionally. Group type `0` means unknown and gives a generic icon.
+**Records are NOT a fixed nine indexes.** Measured 2026-09-06 on a six-record list, the counts were 9, 9, 9, 8, 6 and 6 - the WebUI writes some trailing empties and drops others, apparently depending on which firmware version created the entry. A parser that requires nine indexes rejects most of a real list.
+
+```text
+device1>AA:BB:CC:DD:EE:FF>0>60>>>>><device4>0A:0B:0C:0D:0E:0F>0>4>>>><RT-AC68U>05:04:03:02:01:00>0>24>>
+```
+
+Split on `<`, then on `>`, and treat any index past the end as empty. Group type `0` means unknown and gives a generic icon.
 
 ### 3.3.5 Practical notes
 
@@ -252,7 +281,7 @@ MAC, IP, empty DNS, **empty hostname**. That follows from the binding being by I
 > [!IMPORTANT]
 > **The tunnel must be disabled before its assignments can be changed.** Confirmed on hardware: the WebUI will not apply an assignment to a running profile, and every observed sequence starts with `stop_vpnc`.
 >
-> **A device assigned to a tunnel that is down loses internet access entirely** - it fails closed rather than falling back to the WAN. That is the desired security property, and it is also a footgun: assigning a device to a disabled slot silently blackholes it. The app must refuse, or warn unmistakably.
+> **UNVERIFIED: does a device assigned to a down tunnel fail closed or fall back to the WAN?** Fail-closed is the desired property and the one the feature is sold on, but it has only been measured for "apply to all devices" (`vpnc_default_wan`), not for a per-device `ip rule`. Item 10 settles it. Either way the app should warn before assigning to a disabled slot - fail-closed means the device is blackholed, fail-open means the user believes it is protected when it is not, and both deserve a warning.
 
 > [!WARNING]
 > **Applying an assignment costs one of two very different amounts, and the app should not treat them alike.**
@@ -295,7 +324,9 @@ Both are keyed by **uppercase** MAC, so the join needs no case normalisation - t
 Nothing can be done about the binding itself, but the app should not pretend the problem does not exist:
 
 - An entry that has been offline for a long time is more likely a rotated MAC than a device that left. Show `conn_ts` as "last seen", so a stale entry looks stale.
-- Consider warning when assigning a device whose MAC has the locally-administered bit set (`second hex digit is 2, 6, A or E`) - "this device randomises its address and may lose its assignment".
+- **Warn when the MAC has the locally-administered bit set** - the second hex digit is `2`, `6`, `A` or `E`. AGREED, and now confirmed against real data 2026-09-06: of six named devices exactly one had it set, and it was one of the two the user knew to be randomising. Cheap, reliable, no guesswork.
+
+  It detects **the address currently in use**, not the device setting - the other known randomiser was connected on its factory MAC at the time and reads as stable. So the warning is "this address looks randomised", never "this device randomises".
 - Never silently prune ghosts. The user may have assigned one deliberately.
 
 **Consequences for the UI.**
@@ -306,10 +337,21 @@ Nothing can be done about the binding itself, but the app should not pretend the
 
 **Parsing.** All three are JSON, and stock already requires `jq` at `/jffs/cfg-pia-wg/jq` for the watchdog - so the read is a single `jq` invocation over SSH, not a bespoke parser. Nothing new is needed on the router.
 
-### 2.2 Percent-decoding
+### 2.2 Names are stored raw, not percent-encoded - SETTLED 2026-09-06
 
-Nothing in the app decodes today, because our own descriptions never needed it. A device named `Andrew's iPad` or `Study TV` comes back escaped. Needed **both ways**: decode for display, re-encode on write, and round-trip a name the app did not create without corrupting it.
+The plan assumed `custom_clientlist` percent-encoded awkward characters and that the app would need to decode on read and encode on write. **It does not.** A device deliberately renamed to `Arc's "Tab"` was stored verbatim, apostrophe, double quotes, spaces and all:
 
+```text
+device6>AA:BB:CC:DD:EE:FF>0>9>>
+```
+
+So there is no codec to write. What replaces it is a smaller job and a sharper hazard.
+
+**Parsing.** Split on `<`, then on `>`, tolerate short records (3.3.4). A name containing `<` or `>` would corrupt the structure and there is no escaping to protect against it; the WebUI most likely rejects those characters on input, but the app should not assume so. Cap the split rather than trusting the field count, and treat a record that does not yield a plausible MAC at index 1 as unparseable rather than guessing.
+
+**Quoting - this is the real risk.** These names arrive over SSH and go back into shell commands. A name holding an apostrophe breaks naive single-quoting, and `Arc's "Tab"` is a live example sitting on the test router right now. Every interpolation of a device name must go through `shellSingleQuote` in `router_slot_service.dart`, the same helper the rest of the app already uses. `test/unit/no_escaped_constants_test.dart` will not catch this one - it looks for the opposite mistake - so it needs its own test with that exact name as the fixture.
+
+**Display.** Nothing to decode, but the name is arbitrary user text going into a Flutter `Text`, so it needs no escaping either - just do not build it into a formatted string that assumes anything about its contents.
 ### 2.3 Writes must be verified
 
 Section 3.3.5's truncation warning is the same failure `_writeFile` already guards against for the watchdog script, by comparing `wc -c` against the expected byte count and throwing. Any write to `custom_clientlist` or the assignment key should read the value back and compare before reporting success. Silently half-writing a user's device list would be the worst bug this feature could have.
@@ -322,7 +364,11 @@ Section 3.3.5's truncation warning is the same failure `_writeFile` already guar
 - No change to "Manage PIA WireGuard config", "Watchdog Wireguard management", "View app log" or "Exit app".
 
 > [!NOTE]
-> That makes six primary buttons plus two footnote lines and two footer links, on a screen that already needs a `Spacer` to fit. Check the smallest supported screen before committing to a sixth button - a submenu under MANAGE is the fallback.
+> **Checked on hardware 2026-09-06: it fits, and comfortably.** A screenshot of the current five-button menu, taken on a phone with an enlarged system font and display zoom - the worst realistic case - showed roughly a third of the screen empty below the help link. A sixth button plus the extra footnote line has room without shrinking anything.
+>
+> **No submenu.** That decision is now made rather than deferred, which was the point of checking first.
+>
+> `test/screens/main_menu_screen_test.dart` asserts "main menu shows five entries", and the drawer (`AppDestination`) gains a destination too.
 >
 > `test/screens/main_menu_screen_test.dart` asserts "main menu shows five entries", and the drawer (`AppDestination`) gains a destination too.
 
@@ -335,7 +381,7 @@ Section 3.3.5's truncation warning is the same failure `_writeFile` already guar
 
 ### 2.6 Freemium
 
-`BACKLOG.md` 1.2 puts everything except config generation behind the lifetime unlock. Device assignment is router management, so on that rule it is paid. Decide explicitly **before** the UI exists - it changes where the paywall check goes, and it is a far easier decision now than later.
+**DECIDED 2026-09-06: paid.** `BACKLOG.md` 1.2 puts everything except config generation behind the lifetime unlock, and device assignment is router management, so it follows the rule with no special case. Build the gate in from the start rather than retrofitting it changes where the paywall check goes, and it is a far easier decision now than later.
 
 ---
 
@@ -352,12 +398,83 @@ Section 3.3.5's truncation warning is the same failure `_writeFile` already guar
 
 ## What Andrew needs to do
 
-In order. **Step 1 is done** - phase 2 is unblocked.
+**Everything blocking is answered. The plan is finalised and phase 2 can be built.** What remains is one optional check and one design decision that only Andrew can make.
 
-1. ~~Run `scripts/probe-device-assignment.sh`.~~ **Done 2026-09-06.** Schema, write semantics and service calls are in 3.3.6. The run stopped at step 8 when the WAN renegotiated; the state it stopped in supplied the answer anyway.
-2. ~~Confirm `vpnc_default_wan=0` means plain WAN.~~ **Evidence gathered 2026-09-06**: with all ten devices unassigned and `vpnc_default_wan=0`, every one still had internet. Step 5 of the probe confirms the other direction - that an unassigned device follows a VPN when one IS the default.
-3. ~~Decide the device-list source.~~ **Settled 2026-09-06** - see 2.1. `/jffs/nmp_cl_json.js` for the device set and online state, `custom_clientlist` overlaid for the user's own name.
-4. **Decide whether device assignment is free or paid** (2.6).
-5. **Check the six-button home screen on your smallest device** (2.4) before I build it, so a submenu decision is not made after the fact.
-6. Optional, whenever convenient: **capture a `custom_clientlist` with a device whose name has an apostrophe or a space**, so the percent-decoding in 2.2 is written against a real value rather than an assumed one.
-7. Optional: confirm `/tmp/nmp_cache.js` parses as JSON with `jq` despite the `.js` extension - it is the only source of a device IP, and if it does not parse we simply leave IPs off the screen.
+### Answered
+
+1. ~~Run `scripts/probe-device-assignment.sh`.~~ **Done 2026-09-06.** Schema, write semantics and both service sequences are in 3.3.6. The run stopped at step 8 when `restart_net_and_phy` bounced the LAN; the state it stopped in supplied the answer anyway.
+2. ~~Confirm `vpnc_default_wan=0` means plain WAN.~~ **Confirmed 2026-09-06.** Turning on "apply to all devices" for wgc1 wrote `9` - the clientlist index 6, the same identifier the assignment records use - and turning it off wrote `0`.
+3. ~~Decide the device-list source.~~ **Settled** - see 2.1. `/jffs/nmp_cl_json.js` for the device set and online state, `custom_clientlist` for the display name.
+4. ~~Free or paid?~~ **Paid**, decided 2026-09-06. Follows the `BACKLOG.md` 1.2 rule with no special case; build the gate in from the start.
+5. ~~Check the six-button home screen.~~ **Fits comfortably**, checked 2026-09-06 on an enlarged-font phone - about a third of the screen was still empty. **No submenu.**
+6. ~~Capture a name with an apostrophe.~~ **Done, and it overturned the plan** - see 2.2. Names are stored **raw**, not percent-encoded, so there is no codec to write; the real risk is shell quoting, and there is now a live example on the router to test against.
+
+### Still open
+
+**One decision left: item 8.** Item 7 is answered and item 9 is a cheap test that could change the answer to 8.
+
+7. ~~Does `/tmp/nmp_cache.js` parse as JSON?~~ **Yes**, confirmed 2026-09-06 with `jq -e`. Top-level object keyed by **uppercase MAC**, with `.ip` present and populated:
+
+    ```text
+    AA:BB:CC:DD:EE:FF  ip=192.168.1.20
+    0A:0B:0C:0D:0E:0F  ip=192.168.1.21
+    ```
+
+    Same key format as `nmp_cl_json.js` and `custom_clientlist`, so the join needs no normalisation. It is volatile (`/tmp`), so treat a missing file as "no IP known" rather than an error.
+
+8. ~~Which devices does the screen offer?~~ **DECIDED 2026-09-06: all of them.**
+
+    Reserved-only was considered and rejected. A DHCP *reservation* is a deliberate manual mapping, not something a device acquires by connecting - every device has a *lease*, almost none has a reservation. The test router is atypical with most devices reserved; a normal user has none, so a reserved-only list would be **empty on most routers**. That is not a narrower feature, it is no feature.
+
+    **Corroborated by the reference implementation 2026-09-07**: with the router in a clean state and only four reservations left, VPN Fusion offered **eight** devices as assignable - every device it currently knows about, reserved or not. Stock makes no distinction in the picker, so neither should the app.
+
+    **So the app writes `dhcp_staticlist` itself.** Not by choice - VPN Fusion binds by IP, and the stock WebUI creates the reservation for you (observed at probe step 8). Matching stock is also the least surprising option: requiring a WebUI trip first would be a two-app workflow for the headline feature, and this app exists so that everything needed for VPN management is in one place.
+
+    The alternative - writing the policy record against a lease that can move - fails in the worst direction for a VPN tool, and silently both ways:
+
+    - the lease moves, the assignment stops applying, and the user believes a device is protected when it is not;
+    - **whatever device next takes that IP inherits the assignment** - a guest phone routed through the tunnel without anyone asking for it.
+
+    What the app owes the user is disclosure, not avoidance: assigning a device with no reservation must state that it will reserve the address the device holds now, that this is what the router own VPN Fusion page does, and what the disruption is. Cost is **per device, not per operation** - the expensive path runs once, and every later move or unassign of that device is cheap.
+
+    Open sub-question, low stakes: does unassigning remove a reservation the app created? Not observed - probe step 5 unassigned a device that was already reserved, so it proves nothing. A leftover reservation is harmless. **Do not track "reservations we created" in order to undo them** - that is app-side state describing router-side config, and it goes stale the moment anyone edits it elsewhere.
+
+9. **STILL OPEN - is `restart_net_and_phy` really required?** (Q9)
+
+    Hypothesis, not a finding: the device **already holds the IP** through its current lease, so the policy record binds to a live address and should apply the moment `restart_vpnc_dev_policy` runs, whether or not dnsmasq has re-read `dhcp_staticlist`. The reservation only has to matter at the *next* renewal. If that holds, `restart_dnsmasq` is enough and the whole-LAN bounce disappears - along with the need for a disruption warning in the UI.
+
+10. **STILL OPEN - does a per-device assignment fail closed?** (Q10)
+
+    Fail-closed was measured for `vpnc_default_wan` and **assumed** for per-device assignment. Different mechanisms - a default route versus an `ip rule` for one source address - and the assumption has never been tested. Stock has no kill switch and this feature is the nearest thing to one, so the answer decides whether the app can describe it as protection at all.
+
+### The one thing left to run
+
+**`scripts/verify-device-assignment.sh`** answers both in a single pass and restores everything afterwards. Four phases: baseline routing for the target device, assign it using only the light service calls, take the tunnel down with the assignment left in place, then put it all back. It writes a `RESTORE.sh` first in case it is interrupted.
+
+It uses `ip route get <dest> from <device-ip> iif br0` - the kernel own answer to "how would a packet from this device be routed" - so nothing has to run on the device itself and the question is answerable with the tunnel up or down. It prints a short ANSWERS block at the end; that block is all that needs pasting back.
+
+| Q9 result | Meaning | What the app does |
+| --- | --- | --- |
+| `light` | hypothesis holds | `restart_dnsmasq`, no disruption warning needed |
+| `needs_restart_vpnc` | tunnel restart also required | cheap enough, warn only that VPN routing bounces |
+| `failed` | more than these calls is needed | match the WebUI exactly, warn about the whole-LAN bounce |
+
+| Q10 result | Meaning | What the app says |
+| --- | --- | --- |
+| no route with the tunnel down | **fails closed** | as designed; warn that assigning to a disabled slot blackholes the device |
+| routes via the WAN interface | **fails open** | not a kill switch. Say so plainly - a user who thinks a device is protected when it is not is worse off than one who knows |
+
+Preconditions the script enforces: the target has no reservation, is not already assigned, is not the address the SSH session comes from, its tunnel is up, and **`vpnc_default_wan` is 0**. That last one is the easy mistake: with a tunnel set to "apply to all devices" every device already routes through it, so the baseline shows the target on the tunnel before it is assigned and Q9 has no difference to measure. The script also warns if the phase 1 baseline already routes via the target tunnel, which catches a leftover policy record. Any other device on that tunnel loses internet during phase 3.
+
+---
+
+## Test environment note
+
+The secondary router was converted to an **AiMesh node** on 2026-09-07. Side effect worth knowing: **the conversion removed that router own DHCP reservation** - it dropped out of `dhcp_staticlist` without being asked, so a mesh node is not a device the app should expect to find there.
+
+Two things to re-check now that the mesh is up, before trusting any device-list behaviour measured before that date:
+
+- **Do devices behind a mesh node appear the same way?** They share the one DHCP server, so `dhcp_staticlist` and `nmp_cl_json.js` should be unchanged in shape, but the client list attributes a device to the node it is associated with and the probe has only ever seen a standalone secondary router.
+- **Does an assignment work for a device behind the node?** The policy is an `ip rule` on the main router, and traffic from the node passes through it, so it should - but "should" is what item 10 is about.
+
+Neither blocks phase 2. Both belong in the `TESTING.md` checklist for the feature.
