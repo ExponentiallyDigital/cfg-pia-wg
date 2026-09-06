@@ -52,7 +52,7 @@ done
 nvram commit
 
 echo "== stock vpnc =="
-# vpncN_ runtime keys are indexed by the profile's clientlist field 7, not by slot, so sweep the
+# vpncN_ runtime keys are indexed by the profile's clientlist index 6, not by slot, so sweep the
 # whole 1-16 range rather than guessing which ones were used.
 i=1
 while [ "$i" -le 16 ]; do

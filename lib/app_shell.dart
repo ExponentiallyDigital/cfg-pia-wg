@@ -141,6 +141,9 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // The router address remembered from a previous session. Fire and forget: a router screen
+    // reads it when it prefills, and the controller notifies if it arrives after that.
+    _controller.loadRememberedRouterIp();
   }
 
   Timer? _sessionCloseTimer;

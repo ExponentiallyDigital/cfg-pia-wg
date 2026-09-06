@@ -17,13 +17,33 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-- commit.
 - ADD: in-app device assignment to VPN. Design in`.claude\plans\plan_vpn_device_assignments.md`.
 - commit.
 
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-06 v0.8.40 build 410 - in-app device assignment
+
+- INF: **phase 0 of the device-assignment plan is answered.** `vpnc_dev_policy_list` holds `enabled>IP>>vpnc_idx>` records joined by `<`, where `vpnc_idx` is **index 6 of the profile `vpnc_clientlist` record** - not the slot number and not the row index. Unassigning removes the record rather than zeroing it, and a move is a delete plus an append, so the list has to be rebuilt whole and keyed on IP rather than patched in place.
+- INF: the assignment service sequence is `stop_vpnc` then `restart_vpnc_dev_policy` then `restart_vpnc`; "apply to all devices" is the same with `restart_default_wan` in the middle and writes `vpnc_default_wan` using the same index-6 identifier (`0` = plain WAN), which settles that open question. `vpnc_dev_policy_list_tmp` is the WebUI rollback copy - the previous committed value.
+- INF: assigning a device that has no DHCP reservation makes one, with an empty hostname, because the policy is keyed by IP. Two consequences: the app must write the reservation too or the assignment decays with the lease, and a device using MAC randomisation gets a reservation that breaks silently at the next rotation.
+- INF: a tunnel must be disabled before its assignments can change, and a device assigned to a tunnel that is down fails closed rather than falling back to the WAN.
+- INF: **assigning a device costs one of two very different amounts.** With a DHCP reservation already in place it is `stop_vpnc` / `restart_vpnc_dev_policy` / `restart_vpnc` and only VPN routing bounces. Without one, creating the reservation drags in `restart_net_and_phy` - every switch port bounces, downstream routers and APs drop with everything behind them, and the WAN re-leases onto a new public address. Measured on hardware 2026-09-06: LAN down at 20:11:41, WAN re-lease at 20:11:58, new address registered at 20:12:08. The app must treat creating a reservation as a separate, explicitly confirmed action.
+- ADD: **the router address is remembered between sessions.** A successful SSH connect writes the address you connected to into a single-line file in the app private storage, and the SSH form prefills from it. Precedence is session value, then remembered, then the shipped default. It is written only after the connect has SUCCEEDED, so a typo or a wrong guess is never stored.
+- ADD: `FORGET ROUTER IP` on the ABOUT screen deletes the remembered address. Greyed out when there is nothing stored, which is also the only way a user can see that anything is stored at all.
+- CHG: `kDefaultRouterIp` is now `192.168.50.1`, the ASUS factory address, on every branch. It was a real router address on dev, which was a privacy problem and only tolerable because it saved retyping - and now nothing needs retyping. Closes the BACKLOG item asking for a main/dev split, which is no longer needed.
+- CHG: `wipeAll` deliberately does NOT clear the remembered address. It is not a credential, and wiping it on every exit would make storing it pointless. Everything else it wiped before, it still wipes.
+- INF: the remembered address is the ONLY thing this app writes to device storage - no username, no password, no generated config. It is validated on read as well as on write (the file is hand-editable on a rooted device and its contents reach an SSH connect), and `android:allowBackup="false"` keeps it off Google Drive.
+- TST: `test/unit/router_prefs_test.dart` - 23 cases covering the round trip, the rejected shapes (shell metacharacters, spaces, over-long values), an unreachable directory, the prefill precedence, and that `wipeAll` leaves the address alone. Plus a source scan asserting `router_prefs.dart` writes the address and nothing else, so a future author cannot quietly add a password to it.
+- TST: `RouterPrefs` is inert under `flutter test`. The path_provider channel has no handler in a test binding and its reply never arrives, so an await on it hangs - which appeared as a connect spinner that never cleared and a bare `pumpAndSettle timed out` with no exception to explain it. A test that wants storage passes a directory; widget tests use an in-memory subclass, because a `testWidgets` body runs under fake async and never completes real file I/O.
+- DOC: SECURITY.md, README.md and `.claude/CONTEXT.md` (new section 4.2.1) rewritten where they claimed nothing at all is persisted. The claim is now "one non-secret value, by explicit choice, user-clearable" rather than quietly going stale.
+- FIX: replaced a MAC address in `.claude/plans/plan_vpn_device_assignments.md` that did not match the invented pattern of the samples around it, and moved the "every value here is invented" note from the middle of the document to the top, where a reader meets it before the sample records.
+- TST: `test/unit/no_lan_identifiers_test.dart` fails the build if anything under `.claude/testing/` becomes tracked, if `.claude/testing/` leaves `.gitignore`, or if any repo file carries a MAC address that is not a visibly invented one.
+- DOC: working agreement added to `.claude/CONTEXT.md` - no real IPs, hostnames, DDNS names, MAC addresses, router logins or PIA usernames in any tracked file, with the invented values to substitute and the one deliberate exception (`kDefaultRouterIp`).
+- FIX: NVRAM record fields are now numbered **0-based everywhere, and called `index`, not `field`**. `ARCHITECTURE.md` was contradicting itself - its `vpnc_clientlist` schema table counted from 0 while the prose in the same document counted from 1, so "field 6" meant the *active flag* in one place and the *state index* in another. `.claude/CONTEXT.md` disagreed with itself too, calling the description both "field 0" and "field 1". 37 references corrected across ARCHITECTURE.md, CONTEXT.md, `router_slot_service.dart`, `slot_params_editor.dart`, `router_slot_service_test.dart`, both helper scripts and two plans, matching the `VpncRecord` constants the code has always used. Slot numbers are unaffected and stay `wgc1`..`wgc5`.
+- DOC: recorded the convention as a working agreement in `.claude/CONTEXT.md`, so it does not drift back. Getting it wrong writes the active flag where the state index belongs, which disables a tunnel while appearing to succeed.
 
 2026-09-06 v0.8.39 build 409 - e2e testing updates
 
@@ -721,7 +741,7 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
   - The read-only row now shows "Enabled YES/NO". The modal's HOME button returns to the main menu (not the router login).
 - UI / shell
   - The 10-minute inactivity timer, countdown, and global activity listener are removed entirely (clipboard 60-second auto-clear kept).
-  - Router screens default to 192.168.0.254 / admin; once connected, re-entering a router screen auto-reconnects and opens its modal.
+  - Router screens default to the shipped router address / admin; once connected, re-entering a router screen auto-reconnects and opens its modal.
   - Every exit path (back key, menu "Exit app", drawer "Exit app") now confirms before wiping + exiting.
   - Main menu shows a green hint with an inline hamburger icon; the drawer "HOME" entry is grey and navigates to the menu; the active destination shows green (fixed: the tiles' explicit text colour had been overriding selectedColor, and the route observer now ignores dialog routes so the active item stays green while a modal is open).
 

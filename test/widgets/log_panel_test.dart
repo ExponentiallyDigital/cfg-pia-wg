@@ -12,7 +12,7 @@ import 'package:cfg_pia_wg/widgets/common_fields.dart';
 
 void main() {
   final entries = [
-    LogEntry('[10:19:34] Connecting to router at 192.168.0.254 via SSH...'),
+    LogEntry('[10:19:34] Connecting to router at 192.168.1.1 via SSH...'),
     LogEntry('[10:19:34] Router firmware detected: stock.'),
     LogEntry('[10:19:35] All WireGuard slots are unconfigured.', isError: true),
     LogEntry('[10:19:35] Successfully retrieved router config.', isSuccess: true),

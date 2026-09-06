@@ -29,7 +29,6 @@
 - DOC: Update Play Store description.
 - DOC: Update Play Store screenshots.
 - REL: Update version to 0.9 branch when first releasing stock support (and see the backlog item on performance profiling when sent to GPS alpha track).
-- DOC: Set MAIN branch to use default router ip 192.168.50.1 (ASUS default), DEV branch uses 192.168.0.254 as the default.
 - DOC: instead of calling them "slots", I should consider calling them "units" - that's a lot of risky search and replace though :/
 
 #### 1.1.2. CHG - functional code changes

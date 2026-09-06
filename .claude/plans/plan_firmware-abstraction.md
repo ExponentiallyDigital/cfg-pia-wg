@@ -41,7 +41,7 @@ abstract class RouterOps {
   Future<void> writeDesc(int slot, String desc);
   Future<void> persistCron(int slot, int intervalMin);  // services-start | S50downloadmaster
   List<String> get slotKeys;                 // 17 | 12, i.e. kMerlinOnlySlotKeys or not
-  List<String> runtimeKeysToClear(int slot); // none | vpncN_* by clientlist field 7
+  List<String> runtimeKeysToClear(int slot); // none | vpncN_* by clientlist index 6
 }
 ```
 

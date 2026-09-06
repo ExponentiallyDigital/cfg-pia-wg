@@ -97,7 +97,9 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     if (!_prefilled) {
       _prefilled = true;
       // Defaults for a fresh session; never overwrite values the user already entered.
-      _ipCtrl.text = _c.routerIp.isNotEmpty ? _c.routerIp : kDefaultRouterIp;
+      // routerIpPrefill is session value, then the address remembered from a previous session,
+      // then the ASUS factory default.
+      _ipCtrl.text = _c.routerIpPrefill;
       _userCtrl.text = _c.sshUsername.isNotEmpty ? _c.sshUsername : kDefaultSshUsername;
       _passCtrl.text = _c.sshPassword;
       _c.routerIp = _ipCtrl.text;
@@ -138,8 +140,8 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
   // action reconnecting; RouterSession.run now does that explicitly, with one retry.
   Future<SSHClient> _connect() async {
     final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
-    return _c.routerSession(() =>
-        widget.testClientFactory != null ? widget.testClientFactory!(ip, user, pass) : openSshClient(ip, user, pass));
+    return _c.routerSession(
+        () => widget.testClientFactory != null ? widget.testClientFactory!(ip, user, pass) : openSshClient(ip, user, pass));
   }
 
   RouterSlotService _slotSvc(SSHClient c) => widget.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
@@ -183,6 +185,8 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       if (gate.passed) {
         slots = await svc.fetchSlots();
         _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
+        // Only now, with the connect proven: a wrong address must never be stored.
+        await _c.rememberRouterIp(_ipCtrl.text.trim());
         // The router accepted these credentials: offer to save them, and only here.
         TextInput.finishAutofillContext();
       }

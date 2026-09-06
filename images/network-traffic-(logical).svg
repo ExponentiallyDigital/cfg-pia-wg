@@ -65,7 +65,7 @@
   <path d="M70,575 L70,730 L310,730 L310,575 L295,565 L280,575 L265,565 L250,575 L235,565 L220,575 L205,565 L190,575 L175,565 L160,575 L145,565 L130,575 L115,565 L100,575 L85,565 Z" fill="#ffffff" stroke="#F44336" stroke-width="2"/>
   <text x="84" y="600" class="nt">⛂ Router — ASUS Merlin</text>
   <text x="84" y="624" class="ns">192.168.1.1</text>
-  <text x="84" y="642" class="ns">(app field default 192.168.0.254)</text>
+  <text x="84" y="642" class="ns">(app field default 192.168.50.1)</text>
   <text x="84" y="664" class="ns">SSH server :22 · nvram / wg / service</text>
   <text x="84" y="686" class="ns">WireGuard client slots wgc1–wgc5</text>
   <text x="84" y="708" class="ns">reads wgcN_rip = pool public IP</text>
