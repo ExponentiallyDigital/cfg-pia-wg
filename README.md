@@ -344,6 +344,9 @@ Notes on reading these:
 - **Since `date`** counts every re-configuration this router has made, across all slots, from the day the app first configured it.
 - The router log excerpt includes your **PIA username** (never the password, and never the token). The email travels through your own mail provider, but bear it in mind before forwarding one.
 
+> [!NOTE]
+> **An alert can only be sent if the router can still reach your mail server.** A tunnel failure that also takes DNS down with it — which happens when the failed tunnel was the router's default connection — leaves the watchdog unable to resolve your SMTP host, so that alert never leaves the router. The attempt is always recorded in the router-side watchdog log, and the next email that does get through says how many were missed. If alerts matter to you, it is worth leaving at least one tunnel unassigned as the default connection.
+
 The first email you receive will be the deployment itself — `Event: watchdog deployed` — sent even though there was nothing to fix. That is deliberate: it confirms the whole alerting path works, at the moment you set it up rather than months later during an outage.
 
 ### 5.4. View app log

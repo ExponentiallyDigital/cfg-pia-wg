@@ -93,6 +93,42 @@ void main() {
       c.dispose();
     });
 
+    // Reported 2026-09-06: deleting ONE of the two servers and leaving the screen kept the
+    // survivor, so a config was generated with a single DNS server and no fallback - silently,
+    // because a field with something in it looks deliberate.
+    testWidgets('a single remaining server is topped back up to two', (tester) async {
+      final c = _controller([])..dns = '1.1.1.1';
+      await tester.pumpWidget(_host(c));
+      await tester.pumpAndSettle();
+
+      expect(dnsText(tester), '1.1.1.1, 9.9.9.9', reason: 'what the user typed keeps its place');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a server the user already typed is not duplicated', (tester) async {
+      final c = _controller([])..dns = '149.112.112.112';
+      await tester.pumpWidget(_host(c));
+      await tester.pumpAndSettle();
+
+      expect(dnsText(tester), '149.112.112.112, 9.9.9.9');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('two servers are left exactly as entered', (tester) async {
+      final c = _controller([])..dns = '8.8.8.8, 8.8.4.4';
+      await tester.pumpWidget(_host(c));
+      await tester.pumpAndSettle();
+
+      expect(dnsText(tester), '8.8.8.8, 8.8.4.4');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
     testWidgets('the field can still be cleared to retype it', (tester) async {
       final c = _controller([]);
       await tester.pumpWidget(_host(c));

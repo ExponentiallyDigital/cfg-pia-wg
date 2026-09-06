@@ -17,13 +17,34 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-- TST: full end-to-end manual app test, see `TESTING.md` section `4. Full end-end-to-end manual test`.
+- commit.
 - ADD: in-app device assignment to VPN. Design in`.claude\plans\plan_vpn_device_assignments.md`.
 - commit.
 
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-06 v0.8.39 build 409 - e2e testing updates
+
+- ADD: `scripts/new-test-record.py` generates a blank manual-test record from `TESTING.md` section 4 - a flat table with Ref, Area, Check, Result and Notes columns. The 2026-09-06 run was recorded by hand-editing a copy of the checklist, which VS Code renumbered as it was edited, and the copy then drifted from the original. Now the checklist lives in one place and the record is generated from it; the script refuses to overwrite a run already in progress.
+- FIX: `TESTING.md` section 4 had eight results ("- stock OK") pasted into the checklist itself, which is exactly the drift above. Stripped - results belong in a generated record.
+- CHG: `scripts/clearall.sh` removes `/tmp/watchdog_unsent_wgcN` too, and `stopWatchdog` does the same for the slot it is tearing down.
+- TST: full end-to-end manual app test, used `TESTING.md` section `4. Full end-end-to-end manual test` as a template, results saved to `.claude\testing\2026-06-09_10-40_e2e_manual_test.md`
+- FIX: **the watchdog deploy races the interface coming up.** `enableVpnSlot` issues `restart_vpnc` and returns without waiting - `notify_rc` queues the call - so the script runs about a second later, finds "Interface wgcN is down or absent" and performs a full reconfigure that was never needed. Seen on every deploy where the slot was not already up: wgc5 08:31:07 -> 08:31:08, wgc4 08:48:24 -> 08:48:25, wgc1 10:00:37 -> 10:00:38, wgc5 10:06:13 -> 10:06:14. Costs a needless PIA token + `addKey` per deploy. MANAGE's `enableSlot` already waits and verifies; the watchdog path should do the same before exec'ing the script.
+- FIX: a deploy run **increments `cfg_pia_wg_reconfig_ok`**, so the lifetime counter counts deployments as reconfigures. Consequence of the race above, and wrong even without it.
+- FIX: the deploy email reads `Event: reconfigured successfully on attempt 1` under the heading "Watchdog deployed and the tunnel is up", and carries `Tunnel was down for: unknown (no successful check since the router last rebooted)`. A `deploy` run should say it deployed, whatever path it took, and should omit the outage line - there was no outage.
+- FIX: **cron-triggered alert emails report the wrong timezone** - `Time: 2026-09-06 09:20:00 UTC` when the router is AEST. The clock and the offset are right; only the zone *name* is wrong. Root cause found 2026-09-06: cron inherits `TZ` from init, which holds `/etc/TZ` = `UTC-10DST,M10.1.0/2,M4.1.0/3` - a POSIX string that literally names the zone "UTC" with a +10 offset. A dropbear login shell sets no `TZ` at all (`echo $TZ` is empty), so `date` falls back to `/etc/localtime` and correctly says AEST - which is why manual and app-run alerts looked fine. So exporting `TZ` from nvram would not have helped; it is the same string. Emit the numeric offset instead - `%z` gives `+1000`, which cannot be wrong whatever the zone is called, and reads the same from cron and from a shell.
+- FIX: a hard token failure prints two shell errors: `watchdog_wgcN.sh: line NNN: can't open /tmp/wgcN_token.json: no such file`. When curl cannot resolve the host the file is never created, and `< "$TMPTOK"` fails in the shell *before* the command runs - so the `2>/dev/null` on `jq` / `wc` / `head` does not suppress it. Guard with `[ -f "$TMPTOK" ]`.
+- FIX: in GENERATE, the Quad9 defaults are only restored when the DNS field is emptied **completely**. Deleting one of the two entries and leaving the screen keeps the single remaining entry. The blank-check should also fill in a missing second server.
+- GUI: after SAVE on the watchdog configure dialog the spinner is **below the fold** and the last-edited field keeps focus with a green border and the keyboard up, so it looks like nothing happened and the field looks editable. Centre the spinner in the viewport (or scroll to it) and drop focus before the deploy starts.
+- GUI: the watchdog overwrite prompt says `Overwrite wgc4...`; it should name the region, `Overwrite wgc4:pia-au_brisbane-pf...`, like the delete prompts do.
+- CHG: a better format for recording a manual test run - the current nested list renumbers itself when edited and is hard to read. Suggest a flat table with a status column per check, generated from `TESTING.md` section 4 so the checklist and the record cannot drift.
+- ADD: **report alerts that could not be sent.** The missing 7th email was not a defect - wgc4's 09:12 failure alert could not be sent because DNS was down at that moment (`lookup smtp.gmail.com ... server misbehaving`), wgc1 being the default connection and itself down. An alert about lost connectivity can be unsendable for the same reason it fired. Decided 2026-09-06: rather than resend it late, count the failures and say so in the next email that *does* get through - `1 earlier alert could not be sent (09:12)`. The recovery email is the one people read, and a stale alert arriving hours later is worse than a line of context. Also document the limitation in `README.md`.
+- CHG: **backgrounding no longer closes the router connection immediately** - it now waits 5 minutes (`kBackgroundSessionGrace`), and coming back cancels the timer. The e2e test recorded ten dropbear logins in one session, every one following an `HTTPD [LOGIN]` from the same device: hopping to the router WebUI and back was charging a fresh handshake each time, which is most of what sharing the connection in 406 was meant to remove. A wipe still closes it immediately. Three tests cover brief background, long background and wipe-during-grace.
+- ADD: `scripts/test-backoff.sh` - walks the whole backoff ladder on the router in about two minutes with no PIA traffic, from the loop used to verify it by hand. It refuses to run unless the watchdog is paused and the tunnel is actually down (the two ways this test silently misleads you), confirms no PIA token was requested and that turned-away runs left the counter alone, cleans up its own state file, and exits non-zero on failure. A unit test asserts its hard-coded rungs still match `kBackoffLadder`.
+- TST: backoff **verified on stock** 2026-09-06 - all eight rungs exact (120, 240, 480, 960, 1800, 3600, 5400, 5400 s), the counter untouched by turned-away runs, and no PIA token requests during the test. `TESTING.md` section 2.1.6 now records why the test is built the way it is, not just the commands.
+- ADD: In watchdog, "view router watchdog log", at the bottom of the screen add a button to "CLEAR", that removes and touches the watcdog log so that it is cleared but exists. Center the "CLEAR" button so the bottom of that modal has "COPY CLEAR CLOSE" with "COPY left aligned, "CLOSE" right aligned and "CLEAR" centered between them.
 
 2026-09-06 v0.8.38 build 408 - sync commit ahead of e2e app test
 

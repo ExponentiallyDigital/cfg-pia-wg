@@ -362,11 +362,67 @@ A check that arrives inside the wait is turned away and says so:
 2026-09-04 16:41:00 Backing off after 3 failed attempts: 45s of 480s elapsed
 ```
 
-Check `/tmp/watchdog_backoff_wgc1` is created and holds the attempt count and timestamp. The count rises **only when an attempt is actually made** - a run the backoff turned away must leave it alone, or the ladder would climb faster on a 1 m interval than on a 5 m one. To watch a rung without waiting for it, write the count by hand and re-run the script:
+Check `/tmp/watchdog_backoff_wgc1` is created and holds the attempt count and timestamp. The count rises **only when an attempt is actually made** - a run the backoff turned away must leave it alone, or the ladder would climb faster on a 1 m interval than on a 5 m one.
+
+##### Walking the whole ladder in two minutes, with no PIA traffic
+
+**Why not just let it fail for four hours.** Reaching the 90-minute rung honestly means seven consecutive *failed reconfigures*, each of which asks PIA for a token. That is exactly the behaviour that got the account refused with HTTP 403 on 2026-09-04, and it would take most of a day. The test below reaches every rung in about two minutes and asks PIA for nothing at all.
+
+**Why it is safe.** The backoff gate sits **after** the connectivity check and **before** the first PIA call. A run the gate turns away logs one line and exits, so pre-loading the counter exercises the real arithmetic in the real deployed script without a single token request.
+
+**Why the watchdog must be PAUSED first.** Otherwise `cru` fires its own checks during the test. A scheduled run that arrives when the wait *has* elapsed would perform a genuine reconfigure - PIA traffic, a new key, and a reset counter part-way through the loop. Pausing removes the cron entries and leaves the script and settings in place, so only your manual runs execute.
+
+**Why the timestamp is `now`.** The gate compares `now - LAST` against the rung's wait. Writing `$(date +%s)` as `LAST` guarantees roughly zero elapsed, so every rung is inside its window and every run is turned away - which is the state being tested.
+
+**Why the check must be failing.** A healthy tunnel exits at the handshake check and never reaches the backoff block at all.
+
+Set up so nothing else can interfere:
+
+1. In the app, **DISABLE** the watchdog on the slot you are testing. It shows PAUSED, the `cru` entries go, and the script and settings stay - so only your manual runs execute and no scheduled check can surprise you.
+2. Make the check fail. Either DISABLE the slot in MANAGE, so the interface goes away entirely, or remove the peer:
+
+   ```bash
+   wg set wgc5 peer "$(nvram get wgc5_ppub)" remove
+   ```
+
+Then run `scripts/test-backoff.sh` on the router (copy it across with `scp`). It re-checks both preconditions and refuses rather than misleading you, walks every rung, checks the two properties below, cleans up after itself, and exits non-zero on any failure:
 
 ```bash
-printf '%s\n%s\n' 5 "$(( $(date +%s) - 5 ))" > /tmp/watchdog_backoff_wgc1
-/jffs/cfg-pia-wg/watchdog_wgc1.sh          # expect "Backing off after 5 failed attempts: 5s of 1800s elapsed"
+./test-backoff.sh 5        # slot number; defaults to 5
+```
+
+Each iteration pre-loads the counter with a timestamp of *now*, so the wait cannot have elapsed and the script must turn the run away. The same loop by hand, if you would rather:
+
+```bash
+for n in 1 2 3 4 5 6 7 12; do
+    printf '%s\n%s\n' "$n" "$(date +%s)" > /tmp/watchdog_backoff_wgc5
+    /jffs/cfg-pia-wg/watchdog_wgc5.sh >/dev/null 2>&1
+    echo "CNT=$n -> $(grep 'Backing off' /tmp/watchdog_wgc5.log | tail -1)"
+done
+```
+
+Expected, in order: **120, 240, 480, 960, 1800, 3600, 5400, 5400** seconds. Verified on stock (RT-AX88U, build 409, 2026-09-06):
+
+```text
+CNT=1  -> Backing off after 1 failed attempts: 1s of 120s elapsed
+CNT=2  -> Backing off after 2 failed attempts: 0s of 240s elapsed
+CNT=3  -> Backing off after 3 failed attempts: 0s of 480s elapsed
+CNT=4  -> Backing off after 4 failed attempts: 0s of 960s elapsed
+CNT=5  -> Backing off after 5 failed attempts: 0s of 1800s elapsed
+CNT=6  -> Backing off after 6 failed attempts: 0s of 3600s elapsed
+CNT=7  -> Backing off after 7 failed attempts: 0s of 5400s elapsed
+CNT=12 -> Backing off after 12 failed attempts: 0s of 5400s elapsed
+```
+
+Two things to confirm while you are there, because they are the properties most easily broken by a later change:
+
+- `grep -c 'Requesting PIA token' /tmp/watchdog_wgc5.log` does not change across the loop. If it does, the gate has moved to *after* the first PIA call and a broken tunnel is once again hammering PIA on every check.
+- `head -1 /tmp/watchdog_backoff_wgc5` still reads `12` afterwards. A turned-away run must not increment the counter - if it does, the ladder climbs at a rate that depends on the check interval, so a 1 m watchdog escalates five times faster than a 5 m one.
+
+Clean up, then re-enable the watchdog in the app:
+
+```bash
+rm -f /tmp/watchdog_backoff_wgc5
 ```
 
 #### 2.1.7. What no longer works
@@ -508,15 +564,15 @@ Your best source of information is the system log with `tail -f /tmp/syslog.log`
 
   1. Clear all configs & nvram, reboot router
   2. Home screen
-     1. all five buttons navigate; HOME and the back key return here - stock OK
-     2. "how to use this app" opens the README section - stock OK
-     3. "add a Play Store app review" opens the Play listing - stock OK
-     4. PAYPAL and PATREON open - stock OK
+     1. all five buttons navigate; HOME and the back key return here
+     2. "how to use this app" opens the README section
+     3. "add a Play Store app review" opens the Play listing
+     4. PAYPAL and PATREON open
   3. About
-     1. COPY BUILD INFO - no clipboard countdown starts - stock OK
-     2. licences screen opens and does not bleed through the header - stock OK
-     3. DEL PIA CERT - credential prompt prefills IP and username, keyboard does not obscure it - stock OK
-     4. CREATE GITHUB ISSUE opens - stock OK
+     1. COPY BUILD INFO - no clipboard countdown starts
+     2. licences screen opens and does not bleed through the header
+     3. DEL PIA CERT - credential prompt prefills IP and username, keyboard does not obscure it
+     4. CREATE GITHUB ISSUE opens
   4. Standalone (generate)
      1. create a config and apply manually
      2. heading reads "GENERATED CONFIG: pia-region_name"

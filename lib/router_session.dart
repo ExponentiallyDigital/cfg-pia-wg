@@ -45,6 +45,18 @@ bool isConnectionLost(Object error) {
       s.contains('socketexception');
 }
 
+/// How long the app may sit in the background before the shared connection is dropped.
+///
+/// 406 closed it the instant the app was paused. The 2026-09-06 end-to-end test showed what that
+/// costs in practice: configuring a router means hopping between this app and the router's WebUI,
+/// and every hop bought a fresh handshake and another `dropbear ... Password auth succeeded` line -
+/// ten of them in one session, which is most of what closing per action was meant to remove.
+///
+/// Five minutes keeps the security intent - a session does not sit open behind a locked screen for
+/// long - while a glance at another app costs nothing. A wipe still closes it immediately,
+/// whatever the timer is doing.
+const Duration kBackgroundSessionGrace = Duration(minutes: 5);
+
 /// A long-lived router connection that opens on demand and survives a drop.
 ///
 /// One instance lives on `SessionController` for as long as the app holds router credentials.

@@ -22,10 +22,10 @@
 
 #### 1.1.1. DOC - documentation updates
 
-- DOC: Update `README.md` screenshots.
-- DOC: Update `README.md` [5. Using the app](https://github.com/ExponentiallyDigital/cfg-pia-wg#5-using-the-app).
 - DOC: Add to `README.md` requirements section, `jq` and `sendmail-go` on stock firmware.
 - DOC: Add to `README.md` requirements section, how to install `DownloadMaster` in ASUS WebUI.
+- DOC: Update `README.md` screenshots.
+- DOC: Update `README.md` [5. Using the app](https://github.com/ExponentiallyDigital/cfg-pia-wg#5-using-the-app).
 - DOC: Update Play Store description.
 - DOC: Update Play Store screenshots.
 - REL: Update version to 0.9 branch when first releasing stock support (and see the backlog item on performance profiling when sent to GPS alpha track).
@@ -48,7 +48,7 @@
 
 ### 1.2. v0.9.xx freemium
 
-- NEW: Freemium version using RevenueCat, move all but conf generation to a one-off lifetime paid function, non-freemium makes screens accessible but read only, advise once per session when enterng a freemium gated function, explain how to unlock all capabilities.
+- NEW: Freemium version using RevenueCat, move all but standalone conf generation to a one-off lifetime paid function, non-freemium makes screens accessible but read only, advise once per session when enterng a freemium gated function, explain how to unlock all capabilities.
 - TBC: Determine cost - smaller user base, higher investment.
 
 - Implementation plan, see (and update) detailed plan stored in `.claude\plans\plan_revenuecat-implementation.md`, below are high level steps only:

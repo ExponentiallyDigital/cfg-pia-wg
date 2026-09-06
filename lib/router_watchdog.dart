@@ -497,7 +497,7 @@ const String kSeedCountersCommand = '[ -n "\$(nvram get cfg_pia_wg_sdate)" ] || 
 String kEmailFactsCommand(int slot) => "printf '|%s\\n' "
     '"\$(nvram get ddns_hostname_x)" "\$(nvram get lan_hostname)" "\$(nvram get lan_ipaddr)" '
     '"\$(nvram get productid)" "\$(nvram get buildno)_\$(nvram get extendno)" '
-    '"\$(date \'+%Y-%m-%d %H:%M:%S %Z\')" "\$(uptime | sed \'s/^ *//\')" '
+    '"\$(date \'+%Y-%m-%d %H:%M:%S %z\')" "\$(uptime | sed \'s/^ *//\')" '
     '"\$(nvram get cfg_pia_wg_sdate)" "\$(nvram get cfg_pia_wg_reconfig_ok)" '
     '"\$(nvram get cfg_pia_wg_reconfig_fail)" '
     '"\$(nvram get wgc${slot}_desc)" "\$(nvram get wgc${slot}_wd_check_interval)"';
@@ -635,7 +635,28 @@ class RouterWatchdog {
   final SSHClient client;
   final void Function(String, {bool isError, bool isSuccess})? onLog;
 
-  RouterWatchdog(this.client, {this.onLog});
+  /// Interface-up polling, matching RouterSlotService's cadence. Injectable so a test does not
+  /// wait on real time.
+  final Duration verifyPollInterval;
+  final int verifyMaxAttempts;
+
+  RouterWatchdog(
+    this.client, {
+    this.onLog,
+    this.verifyPollInterval = const Duration(seconds: 2),
+    this.verifyMaxAttempts = 5,
+  });
+
+  /// Polls until `wgcN` appears in `wg show interfaces`, or the attempts run out.
+  ///
+  /// Checks before waiting, so an interface that is already up costs nothing.
+  Future<bool> _awaitInterfaceUp(int slot) async {
+    for (var i = 0; i < verifyMaxAttempts; i++) {
+      if ((await _run('wg show interfaces')).contains('wgc$slot')) return true;
+      await Future.delayed(verifyPollInterval);
+    }
+    return false;
+  }
 
   // Run a command and return trimmed stdout (mirrors router_push.dart `_run`).
   Future<String> _run(String cmd) async => utf8.decode(await client.run(cmd)).trim();
@@ -805,8 +826,19 @@ class RouterWatchdog {
         } else {
           await _run('service "start_wgc $slot"; service restart_vpnrouting0');
         }
+        // `notify_rc` queues the service call and returns at once, so the interface is NOT up
+        // when this returns. deployWatchdog used to exec the script about a second later, which
+        // found "Interface wgcN is down or absent" and performed a full reconfigure - a needless
+        // PIA token and addKey on every single deploy. MANAGE's enableSlot has always waited.
+        final up = await _awaitInterfaceUp(slot);
         await _logRouter('Enabled ${await _label(slot)} via watchdog interface');
-        onLog?.call('${await _label(slot)} enabled.', isSuccess: true);
+        if (up) {
+          onLog?.call('${await _label(slot)} enabled.', isSuccess: true);
+        } else {
+          // Not fatal: the script's own check rebuilds the tunnel, which is what it is for.
+          onLog?.call('${await _label(slot)} enabled, but its interface has not come up yet.',
+              isError: true);
+        }
       });
 
   // Disables the underlying WireGuard slot (mirrors RouterSlotService.disableSlot). Clearing
@@ -943,7 +975,7 @@ class RouterWatchdog {
         // leaving an empty replacement block.
         await _removeCronPersistence(slot);
         await _run(
-          'rm -f /tmp/watchdog_wgc$slot.log /tmp/watchdog_wgc$slot.log.old '
+          'rm -f /tmp/watchdog_wgc$slot.log /tmp/watchdog_wgc$slot.log.old /tmp/watchdog_unsent_wgc$slot '
           '/tmp/watchdog_last_ping_success_wgc$slot /tmp/watchdog_backoff_wgc$slot',
         );
         // nvram command doesn't allow multiple values in one command
@@ -1160,6 +1192,10 @@ LOGTAG="cfg-pia-wg"
 LOGFILE="/tmp/watchdog_${IFACE}.log"
 STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"
 BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
+# Count + time of alerts the mailer could not deliver. An alert about lost connectivity is the one
+# most likely to be undeliverable - a downed default tunnel takes DNS with it - so the next email
+# that DOES get through says how many were missed. /tmp: losing it on a reboot is fine.
+UNSENTFILE="/tmp/watchdog_unsent_${IFACE}"
 CACERT="__CACERT__"
 JQ="__JQ__"
 # tlsv1.2 is a MINIMUM; requiring 1.3 failed addKey with curl 35 (handshake).
@@ -1210,6 +1246,9 @@ log "Watchdog started for $IFACE"
 # Lifetime counters. Reconfigures are rare, so one nvram commit per event is an acceptable flash
 # cost; a broken tunnel retrying forever is what the token backoff is for.
 bump() {
+  # A deploy run is not a reconfigure, even when it had to rebuild the tunnel to get started.
+  # Counting it as one made "N successful reconfigurations" climb every time a watchdog was saved.
+  [ "$RUNMODE" = "deploy" ] && return 0
   [ -n "$(nvram get cfg_pia_wg_sdate)" ] || nvram set cfg_pia_wg_sdate="$(date '+%Y-%m-%d')"
   BN="$(nvram get $1)"
   case "$BN" in ''|*[!0-9]*) BN=0 ;; esac
@@ -1231,7 +1270,7 @@ down_for() {
   esac
   D=$(( $(date +%s) - LGE ))
   [ "$D" -ge 0 ] || D=0
-  printf '%dm %02ds (last seen good %s %s)\n' $((D / 60)) $((D % 60)) "$LGD" "$(date '+%Z')"
+  printf '%dm %02ds (last seen good %s %s)\n' $((D / 60)) $((D % 60)) "$LGD" "$(date '+%z')"
 }
 
 # Email alert
@@ -1275,6 +1314,12 @@ send_alert() {
   case "$FAILN" in ''|*[!0-9]*) FAILN=0 ;; esac
   WDROW="$IFACE:$DESC"
   [ -n "$APPVER" ] && WDROW="$WDROW, deployed by cfg-pia-wg $APPVER"
+  MISSED=0
+  MISSEDAT=""
+  if [ -f "$UNSENTFILE" ]; then
+    { read -r MISSED; read -r MISSEDAT; } < "$UNSENTFILE"
+    case "$MISSED" in ''|*[!0-9]*) MISSED=0 ;; esac
+  fi
 
 __MAILHDR__
   # A row with no value is dropped rather than printed empty.
@@ -1296,12 +1341,16 @@ __WHATTODO__
   echo "ROUTER" >> "$TMPMAIL"
   row "Name" "$RNAME ($LANIP)"
   row "Model" "$(nvram get productid), firmware $(nvram get buildno)_$(nvram get extendno)"
-  row "Time" "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+  row "Time" "$(date '+%Y-%m-%d %H:%M:%S %z')"
   row "Uptime" "$(uptime | sed 's/^ *//')"
   row "Watchdog" "$WDROW"
 
   printf '\nHISTORY\nSince %s this router has recorded %s successful and %s failed reconfigurations.\n' \
     "$SDATE" "$OKN" "$FAILN" >> "$TMPMAIL"
+  if [ "$MISSED" -gt 0 ]; then
+    printf '%s earlier alert(s) could not be sent, the most recent at %s - the router could not reach the mail server.\n' \
+      "$MISSED" "${MISSEDAT:-an unknown time}" >> "$TMPMAIL"
+  fi
 
   if [ "$STATUS" != "SUCCESS" ]; then
     printf '\nROUTER LOG (last 10 lines)\n' >> "$TMPMAIL"
@@ -1317,6 +1366,8 @@ __MAILCMD__
   rm -f "$TMPMAIL"
 
   if [ "$MAIL_EXIT" -ne 0 ]; then
+    # Remember it, so the next email that gets through can say one was missed.
+    printf '%s\n%s\n' "$((MISSED + 1))" "$(date '+%Y-%m-%d %H:%M:%S')" > "$UNSENTFILE"
     SMTP_ERR=$(cat "$TMPERR" 2>/dev/null | tail -20 | tr '\n' '|')
     log "Email FAILED (mailer exit=$MAIL_EXIT) stderr=[${SMTP_ERR:-none}]"
 
@@ -1331,6 +1382,8 @@ __MAILCMD__
     log "Email diag: SMTP probe [${TLS_OUT:-none}]"
     rm -f "$TMPDIAG"
   else
+    # Delivered, so the backlog has been reported and can go.
+    rm -f "$UNSENTFILE"
     log "Alert email sent ($STATUS)"
   fi
 
@@ -1340,13 +1393,17 @@ __MAILCMD__
 abort() {
   log "ERROR: $1"
   bump cfg_pia_wg_reconfig_fail
-  DOWNLABEL="Tunnel has been down for"
-  DOWNFOR="$(down_for)"
-  # The next attempt is whichever comes later: the backoff expiring, or the next cron tick.
-  NEXTWAIT="$(backoff_for "${CNT:-1}")"
-  case "$INTERVAL" in ''|*[!0-9]*) TICK=300 ;; *) TICK=$((INTERVAL * 60)) ;; esac
-  [ "$NEXTWAIT" -ge "$TICK" ] || NEXTWAIT="$TICK"
-  ATTEMPTV="${CNT:-1} since the last success, retrying per schedule, $((NEXTWAIT / 60)) minutes"
+  # A deploy that could not bring the tunnel up has no outage and no attempt history to report -
+  # it is the first run. Both rows are left out rather than filled with nonsense.
+  if [ "$RUNMODE" != "deploy" ]; then
+    DOWNLABEL="Tunnel has been down for"
+    DOWNFOR="$(down_for)"
+    # The next attempt is whichever comes later: the backoff expiring, or the next cron tick.
+    NEXTWAIT="$(backoff_for "${CNT:-1}")"
+    case "$INTERVAL" in ''|*[!0-9]*) TICK=300 ;; *) TICK=$((INTERVAL * 60)) ;; esac
+    [ "$NEXTWAIT" -ge "$TICK" ] || NEXTWAIT="$TICK"
+    ATTEMPTV="${CNT:-1} since the last success, retrying per schedule, $((NEXTWAIT / 60)) minutes"
+  fi
   send_alert FAILED "$1"
   rm -f "$TMPSRV"
   exit 1
@@ -1445,11 +1502,18 @@ log "Requesting PIA token for user $PIA_USER"
 # Body to a file, status to stdout: a pipe into jq would discard curl's exit status.
 HTTP="$($CURLB -S -o "$TMPTOK" -w '%{http_code}' -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" 2>"$TMPERR")"
 RC=$?
-TOKEN="$("$JQ" -r '.token // empty' < "$TMPTOK" 2>/dev/null)"
+TOKEN=""
+# `< "$TMPTOK"` fails in the SHELL, before the command runs, so the command's own 2>/dev/null
+# cannot suppress it - curl that could not resolve the host printed two errors to the console.
+[ -f "$TMPTOK" ] && TOKEN="$("$JQ" -r '.token // empty' < "$TMPTOK" 2>/dev/null)"
 if [ -z "$TOKEN" ]; then
   # The body is the evidence when the status is not: seen once as exit 0 with no status at all.
-  BSZ="$(wc -c < "$TMPTOK" 2>/dev/null | tr -d ' ')"
-  BODY="$(head -n 1 "$TMPTOK" 2>/dev/null | cut -c1-60)"
+  BSZ=0
+  BODY=""
+  if [ -f "$TMPTOK" ]; then
+    BSZ="$(wc -c < "$TMPTOK" 2>/dev/null | tr -d ' ')"
+    BODY="$(head -n 1 "$TMPTOK" 2>/dev/null | cut -c1-60)"
+  fi
   rm -f "$TMPTOK"
   abort "failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}, body ${BSZ:-0}B: ${BODY:-empty}) $(head -n 1 "$TMPERR" | cut -c1-80)"
 fi
@@ -1542,13 +1606,21 @@ log "Interface $IFACE is up"
 
 log "Reconfig SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
 bump cfg_pia_wg_reconfig_ok
-CONNLABEL="Reconnected to"
 CONNVALUE="$BEST_CN ($BEST_IP:$SERVER_PORT), ${BEST_RTT} ms"
-DOWNLABEL="Tunnel was down for"
-# Measure the outage before stamping the status file, or it always reads zero.
-DOWNFOR="$(down_for)"
+if [ "$RUNMODE" = "deploy" ]; then
+  # No outage to report: the tunnel was simply not up yet when the watchdog was saved. The server
+  # and its latency are real and stay - only the event and the outage line change.
+  DETAILV="watchdog deployed"
+  CONNLABEL="Connected to"
+else
+  DETAILV="reconfigured successfully on attempt $CNT"
+  CONNLABEL="Reconnected to"
+  DOWNLABEL="Tunnel was down for"
+  # Measure the outage before stamping the status file, or it always reads zero.
+  DOWNFOR="$(down_for)"
+fi
 date '+%s %Y-%m-%d %H:%M:%S' > "$STATUSFILE"
 INTERVALV="$INTERVAL minutes"
-send_alert SUCCESS "reconfigured successfully on attempt $CNT"
+send_alert SUCCESS "$DETAILV"
 exit 0
 ''';

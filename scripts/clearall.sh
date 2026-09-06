@@ -23,7 +23,7 @@ done
 rm -f /jffs/cfg-pia-wg/pia_ca.rsa.4096.crt
 # Volatile state: the log, the last-good stamp and the backoff counter.
 rm -f /tmp/watchdog_wgc[1-9].log /tmp/watchdog_wgc[1-9].log.old \
-      /tmp/watchdog_last_ping_success_wgc[1-9] /tmp/watchdog_backoff_wgc[1-9] \
+      /tmp/watchdog_last_ping_success_wgc[1-9] /tmp/watchdog_backoff_wgc[1-9] \n      /tmp/watchdog_unsent_wgc[1-9] \
       /tmp/mail.txt /tmp/mail_wgc[1-9].txt /tmp/wd_smtp_err*
 
 echo "== boot persistence =="
