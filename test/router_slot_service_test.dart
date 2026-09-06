@@ -452,7 +452,7 @@ void main() {
 
     test('unsets wgcN_enable and the VPN Fusion runtime keys on stock', () async {
       useStock();
-      // Slot 3's field 7 is 7, so its runtime keys are vpnc7_*, not vpnc3_*.
+      // Slot 3's index 6 is 7, so its runtime keys are vpnc7_*, not vpnc3_*.
       final c = router(clientlist: 'a>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
       await svc(c).deleteSlot(3);
 
@@ -466,7 +466,7 @@ void main() {
     });
 
     // Reproduces the hardware report: create + enable + delete wgc1 left vpnc9_* behind, because
-    // the keys are indexed by field 7 (9 for slot 1), not by the slot number.
+    // the keys are indexed by index 6 (9 for slot 1), not by the slot number.
     test('wgc1 clears vpnc9_*, not vpnc1_*', () async {
       useStock();
       var polls = 0;
@@ -643,11 +643,11 @@ void main() {
   });
 
   // Three different indexes exist on one profile: the slot number, the clientlist row
-  // (vpnc_unit), and field 7 (the vpncN_* runtime keys). They coincide often enough to mislead.
+  // (vpnc_unit), and index 6 (the vpncN_* runtime keys). They coincide often enough to mislead.
   group('vpncStateIndexForSlot (pure)', () {
     const sample = 'a>WireGuard>5>>pw>1>5>>>0>0>Web<b>WireGuard>1>>pw>0>9>>>0>0>Web';
 
-    test('reads field 7, which is not the slot number', () {
+    test('reads index 6, which is not the slot number', () {
       final recs = parseVpncClientlist(sample);
       expect(vpncStateIndexForSlot(recs, 1), 9); // the hardware case: wgc1 -> vpnc9_*
       expect(vpncStateIndexForSlot(recs, 5), 5); // slot 5 is where the two rules coincide
@@ -658,14 +658,14 @@ void main() {
       expect(vpncStateIndexForSlot(const [], 4), 6);
     });
 
-    test('honours a field 7 that does not follow 10 - slot', () {
+    test('honours an index 6 that does not follow 10 - slot', () {
       // Reading the record beats computing it: a profile carrying an unexpected value still
       // resolves to the keys the firmware actually created.
       final recs = parseVpncClientlist('a>WireGuard>2>>pw>1>3>>>0>0>Web');
       expect(vpncStateIndexForSlot(recs, 2), 3);
     });
 
-    test('falls back when field 7 is blank or unparseable', () {
+    test('falls back when index 6 is blank or unparseable', () {
       expect(vpncStateIndexForSlot(parseVpncClientlist('a>WireGuard>2>>pw>1>>>>0>0>Web'), 2), 8);
       expect(vpncStateIndexForSlot(parseVpncClientlist('a>WireGuard>2>>pw>1>x>>>0>0>Web'), 2), 8);
     });
@@ -673,11 +673,11 @@ void main() {
     test('is a different index from vpnc_unit and from the slot', () {
       final recs = parseVpncClientlist(sample);
       expect(vpncUnitForSlot(recs, 1), 1); // clientlist row
-      expect(vpncStateIndexForSlot(recs, 1), 9); // field 7
+      expect(vpncStateIndexForSlot(recs, 1), 9); // index 6
       // and the slot itself is 1 - three distinct numbers for one profile.
     });
 
-    test('buildVpncRecord writes a field 7 the helper reads back', () {
+    test('buildVpncRecord writes an index 6 the helper reads back', () {
       for (final slot in [1, 2, 3, 4, 5]) {
         final rec = buildVpncRecord(slot: slot, desc: 'x', active: false);
         expect(vpncStateIndexForSlot([rec], slot), 10 - slot, reason: 'slot $slot');
@@ -842,8 +842,8 @@ void main() {
       final rec = updated.firstWhere((r) => r.slot == 4);
       expect(rec.desc, 'pia-nz');
       expect(rec.active, isTrue);
-      expect(rec.fields[4], 'aus-pwd'); // field 5 untouched
-      expect(rec.fields[6], '6'); // field 7 untouched
+      expect(rec.fields[4], 'aus-pwd'); // index 4 untouched
+      expect(rec.fields[6], '6'); // index 6 untouched
       expect(updated, hasLength(5)); // no record added
     });
 

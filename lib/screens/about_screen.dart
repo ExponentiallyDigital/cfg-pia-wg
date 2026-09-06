@@ -122,7 +122,7 @@ class _AboutScreenState extends State<AboutScreen> {
       // the user away. Anything already in the session prefills the form.
       final entered = await showDialog<(String, String, String)?>(
         context: context,
-        builder: (_) => _SshCredsDialog(initialIp: ip, initialUser: user, initialPass: pass),
+        builder: (_) => _SshCredsDialog(initialIp: controller.routerIpPrefill, initialUser: user, initialPass: pass),
       );
       if (entered == null || !context.mounted) return;
       (ip, user, pass) = entered;
@@ -166,9 +166,11 @@ class _AboutScreenState extends State<AboutScreen> {
       // The shared session, like every other router action. The credentials above were written
       // back to the controller first, so this either reuses the open connection or opens one
       // against exactly what the user just typed.
-      final client = controller
-          .routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      final client =
+          controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       deleted = await RouterWatchdog(client, onLog: controller.onLog).deleteCachedPiaCert();
+      // The connect worked, so the address is worth keeping - same rule as the router screens.
+      await controller.rememberRouterIp(ip);
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
     } finally {
@@ -182,6 +184,17 @@ class _AboutScreenState extends State<AboutScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(deleted ? 'Cached PIA certificate deleted.' : 'No cached PIA certificate on the router.'),
     ));
+  }
+
+  /// Deletes the remembered router address from device storage. No confirm prompt: nothing is lost
+  /// that cannot be retyped, and the button is only enabled when there is something to clear.
+  Future<void> _forgetRouterIp(BuildContext context) async {
+    final controller = SessionScope.of(context);
+    await controller.forgetRouterIp();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Remembered router address deleted.')),
+    );
   }
 
   /// Same pattern as the header bar's author/repo links: guard, launch, silently no-op.
@@ -239,6 +252,21 @@ class _AboutScreenState extends State<AboutScreen> {
                               )
                             : const Icon(Icons.gpp_bad_outlined, size: 16, color: kHighlight),
                         label: const Text('DEL PIA CERT', style: TextStyle(color: kHighlight, fontSize: 12)),
+                      ),
+                      // The router address is the one thing the app keeps on device storage, so it
+                      // needs a way to be cleared. Greyed out when there is nothing stored.
+                      ListenableBuilder(
+                        listenable: SessionScope.of(context),
+                        builder: (context, _) {
+                          final remembered = SessionScope.of(context).rememberedRouterIp.isNotEmpty;
+                          return TextButton.icon(
+                            key: const Key('about_forget_router_ip'),
+                            onPressed: remembered ? () => _forgetRouterIp(context) : null,
+                            icon: Icon(Icons.wifi_off_outlined, size: 16, color: remembered ? kHighlight : kMuted),
+                            label:
+                                Text('FORGET ROUTER IP', style: TextStyle(color: remembered ? kHighlight : kMuted, fontSize: 12)),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -551,8 +579,9 @@ class _SshCredsDialog extends StatefulWidget {
 
 class _SshCredsDialogState extends State<_SshCredsDialog> {
   // Same starting points as the router screens: session value if there is one, else the defaults.
-  late final TextEditingController _ipCtrl =
-      TextEditingController(text: widget.initialIp.isNotEmpty ? widget.initialIp : kDefaultRouterIp);
+  // initialIp already carries the precedence (session, then remembered, then factory default),
+  // resolved by SessionController.routerIpPrefill at the call site.
+  late final TextEditingController _ipCtrl = TextEditingController(text: widget.initialIp);
   late final TextEditingController _userCtrl =
       TextEditingController(text: widget.initialUser.isNotEmpty ? widget.initialUser : kDefaultSshUsername);
   late final TextEditingController _passCtrl = TextEditingController(text: widget.initialPass);

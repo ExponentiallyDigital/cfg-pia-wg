@@ -48,7 +48,7 @@ Widget _watchdog(RecordingSSHClient ssh, SessionController c) => SessionScope(
     );
 
 Future<void> _fillCreds(WidgetTester tester) async {
-  await tester.enterText(find.widgetWithText(TextFormField, 'Router IP'), '192.168.0.254');
+  await tester.enterText(find.widgetWithText(TextFormField, 'Router IP'), '192.168.1.1');
   await tester.enterText(find.widgetWithText(TextFormField, 'SSH Username'), 'admin');
   await tester.enterText(find.widgetWithText(TextFormField, 'SSH Password'), 'pw');
   await tester.pump();
@@ -73,13 +73,13 @@ void main() {
     c.dispose();
   });
 
-  testWidgets('router IP and SSH username default to 192.168.0.254 / admin', (tester) async {
+  testWidgets('router IP and SSH username default to the ASUS factory address / admin', (tester) async {
     final c = _controller();
     final ssh = RecordingSSHClient(responder: (_) => '');
     await tester.pumpWidget(_manage(ssh, c));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(TextFormField, '192.168.0.254'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, kDefaultRouterIp), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'admin'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
@@ -88,7 +88,7 @@ void main() {
 
   testWidgets('auto-reconnects and opens the modal when already connected this session', (tester) async {
     final c = _controller()
-      ..routerIp = '192.168.0.254'
+      ..routerIp = '192.168.1.1'
       ..sshUsername = 'admin'
       ..sshPassword = 'pw'
       ..routerConnected = true;

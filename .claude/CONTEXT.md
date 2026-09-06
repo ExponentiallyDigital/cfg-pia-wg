@@ -10,7 +10,9 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 - **Any NVRAM variable the app writes must be described in `ARCHITECTURE.md` section "3. Router WireGuard NVRAM fields"** — that section is the reference a user reads before letting the app near their router, so a key that only appears in the code is a key nobody can audit or clean up. Describe it in §4.9 here as well.
 - **Flag conflicts, do not silently resolve them.** If this file disagrees with the code, or with `ARCHITECTURE.md` / `BACKLOG.md` / a `.claude/plan_*.md`, say so and ask. Do not "fix" the code to match the doc or vice versa without confirmation.
 - **CHANGELOG.md entries must be flat and short.** The release GitHub Action *sorts* the lines within a release block, so an indented sub-bullet is separated from its parent and ends up under the wrong entry. Every line item is therefore a standalone top-level `- ` bullet that reads correctly on its own, in the existing `- FIX:` / `- CHG:` / `- ADD:` / `- TST:` / `- DOC:` / `- INF:` style. Keep each to a sentence or two — detail belongs in the code comments or `ARCHITECTURE.md`, not here.
+- **Never record Andrew's real network identifiers in a file the repo tracks.** No LAN or WAN IP addresses, no hostnames, no DDNS names, no MAC addresses, no router login names, no PIA username. He shares these freely in chat to get a problem solved; that is not consent to publish them. When hardware output has to be quoted in a doc, plan or test, substitute invented values - `my-router.asuscomm.com`, `192.168.1.20`-`192.168.1.25`, `AA:BB:CC:DD:EE:FF` - and say in the document that they are invented, so a later reader does not treat them as real and reinstate the originals. Verbatim session logs go under `.claude/testing/`, which is `.gitignore`d for exactly this reason. There are no exceptions: `kDefaultRouterIp` was one until build 410 and is now the ASUS factory address `192.168.50.1`, pinned by a test.
 - Do not read `.claude/plan_*.md` as current state — they are historical design notes.
+- **NVRAM records are numbered 0-based, and the word is "index", not "field".** Any NVRAM value holding more than one entry - `vpnc_clientlist`, `custom_clientlist`, `dhcp_staticlist` - is described as `index N`, counting from 0, matching the `VpncRecord` constants in `router_slot_service.dart`. Until 409 the ARCHITECTURE.md prose counted from 1 while its own schema table counted from 0, so "field 6" meant the active flag in one place and the state index in another - a mix-up that writes the active flag where the state index belongs and disables a tunnel while appearing to succeed. **Slot numbers are unaffected**: they are the firmware's own naming and stay `wgc1`..`wgc5`.
 - **Do not line-wrap Markdown.** `.md` files - this one, `README.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `BACKLOG.md`, `TESTING.md`, `SECURITY.md`, everything under `.claude/` - carry one logical unit per line and no hard wrap at any column. Wrapping makes a diff of a reworded sentence touch every following line, and a hard-wrapped table row breaks the table outright. The 130-character line length is a **Dart** rule and applies to `lib/` and `test/` only. Fenced code blocks inside Markdown keep whatever line breaks the code itself needs.
 
 ### Conventions in force (observed, not aspirational)
@@ -116,7 +118,8 @@ RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fet
 | Field | Notes |
 | --- | --- |
 | `piaUsername`, `piaPassword`, `dns` | `dns` defaults to `kDefaultDns` = `'9.9.9.9, 149.112.112.112'`. |
-| `routerIp`, `sshUsername`, `sshPassword` | Router form pre-fills `192.168.0.254` / `admin` on a fresh session. |
+| `routerIp`, `sshUsername`, `sshPassword` | Volatile. The form prefills via `routerIpPrefill`: session value, then `rememberedRouterIp`, then `kDefaultRouterIp` (`192.168.50.1`, the ASUS factory address) / `admin`. |
+| `rememberedRouterIp` | **The only value the app writes to device storage.** Loaded once at startup by `loadRememberedRouterIp()`, written by `rememberRouterIp()` after a connect SUCCEEDS, deleted by `forgetRouterIp()`. NOT cleared by `wipeAll` - see 4.2.1. |
 | `generatedConfig`, `generatedRegionId` | Survive navigation; wiped by `wipeAll`. |
 | `log` (`List<LogEntry>`) | `[HH:MM:SS] msg`, flags `isError` / `isSuccess`. |
 | `clipboardSeconds`, `_clipboardDeadline` | 60 s default (`clipboardTimeout`), 1 s tick; `resyncOnResume()` re-evaluates after background. |
@@ -124,7 +127,18 @@ RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fet
 | `currentDestination` | Plain field, set by `DestinationObserver`; no `notifyListeners`. |
 | `routerConnected` | Set true after a successful connect; drives auto-reconnect on screen re-entry. |
 
-`wipeAll({reason})` clears all six credential fields, config, `routerConnected`, and the clipboard, then logs. Injectable seams: `clipboardTimeout`, `tickInterval`, `clipboardWriter`.
+`wipeAll({reason})` clears all six credential fields, config, `routerConnected`, and the clipboard, then logs. It deliberately leaves `rememberedRouterIp` alone. Injectable seams: `clipboardTimeout`, `tickInterval`, `clipboardWriter`, `routerPrefs`.
+
+#### 4.2.1 The remembered router address (`router_prefs.dart`)
+
+The app is otherwise zero-persistence, so this is the one departure and it is kept deliberately narrow. `RouterPrefs` writes a single line - the router LAN address - to `router.txt` under `getApplicationSupportDirectory()`. Rules, all of them enforced by `test/unit/router_prefs_test.dart`:
+
+- **Only the address.** No username, no password, nothing else, ever. A source scan of `router_prefs.dart` fails the build if the file gains a second write or mentions a credential, because a password there would survive `wipeAll`, survive an app close, and sit in plain text.
+- **Only after a proven connect.** `rememberRouterIp` is called from `router_slots_screen._onConnect` and `about_screen._deletePiaCert`, both after the SSH work succeeded. Same rule as `TextInput.finishAutofillContext()` - never persist an unproven value.
+- **Validated in both directions.** `^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$`. The file is hand-editable on a rooted device and its contents reach an SSH connect, so a rejected value is dropped on read as well as on write.
+- **Survives `wipeAll`, clearable by the user.** ABOUT -> FORGET ROUTER IP (`Key('about_forget_router_ip')`), greyed out when there is nothing stored - which is also the only way a user can see that anything IS stored.
+- **Off-device backup is disabled.** `android:allowBackup="false"` in the manifest, so it never reaches Google Drive.
+- **Inert under `flutter test`.** The default store checks `FLUTTER_TEST`: the path_provider channel has no handler in a test binding and the reply never arrives, so an `await` on it hangs - which surfaces as a connect spinner that never clears and a bare `pumpAndSettle timed out`. A test that wants storage passes `directory`. **Widget tests cannot use a real directory at all** - a `testWidgets` body runs under fake async, which never completes real file I/O; use an in-memory `RouterPrefs` subclass, as `about_screen_test.dart` does.
 
 ### 4.3 Standalone generation — `PiaService`
 
@@ -142,7 +156,7 @@ UI (`standalone_config_screen.dart`): `GENERATE CONFIG` is enabled only when reg
 
 ### 4.4 Slot modal button matrix (`slot_modal.dart:520-551`)
 
-`hasDesc` = `wgcN_desc` non-empty; `enabled` = `wgcN_enable == 1` (vpnc_clientlist field 6 on stock); `wdActive` = cron entry present. DISABLE also accepts an interface that is up while the flag reads 0 — the two can disagree, and gating on the flag alone would strand a running tunnel behind a greyed button.
+`hasDesc` = `wgcN_desc` non-empty; `enabled` = `wgcN_enable == 1` (vpnc_clientlist index 5 on stock); `wdActive` = cron entry present. DISABLE also accepts an interface that is up while the flag reads 0 — the two can disagree, and gating on the flag alone would strand a running tunnel behind a greyed button.
 
 | Mode | Key | Label | Enabled when |
 | --- | --- | --- | --- |
@@ -159,7 +173,7 @@ UI (`standalone_config_screen.dart`): `GENERATE CONFIG` is enabled only when reg
 
 Row badges: `● ACTIVE` (`activeSlots.contains(n)`), `⚑ KILL SWITCH` (`enforce==1`, amber), `◆ WATCHDOG ACTIVE` (`watchdogActive` - a cron entry exists), `⏸ WATCHDOG PAUSED` (`watchdogConfigured && !watchdogActive` on a non-empty slot: DISABLE removed the schedule and kept the settings; muted grey, since nothing is running), `✉ EMAIL ALERTING` (only alongside WATCHDOG ACTIVE). The two watchdog badges are mutually exclusive.
 
-**Slot naming.** Every app-log and router-syslog line names a slot as `wgcN:<description>` via `slotLabel` / `fetchSlotLabel` (`router_slot_service.dart`), so a message says *which* VPN it is about. The description comes from `vpnc_clientlist` field 0 on stock (a WebUI-created profile has no `wgcN_desc` mirror) and from `wgcN_desc` on Merlin. Both services cache it per instance, so it costs one extra read per action however many lines mention it, and the lookup is best-effort - a failure degrades to the bare `wgcN` rather than breaking the action being logged. Raw router output echoed into the log (`wg show interfaces: wgc1`) is left verbatim. The EDIT modal heading uses the same label (`EDIT wgc1:pia-aus_melbourne`).
+**Slot naming.** Every app-log and router-syslog line names a slot as `wgcN:<description>` via `slotLabel` / `fetchSlotLabel` (`router_slot_service.dart`), so a message says *which* VPN it is about. The description comes from `vpnc_clientlist` index 0 on stock (a WebUI-created profile has no `wgcN_desc` mirror) and from `wgcN_desc` on Merlin. Both services cache it per instance, so it costs one extra read per action however many lines mention it, and the lookup is best-effort - a failure degrades to the bare `wgcN` rather than breaking the action being logged. Raw router output echoed into the log (`wg show interfaces: wgc1`) is left verbatim. The EDIT modal heading uses the same label (`EDIT wgc1:pia-aus_melbourne`).
 
 **Slots run concurrently.** Manage ENABLE used to disable every other slot first ("one active at a time"); it no longer does. Stock caps how many may run at once - `RouterSlots.maxActiveSlots`, read from `nvram get vpnc_max_conn` and falling back to `kDefaultStockMaxActiveSlots` (2) when the key is missing or unparseable. Merlin has no such key, so `maxActiveSlots` is null there and nothing is capped. `SlotModal._enableManage` counts the *other* interfaces that are up and, when that reaches the cap, shows a "VPN limit reached" dialog naming the ASUS limit and asking the user to disable a slot - it makes no router writes in that case. The same check (`SlotModal._withinVpnLimit`) gates watchdog CREATE/EDIT, which brings a tunnel up as a side effect; it runs **before** the dialog opens so the user is not made to fill it in for nothing. Watchdogs are no longer mutually exclusive - `deactivateOtherSlots` is gone.
 
@@ -174,7 +188,7 @@ Row badges: `● ACTIVE` (`activeSlots.contains(n)`), `⚑ KILL SWITCH` (`enforc
 | `enableSlot` | `enable=1` → commit → `service "start_wgc N"; service restart_vpnrouting0` → polls `wg show interfaces` up to `verifyMaxAttempts` (30) × `verifyPollInterval` (2 s) → pings **both** targets via `-I wgcN -c 1 -W 5`. **Both must pass**; any failure reverts to `enable=0` and throws. |
 | EDIT | `readSlotParams` → `SlotParamsEditor` → `writeSlotParams` (values shell-single-quoted). |
 | DISABLE | `stopWatchdog` if `wdActive`, then `enable=0` + commit + the firmware's stop, then **waits for the interface to leave `wg show interfaces`** before returning. The wait is what keeps the ACTIVE badge honest: `_runSlot` refreshes as soon as this returns, and the stop is queued through `notify_rc`, so without it the refresh reads a tunnel that is still up. Same for `_revertEnable`. |
-| DELETE | Confirm (destructive) → `stopWatchdog` if `wdActive` → `enable=0`, stop service, **wait for the interface to leave `wg show interfaces`** (bounded by `verifyPollInterval`/`verifyMaxAttempts`), then `nvram unset` all 17 keys **plus** `wd_primary_ip` / `wd_secondary_ip`, plus `kVpncRuntimeKeys` on stock, then commit. Those runtime keys are indexed by the profile's **clientlist field 7**, not the slot — wgc1 leaves `vpnc9_*` — so `vpncStateIndexForSlot` resolves it from the record while it is still present, falling back to `10 - slot`. The wait is load-bearing: the stop is queued through `notify_rc` and returns immediately, so unsetting straight away lets the firmware re-create `wgcN_enable` behind it. If the interface never goes, the keys are cleared anyway and a warning is logged. |
+| DELETE | Confirm (destructive) → `stopWatchdog` if `wdActive` → `enable=0`, stop service, **wait for the interface to leave `wg show interfaces`** (bounded by `verifyPollInterval`/`verifyMaxAttempts`), then `nvram unset` all 17 keys **plus** `wd_primary_ip` / `wd_secondary_ip`, plus `kVpncRuntimeKeys` on stock, then commit. Those runtime keys are indexed by the profile's **clientlist index 6**, not the slot — wgc1 leaves `vpnc9_*` — so `vpncStateIndexForSlot` resolves it from the record while it is still present, falling back to `10 - slot`. The wait is load-bearing: the stop is queued through `notify_rc` and returns immediately, so unsetting straight away lets the firmware re-create `wgcN_enable` behind it. If the interface never goes, the keys are cleared anyway and a warning is logged. |
 
 All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the router syslog (best-effort).
 
@@ -328,7 +342,7 @@ The whole line is the tap target (a `GestureDetector` with `HitTestBehavior.opaq
 
 Modelled by `VpncRecord` + `parseVpncClientlist` / `serialiseVpncClientlist` / `buildVpncRecord` / `upsertVpncRecord` / `removeVpncRecord` in `router_slot_service.dart` (all pure).
 
-**`wgcN_desc` on stock** is not a real firmware field. The app writes it anyway as a key of its own, mirroring `vpnc_clientlist` field 1, because the router-side watchdog script needs the region name from a bare `nvram get` — the same practice already used for the invented `wgcN_wd_*` keys. Both copies are kept in step by `createConfigToSlot` and `writeSlotParams`.
+**`wgcN_desc` on stock** is not a real firmware field. The app writes it anyway as a key of its own, mirroring `vpnc_clientlist` index 0, because the router-side watchdog script needs the region name from a bare `nvram get` — the same practice already used for the invented `wgcN_wd_*` keys. Both copies are kept in step by `createConfigToSlot` and `writeSlotParams`.
 
 ### 4.10 About screen & build info
 
@@ -367,7 +381,8 @@ The chrome's header takes ~104 logical px off the top, so with a keyboard up a d
 
 | Claim | Reality |
 | --- | --- |
-| Credentials on the device | Volatile only — `SessionController` fields, wiped by `wipeAll` on every exit path. No `SharedPreferences`, no file persistence. |
+| Credentials on the device | Volatile only — `SessionController` fields, wiped by `wipeAll` on every exit path. No `SharedPreferences`, no secure storage, no database. |
+| Non-credentials on the device | Exactly one: the router LAN address, in `router.txt` under the app support directory, written only after a connect succeeds and clearable via ABOUT -> FORGET ROUTER IP. See 4.2.1. Nothing else is persisted, and a test enforces that. |
 | Generated config on the device | In memory, **except** SHARE, which writes `pia-<region>.conf` to the temp dir and deletes it in a `finally`. |
 | Credentials on the router | PIA username/password go to router NVRAM in **plaintext** (`cfg_pia_wg_user`/`_password`) whenever a watchdog is deployed; SMTP password likewise (`wgcN_wd_smtp_pass`). Removed by `stopWatchdog`. |
 | Password managers | Every credential field declares `autofillHints`, and each login is its own `AutofillGroup` - PIA, router SSH, SMTP - so a provider cannot conflate them or save one mixed entry. Groups use `onDisposeAction: cancel`; `TextInput.finishAutofillContext()` is called ONLY after a successful generate or connect, so a save prompt appears only for credentials that have been proven. `FLAG_SECURE` does not block the autofill overlay (verified on a Pixel with KeePass, which also switches cleanly between several entries saved against the app's package id). Android only suggests for an EMPTY field, so the `admin` default in the SSH username field suppresses its prompt until cleared - documented in README 5.2, not changed. Autofill needs API 26; `minSdk` is 24, so a 24/25 device just types as before. |
@@ -394,9 +409,9 @@ The chrome's header takes ~104 logical px off the top, so with a keyboard up a d
 
 | Concern | Merlin | Stock |
 | --- | --- | --- |
-| Region + active state | `wgcN_desc`, `wgcN_enable` | `vpnc_clientlist` fields 1 and 6 (plus the `wgcN_desc` mirror and `wgcN_enable`) |
+| Region + active state | `wgcN_desc`, `wgcN_enable` | `vpnc_clientlist` indexes 0 and 5 (plus the `wgcN_desc` mirror and `wgcN_enable`) |
 | Per-slot keys written | all 17 | 13 — `enforce`, `fw`, `ep_addr_r`, `rip` skipped (`kMerlinOnlySlotKeys`) |
-| Region name read from | `wgcN_desc` | `vpnc_clientlist` field 0, falling back to `wgcN_desc` when the row is missing — so ANY path that creates or renames a slot must call `RouterSlotService.writeVpncProfile`, the watchdog deploy included. Without the fallback a slot missing its row reads as unconfigured and the modal greys out every button that needs a description. `_setVpncActive` carries the description too, so enabling repairs a nameless row. |
+| Region name read from | `wgcN_desc` | `vpnc_clientlist` index 0, falling back to `wgcN_desc` when the row is missing — so ANY path that creates or renames a slot must call `RouterSlotService.writeVpncProfile`, the watchdog deploy included. Without the fallback a slot missing its row reads as unconfigured and the modal greys out every button that needs a description. `_setVpncActive` carries the description too, so enabling repairs a nameless row. |
 | Enable verification | interface present, then a WireGuard handshake, then ping (fatal) | interface present, then a WireGuard handshake (the gate); the ping is logged only - it pings from the tunnel's source address but routes over the WAN, so it answers OK for a tunnel the peer never answered |
 | Watchdog ACTIVE means | cron entry **and** `[ -s <script> ]` (paths come from `watchdogScriptPath` in `firmware.dart` - never build a router command with `\$kSomething`, the shell expands it to nothing and a test now fails on it), in both `fetchSlots` and `getWatchdogStatus` - never the NVRAM settings, which survive a DISABLE and a failed deploy alike |
 | Watchdog start / stop of the tunnel | `service start_wgc N` / `stop_wgc N` | `nvram set vpnc_unit=<row>` + `service restart_vpnc` / `stop_vpnc` (`RouterSlotService.runVpncService`) — the same calls MANAGE makes. The Merlin commands are inert on stock. |
@@ -412,7 +427,7 @@ The chrome's header takes ~104 logical px off the top, so with a keyboard up a d
 
 **`vpnc_unit` is the 0-based ROW INDEX of the slot's record in `vpnc_clientlist`** — see `vpncUnitForSlot` in `router_slot_service.dart` and ARCHITECTURE.md §4.2. It is *not* `5 - slot`: the WebUI can only create profiles in slot order 5,4,3,2,1, so on any list it built the two happen to agree, but the app lets the user pick any slot. All four stock service calls go through `RouterSlotService._runVpncService`, which resolves the row and throws an actionable error on enable when the slot has no profile (a stop is a silent no-op instead). **Ordering is load-bearing:** resolve the unit *after* the upsert that may append the row (enable) and *before* the removal that drops it (delete).
 
-**`restart_vpnc` does not stop a tunnel.** It clears `wgcN_enable` and `vpnc_clientlist` field 6 — so the WebUI reports "disconnected" — while the interface stays up in `wg show interfaces`. Stock disable/delete/revert must use `stop_vpnc` (ARCHITECTURE.md §4.2.3).
+**`restart_vpnc` does not stop a tunnel.** It clears `wgcN_enable` and `vpnc_clientlist` index 5 — so the WebUI reports "disconnected" — while the interface stays up in `wg show interfaces`. Stock disable/delete/revert must use `stop_vpnc` (ARCHITECTURE.md §4.2.3).
 
 **S50downloadmaster** is a stock init script the firmware already runs at boot and on a firewall restart; stock has no `services-start` and bare `cru` entries do not survive a power cycle, so the app hijacks it. Only the region between the two REPLACEMENT markers is ever rewritten, and it accumulates one check + one rotate line **per watchdog** (one today, several later). `stopWatchdog` rebuilds the file with that slot's lines dropped rather than `grep -v`-ing them out, so the stock scaffolding survives; the file itself is never deleted.
 

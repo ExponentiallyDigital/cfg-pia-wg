@@ -14,9 +14,12 @@
 // Copyright (C) 2026 Andrew Newbury.
 //
 // Holds the credentials, generated config, application log, and the 60-second clipboard
-// auto-clear timer that must persist while the user moves between the workflow screens. NOTHING
-// here is ever written to device storage — it lives only in memory and is wiped on "Exit app"
-// and when the app is backed out via the main menu.
+// auto-clear timer that must persist while the user moves between the workflow screens.
+//
+// Everything here is volatile and is wiped on "Exit app" and when the app is backed out via
+// the main menu. ONE value is written to device storage and survives that wipe: the router LAN
+// address, held by RouterPrefs in router_prefs.dart, which explains why. No credential ever
+// goes there - not the PIA login, not the SSH password, not the SMTP password.
 
 import 'dart:async';
 
@@ -25,14 +28,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'clipboard_service.dart';
+import 'router_prefs.dart';
 import 'router_session.dart';
 
 // Default DNS servers (Quad9), matching the value the standalone form pre-fills.
 const String kDefaultDns = '9.9.9.9, 149.112.112.112';
 
 // Starting points for the router SSH form, used wherever it appears - the router screens and
-// the ABOUT screen's DEL PIA CERT prompt - so the two never disagree.
-const String kDefaultRouterIp = '192.168.0.254';
+// the ABOUT screen's DEL PIA CERT prompt - so the two never disagree. This is the ASUS factory
+// address and is only a first-run fallback: once a connect succeeds, the address the user
+// actually typed is remembered (RouterPrefs) and prefills ahead of it. Do not replace this with
+// a real router address - router_prefs_test.dart fails the build if it changes.
+const String kDefaultRouterIp = '192.168.50.1';
 const String kDefaultSshUsername = 'admin';
 
 /// The navigable destinations. [routeName] doubles as the [RouteSettings] name used by the
@@ -64,9 +71,11 @@ class SessionController extends ChangeNotifier {
     Duration clipboardTimeout = const Duration(seconds: 60),
     Duration tickInterval = const Duration(seconds: 1),
     Future<void> Function(String text)? clipboardWriter,
+    RouterPrefs? routerPrefs,
   })  : _clipboardTimeout = clipboardTimeout,
         _tickInterval = tickInterval,
-        _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter;
+        _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter,
+        _routerPrefs = routerPrefs ?? RouterPrefs();
 
   // An empty write means "clear", and clearing goes through the host so Android does not show
   // its clipboard popup for it - see clipboard_service.dart.
@@ -82,6 +91,43 @@ class SessionController extends ChangeNotifier {
   String sshPassword = '';
   String? generatedConfig;
   String generatedRegionId = '';
+
+  // ── Remembered router address (the only persisted value) ─────────────────────
+  final RouterPrefs _routerPrefs;
+
+  /// The address remembered from a previous session, or empty if there is none. Prefills the SSH
+  /// form ahead of [kDefaultRouterIp], and is deliberately NOT cleared by [wipeAll] - it is not a
+  /// credential, and wiping it on every exit would defeat the point of storing it.
+  String rememberedRouterIp = '';
+
+  /// Reads the remembered address into [rememberedRouterIp]. Called once at startup.
+  Future<void> loadRememberedRouterIp() async {
+    rememberedRouterIp = await _routerPrefs.load();
+    if (rememberedRouterIp.isNotEmpty) notifyListeners();
+  }
+
+  /// Remembers [ip]. Call ONLY after a connect to it has succeeded, so an address that does not
+  /// work is never stored. A rejected or failed write leaves the previous value alone.
+  Future<void> rememberRouterIp(String ip) async {
+    final stored = await _routerPrefs.remember(ip);
+    if (stored.isEmpty || stored == rememberedRouterIp) return;
+    rememberedRouterIp = stored;
+    logEntry('Router address remembered. Clear it with FORGET ROUTER IP on the About screen.');
+    notifyListeners();
+  }
+
+  /// Deletes the stored address. Wired to FORGET ROUTER IP on the About screen.
+  Future<void> forgetRouterIp() async {
+    await _routerPrefs.forget();
+    rememberedRouterIp = '';
+    logEntry('Remembered router address deleted from device storage.');
+    notifyListeners();
+  }
+
+  /// What the SSH form should start with: what the user typed this session, else the address
+  /// remembered from a previous one, else the ASUS factory default.
+  String get routerIpPrefill =>
+      routerIp.isNotEmpty ? routerIp : (rememberedRouterIp.isNotEmpty ? rememberedRouterIp : kDefaultRouterIp);
 
   // ── Application log ──────────────────────────────────────────────────────────
   final List<LogEntry> log = [];

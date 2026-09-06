@@ -24,7 +24,7 @@
 #### UI
 
 - remove the 10 minute timer and all it's associated logic and code
-- set defaults for router ip = "192.168.0.254" and router username = "admin"
+- set defaults for router ip = `kDefaultRouterIp` and router username = "admin"
 - warn the user when pressing the back key IFF it will exit the application
 - on the main menu screen, show text below "\* requires SSH connectivity to an ASUS router". This additional text will use the house green style with vertical padding from the existiong text, it will say "Select from the above and/or use the top left <\insert reduced image of hambuger menu> menu."
 - in the hamburger menu, there is text marked "HOME" in green, make this grey and make it navigate to the main menu screen when pressed

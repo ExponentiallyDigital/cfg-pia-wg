@@ -6,7 +6,7 @@ echo "== wgc (slot config + wgcN_wd_ watchdog settings) =="
 nvram show 2>/dev/null | grep -E "wgc[1-9]_" | sort
 
 echo
-echo "== vpncN_ (stock runtime state, indexed by clientlist field 7) =="
+echo "== vpncN_ (stock runtime state, indexed by clientlist index 6) =="
 nvram show 2>/dev/null | grep -E "vpnc([1-9]|1[0-6])_" | sort
 
 echo

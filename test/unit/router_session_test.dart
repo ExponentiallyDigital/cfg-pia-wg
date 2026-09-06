@@ -213,7 +213,7 @@ void main() {
   group('SessionController owns it', () {
     test('hands out the same session while the credentials are unchanged', () {
       final c = _controller()
-        ..routerIp = '192.168.0.254'
+        ..routerIp = '192.168.1.1'
         ..sshUsername = 'admin'
         ..sshPassword = 'pw';
       final opener = _Opener();
@@ -226,7 +226,7 @@ void main() {
     // ignore what the user just typed.
     test('a change of credentials gets a new session', () async {
       final c = _controller()
-        ..routerIp = '192.168.0.254'
+        ..routerIp = '192.168.1.1'
         ..sshUsername = 'admin'
         ..sshPassword = 'pw';
       final opener = _Opener();

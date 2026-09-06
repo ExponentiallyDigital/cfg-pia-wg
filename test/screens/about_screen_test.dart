@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/build_info_service.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/screens/about_screen.dart';
+import 'package:cfg_pia_wg/router_prefs.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 
@@ -33,6 +34,26 @@ const _hostReply = <String, String>{
   'compileSdk': '36',
   'kotlinVersion': '2.3.20',
 };
+
+/// In-memory stand-in for [RouterPrefs].
+///
+/// A widget test body runs under fake async, which drives timers and microtasks but does NOT
+/// complete real file I/O - so a store backed by the filesystem leaves the await hanging and the
+/// test reports "did not complete" after two minutes rather than failing with anything useful.
+/// (`tester.runAsync` is the other way out, but pumpAndSettle cannot be called inside it.)
+/// Storage behaviour itself is covered against a real temp directory in unit/router_prefs_test.
+class _MemoryRouterPrefs extends RouterPrefs {
+  String value = '';
+
+  @override
+  Future<String> load() async => value;
+
+  @override
+  Future<String> remember(String ip) async => value = ip.trim();
+
+  @override
+  Future<void> forget() async => value = '';
+}
 
 /// Installs [handler] as the native side of [buildInfoChannel] for the current test.
 void _mockChannel(WidgetTester tester, Future<Object?>? Function(MethodCall)? handler) {
@@ -384,7 +405,7 @@ void main() {
     }
 
     SessionController connectedController() => SessionController(tickInterval: const Duration(hours: 1))
-      ..routerIp = '192.168.0.254'
+      ..routerIp = '192.168.1.1'
       ..sshUsername = 'admin'
       ..sshPassword = 'pw';
 
@@ -431,7 +452,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Router SSH details'), findsOneWidget);
-      await tester.enterText(find.widgetWithText(TextFormField, 'Router IP'), '192.168.0.254');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Router IP'), '192.168.1.1');
       await tester.enterText(find.widgetWithText(TextFormField, 'SSH Username'), 'admin');
       await tester.enterText(find.widgetWithText(TextFormField, 'SSH Password'), 'pw');
       await tester.tap(find.byKey(const Key('about_ssh_continue')));
@@ -443,7 +464,7 @@ void main() {
 
       expect(ssh.ran(kPiaCaCertPath), isTrue);
       // Kept in the session, so a router screen opened afterwards is already filled in.
-      expect(c.routerIp, '192.168.0.254');
+      expect(c.routerIp, '192.168.1.1');
       expect(c.sshUsername, 'admin');
       expect(c.sshPassword, 'pw');
     });
@@ -472,8 +493,7 @@ void main() {
       expect(tester.getRect(ip).bottom, lessThanOrEqualTo(keyboardTop));
 
       // Everything below the fold has to be reachable by scrolling.
-      await tester.scrollUntilVisible(find.byKey(const Key('about_ssh_continue')), -60,
-          scrollable: find.byType(Scrollable).last);
+      await tester.scrollUntilVisible(find.byKey(const Key('about_ssh_continue')), -60, scrollable: find.byType(Scrollable).last);
       await tester.pumpAndSettle();
       expect(tester.getRect(find.byKey(const Key('about_ssh_continue'))).bottom, lessThanOrEqualTo(keyboardTop));
     });
@@ -515,7 +535,7 @@ void main() {
       await tester.tap(find.byKey(const Key('about_del_pia_cert')));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.widgetWithText(TextFormField, 'Router IP'), '192.168.0.254');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Router IP'), '192.168.1.1');
       await tester.tap(find.byKey(const Key('about_ssh_continue')));
       await tester.pumpAndSettle();
 
@@ -693,5 +713,62 @@ void main() {
     for (final year in ['2009', '2010', '2013']) {
       expect(find.textContaining('Copyright $year Chromium'), findsWidgets, reason: year);
     }
+  });
+
+  // ── FORGET ROUTER IP ────────────────────────────────────────────────────────────────────────
+  //
+  // The router address is the only thing the app writes to device storage, so the promise that it
+  // can be cleared has to be real. The button is also the only place a user can see that anything
+  // IS stored, which is why it is greyed rather than hidden when there is nothing to forget.
+  group('FORGET ROUTER IP', () {
+    late _MemoryRouterPrefs prefs;
+
+    setUp(() => prefs = _MemoryRouterPrefs());
+
+    SessionController controllerWith() {
+      final c = SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {}, routerPrefs: prefs);
+      addTearDown(c.dispose);
+      return c;
+    }
+
+    testWidgets('is greyed out when nothing is stored', (tester) async {
+      _mockChannel(tester, (call) async => _hostReply);
+      await _pumpAbout(tester, controller: controllerWith());
+
+      final button = tester.widget<TextButton>(find.byKey(const Key('about_forget_router_ip')));
+      expect(button.onPressed, isNull);
+    });
+
+    testWidgets('clears the stored address, and greys itself out once it has', (tester) async {
+      _mockChannel(tester, (call) async => _hostReply);
+      final c = controllerWith();
+      await c.rememberRouterIp('192.168.1.1');
+      await _pumpAbout(tester, controller: c);
+
+      expect(tester.widget<TextButton>(find.byKey(const Key('about_forget_router_ip'))).onPressed, isNotNull);
+
+      await tester.tap(find.byKey(const Key('about_forget_router_ip')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Remembered router address deleted.'), findsOneWidget);
+      expect(c.rememberedRouterIp, '');
+      expect(await prefs.load(), '');
+      // The form goes back to the shipped default, not to a stale value.
+      expect(c.routerIpPrefill, kDefaultRouterIp);
+      expect(tester.widget<TextButton>(find.byKey(const Key('about_forget_router_ip'))).onPressed, isNull);
+    });
+
+    testWidgets('the inline SSH prompt prefills with the remembered address', (tester) async {
+      _mockChannel(tester, (call) async => _hostReply);
+      final c = controllerWith();
+      await c.rememberRouterIp('192.168.1.1');
+      await _pumpAbout(tester, controller: c);
+
+      // No session credentials, so DEL PIA CERT asks for them - and should not make the user
+      // retype an address the app already knows.
+      await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextFormField, '192.168.1.1'), findsOneWidget);
+    });
   });
 }

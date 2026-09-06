@@ -37,7 +37,7 @@ class SlotParamsEditor extends StatefulWidget {
   final int slot;
   final Map<String, String> initial; // bare-keyed nvram values (addr, alive, ...)
   // The slot's description, for the heading. Passed in rather than read from [initial] because on
-  // stock the authoritative copy is vpnc_clientlist field 0 - a slot created in the router WebUI
+  // stock the authoritative copy is vpnc_clientlist index 0 - a slot created in the router WebUI
   // has no wgcN_desc mirror for readSlotParams to find.
   final String desc;
   final Future<void> Function(Map<String, String> editableParams) onSave;

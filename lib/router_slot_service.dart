@@ -94,7 +94,7 @@ String slotLabel(int slot, String desc) => desc.trim().isEmpty ? 'wgc$slot' : 'w
 
 /// Reads a slot's description from the router and formats it with [slotLabel].
 ///
-/// Stock keeps the authoritative description in vpnc_clientlist field 0 - a profile created in the
+/// Stock keeps the authoritative description in vpnc_clientlist index 0 - a profile created in the
 /// router WebUI has no `wgcN_desc` mirror at all. Merlin has no clientlist, so `wgcN_desc` is it.
 ///
 /// Best-effort by design: a label is decoration, so a failed lookup degrades to the bare 'wgcN'
@@ -158,8 +158,8 @@ class VpncRecord {
   int? get slot => int.tryParse(fields[_slotIdx].trim());
   bool get active => fields[_activeIdx] == '1';
 
-  /// Field 7. Documented as an "iptables ID", but it is also what VPN Fusion uses to index this
-  /// profile's runtime state keys - `vpnc9_state_t` for a record whose field 7 is 9.
+  /// Index 6. Documented as an "iptables ID", but it is also what VPN Fusion uses to index this
+  /// profile's runtime state keys - `vpnc9_state_t` for a record whose index 6 is 9.
   /// See [vpncStateIndexForSlot].
   int? get vpncStateIndex => int.tryParse(fields[_iptablesIdx].trim());
 
@@ -175,7 +175,7 @@ class VpncRecord {
 }
 
 // Builds a record for a slot that has none yet. Fields 4, 5, 8 and 9 are left empty; the
-// iptables ID (field 7) follows the `10 - slot` pattern observed on stock hardware.
+// iptables ID (index 6) follows the `10 - slot` pattern observed on stock hardware.
 VpncRecord buildVpncRecord({required int slot, required String desc, required bool active}) {
   final fields = List.filled(VpncRecord.fieldCount, '');
   fields[VpncRecord._descIdx] = desc;
@@ -215,11 +215,11 @@ List<VpncRecord> removeVpncRecord(List<VpncRecord> records, int slot) => [
     ];
 
 /// The index VPN Fusion uses for [slot]'s runtime state keys (`vpnc<N>_state_t` and friends), taken
-/// from the profile's vpnc_clientlist field 7.
+/// from the profile's vpnc_clientlist index 6.
 ///
 /// NOT the slot number, and not [vpncUnitForSlot] - three different indexes on the same profile.
-/// Measured: wgc1, whose field 7 is 9, leaves `vpnc9_*` behind. An earlier reading of "slot number"
-/// came from wgc5, where slot and field 7 are both 5 and so cannot tell the two apart.
+/// Measured: wgc1, whose index 6 is 9, leaves `vpnc9_*` behind. An earlier reading of "slot number"
+/// came from wgc5, where slot and index 6 are both 5 and so cannot tell the two apart.
 ///
 /// Falls back to `10 - slot` when the slot has no record - what [buildVpncRecord] and the WebUI
 /// both write. Reading the field rather than always computing it is a strict generalisation: the
@@ -261,7 +261,7 @@ class SlotInfo {
   final int index;
   final String desc; // wgcN_desc (region name); empty => unconfigured
   final bool killSwitch; // wgcN_enforce == 1 (Merlin only; always false on stock)
-  final bool enabled; // wgcN_enable == 1 on Merlin, vpnc_clientlist field 6 on stock
+  final bool enabled; // wgcN_enable == 1 on Merlin, vpnc_clientlist index 5 on stock
   final bool watchdogActive; // cru has watchdog_wgcN - i.e. it is SCHEDULED
   // wgcN_wd_check_interval is set: the watchdog's settings are on the router even if its cron
   // entry is not. That is what DISABLE leaves behind, and what ENABLE needs to put it back.
@@ -730,7 +730,7 @@ class RouterSlotService {
     await _run('nvram unset wgc${slot}_wd_primary_ip');
     await _run('nvram unset wgc${slot}_wd_secondary_ip');
     if (isStockFirmware) {
-      // Resolve the runtime-state index from the record while it is still there - it is field 7,
+      // Resolve the runtime-state index from the record while it is still there - it is index 6,
       // not the slot number, so wgc1 leaves vpnc9_* behind.
       final stateIdx = vpncStateIndexForSlot(parseVpncClientlist(await _run('nvram get vpnc_clientlist')), slot);
       for (final key in kVpncRuntimeKeys) {
