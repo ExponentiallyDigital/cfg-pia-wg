@@ -9,6 +9,7 @@
     - [1.2.1. Accounts \& Play Console setup](#121-accounts--play-console-setup)
     - [1.2.2. RevenueCat dashboard setup](#122-revenuecat-dashboard-setup)
     - [1.2.3. Codebase integration](#123-codebase-integration)
+    - [1.2.3a. Entitlement check must precede every dependency check](#123a-entitlement-check-must-precede-every-dependency-check)
     - [1.2.4. Security \& router diagnostics](#124-security--router-diagnostics)
     - [1.2.5. Sandbox testing \& QA](#125-sandbox-testing--qa)
     - [1.2.6. Documentation and publicity](#126-documentation-and-publicity)
@@ -22,8 +23,6 @@
 
 #### 1.1.1. DOC - documentation updates
 
-- DOC: Add to `README.md` requirements section, `jq` and `sendmail-go` on stock firmware.
-- DOC: Add to `README.md` requirements section, how to install `DownloadMaster` in ASUS WebUI.
 - DOC: Update `README.md` screenshots.
 - DOC: Update `README.md` [5. Using the app](https://github.com/ExponentiallyDigital/cfg-pia-wg#5-using-the-app).
 - DOC: Update Play Store description.
@@ -33,6 +32,7 @@
 
 #### 1.1.2. CHG - functional code changes
 
+- CHG: **cap the in-memory app log.** `SessionController.log` grows without limit - `logEntry` only ever appends - and the log screen renders every entry. Each is small and the whole thing is wiped on exit, so it is not a problem today; a long session with a chatty watchdog is where it would start to show. A few hundred entries, dropping the oldest, is cheap insurance. Noticed 2026-09-07 while checking app size after Google tightened their performance requirements.
 - ADD: Automate updating `THIRD-PARTY-NOTICES.md`, add as part of `scripts\build.ps1/sh`. Add to GitHub actions script `.github\workflows\release.yml`.
 - REL: after releasing **v8.x.y** to GPS alpha track, review [Play Console technical quality requirements](https://support.google.com/googleplay/android-developer/answer/17492799), specifically:
   - [r8-analyzer/SKILL.md](https://github.com/android/skills/tree/main/performance/r8-analyzer)
@@ -68,6 +68,12 @@
   - **Billing service singleton:** Implement RevenueCat initialisation, real-time entitlement status updates, purchase triggers, and purchase restoration.
   - **Paywall UI modal:** Build a `PaywallBottomSheet` highlighting watchdog's zero-touch automation, PIA key renewal fix, and lifetime access model.
   - **PayPal/Patreon:** remove links from main app screen. Re-space the home-screen footer afterwards - the `spacer` above it is sized for the donation block. Keep the "add a Play Store app review" link: the watchdog alert emails say "by tapping on the home screen link", so removing it makes that wording stale.
+
+  #### 1.2.3a. Entitlement check must precede every dependency check
+
+  - **Order: entitlement, then dependencies, then the offer to install them.** A user without `pro_feature` who opens MANAGE or WATCHDOG on stock must see the paywall, never "jq is missing". Telling someone to install a dependency for a feature they cannot use either way wastes their time and reads as a bug.
+  - Applies to the helper-binary install (`.claude/plans/plan_install-helper-binaries.md`) and to anything else that probes the router before the gate. **Never prompt to download binaries onto the router of a user who has not unlocked the feature** - it is work done on their hardware for something they cannot run.
+  - Worth a test that pins the ordering, because it is the kind of thing a later refactor reorders without noticing.
 
   #### 1.2.4. Security & router diagnostics
 

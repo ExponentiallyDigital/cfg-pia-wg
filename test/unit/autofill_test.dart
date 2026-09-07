@@ -50,8 +50,8 @@ void main() {
       final ctrl = TextEditingController();
       addTearDown(ctrl.dispose);
 
-      final field = ObscuredField(
-          controller: ctrl, label: 'Something private', prefixIcon: Icons.lock, visible: false, onToggle: () {});
+      final field =
+          ObscuredField(controller: ctrl, label: 'Something private', prefixIcon: Icons.lock, visible: false, onToggle: () {});
       expect(await pumpAndRead(tester, field), isEmpty, reason: 'hints are opt-in, per field');
     });
   });

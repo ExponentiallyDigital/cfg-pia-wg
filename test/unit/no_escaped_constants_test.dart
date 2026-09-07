@@ -28,7 +28,6 @@ void main() {
         }
       }
     }
-    expect(offenders, isEmpty,
-        reason: 'these reach the router as literal text - drop the backslash to interpolate in Dart');
+    expect(offenders, isEmpty, reason: 'these reach the router as literal text - drop the backslash to interpolate in Dart');
   });
 }

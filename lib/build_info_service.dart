@@ -21,8 +21,7 @@
 import 'package:flutter/services.dart';
 
 /// The channel MainActivity.kt registers in `configureFlutterEngine`.
-const MethodChannel buildInfoChannel =
-    MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/build_info');
+const MethodChannel buildInfoChannel = MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/build_info');
 
 /// The method the channel answers.
 const String kGetBuildInfoMethod = 'getBuildInfo';

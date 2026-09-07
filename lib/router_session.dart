@@ -39,10 +39,7 @@ import 'package:dartssh2/dartssh2.dart';
 bool isConnectionLost(Object error) {
   if (error is SSHStateError || error is SSHAuthAbortError) return true;
   final s = error.toString().toLowerCase();
-  return s.contains('closed') ||
-      s.contains('connection reset') ||
-      s.contains('broken pipe') ||
-      s.contains('socketexception');
+  return s.contains('closed') || s.contains('connection reset') || s.contains('broken pipe') || s.contains('socketexception');
 }
 
 /// How long the app may sit in the background before the shared connection is dropped.

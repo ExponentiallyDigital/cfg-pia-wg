@@ -229,8 +229,20 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   ///
   /// Dismissing the keyboard first resizes the dialog, so this runs on the next frame or it would
   /// scroll to where the button used to be.
+  /// Scrolls the SAVE row (and the spinner that replaces it) into view.
+  ///
+  /// Waits for the keyboard to finish retracting first. `unfocus()` only STARTS that animation,
+  /// so scrolling on the next frame positions against a viewport that is about to grow by the
+  /// keyboard height - and the spinner lands below the fold anyway. That is the regression that
+  /// came back in build 412 after being fixed in 409: the unfocus was still there, but it was
+  /// racing an animation rather than waiting for it.
   Future<void> _showSpinner() async {
-    await WidgetsBinding.instance.endOfFrame;
+    FocusScope.of(context).unfocus();
+    for (var i = 0; i < 20 && mounted; i++) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      if (MediaQuery.of(context).viewInsets.bottom == 0) break; // keyboard is gone
+    }
     final ctx = _saveKey.currentContext;
     if (ctx == null || !ctx.mounted) return;
     await Scrollable.ensureVisible(ctx, alignment: 0.5, duration: const Duration(milliseconds: 200));
@@ -244,8 +256,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     }
     // The keyboard was left up over a field that still had focus and a green border, while the
     // spinner sat below the fold - so a save looked like nothing had happened, on a control the
-    // user had apparently just been editing. Drop focus first; _withService scrolls to the spinner.
-    FocusScope.of(context).unfocus();
+    // user had apparently just been editing. _showSpinner drops focus and waits for the keyboard.
     await _showSpinner();
     if (!mounted) return;
     final cfg = _currentConfig();

@@ -19,12 +19,14 @@ void main() {
   /// handler is absent, which is what a non-Android platform or a plain test looks like.
   List<String> mockHost({Future<Object?> Function(MethodCall call)? reply}) {
     final calls = <String>[];
-    messenger.setMockMethodCallHandler(clipboardChannel, reply == null
-        ? null
-        : (call) async {
-            calls.add(call.method);
-            return reply(call);
-          });
+    messenger.setMockMethodCallHandler(
+        clipboardChannel,
+        reply == null
+            ? null
+            : (call) async {
+                calls.add(call.method);
+                return reply(call);
+              });
     addTearDown(() => messenger.setMockMethodCallHandler(clipboardChannel, null));
     return calls;
   }
@@ -89,8 +91,8 @@ void main() {
 
   // The channel name and method live in two languages; nothing but this catches a rename.
   test('MainActivity.kt registers the same channel and method as Dart calls', () {
-    final kotlin = File('android/app/src/main/kotlin/com/exponentiallydigital/pia_wireguard_cfga/MainActivity.kt')
-        .readAsStringSync();
+    final kotlin =
+        File('android/app/src/main/kotlin/com/exponentiallydigital/pia_wireguard_cfga/MainActivity.kt').readAsStringSync();
 
     expect(kotlin, contains('"${clipboardChannel.name}"'));
     expect(kotlin, contains('"$kClearClipboardMethod"'));
@@ -100,8 +102,8 @@ void main() {
   // Screen capture is blocked in a release build. A debug build skips FLAG_SECURE so the app can
   // be captured on a device while testing; this fails if that ever widens to a release.
   test('MainActivity.kt keeps FLAG_SECURE for release builds', () {
-    final kotlin = File('android/app/src/main/kotlin/com/exponentiallydigital/pia_wireguard_cfga/MainActivity.kt')
-        .readAsStringSync();
+    final kotlin =
+        File('android/app/src/main/kotlin/com/exponentiallydigital/pia_wireguard_cfga/MainActivity.kt').readAsStringSync();
 
     expect(kotlin, contains('FLAG_SECURE'));
     expect(kotlin, contains(r'if (!BuildConfig.DEBUG && !allowScreenCaptureInRelease) {'));

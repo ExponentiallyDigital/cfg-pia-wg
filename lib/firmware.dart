@@ -67,7 +67,7 @@ String watchdogScriptPath(int slot) => '$kRouterAppDir/watchdog_wgc$slot.sh';
 /// completes, where the provenance line is simply omitted rather than guessed at.
 String appVersionLabel = '';
 
-/// Merlin runs cron entries from services-start; stock has no equivalent, so the app hijacks an
+/// Merlin runs cron entries from services-start; stock has no equivalent, so the app replaces an
 /// unused init script that the firmware already executes at boot and on firewall restart.
 const String kServicesStartPath = '/jffs/scripts/services-start';
 const String kS50Path = '/opt/etc/init.d/S50downloadmaster';

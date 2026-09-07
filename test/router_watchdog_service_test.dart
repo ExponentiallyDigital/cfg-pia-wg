@@ -756,8 +756,8 @@ void main() {
       useStock();
       final logs = <String>[];
       final c = RecordingSSHClient(responder: (_) => 'EXITCODE:0');
-      final ok = await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
-          .testEmail(cfg(slot: 1, email: true));
+      final ok =
+          await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)).testEmail(cfg(slot: 1, email: true));
 
       expect(ok, isTrue);
       expect(logs.any((m) => m.contains('Test email sent to to@example.com')), isTrue);
@@ -770,8 +770,7 @@ void main() {
       useStock();
       final logs = <String>[];
       final c = failingMailer();
-      await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
-          .testEmail(cfg(slot: 1, email: true));
+      await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)).testEmail(cfg(slot: 1, email: true));
 
       expect(c.ran('openssl s_client'), isTrue);
       expect(logs.any((m) => m.contains('probe smtp.example.com:465')), isTrue);

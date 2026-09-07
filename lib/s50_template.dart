@@ -14,9 +14,18 @@
 // Copyright (C) 2026 Andrew Newbury.
 //
 // Stock firmware has no services-start equivalent and `cru` entries do not survive a reboot or
-// power cycle, so the app hijacks /opt/etc/init.d/S50downloadmaster — an unused script the
-// firmware already runs at boot and on a firewall restart. Only the region between the
-// REPLACEMENT markers is ever rewritten; everything else is copied through untouched.
+// power cycle, so the app replaces /opt/etc/init.d/S50downloadmaster - a script the firmware
+// already runs at boot and on a firewall restart.
+//
+// The whole file is REPLACED by [kS50DownloadmasterTemplate]. Only the `cru` lines between the
+// REPLACEMENT markers of the previous copy are carried across - see RouterWatchdog._writeS50 -
+// and anything else the file held is discarded. "Everything else is copied through untouched"
+// refers to this template's own scaffolding, not to the file already on the router.
+//
+// That is deliberate, and it costs something: a REAL DownloadMaster script is ~52 KB, so
+// deploying a watchdog silently stops DownloadMaster working. Fine for the documented setup,
+// where it is installed only to provide /opt; not fine for someone actually using it. See
+// ARCHITECTURE.md section 5.2.
 //
 // [kS50DownloadmasterTemplate] mirrors ./scripts/S50downloadmaster-TEMPLATE.sh verbatim (modulo
 // line endings — the repo copy is CRLF, which would make the router's kernel fail to exec the

@@ -12,6 +12,7 @@
 import 'dart:io';
 
 import 'package:cfg_pia_wg/router_prefs.dart';
+import 'package:cfg_pia_wg/router_slot_service.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -107,7 +108,14 @@ void main() {
     test('the shipped default is the ASUS factory address, not anyone real', () {
       // Guards the privacy fix in build 410: a maintainer's own router address must not be the
       // value the app ships with. See .claude/CONTEXT.md.
-      expect(kDefaultRouterIp, '192.168.50.1');
+      expect(splitHostPort(kDefaultRouterIp).host, '192.168.50.1');
+    });
+
+    test('the default spells out the port, since the field hint is never visible', () {
+      // The hint showing `host:port` only renders while the field is empty, and it is always
+      // prefilled - so the syntax was undiscoverable until the value itself showed it.
+      expect(kDefaultRouterIp, '192.168.50.1:22');
+      expect(splitHostPort(kDefaultRouterIp).port, 22);
     });
 
     test('remembering logs it once, and re-remembering the same address stays quiet', () async {
@@ -135,6 +143,28 @@ void main() {
       await c.forgetRouterIp();
       expect(c.rememberedRouterIp, '');
       expect(await prefs.load(), '');
+    });
+
+    test('FORGET clears the session value too, so the form stops showing it', () async {
+      // Reported on hardware in build 412: FORGET ROUTER IP deleted the stored copy but the router
+      // screen still prefilled the old address, because the session value shadows the remembered
+      // one - and merely opening a router screen copies the prefill into the session value. The
+      // button looked broken while doing exactly what it said.
+      final c = make();
+      await c.rememberRouterIp('192.168.1.1');
+      c.routerIp = '192.168.1.1'; // what opening the router screen does
+
+      await c.forgetRouterIp();
+
+      expect(c.routerIp, '', reason: 'the session copy shadows the stored one');
+      expect(c.routerIpPrefill, kDefaultRouterIp, reason: 'the form must fall back to the default');
+    });
+
+    test('FORGET stops the auto-reconnect firing at the forgotten address', () async {
+      final c = make()..routerConnected = true;
+      await c.rememberRouterIp('192.168.1.1');
+      await c.forgetRouterIp();
+      expect(c.routerConnected, isFalse);
     });
 
     test('wipeAll clears every credential but NOT the remembered address', () async {
@@ -167,10 +197,7 @@ void main() {
   test('router_prefs.dart persists the address and nothing else', () {
     // The prose in that file explains at length why a password must never go in it, so scan the
     // code and not the comments.
-    final src = File('lib/router_prefs.dart')
-        .readAsLinesSync()
-        .where((l) => !l.trimLeft().startsWith('//'))
-        .join('\n');
+    final src = File('lib/router_prefs.dart').readAsLinesSync().where((l) => !l.trimLeft().startsWith('//')).join('\n');
     final writes = RegExp(r'writeAsString\w*\(([^)]*)\)').allMatches(src).map((m) => m.group(1)!).toList();
     expect(writes, ['value, flush: true'], reason: 'the only write must be the validated address');
 

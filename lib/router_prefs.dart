@@ -35,10 +35,15 @@ import 'package:path_provider/path_provider.dart';
 /// user never opens, not a document, and on Android documents is the more exposed of the two.
 const String kRouterPrefsFile = 'router.txt';
 
-/// A LAN address or hostname the app is willing to remember. Deliberately strict - the file is
-/// hand-editable on a rooted device, and a value read from it goes straight into a form field and
-/// then into an SSH connect, so anything shell-unsafe or absurdly long is dropped rather than used.
-final RegExp _acceptable = RegExp(r'^[A-Za-z0-9][A-Za-z0-9.\-]{0,62}$');
+/// A LAN address or hostname the app is willing to remember, with an optional `:port`. Deliberately
+/// strict - the file is hand-editable on a rooted device, and a value read from it goes straight
+/// into a form field and then into an SSH connect, so anything shell-unsafe or absurdly long is
+/// dropped rather than used.
+///
+/// The port half matters: it was omitted until build 412, which would have silently refused to
+/// remember the address of any router whose SSH daemon is not on 22 - exactly the users who most
+/// need it remembered.
+final RegExp _acceptable = RegExp(r'^[A-Za-z0-9][A-Za-z0-9.\-]{0,62}(:[0-9]{1,5})?$');
 
 /// Reads and writes the remembered router address. Construct once; [SessionController] owns it.
 class RouterPrefs {

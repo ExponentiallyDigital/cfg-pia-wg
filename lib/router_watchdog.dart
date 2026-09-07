@@ -365,7 +365,7 @@ const String kEmailReviewLine = 'If cfg-pia-wg is useful to you, please consider
 const List<String> kEmailSignOff = ['Thank you,', 'cfg-pia-wg by Exponentially Digital'];
 
 /// The sentence used when a watchdog has never been saved, so no interval is actually scheduled.
-const String kIntervalNotSet = 'Interval: not set, watchdog has yet to be saved and deployed.';
+const String kIntervalNotSet = 'Interval: not set, watchdog has yet to be saved and deployed';
 
 /// Assembles the plain-text body from already-rendered `Label: value` rows.
 String buildEmailBody({
@@ -423,10 +423,7 @@ class RouterEmailFacts {
   /// Parses the marker-prefixed output of [kEmailFactsCommand]; a short reply leaves the rest empty
   /// rather than throwing, because a missing uptime is no reason to fail a test email.
   factory RouterEmailFacts.parse(String raw) {
-    final f = raw
-        .split('\n')
-        .map((l) => l.startsWith('|') ? l.substring(1).trim() : l.trim())
-        .toList();
+    final f = raw.split('\n').map((l) => l.startsWith('|') ? l.substring(1).trim() : l.trim()).toList();
     String at(int i) => i < f.length ? f[i] : '';
     final ddns = at(0), lanHost = at(1), lanIp = at(2);
     return RouterEmailFacts(
@@ -605,8 +602,7 @@ const String _kMailCmdStock = '''  $kStockMailsendPath -ssl -verifyCert \\
 
 // Shell appending a fixed block of lines. Generated from the same constants [buildEmailBody] uses,
 // so the script's wording and the app's cannot drift apart.
-String _echoBlock(Iterable<String> lines) =>
-    lines.map((l) => '  echo ${shellSingleQuote(l)} >> "\$TMPMAIL"').join('\n');
+String _echoBlock(Iterable<String> lines) => lines.map((l) => '  echo ${shellSingleQuote(l)} >> "\$TMPMAIL"').join('\n');
 
 // The full watchdog_wgcN.sh body (see watchdogScriptPath). Slot-parameterised via __SLOT__; the jq path and
 // the two mail blocks are resolved from [firmware] (the detected one by default).
@@ -836,8 +832,7 @@ class RouterWatchdog {
           onLog?.call('${await _label(slot)} enabled.', isSuccess: true);
         } else {
           // Not fatal: the script's own check rebuilds the tunnel, which is what it is for.
-          onLog?.call('${await _label(slot)} enabled, but its interface has not come up yet.',
-              isError: true);
+          onLog?.call('${await _label(slot)} enabled, but its interface has not come up yet.', isError: true);
         }
       });
 
@@ -971,7 +966,7 @@ class RouterWatchdog {
         await _run('cru d watchdog_log_rotate_wgc$slot');
         await _run('rm -f ${watchdogScriptPath(slot)}');
         // strip out cron jobs added when watchdog installed, reinstate 700 permission. On stock
-        // the file itself stays: it is a hijacked init script, so removing it is worse than
+        // the file itself stays: it is a replaced init script, so removing it is worse than
         // leaving an empty replacement block.
         await _removeCronPersistence(slot);
         await _run(
@@ -1092,9 +1087,8 @@ class RouterWatchdog {
           await _runHeredoc(cmd, '/tmp/mail.txt');
         }
 
-        final sendCmd = stock
-            ? buildMailsendGoCommand(host, port, config, subject: subject)
-            : buildSendmailCommand(host, port, config);
+        final sendCmd =
+            stock ? buildMailsendGoCommand(host, port, config, subject: subject) : buildSendmailCommand(host, port, config);
 
         // Redirect stderr to file; echo exit code into stdout so _run can return it.
         final result = await _run('$sendCmd 2>/tmp/wd_smtp_err; echo "EXITCODE:\$?"');
@@ -1471,7 +1465,14 @@ if [ "$LAST" -ne 0 ] && [ "$ELAPSED" -lt "$WAIT" ]; then
 fi
 CNT=$((CNT + 1))
 printf '%s\n%s\n' "$CNT" "$NOW" > "$BACKOFFFILE"
-log "Connectivity lost; reconfiguring (attempt #$CNT)"
+if [ "$RUNMODE" = "deploy" ]; then
+  # First run after SAVE. The tunnel not being up yet is the expected starting state, not an
+  # outage - calling it "connectivity lost" and "reconfiguring" made a normal deploy read like a
+  # fault in the router log.
+  log "Deploying: bringing $IFACE up for the first time"
+else
+  log "Connectivity lost; reconfiguring (attempt #$CNT)"
+fi
 
 # Preflight checks
 [ -n "$DESC" ] || abort "${K}desc is empty"
@@ -1604,7 +1605,11 @@ if ! ifconfig "$IFACE" >/dev/null 2>&1; then
 fi
 log "Interface $IFACE is up"
 
-log "Reconfig SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
+if [ "$RUNMODE" = "deploy" ]; then
+  log "Deploy SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
+else
+  log "Reconfig SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
+fi
 bump cfg_pia_wg_reconfig_ok
 CONNVALUE="$BEST_CN ($BEST_IP:$SERVER_PORT), ${BEST_RTT} ms"
 if [ "$RUNMODE" = "deploy" ]; then

@@ -87,7 +87,6 @@ void main() {
     await _teardown(tester, c);
   });
 
-
   // Reported: after using the back button and the hamburger menu in turn, the drawer's "View app
   // log" entry stopped working - the app thought that screen was already current. Popping a page
   // that sat above an open MODAL reported the dialog as the previous route, which the observer
@@ -313,5 +312,4 @@ void main() {
       await _teardown(tester, c);
     });
   });
-
 }

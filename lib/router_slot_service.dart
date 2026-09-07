@@ -249,8 +249,29 @@ int? vpncUnitForSlot(List<VpncRecord> records, int slot) {
 }
 
 // Opens a real SSH client to the router. Screens inject a test factory instead in tests.
+/// Splits a router address into host and port. `192.168.1.1` gives port 22; `192.168.1.1:2222`
+/// gives 2222.
+///
+/// The router's SSH daemon does not have to listen on 22 - `sshd_port_x` is settable in the
+/// WebUI, which even suggests moving it ("Due to security concerns, we suggest using a port from
+/// 1024 to 65535"). The app assumed 22 until build 412 and simply could not reach a router that
+/// had taken that advice. The port cannot be discovered first: reading `sshd_port_x` needs a
+/// working SSH session, so it has to come from the user.
+///
+/// A malformed or out-of-range port falls back to 22 rather than throwing - the connect attempt
+/// then fails with a normal connection error, which is a better message than a parse error.
+({String host, int port}) splitHostPort(String value) {
+  final v = value.trim();
+  final colon = v.lastIndexOf(':');
+  if (colon <= 0 || colon == v.length - 1) return (host: v, port: 22);
+  final port = int.tryParse(v.substring(colon + 1));
+  if (port == null || port < 1 || port > 65535) return (host: v, port: 22);
+  return (host: v.substring(0, colon), port: port);
+}
+
 Future<SSHClient> openSshClient(String ip, String user, String pass) async {
-  final socket = await SSHSocket.connect(ip, 22, timeout: const Duration(seconds: 5));
+  final target = splitHostPort(ip);
+  final socket = await SSHSocket.connect(target.host, target.port, timeout: const Duration(seconds: 5));
   final client = SSHClient(socket, username: user, onPasswordRequest: () => pass);
   await client.authenticated;
   return client;

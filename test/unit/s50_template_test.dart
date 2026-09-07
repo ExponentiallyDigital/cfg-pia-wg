@@ -32,10 +32,12 @@ void main() {
   group('buildS50Script', () {
     test('inserts the cru lines between the markers, matching the case-arm indent', () {
       final out = buildS50Script([_check, _rotate]);
-      expect(out, contains('  # ********** REPLACEMENT START **********\n'
-          '  $_check\n'
-          '  $_rotate\n'
-          '  # ********** REPLACEMENT END **********'));
+      expect(
+          out,
+          contains('  # ********** REPLACEMENT START **********\n'
+              '  $_check\n'
+              '  $_rotate\n'
+              '  # ********** REPLACEMENT END **********'));
     });
 
     test('drops the placeholder comments', () {
@@ -46,8 +48,10 @@ void main() {
 
     test('an empty list leaves the block empty but keeps the markers', () {
       final out = buildS50Script(const []);
-      expect(out, contains('  # ********** REPLACEMENT START **********\n'
-          '  # ********** REPLACEMENT END **********'));
+      expect(
+          out,
+          contains('  # ********** REPLACEMENT START **********\n'
+              '  # ********** REPLACEMENT END **********'));
     });
 
     // Everything outside the markers belongs to the stock script and must survive untouched.

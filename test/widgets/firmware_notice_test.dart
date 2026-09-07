@@ -28,8 +28,7 @@ class _LaunchRecorder {
       }
       return null;
     });
-    addTearDown(() =>
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+    addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
   }
 }
 
@@ -80,8 +79,7 @@ void main() {
     testWidgets('comma-joins both missing binaries', (tester) async {
       final c = _controller();
       addTearDown(c.dispose);
-      await _pumpNotice(
-          tester, c, (ctx, ctrl) => showMissingBinariesNotice(ctx, ctrl, [kStockJqPath, kStockMailsendPath]));
+      await _pumpNotice(tester, c, (ctx, ctrl) => showMissingBinariesNotice(ctx, ctrl, [kStockJqPath, kStockMailsendPath]));
 
       expect(find.textContaining('Unable to locate: $kStockJqPath, $kStockMailsendPath'), findsOneWidget);
     });
@@ -147,8 +145,8 @@ void main() {
       const channel = MethodChannel('plugins.flutter.io/url_launcher');
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async => call.method == 'canLaunch' ? false : null);
-      addTearDown(() =>
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+      addTearDown(
+          () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
 
       final c = _controller();
       addTearDown(c.dispose);

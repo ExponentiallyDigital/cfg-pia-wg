@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-typedef HttpResponseFactory = HttpClientResponse Function(
-    Uri url, String method);
+typedef HttpResponseFactory = HttpClientResponse Function(Uri url, String method);
 
 class FakeHttpClient implements HttpClient {
   final HttpResponseFactory responseFactory;
@@ -18,10 +17,7 @@ class FakeHttpClient implements HttpClient {
   Future<HttpClientRequest> getUrl(Uri url) async {
     if (url.scheme == 'https' && badCertificateCallback != null) {
       // Call the callback and respect its return value for certificate pinning
-      final isValid = badCertificateCallback!(
-          FakeX509Certificate('CN=server-cn'),
-          url.host,
-          url.port == 0 ? 443 : url.port);
+      final isValid = badCertificateCallback!(FakeX509Certificate('CN=server-cn'), url.host, url.port == 0 ? 443 : url.port);
       if (!isValid) {
         throw Exception('Certificate verification failed');
       }
@@ -30,8 +26,7 @@ class FakeHttpClient implements HttpClient {
   }
 
   @override
-  Future<HttpClientRequest> postUrl(Uri url) async =>
-      FakeHttpClientRequest(responseFactory(url, 'POST'));
+  Future<HttpClientRequest> postUrl(Uri url) async => FakeHttpClientRequest(responseFactory(url, 'POST'));
 
   @override
   void close({bool force = false}) {}
@@ -56,8 +51,7 @@ class FakeHttpClientRequest implements HttpClientRequest {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class FakeHttpClientResponse extends Stream<List<int>>
-    implements HttpClientResponse {
+class FakeHttpClientResponse extends Stream<List<int>> implements HttpClientResponse {
   @override
   final int statusCode;
   @override
