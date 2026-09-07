@@ -37,9 +37,16 @@ const String kDefaultDns = '9.9.9.9, 149.112.112.112';
 // Starting points for the router SSH form, used wherever it appears - the router screens and
 // the ABOUT screen's DEL PIA CERT prompt - so the two never disagree. This is the ASUS factory
 // address and is only a first-run fallback: once a connect succeeds, the address the user
-// actually typed is remembered (RouterPrefs) and prefills ahead of it. Do not replace this with
-// a real router address - router_prefs_test.dart fails the build if it changes.
-const String kDefaultRouterIp = '192.168.50.1';
+// actually typed is remembered (RouterPrefs) and prefills ahead of it.
+//
+// It carries the default port explicitly. The field's hint shows the `host:port` form, but a hint
+// only appears while the field is EMPTY and this one is always prefilled - so the hint was never
+// seen and the syntax was undiscoverable. Showing `:22` in the value itself is the only place a
+// user actually looks. splitHostPort parses it back, so nothing downstream sees the port.
+//
+// Do not replace this with a real router address - router_prefs_test.dart fails the build if the
+// host half changes.
+const String kDefaultRouterIp = '192.168.50.1:22';
 const String kDefaultSshUsername = 'admin';
 
 /// The navigable destinations. [routeName] doubles as the [RouteSettings] name used by the
@@ -120,9 +127,22 @@ class SessionController extends ChangeNotifier {
   Future<void> forgetRouterIp() async {
     await _routerPrefs.forget();
     rememberedRouterIp = '';
+    // The session value shadows the remembered one in [routerIpPrefill], and simply opening a
+    // router screen copies the prefill into it - so clearing only the stored copy left the address
+    // still on screen and the button looking broken. Forgetting has to mean forgetting.
+    routerIp = '';
+    // ...and the auto-reconnect on re-entering a router screen must not fire against an address
+    // the user has just asked the app to drop.
+    routerConnected = false;
     logEntry('Remembered router address deleted from device storage.');
     notifyListeners();
   }
+
+  // ---- Declined helper-binary installs ----------------------------------------
+  /// Sets of missing-binary paths the user has said "not now" to. Session-scoped deliberately:
+  /// re-entering the screen must not re-ask, but a restart should, because by then they may have
+  /// installed them by hand. Not persisted - a refusal is not a setting.
+  final Set<String> declinedBinaryInstalls = {};
 
   /// What the SSH form should start with: what the user typed this session, else the address
   /// remembered from a previous one, else the ASUS factory default.
@@ -272,6 +292,7 @@ class SessionController extends ChangeNotifier {
     generatedConfig = null;
     generatedRegionId = '';
     routerConnected = false;
+    declinedBinaryInstalls.clear();
     await closeRouterSession();
     await clearClipboard();
     logEntry(reason == null

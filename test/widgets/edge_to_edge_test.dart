@@ -178,8 +178,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final context = tester.element(find.byKey(const Key('menu_log')));
-    expect(MediaQuery.viewInsetsOf(context).bottom, 0,
-        reason: 'the Scaffold already took the keyboard off the body');
+    expect(MediaQuery.viewInsetsOf(context).bottom, 0, reason: 'the Scaffold already took the keyboard off the body');
     // And the body really did shrink, so the space is accounted for exactly once.
     expect(tester.getRect(find.byType(Navigator).first).bottom, lessThanOrEqualTo(400));
 

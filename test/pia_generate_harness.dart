@@ -33,17 +33,17 @@ MQRWTK4MMjOHQQ4tGnOJ0pThj2Au4XwOnU6S1nrcMJ9jb5srad2TH6BQFLe4uwrC
 -----END CERTIFICATE-----''';
 
 String _serverListBody() => '${jsonEncode({
-      'regions': [
-        {
-          'id': kTestRegion,
-          'servers': {
-            'wg': [
-              {'ip': '127.0.0.1', 'cn': kTestCn}
-            ]
-          }
-        }
-      ]
-    })}\n';
+          'regions': [
+            {
+              'id': kTestRegion,
+              'servers': {
+                'wg': [
+                  {'ip': '127.0.0.1', 'cn': kTestCn}
+                ]
+              }
+            }
+          ]
+        })}\n';
 
 FakeHttpClientResponse fakeGenerateResponses(Uri url, String method) {
   final u = url.toString();

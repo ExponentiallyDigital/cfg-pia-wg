@@ -14,6 +14,13 @@ import 'package:flutter_test/flutter_test.dart';
 /// Directories git never sees, plus the build and coverage output.
 const _skipDirs = {'.git', '.dart_tool', 'build', 'coverage', '.gradle', '.idea'};
 
+/// `.claude/testing/` is gitignored on purpose - it holds verbatim SSH and app session output,
+/// which is full of real hostnames, addresses and MACs. Scrubbing those file by file is what
+/// failed in build 409; ignoring the directory wholesale is the fix, and the first test below
+/// is what enforces that it stays ignored. So it is exempt from the MAC scan rather than
+/// exempt from the rules.
+const _ignoredPath = '.claude/testing';
+
 /// MAC addresses that are obviously placeholders: every octet is drawn from a repeating or
 /// sequential pattern. A real NIC address will not survive this.
 final _inventedMac = RegExp(r'^(([0-9A-F])\2:)|^(00:01:02|05:04:03|0A:0B:0C|FF:F0:E0|DE:AD:BE)');
@@ -28,6 +35,8 @@ Iterable<File> _repoFiles() sync* {
       if (e is Directory) {
         if (!_skipDirs.contains(name)) stack.add(e);
       } else if (e is File && const {'.md', '.dart', '.sh', '.py', '.svg', '.yaml'}.any(name.endsWith)) {
+        // Uri.path normalises Windows separators to '/', so this matches on both platforms.
+        if (e.uri.path.contains(_ignoredPath)) continue;
         yield e;
       }
     }
@@ -39,8 +48,7 @@ void main() {
     // `.claude/testing/` holds raw SSH and app output, so it is ignored wholesale rather than
     // scrubbed file by file - scrubbing relies on spotting every identifier, which failed once.
     final ignored = File('.gitignore').readAsLinesSync().map((l) => l.trim());
-    expect(ignored, contains('.claude/testing/'),
-        reason: '.claude/testing/ must stay in .gitignore - see .claude/CONTEXT.md');
+    expect(ignored, contains('.claude/testing/'), reason: '.claude/testing/ must stay in .gitignore - see .claude/CONTEXT.md');
 
     final tracked = Process.runSync('git', ['ls-files', '.claude/testing']).stdout.toString().trim();
     expect(tracked, isEmpty, reason: 'these files are verbatim hardware logs and must not be tracked:\n$tracked');

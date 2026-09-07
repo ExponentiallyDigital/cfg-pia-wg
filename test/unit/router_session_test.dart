@@ -68,8 +68,7 @@ class _Opener {
   }
 }
 
-SessionController _controller() =>
-    SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
+SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
 
 void main() {
   group('reuse', () {
@@ -335,8 +334,7 @@ void main() {
         offenders.add('${f.path}: ${m.group(0)}');
       }
     }
-    expect(offenders, isEmpty,
-        reason: 'only SessionController may close the shared session (wipe, or app backgrounded)');
+    expect(offenders, isEmpty, reason: 'only SessionController may close the shared session (wipe, or app backgrounded)');
   });
 }
 

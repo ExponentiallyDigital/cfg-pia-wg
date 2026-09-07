@@ -237,6 +237,265 @@ pia-aus_melbourne>WireGuard>5>>password>1>5>>>0>0>cfg-pia-wg<pia-aus>WireGuard>4
 |  10   | 0                 | 0             | 0                  | 0                  | 0             |
 |  11   | cfg-pia-wg        | cfg-pia-wg    | cfg-pia-wg         | cfg-pia-wg         | cfg-pia-wg    |
 
+### 3.3. Device assignment (stock)
+
+How stock binds a LAN device to a VPN profile, and the NVRAM lists involved. Measured on hardware 2026-09-06 and 2026-09-07 by diffing NVRAM either side of each WebUI action; see `.claude/plans/plan_vpn_device_assignments.md` for the method and for what is still unverified.
+
+> [!NOTE]
+> Every IP address, hostname and MAC address in this section is invented, including in the sample records. Real values are never recorded in this repository.
+
+The app does not write any of this yet. It is documented here because it is the reference the feature is being built against, and because two of the keys - `vpnc_dev_policy_list` and `vpnc_default_wan` - are ones `scripts/clearall.sh` already touches.
+### 3.3.1 `vpnc_default_wan`
+
+An integer naming the VPN that unassigned devices use. It is **index 6 (0-based)** of that profile's `vpnc_clientlist` record - the same number the `vpncN_*` runtime keys are indexed by, not the slot number and not `vpnc_unit`.
+
+```text
+vpnc_default_wan=9
+vpnc_clientlist=pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg
+                                                            ^ index 6 = 9
+```
+
+So `vpnc_default_wan=9` means slot 1, `pia-aus_melbourne`. Confirm what `0` means (phase 0).
+
+### 3.3.2 Shared format
+
+`dhcp_staticlist` and `custom_clientlist` are both single NVRAM strings using `<` as the record separator and `>` as the field separator. Values are stored **percent-encoded** - the WebUI runs `decodeURIComponent()` on read - so names containing `<`, `>` or spaces come back escaped.
+
+### 3.3.3 `dhcp_staticlist`
+
+Four fields per record, always with a leading `<`:
+
+```text
+<MAC>IP>DNS>Hostname
+```
+
+| Idx | Field | Notes |
+| ---: | --- | --- |
+| 0 | MAC | Uppercase, colon separated |
+| 1 | IP | The reserved lease |
+| 2 | DNS | Per client DNS server, empty for most entries |
+| 3 | Hostname | Optional, pushed into dnsmasq as the lease name |
+
+Sample:
+
+```text
+<00:01:02:03:04:05>192.168.1.2>><05:04:03:02:01:00>192.168.1.30>>hostname2<FF:F0:E0:D0:C0:B0>192.168.1.40>>hostname5<0A:0B:0C:0D:0E:0F>192.168.1.60>>hostname6
+```
+
+Trailing fields are treated as empty if absent, so `<MAC>IP` alone is valid and the UI fills in `""` for DNS and hostname.
+
+> [!NOTE]
+> On 384.13 through the 386 branch, ASUS and Merlin briefly split hostnames into a separate `dhcp_hostnames` variable (`<MAC>hostname`). Current firmware is back on the reunified four-field layout, but any older script found on the forums may assume the split.
+
+#### 3.3.3a Reserved or not - the distinction the screen needs
+
+**Do not use the WebUI `IP Method` column as a design input.** It is not stable, and it does not mean what it appears to.
+
+Observed 2026-09-07 on one network across a few hours, with no configuration change in between: the column first showed two values (`Automatic IP`, `MAC-IP Binding`) and later showed three, having reclassified some devices to `Static IP`. Those devices were **exactly the ones wired to an AiMesh node**, and none of them had a DHCP reservation - the LAN -> DHCP Server page listed only the four genuinely reserved devices throughout.
+
+So `Static IP` is very unlikely to mean "this device is configured with a static address". The reading that fits the evidence is **"the router sees this address in use but has no current lease record binding it"** - which is what a client behind a mesh node looks like once the main router's view of that lease has aged or been relayed. That is an inference from one network, not a measurement.
+
+What matters is the consequence, which does not depend on the inference being right:
+
+- **A device can change `IP Method` on its own.** Anything derived from it would silently change with it.
+- **`Static IP` does not imply a stable address.** Those devices are on ordinary DHCP leases; treating them as already-pinned would produce exactly the silent assignment decay this feature must avoid.
+
+**Use `dhcp_staticlist` membership instead**, which is authoritative, stable, and the thing the firmware itself keys the reservation on:
+
+| Test | Means | Assigning it |
+| --- | --- | --- |
+| MAC is in `dhcp_staticlist` | reserved, address pinned | cheap - no `dhcp_staticlist` write, so no whole-LAN bounce |
+| MAC is not | ordinary lease, address can move | needs a reservation created first - the expensive path in 3.3.6 |
+
+Two states, not three. On the measured network that is four devices cheap and six expensive, rather than the seven-and-three an `IP Method` reading would have suggested.
+
+> [!CAUTION]
+> **Devices behind an AiMesh node are seen differently by the main router**, and this is the first hard evidence of it. The policy list is keyed by IP and enforced by an `ip rule` on the main router, so an assignment should still work - but "should" is doing real work in that sentence. Verify against a device behind the node before shipping; `.claude/plans/plan_vpn_device_assignments.md` carries it as an open item.
+
+> [!NOTE]
+> **The guest network is a separate bridge** (`br1`, a different subnet) and is isolated from the LAN by design. Whether guest devices should appear in the assignment list at all is an open question - they cannot reach the LAN, and routing them through a VPN slot is a different proposition from routing a LAN device. Decide before the screen is built rather than discovering it from a bug report.
+Two behaviours confirmed 2026-09-06:
+
+- **Removing a reservation is as disruptive as adding one.** Deleting one entry in the WebUI dropped a 5 GHz laptop hard enough to kill an RDP session running over it. Any `dhcp_staticlist` write goes through the heavy path, in both directions - which is what makes item 9 worth testing.
+- **A device keeps its address after its reservation is removed.** The tablet held the same IP on a plain lease afterwards, reappearing in the client list as `Automatic IP`. So removing a reservation does not immediately break an assignment keyed on that IP - it just stops guaranteeing it, and the breakage arrives silently at some later renewal. That is a worse failure than an immediate one, and it is an argument for the app never removing a reservation on unassign.
+
+> [!NOTE]
+> A real example of the fragile combination has been observed: a device with a **randomised MAC** (locally-administered bit set) that also holds a **reservation**. It looks pinned and is not; the reservation dies at the next MAC rotation and the assignment goes with it, silently.
+>
+> The WebUI does **not** flag this. Its `Device Type` column carries a vendor or DHCP-fingerprint string (`Microsoft`, `Sony Interactive Entertainment Inc.`, `android-dhcp-17`, and sometimes the literal `Loading manufacturer..`, a transient UI state that leaks into the export). It is not an enum and nothing in it identifies a randomised address, so the locally-administered-bit check is the app's own work, not something to read off the firmware.
+
+> [!NOTE]
+> **Nothing in the client list identifies the AiMesh node or the router itself** - the WebUI simply omits both from the export. So excluding them from the assignable list needs a signal from elsewhere; check what `/jffs/nmp_cl_json.js` carries for them before assuming.
+
+---
+### 3.3.4 `custom_clientlist`
+
+Up to nine fields per record. The **first record has no leading `<`**, so split on `<` and discard empty chunks rather than assuming index 0 is junk:
+
+```text
+Name>MAC>Group>Type>Callback>Keeparp>AppGroup>AppAge>AppGroupID
+```
+
+| Idx | Field | Notes |
+| ---: | --- | --- |
+| 0 | Name | User assigned display name |
+| 1 | MAC | Uppercase |
+| 2 | Group | Always written as `0` by the UI |
+| 3 | Type | Icon index into the device type list in `client_function.js` |
+| 4 | Callback | ROG device property, preserved on edit, otherwise empty |
+| 5 | Keeparp | ROG device property, preserved on edit, otherwise empty |
+| 6 | AppGroup | Parental controls / app tags, empty unless used |
+| 7 | AppAge | Parental controls / app tags, empty unless used |
+| 8 | AppGroupID | Parental controls / app tags, empty unless used |
+
+Sample:
+
+```text
+hostname1>00:01:02:03:04:05>0>4>>>>><hostname2>05:04:03:02:01:00>0>60>>>>><hostname3>AA:BB:CC:DD:EE:FF>0>60>>>>><hostname4>FF:F0:E0:D0:C0:B0>0>9>>>>>
+```
+
+**Records are NOT a fixed nine indexes.** Measured 2026-09-06 on a six-record list, the counts were 9, 9, 9, 8, 6 and 6 - the WebUI writes some trailing empties and drops others, apparently depending on which firmware version created the entry. A parser that requires nine indexes rejects most of a real list.
+
+```text
+device1>AA:BB:CC:DD:EE:FF>0>60>>>>><device4>0A:0B:0C:0D:0E:0F>0>4>>>><RT-AC68U>05:04:03:02:01:00>0>24>>
+```
+
+Split on `<`, then on `>`, and treat any index past the end as empty. Group type `0` means unknown and gives a generic icon.
+
+### 3.3.5 Practical notes
+
+- **The two lists are independent.** A MAC can appear in one and not the other, and renaming in `custom_clientlist` does not change the DHCP hostname. The sample data above shows it both ways: `hostname4` is only in `custom_clientlist`, `hostname5` and `hostname6` only in `dhcp_staticlist`.
+- **MAC is the only stable identifier.** Hostnames are not unique and are editable in one list without changing the other.
+- **NVRAM has a hard size ceiling.** After `nvram set` you need `nvram commit`, and a silently truncated write is the usual failure mode once a list gets long.
+
+### 3.3.6 `vpnc_dev_policy_list` - the assignment
+
+**SETTLED 2026-09-06** by `scripts/probe-device-assignment.sh`: eight WebUI actions, each diffed against a snapshot either side, with two control steps supplying the noise set. Records separated by `<`, indexes by `>`.
+
+```text
+enabled>IP>?>vpnc_idx>
+```
+
+| Idx | Field | Notes |
+| ---: | --- | --- |
+| 0 | enabled | `1` assigned, `0` not. **Both forms occur** - see below |
+| 1 | **IP address** | the device LAN IP - **not its MAC** |
+| 2 | ? | empty on every record observed, purpose still unknown |
+| 3 | vpnc_idx | **index 6 of the target profile `vpnc_clientlist` record** - not the slot number, and not the row index |
+| 4 | - | trailing empty, written unconditionally |
+
+Worked example. Two profiles, wgc1 at clientlist index 6 = `9` and wgc5 at index 6 = `5`:
+
+```text
+vpnc_clientlist=pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg<pia-aus_perth>WireGuard>5>>password>0>5>>>0>0>cfg-pia-wg
+vpnc_dev_policy_list=1>192.168.1.20>>9><1>192.168.1.22>>5>
+```
+
+`192.168.1.20` is on wgc1 and `192.168.1.22` is on wgc5. **Index 3 is the third of the three indexes a profile carries** - alongside the slot number and the clientlist row (`vpnc_unit`) - so resolving it needs the clientlist read first. Getting it wrong assigns the device to a different tunnel, or to one that does not exist.
+
+#### How a change is written
+
+| Action | Before | After |
+| --- | --- | --- |
+| Assign one device | *(empty)* | `1>192.168.1.20>>5>` |
+| Assign a second to the same tunnel | `1>192.168.1.20>>5>` | `1>192.168.1.20>>5><1>192.168.1.21>>5>` |
+| **Move** `.20` from wgc5 to wgc1 | `1>192.168.1.20>>5><1>192.168.1.21>>5>` | `1>192.168.1.21>>5><1>192.168.1.20>>9>` |
+| Unassign `.21` | `1>192.168.1.21>>5><1>192.168.1.20>>9>` | `1>192.168.1.20>>9>` |
+
+> [!IMPORTANT]
+> **A move is a delete plus an append, not an edit in place.** Record order is not stable across a change, so the app must rebuild the whole list from its own model and write it in one go, keyed on IP. Any code that patches the string positionally, or assumes a device keeps its index, will corrupt the list the first time a user moves a device.
+
+> [!IMPORTANT]
+> **A record being present does not mean the device is assigned.** On a freshly rebuilt router that had never had a `wgc` slot configured, the list already read:
+>
+> ```text
+> 0>192.168.1.20>>0<0>192.168.1.21>>0<0>192.168.1.22>>0<0>192.168.1.23>>0
+> ```
+>
+> Four records, all `enabled=0` and `vpnc_idx=0`, one for each device holding a **DHCP reservation** (the router itself and the mesh node excluded). So the firmware seeds a disabled placeholder per reserved device, and separately the probe showed unassigning can remove a record outright. **Both forms mean the same thing.**
+>
+> Two consequences, and the first is a security bug waiting to happen:
+>
+> - **Read index 0, never mere presence.** A parser that treats "in the list" as "assigned" reports every reserved device as being on a VPN when none of them are.
+> - **Preserve records the app did not create.** Writing only the app's own assignments would drop the placeholders the firmware maintains. Rebuild the list from the existing one with the app's changes applied, rather than from the app's model alone.
+
+#### 3.3.6a The starting state, before any VPN exists
+
+Observed on a rebuilt router with `wgc1` freshly created and nothing assigned (2026-09-07):
+
+- **"Internet Connection" is itself an entry in the server list**, marked *Default Connection*, with **"Apply to all devices" ON**.
+- Its device list holds exactly the **four devices that have a DHCP reservation** - the same four that appear as `0>IP>>0>` records in `vpnc_dev_policy_list`.
+- The device picker offers **all** known devices, reserved or not, with those four ticked.
+- A newly created VPN profile starts with **no devices assigned**.
+
+So the placeholder records are very likely not "seeded and disabled" but **devices bound to the Internet connection**, index `0` being the WAN. That reading fits the evidence and has not been verified - either way the rule in the box above holds, because index 0 says unassigned-from-a-VPN in both readings.
+
+#### `vpnc_dev_policy_list_tmp`
+
+Confirmed: it holds the **previous committed value** of `vpnc_dev_policy_list`. After every one of the eight steps, `_tmp` equalled the list as it stood before that step. It is the WebUI rollback copy.
+
+The app should write it the same way - set `_tmp` to the outgoing value, then set the list - so a WebUI visit afterwards does not find a stale rollback point pointing at a configuration that never existed.
+
+#### Service calls
+
+Exactly three, in this order, for an assignment change to a device that **already has a DHCP reservation**:
+
+```sh
+service stop_vpnc                    # the tunnel must be down first - see below
+service restart_vpnc_dev_policy      # applies the new list
+service restart_vpnc                 # brings the tunnel back
+```
+
+But when the device has **no reservation** and the firmware has to create one, the middle call becomes a chained pair and the cost changes completely:
+
+```text
+notify_rc restart_net_and_phy;restart_vpnc_dev_policy;
+```
+
+`restart_net_and_phy` restarts the network **and the physical layer**. Every switch port bounces, which takes down anything wired downstream - a second router, an AP, a switch, and everything behind it - and it renews the WAN lease, which on a residential connection usually means a new public address. Confirmed 2026-09-06: the LAN dropped at `20:11:41`, `udhcpc_wan` re-leased at `20:11:58`, and DDNS registered a new address at `20:12:08`. The `restart_vpnc_dev_policy`-only steps earlier in the same run caused none of that.
+
+And for "apply to all devices", the same shape with the middle call swapped:
+
+```sh
+service stop_vpnc
+service restart_default_wan          # applies vpnc_default_wan
+service restart_vpnc
+```
+
+All of these go through `notify_rc`, which queues and returns immediately, so none of them is finished when the call returns - the same trap that produced the watchdog deploy race in 409. Verify by polling, do not sleep and hope.
+
+#### `vpnc_default_wan` uses the same identifier
+
+Turning on "apply to all devices" for wgc1 set `vpnc_default_wan=9` - the clientlist index 6 again, not the slot. Turning it off set it back to `0`. So `0` means plain WAN and any other value is an index-6 identifier, which settles the open question in 3.3.1.
+
+#### Assigning a device with no DHCP reservation creates one
+
+The device used for the final step had no reservation. Assigning it added one to `dhcp_staticlist`:
+
+```text
+<AA:BB:CC:DD:EE:FF>192.168.1.22>>
+```
+
+MAC, IP, empty DNS, **empty hostname**. That follows from the binding being by IP: the firmware has to pin the address before a policy on it means anything. Two consequences for the app:
+
+- Assigning a device is not a read-only act on `dhcp_staticlist`. If the app writes `vpnc_dev_policy_list` itself, it must add the reservation too, or the assignment decays the moment the lease moves.
+- For a device using **MAC randomisation** the reservation is pinned to the address it happens to be using now, so it breaks silently at the next rotation. Warn, or refuse.
+
+> [!IMPORTANT]
+> **The tunnel must be disabled before its assignments can be changed.** Confirmed on hardware: the WebUI will not apply an assignment to a running profile, and every observed sequence starts with `stop_vpnc`.
+>
+> **UNVERIFIED: does a device assigned to a down tunnel fail closed or fall back to the WAN?** Fail-closed is the desired property and the one the feature is sold on, but it has only been measured for "apply to all devices" (`vpnc_default_wan`), not for a per-device `ip rule`. Item 10 settles it. Either way the app should warn before assigning to a disabled slot - fail-closed means the device is blackholed, fail-open means the user believes it is protected when it is not, and both deserve a warning.
+
+> [!WARNING]
+> **Applying an assignment costs one of two very different amounts, and the app should not treat them alike.**
+>
+> - **Device already has a DHCP reservation:** `stop_vpnc` / `restart_vpnc_dev_policy` / `restart_vpnc`. VPN routing bounces for assigned devices. Everything else is untouched. Cheap.
+> - **Device has no reservation:** the firmware creates one, which drags in `restart_net_and_phy` - every switch port bounces, downstream routers and APs drop with everything behind them, and the WAN re-leases. Expensive, and it hits devices that have nothing to do with the assignment.
+>
+> So the app should offer devices that already hold a reservation as the ordinary case, and treat "create a reservation for this device" as a distinct, explicitly confirmed action that warns the whole network will drop for a minute. `restart_default_wan`, used by "apply to all devices", was measured as harmless by comparison - it did not drop anything during the run.
+
+---
+
 ## 4. Wireguard SSH commands
 
 To manage Wireguard Merlin uses VPN Director, stock ASUS uses VPN Fusion. These are similar but different: using nvram settings to store configuration parameters, but differs in how these are applied and used. There's scant reference detail I could find on how stock officially manages things and a **lot** more by having access to Merlin's source code, so the below is my understanding which may be incorrect and have gaps.
@@ -521,9 +780,20 @@ A `cru` (`crontab`) entry drives the configurable periodic health check. An addi
 | Firmware | Boot hook |
 | --- | --- |
 | Merlin | `/jffs/scripts/services-start`, created and made executable if absent |
-| Stock | `/opt/etc/init.d/S50downloadmaster` — a script stock already runs at boot and on a firewall restart, which the app hijacks |
+| Stock | `/opt/etc/init.d/S50downloadmaster` — a script stock already runs at boot and on a firewall restart, which the app replaces |
 
-Stock has no user-script hook of its own. Only the region between the `# ********** REPLACEMENT START/END **********` markers of S50downloadmaster is ever rewritten; everything else in the file is copied through untouched, and the app runs `S50downloadmaster start` immediately rather than waiting for the next boot. `/opt` is an Entware path, which on stock arrives by installing **DownloadMaster** from the ASUS WebUI — that is why DownloadMaster is a prerequisite for the watchdog on stock, and for nothing else the app does.
+Stock has no user-script hook of its own, so the app **replaces** `S50downloadmaster` wholesale with its own template (`lib/s50_template.dart`), carrying across only the `cru` lines it finds between the `# ********** REPLACEMENT START/END **********` markers of the previous copy. Whatever else the file held is discarded.
+
+> [!IMPORTANT]
+> **Settled design - do not change it.** This approach was arrived at after weeks of evaluating the alternatives on stock, and it is the one that works. Treat a proposal to replace it as needing that whole evaluation redone, not as a cleanup.
+>
+> **It does replace a working Download Master installation.** A real `S50downloadmaster` is 52,525 bytes and the app template is around 700, measured either side of an install 2026-09-07. Harmless for the documented setup, where Download Master is installed and then left alone; not harmless for someone who actually downloads with it. `README.md` section 4.1 says so, without going into how.
+>
+> Reinstalling or updating Download Master restores the original and removes the app boot persistence with it, so the two overwrite each other in both directions. Anything that re-runs the installer needs the watchdog re-deployed afterwards.
+>
+> Separately in the app's favour: Download Master running alongside a VPN set to start at boot has been observed to hang the tunnel and the router startup outright.
+>
+> **Keep this low-key in user-facing text.** Describe the requirement and the consequence, not the mechanism - see the working agreement in `.claude/CONTEXT.md`.
 
 The deployed copy is LF-terminated: the repo template `scripts/S50downloadmaster-TEMPLATE.sh` is CRLF, and a CRLF shebang makes the router's kernel refuse to exec it. `test/unit/s50_template_test.dart` fails if the two drift apart.
 

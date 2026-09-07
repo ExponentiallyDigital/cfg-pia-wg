@@ -200,7 +200,7 @@ enabled>IP>?>vpnc_idx>
 
 | Idx | Field | Notes |
 | ---: | --- | --- |
-| 0 | enabled | `1` on every record observed. An unassigned device is **absent from the list**, not present with `0`. |
+| 0 | enabled | `1` assigned, `0` not. **Both forms occur** - see below |
 | 1 | **IP address** | the device LAN IP - **not its MAC** |
 | 2 | ? | empty on every record observed, purpose still unknown |
 | 3 | vpnc_idx | **index 6 of the target profile `vpnc_clientlist` record** - not the slot number, and not the row index |
@@ -226,6 +226,20 @@ vpnc_dev_policy_list=1>192.168.1.20>>9><1>192.168.1.22>>5>
 
 > [!IMPORTANT]
 > **A move is a delete plus an append, not an edit in place.** Record order is not stable across a change, so the app must rebuild the whole list from its own model and write it in one go, keyed on IP. Any code that patches the string positionally, or assumes a device keeps its index, will corrupt the list the first time a user moves a device.
+
+> [!IMPORTANT]
+> **A record being present does not mean the device is assigned.** On a freshly rebuilt router that had never had a `wgc` slot configured, the list already read:
+>
+> ```text
+> 0>192.168.1.20>>0<0>192.168.1.21>>0<0>192.168.1.22>>0<0>192.168.1.23>>0
+> ```
+>
+> Four records, all `enabled=0` and `vpnc_idx=0`, one for each device holding a **DHCP reservation** (the router itself and the mesh node excluded). So the firmware seeds a disabled placeholder per reserved device, and separately the probe showed unassigning can remove a record outright. **Both forms mean the same thing.**
+>
+> Two consequences, and the first is a security bug waiting to happen:
+>
+> - **Read index 0, never mere presence.** A parser that treats "in the list" as "assigned" reports every reserved device as being on a VPN when none of them are.
+> - **Preserve records the app did not create.** Writing only the app's own assignments would drop the placeholders the firmware maintains. Rebuild the list from the existing one with the app's changes applied, rather than from the app's model alone.
 
 #### `vpnc_dev_policy_list_tmp`
 

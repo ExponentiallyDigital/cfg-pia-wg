@@ -81,8 +81,7 @@ backoff_for() {
     expect(line, isNotNull, reason: 'scripts/test-backoff.sh should declare LADDER=');
 
     final pairs = {
-      for (final p in line!.group(1)!.split(' '))
-        int.parse(p.split(':').first): int.parse(p.split(':').last),
+      for (final p in line!.group(1)!.split(' ')) int.parse(p.split(':').first): int.parse(p.split(':').last),
     };
     pairs.forEach((failures, want) {
       expect(want, backoffSeconds(failures), reason: 'rung $failures disagrees with kBackoffLadder');

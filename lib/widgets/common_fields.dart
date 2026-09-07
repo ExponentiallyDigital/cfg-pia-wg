@@ -162,7 +162,14 @@ class RouterIpField extends StatelessWidget {
   Widget build(BuildContext context) => TextFormField(
         controller: controller,
         style: _kMono,
-        decoration: const InputDecoration(labelText: 'Router IP', prefixIcon: Icon(Icons.router, color: kMuted, size: 18)),
+        decoration: const InputDecoration(
+          labelText: 'Router IP',
+          // The SSH daemon does not have to be on 22, and the router's own WebUI encourages moving
+          // it. Accepting host:port here keeps that on one line rather than adding a field that is
+          // blank for almost everyone.
+          hintText: '192.168.50.1  or  192.168.50.1:2222',
+          prefixIcon: Icon(Icons.router, color: kMuted, size: 18),
+        ),
       );
 }
 

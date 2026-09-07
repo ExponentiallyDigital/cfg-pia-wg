@@ -326,8 +326,7 @@ void main() {
     });
 
     test('the user keeps their own prefix', () {
-      expect(buildMailSubject(_cfg(subject: 'HOME VPN'), status: 'SUCCESS', desc: 'pia-x'),
-          'HOME VPN: SUCCESS - wgc1:pia-x');
+      expect(buildMailSubject(_cfg(subject: 'HOME VPN'), status: 'SUCCESS', desc: 'pia-x'), 'HOME VPN: SUCCESS - wgc1:pia-x');
     });
 
     test('the Merlin script builds the same subject the app does', () {

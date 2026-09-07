@@ -42,6 +42,12 @@ EXTRACT_DIR="/tmp/mailsend-extract"
 rm -rf "$EXTRACT_DIR"          # remove any leftover from previous runs
 mkdir -p "$EXTRACT_DIR"
 
+# Verify the ARCHIVE before opening it. The project publishes checksums for the .tar.gz, not for
+# the binary inside, so this is the only hash that can be compared with anything upstream. The
+# app does the same - see lib/binary_installer.dart.
+echo "Verify this against mailsend-go-<version>-checksums.txt from the release before trusting it:"
+openssl dgst -sha256 /tmp/mailsend-go.tar.gz 2>/dev/null || sha256sum /tmp/mailsend-go.tar.gz
+
 tar -xzf /tmp/mailsend-go.tar.gz -C "$EXTRACT_DIR"
 
 # Find the binary (exclude .txt and .md files)

@@ -238,6 +238,37 @@ void main() {
     });
   });
 
+  group('the deployed script distinguishes a deploy from a reconfigure', () {
+    // Reported from a router log: the very first run after SAVE announced "Connectivity lost;
+    // reconfiguring" and then "Reconfig SUCCESS". Both were literally what the code did, and both
+    // read as a fault - the tunnel not being up yet is the expected starting state of a deploy,
+    // not an outage. Build 409 fixed the same confusion in the alert emails; the router log kept it.
+    final script = buildWatchdogScript(_valid(slot: 1));
+
+    test('a deploy says it is deploying, not that connectivity was lost', () {
+      // Raw string: $IFACE is a shell variable the router expands, not Dart interpolation.
+      expect(script, contains(r'Deploying: bringing $IFACE up for the first time'));
+      expect(script, contains('Connectivity lost; reconfiguring'), reason: 'still the wording for a real outage');
+    });
+
+    test('a deploy reports Deploy SUCCESS, a cron run reports Reconfig SUCCESS', () {
+      expect(script, contains('Deploy SUCCESS: region'));
+      expect(script, contains('Reconfig SUCCESS: region'));
+    });
+
+    test('both branches are guarded on RUNMODE, not on some other signal', () {
+      // RUNMODE is the only thing that knows which it is; anything inferred from state would be
+      // wrong on a router that happened to be offline when the watchdog was saved.
+      for (final line in script.split('\n')) {
+        if (line.contains('Deploying: bringing') || line.contains('Deploy SUCCESS')) {
+          final i = script.split('\n').indexOf(line);
+          final before = script.split('\n').sublist((i - 4).clamp(0, i), i).join('\n');
+          expect(before, contains('RUNMODE'), reason: line);
+        }
+      }
+    });
+  });
+
   group('buildWatchdogScript', () {
     test('substitutes the slot number everywhere', () {
       final s = buildWatchdogScript(_valid(slot: 3));
@@ -565,10 +596,8 @@ void main() {
     // prefix - anyone who changed it from the default keeps their existing mail rules.
     test('buildMailSubject is <prefix>: STATUS - wgcN:region', () {
       final c = _valid(email: true);
-      expect(buildMailSubject(c, status: 'SUCCESS', desc: 'pia-aus_melbourne'),
-          'Alert: SUCCESS - wgc1:pia-aus_melbourne');
-      expect(buildMailSubject(c, status: 'FAILED', desc: 'pia-aus_melbourne'),
-          'Alert: FAILED - wgc1:pia-aus_melbourne');
+      expect(buildMailSubject(c, status: 'SUCCESS', desc: 'pia-aus_melbourne'), 'Alert: SUCCESS - wgc1:pia-aus_melbourne');
+      expect(buildMailSubject(c, status: 'FAILED', desc: 'pia-aus_melbourne'), 'Alert: FAILED - wgc1:pia-aus_melbourne');
       expect(buildMailSubject(c, status: 'TEST email'), 'Alert: TEST email - wgc1',
           reason: 'no region yet means no region in the subject, not an empty colon');
     });

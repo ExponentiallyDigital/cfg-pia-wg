@@ -319,6 +319,22 @@ void main() {
     });
   });
 
+  // Missing binaries bring up an offer to install them. Declining closes it and says nothing
+  // more - the dialog already covered what happens next, so repeating it immediately would be
+  // nagging. The manual-instructions notice appears on the NEXT visit, which is what these tests
+  // then check, so connecting a second time is part of the flow rather than a workaround.
+  Future<void> declineThenReconnect(WidgetTester tester) async {
+    expect(find.byKey(const Key('install_binaries')), findsOneWidget,
+        reason: 'the app should offer to install what is missing before explaining how to do it by hand');
+    await tester.tap(find.byKey(const Key('install_binaries_decline')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('firmware_notice')), findsNothing,
+        reason: 'declining is an informed choice; do not immediately repeat what the dialog just said');
+
+    await tester.tap(find.byKey(const Key('connect_router')));
+    await tester.pumpAndSettle();
+  }
+
   group('stock helper binaries', () {
     testWidgets('watchdog mode names both missing binaries and does not open the modal', (tester) async {
       final c = _controller();
@@ -329,6 +345,7 @@ void main() {
       await tester.tap(find.byKey(const Key('connect_router')));
       await tester.pumpAndSettle();
 
+      await declineThenReconnect(tester);
       expect(find.textContaining('Unable to locate: $kStockJqPath, $kStockMailsendPath'), findsOneWidget);
       expect(find.byKey(const Key('firmware_notice_link')), findsOneWidget);
       expect(find.text('WATCHDOG CONFIGURATION'), findsNothing);
@@ -346,6 +363,7 @@ void main() {
       await tester.tap(find.byKey(const Key('connect_router')));
       await tester.pumpAndSettle();
 
+      await declineThenReconnect(tester);
       expect(find.textContaining('Unable to locate: $kStockMailsendPath'), findsOneWidget);
       expect(find.textContaining(kStockJqPath), findsNothing);
 
@@ -377,6 +395,7 @@ void main() {
       await tester.tap(find.byKey(const Key('connect_router')));
       await tester.pumpAndSettle();
 
+      await declineThenReconnect(tester);
       expect(find.textContaining('Unable to locate: $kStockJqPath'), findsOneWidget);
       expect(find.text('WIREGUARD CONFIGURATION'), findsNothing);
 

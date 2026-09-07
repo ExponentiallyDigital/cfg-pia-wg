@@ -17,6 +17,8 @@
 // the router IP / SSH credentials (pre-filled from the shared session), connect, fetch the slots,
 // then open the parameterised SlotModal in the appropriate mode.
 
+import 'dart:convert';
+
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -26,12 +28,19 @@ import '../firmware.dart';
 import '../pia_service.dart';
 import '../router_slot_service.dart';
 import '../router_watchdog.dart';
+import '../binary_installer.dart';
 import '../session_controller.dart';
+import 'install_binaries_dialog.dart';
 import 'app_scaffold.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
 import 'firmware_notice.dart';
 import 'slot_modal.dart';
+
+/// What came of offering to install the missing helper binaries. Distinguishes a fresh refusal
+/// from one made earlier in the session: the first has just been told everything the follow-up
+/// notice would say, the second has not been told anything this time round.
+enum _InstallOutcome { installed, justDeclined, previouslyDeclined, failed }
 
 /// Outcome of the firmware gate. Carries what to show rather than showing it, so the connect
 /// spinner can be cleared before any dialog is awaited.
@@ -88,6 +97,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _sshVisible = false, _connecting = false, _prefilled = false;
+
   late SessionController _c;
 
   @override
@@ -172,6 +182,10 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
   }
 
   Future<void> _onConnect() async {
+    // Nothing here is typed into, and a dialog closing restores focus to whatever had it last -
+    // so without this the keyboard reopens over the connect spinner on a field the user has
+    // finished with.
+    FocusScope.of(context).unfocus();
     setState(() => _connecting = true);
     _c.logEntry('Connecting to router at ${_ipCtrl.text.trim()} via SSH...');
     RouterSlots? slots;
@@ -199,7 +213,21 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
 
     // Spinner is off, so it is safe to await a modal (see .claude/CONTEXT.md, "Async + UI").
     if (connectError != null) return AppErrors.system(context, _c, connectError);
-    if (gate != null && !gate.passed) return gate.present(context, _c);
+    if (gate != null && !gate.passed) {
+      // Missing binaries are the one gate failure the app can do something about, so offer
+      // rather than just explaining. Everything else still just explains.
+      if (gate.missingBinaries.isNotEmpty) {
+        final outcome = await _offerInstall(gate.missingBinaries);
+        if (!mounted) return;
+        if (outcome == _InstallOutcome.installed) return _onConnect(); // retry the gate, do not assume
+        // Declining is an informed choice - the dialog said what happens and where to read more -
+        // so following it with the same information again is nagging. The notice still appears on
+        // the NEXT visit, which is where it stops being a repeat and starts being a reminder.
+        if (outcome == _InstallOutcome.justDeclined) return;
+      }
+      if (!mounted) return;
+      return gate.present(context, _c);
+    }
     if (slots == null) return;
 
     _c.enterModal();
@@ -216,6 +244,57 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       ),
     );
     if (mounted) _c.exitModal();
+  }
+
+  /// Offers to install [missing], and does it if the user agrees.
+  Future<_InstallOutcome> _offerInstall(List<String> missing) async {
+    final key = missing.join(',');
+    // Already said no this session: fall straight through to the notice rather than re-asking.
+    if (_c.declinedBinaryInstalls.contains(key)) return _InstallOutcome.previouslyDeclined;
+    if (await showInstallBinariesDialog(context, _c, missing) != InstallChoice.install) {
+      _c.declinedBinaryInstalls.add(key);
+      return _InstallOutcome.justDeclined;
+    }
+
+    if (!mounted) return _InstallOutcome.failed;
+    FocusScope.of(context).unfocus(); // the dialog just handed focus back to a field
+    setState(() => _connecting = true);
+    var allOk = true;
+    String? failure;
+    try {
+      final client = await _connect();
+      final installer = BinaryInstaller(
+        (cmd) async => utf8.decode(await client.run(cmd)).trim(),
+        onLog: _c.onLog,
+      );
+      for (final path in missing) {
+        final binary = kHelperBinaries[path];
+        if (binary == null) continue;
+        final result = await installer.install(binary);
+        if (!result.ok) {
+          allOk = false;
+          failure = '${binary.name}: ${result.error}';
+          break; // no point installing the second one if the first failed for a shared reason
+        }
+      }
+    } catch (e) {
+      allOk = false;
+      failure = e.toString().replaceAll('Exception: ', '');
+    } finally {
+      if (mounted) setState(() => _connecting = false);
+    }
+    if (!mounted) return _InstallOutcome.failed;
+
+    if (!allOk) {
+      // Do not remember this as a refusal - the user said yes, the install failed, and trying
+      // again after fixing the cause is a reasonable thing to want to do.
+      // 'Could not install X: reason' - the reason is a phrase, so it needs the colon to read as
+      // a sentence. Without it, build 412 produced 'Could not install the archive extracted to
+      // nothing', which parses as nonsense on first reading.
+      await AppErrors.system(context, _c, 'Could not install ${failure ?? 'the helper program: unknown error'}');
+      return _InstallOutcome.failed;
+    }
+    return _InstallOutcome.installed;
   }
 
   @override

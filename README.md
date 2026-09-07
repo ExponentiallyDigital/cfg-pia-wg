@@ -124,6 +124,8 @@ To manage WireGuard configs and/or deploy a watchdog, you'll need to do a one ti
 Advanced Settings\Administration\System\Service -> "Enable SSH" (LAN only is recommended).
 ```
 
+If you change the SSH port from the default 22 - the router's own web interface suggests you do - enter the router address in the app as `address:port`, for example `192.168.50.1:2222`. A plain address means port 22.
+
 2. If your'e on recent stock firmware skip to the next step. If you're using Merlin, enable the `JFFS` partition. This _should_ be enabled by default on ASUS routers running firmware version 378.50 or newer. This allows the watchdog script and settings to survive reboots/power cycling:
 
 ```text
@@ -132,7 +134,67 @@ Advanced Settings\Administration\System\Basic Config -> "Enable JFFS custom scri
 
 3. Install the `jq` and `mailsend-go` helper apps.
 
-`<************** PLACEHOLDER **************>`
+**On Merlin**, SSH into the router and run [`scripts/get-bins.sh`](scripts/get-bins.sh). That is all - skip the rest of this step.
+
+**On stock firmware** there is one more thing to do first, and it needs a USB stick.
+
+#### Why Download Master is needed
+
+On stock firmware, scheduled tasks do not survive a reboot on their own. Download Master provides the `/opt` structure the app uses to keep a watchdog running across reboots and power cycles. It is a prerequisite, not something you will use.
+
+> [!IMPORTANT]
+> **Install Download Master, then leave it alone.** The app takes over part of its installation, so Download Master itself will not work afterwards - and if you reinstall or update it later, your watchdogs stop surviving reboots until you redeploy them from the app. If you actively use Download Master for downloads, this app's watchdog is not compatible with it on stock firmware.
+
+#### Preparing the USB stick
+
+Download Master installs *onto* the stick - it writes `asusware.arm` and `Download2` to the root of the partition - so it has to be writable with a few hundred MB free.
+
+| Format | Supported | Notes |
+| --- | :-: | --- |
+| **ext4** | yes | **Recommended.** No file-size cap, native Unix permissions for the package install |
+| ext2 / ext3 | yes | Fine; 8 GB file-size cap |
+| NTFS | yes | Read and write both supported. Use this if you also want the stick readable on Windows |
+| FAT32 | yes | Mounts, but the 4 GB file-size cap is a problem for large downloads |
+| FAT16 | yes | 2 GB limit, avoid |
+| HFS+ | partial | ASUS marks it with an undefined asterisk; treat as read-only |
+| **exFAT** | **NO** | **Will not mount.** This is the most common failure - any modern stick over 32 GB that Windows formatted is exFAT by default |
+
+Use a **single primary partition on an MBR table**: ASUSWRT's `fdisk` cannot create or edit GPT, and the installer has a long history of not offering a target that is not the first partition. OS-encrypted volumes (BitLocker, FileVault) are not supported.
+
+The router's own Format tool only offers NTFS, FAT and HFS, so create an ext4 partition on another machine - `parted` and `mkfs.ext4` on Linux, or a partition tool such as MiniTool Partition Wizard on Windows.
+
+Authoritative source: [ASUS Plug-n-Share Disks Compatibility List](https://www.asus.com/us/support/faq/1047043/).
+
+#### Installing Download Master
+
+1. Insert the prepared USB stick into the router.
+2. Log in to the router's web interface.
+3. Go to **USB Application**.
+4. Under **Download Master**, click **Install**.
+
+    ![Download Master install button](images/dm-install-1.png)
+
+5. Select the USB storage device to install onto.
+
+    ![Selecting the USB device](images/dm-install-2.png)
+
+6. The disk is checked, then the packages are downloaded, installed and configured.
+
+    ![Installation in progress](images/dm-install-3.png)
+
+7. It looks like this when it finishes.
+
+    ![Installation complete](images/dm-install-4.png)
+
+8. **Do not launch Download Master**, and do not click **Disable** or **Check update**.
+
+    ![Leave Download Master alone](images/dm-install-5.png)
+
+That is it - nothing else to configure.
+
+#### Installing the helper binaries
+
+SSH into the router and run [`scripts/get-bins.sh`](scripts/get-bins.sh), which detects the architecture and installs `jq` and `mailsend-go` into `/jffs/cfg-pia-wg`. The app checks for both when you open the MANAGE or WATCHDOG screens and tells you if either is missing (MANAGE does not need `mailsend-go` - it never sends email).
   
 > [!TIP]
 > Firmware flashing (upgrading your router's software) [_may_ require redeployment](https://github-wiki-see.page/m/RMerl/asuswrt-merlin.ng/wiki/JFFS) of PIA WG configs. Always test your VPN is active after applying a new firmware version.
@@ -419,7 +481,9 @@ The screen shows the app version and build number, the build fingerprint and the
 <br>
 
 > [!WARNING]
-> If you sell/give away you router, be advised that a factory restore does **not** remove custom NVRAM values. If you use the watchdog function, this could lead to exposure of credentials (PIA & smtp). You can fix this by SSH'ing into your router and running these scripts: `scripts\showall.sh` & `scripts\clearall.sh`. These are avaiable in the app's [GitHub repo](https://github.com/ExponentiallyDigital/cfg-pia-wg) in the scripts folder. Or make sure that you delete all VPN slots and watchdogs before parting company with your router.
+> If you sell or give away your router, reset it before it leaves your hands. The watchdog stores your PIA and SMTP passwords in NVRAM in plain text, and a router handed over as-is hands those over with it. `scripts/showall.sh` will show you what is stored and `scripts/clearall.sh` removes it; both are in the [GitHub repo](https://github.com/ExponentiallyDigital/cfg-pia-wg). Deleting every VPN slot and watchdog from the app does the same job.
+>
+> **A factory reset does clear them.** Measured 2026-09-07 on stock firmware (RT-AX88U): marker values were written to NVRAM and committed, and neither the WebUI factory-default restore nor the WPS-button hard reset left any of them behind - including one shaped like `cfg_pia_wg_password` and one shaped like `wgcN_wd_smtp_pass`. Earlier releases of this page claimed the opposite; that claim was never tested and was wrong. Merlin has not been tested, so if you are on Merlin, use the scripts above rather than relying on the reset.
 
 ---
 
