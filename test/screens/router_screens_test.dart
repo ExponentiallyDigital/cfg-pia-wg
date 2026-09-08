@@ -29,11 +29,16 @@ RecordingSSHClient _stockSsh({bool jq = true, bool mailsend = true, String Funct
 RouterSlotService _fastSvc(SSHClient c, SessionController ctrl) =>
     RouterSlotService(c, onLog: ctrl.onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: 1);
 
-Widget _manage(RecordingSSHClient ssh, SessionController c) => SessionScope(
+/// [factory] overrides how the connection is made, so a test can make it fail.
+Widget _manage(RecordingSSHClient ssh, SessionController c, {Future<SSHClient> Function(String, String, String)? factory}) =>
+    SessionScope(
       controller: c,
       child: MaterialApp(
         home: Scaffold(
-          body: ManageRouterScreen(testClientFactory: (ip, u, p) async => ssh, slotServiceFactory: (cl) => _fastSvc(cl, c)),
+          body: ManageRouterScreen(
+            testClientFactory: factory ?? (ip, u, p) async => ssh,
+            slotServiceFactory: (cl) => _fastSvc(cl, c),
+          ),
         ),
       ),
     );
@@ -268,6 +273,33 @@ void main() {
       await tester.tap(find.byKey(const Key('firmware_notice_ok')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('firmware_notice')), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a router that cannot be reached is a CONNECTION error, not a firmware one', (tester) async {
+      // Reported on hardware 2026-09-08: typing an unreachable address produced "Unable to
+      // determine router firmware type". RouterSession connects lazily, so the connect call does
+      // no I/O and the timeout surfaced inside the firmware probe, whose catch relabels anything.
+      // Worse, it only misreported on the FIRST connect of a session - afterwards the firmware is
+      // cached and the probe is skipped - so the same mistake gave two different messages.
+      final c = _controller();
+      await tester.pumpWidget(_manage(
+        RecordingSSHClient(),
+        c,
+        factory: (ip, u, p) async => throw Exception('SocketConnection timed out, host: \$ip'),
+      ));
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Router SSH connection error'), findsOneWidget);
+      expect(find.textContaining('timed out'), findsOneWidget);
+      expect(find.textContaining('firmware type'), findsNothing, reason: 'the address was wrong, not the firmware');
+      expect(firmwareDetected, isFalse);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

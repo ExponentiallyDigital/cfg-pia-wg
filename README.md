@@ -471,6 +471,7 @@ The screen shows the app version and build number, the build fingerprint and the
 - **PIA maintenance:** PIA occasionally take regions offline for maintenance so you might be expecting to have an exit node in say Perth, but online tools may show you as exiting from Adelaide.
 - **Check your VPN is working:** with services like [PIA what is my ip](https://www.privateinternetaccess.com/what-is-my-ip), [ipaddress.my](https://ipaddress.my/?lang=en_US), [2ip.io](https://2ip.io), and [showmyip.com](https://www.showmyip.com). However, these sites may cache your location in the browser and they sometimes return a stale exit region if used multiple times. To be absolutely sure, close your browser rather than just refreshing the page.
 - **Watchdog shortcut:** If you deploy a _watchdog_ on an empty slot, that will also create the config for that slot in one step.
+- **Change things in one place at a time.** The router's web interface writes the whole VPN list back when you press **Apply all settings**, using the copy it loaded when the page was opened - so a change made in this app can be overwritten by a web page that was open before you made it. If you use both, finish and apply in one before switching to the other, and reload the web page afterwards.
 - ***Maximum VPN count:** ASUS limit two concurrent VPNs on stock firmware, this is enforced by the app. On Merlin, there is no VPN limit.
 
 <br>

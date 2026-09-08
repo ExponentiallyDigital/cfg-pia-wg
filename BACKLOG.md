@@ -32,6 +32,7 @@
 
 #### 1.1.2. CHG - functional code changes
 
+- CHG: **`chown` the installed helper binaries.** `mailsend-go` extracted from the release archive keeps the uploader's numeric owner (`501:20` on the test router) because `BinaryInstaller` only sets the mode. `scripts/get-bins.sh` already does `chown 0:0`; the app should match. Harmless today - mode 755 means root can still execute it - but a file on the router owned by a uid that does not exist there is untidy and will confuse the next person to run `ls -la`.
 - CHG: **cap the in-memory app log.** `SessionController.log` grows without limit - `logEntry` only ever appends - and the log screen renders every entry. Each is small and the whole thing is wiped on exit, so it is not a problem today; a long session with a chatty watchdog is where it would start to show. A few hundred entries, dropping the oldest, is cheap insurance. Noticed 2026-09-07 while checking app size after Google tightened their performance requirements.
 - ADD: Automate updating `THIRD-PARTY-NOTICES.md`, add as part of `scripts\build.ps1/sh`. Add to GitHub actions script `.github\workflows\release.yml`.
 - REL: after releasing **v8.x.y** to GPS alpha track, review [Play Console technical quality requirements](https://support.google.com/googleplay/android-developer/answer/17492799), specifically:

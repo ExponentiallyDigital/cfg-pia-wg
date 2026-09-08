@@ -41,6 +41,36 @@ class RecordingSSHClient implements SSHClient {
   @override
   Future<void> get authenticated => Future.value();
 
+  /// Commands the fake should report as having FAILED, by substring. The exit code is 1 and the
+  /// text becomes stderr, so a test can exercise the strict-write path without an SSH server.
+  final Map<String, String> failWith = {};
+
+  /// The path the app takes since 413: stdout and stderr apart, plus an exit code.
+  ///
+  /// [run] is kept delegating to this so the two can never disagree about what a command did.
+  @override
+  Future<SSHRunResult> runWithResult(
+    String command, {
+    bool runInPty = false,
+    bool stdout = true,
+    bool stderr = true,
+    Map<String, String>? environment,
+  }) async {
+    final out = await run(command, environment: environment, runInPty: runInPty, stderr: stderr, stdout: stdout);
+    for (final entry in failWith.entries) {
+      if (command.contains(entry.key)) {
+        return SSHRunResult(
+          output: out,
+          stdout: Uint8List(0),
+          stderr: Uint8List.fromList(utf8.encode(entry.value)),
+          exitCode: 1,
+          exitSignal: null,
+        );
+      }
+    }
+    return SSHRunResult(output: out, stdout: out, stderr: Uint8List(0), exitCode: 0, exitSignal: null);
+  }
+
   @override
   Future<Uint8List> run(
     String command, {

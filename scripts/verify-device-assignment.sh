@@ -43,13 +43,16 @@
 #
 # STARTING CONDITION - all of this is checked, but set it up first and save yourself a rerun
 #
-#   1. ONE tunnel up, say wgc1, with a working PIA config.
-#   2. "Apply to all devices" OFF - `vpnc_default_wan` must be 0.
+#   1. A tunnel up with a working PIA config, and NO watchdog on it. A watchdog would repair the
+#      tunnel during phase 3 and destroy the measurement, so use a slot you have not deployed one
+#      to - creating a second slot for the purpose is the easiest route.
+#   2. "Apply to all devices" must NOT point at the slot being tested.
 #
-#      This one is easy to get wrong and it invalidates the whole run. With a tunnel applied to
-#      all devices, EVERY device already routes through it, so the phase 1 baseline shows the
-#      target going via the tunnel before it has been assigned - and Q9 becomes unanswerable,
-#      because there is no difference for the assignment to make.
+#      If it does, the target already routes there and the assignment changes nothing observable,
+#      so Q9 cannot be answered. Pointing at a DIFFERENT tunnel is fine - an explicit assignment
+#      overrides the default - and pointing at "Internet Connection" is cleanest, because then a
+#      fail-open in phase 3 lands on the WAN rather than on another tunnel, which would be a third
+#      outcome the result table does not cover.
 #
 #   3. `vpnc_dev_policy_list` empty, or at least not mentioning the target device.
 #   4. The target device: powered on, holding a lease, and with NO DHCP reservation.
@@ -135,17 +138,6 @@ case " $(wg show interfaces) " in
        exit 1 ;;
 esac
 
-# "Apply to all devices" routes EVERY device through a tunnel by default, so the baseline would
-# already go via wgc$SLOT and the assignment would make no observable difference. Q9 cannot be
-# answered in that state, so refuse rather than produce a confident wrong answer.
-DEFWAN="$(nvram get vpnc_default_wan)"
-if [ "$DEFWAN" != "0" ] && [ -n "$DEFWAN" ]; then
-    echo "ERROR: vpnc_default_wan=$DEFWAN - a tunnel is set to 'apply to all devices'." >&2
-    echo "       Turn that OFF in the WebUI first. Otherwise every device already routes" >&2
-    echo "       through it, the phase 1 baseline is meaningless, and Q9 cannot be answered." >&2
-    exit 1
-fi
-
 # Dropbear sets SSH_CLIENT to '<source ip> <sport> <dport>'. Assigning the address you are
 # connected from would route this session into the tunnel and, in phase 3, cut it off entirely.
 if [ -n "${SSH_CLIENT:-}" ]; then
@@ -178,6 +170,37 @@ done
 IFS="$OLDIFS"
 [ -n "$IDX" ] || { echo "ERROR: wgc$SLOT has no vpnc_clientlist profile - CREATE it in the app first." >&2; exit 1; }
 echo "wgc$SLOT : clientlist row (vpnc_unit) = $ROW, index 6 = $IDX"
+
+# "Apply to all devices" only defeats the test when it points at the SAME tunnel we are assigning
+# to - then the target is already routed there and the assignment changes nothing observable. An
+# explicit assignment overrides the default, so any OTHER tunnel being the default is fine.
+DEFWAN="$(nvram get vpnc_default_wan)"
+if [ "$DEFWAN" = "$IDX" ]; then
+    echo "ERROR: 'apply to all devices' is on for wgc$SLOT (vpnc_default_wan=$DEFWAN), which is the" >&2
+    echo "       tunnel being assigned to. The target already routes there, so the assignment would" >&2
+    echo "       make no observable difference and Q9 cannot be answered. Turn it off, or pick a" >&2
+    echo "       different slot." >&2
+    exit 1
+fi
+if [ "$DEFWAN" != "0" ] && [ -n "$DEFWAN" ]; then
+    echo "NOTE: 'apply to all devices' is on for index-6 $DEFWAN, not for wgc$SLOT - fine for Q9."
+    echo "      For Q10 it means phase 3 shows this device failing closed while every OTHER device"
+    echo "      keeps working, which is the cleaner result anyway."
+fi
+
+# A watchdog on the target slot will fight phase 3. Taking the tunnel down is exactly the condition
+# it exists to repair: within one check interval it reconfigures the slot and brings it back up,
+# which destroys the measurement and leaves the router in a state the script did not intend.
+#
+# Build 413 made the watchdog stand down when `wgcN_enable=0`, but phase 3 uses `service stop_vpnc`
+# and it is NOT established that the service clears that flag - the WebUI sets it separately. So
+# this refuses rather than relies on it.
+if cru l 2>/dev/null | grep -q "watchdog_wgc$SLOT "; then
+    echo "ERROR: wgc$SLOT has an active watchdog. Phase 3 takes the tunnel down, which the watchdog" >&2
+    echo "       would treat as an outage and repair mid-test. Use a slot with no watchdog, or" >&2
+    echo "       disable this one in the app first." >&2
+    exit 1
+fi
 
 # -- back up ------------------------------------------------------------------------------------
 mkdir -p "$BAK" || exit 1

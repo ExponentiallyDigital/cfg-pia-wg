@@ -238,6 +238,55 @@ void main() {
     });
   });
 
+  group('the watchdog stands down when the user disables the tunnel', () {
+    // A tunnel switched off in the WebUI is indistinguishable from one that dropped, so without
+    // this the watchdog reconfigures it, brings it back and emails an alert - undoing the user and
+    // reporting a fault that did not happen. Observed 2026-09-07 22:45. It also blocks device
+    // assignment, which requires disabling the tunnel to change an assignment.
+    final script = buildWatchdogScript(_valid(slot: 1));
+
+    test('reads wgcN_enable and exits without checking', () {
+      expect(script, contains(r'ENABLED="$(nvram get ${K}enable)"'));
+      expect(script, contains('standing down until it is enabled again'));
+    });
+
+    test('only an explicit 0 stands down - an empty value must not stop the watchdog', () {
+      // An absent key means the firmware does not keep it, which is not the user saying no.
+      expect(script, contains(r'[ "$ENABLED" = "0" ]'));
+      expect(script.contains(r'[ "$ENABLED" != "1" ]'), isFalse);
+    });
+
+    test('a deploy runs regardless, since that is explicit user intent', () {
+      expect(script, contains(r'[ "$RUNMODE" != "deploy" ] && [ "$ENABLED" = "0" ]'));
+    });
+
+    test('the check precedes the connectivity probe, so a disabled slot costs nothing', () {
+      final lines = script.split('\n');
+      final standDown = lines.indexWhere((l) => l.contains('standing down until'));
+      final probe = lines.indexWhere((l) => l.contains('Checking \$IFACE'));
+      expect(standDown, greaterThan(-1));
+      expect(standDown, lessThan(probe), reason: 'a disabled slot must not be probed');
+    });
+  });
+
+  group('the token failure says which kind of failure it was', () {
+    final script = buildWatchdogScript(_valid(slot: 1));
+
+    test('curl runs as the condition of an if, so its status cannot be misread', () {
+      // The assignment form was tested and DOES capture the status correctly in POSIX sh, so it
+      // was not the cause of the 2026-09-07 report - but the `if` form cannot be misread by any
+      // shell, which is worth having in a script that runs on BusyBox builds we cannot inspect.
+      expect(script, contains(r'if $CURLB -S -o "$TMPTOK"'));
+    });
+
+    test('a responseless success is reported as its own thing', () {
+      // exit 0 with no status code, no body and no stderr is not an HTTP error and must not be
+      // described as one - that is exactly what made the observed failure unreadable.
+      expect(script, contains('curl reported success but returned nothing at all'));
+      expect(script, contains('network was still coming back up'));
+    });
+  });
+
   group('the deployed script distinguishes a deploy from a reconfigure', () {
     // Reported from a router log: the very first run after SAVE announced "Connectivity lost;
     // reconfiguring" and then "Reconfig SUCCESS". Both were literally what the code did, and both
@@ -304,7 +353,7 @@ void main() {
       // /jffs/cfg-pia-wg exists on stock (the user installs jq there) but not necessarily on
       // Merlin, and curl will not create it.
       expect(s, contains(r'mkdir -p "${CACERT%/*}"'));
-      expect(s.indexOf('mkdir -p'), lessThan(s.indexOf(r'$CURL "$CACERT_URL"')));
+      expect(s.indexOf('mkdir -p'), lessThan(s.indexOf(r'"$CACERT_URL" -o "$CACERT"')));
     });
 
     test('pings via the VPN interface, primary then secondary', () {
@@ -394,9 +443,11 @@ void main() {
       // --fail suppresses the response body, and the body is the only thing that says WHY PIA
       // refused (a router saw HTTP 403 with nothing to explain it). The status comes from -w, so
       // the token call does not need curl to turn an error into an exit code.
-      expect(s, contains(r'HTTP="$($CURLB -S -o "$TMPTOK"'), reason: 'the token call must not use --fail');
+      // Was `HTTP="$($CURLB ...)"` with `RC=$?` on the next line; now curl is the condition of an
+      // `if`, so no shell can misreport its status. 413 kept the no---fail behaviour either way.
+      expect(s, contains(r'if $CURLB -S -o "$TMPTOK"'), reason: 'the token call must not use --fail');
       expect(s, contains(r'CURL="$CURLB --fail"'), reason: 'every other call still fails hard');
-      expect(s, contains(r'abort "failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}'));
+      expect(s, contains(r'failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}'));
       // Body to a file, so jq never sees the status line and curl's status survives.
       expect(s, contains(r'-o "$TMPTOK"'));
       expect(s, contains(r'TMPTOK="/tmp/${IFACE}_token.json"'));
@@ -507,7 +558,9 @@ void main() {
 
     test(r'every jq call site goes through $JQ, so nothing hardcodes the Merlin path', () {
       final s = buildWatchdogScript(_valid(), firmware: RouterFirmware.stock);
-      expect(RegExp(r'"\$JQ" -r').allMatches(s).length, 4);
+      // 5 since 413: the server-list failure path re-reads the payload to tell 'the list did not
+      // parse' from 'your region is not in it', which were previously one misleading message.
+      expect(RegExp(r'"\$JQ" -r').allMatches(s).length, 5);
       expect(s, isNot(contains('| jq ')));
       expect(s, isNot(contains('which jq')));
     });

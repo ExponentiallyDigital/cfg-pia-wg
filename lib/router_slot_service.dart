@@ -20,8 +20,8 @@
 // owned by the caller (mirroring RouterWatchdog), so RecordingSSHClient drives these in tests.
 
 import 'dart:async';
-import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
+import 'router_command.dart';
 import 'firmware.dart';
 import 'router_watchdog.dart' show buildLoggerCommand, shellSingleQuote;
 
@@ -337,7 +337,22 @@ class RouterSlotService {
     this.verifyMaxAttempts = 5,
   });
 
-  Future<String> _run(String cmd) async => utf8.decode(await client.run(cmd)).trim();
+  /// Runs [cmd] on the router and returns its **stdout only**, trimmed.
+  ///
+  /// Throws [RouterCommandException] on a non-zero exit unless [allowFailure] is set. See
+  /// router_command.dart for why writes are strict and reads are not: a silent `nvram set` failure
+  /// leaves the router in a state the app then reports as success, while a non-zero `cru d` or
+  /// `grep -c` is routine and throwing on it would bury the failures that matter.
+  ///
+  /// A tolerated failure is still logged with its exit code and stderr, so it is diagnosable from
+  /// the app log and the router syslog without interrupting anyone.
+  Future<String> _run(String cmd, {bool allowFailure = false}) async {
+    final r = await runRouterCommand(client, cmd, allowFailure: allowFailure, onLog: onLog);
+    return r.stdout;
+  }
+
+  /// A read: returns stdout and never throws, whatever the exit code.
+  Future<String> _read(String cmd) => _run(cmd, allowFailure: true);
 
   // 'wgcN:<description>' for log lines. Cached per service instance - one is built per user
   // action, so the description is read at most once however many lines it appears in. (The SSH
@@ -355,7 +370,7 @@ class RouterSlotService {
   // ── Firmware detection (spec: once per app session, on entry to either router screen) ────
   // Raw `nvram get 3rd-party` output for firmware.dart's classifyFirmwareTag. Throws on a non-zero
   // exit, an SSH failure, or a stalled channel; the caller treats any of those as "not detected".
-  Future<String> readFirmwareTag() async => _run('nvram get 3rd-party').timeout(
+  Future<String> readFirmwareTag() async => _read('nvram get 3rd-party').timeout(
         const Duration(seconds: 5),
         onTimeout: () => throw Exception('Timed out after 5s reading the router firmware type.'),
       );
@@ -372,7 +387,7 @@ class RouterSlotService {
 
   // Reads vpnc_clientlist and indexes it by slot number (stock only).
   Future<Map<int, VpncRecord>> _readVpncBySlot() async {
-    final records = parseVpncClientlist(await _run('nvram get vpnc_clientlist'));
+    final records = parseVpncClientlist(await _read('nvram get vpnc_clientlist'));
     return {
       for (final r in records)
         if (r.slot != null) r.slot!: r,
@@ -382,13 +397,13 @@ class RouterSlotService {
   // Stock's cap on simultaneous tunnels. Falls back to [kDefaultStockMaxActiveSlots] when the key
   // is missing or unparseable.
   Future<int> _readMaxActiveSlots() async {
-    final raw = int.tryParse(await _run('nvram get vpnc_max_conn'));
+    final raw = int.tryParse(await _read('nvram get vpnc_max_conn'));
     return (raw == null || raw < 1) ? kDefaultStockMaxActiveSlots : raw;
   }
 
   // Read/modify/write of vpnc_clientlist. The caller commits.
   Future<void> _editVpncClientlist(List<VpncRecord> Function(List<VpncRecord>) edit) async {
-    final current = parseVpncClientlist(await _run('nvram get vpnc_clientlist'));
+    final current = parseVpncClientlist(await _read('nvram get vpnc_clientlist'));
     await _run('nvram set vpnc_clientlist=${shellSingleQuote(serialiseVpncClientlist(edit(current)))}');
   }
 
@@ -411,7 +426,7 @@ class RouterSlotService {
   // repair from.
   Future<void> _setVpncActive(int slot, bool active) async {
     if (!isStockFirmware) return;
-    final desc = (await _run('nvram get wgc${slot}_desc')).trim();
+    final desc = (await _read('nvram get wgc${slot}_desc')).trim();
     await writeVpncProfile(slot, desc: desc.isEmpty ? null : desc, active: active);
   }
 
@@ -425,7 +440,7 @@ class RouterSlotService {
   // slot that VPN Fusion does not know about cannot work, whereas stopping one is already a no-op.
   /// Public so `RouterWatchdog` starts and stops a stock tunnel exactly as MANAGE does.
   Future<bool> runVpncService(int slot, String serviceCmd, {bool required = false}) async {
-    final unit = vpncUnitForSlot(parseVpncClientlist(await _run('nvram get vpnc_clientlist')), slot);
+    final unit = vpncUnitForSlot(parseVpncClientlist(await _read('nvram get vpnc_clientlist')), slot);
     if (unit == null) {
       if (required) {
         throw Exception('wgc$slot has no vpnc_clientlist profile on the router. Create it with CREATE first.');
@@ -444,7 +459,7 @@ class RouterSlotService {
   // ── Read ────────────────────────────────────────────────────────────────────────────
   Future<RouterSlots> fetchSlots() async {
     onLog?.call('Reading router configuration...');
-    final isMerlin = (await _run('nvram get 3rd-party')) == 'merlin';
+    final isMerlin = (await _read('nvram get 3rd-party')) == 'merlin';
     final stock = isStockFirmware;
     // On stock the region name and active flag live in vpnc_clientlist, not in per-slot keys.
     final vpnc = stock ? await _readVpncBySlot() : const <int, VpncRecord>{};
@@ -455,20 +470,20 @@ class RouterSlotService {
       // is missing or blank: a watchdog deployed before the deploy path wrote that row leaves the
       // slot looking empty, which greys out every button that needs a description. DELETE unsets
       // wgcN_desc along with the row, so this cannot resurrect a deleted slot.
-      var desc = stock ? (vpnc[i]?.desc ?? '') : await _run('nvram get wgc${i}_desc');
-      if (stock && desc.trim().isEmpty) desc = await _run('nvram get wgc${i}_desc');
+      var desc = stock ? (vpnc[i]?.desc ?? '') : await _read('nvram get wgc${i}_desc');
+      if (stock && desc.trim().isEmpty) desc = await _read('nvram get wgc${i}_desc');
       // Stock exposes no kill switch (ARCHITECTURE.md 2.3.1), so the badge never lights there.
-      final killSwitch = stock ? false : (await _run('nvram get wgc${i}_enforce')) == '1';
-      final enabled = stock ? (vpnc[i]?.active ?? false) : (await _run('nvram get wgc${i}_enable')) == '1';
+      final killSwitch = stock ? false : (await _read('nvram get wgc${i}_enforce')) == '1';
+      final enabled = stock ? (vpnc[i]?.active ?? false) : (await _read('nvram get wgc${i}_enable')) == '1';
       // A cron entry alone is not a watchdog: a failed deploy left cru pointing at a script that
       // was never written, and the app called that ACTIVE. Both have to be there.
       final watchdog = (await _run("cru l | grep -qw watchdog_wgc$i && [ -s '${watchdogScriptPath(i)}' ] "
               '&& echo 1 || echo 0')) ==
           '1';
       // Settings can outlive the cron entry: DISABLE removes the schedule and keeps the config.
-      final watchdogConfigured = (await _run('nvram get wgc${i}_wd_check_interval')).isNotEmpty;
+      final watchdogConfigured = (await _read('nvram get wgc${i}_wd_check_interval')).isNotEmpty;
       // Email alerting is a watchdog feature; only read it for an active watchdog.
-      final emailAlerting = watchdog && (await _run('nvram get wgc${i}_wd_email_enabled')) == '1';
+      final emailAlerting = watchdog && (await _read('nvram get wgc${i}_wd_email_enabled')) == '1';
       slots[i] = SlotInfo(
         index: i,
         desc: desc,
@@ -482,7 +497,7 @@ class RouterSlotService {
 
     // allMatches, not firstMatch: more than one tunnel can be up, and taking only the first
     // silently badged an arbitrary one of them.
-    final ifaceOutput = await _run('wg show interfaces');
+    final ifaceOutput = await _read('wg show interfaces');
     final activeSlots = RegExp(r'wgc(\d)').allMatches(ifaceOutput).map((m) => int.parse(m.group(1)!)).toSet();
 
     // Stock caps concurrent tunnels; follow the router's own setting rather than assuming 2, so a
@@ -502,7 +517,7 @@ class RouterSlotService {
     final live = slotKeysFor(routerFirmware);
     final m = {for (final k in kSlotNvramKeys) k: ''};
     for (final k in live) {
-      m[k] = await _run('nvram get wgc${slot}_$k');
+      m[k] = await _read('nvram get wgc${slot}_$k');
     }
     return m;
   }
@@ -561,14 +576,14 @@ class RouterSlotService {
     try {
       // On stock the desc mirror is only present for slots this app created — a profile made in
       // the router web UI shows up in vpnc_clientlist alone, and must still be backed up.
-      final existingDesc = await _run('nvram get wgc${slot}_desc');
-      final existingVpnc = stock ? await _run('nvram get vpnc_clientlist') : '';
+      final existingDesc = await _read('nvram get wgc${slot}_desc');
+      final existingVpnc = stock ? await _read('nvram get vpnc_clientlist') : '';
       final occupied = existingDesc.isNotEmpty || (stock && parseVpncClientlist(existingVpnc).any((r) => r.slot == slot));
       if (occupied) {
         onLog?.call('Backing up existing ${await _label(slot)} config...');
         backup = {};
         for (final key in keys) {
-          backup['wgc${slot}_$key'] = await _run('nvram get wgc${slot}_$key');
+          backup['wgc${slot}_$key'] = await _read('nvram get wgc${slot}_$key');
         }
         if (stock) vpncBackup = existingVpnc;
       }
@@ -587,19 +602,39 @@ class RouterSlotService {
       onLog?.call('Config written to ${await _label(slot)} (disabled).', isSuccess: true);
       await _logRouter('Created ${await _label(slot)} configuration');
     } catch (e) {
+      // Both branches go through _run, not client.run: a restore that itself fails must reach the
+      // CRITICAL line rather than reporting success on a discarded exit code (build 413).
       if (backup != null) {
         onLog?.call('Create failed, restoring $oldLabel config...', isError: true);
         try {
           for (final entry in backup.entries) {
-            await client.run('nvram set ${entry.key}="${entry.value}"');
+            await _run('nvram set ${entry.key}=${shellSingleQuote(entry.value)}');
           }
           if (vpncBackup != null) {
-            await client.run('nvram set vpnc_clientlist=${shellSingleQuote(vpncBackup)}');
+            await _run('nvram set vpnc_clientlist=${shellSingleQuote(vpncBackup)}');
           }
-          await client.run('nvram commit');
+          await _run('nvram commit');
           onLog?.call('$oldLabel config restored.', isSuccess: true);
         } catch (_) {
           onLog?.call('CRITICAL: could not restore $oldLabel. Check router manually.', isError: true);
+        }
+      } else {
+        // The slot was EMPTY, so there is nothing to restore - but everything written before the
+        // failure is still in NVRAM, and `nvram commit` never ran. That is the half-written slot
+        // seen on 2026-09-08: all 17 wgc5_* keys readable, no vpnc_clientlist row, so fetchSlots
+        // and the router web UI both showed the slot as unconfigured while the keys sat in RAM.
+        // Put it back to genuinely empty instead of leaving the wreckage.
+        onLog?.call('Create failed, clearing the half-written wgc$slot...', isError: true);
+        try {
+          for (final key in keys) {
+            await _run('nvram unset wgc${slot}_$key', allowFailure: true);
+          }
+          if (stock) await _editVpncClientlist((recs) => removeVpncRecord(recs, slot));
+          await _run('nvram commit');
+          _labelCache.remove(slot); // the region name never took; do not report it afterwards
+          onLog?.call('wgc$slot cleared.', isSuccess: true);
+        } catch (_) {
+          onLog?.call('CRITICAL: could not clear wgc$slot. Check router manually.', isError: true);
         }
       }
       rethrow;
@@ -630,7 +665,7 @@ class RouterSlotService {
     var up = false;
     for (var retry = 0; retry < verifyMaxAttempts; retry++) {
       await Future.delayed(verifyPollInterval);
-      final out = await _run('wg show interfaces');
+      final out = await _read('wg show interfaces');
       onLog?.call('  wg show interfaces: ${out.isEmpty ? '(none)' : out}');
       await _logRouter('wg show interfaces: ${out.isEmpty ? '(none)' : out}');
       if (out.contains('wgc$slot')) {
@@ -745,17 +780,17 @@ class RouterSlotService {
     await _awaitInterfaceDown(slot);
 
     for (final key in slotKeysFor(routerFirmware)) {
-      await _run('nvram unset wgc${slot}_$key');
+      await _run('nvram unset wgc${slot}_$key', allowFailure: true);
     }
     // also clear ping target keys
-    await _run('nvram unset wgc${slot}_wd_primary_ip');
-    await _run('nvram unset wgc${slot}_wd_secondary_ip');
+    await _run('nvram unset wgc${slot}_wd_primary_ip', allowFailure: true);
+    await _run('nvram unset wgc${slot}_wd_secondary_ip', allowFailure: true);
     if (isStockFirmware) {
       // Resolve the runtime-state index from the record while it is still there - it is index 6,
       // not the slot number, so wgc1 leaves vpnc9_* behind.
-      final stateIdx = vpncStateIndexForSlot(parseVpncClientlist(await _run('nvram get vpnc_clientlist')), slot);
+      final stateIdx = vpncStateIndexForSlot(parseVpncClientlist(await _read('nvram get vpnc_clientlist')), slot);
       for (final key in kVpncRuntimeKeys) {
-        await _run('nvram unset vpnc${stateIdx}_$key');
+        await _run('nvram unset vpnc${stateIdx}_$key', allowFailure: true);
       }
       await _editVpncClientlist((recs) => removeVpncRecord(recs, slot));
     }
@@ -769,7 +804,7 @@ class RouterSlotService {
   // cadence as the enable-side verification.
   Future<void> _awaitInterfaceDown(int slot) async {
     for (var attempt = 0; attempt < verifyMaxAttempts; attempt++) {
-      if (!(await _run('wg show interfaces')).contains('wgc$slot')) return;
+      if (!(await _read('wg show interfaces')).contains('wgc$slot')) return;
       await Future.delayed(verifyPollInterval);
     }
     // Clearing the configuration is still the right thing to do; say so rather than fail the delete.
@@ -799,8 +834,8 @@ class RouterSlotService {
 
   // ── Watchdog ping-target NVRAM (shared with the ENABLE check & the watchdog script) ─
   Future<(String, String)> readWatchdogPingTargets(int slot) async {
-    final primary = await _run('nvram get wgc${slot}_wd_primary_ip');
-    final secondary = await _run('nvram get wgc${slot}_wd_secondary_ip');
+    final primary = await _read('nvram get wgc${slot}_wd_primary_ip');
+    final secondary = await _read('nvram get wgc${slot}_wd_secondary_ip');
     return (primary, secondary);
   }
 
@@ -823,7 +858,7 @@ class RouterSlotService {
           "awk '{if (\$2 > m) m = \$2} END {print m + 0}'");
       final stamp = int.tryParse(out.trim()) ?? 0;
       if (stamp <= 0) return null;
-      final now = int.tryParse((await _run('date +%s')).trim());
+      final now = int.tryParse((await _read('date +%s')).trim());
       if (now == null) return null;
       final age = now - stamp;
       return age < 0 ? 0 : age;

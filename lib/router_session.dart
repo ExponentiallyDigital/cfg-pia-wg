@@ -145,6 +145,31 @@ class RouterSession implements SSHClient {
     }
   }
 
+  /// Like [run], but keeps stdout and stderr apart and reports the exit code.
+  ///
+  /// Same one-reconnect-one-retry contract as [run] - a `service restart_vpnc` can take the
+  /// session down mid-action, and a caller that now checks exit codes must not see that as the
+  /// command failing.
+  @override
+  Future<SSHRunResult> runWithResult(
+    String command, {
+    bool runInPty = false,
+    bool stdout = true,
+    bool stderr = true,
+    Map<String, String>? environment,
+  }) async {
+    final c = await client();
+    try {
+      return await c.runWithResult(command, runInPty: runInPty, stdout: stdout, stderr: stderr, environment: environment);
+    } catch (e) {
+      if (_closed || !isConnectionLost(e)) rethrow;
+      _drop();
+      onLog?.call('Router SSH connection dropped; reconnecting.', isError: true);
+      final fresh = await client();
+      return await fresh.runWithResult(command, runInPty: runInPty, stdout: stdout, stderr: stderr, environment: environment);
+    }
+  }
+
   /// Resolves once a client is up. `openSshClient` already awaits authentication, so reaching here
   /// at all means the router accepted the credentials.
   @override
