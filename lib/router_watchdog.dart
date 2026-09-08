@@ -15,9 +15,9 @@
 //
 
 import 'dart:async';
-import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
+import 'router_command.dart';
 import 'firmware.dart';
 import 'router_slot_service.dart' show RouterSlotService, fetchSlotLabel, slotDescFor;
 import 's50_template.dart';
@@ -648,14 +648,22 @@ class RouterWatchdog {
   /// Checks before waiting, so an interface that is already up costs nothing.
   Future<bool> _awaitInterfaceUp(int slot) async {
     for (var i = 0; i < verifyMaxAttempts; i++) {
-      if ((await _run('wg show interfaces')).contains('wgc$slot')) return true;
+      if ((await _read('wg show interfaces')).contains('wgc$slot')) return true;
       await Future.delayed(verifyPollInterval);
     }
     return false;
   }
 
   // Run a command and return trimmed stdout (mirrors router_push.dart `_run`).
-  Future<String> _run(String cmd) async => utf8.decode(await client.run(cmd)).trim();
+  /// Runs [cmd] and returns its **stdout only**. Throws on a non-zero exit unless [allowFailure];
+  /// see router_command.dart for why writes are strict and reads are not.
+  Future<String> _run(String cmd, {bool allowFailure = false}) async {
+    final r = await runRouterCommand(client, cmd, allowFailure: allowFailure, onLog: onLog);
+    return r.stdout;
+  }
+
+  /// A read: returns stdout and never throws, whatever the exit code.
+  Future<String> _read(String cmd) => _run(cmd, allowFailure: true);
 
   // Heredoc writes can stall if the SSH channel hangs; bound them at 30s and
   // surface a troubleshooting message on timeout.
@@ -701,7 +709,7 @@ class RouterWatchdog {
 
   // The slot's stored description, used to keep the stock clientlist row named.
   Future<String?> _descFor(int slot) async {
-    final desc = (await _run('nvram get wgc${slot}_desc')).trim();
+    final desc = (await _read('nvram get wgc${slot}_desc')).trim();
     return desc.isEmpty ? null : desc;
   }
 
@@ -727,7 +735,7 @@ class RouterWatchdog {
     }
   }
 
-  Future<bool> isMerlinRouter() async => (await _run('nvram get 3rd-party')) == 'merlin';
+  Future<bool> isMerlinRouter() async => (await _read('nvram get 3rd-party')) == 'merlin';
 
   /// Deletes the cached PIA CA certificate, so the next watchdog run downloads a fresh one.
   ///
@@ -743,7 +751,7 @@ class RouterWatchdog {
 
   // Merlin ships jq on $PATH; on stock the user installs it under /jffs/cfg-pia-wg (README §4).
   Future<bool> isJqInstalled() async =>
-      isStockFirmware ? (await _run("[ -x '$kStockJqPath' ] && echo 1 || echo 0")) == '1' : (await _run('which jq')).isNotEmpty;
+      isStockFirmware ? (await _run("[ -x '$kStockJqPath' ] && echo 1 || echo 0")) == '1' : (await _read('which jq')).isNotEmpty;
 
   // Ensures the watchdog script has somewhere to live. jffs2_scripts / jffs2_on are a Merlin
   // custom-scripts feature; on stock only the directory matters.
@@ -754,8 +762,8 @@ class RouterWatchdog {
       await _run("mkdir -p '$kRouterAppDir'");
       return;
     }
-    final scripts = await _run('nvram get jffs2_scripts');
-    final on = await _run('nvram get jffs2_on');
+    final scripts = await _read('nvram get jffs2_scripts');
+    final on = await _read('nvram get jffs2_on');
     if (scripts == '1' && on == '1') return;
     await _run('nvram set jffs2_scripts=1');
     await _run('nvram set jffs2_on=1');
@@ -905,8 +913,8 @@ class RouterWatchdog {
   // schedule back without asking the user for the settings again.
   Future<void> disableWatchdog(int slot) => _guard('disable watchdog', () async {
         final label = await _label(slot);
-        await _run('cru d watchdog_wgc$slot');
-        await _run('cru d watchdog_log_rotate_wgc$slot');
+        await _run('cru d watchdog_wgc$slot', allowFailure: true);
+        await _run('cru d watchdog_log_rotate_wgc$slot', allowFailure: true);
         await _removeCronPersistence(slot);
         await _logRouter('Watchdog schedule removed for $label (settings kept)');
         onLog?.call('Watchdog disabled for $label; its settings are kept.', isSuccess: true);
@@ -917,7 +925,7 @@ class RouterWatchdog {
   // from the one the user configured.
   Future<void> enableWatchdog(int slot) => _guard('enable watchdog', () async {
         final label = await _label(slot);
-        final stored = await _run('nvram get wgc${slot}_wd_check_interval');
+        final stored = await _read('nvram get wgc${slot}_wd_check_interval');
         final interval = int.tryParse(stored);
         if (interval == null || interval <= 0) {
           throw Exception('wgc$slot has no stored watchdog settings - use CREATE/EDIT first.');
@@ -952,7 +960,7 @@ class RouterWatchdog {
   Future<bool> _otherWatchdogsRemain(int slot) async {
     for (var other = 1; other <= 5; other++) {
       if (other == slot) continue;
-      if ((await _run('cru l | grep -qw watchdog_wgc$other && echo 1 || echo 0')) == '1') return true;
+      if ((await _read('cru l | grep -qw watchdog_wgc$other && echo 1 || echo 0')) == '1') return true;
     }
     return false;
   }
@@ -962,8 +970,8 @@ class RouterWatchdog {
   Future<void> stopWatchdog(int slot) => _guard('disable', () async {
         // Read before the nvram unsets below wipe the description.
         final label = await _label(slot);
-        await _run('cru d watchdog_wgc$slot');
-        await _run('cru d watchdog_log_rotate_wgc$slot');
+        await _run('cru d watchdog_wgc$slot', allowFailure: true);
+        await _run('cru d watchdog_log_rotate_wgc$slot', allowFailure: true);
         await _run('rm -f ${watchdogScriptPath(slot)}');
         // strip out cron jobs added when watchdog installed, reinstate 700 permission. On stock
         // the file itself stays: it is a replaced init script, so removing it is worse than
@@ -974,16 +982,16 @@ class RouterWatchdog {
           '/tmp/watchdog_last_ping_success_wgc$slot /tmp/watchdog_backoff_wgc$slot',
         );
         // nvram command doesn't allow multiple values in one command
-        await _run('nvram unset wgc${slot}_wd_check_interval');
-        await _run('nvram unset wgc${slot}_wd_email_enabled');
-        await _run('nvram unset wgc${slot}_wd_email_from');
-        await _run('nvram unset wgc${slot}_wd_email_subject');
-        await _run('nvram unset wgc${slot}_wd_email_to');
-        await _run('nvram unset wgc${slot}_wd_primary_ip');
-        await _run('nvram unset wgc${slot}_wd_secondary_ip');
-        await _run('nvram unset wgc${slot}_wd_smtp_pass');
-        await _run('nvram unset wgc${slot}_wd_smtp_server');
-        await _run('nvram unset wgc${slot}_wd_smtp_user');
+        await _run('nvram unset wgc${slot}_wd_check_interval', allowFailure: true);
+        await _run('nvram unset wgc${slot}_wd_email_enabled', allowFailure: true);
+        await _run('nvram unset wgc${slot}_wd_email_from', allowFailure: true);
+        await _run('nvram unset wgc${slot}_wd_email_subject', allowFailure: true);
+        await _run('nvram unset wgc${slot}_wd_email_to', allowFailure: true);
+        await _run('nvram unset wgc${slot}_wd_primary_ip', allowFailure: true);
+        await _run('nvram unset wgc${slot}_wd_secondary_ip', allowFailure: true);
+        await _run('nvram unset wgc${slot}_wd_smtp_pass', allowFailure: true);
+        await _run('nvram unset wgc${slot}_wd_smtp_server', allowFailure: true);
+        await _run('nvram unset wgc${slot}_wd_smtp_user', allowFailure: true);
         // GLOBAL keys, shared by every watchdog script. With concurrent watchdogs allowed, only
         // the last one out may clear them - otherwise the survivor cannot authenticate with PIA
         // at its next renegotiation. The cru entries for this slot are already gone above, so
@@ -991,8 +999,8 @@ class RouterWatchdog {
         if (await _otherWatchdogsRemain(slot)) {
           onLog?.call('Another watchdog is still configured; keeping the shared PIA credentials.');
         } else {
-          await _run('nvram unset cfg_pia_wg_password');
-          await _run('nvram unset cfg_pia_wg_user');
+          await _run('nvram unset cfg_pia_wg_password', allowFailure: true);
+          await _run('nvram unset cfg_pia_wg_user', allowFailure: true);
         }
         await _run('nvram commit');
         onLog?.call('NVRAM committed.', isSuccess: true);
@@ -1020,14 +1028,14 @@ class RouterWatchdog {
     final cronEnabled = (await _run("cru l | grep -qw watchdog_wgc$slot && [ -s '${watchdogScriptPath(slot)}' ] "
             '&& echo 1 || echo 0')) ==
         '1';
-    final interfaceEnabled = (await _run('nvram get wgc${slot}_enable')) == '1';
-    final interfacePresent = (await _run('wg show interfaces')).contains('wgc$slot');
+    final interfaceEnabled = (await _read('nvram get wgc${slot}_enable')) == '1';
+    final interfacePresent = (await _read('wg show interfaces')).contains('wgc$slot');
     final enabled = cronEnabled && interfaceEnabled && interfacePresent;
-    final ping = await _run('cat /tmp/watchdog_last_ping_success_wgc$slot 2>/dev/null');
+    final ping = await _read('cat /tmp/watchdog_last_ping_success_wgc$slot 2>/dev/null');
     return WatchdogStatus(isEnabled: enabled, lastSuccessfulPing: parseLastPing(ping));
   }
 
-  Future<String> getWatchdogLog(int slot) => _run('cat /tmp/watchdog_wgc$slot.log 2>/dev/null');
+  Future<String> getWatchdogLog(int slot) => _read('cat /tmp/watchdog_wgc$slot.log 2>/dev/null');
 
   // Reads the full watchdog config (per-slot + global PIA) back from NVRAM for the dialog.
   Future<WatchdogConfig> loadConfig(int slot) async {
@@ -1045,10 +1053,10 @@ class RouterWatchdog {
     ];
     final nv = <String, String>{};
     for (final k in keys) {
-      nv['wgc${slot}_wd_$k'] = await _run('nvram get wgc${slot}_wd_$k');
+      nv['wgc${slot}_wd_$k'] = await _read('nvram get wgc${slot}_wd_$k');
     }
-    nv['cfg_pia_wg_user'] = await _run('nvram get cfg_pia_wg_user');
-    nv['cfg_pia_wg_password'] = await _run('nvram get cfg_pia_wg_password');
+    nv['cfg_pia_wg_user'] = await _read('nvram get cfg_pia_wg_user');
+    nv['cfg_pia_wg_password'] = await _read('nvram get cfg_pia_wg_password');
     return WatchdogConfig.fromNvram(slot, nv);
   }
 
@@ -1105,7 +1113,7 @@ class RouterWatchdog {
         onLog?.call('Test email FAILED (exit $exitCode) sending to ${config.emailTo} via $host:$port.', isError: true);
 
         // Layer 1: mailer stderr
-        final stderrRaw = await _run('cat /tmp/wd_smtp_err 2>/dev/null | tail -20 | tr "\\n" "|"');
+        final stderrRaw = await _read('cat /tmp/wd_smtp_err 2>/dev/null | tail -20 | tr "\\n" "|"');
         await _logRouter('Email FAILED (exit=$exitCode) stderr=[${stderrRaw.trim()}]');
         if (stderrRaw.trim().isNotEmpty) onLog?.call('  mailer: ${stderrRaw.trim()}', isError: true);
 
@@ -1138,7 +1146,7 @@ class RouterWatchdog {
   // Reachability probe over the WAN (no interface binding) — used during pre-save validation.
   Future<bool> pingHostViaWan(String ip) async {
     try {
-      final out = await _run('ping -c 1 -W 2 ${shellSingleQuote(ip)} >/dev/null 2>&1 && echo OK || echo FAIL');
+      final out = await _read('ping -c 1 -W 2 ${shellSingleQuote(ip)} >/dev/null 2>&1 && echo OK || echo FAIL');
       return out == 'OK';
     } catch (_) {
       return false;
@@ -1148,7 +1156,7 @@ class RouterWatchdog {
   // Reachability probe bound to the VPN interface — used by any test-from-app functionality.
   Future<bool> pingHostViaVpn(String ip, int slot) async {
     try {
-      final out = await _run('ping -I wgc$slot -c 1 -W 2 ${shellSingleQuote(ip)} >/dev/null 2>&1 && echo OK || echo FAIL');
+      final out = await _read('ping -I wgc$slot -c 1 -W 2 ${shellSingleQuote(ip)} >/dev/null 2>&1 && echo OK || echo FAIL');
       return out == 'OK';
     } catch (_) {
       return false;
@@ -1197,6 +1205,7 @@ CURLB="curl -s --max-time 15 --connect-timeout 8 --tlsv1.2"
 CURL="$CURLB --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
 TMPSRV="/tmp/${IFACE}_servers.txt"
+TMPSRVRAW="/tmp/${IFACE}_servers_raw.json"
 TMPERR="/tmp/${IFACE}_curl.err"
 TMPTOK="/tmp/${IFACE}_token.json"
 SERVERLIST_URL="https://serverlist.piaservers.net/vpninfo/servers/v6"
@@ -1236,6 +1245,22 @@ PIA_PASS="$(nvram get cfg_pia_wg_password)"
 __BACKOFF__
 
 log "Watchdog started for $IFACE"
+
+# A tunnel the user turned off in the WebUI looks exactly like a tunnel that dropped. Without
+# this the watchdog reconfigures it, brings it back up and emails an alert - undoing what the
+# user just did and telling them their VPN failed.
+#
+# This is not a corner case: changing a device assignment REQUIRES disabling the tunnel first,
+# so every assignment would trip it. Observed 2026-09-07 22:45.
+#
+# Only an explicit "0" stands down. An empty value means the firmware does not keep the key,
+# which is not the same as the user having said no, and must not silently stop the watchdog.
+# A deploy is explicit user intent and runs regardless.
+ENABLED="$(nvram get ${K}enable)"
+if [ "$RUNMODE" != "deploy" ] && [ "$ENABLED" = "0" ]; then
+  log "$IFACE is disabled in the router; standing down until it is enabled again"
+  exit 0
+fi
 
 # Lifetime counters. Reconfigures are rare, so one nvram commit per event is an acceptable flash
 # cost; a broken tunnel retrying forever is what the token backoff is for.
@@ -1491,7 +1516,10 @@ fi
 if [ ! -f "$CACERT" ]; then
   log "CA cert not cached; downloading"
   mkdir -p "${CACERT%/*}" || abort "failed to create ${CACERT%/*}"
-  $CURL "$CACERT_URL" -o "$CACERT" || abort "failed to download CA cert"
+  if ! $CURLB -S --fail "$CACERT_URL" -o "$CACERT" 2>"$TMPERR"; then
+    CRC=$?
+    abort "failed to download the PIA CA certificate (curl exit $CRC: $(head -n 1 "$TMPERR" | cut -c1-120)). The router needs internet access to $CACERT_URL."
+  fi
   echo -n > /jffs/curllst
   openssl x509 -noout -in "$CACERT" >/dev/null 2>&1 || abort "CA cert is not valid PEM"
   log "CA cert cached at $CACERT"
@@ -1500,15 +1528,34 @@ else
 fi
 
 log "Requesting PIA token for user $PIA_USER"
-# Body to a file, status to stdout: a pipe into jq would discard curl's exit status.
-HTTP="$($CURLB -S -o "$TMPTOK" -w '%{http_code}' -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" 2>"$TMPERR")"
-RC=$?
+# Body to a file, status code to a second file, and curl run as the condition of an `if`.
+#
+# 2026-09-07 22:45 this reported `exit 0, HTTP none, body 0B: empty` with an empty stderr - so
+# curl supposedly succeeded while producing no status code, no body and no error. The obvious
+# suspect was `RC=$?` after `VAR="$(curl ...)"` capturing the assignment rather than the command,
+# but that was TESTED and POSIX sh captures it correctly, so the assignment form was not the
+# cause and the real one is still unknown. The `if` form is kept anyway because it cannot be
+# misread by any shell, and RESPONSELESS below can now distinguish the case that was observed
+# from an ordinary HTTP error - which the old message could not.
+TMPHTTP="/tmp/${IFACE}_http.txt"
+if $CURLB -S -o "$TMPTOK" -w '%{http_code}' -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" \
+     >"$TMPHTTP" 2>"$TMPERR"; then
+  RC=0
+else
+  RC=$?
+fi
+HTTP="$(cat "$TMPHTTP" 2>/dev/null)"
+rm -f "$TMPHTTP"
 TOKEN=""
 # `< "$TMPTOK"` fails in the SHELL, before the command runs, so the command's own 2>/dev/null
 # cannot suppress it - curl that could not resolve the host printed two errors to the console.
 [ -f "$TMPTOK" ] && TOKEN="$("$JQ" -r '.token // empty' < "$TMPTOK" 2>/dev/null)"
 if [ -z "$TOKEN" ]; then
-  # The body is the evidence when the status is not: seen once as exit 0 with no status at all.
+  # curl exits 0 for an HTTP error unless --fail is used, and this call deliberately does not
+  # use it - so exit 0 WITH an HTTP code means the server answered and the answer was not a
+  # token. Exit 0 with NO code and NO stderr is a different animal: curl reported success and
+  # produced nothing whatsoever. That is what was seen once, during a WAN restart, and the old
+  # message could not tell the two apart. Naming it is what makes the next occurrence readable.
   BSZ=0
   BODY=""
   if [ -f "$TMPTOK" ]; then
@@ -1516,15 +1563,36 @@ if [ -z "$TOKEN" ]; then
     BODY="$(head -n 1 "$TMPTOK" 2>/dev/null | cut -c1-60)"
   fi
   rm -f "$TMPTOK"
-  abort "failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}, body ${BSZ:-0}B: ${BODY:-empty}) $(head -n 1 "$TMPERR" | cut -c1-80)"
+  ERRLINE="$(head -n 1 "$TMPERR" 2>/dev/null | cut -c1-80)"
+  if [ "$RC" = "0" ] && [ -z "$HTTP" ] && [ -z "$ERRLINE" ]; then
+    abort "failed to obtain PIA token: curl reported success but returned nothing at all (no status, no body, no error). Usually means the network was still coming back up."
+  fi
+  abort "failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}, body ${BSZ:-0}B: ${BODY:-empty}) $ERRLINE"
 fi
 rm -f "$TMPTOK"
 echo -n > /jffs/curllst
 log "PIA token obtained (len=$(echo -n "$TOKEN" | wc -c))"
 
 log "Fetching server list for region $REGION"
-SERVERS="$($CURL "$SERVERLIST_URL" | head -1 | "$JQ" -r --arg id "$REGION" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"')"
-[ -n "$SERVERS" ] || abort "no servers found for region $REGION"
+# Fetch and parse as separate steps. As one pipeline, `$?` was jq's and curl's failure was
+# invisible - so a router with no working DNS was told "no servers found for region X", which
+# blames the one thing that was fine. The three causes need three different messages.
+if ! $CURLB -S --fail "$SERVERLIST_URL" -o "$TMPSRVRAW" 2>"$TMPERR"; then
+  SRC=$?
+  abort "could not fetch the PIA server list (curl exit $SRC: $(head -n 1 "$TMPERR" | cut -c1-120)). This is a network problem, not a region problem."
+fi
+# The payload is one long JSON line followed by a signature block; jq only wants the first.
+SERVERS="$(head -1 "$TMPSRVRAW" | "$JQ" -r --arg id "$REGION" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"' 2>"$TMPERR")"
+if [ -z "$SERVERS" ]; then
+  # Distinguish "the list did not parse" from "the list is fine and your region is not in it".
+  ALLIDS="$(head -1 "$TMPSRVRAW" | "$JQ" -r '.regions[].id' 2>/dev/null | wc -l | tr -d ' ')"
+  rm -f "$TMPSRVRAW"
+  case "$ALLIDS" in
+    ''|0) abort "the PIA server list downloaded but could not be parsed ($(head -n 1 "$TMPERR" | cut -c1-120)). Check $JQ runs on this router." ;;
+    *) abort "region '$REGION' is not in PIA's server list ($ALLIDS regions offered). Check the slot description matches a PIA region id exactly." ;;
+  esac
+fi
+rm -f "$TMPSRVRAW"
 log "Servers: $(echo "$SERVERS" | wc -l | tr -d ' ') candidates"
 echo -n > /jffs/curllst
 
@@ -1549,7 +1617,7 @@ if [ -z "$BEST_IP" ]; then
   BEST_IP="$(echo "$SERVERS" | head -1 | awk '{print $1}')"
   BEST_CN="$(echo "$SERVERS" | head -1 | awk '{print $2}')"
 fi
-[ -n "$BEST_IP" ] || abort "could not select a server for region $REGION"
+[ -n "$BEST_IP" ] || abort "none of the $(wc -l < "$TMPSRV" | tr -d ' ') PIA servers for $REGION answered a ping. The server list downloaded, so this is the router reaching PIA, not the region."
 log "Selected server $BEST_IP ($BEST_CN) for region $DESC"
 
 log "Generating WireGuard keypair"
@@ -1601,7 +1669,7 @@ service restart_vpnrouting0
 log "Waiting for $IFACE to initialise"
 sleep 3
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then
-  abort "Interface $IFACE did not come up after reconfiguration"
+  abort "$IFACE did not come up after reconfiguration (interfaces present: $(wg show interfaces 2>/dev/null | tr -s ' ' | cut -c1-60))"
 fi
 log "Interface $IFACE is up"
 

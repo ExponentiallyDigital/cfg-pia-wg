@@ -310,7 +310,21 @@ What matters is the consequence, which does not depend on the inference being ri
 Two states, not three. On the measured network that is four devices cheap and six expensive, rather than the seven-and-three an `IP Method` reading would have suggested.
 
 > [!CAUTION]
-> **Devices behind an AiMesh node are seen differently by the main router**, and this is the first hard evidence of it. The policy list is keyed by IP and enforced by an `ip rule` on the main router, so an assignment should still work - but "should" is doing real work in that sentence. Verify against a device behind the node before shipping; `.claude/plans/plan_vpn_device_assignments.md` carries it as an open item.
+> **Devices behind an AiMesh node are seen differently by the main router - RESOLVED 2026-09-08, and it does not block assignment.**
+>
+> AiMesh nodes report their **wireless** clients up to the main router; a device on a node's **ethernet** port is bridged transparently and never registers as a mesh client. The kernel says so directly - `<MAC> not mesh client, can't update it's ip` - for exactly the wired-behind-node devices the WebUI also labelled `Static IP`. One phenomenon, two symptoms: the AiMesh client table has no IP binding for them, so the client-tracking code cannot label them and cannot update them.
+>
+> **The app's own sources are unaffected**, checked on hardware for a wired-behind-node device:
+>
+> | Source | Has it? |
+> | --- | --- |
+> | `/jffs/nmp_cl_json.js` | yes - `online: 1`, `wireless: 0`, and **no `ip` field at all** |
+> | `/tmp/nmp_cache.js` | yes, with the IP and the user's name for it |
+> | `/proc/net/arp` | yes, on `br0` |
+>
+> So such a device can be listed and assigned. It also confirms the two-source design in 2.1 is **necessary rather than tidy**: `nmp_cl_json.js` carries no address, so the IP has to come from `nmp_cache.js` for every device, not just these.
+>
+> The kernel messages themselves are cosmetic. They appear only in `dmesg`, never in `/tmp/syslog.log`, because `/proc/sys/kernel/printk` reads `5 4 1 7` - only priorities below 5 are forwarded, and these are informational.
 
 > [!NOTE]
 > **The guest network is a separate bridge** (`br1`, a different subnet) and is isolated from the LAN by design. Whether guest devices should appear in the assignment list at all is an open question - they cannot reach the LAN, and routing them through a VPN slot is a different proposition from routing a LAN device. Decide before the screen is built rather than discovering it from a bug report.
@@ -430,6 +444,25 @@ Observed on a rebuilt router with `wgc1` freshly created and nothing assigned (2
 
 So the placeholder records are very likely not "seeded and disabled" but **devices bound to the Internet connection**, index `0` being the WAN. That reading fits the evidence and has not been verified - either way the rule in the box above holds, because index 0 says unassigned-from-a-VPN in both readings.
 
+#### Reservations are created by ANY assignment, and never removed - MEASURED 2026-09-08
+
+Assigning devices in the WebUI and then unassigning them again produced this, with the policy list left empty:
+
+```text
+dhcp_staticlist=<AA:BB:CC:DD:EE:FF>192.168.1.20>>hostname1<...> 4 named, typed by hand
+                <0A:0B:0C:0D:0E:0F>192.168.1.21>>              6 new, hostname EMPTY
+vpnc_dev_policy_list=                                          nothing assigned
+```
+
+Three things follow, and all three change the design:
+
+- **Assigning to the "Internet Connection" profile creates a reservation too.** It is not VPN-specific: binding a device to *any* profile pins its address, because every profile is keyed by IP. So the expensive path is reached by an action that does not look like it involves a VPN at all.
+- **Unassigning does NOT remove the reservation.** This was previously an open sub-question answered only by inference; here the policy list is empty and all ten reservations remain. Reservations accumulate and are never cleaned up.
+- **The cost is per device, once, ever.** After a user has assigned devices even briefly, every one of them is reserved, and from then on every assignment - and reassignment - takes the cheap path. The whole-LAN bounce is a first-touch cost, not a recurring one.
+
+> [!NOTE]
+> The corollary for the app: a router that has ever used VPN Fusion is likely to have a reservation for every device already, so the expensive path is the exception in practice. A **freshly reset** router is where it bites - which is exactly the state a new user is in. Do not let the rarity argue away the warning.
+
 #### `vpnc_dev_policy_list_tmp`
 
 Confirmed: it holds the **previous committed value** of `vpnc_dev_policy_list`. After every one of the eight steps, `_tmp` equalled the list as it stood before that step. It is the WebUI rollback copy.
@@ -484,10 +517,61 @@ MAC, IP, empty DNS, **empty hostname**. That follows from the binding being by I
 > [!IMPORTANT]
 > **The tunnel must be disabled before its assignments can be changed.** Confirmed on hardware: the WebUI will not apply an assignment to a running profile, and every observed sequence starts with `stop_vpnc`.
 >
-> **UNVERIFIED: does a device assigned to a down tunnel fail closed or fall back to the WAN?** Fail-closed is the desired property and the one the feature is sold on, but it has only been measured for "apply to all devices" (`vpnc_default_wan`), not for a per-device `ip rule`. Item 10 settles it. Either way the app should warn before assigning to a disabled slot - fail-closed means the device is blackholed, fail-open means the user believes it is protected when it is not, and both deserve a warning.
+> **A per-device assignment falls through to the DEFAULT CONNECTION when its tunnel drops.**
+> CONFIRMED 2026-09-08 by running the same test twice with different defaults.
+>
+> ```text
+> default = Internet          default = wgc1 (another tunnel)
+> unassigned  : dev eth0      unassigned  : dev wgc1
+> assigned,up : dev wgc5      assigned,up : dev wgc5
+> assigned,DN : dev eth0      assigned,DN : dev wgc1        <- the discriminator
+> ```
+>
+> The second run is decisive: with the tunnel down the device went to **wgc1, not the WAN**. So the
+> rule is not "falls back to the internet" but "the `ip rule` is torn down with its interface and
+> traffic falls through to the default connection". The first run only looked like a leak because
+> the default happened to be the internet.
+>
+> | Default connection | Tunnel drops | Result | Evidence |
+> | --- | --- | --- | --- |
+> | Internet | falls to WAN | traffic **leaks** | measured 2026-09-08 14:10 |
+> | a different, working tunnel | falls to that tunnel | still encrypted, different exit | measured 2026-09-08 14:40 |
+> | the same tunnel | default is dead too | **no internet, no leak** | predicted by the rule; matches the maintainer's years of running exactly this, and is the fault this app was written to fix. Not measured in this harness |
+>
+> It also retires the "two mechanisms" reading: `vpnc_default_wan` appeared to fail closed on
+> 2026-09-05 only because the default WAS the tunnel. One rule, three outcomes, chosen by a setting.
+>
+> **What this gives the app.** Assignment alone is not a kill switch, and must never be described as
+> one. But fail-closed behaviour is *reachable*, and now on evidence rather than hope: pin the
+> devices to a tunnel AND make that tunnel the default connection. That is a recommendation the app
+> can make. The watchdog then bounds how long the outage lasts - which is the whole origin of this
+> project, where a stale PIA config took a network off the internet until a config was rebuilt by
+> hand. Assignment, default connection and watchdog are one story, not three features.
+
+> [!NOTE]
+> **SUPERSEDED 2026-09-08 - the heavy path is avoidable.** Measured: writing the reservation and
+> the policy record, then calling only `restart_dnsmasq` and `restart_vpnc_dev_policy`, applied
+> the assignment with **nothing bouncing** - the WAN address was unchanged, the syslog carried no
+> `restart_net_and_phy`, and a wired SSH session did not drop. The WebUI's heavy call is simply
+> heavier than the job needs, and the app can do better than the WebUI here. The two-cost model
+> below is kept for the reasoning, but the app should always use the light pair.
+>
+> **A second, independent signal says the same thing.** A day of syslog was searched for the
+> Broadcom multicast-snooping error `bcm_mcast_netlink_process_snoop_cfg,884: interface N could
+> not be found`. It appears in three bursts of ~120 lines each, and every one follows a
+> `restart_net_and_phy` within ten seconds. Nothing else provokes it - `restart_vpnc`,
+> `stop_vpnc`, `restart_vpnc_dev_policy` on its own, `restart_default_wan`, `restart_wgs` and
+> `restart_firewall` all ran repeatedly in the same log and produced none. The heavy call tears
+> down every network device at once, so `mcpd` retries its snooping config against interface
+> indexes that no longer exist until the rebuild settles.
+>
+> This is an ASUS defect and not one the app can repair - but the app never triggers it, because
+> the light pair does not rebuild the network stack. The number in the message is a kernel
+> `ifindex`, which is never reused within a boot and resets on reboot; it identifies nothing the
+> app owns and needs no handling.
 
 > [!WARNING]
-> **Applying an assignment costs one of two very different amounts, and the app should not treat them alike.**
+> **The WebUI applies an assignment one of two very different ways.**
 >
 > - **Device already has a DHCP reservation:** `stop_vpnc` / `restart_vpnc_dev_policy` / `restart_vpnc`. VPN routing bounces for assigned devices. Everything else is untouched. Cheap.
 > - **Device has no reservation:** the firmware creates one, which drags in `restart_net_and_phy` - every switch port bounces, downstream routers and APs drop with everything behind them, and the WAN re-leases. Expensive, and it hits devices that have nothing to do with the assignment.

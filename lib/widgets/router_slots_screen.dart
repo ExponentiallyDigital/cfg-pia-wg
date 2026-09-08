@@ -193,6 +193,13 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     String? connectError;
     try {
       final client = await _connect();
+      // Force the connection HERE, so a bad address or a refused login is reported as what it is.
+      // RouterSession connects lazily, so `_connect()` does no I/O - the first command did, which
+      // meant a connection failure surfaced inside _checkFirmware and was relabelled "Unable to
+      // determine router firmware type". Only on the first connect of a session, since after that
+      // the firmware is cached and the probe is skipped - which is why the same mistake reported
+      // two different errors depending on what had happened earlier.
+      await client.authenticated;
       final svc = _slotSvc(client);
       // Detection has to precede fetchSlots: on stock the slot list comes from vpnc_clientlist.
       gate = await _checkFirmware(svc);

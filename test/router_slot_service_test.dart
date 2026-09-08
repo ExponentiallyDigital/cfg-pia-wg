@@ -226,6 +226,53 @@ void main() {
       expect(logs.any((m) => m.contains('Backing up existing wgc1')), isTrue);
       expect(logs.any((m) => m.contains('config restored')), isTrue);
     });
+
+    // The gap that produced the half-written wgc5 of 2026-09-08. `backup` is only populated for an
+    // OCCUPIED slot, so a create into an EMPTY one that failed part-way took the `if (backup !=
+    // null)` branch, did nothing, and left the keys written and uncommitted.
+    test('a failed create into an EMPTY slot unsets what it wrote', () async {
+      final logs = <String>[];
+      final c = RecordingSSHClient(responder: (_) => '', throwOn: ['wgc1_alive=25']);
+      await expectLater(
+        svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
+            .createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        throwsA(isA<Exception>()),
+      );
+      expect(logs.any((m) => m.contains('Backing up')), isFalse, reason: 'nothing to back up');
+      expect(c.ran('nvram unset wgc1_desc'), isTrue);
+      expect(c.ran('nvram unset wgc1_addr'), isTrue);
+      expect(c.ran('nvram commit'), isTrue, reason: 'the clear must be flushed, or it survives in RAM');
+      expect(logs.any((m) => m.contains('clearing the half-written wgc1')), isTrue);
+    });
+
+    test('a restore that itself fails says CRITICAL rather than restored', () async {
+      // Before 413 the restore ran through client.run, which discards the exit code - so a restore
+      // that failed still logged 'config restored' and the user was told their slot was safe.
+      final logs = <String>[];
+      final c = RecordingSSHClient(
+        responder: (cmd) => cmd.contains('nvram get') ? 'backup_val' : '',
+        throwOn: ['wgc1_alive=25'],
+      )..failWith['nvram set wgc1_addr='] = 'nvram: write failed';
+      await expectLater(
+        svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
+            .createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        throwsA(isA<Exception>()),
+      );
+      expect(logs.any((m) => m.contains('CRITICAL: could not restore')), isTrue);
+      expect(logs.any((m) => m.contains('config restored')), isFalse);
+    });
+
+    test('restored values are single-quoted, so a quote in the old value cannot break out', () async {
+      final c = RecordingSSHClient(
+        responder: (cmd) => cmd.contains('nvram get') ? r'a"b' : '',
+        throwOn: ['wgc1_alive=25'],
+      );
+      await expectLater(
+        svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        throwsA(isA<Exception>()),
+      );
+      expect(c.ran("nvram set wgc1_addr='a\"b'"), isTrue);
+    });
   });
 
   group('enableSlot', () {
@@ -944,6 +991,19 @@ void main() {
         throwsA(isA<Exception>()),
       );
       expect(c.ran("nvram set vpnc_clientlist='backup_val'"), isTrue);
+    });
+
+    test('a failed create into an empty STOCK slot also drops the vpnc_clientlist row', () async {
+      // The empty-slot clear has to undo both halves of the write, or it leaves the mirror image
+      // of the observed fault: a row in the list naming a slot whose keys are gone.
+      useStock();
+      final c = RecordingSSHClient(responder: (_) => '', throwOn: ['nvram commit']);
+      await expectLater(
+        svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        throwsA(isA<Exception>()),
+      );
+      expect(c.ran('nvram unset wgc1_desc'), isTrue);
+      expect(c.ran('nvram set vpnc_clientlist='), isTrue, reason: 'the row is rewritten without slot 1');
     });
 
     test('enableSlot flips the vpnc active flag as well as wgcN_enable', () async {

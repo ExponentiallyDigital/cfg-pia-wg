@@ -19,7 +19,18 @@ Let the user see their LAN devices and choose which VPN each one uses. Unassigne
 
 Stock has no `wgcN_enforce`, so there is no kill switch: when a tunnel drops, traffic silently continues over the plain WAN. Device assignment is the nearest thing stock has to one.
 
-Observed on hardware 2026-09-05: with a tunnel set to **"apply to all devices"**, taking that tunnel down cost the affected devices their internet connectivity. That is **fail-closed** behaviour, and it is the justification for the whole feature.
+Observed on hardware 2026-09-05: with a tunnel set to **"apply to all devices"**, taking that tunnel down cost the affected devices their internet connectivity. That is **fail-closed** behaviour - **for that mechanism only**.
+
+> [!CAUTION]
+> **A per-device assignment falls through to the DEFAULT CONNECTION when its tunnel drops. CONFIRMED 2026-09-08 by running the test twice with different defaults: with the default on "Internet Connection" the device fell back to the WAN (`dev eth0`); with the default on wgc1 the same device fell back to `dev wgc1`, not the WAN.**
+>
+> So the leak is a property of THAT configuration, not of assignment. Fail-closed is reachable and now recommendable on evidence: pin the devices to a tunnel AND make that tunnel the default, which is the maintainer's long-standing setup and the one where a stale config took the whole network offline rather than leaking - the fault this app was written to fix. One rule covers every case: the `ip rule` dies with the interface and traffic falls through to the default. See `ARCHITECTURE.md` 3.3.6.
+>
+> So the feature is not a kill switch **by itself**, and whether it protects depends on a separate setting the user may not connect to it. Never describe assignment alone as protection.
+>
+> What it is: a way to route chosen devices through a chosen tunnel while that tunnel is up. That is worth having - it is what "which of my devices use the VPN" means - but it is a routing feature, not a protection feature.
+>
+> The watchdog is what makes it safe, by bounding any leak to one check interval. **Assignment without a watchdog on the same slot is the case to warn about.**
 
 > [!CAUTION]
 > **That observation covers `vpnc_default_wan`, not per-device assignment.** They are different mechanisms - one is the default route for unassigned traffic, the other is an `ip rule` for one source address - and fail-closed has NOT been shown for the second. It was briefly written up as confirmed on the strength of the 09-05 run; that was a generalisation, not a measurement, and it is withdrawn. See item 10: if per-device assignment fails *open*, the security story for this feature is much weaker and the app has to say so plainly rather than imply a kill switch it does not have.
@@ -383,8 +394,6 @@ Section 3.3.5's truncation warning is the same failure `_writeFile` already guar
 > **No submenu.** That decision is now made rather than deferred, which was the point of checking first.
 >
 > `test/screens/main_menu_screen_test.dart` asserts "main menu shows five entries", and the drawer (`AppDestination`) gains a destination too.
->
-> `test/screens/main_menu_screen_test.dart` asserts "main menu shows five entries", and the drawer (`AppDestination`) gains a destination too.
 
 ### 2.5 The screen itself
 
@@ -453,34 +462,20 @@ Section 3.3.5's truncation warning is the same failure `_writeFile` already guar
 
     Open sub-question, low stakes: does unassigning remove a reservation the app created? Not observed - probe step 5 unassigned a device that was already reserved, so it proves nothing. A leftover reservation is harmless. **Do not track "reservations we created" in order to undo them** - that is app-side state describing router-side config, and it goes stale the moment anyone edits it elsewhere.
 
-9. **STILL OPEN - is `restart_net_and_phy` really required?** (Q9)
+9. ~~Is `restart_net_and_phy` really required?~~ **ANSWERED 2026-09-08: no.** The light pair - `restart_dnsmasq` then `restart_vpnc_dev_policy` - applied a brand-new reservation and policy with nothing bouncing. The app should always use it, and needs no whole-network disruption warning.
 
-    Hypothesis, not a finding: the device **already holds the IP** through its current lease, so the policy record binds to a live address and should apply the moment `restart_vpnc_dev_policy` runs, whether or not dnsmasq has re-read `dhcp_staticlist`. The reservation only has to matter at the *next* renewal. If that holds, `restart_dnsmasq` is enough and the whole-LAN bounce disappears - along with the need for a disruption warning in the UI.
+10. ~~Does a per-device assignment fail closed?~~ **ANSWERED 2026-09-08, then CONFIRMED by a second run: it falls through to whatever the default connection is.** Run 1 (default = Internet) sent the device to the WAN, which read as failing open. Run 2 (default = wgc1, target still wgc5) sent the same device to `dev wgc1` - if the blunter "always falls to the WAN" reading were right it would have gone to `eth0`. So there is one rule, and the outcome is chosen by a setting the user controls. This is the most consequential result of the whole investigation, and the second run is what made it actionable rather than merely alarming.
 
-10. **STILL OPEN - does a per-device assignment fail closed?** (Q10)
+### Both questions are answered; phase 2 can be built
 
-    Fail-closed was measured for `vpnc_default_wan` and **assumed** for per-device assignment. Different mechanisms - a default route versus an `ip rule` for one source address - and the assumption has never been tested. Stock has no kill switch and this feature is the nearest thing to one, so the answer decides whether the app can describe it as protection at all.
+`scripts/verify-device-assignment.sh` was run on an RT-AX88U 2026-09-08 and settled both. What it changes in the design:
 
-### The one thing left to run
-
-**`scripts/verify-device-assignment.sh`** answers both in a single pass and restores everything afterwards. Four phases: baseline routing for the target device, assign it using only the light service calls, take the tunnel down with the assignment left in place, then put it all back. It writes a `RESTORE.sh` first in case it is interrupted.
-
-It uses `ip route get <dest> from <device-ip> iif br0` - the kernel own answer to "how would a packet from this device be routed" - so nothing has to run on the device itself and the question is answerable with the tunnel up or down. It prints a short ANSWERS block at the end; that block is all that needs pasting back.
-
-| Q9 result | Meaning | What the app does |
+| | Result | Consequence |
 | --- | --- | --- |
-| `light` | hypothesis holds | `restart_dnsmasq`, no disruption warning needed |
-| `needs_restart_vpnc` | tunnel restart also required | cheap enough, warn only that VPN routing bounces |
-| `failed` | more than these calls is needed | match the WebUI exactly, warn about the whole-LAN bounce |
+| Q9 | the light pair is enough | no disruption warning; the app is gentler than the WebUI |
+| Q10 | **falls through to the default connection** | assignment alone is routing, not protection - but pairing it with the default connection IS protection, and the app can say how |
 
-| Q10 result | Meaning | What the app says |
-| --- | --- | --- |
-| no route with the tunnel down | **fails closed** | as designed; warn that assigning to a disabled slot blackholes the device |
-| routes via the WAN interface | **fails open** | not a kill switch. Say so plainly - a user who thinks a device is protected when it is not is worse off than one who knows |
-
-Preconditions the script enforces: the target has no reservation, is not already assigned, is not the address the SSH session comes from, its tunnel is up, and **`vpnc_default_wan` is 0**. That last one is the easy mistake: with a tunnel set to "apply to all devices" every device already routes through it, so the baseline shows the target on the tunnel before it is assigned and Q9 has no difference to measure. The script also warns if the phase 1 baseline already routes via the target tunnel, which catches a leftover policy record. Any other device on that tunnel loses internet during phase 3.
-
----
+What still needs deciding is not a measurement but a presentation question: **how the screen states what happens when the tunnel drops** without either burying it or making the feature sound useless. The confirming run gives a better answer than a warning does - the app can tell the user how to get fail-closed behaviour instead of only telling them they do not have it: assign the devices to a slot, make that slot the default connection, and deploy a watchdog on it. Three settings, one outcome.
 
 ## Test environment note
 
