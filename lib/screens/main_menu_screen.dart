@@ -66,14 +66,20 @@ class MainMenuScreen extends StatelessWidget {
             const SizedBox(height: 12),
             _MenuButton(
               keyValue: 'menu_manage_router',
-              label: '${AppDestination.manageRouter.title}*',
+              label: '${AppDestination.manageRouter.title}¹',
               onTap: () => navigateToDestination(context, controller, AppDestination.manageRouter),
             ),
             const SizedBox(height: 12),
             _MenuButton(
               keyValue: 'menu_watchdog',
-              label: '${AppDestination.watchdog.title}*',
+              label: '${AppDestination.watchdog.title}¹',
               onTap: () => navigateToDestination(context, controller, AppDestination.watchdog),
+            ),
+            const SizedBox(height: 12),
+            _MenuButton(
+              keyValue: 'menu_device_assignment',
+              label: '${AppDestination.deviceAssignment.title}¹²',
+              onTap: () => navigateToDestination(context, controller, AppDestination.deviceAssignment),
             ),
             const SizedBox(height: 12),
             _MenuButton(
@@ -95,7 +101,9 @@ class MainMenuScreen extends StatelessWidget {
               ),
             ),
             SizedBox(height: spacer),
-            const Text('* requires SSH connectivity to an ASUS router',
+            const Text('¹ requires SSH connectivity to an ASUS router',
+                textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 12)),
+            const Text('² stock firmware only',
                 textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 12)),
             const SizedBox(height: 12),
             const _HelpLink(),

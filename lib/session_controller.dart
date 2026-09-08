@@ -53,9 +53,10 @@ const String kDefaultSshUsername = 'admin';
 /// destination observer to track which screen is on top (for the drawer's no-op-on-current).
 enum AppDestination {
   menu('main_menu', 'Main menu'),
-  standalone('standalone', 'Generate PIA WireGuard config'),
+  standalone('standalone', 'Standalone PIA WireGuard config'),
   manageRouter('manage_router', 'Manage PIA WireGuard config'),
   watchdog('watchdog', 'Watchdog WireGuard management'),
+  deviceAssignment('device_assignment', 'VPN device assignment'),
   log('log', 'View app log'),
   about('about', 'About');
 

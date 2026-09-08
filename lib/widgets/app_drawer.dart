@@ -28,6 +28,7 @@ import '../screens/manage_router_screen.dart';
 import '../screens/standalone_config_screen.dart';
 import '../screens/watchdog_management_screen.dart';
 import '../session_controller.dart';
+import 'device_assignment_screen.dart';
 
 /// Builds the screen widget for a destination (default constructors; tests pump screens directly).
 Widget screenForDestination(AppDestination dest) {
@@ -40,6 +41,8 @@ Widget screenForDestination(AppDestination dest) {
       return const ManageRouterScreen();
     case AppDestination.watchdog:
       return const WatchdogManagementScreen();
+    case AppDestination.deviceAssignment:
+      return const DeviceAssignmentScreen();
     case AppDestination.log:
       return const LogScreen();
     case AppDestination.about:
@@ -97,6 +100,7 @@ class AppDrawer extends StatelessWidget {
     AppDestination.standalone,
     AppDestination.manageRouter,
     AppDestination.watchdog,
+    AppDestination.deviceAssignment,
     AppDestination.log,
     AppDestination.about,
   ];

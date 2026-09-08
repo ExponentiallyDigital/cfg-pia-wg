@@ -327,7 +327,7 @@ Two states, not three. On the measured network that is four devices cheap and si
 > The kernel messages themselves are cosmetic. They appear only in `dmesg`, never in `/tmp/syslog.log`, because `/proc/sys/kernel/printk` reads `5 4 1 7` - only priorities below 5 are forwarded, and these are informational.
 
 > [!NOTE]
-> **The guest network is a separate bridge** (`br1`, a different subnet) and is isolated from the LAN by design. Whether guest devices should appear in the assignment list at all is an open question - they cannot reach the LAN, and routing them through a VPN slot is a different proposition from routing a LAN device. Decide before the screen is built rather than discovering it from a bug report.
+> **The guest network is a separate bridge** (`br1`, a different subnet) and is isolated from the LAN by design. **DECIDED 2026-09-08: guest devices are never offered for assignment.** They cannot reach the LAN, and routing them through a VPN slot is a different proposition from routing a LAN device.
 Two behaviours confirmed 2026-09-06:
 
 - **Removing a reservation is as disruptive as adding one.** Deleting one entry in the WebUI dropped a 5 GHz laptop hard enough to kill an RDP session running over it. Any `dhcp_staticlist` write goes through the heavy path, in both directions - which is what makes item 9 worth testing.
@@ -382,6 +382,38 @@ Split on `<`, then on `>`, and treat any index past the end as empty. Group type
 - **MAC is the only stable identifier.** Hostnames are not unique and are editable in one list without changing the other.
 - **NVRAM has a hard size ceiling.** After `nvram set` you need `nvram commit`, and a silently truncated write is the usual failure mode once a list gets long.
 
+### 3.3.5b Reading the two device JSON files
+
+Both are plain JSON despite the `.js` extension - objects keyed by uppercase MAC, no wrapper, no trailing semicolon - so `jq` reads them directly.
+
+> [!WARNING]
+> **`/tmp/nmp_cache.js` mixes non-device keys in at the top level.** Measured 2026-09-08: alongside the MAC-keyed device objects it carries `maclist` (an ARRAY of every tracked MAC) and `ClientAPILevel` (the STRING `"5"`). A parser that assumes every value is a device object throws - `jq to_entries[] | .value.isGateway` failed with `Cannot index array with string` on exactly this. **Skip any entry whose value is not an object, and require the key to look like a MAC.**
+
+Other traps in the same pair of files:
+
+- `type` is an INTEGER in `nmp_cl_json.js` and a STRING in `nmp_cache.js`. The `nmp_cache` value is the user-set icon type and matches `custom_clientlist` index 3; the `nmp_cl_json` one is the raw detection.
+- `name` is the auto-detected name; `nickName` is the user's and is already merged from `custom_clientlist`. So `nmp_cache.js` alone supplies the whole name chain when it is present.
+- **`conn_ts` is not a last-seen time.** It reads `0` for every wired device, and the wireless ones share a value to within three seconds - the last reboot. It is a wireless association timestamp, not a last-seen time.
+- **Liveness comes from `nmp_cl_json.js`, never from `nmp_cache.js`.** Measured 2026-09-08 on a device powered off for ten minutes: `nmp_cl_json.js` had updated to `"online": 0`, while `nmp_cache.js` still read `"isOnline": "1"`. Sourcing liveness from `nmp_cache.js` - the obvious choice, since every other field comes from there - would show every device as permanently online.
+- **An offline device KEEPS its `ip` in `nmp_cache.js`**, so it stays assignable. The address is only genuinely unavailable when a device is unreserved, powered off, AND has not connected since the last reboot, because `/tmp` is rebuilt at boot.
+- The router itself does not appear in `nmp_cache.js` at all. A mesh node does, indistinguishable from a client - see 3.3.5a.
+
+### 3.3.5a `cfg_device_list` - the router and its mesh nodes
+
+Read-only for this app, and the answer to "which entries in the device list are not really devices".
+
+```text
+cfg_device_list=<RT-AX88U>192.168.1.1>AA:BB:CC:DD:EE:FF>1<RT-AC68U>192.168.1.90>0A:0B:0C:0D:0E:0F>0
+```
+
+Records separated by `<`, fields by `>`: `name>IP>MAC>flag`. The flag is `1` for the router itself and `0` for a mesh node.
+
+**Any MAC in this list is never offered as assignable.** One read covers the router and every node, by identity rather than by matching a model string or a name. The flag does not need interpreting - membership is the whole rule.
+
+This matters because a mesh node is otherwise indistinguishable from an ordinary client. Measured 2026-09-08: the node appears in `nmp_cache.js` with `isGateway: "0"`, exactly like a laptop, so that field is no help. `lan_hwaddr` and `label_mac` identify the router alone and say nothing about nodes.
+
+A related field, not needed for exclusion but worth knowing: `nmp_cache.js` carries `amesh_isReClient` and `amesh_papMac` on devices connected THROUGH a node, where `amesh_papMac` is the node MAC. That identifies a device behind the mesh - which is assignable like any other (see 3.3.3) - not the node itself.
+
 ### 3.3.6 `vpnc_dev_policy_list` - the assignment
 
 **SETTLED 2026-09-06** by `scripts/probe-device-assignment.sh`: eight WebUI actions, each diffed against a snapshot either side, with two control steps supplying the noise set. Records separated by `<`, indexes by `>`.
@@ -406,6 +438,17 @@ vpnc_dev_policy_list=1>192.168.1.20>>9><1>192.168.1.22>>5>
 ```
 
 `192.168.1.20` is on wgc1 and `192.168.1.22` is on wgc5. **Index 3 is the third of the three indexes a profile carries** - alongside the slot number and the clientlist row (`vpnc_unit`) - so resolving it needs the clientlist read first. Getting it wrong assigns the device to a different tunnel, or to one that does not exist.
+
+> [!IMPORTANT]
+> **Index 3 can point at a profile this app has no business touching.** The web interface allows up to **16 VPN profiles of any kind** - OpenVPN, WireGuard, PPTP, L2TP, or one of the built-in third-party providers - and they all share `vpnc_clientlist` and all get an index 6. So a policy record may name an OpenVPN profile just as easily as a `wgcN` one, and the app supports WireGuard only.
+>
+> Two rules follow, and the second is a correctness rule rather than a nicety:
+>
+> - The assignment picker offers **only** app-managed `wgcN` slots. A non-WireGuard profile is never an option.
+> - A record pointing at a non-WireGuard profile is written back **byte-for-byte**. Rendering such a device as unassigned would silently destroy the user's existing assignment on the next write - it must be shown as belonging to a VPN this app does not manage, and left alone.
+
+> [!IMPORTANT]
+> **The record is keyed by IP, so a device whose address is unknown cannot be assigned at all.** `/jffs/nmp_cl_json.js` - the persistent device inventory, and the only source that lists offline devices - carries no `ip` field. The address therefore comes from `/tmp/nmp_cache.js` when that file exists, and otherwise from `dhcp_staticlist`, which holds MAC-to-IP for every reserved device whether it is online or not. A device that is both unreserved and absent from the cache has no address to write and none that could safely be invented, so it is listed but not assignable.
 
 #### How a change is written
 
@@ -442,7 +485,11 @@ Observed on a rebuilt router with `wgc1` freshly created and nothing assigned (2
 - The device picker offers **all** known devices, reserved or not, with those four ticked.
 - A newly created VPN profile starts with **no devices assigned**.
 
-So the placeholder records are very likely not "seeded and disabled" but **devices bound to the Internet connection**, index `0` being the WAN. That reading fits the evidence and has not been verified - either way the rule in the box above holds, because index 0 says unassigned-from-a-VPN in both readings.
+So the placeholder records are very likely not "seeded and disabled" but **devices bound to the Internet connection**, index `0` being the WAN.
+
+**CORRECTED 2026-09-08.** That reading is now the better-supported one: a router with **nine DHCP reservations and a completely empty `vpnc_dev_policy_list`** was captured, so the firmware plainly does NOT seed a placeholder per reserved device. The records seen on 2026-09-06 were left behind by assignments that had been made and undone, not created by the firmware.
+
+Nothing downstream changes, because the rule in the box above never depended on which reading was right - index `0` says unassigned-from-a-VPN either way, and the app must read the index rather than presence in the list. What does change is the expectation: an untouched router has an **empty** policy list, so the screen must render "every device on the default connection" from no records at all rather than from a list of zeros.
 
 #### Reservations are created by ANY assignment, and never removed - MEASURED 2026-09-08
 
@@ -500,6 +547,60 @@ All of these go through `notify_rc`, which queues and returns immediately, so no
 #### `vpnc_default_wan` uses the same identifier
 
 Turning on "apply to all devices" for wgc1 set `vpnc_default_wan=9` - the clientlist index 6 again, not the slot. Turning it off set it back to `0`. So `0` means plain WAN and any other value is an index-6 identifier, which settles the open question in 3.3.1.
+
+#### `enabled` is what separates "on the internet" from "follows the default" - CONFIRMED 2026-09-08
+
+Two records can both carry index `0` and mean different things:
+
+```text
+1>192.168.1.200>>0>    enabled, index 0  -> pinned to Internet Connection, IGNORES the default
+0>192.168.1.73>>0>     disabled          -> follows the default connection
+```
+
+The router's own interface renders the difference, which is how it was confirmed: with the tunnels stopped so its device lists could be read, a device holding an ENABLED index-0 record showed as **selected** under Internet Connection, while every device holding a DISABLED record showed as a **greyed** selection there. Same list, same column, two states.
+
+This matters because unassigning in this app writes the disabled form. A user who then looks at the web interface sees their device greyed under Internet Connection and may read that as "pinned to the internet" - it is not, it follows whatever the default connection is. The distinction is exactly the one that decides whether a device leaks or fails closed when a tunnel drops (3.3.6).
+
+#### Changing the default connection - the exact sequence, MEASURED 2026-09-08
+
+Writing `vpnc_default_wan` does nothing on its own, and eleven probes were needed to find out why. The sequence below is the only one that works; every element is load-bearing and none of it is guessable.
+
+```sh
+nvram set vpnc_unit=<clientlist ROW of the target>
+service stop_vpnc                 # stops the profile vpnc_unit names
+service restart_default_wan       # tears the clients down AND resets the key to 0
+nvram set vpnc_default_wan=<index 6 of the target>
+nvram set wgc_unit=<SLOT number of the target>
+nvram commit
+service restart_vpnc              # starts the target, and THIS installs the routing
+```
+
+Three different numbers name the same profile here. For wgc5 in a two-profile list they are row `1`, index 6 `5`, slot `5`; for wgc1 they are `0`, `9`, `1`. Getting `vpnc_unit` wrong is the quiet failure - the wrong tunnel is stopped and restarted, nothing else complains, and the default is silently not applied.
+
+What the default connection actually IS, once applied - a pair of rules at priority 10000, one per bridge:
+
+```text
+10000:  from all iif br0 lookup 5
+10000:  from all iif br1 lookup 5
+```
+
+They are installed by `restart_vpnc` starting the target, not by writing the key.
+
+> [!IMPORTANT]
+> **`restart_default_wan` is a teardown, not a routing refresh.** It stops every WireGuard client - `wg show interfaces` comes back empty - and resets `vpnc_default_wan` to `0`. That reset is why writing the key first always failed: the value went in ahead of the thing that clears it. The app must never call it except as step 3 of this sequence.
+
+> [!IMPORTANT]
+> **`notify_rc` only queues.** Issued back to back the whole sequence completes in two seconds and fails, because `restart_default_wan` runs after the values have been written. Each step has to be waited for. The app polls rather than sleeping: the target leaving `wg show interfaces`, then the key reading `0`, then the target returning - which takes about six seconds in total against fifty-five for fixed sleeps.
+
+Things that do NOT work, all measured rather than assumed:
+
+- writing `vpnc_default_wan` alone - the key holds, no route changes
+- `restart_vpnc_dev_policy` - applies device assignments, does nothing for the default
+- `restart_vpnc` alone after writing the key - the key holds, no route changes
+- writing the key before `restart_default_wan`, in any combination, stopped or running
+- a `vpnc_clientlist` field - the list is byte-for-byte identical either side of a web-interface change
+
+The cost is real and the app warns before doing it: the tunnels stop and restart, anything using them loses its connection for the duration, and a watchdog on an affected slot reports the outage. Assigning a device does none of that.
 
 #### Assigning a device with no DHCP reservation creates one
 
