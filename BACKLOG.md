@@ -3,17 +3,16 @@
 - [1. Backlog](#1-backlog)
   - [1.1. All](#11-all)
     - [1.1.1. DOC - documentation updates](#111-doc---documentation-updates)
-    - [1.1.2. CHG - functional code changes](#112-chg---functional-code-changes)
-    - [1.1.3. FTR - future implementation](#113-ftr---future-implementation)
+    - [1.1.2. FTR - future implementation](#112-ftr---future-implementation)
   - [1.2. v0.9.xx freemium](#12-v09xx-freemium)
     - [1.2.1. Accounts \& Play Console setup](#121-accounts--play-console-setup)
     - [1.2.2. RevenueCat dashboard setup](#122-revenuecat-dashboard-setup)
     - [1.2.3. Codebase integration](#123-codebase-integration)
-    - [1.2.3a. Entitlement check must precede every dependency check](#123a-entitlement-check-must-precede-every-dependency-check)
-    - [1.2.4. Security \& router diagnostics](#124-security--router-diagnostics)
-    - [1.2.5. Sandbox testing \& QA](#125-sandbox-testing--qa)
-    - [1.2.6. Documentation and publicity](#126-documentation-and-publicity)
-    - [1.2.7. Launch \& post-launch](#127-launch--post-launch)
+    - [1.2.4. 1.2.3a. Entitlement check must precede every dependency check](#124-123a-entitlement-check-must-precede-every-dependency-check)
+    - [1.2.5. Security \& router diagnostics](#125-security--router-diagnostics)
+    - [1.2.6. Sandbox testing \& QA](#126-sandbox-testing--qa)
+    - [1.2.7. Documentation and publicity](#127-documentation-and-publicity)
+    - [1.2.8. Launch \& post-launch](#128-launch--post-launch)
   - [1.3. Codebase cleanup](#13-codebase-cleanup)
   - [1.4. v1.0.0 iOS version](#14-v100-ios-version)
 
@@ -28,21 +27,12 @@
 - DOC: Update Play Store description.
 - DOC: Update Play Store screenshots.
 - REL: Update version to 0.9 branch when first releasing stock support (and see the backlog item on performance profiling when sent to GPS alpha track).
-- DOC: instead of calling them "slots", I should consider calling them "units" - that's a lot of risky search and replace though :/
 
-#### 1.1.2. CHG - functional code changes
-
-- CHG: **`chown` the installed helper binaries.** `mailsend-go` extracted from the release archive keeps the uploader's numeric owner (`501:20` on the test router) because `BinaryInstaller` only sets the mode. `scripts/get-bins.sh` already does `chown 0:0`; the app should match. Harmless today - mode 755 means root can still execute it - but a file on the router owned by a uid that does not exist there is untidy and will confuse the next person to run `ls -la`.
-- CHG: **cap the in-memory app log.** `SessionController.log` grows without limit - `logEntry` only ever appends - and the log screen renders every entry. Each is small and the whole thing is wiped on exit, so it is not a problem today; a long session with a chatty watchdog is where it would start to show. A few hundred entries, dropping the oldest, is cheap insurance. Noticed 2026-09-07 while checking app size after Google tightened their performance requirements.
-- ADD: Automate updating `THIRD-PARTY-NOTICES.md`, add as part of `scripts\build.ps1/sh`. Add to GitHub actions script `.github\workflows\release.yml`.
-- REL: after releasing **v8.x.y** to GPS alpha track, review [Play Console technical quality requirements](https://support.google.com/googleplay/android-developer/answer/17492799), specifically:
-  - [r8-analyzer/SKILL.md](https://github.com/android/skills/tree/main/performance/r8-analyzer)
-  - [Perfetto Skills](https://github.com/google/perfetto/tree/main/ai/skills)
-  - [profilers/android-profiler](https://github.com/android/skills/tree/main/profilers/android-profiler)
-
-#### 1.1.3. FTR - future implementation
+#### 1.1.2. FTR - future implementation
 
 - FTR: Add localisation strings: French, Spanish, Spanish (latin), after that decide which ones next. (Google auto transations break character limits of PS Description)
+- FTR: edit a device's display name from the assignment screen, writing `custom_clientlist`. Two sharp edges make it more than a text field: `<` and `>` are the record and field delimiters, so an unvalidated name corrupts every device name on the router; and appending a record for a device that has none writes index 3, so a naive `0` downgrades that device's icon to generic in both the WebUI and the ASUS app - the detected type has to be carried over from `nmp_cl_json.js` first. Also needs the service call that makes it take effect, which is unknown.
+- FTR: the watchdog alert email should say WHERE the pinned traffic went while the tunnel was down, and recommend the fix. On stock the script can read `vpnc_dev_policy_list` for its own index-6 and compare with `vpnc_default_wan`: devices pinned to this slot fall through to the default connection, so if the default is the WAN they were on the plain internet, if it is another tunnel they were on that one, and if it is this slot they simply had no internet. Only claim it when the lists actually say so - a slot with nothing pinned to it must not carry the line at all. Recommendation follows from the same read: set the default connection to this slot and the outage becomes fail-closed. Merlin uses a different mechanism, so gate on firmware. Evidence: `ARCHITECTURE.md` 3.3.6.
 
 ---
 
@@ -70,19 +60,19 @@
   - **Paywall UI modal:** Build a `PaywallBottomSheet` highlighting watchdog's zero-touch automation, PIA key renewal fix, and lifetime access model.
   - **PayPal/Patreon:** remove links from main app screen. Re-space the home-screen footer afterwards - the `spacer` above it is sized for the donation block. Keep the "add a Play Store app review" link: the watchdog alert emails say "by tapping on the home screen link", so removing it makes that wording stale.
 
-  #### 1.2.3a. Entitlement check must precede every dependency check
+  #### 1.2.4. 1.2.3a. Entitlement check must precede every dependency check
 
   - **Order: entitlement, then dependencies, then the offer to install them.** A user without `pro_feature` who opens MANAGE or WATCHDOG on stock must see the paywall, never "jq is missing". Telling someone to install a dependency for a feature they cannot use either way wastes their time and reads as a bug.
   - Applies to the helper-binary install (`.claude/plans/plan_install-helper-binaries.md`) and to anything else that probes the router before the gate. **Never prompt to download binaries onto the router of a user who has not unlocked the feature** - it is work done on their hardware for something they cannot run.
   - Worth a test that pins the ordering, because it is the kind of thing a later refactor reorders without noticing.
 
-  #### 1.2.4. Security & router diagnostics
+  #### 1.2.5. Security & router diagnostics
 
   - **Pre-flight diagnostic:** Verify SSH connectivity and JFFS script execution readiness *before* displaying unlock feature to prevent purchases on incompatible setups. Most of this already exists - see the table in the plan addendum. The one missing check is `/opt` on stock (DownloadMaster installed): without it the watchdog deploys, works, and then silently loses its cron entries at the next reboot. **Worth adding regardless of freemium.**
   - **Do not build revocation into the deployed watchdog script.** A deployed watchdog runs on the router with the app nowhere in the picture, so entitlement cannot be enforced after the fact - accepted deliberately (see plan addendum). A licence check inside the script would be defeatable in a text editor and would add a failure mode to the one thing that has to be reliable unattended.
   - **`flutter_secure_storage` versus the stated posture:** `README.md` and `SECURITY.md` both say absolutely that nothing is written to device storage. Caching an entitlement is compatible with the intent but contradicts the wording. Reword "Secret management" to separate *credentials* (never stored) from *purchase state* (cached, not sensitive) in the same change that adds the dependency.
 
-  #### 1.2.5. Sandbox testing & QA
+  #### 1.2.6. Sandbox testing & QA
 
   - **Licence testing:** Add developer Gmail under *Google Play Console -> Licence testing*.
   - **Internal test track:** Build and upload `flutter build appbundle` (`.aab`) to the Internal Testing track.
@@ -93,14 +83,14 @@
   - **Restoration flow:** test "Restore Purchases" button.
   - **Offline access:** disconnect internet and verify cached local entitlements allow watchdog to execute.
 
-  #### 1.2.6. Documentation and publicity
+  #### 1.2.7. Documentation and publicity
 
   - **Update screenshots:** create & upload phone and tablet screenshots x8.
   - **Trademark protection:** add to README that app name, logos, and branding are reserved trademarks.
   - **Transparency:** explain in README that pre-built convenience binaries are available via the Google Play Store to defray development costs and support ongoing app updates.
   - **Publicise**: update Play Store description. Post to SNB and Reddit (r/AsuswrtMerlin, r/PrivateInternetAccess, r/WireGuard).
 
-  #### 1.2.7. Launch & post-launch
+  #### 1.2.8. Launch & post-launch
 
   - **Changelog:** Add to v0.9.00 changelog, explain why watchdog is monetised.
   - **Store optimisation (ASO):** include high-intent keywords: *Asuswrt-Merlin, PIA WireGuard token auto-renew, Asus router VPN, NVRAM SSH scripts*.

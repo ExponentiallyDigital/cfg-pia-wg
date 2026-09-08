@@ -70,4 +70,42 @@ void main() {
     expect(offenders, isEmpty,
         reason: 'use an invented MAC such as AA:BB:CC:DD:EE:FF - see .claude/CONTEXT.md:\n${offenders.join('\n')}');
   });
+
+  // MACs have been guarded since 2026-09-07. Hostnames and addresses were not, and both leaked
+  // into ARCHITECTURE.md and a plan on 2026-09-08 while a screen mock-up was written up - the
+  // sweep caught them, but only because it was run by hand. The rule covers all three, so now so
+  // does the guard.
+  test('no device hostname from the maintainer network is written down', () {
+    // Every device on that network is named Arc<Something>. Nothing in this repo needs to be.
+    final pattern = RegExp(r'\bArc[A-Z][A-Za-z0-9]');
+    final offenders = <String>[];
+    for (final file in _repoFiles()) {
+      final lines = file.readAsStringSync().split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        if (pattern.hasMatch(lines[i])) offenders.add('${file.path}:${i + 1}  ${lines[i].trim()}');
+      }
+    }
+    expect(offenders, isEmpty,
+        reason: 'use a generic device name - Laptop, Console, NAS:\n${offenders.join('\n')}');
+  });
+
+  test('no address from the maintainer LAN subnet is written down', () {
+    // That LAN sits on the 192.168.0 prefix - written without a fourth octet here, because this
+    // comment is inside the range the test scans and the first draft flagged itself. Examples
+    // belong in 192.168.1.x, and 192.168.50.1 is the ASUS factory default, a documented constant
+    // rather than anybody's address.
+    final pattern = RegExp(r'\b192\.168\.0\.\d{1,3}\b');
+    final offenders = <String>[];
+    for (final file in _repoFiles()) {
+      final lines = file.readAsStringSync().split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        for (final m in pattern.allMatches(lines[i])) {
+          // .1 is the gateway address everyone writes; it is not a device on that network.
+          if (m.group(0) == '192.168.0.1') continue;
+          offenders.add('${file.path}:${i + 1}  ${m.group(0)}');
+        }
+      }
+    }
+    expect(offenders, isEmpty, reason: 'use 192.168.1.x for examples:\n${offenders.join('\n')}');
+  });
 }

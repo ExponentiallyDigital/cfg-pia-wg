@@ -20,7 +20,7 @@ Future<void> _teardown(WidgetTester tester, SessionController c) async {
 }
 
 void main() {
-  testWidgets('main menu shows five entries, the footnote, hamburger and header', (tester) async {
+  testWidgets('main menu shows six entries, both footnotes, hamburger and header', (tester) async {
     final c = _quietController();
     await tester.pumpWidget(PiaWgApp(controller: c));
     await tester.pumpAndSettle();
@@ -30,13 +30,19 @@ void main() {
     expect(find.byKey(const Key('menu_standalone')), findsOneWidget);
     expect(find.byKey(const Key('menu_manage_router')), findsOneWidget);
     expect(find.byKey(const Key('menu_watchdog')), findsOneWidget);
+    expect(find.byKey(const Key('menu_device_assignment')), findsOneWidget);
     expect(find.byKey(const Key('menu_log')), findsOneWidget);
     expect(find.byKey(const Key('menu_close_app')), findsOneWidget);
-    expect(find.text('* requires SSH connectivity to an ASUS router'), findsOneWidget);
+    // Two markers now: device assignment needs SSH AND stock firmware, so the single '*' was
+    // renumbered rather than overloaded.
+    expect(find.text('¹ requires SSH connectivity to an ASUS router'), findsOneWidget);
+    expect(find.text('² stock firmware only'), findsOneWidget);
     expect(find.byKey(const Key('menu_help')), findsOneWidget);
     expect(find.textContaining('Select from the above'), findsNothing);
     // Both trailing lines are centred; the Column stretches them, so alignment is the Text's job.
-    expect(tester.widget<Text>(find.text('* requires SSH connectivity to an ASUS router')).textAlign, TextAlign.center);
+    expect(tester.widget<Text>(find.text('¹ requires SSH connectivity to an ASUS router')).textAlign,
+        TextAlign.center);
+    expect(tester.widget<Text>(find.text('² stock firmware only')).textAlign, TextAlign.center);
     expect(tester.widget<Text>(find.byKey(const Key('menu_help'))).textAlign, TextAlign.center);
     expect(find.byKey(const Key('menu_review')), findsOneWidget);
     expect(find.text('Support development:'), findsOneWidget);

@@ -395,12 +395,58 @@ Section 3.3.5's truncation warning is the same failure `_writeFile` already guar
 >
 > `test/screens/main_menu_screen_test.dart` asserts "main menu shows five entries", and the drawer (`AppDestination`) gains a destination too.
 
-### 2.5 The screen itself
+### 2.5 The screen itself - AGREED 2026-09-08
 
-- List devices with their current assignment.
-- Assign a device to a slot, or clear it.
-- An "apply to all devices" control, writing `vpnc_default_wan`.
-- Apply with the service call confirmed in phase 0.
+```text
+  VPN DEVICE ASSIGNMENT
+
+  Default connection
+  [ wgc1 - pia-aus_melbourne           v ]
+  Devices set to "default" use this. Assigned
+  devices fall back to it if their tunnel drops.
+  --------------------------------------------
+  Laptop - 192.168.1.29
+  [ default                            v ]
+  --------------------------------------------
+  Console - 192.168.1.31 - DHCP
+  [ wgc5 - pia-aus_perth             * v ]
+  --------------------------------------------
+  NAS - 192.168.1.40
+  [ OpenVPN, not app managed           v ]
+  --------------------------------------------
+  00:01:02:03:04:05 - 192.168.1.55 - DHCP
+  [ default                            v ]
+  --------------------------------------------
+
+  Names come from your router's client list.
+
+              [     APPLY 2     ]
+```
+
+**Two lines per device.** Name and IP on one line separated by ` - `, the picker on the next. The MAC replaces the name only when there is no name; it is never a third line.
+
+**Tag only the exception.** A device that is online, on a stable MAC and holding a DHCP reservation shows nothing but its name and address. Everything else earns a tag: `DHCP` for no reservation, `offline`, and a warning for a locally-administered MAC. This keeps the common row short enough for a narrow screen and puts every mark where it means something.
+
+**The `offline` tag reads `online` from `nmp_cl_json.js`, not `isOnline` from `nmp_cache.js`.** Measured 2026-09-08: after ten minutes powered off, the first had updated and the second had not. Taking liveness from `nmp_cache.js`, where every other field comes from, would show every device online forever.
+
+**There is no "last seen" tag.** It was in the design until `conn_ts` was measured on 2026-09-08. It reads `0` for every WIRED device, and the five wireless devices that do carry a value share it to within three seconds - a single moment, the last reboot. It is a wireless association time, not a last-seen time, and showing it would mark every wired device as never-seen. `online` / `isOnline` are reliable, so the `offline` tag stays.
+
+**The default connection sits at the top, with its sentence.** Not in a sub-page. 3.3.6 makes it the switch that decides whether an assignment fails open or fails closed, and no user would guess that. It stages like any other change and adds `restart_default_wan` to the apply.
+
+**Staged changes, one APPLY, centred.** Matches the WebUI, matches the cost model - one service call for N changes - and lets a single confirmation cover every warning. The confirmation lists each change as `name` over `from -> to`, then adds only the paragraphs that apply: the whole-network restart when any staged device needs a reservation created, and the replacement notice when a staged device currently belongs to a VPN this app does not manage.
+
+**The picker gives each entry two lines** - `wgcN - pia-<region>` over the watchdog state in words (`watchdog active` / `watchdog paused` / `no watchdog`), from the `watchdogActive` and `watchdogConfigured` fields `SlotInfo` already carries. Two lines because `pia-us_north_carolina-pf` is 24 characters and the state will not fit beside it. The `pia-` prefix is kept: the rest of the app shows `info.desc` raw, and it is what the WebUI shows too.
+
+**Scope is `wgcN` and nothing else.** The WebUI allows up to 16 VPN profiles of any kind, and `vpnc_dev_policy_list` refers to them by clientlist index 6 - which can point at OpenVPN, PPTP, L2TP or a third-party provider just as easily as WireGuard. Two rules follow:
+
+- The picker offers **only** app-managed `wgcN` slots. A non-WireGuard profile is never an option, only a state a device can already be in.
+- A device already pinned to one is shown with its type and `not app managed`, and its record is written back **byte-for-byte**. Rendering it as "default" would silently destroy the user's assignment on the next apply. Choosing a `wgcN` for it is allowed, behind a confirmation that says it replaces the existing assignment.
+
+**The policy record is keyed by IP, so a device with no known IP cannot be assigned at all.** `nmp_cl_json.js` - the persistent inventory - carries no address. So the IP is sourced in order: `/tmp/nmp_cache.js` when present, then `dhcp_staticlist`, which holds MAC-to-IP for every reserved device whether it is online or not. A device that is unreserved AND has no cached address is listed with its picker disabled and the line "connect this device once to assign it", because there is no address to write and none we could safely invent.
+
+**APPLY re-reads before it writes.** README section 6 records that a WebUI page open since before your change writes the whole list back from its stale copy; the same hazard runs in reverse. So apply re-reads `vpnc_dev_policy_list` and `vpnc_clientlist`, compares every record it is not touching against what was loaded, and refuses with "the router changed while you were editing" rather than clobbering.
+
+**Service calls: the light pair only** - `restart_dnsmasq` then `restart_vpnc_dev_policy`, per Q9. `restart_net_and_phy` is reached only when the firmware itself drags it in by creating a reservation, which is the case the confirmation warns about.
 
 ### 2.6 Freemium
 
