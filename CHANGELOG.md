@@ -23,8 +23,32 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
+**do now:**
+- BUG: regression of default router ssh username re-appeared in comitted build 414; this field should be empty. "admin" is prepopulated in "SSH username" field in MANAGHE, WATCHDOG, DEVICE ASSIGNMENT
+- BUG: regression (?) when creating a watchdog, the screen did not scroll (same issue we had yesterday?), spinner appears below the fold and the screen does not scroll, focus stayed in the last edited field and makes it look like the app is waiting for the user to do something.
+- FIX: inconsistent UI: HOME button on device assignment sits on top of the scrolling screen, on MANAGE and WATCHDOG it sits behind the scrolling screen display. See `.claude\testing\Screenshot_20260909-143219.png`.
+- CHG: `chown` the installed helper binaries.eg `mailsend-go` is `501:201 by default.
+- BUG: install `scripts\S50asuslighttpd-TEMPLATE.sh` as `S50asuslighttpd` to `/opt/etc/init.d` on the router, chmod 700, and rename the existing script in that folder to `S50asuslighttpd.old`. See `lib\s50_template.dart` for how to do that with the other script. I have copies of the existing original scripts already saved as `*.bak` and in `/jffs/cfg-piawg/*.original`.
+- BUG: When copying `S50Downloadmaster` via `lib\s50_template.dart` to the router, we first need to backup the existing script to `S50Downloadmaster.old`.
+
+**emails:**
+- ADD: include how to disable emails as a footer in all emails sent by the app: `<"Email alerting can be disabled in the app via WATCHDOG, EDIT, deselect "enable email alerts">`. DOn't change the TEST email template.
+- CHG: update the section in any email that gets sent re: "Kill switch: not supported on this firmware - traffic is reaching the internet without the VPN" let's discuss what to do here.
+- CHG: update the email section "WHAT TO DO", insert between existing (3.) and (4.) saying "Review your router log.", update bullet numbers accordingly.
+
+**device assignment:**
+- BUG?: in device assignment screen, tablet showing as online when it is not. Other offline devices are showing correctly as offline.
+- FIX: unable to select "Internet Connection" from device assignment screen on a per device basis. With only wgc1 available as a VPN you see wgc1 listed twice: "default wgc1 pia-region_name" then again as "wgc1 - pia-region_name", and no ability to choose "Internet Connection" unless the default connection is set to Internet, then you do see two choices in the drop down: "default Internet" and "wgc1 - pia-region_name".
+- BUG: if you navigate away from device assignment to say the log, then return, any staged changes are lost on re-entering the device assignment screen.
+- ADD: when a default connection is applied in device assignment, log a message to the router log: "default WAN connection set from `<old-name>` to `<new-name>`, eg "Internet Connection" or "wgcN:pia-region_name". There is currently no message displayed in the router log. Also do that for the app log, instead of "default connection changed". In the app log record what assignment changes were made: instead of logging "Applying..." log "Applying: `<list of changes on separate lines>` eg "tablet1: default connection -> wgc1:pia-region_name".
+
+**uninstall and new menu:**
+- ADD: uninstall feature - add a "Settings" menu item on the hamburger menu above "ABOUT". This menu is not shown on the home screen. Create a screen in that menu item that provides a button to tap on to "Uninstall features installed to router", this removes the app's `S50Downloadmaster` and renames `S50Downloadmaster.old` to `S50Downloadmaster`, renames `S50asuslighttpd.old` to `S50asuslighttpd`, and removes the `/jffs/cfg-pia-wg` folder - the user should be prompted first and told what it will do. Move the "FORGET ROUTER IP" and "DEL PIA CERT" buttons from the ABOUT menu to this SETTINGS menu.
+- ADD: "View router log" add a menu item on the hamburger menu **before** the "View app log" menu item. This screen opens to a scrollable display of `/tmp/syslog.log`, scroll it so that it shows the latest entries in the log. At the bottom of the screen create "REFRESH" and "HOME" buttons in house style. Text in the screen is selectable and copyable without invoking the 60s timer.
+- ADD: button to clear the current watchdog log file stored on the router, in the existing watchdog log viewing screen add a centered "CLEAR" button on the COPY/CLOSE line, so it looks someting like this: "COPY     CLEAR      HOME".
+
+**longer term:**
 - CONFIRM: **the watchdog may be unable to recover when the router's own DNS is routed through a stopped tunnel.** Observed 2026-09-08: with wgc1 and wgc5 both stopped by hand, the wgc1 watchdog fired and failed with `failed to obtain PIA token (exit 0, HTTP none, body 0B: empty)` twice running. The `ip rule` table carries `from all to <dns> iif lo lookup 5` entries - the router's OWN lookups for the tunnel's DNS servers go through wgc5 - so with that tunnel down the token fetch has no working resolver. Inferred from the rules plus the timing, not yet proven. If it holds, the watchdog should fall back to WAN DNS before giving up, because the situation it cannot recover from is exactly the one it exists for.
-- CHG: **`chown` the installed helper binaries.** `mailsend-go` extracted from the release archive keeps the uploader's numeric owner (`501:20` on the test router) because `BinaryInstaller` only sets the mode. `scripts/get-bins.sh` already does `chown 0:0`; the app should match. Harmless today - mode 755 means root can still execute it - but a file on the router owned by a uid that does not exist there is untidy and will confuse the next person to run `ls -la`.
 - DELETE: `.claude\testing\2026-09-07_pristine-lan-reference.md` once device assignment is complete and tested.
 - commit.
 - ADD: Automate updating `THIRD-PARTY-NOTICES.md`, and add as part of `scripts\build.ps1/sh all`. Add to GitHub actions script `.github\workflows\release.yml`.
@@ -35,6 +59,32 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-09 v0.8.46 build 416 - the reason the watchdog could never recover a tunnel
+
+- FIX: **the watchdog could never recover a tunnel on its own.** ASUS's `/usr/sbin/curl` walks its live process ancestry and refuses to run when `crond` is anywhere in the chain: it exits 0 having produced no HTTP status, no body and no stderr, and writes `Invalid caller(crond)` to `/jffs/curllst`. Every cron-driven PIA token request had been silently rejected. A cron run now re-execs itself detached and waits to be reparented to init before doing any work; a `deploy` run over SSH is untouched, because dropbear was never the problem.
+- INF: measured three times over on hardware, same command one minute apart: from cron the write-out was empty, detached to init it was `200 exit=0`, and `/jffs/curllst` carried the rejection line only for the cron caller. This is what an overnight outage of four and a half hours, eight failed attempts and five disproved hypotheses came down to.
+- INF: the five hypotheses measured and disproved on the way there, recorded so they are not re-run. DNS routed through the dead tunnel - the alert emails were delivered throughout, and there is no `wgc1_dns` at all. Tmpfs exhaustion - 9.7 MB used, no OOM in the log. A device-assignment apply killing the tunnel - an apply was run with the handshake sampled either side and it advanced. The router's own traffic routed into the down tunnel - `ip route get` shows the PIA endpoint going out `eth0`. The fetch failing because the tunnel is down - the identical curl returns HTTP 200 with wgc1 down.
+- SEC: `abort()` now empties `/jffs/curllst` too. The token request passes `-u user:password` on the command line, curl records every command line in that world-readable file, and only the success paths flushed it - so a failed fetch left the PIA password on flash until the next successful reconfigure.
+- DOC: ARCHITECTURE.md section 5.5 records the caller check, the measurements and the `/jffs/curllst` exposure; SECURITY.md and TESTING.md section 2.1.4 carry the parts that matter to users.
+- ADD: **both version numbers, in both logs.** Every watchdog run logs `Watchdog started for wgcN [script v0.8.46 build 416]` to the router syslog and the watchdog log, and opening the watchdog screen logs the deployed script's version next to the app's - saying "redeploy the watchdog to update it" when they differ. The app updates from the store but the script only changes on a deploy, so the two drift silently: the 415 interface fix was tested on hardware against a script two builds old before that was noticed.
+- INF: an unknown version is deliberately not reported as a mismatch. Scripts deployed before the marker existed have none, and a warning nobody can act on teaches people to ignore the ones they can.
+- TST: five script assertions - the detach guard, the reparent wait, deploy runs staying attached, the guard preceding every curl, and the abort-path flush - plus the version marker in the start line, the header parser, the mismatch rule, and the status read reporting to both logs.
+
+2026-09-09 v0.8.45 build 415 - what "active" means, and why a watchdog could not recover
+
+- FIX: **a configured-but-DOWN interface reported as ACTIVE.** Reported from hardware: `ifconfig wgc1 down` left the app badging the slot active while the router's own web interface showed "connecting" and nothing passed. `wg show interfaces` lists WireGuard DEVICES and says nothing about link state, so every liveness question in the app was asking the wrong one - the ENABLE verification loop that decides the badge, the watchdog's interface polls, the delete-time wait, and the device-assignment waits. All six now use `ip -o link show up`.
+- INF: the obvious fix would also have been wrong. A WireGuard device reads `state UNKNOWN` while it is up, because it is POINTOPOINT/NOARP - matching on `state UP` would have failed always. The UP flag in the angle brackets is the signal, and `ip -o link show up` filters on it: up is `<POINTOPOINT,NOARP,UP,LOWER_UP>`, down is `<POINTOPOINT,NOARP>`.
+- FIX: the router-side script had the same flaw. `ifconfig "$IFACE"` succeeds for a device that exists, up or down, so "Interface $IFACE is down or absent" never fired for a downed interface - only the handshake and ping fallback caught it, which is slower and less clear about what is wrong.
+- ADD: **the PIA token fetch now records what curl says rather than what the script infers.** Five failures between 2026-09-07 and 2026-09-09 reported `exit 0, HTTP none, body 0B: empty` - curl reporting success while producing no status, no body and no stderr, which curl should not be able to do. curl 7.84 on this firmware supports `%{exitcode}`, `%{errormsg}` and `%{num_connects}` (all 7.75+), so it is now asked directly.
+- ADD: one retry, three seconds apart, when the token fetch comes back with no status or `000`. The existing message already guessed "the network was still coming back up"; a retry tests that guess for the cost of three seconds against a tunnel that otherwise stays down for hours.
+- ADD: the token request's temp files are kept when the fetch fails instead of being deleted. That failure has only ever happened under cron, has never been reproduced by hand, and left nothing behind to examine - an overnight outage on 2026-09-09 ran eight attempts over four and a half hours and the only surviving evidence was a zero-byte stderr file.
+- TST: a regression test that a configured-but-down interface is not active, and script assertions for the new `-w` format, the retry and the kept files.
+2026-09-09 v0.8.45 build 415 - post implementation cleanup
+
+- DOC: updated TESTING.md - what a healthy tunnel looks like.
+- ADD: resequenced WIP list.
+- ...
 
 2026-09-09 v0.8.44 build 414 - in-app device assignment, implementation phase 2: decode mechanism behind how default connection is done on stock the screen, phase 3 - screen UI
 

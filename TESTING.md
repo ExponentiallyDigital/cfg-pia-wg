@@ -13,6 +13,7 @@
     - [2.1.4. Interface down](#214-interface-down)
     - [2.1.5. What a healthy check looks like](#215-what-a-healthy-check-looks-like)
     - [2.1.6. Backoff](#216-backoff)
+      - [Walking the whole ladder in two minutes, with no PIA traffic](#walking-the-whole-ladder-in-two-minutes-with-no-pia-traffic)
     - [2.1.7. What no longer works](#217-what-no-longer-works)
 - [3. Examining nvram settings](#3-examining-nvram-settings)
 - [4. Full end-end-to-end manual test](#4-full-end-end-to-end-manual-test)
@@ -338,12 +339,14 @@ ifconfig wgc1 down
 2026-09-04 16:45:00 Connectivity lost; reconfiguring (attempt #1)
 ```
 
+The reconfigure that follows rewrites the peer and restarts the interface, so the tunnel comes back on its own. If it does not, and the log stops at the token request, check that the deployed script carries a version marker of v0.8.46 build 416 or later - earlier scripts could not fetch a PIA token from cron at all (ARCHITECTURE.md 5.5). Clearing `/tmp/watchdog_backoff_wgc1` makes the next tick run in full rather than backing off.
+
 #### 2.1.5. What a healthy check looks like
 
-For contrast - this is every minute on a working tunnel, and no reconfigure should follow:
+A working tunnel with an active watchdog will show:
 
 ```text
-2026-09-04 15:48:00 Checking wgc1 pia-aus_melbourne connectivity
+2026-09-04 15:48:00 Checking wgcN pia-region_name connectivity
 2026-09-04 15:48:00 Handshake 60s ago
 ```
 
@@ -351,9 +354,9 @@ For contrast - this is every minute on a working tunnel, and no reconfigure shou
 
 The wait before the next reconfigure attempt grows with each **consecutive failed attempt** and resets the moment one succeeds:
 
-| Consecutive failures | 1 | 2 | 3 | 4 | 5 | 6 | 7+ |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Wait | 2 min | 4 min | 8 min | 16 min | 30 min | 60 min | 90 min (cap) |
+| Consecutive failures |     1 |     2 |     3 |      4 |      5 |      6 |           7+ |
+| -------------------- | ----: | ----: | ----: | -----: | -----: | -----: | -----------: |
+| Wait                 | 2 min | 4 min | 8 min | 16 min | 30 min | 60 min | 90 min (cap) |
 
 A check that arrives inside the wait is turned away and says so:
 

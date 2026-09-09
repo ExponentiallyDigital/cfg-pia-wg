@@ -298,7 +298,7 @@ void main() {
       if (cmd == 'nvram get vpnc_dev_policy_list') return _policyList;
       if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
       if (cmd == 'nvram get vpnc_default_wan') return '0';
-      if (cmd == 'wg show interfaces') return 'wgc1 wgc5';
+      if (cmd == 'ip -o link show up') return 'wgc1 wgc5';
       if (cmd.startsWith('nvram set vpnc_default_wan=')) key = cmd.split('=').last;
       return '';
     });

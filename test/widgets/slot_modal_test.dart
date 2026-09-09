@@ -225,7 +225,7 @@ void main() {
         responder: (cmd) {
           if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
           if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
           if (cmd.contains('ping')) return 'OK';
           return '';
         },
@@ -250,7 +250,7 @@ void main() {
       final c = _controller();
       final ssh = RecordingSSHClient(
         responder: (cmd) {
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
           if (cmd.contains('ping')) return 'OK';
           return ''; // wd_*_ip empty -> prompt
         },
@@ -744,7 +744,7 @@ void main() {
       final c = _controller();
       final ssh = RecordingSSHClient(
         responder: (cmd) {
-          if (cmd.contains('wg show interfaces')) return 'wgc2';
+          if (cmd.contains('ip -o link show up')) return 'wgc2';
           if (cmd.contains('ping')) return 'OK';
           if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
           if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
@@ -789,7 +789,7 @@ void main() {
           // notify_rc returns immediately; the interface lingers for a moment after that, which is
           // exactly the window the old code refreshed in.
           if (cmd.contains('service') && cmd.contains('stop')) stopped = true;
-          if (cmd.contains('wg show interfaces')) {
+          if (cmd.contains('ip -o link show up')) {
             if (!stopped) return 'wgc1';
             return pollsSinceStop++ < 2 ? 'wgc1' : '';
           }
@@ -898,7 +898,7 @@ void main() {
           responder: (cmd) {
             if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
             if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
-            if (cmd.contains('wg show interfaces')) return 'wgc3';
+            if (cmd.contains('ip -o link show up')) return 'wgc3';
             if (cmd.contains('ping')) return 'OK';
             return '';
           },
@@ -1036,7 +1036,7 @@ void main() {
         responder: (cmd) {
           if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
           if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
-          if (cmd.contains('wg show interfaces')) return 'wgc2';
+          if (cmd.contains('ip -o link show up')) return 'wgc2';
           if (cmd.contains('ping')) return 'OK';
           return '';
         },

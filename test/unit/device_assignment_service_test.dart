@@ -55,7 +55,7 @@ RecordingSSHClient _client({String cache = _cache, String policy = _policyList, 
     // The default-connection sequence polls these two. `restart_default_wan` resetting the key to
     // 0 is what the service waits for, and the target interface coming back is the other.
     if (cmd == 'nvram get vpnc_default_wan') return '0';
-    if (cmd == 'wg show interfaces') return 'wgc1 wgc5';
+    if (cmd == 'ip -o link show up') return 'wgc1 wgc5';
     return '';
   });
 }
