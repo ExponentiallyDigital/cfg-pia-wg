@@ -249,6 +249,22 @@ int? vpncUnitForSlot(List<VpncRecord> records, int slot) {
 }
 
 // Opens a real SSH client to the router. Screens inject a test factory instead in tests.
+/// Interfaces that are actually UP, as opposed to merely configured.
+///
+/// `wg show interfaces` lists every WireGuard DEVICE regardless of link state, so an interface
+/// taken down with `ifconfig wgcN down` still appears there. Measured 2026-09-09: the app badged a
+/// slot ACTIVE while the router's own web interface showed it as "connecting" and no traffic was
+/// passing. Every liveness question in the app goes through this command instead.
+///
+/// The `state` word is no use either - a WireGuard device reads `state UNKNOWN` when it is up,
+/// because it is POINTOPOINT/NOARP - so the UP flag is what matters, and `show up` filters on it:
+///
+/// ```text
+/// up    51: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP> ... state UNKNOWN
+/// down  51: wgc1: <POINTOPOINT,NOARP>             ... state DOWN
+/// ```
+const String kUpInterfacesCommand = 'ip -o link show up';
+
 /// Splits a router address into host and port. `192.168.1.1` gives port 22; `192.168.1.1:2222`
 /// gives 2222.
 ///
@@ -497,7 +513,7 @@ class RouterSlotService {
 
     // allMatches, not firstMatch: more than one tunnel can be up, and taking only the first
     // silently badged an arbitrary one of them.
-    final ifaceOutput = await _read('wg show interfaces');
+    final ifaceOutput = await _read(kUpInterfacesCommand);
     final activeSlots = RegExp(r'wgc(\d)').allMatches(ifaceOutput).map((m) => int.parse(m.group(1)!)).toSet();
 
     // Stock caps concurrent tunnels; follow the router's own setting rather than assuming 2, so a
@@ -665,9 +681,14 @@ class RouterSlotService {
     var up = false;
     for (var retry = 0; retry < verifyMaxAttempts; retry++) {
       await Future.delayed(verifyPollInterval);
-      final out = await _read('wg show interfaces');
-      onLog?.call('  wg show interfaces: ${out.isEmpty ? '(none)' : out}');
-      await _logRouter('wg show interfaces: ${out.isEmpty ? '(none)' : out}');
+      // The interfaces that are UP, not the ones that exist. This loop is what decides the
+      // ACTIVE badge, and asking `wg show interfaces` meant a slot taken down with
+      // `ifconfig wgcN down` still reported active while the router's own web interface showed it
+      // as connecting and nothing passed. Measured 2026-09-09.
+      final raw = await _read(kUpInterfacesCommand);
+      final out = RegExp(r'wg[cs][0-9]').allMatches(raw).map((m) => m.group(0)!).join(' ');
+      onLog?.call('  interfaces up: ${out.isEmpty ? '(none)' : out}');
+      await _logRouter('interfaces up: ${out.isEmpty ? '(none)' : out}');
       if (out.contains('wgc$slot')) {
         up = true;
         onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: $label is active');
@@ -804,7 +825,7 @@ class RouterSlotService {
   // cadence as the enable-side verification.
   Future<void> _awaitInterfaceDown(int slot) async {
     for (var attempt = 0; attempt < verifyMaxAttempts; attempt++) {
-      if (!(await _read('wg show interfaces')).contains('wgc$slot')) return;
+      if (!(await _read(kUpInterfacesCommand)).contains('wgc$slot')) return;
       await Future.delayed(verifyPollInterval);
     }
     // Clearing the configuration is still the right thing to do; say so rather than fail the delete.

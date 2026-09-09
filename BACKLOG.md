@@ -22,6 +22,7 @@
 
 #### 1.1.1. DOC - documentation updates
 
+- DOC: add to headline features section of README how much easier it is to assign clients to VPNs; stock is tunnel based vs cfg-pia-wg which is client (device) based.
 - DOC: Update `README.md` screenshots.
 - DOC: Update `README.md` [5. Using the app](https://github.com/ExponentiallyDigital/cfg-pia-wg#5-using-the-app).
 - DOC: Update Play Store description.
@@ -33,6 +34,7 @@
 - FTR: Add localisation strings: French, Spanish, Spanish (latin), after that decide which ones next. (Google auto transations break character limits of PS Description)
 - FTR: edit a device's display name from the assignment screen, writing `custom_clientlist`. Two sharp edges make it more than a text field: `<` and `>` are the record and field delimiters, so an unvalidated name corrupts every device name on the router; and appending a record for a device that has none writes index 3, so a naive `0` downgrades that device's icon to generic in both the WebUI and the ASUS app - the detected type has to be carried over from `nmp_cl_json.js` first. Also needs the service call that makes it take effect, which is unknown.
 - FTR: the watchdog alert email should say WHERE the pinned traffic went while the tunnel was down, and recommend the fix. On stock the script can read `vpnc_dev_policy_list` for its own index-6 and compare with `vpnc_default_wan`: devices pinned to this slot fall through to the default connection, so if the default is the WAN they were on the plain internet, if it is another tunnel they were on that one, and if it is this slot they simply had no internet. Only claim it when the lists actually say so - a slot with nothing pinned to it must not carry the line at all. Recommendation follows from the same read: set the default connection to this slot and the outage becomes fail-closed. Merlin uses a different mechanism, so gate on firmware. Evidence: `ARCHITECTURE.md` 3.3.6.
+- ADD: deploy a script like `.\scripts\showall.sh` to `jffs/cfg-pia-wg` that creates diagnostic information, decide what to do about secrets in the file
 
 ---
 
@@ -82,6 +84,8 @@
   - **Declined card handling:** Test error handling using *"Test card, always declines"*.
   - **Restoration flow:** test "Restore Purchases" button.
   - **Offline access:** disconnect internet and verify cached local entitlements allow watchdog to execute.
+  - Check if we need to update the list of Android permissions the app now uses, see `README.md` section "8. App permissions".
+  - Run a sonar scan on the Dev branch before merging to main.
 
   #### 1.2.7. Documentation and publicity
 

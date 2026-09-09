@@ -34,7 +34,7 @@ void main() {
           if (cmd.contains('wgc1_enable')) return '1';
           if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
           if (cmd.contains('wgc1_wd_email_enabled')) return '1';
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
           return '';
         },
       );
@@ -90,7 +90,7 @@ void main() {
               return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg<pia-aus_perth>WireGuard>3>>pw2>0>7>>>0>0>cfg-pia-wg';
             }
             if (cmd.contains('cru l') && cmd.contains('watchdog_wgc3')) return '1';
-            if (cmd.contains('wg show interfaces')) return 'wgc1';
+            if (cmd.contains('ip -o link show up')) return 'wgc1';
             // Slot 1 HAS a clientlist row, so its per-slot key must never win.
             if (cmd.contains('nvram get wgc1_desc')) return 'STOCK-SHOULD-NOT-READ-THIS';
             return '';
@@ -172,8 +172,26 @@ void main() {
   // Regression: activeSlot used RegExp.firstMatch, so with two tunnels up only one was ever
   // badged, and which one depended on the order `wg` happened to print them.
   group('fetchSlots active interfaces', () {
+    test('A CONFIGURED BUT DOWN INTERFACE IS NOT ACTIVE', () async {
+      // Reported from hardware 2026-09-09. `ifconfig wgc1 down` left the app badging the slot
+      // ACTIVE while the router's own web interface showed "connecting" and no traffic passed.
+      // `wg show interfaces` lists configured DEVICES and says nothing about link state:
+      //
+      //   up    51: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP> ... state UNKNOWN
+      //   down  51: wgc1: <POINTOPOINT,NOARP>             ... state DOWN
+      //
+      // Note the `state` word is UNKNOWN when it IS up, so matching on that would fail always -
+      // the UP flag is the signal, and `ip -o link show up` filters on it.
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('wg show interfaces')) return 'wgs1 wgc1'; // configured
+        if (cmd.contains('ip -o link show up')) return ' '; // nothing up
+        return '';
+      });
+      expect((await svc(c).fetchSlots()).activeSlots, isEmpty);
+    });
+
     Future<Set<int>> active(String wgOutput) async {
-      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('wg show interfaces') ? wgOutput : '');
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('ip -o link show up') ? wgOutput : '');
       return (await svc(c).fetchSlots()).activeSlots;
     }
 
@@ -207,7 +225,7 @@ void main() {
       expect(c.count('nvram set wgc1_'), 17);
       // Must NOT activate the slot.
       expect(c.ran('start_wgc'), isFalse);
-      expect(c.ran('wg show interfaces'), isFalse);
+      expect(c.ran('ip -o link show up'), isFalse);
     });
 
     test('backs up an occupied slot and restores it on write failure', () async {
@@ -279,7 +297,7 @@ void main() {
     test('enables, verifies the interface, pings both targets and succeeds', () async {
       final c = RecordingSSHClient(
         responder: (cmd) {
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
           if (cmd.contains('ping -I wgc1')) return 'OK';
           return '';
         },
@@ -298,7 +316,7 @@ void main() {
     group('handshake gate', () {
       RecordingSSHClient router({required String handshake}) => RecordingSSHClient(
             responder: (cmd) {
-              if (cmd.contains('wg show interfaces')) return 'wgc1';
+              if (cmd.contains('ip -o link show up')) return 'wgc1';
               if (cmd.contains('latest-handshakes')) return handshake;
               if (cmd.contains('date +%s')) return '$kFakeNow';
               if (cmd.contains('ping -I wgc1')) return 'OK';
@@ -345,7 +363,7 @@ void main() {
         final c = RecordingSSHClient(
           responder: (cmd) {
             if (cmd.contains('vpnc_clientlist')) return 'pia-x>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
-            if (cmd.contains('wg show interfaces')) return 'wgc1';
+            if (cmd.contains('ip -o link show up')) return 'wgc1';
             if (cmd.contains('latest-handshakes')) return '${kFakeNow - 3}';
             if (cmd.contains('date +%s')) return '$kFakeNow';
             return ''; // every ping fails
@@ -360,7 +378,7 @@ void main() {
         final c = RecordingSSHClient(
           responder: (cmd) {
             if (cmd.contains('vpnc_clientlist')) return 'pia-x>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
-            if (cmd.contains('wg show interfaces')) return 'wgc1';
+            if (cmd.contains('ip -o link show up')) return 'wgc1';
             if (cmd.contains('latest-handshakes')) return '0';
             return '';
           },
@@ -379,7 +397,7 @@ void main() {
     test('reverts and throws when a ping target is unreachable', () async {
       final c = RecordingSSHClient(
         responder: (cmd) {
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
           if (cmd.contains('ping -I wgc1')) return 'FAIL';
           return '';
         },
@@ -395,20 +413,20 @@ void main() {
     RecordingSSHClient router({required int upFor}) {
       var polls = 0;
       return RecordingSSHClient(
-        responder: (cmd) => cmd.contains('wg show interfaces') ? (polls++ < upFor ? 'wgc2' : '') : '',
+        responder: (cmd) => cmd.contains('ip -o link show up') ? (polls++ < upFor ? 'wgc2' : '') : '',
       );
     }
 
     test('disableSlot returns only once the slot has gone', () async {
       final c = router(upFor: 2);
       await svc(c, verifyMaxAttempts: 5).disableSlot(2);
-      expect(c.count('wg show interfaces'), 3); // two while up, one confirming it went
+      expect(c.count('ip -o link show up'), 3); // two while up, one confirming it went
     });
 
     test('an already-stopped slot costs a single poll', () async {
       final c = router(upFor: 0);
       await svc(c).disableSlot(2);
-      expect(c.count('wg show interfaces'), 1);
+      expect(c.count('ip -o link show up'), 1);
     });
 
     test('disableSlot gives up rather than hanging, and still reports', () async {
@@ -460,7 +478,7 @@ void main() {
       return RecordingSSHClient(
         responder: (cmd) {
           if (cmd.contains('vpnc_clientlist')) return clientlist;
-          if (cmd.contains('wg show interfaces')) return polls++ < upFor ? 'wgc3' : '';
+          if (cmd.contains('ip -o link show up')) return polls++ < upFor ? 'wgc3' : '';
           return '';
         },
       );
@@ -471,7 +489,7 @@ void main() {
       final c = router(upFor: 2, clientlist: 'a>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
       await svc(c, verifyMaxAttempts: 5).deleteSlot(3);
 
-      final lastPoll = c.commands.lastIndexOf('wg show interfaces');
+      final lastPoll = c.commands.lastIndexOf('ip -o link show up');
       final firstUnset = c.commands.indexWhere((cmd) => cmd.startsWith('nvram unset'));
       expect(lastPoll, isNot(-1));
       expect(firstUnset, isNot(-1));
@@ -482,7 +500,7 @@ void main() {
       useStock();
       final c = router();
       await svc(c).deleteSlot(3);
-      expect(c.count('wg show interfaces'), 1);
+      expect(c.count('ip -o link show up'), 1);
     });
 
     // Giving up must still clear the configuration - that is what the user asked for.
@@ -520,7 +538,7 @@ void main() {
       final c = RecordingSSHClient(
         responder: (cmd) {
           if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
-          if (cmd.contains('wg show interfaces')) return polls++ < 1 ? 'wgc1' : '';
+          if (cmd.contains('ip -o link show up')) return polls++ < 1 ? 'wgc1' : '';
           return '';
         },
       );
@@ -786,7 +804,7 @@ void main() {
         final c = RecordingSSHClient(
           responder: (cmd) {
             if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
-            if (cmd.contains('wg show interfaces')) return 'wgc1';
+            if (cmd.contains('ip -o link show up')) return 'wgc1';
             if (cmd.contains('ping -I')) return 'OK';
             if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
             return '';
@@ -800,7 +818,7 @@ void main() {
         expect(logs, contains(probe.$1));
         // No line still names the slot bare. Raw router output (`wg show interfaces: wgc1`) is
         // excluded - that is the router's own text, not the app naming a slot.
-        final appLines = logs.where((m) => !m.contains('wg show interfaces:'));
+        final appLines = logs.where((m) => !m.contains('interfaces up:'));
         expect(appLines.any((m) => m.contains(RegExp(r'wgc1(?!:)'))), isFalse, reason: probe.$1);
       }
     });
@@ -1011,7 +1029,7 @@ void main() {
       final c = RecordingSSHClient(
         responder: (cmd) {
           if (cmd.contains('vpnc_clientlist')) return 'pia-aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
           // These need to be checked in reverse order of specificity: ping -I first
           if (cmd.contains('ping -I')) return 'OK';
           if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
@@ -1073,7 +1091,7 @@ void main() {
       // rather than leaving the answer empty, which the fake would fill in from the enable flag.
       final c = RecordingSSHClient(responder: (cmd) {
         if (cmd.contains('vpnc_clientlist')) return 'pia-aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
-        if (cmd == 'wg show interfaces') return 'wgs1';
+        if (cmd == 'ip -o link show up') return 'wgs1';
         return '';
       });
       await expectLater(svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
@@ -1090,7 +1108,7 @@ void main() {
           if (cmd.contains('vpnc_clientlist')) {
             return 'aus_melbourne>WireGuard>5>>pw>0>5>>>0>0>cfg-pia-wg<aus_perth>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
           }
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
           if (cmd.contains('ping -I')) return 'OK';
           if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
           return '';
@@ -1113,7 +1131,7 @@ void main() {
             return '';
           }
           if (cmd.contains('vpnc_clientlist')) return list;
-          if (cmd.contains('wg show interfaces')) return 'wgc3';
+          if (cmd.contains('ip -o link show up')) return 'wgc3';
           if (cmd.contains('ping -I')) return 'OK';
           if (cmd.contains('ip -4 addr show wgc3')) return 'inet 10.0.0.2/32';
           return '';

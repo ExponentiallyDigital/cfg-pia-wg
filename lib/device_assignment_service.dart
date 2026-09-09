@@ -195,7 +195,7 @@ class DeviceAssignmentService {
   /// Waits for [iface] to appear in, or vanish from, `wg show interfaces`.
   Future<void> _awaitInterface(String iface, {required bool up}) async {
     for (var i = 0; i < maxPolls; i++) {
-      final present = (await _read('wg show interfaces')).split(RegExp(r'\s+')).contains(iface);
+      final present = (await _read(kUpInterfacesCommand)).contains(iface);
       if (present == up) return;
       await Future<void>.delayed(pollInterval);
     }

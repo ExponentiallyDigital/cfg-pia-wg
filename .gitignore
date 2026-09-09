@@ -62,3 +62,5 @@ key.properties
 # Hardware test records. These are verbatim SSH/app session logs, so they carry real LAN
 # hostnames, IPs, MAC addresses and router logins by nature. Kept locally, never committed.
 .claude/testing/
+# Widget Preview related
+.widget_preview/

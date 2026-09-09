@@ -27,6 +27,7 @@
   - [5.2. Cron entries](#52-cron-entries)
   - [5.3. Watchdog NVRAM fields](#53-watchdog-nvram-fields)
   - [5.4. Sample `cfg-pia-wg` output](#54-sample-cfg-pia-wg-output)
+  - [5.5. `curl` refuses to run from cron](#55-curl-refuses-to-run-from-cron)
 - [6. Network traffic](#6-network-traffic)
 - [7. Output \& session destruction](#7-output--session-destruction)
 - [8. Build provenance (the About screen)](#8-build-provenance-the-about-screen)
@@ -1025,6 +1026,27 @@ Endpoint            = <server IP:port from PIA>
 PersistentKeepalive = 25
 AllowedIPs          = 0.0.0.0/0
 ```
+
+### 5.5. <a name='Curlcallercheck'></a>`curl` refuses to run from cron
+
+`/usr/sbin/curl` on stock ASUS firmware inspects its own process ancestry at startup and **refuses to run if `crond` appears anywhere in the chain**. The rejection is silent in every way that matters: exit status 0, no HTTP status, no response body, and nothing on stderr. The only trace is a line in `/jffs/curllst`.
+
+Measured 2026-09-09, stock firmware, curl 7.84.0. Identical command, one minute apart, from a cron job that ran the same script three ways:
+
+| Caller | `%{http_code} exit=%{exitcode}` | `/jffs/curllst` |
+| --- | --- | --- |
+| `crond` -> `sh -c script` -> `curl` | *(empty)* | `Invalid caller(crond)` |
+| `crond` -> `sh script` -> detached child reparented to init -> `curl` | `200 exit=0` | ancestry ends at `/sbin/init`, no rejection |
+| `crond` -> `sh -c script` -> busybox `wget` | `rc=0` | not logged |
+
+The consequence is that **a watchdog invoked directly by cron can never fetch a PIA token**, and therefore can never reconfigure a tunnel by itself. Every successful reconfigure observed before this was found came from the app running the script over SSH, where the parent is `dropbear`.
+
+The fix is at the top of `watchdog_wgcN.sh`. A run with no argument, which is how cron invokes it, re-execs itself with the argument `detached`, backgrounds that copy and exits immediately. The child waits for its `PPid` to become 1 - the parent exiting is what reparents it to init - and then continues with `RUNMODE` set back to `cron`, so nothing downstream knows the difference. A `deploy` run, which is the app running the script over SSH, is not detached: its ancestry is fine, and detaching it would throw away the output the app shows the user.
+
+`exit 0` with no status, no body and no stderr is this failure and nothing else, and the watchdog's token-fetch error message reports all three. Seeing that combination again means the detach has stopped working.
+
+> [!WARNING]
+> `/jffs/curllst` is world-readable (mode 666), survives reboots, and records **the full command line** of every `curl` invocation - including the `-u <user>:<password>` of the PIA token request. It is rotated to `/jffs/curllst.1`. There is no way to disable it, so the watchdog empties it (`echo -n > /jffs/curllst`) after every `curl`, on the success paths and in `abort()`. Never paste this file anywhere without redacting it.
 
 ---
 

@@ -91,7 +91,7 @@ class RecordingSSHClient implements SSHClient {
     // A slot the app has just switched on reports as up. Since 409 the watchdog deploy waits for
     // the interface before running the script, and a fake that never came up would make every
     // deploy test sit through the full poll.
-    if (out.isEmpty && command == 'wg show interfaces') out = _enabledSlots.map((s) => 'wgc$s').join(' ');
+    if (out.isEmpty && command == 'ip -o link show up') out = _enabledSlots.map((s) => 'wgc$s').join(' ');
     if (out.isEmpty && (command.contains('latest-handshakes') || command.contains('date +%s'))) {
       out = kFakeNow.toString();
     }
