@@ -1,42 +1,65 @@
 # ARCHITECTURE.md
 
-- [1. How it works](#1-how-it-works)
-- [2. App processing flow](#2-app-processing-flow)
-  - [2.1. Overview](#21-overview)
-  - [2.2. Detail](#22-detail)
-- [3. Router WireGuard NVRAM fields](#3-router-wireguard-nvram-fields)
-  - [3.1. Field reference](#31-field-reference)
-  - [3.2. Stock `vpnc_clientlist`](#32-stock-vpnc_clientlist)
-- [4. Wireguard SSH commands](#4-wireguard-ssh-commands)
-  - [4.1. Merlin](#41-merlin)
-    - [4.1.1. Enable](#411-enable)
-    - [4.1.2. Disable](#412-disable)
-    - [4.1.3. Delete](#413-delete)
-    - [4.1.4. What only Merlin has](#414-what-only-merlin-has)
-    - [4.1.5. Firmware detection](#415-firmware-detection)
-  - [4.2. Stock](#42-stock)
-    - [4.2.1 Create and enable a slot](#421-create-and-enable-a-slot)
-    - [4.2.2 Enable existing slot](#422-enable-existing-slot)
-    - [4.2.3 Stop/Disable](#423-stopdisable)
-    - [4.2.4 Delete](#424-delete)
-    - [4.2.5 VPN Fusion](#425-vpn-fusion)
-- [5. Watchdog details](#5-watchdog-details)
-  - [5.1. Shell script](#51-shell-script)
-    - [5.1.1. Backoff](#511-backoff)
-    - [5.1.2. Email alerting](#512-email-alerting)
-  - [5.2. Cron entries](#52-cron-entries)
-  - [5.3. Watchdog NVRAM fields](#53-watchdog-nvram-fields)
-  - [5.4. Sample `cfg-pia-wg` output](#54-sample-cfg-pia-wg-output)
-  - [5.5. `curl` refuses to run from cron](#55-curl-refuses-to-run-from-cron)
-- [6. Network traffic](#6-network-traffic)
-- [7. Output \& session destruction](#7-output--session-destruction)
-- [8. Build provenance (the About screen)](#8-build-provenance-the-about-screen)
-  - [8.1. The channel](#81-the-channel)
-  - [8.2. Where each field comes from](#82-where-each-field-comes-from)
-  - [8.3. Gradle-side notes](#83-gradle-side-notes)
-  - [8.4. GNU licence text](#84-gnu-licence-text)
+- [1. How it works](#how-it-works)
+- [2. App processing flow](#app-processing-flow)
+  - [2.1. Overview](#overview)
+  - [2.2. Detail](#detail)
+- [3. Wireguard SSH commands](#wireguard-ssh-commands)
+  - [3.1. Merlin](#merlin)
+    - [3.1.1. Enable](#enable)
+    - [3.1.2. Disable](#disable)
+    - [3.1.3. Delete](#delete)
+    - [3.1.4. What only Merlin has](#what-only-merlin-has)
+    - [3.1.5. Firmware detection](#firmware-detection)
+  - [3.2. Stock](#stock)
+    - [3.2.1. Create and enable a slot](#create-and-enable-a-slot)
+    - [3.2.2. Enable existing slot](#enable-existing-slot)
+    - [3.2.3. Stop/Disable](#stopdisable)
+    - [3.2.4. Delete](#stock-delete)
+    - [3.2.5. VPN Fusion](#vpn-fusion)
+- [4. Router WireGuard NVRAM fields](#router-wireguard-nvram-fields)
+  - [4.1. Field reference](#field-reference)
+  - [4.2. Stock `vpnc_clientlist`](#stock-vpnc-clientlist)
+- [5. Device assignment (stock)](#device-assignment-stock)
+  - [5.1. `vpnc_default_wan`](#vpnc-default-wan)
+  - [5.2. Shared format](#shared-format)
+  - [5.3. `dhcp_staticlist`](#dhcp-staticlist)
+    - [5.3.1. Reserved or not - the distinction the screen needs](#reserved-or-not-the-distinction-the-screen-needs)
+  - [5.4. `custom_clientlist`](#custom-clientlist)
+  - [5.5. Practical notes](#practical-notes)
+  - [5.6. Reading the two device JSON files](#reading-the-two-device-json-files)
+  - [5.7. `cfg_device_list` - the router and its mesh nodes](#cfg-device-list-the-router-and-its-mesh-nodes)
+  - [5.8. `vpnc_dev_policy_list` - the assignment](#vpnc-dev-policy-list-the-assignment)
+    - [5.8.1. How a change is written](#how-a-change-is-written)
+    - [5.8.2. The starting state, before any VPN exists](#the-starting-state-before-any-vpn-exists)
+    - [5.8.3. Reservations are created by ANY assignment, and never removed - MEASURED 2026-09-08](#reservations-are-created-by-any-assignment-and-n)
+    - [5.8.4. `vpnc_dev_policy_list_tmp`](#vpnc-dev-policy-list-tmp)
+    - [5.8.5. Service calls](#service-calls)
+    - [5.8.6. `vpnc_default_wan` uses the same identifier](#vpnc-default-wan-uses-the-same-identifier)
+    - [5.8.7. `enabled` is what separates "on the internet" from "follows the default" - CONFIRMED 2026-09-08](#enabled-is-what-separates-on-the-internet-from-f)
+    - [5.8.8. Changing the default connection - the exact sequence, MEASURED 2026-09-08](#changing-the-default-connection-the-exact-sequen)
+    - [5.8.9. Assigning a device with no DHCP reservation creates one](#assigning-a-device-with-no-dhcp-reservation-crea)
+    - [5.8.10. Stock leaves the old routing rule behind - MEASURED 2026-09-10](#stock-leaves-the-old-routing-rule-behind-measure)
+- [6. Watchdog details](#watchdog-details)
+  - [6.1. Shell script](#shell-script)
+    - [6.1.1. Backoff](#backoff)
+    - [6.1.2. Email alerting](#email-alerting)
+  - [6.2. Cron entries](#cron-entries)
+    - [6.2.1. The router's service queue, and how it wedges](#the-routers-service-queue-and-how-it-wedges)
+    - [6.2.2. The second init script, and how both are made recoverable](#the-second-init-script-and-how-both-are-made-rec)
+    - [6.2.3. What an uninstall leaves behind](#what-an-uninstall-leaves-behind)
+  - [6.3. Watchdog NVRAM fields](#watchdog-nvram-fields)
+  - [6.4. Sample `cfg-pia-wg` output](#sample-cfg-pia-wg-output)
+  - [6.5. `curl` refuses to run from cron](#curl-refuses-to-run-from-cron)
+- [7. Network traffic](#network-traffic)
+- [8. Output & session destruction](#output-session-destruction)
+- [9. Build provenance (the About screen)](#build-provenance-the-about-screen)
+  - [9.1. The channel](#the-channel)
+  - [9.2. Where each field comes from](#where-each-field-comes-from)
+  - [9.3. Gradle-side notes](#gradle-side-notes)
+  - [9.4. GNU licence text](#gnu-licence-text)
 
-## 1. How it works
+## 1. <a name='how-it-works'></a>How it works
 
 The provisioning logic in `lib/pia_service.dart` is a direct Dart translation of the command line version's [Go code](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/blob/main/main.go), implementing the same steps in the same order:
 
@@ -50,7 +73,7 @@ The provisioning logic in `lib/pia_service.dart` is a direct Dart translation of
 
 ---
 
-## 2. <a name='Appprocessingflow'></a>App processing flow
+## 2. <a name='app-processing-flow'></a>App processing flow
 
 ```mermaid
 graph TD
@@ -133,13 +156,13 @@ graph TD
 > [!NOTE]
 > WireGuard configuration is backed up before any destructive/configuration activity, and restored if any issue is detected.
 
-### 2.1. Overview
+### 2.1. <a name='overview'></a>Overview
 
 When you select a PIA region and push it to your router, the app connects directly to your router over your home network and switches your VPN tunnel to the new location.
 
 It first checks whether a VPN tunnel is already running, stops it cleanly, writes the new VPN server details into the router's permanent memory, and then starts the new tunnel. The app watches the router until it confirms the tunnel is active, then checks that internet traffic is actually flowing through it by verifying the public IP address your router is using. If anything goes wrong at any point, the app restores the router to the state it was in before you started.
 
-### 2.2. Detail
+### 2.2. <a name='detail'></a>Detail
 
 The push operation establishes an SSH session to the router and uses `wg show interfaces` to detect any currently active WireGuard client slot.
 
@@ -150,7 +173,210 @@ The push operation establishes an SSH session to the router and uses `wg show in
 - The app then polls `wg show interfaces` to confirm the interface is active, followed by pinging the user supplied ping targets (defaults to 8.8.8.8 & 1.1.1.1) through the tunnel to confirm routed connectivity.
 - If the ping fails, a recovery block restores and re-enables the previously active slot.
 
-## 3. <a name='RouterWireGuardNVRAMfields'></a>Router WireGuard NVRAM fields
+## 3. <a name='wireguard-ssh-commands'></a>Wireguard SSH commands
+
+To manage Wireguard Merlin uses VPN Director, stock ASUS uses VPN Fusion. These are similar but different: using nvram settings to store configuration parameters, but differs in how these are applied and used. There's scant reference detail I could find on how stock officially manages things and a **lot** more by having access to Merlin's source code, so the below is my understanding which may be incorrect and have gaps.
+
+### 3.1. <a name='merlin'></a>Merlin
+
+VPN Director exposes each slot directly: there is no clientlist and no unit indirection. Write the `wgcN_*` keys, commit, then act on the slot **by its own number**.
+
+```text
+   nvram set wgcN_*      (17 keys, section 3.1)
+          │
+   nvram commit          always BEFORE the service call, so the
+          │              service cannot read a half-written slot
+          ▼
+        exec
+  service "start_wgc N"  OR  service "stop_wgc N"
+          │
+          ▼
+  service restart_vpnrouting0   (start)
+  service start_vpnrouting0     (stop)
+          │
+          ▼
+        wgcN
+```
+
+#### 3.1.1. <a name='enable'></a>Enable
+
+```bash
+nvram set wgcN_enable=1
+nvram commit
+service "start_wgc N"; service restart_vpnrouting0
+```
+
+Then poll `wg show interfaces` until `wgcN` appears. The app tries five times at two-second intervals and reverts to disabled if it never comes up — the `service` call is queued through `notify_rc` and returns immediately, so a prompt return says nothing about the tunnel.
+
+#### 3.1.2. <a name='disable'></a>Disable
+
+```bash
+nvram set wgcN_enable=0
+nvram commit
+service "stop_wgc N"; service start_vpnrouting0
+```
+
+Note the asymmetry: **`restart_vpnrouting0` on the way up, `start_vpnrouting0` on the way down.** Then poll until `wgcN` leaves `wg show interfaces` — unsetting keys before it has gone lets the firmware re-create `wgcN_enable` behind you.
+
+#### 3.1.3. <a name='delete'></a>Delete
+
+Disable as above, wait for the interface to go, then `nvram unset` all 17 `wgcN_*` keys plus `wgcN_wd_primary_ip` / `wgcN_wd_secondary_ip`, and commit. There are no `vpncN_*` runtime keys to clean up on Merlin.
+
+#### 3.1.4. <a name='what-only-merlin-has'></a>What only Merlin has
+
+- `wgcN_enforce` (kill switch), `wgcN_fw` (inbound firewall), `wgcN_rip` — `kMerlinOnlySlotKeys`. Writing them on stock creates keys nothing reads and DELETE does not clean up.
+- `wgcN_desc` as a real firmware field. On stock the app writes it anyway, as a key of its own, because the watchdog script needs the region name from a bare `nvram get`.
+- The JFFS custom-scripts partition, which the watchdog needs for reboot persistence:
+
+  ```bash
+  nvram get jffs2_scripts   # both must be 1
+  nvram get jffs2_on
+  ```
+
+  The app sets and commits them if they are not already on. Stock has no equivalent and no `/jffs/scripts` hook directory, so the watchdog persists its cron entries differently there — see section 5.2.
+
+#### 3.1.5. <a name='firmware-detection'></a>Firmware detection
+
+`nvram get 3rd-party` returns `merlin` on Merlin and is empty on stock. Detected once per app session; every router command branches on the result.
+
+### 3.2. <a name='stock'></a>Stock
+
+VPN Fusion abstracts the underlying per slot calls to manipulate WG VPNs. Find the profile's **row** in `vpnc_clientlist`, set `vpnc_unit` to that row's 0-based index, then exec the `service` command:
+
+```text
+        vpnc_clientlist
+              │
+              ├── row 0 ── slot 5 ─┐
+              ├── row 1 ── slot 1  │  find the row whose
+              └── row N ── slot M  │  index 2 == target slot
+              │                    │
+             set ◄─────────────────┘
+   vpnc_unit=(row index)
+              │
+              ▼
+            exec
+  stop_vpnc OR restart_vpnc
+              │
+              ▼
+          VPN Fusion
+              │
+              ▼
+             wgcN
+```
+
+> [!IMPORTANT]
+> `vpnc_unit` is the **row index**, not `5 - slot`.
+>
+> The WebUI can only create profiles in slot order 5,4,3,2,1, so in any list it built row 0 is slot 5, row 1 is slot 4, and so on — the row index and `5 - slot` are the same number, which is why the `5 - slot` rule looked correct.
+>
+> `cfg-pia-wg` lets the user pick any slot, so its lists can be in any order and only the row index holds. Measured: with rows `[slot 5, slot 1]`, enabling the slot-1 profile from the WebUI writes `vpnc_unit=1`; `5 - slot` would give `4`, a row that does not exist, and nothing comes up.
+>
+> Row index is a strict generalisation — it agrees with `5 - slot` on every WebUI-ordered list.
+
+The runtime state keys are indexed differently again: `vpncN_state_t` / `vpncN_dns` / `vpncN_sbstate_t` use **index 6** of the profile's `vpnc_clientlist` record, *not* the slot number and *not* `vpnc_unit`.
+
+> [!IMPORTANT]
+> One profile carries three different indexes. For `aus_perth` in slot 1, sitting at row 1 with index 6 = 9:
+>
+> | Index | Value | Used by |
+> |---|:-:|---|
+> | slot number | 1 | `wgc1_*` keys, `service` targets |
+> | clientlist row | 1 | `vpnc_unit` |
+> | clientlist index 6 | 9 | `vpnc9_state_t`, `vpnc9_sbstate_t`, `vpnc9_dut_disc` |
+>
+> Measured: enabling then deleting wgc1 left `vpnc9_*` behind. Slot 5 is the trap - there the slot number and index 6 are both 5, so a reading taken only from wgc5 cannot tell them apart.
+
+#### 3.2.1. <a name='create-and-enable-a-slot'></a>Create and enable a slot
+
+Creating the first slot in the WebUI adds the below keys and populates settings.
+
+The below examples are for `wgc5`, which is the first WG VPN created. **NB** the first slot created is numbered `5` and the last is `1`.
+
+  1. set `wgcN_*` values:
+
+  ```bash
+  # Primary keys
+  wgc5_addr=10.119.0.18/32          # local tunnel IP address assigned by the VPN server
+  wgc5_aips=0.0.0.0/0               # allowed IP addresses
+  wgc5_alive=25                     # tunnel keep alive in seconds
+  wgc5_dns=9.9.9.9,149.112.112.112  # two DNS servers
+  wgc5_enable=1                     # 1=enable, 0=disable
+  wgc5_ep_addr=45.130.141.215       # FQDN or public IP of the remote PIA WireGuard peer endpoint
+  wgc5_ep_addr_r=45.130.141.215     # resolved numeric IP if `wgcN_ep_addr` is a DNS name; set when the interface initialises
+  wgc5_ep_port=1337                 # end point port; PIA WG uses port 1337
+  wgc5_mtu=                         # maximum transmission unit, picked up from the conf file that created this slot (defaults to??)
+  wgc5_nat=1                        # 1=enable, 0=disabled
+  wgc5_ppub=PUBLIC_KEY              # PIA VPN server public key
+  wgc5_priv=PRIVATE_KEY             # PIA user's private key
+  wgc5_psk=                         # preshared key, not used by PIA.
+  
+  # VPN Fusion keys - do these get created for us?
+  vpnc5_dns=9.9.9.9 149.112.112.112 # DNS servers, set when slot is enabled, unset when disabled
+  vpnc5_dut_disc=5                  # unknown, unset when slot is enabled, when disabled this is the slot #
+  vpnc5_sbstate_t=0                 # unknown
+  vpnc5_state_t=2                   # TBC. interface exists=2
+  vpnc_unit=0                       # the unit being acted on where 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1; retains last set value.
+  ```
+
+  2. `vpnc_clientlist` is created and contains
+
+  ```bash
+  pia-aus_melbourne>WireGuard>5>>ROUTER_ADMIN_PWD>1>5>>>0>0>Web
+  ```
+
+  3. exec `service restart_vpnc`
+
+#### 3.2.2. <a name='enable-existing-slot'></a>Enable existing slot
+
+  1. set `wgcN_enable=1`
+  2. set `vpnc_clientlist` index 5 (vpn state) to `1` (active) — do this **before** step 3, since a slot with no profile gains a new row here and the unit is that row's index
+  3. set `vpnc_unit=N` where `N` is the 0-based index of the slot's row in `vpnc_clientlist` (see 4.2)
+  4. exec `service restart_vpnc`
+
+  `service restart_default_wan` is run by the UI when "apply to all devices" is enabled/disabled.
+
+There is **no** `start_vpnc` command, which is why enable uses `restart_vpnc`.
+
+#### 3.2.3. <a name='stopdisable'></a>Stop/Disable
+
+  1. set `wgcN_enable=0`
+  2. set `vpnc_clientlist` index 5 (vpn state) to `0` (disabled)
+  3. set `vpnc_unit=N` where `N` is the 0-based index of the slot's row in `vpnc_clientlist` (see 4.2)
+  4. exec `service stop_vpnc`
+
+> [!WARNING]
+> `restart_vpnc` does **not** stop a tunnel. Using it here clears `wgcN_enable` and index 5 — so the WebUI reports the profile disconnected — while the interface stays up and keeps appearing in `wg show interfaces`. Deleting a slot must issue `stop_vpnc` too, and must resolve `vpnc_unit` *before* the row is removed from `vpnc_clientlist`.
+
+#### 3.2.4. <a name='stock-delete'></a>Delete
+
+Deleting a slot set to `apply to all devices` executes
+
+```bash
+service restart_default_wan
+service restart_vpnc_dev_policy
+```
+
+Deleting the last WG slot executes
+
+```bash
+service restart_vpnc_dev_policy
+```
+
+#### 3.2.5. <a name='vpn-fusion'></a>VPN Fusion
+
+ `vpncN_*` values are
+
+  ```bash
+  vpnc5_dut_disc=5   # retained after reboot
+  vpnc5_sbstate_t=0  # removed after reboot
+  vpnc5_state_t=2    # removed after reboot
+  ```
+
+  `wgcN_*` are **not** removed when a profile is deleted.
+
+---
+
+## 4. <a name='router-wireguard-nvram-fields'></a>Router WireGuard NVRAM fields
 
 Merlin exposes 17 nvram fields per WireGuard slot, stock exposes 12.
 
@@ -166,7 +392,7 @@ Alongside the per-slot fields, the app keeps a handful of **global** `cfg_pia_wg
 
 The two counters are committed once per alert, never per check: `nvram commit` writes flash, and a tunnel that is broken for hours would otherwise commit every cooldown.
 
-### 3.1. Field reference
+### 4.1. <a name='field-reference'></a>Field reference
 
 | Field            | Merlin | Stock  | Default                      | Description                                                                                                                                                                                                                                                                             |
 | ---------------- | :----: | :----: | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -190,7 +416,7 @@ The two counters are committed once per alert, never per check: `nvram commit` w
 
 **Note: `wgcN_alive`:** Merlin sets this to 25 by default. Stock only defaults to 25 if the field is not explicitly set; the field itself is otherwise optional.
 
-### 3.2. Stock `vpnc_clientlist`
+### 4.2. <a name='stock-vpnc-clientlist'></a>Stock `vpnc_clientlist`
 
 On stock firmware, several WireGuard slot parameters are consolidated into a single nvram setting, `vpnc_clientlist`, rather than being stored as individual `wgcN_` values. This setting is a delimited string holding up to five VPN profiles, one per slot.
 
@@ -238,7 +464,8 @@ pia-aus_melbourne>WireGuard>5>>password>1>5>>>0>0>cfg-pia-wg<pia-aus>WireGuard>4
 |  10   | 0                 | 0             | 0                  | 0                  | 0             |
 |  11   | cfg-pia-wg        | cfg-pia-wg    | cfg-pia-wg         | cfg-pia-wg         | cfg-pia-wg    |
 
-### 3.3. Device assignment (stock)
+## 5. <a name='device-assignment-stock'></a>Device assignment (stock)
+
 
 How stock binds a LAN device to a VPN profile, and the NVRAM lists involved. Measured on hardware 2026-09-06 and 2026-09-07 by diffing NVRAM either side of each WebUI action; see `.claude/plans/plan_vpn_device_assignments.md` for the method and for what is still unverified.
 
@@ -246,7 +473,7 @@ How stock binds a LAN device to a VPN profile, and the NVRAM lists involved. Mea
 > Every IP address, hostname and MAC address in this section is invented, including in the sample records. Real values are never recorded in this repository.
 
 The app does not write any of this yet. It is documented here because it is the reference the feature is being built against, and because two of the keys - `vpnc_dev_policy_list` and `vpnc_default_wan` - are ones `scripts/clearall.sh` already touches.
-### 3.3.1 `vpnc_default_wan`
+### 5.1. <a name='vpnc-default-wan'></a>`vpnc_default_wan`
 
 An integer naming the VPN that unassigned devices use. It is **index 6 (0-based)** of that profile's `vpnc_clientlist` record - the same number the `vpncN_*` runtime keys are indexed by, not the slot number and not `vpnc_unit`.
 
@@ -258,11 +485,11 @@ vpnc_clientlist=pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg
 
 So `vpnc_default_wan=9` means slot 1, `pia-aus_melbourne`. Confirm what `0` means (phase 0).
 
-### 3.3.2 Shared format
+### 5.2. <a name='shared-format'></a>Shared format
 
 `dhcp_staticlist` and `custom_clientlist` are both single NVRAM strings using `<` as the record separator and `>` as the field separator. Values are stored **percent-encoded** - the WebUI runs `decodeURIComponent()` on read - so names containing `<`, `>` or spaces come back escaped.
 
-### 3.3.3 `dhcp_staticlist`
+### 5.3. <a name='dhcp-staticlist'></a>`dhcp_staticlist`
 
 Four fields per record, always with a leading `<`:
 
@@ -288,7 +515,7 @@ Trailing fields are treated as empty if absent, so `<MAC>IP` alone is valid and 
 > [!NOTE]
 > On 384.13 through the 386 branch, ASUS and Merlin briefly split hostnames into a separate `dhcp_hostnames` variable (`<MAC>hostname`). Current firmware is back on the reunified four-field layout, but any older script found on the forums may assume the split.
 
-#### 3.3.3a Reserved or not - the distinction the screen needs
+#### 5.3.1. <a name='reserved-or-not-the-distinction-the-screen-needs'></a>Reserved or not - the distinction the screen needs
 
 **Do not use the WebUI `IP Method` column as a design input.** It is not stable, and it does not mean what it appears to.
 
@@ -343,7 +570,7 @@ Two behaviours confirmed 2026-09-06:
 > **Nothing in the client list identifies the AiMesh node or the router itself** - the WebUI simply omits both from the export. So excluding them from the assignable list needs a signal from elsewhere; check what `/jffs/nmp_cl_json.js` carries for them before assuming.
 
 ---
-### 3.3.4 `custom_clientlist`
+### 5.4. <a name='custom-clientlist'></a>`custom_clientlist`
 
 Up to nine fields per record. The **first record has no leading `<`**, so split on `<` and discard empty chunks rather than assuming index 0 is junk:
 
@@ -377,13 +604,13 @@ device1>AA:BB:CC:DD:EE:FF>0>60>>>>><device4>0A:0B:0C:0D:0E:0F>0>4>>>><RT-AC68U>0
 
 Split on `<`, then on `>`, and treat any index past the end as empty. Group type `0` means unknown and gives a generic icon.
 
-### 3.3.5 Practical notes
+### 5.5. <a name='practical-notes'></a>Practical notes
 
 - **The two lists are independent.** A MAC can appear in one and not the other, and renaming in `custom_clientlist` does not change the DHCP hostname. The sample data above shows it both ways: `hostname4` is only in `custom_clientlist`, `hostname5` and `hostname6` only in `dhcp_staticlist`.
 - **MAC is the only stable identifier.** Hostnames are not unique and are editable in one list without changing the other.
 - **NVRAM has a hard size ceiling.** After `nvram set` you need `nvram commit`, and a silently truncated write is the usual failure mode once a list gets long.
 
-### 3.3.5b Reading the two device JSON files
+### 5.6. <a name='reading-the-two-device-json-files'></a>Reading the two device JSON files
 
 Both are plain JSON despite the `.js` extension - objects keyed by uppercase MAC, no wrapper, no trailing semicolon - so `jq` reads them directly.
 
@@ -399,7 +626,7 @@ Other traps in the same pair of files:
 - **An offline device KEEPS its `ip` in `nmp_cache.js`**, so it stays assignable. The address is only genuinely unavailable when a device is unreserved, powered off, AND has not connected since the last reboot, because `/tmp` is rebuilt at boot.
 - The router itself does not appear in `nmp_cache.js` at all. A mesh node does, indistinguishable from a client - see 3.3.5a.
 
-### 3.3.5a `cfg_device_list` - the router and its mesh nodes
+### 5.7. <a name='cfg-device-list-the-router-and-its-mesh-nodes'></a>`cfg_device_list` - the router and its mesh nodes
 
 Read-only for this app, and the answer to "which entries in the device list are not really devices".
 
@@ -415,7 +642,7 @@ This matters because a mesh node is otherwise indistinguishable from an ordinary
 
 A related field, not needed for exclusion but worth knowing: `nmp_cache.js` carries `amesh_isReClient` and `amesh_papMac` on devices connected THROUGH a node, where `amesh_papMac` is the node MAC. That identifies a device behind the mesh - which is assignable like any other (see 3.3.3) - not the node itself.
 
-### 3.3.6 `vpnc_dev_policy_list` - the assignment
+### 5.8. <a name='vpnc-dev-policy-list-the-assignment'></a>`vpnc_dev_policy_list` - the assignment
 
 **SETTLED 2026-09-06** by `scripts/probe-device-assignment.sh`: eight WebUI actions, each diffed against a snapshot either side, with two control steps supplying the noise set. Records separated by `<`, indexes by `>`.
 
@@ -451,7 +678,7 @@ vpnc_dev_policy_list=1>192.168.1.20>>9><1>192.168.1.22>>5>
 > [!IMPORTANT]
 > **The record is keyed by IP, so a device whose address is unknown cannot be assigned at all.** `/jffs/nmp_cl_json.js` - the persistent device inventory, and the only source that lists offline devices - carries no `ip` field. The address therefore comes from `/tmp/nmp_cache.js` when that file exists, and otherwise from `dhcp_staticlist`, which holds MAC-to-IP for every reserved device whether it is online or not. A device that is both unreserved and absent from the cache has no address to write and none that could safely be invented, so it is listed but not assignable.
 
-#### How a change is written
+#### 5.8.1. <a name='how-a-change-is-written'></a>How a change is written
 
 | Action | Before | After |
 | --- | --- | --- |
@@ -477,7 +704,7 @@ vpnc_dev_policy_list=1>192.168.1.20>>9><1>192.168.1.22>>5>
 > - **Read index 0, never mere presence.** A parser that treats "in the list" as "assigned" reports every reserved device as being on a VPN when none of them are.
 > - **Preserve records the app did not create.** Writing only the app's own assignments would drop the placeholders the firmware maintains. Rebuild the list from the existing one with the app's changes applied, rather than from the app's model alone.
 
-#### 3.3.6a The starting state, before any VPN exists
+#### 5.8.2. <a name='the-starting-state-before-any-vpn-exists'></a>The starting state, before any VPN exists
 
 Observed on a rebuilt router with `wgc1` freshly created and nothing assigned (2026-09-07):
 
@@ -492,7 +719,7 @@ So the placeholder records are very likely not "seeded and disabled" but **devic
 
 Nothing downstream changes, because the rule in the box above never depended on which reading was right - index `0` says unassigned-from-a-VPN either way, and the app must read the index rather than presence in the list. What does change is the expectation: an untouched router has an **empty** policy list, so the screen must render "every device on the default connection" from no records at all rather than from a list of zeros.
 
-#### Reservations are created by ANY assignment, and never removed - MEASURED 2026-09-08
+#### 5.8.3. <a name='reservations-are-created-by-any-assignment-and-n'></a>Reservations are created by ANY assignment, and never removed - MEASURED 2026-09-08
 
 Assigning devices in the WebUI and then unassigning them again produced this, with the policy list left empty:
 
@@ -511,13 +738,13 @@ Three things follow, and all three change the design:
 > [!NOTE]
 > The corollary for the app: a router that has ever used VPN Fusion is likely to have a reservation for every device already, so the expensive path is the exception in practice. A **freshly reset** router is where it bites - which is exactly the state a new user is in. Do not let the rarity argue away the warning.
 
-#### `vpnc_dev_policy_list_tmp`
+#### 5.8.4. <a name='vpnc-dev-policy-list-tmp'></a>`vpnc_dev_policy_list_tmp`
 
 Confirmed: it holds the **previous committed value** of `vpnc_dev_policy_list`. After every one of the eight steps, `_tmp` equalled the list as it stood before that step. It is the WebUI rollback copy.
 
 The app should write it the same way - set `_tmp` to the outgoing value, then set the list - so a WebUI visit afterwards does not find a stale rollback point pointing at a configuration that never existed.
 
-#### Service calls
+#### 5.8.5. <a name='service-calls'></a>Service calls
 
 Exactly three, in this order, for an assignment change to a device that **already has a DHCP reservation**:
 
@@ -545,11 +772,11 @@ service restart_vpnc
 
 All of these go through `notify_rc`, which queues and returns immediately, so none of them is finished when the call returns - the same trap that produced the watchdog deploy race in 409. Verify by polling, do not sleep and hope.
 
-#### `vpnc_default_wan` uses the same identifier
+#### 5.8.6. <a name='vpnc-default-wan-uses-the-same-identifier'></a>`vpnc_default_wan` uses the same identifier
 
 Turning on "apply to all devices" for wgc1 set `vpnc_default_wan=9` - the clientlist index 6 again, not the slot. Turning it off set it back to `0`. So `0` means plain WAN and any other value is an index-6 identifier, which settles the open question in 3.3.1.
 
-#### `enabled` is what separates "on the internet" from "follows the default" - CONFIRMED 2026-09-08
+#### 5.8.7. <a name='enabled-is-what-separates-on-the-internet-from-f'></a>`enabled` is what separates "on the internet" from "follows the default" - CONFIRMED 2026-09-08
 
 Two records can both carry index `0` and mean different things:
 
@@ -564,7 +791,7 @@ This matters because unassigning in this app writes the disabled form. A user wh
 
 **The app models both since 421.** `DevicePolicy.isAssigned` is the enabled flag alone - index 0 does not disqualify a record - so `assignedIndexFor` returns `0` for a device pinned to the internet and `null` for one that follows the default. The per-device picker offers both as separate choices: *default*, which names what the default currently resolves to, and *Internet*, which pins and ignores the default from then on. Until 421 only the first existed, so a device deliberately pinned to the internet was displayed as following the default and rewritten as such on the next apply.
 
-#### Changing the default connection - the exact sequence, MEASURED 2026-09-08
+#### 5.8.8. <a name='changing-the-default-connection-the-exact-sequen'></a>Changing the default connection - the exact sequence, MEASURED 2026-09-08
 
 Writing `vpnc_default_wan` does nothing on its own, and eleven probes were needed to find out why. The sequence below is the only one that works; every element is load-bearing and none of it is guessable.
 
@@ -605,7 +832,7 @@ Things that do NOT work, all measured rather than assumed:
 
 The cost is real and the app warns before doing it: the tunnels stop and restart, anything using them loses its connection for the duration, and a watchdog on an affected slot reports the outage. Assigning a device does none of that.
 
-#### Assigning a device with no DHCP reservation creates one
+#### 5.8.9. <a name='assigning-a-device-with-no-dhcp-reservation-crea'></a>Assigning a device with no DHCP reservation creates one
 
 The device used for the final step had no reservation. Assigning it added one to `dhcp_staticlist`:
 
@@ -682,7 +909,7 @@ MAC, IP, empty DNS, **empty hostname**. That follows from the binding being by I
 >
 > So the app should offer devices that already hold a reservation as the ordinary case, and treat "create a reservation for this device" as a distinct, explicitly confirmed action that warns the whole network will drop for a minute. `restart_default_wan`, used by "apply to all devices", was measured as harmless by comparison - it did not drop anything during the run.
 
-#### 3.3.6b Stock leaves the old routing rule behind - MEASURED 2026-09-10
+#### 5.8.10. <a name='stock-leaves-the-old-routing-rule-behind-measure'></a>Stock leaves the old routing rule behind - MEASURED 2026-09-10
 
 **Writing the assignment is not applying it.** An assignment becomes a policy routing rule, `from <device IP> lookup <index 6>`, and the routing table number is the profile's index 6. Moving a device writes the new rule but **never removes the old one**, and both sit at **priority 100**:
 
@@ -716,210 +943,7 @@ Three points of care, all covered by `staleRuleTables` in `lib/device_assignment
 
 ---
 
-## 4. Wireguard SSH commands
-
-To manage Wireguard Merlin uses VPN Director, stock ASUS uses VPN Fusion. These are similar but different: using nvram settings to store configuration parameters, but differs in how these are applied and used. There's scant reference detail I could find on how stock officially manages things and a **lot** more by having access to Merlin's source code, so the below is my understanding which may be incorrect and have gaps.
-
-### 4.1. Merlin
-
-VPN Director exposes each slot directly: there is no clientlist and no unit indirection. Write the `wgcN_*` keys, commit, then act on the slot **by its own number**.
-
-```text
-   nvram set wgcN_*      (17 keys, section 3.1)
-          │
-   nvram commit          always BEFORE the service call, so the
-          │              service cannot read a half-written slot
-          ▼
-        exec
-  service "start_wgc N"  OR  service "stop_wgc N"
-          │
-          ▼
-  service restart_vpnrouting0   (start)
-  service start_vpnrouting0     (stop)
-          │
-          ▼
-        wgcN
-```
-
-#### 4.1.1. Enable
-
-```bash
-nvram set wgcN_enable=1
-nvram commit
-service "start_wgc N"; service restart_vpnrouting0
-```
-
-Then poll `wg show interfaces` until `wgcN` appears. The app tries five times at two-second intervals and reverts to disabled if it never comes up — the `service` call is queued through `notify_rc` and returns immediately, so a prompt return says nothing about the tunnel.
-
-#### 4.1.2. Disable
-
-```bash
-nvram set wgcN_enable=0
-nvram commit
-service "stop_wgc N"; service start_vpnrouting0
-```
-
-Note the asymmetry: **`restart_vpnrouting0` on the way up, `start_vpnrouting0` on the way down.** Then poll until `wgcN` leaves `wg show interfaces` — unsetting keys before it has gone lets the firmware re-create `wgcN_enable` behind you.
-
-#### 4.1.3. Delete
-
-Disable as above, wait for the interface to go, then `nvram unset` all 17 `wgcN_*` keys plus `wgcN_wd_primary_ip` / `wgcN_wd_secondary_ip`, and commit. There are no `vpncN_*` runtime keys to clean up on Merlin.
-
-#### 4.1.4. What only Merlin has
-
-- `wgcN_enforce` (kill switch), `wgcN_fw` (inbound firewall), `wgcN_rip` — `kMerlinOnlySlotKeys`. Writing them on stock creates keys nothing reads and DELETE does not clean up.
-- `wgcN_desc` as a real firmware field. On stock the app writes it anyway, as a key of its own, because the watchdog script needs the region name from a bare `nvram get`.
-- The JFFS custom-scripts partition, which the watchdog needs for reboot persistence:
-
-  ```bash
-  nvram get jffs2_scripts   # both must be 1
-  nvram get jffs2_on
-  ```
-
-  The app sets and commits them if they are not already on. Stock has no equivalent and no `/jffs/scripts` hook directory, so the watchdog persists its cron entries differently there — see section 5.2.
-
-#### 4.1.5. Firmware detection
-
-`nvram get 3rd-party` returns `merlin` on Merlin and is empty on stock. Detected once per app session; every router command branches on the result.
-
-### 4.2. Stock
-
-VPN Fusion abstracts the underlying per slot calls to manipulate WG VPNs. Find the profile's **row** in `vpnc_clientlist`, set `vpnc_unit` to that row's 0-based index, then exec the `service` command:
-
-```text
-        vpnc_clientlist
-              │
-              ├── row 0 ── slot 5 ─┐
-              ├── row 1 ── slot 1  │  find the row whose
-              └── row N ── slot M  │  index 2 == target slot
-              │                    │
-             set ◄─────────────────┘
-   vpnc_unit=(row index)
-              │
-              ▼
-            exec
-  stop_vpnc OR restart_vpnc
-              │
-              ▼
-          VPN Fusion
-              │
-              ▼
-             wgcN
-```
-
-> [!IMPORTANT]
-> `vpnc_unit` is the **row index**, not `5 - slot`.
->
-> The WebUI can only create profiles in slot order 5,4,3,2,1, so in any list it built row 0 is slot 5, row 1 is slot 4, and so on — the row index and `5 - slot` are the same number, which is why the `5 - slot` rule looked correct.
->
-> `cfg-pia-wg` lets the user pick any slot, so its lists can be in any order and only the row index holds. Measured: with rows `[slot 5, slot 1]`, enabling the slot-1 profile from the WebUI writes `vpnc_unit=1`; `5 - slot` would give `4`, a row that does not exist, and nothing comes up.
->
-> Row index is a strict generalisation — it agrees with `5 - slot` on every WebUI-ordered list.
-
-The runtime state keys are indexed differently again: `vpncN_state_t` / `vpncN_dns` / `vpncN_sbstate_t` use **index 6** of the profile's `vpnc_clientlist` record, *not* the slot number and *not* `vpnc_unit`.
-
-> [!IMPORTANT]
-> One profile carries three different indexes. For `aus_perth` in slot 1, sitting at row 1 with index 6 = 9:
->
-> | Index | Value | Used by |
-> |---|:-:|---|
-> | slot number | 1 | `wgc1_*` keys, `service` targets |
-> | clientlist row | 1 | `vpnc_unit` |
-> | clientlist index 6 | 9 | `vpnc9_state_t`, `vpnc9_sbstate_t`, `vpnc9_dut_disc` |
->
-> Measured: enabling then deleting wgc1 left `vpnc9_*` behind. Slot 5 is the trap - there the slot number and index 6 are both 5, so a reading taken only from wgc5 cannot tell them apart.
-
-#### 4.2.1 Create and enable a slot
-
-Creating the first slot in the WebUI adds the below keys and populates settings.
-
-The below examples are for `wgc5`, which is the first WG VPN created. **NB** the first slot created is numbered `5` and the last is `1`.
-
-  1. set `wgcN_*` values:
-
-  ```bash
-  # Primary keys
-  wgc5_addr=10.119.0.18/32          # local tunnel IP address assigned by the VPN server
-  wgc5_aips=0.0.0.0/0               # allowed IP addresses
-  wgc5_alive=25                     # tunnel keep alive in seconds
-  wgc5_dns=9.9.9.9,149.112.112.112  # two DNS servers
-  wgc5_enable=1                     # 1=enable, 0=disable
-  wgc5_ep_addr=45.130.141.215       # FQDN or public IP of the remote PIA WireGuard peer endpoint
-  wgc5_ep_addr_r=45.130.141.215     # resolved numeric IP if `wgcN_ep_addr` is a DNS name; set when the interface initialises
-  wgc5_ep_port=1337                 # end point port; PIA WG uses port 1337
-  wgc5_mtu=                         # maximum transmission unit, picked up from the conf file that created this slot (defaults to??)
-  wgc5_nat=1                        # 1=enable, 0=disabled
-  wgc5_ppub=PUBLIC_KEY              # PIA VPN server public key
-  wgc5_priv=PRIVATE_KEY             # PIA user's private key
-  wgc5_psk=                         # preshared key, not used by PIA.
-  
-  # VPN Fusion keys - do these get created for us?
-  vpnc5_dns=9.9.9.9 149.112.112.112 # DNS servers, set when slot is enabled, unset when disabled
-  vpnc5_dut_disc=5                  # unknown, unset when slot is enabled, when disabled this is the slot #
-  vpnc5_sbstate_t=0                 # unknown
-  vpnc5_state_t=2                   # TBC. interface exists=2
-  vpnc_unit=0                       # the unit being acted on where 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1; retains last set value.
-  ```
-
-  2. `vpnc_clientlist` is created and contains
-
-  ```bash
-  pia-aus_melbourne>WireGuard>5>>ROUTER_ADMIN_PWD>1>5>>>0>0>Web
-  ```
-
-  3. exec `service restart_vpnc`
-
-#### 4.2.2 Enable existing slot
-
-  1. set `wgcN_enable=1`
-  2. set `vpnc_clientlist` index 5 (vpn state) to `1` (active) — do this **before** step 3, since a slot with no profile gains a new row here and the unit is that row's index
-  3. set `vpnc_unit=N` where `N` is the 0-based index of the slot's row in `vpnc_clientlist` (see 4.2)
-  4. exec `service restart_vpnc`
-
-  `service restart_default_wan` is run by the UI when "apply to all devices" is enabled/disabled.
-
-There is **no** `start_vpnc` command, which is why enable uses `restart_vpnc`.
-
-#### 4.2.3 Stop/Disable
-
-  1. set `wgcN_enable=0`
-  2. set `vpnc_clientlist` index 5 (vpn state) to `0` (disabled)
-  3. set `vpnc_unit=N` where `N` is the 0-based index of the slot's row in `vpnc_clientlist` (see 4.2)
-  4. exec `service stop_vpnc`
-
-> [!WARNING]
-> `restart_vpnc` does **not** stop a tunnel. Using it here clears `wgcN_enable` and index 5 — so the WebUI reports the profile disconnected — while the interface stays up and keeps appearing in `wg show interfaces`. Deleting a slot must issue `stop_vpnc` too, and must resolve `vpnc_unit` *before* the row is removed from `vpnc_clientlist`.
-
-#### 4.2.4 Delete
-
-Deleting a slot set to `apply to all devices` executes
-
-```bash
-service restart_default_wan
-service restart_vpnc_dev_policy
-```
-
-Deleting the last WG slot executes
-
-```bash
-service restart_vpnc_dev_policy
-```
-
-#### 4.2.5 VPN Fusion
-
- `vpncN_*` values are
-
-  ```bash
-  vpnc5_dut_disc=5   # retained after reboot
-  vpnc5_sbstate_t=0  # removed after reboot
-  vpnc5_state_t=2    # removed after reboot
-  ```
-
-  `wgcN_*` are **not** removed when a profile is deleted.
-
----
-
-## 5. <a name='Watchdogdetails'></a>Watchdog details
+## 6. <a name='watchdog-details'></a>Watchdog details
 
 Deploying a watchdog writes three things to the router, plus the settings in section 5.3:
 
@@ -933,7 +957,7 @@ The app then runs the script once by hand, as `watchdog_wgcN.sh deploy`, so the 
 
 Watchdogs run per slot and concurrently — two slots can each have their own, with independent intervals and email settings.
 
-### 5.1. <a name='Shellscript'></a>Shell script
+### 6.1. <a name='shell-script'></a>Shell script
 
 Each run asks one question: is this tunnel carrying traffic?
 
@@ -947,7 +971,7 @@ A healthy check writes the time to `/tmp/watchdog_last_ping_success_wgcN`, reset
 
 A failed check reconfigures: fetch a PIA token, fetch the region's server list, ping every candidate and take the lowest latency, generate a fresh keypair, register the public key with `addKey`, write the 16 `wgcN_*` values, and restart the interface. Full flow in section 2.2.
 
-#### 5.1.1. Backoff
+#### 6.1.1. <a name='backoff'></a>Backoff
 
 PIA answers **HTTP 403** after sustained re-registration and clears on its own after tens of minutes. Retrying at a fixed interval is what provokes and prolongs that, so the wait grows with each consecutive failed attempt and resets on success:
 
@@ -963,7 +987,7 @@ PIA answers **HTTP 403** after sustained re-registration and clears on its own a
 
 The counter in `/tmp/watchdog_backoff_wgcN` counts attempts **actually made**, not checks that found a fault: a run the backoff turns away leaves it untouched, so a rung means the same thing whatever the check interval. A run inside the wait logs `Backing off after N failed attempts: Xs of Ys elapsed` and exits — a long silent gap in the log otherwise reads as a watchdog that has stopped.
 
-#### 5.1.2. Email alerting
+#### 6.1.2. <a name='email-alerting'></a>Email alerting
 
 Optional, per slot, and sent from the user's own SMTP account — nothing is routed through a third party. Merlin uses BusyBox `sendmail` over `openssl s_client`; stock uses `mailsend-go`, since BusyBox sendmail is not viable there.
 
@@ -986,7 +1010,7 @@ Every message is plain text with four sections — `WHAT HAPPENED`, `ROUTER`, `H
 > [!NOTE]
 > The failure email's router-log excerpt can contain the PIA **username** (`Requesting PIA token for user ...`). It never contains the password or the token — the script logs the token's length only.
 
-### 5.2. <a name='Cronentries'></a>Cron entries
+### 6.2. <a name='cron-entries'></a>Cron entries
 
 A `cru` (`crontab`) entry drives the configurable periodic health check. An additional job rotates the watchdog router log file at midnight. To avoid filling the JFFS partition, all logging is stored in `/tmp`. Watchdog logs do not persist after a reboot or power loss.
 
@@ -1017,16 +1041,7 @@ Stock has no user-script hook of its own, so the app **replaces** `S50downloadma
 
 The deployed copy is LF-terminated: the repo template `scripts/S50downloadmaster-TEMPLATE.sh` is CRLF, and a CRLF shebang makes the router's kernel refuse to exec it. `test/unit/s50_template_test.dart` fails if the two drift apart.
 
-#### 5.2.2 What an uninstall leaves behind
-
-The uninstall in SETTINGS removes the app from the router, not the user's VPNs. It restores both boot scripts from their `.old` copies, removes every watchdog `cru` entry, unsets the fifteen NVRAM keys the app writes, and deletes `/jffs/cfg-pia-wg`. Tunnel configuration (`wgcN_*`) is deliberately untouched: the tunnels keep working and stay manageable from the router's own web interface.
-
-> [!NOTE]
-> **A disabled default connection does NOT block traffic.** Observed 2026-09-10 with the app fully uninstalled including its NVRAM settings, the router rebooted, the default connection set to wgc5, wgc5 DISABLED, no other WireGuard client enabled, and every device assigned to that disabled slot: LAN traffic left via the WAN rather than being blocked. The default connection names where unassigned traffic SHOULD go; it is not a kill switch, and stock has none (3.3.6, and the alert-email wording in 5.5). A user who wants fail-closed behaviour needs the default connection pointed at a tunnel that is actually up.
-
-Both replacement scripts carry `# <name> - auto-generated by cfg-pia-wg; *do* *not* edit.` as their second line, and the uninstall will not delete a file without it. That header was added to `S50downloadmaster` in 428: it had been recognised by its REPLACEMENT markers, which the restored original does not carry either - so a SECOND uninstall saw a file it did not recognise and deleted the router's own script. Reported 2026-09-10.
-
-#### 5.2.0 The router's service queue, and how it wedges
+#### 6.2.1. <a name='the-routers-service-queue-and-how-it-wedges'></a>The router's service queue, and how it wedges
 
 Every `service <name>` call goes through `notify_rc`, which records what it is doing in the `rc_service` NVRAM key (with the pid in `rc_service_pid`) and clears it when the action finishes. A later call that finds the key set waits for it - `rc_service: waitting "<name>" via ...` - and after 15 seconds **discards itself**: `rc_service: skip the event: <name>`.
 
@@ -1052,7 +1067,7 @@ Related: an interface seen up ONCE is not up. The app reported "wgc1 enabled" a 
 
 Full evidence in `.claude/testing/2026-09-10_rc-service-stuck-runsheet.md`.
 
-#### 5.2.1 The second init script, and how both are made recoverable
+#### 6.2.2. <a name='the-second-init-script-and-how-both-are-made-rec'></a>The second init script, and how both are made recoverable
 
 `S50asuslighttpd` sits beside `S50downloadmaster` in `/opt/etc/init.d` and is run by the same triggers - at boot, and again on **every VPN up or down**. It contains `sleep` calls, and with a VPN set to start at boot they stall the boot until the tunnel is disabled by hand. Nothing in it is wanted here, so a watchdog deploy replaces it with a stub that returns immediately whatever trigger it is given (`scripts/S50asuslighttpd-TEMPLATE.sh`, embedded as `kS50AsusLighttpdTemplate`, chmod 700).
 
@@ -1070,7 +1085,16 @@ The stub is rewritten on every deploy rather than once, so a firmware update tha
 
 The app can put all of this back. SETTINGS carries an uninstall that restores each script from its `.old` copy and deletes `/jffs/cfg-pia-wg` - in that order, so a failure at the last step still leaves a router that boots the way it originally did. Where no `.old` exists the app's own copy is removed rather than left behind, and the confirmation says which of the two happened for each script. Cron entries, NVRAM and the tunnels are deliberately untouched: they belong to the watchdog and the slots, which have their own DELETE.
 
-### 5.3. <a name='WatchdogNVRAMfields'></a>Watchdog NVRAM fields
+#### 6.2.3. <a name='what-an-uninstall-leaves-behind'></a>What an uninstall leaves behind
+
+The uninstall in SETTINGS removes the app from the router, not the user's VPNs. It restores both boot scripts from their `.old` copies, removes every watchdog `cru` entry, unsets the fifteen NVRAM keys the app writes, and deletes `/jffs/cfg-pia-wg`. Tunnel configuration (`wgcN_*`) is deliberately untouched: the tunnels keep working and stay manageable from the router's own web interface.
+
+> [!NOTE]
+> **A disabled default connection does NOT block traffic.** Observed 2026-09-10 with the app fully uninstalled including its NVRAM settings, the router rebooted, the default connection set to wgc5, wgc5 DISABLED, no other WireGuard client enabled, and every device assigned to that disabled slot: LAN traffic left via the WAN rather than being blocked. The default connection names where unassigned traffic SHOULD go; it is not a kill switch, and stock has none (3.3.6, and the alert-email wording in 5.5). A user who wants fail-closed behaviour needs the default connection pointed at a tunnel that is actually up.
+
+Both replacement scripts carry `# <name> - auto-generated by cfg-pia-wg; *do* *not* edit.` as their second line, and the uninstall will not delete a file without it. That header was added to `S50downloadmaster` in 428: it had been recognised by its REPLACEMENT markers, which the restored original does not carry either - so a SECOND uninstall saw a file it did not recognise and deleted the router's own script. Reported 2026-09-10.
+
+### 6.3. <a name='watchdog-nvram-fields'></a>Watchdog NVRAM fields
 
 All watchdog configuration is stored on your router's NVRAM. Defaults are as follows:
 
@@ -1096,7 +1120,7 @@ cfg_pia_wg_reconfig_fail=0
 
 (where `N` is the slot number 1-5)
 
-### 5.4. Sample `cfg-pia-wg` output
+### 6.4. <a name='sample-cfg-pia-wg-output'></a>Sample `cfg-pia-wg` output
 
 Standalone configuration file, suitable for importing into various WireGuard clients/routers:
 
@@ -1114,7 +1138,7 @@ PersistentKeepalive = 25
 AllowedIPs          = 0.0.0.0/0
 ```
 
-### 5.5. <a name='Curlcallercheck'></a>`curl` refuses to run from cron
+### 6.5. <a name='curl-refuses-to-run-from-cron'></a>`curl` refuses to run from cron
 
 `/usr/sbin/curl` on stock ASUS firmware inspects its own process ancestry at startup and **refuses to run if `crond` appears anywhere in the chain**. The rejection is silent in every way that matters: exit status 0, no HTTP status, no response body, and nothing on stderr. The only trace is a line in `/jffs/curllst`.
 
@@ -1137,7 +1161,7 @@ The fix is at the top of `watchdog_wgcN.sh`. A run with no argument, which is ho
 
 ---
 
-## 6. <a name='Networktraffic'></a>Network traffic
+## 7. <a name='network-traffic'></a>Network traffic
 
 Below are detailed representations of the app's network calls, with illustrative, not real, IP addresses.
 
@@ -1147,7 +1171,7 @@ Below are detailed representations of the app's network calls, with illustrative
 
 ---
 
-## 7. <a name='Outputsessiondestruction'></a>Output & session destruction
+## 8. <a name='output-session-destruction'></a>Output & session destruction
 
 Generated configuration data is managed via:
 
@@ -1158,11 +1182,11 @@ Generated configuration data is managed via:
 
 ---
 
-## 8. <a name='BuildprovenancetheAboutscreen'></a>Build provenance (the About screen)
+## 9. <a name='build-provenance-the-about-screen'></a>Build provenance (the About screen)
 
 `lib/screens/about_screen.dart` exists so a bug reportor can identify which binary is running. Displays the commit, branch/tag, CI run, build type, and install source.
 
-### 8.1. <a name='Thechannel'></a>The channel
+### 9.1. <a name='the-channel'></a>The channel
 
 `com.exponentiallydigital.pia_wireguard_cfga/build_info`, registered in `MainActivity.configureFlutterEngine` and answering a single method, `getBuildInfo`, with a flat `Map<String, String>`.
 
@@ -1170,7 +1194,7 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 
 `loadBuildInfo()` handles `MissingPluginException` and `PlatformException`, returning `BuildInfo.unknown()`. With `flutter test` no native side is registered, so every test takes that path.
 
-### 8.2. <a name='Whereeachfieldcomesfrom'></a>Where each field comes from
+### 9.2. <a name='where-each-field-comes-from'></a>Where each field comes from
 
 | Field                                                                                                | Source                                                                                                                                  |
 | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1181,7 +1205,7 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 | `osVersion`                                                                                          | `RELEASE_OR_CODENAME` on API 30+, else `RELEASE`, plus `SDK_INT`                                                                        |
 | `buildTimestamp`, `commitHash`, `commitDate`, `gitBranch`, `runnerId`, `compileSdk`, `kotlinVersion` | `BuildConfig`, injected by `android/app/build.gradle.kts` at configuration time                                                         |
 
-### 8.3. <a name='Gradle-sidenotes'></a>Gradle-side notes
+### 9.3. <a name='gradle-side-notes'></a>Gradle-side notes
 
 `buildFeatures { buildConfig = true }` is required, AGP 8+ defaults it to `false`, and AGP 9 removed the `android.defaults.buildfeatures.buildconfig` escape hatch. Once enabled, AGP generates `DEBUG`, `APPLICATION_ID`, `BUILD_TYPE`, `VERSION_CODE` and `VERSION_NAME` itself; only the seven custom fields are declared by hand.
 
@@ -1192,7 +1216,7 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 - **`buildConfigField`'s value is emitted verbatim** into `BuildConfig.java`, so `javaStringLiteral()` escapes every string. These values come from git and the environment: a branch named `foo"bar` would otherwise produce uncompilable generated Java.
 - No new dependencies, so the STRICT `gradle.lockfile` set is untouched. This is also why the Kotlin side hand-rolls the `longVersionCode` branch rather than using `androidx.core`'s `PackageInfoCompat`.
 
-### 8.4. <a name='Thelicencetext'></a>GNU licence text
+### 9.4. <a name='gnu-licence-text'></a>GNU licence text
 
 `lib/license_text.dart` holds `./LICENSE` a verbatim raw-string constant, generated at development time, not loaded at runtime and not registered as an asset.
 
