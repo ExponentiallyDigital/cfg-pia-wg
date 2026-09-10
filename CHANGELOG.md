@@ -40,16 +40,17 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 2026-09-11 v0.8.60 build 430 - documentation rebuild
 
-One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
+One build, sixteen commits. Newest on top. Four documents rebuilt in the order they depend on
+each other: ARCHITECTURE, then TESTING, then README, then CONTEXT.
 
-PENDING CONTEXT - name the symbol, not the line, and point rather than repeat
+b8f2356 CONTEXT - name the symbol, not the line, and point rather than repeat
 
 - FIX: **seven references to a specific line range, every one of them wrong.** All of those files moved this week and nothing reported it. They now name the SYMBOL - `SlotModal._runSlot`, `navigateToDestination`, `WatchdogDialog._save`, `RouterWatchdog.deployWatchdog`, `createConfigToSlot`. A symbol either exists or a grep for it fails loudly; a line number rots in silence.
 - CHG: the 17-key table and the `vpnc_clientlist` field table point at ARCHITECTURE for what a key MEANS and keep only what the APP does with it. Two documents describing the same firmware is two documents to keep right.
 - CHG: nine passages that only recorded what changed are gone - which build made the slot list a page, which one moved a button, which gate used to exist. The ones that give the REASON a rule exists are kept in full: spinners cleared before awaiting a modal, never a dialog for a long form, one SSH connection per session, and why the backoff counter counts attempts rather than checks.
 - FIX: FORGET ROUTER IP was documented as living on ABOUT. It is on SETTINGS.
 
-PENDING CONTEXT - the device assignment screen exists
+003866b CONTEXT - the device assignment screen exists
 
 - ADD: **4.14 Device assignment.** The feature was mentioned four times in 492 lines and was absent from the call graph, so a session reading this file would not have known the screen was there. It now covers the eight-source read, why staged changes live on the session, the conflict check before any write, the light service pair, and the stale `ip rule` sweep.
 - CHG: the snapshot said the drawer added one destination. It adds four.
@@ -57,20 +58,20 @@ PENDING CONTEXT - the device assignment screen exists
 - ADD: the call graph gains the three drawer-only screens.
 - FIX: a "see 4.14" that pointed at a section which did not exist.
 
-PENDING README - the last gaps, and the last section numbers
+0d80d6a README - the last gaps, and the last section numbers
 
 - ADD: the watchdog's ENABLE and DISABLE actions, and the PAUSED badge. The README listed CREATE/EDIT, DELETE and VIEW LOG and stopped there.
 - ADD: what is actually on the Settings screen - the uninstall, DEL PIA CERT, and FORGET ROUTER IP, which is the only thing the app keeps on the phone.
 - CHG: the last three references to a README section NUMBER - two in ARCHITECTURE, one in a `lib/` comment - now name the section.
 
-PENDING README - what the app does to your router, and how to check it
+3778bcb README - what the app does to your router, and how to check it
 
 - CHG: **section 7 answers the question it asks.** It was a paragraph of reassurance and a link. It is now the whole list: what a slot change writes, what a watchdog deploy writes - including that your PIA and SMTP passwords sit in NVRAM in plain text - what makes the schedules survive a reboot, and what the app never does.
 - ADD: **the uninstall exists**, said plainly in the section where someone is deciding whether to install. It takes the app off and leaves your tunnels alone.
 - ADD: **9.1 How to check the watchdog script yourself.** The app asks a user to let it run a script holding their PIA password as root on their router forever. "You can read it" is the whole answer, so it now says where the script is, that it is never obfuscated, that a test fails the build if the deployed text and the repo template drift apart, and that every file the app writes says so on its second line.
 - ADD: bug reports under section 11, where a reporter actually looks - CREATE GITHUB ISSUE on the About screen opens a report with the build details filled in. Section 13 keeps the joke.
 
-PENDING README - the screens as they are now
+b889bfd README - the screens as they are now
 
 - ADD: **5.4 VPN device assignment**, which the README had never mentioned. What it is for, how to use it, and the four things that surprise people - a device with no known address cannot be assigned, assigning one pins its address for good, a randomised MAC breaks the assignment silently, and **this is not a kill switch**.
 - ADD: the two hamburger entries that were missing - View router log and Settings.
@@ -80,13 +81,13 @@ PENDING README - the screens as they are now
 - ADD: SMTP alerts need an app password, not the account password, with the shortest possible route to one for Gmail and Outlook.
 - ADD: a note that the slot EDIT screen is shorter on stock - the kill switch and inbound firewall are Merlin features.
 
-PENDING TESTING - a test that every Markdown link resolves
+dc46331 TESTING - a test that every Markdown link resolves
 
 - ADD: `test/unit/markdown_links_test.dart`. Every link between the repo's own Markdown files must resolve, both the file and the anchor. Anchors are generated from heading text, so any reword silently breaks every link into that heading - and a rewrite is exactly when a written-down rule gets forgotten. Same approach as the LAN-identifier guard: a rule nobody can forget beats one written down.
 - INF: it reproduces GitHub's slug rule, including the two details that would otherwise produce false failures - each space becomes its own hyphen, so `A & B` yields a double hyphen, and a heading indented up to three spaces is still a heading.
 - INF: `.claude/plans/` is out of scope. Those record what was believed at the time and are not kept current.
 
-PENDING TESTING - pass 2, the things a tester could not guess
+b8257a6 TESTING - pass 2, the things a tester could not guess
 
 - ADD: **"When something looks broken, check these first"**, second section in the file. The wedged service queue, curl refusing a caller with `crond` in its ancestry, and a stale `ip rule` after a reassignment. Each presents as a completely different fault, and a tester following this document last week would have had no way to find any of them.
 - ADD: a device assignment section. It was not covered at all, and the default-connection test drops every tunnel on the router for about a minute - so it carries the same warning treatment the watchdog tests already had.
@@ -95,55 +96,55 @@ PENDING TESTING - pass 2, the things a tester could not guess
 - CHG: "files deployed to the router" was out of date on every point - the second init script, the header line both now carry, the installed binaries, and what an uninstall does and does not remove.
 - FIX: two cross-references pointing at a numbering no document has used for weeks.
 
-PENDING TESTING - pass 1, one section per thing a user does
+a5727f1 TESTING - pass 1, one section per thing a user does
 
 - CHG: the end-to-end manual test moves from the bottom of the file to the top and becomes the spine. Its nine checklist items are now sections, in the order a user meets them, and the material that used to sit above it - email, watchdog checks, NVRAM - is filed underneath the function it belongs to.
 - CHG: stable `<a name>` anchors on all 25 headings, keyed on the title rather than the number, and a regenerated TOC. Same convention as ARCHITECTURE, so a link into either survives a renumber.
 - INF: position and heading level only. A word-level comparison of the file before and after accounts for every line: nothing is lost except the old TOC, three section labels absorbed into the sections that replaced them, and the `<br>` separators the old checklist used.
 
-PENDING ARCHITECTURE - pass 3, narrative
+aa19ac4 ARCHITECTURE - pass 3, narrative
 
 - ADD: an opening. What the app does, the one idea needed before any of the detail makes sense - the two firmwares drive WireGuard in completely different ways - and where to start reading when a firmware update breaks something.
 - CHG: the six provisioning steps say what they do rather than describe themselves. The certificate step now records what actually happens: the PIA root is fetched at runtime, the platform trust store is turned off for the call, and the server certificate is accepted only when its Common Name matches.
 - ADD: "What happens when the tunnel drops" is its own section. The rule that decides whether an assignment fails closed or leaks was buried inside a section about DHCP reservations, in a blockquote, three screens from the heading.
 - FIX: the plain-language walkthrough of a push never said it was the Merlin path. It uses `stop_wgc` and `start_vpnrouting0`, neither of which exists on stock.
 
-PENDING ARCHITECTURE - pass 3, stale claims and internal references
+8ad63ce ARCHITECTURE - pass 3, stale claims and internal references
 
 - FIX: fourteen references to ARCHITECTURE's own section NUMBERS, every one of them pointing at a numbering the document stopped using. The earlier pass caught the references FROM other files and missed the ones inside this one. All now name the section, and a link check confirms all 99 resolve.
 - FIX: "the app does not write any of this yet", at the head of the device assignment section. It has written it since build 421.
 - CHG: the last of the two-cost model removed from the sections that leaned on it - the reserved/unreserved table, the reservation-is-permanent finding, and the removal warning. The distinction the screen needs is still reserved versus not; the reason is now that an unpinned address moves and takes the assignment with it, not that writing one bounces the LAN.
 
-PENDING ARCHITECTURE - prior designs appendix
+c2efe95 ARCHITECTURE - prior designs appendix
 
 - ADD: an appendix holding two readings that were believed, acted on, and then measured to be wrong: the two-cost model for applying a device assignment, and placeholder records in the policy list. The working that produced each one is kept, because an idea that fitted the evidence once will fit it again.
 - CHG: a one-line retraction stays where the wrong idea would occur to a reader, with a link to the long story. Moving a retraction to the back of a document invites exactly the rediscovery it was written to prevent.
 - CHG: "the tunnel must be disabled before its assignments can be changed" corrected. That is what the web interface does, not what the firmware requires - the app changes assignments on a running profile and they take effect.
 - CHG: the starting-state section now leads with the fact rather than the correction. An untouched router has an EMPTY policy list, so the screen renders "everything on the default connection" from an empty string.
-PENDING ARCHITECTURE - diagrams: when the watchdog runs, and what a reconfigure does
+ae1e78f ARCHITECTURE - diagrams: watchdog run and reconfigure flows
 
 - ADD: two flowcharts for the router-side script. "When it runs" covers the detach, the enable check, the handshake and ping tests, the backoff and the WAN gate - most runs do nothing, and everything before the expensive path exists to avoid taking it. "What a reconfigure does" covers the twelve steps that follow, each of which can abort.
 - ADD: the reason each gate exists, beside the gate. Why the detach is there, why a tunnel switched off by hand is not an outage, why ping alone is not a liveness test on stock, and why a missing WAN exits silently without alerting.
 - CHG: the email flow is documented as a BRANCH of the reconfigure rather than a diagram of its own. `send_alert` is called from exactly two places, and a failure and its recovery are two halves of one story.
 
-PENDING ARCHITECTURE - the three numbers that name one profile
+bff134a ARCHITECTURE - diagram: the three numbers that name one profile
 
 - ADD: a diagram of the profile identity problem, with a worked example from a real two-profile list. One WireGuard profile is named by its slot, its clientlist ROW and its index 6, and every one of those is used somewhere - keys and interface by slot, `vpnc_unit` by row, default connection and device pinning and routing table by index 6.
 - INF: this caused more wrong guesses during development than anything else, and prose never fixed it. It also records why `5 - slot` looked right for so long: the web interface can only create profiles in descending slot order, so on any list IT built the row and `5 - slot` agree.
 
-PENDING ARCHITECTURE - firmware dependency register, and a home for the USB finding
+bed9375 ARCHITECTURE - firmware dependency register
 
 - ADD: **"What this app depends on ASUS not changing"**, immediately after the overview. Ten assumptions, each with where the detail lives and what breaks if that assumption fails - because when a firmware update breaks something, the failure almost never looks like its cause. This is the section the document exists for.
 - ADD: USB storage for Download Master, moved out of the README, beside the boot hook it is a prerequisite of. The README keeps three sentences and a link.
 - INF: the register carries the "how it fails" column deliberately. A wedged service queue looks like a failed command; a rejected curl looks like a network problem; a stale routing rule looks like an assignment that was never written.
 
-PENDING ARCHITECTURE - reference sections by title, not number
+4827ba0 ARCHITECTURE - reference sections by title, not number
 
 - CHG: 26 references to ARCHITECTURE section NUMBERS, across ten files and six `lib/` comments, now name the section instead. A number changes whenever the document is reordered; a title does not, and a wrong title is visible where a wrong number is not.
 - INF: five of them were already wrong before this run. `ARCHITECTURE.md 2.3.1` and `2.3.2` pointed at a numbering the document stopped using some time ago, and nothing could have told us.
 - CHG: comments only in `lib/` and `test/`; no behaviour changed anywhere.
 
-PENDING ARCHITECTURE - pass 1, restructure
+e79ea61 ARCHITECTURE - pass 1, restructure
 
 - CHG: high level first, then deeper. SSH commands now precede the NVRAM reference, because how the app drives the router is the shape of the thing and the field list is detail.
 - CHG: section 3 split in two. At 566 lines it was half the document; device assignment is now its own top-level section.
