@@ -348,6 +348,18 @@ class BinaryInstaller {
       final moved = await run('mv ${shellSingleQuote(staged!)} $dest && chmod 755 $dest && echo OK || echo FAIL');
       if (!moved.contains('OK')) return InstallResult.failure(arch, 'could not write ${binary.destination}');
 
+      // Ownership comes out of the ARCHIVE otherwise: mailsend-go's tarball carries 501:201, the
+      // uid/gid of whoever built it, and tar preserves them. Numeric 0:0 rather than root:root,
+      // because BusyBox needs the names to exist in /etc/passwd and /etc/group and there is no
+      // reason to depend on that. Best-effort: the binary runs as root either way, so a router
+      // that will not take the chown is odd rather than broken, and refusing the install over it
+      // would be worse than the thing it is guarding against.
+      try {
+        await run('chown 0:0 $dest 2>/dev/null; chown 0:0 ${shellSingleQuote(kRouterAppDir)} 2>/dev/null; true');
+      } catch (_) {
+        // Swallowed on purpose. See above: this is tidying, not a precondition.
+      }
+
       if (!await verifyRuns(binary.destination, binary.versionFlag)) {
         // Wrong architecture is the expected reason, and the caller will try the other one. Leave
         // nothing behind: a binary that does not run is worse than none, because the missing-binary

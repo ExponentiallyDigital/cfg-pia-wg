@@ -177,6 +177,27 @@ void main() {
       expect(router.ran('chmod 755'), isTrue);
     });
 
+    // Ownership comes out of the archive otherwise - mailsend-go's tarball carries 501:201, the
+    // uid/gid of whoever built it, and tar preserves them.
+    test('the installed binary and the app directory end up owned by root', () async {
+      final router = _FakeRouter(_happy);
+      await BinaryInstaller(router.run).install(kJqBinary);
+
+      final chown = router.commands.where((c) => c.contains('chown 0:0')).join('\n');
+      expect(chown, contains(kJqBinary.destination));
+      expect(chown, contains(kRouterAppDir));
+      // Numeric, not root:root - BusyBox needs the names to exist in /etc/passwd and /etc/group.
+      expect(router.commands.any((c) => c.contains('root:root')), isFalse);
+    });
+
+    test('a router that refuses the chown still reports a successful install', () async {
+      // Best-effort by design: the binary runs as root either way, and failing an install over
+      // ownership would trade the feature for the thing it is tidying up.
+      final router = _FakeRouter((cmd) => cmd.contains('chown') ? throw Exception('not permitted') : _happy(cmd));
+      final result = await BinaryInstaller(router.run).install(kJqBinary);
+      expect(result.ok, isTrue);
+    });
+
     test('the checksum is computed BEFORE the binary is moved into place', () async {
       final router = _FakeRouter(_happy);
       await BinaryInstaller(router.run).install(kJqBinary);

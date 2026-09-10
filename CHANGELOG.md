@@ -23,12 +23,6 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-**do now - router install:** these three share `lib\s50_template.dart` and the deploy path, and the two backups are a PREREQUISITE for the uninstall feature below - it renames `*.old` back into place, so it cannot work until these have created them.
-- CHG: `chown` the installed helper binaries.eg `mailsend-go` is `501:201 by default.
-- FIX: re-install `scripts\S50asuslighttpd-TEMPLATE.sh` as `S50asuslighttpd` to `/opt/etc/init.d` on the router, chmod 700, and rename the existing script in that folder to `S50asuslighttpd.old`. See `lib\s50_template.dart` for how to do that with the other script. I have copies of the existing original scripts already saved as `*.bak` and in `/jffs/cfg-piawg/*.original`.
-- BUG: When copying `S50Downloadmaster` via `lib\s50_template.dart` to the router, we first need to backup the existing script to `S50Downloadmaster.old`.
-- commit.
-
 **emails:**
 - ADD: include how to disable emails as a footer in all emails sent by the app: `<"Email alerting can be disabled in the app via WATCHDOG, EDIT, deselect "enable email alerts">`. Don't change the TEST email template.
 - CHG: update the section in any email that gets sent re: "Kill switch: not supported on this firmware - traffic is reaching the internet without the VPN" let's discuss what to do here.
@@ -36,7 +30,7 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 - commit.
 
 **device assignment:**
-- GUI: alter the device management screen so that if a device is showing as set to the default connection "default" instead show what default is eg "default - Internet" or "default - wgc1:pia-region_name"
+- GUI: alter the device management screen so that if a device is showing as set to the default connection "default", instead show what the default is eg "default - Internet" or "default - wgc1:pia-region_name"
 - FIX: in the apply-changes popup modal, the "from" line is indented by two spaces. Remove the indent so every line of the change list starts at the same column.
 - FIX: unable to select "Internet Connection" from device assignment screen on a per device basis. With only wgc1 available as a VPN do you see wgc1 listed twice: "default wgc1 pia-region_name" then again as "wgc1 - pia-region_name", and no ability to choose "Internet Connection" unless the default connection is set to Internet, then you do see two choices in the drop down: "default Internet" and "wgc1 - pia-region_name".
 - ADD: changes to the device dropdown: where the line says "no watchdog", add before that text a status to show if the wgcN is enabled or disabled, use a similar style to the slot modal used by MANAGE and WATCHDOG ie teal "Active". If the slot is not active use "Disabled", and use amber text (to match the PAUSED watchdog or unapplied device management text).
@@ -65,6 +59,14 @@ outer_watchdog.dart` already does the parsing and `WatchdogStatus.scriptVersion`
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-10 v0.8.49 build 419 - router install: helper binary ownership and boot script backups
+
+- ADD: **the two init scripts the app takes over are backed up before it writes over them.** `S50downloadmaster` and `S50asuslighttpd` are copied to `<path>.old` on a stock deploy, so a router can be put back the way it was found - and so the uninstall feature has something to rename back. Guarded three ways: the file must exist, `.old` must not already exist, and the file must not already be the app's own copy, because a false backup is worse than none.
+- ADD: **`S50asuslighttpd` is replaced by a stub that returns immediately.** It runs at boot and again on every VPN up or down, and its `sleep` calls stall the boot outright when the router starts with a VPN enabled. Nothing in it is wanted here. Rewritten on every deploy, so a firmware update that restores the original is undone next time.
+- FIX: the installed helper binaries and `/jffs/cfg-pia-wg` are now owned by root. Ownership came out of the archive otherwise - mailsend-go's tarball carries 501:201, the uid and gid of whoever built it, and tar preserves them. Numeric `0:0` rather than `root:root`, which BusyBox needs `/etc/passwd` and `/etc/group` entries for. Best-effort: the binary runs as root either way.
+- TST: nine - the chown covering both the binary and the app directory and never failing an install, both backups preceding their writes with all three guards present, the stub written at mode 700 and proved by byte count, Merlin untouched, and the embedded stub matching the repo copy, shipping LF only, carrying the backup marker and containing no logic at all.
+- DOC: ARCHITECTURE.md 5.2.1 - the second init script, and why each backup guard is load-bearing.
 
 2026-09-10 v0.8.48 build 418 - device management regression fixes
 
