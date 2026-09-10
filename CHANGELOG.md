@@ -38,6 +38,18 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.60 build 430 - documentation rebuild
+
+One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
+
+PENDING ARCHITECTURE - pass 1, restructure
+
+- CHG: high level first, then deeper. SSH commands now precede the NVRAM reference, because how the app drives the router is the shape of the thing and the field list is detail.
+- CHG: section 3 split in two. At 566 lines it was half the document; device assignment is now its own top-level section.
+- CHG: every heading renumbered in document order. Subsections had drifted out of sequence - 3.3.5b sat above 3.3.5a, and the uninstall was described before the service queue and init scripts it depends on.
+- ADD: a stable `<a name>` anchor on all 58 headings, keyed on the TITLE rather than the number, so a future renumber cannot break a link into this document. The TOC is regenerated against them.
+- INF: movement only. Every prose line in the file is byte-identical to the previous version; the diff is relocation, nothing else.
+
 2026-09-11 v0.8.59 build 429 - CONTEXT.md knows about the whole app again
 
 - FIX: **CONTEXT.md section 3 listed 28 files when `lib/` holds 44.** The sixteen missing ones were everything added since device assignment landed - both halves of device assignment, the router service queue, log paging, the binary installer, router prefs and command, the entitlement seam, the settings and router log screens, and four widgets. A reader of the file the app is documented in would not have known the assignment screen existed.
