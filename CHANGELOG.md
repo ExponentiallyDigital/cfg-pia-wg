@@ -48,6 +48,13 @@ PENDING ARCHITECTURE - pass 3, stale claims and internal references
 - FIX: "the app does not write any of this yet", at the head of the device assignment section. It has written it since build 421.
 - CHG: the last of the two-cost model removed from the sections that leaned on it - the reserved/unreserved table, the reservation-is-permanent finding, and the removal warning. The distinction the screen needs is still reserved versus not; the reason is now that an unpinned address moves and takes the assignment with it, not that writing one bounces the LAN.
 
+PENDING ARCHITECTURE - pass 3, narrative
+
+- ADD: an opening. What the app does, the one idea needed before any of the detail makes sense - the two firmwares drive WireGuard in completely different ways - and where to start reading when a firmware update breaks something.
+- CHG: the six provisioning steps say what they do rather than describe themselves. The certificate step now records what actually happens: the PIA root is fetched at runtime, the platform trust store is turned off for the call, and the server certificate is accepted only when its Common Name matches.
+- ADD: "What happens when the tunnel drops" is its own section. The rule that decides whether an assignment fails closed or leaks was buried inside a section about DHCP reservations, in a blockquote, three screens from the heading.
+- FIX: the plain-language walkthrough of a push never said it was the Merlin path. It uses `stop_wgc` and `start_vpnrouting0`, neither of which exists on stock.
+
 PENDING ARCHITECTURE - prior designs appendix
 
 - ADD: an appendix holding two readings that were believed, acted on, and then measured to be wrong: the two-cost model for applying a device assignment, and placeholder records in the policy list. The working that produced each one is kept, because an idea that fitted the evidence once will fit it again.
