@@ -42,6 +42,15 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING TESTING - pass 2, the things a tester could not guess
+
+- ADD: **"When something looks broken, check these first"**, second section in the file. The wedged service queue, curl refusing a caller with `crond` in its ancestry, and a stale `ip rule` after a reassignment. Each presents as a completely different fault, and a tester following this document last week would have had no way to find any of them.
+- ADD: a device assignment section. It was not covered at all, and the default-connection test drops every tunnel on the router for about a minute - so it carries the same warning treatment the watchdog tests already had.
+- ADD: sections for the router log and for SETTINGS, including the check that matters most - run UNINSTALL twice and confirm the second run deletes nothing.
+- CHG: the email section leads with the TEST EMAIL button and is now "how to test this by hand when that fails". It also says, for the first time, that stock sends through `mailsend-go` and Merlin through BusyBox `sendmail`, and gives the stock command.
+- CHG: "files deployed to the router" was out of date on every point - the second init script, the header line both now carry, the installed binaries, and what an uninstall does and does not remove.
+- FIX: two cross-references pointing at a numbering no document has used for weeks.
+
 PENDING TESTING - pass 1, one section per thing a user does
 
 - CHG: the end-to-end manual test moves from the bottom of the file to the top and becomes the spine. Its nine checklist items are now sections, in the order a user meets them, and the material that used to sit above it - email, watchdog checks, NVRAM - is filed underneath the function it belongs to.

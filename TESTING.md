@@ -1,30 +1,34 @@
 # Notes on testing cfg-pia-wg
 
 - [1. Before you start](#before-you-start)
-- [2. Home screen](#home-screen)
-- [3. Standalone (generate)](#standalone-generate)
-- [4. Manage](#manage)
-- [5. Watchdog](#watchdog)
-  - [5.1. Checks](#checks)
-    - [5.1.1. Invalidate the registration (the important one)](#invalidate-the-registration-the-important-one)
-    - [5.1.2. What does NOT work: moving the endpoint](#what-does-not-work-moving-the-endpoint)
-    - [5.1.3. Peer removed (the fast one)](#peer-removed-the-fast-one)
-    - [5.1.4. Interface down](#interface-down)
-    - [5.1.5. What a healthy check looks like](#what-a-healthy-check-looks-like)
-    - [5.1.6. Backoff](#backoff)
-    - [5.1.7. Walking the whole backoff ladder in two minutes, with no PIA traffic](#walking-the-whole-backoff-ladder-in-two-minutes-)
-  - [5.2. Applying a config, and what it should leave behind](#applying-a-config-and-what-it-should-leave-behin)
-  - [5.3. Files deployed to the router](#files-deployed-to-the-router)
-  - [5.4. Testing email send from SSH](#testing-email-send-from-ssh)
-    - [5.4.1. Construct the command line](#construct-the-command-line)
-    - [5.4.2. Construct the test email](#construct-the-test-email)
-    - [5.4.3. How the Commands Work](#how-the-commands-work)
-    - [5.4.4. Certificate information](#certificate-information)
-- [6. App log](#app-log)
-- [7. About](#about)
-- [8. Credentials and exit](#credentials-and-exit)
-- [9. Firmware coverage](#firmware-coverage)
-- [10. Examining nvram settings](#examining-nvram-settings)
+- [2. When something looks broken, check these first](#when-something-looks-broken-check-these-first)
+- [3. Home screen](#home-screen)
+- [4. Standalone (generate)](#standalone-generate)
+- [5. Manage](#manage)
+- [6. Watchdog](#watchdog)
+  - [6.1. Checks](#checks)
+    - [6.1.1. Invalidate the registration (the important one)](#invalidate-the-registration-the-important-one)
+    - [6.1.2. What does NOT work: moving the endpoint](#what-does-not-work-moving-the-endpoint)
+    - [6.1.3. Peer removed (the fast one)](#peer-removed-the-fast-one)
+    - [6.1.4. Interface down](#interface-down)
+    - [6.1.5. What a healthy check looks like](#what-a-healthy-check-looks-like)
+    - [6.1.6. Backoff](#backoff)
+    - [6.1.7. Walking the whole backoff ladder in two minutes, with no PIA traffic](#walking-the-whole-backoff-ladder-in-two-minutes-)
+  - [6.2. Applying a config, and what it should leave behind](#applying-a-config-and-what-it-should-leave-behin)
+  - [6.3. Files deployed to the router](#files-deployed-to-the-router)
+  - [6.4. Testing email send by hand](#testing-email-send-from-ssh)
+    - [6.4.1. Construct the command line](#construct-the-command-line)
+    - [6.4.2. Construct the test email](#construct-the-test-email)
+    - [6.4.3. How the Commands Work](#how-the-commands-work)
+    - [6.4.4. Certificate information](#certificate-information)
+- [7. Device assignment](#device-assignment)
+- [8. App log](#app-log)
+- [9. Router log](#router-log)
+- [10. Settings](#settings)
+- [11. About](#about)
+- [12. Credentials and exit](#credentials-and-exit)
+- [13. Firmware coverage](#firmware-coverage)
+- [14. Examining nvram settings](#examining-nvram-settings)
 
 ## 1. <a name='before-you-start'></a>Before you start
 
@@ -32,7 +36,37 @@ Clear all configs and NVRAM, then reboot the router.
 
 ---
 
-## 2. <a name='home-screen'></a>Home screen
+## 2. <a name='when-something-looks-broken-check-these-first'></a>When something looks broken, check these first
+
+Each of these presents as a different fault from the one it is, and none of them is guessable. Check
+them before spending time anywhere else.
+
+**`rc_service: skip the event:` in `/tmp/syslog.log`.** The router is silently discarding every
+service call it is given, and has been since some earlier one hung without finishing. Nothing works
+after that - not the app, not the web interface, not `reboot`. **Only a power cycle clears it.**
+The app now detects and clears the stale marker before deploying, but if you see this line while
+testing by hand, stop: nothing you observe afterwards means anything. Detail in
+[ARCHITECTURE.md, The router's service queue and how it wedges](ARCHITECTURE.md#the-routers-service-queue-and-how-it-wedges).
+
+**A token fetch that exits 0 with no HTTP status, no body and nothing on stderr.** Stock's
+`/usr/sbin/curl` walks its own process ancestry and refuses to run when `crond` appears in the chain.
+It does not fail, it does nothing, which is far harder to spot. Confirm it by looking for
+`Invalid caller(crond)` in `/jffs/curllst`. Detail in
+[ARCHITECTURE.md, `curl` refuses to run from cron](ARCHITECTURE.md#curl-refuses-to-run-from-cron).
+
+> [!CAUTION]
+> `/jffs/curllst` is world-readable, survives reboots, and records **full command lines including
+> `-u user:password`**. Redact it before pasting it anywhere, including into a bug report.
+
+**A device assignment that is written correctly and has no effect.** Check `ip rule show` before
+anything else. Stock never removes a device's previous rule when it is reassigned, so both rules sit
+at priority 100 and the older one matches first. The record in `vpnc_dev_policy_list` will look
+perfect the whole time. Detail in
+[ARCHITECTURE.md, Stock leaves the old routing rule behind](ARCHITECTURE.md#stock-leaves-the-old-routing-rule-behind-measure).
+
+---
+
+## 3. <a name='home-screen'></a>Home screen
 
 - all five buttons navigate; HOME and the back key return here
 - "how to use this app" opens the README section
@@ -41,7 +75,7 @@ Clear all configs and NVRAM, then reboot the router.
 
 ---
 
-## 3. <a name='standalone-generate'></a>Standalone (generate)
+## 4. <a name='standalone-generate'></a>Standalone (generate)
 
 - create a config and apply manually
 - heading reads "GENERATED CONFIG: pia-region_name"
@@ -51,7 +85,7 @@ Clear all configs and NVRAM, then reboot the router.
 
 ---
 
-## 4. <a name='manage'></a>Manage
+## 5. <a name='manage'></a>Manage
 
 - create wgc1-5
 - enable wgc1 & 5
@@ -69,11 +103,11 @@ Applying configs:
 
 ---
 
-## 5. <a name='watchdog'></a>Watchdog
+## 6. <a name='watchdog'></a>Watchdog
 
 - Create wgc1 & wgc5 - check test email
 - Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
-- force a reconfigure with, check email alerting
+- force a reconfigure, then check the email alerting
   1. `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`
   2. `/jffs/cfg-pia-wg/watchdog_wgc1.sh`
 - Check emails
@@ -86,7 +120,7 @@ Applying configs:
 - keyboard does not obscure the configure dialog's fields
 - backoff: leave it failing and watch the log - "Backing off after N failed attempts", waits growing 2, 4, 8, 16, 30, 60, 90 min
 
-### 5.1. <a name='checks'></a>Checks
+### 6.1. <a name='checks'></a>Checks
 
 1. check that boot persistence contains the two cru lines (5m watchdog)
 
@@ -168,10 +202,10 @@ Check `/jffs/cfg-pia-wg/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
 
 The watchdog decides a tunnel is alive from its **WireGuard handshake**: `wg show wgcN latest-handshakes` reduced to its newest peer, healthy if under 300 seconds old. A ping bound to the interface is only a fallback, because on stock the router's own traffic is not policy-routed into `wgcN` and `ping -I` fails on a perfectly healthy tunnel.
 
-So a good test breaks the **crypto or the peer**, leaves the interface up, and touches neither the WAN nor NVRAM. Two things that look like good tests are not: disabling the interface in the WebUI exercises only the "interface down or absent" path and disturbs routing, and moving the peer's endpoint is undone within seconds by WireGuard's endpoint roaming (13.1.1).
+So a good test breaks the **crypto or the peer**, leaves the interface up, and touches neither the WAN nor NVRAM. Two things that look like good tests are not: disabling the interface in the WebUI exercises only the "interface down or absent" path and disturbs routing, and moving the peer's endpoint is undone within seconds by WireGuard's endpoint roaming - see [What does NOT work: moving the endpoint](#what-does-not-work-moving-the-endpoint).
 
 > [!IMPORTANT]
-> The clock runs from the **last handshake**, not from when you broke the tunnel. `wg show wgcN latest-handshakes` tells you exactly where you are; the watchdog reacts at the first check where that age exceeds 300 s, so worst case is 300 s **plus** one check interval. A check logging `Handshake 264s ago` after you broke it is the window working, not a failure - wait for the next one. Removing the peer (13.2) skips the wait entirely.
+> The clock runs from the **last handshake**, not from when you broke the tunnel. `wg show wgcN latest-handshakes` tells you exactly where you are; the watchdog reacts at the first check where that age exceeds 300 s, so worst case is 300 s **plus** one check interval. A check logging `Handshake 264s ago` after you broke it is the window working, not a failure - wait for the next one. Removing the peer - see [Peer removed (the fast one)](#peer-removed-the-fast-one) - skips the wait entirely.
 
 > [!CAUTION]
 > Any LAN client policy-routed through the slot loses internet for the duration of the test - the tunnel really is dead. That is confirmation the test worked, but do not run it on a slot something depends on.
@@ -179,7 +213,7 @@ So a good test breaks the **crypto or the peer**, leaves the interface up, and t
 > [!WARNING]
 > PIA rate-limits token requests. Since 405 the watchdog backs off on consecutive failures - 2, 4, 8, 16, 30, 60 minutes, capped at 90 - which is what keeps a broken tunnel from provoking it, but two failing watchdogs still climb their ladders independently. If `failed to obtain PIA token` starts appearing, stop and wait 15-30 minutes; the log carries the HTTP status, so `HTTP 403` confirms throttling rather than a fault. Test one slot at a time, and prefer a 5 m check interval over 1 m for reconfigure tests.
 
-#### 5.1.1. <a name='invalidate-the-registration-the-important-one'></a>Invalidate the registration (the important one)
+#### 6.1.1. <a name='invalidate-the-registration-the-important-one'></a>Invalidate the registration (the important one)
 
 The truest simulation of a PIA registration that has silently died: the interface stays up and keeps sending, the server no longer recognises us, and no handshake ever completes. Replace the interface's private key with a fresh one the server has never seen:
 
@@ -208,7 +242,7 @@ Expected in `/tmp/watchdog_wgc1.log` once the handshake passes 300 s:
 
 Recovery needs no cleanup: the re-negotiation generates a new keypair, registers it, rewrites `wgc1_*` in NVRAM and restarts the slot.
 
-#### 5.1.2. <a name='what-does-not-work-moving-the-endpoint'></a>What does NOT work: moving the endpoint
+#### 6.1.2. <a name='what-does-not-work-moving-the-endpoint'></a>What does NOT work: moving the endpoint
 
 ```bash
 # looks right, does nothing - do not use
@@ -217,7 +251,7 @@ wg set wgc1 peer "$(nvram get wgc1_ppub)" endpoint 203.0.113.1:1337
 
 `wg` accepts it and shows the new endpoint, then puts the real one back within seconds and no reconfigure ever happens. That is **endpoint roaming**, a WireGuard feature: a peer's endpoint is updated automatically whenever an authenticated packet arrives from a different source address. The PIA server is still sending, so the endpoint follows it home. Anything that leaves the keys intact will be undone the same way.
 
-#### 5.1.3. <a name='peer-removed-the-fast-one'></a>Peer removed (the fast one)
+#### 6.1.3. <a name='peer-removed-the-fast-one'></a>Peer removed (the fast one)
 
 Blunter, immune to roaming - there is no peer left for an inbound packet to update - and **detected at the very next check with no 300 s wait**, because removing the peer removes its handshake record too: `latest-handshakes` returns nothing, so the age test fails immediately.
 
@@ -247,7 +281,7 @@ public key from the one you removed, and the next scheduled check should read `H
 
 Running it again inside the backoff window gives `Backing off after N failed attempts: Xs of Ys elapsed` - that is the guard working, not a fault.
 
-#### 5.1.4. <a name='interface-down'></a>Interface down
+#### 6.1.4. <a name='interface-down'></a>Interface down
 
 The one the WebUI gives you. Detected immediately - no 300 s wait, because the script tests `ifconfig` before the handshake:
 
@@ -263,7 +297,7 @@ ifconfig wgc1 down
 
 The reconfigure that follows rewrites the peer and restarts the interface, so the tunnel comes back on its own. If it does not, and the log stops at the token request, check that the deployed script carries a version marker of v0.8.46 build 416 or later - earlier scripts could not fetch a PIA token from cron at all (ARCHITECTURE.md "curl refuses to run from cron"). Clearing `/tmp/watchdog_backoff_wgc1` makes the next tick run in full rather than backing off.
 
-#### 5.1.5. <a name='what-a-healthy-check-looks-like'></a>What a healthy check looks like
+#### 6.1.5. <a name='what-a-healthy-check-looks-like'></a>What a healthy check looks like
 
 A working tunnel with an active watchdog will show:
 
@@ -272,7 +306,7 @@ A working tunnel with an active watchdog will show:
 2026-09-04 15:48:00 Handshake 60s ago
 ```
 
-#### 5.1.6. <a name='backoff'></a>Backoff
+#### 6.1.6. <a name='backoff'></a>Backoff
 
 The wait before the next reconfigure attempt grows with each **consecutive failed attempt** and resets the moment one succeeds:
 
@@ -289,7 +323,7 @@ A check that arrives inside the wait is turned away and says so:
 
 Check `/tmp/watchdog_backoff_wgc1` is created and holds the attempt count and timestamp. The count rises **only when an attempt is actually made** - a run the backoff turned away must leave it alone, or the ladder would climb faster on a 1 m interval than on a 5 m one.
 
-#### 5.1.7. <a name='walking-the-whole-backoff-ladder-in-two-minutes-'></a>Walking the whole backoff ladder in two minutes, with no PIA traffic
+#### 6.1.7. <a name='walking-the-whole-backoff-ladder-in-two-minutes-'></a>Walking the whole backoff ladder in two minutes, with no PIA traffic
 
 **Why not just let it fail for four hours.** Reaching the 90-minute rung honestly means seven consecutive *failed reconfigures*, each of which asks PIA for a token. That is exactly the behaviour that got the account refused with HTTP 403 on 2026-09-04, and it would take most of a day. The test below reaches every rung in about two minutes and asks PIA for nothing at all.
 
@@ -350,7 +384,7 @@ Clean up, then re-enable the watchdog in the app:
 rm -f /tmp/watchdog_backoff_wgc5
 ```
 
-### 5.2. <a name='applying-a-config-and-what-it-should-leave-behin'></a>Applying a config, and what it should leave behind
+### 6.2. <a name='applying-a-config-and-what-it-should-leave-behin'></a>Applying a config, and what it should leave behind
 
 - check all NVRAM settings are cleared on script & watchdog disable
 
@@ -359,31 +393,76 @@ nvram show | grep pia_wg | sort
 nvram show | grep qgc | sort
 ```
 
-### 5.3. <a name='files-deployed-to-the-router'></a>Files deployed to the router
+### 6.3. <a name='files-deployed-to-the-router'></a>Files deployed to the router
 
-Check these get created/cleaned up
+On both firmwares:
 
-```bash
-/jffs/scripts/services-start              # Merlin boot persistence
-/opt/etc/init.d/S50downloadmaster         # stock boot persistence (replacement block only)
-/jffs/cfg-pia-wg/watchdog_wgcN.sh
+```text
+/jffs/cfg-pia-wg/                         # everything the app owns lives here
+/jffs/cfg-pia-wg/watchdog_wgcN.sh         # one per watched slot
 /jffs/cfg-pia-wg/pia_ca.rsa.4096.crt      # cached PIA CA, shared by all slots
-/tmp/watchdog_wgcN.log
+/tmp/watchdog_wgcN.log                    # and .log.old after the nightly rotate
 /tmp/watchdog_last_ping_success_wgcN
 /tmp/watchdog_backoff_wgcN
 ```
 
-Where `N` is the slot number
+Stock also gets, because it has no `/jffs/scripts` hooks:
 
-### 5.4. <a name='testing-email-send-from-ssh'></a>Testing email send from SSH
+```text
+/jffs/cfg-pia-wg/jq                       # installed by the app
+/jffs/cfg-pia-wg/mailsend-go              # installed by the app, only if email is enabled
+/opt/etc/init.d/S50downloadmaster         # boot persistence, replacement block only
+/opt/etc/init.d/S50asuslighttpd           # a stub that returns immediately
+```
 
-If the watchdog feature is used, cfg-pia-wg employs the below commands to send emails. If you are having issues with sending email alerts you can test locally via SSH with the following examples.
+Merlin instead uses `/jffs/scripts/services-start` for boot persistence.
 
-As a fully blown `sendmail` is not available, cfg-pia-wg uses the built-in BusyBox `sendmail` applet paired with `openssl s_client` to establish a secure email connection. Email is sent with TLS 1.3 encryption, a verified CA bundle is used to ensure that the endpoint is actually who it should be, and enforces strict cryptographic handshake failures.
+Three things to check on those two init scripts, because all three are recent:
 
-This ensures that emails are sent without exposing account credentials to eavesdropping or man-in-the-middle attacks.
+- each carries `# <name> - auto-generated by cfg-pia-wg; *do* *not* edit.` as its **second line**
+- where one replaced a real script, the original is beside it with a `.old` suffix
+- the watchdog script carries a version line, and the About screen reports it
 
-#### 5.4.1. <a name='construct-the-command-line'></a>Construct the command line
+Where `N` is the slot number.
+
+**What an uninstall leaves behind.** SETTINGS -> UNINSTALL removes everything above, every
+`cfg_pia_wg_*` and `wgcN_wd_*` NVRAM key, and every `cru` entry it created. It does **not** touch the
+tunnels: `wgcN_*` keys, the profiles and `vpnc_clientlist` are the user's, not the app's, and DELETE
+on the Manage screen is what removes those. Device assignments and the default connection are left
+alone for the same reason.
+
+### 6.4. <a name='testing-email-send-from-ssh'></a>Testing email send by hand
+
+**Use the TEST EMAIL button first.** The watchdog dialog sends a real message through the settings on
+screen and reports what the server said, which is faster than anything below and tests the same path
+the watchdog will use. What follows is for when that button fails and you need to see why.
+
+**The two firmwares send mail differently, and only one of them is documented below.**
+
+| Firmware | Sends with | Comes from |
+| --- | --- | --- |
+| Merlin | BusyBox `sendmail` wrapped in `openssl s_client` for implicit TLS | built in |
+| Stock | `mailsend-go`, `-ssl -verifyCert` | installed by the app into `/jffs/cfg-pia-wg` |
+
+BusyBox `sendmail` is not viable on stock, which is why the second exists. The hand-testing recipe
+below is the **Merlin** one. The stock equivalent is a single command:
+
+```bash
+/jffs/cfg-pia-wg/mailsend-go -ssl -verifyCert \
+    -smtp smtp.gmail.com -port 465 -sub "test from the router" \
+    -f "sender@example.com" -t "recipient@example.com" \
+    auth -user "sender@example.com" -pass "APP_PASSWORD" \
+    body -file /tmp/test-email.txt
+```
+
+`mailsend-go` builds its own RFC-822 headers from those flags, so the body file it takes is the
+message text alone - no `From:`, `To:` or `Subject:` lines, and no blank separator line. That is the
+one difference that will catch you out if you copy the Merlin body below.
+
+Both routes use TLS with a verified CA bundle and fail the handshake rather than falling back, so an
+alert never leaves the router with the credentials exposed.
+
+#### 6.4.1. <a name='construct-the-command-line'></a>Construct the command line
 
 Replace `sender@example.com`, `recipient@example.com`, and `APP_PASSWORD` in the below:
 
@@ -398,7 +477,7 @@ sendmail -v \
 > [!CAUTION]
 > **APP PASSWORD**: the above example exposes your app password to bash history, `ps`, and process lists. These are cleared at reboot though. Remember, this is **only** for testing purposes. A more secure approach uses input stuffing from a file eg. one-time setup with `nano /tmp/.smtp-pass` enter your password then save the file, secure the file with `chmod 600 /tmp/.smtp-pass` the `sendmail` command line would then be modified with `-ap$(cat /tmp/.smtp-pass)`.
 
-#### 5.4.2. <a name='construct-the-test-email'></a>Construct the test email
+#### 6.4.2. <a name='construct-the-test-email'></a>Construct the test email
 
 Replace `sender@example.com`, `Sender Name`, `Recipient Name`, and `recipient@example.com` in the below:
 
@@ -434,7 +513,7 @@ EOF
 > [!TIP]
 > **EOF**: Using `EOF` without single quotes allows variable expansion. Typically you would use `'EOF'`, but we need the `date` and `hostnames` expanded, which is why we use `cat << EOF >`.
 
-#### 5.4.3. <a name='how-the-commands-work'></a>How the Commands Work
+#### 6.4.3. <a name='how-the-commands-work'></a>How the Commands Work
 
 The first command constructs a valid, raw RFC-compliant email body inside a temporary file (/tmp/test-email.txt) using dynamic variables to inject an accurate timestamp, a globally unique Message-ID, and local hostname metadata. The second command executes sendmail in verbose mode (-v), using a custom network handler string (-H) to launch OpenSSL instead of a standard socket connection. The OpenSSL utility wraps the session in TLS 1.3 encryption, cross-references Gmail's public certificates against the router's trusted system authorities (-CAfile), and immediately kills the transmission (-verify_return_error) if any intermediate certificate is missing or invalid. Once a secure channel is verified, sendmail submits the authentication flags (-au and -ap), passes the envelope routing details, and pipes the payload text directly into the authenticated SMTP session.
 
@@ -500,7 +579,7 @@ read:errno=0
 sendmail: recv:'221 2.0.0 closing connection a-very-long-session-id-string - gsmtp'
 ```
 
-#### 5.4.4. <a name='certificate-information'></a>Certificate information
+#### 6.4.4. <a name='certificate-information'></a>Certificate information
 
 If you want to verify certificate use (and it's a _lot_ of information), use
 
@@ -515,7 +594,56 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
 
 ---
 
-## 6. <a name='app-log'></a>App log
+## 7. <a name='device-assignment'></a>Device assignment
+
+Stock only. Merlin routes per device through VPN Director and the app does not offer this screen there.
+
+> [!CAUTION]
+> **The default-connection test drops every tunnel on the router for about a minute.** Changing the
+> default runs `restart_default_wan`, which stops every WireGuard client, applies the change, then
+> starts them again. Anything using any tunnel loses its connection for the duration, and a watchdog
+> on an affected slot will see a real outage and may reconfigure. Do not run that part on a router
+> anyone is relying on. **Assigning a device does none of this** and is safe to test at any time.
+
+The list:
+
+- every LAN device appears, offline ones dimmed and sorted last
+- a device with no DHCP reservation carries a `DHCP` tag; one with a locally-administered address carries `random MAC`
+- a device with no known address shows "connect this device once to assign it" and no picker
+- the router itself, any AiMesh node, and guest-network devices never appear at all
+
+Assigning:
+
+- pick a slot for one device - the row marks itself changed, and APPLY and DISCARD CHANGES appear
+- DISCARD CHANGES puts every row back and writes nothing to the router
+- APPLY lists each change as `from -> to` and asks before doing anything
+- afterwards `nvram get vpnc_dev_policy_list` holds `1><ip>>><index6>>` for that device, where the last number is the profile's **index 6**, not its slot
+- `ip rule show` holds exactly **one** rule for that address at priority 100
+- the app writes a line to the router's syslog for each reassignment - `tail /tmp/syslog.log` should name the device and where it moved
+
+Reassigning, which is where this feature breaks:
+
+- move the same device to a different slot, APPLY, then run `ip rule show` again
+- there must still be exactly ONE rule for that address. Two means the app's stale-rule cleanup did not run, and the older rule will win silently
+- the device's own traffic is the real test: check its public address from the device itself, not from the router - the router's own traffic is not policy-routed into the tunnel
+
+Reservations:
+
+- assign a device that has no reservation. `nvram get dhcp_staticlist` gains `<MAC>IP>>` and **nothing on the LAN drops** - the app applies the change with `restart_dnsmasq` and `restart_vpnc_dev_policy`, not the web interface's heavier call
+- unassign it again. The policy record goes; the reservation stays. That is the firmware, and the app deliberately does not remove it
+
+The default connection - read the warning above first:
+
+- note what is up: `wg show interfaces`
+- set the default to a tunnel and APPLY. Every tunnel stops and restarts
+- `nvram get vpnc_default_wan` reads that profile's **index 6**. `0` means plain internet
+- `ip rule show` gains a pair at priority 10000
+- an **unassigned** device now leaves through that tunnel. Check from the device
+- set it back to Internet and confirm the pair goes and unassigned traffic returns to the WAN
+
+---
+
+## 8. <a name='app-log'></a>App log
 
 - one connection exists per session
 - router log: one `dropbear ... Password auth succeeded` per app session, not per button press
@@ -524,16 +652,53 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
 
 ---
 
-## 7. <a name='about'></a>About
+## 9. <a name='router-log'></a>Router log
+
+- opens on the newest 32 KB of `/tmp/syslog.log`, scrolled to the bottom
+- scrolling to the top loads the previous 32 KB and **keeps your place** - the text you were reading must not jump
+- a partial first line is trimmed, so no page ever starts mid-word
+- reaching the start of `syslog.log` continues into the rotated `syslog.log-1` if the router has one, and says so
+- COPY takes everything loaded, not just the visible page, and no clipboard countdown is armed
+- REFRESH returns to the newest page
+- text selects across page boundaries in one run
+- HOME leaves
+
+---
+
+## 10. <a name='settings'></a>Settings
+
+- UNINSTALL asks twice, and the second prompt says what it is about to do
+- afterwards, on the router:
+
+```bash
+ls -l /opt/etc/init.d/S50downloadmaster /opt/etc/init.d/S50asuslighttpd   # restored, or gone
+cru l                                    # no watchdog entries
+nvram show | grep cfg_pia_wg             # nothing
+nvram show | grep -E 'wgc[1-9]_wd_'      # nothing
+ls /jffs/cfg-pia-wg                       # gone
+wg show interfaces                        # UNCHANGED - the tunnels are not ours to remove
+```
+
+- **run UNINSTALL a second time on the same router.** It must report that each script is not ours
+  and delete nothing. A second run that removes the router's own `S50downloadmaster` is the 425 bug
+  and the reason both scripts now carry an `auto-generated by cfg-pia-wg` header line
+- DEL PIA CERT removes the cached PIA CA and the next reconfigure fetches it again
+- FORGET ROUTER IP clears the saved address, and the next connect screen opens empty
+
+---
+
+## 11. <a name='about'></a>About
 
 - COPY BUILD INFO - no clipboard countdown starts
 - licences screen opens and does not bleed through the header
 - DEL PIA CERT - credential prompt prefills IP and username, keyboard does not obscure it
 - CREATE GITHUB ISSUE opens
+- the deployed watchdog script version is shown, and is flagged when it is older than the app's copy
+- the history line reads `Since <yyyy-mm-dd>: X successful & Y unsuccessful reconfigures`
 
 ---
 
-## 8. <a name='credentials-and-exit'></a>Credentials and exit
+## 12. <a name='credentials-and-exit'></a>Credentials and exit
 
 - password manager fills PIA, SSH and SMTP logins (clear the field first - Android only offers on an empty one)
 - Exit app and the back key both prompt, then wipe credentials and clipboard
@@ -541,15 +706,28 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
 
 ---
 
-## 9. <a name='firmware-coverage'></a>Firmware coverage
+## 13. <a name='firmware-coverage'></a>Firmware coverage
 
-- repeat 5-7 on the other firmware (stock / Merlin)
+Repeat [Manage](#manage), [Watchdog](#watchdog) and [App log](#app-log) on the other firmware.
+
+Two sections do not apply on Merlin at all: [Device assignment](#device-assignment) needs VPN
+Fusion, and the parts of [Files deployed to the router](#files-deployed-to-the-router) about the
+init scripts and the installed binaries are stock-only. Merlin has `/jffs/scripts/services-start`
+and ships `jq` already.
 
 ---
 
-## 10. <a name='examining-nvram-settings'></a>Examining nvram settings
+## 14. <a name='examining-nvram-settings'></a>Examining nvram settings
 
 I've used the below to examine WG on ASUS routers.
+
+What the fields **mean** is in
+[ARCHITECTURE.md, Router WireGuard NVRAM fields](ARCHITECTURE.md#router-wireguard-nvram-fields);
+this section is only how to look at them. Two things about stock catch people out while testing,
+and both are worth reading before you start interpreting output:
+
+- **One profile is named by three different numbers** - its slot, its row in `vpnc_clientlist` (`vpnc_unit`), and its index 6. Which one a key wants depends on the key. `vpnc_default_wan` and `vpnc_dev_policy_list` both want index 6, so a value of `9` is perfectly normal on a five-slot router. See [The three numbers that name one profile](ARCHITECTURE.md#the-three-numbers-that-name-one-profile).
+- **`nvram get` after a `service` call proves nothing.** `notify_rc` queues and returns immediately, so the value you read may be from before the call finished. Poll for the effect - the interface appearing in `wg show interfaces`, the key changing - rather than reading once.
 
 Your best source of information is the system log with `tail -f /tmp/syslog.log`. This shows calls to the `service` command wrapper with commands like `service restart_vpnc`. `service` command parameters are not user accessible files.
 
