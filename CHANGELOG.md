@@ -42,6 +42,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING ARCHITECTURE - diagrams: when the watchdog runs, and what a reconfigure does
+
+- ADD: two flowcharts for the router-side script. "When it runs" covers the detach, the enable check, the handshake and ping tests, the backoff and the WAN gate - most runs do nothing, and everything before the expensive path exists to avoid taking it. "What a reconfigure does" covers the twelve steps that follow, each of which can abort.
+- ADD: the reason each gate exists, beside the gate. Why the detach is there, why a tunnel switched off by hand is not an outage, why ping alone is not a liveness test on stock, and why a missing WAN exits silently without alerting.
+- CHG: the email flow is documented as a BRANCH of the reconfigure rather than a diagram of its own. `send_alert` is called from exactly two places, and a failure and its recovery are two halves of one story.
+
 PENDING ARCHITECTURE - the three numbers that name one profile
 
 - ADD: a diagram of the profile identity problem, with a worked example from a real two-profile list. One WireGuard profile is named by its slot, its clientlist ROW and its index 6, and every one of those is used somewhere - keys and interface by slot, `vpnc_unit` by row, default connection and device pinning and routing table by index 6.
