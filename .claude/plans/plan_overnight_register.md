@@ -14,4 +14,4 @@ Nothing yet.
 
 ## Deviations from the plans
 
-Nothing yet.
+**ARCHITECTURE pass 1 did not move the prior-design material.** The plan lists that under pass 1, but writing the one-line retractions that stay behind is a CONTENT change, and pass 1 was meant to be pure movement so its diff could be read for what was dropped. The appendix gets its own commit later in the run.

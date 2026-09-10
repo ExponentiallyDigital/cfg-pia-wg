@@ -127,7 +127,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 _text('alive', 'Persistent keepalive (s)', keyboard: TextInputType.number),
                 _text('aips', 'Allowed IPs'),
                 const SizedBox(height: 4),
-                // enforce / fw / ep_addr_r / rip do not exist on stock (ARCHITECTURE.md 2.3.1).
+                // enforce / fw / ep_addr_r / rip do not exist on stock (ARCHITECTURE.md "Field reference").
                 if (!isStockFirmware) ...[
                   _switch('Kill switch', _enforce, (v) => setState(() => _enforce = v), const Key('slot_enforce')),
                   _switch('Inbound firewall', _fw, (v) => setState(() => _fw = v), const Key('slot_fw')),

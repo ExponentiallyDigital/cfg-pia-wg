@@ -42,6 +42,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING ARCHITECTURE - reference sections by title, not number
+
+- CHG: 26 references to ARCHITECTURE section NUMBERS, across ten files and six `lib/` comments, now name the section instead. A number changes whenever the document is reordered; a title does not, and a wrong title is visible where a wrong number is not.
+- INF: five of them were already wrong before this run. `ARCHITECTURE.md 2.3.1` and `2.3.2` pointed at a numbering the document stopped using some time ago, and nothing could have told us.
+- CHG: comments only in `lib/` and `test/`; no behaviour changed anywhere.
+
 PENDING ARCHITECTURE - pass 1, restructure
 
 - CHG: high level first, then deeper. SSH commands now precede the NVRAM reference, because how the app drives the router is the shape of the thing and the field list is detail.

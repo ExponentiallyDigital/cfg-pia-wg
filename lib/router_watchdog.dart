@@ -658,12 +658,13 @@ const String _kMailHdrMerlin = r'''  {
 //
 // Stock used to assert a leak in all three - "traffic is reaching the internet without the VPN".
 // That is wrong about two thirds of the time. A device pinned to a dropped tunnel falls through to
-// the DEFAULT CONNECTION (ARCHITECTURE.md 3.3.6, confirmed twice on hardware), and the default is
-// one of three things: this same slot, in which case those devices have no internet at all and the
-// outage is fail-closed; another tunnel, in which case they are still on a VPN and the old sentence
-// was a false alarm; or the plain internet, which is the only case the old sentence described. A
-// warning that cries wolf twice for every time it is right is one people learn to ignore, so the
-// script reads `vpnc_default_wan` and says which of the three actually happened.
+// the DEFAULT CONNECTION (ARCHITECTURE.md "vpnc_dev_policy_list - the assignment", confirmed
+// twice on hardware), and the default is one of three things: this same slot, in which case those
+// devices have no internet at all and the outage is fail-closed; another tunnel, in which case
+// they are still on a VPN and the old sentence was a false alarm; or the plain internet, which is
+// the only case the old sentence described. A warning that cries wolf twice for every time it is
+// right is one people learn to ignore, so the script reads `vpnc_default_wan` and says which of
+// the three actually happened.
 const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
 [ -n "$DEFIDX" ] || DEFIDX=0
 # Index 2 of a vpnc_clientlist record is the slot, index 6 the state index the default is named by.
@@ -994,7 +995,7 @@ class RouterWatchdog {
     await slots.writeVpncProfile(slot, active: false);
     await _run('nvram commit');
     // There is no start_vpnc on stock; stop_vpnc is what actually tears the interface down
-    // (ARCHITECTURE.md 4.2.3). restart_vpnc would leave it up.
+    // (ARCHITECTURE.md "Stop/Disable"). restart_vpnc would leave it up.
     if (isStockFirmware) {
       await slots.runVpncService(slot, 'stop_vpnc');
     } else {
@@ -1491,7 +1492,7 @@ const String _kWatchdogScriptTemplate = r'''#!/bin/sh
 RUNMODE="${1:-cron}"
 # ASUS's curl refuses to run with crond in its LIVE process ancestry: exit 0, no status, no body,
 # no stderr, and "Invalid caller(crond)" in /jffs/curllst. Measured 2026-09-09; no curl argument
-# avoids it, so a cron run re-execs itself and only the reparented copy works. ARCHITECTURE.md 5.5.
+# avoids it, so a cron run re-execs itself and only the reparented copy works. ARCHITECTURE.md "curl refuses to run from cron".
 if [ "$RUNMODE" = "cron" ]; then
   "$0" detached >/dev/null 2>&1 &
   exit 0
