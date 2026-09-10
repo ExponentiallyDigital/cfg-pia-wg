@@ -23,12 +23,6 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-**emails:**
-- ADD: include how to disable emails as a footer in all emails sent by the app: `<"Email alerting can be disabled in the app via WATCHDOG, EDIT, deselect "enable email alerts">`. Don't change the TEST email template.
-- CHG: update the section in any email that gets sent re: "Kill switch: not supported on this firmware - traffic is reaching the internet without the VPN" let's discuss what to do here.
-- CHG: update the email section "WHAT TO DO", insert between existing (3.) and (4.) saying "Review your router log.", update bullet numbers accordingly.
-- commit.
-
 **device assignment:**
 - GUI: alter the device management screen so that if a device is showing as set to the default connection "default", instead show what the default is eg "default - Internet" or "default - wgc1:pia-region_name"
 - FIX: in the apply-changes popup modal, the "from" line is indented by two spaces. Remove the indent so every line of the change list starts at the same column.
@@ -59,6 +53,17 @@ outer_watchdog.dart` already does the parsing and `WatchdogStatus.scriptVersion`
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-10 v0.8.50 build 420 - alert emails: what to do, and how to turn them off
+
+- CHG: **stock alert emails no longer claim a leak that usually is not one.** The kill-switch row said "traffic is reaching the internet without the VPN" whatever the state of the router. A device pinned to a dropped tunnel actually falls through to the DEFAULT CONNECTION, which is one of three things, and only one of them is a leak - so the script reads `vpnc_default_wan` and says which happened.
+- INF: the three cases. This tunnel IS the default, so its devices have no internet rather than an unprotected one - fail-closed, and worth saying so. Another tunnel is the default, so its devices are still on a VPN, and the email names it. The plain internet is the default, which is the only case the old sentence described. A warning that cries wolf twice for every time it is right is one people learn to ignore.
+- CHG: the deploy payload guard is now an absolute 26 KB for both firmwares rather than tying stock to Merlin's size. Stock carries three branches of this wording that Merlin has no need of, because Merlin has a real kill switch to report on and stock has to work out where the traffic went instead.
+- TST: six - the two NVRAM reads, one per case for the fail-closed, other-tunnel and plain-internet branches, all three tenses present in each, and the old blanket claim gone from the script entirely.
+- ADD: **every alert email now says how to turn alert emails off** - via WATCHDOG, CREATE/EDIT, then deselecting "Enable email alerts", naming the controls exactly as the app labels them. An alert arrives hours later at an address that may not even be the phone the app is on, and one that does not say how to stop it gets silenced at the mail client instead, which loses the next one too.
+- CHG: the TEST email deliberately does NOT carry that footer. It is sent from the very screen the sentence points at, with the checkbox on it.
+- ADD: WHAT TO DO gains "Review your router log." as step 4, and the remaining step is renumbered.
+- TST: five - the new step and the renumbering, the numbering having no gaps or repeats, the footer present on an alert and absent from a test email, its position above the review line with the sign-off still last, and the deployed script carrying the same footer and the same steps as the app builds.
 
 2026-09-10 v0.8.49 build 419 - router install: helper binary ownership and boot script backups
 

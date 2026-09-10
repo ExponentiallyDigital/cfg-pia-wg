@@ -45,13 +45,14 @@ String _factsReply({
 
 void main() {
   group('buildEmailBody', () {
-    String body({List<String> whatToDo = const [], String? log}) => buildEmailBody(
+    String body({List<String> whatToDo = const [], String? log, bool howToDisable = true}) => buildEmailBody(
           opening: 'Connectivity was lost and the tunnel has been rebuilt.',
           whatHappened: const ['Event: reconfigured successfully on attempt 2', 'Interval: 5 minutes'],
           router: const ['Name: r (192.168.1.1)', 'Time: 2026-09-05 14:32:53 AEST'],
           history: 'Since 2026-09-01 this router has recorded 4 successful and 1 failed reconfigurations.',
           whatToDo: whatToDo,
           routerLog: log,
+          howToDisable: howToDisable,
         );
 
     test('sections run answer, action, evidence - and the failure-only ones stay out of a success', () {
@@ -69,7 +70,33 @@ void main() {
       expect(s.indexOf(kSectionWhatToDo), lessThan(s.indexOf(kSectionRouter)));
       expect(s.indexOf(kSectionHistory), lessThan(s.indexOf(kSectionRouterLog)));
       expect(s.indexOf(kSectionRouterLog), lessThan(s.indexOf(kEmailReviewLine)));
-      expect(s, contains('4. Is your PIA billing account active?'));
+      expect(s, contains('4. Review your router log.'));
+      expect(s, contains('5. Is your PIA billing account active?'));
+    });
+
+    // The steps are numbered in the text, so inserting one means renumbering the rest. A duplicate
+    // or a gap is the failure mode, and it reads as sloppy in the one email a user reads carefully.
+    test('the steps are numbered 1..n with no gaps or repeats', () {
+      final numbers = [for (final step in kEmailWhatToDo) int.parse(step.split('.').first)];
+      expect(numbers, List.generate(kEmailWhatToDo.length, (i) => i + 1));
+    });
+
+    // An alert arrives hours later, at an address that may not be the phone the app is on. One that
+    // does not say how to stop it gets silenced at the mail client instead, which loses the next
+    // one too.
+    test('an alert says how to turn alerts off; the test email does not', () {
+      expect(body(whatToDo: kEmailWhatToDo), contains(kEmailHowToDisable));
+      expect(body(howToDisable: false), isNot(contains(kEmailHowToDisable)));
+      // Named exactly as the app labels them, or the instruction sends the reader hunting.
+      expect(kEmailHowToDisable, contains('WATCHDOG'));
+      expect(kEmailHowToDisable, contains('CREATE/EDIT'));
+      expect(kEmailHowToDisable, contains('Enable email alerts'));
+    });
+
+    test('the footer sits above the review line, and the sign-off stays last', () {
+      final s = body(whatToDo: kEmailWhatToDo);
+      expect(s.indexOf(kEmailHowToDisable), lessThan(s.indexOf(kEmailReviewLine)));
+      expect(s.trimRight(), endsWith(kEmailSignOff.last));
     });
 
     test('every section is separated by a blank line', () {
@@ -220,8 +247,44 @@ void main() {
       expect(merlin, contains('OFF - the kill switch is available but is not enabled'));
 
       final stock = script(RouterFirmware.stock);
-      expect(stock, contains('not supported on this firmware'));
+      expect(stock, contains('none on this firmware'));
       expect(stock, isNot(contains('OFF - the kill switch is available')));
+    });
+
+    // Stock used to assert a leak in every case. A device pinned to a dropped tunnel falls through
+    // to the DEFAULT CONNECTION, which is one of three things - and only one of them is a leak. A
+    // warning that cries wolf twice for every time it is right is one people learn to ignore.
+    group('stock says where the traffic actually went', () {
+      final stock = script(RouterFirmware.stock);
+
+      test('it reads the default connection rather than assuming', () {
+        expect(stock, contains(r'DEFIDX="$(nvram get vpnc_default_wan)"'));
+        // Index 2 of a clientlist record is the slot, index 6 the number the default is named by.
+        expect(stock, contains(r'-v s="$SLOT"'));
+        expect(stock, contains(r'-v d="$DEFIDX"'));
+      });
+
+      test('this tunnel being the default is reported as fail-closed, not as a leak', () {
+        expect(stock, contains(r'if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then'));
+        expect(stock, contains('have no internet rather than an unprotected one'));
+      });
+
+      test('another tunnel as the default is reported as still protected, and named', () {
+        expect(stock, contains(r'elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ]; then'));
+        expect(stock, contains(r'the default connection, $DEFNAME, so they are still on a VPN'));
+      });
+
+      test('only the plain-internet default claims traffic is leaving without a VPN', () {
+        expect(stock, contains('its devices are reaching the internet with no VPN'));
+        // The old blanket claim, made whatever the default was, must not survive anywhere.
+        expect(stock, isNot(contains('traffic is reaching the internet without the VPN')));
+      });
+
+      test('each of the three cases still carries all three tenses', () {
+        for (final v in ['KILLSW_UP=', 'KILLSW_FIXED=', 'KILLSW_DOWN=']) {
+          expect(RegExp(RegExp.escape(v)).allMatches(stock).length, 3, reason: '$v needs one per case');
+        }
+      });
     });
 
     // The same fact reads wrong in the wrong tense: a failure alert saying "no traffic left the
@@ -234,7 +297,7 @@ void main() {
         }
       }
       expect(script(RouterFirmware.merlin), contains('ON - traffic is blocked while the tunnel is down'));
-      expect(script(RouterFirmware.stock), contains('traffic is reaching the internet without the VPN'));
+      expect(script(RouterFirmware.stock), contains('its devices are reaching the internet with no VPN'));
       // A failure picks the still-down wording whether or not this run was a deploy.
       expect(script(RouterFirmware.merlin), contains('''if [ "\$STATUS" != "SUCCESS" ]; then
     KILLSW="\$KILLSW_DOWN"'''));

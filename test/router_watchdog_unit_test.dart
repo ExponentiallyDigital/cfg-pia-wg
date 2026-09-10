@@ -415,6 +415,19 @@ void main() {
       expect(s, contains('logger -t "\$LOGTAG"'));
     });
 
+    // The router-side script builds its own body, so the two can drift. They must not: a user who
+    // reads one and then the other is reading the same app.
+    test('the deployed script carries the same footer and the same numbered steps', () {
+      final s = buildWatchdogScript(_valid(slot: 1));
+      expect(s, contains(kEmailHowToDisable));
+      for (final step in kEmailWhatToDo) {
+        expect(s, contains(step));
+      }
+      // Above the review line, sign-off last, exactly as buildEmailBody orders them.
+      expect(s.indexOf(kEmailHowToDisable), lessThan(s.indexOf(kEmailReviewLine)));
+      expect(s.indexOf(kEmailReviewLine), lessThan(s.indexOf(kEmailSignOff.last)));
+    });
+
     test('abort empties curllst so a failed token fetch leaves no PIA password on flash', () {
       final s = buildWatchdogScript(_valid(slot: 1));
       // The fetch passes -u user:password, and /usr/sbin/curl records every command line in
@@ -712,13 +725,20 @@ void main() {
     // the script can exceed dropbear's 9000-byte MAX_CMD_LEN without a single command doing so.
     // (Crossing it as one command is what closed the connection mid-deploy in 402.) Raised
     // 8700 -> 9000 in 400, then 9500 and 10000 in 402, and 24576 in 404 when the alert emails grew
-    // a body worth reading (which took the script from ~9 KB to ~15 KB). Prune the script's
-    // comments before raising it again.
+    // a body worth reading (which took the script from ~9 KB to ~15 KB), and 26624 in 420. Prune
+    // the script's comments before raising it again.
+    //
+    // The guard used to be `stock <= merlin`, on the reasoning that Merlin was the known-good
+    // baseline and stock must not balloon past it. That stopped holding in 420: stock now carries
+    // three branches of kill-switch wording Merlin has no need of, because it has an actual kill
+    // switch to report on and stock has to work out where the traffic went instead. An absolute
+    // ceiling says what the guard was always for - JFFS space and reviewability - without tying
+    // one firmware's size to the other's.
     test('neither variant grows the deploy payload', () {
       final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
       final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
-      expect(merlin, lessThan(24576));
-      expect(stock, lessThanOrEqualTo(merlin));
+      expect(merlin, lessThan(26624));
+      expect(stock, lessThan(26624));
     });
   });
 
