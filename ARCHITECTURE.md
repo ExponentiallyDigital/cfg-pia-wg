@@ -1080,7 +1080,7 @@ Times carry a **numeric UTC offset** (`+1000`), never a zone name. `%Z` prints w
 
 An alert that **could not be sent** is counted in `/tmp/watchdog_unsent_wgcN` and reported by the next email that does get through (`2 earlier alert(s) could not be sent, the most recent at ...`). An alert about lost connectivity is the one most likely to be undeliverable - a downed default tunnel takes DNS with it - and a stale alert arriving hours later is worse than a line of context on a live one.
 
-Every message is plain text with four sections — `WHAT HAPPENED`, `ROUTER`, `HISTORY`, and on failures `WHAT TO DO` and `ROUTER LOG` — ordered answer first, action second, evidence last. `HISTORY` reports the lifetime counters from [Router WireGuard NVRAM fields](#router-wireguard-nvram-fields). Worked examples are in [README.md section 5.3.1](README.md#531-email-alerts).
+Every message is plain text with four sections — `WHAT HAPPENED`, `ROUTER`, `HISTORY`, and on failures `WHAT TO DO` and `ROUTER LOG` — ordered answer first, action second, evidence last. `HISTORY` reports the lifetime counters from [Router WireGuard NVRAM fields](#router-wireguard-nvram-fields). Worked examples are in [README.md, Email alerts](README.md#531-email-alerts).
 
 > [!NOTE]
 > The failure email's router-log excerpt can contain the PIA **username** (`Requesting PIA token for user ...`). It never contains the password or the token — the script logs the token's length only.
@@ -1192,7 +1192,7 @@ Stock has no user-script hook of its own, so the app **replaces** `S50downloadma
 > [!IMPORTANT]
 > **Settled design - do not change it.** This approach was arrived at after weeks of evaluating the alternatives on stock, and it is the one that works. Treat a proposal to replace it as needing that whole evaluation redone, not as a cleanup.
 >
-> **It does replace a working Download Master installation.** A real `S50downloadmaster` is 52,525 bytes and the app template is around 700, measured either side of an install 2026-09-07. Harmless for the documented setup, where Download Master is installed and then left alone; not harmless for someone who actually downloads with it. `README.md` section 4.1 says so, without going into how.
+> **It does replace a working Download Master installation.** A real `S50downloadmaster` is 52,525 bytes and the app template is around 700, measured either side of an install 2026-09-07. Harmless for the documented setup, where Download Master is installed and then left alone; not harmless for someone who actually downloads with it. [README.md, Enabling prequisites](README.md#41-enabling-prequisites) says so, without going into how.
 >
 > Reinstalling or updating Download Master restores the original and removes the app boot persistence with it, so the two overwrite each other in both directions. Anything that re-runs the installer needs the watchdog re-deployed afterwards.
 >

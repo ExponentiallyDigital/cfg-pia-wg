@@ -42,6 +42,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING README - the last gaps, and the last section numbers
+
+- ADD: the watchdog's ENABLE and DISABLE actions, and the PAUSED badge. The README listed CREATE/EDIT, DELETE and VIEW LOG and stopped there.
+- ADD: what is actually on the Settings screen - the uninstall, DEL PIA CERT, and FORGET ROUTER IP, which is the only thing the app keeps on the phone.
+- CHG: the last three references to a README section NUMBER - two in ARCHITECTURE, one in a `lib/` comment - now name the section.
+
 PENDING README - what the app does to your router, and how to check it
 
 - CHG: **section 7 answers the question it asks.** It was a paragraph of reassurance and a link. It is now the whole list: what a slot change writes, what a watchdog deploy writes - including that your PIA and SMTP passwords sit in NVRAM in plain text - what makes the schedules survive a reboot, and what the app never does.
