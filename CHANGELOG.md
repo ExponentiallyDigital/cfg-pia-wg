@@ -42,6 +42,13 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING README - what the app does to your router, and how to check it
+
+- CHG: **section 7 answers the question it asks.** It was a paragraph of reassurance and a link. It is now the whole list: what a slot change writes, what a watchdog deploy writes - including that your PIA and SMTP passwords sit in NVRAM in plain text - what makes the schedules survive a reboot, and what the app never does.
+- ADD: **the uninstall exists**, said plainly in the section where someone is deciding whether to install. It takes the app off and leaves your tunnels alone.
+- ADD: **9.1 How to check the watchdog script yourself.** The app asks a user to let it run a script holding their PIA password as root on their router forever. "You can read it" is the whole answer, so it now says where the script is, that it is never obfuscated, that a test fails the build if the deployed text and the repo template drift apart, and that every file the app writes says so on its second line.
+- ADD: bug reports under section 11, where a reporter actually looks - CREATE GITHUB ISSUE on the About screen opens a report with the build details filled in. Section 13 keeps the joke.
+
 PENDING README - the screens as they are now
 
 - ADD: **5.4 VPN device assignment**, which the README had never mentioned. What it is for, how to use it, and the four things that surprise people - a device with no known address cannot be assigned, assigning one pins its address for good, a randomised MAC breaks the assignment silently, and **this is not a kill switch**.
