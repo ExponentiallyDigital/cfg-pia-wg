@@ -34,10 +34,11 @@
   - [5.2. Manage router PIA WireGuard configuration](#52-manage-router-pia-wireguard-configuration)
   - [5.3. Watchdog WireGuard management](#53-watchdog-wireguard-management)
     - [5.3.1. Email alerts](#531-email-alerts)
-  - [5.4. View app log](#54-view-app-log)
-  - [5.5. Exit app](#55-exit-app)
-  - [5.6. Hamburger menu](#56-hamburger-menu)
-  - [5.7. About](#57-about)
+  - [5.4. VPN device assignment](#54-vpn-device-assignment)
+  - [5.5. View app log](#55-view-app-log)
+  - [5.6. Exit app](#56-exit-app)
+  - [5.7. Hamburger menu](#57-hamburger-menu)
+  - [5.8. About](#58-about)
 - [6. Notes](#6-notes)
 - [7. What does the app do to my router?](#7-what-does-the-app-do-to-my-router)
 - [8. App permissions](#8-app-permissions)
@@ -138,7 +139,7 @@ Advanced Settings\Administration\System\Basic Config -> "Enable JFFS custom scri
 
 3. Install the `jq` and `mailsend-go` helper apps.
 
-**On Merlin**, SSH into the router and run [`scripts/get-bins.sh`](scripts/get-bins.sh). That is all - skip the rest of this step.
+**On Merlin**, SSH into the router and run [`scripts/get-bins.sh`](scripts/get-bins.sh). That is all - skip the rest of this step. The app cannot do this one for you: the in-app installer writes to the `/opt` area that only stock firmware has, so Merlin keeps the script.
 
 **On stock firmware** there is one more thing to do first, and it needs a USB stick.
 
@@ -186,8 +187,16 @@ That is it - nothing else to configure.
 
 #### Installing the helper binaries
 
-SSH into the router and run [`scripts/get-bins.sh`](scripts/get-bins.sh), which detects the architecture and installs `jq` and `mailsend-go` into `/jffs/cfg-pia-wg`. The app checks for both when you open the MANAGE or WATCHDOG screens and tells you if either is missing (MANAGE does not need `mailsend-go` - it never sends email).
-  
+**On stock firmware the app does this for you.** Open **MANAGE** or **WATCHDOG** and, if either
+helper is missing, the app offers to install it. It shows what it is about to download, where it
+goes, and the SHA-256 checksum it will verify before anything is put in place. `mailsend-go` is only
+needed if you want email alerts.
+
+<!-- SCREENSHOT: the INSTALL HELPERS dialog showing the two binaries, their sources and checksums -->
+
+If your router turns out to be an architecture there is no published build for, the app says so and
+you can fall back to running [`scripts/get-bins.sh`](scripts/get-bins.sh) over SSH, which is the same
+script Merlin users run.
 > [!TIP]
 > Firmware flashing (upgrading your router's software) [_may_ require redeployment](https://github-wiki-see.page/m/RMerl/asuswrt-merlin.ng/wiki/JFFS) of PIA WG configs. Always test your VPN is active after applying a new firmware version.
 
@@ -239,7 +248,7 @@ This enables full management of WG slots.
 3. Tap **CONNECT TO ROUTER**.
 
 > [!TIP]
-> To fill the credentials from your password manager, tap a field and choose the entry it offers. Android only suggests for a field that is **empty**, so the SSH username - prefilled with `admin` - will not prompt until you clear it. The password field prompts straight away.
+> To fill the credentials from your password manager, tap a field and choose the entry it offers. Android only suggests for a field that is **empty**, so clear a field the app has already filled - the router address it remembers, for instance - before expecting a suggestion.
 
 <p align="center">
   <img src="./images/router-slot-management.png" alt="Router slot management" width="300">
@@ -286,6 +295,9 @@ This enables full management of WG slots.
 - **DISABLE:** disable the selected slot.
 - **DELETE:** remove the slot configuration and disable any associated watchdog.
 
+> [!NOTE]
+> **The EDIT screen is shorter on stock firmware.** The kill switch and the inbound firewall setting are Merlin features - stock has neither, so the app does not offer them there. Everything else is the same on both.
+
 ### 5.3. Watchdog WireGuard management
 
 This manages a self-healing watchdog. When your WG configuration inevitably expires, it is automatically renewed and an optional email alert sent when connectivity has been restored.
@@ -317,7 +329,9 @@ This manages a self-healing watchdog. When your WG configuration inevitably expi
 
 #### 5.3.1. Email alerts
 
-If you fill in the email fields when configuring a watchdog, the router sends you a plain-text alert whenever it rebuilds a tunnel — and one when it tries and fails. Alerts come from your own SMTP account (Gmail with an app password works well); nothing is routed through a third party, and the app has no server of its own.
+If you fill in the email fields when configuring a watchdog, the router sends you a plain-text alert whenever it rebuilds a tunnel — and one when it tries and fails. Alerts come from your own SMTP account; nothing is routed through a third party, and the app has no server of its own.
+
+**You will need an app password, not your normal one.** Gmail and Outlook both refuse plain password sign-in from a device like this. In a Google account, turn on 2-Step Verification and then create an App password; in a Microsoft account, turn on two-step verification and then create an app password. Paste that into the SMTP password field. Full walkthrough and how to test it by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md).
 
 Use **TEST EMAIL** in the configuration dialog before you save. It sends the same kind of message through the same path, so a test that arrives is a real guarantee that alerts will too.
 
@@ -404,7 +418,40 @@ Notes on reading these:
 
 The first email you receive will be the deployment itself — `Event: watchdog deployed` — sent even though there was nothing to fix. That is deliberate: it confirms the whole alerting path works, at the moment you set it up rather than months later during an outage.
 
-### 5.4. View app log
+### 5.4. VPN device assignment
+
+**Stock firmware only.** Merlin does the same job through VPN Director, which this app does not drive.
+
+Normally every device on your network follows the router's default connection. This screen lets you
+send particular devices through a particular VPN tunnel and leave everything else alone - a games
+console straight out to the internet, a laptop through Melbourne, everything else through Perth.
+
+1. Open **VPN device assignment** from the hamburger menu.
+2. Enter router IP, SSH username and password, then tap **CONNECT TO ROUTER**.
+3. Every device the router knows about is listed, with what it is using now.
+4. Tap a device to pick **Internet** or one of your WireGuard slots. Offline devices are listed too, greyed, at the bottom.
+5. **APPLY** shows every change as `from -> to` and asks before touching anything. **DISCARD CHANGES** puts them all back.
+
+<!-- SCREENSHOT: the device list, one device changed, APPLY and DISCARD CHANGES showing -->
+
+**Default connection** sits at the top of the screen and covers every device you have *not* assigned.
+
+> [!IMPORTANT]
+> Changing the default connection restarts **every** tunnel on the router, so anything using a VPN
+> loses its connection for about a minute. The app warns you before it does it. Assigning individual
+> devices does none of this and is safe at any time.
+
+<!-- SCREENSHOT: the default connection picker -->
+
+Worth knowing:
+
+- **This is not a kill switch.** If an assigned tunnel drops, its devices fall through to the default connection - so if that is **Internet**, they carry on unencrypted. Pointing the default connection at a tunnel you also assign devices to is what gets you fail-closed behaviour, and a watchdog on that tunnel is what bounds how long the outage lasts.
+- A device the router has never had an address for cannot be assigned. Connect it once and come back.
+- Assigning a device pins its address, so the assignment cannot drift onto a different device later. That pin stays behind when you unassign - the firmware never removes one, and neither does this app.
+- A device using a **randomised MAC address** is tagged as such. Its assignment breaks silently the next time that address rotates. Phones do this per network by default; you can usually turn it off for your home Wi-Fi in the phone's network settings.
+- Devices on the guest network never appear. They cannot reach your LAN, and routing them through a VPN is a different question.
+
+### 5.5. View app log
 
 Use the **View app log** screen to inspect in-app log entries and clear them with **CLEAR LOG**.
 
@@ -414,11 +461,11 @@ Use the **View app log** screen to inspect in-app log entries and clear them wit
   App log
 </p>
 
-### 5.5. Exit app
+### 5.6. Exit app
 
 The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard.
 
-### 5.6. Hamburger menu
+### 5.7. Hamburger menu
 
 You can quickly jump between functions via the hamburger menu, always shown in the <span style="color: green; font-weight: bold;">top left corner</span> of each screen:
 
@@ -436,7 +483,12 @@ This can be useful to check the application's log during operations.
   Hamburger Menu
 </p>
 
-### 5.7. About
+Two entries are not on the main menu:
+
+- **View router log** shows the router's own system log, newest first. Scroll up to load more, including the previous log file if the router still has it. **COPY** takes everything loaded. This is the first place to look when something on the router did not do what you expected.
+- **Settings** holds the things you only do once, including **UNINSTALL** - see [What does the app do to my router?](#7-what-does-the-app-do-to-my-router).
+
+### 5.8. About
 
 Build information and documentation links live in the hamburger menu's **About** screen:
 
@@ -452,6 +504,11 @@ The screen shows the app version and build number, the build fingerprint and the
 - **CREATE GITHUB ISSUE** — opens a new issue against the repository in your browser.
 - **DEL PIA CERT** — deletes the cached PIA CA certificate (`/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt`) from the router; the watchdog downloads a fresh copy on its next run. Nothing else is changed. About is reachable without ever visiting a router screen, so if no SSH details are held for this session it asks for them here rather than sending you away.
 - **Open source: licenses** — the full licence text for every third-party component, via Flutter's licence page.
+
+It also reports the **watchdog script version deployed on your router**, and tells you when that is
+older than the copy in the app - which is the signal to redeploy. Underneath is a running history:
+`Since <date>: X successful & Y unsuccessful reconfigures`, counted across every slot since the app
+first configured this router.
 
 ---
 
