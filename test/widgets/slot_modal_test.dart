@@ -470,6 +470,41 @@ void main() {
       c.dispose();
     });
 
+    // COPY left, CLEAR centred, CLOSE right.
+    testWidgets('the log viewer offers CLEAR between COPY and CLOSE', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'a line' : '');
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus', watchdog: true)}), c),
+      );
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('slot_view_log')));
+      await tester.tap(find.byKey(const Key('slot_view_log')));
+      await tester.pumpAndSettle();
+
+      final copy = tester.getCenter(find.byKey(const Key('watchdog_log_copy'))).dx;
+      final clear = tester.getCenter(find.byKey(const Key('watchdog_log_clear'))).dx;
+      final close = tester.getCenter(find.widgetWithText(TextButton, 'CLOSE')).dx;
+      expect(copy, lessThan(clear));
+      expect(clear, lessThan(close));
+
+      // Destructive and irreversible, so it asks first - and truncates rather than deleting, or
+      // the script would lose every line until the next reboot.
+      await tester.tap(find.byKey(const Key('watchdog_log_clear')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Empties /tmp/watchdog_wgc1.log'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(TextButton, 'CLEAR').last);
+      await tester.pumpAndSettle();
+      expect(ssh.commands.any((x) => x.contains('> /tmp/watchdog_wgc1.log')), isTrue);
+      expect(ssh.commands.any((x) => x.contains('rm ') && x.contains('watchdog_wgc1.log')), isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('COPY button copies the watchdog log text without arming the auto-clear', (tester) async {
       String? copiedText;
       final c = SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (text) async => copiedText = text);

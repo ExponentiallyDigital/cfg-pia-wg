@@ -30,7 +30,7 @@ import '../router_slot_service.dart';
 import '../router_watchdog.dart';
 import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
-import '../widgets/common_fields.dart';
+import '../widgets/ssh_creds_dialog.dart';
 import '../widgets/error_presenter.dart';
 
 const String _kRepoUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg';
@@ -70,8 +70,13 @@ class _AboutScreenState extends State<AboutScreen> {
   // channel on every rebuild.
   late final Future<BuildInfo> _buildInfo;
 
-  // True while the SSH round trip for DEL CACHED PIA CERT is in flight.
-  bool _deletingCert = false;
+  /// What the router has deployed, once we have looked. Three states, and they are different
+  /// questions: not looked yet (offer to log in), looked and found a version, looked and found no
+  /// script at all. The app updates from the store while the script only changes on a deploy, so
+  /// "which script is actually out there" is a question this screen exists to answer.
+  String? _scriptVersion;
+  bool _scriptChecked = false, _scriptLoading = false;
+  late final TapGestureRecognizer _scriptLoginRecogniser;
 
   // One recogniser per link, owned by this State so they can be disposed. A tappable TextSpan
   // (rather than an InkWell around the whole row) is what lets a long GitHub URL wrap mid-line
@@ -91,6 +96,73 @@ class _AboutScreenState extends State<AboutScreen> {
     }
     // A dedicated recogniser for the licences link, which is not one of the _kLinks entries.
     _licencesRecognizer = TapGestureRecognizer()..onTap = () => _showOpenSourceLicences(context);
+    _scriptLoginRecogniser = TapGestureRecognizer()..onTap = () => _loadScriptVersion(prompt: true);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Free when the session already has a connection: no prompt, no extra handshake, and the row
+    // is filled in by the time the user looks at it. Never prompts on its own - ABOUT is reachable
+    // without any intention of touching the router.
+    if (_scriptChecked || _scriptLoading) return;
+    final c = SessionScope.of(context);
+    if (c.routerConnected && c.routerIp.trim().isNotEmpty && c.sshUsername.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadScriptVersion();
+      });
+    }
+  }
+
+  /// Reads the deployed script's version. With [prompt], asks for credentials when the session has
+  /// none - which is what the "login to router to retrieve" link does.
+  Future<void> _loadScriptVersion({bool prompt = false}) async {
+    final controller = SessionScope.of(context);
+    var ip = controller.routerIp.trim(), user = controller.sshUsername.trim(), pass = controller.sshPassword;
+    if (ip.isEmpty || user.isEmpty || pass.isEmpty) {
+      if (!prompt) return;
+      final entered = await showDialog<(String, String, String)?>(
+        context: context,
+        builder: (_) => SshCredsDialog(initialIp: controller.routerIpPrefill, initialUser: user, initialPass: pass),
+      );
+      if (entered == null || !mounted) return;
+      (ip, user, pass) = entered;
+      controller
+        ..routerIp = ip
+        ..sshUsername = user
+        ..sshPassword = pass;
+    }
+
+    setState(() => _scriptLoading = true);
+    String? version;
+    String? error;
+    try {
+      final client =
+          controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      version = await RouterWatchdog(client, onLog: controller.onLog).deployedScriptVersion();
+      await controller.rememberRouterIp(ip);
+    } catch (e) {
+      error = e.toString().replaceAll('Exception: ', '');
+    }
+    if (!mounted) return;
+    setState(() {
+      _scriptLoading = false;
+      // Only a SUCCESSFUL look counts as having looked. A refused login must leave the link there
+      // to try again, not replace it with "not deployed" - which would be a different answer to a
+      // question we never got to ask.
+      _scriptChecked = error == null;
+      _scriptVersion = version;
+    });
+    if (error != null && mounted) {
+      await AppErrors.system(context, controller, 'Could not read the deployed watchdog script: $error');
+    }
+  }
+
+  /// The plain-text value of the `Watchdog script` row, which is also what COPY BUILD INFO writes.
+  String get _scriptStatus {
+    if (_scriptLoading) return 'reading...';
+    if (!_scriptChecked) return kScriptLoginPrompt;
+    return _scriptVersion ?? 'not deployed';
   }
 
   @override
@@ -98,6 +170,7 @@ class _AboutScreenState extends State<AboutScreen> {
     for (final recogniser in _recognisers) {
       recogniser.dispose();
     }
+    _scriptLoginRecogniser.dispose();
     super.dispose();
   }
 
@@ -106,7 +179,8 @@ class _AboutScreenState extends State<AboutScreen> {
   // stands down a countdown left by an earlier config copy, which would otherwise wipe the build
   // info the user has just copied.
   Future<void> _copyBuildInfo(BuildContext context, BuildInfo? info) async {
-    await SessionScope.of(context).copyToClipboard(_BuildInfoBlock.asPlainText(info), armAutoClear: false);
+    await SessionScope.of(context)
+        .copyToClipboard(_BuildInfoBlock.asPlainText(info, scriptStatus: _scriptStatus), armAutoClear: false);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Build info copied.')));
     }
@@ -114,89 +188,6 @@ class _AboutScreenState extends State<AboutScreen> {
 
   // The cached PIA CA lives on the router, so this needs the SSH details the router screens
   // collect. They are session state, not stored, so the button says so rather than failing.
-  Future<void> _deletePiaCert(BuildContext context) async {
-    final controller = SessionScope.of(context);
-    var ip = controller.routerIp.trim(), user = controller.sshUsername.trim(), pass = controller.sshPassword;
-    if (ip.isEmpty || user.isEmpty || pass.isEmpty) {
-      // ABOUT is reachable without ever visiting a router screen, so ask here rather than sending
-      // the user away. Anything already in the session prefills the form.
-      final entered = await showDialog<(String, String, String)?>(
-        context: context,
-        builder: (_) => _SshCredsDialog(initialIp: controller.routerIpPrefill, initialUser: user, initialPass: pass),
-      );
-      if (entered == null || !context.mounted) return;
-      (ip, user, pass) = entered;
-      controller
-        ..routerIp = ip
-        ..sshUsername = user
-        ..sshPassword = pass;
-    }
-
-    final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: kSurface,
-            title: const Text('Delete cached PIA certificate?', style: TextStyle(color: kHighlight, fontSize: 14)),
-            content: const Text(
-              'Removes $kPiaCaCertPath from the router. The watchdog downloads a fresh copy on its '
-              'next run. Nothing else is changed.',
-              style: TextStyle(color: kText, fontSize: 12),
-            ),
-            actions: [
-              TextButton(
-                key: const Key('about_del_cert_cancel'),
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('CANCEL'),
-              ),
-              TextButton(
-                key: const Key('about_del_cert_confirm'),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('DELETE', style: TextStyle(color: kError)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-    if (!confirmed) return;
-
-    setState(() => _deletingCert = true);
-    String? error;
-    var deleted = false;
-    try {
-      // The shared session, like every other router action. The credentials above were written
-      // back to the controller first, so this either reuses the open connection or opens one
-      // against exactly what the user just typed.
-      final client =
-          controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      deleted = await RouterWatchdog(client, onLog: controller.onLog).deleteCachedPiaCert();
-      // The connect worked, so the address is worth keeping - same rule as the router screens.
-      await controller.rememberRouterIp(ip);
-    } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
-    } finally {
-      if (mounted) setState(() => _deletingCert = false);
-    }
-    if (!context.mounted) return;
-    if (error != null) {
-      await AppErrors.system(context, controller, 'Could not delete the cached certificate: $error');
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(deleted ? 'Cached PIA certificate deleted.' : 'No cached PIA certificate on the router.'),
-    ));
-  }
-
-  /// Deletes the remembered router address from device storage. No confirm prompt: nothing is lost
-  /// that cannot be retyped, and the button is only enabled when there is something to clear.
-  Future<void> _forgetRouterIp(BuildContext context) async {
-    final controller = SessionScope.of(context);
-    await controller.forgetRouterIp();
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Remembered router address deleted.')),
-    );
-  }
-
   /// Same pattern as the header bar's author/repo links: guard, launch, silently no-op.
   Future<void> _launch(String urlStr) async {
     final url = Uri.parse(urlStr);
@@ -221,7 +212,11 @@ class _AboutScreenState extends State<AboutScreen> {
               builder: (context, snap) => Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _BuildInfoBlock(info: snap.data),
+                  _BuildInfoBlock(
+                    info: snap.data,
+                    scriptStatus: _scriptStatus,
+                    scriptLoginRecogniser: _scriptChecked || _scriptLoading ? null : _scriptLoginRecogniser,
+                  ),
                   const SizedBox(height: 8),
                   // Wrap, not Row: the two labels together overflow a narrow phone, so they sit
                   // side by side when there is room and fall to a second line when there is not.
@@ -242,32 +237,6 @@ class _AboutScreenState extends State<AboutScreen> {
                         icon: const Icon(Icons.bug_report_outlined, size: 16, color: kHighlight),
                         label: const Text('CREATE GITHUB ISSUE', style: TextStyle(color: kHighlight, fontSize: 12)),
                       ),
-                      TextButton.icon(
-                        key: const Key('about_del_pia_cert'),
-                        onPressed: _deletingCert ? null : () => _deletePiaCert(context),
-                        icon: _deletingCert
-                            ? const SizedBox.square(
-                                dimension: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight),
-                              )
-                            : const Icon(Icons.gpp_bad_outlined, size: 16, color: kHighlight),
-                        label: const Text('DEL PIA CERT', style: TextStyle(color: kHighlight, fontSize: 12)),
-                      ),
-                      // The router address is the one thing the app keeps on device storage, so it
-                      // needs a way to be cleared. Greyed out when there is nothing stored.
-                      ListenableBuilder(
-                        listenable: SessionScope.of(context),
-                        builder: (context, _) {
-                          final remembered = SessionScope.of(context).rememberedRouterIp.isNotEmpty;
-                          return TextButton.icon(
-                            key: const Key('about_forget_router_ip'),
-                            onPressed: remembered ? () => _forgetRouterIp(context) : null,
-                            icon: Icon(Icons.wifi_off_outlined, size: 16, color: remembered ? kHighlight : kMuted),
-                            label:
-                                Text('FORGET ROUTER IP', style: TextStyle(color: remembered ? kHighlight : kMuted, fontSize: 12)),
-                          );
-                        },
-                      ),
                     ],
                   ),
                 ],
@@ -275,23 +244,18 @@ class _AboutScreenState extends State<AboutScreen> {
             ),
             // url links display
             const SizedBox(height: 20),
+            // The label IS the link, and the URL is not shown. A raw GitHub blob URL is 70-odd
+            // characters of noise that wraps across two lines on a phone and tells the reader
+            // nothing they wanted to know; the destination is already named by the label.
             for (var i = 0; i < _kLinks.length; i++)
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
-                child: Text.rich(
-                  TextSpan(children: [
-                    TextSpan(text: '${_kLinks[i].$1}: ', style: _labelStyle),
-                    TextSpan(
-                      text: _kLinks[i].$2,
-                      style: const TextStyle(
-                        color: kHighlight,
-                        fontSize: 12,
-                        decoration: TextDecoration.underline,
-                        decorationColor: kHighlight,
-                      ),
-                      recognizer: _recognisers[i],
-                    ),
-                  ]),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text.rich(
+                    key: Key('about_link_$i'),
+                    TextSpan(text: _kLinks[i].$1, style: _linkStyle, recognizer: _recognisers[i]),
+                  ),
                 ),
               ),
             // "Open source: licenses" display
@@ -302,19 +266,9 @@ class _AboutScreenState extends State<AboutScreen> {
                 alignment: Alignment.centerLeft,
                 child: Text.rich(
                   key: const Key('about_licenses_link'),
-                  TextSpan(children: [
-                    TextSpan(text: 'Open source: ', style: _labelStyle),
-                    TextSpan(
-                      text: 'licenses',
-                      style: const TextStyle(
-                        color: kHighlight,
-                        fontSize: 12,
-                        decoration: TextDecoration.underline,
-                        decorationColor: kHighlight,
-                      ),
-                      recognizer: _licencesRecognizer,
-                    ),
-                  ]),
+                  // Whole phrase tappable, like the four above it - a two-word link inside a
+                  // longer sentence is a small target and reads as an afterthought.
+                  TextSpan(text: 'Open source licenses', style: _linkStyle, recognizer: _licencesRecognizer),
                 ),
               ),
             ),
@@ -332,6 +286,14 @@ class _AboutScreenState extends State<AboutScreen> {
 }
 
 const TextStyle _labelStyle = TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600);
+
+/// Every tappable line on this screen. One style, so they read as a set.
+const TextStyle _linkStyle = TextStyle(
+  color: kHighlight,
+  fontSize: 12,
+  decoration: TextDecoration.underline,
+  decorationColor: kHighlight,
+);
 const TextStyle _valueStyle = TextStyle(color: kText, fontSize: 12);
 
 /// The metadata block. [info] is null while the channel call is in flight.
@@ -339,14 +301,30 @@ const TextStyle _valueStyle = TextStyle(color: kText, fontSize: 12);
 /// Rendered as ONE Text.rich rather than a widget per row. SelectionArea joins the text of separate
 /// widgets with no separator, so a row-per-widget layout copied as one run-on line; keeping the
 /// newlines inside a single Text is what carries them to the clipboard.
+/// What the `Watchdog script` row offers when the app has no router session to answer with.
+const String kScriptLoginPrompt = 'login to router to retrieve';
+
 class _BuildInfoBlock extends StatelessWidget {
   final BuildInfo? info;
-  const _BuildInfoBlock({required this.info});
+
+  /// The deployed watchdog script's version, or [kScriptLoginPrompt], or 'not deployed'.
+  final String scriptStatus;
+
+  /// Non-null only when [scriptStatus] is the login prompt, which is the one value here that is a
+  /// link rather than a fact.
+  final TapGestureRecognizer? scriptLoginRecogniser;
+
+  const _BuildInfoBlock({required this.info, this.scriptStatus = '', this.scriptLoginRecogniser});
 
   /// `label: value` pairs in display order. [i] is null while the channel call is in flight.
-  static List<(String, String)> rows(BuildInfo? i) {
+  ///
+  /// The router's script version comes FIRST. It is the one line here that can disagree with the
+  /// rest: everything else describes the app the user is holding, while this describes what is
+  /// actually running on their router, which only changes when a watchdog is deployed.
+  static List<(String, String)> rows(BuildInfo? i, {String scriptStatus = ''}) {
     String v(String Function(BuildInfo) field) => i == null ? _kPending : field(i);
     return [
+      if (scriptStatus.isNotEmpty) ('Watchdog script', scriptStatus),
       ('Built by', '${v((b) => b.installer)} at ${v((b) => b.buildTimestamp)}'),
       ('Build type', v((b) => b.buildType)),
       ('Commit hash', v((b) => b.commitHash)),
@@ -365,11 +343,12 @@ class _BuildInfoBlock extends StatelessWidget {
   }
 
   /// Exactly what selecting this block yields, and what the COPY button writes to the clipboard.
-  static String asPlainText(BuildInfo? i) => '${headline(i)}\n\n${rows(i).map((r) => '${r.$1}: ${r.$2}').join('\n')}';
+  static String asPlainText(BuildInfo? i, {String scriptStatus = ''}) =>
+      '${headline(i)}\n\n${rows(i, scriptStatus: scriptStatus).map((r) => '${r.$1}: ${r.$2}').join('\n')}';
 
   @override
   Widget build(BuildContext context) {
-    final data = rows(info);
+    final data = rows(info, scriptStatus: scriptStatus);
     return Text.rich(
       TextSpan(children: [
         TextSpan(
@@ -379,7 +358,12 @@ class _BuildInfoBlock extends StatelessWidget {
         const TextSpan(text: '\n\n'),
         for (var n = 0; n < data.length; n++) ...[
           TextSpan(text: '${data[n].$1}: ', style: _labelStyle),
-          TextSpan(text: data[n].$2, style: _valueStyle),
+          // The login prompt is the only value here that is tappable. Same weight and size as
+          // every other value, so the block still reads as one table rather than a call to action.
+          if (n == 0 && scriptLoginRecogniser != null)
+            TextSpan(text: data[n].$2, style: _linkStyle, recognizer: scriptLoginRecogniser)
+          else
+            TextSpan(text: data[n].$2, style: _valueStyle),
           if (n < data.length - 1) const TextSpan(text: '\n'),
         ],
       ]),
@@ -569,104 +553,3 @@ class _LicenceParagraph extends StatelessWidget {
 /// The router screens normally collect these, but ABOUT is reachable without visiting one and its
 /// DEL PIA CERT button needs them. Whatever the session already holds is prefilled; what the user
 /// enters goes back into the session, so a later router screen starts connected.
-class _SshCredsDialog extends StatefulWidget {
-  final String initialIp, initialUser, initialPass;
-  const _SshCredsDialog({required this.initialIp, required this.initialUser, required this.initialPass});
-
-  @override
-  State<_SshCredsDialog> createState() => _SshCredsDialogState();
-}
-
-class _SshCredsDialogState extends State<_SshCredsDialog> {
-  // Same starting points as the router screens: session value if there is one, else the defaults.
-  // initialIp already carries the precedence (session, then remembered, then factory default),
-  // resolved by SessionController.routerIpPrefill at the call site.
-  late final TextEditingController _ipCtrl = TextEditingController(text: widget.initialIp);
-  // Username is left BLANK rather than defaulted to 'admin', for the reason the router screens
-  // give: a password manager will not overwrite a field that already has content.
-  late final TextEditingController _userCtrl = TextEditingController(text: widget.initialUser);
-  late final TextEditingController _passCtrl = TextEditingController(text: widget.initialPass);
-  bool _visible = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _ipCtrl.dispose();
-    _userCtrl.dispose();
-    _passCtrl.dispose();
-    super.dispose();
-  }
-
-  void _onContinue() {
-    final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
-    if (ip.isEmpty || user.isEmpty || pass.isEmpty) {
-      setState(() => _error = 'Router IP, SSH username and SSH password are all required.');
-      return;
-    }
-    Navigator.of(context).pop((ip, user, pass));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // A Dialog with its own scroll view, not an AlertDialog: an AlertDialog puts its content in a
-    // Flexible, and inside the app chrome (where the Scaffold has already taken the keyboard's
-    // height off the body) that Flexible collapses to zero and the fields spill out of the card.
-    // This is the same structure SlotParamsEditor uses.
-    return Dialog(
-      backgroundColor: kSurface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        // Width only. The height must come from the incoming constraints - inside the app chrome
-        // the Scaffold has already taken the keyboard off the body, so any cap computed from the
-        // screen height is too large and the card spills down behind the keyboard. Unbounded here
-        // lets SingleChildScrollView shrink-wrap to the space it is given and scroll past that.
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('Router SSH details', style: TextStyle(color: kHighlight, fontSize: 14)),
-                const SizedBox(height: 16),
-                RouterIpField(controller: _ipCtrl),
-                const SizedBox(height: 10),
-                // Its own group, and the router IP is deliberately outside it - see
-                // plan_autofill-credentials.md. cancel: dismissing the dialog asks nothing.
-                AutofillGroup(
-                  onDisposeAction: AutofillContextAction.cancel,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SshUsernameField(controller: _userCtrl),
-                      const SizedBox(height: 10),
-                      SshPasswordField(
-                          controller: _passCtrl, visible: _visible, onToggle: () => setState(() => _visible = !_visible)),
-                    ],
-                  ),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
-                ],
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      key: const Key('about_ssh_cancel'),
-                      onPressed: () => Navigator.pop(context, null),
-                      child: const Text('CANCEL', style: TextStyle(color: kMuted)),
-                    ),
-                    TextButton(key: const Key('about_ssh_continue'), onPressed: _onContinue, child: const Text('CONTINUE')),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

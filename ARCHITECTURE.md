@@ -1033,6 +1033,8 @@ The third test is a string match: `REPLACEMENT START` for `S50downloadmaster`, `
 
 The stub is rewritten on every deploy rather than once, so a firmware update that restores the original is undone the next time a watchdog is deployed.
 
+The app can put all of this back. SETTINGS carries an uninstall that restores each script from its `.old` copy and deletes `/jffs/cfg-pia-wg` - in that order, so a failure at the last step still leaves a router that boots the way it originally did. Where no `.old` exists the app's own copy is removed rather than left behind, and the confirmation says which of the two happened for each script. Cron entries, NVRAM and the tunnels are deliberately untouched: they belong to the watchdog and the slots, which have their own DELETE.
+
 ### 5.3. <a name='WatchdogNVRAMfields'></a>Watchdog NVRAM fields
 
 All watchdog configuration is stored on your router's NVRAM. Defaults are as follows:

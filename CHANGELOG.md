@@ -23,15 +23,6 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-**uninstall and new menu:**
-- ADD: uninstall feature - add a "Settings" menu item on the hamburger menu above "ABOUT". This menu is not shown on the home screen. Create a screen in that menu item that provides a button to tap on to "Uninstall features installed to router", this removes the app's `S50Downloadmaster` and renames `S50Downloadmaster.old` to `S50Downloadmaster`, renames `S50asuslighttpd.old` to `S50asuslighttpd`, and removes the `/jffs/cfg-pia-wg` folder - the user should be prompted first and told what it will do. Move the "FORGET ROUTER IP" and "DEL PIA CERT" buttons from the ABOUT menu to this SETTINGS menu.
-- ADD: alter about menu URLs to be short form (display a tapable link instead of the url) - so the "Readme: ..." line becomes "Readme". Retain one item per line, do for all 4 lines; alter "Open source: licenses" to be tappable as well and change to -> "Open source licenses". The whole text is tappable.
-- ADD: "View router log" add a menu item on the hamburger menu **before** the "View app log" menu item. This screen opens to a scrollable display of `/tmp/syslog.log`, scroll it so that it shows the latest entries in the log. At the bottom of the screen create "REFRESH" and "HOME" buttons in house style. Text in the screen is selectable and copyable without invoking the 60s timer.
-- ADD: button to clear the current watchdog log file stored on the router, in the existing watchdog log viewing screen add a centered "CLEAR" button on the COPY/CLOSE line, so it looks similar to this: "COPY     CLEAR      HOME".
-- ADD: add the detected script version to build info in the app's ABOUT screen. Get this from a lookup on the router using an existing SSH connection if one exists. If there is no SSH session, then where you would have put the version info eg "Watchdog script: v0.8.48 build 418" put a link to login like this: "Watchdog script: login to router to retrieve", make "login to router to retrieve" a hot link that opens a modal on to of the existing screen and prompts for the router IP and credentials, then gets the deployed script version from line 2 of `/jffs/cfg-pia-wg/watchdog_wgcN.sh` (NOT `S50Downloadmaster`, which carries no version marker). `parseScriptVersion` in `lib
-outer_watchdog.dart` already does the parsing and `WatchdogStatus.scriptVersion` already exposes it, so this is a display change, then put the version number in the About screen. If the script is not deployed, return "not deployed". Put the version info as the first line above "Built by: xxx", use the same font weight and style as the existing build info block, and allow that text to be selected and copied to the clipboard without invoking the 60s clear timer.
-- commit.
-
 **longer term:**
 - DELETE: `.claude\testing\2026-09-07_pristine-lan-reference.md` once device assignment is complete and tested.
 - commit.
@@ -43,6 +34,20 @@ outer_watchdog.dart` already does the parsing and `WatchdogStatus.scriptVersion`
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-10 v0.8.52 build 422 - uninstall and new menu
+
+- ADD: **SETTINGS, a drawer screen for everything that removes something.** It carries a new uninstall that puts back the two boot scripts the app replaced and deletes `/jffs/cfg-pia-wg`, in that order - so a failure at the last step still leaves a router that boots the way it originally did. Where no `.old` backup exists the app's own copy is removed rather than left behind, and the result says which of the two happened for each script.
+- INF: the uninstall deliberately leaves cron entries, NVRAM and the tunnels alone, and the prompt says so. They belong to the watchdog and the slots, which have their own DELETE; an uninstall that silently tore down a working VPN would be a much bigger action than the button says.
+- CHG: DEL PIA CERT and FORGET ROUTER IP moved from ABOUT to SETTINGS. ABOUT is a page people open to read, and those two sat among the build metadata and the licence text. Each now carries a line saying what it removes.
+- ADD: **View router log**, a drawer screen showing the last 500 lines of `/tmp/syslog.log` with REFRESH and HOME. Every alert email and half the failure messages in this app end with "check your router log", which until now meant leaving the app for an SSH client. It opens scrolled to the newest lines and the text is selectable without arming the clipboard countdown.
+- ADD: **the deployed watchdog script's version in the ABOUT build info**, above `Built by`. The app updates from the store while the script only changes on a deploy, so a user can be running a build whose fixes never reached their router. Filled in for free when the session already has a connection; otherwise the row offers "login to router to retrieve", and says "not deployed" when the router has no script at all.
+- INF: a refused login leaves that link in place rather than reporting "not deployed" - that would be a different answer to a question we never got to ask.
+- ADD: a CLEAR button on the watchdog log viewer, between COPY and CLOSE. It truncates rather than deleting: the script appends and never creates, so removing the file would lose every line until the next reboot.
+- CHG: the ABOUT links are the labels themselves now, not label plus URL. A raw GitHub blob URL is 70-odd characters that wrap across two lines on a phone and tell the reader nothing. "Open source: licenses" became "Open source licenses", tappable end to end.
+- ADD: `SshCredsDialog`, shared by ABOUT, SETTINGS and the router log. All three are reachable without ever visiting a router screen, so each needs a way to ask for credentials rather than sending the user away.
+- TST: eighteen - the uninstall's order and its two outcomes per script and what it must not touch, the prompt naming what survives, the router log tailing rather than reading whole and refreshing and offering selectable text, the script version read without a prompt when there is a session and offered as a login when there is not and "not deployed" when there is no script, CLEAR sitting between COPY and CLOSE and truncating rather than deleting, and the SETTINGS actions stacked with their explanations.
+- DOC: ARCHITECTURE.md 5.2.1 and CONTEXT.md 4.1 record the uninstall and the two new destinations.
 
 2026-09-10 v0.8.51 build 421 - device assignment: say what is on, what changed, and what default means
 

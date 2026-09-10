@@ -108,7 +108,7 @@ void main() {
     // The link is a TextSpan recogniser, not a tappable widget - drive it the way the About
     // screen's own tests do.
     final span = tester.widget<Text>(find.byKey(const Key('about_licenses_link'))).textSpan! as TextSpan;
-    ((span.children!.last as TextSpan).recognizer! as TapGestureRecognizer).onTap!();
+    (span.recognizer! as TapGestureRecognizer).onTap!();
     await tester.pumpAndSettle();
 
     expect(find.byType(AppBar), findsOneWidget, reason: 'the licences dialog should be open');
@@ -135,10 +135,11 @@ void main() {
 
     await tester.tap(find.byKey(const Key('app_hamburger')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('drawer_about')));
+    // DEL PIA CERT moved to SETTINGS in 422, and its credentials form came with it.
+    await tester.tap(find.byKey(const Key('drawer_settings')));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('about_del_pia_cert')));
-    await tester.tap(find.byKey(const Key('about_del_pia_cert')));
+    await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
+    await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
     await tester.pumpAndSettle();
 
     // The keyboard opens while the dialog is already up, as it does when a field is tapped.

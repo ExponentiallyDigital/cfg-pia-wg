@@ -24,6 +24,8 @@ import '../app_colors.dart';
 import '../screens/about_screen.dart';
 import '../screens/log_screen.dart';
 import '../screens/main_menu_screen.dart';
+import '../screens/router_log_screen.dart';
+import '../screens/settings_screen.dart';
 import '../screens/manage_router_screen.dart';
 import '../screens/standalone_config_screen.dart';
 import '../screens/watchdog_management_screen.dart';
@@ -43,8 +45,12 @@ Widget screenForDestination(AppDestination dest) {
       return const WatchdogManagementScreen();
     case AppDestination.deviceAssignment:
       return const DeviceAssignmentScreen();
+    case AppDestination.routerLog:
+      return const RouterLogScreen();
     case AppDestination.log:
       return const LogScreen();
+    case AppDestination.settings:
+      return const SettingsScreen();
     case AppDestination.about:
       return const AboutScreen();
   }
@@ -101,7 +107,9 @@ class AppDrawer extends StatelessWidget {
     AppDestination.manageRouter,
     AppDestination.watchdog,
     AppDestination.deviceAssignment,
+    AppDestination.routerLog,
     AppDestination.log,
+    AppDestination.settings,
     AppDestination.about,
   ];
 
