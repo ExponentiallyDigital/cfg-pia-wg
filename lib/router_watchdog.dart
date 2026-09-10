@@ -18,6 +18,7 @@ import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 
 import 'router_command.dart';
+import 'router_service_queue.dart';
 import 'firmware.dart';
 import 'router_slot_service.dart' show RouterSlotService, fetchSlotLabel, kUpInterfacesCommand, slotDescFor;
 import 's50_template.dart';
@@ -715,12 +716,34 @@ class RouterWatchdog {
   /// says nothing about link state, so a downed interface reported as up (2026-09-09).
   ///
   /// Checks before waiting, so an interface that is already up costs nothing.
+  /// Guards service calls against the router's own queue. See router_service_queue.dart: a marker
+  /// left behind by a hung service makes the router discard everything sent to it afterwards, and
+  /// the discard looks exactly like the command having worked.
+  RouterServiceQueue get _serviceQueue => RouterServiceQueue(
+        read: (cmd) => _read(cmd),
+        run: (cmd) => _run(cmd),
+        onLog: onLog,
+        pollInterval: verifyPollInterval,
+        maxPolls: verifyMaxAttempts,
+      );
+
+  /// Waits for wgc[slot] to be up, and to STILL be up on a second look.
+  ///
+  /// One sighting is not evidence. Measured 2026-09-10: the app reported "wgc1 enabled" a second
+  /// after `service restart_vpnc`, because it caught the interface during the restart - and then
+  /// ran the deploy script against a tunnel that was on its way back down. Requiring two
+  /// consecutive sightings costs one poll interval and rules that out.
   Future<bool> _awaitInterfaceUp(int slot) async {
+    var seen = false;
     for (var i = 0; i < verifyMaxAttempts; i++) {
-      if ((await _read(kUpInterfacesCommand)).contains('wgc$slot')) return true;
+      final up = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
+      if (up && seen) return true;
+      seen = up;
       await Future.delayed(verifyPollInterval);
     }
-    return false;
+    // A single final sighting on the last poll counts: the alternative is reporting a working
+    // tunnel as failed because the loop ran out one poll early.
+    return seen && (await _read(kUpInterfacesCommand)).contains('wgc$slot');
   }
 
   // Run a command and return trimmed stdout (mirrors router_push.dart `_run`).
@@ -895,9 +918,12 @@ class RouterWatchdog {
         // Stock drives WireGuard through VPN Fusion; start_wgc is Merlin's. Same calls MANAGE
         // makes, so a watchdog-managed tunnel comes up the same way as a hand-enabled one.
         if (isStockFirmware) {
+          // runVpncService already clears a ghost marker and waits for the queue to drain.
           await slots.runVpncService(slot, 'restart_vpnc', required: true);
         } else {
+          await _serviceQueue.clearIfStale();
           await _run('service "start_wgc $slot"; service restart_vpnrouting0');
+          await _serviceQueue.awaitIdle();
         }
         // `notify_rc` queues the service call and returns at once, so the interface is NOT up
         // when this returns. deployWatchdog used to exec the script about a second later, which

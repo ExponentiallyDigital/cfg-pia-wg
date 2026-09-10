@@ -22,6 +22,7 @@
 import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 import 'router_command.dart';
+import 'router_service_queue.dart';
 import 'firmware.dart';
 import 'router_watchdog.dart' show buildLoggerCommand, shellSingleQuote;
 
@@ -455,6 +456,18 @@ class RouterSlotService {
   // Returns false when the slot has no profile. [required] turns that into an error — enabling a
   // slot that VPN Fusion does not know about cannot work, whereas stopping one is already a no-op.
   /// Public so `RouterWatchdog` starts and stops a stock tunnel exactly as MANAGE does.
+  /// Guards every service call against the router's own queue. See router_service_queue.dart.
+  ///
+  /// Built per call rather than held: it is stateless, and the poll interval is the one this
+  /// service was constructed with, so tests get the same zero-wait behaviour everything else does.
+  RouterServiceQueue get serviceQueue => RouterServiceQueue(
+        read: (cmd) => _read(cmd),
+        run: (cmd) => _run(cmd),
+        onLog: onLog,
+        pollInterval: verifyPollInterval,
+        maxPolls: verifyMaxAttempts,
+      );
+
   Future<bool> runVpncService(int slot, String serviceCmd, {bool required = false}) async {
     final unit = vpncUnitForSlot(parseVpncClientlist(await _read('nvram get vpnc_clientlist')), slot);
     if (unit == null) {
@@ -468,7 +481,15 @@ class RouterSlotService {
     onLog?.call(msg);
     await _logRouter(msg);
     await _run('nvram set vpnc_unit=$unit');
+    // A ghost `rc_service` marker makes the router discard this call after a 15-second wait, and
+    // the discard is silent - the command "succeeds" and nothing happens. Measured 2026-09-10:
+    // ninety minutes of that, four watchdog reconfigures acted on by nothing. Clearing a ghost
+    // first costs one round trip; not clearing it costs the whole action.
+    final queue = serviceQueue;
+    await queue.clearIfStale();
     await _run('service $serviceCmd');
+    // And wait for it to finish, rather than firing the next call into a queue that is still busy.
+    await queue.awaitIdle();
     return true;
   }
 
