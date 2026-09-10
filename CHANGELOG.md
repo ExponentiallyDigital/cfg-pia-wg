@@ -35,6 +35,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.55 build 425 - one control, one size
+
+- FIX: **HOME was a different width on different screens.** Full width on ABOUT and DEVICE ASSIGNMENT, 480-wide on SETTINGS, MANAGE and WATCHDOG - because those screens cap their body width on a tablet and the cap was being applied to the button as well. The cap is for content, not for chrome. Reported from a tablet.
+- DOC: CONTEXT.md carries it as house style now: one control, one size, on every screen. The two log screens are the deliberate exception, since a row of three buttons cannot also be one full-width button.
+- TST: HOME is wider than the content cap on a 1200-wide screen while the slot rows are still capped.
+
 2026-09-10 v0.8.54 build 424 - surviving a wedged rc_service
 
 - FIX: **the app now survives a router that has stopped accepting service commands.** Every `service` call goes through `notify_rc`, which records what it is doing in `rc_service` and clears it when done; a call finding that key set waits 15 seconds and then DISCARDS itself. A service that never finishes never clears the key, and from then on the router silently throws away everything sent to it. The app clears a ghost marker - key set, pid gone - before every service call, and waits for the key to clear afterwards.

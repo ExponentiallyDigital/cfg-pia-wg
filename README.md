@@ -25,6 +25,10 @@
 - [3. Pre-built release](#3-pre-built-release)
 - [4. Prerequisites \& requirements](#4-prerequisites--requirements)
   - [4.1. Enabling prequisites](#41-enabling-prequisites)
+    - [Why Download Master is needed](#why-download-master-is-needed)
+    - [Preparing the USB stick](#preparing-the-usb-stick)
+    - [Installing Download Master](#installing-download-master)
+    - [Installing the helper binaries](#installing-the-helper-binaries)
 - [5. Using the app](#5-using-the-app)
   - [5.1. Generate a PIA WireGuard configuration](#51-generate-a-pia-wireguard-configuration)
   - [5.2. Manage router PIA WireGuard configuration](#52-manage-router-pia-wireguard-configuration)
@@ -468,7 +472,7 @@ The screen shows the app version and build number, the build fingerprint and the
 - **Pre-shared keys:** PIA WG does not use pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
 - **Time-to-live constraints:** PIA WG configs expire without warning per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
 - **Key safety:** generated configs contains private encryption keys. Treat them like passwords and manage them securely.
-- **PIA maintenance:** PIA occasionally take regions offline for maintenance so you might be expecting to have an exit node in say Perth, but online tools may show you as exiting from Adelaide.
+- **PIA maintenance:** PIA occasionally take regions offline for maintenance so you might be expecting to have an exit node in say pia-region_one, but onlines tools may show you as exiting from pia-region_two.
 - **Check your VPN is working:** with services like [PIA what is my ip](https://www.privateinternetaccess.com/what-is-my-ip), [ipaddress.my](https://ipaddress.my/?lang=en_US), [2ip.io](https://2ip.io), and [showmyip.com](https://www.showmyip.com). However, these sites may cache your location in the browser and they sometimes return a stale exit region if used multiple times. To be absolutely sure, close your browser rather than just refreshing the page.
 - **Watchdog shortcut:** If you deploy a _watchdog_ on an empty slot, that will also create the config for that slot in one step.
 - **Change things in one place at a time.** The router's web interface writes the whole VPN list back when you press **Apply all settings**, using the copy it loaded when the page was opened - so a change made in this app can be overwritten by a web page that was open before you made it. If you use both, finish and apply in one before switching to the other, and reload the web page afterwards.

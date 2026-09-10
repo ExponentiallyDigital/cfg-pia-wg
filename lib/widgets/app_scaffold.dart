@@ -291,9 +291,11 @@ class AppScaffold extends StatelessWidget {
           if (showClose)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              // Capped alongside the body, or HOME would run the full width of a tablet under a
-              // column of content that does not.
-              child: _capped(SizedBox(
+              // NOT capped, even when the body is. HOME is the same control on every screen and it
+              // reads as one only if it is the same size on every screen - a 480-wide HOME under a
+              // 480-wide column looked deliberate in isolation and inconsistent beside ABOUT and
+              // DEVICE ASSIGNMENT, which have no cap. Reported from a tablet, 425.
+              child: SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
                   key: const Key('screen_close'),
@@ -305,7 +307,7 @@ class AppScaffold extends StatelessWidget {
                   onPressed: () => navigateToDestination(context, SessionScope.of(context), AppDestination.menu),
                   child: const Text('HOME'),
                 ),
-              )),
+              ),
             ),
         ],
       ),
