@@ -151,23 +151,11 @@ On stock firmware, scheduled tasks do not survive a reboot on their own. Downloa
 
 #### Preparing the USB stick
 
-Download Master installs *onto* the stick - it writes `asusware.arm` and `Download2` to the root of the partition - so it has to be writable with a few hundred MB free.
+Download Master installs onto the stick, so it needs a writable partition with a few hundred MB free.
 
-| Format | Supported | Notes |
-| --- | :-: | --- |
-| **ext4** | yes | **Recommended.** No file-size cap, native Unix permissions for the package install |
-| ext2 / ext3 | yes | Fine; 8 GB file-size cap |
-| NTFS | yes | Read and write both supported. Use this if you also want the stick readable on Windows |
-| FAT32 | yes | Mounts, but the 4 GB file-size cap is a problem for large downloads |
-| FAT16 | yes | 2 GB limit, avoid |
-| HFS+ | partial | ASUS marks it with an undefined asterisk; treat as read-only |
-| **exFAT** | **NO** | **Will not mount.** This is the most common failure - any modern stick over 32 GB that Windows formatted is exFAT by default |
+**Format it ext4, as a single primary partition on an MBR table.** The one that catches people out is **exFAT, which will not mount at all** - and any stick over 32 GB that Windows formatted is exFAT by default. NTFS and FAT32 work; the router's own Format tool cannot make ext4, so use another machine.
 
-Use a **single primary partition on an MBR table**: ASUSWRT's `fdisk` cannot create or edit GPT, and the installer has a long history of not offering a target that is not the first partition. OS-encrypted volumes (BitLocker, FileVault) are not supported.
-
-The router's own Format tool only offers NTFS, FAT and HFS, so create an ext4 partition on another machine - `parted` and `mkfs.ext4` on Linux, or a partition tool such as MiniTool Partition Wizard on Windows.
-
-Authoritative source: [ASUS Plug-n-Share Disks Compatibility List](https://www.asus.com/us/support/faq/1047043/).
+Full compatibility table and the reasons behind each of those constraints: [ARCHITECTURE.md, USB storage for Download Master](ARCHITECTURE.md#usb-storage-for-download-master).
 
 #### Installing Download Master
 

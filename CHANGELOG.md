@@ -42,6 +42,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING ARCHITECTURE - firmware dependency register, and a home for the USB finding
+
+- ADD: **"What this app depends on ASUS not changing"**, immediately after the overview. Ten assumptions, each with where the detail lives and what breaks if that assumption fails - because when a firmware update breaks something, the failure almost never looks like its cause. This is the section the document exists for.
+- ADD: USB storage for Download Master, moved out of the README, beside the boot hook it is a prerequisite of. The README keeps three sentences and a link.
+- INF: the register carries the "how it fails" column deliberately. A wedged service queue looks like a failed command; a rejected curl looks like a network problem; a stale routing rule looks like an assignment that was never written.
+
 PENDING ARCHITECTURE - reference sections by title, not number
 
 - CHG: 26 references to ARCHITECTURE section NUMBERS, across ten files and six `lib/` comments, now name the section instead. A number changes whenever the document is reordered; a title does not, and a wrong title is visible where a wrong number is not.
