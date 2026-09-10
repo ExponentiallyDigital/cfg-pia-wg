@@ -42,9 +42,19 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING README - the screens as they are now
+
+- ADD: **5.4 VPN device assignment**, which the README had never mentioned. What it is for, how to use it, and the four things that surprise people - a device with no known address cannot be assigned, assigning one pins its address for good, a randomised MAC breaks the assignment silently, and **this is not a kill switch**.
+- ADD: the two hamburger entries that were missing - View router log and Settings.
+- ADD: the About screen reports the watchdog script version deployed on the router, and the running count of successful and unsuccessful reconfigures since the app first configured it.
+- CHG: on stock the app installs `jq` and `mailsend-go` itself, showing the source, the destination and the checksum it verifies. `get-bins.sh` stays, and now says why Merlin still needs it: the in-app installer writes to an `/opt` area only stock has.
+- FIX: the autofill tip described a prefilled `admin` username that no longer exists.
+- ADD: SMTP alerts need an app password, not the account password, with the shortest possible route to one for Gmail and Outlook.
+- ADD: a note that the slot EDIT screen is shorter on stock - the kill switch and inbound firewall are Merlin features.
+
 PENDING TESTING - a test that every Markdown link resolves
 
-- ADD: `test/unit/markdown_links_test.dart`. Every `[text](target)` between the repo's own Markdown files must resolve, file and anchor. Anchors are generated from heading text, so any reword silently breaks every link into that heading - and a rewrite is exactly when a written-down rule gets forgotten. Same approach as the LAN-identifier guard: a rule nobody can forget beats one written down.
+- ADD: `test/unit/markdown_links_test.dart`. Every link between the repo's own Markdown files must resolve, both the file and the anchor. Anchors are generated from heading text, so any reword silently breaks every link into that heading - and a rewrite is exactly when a written-down rule gets forgotten. Same approach as the LAN-identifier guard: a rule nobody can forget beats one written down.
 - INF: it reproduces GitHub's slug rule, including the two details that would otherwise produce false failures - each space becomes its own hyphen, so `A & B` yields a double hyphen, and a heading indented up to three spaces is still a heading.
 - INF: `.claude/plans/` is out of scope. Those record what was believed at the time and are not kept current.
 
