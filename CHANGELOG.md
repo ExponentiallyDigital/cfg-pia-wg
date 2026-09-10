@@ -42,6 +42,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING ARCHITECTURE - prior designs appendix
+
+- ADD: an appendix holding two readings that were believed, acted on, and then measured to be wrong: the two-cost model for applying a device assignment, and placeholder records in the policy list. The working that produced each one is kept, because an idea that fitted the evidence once will fit it again.
+- CHG: a one-line retraction stays where the wrong idea would occur to a reader, with a link to the long story. Moving a retraction to the back of a document invites exactly the rediscovery it was written to prevent.
+- CHG: "the tunnel must be disabled before its assignments can be changed" corrected. That is what the web interface does, not what the firmware requires - the app changes assignments on a running profile and they take effect.
+- CHG: the starting-state section now leads with the fact rather than the correction. An untouched router has an EMPTY policy list, so the screen renders "everything on the default connection" from an empty string.
 PENDING ARCHITECTURE - diagrams: when the watchdog runs, and what a reconfigure does
 
 - ADD: two flowcharts for the router-side script. "When it runs" covers the detach, the enable check, the handshake and ping tests, the backoff and the WAN gate - most runs do nothing, and everything before the expensive path exists to avoid taking it. "What a reconfigure does" covers the twelve steps that follow, each of which can abort.
