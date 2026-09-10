@@ -208,6 +208,79 @@ void main() {
       expect(order, ['nvram commit', 'service restart_dnsmasq', 'service restart_vpnc_dev_policy']);
     });
 
+    // Without this the whole feature is cosmetic. Measured on hardware 2026-09-10: stock leaves
+    // the old rule in place when a device moves, both sit at priority 100, and the kernel takes
+    // them in insertion order - so NVRAM, the web interface and this app all said wgc5 while the
+    // traffic went out wgc1. See staleRuleTables for the evidence.
+    group('stale routing rules', () {
+      /// A router that actually applies the deletes, so the sweep terminates the way it does on
+      /// hardware rather than looping against a fixed reply.
+      RecordingSSHClient ruleClient(List<String> rules) {
+        final live = [...rules];
+        return RecordingSSHClient(responder: (cmd) {
+          if (cmd.contains('cfg_device_list')) return _blob();
+          if (cmd == 'nvram get vpnc_dev_policy_list') return _policyList;
+          if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
+          if (cmd == 'nvram get dhcp_staticlist') return _staticlist;
+          if (cmd == 'ip rule show') return live.join('\n');
+          if (cmd.startsWith('ip rule del ')) {
+            final m = RegExp(r'from (\S+) lookup ([0-9]+)').firstMatch(cmd)!;
+            live.removeWhere((r) => r.contains('from ${m.group(1)} lookup ${m.group(2)}'));
+            return '';
+          }
+          return '';
+        });
+      }
+
+      test('the rule for the tunnel the device left is deleted', () async {
+        final c = ruleClient([
+          '100:\tfrom 192.168.1.20 lookup 9',
+          '100:\tfrom 192.168.1.20 lookup 5',
+          '10000:\tfrom all iif br0 lookup 5',
+        ]);
+        final s = await _state(c);
+        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+
+        expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9'));
+        expect(c.commands.any((x) => x.contains('lookup 5')), isFalse, reason: 'the new rule stays');
+        expect(c.ran('restart_net_and_phy'), isFalse, reason: 'deleting the rule is the light fix');
+      });
+
+      test('the sweep runs after the service that installs the new rule', () async {
+        final c = ruleClient(['100:\tfrom 192.168.1.20 lookup 9']);
+        final s = await _state(c);
+        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        expect(c.commands.indexOf('service restart_vpnc_dev_policy'),
+            lessThan(c.commands.indexWhere((x) => x.startsWith('ip rule del'))));
+      });
+
+      test('unassigning clears every per-device rule and leaves the default connection alone', () async {
+        final c = ruleClient([
+          '100:\tfrom 192.168.1.20 lookup 9',
+          '10000:\tfrom all iif br0 lookup 9',
+        ]);
+        final s = await _state(c);
+        await _svc(c).apply(base: s, changes: {'192.168.1.20': null}, reservationsToCreate: {});
+
+        expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9'));
+        expect(c.commands.any((x) => x.contains('from all')), isFalse);
+      });
+
+      test('nothing is deleted when the rules are already right', () async {
+        final c = ruleClient(['100:\tfrom 192.168.1.20 lookup 5']);
+        final s = await _state(c);
+        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        expect(c.commands.any((x) => x.startsWith('ip rule del')), isFalse);
+      });
+
+      test('a default-connection change on its own touches no per-device rule', () async {
+        final c = ruleClient(['100:\tfrom 192.168.1.20 lookup 9']);
+        final s = await _state(c);
+        await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
+        expect(c.commands.any((x) => x.startsWith('ip rule del')), isFalse);
+      });
+    });
+
     test('THE DEFAULT CONNECTION SEQUENCE IS EXACT', () async {
       // Eleven probes on hardware to find this. Every element is load-bearing and the order is
       // the part that is not guessable: restart_default_wan RESETS the key, so it has to run

@@ -98,6 +98,15 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
   final _passCtrl = TextEditingController();
   bool _sshVisible = false, _connecting = false, _prefilled = false;
 
+  /// Null until CONNECT succeeds; the slot list once it has. This screen IS the slot list
+  /// afterwards - it does not push one - so the back button leaves for the menu rather than
+  /// returning the user to a login form that has already done its job.
+  RouterSlots? _slots;
+
+  /// True from the first frame of a re-entry that will reconnect on its own, false once that
+  /// attempt has either produced a slot list or failed and left the form to be used.
+  bool _autoConnecting = false;
+
   late SessionController _c;
 
   @override
@@ -110,7 +119,11 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       // routerIpPrefill is session value, then the address remembered from a previous session,
       // then the ASUS factory default.
       _ipCtrl.text = _c.routerIpPrefill;
-      _userCtrl.text = _c.sshUsername.isNotEmpty ? _c.sshUsername : kDefaultSshUsername;
+      // Left BLANK when the session has no username yet. A password manager will not overwrite a
+      // field that already has content, so prefilling 'admin' cost a manual clear before every
+      // autofill. Reported on the assignment screen (B3, 2026-09-08), fixed there, and it came
+      // back here in 414 - the two screens had the same line and only one of them was changed.
+      _userCtrl.text = _c.sshUsername;
       _passCtrl.text = _c.sshPassword;
       _c.routerIp = _ipCtrl.text;
       _c.sshUsername = _userCtrl.text;
@@ -118,8 +131,11 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       _userCtrl.addListener(_sync);
       _passCtrl.addListener(_sync);
 
-      // If we already connected this session, re-connect and jump straight to the slot modal.
+      // If we already connected this session, re-connect and go straight to the slot list. The
+      // flag is set HERE, synchronously, so the very first frame shows the reconnect placeholder
+      // rather than a login form asking for credentials the app already holds and is already using.
       if (_c.routerConnected && _canConnect) {
+        _autoConnecting = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _onConnect();
         });
@@ -214,7 +230,14 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     } catch (e) {
       connectError = 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}';
     } finally {
-      if (mounted) setState(() => _connecting = false);
+      // Both flags together: on the failure paths below the user needs the form, and this is the
+      // point at which it stops being a lie to show it.
+      if (mounted) {
+        setState(() {
+          _connecting = false;
+          _autoConnecting = false;
+        });
+      }
     }
     if (!mounted) return;
 
@@ -237,20 +260,15 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     }
     if (slots == null) return;
 
-    _c.enterModal();
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => SlotModal(
-        mode: widget.mode,
-        controller: _c,
-        connect: _connect,
-        initialSlots: slots!,
-        piaService: widget.piaService ?? PiaService(),
-        slotServiceFactory: widget.slotServiceFactory,
-        watchdogServiceFactory: widget.watchdogServiceFactory,
-      ),
-    );
-    if (mounted) _c.exitModal();
+    // Shown IN PLACE, not pushed and not in a dialog. This screen is the connect form until it has
+    // connected and the slot list afterwards, which is exactly how the device assignment screen
+    // works - and it is what makes the back button leave for the menu rather than dropping the
+    // user back on a spent login form. 418 pushed a second route and got that wrong; 419 does not
+    // navigate at all, so there is no extra route to name, to observe, or to go back to.
+    //
+    // enterModal/exitModal are deliberately not called: modalDepth says something is stacked OVER
+    // a screen, and this is the screen.
+    setState(() => _slots = slots);
   }
 
   /// Offers to install [missing], and does it if the user agrees.
@@ -306,6 +324,22 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Three states of one screen. SlotModal brings its own AppScaffold, so there is no nesting.
+    final slots = _slots;
+    if (slots == null && _autoConnecting) {
+      return const AppScaffold(fillViewport: true, child: ReconnectingBody());
+    }
+    if (slots != null) {
+      return SlotModal(
+        mode: widget.mode,
+        controller: _c,
+        connect: _connect,
+        initialSlots: slots,
+        piaService: widget.piaService ?? PiaService(),
+        slotServiceFactory: widget.slotServiceFactory,
+        watchdogServiceFactory: widget.watchdogServiceFactory,
+      );
+    }
     return AppScaffold(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

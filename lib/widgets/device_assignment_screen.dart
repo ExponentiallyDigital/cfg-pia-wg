@@ -62,6 +62,10 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
   DeviceAssignmentService? _service;
   AssignmentState? _state;
 
+  /// True from the first frame of a re-entry that will reconnect on its own, false once that
+  /// attempt has either produced a device list or failed and left the form to be used.
+  bool _autoConnecting = false;
+
   /// Staged, not yet written: device IP to the profile index it should use, null for the default.
   final Map<String, int?> _staged = {};
   int? _stagedDefault;
@@ -90,6 +94,9 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     // this the user had to press CONNECT every time they opened the screen while the other two
     // walked straight in (B8n feedback 2026-09-08).
     if (_c.routerConnected && _canConnect) {
+      // Set synchronously, so the FIRST frame shows the reconnect placeholder instead of a login
+      // form asking for credentials the app already has and is already using.
+      _autoConnecting = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _connect();
       });
@@ -183,7 +190,14 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     } catch (e) {
       failure = 'Could not read the device list: $e';
     } finally {
-      if (mounted) setState(() => _busy = false);
+      // Both flags together: past this point a failure leaves the user needing the form, so it
+      // stops being a lie to show it.
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _autoConnecting = false;
+        });
+      }
     }
     if (failure != null && mounted) await AppErrors.system(context, _c, failure);
   }
@@ -410,6 +424,9 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_state == null && _autoConnecting) {
+      return const AppScaffold(fillViewport: true, child: ReconnectingBody());
+    }
     return AppScaffold(
       child: _state == null ? _buildConnect() : _buildList(),
     );

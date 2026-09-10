@@ -23,12 +23,6 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-**do now - app UI:**
-- BUG: regression of default router ssh username re-appeared in comitted build 414; this field should be empty. "admin" is prepopulated in "SSH username" field in MANAGE, WATCHDOG, DEVICE ASSIGNMENT
-- BUG: regression (?) when creating a watchdog, the screen did not scroll (same issue we had 2026-09-08), spinner appears below the fold and the screen does not scroll, focus stayed in the last edited field and makes it look like the app is waiting for the user to do something.
-- FIX: inconsistent UI: HOME button on device assignment sits on top of the scrolling screen, on MANAGE and WATCHDOG it sits behind the scrolling screen display. See untracked file `.claude\testing\Screenshot_20260909-143219.png`.
-- commit.
-
 **do now - router install:** these three share `lib\s50_template.dart` and the deploy path, and the two backups are a PREREQUISITE for the uninstall feature below - it renames `*.old` back into place, so it cannot work until these have created them.
 - CHG: `chown` the installed helper binaries.eg `mailsend-go` is `501:201 by default.
 - FIX: re-install `scripts\S50asuslighttpd-TEMPLATE.sh` as `S50asuslighttpd` to `/opt/etc/init.d` on the router, chmod 700, and rename the existing script in that folder to `S50asuslighttpd.old`. See `lib\s50_template.dart` for how to do that with the other script. I have copies of the existing original scripts already saved as `*.bak` and in `/jffs/cfg-piawg/*.original`.
@@ -42,8 +36,10 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 - commit.
 
 **device assignment:**
-- BUG?: in device assignment screen, tablet showing as online when it is not. Other offline devices are showing correctly as offline.
-- FIX: unable to select "Internet Connection" from device assignment screen on a per device basis. With only wgc1 available as a VPN you see wgc1 listed twice: "default wgc1 pia-region_name" then again as "wgc1 - pia-region_name", and no ability to choose "Internet Connection" unless the default connection is set to Internet, then you do see two choices in the drop down: "default Internet" and "wgc1 - pia-region_name".
+- GUI: alter the device management screen so that if a device is showing as set to the default connection "default" instead show what default is eg "default - Internet" or "default - wgc1:pia-region_name"
+- FIX: in the apply-changes popup modal, the "from" line is indented by two spaces. Remove the indent so every line of the change list starts at the same column.
+- FIX: unable to select "Internet Connection" from device assignment screen on a per device basis. With only wgc1 available as a VPN do you see wgc1 listed twice: "default wgc1 pia-region_name" then again as "wgc1 - pia-region_name", and no ability to choose "Internet Connection" unless the default connection is set to Internet, then you do see two choices in the drop down: "default Internet" and "wgc1 - pia-region_name".
+- ADD: changes to the device dropdown: where the line says "no watchdog", add before that text a status to show if the wgcN is enabled or disabled, use a similar style to the slot modal used by MANAGE and WATCHDOG ie teal "Active". If the slot is not active use "Disabled", and use amber text (to match the PAUSED watchdog or unapplied device management text).
 - BUG: if you navigate away from device assignment to say the log, then return, any staged changes are lost on re-entering the device assignment screen.
 - ADD: when a default connection is applied in device assignment, log a message to the router log: "default WAN connection set from `<old-name>` to `<new-name>`, eg "Internet Connection" or "wgcN:pia-region_name". There is currently no message displayed in the router log. Also do that for the app log, instead of "default connection changed". In the app log record what assignment changes were made: instead of logging "Applying..." log "Applying: `<list of changes on separate lines>` eg "tablet1: default connection -> wgc1:pia-region_name".
 - CHG: instead only only sorting the display by hostname, sort the device list by status then hostname so offline hosts appear below online hosts.
@@ -51,10 +47,11 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 **uninstall and new menu:**
 - ADD: uninstall feature - add a "Settings" menu item on the hamburger menu above "ABOUT". This menu is not shown on the home screen. Create a screen in that menu item that provides a button to tap on to "Uninstall features installed to router", this removes the app's `S50Downloadmaster` and renames `S50Downloadmaster.old` to `S50Downloadmaster`, renames `S50asuslighttpd.old` to `S50asuslighttpd`, and removes the `/jffs/cfg-pia-wg` folder - the user should be prompted first and told what it will do. Move the "FORGET ROUTER IP" and "DEL PIA CERT" buttons from the ABOUT menu to this SETTINGS menu.
-- ADD: if a watchdog script has been deployed on the router we need a way of putting that verion into the ABOUT build info section.
 - ADD: alter about menu URLs to be short form (display a tapable link instead of the url) - so the "Readme: ..." line becomes "Readme". Retain one item per line, do for all 4 lines; alter "Open source: licenses" to be tappable as well and change to -> "Open source licenses". The whole text is tappable.
 - ADD: "View router log" add a menu item on the hamburger menu **before** the "View app log" menu item. This screen opens to a scrollable display of `/tmp/syslog.log`, scroll it so that it shows the latest entries in the log. At the bottom of the screen create "REFRESH" and "HOME" buttons in house style. Text in the screen is selectable and copyable without invoking the 60s timer.
 - ADD: button to clear the current watchdog log file stored on the router, in the existing watchdog log viewing screen add a centered "CLEAR" button on the COPY/CLOSE line, so it looks similar to this: "COPY     CLEAR      HOME".
+- ADD: add the detected script version to build info in the app's ABOUT screen. Get this from a lookup on the router using an existing SSH connection if one exists. If there is no SSH session, then where you would have put the version info eg "Watchdog script: v0.8.48 build 418" put a link to login like this: "Watchdog script: login to router to retrieve", make "login to router to retrieve" a hot link that opens a modal on to of the existing screen and prompts for the router IP and credentials, then gets the deployed script version from line 2 of `/jffs/cfg-pia-wg/watchdog_wgcN.sh` (NOT `S50Downloadmaster`, which carries no version marker). `parseScriptVersion` in `lib
+outer_watchdog.dart` already does the parsing and `WatchdogStatus.scriptVersion` already exposes it, so this is a display change, then put the version number in the About screen. If the script is not deployed, return "not deployed". Put the version info as the first line above "Built by: xxx", use the same font weight and style as the existing build info block, and allow that text to be selected and copied to the clipboard without invoking the 60s clear timer.
 - commit.
 
 **longer term:**
@@ -69,7 +66,27 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
-2026-09-10 v0.8.47 build 417 - sync commit
+2026-09-10 v0.8.48 build 418 - device management regression fixes
+
+- FIX: **the login form flashed on entry to MANAGE, WATCHDOG and DEVICE ASSIGNMENT.** All three reconnect on their own when the session already has a working connection, but they rendered the form for the whole of that reconnect - asking for credentials the app already held, on a screen the user was about to be taken off, with fields they might start typing into. A reconnect now shows a placeholder from the first frame, and the form appears only when the reconnect fails and it is actually needed.
+- ADD: `ReconnectingBody`, shared by all three screens so the reconnect looks the same wherever it happens.
+- FIX: **back from MANAGE and WATCHDOG dropped the user on the login form they had finished with.** Reported against 418, which pushed the slot list as a second route. It is not a route at all now: the screen IS the connect form until it connects and the slot list afterwards, exactly as the device assignment screen works - so back leaves for the menu, and there is no extra route to name, observe or return to.
+- FIX: on a tablet the slot rows sat alone at the far left of a very wide line. Content on the slot list and the watchdog form is capped at 480 and centred, the width those screens had as cards. A phone is narrower than the cap, so nothing changes there.
+- ADD: `AppScaffold.maxContentWidth`, which caps and centres the body and the HOME button together - HOME running the full width of a tablet under a narrower column would have swapped one oddity for another.
+- FIX: **the SSH username field is prefilled with 'admin' again.** Fixed on the device assignment screen in 413 and regressed on MANAGE and WATCHDOG in 414 - the two screens carried the same line and only one was changed. A password manager will not overwrite a field that already has content, so the default cost a manual clear before every autofill. The ABOUT screen's router login follows, since its comment says it starts from the same place the router screens do.
+- CHG: **MANAGE and WATCHDOG are full screens now, not modals.** They are destinations, and they were sitting on top of a connect form that had done its job. Both are pushed with the destination name of the screen underneath, so the drawer keeps highlighting the right entry.
+- FIX: the watchdog CREATE/EDIT form is a page too, which is what fixes SAVE and its spinner sitting below a fold that would not scroll. That shipped in 409, was fixed, and came back in 412: a shrink-wrapping scroll view inside an unbounded card has no overflow to scroll, and no height arithmetic makes one. On a page the scroll view is bounded by construction.
+- FIX: the HOME button is the shared one everywhere. The slot list had its own small right-aligned button while every other screen pins a full-width one below the scroll view - which is the inconsistency reported against the device assignment screen. It also means the processing overlay now covers HOME rather than stopping at the edge of a card.
+- FIX: `AppScaffold` is a `Material` rather than a `ColoredBox`. An opaque box between a `ListTile` and the chrome's `Material` makes Flutter assert that the ink splash will be invisible, which is what the email-alerts row hit once the form became a page.
+- TST: eleven - the reconnect placeholder showing on the first frame of a re-entry on all three screens and the form coming back when a reconnect fails, the username left blank on both router screens and in ABOUT, the slot list and the watchdog form being pages with the shared chrome and no modal depth, HOME being the pinned `AppScaffold` button outside the scroll view, the watchdog form scrolling on a 360x560 screen with SAVE reachable and no overflow, the slot rows capped and centred on a 1200-wide screen, and connecting pushing no route.
+- DOC: CONTEXT.md 4.1 and 4.10b - pages versus dialogs, and why a long form is never a dialog.
+- FIX: **a device assignment was written correctly and had no effect.** Stock never removes a device's old policy routing rule when its assignment changes, and both rules sit at priority 100 - so the kernel takes them in insertion order and the older one always wins. `vpnc_dev_policy_list`, the web interface and the app all read wgc5 while the traffic kept leaving through wgc1. The app now deletes the stale rules itself after `restart_vpnc_dev_policy`.
+- INF: no service call clears it. `restart_dnsmasq`, `restart_vpnc_dev_policy`, `restart_vpnrouting0`, `restart wgcN` and a full `stop_vpnc`/`restart_vpnc` cycle with `vpnc_unit` set to the target row were each measured and each left the rule in place. Only `restart_net_and_phy` clears it, and that bounces every switch port and re-leases the WAN - far too much for moving one device.
+- FIX: unassigning had the same defect, so a device sent back to the default connection carried on using the tunnel it had left. Every per-device rule for that address is now removed. The priority-10000 `from all iif br0` rules that ARE the default connection are matched on the address and never touched.
+- DOC: ARCHITECTURE.md 3.3.6b records the measurement, the commands to see it, and the three cases the sweep has to get right.
+- TST: eleven - six on the rule parser including a prefix-match trap and the default-connection rules, and five over a fake router that actually applies the deletes.
+
+2026-09-09 v0.8.47 build 417 - sync commit
 
 - updated work sequence and items (one disappeared today).
 
@@ -279,7 +296,6 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 - CHG: **backgrounding no longer closes the router connection immediately** - it now waits 5 minutes (`kBackgroundSessionGrace`), and coming back cancels the timer. The e2e test recorded ten dropbear logins in one session, every one following an `HTTPD [LOGIN]` from the same device: hopping to the router WebUI and back was charging a fresh handshake each time, which is most of what sharing the connection in 406 was meant to remove. A wipe still closes it immediately. Three tests cover brief background, long background and wipe-during-grace.
 - ADD: `scripts/test-backoff.sh` - walks the whole backoff ladder on the router in about two minutes with no PIA traffic, from the loop used to verify it by hand. It refuses to run unless the watchdog is paused and the tunnel is actually down (the two ways this test silently misleads you), confirms no PIA token was requested and that turned-away runs left the counter alone, cleans up its own state file, and exits non-zero on failure. A unit test asserts its hard-coded rungs still match `kBackoffLadder`.
 - TST: backoff **verified on stock** 2026-09-06 - all eight rungs exact (120, 240, 480, 960, 1800, 3600, 5400, 5400 s), the counter untouched by turned-away runs, and no PIA token requests during the test. `TESTING.md` section 2.1.6 now records why the test is built the way it is, not just the commands.
-- ADD: In watchdog, "view router watchdog log", at the bottom of the screen add a button to "CLEAR", that removes and touches the watcdog log so that it is cleared but exists. Center the "CLEAR" button so the bottom of that modal has "COPY CLEAR CLOSE" with "COPY left aligned, "CLOSE" right aligned and "CLEAR" centered between them.
 
 2026-09-06 v0.8.38 build 408 - sync commit ahead of e2e app test
 

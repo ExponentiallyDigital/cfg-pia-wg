@@ -30,6 +30,7 @@ import '../router_watchdog.dart';
 import '../screens/slot_params_editor.dart';
 import '../session_controller.dart';
 import '../watchdog_dialog.dart';
+import 'app_scaffold.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
 import 'region_picker_sheet.dart';
@@ -294,8 +295,12 @@ class _SlotModalState extends State<SlotModal> {
     // Checked before the dialog, so the user is not made to fill it in for nothing.
     if (!(_slots.activeSlots.contains(slot)) && !await _withinVpnLimit(slot)) return;
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
+    // Pushed as a page for the same reason the slot list is (418), and with more at stake: it is a
+    // long form, and as a card its height was wrong twice over, leaving SAVE and its spinner below
+    // a fold that would not scroll. The route name matches the screen underneath so the drawer
+    // keeps highlighting WATCHDOG.
+    await Navigator.of(context).push<void>(MaterialPageRoute(
+      settings: RouteSettings(name: AppDestination.watchdog.routeName),
       builder: (ctx) => WatchdogDialog(
         slotIndex: slot,
         regionDesc: _slots.slots[slot]?.desc ?? '',
@@ -307,7 +312,7 @@ class _SlotModalState extends State<SlotModal> {
         piaService: widget.piaService,
         serviceFactory: widget.watchdogServiceFactory,
       ),
-    );
+    ));
     await _refresh();
   }
 
@@ -427,53 +432,41 @@ class _SlotModalState extends State<SlotModal> {
   // ── UI ────────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: kSurface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 480,
-          maxHeight: MediaQuery.of(context).size.height * 1,
+    // A full screen, not a dialog. Until 418 this was a `Dialog` sitting on top of the connect
+    // form it had finished with - a modal says "this is a detour, you will come back", and MANAGE
+    // and WATCHDOG are destinations. It also cost the whole viewport: the slot list, the buttons
+    // and the spinner shared a card while a spent form filled the space behind it.
+    //
+    // AppScaffold is what every other destination uses, which is also the fix for the HOME button
+    // being inconsistent here - it now sits pinned at the bottom, full width, outside the scroll
+    // view, exactly as it does on the device assignment screen.
+    return Stack(
+      children: [
+        AppScaffold(
+          // 480 is the width the card had. Full width leaves a slot row stranded at the far left of
+          // a tablet line; a phone is narrower than the cap, so nothing changes there.
+          maxContentWidth: kFormMaxWidth,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(widget.mode == SlotModalMode.manage ? 'WIREGUARD CONFIGURATION' : 'WATCHDOG CONFIGURATION',
+                  style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+              const SizedBox(height: 16),
+              _slotList(),
+              const SizedBox(height: 20),
+              ..._buttons(),
+            ],
+          ),
         ),
-        child: Stack(
-          children: [
-            SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(widget.mode == SlotModalMode.manage ? 'WIREGUARD CONFIGURATION' : 'WATCHDOG CONFIGURATION',
-                        style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
-                    const SizedBox(height: 16),
-                    _slotList(),
-                    const SizedBox(height: 20),
-                    ..._buttons(),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        // HOME returns to the main menu (closes the modal + intermediate screens).
-                        onPressed:
-                            _processing ? null : () => Navigator.of(context, rootNavigator: true).popUntil((r) => r.isFirst),
-                        child: const Text('HOME', style: TextStyle(color: kHighlight)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+        // Covers the HOME button too, which the old overlay did not - it was inside the card.
+        if (_processing)
+          const Positioned.fill(
+            child: ColoredBox(
+              color: Color(0x99000000),
+              child: Center(child: CircularProgressIndicator(color: kHighlight)),
             ),
-            if (_processing)
-              Positioned.fill(
-                child: ColoredBox(
-                  color: const Color(0x99000000),
-                  child: const Center(child: CircularProgressIndicator(color: kHighlight)),
-                ),
-              ),
-          ],
-        ),
-      ),
+          ),
+      ],
     );
   }
 

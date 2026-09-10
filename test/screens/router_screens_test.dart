@@ -7,6 +7,7 @@ import 'package:cfg_pia_wg/router_slot_service.dart';
 import 'package:cfg_pia_wg/screens/manage_router_screen.dart';
 import 'package:cfg_pia_wg/screens/watchdog_management_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
 
 import '../watchdog_test_utils.dart';
 
@@ -78,14 +79,18 @@ void main() {
     c.dispose();
   });
 
-  testWidgets('router IP and SSH username default to the ASUS factory address / admin', (tester) async {
+  // The username is deliberately left EMPTY. A password manager will not overwrite a field that
+  // already has content, so prefilling 'admin' cost a manual clear before every autofill - fixed
+  // on the assignment screen in 413 and regressed here in 414, because the two screens carried the
+  // same line and only one was changed.
+  testWidgets('router IP defaults to the ASUS factory address, and the username is left blank', (tester) async {
     final c = _controller();
     final ssh = RecordingSSHClient(responder: (_) => '');
     await tester.pumpWidget(_manage(ssh, c));
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(TextFormField, kDefaultRouterIp), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'admin'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'admin'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();
@@ -103,6 +108,54 @@ void main() {
 
     // No manual CONNECT tap — the modal opens automatically.
     expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  // Reported from hardware: entering any of the three router screens flashed the login form while
+  // the session's existing connection was being reused. It asks for credentials the app already
+  // holds, on a screen the user is about to be taken off, and it is a field they might type into.
+  testWidgets('a reconnect never shows the login form, not even for a frame', (tester) async {
+    final c = _controller()
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true;
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('3rd-party') ? 'merlin' : '');
+    await tester.pumpWidget(_manage(ssh, c));
+
+    // The FIRST frame, before the post-frame reconnect has even been scheduled to run.
+    expect(find.byType(ReconnectingBody), findsOneWidget);
+    expect(find.byKey(const Key('connect_router')), findsNothing);
+
+    await tester.pumpAndSettle();
+    expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+    expect(find.byType(ReconnectingBody), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  testWidgets('a FAILED reconnect hands the form back, because now it is needed', (tester) async {
+    final c = _controller()
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true;
+    await tester.pumpWidget(_manage(
+      RecordingSSHClient(responder: (_) => ''),
+      c,
+      factory: (ip, u, p) async => throw Exception('connection refused'),
+    ));
+    expect(find.byType(ReconnectingBody), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'OK'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('connect_router')), findsOneWidget);
+    expect(find.byType(ReconnectingBody), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();
@@ -160,11 +213,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(h.opens, hasLength(1));
 
-      // Leave the modal and connect again - the old code opened a second connection here.
-      await tester.ensureVisible(find.widgetWithText(TextButton, 'HOME'));
-      await tester.tap(find.widgetWithText(TextButton, 'HOME'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('connect_router')));
+      // Leave the screen and come back, which is the only route to a second connect now that the
+      // slot list replaces the form in place: re-entry finds routerConnected set and reconnects on
+      // its own. The old code opened a second SSH connection here.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(h.widget);
       await tester.pumpAndSettle();
 
       expect(h.opens, hasLength(1), reason: 'one handshake for the whole session');
@@ -185,10 +238,8 @@ void main() {
       // An authenticated session held open behind a locked screen is a wider exposure than
       // credentials in memory; PiaWgApp closes it on pause. Here the controller stands in for it.
       await c.closeRouterSession();
-      await tester.ensureVisible(find.widgetWithText(TextButton, 'HOME'));
-      await tester.tap(find.widgetWithText(TextButton, 'HOME'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(h.widget);
       await tester.pumpAndSettle();
 
       expect(h.opens, hasLength(2), reason: 'and the next action reconnects');
@@ -196,6 +247,30 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
+  });
+
+  // Reported from hardware: back from the slot list dropped the user on a login form that had
+  // already done its job, while the device assignment screen - which swaps state in place - went
+  // where they expected. The slot list now replaces the form in the SAME screen, so there is no
+  // intermediate route for back to land on.
+  testWidgets('connecting replaces the form in place, pushing no route to go back to', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = _merlinSsh();
+    await tester.pumpWidget(_manage(ssh, c));
+    await tester.pumpAndSettle();
+    await _fillCreds(tester);
+
+    final before = tester.widget<Navigator>(find.byType(Navigator).first);
+    await tester.tap(find.byKey(const Key('connect_router')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+    expect(find.byKey(const Key('connect_router')), findsNothing, reason: 'the form is gone, not covered');
+    // Same navigator, same depth: nothing was pushed, so back leaves the screen entirely.
+    expect(tester.widget<Navigator>(find.byType(Navigator).first), same(before));
+
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('manage CONNECT opens the slot modal', (tester) async {

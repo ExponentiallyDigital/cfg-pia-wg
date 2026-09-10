@@ -170,4 +170,47 @@ void main() {
       expect(input.first.displayName, 'zebra');
     });
   });
+
+  // Stock never removes a device's old `ip rule` when its assignment changes, and both rules land
+  // at priority 100, so the older one wins on insertion order. Measured on hardware 2026-09-10:
+  // every list said wgc5 while the traffic left through wgc1.
+  group('staleRuleTables', () {
+    const twoRules = '0:\tfrom all lookup local\n'
+        '100:\tfrom 192.168.1.51 lookup 9\n'
+        '100:\tfrom 192.168.1.51 lookup 5\n'
+        '10000:\tfrom all iif br0 lookup 5\n'
+        '32766:\tfrom all lookup main\n';
+
+    test('the rule for the tunnel the device left is stale', () {
+      expect(staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: 5), [9]);
+    });
+
+    test('unassigning leaves nothing behind - every per-device rule goes', () {
+      expect(staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: null), [9, 5]);
+    });
+
+    test('the default-connection rule is never touched', () {
+      // `from all iif br0 lookup 5` at priority 10000 IS the default connection. Deleting it
+      // would send every unassigned device straight out of the WAN.
+      expect(staleRuleTables(twoRules, ip: 'all', keepIndex: null), isEmpty);
+    });
+
+    test('a duplicate of the correct rule is stale too, but one copy is kept', () {
+      const dupes = '100:\tfrom 192.168.1.51 lookup 5\n100:\tfrom 192.168.1.51 lookup 5\n';
+      expect(staleRuleTables(dupes, ip: '192.168.1.51', keepIndex: 5), [5]);
+    });
+
+    test('other devices are left alone, and a prefix match is not a match', () {
+      const others = '100:\tfrom 192.168.1.5 lookup 9\n'
+          '100:\tfrom 192.168.1.510 lookup 9\n'
+          '100:\tfrom 192.168.1.51 lookup 9\n';
+      expect(staleRuleTables(others, ip: '192.168.1.51', keepIndex: null), [9]);
+    });
+
+    test('nothing to do when the device already has only its own rule', () {
+      expect(staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: 9), [5]);
+      expect(staleRuleTables('100:\tfrom 192.168.1.51 lookup 5\n', ip: '192.168.1.51', keepIndex: 5), isEmpty);
+      expect(staleRuleTables('', ip: '192.168.1.51', keepIndex: 5), isEmpty);
+    });
+  });
 }

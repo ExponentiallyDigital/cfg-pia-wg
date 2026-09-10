@@ -27,6 +27,7 @@ import 'pia_service.dart';
 import 'router_slot_service.dart' show slotLabel;
 import 'router_watchdog.dart';
 import 'session_controller.dart';
+import 'widgets/app_scaffold.dart';
 import 'widgets/error_presenter.dart';
 import 'widgets/region_picker_sheet.dart';
 
@@ -319,22 +320,18 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   Widget build(BuildContext context) {
     final status = _status;
     final enabled = status?.isEnabled == true;
-    return Dialog(
-      backgroundColor: kSurface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        // Width only. The height must come from the incoming constraints - inside the app chrome
-        // the Scaffold has already taken the keyboard off the body, so any cap computed from the
-        // screen height is too large and the card spills down behind the keyboard. Unbounded here
-        // lets SingleChildScrollView shrink-wrap to the space it is given and scroll past that.
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+    // A full screen, not a dialog (418). This is a long form - ping targets, a schedule, five
+    // email fields - and as a card it had a height nobody could get right. Twice it shipped with
+    // the SAVE row and its spinner below the fold and the content refusing to scroll (409, then
+    // again in 412), because a shrink-wrapping SingleChildScrollView inside an unbounded card has
+    // no overflow to scroll. AppScaffold gives it a BOUNDED viewport - the scroll view sits in an
+    // Expanded - so the same content scrolls by construction rather than by arithmetic.
+    return AppScaffold(
+      showClose: false, // this screen has its own SAVE/CLOSE pair
+      maxContentWidth: kFormMaxWidth, // the width this form had as a card
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
                 Row(
                   children: [
                     const Icon(Icons.shield_outlined, color: kHighlight, size: 18),
@@ -451,18 +448,15 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                         : const Text('SAVE'),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _loading ? null : () => Navigator.of(context).pop(),
-                    child: const Text('CLOSE', style: TextStyle(color: kMuted)),
-                  ),
-                ),
-              ],
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _loading ? null : () => Navigator.of(context).pop(),
+              child: const Text('CLOSE', style: TextStyle(color: kMuted)),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
