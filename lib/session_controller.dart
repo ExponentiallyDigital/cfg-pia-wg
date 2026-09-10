@@ -174,6 +174,16 @@ class SessionController extends ChangeNotifier {
   // True once a router SSH connect has succeeded this session (drives auto-reconnect on entry).
   bool routerConnected = false;
 
+  /// Whether a screen away from the router screens can act on the router WITHOUT asking first.
+  ///
+  /// `routerConnected` is the load-bearing part. Three non-empty strings is not the same question:
+  /// merely opening MANAGE writes the FACTORY DEFAULT address into `routerIp` before the user has
+  /// typed anything, so a test of "are these fields filled in" says yes for a session that has
+  /// never reached a router. Reported on a tablet in 423 - DEL PIA CERT, the ABOUT script-version
+  /// link and the router log all tried to connect to 192.168.50.1 instead of asking.
+  bool get canReuseRouterSession =>
+      routerConnected && routerIp.trim().isNotEmpty && sshUsername.trim().isNotEmpty && sshPassword.isNotEmpty;
+
   // ── Staged device assignments ──────────────────────────────────────────────────
   // Held here rather than on DeviceAssignmentScreen's State, which is rebuilt from scratch every
   // time the screen is entered - so a glance at the log discarded a dozen staged assignments and

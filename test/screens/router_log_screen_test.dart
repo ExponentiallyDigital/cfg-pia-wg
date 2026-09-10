@@ -18,7 +18,8 @@ Future<RecordingSSHClient> _pump(WidgetTester tester, {String reply = _log}) asy
   final c = SessionController(tickInterval: const Duration(hours: 1))
     ..routerIp = '192.168.1.1'
     ..sshUsername = 'admin'
-    ..sshPassword = 'pw';
+    ..sshPassword = 'pw'
+    ..routerConnected = true;
   addTearDown(c.dispose);
   await tester.pumpWidget(MaterialApp(
     home: SessionScope(

@@ -56,7 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// dismissing a login is a decision, not a failure to report.
   Future<(String, String, String)?> _credentials() async {
     final ip = _c.routerIp.trim(), user = _c.sshUsername.trim(), pass = _c.sshPassword;
-    if (ip.isNotEmpty && user.isNotEmpty && pass.isNotEmpty) return (ip, user, pass);
+    if (_c.canReuseRouterSession) return (ip, user, pass);
     final entered = await showDialog<(String, String, String)?>(
       context: context,
       builder: (_) => SshCredsDialog(initialIp: _c.routerIpPrefill, initialUser: user, initialPass: pass),
@@ -242,7 +242,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           builder: (context, _) => _Action(
             keyValue: 'settings_forget_router_ip',
             label: 'FORGET ROUTER IP',
-            note: 'Deletes the remembered router address. Credentials are never stored at all.',
+            note: 'Deletes the remembered router address. No router SSH credentials are stored on this device.',
             icon: Icons.wifi_off_outlined,
             onTap: _c.rememberedRouterIp.isEmpty || _busy ? null : _forgetRouterIp,
           ),

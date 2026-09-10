@@ -9,6 +9,7 @@ import 'package:cfg_pia_wg/router_prefs.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/screens/settings_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/widgets/ssh_creds_dialog.dart';
 
 import '../watchdog_test_utils.dart';
 
@@ -42,6 +43,56 @@ Future<void> _pumpSettings(WidgetTester tester, {SessionController? controller})
 }
 
 void main() {
+  // Reported from a tablet on 423: DEL PIA CERT, the ABOUT script-version link and the router log
+  // all tried to connect to 192.168.50.1 instead of asking for credentials. Opening MANAGE writes
+  // the FACTORY DEFAULT address into routerIp before the user types anything, so a test of "are
+  // these three fields filled in" says yes for a session that has never reached a router.
+  group('asks before acting when no connection has been made', () {
+    testWidgets('a filled-in but never-connected session still gets the login prompt', (tester) async {
+      final c = SessionController(tickInterval: const Duration(hours: 1))
+        ..routerIp = kDefaultRouterIp
+        ..sshUsername = 'admin'
+        ..sshPassword = 'pw';
+      // routerConnected deliberately left false - that is the whole point.
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(
+          controller: c,
+          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: (_) => ''))),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SshCredsDialog), findsOneWidget);
+      expect(c.canReuseRouterSession, isFalse);
+    });
+
+    testWidgets('a connected session is not asked again', (tester) async {
+      final c = SessionController(tickInterval: const Duration(hours: 1))
+        ..routerIp = '192.168.1.1'
+        ..sshUsername = 'admin'
+        ..sshPassword = 'pw'
+        ..routerConnected = true;
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(
+          controller: c,
+          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: (_) => ''))),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SshCredsDialog), findsNothing);
+      expect(find.byKey(const Key('settings_del_cert_confirm')), findsOneWidget);
+    });
+  });
+
   // Puts a router back the way the app found it. The one thing it must never do is leave a
   // half-undone router: restore the boot scripts BEFORE removing the directory, so a failure at
   // the last step still leaves a router that boots the way it did originally.
@@ -54,7 +105,8 @@ void main() {
       final c = SessionController(tickInterval: const Duration(hours: 1))
         ..routerIp = '192.168.1.1'
         ..sshUsername = 'admin'
-        ..sshPassword = 'pw';
+        ..sshPassword = 'pw'
+        ..routerConnected = true;
       addTearDown(c.dispose);
       await tester.pumpWidget(MaterialApp(
         home: SessionScope(
@@ -97,7 +149,8 @@ void main() {
       final c = SessionController(tickInterval: const Duration(hours: 1))
         ..routerIp = '192.168.1.1'
         ..sshUsername = 'admin'
-        ..sshPassword = 'pw';
+        ..sshPassword = 'pw'
+        ..routerConnected = true;
       addTearDown(c.dispose);
       await tester.pumpWidget(MaterialApp(
         home: SessionScope(
@@ -146,7 +199,8 @@ void main() {
     SessionController connectedController() => SessionController(tickInterval: const Duration(hours: 1))
       ..routerIp = '192.168.1.1'
       ..sshUsername = 'admin'
-      ..sshPassword = 'pw';
+      ..sshPassword = 'pw'
+        ..routerConnected = true;
 
     // Every action on this screen is a full-width row with a line under it saying what it removes.
     // A bare label leaves the user guessing how much, which is not a guess to invite here.

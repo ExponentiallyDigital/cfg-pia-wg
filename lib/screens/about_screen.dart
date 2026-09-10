@@ -106,8 +106,7 @@ class _AboutScreenState extends State<AboutScreen> {
     // is filled in by the time the user looks at it. Never prompts on its own - ABOUT is reachable
     // without any intention of touching the router.
     if (_scriptChecked || _scriptLoading) return;
-    final c = SessionScope.of(context);
-    if (c.routerConnected && c.routerIp.trim().isNotEmpty && c.sshUsername.trim().isNotEmpty) {
+    if (SessionScope.of(context).canReuseRouterSession) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _loadScriptVersion();
       });
@@ -119,7 +118,7 @@ class _AboutScreenState extends State<AboutScreen> {
   Future<void> _loadScriptVersion({bool prompt = false}) async {
     final controller = SessionScope.of(context);
     var ip = controller.routerIp.trim(), user = controller.sshUsername.trim(), pass = controller.sshPassword;
-    if (ip.isEmpty || user.isEmpty || pass.isEmpty) {
+    if (!controller.canReuseRouterSession) {
       if (!prompt) return;
       final entered = await showDialog<(String, String, String)?>(
         context: context,
@@ -233,7 +232,7 @@ class _AboutScreenState extends State<AboutScreen> {
                       ),
                       TextButton.icon(
                         key: const Key('about_create_issue'),
-                        onPressed: () => _launch(bugReportUrl(snap.data)),
+                        onPressed: () => _launch(bugReportUrl(snap.data, scriptStatus: _scriptStatus)),
                         icon: const Icon(Icons.bug_report_outlined, size: 16, color: kHighlight),
                         label: const Text('CREATE GITHUB ISSUE', style: TextStyle(color: kHighlight, fontSize: 12)),
                       ),
@@ -247,17 +246,23 @@ class _AboutScreenState extends State<AboutScreen> {
             // The label IS the link, and the URL is not shown. A raw GitHub blob URL is 70-odd
             // characters of noise that wraps across two lines on a phone and tells the reader
             // nothing they wanted to know; the destination is already named by the label.
-            for (var i = 0; i < _kLinks.length; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text.rich(
+            // One line, pipe-separated, wrapping when it has to. Wrap rather than Text.rich with
+            // inline separators: a wrapped RichText puts its second line straight under the first,
+            // and two rows of tap targets 12px apart is a mis-tap waiting to happen. runSpacing is
+            // what buys the gap.
+            Wrap(
+              spacing: 10,
+              runSpacing: 14,
+              children: [
+                for (var i = 0; i < _kLinks.length; i++) ...[
+                  Text.rich(
                     key: Key('about_link_$i'),
                     TextSpan(text: _kLinks[i].$1, style: _linkStyle, recognizer: _recognisers[i]),
                   ),
-                ),
-              ),
+                  if (i < _kLinks.length - 1) const Text('|', style: TextStyle(color: kMuted, fontSize: 12)),
+                ],
+              ],
+            ),
             // "Open source: licenses" display
             const SizedBox(height: 20),
             Padding(
@@ -381,8 +386,11 @@ class _BuildInfoBlock extends StatelessWidget {
 ///
 /// The template's own Environment bullets are not reproduced - they still ask for an addon and a
 /// game version - so that section carries the build info plus the router fields instead.
-String bugReportUrl(BuildInfo? info) {
+String bugReportUrl(BuildInfo? info, {String scriptStatus = ''}) {
   final firmware = firmwareDetected ? routerFirmware.name : 'not detected this session';
+  // UNKNOWN, not the screen's "login to router to retrieve" - that is an instruction to the
+  // user standing in front of the app, and it tells whoever reads the issue nothing at all.
+  final script = scriptStatus.isEmpty || scriptStatus == kScriptLoginPrompt ? 'UNKNOWN' : scriptStatus;
   final body = '''
 **Describe the bug**
 A clear and concise description of what the bug is.
@@ -404,7 +412,7 @@ If applicable, add screenshots to help explain your problem.
 **Environment (please complete the following information):**
 
 ```text
-${_BuildInfoBlock.asPlainText(info)}
+${_BuildInfoBlock.asPlainText(info, scriptStatus: script)}
 Router firmware: $firmware
 ```
 

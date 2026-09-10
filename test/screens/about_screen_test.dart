@@ -295,6 +295,16 @@ void main() {
       expect(ssh.commands.where((x) => x.contains('watchdog_wgc')).length, 1);
     });
 
+    // The issue body goes to whoever reads the report, not to the user standing in front of the
+    // app - "login to router to retrieve" is an instruction, and tells a reader nothing.
+    test('the GitHub issue body says UNKNOWN rather than the login prompt', () {
+      expect(bugReportUrl(null, scriptStatus: kScriptLoginPrompt), contains('UNKNOWN'));
+      expect(bugReportUrl(null, scriptStatus: kScriptLoginPrompt), isNot(contains('login+to+router')));
+      // Query encoding turns spaces into '+', so decode before looking for the version.
+      expect(Uri.decodeFull(bugReportUrl(null, scriptStatus: 'v0.8.53 build 423')).replaceAll('+', ' '),
+          contains('v0.8.53 build 423'));
+    });
+
     testWidgets('says "not deployed" when the router has no script at all', (tester) async {
       _mockChannel(tester, (call) async => _hostReply);
       final c = _quietController()

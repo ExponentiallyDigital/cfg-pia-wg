@@ -35,6 +35,16 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-10 v0.8.53 build 423 - ask before connecting, and a log you can select from
+
+- FIX: **three screens tried to connect to 192.168.50.1 instead of asking for credentials.** Reported from a tablet that had never logged in. Opening MANAGE writes the FACTORY DEFAULT address into the session before the user types anything, so the test "are these three fields filled in" said yes for a session that had never reached a router. DEL PIA CERT, the ABOUT script-version link and the router log now all ask `canReuseRouterSession`, which requires a connect to have actually succeeded.
+- FIX: **the watchdog log viewer is a full screen, not a card.** Selecting the whole log put Android's own Copy/Share toolbar directly over the action row, and a tap meant for Copy landed on CLEAR. There is now 72px of empty space below the last line for that toolbar to sit on.
+- CHG: the ABOUT links are one pipe-separated line - ReadMe | Change log | Security policy | Privacy policy - wrapping with a 14px gap so the second row is still comfortably tappable.
+- ADD: the GitHub issue body carries the deployed script version, or UNKNOWN. It used to carry whatever the screen was showing, and "login to router to retrieve" is an instruction to the user standing in front of the app rather than anything the reader of an issue can use.
+- CHG: SETTINGS says "No router SSH credentials are stored on this device" rather than "Credentials are never stored at all", which claimed more than the app can promise about the router end.
+- CHG: `Router command failed` is lowercase at source, so it reads correctly where it appears after a colon.
+- TST: four - a filled-in but never-connected session still gets the prompt, a connected one does not, the issue body says UNKNOWN rather than the login prompt, and the log viewer is a page with CLEAR between COPY and CLOSE.
+
 2026-09-10 v0.8.52 build 422 - uninstall and new menu
 
 - ADD: **SETTINGS, a drawer screen for everything that removes something.** It carries a new uninstall that puts back the two boot scripts the app replaced and deletes `/jffs/cfg-pia-wg`, in that order - so a failure at the last step still leaves a router that boots the way it originally did. Where no `.old` backup exists the app's own copy is removed rather than left behind, and the result says which of the two happened for each script.
