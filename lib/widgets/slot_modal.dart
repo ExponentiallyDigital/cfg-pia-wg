@@ -372,51 +372,21 @@ class _SlotModalState extends State<SlotModal> {
     if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
     if (log == null || !mounted) return;
     final logText = log.isEmpty ? '(watchdog log is empty)' : log;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: kSurface,
-        actionsAlignment: MainAxisAlignment.spaceBetween,
-        title: Text('WATCHDOG LOG · wgc$slot', style: const TextStyle(color: kHighlight, fontSize: 13)),
-        content: SizedBox(
-          width: 460,
-          child: SingleChildScrollView(
-            child: SelectableText(logText,
-                key: const Key('watchdog_log_text'), style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace')),
-          ),
-        ),
-        // COPY left, CLEAR centred, CLOSE right. spaceBetween does that on its own with three
-        // children, which is why CLEAR needs no padding of its own.
-        actions: [
-          TextButton(
-            key: const Key('watchdog_log_copy'),
-            onPressed: () async {
-              // Not a secret: copying a log must not arm the 60s auto-clear (it would count down
-              // on the conf screen and then wipe the log the user just copied).
-              await _c.copyToClipboard(logText, armAutoClear: false);
-            },
-            child: const Text('COPY'),
-          ),
-          TextButton(
-            key: const Key('watchdog_log_clear'),
-            // Destructive and irreversible, so it asks - but the log is diagnostic rather than
-            // configuration, and the confirmation says exactly that so a user can decide quickly.
-            onPressed: () async {
-              final ok = await _confirm('Clear the watchdog log for wgc$slot?',
-                  message: 'Empties /tmp/watchdog_wgc$slot.log on the router. The watchdog keeps '
-                      'writing to it from its next run. Nothing else changes.',
-                  confirmLabel: 'CLEAR',
-                  destructive: true);
-              if (!ok || !ctx.mounted) return;
-              Navigator.pop(ctx);
-              await _clearWatchdogLog(slot);
-            },
-            child: const Text('CLEAR', style: TextStyle(color: kError)),
-          ),
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE')),
-        ],
+    // A PAGE, not a dialog. Reported 2026-09-10: selecting the whole log put Android's own
+    // "Copy / Share" toolbar directly over the action row at the bottom of the card, and a tap
+    // meant for Copy landed on CLEAR. A full screen gives the text room to be selected without
+    // the selection's toolbar and the app's buttons competing for the same 48 pixels.
+    await Navigator.of(context).push<void>(MaterialPageRoute(
+      settings: RouteSettings(name: AppDestination.watchdog.routeName),
+      builder: (ctx) => _WatchdogLogScreen(
+        slot: slot,
+        text: logText,
+        // Not a secret: copying a log must not arm the 60s auto-clear, which would count down on
+        // the config screen and then wipe the log the user has just copied.
+        onCopy: () => _c.copyToClipboard(logText, armAutoClear: false),
+        onClear: () => _clearWatchdogLog(slot),
       ),
-    );
+    ));
   }
 
   Future<void> _clearWatchdogLog(int slot) async {
@@ -790,6 +760,100 @@ class _FormDialog extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The watchdog log, full screen.
+///
+/// A dialog until 423. Selecting the whole log put Android's own "Copy / Share" toolbar directly
+/// over the action row at the bottom of the card, and a tap meant for Copy landed on CLEAR
+/// (reported 2026-09-10). A full screen gives the text room to be selected without the selection's
+/// toolbar and the app's buttons competing for the same 48 pixels.
+class _WatchdogLogScreen extends StatelessWidget {
+  const _WatchdogLogScreen({
+    required this.slot,
+    required this.text,
+    required this.onCopy,
+    required this.onClear,
+  });
+
+  final int slot;
+  final String text;
+  final Future<void> Function() onCopy;
+  final Future<void> Function() onClear;
+
+  Future<void> _confirmClear(BuildContext context) async {
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: kSurface,
+            title: Text('Clear the watchdog log for wgc$slot?', style: const TextStyle(color: kText, fontSize: 15)),
+            content: Text(
+              'Empties /tmp/watchdog_wgc$slot.log on the router. The watchdog keeps writing to it '
+              'from its next run. Nothing else changes.',
+              style: const TextStyle(color: kMuted, fontSize: 13),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
+              TextButton(
+                key: const Key('watchdog_log_clear_confirm'),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('CLEAR', style: TextStyle(color: kError, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok || !context.mounted) return;
+    Navigator.pop(context);
+    await onClear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: kBg,
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text('WATCHDOG LOG · wgc$slot', style: const TextStyle(color: kHighlight, fontSize: 13)),
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SingleChildScrollView(
+              // Room below the last line for the selection toolbar to land on, so it does not sit
+              // over the buttons even when the selection reaches the bottom of the screen.
+              padding: const EdgeInsets.only(bottom: 72),
+              child: SelectableText(
+                text,
+                key: const Key('watchdog_log_text'),
+                style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace'),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            TextButton(key: const Key('watchdog_log_copy'), onPressed: onCopy, child: const Text('COPY')),
+            TextButton(
+              key: const Key('watchdog_log_clear'),
+              onPressed: () => _confirmClear(context),
+              child: const Text('CLEAR', style: TextStyle(color: kError)),
+            ),
+            TextButton(
+              key: const Key('watchdog_log_close'),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('CLOSE'),
+            ),
+          ]),
+        ),
+      ]),
     );
   }
 }

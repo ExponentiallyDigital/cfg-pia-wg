@@ -101,7 +101,7 @@ class RouterCommandException implements Exception {
   final RouterResult result;
 
   @override
-  String toString() => 'Router command failed (${result.failureDetail}): ${redactCommand(command)}';
+  String toString() => 'router command failed (${result.failureDetail}): ${redactCommand(command)}';
 }
 
 /// Runs [cmd] and separates stdout, stderr and the exit code.
@@ -125,7 +125,7 @@ Future<RouterResult> runRouterCommand(
   // Logged whether or not it is fatal. The command is redacted: the app log is shown on screen and
   // pasted into bug reports, and plenty of these carry a PIA or SMTP password.
   onLog?.call(
-    'Router command failed (${result.failureDetail}): ${redactCommand(cmd)}',
+    'router command failed (${result.failureDetail}): ${redactCommand(cmd)}',
     isError: !allowFailure,
   );
   if (allowFailure) return result;

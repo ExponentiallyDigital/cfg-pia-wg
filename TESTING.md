@@ -210,10 +210,6 @@ cfg-pia-wg_password=REDACTED
 cfg-pia-wg_user=REDACTED
 ```
 
-5. Check `/tmp/watchdog_backoff_wgcN`
-
-Force a reconfiguration by supplying invalid ping targets, then check that the file is created.
-
 6. Check `/tmp/watchdog_last_ping_success_wgcN`
 
 Check that this file is created when a ping succeeds.
@@ -428,26 +424,13 @@ Clean up, then re-enable the watchdog in the app:
 rm -f /tmp/watchdog_backoff_wgc5
 ```
 
-#### 2.1.7. What no longer works
-
-> [!WARNING]
-> Setting the ping targets to unroutable addresses does **not** force a reconfigure. Those addresses are also the WAN reachability check, so the script concludes the router has no internet and exits 0 without alerting. Per [RFC 5737](https://www.iana.org/go/rfc5737), `192.0.2.0/24`, `198.51.100.0/24` and `203.0.113.0/24` never respond, which is what makes them tempting here - but see 13.1.1 for why pointing the tunnel at one does not work either.
-
-```bash
-# DO NOT use this to force a reconfigure - the script sees "no Internet" and exits
-nvram set wgc1_wd_primary_ip=192.0.2.1; nvram set wgc1_wd_secondary_ip=198.51.100.1
-
-# valid entries
-nvram set wgc1_wd_primary_ip=8.8.8.8; nvram set wgc1_wd_secondary_ip=1.1.1.1
-```
-
-14. Apply a new config to a blank slot
+1.  Apply a new config to a blank slot
     <br>
-15. Overwrite an existing slot with a different region's config
+2.  Overwrite an existing slot with a different region's config
     <br>
-16. Overwrite an existing slot with the same region's config
+3.  Overwrite an existing slot with the same region's config
     <br>
-17. check all NVRAM settings are cleared on script & watchdog disable
+4.  check all NVRAM settings are cleared on script & watchdog disable
 
 ```bash
 nvram show | grep pia_wg | sort

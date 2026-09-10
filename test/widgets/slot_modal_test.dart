@@ -487,9 +487,12 @@ void main() {
 
       final copy = tester.getCenter(find.byKey(const Key('watchdog_log_copy'))).dx;
       final clear = tester.getCenter(find.byKey(const Key('watchdog_log_clear'))).dx;
-      final close = tester.getCenter(find.widgetWithText(TextButton, 'CLOSE')).dx;
+      final close = tester.getCenter(find.byKey(const Key('watchdog_log_close'))).dx;
       expect(copy, lessThan(clear));
       expect(clear, lessThan(close));
+      // A page, not a card. Selecting the whole log put Android's own Copy/Share toolbar over the
+      // action row of the dialog, and a tap meant for Copy landed on CLEAR.
+      expect(find.byType(AlertDialog), findsNothing);
 
       // Destructive and irreversible, so it asks first - and truncates rather than deleting, or
       // the script would lose every line until the next reboot.
@@ -497,7 +500,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('Empties /tmp/watchdog_wgc1.log'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(TextButton, 'CLEAR').last);
+      await tester.tap(find.byKey(const Key('watchdog_log_clear_confirm')));
       await tester.pumpAndSettle();
       expect(ssh.commands.any((x) => x.contains('> /tmp/watchdog_wgc1.log')), isTrue);
       expect(ssh.commands.any((x) => x.contains('rm ') && x.contains('watchdog_wgc1.log')), isFalse);

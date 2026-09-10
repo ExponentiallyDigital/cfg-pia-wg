@@ -71,7 +71,7 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
 
   Future<void> _load({bool prompt = false}) async {
     var ip = _c.routerIp.trim(), user = _c.sshUsername.trim(), pass = _c.sshPassword;
-    if (ip.isEmpty || user.isEmpty || pass.isEmpty) {
+    if (!_c.canReuseRouterSession) {
       if (!prompt) return;
       final entered = await showDialog<(String, String, String)?>(
         context: context,
