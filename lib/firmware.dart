@@ -72,6 +72,13 @@ String appVersionLabel = '';
 const String kServicesStartPath = '/jffs/scripts/services-start';
 const String kS50Path = '/opt/etc/init.d/S50downloadmaster';
 
+/// The sibling init script, replaced by a do-nothing stub - see [kS50AsusLighttpdTemplate].
+const String kS50LighttpdPath = '/opt/etc/init.d/S50asuslighttpd';
+
+/// Where an original init script is kept before the app replaces it. The uninstall feature
+/// renames these back, so a router can be returned to how it was found.
+String originalScriptBackupPath(String path) => '$path.old';
+
 const String kReadmePrereqUrl =
     'https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#4-prerequisites--requirements';
 
