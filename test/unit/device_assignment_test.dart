@@ -6,7 +6,7 @@
 import 'package:cfg_pia_wg/device_assignment.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-// Two profiles: wgc1 at clientlist index 6 = 9, wgc5 at index 6 = 5 (ARCHITECTURE.md 3.3.6).
+// Two profiles: wgc1 at clientlist index 6 = 9, wgc5 at index 6 = 5 (ARCHITECTURE.md "vpnc_dev_policy_list - the assignment").
 const _twoAssigned = '1>192.168.1.20>>9><1>192.168.1.22>>5>';
 
 void main() {
@@ -112,7 +112,7 @@ void main() {
     });
 
     test('A RECORD FOR ANOTHER VPN SURVIVES BYTE FOR BYTE', () {
-      // The correctness rule from ARCHITECTURE.md 3.3.6. Index 3 can name an OpenVPN or PPTP
+      // The correctness rule from ARCHITECTURE.md "vpnc_dev_policy_list - the assignment". Index 3 can name an OpenVPN or PPTP
       // profile, and rewriting or dropping it would silently destroy an assignment the user made
       // elsewhere. 192.168.1.50 here is on a profile this app knows nothing about.
       const withForeign = '1>192.168.1.20>>9><1>192.168.1.50>>3><0>192.168.1.60>>0>';

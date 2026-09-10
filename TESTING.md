@@ -335,7 +335,7 @@ ifconfig wgc1 down
 2026-09-04 16:45:00 Connectivity lost; reconfiguring (attempt #1)
 ```
 
-The reconfigure that follows rewrites the peer and restarts the interface, so the tunnel comes back on its own. If it does not, and the log stops at the token request, check that the deployed script carries a version marker of v0.8.46 build 416 or later - earlier scripts could not fetch a PIA token from cron at all (ARCHITECTURE.md 5.5). Clearing `/tmp/watchdog_backoff_wgc1` makes the next tick run in full rather than backing off.
+The reconfigure that follows rewrites the peer and restarts the interface, so the tunnel comes back on its own. If it does not, and the log stops at the token request, check that the deployed script carries a version marker of v0.8.46 build 416 or later - earlier scripts could not fetch a PIA token from cron at all (ARCHITECTURE.md "curl refuses to run from cron"). Clearing `/tmp/watchdog_backoff_wgc1` makes the next tick run in full rather than backing off.
 
 #### 2.1.5. What a healthy check looks like
 

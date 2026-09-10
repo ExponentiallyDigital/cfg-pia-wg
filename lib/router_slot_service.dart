@@ -130,7 +130,7 @@ List<String> slotKeysFor(RouterFirmware firmware) => firmware == RouterFirmware.
 // ─── vpnc_clientlist (stock only) ─────────────────────────────────────────────────────
 // Stock consolidates the region name and the active flag into one delimited nvram string holding
 // up to five profiles: records separated by '<' (no leading delimiter), fields by '>'.
-// See ARCHITECTURE.md 2.3.2 for the field schema.
+// See ARCHITECTURE.md "Stock vpnc_clientlist" for the field schema.
 
 // One `vpnc_clientlist` profile. Field numbers in the ARCHITECTURE.md are 1-based; [fields] is **0-based**.
 class VpncRecord {
@@ -509,7 +509,7 @@ class RouterSlotService {
       // wgcN_desc along with the row, so this cannot resurrect a deleted slot.
       var desc = stock ? (vpnc[i]?.desc ?? '') : await _read('nvram get wgc${i}_desc');
       if (stock && desc.trim().isEmpty) desc = await _read('nvram get wgc${i}_desc');
-      // Stock exposes no kill switch (ARCHITECTURE.md 2.3.1), so the badge never lights there.
+      // Stock exposes no kill switch (ARCHITECTURE.md "Field reference"), so the badge never lights there.
       final killSwitch = stock ? false : (await _read('nvram get wgc${i}_enforce')) == '1';
       final enabled = stock ? (vpnc[i]?.active ?? false) : (await _read('nvram get wgc${i}_enable')) == '1';
       // A cron entry alone is not a watchdog: a failed deploy left cru pointing at a script that
@@ -692,7 +692,7 @@ class RouterSlotService {
     // stock requires a different start command to Merlin
     if (isStockFirmware) {
       // Must follow _setVpncActive: upsert appends a row for a slot that had none, and the unit
-      // is that row's index. There is no start_vpnc on stock (ARCHITECTURE.md 4.2.2).
+      // is that row's index. There is no start_vpnc on stock (ARCHITECTURE.md "Enable existing slot").
       await runVpncService(slot, 'restart_vpnc', required: true);
     } else {
       await _run('service "start_wgc $slot"; service restart_vpnrouting0');
@@ -788,7 +788,7 @@ class RouterSlotService {
     await _setVpncActive(slot, false);
     await _run('nvram commit');
     // stock requires a different stop command to Merlin. `restart_vpnc` clears the nvram flags but
-    // leaves the interface up (ARCHITECTURE.md 4.2.3 specifies stop_vpnc) — that mismatch is what
+    // leaves the interface up (ARCHITECTURE.md "Stop/Disable" specifies stop_vpnc) — that mismatch is what
     // left a tunnel running behind a WebUI that reported it disconnected.
     if (isStockFirmware) {
       await runVpncService(slot, 'stop_vpnc');

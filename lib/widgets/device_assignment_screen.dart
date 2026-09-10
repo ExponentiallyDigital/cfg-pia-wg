@@ -16,7 +16,7 @@
 // Design in `.claude/plans/plan_vpn_device_assignments.md` section 2.5. Two things about it are
 // not obvious and both come from measurement rather than taste:
 //
-//   - The DEFAULT CONNECTION sits at the top with an explanation, because ARCHITECTURE.md 3.3.6
+//   - The DEFAULT CONNECTION sits at the top with an explanation, because ARCHITECTURE.md "vpnc_dev_policy_list - the assignment"
 //     makes it the setting that decides whether a dropped tunnel leaks or fails closed, and no
 //     user would guess that from a list of devices.
 //   - Changes are STAGED and applied together. One service call for N changes, and one

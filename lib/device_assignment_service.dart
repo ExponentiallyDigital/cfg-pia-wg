@@ -147,7 +147,7 @@ class DeviceAssignmentService {
   }
 
   /// Changes the default connection - the setting that decides where an unassigned device goes,
-  /// and where an ASSIGNED device falls back to when its tunnel drops (ARCHITECTURE.md 3.3.6).
+  /// and where an ASSIGNED device falls back to when its tunnel drops (ARCHITECTURE.md "vpnc_dev_policy_list - the assignment").
   ///
   /// Nothing about this sequence is guessable, and eleven probes on hardware were needed to find
   /// it. Every part of it is load-bearing:
@@ -158,7 +158,7 @@ class DeviceAssignmentService {
   ///   2. `restart_default_wan` runs BEFORE the values are written. It tears the clients down and
   ///      resets `vpnc_default_wan` to 0 - which is why writing the key first always failed.
   ///   3. Only then are `vpnc_default_wan` (index 6) and `wgc_unit` (slot number) written. Three
-  ///      different numbers name the same profile here; see ARCHITECTURE.md 4.2.
+  ///      different numbers name the same profile here; see ARCHITECTURE.md "Stock".
   ///   4. `restart_vpnc` starts the target, and THAT is what installs the pair of `ip rule`s at
   ///      priority 10000 - `from all iif br0 lookup <index 6>` and the same for br1.
   ///
@@ -306,7 +306,7 @@ class DeviceAssignmentService {
       await _run('nvram set vpnc_dev_policy_list=${shellSingleQuote(serialiseDevicePolicyList(policies))}');
       await _run('nvram commit');
 
-      // The light pair, per ARCHITECTURE.md 3.3. `restart_net_and_phy` - what the web interface
+      // The light pair, per ARCHITECTURE.md "Device assignment (stock)". `restart_net_and_phy` - what the web interface
       // uses for the same job - bounces every switch port and re-leases the WAN, and is not needed.
       // What is being applied, by name, one per line. "Applying..." told the reader nothing, and
       // the app log is the only record of an assignment once the screen has moved on.

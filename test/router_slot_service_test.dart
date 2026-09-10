@@ -852,7 +852,7 @@ void main() {
   });
 
   group('vpnc_clientlist parsing (pure)', () {
-    // Verbatim from ARCHITECTURE.md 2.3.2.
+    // Verbatim from ARCHITECTURE.md "Stock vpnc_clientlist".
     const sample = 'pia-aus_melbourne>WireGuard>5>>mel-pwd>1>5>>>0>0>cfg-pia-wg'
         '<pia-aus>WireGuard>4>>aus-pwd>0>6>>>0>0>cfg-pia-wg'
         '<pia-au_brisbane-pf>WireGuard>3>>bris-pwd>0>7>>>0>0>cfg-pia-wg'
@@ -1066,7 +1066,7 @@ void main() {
 
     // Regression: disable used `service restart_vpnc`, which cleared wgcN_enable and the
     // clientlist active flag — so the WebUI read "disconnected" — but left the interface up.
-    // ARCHITECTURE.md 4.2.3 specifies stop_vpnc, confirmed on hardware.
+    // ARCHITECTURE.md "Stop/Disable" specifies stop_vpnc, confirmed on hardware.
     test('disableSlot stops the tunnel rather than restarting it', () async {
       useStock();
       final c = RecordingSSHClient(

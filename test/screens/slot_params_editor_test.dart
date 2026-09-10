@@ -178,7 +178,7 @@ void main() {
     });
   });
 
-  // Stock exposes 12 of the 17 fields (ARCHITECTURE.md 2.3.1); the four the app cannot write are
+  // Stock exposes 12 of the 17 fields (ARCHITECTURE.md "Field reference"); the four the app cannot write are
   // hidden rather than shown as controls that silently do nothing.
   testWidgets('the Merlin-only fields are hidden on stock', (tester) async {
     useStock();

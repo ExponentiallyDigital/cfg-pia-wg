@@ -16,7 +16,7 @@
 // No SSH in this file. Everything here is parse, decide, serialise - so the rules that matter can
 // be tested without a router, and the router layer is left with nothing but I/O.
 //
-// Two facts from ARCHITECTURE.md 3.3.6 shape the whole design:
+// Two facts from ARCHITECTURE.md "vpnc_dev_policy_list - the assignment" shape the whole design:
 //
 //   1. A policy record is keyed by IP ADDRESS, not MAC. So a device whose address we do not know
 //      cannot be assigned at all, and an assignment silently stops applying if the address moves.
@@ -56,7 +56,7 @@ class DevicePolicy {
   /// True when this record PINS the device somewhere, whether to a tunnel or to the plain internet.
   ///
   /// The enabled flag is the whole test, and index 0 does not disqualify a record. Two records can
-  /// both carry index 0 and mean opposite things (ARCHITECTURE.md 3.3.6, confirmed 2026-09-08):
+  /// both carry index 0 and mean opposite things (ARCHITECTURE.md "vpnc_dev_policy_list - the assignment", confirmed 2026-09-08):
   /// `1>IP>>0>` is PINNED to Internet Connection and ignores the default, while `0>IP>>0>` follows
   /// whatever the default is. Until 421 this returned false for both, so a device deliberately
   /// pinned to the internet was displayed - and rewritten - as though it followed the default. That
