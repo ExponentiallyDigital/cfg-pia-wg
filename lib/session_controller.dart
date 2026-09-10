@@ -172,6 +172,22 @@ class SessionController extends ChangeNotifier {
   // True once a router SSH connect has succeeded this session (drives auto-reconnect on entry).
   bool routerConnected = false;
 
+  // ── Staged device assignments ──────────────────────────────────────────────────
+  // Held here rather than on DeviceAssignmentScreen's State, which is rebuilt from scratch every
+  // time the screen is entered - so a glance at the log discarded a dozen staged assignments and
+  // the user had to make them all again. Volatile like everything else here: cleared on APPLY, on
+  // Discard, and by wipeAll.
+  //
+  // IP -> profile index 6, or null for "follows the default connection". Nothing here has been
+  // written to the router; apply() re-reads and refuses on a conflict before it writes anything.
+  final Map<String, int?> stagedAssignments = {};
+  int? stagedDefaultIndex;
+
+  void clearStagedAssignments() {
+    stagedAssignments.clear();
+    stagedDefaultIndex = null;
+  }
+
   // ── Router SSH session ─────────────────────────────────────────────────────────
   // One connection, reused by every action, rather than a handshake and a dropbear login line per
   // button press. Owned here because this is what already owns the credentials and the session
@@ -293,6 +309,7 @@ class SessionController extends ChangeNotifier {
     generatedConfig = null;
     generatedRegionId = '';
     routerConnected = false;
+    clearStagedAssignments();
     declinedBinaryInstalls.clear();
     await closeRouterSession();
     await clearClipboard();

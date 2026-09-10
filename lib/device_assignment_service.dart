@@ -22,7 +22,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'device_assignment.dart';
 import 'router_command.dart';
 import 'router_slot_service.dart';
-import 'router_watchdog.dart' show shellSingleQuote;
+import 'router_watchdog.dart' show buildLoggerCommand, shellSingleQuote;
 
 /// Everything the assignment screen needs, read in one round trip.
 class AssignmentState {
@@ -164,11 +164,17 @@ class DeviceAssignmentService {
   ///
   /// This is expensive: it stops and restarts tunnels, and takes about a minute. The caller must
   /// warn before calling it. Assigning a device costs nothing like this.
-  Future<void> _setDefaultConnection(AssignmentState base, int index) async {
+  Future<void> _setDefaultConnection(AssignmentState base, int index, {String from = '', String to = ''}) async {
     final row = base.profiles.indexWhere((p) => p.vpncStateIndex == index);
     final slot = row < 0 ? null : base.profiles[row].slot;
 
-    onLog?.call('Changing the default connection - tunnels will restart...');
+    // Named in both logs. The default connection decides where every unassigned device goes AND
+    // where an assigned one falls back to when its tunnel drops, so a change to it explains an
+    // outage days later - and until now the router log said nothing at all about it, while the app
+    // log said only "default connection changed", which does not say from what or to what.
+    final change = from.isEmpty || to.isEmpty ? '' : ' from $from to $to';
+    onLog?.call('Changing the default connection$change - tunnels will restart...');
+    await _read(buildLoggerCommand('default WAN connection set$change'));
     // Internet has no profile to restart, so only the teardown half applies.
     if (row >= 0) await _run('nvram set vpnc_unit=$row');
 
@@ -189,7 +195,7 @@ class DeviceAssignmentService {
 
     await _run('service restart_vpnc');
     if (slot != null) await _awaitInterface('wgc$slot', up: true);
-    onLog?.call('Default connection changed.', isSuccess: true);
+    onLog?.call('Default connection set$change.', isSuccess: true);
   }
 
   /// Waits for [iface] to appear in, or vanish from, `wg show interfaces`.
@@ -264,6 +270,9 @@ class DeviceAssignmentService {
     required Map<String, int?> changes,
     required Map<String, String> reservationsToCreate,
     int? newDefaultIndex,
+    List<String> changeDescriptions = const [],
+    String defaultFrom = '',
+    String defaultTo = '',
   }) async {
     if (changes.isEmpty && newDefaultIndex == null) return;
 
@@ -299,12 +308,19 @@ class DeviceAssignmentService {
 
       // The light pair, per ARCHITECTURE.md 3.3. `restart_net_and_phy` - what the web interface
       // uses for the same job - bounces every switch port and re-leases the WAN, and is not needed.
-      onLog?.call('Applying...');
+      // What is being applied, by name, one per line. "Applying..." told the reader nothing, and
+      // the app log is the only record of an assignment once the screen has moved on.
+      onLog?.call('Applying ${changes.length} device change${changes.length == 1 ? '' : 's'}:');
+      for (final d in changeDescriptions) {
+        onLog?.call('  $d');
+      }
       await _run('service restart_dnsmasq');
       await _run('service restart_vpnc_dev_policy');
       await _clearStaleRules(changes);
     }
-    if (newDefaultIndex != null) await _setDefaultConnection(base, newDefaultIndex);
+    if (newDefaultIndex != null) {
+      await _setDefaultConnection(base, newDefaultIndex, from: defaultFrom, to: defaultTo);
+    }
     onLog?.call('Device assignments applied.', isSuccess: true);
   }
 }

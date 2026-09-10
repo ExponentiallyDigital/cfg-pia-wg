@@ -138,8 +138,11 @@ void main() {
       expect(laptop.assignable, isFalse, reason: 'unreserved, and no cached address to fall back on');
     });
 
-    test('the result comes back sorted', () {
-      expect(_join().map((d) => d.displayName).toList(), ['Console', 'laptop']);
+    // Online first, then by name. 'Console' sorts before 'laptop' alphabetically but is offline,
+    // so it sinks - scrolling past greyed rows to reach a device that is actually there was the
+    // common case on a list this long.
+    test('the result comes back sorted, online devices first', () {
+      expect(_join().map((d) => d.displayName).toList(), ['laptop', 'Console']);
     });
 
     test('a device known only to the cache is still listed', () {

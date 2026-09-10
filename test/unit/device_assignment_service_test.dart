@@ -281,6 +281,51 @@ void main() {
       });
     });
 
+    // The app log is the only record of an assignment once the screen has moved on, and the
+    // router log said nothing at all about a default-connection change - which is exactly the
+    // change that explains an outage days later.
+    group('what gets logged', () {
+      test('each device change is named, one line each', () async {
+        final c = _client();
+        final s = await _state(c);
+        final logged = <String>[];
+        final svc = DeviceAssignmentService(c, pollInterval: Duration.zero,
+            onLog: (m, {isError = false, isSuccess = false}) => logged.add(m));
+
+        await svc.apply(
+          base: s,
+          changes: {'192.168.1.20': 5},
+          reservationsToCreate: {},
+          changeDescriptions: const ['Box: default - Internet -> wgc5 - pia-aus_perth'],
+        );
+
+        expect(logged, contains('Applying 1 device change:'));
+        expect(logged, contains('  Box: default - Internet -> wgc5 - pia-aus_perth'));
+        expect(logged.any((l) => l == 'Applying...'), isFalse, reason: 'that told the reader nothing');
+      });
+
+      test('a default-connection change is named in BOTH logs, from and to', () async {
+        final c = _client();
+        final s = await _state(c);
+        final logged = <String>[];
+        final svc = DeviceAssignmentService(c, pollInterval: Duration.zero,
+            onLog: (m, {isError = false, isSuccess = false}) => logged.add(m));
+
+        await svc.apply(
+          base: s,
+          changes: const {},
+          reservationsToCreate: {},
+          newDefaultIndex: 5,
+          defaultFrom: 'Internet',
+          defaultTo: 'wgc5 - pia-aus_perth',
+        );
+
+        expect(logged.join('\n'), contains('from Internet to wgc5 - pia-aus_perth'));
+        final syslog = c.commands.firstWhere((x) => x.contains('logger'), orElse: () => '');
+        expect(syslog, contains('default WAN connection set from Internet to wgc5 - pia-aus_perth'));
+      });
+    });
+
     test('THE DEFAULT CONNECTION SEQUENCE IS EXACT', () async {
       // Eleven probes on hardware to find this. Every element is load-bearing and the order is
       // the part that is not guessable: restart_default_wan RESETS the key, so it has to run
