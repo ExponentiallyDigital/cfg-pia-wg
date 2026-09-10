@@ -35,6 +35,16 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.56 build 426 - two log screens that behave the same
+
+- FIX: **the router log showed only its last 41,644 characters.** It tailed 500 lines, and `/tmp/syslog.log` reached 512 KB in a day on the test router. It now opens on the newest 32 KB and pages BACKWARDS on demand: scroll near the top and the next page is fetched, with the scroll position corrected so what you are reading does not move under you.
+- ADD: paging continues into the ROTATED log. The firmware rotates to `syslog.log-1` rather than truncating, so the history a user wants can span two files and three quarters of a megabyte. It stops at the start of the older file and says so.
+- INF: each page is one command - `tail -c <total> file | head -c 32768` - so the router does the seeking and only 32 KB crosses SSH however far back you scroll. Every page but the oldest starts mid-line and has that fragment trimmed, or half a timestamp appears at the top of the screen.
+- ADD: **a COPY button on the router log**, taking everything loaded. Android places its own Copy/Share toolbar relative to the SELECTION, so on a full-height selection it lands on the app's own buttons - which is how a tap meant for Copy cleared the watchdog log on 2026-09-10. An in-app copy removes the need for the system toolbar in the one case where it gets in the way. It cannot be fixed by layout: nothing the app does moves where Android puts that toolbar.
+- CHG: both log screens now carry the same row of three bordered, equal-width buttons - COPY REFRESH HOME and COPY CLEAR CLOSE. They were bare TextButtons and read as three unrelated links.
+- CHG: the watchdog log lost its left and right margins. It is a wide monospace block and every column lost to padding is a wrapped line.
+- TST: fifteen - the paging arithmetic including the second page ending where the first began, a short last page, continuing into the rotated file, exhaustion, a missing rotated log, and the partial-line trim; plus the screen reading on entry, REFRESH starting again, COPY taking everything without arming the clipboard countdown, and both button rows being bordered and in order.
+
 2026-09-11 v0.8.55 build 425 - one control, one size
 
 - FIX: **HOME was a different width on different screens.** Full width on ABOUT and DEVICE ASSIGNMENT, 480-wide on SETTINGS, MANAGE and WATCHDOG - because those screens cap their body width on a tablet and the cap was being applied to the button as well. The cap is for content, not for chrome. Reported from a tablet.

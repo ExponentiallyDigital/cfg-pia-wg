@@ -17,21 +17,22 @@
 // which until now meant leaving the app for an SSH client or the web interface. The watchdog's own
 // lines are in here alongside the firmware's, so a reconfigure can be read in the context of
 // whatever the router was doing at the time.
+//
+// Opens on the newest lines and pages BACKWARDS on demand - see router_log_paging.dart for why,
+// and for which bytes each page covers.
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
 import '../router_command.dart';
+import '../router_log_paging.dart';
 import '../router_slot_service.dart' show openSshClient;
 import '../session_controller.dart';
 import '../widgets/app_drawer.dart' show navigateToDestination;
 import '../widgets/error_presenter.dart';
+import '../widgets/log_buttons.dart';
 import '../widgets/ssh_creds_dialog.dart';
-
-/// The router's syslog. Tail rather than the whole file: it can run to megabytes after an uptime
-/// of weeks, and every line above the last few hundred is scrollback nobody reads on a phone.
-const String kRouterLogCommand = 'tail -n 500 /tmp/syslog.log 2>/dev/null';
 
 class RouterLogScreen extends StatefulWidget {
   /// Injected by tests so the screen can be driven without a router.
@@ -46,8 +47,21 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
   late SessionController _c;
   final _scroll = ScrollController();
 
-  String? _log;
-  bool _loading = false, _started = false;
+  /// Loaded pages, OLDEST first, so the column renders in reading order top to bottom.
+  final List<String> _pages = [];
+
+  /// Bytes already read from each file in [kRouterLogFiles], and how big each of those is.
+  List<int> _consumed = [0, 0];
+  List<int> _sizes = [0, 0];
+
+  bool _loading = false, _started = false, _exhausted = false;
+  bool get _hasContent => _pages.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
 
   @override
   void didChangeDependencies() {
@@ -59,7 +73,7 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     // credentials when the session has none, because this screen has no other purpose - unlike
     // ABOUT, where arriving is not a statement of intent to touch the router.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _load(prompt: true);
+      if (mounted) _refresh(prompt: true);
     });
   }
 
@@ -69,109 +83,198 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     super.dispose();
   }
 
-  Future<void> _load({bool prompt = false}) async {
-    var ip = _c.routerIp.trim(), user = _c.sshUsername.trim(), pass = _c.sshPassword;
-    if (!_c.canReuseRouterSession) {
-      if (!prompt) return;
-      final entered = await showDialog<(String, String, String)?>(
-        context: context,
-        builder: (_) => SshCredsDialog(initialIp: _c.routerIpPrefill, initialUser: user, initialPass: pass),
-      );
-      if (entered == null || !mounted) return;
-      (ip, user, pass) = entered;
-      _c
-        ..routerIp = ip
-        ..sshUsername = user
-        ..sshPassword = pass;
-    }
+  /// Fetches the next older page when the reader gets near the top of what is loaded.
+  ///
+  /// 200 pixels of warning rather than waiting for offset zero, so the page usually arrives before
+  /// the reader reaches the end of the text.
+  void _onScroll() {
+    if (_loading || _exhausted || !_scroll.hasClients) return;
+    if (_scroll.offset <= 200) _loadOlder();
+  }
+
+  /// The credentials to use, asking for them when the session has none.
+  Future<(String, String, String)?> _credentials({required bool prompt}) async {
+    if (_c.canReuseRouterSession) return (_c.routerIp.trim(), _c.sshUsername.trim(), _c.sshPassword);
+    if (!prompt) return null;
+    final entered = await showDialog<(String, String, String)?>(
+      context: context,
+      builder: (_) => SshCredsDialog(
+        initialIp: _c.routerIpPrefill,
+        initialUser: _c.sshUsername.trim(),
+        initialPass: _c.sshPassword,
+      ),
+    );
+    if (entered == null || !mounted) return null;
+    _c
+      ..routerIp = entered.$1
+      ..sshUsername = entered.$2
+      ..sshPassword = entered.$3;
+    return entered;
+  }
+
+  SSHClient _client(String ip, String user, String pass) =>
+      _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+
+  /// Starts again from the newest page. Also what REFRESH does.
+  Future<void> _refresh({bool prompt = false}) async {
+    final creds = await _credentials(prompt: prompt);
+    if (creds == null || !mounted) return;
+    final (ip, user, pass) = creds;
 
     setState(() => _loading = true);
-    String? text;
     String? error;
+    List<int>? sizes;
+    String? first;
+    LogPage? page;
     try {
-      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      text = (await runRouterCommand(client, kRouterLogCommand, allowFailure: true)).stdout;
+      final client = _client(ip, user, pass);
+      sizes = parseLogSizes((await runRouterCommand(client, buildLogSizesCommand(), allowFailure: true)).stdout);
+      page = nextLogPage(sizes: sizes, consumed: [0, 0]);
+      if (page != null) {
+        first = (await runRouterCommand(client, page.command, allowFailure: true)).stdout;
+      }
       _c.routerConnected = true;
       await _c.rememberRouterIp(ip);
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
     }
     if (!mounted) return;
+    final loaded = page;
     setState(() {
       _loading = false;
-      if (text != null) _log = text.trimRight();
+      if (error != null) return;
+      _sizes = sizes ?? [0, 0];
+      _consumed = [0, 0];
+      _pages.clear();
+      _exhausted = loaded == null;
+      if (loaded != null && first != null) {
+        _pages.add(trimPartialFirstLine(first, reachesStart: loaded.reachesStart));
+        _consumed[kRouterLogFiles.indexOf(loaded.file)] = loaded.length;
+        _exhausted = nextLogPage(sizes: _sizes, consumed: _consumed) == null;
+      }
     });
-    // The newest lines are at the BOTTOM of a syslog, and they are the ones anyone opening this
-    // screen came for. Jumping after the frame that laid the text out, so the extent is known.
+    // The newest lines are at the BOTTOM of a syslog, and they are what anyone opening this screen
+    // came for. Jumping after the frame that laid the text out, so the extent is known.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
     if (error != null && mounted) await AppErrors.system(context, _c, 'Could not read the router log: $error');
   }
 
+  /// Fetches one page older than everything loaded, and inserts it ABOVE without moving the view.
+  Future<void> _loadOlder() async {
+    final page = nextLogPage(sizes: _sizes, consumed: _consumed);
+    if (page == null) {
+      setState(() => _exhausted = true);
+      return;
+    }
+    final creds = await _credentials(prompt: false);
+    if (creds == null || !mounted) return;
+    final (ip, user, pass) = creds;
+
+    setState(() => _loading = true);
+    // Everything below the insertion point shifts down by the height of what we add, so the scroll
+    // offset has to move with it or the reader is thrown backwards mid-sentence. maxScrollExtent
+    // grows by exactly that height, which is why the difference is the right correction.
+    final before = _scroll.hasClients ? _scroll.position.maxScrollExtent : 0.0;
+    String? text;
+    String? error;
+    try {
+      text = (await runRouterCommand(_client(ip, user, pass), page.command, allowFailure: true)).stdout;
+    } catch (e) {
+      error = e.toString().replaceAll('Exception: ', '');
+    }
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      if (error != null || text == null) return;
+      _pages.insert(0, trimPartialFirstLine(text, reachesStart: page.reachesStart));
+      _consumed[kRouterLogFiles.indexOf(page.file)] += page.length;
+      _exhausted = nextLogPage(sizes: _sizes, consumed: _consumed) == null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final delta = _scroll.position.maxScrollExtent - before;
+      if (delta > 0) _scroll.jumpTo(_scroll.offset + delta);
+    });
+    if (error != null && mounted) await AppErrors.system(context, _c, 'Could not read more of the router log: $error');
+  }
+
+  /// Copies everything loaded so far.
+  ///
+  /// Android puts its own Copy/Share toolbar wherever the selection is, which on a full-height
+  /// selection lands on top of these buttons - reported 2026-09-10, when a tap meant for Copy
+  /// cleared the watchdog log instead. An in-app copy removes the need for the system toolbar in
+  /// the one case where it gets in the way. armAutoClear: false - a log is not a credential, and
+  /// the 60-second wipe would take back what was just copied.
+  Future<void> _copy() async {
+    await _c.copyToClipboard(_pages.join(), armAutoClear: false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Router log copied.')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final log = _log;
-    return Column(
-      children: [
+    return Material(
+      color: kBg,
+      child: Column(children: [
         Expanded(
-          child: Container(
-            color: kBg,
+          child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: log == null
+            child: !_hasContent
                 ? Center(
                     child: _loading
                         ? const CircularProgressIndicator(color: kHighlight)
                         : const Text('No log read yet.', style: TextStyle(color: kMuted, fontSize: 13)),
                   )
-                // Its own scroll view, not AppScaffold's: this one has to be driven to the bottom
-                // after every refresh, which needs a controller on the scrollable holding the text.
-                : Scrollbar(
-                    controller: _scroll,
+                // One selection region over every loaded page, so "select all" spans the lot. A
+                // lazily-built list would page more cheaply and would not do that.
+                : SelectionArea(
                     child: SingleChildScrollView(
                       controller: _scroll,
-                      child: SelectableText(
-                        log.isEmpty ? '(the router log is empty)' : log,
-                        key: const Key('router_log_text'),
-                        style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace'),
-                      ),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        if (_loading)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Center(
+                              child: SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight),
+                              ),
+                            ),
+                          )
+                        else if (_exhausted)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text('- start of the router log -',
+                                textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 11)),
+                          ),
+                        for (final page in _pages)
+                          Text(page, style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace')),
+                      ]),
                     ),
                   ),
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Row(children: [
-            Expanded(
-              child: OutlinedButton(
-                key: const Key('router_log_refresh'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: kHighlight,
-                  side: const BorderSide(color: kHighlight),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                onPressed: _loading ? null : () => _load(prompt: true),
-                child: _loading
-                    ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
-                    : const Text('REFRESH'),
-              ),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          child: LogButtonRow(children: [
+            LogButton(keyValue: 'router_log_copy', label: 'COPY', onPressed: _hasContent ? _copy : null),
+            LogButton(
+              keyValue: 'router_log_refresh',
+              label: 'REFRESH',
+              busy: _loading,
+              onPressed: _loading ? null : () => _refresh(prompt: true),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton(
-                key: const Key('router_log_home'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: kHighlight,
-                  side: const BorderSide(color: kHighlight),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                onPressed: () => navigateToDestination(context, _c, AppDestination.menu),
-                child: const Text('HOME'),
-              ),
+            LogButton(
+              keyValue: 'router_log_home',
+              label: 'HOME',
+              onPressed: () => navigateToDestination(context, _c, AppDestination.menu),
             ),
           ]),
         ),
-      ],
+      ]),
     );
   }
 }

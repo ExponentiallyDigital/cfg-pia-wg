@@ -33,6 +33,7 @@ import '../watchdog_dialog.dart';
 import 'app_scaffold.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
+import 'log_buttons.dart';
 import 'region_picker_sheet.dart';
 
 enum SlotModalMode { manage, watchdog }
@@ -823,34 +824,31 @@ class _WatchdogLogScreen extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SingleChildScrollView(
-              // Room below the last line for the selection toolbar to land on, so it does not sit
-              // over the buttons even when the selection reaches the bottom of the screen.
-              padding: const EdgeInsets.only(bottom: 72),
-              child: SelectableText(
-                text,
-                key: const Key('watchdog_log_text'),
-                style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace'),
-              ),
+          // No side margins: the log is a wide monospace block and every column it loses to
+          // padding is a wrapped line. Full screen height AND full screen width.
+          child: SingleChildScrollView(
+            // Room below the last line for Android's selection toolbar to land on. It is placed
+            // relative to the selection rather than the layout, so this helps rather than fixes -
+            // the in-app COPY below is what makes the system toolbar unnecessary.
+            padding: const EdgeInsets.only(bottom: 72),
+            child: SelectableText(
+              text,
+              key: const Key('watchdog_log_text'),
+              style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace'),
             ),
           ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            TextButton(key: const Key('watchdog_log_copy'), onPressed: onCopy, child: const Text('COPY')),
-            TextButton(
-              key: const Key('watchdog_log_clear'),
+          child: LogButtonRow(children: [
+            LogButton(keyValue: 'watchdog_log_copy', label: 'COPY', onPressed: onCopy),
+            LogButton(
+              keyValue: 'watchdog_log_clear',
+              label: 'CLEAR',
+              destructive: true,
               onPressed: () => _confirmClear(context),
-              child: const Text('CLEAR', style: TextStyle(color: kError)),
             ),
-            TextButton(
-              key: const Key('watchdog_log_close'),
-              onPressed: () => Navigator.pop(context),
-              child: const Text('CLOSE'),
-            ),
+            LogButton(keyValue: 'watchdog_log_close', label: 'CLOSE', onPressed: () => Navigator.pop(context)),
           ]),
         ),
       ]),

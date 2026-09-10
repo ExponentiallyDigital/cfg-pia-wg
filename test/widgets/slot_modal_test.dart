@@ -490,6 +490,13 @@ void main() {
       final close = tester.getCenter(find.byKey(const Key('watchdog_log_close'))).dx;
       expect(copy, lessThan(clear));
       expect(clear, lessThan(close));
+      // Bordered and equal width, the same row the router log carries - they were bare TextButtons
+      // and read as three unrelated links rather than as a set of controls.
+      for (final key in ['watchdog_log_copy', 'watchdog_log_clear', 'watchdog_log_close']) {
+        expect(tester.widget<OutlinedButton>(find.byKey(Key(key))).style?.side, isNotNull, reason: key);
+      }
+      expect(tester.getSize(find.byKey(const Key('watchdog_log_copy'))).width,
+          tester.getSize(find.byKey(const Key('watchdog_log_close'))).width);
       // A page, not a card. Selecting the whole log put Android's own Copy/Share toolbar over the
       // action row of the dialog, and a tap meant for Copy landed on CLEAR.
       expect(find.byType(AlertDialog), findsNothing);
