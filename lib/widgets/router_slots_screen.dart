@@ -64,10 +64,16 @@ class _FirmwareGate {
       : passed = false,
         errorMessage = null;
 
-  Future<void> present(BuildContext context, SessionController c) {
-    if (errorMessage != null) return AppErrors.system(context, c, errorMessage!);
+  /// Shows the outcome. Returns true when the user asked to install the missing binaries, which
+  /// only the missing-binaries notice can offer - the other two have nothing the app can fix.
+  Future<bool> present(BuildContext context, SessionController c) async {
+    if (errorMessage != null) {
+      await AppErrors.system(context, c, errorMessage!);
+      return false;
+    }
     if (missingBinaries.isNotEmpty) return showMissingBinariesNotice(context, c, missingBinaries);
-    return showUnsupportedFirmwareNotice(context, c);
+    await showUnsupportedFirmwareNotice(context, c);
+    return false;
   }
 }
 
@@ -256,7 +262,13 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
         if (outcome == _InstallOutcome.justDeclined) return;
       }
       if (!mounted) return;
-      return gate.present(context, _c);
+      // INSTALL on the notice leads straight into the install the user just declined, rather than
+      // dead-ending on a warning about something the app can fix from here.
+      if (await gate.present(context, _c) && mounted) {
+        _c.declinedBinaryInstalls.remove(gate.missingBinaries.join(','));
+        return _onConnect();
+      }
+      return;
     }
     if (slots == null) return;
 

@@ -72,16 +72,29 @@ void main() {
       await _pumpNotice(tester, c, (ctx, ctrl) => showMissingBinariesNotice(ctx, ctrl, [kStockJqPath]));
 
       expect(find.byKey(const Key('firmware_notice')), findsOneWidget);
-      expect(find.textContaining('Unable to locate: $kStockJqPath'), findsOneWidget);
+      expect(find.textContaining('Unable to locate:'), findsOneWidget);
+      expect(find.textContaining(kStockJqPath), findsOneWidget);
       expect(find.textContaining('Prerequisites in README.md'), findsOneWidget);
+      // This is something the app can fix, so the notice offers to rather than dead-ending.
+      expect(find.byKey(const Key('firmware_notice_install')), findsOneWidget);
     });
 
-    testWidgets('comma-joins both missing binaries', (tester) async {
+    // One path per line. As a comma-separated sentence they ran together with the words around
+    // them and a reader had to pick them out of prose.
+    testWidgets('lists both missing binaries, one per line', (tester) async {
       final c = _controller();
       addTearDown(c.dispose);
       await _pumpNotice(tester, c, (ctx, ctrl) => showMissingBinariesNotice(ctx, ctrl, [kStockJqPath, kStockMailsendPath]));
 
-      expect(find.textContaining('Unable to locate: $kStockJqPath, $kStockMailsendPath'), findsOneWidget);
+      expect(find.textContaining('$kStockJqPath\n$kStockMailsendPath'), findsOneWidget);
+    });
+
+    // The unsupported-firmware notice has nothing the app can fix, so it must NOT offer.
+    testWidgets('the unsupported firmware notice offers no install', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      await _pumpNotice(tester, c, showUnsupportedFirmwareNotice);
+      expect(find.byKey(const Key('firmware_notice_install')), findsNothing);
     });
 
     testWidgets('is dismissible via OK', (tester) async {
@@ -167,7 +180,8 @@ void main() {
       await _pumpNotice(tester, c, (ctx, ctrl) => showMissingBinariesNotice(ctx, ctrl, [kStockJqPath]));
 
       expect(c.log.last.isError, isTrue);
-      expect(c.log.last.message, contains('Unable to locate: $kStockJqPath'));
+      expect(c.log.last.message, contains('Unable to locate:'));
+      expect(c.log.last.message, contains(kStockJqPath));
       expect(c.log.last.message, contains(kReadmePrereqUrl));
     });
 

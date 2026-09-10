@@ -453,7 +453,12 @@ void main() {
       await tester.pumpAndSettle();
 
       await declineThenReconnect(tester);
-      expect(find.textContaining('Unable to locate: $kStockJqPath, $kStockMailsendPath'), findsOneWidget);
+      // One path per line, not a comma-separated sentence: as prose they ran together with the
+      // words around them and a reader had to pick them out.
+      expect(find.textContaining('Unable to locate:'), findsOneWidget);
+      expect(find.textContaining('$kStockJqPath\n$kStockMailsendPath'), findsOneWidget);
+      // The app can fix this, so the notice offers to rather than dead-ending on a warning.
+      expect(find.byKey(const Key('firmware_notice_install')), findsOneWidget);
       expect(find.byKey(const Key('firmware_notice_link')), findsOneWidget);
       expect(find.text('WATCHDOG CONFIGURATION'), findsNothing);
 
@@ -471,7 +476,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await declineThenReconnect(tester);
-      expect(find.textContaining('Unable to locate: $kStockMailsendPath'), findsOneWidget);
+      expect(find.textContaining('Unable to locate:'), findsOneWidget);
+      expect(find.textContaining(kStockMailsendPath), findsOneWidget);
       expect(find.textContaining(kStockJqPath), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
@@ -503,7 +509,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await declineThenReconnect(tester);
-      expect(find.textContaining('Unable to locate: $kStockJqPath'), findsOneWidget);
+      expect(find.textContaining('Unable to locate:'), findsOneWidget);
+      expect(find.textContaining(kStockJqPath), findsOneWidget);
       expect(find.text('WIREGUARD CONFIGURATION'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());

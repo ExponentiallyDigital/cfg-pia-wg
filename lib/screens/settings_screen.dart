@@ -20,11 +20,13 @@
 // Drawer only, never on the main menu: an uninstall is not something to offer on the way in.
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
 import '../firmware.dart';
 import '../router_slot_service.dart' show openSshClient;
+import '../review_service.dart';
 import '../router_watchdog.dart';
 import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
@@ -77,12 +79,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: const Text('Remove cfg-pia-wg from the router?', style: TextStyle(color: kHighlight, fontSize: 14)),
             content: const SingleChildScrollView(
               child: Text(
-                'Puts back the two boot scripts the app replaced, and deletes $kRouterAppDir '
-                'along with everything in it - the watchdog scripts, the cached PIA certificate, '
-                'and the helper binaries the app installed.\n\n'
-                'Your VPN tunnels and their settings are NOT touched, and neither are any '
-                'watchdogs that are currently scheduled. Delete those first if you want them gone '
-                'too, or the next reboot will leave a watchdog with no script to run.\n\n'
+                'This will remove your watchdog reconfigure history, every setting the app '
+                'wrote to your router, and any watchdog schedules. It puts back the two boot '
+                'scripts the app replaced, and deletes $kRouterAppDir along with everything '
+                'in it - the watchdog scripts, the cached PIA certificate, and the helper '
+                'binaries.\n\n'
+                'Your VPN tunnels are NOT touched. They keep working, and you can manage them '
+                "from your router's own web interface.\n\n"
                 'The app itself keeps working. Deploying a watchdog again puts everything back.',
                 style: TextStyle(color: kText, fontSize: 12),
               ),
@@ -103,6 +106,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ) ??
         false;
     if (!confirmed || !mounted) return;
+    if (!await _reallySure() || !mounted) return;
 
     final creds = await _credentials();
     if (creds == null || !mounted) return;
@@ -131,7 +135,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
         title: const Text('Removed from the router', style: TextStyle(color: kHighlight, fontSize: 14)),
-        content: Text(done!.join('\n'), style: const TextStyle(color: kText, fontSize: 12)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(done!.join('\n'), style: const TextStyle(color: kText, fontSize: 12)),
+          // Amber, and set apart. The cron entries are gone but a running watchdog process is
+          // not, and the firmware keeps its own idea of what is configured until it restarts.
+          const SizedBox(height: 16),
+          const Text('Please restart your router.', style: TextStyle(color: kWarn, fontSize: 12)),
+        ]),
         actions: [
           TextButton(
             key: const Key('settings_uninstall_done'),
@@ -141,6 +151,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  /// The second ask, and the last thing between a tap and an uninstall.
+  ///
+  /// The first confirmation explains what happens; this one is the "are you sure". It also asks for
+  /// a review, which is the one moment in the app where asking is fair - the user is leaving, and
+  /// why they are leaving is the most useful thing they could tell us.
+  Future<bool> _reallySure() async {
+    final recogniser = TapGestureRecognizer()..onTap = _openReview;
+    try {
+      return await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: kSurface,
+              content: Text.rich(
+                TextSpan(style: const TextStyle(color: kText, fontSize: 13), children: [
+                  const TextSpan(text: 'Are you sure?\n\n'),
+                  const TextSpan(text: 'Please consider '),
+                  TextSpan(
+                    text: 'leaving us a review',
+                    style: const TextStyle(
+                      color: kHighlight,
+                      decoration: TextDecoration.underline,
+                      decorationColor: kHighlight,
+                    ),
+                    recognizer: recogniser,
+                  ),
+                  const TextSpan(text: " on the Google Play store with why you're uninstalling."),
+                ]),
+              ),
+              actions: [
+                OutlinedButton(
+                  key: const Key('settings_uninstall_really'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: kError,
+                    side: const BorderSide(color: kHighlight),
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  ),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('UNINSTALL', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                OutlinedButton(
+                  key: const Key('settings_uninstall_really_cancel'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: kHighlight,
+                    side: const BorderSide(color: kHighlight),
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  ),
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('CANCEL'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+    } finally {
+      recogniser.dispose();
+    }
+  }
+
+  /// The same destination the home screen's review link uses.
+  Future<void> _openReview() async {
+    if (!await openPlayStoreReview() && mounted) {
+      _c.logEntry('Could not open the Play Store listing on this device.', isError: true);
+    }
   }
 
   Future<void> _deletePiaCert() async {
