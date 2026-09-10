@@ -313,6 +313,9 @@ class DeviceAssignmentService {
       onLog?.call('Applying ${changes.length} device change${changes.length == 1 ? '' : 's'}:');
       for (final d in changeDescriptions) {
         onLog?.call('  $d');
+        // The same line in the ROUTER log. The app log is wiped when the app exits; a reassignment
+        // that explains a device's traffic weeks later has to be somewhere that survives.
+        await _read(buildLoggerCommand('$d reassigned'));
       }
       await _run('service restart_dnsmasq');
       await _run('service restart_vpnc_dev_policy');

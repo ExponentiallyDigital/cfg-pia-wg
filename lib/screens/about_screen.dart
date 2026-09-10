@@ -75,8 +75,13 @@ class _AboutScreenState extends State<AboutScreen> {
   /// script at all. The app updates from the store while the script only changes on a deploy, so
   /// "which script is actually out there" is a question this screen exists to answer.
   String? _scriptVersion;
+
+  /// "Since yyyy-mm-dd: X successful & Y unsuccessful reconfigures", or null when the router has
+  /// never recorded any - in which case the screen shows nothing rather than an empty row.
+  String? _historyLine;
   bool _scriptChecked = false, _scriptLoading = false;
   late final TapGestureRecognizer _scriptLoginRecogniser;
+  late final TapGestureRecognizer _historyLoginRecogniser;
 
   // One recogniser per link, owned by this State so they can be disposed. A tappable TextSpan
   // (rather than an InkWell around the whole row) is what lets a long GitHub URL wrap mid-line
@@ -97,6 +102,8 @@ class _AboutScreenState extends State<AboutScreen> {
     // A dedicated recogniser for the licences link, which is not one of the _kLinks entries.
     _licencesRecognizer = TapGestureRecognizer()..onTap = () => _showOpenSourceLicences(context);
     _scriptLoginRecogniser = TapGestureRecognizer()..onTap = () => _loadScriptVersion(prompt: true);
+    // Either link fetches both rows, because one round trip answers both questions.
+    _historyLoginRecogniser = TapGestureRecognizer()..onTap = () => _loadScriptVersion(prompt: true);
   }
 
   @override
@@ -134,11 +141,16 @@ class _AboutScreenState extends State<AboutScreen> {
 
     setState(() => _scriptLoading = true);
     String? version;
+    String? history;
     String? error;
     try {
       final client =
           controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      version = await RouterWatchdog(client, onLog: controller.onLog).deployedScriptVersion();
+      // Both ABOUT rows in one round trip - neither is worth a handshake of its own, and it means
+      // tapping either row's login link fills in the other.
+      final facts = await RouterWatchdog(client, onLog: controller.onLog).aboutRouterFacts();
+      version = facts.version;
+      history = facts.history;
       await controller.rememberRouterIp(ip);
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
@@ -151,6 +163,7 @@ class _AboutScreenState extends State<AboutScreen> {
       // question we never got to ask.
       _scriptChecked = error == null;
       _scriptVersion = version;
+      _historyLine = history;
     });
     if (error != null && mounted) {
       await AppErrors.system(context, controller, 'Could not read the deployed watchdog script: $error');
@@ -170,6 +183,7 @@ class _AboutScreenState extends State<AboutScreen> {
       recogniser.dispose();
     }
     _scriptLoginRecogniser.dispose();
+    _historyLoginRecogniser.dispose();
     super.dispose();
   }
 
@@ -216,6 +230,23 @@ class _AboutScreenState extends State<AboutScreen> {
                     scriptStatus: _scriptStatus,
                     scriptLoginRecogniser: _scriptChecked || _scriptLoading ? null : _scriptLoginRecogniser,
                   ),
+                  // The watchdog's own history, set apart from the build info because it describes
+                  // the ROUTER rather than this app. Absent entirely when the router has no
+                  // counters, so an untouched router shows no empty gap where it would have been.
+                  if (_historyLine != null || !_scriptChecked) ...[
+                    const SizedBox(height: 16),
+                    Text.rich(
+                      key: const Key('about_watchdog_history'),
+                      _historyLine != null
+                          ? TextSpan(text: _historyLine, style: _valueStyle)
+                          : TextSpan(
+                              children: [
+                                const TextSpan(text: 'Watchdog history: ', style: _labelStyle),
+                                TextSpan(text: kScriptLoginPrompt, style: _linkStyle, recognizer: _historyLoginRecogniser),
+                              ],
+                            ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   // Wrap, not Row: the two labels together overflow a narrow phone, so they sit
                   // side by side when there is room and fall to a second line when there is not.

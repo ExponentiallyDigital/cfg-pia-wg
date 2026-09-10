@@ -228,8 +228,20 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   /// WireGuard slots only. A record naming an OpenVPN or PPTP profile is never offered - the app
   /// manages WireGuard, and writing to another VPN's profile is not ours to do.
-  List<VpncRecord> get _wireguardProfiles =>
-      _state!.profiles.where((p) => p.protocol == 'WireGuard' && p.vpncStateIndex != null).toList();
+  /// Active tunnels first, then disabled ones, each group in wgcN order.
+  ///
+  /// The list came back in `vpnc_clientlist` order, which is creation order - so a user who built
+  /// wgc1 then wgc5 then wgc2 saw wgc4 above wgc3 and had to read every line to find one. Slot
+  /// number is the only order anyone thinks in.
+  List<VpncRecord> get _wireguardProfiles {
+    final out = _state!.profiles.where((p) => p.protocol == 'WireGuard' && p.vpncStateIndex != null).toList();
+    out.sort((a, b) {
+      final aUp = _slotActive(a) ?? false, bUp = _slotActive(b) ?? false;
+      if (aUp != bUp) return aUp ? -1 : 1;
+      return (a.slot ?? 99).compareTo(b.slot ?? 99);
+    });
+    return out;
+  }
 
   bool _isForeign(LanDevice d) => _isForeignIndex(_effectiveIndex(d));
 
@@ -259,7 +271,10 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         return '${p.protocol.isEmpty ? 'Another VPN' : p.protocol}, not app managed';
       }
       final slot = p.slot;
-      return slot == null ? p.desc : 'wgc$slot - ${p.desc}';
+      // `wgc1:pia-aus_melbourne`, the same shape slotLabel() produces and every log line in the app
+      // already uses. It read `wgc1 - pia-aus_melbourne` here, which made the same tunnel look like
+      // two different things depending on which screen you were on.
+      return slot == null ? p.desc : slotLabel(slot, p.desc);
     }
     return 'profile $idx';
   }
@@ -359,7 +374,11 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
                       if (note.isNotEmpty) const Text(' - ', style: TextStyle(color: kMuted, fontSize: 12)),
                     ],
                     if (note.isNotEmpty)
-                      Flexible(child: Text(note, style: const TextStyle(color: kMuted, fontSize: 12))),
+                      Flexible(
+                        child: Text(note,
+                            style: TextStyle(
+                                color: note == kWatchdogActiveNote ? kHighlight : kMuted, fontSize: 12)),
+                      ),
                   ]),
               ]),
             ),
@@ -373,7 +392,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     if (slot == null) return '';
     final info = _slotInfo[slot];
     if (info == null) return '';
-    if (info.watchdogActive) return 'watchdog active';
+    if (info.watchdogActive) return kWatchdogActiveNote;
     if (info.watchdogConfigured) return 'watchdog paused';
     return 'no watchdog';
   }
@@ -583,22 +602,30 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       const Text("Names come from your router's client list.",
           textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 11)),
       const SizedBox(height: 8),
-      if (_pendingCount > 0)
-        Center(
-          child: TextButton(
+      // One centred row, both buttons at HOME's height so the three read as one set rather than
+      // three sizes stacked up the screen. Their widths are left to their labels.
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        if (_pendingCount > 0) ...[
+          OutlinedButton(
             key: const Key('device_discard'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: kMuted,
+              side: const BorderSide(color: kMuted),
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            ),
             onPressed: _busy ? null : () => setState(_c.clearStagedAssignments),
-            child: const Text('Discard changes', style: TextStyle(color: kMuted)),
+            child: const Text('DISCARD CHANGES'),
           ),
-        ),
-      Center(
-        child: FilledButton(
+          const SizedBox(width: 12),
+        ],
+        FilledButton(
           key: const Key('device_apply'),
+          style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16)),
           onPressed: _busy || _pendingCount == 0 ? null : _apply,
           // 'APPLY 1' read as a step number rather than a count (B3 feedback).
           child: Text(_pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES'),
         ),
-      ),
+      ]),
       // AppScaffold pins HOME to the bottom over the scroll view, which clipped APPLY when the
       // list was scrolled fully down (B1 screenshot 2026-09-08).
       const SizedBox(height: 16),
@@ -626,6 +653,9 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     setState(() => _stagedDefault = chosen == _state!.defaultIndex ? null : chosen as int);
   }
 }
+
+/// The one picker note worth spotting in a list, so it is the one that is not grey.
+const String kWatchdogActiveNote = 'watchdog active';
 
 /// One device: `Name - IP` over the picker. The MAC stands in for a missing name rather than
 /// occupying a line of its own, and only exceptional states earn a tag.

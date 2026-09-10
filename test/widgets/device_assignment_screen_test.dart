@@ -142,7 +142,7 @@ void main() {
     await _pumpConnected(tester);
     expect(find.text('Default connection'), findsOneWidget);
     expect(find.textContaining('fall back to it if their tunnel drops'), findsOneWidget);
-    expect(find.text('wgc1 - pia-aus_melbourne'), findsWidgets);
+    expect(find.text('wgc1:pia-aus_melbourne'), findsWidgets);
   });
 
   testWidgets('a default connection of INTERNET reads as Internet, not "profile 0"', (tester) async {
@@ -230,7 +230,7 @@ void main() {
   // down a list of a dozen rows.
   testWidgets('a device that follows the default says what the default IS', (tester) async {
     await _pumpConnected(tester);
-    expect(find.textContaining('default - wgc1 - pia-aus_melbourne'), findsWidgets);
+    expect(find.textContaining('default - wgc1:pia-aus_melbourne'), findsWidgets);
     expect(find.widgetWithText(OutlinedButton, 'default'), findsNothing);
   });
 
@@ -316,6 +316,53 @@ void main() {
     expect(find.byKey(const Key('device_discard')), findsNothing);
   });
 
+  // The list came back in creation order, so a user who built wgc1 then wgc5 then wgc2 saw wgc4
+  // above wgc3 and had to read every line to find one. Slot number is the only order anyone thinks
+  // in - within the enabled and disabled groups, which stay.
+  testWidgets('the picker lists tunnels in wgcN order within each group', (tester) async {
+    await _pumpConnected(tester);
+    await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+    await tester.pumpAndSettle();
+
+    // wgc1 is up in the fixture and wgc5 is not, so active-first and wgcN-order agree here; the
+    // assertion that matters is that both are present and ordered, not jumbled by creation order.
+    final one = tester.getCenter(find.byKey(const Key('pick_9'))).dy;
+    final five = tester.getCenter(find.byKey(const Key('pick_5'))).dy;
+    expect(one, lessThan(five), reason: 'wgc1 is active, wgc5 is not');
+  });
+
+  // An active watchdog is the one fact worth spotting while choosing, so it is the one that is not
+  // grey.
+  testWidgets('an active watchdog is teal in the picker', (tester) async {
+    await _pumpConnected(tester);
+    await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+    await tester.pumpAndSettle();
+
+    for (final t in tester.widgetList<Text>(find.byType(Text))) {
+      if (t.data == kWatchdogActiveNote) {
+        expect(t.style?.color, kHighlight);
+        return;
+      }
+    }
+  });
+
+  testWidgets('APPLY and DISCARD share one centred row, at HOME height', (tester) async {
+    await _pumpConnected(tester);
+    await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pick_5')));
+    await tester.pumpAndSettle();
+
+    final discard = tester.getRect(find.byKey(const Key('device_discard')));
+    final apply = tester.getRect(find.byKey(const Key('device_apply')));
+    expect(discard.center.dy, apply.center.dy, reason: 'one row');
+    expect(discard.right, lessThan(apply.left), reason: 'discard on the left');
+    expect(discard.height, apply.height, reason: 'and the same height as each other');
+    // Capitals, like every other button label in the app.
+    expect(find.text('DISCARD CHANGES'), findsOneWidget);
+    expect(find.text('Discard changes'), findsNothing);
+  });
+
   testWidgets('APPLY confirms, then writes', (tester) async {
     final ssh = await _pumpConnected(tester);
     await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
@@ -328,7 +375,7 @@ void main() {
     expect(find.text('Apply 1 change'), findsOneWidget);
     // "default" on its own meant holding the default connection in your head while reading the
     // list; the row and the confirmation both resolve it now. vpnc_default_wan is 9 here, wgc1.
-    expect(find.textContaining('default - wgc1 - pia-aus_melbourne -> wgc5 - pia-aus_perth'), findsOneWidget);
+    expect(find.textContaining('default - wgc1:pia-aus_melbourne -> wgc5:pia-aus_perth'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('apply_confirm')));
     await tester.pumpAndSettle();
@@ -446,7 +493,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const Key('device_connect')));
     await tester.pumpAndSettle();
-    expect(find.text('wgc1 - pia-aus_melbourne'), findsWidgets);
+    expect(find.text('wgc1:pia-aus_melbourne'), findsWidgets);
 
     await tester.tap(find.byKey(const Key('default_picker')));
     await tester.pumpAndSettle();
@@ -457,7 +504,7 @@ void main() {
     await tester.tap(find.byKey(const Key('apply_confirm')));
     await tester.pumpAndSettle();
 
-    expect(find.text('wgc5 - pia-aus_perth'), findsWidgets, reason: 'the picker shows the new default');
+    expect(find.text('wgc5:pia-aus_perth'), findsWidgets, reason: 'the picker shows the new default');
     expect(find.text('APPLY 0 CHANGES'), findsOneWidget, reason: 'staging cleared');
   });
 
