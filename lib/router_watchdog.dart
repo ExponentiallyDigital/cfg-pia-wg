@@ -375,8 +375,19 @@ const List<String> kEmailWhatToDo = [
   '1. Check your PIA username and password in the app, under WATCHDOG then CONFIGURE.',
   '2. Open VIEW WATCHDOG LOG in the app for the full history.',
   '3. PIA rate-limits repeated token requests; if the code above is 403, wait 30 minutes before intervening.',
-  '4. Is your PIA billing account active?',
+  '4. Review your router log.',
+  '5. Is your PIA billing account active?',
 ];
+
+/// The footer on every ALERT email. Not on the test email: that one is sent from the very screen
+/// this sentence points at, with the checkbox on it, so telling the reader where to find it would
+/// be telling them where they already are.
+///
+/// Alerts are different. They arrive hours or days later, at an address that may not even be the
+/// phone the app is on, and an alert nobody can see how to stop is one people silence at the mail
+/// client instead - which loses the next one too.
+const String kEmailHowToDisable =
+    'Email alerting can be disabled in the app via WATCHDOG, CREATE/EDIT, then deselecting "Enable email alerts".';
 
 const String kEmailReviewLine = 'If cfg-pia-wg is useful to you, please consider submitting a review '
     'by tapping on the home screen link or via $kPlayStoreUrl';
@@ -394,6 +405,7 @@ String buildEmailBody({
   required String history,
   List<String> whatToDo = const [],
   String? routerLog,
+  bool howToDisable = true,
 }) {
   final b = StringBuffer()
     ..writeln(opening)
@@ -411,6 +423,11 @@ String buildEmailBody({
   section(kSectionRouter, router.where((r) => r.isNotEmpty));
   section(kSectionHistory, [history]);
   if (routerLog != null) section(kSectionRouterLog, [routerLog.trimRight()]);
+  if (howToDisable) {
+    b
+      ..writeln(kEmailHowToDisable)
+      ..writeln();
+  }
   b
     ..writeln(kEmailReviewLine)
     ..writeln();
@@ -583,15 +600,37 @@ const String _kMailHdrMerlin = r'''  {
 ''';
 
 // The kill switch has three states, not two: on, available-but-disabled (Merlin), and absent
-// (stock, which has none - revisit that wording once in-app device assignment lands, after which a
-// device assigned to a downed wgcN simply loses connectivity).
+// (stock, which has none).
 //
 // Each also needs three tenses, because the same fact reads wrong in the wrong one: UP for a deploy
 // run where the tunnel is fine, FIXED for a recovery that is over, DOWN for a failure that is not.
-const String _kKillSwitchStock =
-    r'''KILLSW_UP="not supported on this firmware - if the tunnel drops, traffic reaches the internet without the VPN"
-KILLSW_FIXED="not supported on this firmware - traffic reached the internet without the VPN"
-KILLSW_DOWN="not supported on this firmware - traffic is reaching the internet without the VPN"''';
+//
+// Stock used to assert a leak in all three - "traffic is reaching the internet without the VPN".
+// That is wrong about two thirds of the time. A device pinned to a dropped tunnel falls through to
+// the DEFAULT CONNECTION (ARCHITECTURE.md 3.3.6, confirmed twice on hardware), and the default is
+// one of three things: this same slot, in which case those devices have no internet at all and the
+// outage is fail-closed; another tunnel, in which case they are still on a VPN and the old sentence
+// was a false alarm; or the plain internet, which is the only case the old sentence described. A
+// warning that cries wolf twice for every time it is right is one people learn to ignore, so the
+// script reads `vpnc_default_wan` and says which of the three actually happened.
+const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
+[ -n "$DEFIDX" ] || DEFIDX=0
+# Index 2 of a vpnc_clientlist record is the slot, index 6 the state index the default is named by.
+MYIDX="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" '$3==s {print $7; exit}')"
+DEFNAME="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v d="$DEFIDX" '$7==d {print $1; exit}')"
+if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then
+  KILLSW_UP="none on this firmware, but this tunnel is the default connection - if it drops, its devices lose internet rather than leaking"
+  KILLSW_FIXED="none on this firmware; this tunnel is the default connection, so its devices had no internet rather than an unprotected one"
+  KILLSW_DOWN="none on this firmware; this tunnel is the default connection, so its devices have no internet rather than an unprotected one"
+elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ]; then
+  KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection, $DEFNAME, so they stay on a VPN"
+  KILLSW_FIXED="none on this firmware; while it was down, its devices fell through to the default connection, $DEFNAME, so they stayed on a VPN"
+  KILLSW_DOWN="none on this firmware; its devices are falling through to the default connection, $DEFNAME, so they are still on a VPN"
+else
+  KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection - the plain internet, with no VPN"
+  KILLSW_FIXED="none on this firmware; while it was down, its devices reached the internet with no VPN"
+  KILLSW_DOWN="none on this firmware; its devices are reaching the internet with no VPN"
+fi''';
 
 const String _kKillSwitchMerlin = r'''if [ "$ENFORCE" = "1" ]; then
   KILLSW_UP="ON - traffic is blocked if the tunnel drops"
@@ -640,7 +679,7 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       .replaceAll('__KILLSW__', stock ? _kKillSwitchStock : _kKillSwitchMerlin)
       .replaceAll('__MAILHDR__', stock ? _kMailHdrStock : _kMailHdrMerlin)
       .replaceAll('__WHATTODO__', _echoBlock(['', kSectionWhatToDo, ...kEmailWhatToDo]))
-      .replaceAll('__SIGNOFF__', _echoBlock(['', kEmailReviewLine, '', ...kEmailSignOff]))
+      .replaceAll('__SIGNOFF__', _echoBlock(['', kEmailHowToDisable, '', kEmailReviewLine, '', ...kEmailSignOff]))
       .replaceAll('__MAILCMD__', stock ? _kMailCmdStock : _kMailCmdMerlin);
 }
 
@@ -1166,6 +1205,7 @@ class RouterWatchdog {
           ],
           router: facts.routerRows(config.slotIndex),
           history: facts.historyLine,
+          howToDisable: false,
         );
         // sendmail wants the RFC-822 headers inline; mailsend-go takes them as flags.
         final file = stock ? body : '${buildMailHeaders(config, subject: subject)}$body';
