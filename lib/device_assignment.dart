@@ -53,9 +53,16 @@ class DevicePolicy {
   /// treated as "not ours" rather than guessed at.
   int? get vpncIndex => int.tryParse(fields[_vpncIdx]);
 
-  /// True when this record says the device routes somewhere. Index `0` is the WAN, and a disabled
-  /// record is a placeholder, so neither counts.
-  bool get isAssigned => enabled && (vpncIndex ?? 0) != 0;
+  /// True when this record PINS the device somewhere, whether to a tunnel or to the plain internet.
+  ///
+  /// The enabled flag is the whole test, and index 0 does not disqualify a record. Two records can
+  /// both carry index 0 and mean opposite things (ARCHITECTURE.md 3.3.6, confirmed 2026-09-08):
+  /// `1>IP>>0>` is PINNED to Internet Connection and ignores the default, while `0>IP>>0>` follows
+  /// whatever the default is. Until 421 this returned false for both, so a device deliberately
+  /// pinned to the internet was displayed - and rewritten - as though it followed the default. That
+  /// is the difference between leaking and failing closed when a tunnel drops, so it is not a
+  /// display detail.
+  bool get isAssigned => enabled;
 
   String serialise() => fields.join('>');
 
@@ -90,7 +97,8 @@ List<DevicePolicy> setDevicePolicy(List<DevicePolicy> records, {required String 
   return out;
 }
 
-/// The `vpnc_clientlist` index 6 currently assigned to [ip], or null for none.
+/// The `vpnc_clientlist` index 6 [ip] is pinned to: `0` for the plain internet, a profile index for
+/// a tunnel, or null when the device has no pin and follows the default connection.
 int? assignedIndexFor(List<DevicePolicy> records, String ip) {
   for (final r in records) {
     if (r.ip == ip) return r.isAssigned ? r.vpncIndex : null;
@@ -204,6 +212,9 @@ class LanDevice {
 List<LanDevice> sortDevicesForDisplay(List<LanDevice> devices) {
   final out = List.of(devices);
   out.sort((a, b) {
+    // Offline devices sink below online ones. The list is long enough that scrolling past greyed
+    // rows to reach a device that is actually there was the common case.
+    if (a.online != b.online) return a.online ? -1 : 1;
     if (a.isNameless != b.isNameless) return a.isNameless ? 1 : -1;
     return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
   });

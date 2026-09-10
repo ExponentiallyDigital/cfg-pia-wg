@@ -52,8 +52,29 @@ void main() {
       expect(r.isAssigned, isFalse);
     });
 
-    test('index 0 is the WAN, so enabled-but-zero is not an assignment either', () {
-      expect(parseDevicePolicyList('1>192.168.1.20>>0>').single.isAssigned, isFalse);
+    // Two records can carry index 0 and mean opposite things. Confirmed 2026-09-08 by reading the
+    // router's own interface with the tunnels stopped: a device holding an ENABLED index-0 record
+    // showed as selected under Internet Connection, a disabled one as a greyed selection.
+    test('ENABLED index 0 is a pin to the plain internet, not an absence of one', () {
+      final r = parseDevicePolicyList('1>192.168.1.20>>0>').single;
+      expect(r.isAssigned, isTrue);
+      expect(assignedIndexFor([r], '192.168.1.20'), 0);
+    });
+
+    test('DISABLED index 0 follows the default connection, and has no index of its own', () {
+      final r = parseDevicePolicyList('0>192.168.1.20>>0>').single;
+      expect(r.isAssigned, isFalse);
+      expect(assignedIndexFor([r], '192.168.1.20'), isNull);
+    });
+
+    // The difference decides whether a device leaks or fails closed when a tunnel drops, so
+    // rewriting one as the other is a correctness bug rather than a display detail.
+    test('pinning to the internet and unpinning write different records', () {
+      final start = parseDevicePolicyList('1>192.168.1.20>>9>');
+      expect(serialiseDevicePolicyList(setDevicePolicy(start, ip: '192.168.1.20', vpncIndex: 0)),
+          '1>192.168.1.20>>0>');
+      expect(serialiseDevicePolicyList(setDevicePolicy(start, ip: '192.168.1.20', vpncIndex: null)),
+          '0>192.168.1.20>>0>');
     });
 
     test('enabled with a real index is an assignment', () {

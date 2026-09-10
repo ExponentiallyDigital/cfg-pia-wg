@@ -67,8 +67,12 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
   bool _autoConnecting = false;
 
   /// Staged, not yet written: device IP to the profile index it should use, null for the default.
-  final Map<String, int?> _staged = {};
-  int? _stagedDefault;
+  /// Staged, unwritten changes. These live on the SESSION, not on this State: the screen is built
+  /// from scratch every time it is entered, so a glance at the log used to discard everything the
+  /// user had staged. Aliases rather than copies, so there is no sync step to forget.
+  Map<String, int?> get _staged => _c.stagedAssignments;
+  int? get _stagedDefault => _c.stagedDefaultIndex;
+  set _stagedDefault(int? v) => _c.stagedDefaultIndex = v;
 
   @override
   void didChangeDependencies() {
@@ -167,8 +171,11 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       // Watchdog state for the picker. A tolerated failure: the notes go blank rather than the
       // whole screen failing, because assignment does not depend on knowing them.
       Map<int, SlotInfo> slots = const {};
+      Set<int>? active;
       try {
-        slots = (await slotSvc.fetchSlots()).slots;
+        final fetched = await slotSvc.fetchSlots();
+        slots = fetched.slots;
+        active = fetched.activeSlots;
       } catch (_) {
         // left blank on purpose
       }
@@ -178,8 +185,13 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         _service = svc;
         _state = state;
         _slotInfo = slots;
-        _stagedDefault = null;
-        _staged.clear();
+        _activeSlots = active;
+        // Staged changes survive leaving the screen and coming back - they live on the session,
+        // not on this State, which is rebuilt from scratch on every entry. Losing a dozen staged
+        // assignments to a glance at the log was the reported bug.
+        // Deliberately NOT cleared here: the staged changes are the user's, and a reconnect is
+        // not a decision to throw them away. apply() re-reads and refuses on a conflict, so
+        // carrying them across a reconnect cannot write anything based on a stale view.
       });
       return null;
     }
@@ -219,11 +231,19 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
   List<VpncRecord> get _wireguardProfiles =>
       _state!.profiles.where((p) => p.protocol == 'WireGuard' && p.vpncStateIndex != null).toList();
 
-  bool _isForeign(LanDevice d) {
-    final idx = _effectiveIndex(d);
-    if (idx == null) return false;
-    return !_wireguardProfiles.any((p) => p.vpncStateIndex == idx);
-  }
+  bool _isForeign(LanDevice d) => _isForeignIndex(_effectiveIndex(d));
+
+  /// What the DEFAULT CONNECTION panel shows. An unset `vpnc_default_wan` means the plain
+  /// internet, the same as an explicit 0 - without this it read 'default', which says nothing.
+  String get _defaultLabel => _labelForIndex((_stagedDefault ?? _state!.defaultIndex) ?? 0);
+
+  /// What a DEVICE row shows. A device with no pin of its own follows the default, so the row
+  /// names it: "default - Internet", "default - wgc1 - pia-aus_melbourne". Reading just "default"
+  /// meant knowing what the default was and holding it in your head while you read the list.
+  ///
+  /// Uses the STAGED default when one is pending, so the list says where these devices will be
+  /// after APPLY rather than where they are now - which is what the panel above it also says.
+  String _labelForDevice(int? idx) => idx == null ? 'default - $_defaultLabel' : _labelForIndex(idx);
 
   String _labelForIndex(int? idx) {
     if (idx == null) return 'default';
@@ -254,7 +274,20 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       builder: (ctx) => _PickerDialog(
         title: d.displayName,
         children: [
-          _pickerTile(ctx, key: 'pick_default', label: 'default', note: _labelForIndex(_state!.defaultIndex), value: 'default'),
+          _pickerTile(ctx,
+              key: 'pick_default',
+              label: 'default - $_defaultLabel',
+              note: 'follows the default connection, whatever you set it to',
+              value: 'default'),
+          // Pinning to the plain internet is a DIFFERENT choice from following a default that
+          // happens to be the internet: a pinned device ignores the default from then on. The
+          // router models both (`1>IP>>0>` versus `0>IP>>0>`), the app only offered one, and with
+          // a single tunnel configured the picker read as the same profile listed twice.
+          _pickerTile(ctx,
+              key: 'pick_internet',
+              label: 'Internet',
+              note: 'no VPN, and ignores the default connection',
+              value: 0),
           for (final p in _wireguardProfiles)
             _pickerTile(ctx,
                 key: 'pick_${p.vpncStateIndex}',
@@ -262,6 +295,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
                 // The watchdog state belongs here rather than in a warning: the user sees it while
                 // choosing, which is when it can still change the decision.
                 note: _watchdogNote(p),
+                active: _slotActive(p),
                 value: p.vpncStateIndex),
         ],
       ),
@@ -280,7 +314,21 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   // One entry in a picker: the choice, and a note under it. Built here rather than inline so the
   // device picker and the default picker cannot drift apart.
-  Widget _pickerTile(BuildContext ctx, {required String key, required String label, required String note, required Object? value}) =>
+  /// Whether the profile's tunnel is UP, or null when the slot state could not be read.
+  ///
+  /// A tunnel that is down accepts an assignment perfectly happily and then carries no traffic,
+  /// which is a slow thing to work out from the outside. Reported after assigning a device to a
+  /// disabled wgc5 and finding it still on wgc1.
+  bool? _slotActive(VpncRecord p) {
+    final slot = p.slot;
+    if (slot == null) return null;
+    return _activeSlots?.contains(slot);
+  }
+
+  Set<int>? _activeSlots;
+
+  Widget _pickerTile(BuildContext ctx,
+          {required String key, required String label, required String note, required Object? value, bool? active}) =>
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         // A bordered, filled tile rather than a bare ListTile. Three plain rows of text read as a
@@ -299,7 +347,20 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                 Text(label, style: const TextStyle(color: kText, fontSize: 14)),
-                if (note.isNotEmpty) Text(note, style: const TextStyle(color: kMuted, fontSize: 12)),
+                // Teal ACTIVE / amber DISABLED, the colours the slot modal uses for the same
+                // facts - amber being the app's "configured but not doing anything" colour, as on
+                // a paused watchdog and on a staged-but-unapplied change.
+                if (active != null || note.isNotEmpty)
+                  Row(children: [
+                    if (active != null) ...[
+                      Text(active ? 'Active' : 'Disabled',
+                          style: TextStyle(
+                              color: active ? kHighlight : kWarn, fontSize: 12, fontWeight: FontWeight.w700)),
+                      if (note.isNotEmpty) const Text(' - ', style: TextStyle(color: kMuted, fontSize: 12)),
+                    ],
+                    if (note.isNotEmpty)
+                      Flexible(child: Text(note, style: const TextStyle(color: kMuted, fontSize: 12))),
+                  ]),
               ]),
             ),
             const Icon(Icons.chevron_right, size: 18, color: kMuted),
@@ -341,14 +402,14 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
           for (final entry in _staged.entries)
             _ChangeLine(
               name: state.devices.firstWhere((d) => d.ip == entry.key, orElse: () => LanDevice(mac: entry.key)).displayName,
-              from: _labelForIndex(assignedIndexFor(state.policies, entry.key)),
-              to: _labelForIndex(entry.value),
+              from: _labelForDevice(assignedIndexFor(state.policies, entry.key)),
+              to: _labelForDevice(entry.value),
             ),
           if (_stagedDefault != null)
             _ChangeLine(
               name: 'Default connection',
-              from: _labelForIndex(state.defaultIndex),
-              to: _labelForIndex(_stagedDefault),
+              from: _labelForIndex(state.defaultIndex ?? 0),
+              to: _labelForIndex(_stagedDefault ?? 0),
             ),
         ],
         reservationNames: [
@@ -389,6 +450,15 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         changes: Map.of(_staged),
         reservationsToCreate: reservations,
         newDefaultIndex: _stagedDefault,
+        // The service knows IP addresses and profile indexes; only the screen knows what the user
+        // calls them. Naming the change here is what makes the app log readable a week later.
+        changeDescriptions: [
+          for (final entry in _staged.entries)
+            '${state.devices.firstWhere((d) => d.ip == entry.key, orElse: () => LanDevice(mac: entry.key)).displayName}: '
+                '${_labelForDevice(assignedIndexFor(state.policies, entry.key))} -> ${_labelForDevice(entry.value)}',
+        ],
+        defaultFrom: _labelForIndex(state.defaultIndex ?? 0),
+        defaultTo: _labelForIndex(_stagedDefault ?? 0),
       );
     } on AssignmentConflictException catch (e) {
       failure = e.toString();
@@ -404,8 +474,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       if (mounted) {
         setState(() {
           _state = fresh;
-          _staged.clear();
-          _stagedDefault = null;
+          _c.clearStagedAssignments();
         });
       }
     } catch (e) {
@@ -480,7 +549,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
           const SizedBox(height: 4),
           _PickerButton(
             keyValue: 'default_picker',
-            label: _labelForIndex(_stagedDefault ?? state.defaultIndex),
+            label: _defaultLabel,
             changed: _stagedDefault != null,
             onTap: _busy ? null : _pickDefault,
           ),
@@ -502,7 +571,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             if (d != state.devices.first) const Divider(color: kBorder, height: 20),
             _DeviceRow(
               device: d,
-              label: _labelForIndex(_effectiveIndex(d)),
+              label: _labelForDevice(_effectiveIndex(d)),
               changed: _staged.containsKey(d.ip),
               foreign: _isForeign(d),
               onTap: _busy || !d.assignable ? null : () => _pick(d),
@@ -518,10 +587,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         Center(
           child: TextButton(
             key: const Key('device_discard'),
-            onPressed: _busy ? null : () => setState(() {
-              _staged.clear();
-              _stagedDefault = null;
-            }),
+            onPressed: _busy ? null : () => setState(_c.clearStagedAssignments),
             child: const Text('Discard changes', style: TextStyle(color: kMuted)),
           ),
         ),
@@ -551,6 +617,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
                 key: 'default_pick_${p.vpncStateIndex}',
                 label: _labelForIndex(p.vpncStateIndex),
                 note: _watchdogNote(p),
+                active: _slotActive(p),
                 value: p.vpncStateIndex),
         ],
       ),
@@ -658,7 +725,7 @@ class _ApplyDialog extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             for (final l in lines) ...[
               Text(l.name, style: const TextStyle(color: kText, fontSize: 13)),
-              Text('  ${l.from} -> ${l.to}', style: const TextStyle(color: kMuted, fontSize: 12)),
+              Text('${l.from} -> ${l.to}', style: const TextStyle(color: kMuted, fontSize: 12)),
               const SizedBox(height: 6),
             ],
             if (reservationNames.isNotEmpty) ...[

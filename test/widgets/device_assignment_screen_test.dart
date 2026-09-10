@@ -5,6 +5,7 @@
 // this app does not manage is named rather than shown as unassigned.
 //
 // MACs are invented - see test/unit/no_lan_identifiers_test.dart.
+import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/device_assignment_service.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_session.dart';
@@ -49,6 +50,9 @@ RecordingSSHClient _router() => RecordingSSHClient(responder: (cmd) {
       if (cmd == 'nvram get vpnc_dev_policy_list') return _policyList;
       if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
       if (cmd == 'nvram get dhcp_staticlist') return _staticlist;
+      // wgc1 up, wgc5 down - so the picker has one of each to tag. `ip -o link show up` is the
+      // only correct liveness check: a WireGuard device reads state UNKNOWN while it is up.
+      if (cmd.contains('ip -o link show up')) return '3: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP>';
       return '';
     });
 
@@ -222,6 +226,96 @@ void main() {
     expect(find.byKey(const Key('pick_3')), findsNothing, reason: 'the OpenVPN profile is never offered');
   });
 
+  // "default" on its own made the reader hold the default connection in their head while going
+  // down a list of a dozen rows.
+  testWidgets('a device that follows the default says what the default IS', (tester) async {
+    await _pumpConnected(tester);
+    expect(find.textContaining('default - wgc1 - pia-aus_melbourne'), findsWidgets);
+    expect(find.widgetWithText(OutlinedButton, 'default'), findsNothing);
+  });
+
+  // The router models two different things with index 0 - `1>IP>>0>` is PINNED to the internet and
+  // ignores the default, `0>IP>>0>` follows it - and the app only offered the second. With one
+  // tunnel configured the picker read as the same profile listed twice.
+  testWidgets('a device can be pinned to the plain internet, separately from following a default', (tester) async {
+    final ssh = await _pumpConnected(tester);
+    await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('pick_default')), findsOneWidget);
+    expect(find.byKey(const Key('pick_internet')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('pick_internet')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('device_apply')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('apply_confirm')));
+    await tester.pumpAndSettle();
+
+    // Enabled, index 0: pinned. The unassign form would have been `0>...>>0>`.
+    final write = ssh.commands.firstWhere((c) => c.startsWith('nvram set vpnc_dev_policy_list'));
+    expect(write, contains('1>192.168.1.20>>0>'));
+  });
+
+  testWidgets('the picker tags each tunnel Active or Disabled', (tester) async {
+    await _pumpConnected(tester);
+    await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+    await tester.pumpAndSettle();
+
+    // A tunnel that is down accepts an assignment happily and then carries no traffic, which is a
+    // slow thing to work out from the outside.
+    final active = tester.widget<Text>(find.text('Active').first);
+    expect(active.style?.color, kHighlight);
+    final disabled = tester.widget<Text>(find.text('Disabled').first);
+    expect(disabled.style?.color, kWarn, reason: 'amber, as a paused watchdog and a staged change are');
+  });
+
+  // Reported: a glance at the log discarded everything staged, because the screen is rebuilt from
+  // scratch on every entry.
+  testWidgets('staged changes survive leaving the screen and coming back', (tester) async {
+    final ssh = _router();
+    final c = SessionController()
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true;
+    addTearDown(c.dispose);
+    Widget screen() => SessionScope(
+          controller: c,
+          child: MaterialApp(
+            home: Scaffold(body: DeviceAssignmentScreen(testClientFactory: (_, __, ___) async => ssh)),
+          ),
+        );
+
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pick_5')));
+    await tester.pumpAndSettle();
+    expect(find.text('APPLY 1 CHANGE'), findsOneWidget);
+
+    // Away and back: a new State, built from the session rather than from nothing.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(screen());
+    await tester.pumpAndSettle();
+
+    expect(find.text('APPLY 1 CHANGE'), findsOneWidget);
+    expect(c.stagedAssignments['192.168.1.20'], 5);
+  });
+
+  testWidgets('discarding clears the session too, so it does not come back', (tester) async {
+    await _pumpConnected(tester);
+    await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pick_5')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('device_discard')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('device_discard')), findsNothing);
+  });
+
   testWidgets('APPLY confirms, then writes', (tester) async {
     final ssh = await _pumpConnected(tester);
     await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
@@ -232,7 +326,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Apply 1 change'), findsOneWidget);
-    expect(find.textContaining('default -> wgc5 - pia-aus_perth'), findsOneWidget);
+    // "default" on its own meant holding the default connection in your head while reading the
+    // list; the row and the confirmation both resolve it now. vpnc_default_wan is 9 here, wgc1.
+    expect(find.textContaining('default - wgc1 - pia-aus_melbourne -> wgc5 - pia-aus_perth'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('apply_confirm')));
     await tester.pumpAndSettle();

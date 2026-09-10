@@ -562,6 +562,8 @@ The router's own interface renders the difference, which is how it was confirmed
 
 This matters because unassigning in this app writes the disabled form. A user who then looks at the web interface sees their device greyed under Internet Connection and may read that as "pinned to the internet" - it is not, it follows whatever the default connection is. The distinction is exactly the one that decides whether a device leaks or fails closed when a tunnel drops (3.3.6).
 
+**The app models both since 421.** `DevicePolicy.isAssigned` is the enabled flag alone - index 0 does not disqualify a record - so `assignedIndexFor` returns `0` for a device pinned to the internet and `null` for one that follows the default. The per-device picker offers both as separate choices: *default*, which names what the default currently resolves to, and *Internet*, which pins and ignores the default from then on. Until 421 only the first existed, so a device deliberately pinned to the internet was displayed as following the default and rewritten as such on the next apply.
+
 #### Changing the default connection - the exact sequence, MEASURED 2026-09-08
 
 Writing `vpnc_default_wan` does nothing on its own, and eleven probes were needed to find out why. The sequence below is the only one that works; every element is load-bearing and none of it is guessable.

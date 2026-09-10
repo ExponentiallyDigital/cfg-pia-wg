@@ -23,16 +23,6 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.2. WIP
 
-**device assignment:**
-- GUI: alter the device management screen so that if a device is showing as set to the default connection "default", instead show what the default is eg "default - Internet" or "default - wgc1:pia-region_name"
-- FIX: in the apply-changes popup modal, the "from" line is indented by two spaces. Remove the indent so every line of the change list starts at the same column.
-- FIX: unable to select "Internet Connection" from device assignment screen on a per device basis. With only wgc1 available as a VPN do you see wgc1 listed twice: "default wgc1 pia-region_name" then again as "wgc1 - pia-region_name", and no ability to choose "Internet Connection" unless the default connection is set to Internet, then you do see two choices in the drop down: "default Internet" and "wgc1 - pia-region_name".
-- ADD: changes to the device dropdown: where the line says "no watchdog", add before that text a status to show if the wgcN is enabled or disabled, use a similar style to the slot modal used by MANAGE and WATCHDOG ie teal "Active". If the slot is not active use "Disabled", and use amber text (to match the PAUSED watchdog or unapplied device management text).
-- BUG: if you navigate away from device assignment to say the log, then return, any staged changes are lost on re-entering the device assignment screen.
-- ADD: when a default connection is applied in device assignment, log a message to the router log: "default WAN connection set from `<old-name>` to `<new-name>`, eg "Internet Connection" or "wgcN:pia-region_name". There is currently no message displayed in the router log. Also do that for the app log, instead of "default connection changed". In the app log record what assignment changes were made: instead of logging "Applying..." log "Applying: `<list of changes on separate lines>` eg "tablet1: default connection -> wgc1:pia-region_name".
-- CHG: instead only only sorting the display by hostname, sort the device list by status then hostname so offline hosts appear below online hosts.
-- commit.
-
 **uninstall and new menu:**
 - ADD: uninstall feature - add a "Settings" menu item on the hamburger menu above "ABOUT". This menu is not shown on the home screen. Create a screen in that menu item that provides a button to tap on to "Uninstall features installed to router", this removes the app's `S50Downloadmaster` and renames `S50Downloadmaster.old` to `S50Downloadmaster`, renames `S50asuslighttpd.old` to `S50asuslighttpd`, and removes the `/jffs/cfg-pia-wg` folder - the user should be prompted first and told what it will do. Move the "FORGET ROUTER IP" and "DEL PIA CERT" buttons from the ABOUT menu to this SETTINGS menu.
 - ADD: alter about menu URLs to be short form (display a tapable link instead of the url) - so the "Readme: ..." line becomes "Readme". Retain one item per line, do for all 4 lines; alter "Open source: licenses" to be tappable as well and change to -> "Open source licenses". The whole text is tappable.
@@ -53,6 +43,18 @@ outer_watchdog.dart` already does the parsing and `WatchdogStatus.scriptVersion`
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-10 v0.8.51 build 421 - device assignment: say what is on, what changed, and what default means
+
+- FIX: **a device pinned to the plain internet was shown, and rewritten, as though it followed the default connection.** The router models both - `1>IP>>0>` pins and ignores the default, `0>IP>>0>` follows it - and `isAssigned` collapsed the two. The picker now offers *default* and *Internet* as separate choices, which also ends the complaint that with one tunnel configured it listed the same profile twice.
+- CHG: **a row that follows the default now says what the default is** - "default - wgc1 - pia-aus_melbourne" rather than "default". Reading the old label meant holding the default connection in your head while going down a dozen rows. It follows the STAGED default when one is pending, so the list says where those devices will be after APPLY.
+- ADD: the picker tags each tunnel teal **Active** or amber **Disabled**, the colours the slot modal uses for the same facts. A tunnel that is down accepts an assignment happily and then carries no traffic, which is a slow thing to work out from the outside.
+- FIX: **staged changes survived leaving the screen and coming back.** They live on the session now rather than on the screen's State, which is rebuilt on every entry - so a glance at the log discarded everything staged. Cleared on APPLY, on Discard, and by the credential wipe.
+- ADD: **both logs now name what changed.** The app log lists each device change as "<name>: <from> -> <to>", one per line, instead of "Applying...", and a default-connection change is named from and to in the app log AND the router syslog, which said nothing about it at all before.
+- CHG: the device list sorts offline devices below online ones, then by name. Scrolling past greyed rows to reach a device that is actually there was the common case.
+- FIX: the apply confirmation no longer indents the "from" line by two spaces.
+- TST: fourteen - the pin-versus-follow distinction in the model and what each writes, the resolved default label on rows and in the confirmation, the Internet choice writing the enabled form, the Active and Disabled colours, staged changes surviving a rebuild and being cleared by Discard, both log paths, and the new sort order.
+- DOC: ARCHITECTURE.md 3.3.6 records that the app now models both index-0 meanings.
 
 2026-09-10 v0.8.50 build 420 - alert emails: what to do, and how to turn them off
 
