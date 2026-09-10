@@ -14,7 +14,13 @@ the numbering below that moves.
 
 ## Tests I had to change
 
-Nothing yet.
+**Added `test/unit/markdown_links_test.dart`** - the link check from plan 2, pre-approved. It passes
+on the tree as it stands. Two details of GitHub anchor generation had to be reproduced exactly or it
+reported false failures: each space becomes its own hyphen (so `Security & QA` yields a double
+hyphen), and a heading indented by up to three spaces is still a heading - BACKLOG.md has eight of
+those inside a list.
+
+No existing test has needed a change so far.
 
 ## Deviations from the plans
 
