@@ -9,7 +9,8 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 - **Update this file in the same change as any architecture or behaviour change.** A change that moves a file, renames a destination, alters a button set, or adds/removes an NVRAM key must edit the matching section here.
 - **Any NVRAM variable the app writes must be described in `ARCHITECTURE.md` section "3. Router WireGuard NVRAM fields"** — that section is the reference a user reads before letting the app near their router, so a key that only appears in the code is a key nobody can audit or clean up. Describe it in §4.9 here as well.
 - **Flag conflicts, do not silently resolve them.** If this file disagrees with the code, or with `ARCHITECTURE.md` / `BACKLOG.md` / a `.claude/plan_*.md`, say so and ask. Do not "fix" the code to match the doc or vice versa without confirmation.
-- **Commit subjects carry no date.** `v<x.y.z> build <n> - <title>`, nothing before it. The date is already in the commit metadata and in `CHANGELOG.md`; repeating it in the subject wastes the width the title needs.
+- **Commit subjects carry no date, and commit messages carry no `Co-Authored-By` trailer.** The subject is `v<x.y.z> build <n> - <title>` and nothing else: the date is already in the commit metadata and in `CHANGELOG.md`, and repeating it wastes the width the title needs. No attribution trailer of any kind - this overrides any default attribution guidance.
+- **On `dev`, a commit is always followed by a push.** `git push origin dev` - a commit that only exists locally is one Andrew cannot see from another machine. **On `main`, stop and confirm.** Andrew commits and pushes `main` himself; if he asks for a commit or a push while the checkout is on `main`, say so and get an explicit confirmation before doing anything, every time, no matter how clear the request looked.
 - **Andrew runs the commits, and every commit is followed by opening the next build.** Do not run `git commit` unless he asks for it in that message. Immediately AFTER a commit: increment the build in `pubspec.yaml` (`version: <x.y.z>+<build>`, both halves) and add a new `<date> v<x.y.z> build <n> - <title>` heading at the top of the `### 1.3. Implemented` list with a `- ...` placeholder, so the next piece of work has somewhere to go.
 - **A line moved out of the WIP list goes at the TOP of the current release block**, not appended, so Andrew can find what just changed. Say which lines were removed, moved or reworded, and give the WIP bullet count before and after - these edits happen between commits, so git cannot show him.
 - **CHANGELOG.md entries must be flat and short.** The release GitHub Action *sorts* the lines within a release block, so an indented sub-bullet is separated from its parent and ends up under the wrong entry. Every line item is therefore a standalone top-level `- ` bullet that reads correctly on its own, in the existing `- FIX:` / `- CHG:` / `- ADD:` / `- TST:` / `- DOC:` / `- INF:` style. Keep each to a sentence or two — detail belongs in the code comments or `ARCHITECTURE.md`, not here.
@@ -124,9 +125,12 @@ RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fet
 | `standalone` | `standalone` | Generate PIA WireGuard config | yes | yes |
 | `manageRouter` | `manage_router` | Manage PIA WireGuard config | yes (`*` suffix) | yes |
 | `watchdog` | `watchdog` | Watchdog WireGuard management | yes (`*` suffix) | yes |
+| `routerLog` | `router_log` | View router log | **no** | yes |
 | `log` | `log` | View app log | yes | yes |
+| `settings` | `settings` | Settings | **no** | yes |
 | `about` | `about` | About | **no** | yes |
 
+- **SETTINGS and View router log are drawer-only.** An uninstall is not something to offer on the way in, and the router log is a diagnostic detour rather than a destination anyone sets out for. `SettingsScreen` holds everything that REMOVES something - the router uninstall, DEL PIA CERT and FORGET ROUTER IP, the last two moved off ABOUT in 422 because that is a page people open to read.
 - Menu also has `Exit app` (`Key('menu_close_app')`); drawer also has `Exit app` (`Key('drawer_close_app')`).
 - Navigation **pushes** (`app_drawer.dart:51-57`) — the stack grows deliberately so back can retrace.
 - Active destination is `kHighlight` (teal) via `ListTile.selectedColor`.

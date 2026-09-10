@@ -57,7 +57,9 @@ enum AppDestination {
   manageRouter('manage_router', 'Manage PIA WireGuard config'),
   watchdog('watchdog', 'Watchdog WireGuard management'),
   deviceAssignment('device_assignment', 'VPN device assignment'),
+  routerLog('router_log', 'View router log'),
   log('log', 'View app log'),
+  settings('settings', 'Settings'),
   about('about', 'About');
 
   const AppDestination(this.routeName, this.title);

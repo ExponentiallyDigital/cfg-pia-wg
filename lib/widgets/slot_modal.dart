@@ -385,6 +385,8 @@ class _SlotModalState extends State<SlotModal> {
                 key: const Key('watchdog_log_text'), style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace')),
           ),
         ),
+        // COPY left, CLEAR centred, CLOSE right. spaceBetween does that on its own with three
+        // children, which is why CLEAR needs no padding of its own.
         actions: [
           TextButton(
             key: const Key('watchdog_log_copy'),
@@ -395,10 +397,43 @@ class _SlotModalState extends State<SlotModal> {
             },
             child: const Text('COPY'),
           ),
+          TextButton(
+            key: const Key('watchdog_log_clear'),
+            // Destructive and irreversible, so it asks - but the log is diagnostic rather than
+            // configuration, and the confirmation says exactly that so a user can decide quickly.
+            onPressed: () async {
+              final ok = await _confirm('Clear the watchdog log for wgc$slot?',
+                  message: 'Empties /tmp/watchdog_wgc$slot.log on the router. The watchdog keeps '
+                      'writing to it from its next run. Nothing else changes.',
+                  confirmLabel: 'CLEAR',
+                  destructive: true);
+              if (!ok || !ctx.mounted) return;
+              Navigator.pop(ctx);
+              await _clearWatchdogLog(slot);
+            },
+            child: const Text('CLEAR', style: TextStyle(color: kError)),
+          ),
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CLOSE')),
         ],
       ),
     );
+  }
+
+  Future<void> _clearWatchdogLog(int slot) async {
+    setState(() => _processing = true);
+    Object? error;
+    try {
+      await _wdSvc(await widget.connect()).clearWatchdogLog(slot);
+    } catch (e) {
+      error = e;
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+    if (error != null && mounted) {
+      await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
+    } else {
+      _c.logEntry('Watchdog log cleared for wgc$slot.', isSuccess: true);
+    }
   }
 
   // ── Sub-dialogs ─────────────────────────────────────────────────────────────────

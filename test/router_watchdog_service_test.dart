@@ -276,6 +276,47 @@ void main() {
     });
   });
 
+  group('log housekeeping and uninstall', () {
+    // Truncated, not deleted: the script appends and never creates, so removing the file would
+    // lose every line until the next reboot.
+    test('clearing a watchdog log truncates the file rather than removing it', () async {
+      final c = RecordingSSHClient(responder: (_) => '');
+      await _wd(c).clearWatchdogLog(1);
+
+      expect(c.commands.any((x) => x.contains('rm ') && x.contains('watchdog_wgc1.log')), isFalse);
+      expect(c.commands.any((x) => x.contains('> /tmp/watchdog_wgc1.log')), isTrue);
+      expect(c.commands.any((x) => x.contains('logger')), isTrue, reason: 'the router log records it');
+    });
+
+    test('uninstall restores what it can and reports what it did', () async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('.old') ? 'RESTORED' : 'REMOVED');
+      final done = await _wd(c).uninstallFromRouter();
+
+      expect(done, contains('Restored the original S50downloadmaster.'));
+      expect(done, contains('Restored the original S50asuslighttpd.'));
+      expect(done.last, contains(kRouterAppDir));
+    });
+
+    // Restoring first means that if the directory removal fails, the boot scripts are already
+    // back - the reverse order could leave a router with no init script AND the app's files on it.
+    test('the boot scripts are restored BEFORE the directory is removed', () async {
+      final c = RecordingSSHClient(responder: (_) => 'RESTORED');
+      await _wd(c).uninstallFromRouter();
+
+      expect(c.commands.indexWhere((x) => x.contains('S50asuslighttpd.old')),
+          lessThan(c.commands.indexWhere((x) => x.contains('rm -rf'))));
+    });
+
+    test('it leaves cron, NVRAM and the tunnels alone', () async {
+      final c = RecordingSSHClient(responder: (_) => 'REMOVED');
+      await _wd(c).uninstallFromRouter();
+
+      for (final untouched in ['cru ', 'nvram ', 'service ']) {
+        expect(c.commands.any((x) => x.contains(untouched)), isFalse, reason: untouched);
+      }
+    });
+  });
+
   group('deployWatchdog', () {
     test('enables JFFS, writes nvram, deploys the script and both cron entries', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
