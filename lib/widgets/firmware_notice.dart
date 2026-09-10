@@ -28,13 +28,20 @@ import '../session_controller.dart';
 
 /// Warns that stock firmware is missing one or both helper binaries. [missing] holds the absent
 /// paths in probe order.
-Future<void> showMissingBinariesNotice(BuildContext context, SessionController controller, List<String> missing) =>
-    showFirmwareNotice(
+/// Returns true when the user asked to install the missing binaries instead of dismissing.
+///
+/// The paths go on their OWN LINES. As prose they ran together with the sentence around them and a
+/// reader had to pick them out of it; as a block they are a list of files that are not there, which
+/// is what the reader is being told.
+Future<bool> showMissingBinariesNotice(BuildContext context, SessionController controller, List<String> missing) async =>
+    await showFirmwareNotice(
       context,
       controller,
-      message: 'Unable to locate: ${missing.join(', ')}\nSee ',
+      message: 'Unable to locate:\n\n${missing.join('\n')}\n\nSee ',
       linkText: 'Prerequisites in README.md',
-    );
+      offerInstall: true,
+    ) ==
+    FirmwareNoticeChoice.install;
 
 /// Warns that `nvram get 3rd-party` named a firmware this app does not support.
 Future<void> showUnsupportedFirmwareNotice(BuildContext context, SessionController controller) => showFirmwareNotice(
@@ -44,27 +51,40 @@ Future<void> showUnsupportedFirmwareNotice(BuildContext context, SessionControll
       linkText: 'README.md',
     );
 
+/// What the user did with a notice.
+enum FirmwareNoticeChoice { dismissed, install }
+
 /// [message] is plain prose (newlines honoured) followed by [linkText], which opens [url].
-Future<void> showFirmwareNotice(
+Future<FirmwareNoticeChoice> showFirmwareNotice(
   BuildContext context,
   SessionController controller, {
   required String message,
   required String linkText,
   String url = kReadmePrereqUrl,
+  bool offerInstall = false,
 }) async {
   controller.logEntry('$message$linkText ($url)', isError: true);
   controller.enterModal();
-  await showDialog<void>(
+  final choice = await showDialog<FirmwareNoticeChoice>(
     context: context,
     useRootNavigator: true,
-    builder: (ctx) => _FirmwareNoticeDialog(message: message, linkText: linkText, url: url),
+    builder: (ctx) => _FirmwareNoticeDialog(message: message, linkText: linkText, url: url, offerInstall: offerInstall),
   );
   controller.exitModal();
+  return choice ?? FirmwareNoticeChoice.dismissed;
 }
 
 class _FirmwareNoticeDialog extends StatefulWidget {
   final String message, linkText, url;
-  const _FirmwareNoticeDialog({required this.message, required this.linkText, required this.url});
+
+  /// Whether the thing this notice complains about is something the app can fix.
+  final bool offerInstall;
+  const _FirmwareNoticeDialog({
+    required this.message,
+    required this.linkText,
+    required this.url,
+    this.offerInstall = false,
+  });
 
   @override
   State<_FirmwareNoticeDialog> createState() => _FirmwareNoticeDialogState();
@@ -117,12 +137,20 @@ class _FirmwareNoticeDialogState extends State<_FirmwareNoticeDialog> {
         ]),
         key: const Key('firmware_notice_link'),
       ),
+      // OK and INSTALL on the same row. Telling a user what is missing and then leaving them to
+      // find the install elsewhere is a dead end when the app can do it from here.
       actions: [
         TextButton(
           key: const Key('firmware_notice_ok'),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(context).pop(FirmwareNoticeChoice.dismissed),
           child: const Text('OK', style: TextStyle(color: kHighlight, fontWeight: FontWeight.w700)),
         ),
+        if (widget.offerInstall)
+          TextButton(
+            key: const Key('firmware_notice_install'),
+            onPressed: () => Navigator.of(context).pop(FirmwareNoticeChoice.install),
+            child: const Text('INSTALL', style: TextStyle(color: kHighlight, fontWeight: FontWeight.w700)),
+          ),
       ],
     );
   }

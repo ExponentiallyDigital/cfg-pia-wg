@@ -119,6 +119,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('settings_uninstall_confirm')));
       await tester.pumpAndSettle();
+      // The second ask. This is the one action in the app that cannot be undone from inside it.
+      await tester.tap(find.byKey(const Key('settings_uninstall_really')));
+      await tester.pumpAndSettle();
       return ssh;
     }
 
@@ -127,13 +130,20 @@ void main() {
 
       final order = ssh.commands.where((c) => c.contains('.old') || c.contains('rm -rf')).toList();
       expect(order.length, 3, reason: 'two scripts and the directory');
+      // Cron and NVRAM go too, or an "uninstalled" router keeps firing a schedule at a script that
+      // is not there and keeps the app's settings for the next person to wonder about.
+      expect(ssh.commands.contains('cru l'), isTrue);
+      expect(ssh.commands.any((c) => c.contains('nvram unset cfg_pia_wg_user')), isTrue);
       expect(order[0], contains('S50downloadmaster.old'));
       expect(order[1], contains('S50asuslighttpd.old'));
       expect(order[2], contains('rm -rf'));
       expect(order[2], contains(kRouterAppDir));
 
-      expect(find.textContaining('Restored the original S50downloadmaster.'), findsOneWidget);
-      expect(find.textContaining('Restored the original S50asuslighttpd.'), findsOneWidget);
+      expect(find.textContaining('Restored the original S50downloadmaster'), findsOneWidget);
+      expect(find.textContaining('Restored the original S50asuslighttpd'), findsOneWidget);
+      // Cron entries are gone but a running watchdog process is not, and the firmware keeps its own
+      // idea of what is configured until it restarts.
+      expect(find.text('Please restart your router.'), findsOneWidget);
     });
 
     // A missing .old means the original was gone before the app ever wrote a backup - true for
@@ -180,7 +190,40 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('are NOT touched'), findsOneWidget);
-      expect(find.textContaining('Delete those first'), findsOneWidget);
+      expect(find.textContaining('reconfigure history'), findsOneWidget);
+      expect(find.textContaining('web interface'), findsOneWidget);
+    });
+
+    // A second ask, because REMOVE on the first dialog is one tap from a screen full of buttons
+    // and this is the only action in the app that cannot be undone from inside it.
+    testWidgets('a second confirmation stands between REMOVE and the router', (tester) async {
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      final c = SessionController(tickInterval: const Duration(hours: 1))
+        ..routerIp = '192.168.1.1'
+        ..sshUsername = 'admin'
+        ..sshPassword = 'pw'
+        ..routerConnected = true;
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(
+          controller: c,
+          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_uninstall')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_uninstall_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Are you sure?'), findsOneWidget);
+      // The one moment in the app where asking for a review is fair: the user is leaving, and why
+      // they are leaving is the most useful thing they could tell us.
+      expect(find.textContaining('leaving us a review'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('settings_uninstall_really_cancel')));
+      await tester.pumpAndSettle();
+      expect(ssh.commands, isEmpty, reason: 'cancelling the second ask touches nothing');
     });
   });
 
