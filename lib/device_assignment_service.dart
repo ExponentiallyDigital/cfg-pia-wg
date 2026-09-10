@@ -213,6 +213,40 @@ class DeviceAssignmentService {
     onLog?.call('The router did not report the default connection being reset; continuing.', isError: true);
   }
 
+  /// Removes the policy routing rules stock leaves behind when a device's assignment changes.
+  ///
+  /// Without this the whole feature is cosmetic: measured 2026-09-10, a device moved from wgc1 to
+  /// wgc5 kept BOTH rules at priority 100, the older one matched first, and its traffic carried on
+  /// leaving through wgc1 while every list on the router said wgc5. See [staleRuleTables] for the
+  /// evidence and for why none of the service calls clear it.
+  ///
+  /// Deleting the rules directly is the light fix. `restart_net_and_phy` also works - it is what
+  /// the web interface reaches for - but it bounces every switch port and re-leases the WAN, which
+  /// drops every wireless client on the network. That is far too much for moving one device.
+  ///
+  /// Runs AFTER `restart_vpnc_dev_policy`, so it sweeps up whatever that call left in place, and
+  /// repeats while it still finds something: the service is queued by `notify_rc`, so the first
+  /// read can land before it has finished installing the new rule.
+  Future<void> _clearStaleRules(Map<String, int?> changes) async {
+    for (var pass = 0; pass < 3; pass++) {
+      final rules = await _read(kIpRuleCommand);
+      final deletions = <String>[];
+      changes.forEach((ip, index) {
+        for (final table in staleRuleTables(rules, ip: ip, keepIndex: index)) {
+          deletions.add('ip rule del from $ip lookup $table');
+        }
+      });
+      if (deletions.isEmpty) return;
+      onLog?.call('Clearing ${deletions.length} stale routing rule(s)...');
+      // Tolerant: a rule that has already gone between the read and the delete is the outcome we
+      // wanted, not a failure worth stopping an apply for.
+      for (final cmd in deletions) {
+        await _read(cmd);
+      }
+      await Future<void>.delayed(pollInterval);
+    }
+  }
+
   /// Applies staged changes in one pass.
   ///
   /// [changes] maps a device IP to the profile index 6 it should route through, or null to send it
@@ -268,6 +302,7 @@ class DeviceAssignmentService {
       onLog?.call('Applying...');
       await _run('service restart_dnsmasq');
       await _run('service restart_vpnc_dev_policy');
+      await _clearStaleRules(changes);
     }
     if (newDefaultIndex != null) await _setDefaultConnection(base, newDefaultIndex);
     onLog?.call('Device assignments applied.', isSuccess: true);

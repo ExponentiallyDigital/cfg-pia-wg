@@ -98,6 +98,45 @@ int? assignedIndexFor(List<DevicePolicy> records, String ip) {
   return null;
 }
 
+/// Lists the policy routing rules. Each assigned device gets one, `from <ip> lookup <index 6>`.
+const String kIpRuleCommand = 'ip rule show';
+
+/// The routing tables [ip] is still being sent to that it should not be, given that it now belongs
+/// to [keepIndex] (or to the default connection when that is null).
+///
+/// Stock DOES NOT REMOVE a device's old rule when its assignment changes. Measured 2026-09-10: a
+/// device moved from wgc1 to wgc5 ended up with both rules, at the same priority 100 -
+///
+/// ```text
+/// 100:    from 192.168.1.51 lookup 9     <- wgc1, stale
+/// 100:    from 192.168.1.51 lookup 5     <- wgc5, correct
+/// ```
+///
+/// At equal priority the kernel takes them in insertion order, so the older rule matches first and
+/// the new one is never reached. NVRAM, the web interface and this app all agreed the device was on
+/// wgc5 while its traffic went out wgc1 - the assignment was written correctly and simply had no
+/// effect. Neither `restart_vpnc_dev_policy`, `restart_vpnrouting0` nor a vpnc stop/restart clears
+/// it; only `restart_net_and_phy` does, and that bounces every switch port and re-leases the WAN.
+///
+/// A duplicate of the CORRECT rule is stale too: one is kept and any further copies are returned.
+List<int> staleRuleTables(String ipRuleOutput, {required String ip, int? keepIndex}) {
+  final stale = <int>[];
+  var kept = false;
+  for (final line in ipRuleOutput.split('\n')) {
+    final m = RegExp(r'from (\S+) lookup ([0-9]+)').firstMatch(line);
+    // `lookup main` and the priority-10000 `from all iif br0` default-connection rules are not
+    // per-device and must never be touched; both fail the match above.
+    if (m == null || m.group(1) != ip) continue;
+    final table = int.parse(m.group(2)!);
+    if (table == keepIndex && !kept) {
+      kept = true;
+      continue;
+    }
+    stale.add(table);
+  }
+  return stale;
+}
+
 // ─── Devices ────────────────────────────────────────────────────────────────────────
 
 /// A LAN device as the assignment screen sees it, joined from up to four router sources.

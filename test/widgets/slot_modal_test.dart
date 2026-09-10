@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
+import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
 import 'package:cfg_pia_wg/widgets/slot_modal.dart';
 
 import '../watchdog_test_utils.dart';
@@ -67,8 +69,9 @@ Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, Se
       home: Scaffold(
         body: Builder(
           builder: (ctx) => ElevatedButton(
-            onPressed: () => showDialog<void>(
-              context: ctx,
+            // Pushed as a page, matching production since 418 - the slot list is a destination,
+            // not a dialog over the connect form it has finished with.
+            onPressed: () => Navigator.of(ctx).push<void>(MaterialPageRoute(
               builder: (_) => SlotModal(
                 mode: mode,
                 controller: c,
@@ -78,7 +81,7 @@ Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, Se
                 slotServiceFactory: (cl) => RouterSlotService(cl,
                     onLog: c.onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts),
               ),
-            ),
+            )),
             child: const Text('open'),
           ),
         ),
@@ -833,9 +836,67 @@ void main() {
     });
   });
 
+  // Since 418 the slot screen is a page, so HOME is AppScaffold's own pinned full-width button
+  // rather than a small right-aligned TextButton inside a card. That IS the fix for the button
+  // being inconsistent between here and the device assignment screen.
+  // Since 418 the slot list is a destination, not a card over the connect form it has finished
+  // with. A modal says "this is a detour, you will come back"; MANAGE and WATCHDOG are where the
+  // user was going, and the form behind them was spent.
+  group('full screen, not a dialog', () {
+    testWidgets('the slot list is a page with the shared chrome', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        _host(RecordingSSHClient(responder: (_) => ''), SlotModalMode.manage, _slots({1: _slot(1, desc: 'pia-aus')}), c),
+      );
+      await _open(tester);
+
+      expect(find.byType(Dialog), findsNothing);
+      expect(find.byType(AppScaffold), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    // Reported from a tablet: with the card gone the slot rows sat alone at the far left of a very
+    // wide line. The cap is the width the card had, so a phone - narrower than 480 - is unchanged.
+    testWidgets('content is capped and centred on a wide screen', (tester) async {
+      tester.view.physicalSize = const Size(1200, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final c = _controller();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        _host(RecordingSSHClient(responder: (_) => ''), SlotModalMode.manage, _slots({1: _slot(1, desc: 'pia-aus')}), c),
+      );
+      await _open(tester);
+
+      final row = tester.getRect(find.byKey(const Key('slot_row_1')));
+      expect(row.width, lessThanOrEqualTo(kFormMaxWidth));
+      // Centred: the margins either side match, rather than everything being pushed left.
+      expect(row.left, closeTo(1200 - row.right, 1.0));
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('it does not stack a modal depth, because it is a screen', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        _host(RecordingSSHClient(responder: (_) => ''), SlotModalMode.manage, _slots({1: _slot(1, desc: 'pia-aus')}), c),
+      );
+      await _open(tester);
+
+      // modalDepth exists so the error presenter knows something is stacked OVER a screen.
+      expect(c.modalDepth, 0);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
   group('HOME button', () {
     for (final mode in SlotModalMode.values) {
-      testWidgets('is teal, not muted, in ${mode.name} mode', (tester) async {
+      testWidgets('is the shared AppScaffold button, teal and pinned, in ${mode.name} mode', (tester) async {
         final c = _controller();
         addTearDown(c.dispose);
         await tester.pumpWidget(
@@ -843,9 +904,14 @@ void main() {
         );
         await _open(tester);
 
-        final home = tester.widget<Text>(find.text('HOME'));
-        expect(home.style?.color, kHighlight);
-        expect(home.style?.color, isNot(kMuted));
+        final home = tester.widget<OutlinedButton>(find.byKey(const Key('screen_close')));
+        expect(home.style?.foregroundColor?.resolve({}), kHighlight);
+        expect(home.style?.foregroundColor?.resolve({}), isNot(kMuted));
+        // Outside the scroll view, so it cannot be scrolled away from or clip the buttons above it.
+        expect(
+          find.ancestor(of: find.byKey(const Key('screen_close')), matching: find.byType(SingleChildScrollView)),
+          findsNothing,
+        );
 
         await tester.pumpWidget(const SizedBox());
       });
@@ -1086,19 +1152,21 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('modal HOME returns to the root', (tester) async {
-      final c = _controller();
+    // Since 418 HOME goes to the main menu rather than merely closing a card, because the slot
+    // list is a page. navigateToDestination no-ops when the controller already names the target,
+    // so the destination has to be what DestinationObserver would have set - manage_router.
+    testWidgets('HOME leaves the slot list for the main menu', (tester) async {
+      final c = _controller()..currentDestination = AppDestination.manageRouter;
       final ssh = RecordingSSHClient(responder: (_) => '');
       await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
       await _open(tester);
       expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
 
-      await tester.ensureVisible(find.widgetWithText(TextButton, 'HOME'));
-      await tester.tap(find.widgetWithText(TextButton, 'HOME'));
+      await tester.tap(find.byKey(const Key('screen_close')));
       await tester.pumpAndSettle();
 
-      expect(find.text('WIREGUARD CONFIGURATION'), findsNothing); // modal closed
-      expect(find.text('open'), findsOneWidget); // back at the root host
+      expect(find.text('WIREGUARD CONFIGURATION'), findsNothing);
+      expect(find.byType(MainMenuScreen), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

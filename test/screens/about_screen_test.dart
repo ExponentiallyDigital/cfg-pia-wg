@@ -508,7 +508,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.widgetWithText(TextFormField, kDefaultRouterIp), findsOneWidget);
-      expect(find.widgetWithText(TextFormField, kDefaultSshUsername), findsOneWidget);
+      // The username is deliberately NOT prefilled - a password manager will not overwrite a field
+      // that already has content, so a default costs a manual clear before every autofill.
+      expect(find.widgetWithText(TextFormField, kDefaultSshUsername), findsNothing);
     });
 
     testWidgets('a session value beats the default', (tester) async {

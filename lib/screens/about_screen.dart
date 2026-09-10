@@ -582,8 +582,9 @@ class _SshCredsDialogState extends State<_SshCredsDialog> {
   // initialIp already carries the precedence (session, then remembered, then factory default),
   // resolved by SessionController.routerIpPrefill at the call site.
   late final TextEditingController _ipCtrl = TextEditingController(text: widget.initialIp);
-  late final TextEditingController _userCtrl =
-      TextEditingController(text: widget.initialUser.isNotEmpty ? widget.initialUser : kDefaultSshUsername);
+  // Username is left BLANK rather than defaulted to 'admin', for the reason the router screens
+  // give: a password manager will not overwrite a field that already has content.
+  late final TextEditingController _userCtrl = TextEditingController(text: widget.initialUser);
   late final TextEditingController _passCtrl = TextEditingController(text: widget.initialPass);
   bool _visible = false;
   String? _error;

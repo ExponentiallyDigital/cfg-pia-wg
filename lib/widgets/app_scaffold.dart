@@ -205,19 +205,68 @@ class AppHeaderBar extends StatelessWidget {
   }
 }
 
+/// Stands in for a router login form while the session's EXISTING connection is being reused.
+///
+/// All three router screens reconnect on their own when they already have a working session, but
+/// they used to render the login form for the whole of that reconnect - so entering MANAGE,
+/// WATCHDOG or DEVICE ASSIGNMENT flashed a form asking for credentials the app already had, on a
+/// screen the user was about to be taken off. Worse than untidy: it invites typing into a field
+/// that is about to be replaced.
+///
+/// The form is for the case where there is nothing to reuse. This is the case where there is.
+class ReconnectingBody extends StatelessWidget {
+  const ReconnectingBody({super.key});
+
+  @override
+  Widget build(BuildContext context) => Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [
+          CircularProgressIndicator(color: kHighlight),
+          SizedBox(height: 20),
+          Text('Reconnecting to the router...', style: TextStyle(color: kMuted, fontSize: 13)),
+        ],
+      );
+}
+
+/// The width a form or a list reads well at. It is what the pre-418 dialogs used as their
+/// `maxWidth`, kept so those screens look the same on a tablet now that they are pages.
+const double kFormMaxWidth = 480;
+
 /// Per-screen body wrapper: a scrollable padded content area plus an optional HOME button that
 /// returns to a fresh main menu (spec 2.1; stack-growth is intentional).
 class AppScaffold extends StatelessWidget {
   final Widget child;
   final bool showClose;
   final bool fillViewport;
-  const AppScaffold({super.key, required this.child, this.showClose = true, this.fillViewport = false});
+
+  /// Caps the content and centres it, for screens that were 480-wide cards before 418. Left null
+  /// on the screens that were always full width. Without it a slot row on a tablet sits alone at
+  /// the far left of a very wide line, which is what a dialog's `maxWidth` used to prevent.
+  final double? maxContentWidth;
+
+  const AppScaffold({
+    super.key,
+    required this.child,
+    this.showClose = true,
+    this.fillViewport = false,
+    this.maxContentWidth,
+  });
+
+  /// Centres [inner] within [maxContentWidth], or returns it untouched when there is no cap.
+  Widget _capped(Widget inner) => maxContentWidth == null
+      ? inner
+      : Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxContentWidth!), child: inner));
 
   @override
   Widget build(BuildContext context) {
     const bodyPadding = EdgeInsets.all(20);
 
-    return ColoredBox(
+    // Material, not a ColoredBox. It paints the same background, and it gives the page a Material
+    // ancestor of its own - which a ColoredBox actively prevents: anything inking below it (a
+    // ListTile, a Switch row) finds the chrome's Material with an opaque box in between, and
+    // Flutter asserts that the splash will be invisible. It also lets a screen be pushed anywhere
+    // without depending on what is above it.
+    return Material(
       color: kBg,
       child: Column(
         children: [
@@ -229,12 +278,12 @@ class AppScaffold extends StatelessWidget {
 
                 return SingleChildScrollView(
                   padding: bodyPadding,
-                  child: fillViewport
+                  child: _capped(fillViewport
                       ? ConstrainedBox(
                           constraints: BoxConstraints(minHeight: minHeight),
                           child: IntrinsicHeight(child: child),
                         )
-                      : child,
+                      : child),
                 );
               },
             ),
@@ -242,7 +291,9 @@ class AppScaffold extends StatelessWidget {
           if (showClose)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: SizedBox(
+              // Capped alongside the body, or HOME would run the full width of a tablet under a
+              // column of content that does not.
+              child: _capped(SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
                   key: const Key('screen_close'),
@@ -254,7 +305,7 @@ class AppScaffold extends StatelessWidget {
                   onPressed: () => navigateToDestination(context, SessionScope.of(context), AppDestination.menu),
                   child: const Text('HOME'),
                 ),
-              ),
+              )),
             ),
         ],
       ),

@@ -680,6 +680,38 @@ MAC, IP, empty DNS, **empty hostname**. That follows from the binding being by I
 >
 > So the app should offer devices that already hold a reservation as the ordinary case, and treat "create a reservation for this device" as a distinct, explicitly confirmed action that warns the whole network will drop for a minute. `restart_default_wan`, used by "apply to all devices", was measured as harmless by comparison - it did not drop anything during the run.
 
+#### 3.3.6b Stock leaves the old routing rule behind - MEASURED 2026-09-10
+
+**Writing the assignment is not applying it.** An assignment becomes a policy routing rule, `from <device IP> lookup <index 6>`, and the routing table number is the profile's index 6. Moving a device writes the new rule but **never removes the old one**, and both sit at **priority 100**:
+
+```text
+100:    from 192.168.1.51 lookup 9      <- wgc1, stale
+100:    from 192.168.1.51 lookup 5      <- wgc5, the assignment just made
+```
+
+At equal priority the kernel evaluates in insertion order, so the older rule matches first and the new one is never reached. The result is a device whose traffic keeps leaving through the tunnel it was moved off, while `vpnc_dev_policy_list`, the web interface and this app all correctly say otherwise. Nothing in the visible state is wrong; the assignment simply has no effect.
+
+Confirm which tunnel a table belongs to by reading it - `0.0.0.0/1 dev wgcN` names the interface:
+
+```sh
+ip rule show | grep <device IP>
+ip route show table <n>
+```
+
+Measured on hardware: **no service call clears the stale rule.** `restart_dnsmasq`, `restart_vpnc_dev_policy`, `restart_vpnrouting0`, `service "restart wgc5"`, and a full `stop_vpnc` / `restart_vpnc` cycle with `vpnc_unit` set to the target row all leave it in place. Only `restart_net_and_phy` clears it, by tearing down the whole rule set and rebuilding it - and that bounces every switch port and re-leases the WAN, dropping every wireless client on the network.
+
+**So the app deletes the rule itself**, after `restart_vpnc_dev_policy`, for each device whose assignment changed:
+
+```sh
+ip rule del from <device IP> lookup <old index 6>
+```
+
+Three points of care, all covered by `staleRuleTables` in `lib/device_assignment.dart`:
+
+- **Unassigning needs it too.** Sending a device back to the default connection leaves its rule behind exactly the same way, so the device stays on the old tunnel. Every per-device rule for that address goes.
+- **A duplicate of the CORRECT rule is also stale.** Repeated applies can add the same rule more than once; one copy is kept and the rest deleted.
+- **The default-connection rules must never be touched.** Those are `from all iif br0 lookup <index 6>` and its br1 twin, at priority 10000, and they are what sends unassigned devices to the default (see "Changing the default connection"). They do not name a device address, so a per-device sweep must match on the address rather than on the table number.
+
 ---
 
 ## 4. Wireguard SSH commands

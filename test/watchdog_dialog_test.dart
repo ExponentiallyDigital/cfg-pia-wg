@@ -7,6 +7,7 @@ import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/watchdog_dialog.dart';
+import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
 
 import 'watchdog_test_utils.dart';
 
@@ -50,6 +51,47 @@ Widget _host(
 }
 
 void main() {
+  // The reason this screen is a page and not a Dialog (418). As a card its height was wrong twice
+  // over - 409 and again in 412 - and each time SAVE and the spinner that replaces it sat below a
+  // fold that would not scroll, so a save looked like nothing had happened. A shrink-wrapping
+  // SingleChildScrollView inside an unbounded card has no overflow to scroll; AppScaffold gives it
+  // a bounded viewport instead, which is a property rather than an arithmetic result.
+  group('a long form on a small screen', () {
+    testWidgets('scrolls, rather than overflowing, and SAVE can be reached', (tester) async {
+      tester.view.physicalSize = const Size(360, 560);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+      await tester.pumpWidget(_host(ssh, c));
+      await tester.pumpAndSettle();
+
+      // A RenderFlex overflow would surface here, and did whenever the card was sized wrongly.
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(find.byKey(const Key('wd_save')));
+      await tester.pumpAndSettle();
+      final save = tester.getRect(find.byKey(const Key('wd_save')));
+      expect(save.bottom, lessThanOrEqualTo(560.0), reason: 'SAVE ends up on screen, not below the fold');
+      expect(save.top, greaterThanOrEqualTo(0.0));
+    });
+
+    testWidgets('is a page, so it does not carry a Dialog of its own', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+      await tester.pumpWidget(_host(ssh, c));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsNothing);
+      // AppScaffold's own scroll view, bounded by an Expanded - the thing the card never had.
+      expect(find.byType(AppScaffold), findsOneWidget);
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+    });
+  });
+
   testWidgets('renders title, status and configuration fields; no DISABLE/VIEW LOG buttons', (tester) async {
     final c = _controller();
     addTearDown(c.dispose);

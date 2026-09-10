@@ -10,6 +10,7 @@ import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_session.dart';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
 import 'package:cfg_pia_wg/widgets/device_assignment_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -74,6 +75,34 @@ Future<RecordingSSHClient> _pumpConnected(WidgetTester tester) async {
 
 void main() {
   setUp(useStock);
+
+  // Reported from hardware: all three router screens flashed their login form while the session's
+  // existing connection was being reused - a form asking for credentials the app already has, on a
+  // screen the user is about to be taken off, with fields they might start typing into.
+  testWidgets('a reconnect never shows the login form, not even for a frame', (tester) async {
+    final ssh = _router();
+    final c = SessionController()
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true;
+    addTearDown(c.dispose);
+
+    await tester.pumpWidget(SessionScope(
+      controller: c,
+      child: MaterialApp(
+        home: Scaffold(body: DeviceAssignmentScreen(testClientFactory: (_, __, ___) async => ssh)),
+      ),
+    ));
+
+    // The FIRST frame, before the post-frame reconnect has run.
+    expect(find.byType(ReconnectingBody), findsOneWidget);
+    expect(find.byKey(const Key('device_connect')), findsNothing);
+
+    await tester.pumpAndSettle();
+    expect(find.byType(ReconnectingBody), findsNothing);
+    expect(find.byKey(const Key('device_apply')), findsOneWidget);
+  });
 
   testWidgets('lists the devices, excluding the router', (tester) async {
     await _pumpConnected(tester);
