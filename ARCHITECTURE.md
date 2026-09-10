@@ -1017,6 +1017,32 @@ Stock has no user-script hook of its own, so the app **replaces** `S50downloadma
 
 The deployed copy is LF-terminated: the repo template `scripts/S50downloadmaster-TEMPLATE.sh` is CRLF, and a CRLF shebang makes the router's kernel refuse to exec it. `test/unit/s50_template_test.dart` fails if the two drift apart.
 
+#### 5.2.0 The router's service queue, and how it wedges
+
+Every `service <name>` call goes through `notify_rc`, which records what it is doing in the `rc_service` NVRAM key (with the pid in `rc_service_pid`) and clears it when the action finishes. A later call that finds the key set waits for it - `rc_service: waitting "<name>" via ...` - and after 15 seconds **discards itself**: `rc_service: skip the event: <name>`.
+
+A brief wait is ordinary and harmless. A service that never finishes is not: the key is never cleared, and every event sent to the router from then on is discarded for as long as it stays up.
+
+Measured 2026-09-10. `service restart_vpnc` hung at 17:40:25 and the router spent ninety minutes discarding everything:
+
+- Four watchdog reconfigures fetched a PIA token, registered a key and wrote a complete tunnel config that nothing acted on. Each ended `wgc1 did not come up after reconfiguration`.
+- The app reported `router command failed (exit 1)` with no hint as to why.
+- A `reboot` request was discarded too. The web interface said the router was rebooting; it was not. **A power cycle was the only way out.**
+- After the power cycle the key read empty at boot and cleared itself normally, so this is a wedge rather than how the firmware behaves.
+
+`rc_service_pid` is what makes it recoverable. A key naming a process that no longer exists is a **ghost**, and clearing it by hand restores normal service - though only for one call, because that call sets the key again and the next one waits on whatever it left behind.
+
+The app handles this in `lib/router_service_queue.dart`:
+
+| Before a service call | Read the key and its pid. If the pid is gone, clear the key and log it. |
+| --- | --- |
+| After a service call | Poll until the key clears. A ghost appearing mid-wait is cleared the same way. |
+| Key set, pid ALIVE, past the timeout | `RouterServiceWedgedException` - the app cannot fix this, so it names the service and says to power cycle. |
+
+Related: an interface seen up ONCE is not up. The app reported "wgc1 enabled" a second after `restart_vpnc` because it caught the interface mid-restart, then ran the deploy script against a tunnel on its way back down. Two consecutive sightings are required.
+
+Full evidence in `.claude/testing/2026-09-10_rc-service-stuck-runsheet.md`.
+
 #### 5.2.1 The second init script, and how both are made recoverable
 
 `S50asuslighttpd` sits beside `S50downloadmaster` in `/opt/etc/init.d` and is run by the same triggers - at boot, and again on **every VPN up or down**. It contains `sleep` calls, and with a VPN set to start at boot they stall the boot until the tunnel is disabled by hand. Nothing in it is wanted here, so a watchdog deploy replaces it with a stub that returns immediately whatever trigger it is given (`scripts/S50asuslighttpd-TEMPLATE.sh`, embedded as `kS50AsusLighttpdTemplate`, chmod 700).

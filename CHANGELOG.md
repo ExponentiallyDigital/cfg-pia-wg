@@ -35,6 +35,16 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-10 v0.8.54 build 424 - surviving a wedged rc_service
+
+- FIX: **the app now survives a router that has stopped accepting service commands.** Every `service` call goes through `notify_rc`, which records what it is doing in `rc_service` and clears it when done; a call finding that key set waits 15 seconds and then DISCARDS itself. A service that never finishes never clears the key, and from then on the router silently throws away everything sent to it. The app clears a ghost marker - key set, pid gone - before every service call, and waits for the key to clear afterwards.
+- INF: measured on hardware 2026-09-10. `restart_vpnc` hung at 17:40 and the router spent ninety minutes discarding events: four watchdog reconfigures fetched a PIA token, registered a key and wrote a complete config that nothing acted on. It discarded a `reboot` request too - the web interface said it was rebooting and it was not - so a power cycle was the only way out.
+- ADD: `RouterServiceWedgedException` for the one case the app cannot fix, a marker whose process is still alive. It names the service and says to power cycle, rather than reporting a fifth opaque "router command failed (exit 1)".
+- FIX: **an interface seen up once is no longer called up.** The app reported "wgc1 enabled" a second after `restart_vpnc` because it caught the interface mid-restart, then ran the deploy script against a tunnel on its way back down. Two consecutive sightings are required now.
+- INF: the thirteen zombie watchdog processes seen during the wedge were a symptom of it, not of the detach guard added in 416. Each wedged run sat through three 15-second waits before failing; five healthy runs since have left none.
+- TST: twenty - the marker parser including a probe that does not parse reading as idle, clearing a ghost but never a live marker, the clear happening BEFORE the service call, an idle router not being written to, a service dying mid-wait, the wedged exception and what its message must say, and an interface sighting that does not persist not counting as up.
+- DOC: ARCHITECTURE.md 5.2.0 records the queue, the ninety minutes, and the power cycle.
+
 2026-09-10 v0.8.53 build 423 - ask before connecting, and a log you can select from
 
 - FIX: **three screens tried to connect to 192.168.50.1 instead of asking for credentials.** Reported from a tablet that had never logged in. Opening MANAGE writes the FACTORY DEFAULT address into the session before the user types anything, so the test "are these three fields filled in" said yes for a session that had never reached a router. DEL PIA CERT, the ABOUT script-version link and the router log now all ask `canReuseRouterSession`, which requires a connect to have actually succeeded.

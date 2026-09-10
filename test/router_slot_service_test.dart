@@ -1,6 +1,7 @@
 // test/router_slot_service_test.dart - RouterSlotService tests over a fake SSH client.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
+import 'package:cfg_pia_wg/router_service_queue.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
 
 import 'watchdog_test_utils.dart';
@@ -1118,6 +1119,55 @@ void main() {
       expect(c.ran('nvram set vpnc_unit=1'), isTrue); // row index
       expect(c.ran('nvram set vpnc_unit=4'), isFalse); // the old 5 - slot value
       expect(c.ran('service restart_vpnc'), isTrue);
+    });
+
+    // The router discards a service call, silently, if a previous one left its rc_service marker
+    // behind. Measured 2026-09-10: ninety minutes of that, and four watchdog reconfigures that
+    // wrote a perfect config nothing acted on.
+    group('the rc_service queue', () {
+      RecordingSSHClient stock({required String marker, required bool alive}) {
+        var cleared = false;
+        return RecordingSSHClient(responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+          if (cmd.contains('rc_service')) {
+            return cleared ? '@@@@dead' : '$marker@@4023@@${alive ? 'alive' : 'dead'}';
+          }
+          if (cmd.startsWith('nvram set rc_service')) {
+            cleared = true;
+            return '';
+          }
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
+          if (cmd.contains('ping -I')) return 'OK';
+          if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
+          return '';
+        });
+      }
+
+      test('a ghost marker is cleared BEFORE the service call, or the call is discarded', () async {
+        useStock();
+        final c = stock(marker: 'restart_vpnc', alive: false);
+        await svc(c).runVpncService(1, 'restart_vpnc');
+
+        final cleared = c.commands.indexWhere((x) => x.startsWith('nvram set rc_service'));
+        final called = c.commands.indexOf('service restart_vpnc');
+        expect(cleared, greaterThan(-1), reason: 'the ghost was never cleared');
+        expect(cleared, lessThan(called), reason: 'clearing after the call is too late');
+      });
+
+      test('an idle router is not written to', () async {
+        useStock();
+        final c = stock(marker: '', alive: false);
+        await svc(c).runVpncService(1, 'restart_vpnc');
+        expect(c.commands.any((x) => x.startsWith('nvram set rc_service')), isFalse);
+      });
+
+      // The one case the app cannot fix: a marker whose process is still alive after the whole
+      // timeout. Reporting it beats another opaque "router command failed (exit 1)".
+      test('a router still busy after the timeout is reported as wedged', () async {
+        useStock();
+        final c = stock(marker: 'restart_vpnc', alive: true);
+        await expectLater(svc(c).runVpncService(1, 'restart_vpnc'), throwsA(isA<RouterServiceWedgedException>()));
+      });
     });
 
     test('the unit is read after the row is appended for a slot that had none', () async {

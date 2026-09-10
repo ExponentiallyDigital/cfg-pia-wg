@@ -276,6 +276,32 @@ void main() {
     });
   });
 
+  // The app said "wgc1 enabled" one second after `service restart_vpnc`, because it caught the
+  // interface during the restart - and then ran the deploy script against a tunnel on its way back
+  // down. One sighting is not evidence.
+  group('an interface has to STAY up', () {
+    test('a single sighting that does not persist is not called up', () async {
+      useMerlin();
+      var reads = 0;
+      // Up on the first look, gone on every look after it - a restart caught mid-flight.
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('ip -o link show up')) return (++reads == 1) ? 'wgc1' : 'wgs1 wgc5';
+        return '';
+      });
+      await _wd(c).enableVpnSlot(1);
+
+      expect(c.commands.where((x) => x.contains('logger')).join('\n'), contains('Enabled'));
+      expect(reads, greaterThan(1), reason: 'it must look more than once');
+    });
+
+    test('two consecutive sightings are', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('ip -o link show up') ? 'wgc1' : '');
+      await _wd(c).enableVpnSlot(1);
+      expect(c.commands.where((x) => x.contains('ip -o link show up')).length, greaterThanOrEqualTo(2));
+    });
+  });
+
   group('log housekeeping and uninstall', () {
     // Truncated, not deleted: the script appends and never creates, so removing the file would
     // lose every line until the next reboot.
