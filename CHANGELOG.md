@@ -13,6 +13,9 @@
 
 See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for "deep" backlog.
 
+- DOC: Sequenced documentation updates: ARCHITECTURE, TESTING, README, COINTEXT.
+- BUG: when deploying a watchdog (even with build 429) while saving, the spinner is below the fold and the last edited field is showing as editable. This has been a repeating issue across multiple builds.
+- commit.
 - ADD: implement RevenueCat.
 - commit.
 - REL: release **v8.x.y** to GPS alpha track, review [Play Console technical quality requirements](https://support.google.com/googleplay/android-developer/answer/17492799), specifically:
@@ -35,9 +38,11 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
-2026-09-11 v0.8.59 build 429 - longer term items
+2026-09-11 v0.8.59 build 429 - CONTEXT.md knows about the whole app again
 
-- ...
+- FIX: **CONTEXT.md section 3 listed 28 files when `lib/` holds 44.** The sixteen missing ones were everything added since device assignment landed - both halves of device assignment, the router service queue, log paging, the binary installer, router prefs and command, the entitlement seam, the settings and router log screens, and four widgets. A reader of the file the app is documented in would not have known the assignment screen existed.
+- CHG: two stale counts corrected in place, and a line count dropped from the `router_watchdog.dart` entry that had been wrong for several builds. Counts in prose rot silently.
+- ADD: the ARCHITECTURE.md and CONTEXT.md rewrite plans, alongside the README and TESTING ones, so all four are in the repo rather than in drafts.
 
 2026-09-11 v0.8.58 build 428 - an uninstall that finishes the job
 
