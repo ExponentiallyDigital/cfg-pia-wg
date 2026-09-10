@@ -42,6 +42,13 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING CONTEXT - name the symbol, not the line, and point rather than repeat
+
+- FIX: **seven references to a specific line range, every one of them wrong.** All of those files moved this week and nothing reported it. They now name the SYMBOL - `SlotModal._runSlot`, `navigateToDestination`, `WatchdogDialog._save`, `RouterWatchdog.deployWatchdog`, `createConfigToSlot`. A symbol either exists or a grep for it fails loudly; a line number rots in silence.
+- CHG: the 17-key table and the `vpnc_clientlist` field table point at ARCHITECTURE for what a key MEANS and keep only what the APP does with it. Two documents describing the same firmware is two documents to keep right.
+- CHG: nine passages that only recorded what changed are gone - which build made the slot list a page, which one moved a button, which gate used to exist. The ones that give the REASON a rule exists are kept in full: spinners cleared before awaiting a modal, never a dialog for a long form, one SSH connection per session, and why the backoff counter counts attempts rather than checks.
+- FIX: FORGET ROUTER IP was documented as living on ABOUT. It is on SETTINGS.
+
 PENDING CONTEXT - the device assignment screen exists
 
 - ADD: **4.14 Device assignment.** The feature was mentioned four times in 492 lines and was absent from the call graph, so a session reading this file would not have known the screen was there. It now covers the eight-source read, why staged changes live on the session, the conflict check before any write, the light service pair, and the stale `ip rule` sweep.

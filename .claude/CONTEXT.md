@@ -46,7 +46,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 | State management | No package. `SessionController extends ChangeNotifier`, published through the `SessionScope` `InheritedWidget`; subtrees that must repaint wrap `ListenableBuilder`. Screens are `StatefulWidget` + `setState` for local form state. **No Provider/Riverpod/Bloc — do not introduce one.** |
 | Dependency injection | Constructor-injected nullable factories used purely as test seams: `PiaService? service`, `Future<SSHClient> Function(...)? testClientFactory`, `RouterSlotService Function(SSHClient)? slotServiceFactory`, `RouterWatchdog Function(SSHClient)? watchdogServiceFactory`, `SessionController? controller`, `PiaService({int probePort})`, `RouterSlotService(..., verifyPollInterval, verifyMaxAttempts)`. Follow this pattern instead of a service locator. |
 | Error handling | Services `throw`; UI catches, strips `'Exception: '`, and routes through `AppErrors.system` (one at a time) or `AppErrors.inputs` (batched). Every error is also appended to the app log. Router mutations are additionally wrapped by `RouterWatchdog._guard`, which logs to the app log **and** the router syslog before rethrowing. Best-effort side calls (`_logRouter`, ping helpers) swallow with `catch (_)`. |
-| Async + UI | Every `await` across a widget boundary is followed by a `mounted` check. Spinners are cleared **before** awaiting a modal (a spinner must never animate under a dialog) — see `slot_modal.dart:99-104`. |
+| Async + UI | Every `await` across a widget boundary is followed by a `mounted` check. Spinners are cleared **before** awaiting a modal (a spinner must never animate under a dialog) — see `SlotModal._runSlot`. |
 | SSH lifetime | **One connection per app session**, shared by every action - `RouterSession` in `router_session.dart`, owned by `SessionController`. Opened lazily, reused, reconnected once on a transport failure, and closed by `wipeAll()` and by `AppLifecycleState.paused`. Until 406 it was a fresh `SSHClient` per action, closed in a `finally`; **an action must never call `close()` now** - it would pull the connection out from under the next one, and a source scan in `test/unit/router_session_test.dart` fails the build if one appears. |
 | Licence header | Every `lib/` file opens with the GPL-v3 header block + `Copyright (C) 2026 Andrew Newbury.` Keep it on new files. |
 | Colours | Never inline a hex colour in a screen; use the constants in `lib/app_colors.dart`. |
@@ -156,17 +156,17 @@ SettingsScreen   ──> RouterWatchdog.uninstallFromRouter() / deleteCachedPiaC
 | `settings` | `settings` | Settings | **no** | yes |
 | `about` | `about` | About | **no** | yes |
 
-- **SETTINGS and View router log are drawer-only.** An uninstall is not something to offer on the way in, and the router log is a diagnostic detour rather than a destination anyone sets out for. `SettingsScreen` holds everything that REMOVES something - the router uninstall, DEL PIA CERT and FORGET ROUTER IP, the last two moved off ABOUT in 422 because that is a page people open to read.
+- **SETTINGS and View router log are drawer-only.** An uninstall is not something to offer on the way in, and the router log is a diagnostic detour rather than a destination anyone sets out for. `SettingsScreen` holds everything that REMOVES something - the router uninstall, DEL PIA CERT and FORGET ROUTER IP, the last two are there rather than on ABOUT, which is a page people open to read.
 - Menu also has `Exit app` (`Key('menu_close_app')`); drawer also has `Exit app` (`Key('drawer_close_app')`).
-- Navigation **pushes** (`app_drawer.dart:51-57`) — the stack grows deliberately so back can retrace.
+- Navigation **pushes** (`navigateToDestination`) — the stack grows deliberately so back can retrace.
 - Active destination is `kHighlight` (teal) via `ListTile.selectedColor`.
-- **`RouterSlotsScreen` IS the slot list once it has connected - it does not push one.** The connect form and the list are two states of one screen, the way the device assignment screen works, so the back button leaves for the menu instead of returning to a spent login form. 418 pushed a second route and got that wrong; 419 does not navigate at all, so there is no extra route to name, to observe, or to go back to. `SlotModal` still pushes `WatchdogDialog` as a page, with `settings.name` set to the watchdog destination so `DestinationObserver` keeps the drawer highlighting it - an unrecognised name silently resets that to the menu.
+- **`RouterSlotsScreen` IS the slot list once it has connected - it does not push one.** The connect form and the list are two states of one screen, the way the device assignment screen works, so the back button leaves for the menu instead of returning to a spent login form. Neither navigates at all, so there is no extra route to name, to observe, or to go back to. `SlotModal` still pushes `WatchdogDialog` as a page, with `settings.name` set to the watchdog destination so `DestinationObserver` keeps the drawer highlighting it - an unrecognised name silently resets that to the menu.
 - Neither calls `enterModal`/`exitModal`: `modalDepth` says something is stacked OVER a screen, and these are screens.
 - **A router screen that will reconnect on its own NEVER renders its login form.** All three set an `_autoConnecting` flag synchronously in `didChangeDependencies`, so the first frame shows `ReconnectingBody` instead; the flag clears in the same `finally` that clears the connect spinner, which is the point at which a failure means the form is genuinely needed. Rendering the form during a reconnect asks for credentials the app already holds and offers fields that are about to be replaced.
-- **HOUSE STYLE: one control, one size, on every screen.** `HOME` is full width and pinned at the bottom EVERYWHERE, including on screens whose body is capped by `maxContentWidth` - the cap is for content, not for chrome. A control that changes size between screens reads as an accident even when each screen looks fine on its own. Reported from a tablet in 425, where HOME was full width on ABOUT and DEVICE ASSIGNMENT and 480-wide on SETTINGS, MANAGE and WATCHDOG.
+- **HOUSE STYLE: one control, one size, on every screen.** `HOME` is full width and pinned at the bottom EVERYWHERE, including on screens whose body is capped by `maxContentWidth` - the cap is for content, not for chrome. A control that changes size between screens reads as an accident even when each screen looks fine on its own.
   - The two LOG screens are the deliberate exception: they carry a row of three bordered buttons (`COPY REFRESH HOME` on the router log, `COPY CLEAR CLOSE` on the watchdog log), so no single button can be full width there. Do not "fix" that back.
 - **Screens that were 480-wide cards pass `AppScaffold(maxContentWidth: kFormMaxWidth)`.** Without it a slot row on a tablet sits alone at the far left of a very wide line. The cap covers the HOME button too, or it runs the full width under a narrower column. A phone is narrower than the cap and is unaffected.
-- Every HOME is now `AppScaffold`'s: pinned at the bottom, full width, outside the scroll view, pushing a fresh menu. The slot list used to carry its own right-aligned `TextButton` doing `popUntil((r) => r.isFirst)`, which is what made the button inconsistent between it and the device assignment screen.
+- Every HOME is `AppScaffold`'s: pinned at the bottom, full width, outside the scroll view, pushing a fresh menu. No screen builds its own.
 - Exit paths (back key on menu, menu button, drawer entry) → `confirmAndExit` → `wipeAll` → `SystemNavigator.pop()`.
 
 ### 4.2 Session state (`SessionController`)
@@ -194,7 +194,7 @@ The app is otherwise zero-persistence, so this is the one departure and it is ke
 - **Only the address.** No username, no password, nothing else, ever. A source scan of `router_prefs.dart` fails the build if the file gains a second write or mentions a credential, because a password there would survive `wipeAll`, survive an app close, and sit in plain text.
 - **Only after a proven connect.** `rememberRouterIp` is called from `router_slots_screen._onConnect` and `about_screen._deletePiaCert`, both after the SSH work succeeded. Same rule as `TextInput.finishAutofillContext()` - never persist an unproven value.
 - **Validated in both directions.** `^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$`. The file is hand-editable on a rooted device and its contents reach an SSH connect, so a rejected value is dropped on read as well as on write.
-- **Survives `wipeAll`, clearable by the user.** ABOUT -> FORGET ROUTER IP (`Key('about_forget_router_ip')`), greyed out when there is nothing stored - which is also the only way a user can see that anything IS stored.
+- **Survives `wipeAll`, clearable by the user.** SETTINGS -> FORGET ROUTER IP, greyed out when there is nothing stored - which is also the only way a user can see that anything IS stored.
 - **Off-device backup is disabled.** `android:allowBackup="false"` in the manifest, so it never reaches Google Drive.
 - **Inert under `flutter test`.** The default store checks `FLUTTER_TEST`: the path_provider channel has no handler in a test binding and the reply never arrives, so an `await` on it hangs - which surfaces as a connect spinner that never clears and a bare `pumpAndSettle timed out`. A test that wants storage passes `directory`. **Widget tests cannot use a real directory at all** - a `testWidgets` body runs under fake async, which never completes real file I/O; use an in-memory `RouterPrefs` subclass, as `about_screen_test.dart` does.
 
@@ -212,7 +212,7 @@ The app is otherwise zero-persistence, so this is the one departure and it is ke
 
 UI (`standalone_config_screen.dart`): `GENERATE CONFIG` is enabled only when region + username + password are non-empty (DNS optional). PIA creds/DNS mirror into the session on every keystroke. A blank DNS field is refilled with `kDefaultDns` on entry and again at the start of `_generate` (`_restoreDefaultDns`) - not per keystroke, so it can still be cleared to retype. `PiaService` keeps its own Quad9 fallback for an empty `dns`, but the screen should never reach it; a test pins the two to the same constant. COPY → `copyToClipboard` + snackbar + countdown. SHARE writes `pia-<region>.conf` into `getTemporaryDirectory()`, shares it, then deletes it in `finally`.
 
-### 4.4 Slot modal button matrix (`slot_modal.dart:520-551`)
+### 4.4 Slot modal button matrix (`SlotModal._buttons`)
 
 `hasDesc` = `wgcN_desc` non-empty; `enabled` = `wgcN_enable == 1` (vpnc_clientlist index 5 on stock); `wdActive` = cron entry present. DISABLE also accepts an interface that is up while the flag reads 0 — the two can disagree, and gating on the flag alone would strand a running tunnel behind a greyed button.
 
@@ -233,7 +233,7 @@ Row badges: `● ACTIVE` (`activeSlots.contains(n)`), `⚑ KILL SWITCH` (`enforc
 
 **Slot naming.** Every app-log and router-syslog line names a slot as `wgcN:<description>` via `slotLabel` / `fetchSlotLabel` (`router_slot_service.dart`), so a message says *which* VPN it is about. The description comes from `vpnc_clientlist` index 0 on stock (a WebUI-created profile has no `wgcN_desc` mirror) and from `wgcN_desc` on Merlin. Both services cache it per instance, so it costs one extra read per action however many lines mention it, and the lookup is best-effort - a failure degrades to the bare `wgcN` rather than breaking the action being logged. Raw router output echoed into the log (`wg show interfaces: wgc1`) is left verbatim. The EDIT modal heading uses the same label (`EDIT wgc1:pia-aus_melbourne`).
 
-**Slots run concurrently.** Manage ENABLE used to disable every other slot first ("one active at a time"); it no longer does. Stock caps how many may run at once - `RouterSlots.maxActiveSlots`, read from `nvram get vpnc_max_conn` and falling back to `kDefaultStockMaxActiveSlots` (2) when the key is missing or unparseable. Merlin has no such key, so `maxActiveSlots` is null there and nothing is capped. `SlotModal._enableManage` counts the *other* interfaces that are up and, when that reaches the cap, shows a "VPN limit reached" dialog naming the ASUS limit and asking the user to disable a slot - it makes no router writes in that case. The same check (`SlotModal._withinVpnLimit`) gates watchdog CREATE/EDIT, which brings a tunnel up as a side effect; it runs **before** the dialog opens so the user is not made to fill it in for nothing. Watchdogs are no longer mutually exclusive - `deactivateOtherSlots` is gone.
+**Slots run concurrently**, and nothing in the app tears down a slot to bring another up. Stock caps how many may run at once - `RouterSlots.maxActiveSlots`, read from `nvram get vpnc_max_conn` and falling back to `kDefaultStockMaxActiveSlots` (2) when the key is missing or unparseable. Merlin has no such key, so `maxActiveSlots` is null there and nothing is capped. `SlotModal._enableManage` counts the *other* interfaces that are up and, when that reaches the cap, shows a "VPN limit reached" dialog naming the ASUS limit and asking the user to disable a slot - it makes no router writes in that case. The same check (`SlotModal._withinVpnLimit`) gates watchdog CREATE/EDIT, which brings a tunnel up as a side effect; it runs **before** the dialog opens so the user is not made to fill it in for nothing.
 
 `RouterSlots.activeSlots` is a **`Set<int>`** built from *all* matches of `wgc(\d)` in `wg show interfaces` — more than one tunnel can be up at once (stock `vpnc_max_conn`), and the previous `firstMatch` silently badged an arbitrary one of them. It is independent of `SlotInfo.enabled` (the NVRAM / `vpnc_clientlist` flag): the badge means *the interface is up*, the flag means *it is configured on*. They can legitimately disagree while an action is in flight.
 
@@ -242,7 +242,7 @@ Row badges: `● ACTIVE` (`activeSlots.contains(n)`), `⚑ KILL SWITCH` (`enforc
 | Action | Behaviour |
 | --- | --- |
 | CREATE | Overwrite confirm if `!isEmpty` → region picker → `_PiaCredsDialog` → `generateConfig` → `createConfigToSlot`. Backs up the 17 existing keys first and restores them on failure. Writes `enable=0`, `enforce=0`, `fw=1`, `nat=1`, `psk=""`, `rip=""`, `ep_addr_r=""`. Ends with an info dialog telling the user to press ENABLE. |
-| ENABLE | Reads `wgcN_wd_primary_ip` / `_secondary_ip`; if either is blank, prompts (`_PingTargetsDialog`, defaults `8.8.8.8` / `1.1.1.1`) and writes them. Applies the concurrency gate (below), then calls `enableSlot`. **Other slots are left running** - it no longer tears anything down. |
+| ENABLE | Reads `wgcN_wd_primary_ip` / `_secondary_ip`; if either is blank, prompts (`_PingTargetsDialog`, defaults `8.8.8.8` / `1.1.1.1`) and writes them. Applies the concurrency gate (below), then calls `enableSlot`. **Other slots are left running.** |
 | `enableSlot` | `enable=1` → commit → `service "start_wgc N"; service restart_vpnrouting0` → polls `wg show interfaces` up to `verifyMaxAttempts` (30) × `verifyPollInterval` (2 s) → pings **both** targets via `-I wgcN -c 1 -W 5`. **Both must pass**; any failure reverts to `enable=0` and throws. |
 | EDIT | `readSlotParams` → `SlotParamsEditor` → `writeSlotParams` (values shell-single-quoted). |
 | DISABLE | `stopWatchdog` if `wdActive`, then `enable=0` + commit + the firmware's stop, then **waits for the interface to leave `wg show interfaces`** before returning. The wait is what keeps the ACTIVE badge honest: `_runSlot` refreshes as soon as this returns, and the stop is queued through `notify_rc`, so without it the refresh reads a tunnel that is still up. Same for `_revertEnable`. |
@@ -260,15 +260,15 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 
 ### 4.7 Watchdog
 
-**Preconditions.** The watchdog runs on **both** firmwares. The old Merlin-only gate in `router_slots_screen.dart` is gone, replaced by the firmware gate in §4.13. `jq` is still required: `isJqInstalled()` checks `which jq` on Merlin and `[ -x /jffs/cfg-pia-wg/jq ]` on stock; if absent the dialog shows a red banner naming the expected path and SAVE is disabled.
+**Preconditions.** The watchdog runs on **both** firmwares; the firmware gate in §4.13 is what decides which path a command takes. `jq` is still required: `isJqInstalled()` checks `which jq` on Merlin and `[ -x /jffs/cfg-pia-wg/jq ]` on stock; if absent the dialog shows a red banner naming the expected path and SAVE is disabled.
 
 **`WatchdogDialog` fields:** check interval (min, default 5), primary IP (8.8.8.8), secondary IP (1.1.1.1), PIA username/password (pre-filled from session, mirrored back on every exit path via `_rememberPiaCreds`), and — behind the `Enable email alerts` switch — From, To, Subject (`cfg-pia-wg alert`), SMTP server `host:port`, SMTP username/password, plus `TEST EMAIL`.
 
 **`WatchdogConfig.validate()`** returns human-readable strings: interval > 0; both IPs required and valid IPv4; PIA username + password required; when email is on — From/To valid addresses, subject, `host:port` SMTP server, SMTP username + password.
 
-**SAVE flow (`watchdog_dialog.dart:219-262`):** jq gate → `validate()` → if not currently enabled, confirm-overwrite (when the slot is non-empty) then force a region pick → WAN-ping both targets (`pingHostViaWan`, warn-only, "The settings will still be saved.") → `deployWatchdog(cfg, desc)` → if the slot was empty, `enableVpnSlot` → pop.
+**SAVE flow (`WatchdogDialog._save`):** jq gate → `validate()` → if not currently enabled, confirm-overwrite (when the slot is non-empty) then force a region pick → WAN-ping both targets (`pingHostViaWan`, warn-only, "The settings will still be saved.") → `deployWatchdog(cfg, desc)` → if the slot was empty, `enableVpnSlot` → pop.
 
-**`deployWatchdog` order (`router_watchdog.dart:373-392`) — order is load-bearing:**
+**`RouterWatchdog.deployWatchdog` — the order is load-bearing:**
 1. `enableJffsScripts` (`jffs2_scripts=1`, `jffs2_on=1`)
 2. `_writeWatchdogNvram` (per-slot `wgcN_wd_*` + global PIA creds + optional `wgcN_desc`) + commit
 3. `enableVpnSlot`
@@ -290,7 +290,7 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 
 | Aspect | Value |
 | --- | --- |
-| Paths | `/jffs/cfg-pia-wg/watchdog_wgcN.sh` (`watchdogScriptPath`; moved off `/jffs/scripts` in 402, which is Merlin's hook directory and still holds `services-start`), log `/tmp/watchdog_wgcN.log`, status `/tmp/watchdog_last_ping_success_wgcN`, backoff `/tmp/watchdog_backoff_wgcN`, CA cache `/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt` (`kPiaCaCertPath`; the script `mkdir -p`s the directory before downloading, since Merlin has no reason to have created it) |
+| Paths | `/jffs/cfg-pia-wg/watchdog_wgcN.sh` (`watchdogScriptPath`; deliberately NOT `/jffs/scripts`, which is Merlin's own hook directory and still holds `services-start`), log `/tmp/watchdog_wgcN.log`, status `/tmp/watchdog_last_ping_success_wgcN`, backoff `/tmp/watchdog_backoff_wgcN`, CA cache `/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt` (`kPiaCaCertPath`; the script `mkdir -p`s the directory before downloading, since Merlin has no reason to have created it) |
 | Health check | `ping -I wgcN -c 3 -W 2` primary, **else** secondary — **either** passing is success (contrast: app ENABLE requires **both**) |
 | Backoff | `backoff_for()` - a ladder of 120, 240, 480, 960, 1800, 3600 s, capped at **5400 s (90 min)**, generated from `kBackoffLadder` by `buildBackoffCase()` so the shell and `backoffSeconds()` cannot drift. Counter+timestamp in the backoff file, reset to `0\n0` on success. **The counter counts attempts actually made, not checks that found a fault** - it used to increment on runs the cooldown turned away, which made the growth rate depend on the check interval (a 1-minute watchdog escalated twice as fast as a 2-minute one). A run inside the wait logs `Backing off after N failed attempts` and exits, because a long silent gap otherwise reads as a stopped watchdog. |
 | Preflight | `wgcN_desc` non-empty, `jq` present, PIA user set, and WAN reachability of either target (no internet → exit 0, no alert) |
@@ -363,27 +363,20 @@ The whole line is the tap target (a `GestureDetector` with `HitTestBehavior.opaq
 
 ### 4.9 NVRAM variables
 
-**Per-slot WireGuard (`kSlotNvramKeys`, `router_slot_service.dart:28-46`) — `wgcN_` prefix, N = 1..5:**
+**Per-slot WireGuard (`kSlotNvramKeys` in `router_slot_service.dart`) - `wgcN_` prefix, N = 1..5:**
 
-| Key | Meaning | User-editable |
-| --- | --- | --- |
-| `addr` | local tunnel IP, CIDR | yes |
-| `alive` | persistent keepalive (25) | yes |
-| `desc` | **`pia-` + PIA region id** (e.g. `pia-aus_melbourne`). The prefix marks the VPN as this app's among any others on the router; the router script strips it (`${DESC#pia-}` -> `REGION`) before its `select(.id==$id)` lookup, so the bare id must still be a real PIA region. `slotDescFor` / `regionIdFromDesc` are the Dart side. | yes |
-| `dns` | DNS servers | yes |
-| `enable` | 1/0 interface enabled | no (ENABLE/DISABLE only) |
-| `enforce` | 1/0 kill switch | yes |
-| `ep_addr` | peer endpoint FQDN/IP | yes |
-| `ep_addr_r` | resolved endpoint IP | no |
-| `ep_port` | endpoint port (1337) | yes |
-| `fw` | 1/0 inbound firewall | yes |
-| `mtu` | MTU (1420) | yes |
-| `nat` | 1/0 NAT | yes |
-| `ppub` | server public key | yes |
-| `priv` | client private key (obscured field) | yes |
-| `psk` | preshared key — unused by PIA | no |
-| `rip` | router public IP | no |
-| `aips` | allowed IPs (`0.0.0.0/0`) | yes |
+```text
+addr  alive  desc  dns  enable  enforce  ep_addr  ep_addr_r  ep_port
+fw  mtu  nat  ppub  priv  psk  rip  aips
+```
+
+What each one means to the firmware is in
+[ARCHITECTURE.md, Field reference](../ARCHITECTURE.md#field-reference), which is the authority and
+the version a user reads. Only what the APP does with them belongs here:
+
+- **Four are read-only** in `SlotParamsEditor`: `enable` (ENABLE and DISABLE own it), `ep_addr_r` and `rip` (the firmware fills them in) and `psk` (PIA does not use one). Ten text fields and three switches are editable, and SAVE stays disabled until all ten text fields are non-empty.
+- **`desc` is `pia-` + the PIA region id** (`pia-aus_melbourne`). The prefix is what marks a VPN as this app's among any others on the router, and the watchdog re-reads the region from it on every reconfigure - so a slot renamed by hand can no longer be rebuilt.
+- **Three are Merlin-only** (`kMerlinOnlySlotKeys`): `enforce`, `fw`, `rip`. Writing them on stock creates keys nothing reads, and DELETE does not clean them up.
 
 **Per-slot watchdog (`WatchdogConfig.toNvram`) — `wgcN_wd_` prefix:** `check_interval`, `primary_ip`, `secondary_ip`, `email_enabled`, `email_from`, `email_to`, `email_subject`, `smtp_server`, `smtp_user`, `smtp_pass`.
 
@@ -391,17 +384,15 @@ The whole line is the tap target (a `GestureDetector` with `HitTestBehavior.opaq
 
 **Global (not slot-scoped):** `cfg_pia_wg_user`, `cfg_pia_wg_password` — plaintext PIA credentials shared by every slot's watchdog. `cfg_pia_wg_sdate` (`yyyy-mm-dd` the app first configured this router), `cfg_pia_wg_reconfig_ok` and `cfg_pia_wg_reconfig_fail` — lifetime re-configuration counters across all slots, reported in the HISTORY section of every alert email. The three are seeded together by whichever of a watchdog deploy or a test email happens first (`kSeedCountersCommand`) and incremented by the router script's `bump()`, which commits once per alert — never per check, because `nvram commit` writes flash. Also read: `3rd-party` (firmware detection), `jffs2_scripts`, `jffs2_on` (Merlin only), `vpnc_clientlist` (stock only), and for email bodies `ddns_hostname_x`, `lan_hostname`, `lan_ipaddr`, `productid`, `buildno`, `extendno`.
 
-**Stock `vpnc_clientlist`** (see ARCHITECTURE.md "Stock vpnc_clientlist" for the full schema). Stock exposes only 12 of the 17 `wgcN_` keys; the region name and the active flag live instead in one delimited string of up to five profiles — records separated by `<` (no leading delimiter), fields by `>`. The app owns exactly two fields and copies every other one through untouched:
-
-| Field | Meaning | App behaviour |
-| --- | --- | --- |
-| 1 | description | written — the PIA region id |
-| 2 | protocol | `WireGuard` on a record the app creates |
-| 3 | slot number | how a record is matched to `wgcN_` |
-| 6 | active state | written by ENABLE / DISABLE / CREATE |
-| 7 | iptables ID — also indexes the profile's `vpncN_*` runtime keys (`9` -> `vpnc9_state_t`) | `10 - slot` on a record the app creates; **preserved** on an existing one |
-| 12 | fixed | `Web` on a record the app creates |
-| 4, 5, 8, 9, 10, 11 | unknown / ignored | left empty when creating; preserved when updating |
+**Stock `vpnc_clientlist`.** The schema, the field numbering and the three different numbers that
+name one profile are in
+[ARCHITECTURE.md, Stock `vpnc_clientlist`](../ARCHITECTURE.md#stock-vpnc-clientlist). What the app
+writes into a record it creates: the region id at field 1, `WireGuard` at field 2, the slot number
+at field 3, the active state at field 6 (ENABLE / DISABLE / CREATE all write it), `10 - slot` at
+field 7 and `Web` at field 12. **Fields 4, 5 and 8-11 are left empty when creating and preserved
+byte-for-byte when updating** - the app must never assume it knows what a field it does not
+understand is for. Field 7 is the number the `vpncN_*` runtime keys are indexed by, so wgc1 leaves
+`vpnc9_*` behind.
 
 Modelled by `VpncRecord` + `parseVpncClientlist` / `serialiseVpncClientlist` / `buildVpncRecord` / `upsertVpncRecord` / `removeVpncRecord` in `router_slot_service.dart` (all pure).
 
@@ -453,7 +444,7 @@ The chrome's header takes ~104 logical px off the top, so with a keyboard up a d
 | Password managers | Every credential field declares `autofillHints`, and each login is its own `AutofillGroup` - PIA, router SSH, SMTP - so a provider cannot conflate them or save one mixed entry. Groups use `onDisposeAction: cancel`; `TextInput.finishAutofillContext()` is called ONLY after a successful generate or connect, so a save prompt appears only for credentials that have been proven. `FLAG_SECURE` does not block the autofill overlay (verified on a Pixel with KeePass, which also switches cleanly between several entries saved against the app's package id). Android only suggests for an EMPTY field, so the `admin` default in the SSH username field suppresses its prompt until cleared - documented in README 5.2, not changed. Autofill needs API 26; `minSdk` is 24, so a 24/25 device just types as before. |
 | Screen capture | `FLAG_SECURE` in `MainActivity.onCreate` blocks screenshots, screen recording and the Recent Apps preview - **release builds only**. A DEBUG build skips it so the app can be captured on a device while testing, and `allowScreenCaptureInRelease` is a manual escape hatch for capturing a release build. `test/unit/clipboard_service_test.dart` fails if the gate widens or the hatch is left on. |
 | TLS | PIA `addKey` is CA-pinned (`withTrustedRoots: false`) with a CN check; SMTP uses `openssl s_client -tls1_3 -verify_return_error`. |
-| Shell injection | All interpolated user values go through `shellSingleQuote` — **except** `createConfigToSlot`, which uses `"…"` double quotes for the parsed-config values (`router_slot_service.dart:177-193`). |
+| Shell injection | All interpolated user values go through `shellSingleQuote` — **except** `createConfigToSlot`, which uses `"…"` double quotes for the parsed-config values (`createConfigToSlot`). |
 
 ### 4.13 Firmware detection & the stock branch
 
