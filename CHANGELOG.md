@@ -42,6 +42,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING ARCHITECTURE - pass 3, stale claims and internal references
+
+- FIX: fourteen references to ARCHITECTURE's own section NUMBERS, every one of them pointing at a numbering the document stopped using. The earlier pass caught the references FROM other files and missed the ones inside this one. All now name the section, and a link check confirms all 99 resolve.
+- FIX: "the app does not write any of this yet", at the head of the device assignment section. It has written it since build 421.
+- CHG: the last of the two-cost model removed from the sections that leaned on it - the reserved/unreserved table, the reservation-is-permanent finding, and the removal warning. The distinction the screen needs is still reserved versus not; the reason is now that an unpinned address moves and takes the assignment with it, not that writing one bounces the LAN.
+
 PENDING ARCHITECTURE - prior designs appendix
 
 - ADD: an appendix holding two readings that were believed, acted on, and then measured to be wrong: the two-cost model for applying a device assignment, and placeholder records in the policy list. The working that produced each one is kept, because an idea that fitted the evidence once will fit it again.
