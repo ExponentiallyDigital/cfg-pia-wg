@@ -42,6 +42,14 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING CONTEXT - the device assignment screen exists
+
+- ADD: **4.14 Device assignment.** The feature was mentioned four times in 492 lines and was absent from the call graph, so a session reading this file would not have known the screen was there. It now covers the eight-source read, why staged changes live on the session, the conflict check before any write, the light service pair, and the stale `ip rule` sweep.
+- CHG: the snapshot said the drawer added one destination. It adds four.
+- ADD: the destination table gains the device screen, and the session-state table gains `canReuseRouterSession` and the two staged-assignment fields.
+- ADD: the call graph gains the three drawer-only screens.
+- FIX: a "see 4.14" that pointed at a section which did not exist.
+
 PENDING README - the last gaps, and the last section numbers
 
 - ADD: the watchdog's ENABLE and DISABLE actions, and the PAUSED badge. The README listed CREATE/EDIT, DELETE and VIEW LOG and stopped there.

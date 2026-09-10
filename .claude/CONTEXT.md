@@ -53,7 +53,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 
 ## 2. Snapshot
 
-The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit app"; a hamburger drawer rendered *above* the Navigator adds an **About** destination and duplicates the rest. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and then push a shared full-screen `wgc1..wgc5` slot list (a dialog until 418): *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. **Both Merlin and stock ASUS firmware are supported** — the firmware is detected once per session on entry to either router screen and every router command branches on it (§4.13). Screen 4 shows the in-memory app log. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
+The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit app"; a hamburger drawer rendered *above* the Navigator duplicates those and adds four more - **VPN device assignment**, **View router log**, **Settings** and **About**. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and then push a shared full-screen `wgc1..wgc5` slot list: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. **Both Merlin and stock ASUS firmware are supported** — the firmware is detected once per session on entry to either router screen and every router command branches on it (§4.13). Screen 4 shows the in-memory app log. The drawer-only screens pin individual LAN devices to a tunnel (stock only, §4.14), page through the router's syslog, and remove things - the router uninstall lives on SETTINGS. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
 
 ## 3. Architecture — `lib/` (44 files)
 
@@ -65,7 +65,7 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 | `firmware.dart` | `RouterFirmware` enum, the once-per-session detection flag (a library global — see §4.13), `classifyFirmwareTag()`, `jqCommand()`, and the stock paths (`kStockJqPath`, `kStockMailsendPath`, `kS50Path`, `kServicesStartPath`, `kReadmePrereqUrl`). |
 | `s50_template.dart` | `kS50DownloadmasterTemplate` and `kS50AsusLighttpdTemplate` — verbatim LF copies of the two scripts in `./scripts/` (same mirroring pattern as `license_text.dart`) — plus `buildS50Script()` / `extractS50CruLines()`, which own the block between the REPLACEMENT markers. Tests fail if either copy drifts. |
 | `app_shell.dart` | `PiaWgApp` (root `StatefulWidget`, `WidgetsBindingObserver`) owns the `SessionController`, `MaterialApp`, `buildAppTheme()`, and installs `AppChrome` via `MaterialApp.builder`. `DestinationObserver` (a `NavigatorObserver`) updates `controller.currentDestination` from its OWN list of page routes, **ignoring non-`PageRoute`s** so dialogs don't change drawer highlighting. It cannot read `previousRoute` on a pop: with a modal open under a pushed page, popping that page reports the dialog, and treating that as "no change" left the destination naming the page just left - the drawer then no-opped on that entry. `didChangeAppLifecycleState(resumed)` → `resyncOnResume()`. Disposes the controller only if it created it. |
-| `session_controller.dart` | `AppDestination` enum (8 values), `LogEntry`, `SessionController extends ChangeNotifier`, `SessionScope extends InheritedWidget`, `kDefaultDns`. Holds all volatile state, the 1 Hz clipboard countdown, modal depth, `wipeAll()`. `SessionScope.updateShouldNotify` compares controller identity only, so it does **not** rebuild on every tick.  Also holds the device screen's STAGED assignments (`stagedAssignments`, `stagedDefaultIndex`, `clearStagedAssignments`), because `DeviceAssignmentScreen`'s State is rebuilt on every entry and a glance at the log used to discard them.|
+| `session_controller.dart` | `AppDestination` enum (9 values), `LogEntry`, `SessionController extends ChangeNotifier`, `SessionScope extends InheritedWidget`, `kDefaultDns`. Holds all volatile state, the 1 Hz clipboard countdown, modal depth, `wipeAll()`. `SessionScope.updateShouldNotify` compares controller identity only, so it does **not** rebuild on every tick.  Also holds the device screen's STAGED assignments (`stagedAssignments`, `stagedDefaultIndex`, `clearStagedAssignments`), because `DeviceAssignmentScreen`'s State is rebuilt on every entry and a glance at the log used to discard them.|
 | `app_colors.dart` | 13 `const Color` tokens: `kHighlight` teal `#00D4AA`, `kSecondary`, `kBg`, `kSurface`, `kField`, `kBorder`, `kText`, `kMuted`, `kHint`, `kError`, `kOnPrimary`, `kConfigBg`, `kWarn`. |
 | `pia_service.dart` | PIA provisioning engine. `WgServer`/`Region`/`ProbeResult`/`RegResponse` models + `PiaService`. Uses `dart:io` `HttpClient` (10 s connect timeout), not `package:http`. |
 | `router_session.dart` | `RouterSession implements SSHClient` - the shared router connection. `client()` opens on demand and coalesces concurrent opens; `run()` retries **once** after reconnecting when `isConnectionLost(e)`; `close()` is the session teardown. Implementing `SSHClient` rather than wrapping one is why nothing downstream changed: the services still take an `SSHClient` and the fakes still substitute for one. |
@@ -73,7 +73,7 @@ The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit
 | `router_watchdog.dart` | The largest file in the app. Validation helpers, `WatchdogConfig`, `WatchdogStatus`, pure Bash-template builders, `RouterWatchdog` service, and `_kWatchdogScriptTemplate` (the router-side sh script, ~7 KB heredoc ceiling). |
 | `watchdog_dialog.dart` | `WatchdogDialog` — the watchdog CREATE/EDIT form. Its `SAVE` validates, optionally picks a region, WAN-pings both targets (warn-only), then calls `deployWatchdog`. **This is the only path that brings a watchdog up.** |
 | `build_info_service.dart` | `BuildInfo` model + `loadBuildInfo()` over `MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/build_info')`, method `getBuildInfo`. One of the app's **two** platform channels. Falls back to `BuildInfo.unknown()` on `MissingPluginException`/`PlatformException` so widget tests render. |
-| `review_service.dart` | `openPlayStoreReview()` - opens the Play Store listing via `in_app_review`'s `openStoreListing()` (an ACTION_VIEW on the https URL, which the manifest `<queries>` already covers). Returns false when nothing could be opened, and the caller logs that. **Deliberately does NOT call `requestReview()`** - see 4.14. `debugReviewOverride` is the test seam: a method-channel mock is not enough, because the plugin branches on the host platform in Dart before the channel is reached. |
+| `review_service.dart` | `openPlayStoreReview()` - opens the Play Store listing via `in_app_review`'s `openStoreListing()` (an ACTION_VIEW on the https URL, which the manifest `<queries>` already covers). Returns false when nothing could be opened, and the caller logs that. **Deliberately does NOT call `requestReview()`** - see §4.8.3. `debugReviewOverride` is the test seam: a method-channel mock is not enough, because the plugin branches on the host platform in Dart before the channel is reached. |
 | `clipboard_service.dart` | `clearSystemClipboard()` over `MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/clipboard')`, method `clearClipboard` -> `ClipboardManager.clearPrimaryClip()` (API 28+). Falls back to writing `''` on `MissingPluginException`/`PlatformException`. A test reads `MainActivity.kt` so the names cannot drift. |
 | `router_command.dart` | `runRouterCommand()` and `RouterCommandException`. The one place a router command is run: **writes throw, reads tolerate**. `SSHClient.run()` merges stderr into stdout and discards the exit code, so this uses `runWithResult()` and keeps them apart. |
 | `router_service_queue.dart` | `RcServiceState`, `parseRcService`, `RouterServiceQueue`, `RouterServiceWedgedException`. Survives the router's own `notify_rc` queue: a service that never finishes leaves `rc_service` set and every later event is discarded after a 15-second wait. Clears a ghost marker (key set, pid gone) before a service call and waits for the key to clear after it. ARCHITECTURE.md "The router's service queue, and how it wedges". |
@@ -128,6 +128,16 @@ RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fet
               └─ watchdog: _editWatchdog → WatchdogDialog → RouterWatchdog.deployWatchdog
                            _deleteWatchdog → stopWatchdog + deleteSlot
                            _viewWatchdogLog → getWatchdogLog
+
+DeviceAssignmentScreen ──connect()──> SSHClient ──> DeviceAssignmentService.read()   (one read, 8 sources)
+        ├─ staged on SessionController (survives a trip to the log and back)
+        └─ APPLY → .apply() → re-read, refuse on conflict
+                              → dhcp_staticlist → vpnc_dev_policy_list → commit
+                              → restart_dnsmasq + restart_vpnc_dev_policy → clear stale ip rules
+                              → [default connection, if changed: the eleven-probe sequence]
+
+RouterLogScreen  ──> router_log_paging.dart (pure) ──> tail -c … | head -c …
+SettingsScreen   ──> RouterWatchdog.uninstallFromRouter() / deleteCachedPiaCert()
 ```
 
 ## 4. Feature reference
@@ -140,6 +150,7 @@ RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fet
 | `standalone` | `standalone` | Generate PIA WireGuard config | yes | yes |
 | `manageRouter` | `manage_router` | Manage PIA WireGuard config | yes (`*` suffix) | yes |
 | `watchdog` | `watchdog` | Watchdog WireGuard management | yes (`*` suffix) | yes |
+| `deviceAssignment` | `device_assignment` | VPN device assignment | **no** | yes |
 | `routerLog` | `router_log` | View router log | **no** | yes |
 | `log` | `log` | View app log | yes | yes |
 | `settings` | `settings` | Settings | **no** | yes |
@@ -171,6 +182,8 @@ RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fet
 | `modalDepth` / `modalsOpen` | `enterModal` / `exitModal`. |
 | `currentDestination` | Plain field, set by `DestinationObserver`; no `notifyListeners`. |
 | `routerConnected` | Set true after a successful connect; drives auto-reconnect on screen re-entry. |
+| `canReuseRouterSession` | True when the session holds a live connection AND the three fields to rebuild it. The three router screens render `ReconnectingBody` instead of their login form when it is true - "three non-empty fields" was the wrong test, because opening MANAGE writes the factory-default address into the session. |
+| `stagedAssignments`, `stagedDefaultIndex` | The device screen's unsaved picks, held here rather than in its `State` because that State is rebuilt on every entry. `clearStagedAssignments` after a successful apply. |
 
 `wipeAll({reason})` clears all six credential fields, config, `routerConnected`, and the clipboard, then logs. It deliberately leaves `rememberedRouterIp` alone. Injectable seams: `clipboardTimeout`, `tickInterval`, `clipboardWriter`, `routerPrefs`.
 
@@ -490,3 +503,58 @@ The chrome's header takes ~104 logical px off the top, so with a keyboard up a d
 **Tests.** The detection flag is a library global, so any suite touching router code must reset it — use `useMerlin()` / `useStock()` / `resetRouterFirmware()` from `test/watchdog_test_utils.dart`. A leaked flag produces confusing cross-file failures under parallel workers.
 
 Note: ignore all .claude\plan_*.md files, they are historical and not part of the current codebase. This .claude\CONTEXT.md file is the authoritative source for doc-vs-code discrepancies.
+
+### 4.14 Device assignment (stock only)
+
+Three files, split the way the rest of the app is: `device_assignment.dart` is pure and has no SSH in
+it, `device_assignment_service.dart` does the I/O, `widgets/device_assignment_screen.dart` is the
+screen. **Merlin routes per device through VPN Director, which this app does not drive**, so the
+screen detects the firmware itself on entry and refuses with an explanation. It detects rather than
+trusts: `routerFirmware` defaults to Merlin until something probes it, and reaching this screen
+first told a stock user their router was Merlin.
+
+**One read, eight sources.** `DeviceAssignmentService.read()` sends a single marker-separated command
+and splits the reply: `vpnc_clientlist`, `vpnc_dev_policy_list`, `vpnc_default_wan`,
+`dhcp_staticlist`, `custom_clientlist`, `cfg_device_list`, `/jffs/nmp_cl_json.js`,
+`/tmp/nmp_cache.js`. No source is complete on its own - liveness comes only from `nmp_cl_json.js`,
+addresses only from `nmp_cache.js` or `dhcp_staticlist`, the user's own name for a device only from
+`custom_clientlist`, and the router and its mesh nodes are identified only by `cfg_device_list`.
+`buildDeviceList` is the join. Written out as eight named commands rather than a loop, because a
+lower-case shell variable in a Dart string is indistinguishable from the escaped-constant mistake
+`no_escaped_constants_test.dart` exists to catch.
+
+**A record is keyed by IP, so a device with no known address cannot be assigned at all.**
+`LanDevice.assignable` is false for it and the row says so instead of offering a picker.
+
+**Read the index, never mere presence.** `assignedIndexFor` returns null for a record whose index is
+`0` - that device is on the default connection, not on a VPN. `AssignmentState.profiles` holds every
+`vpnc_clientlist` profile, WireGuard or not, so a device pinned to an OpenVPN profile can be shown
+honestly rather than reported as unassigned and silently reassigned on the next write.
+
+**Changes are STAGED on the session, not in the State.** `stagedAssignments` / `stagedDefaultIndex`
+live on `SessionController` because the screen's `State` is rebuilt on every entry - a glance at the
+log used to discard everything the user had picked. `clearStagedAssignments` runs after a successful
+apply.
+
+**`apply()` re-reads and refuses on conflict.** The router's own web interface rewrites the WHOLE of
+a list from the copy its page loaded, so `AssignmentState.rawPolicyList` / `rawClientlist` are kept
+verbatim and compared before anything is written; a mismatch throws `AssignmentConflictException`
+rather than overwriting a change made elsewhere.
+
+**The write order matters, and so does the cleanup.** Reservations first (an assignment is keyed on
+an address, so the address has to be pinned), then the policy list, then `nvram commit`, then the
+LIGHT pair - `restart_dnsmasq` and `restart_vpnc_dev_policy`. The web interface uses
+`restart_net_and_phy` for the same job, which bounces every switch port and re-leases the WAN; the
+app never needs it. Then `_clearStaleRules`: **stock never removes a device's previous `ip rule`**,
+both sit at priority 100 and the older one wins, so an assignment that was written perfectly has no
+effect. `staleRuleTables` finds them and the service deletes them by hand.
+
+**Changing the default connection is the expensive one**, and it is a separate step at the end.
+`_setDefaultConnection` runs the measured sequence, waits on the interface and on the NVRAM key
+rather than sleeping, and the screen warns first: every tunnel on the router stops and restarts.
+
+Each reassignment is also written to the router's own syslog with `buildLoggerCommand`. The app log
+dies with the app; a line explaining a device's traffic weeks later has to survive somewhere.
+
+Full firmware detail, including the schema of both lists and the three numbers that name one profile:
+[ARCHITECTURE.md, Device assignment (stock)](../ARCHITECTURE.md#device-assignment-stock).
