@@ -1,5 +1,27 @@
 # ARCHITECTURE.md
 
+This app provisions Private Internet Access WireGuard configurations onto an ASUS router, and keeps
+them working. It does three separate jobs, and most of this document is about the second and third:
+
+1. **Generate a configuration** from PIA and hand it to you. No router is involved, and nothing is stored.
+2. **Write one into a router slot** over SSH, start the tunnel, and prove that traffic is really flowing through it.
+3. **Deploy a watchdog** onto the router, which checks the tunnel on a schedule and rebuilds it unattended when it fails.
+
+**One idea is needed before the detail makes sense.** The two firmwares drive WireGuard in completely
+different ways. Asuswrt-Merlin exposes each of the five client slots directly through VPN Director;
+stock Asuswrt hides them behind VPN Fusion, where a single profile is named by three different
+numbers depending on which key is being written. Nearly every awkward thing below is a consequence of
+that split, and the app carries both paths.
+
+**None of this comes from vendor documentation, because there is none.** Every claim about the
+firmware was measured on hardware, usually by changing one thing in the web interface and diffing
+NVRAM either side. Entries carry the date they were measured, and say when a reading is an inference
+rather than a measurement.
+
+**Start with [What this app depends on ASUS not changing](#what-this-app-depends-on-asus-not-changing).**
+It lists the firmware behaviours the app leans on, and it is the right first stop when a firmware
+update breaks something: the failure almost never looks like its cause.
+
 - [1. How it works](#how-it-works)
 - [2. What this app depends on ASUS not changing](#what-this-app-depends-on-asus-not-changing)
 - [3. App processing flow](#app-processing-flow)
@@ -41,7 +63,8 @@
     - [6.8.7. `enabled` is what separates "on the internet" from "follows the default" - CONFIRMED 2026-09-08](#enabled-is-what-separates-on-the-internet-from-f)
     - [6.8.8. Changing the default connection - the exact sequence, MEASURED 2026-09-08](#changing-the-default-connection-the-exact-sequen)
     - [6.8.9. Assigning a device with no DHCP reservation creates one](#assigning-a-device-with-no-dhcp-reservation-crea)
-    - [6.8.10. Stock leaves the old routing rule behind - MEASURED 2026-09-10](#stock-leaves-the-old-routing-rule-behind-measure)
+    - [6.8.10. What happens when the tunnel drops](#what-happens-when-the-tunnel-drops)
+    - [6.8.11. Stock leaves the old routing rule behind - MEASURED 2026-09-10](#stock-leaves-the-old-routing-rule-behind-measure)
 - [7. Watchdog details](#watchdog-details)
   - [7.1. Shell script](#shell-script)
     - [7.1.1. Backoff](#backoff)
@@ -69,15 +92,14 @@
 
 ## 1. <a name='how-it-works'></a>How it works
 
-The provisioning logic in `lib/pia_service.dart` is a direct Dart translation of the command line version's [Go code](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/blob/main/main.go), implementing the same steps in the same order:
+The provisioning logic in `lib/pia_service.dart` is a direct Dart translation of the command line version's [Go code](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/blob/main/main.go), doing the same six steps in the same order:
 
-1. **Server discovery**: pulls the complete endpoints mapping directly from serverlist.piaservers.net/vpninfo/servers/v6. The payload splits at the first newline boundary to discard the payload block signature.
-2. **Latency probes**: dispatches immediate TCP probes to port 1337 across regional candidate blocks to calculate routing latency.
-3. **Session tokens**: challenges the central API through a standard POST request over TLS, securing an execution token from basic user parameters.
-4. **Keypair issuance**: generate WireGuard (WG) keypair using X25519 with RFC 7748 scalar clamping  
-   (k[0] &= 248, k[31] &= 127, k[31] |= 64)
-5. **Secure registration**: submits the dynamic public key configuration to the chosen low-latency endpoint via an HTTPS API (port 1337). The step utilises the dynamically resolved PIA root certificate, matching the specific Common Name (CN) mapping fields rather than raw IP routing addresses. The certificate is not hardcoded, so that it stays current when PIA rotates it.
-6. **Config assembly**: transforms payload metadata returns into localised .conf specifications utilising Unix line endings (\n) for cross-compatibility.
+1. **Find the servers.** Fetch the endpoint list from `serverlist.piaservers.net/vpninfo/servers/v6` and split the payload at the first newline, discarding the signature block that follows it.
+2. **Pick the fastest one.** Open a TCP connection to port 1337 on each candidate in the chosen region and keep the one that answers first.
+3. **Get a session token.** POST the PIA username and password over TLS; the reply carries the token the next step needs.
+4. **Make a keypair.** X25519 with RFC 7748 clamping - `k[0] &= 248`, `k[31] &= 127`, `k[31] |= 64`.
+5. **Register the public key** with the chosen server over HTTPS on port 1337. PIA present a certificate signed by their own root, so the app fetches that root at runtime, turns off the platform trust store for the call, and accepts the server certificate only when its Common Name matches the server it meant to reach. Fetching the root rather than embedding it is what keeps this working when PIA rotate it.
+6. **Assemble the `.conf`** from what came back, with Unix line endings.
 
 ---
 
@@ -105,6 +127,10 @@ Everything below was measured on hardware, not read in documentation - ASUS publ
 ---
 
 ## 3. <a name='app-processing-flow'></a>App processing flow
+
+The whole app on one page: the entry points from the main menu, what each asks for, and where the
+work happens. The two sections after the diagram describe the push operation again in plain
+language and then in detail, because that is the part most worth being able to check.
 
 ```mermaid
 graph TD
@@ -194,6 +220,8 @@ When you select a PIA region and push it to your router, the app connects direct
 It first checks whether a VPN tunnel is already running, stops it cleanly, writes the new VPN server details into the router's permanent memory, and then starts the new tunnel. The app watches the router until it confirms the tunnel is active, then checks that internet traffic is actually flowing through it by verifying the public IP address your router is using. If anything goes wrong at any point, the app restores the router to the state it was in before you started.
 
 ### 3.2. <a name='detail'></a>Detail
+
+The commands here are the **Merlin** ones. Stock reaches the same result through VPN Fusion, and both are set out in [Wireguard SSH commands](#wireguard-ssh-commands).
 
 The push operation establishes an SSH session to the router and uses `wg show interfaces` to detect any currently active WireGuard client slot.
 
@@ -917,44 +945,46 @@ MAC, IP, empty DNS, **empty hostname**. That follows from the binding being by I
 - Assigning a device is not a read-only act on `dhcp_staticlist`. If the app writes `vpnc_dev_policy_list` itself, it must add the reservation too, or the assignment decays the moment the lease moves.
 - For a device using **MAC randomisation** the reservation is pinned to the address it happens to be using now, so it breaks silently at the next rotation. Warn, or refuse.
 
-> [!IMPORTANT]
-> **The WebUI disables the tunnel before changing its assignments.** Every observed WebUI sequence starts with `stop_vpnc`. That is the WebUI being careful rather than a rule of the firmware: the app changes assignments on a running profile and they take effect.
->
-> **A per-device assignment falls through to the DEFAULT CONNECTION when its tunnel drops.**
-> CONFIRMED 2026-09-08 by running the same test twice with different defaults.
->
-> ```text
-> default = Internet          default = wgc1 (another tunnel)
-> unassigned  : dev eth0      unassigned  : dev wgc1
-> assigned,up : dev wgc5      assigned,up : dev wgc5
-> assigned,DN : dev eth0      assigned,DN : dev wgc1        <- the discriminator
-> ```
->
-> The second run is decisive: with the tunnel down the device went to **wgc1, not the WAN**. So the
-> rule is not "falls back to the internet" but "the `ip rule` is torn down with its interface and
-> traffic falls through to the default connection". The first run only looked like a leak because
-> the default happened to be the internet.
->
-> | Default connection | Tunnel drops | Result | Evidence |
-> | --- | --- | --- | --- |
-> | Internet | falls to WAN | traffic **leaks** | measured 2026-09-08 14:10 |
-> | a different, working tunnel | falls to that tunnel | still encrypted, different exit | measured 2026-09-08 14:40 |
-> | the same tunnel | default is dead too | **no internet, no leak** | predicted by the rule; matches the maintainer's years of running exactly this, and is the fault this app was written to fix. Not measured in this harness |
->
-> It also retires the "two mechanisms" reading: `vpnc_default_wan` appeared to fail closed on
-> 2026-09-05 only because the default WAS the tunnel. One rule, three outcomes, chosen by a setting.
->
-> **What this gives the app.** Assignment alone is not a kill switch, and must never be described as
-> one. But fail-closed behaviour is *reachable*, and now on evidence rather than hope: pin the
-> devices to a tunnel AND make that tunnel the default connection. That is a recommendation the app
-> can make. The watchdog then bounds how long the outage lasts - which is the whole origin of this
-> project, where a stale PIA config took a network off the internet until a config was rebuilt by
-> hand. Assignment, default connection and watchdog are one story, not three features.
-
 > [!NOTE]
 > **Creating the reservation is not expensive, as long as the app creates it.** Measured 2026-09-08: writing `dhcp_staticlist` and `vpnc_dev_policy_list` and then calling only `restart_dnsmasq` and `restart_vpnc_dev_policy` applies the assignment with **nothing bouncing** - the WAN address unchanged, no `restart_net_and_phy` in the syslog, a wired SSH session held. The WebUI reaches for the heavy call for this case and the app does not need to, so the reservation is created without ceremony and without a warning. The two-cost model that preceded this, and the Broadcom defect the heavy call provokes, are in [The two-cost model for applying an assignment](#the-two-cost-model-for-applying-an-assignment).
 
-#### 6.8.10. <a name='stock-leaves-the-old-routing-rule-behind-measure'></a>Stock leaves the old routing rule behind - MEASURED 2026-09-10
+> [!IMPORTANT]
+> **The WebUI disables the tunnel before changing its assignments.** Every observed WebUI sequence starts with `stop_vpnc`. That is the WebUI being careful rather than a rule of the firmware: the app changes assignments on a running profile and they take effect.
+
+#### 6.8.10. <a name='what-happens-when-the-tunnel-drops'></a>What happens when the tunnel drops
+
+**A per-device assignment falls through to the DEFAULT CONNECTION when its tunnel drops.**
+CONFIRMED 2026-09-08 by running the same test twice with different defaults.
+
+```text
+default = Internet          default = wgc1 (another tunnel)
+unassigned  : dev eth0      unassigned  : dev wgc1
+assigned,up : dev wgc5      assigned,up : dev wgc5
+assigned,DN : dev eth0      assigned,DN : dev wgc1        <- the discriminator
+```
+
+The second run is decisive: with the tunnel down the device went to **wgc1, not the WAN**. So the
+rule is not "falls back to the internet" but "the `ip rule` is torn down with its interface and
+traffic falls through to the default connection". The first run only looked like a leak because
+the default happened to be the internet.
+
+| Default connection | Tunnel drops | Result | Evidence |
+| --- | --- | --- | --- |
+| Internet | falls to WAN | traffic **leaks** | measured 2026-09-08 14:10 |
+| a different, working tunnel | falls to that tunnel | still encrypted, different exit | measured 2026-09-08 14:40 |
+| the same tunnel | default is dead too | **no internet, no leak** | predicted by the rule; matches the maintainer's years of running exactly this, and is the fault this app was written to fix. Not measured in this harness |
+
+It also retires the "two mechanisms" reading: `vpnc_default_wan` appeared to fail closed on
+2026-09-05 only because the default WAS the tunnel. One rule, three outcomes, chosen by a setting.
+
+**What this gives the app.** Assignment alone is not a kill switch, and must never be described as
+one. But fail-closed behaviour is *reachable*, and now on evidence rather than hope: pin the
+devices to a tunnel AND make that tunnel the default connection. That is a recommendation the app
+can make. The watchdog then bounds how long the outage lasts - which is the whole origin of this
+project, where a stale PIA config took a network off the internet until a config was rebuilt by
+hand. Assignment, default connection and watchdog are one story, not three features.
+
+#### 6.8.11. <a name='stock-leaves-the-old-routing-rule-behind-measure'></a>Stock leaves the old routing rule behind - MEASURED 2026-09-10
 
 **Writing the assignment is not applying it.** An assignment becomes a policy routing rule, `from <device IP> lookup <index 6>`, and the routing table number is the profile's index 6. Moving a device writes the new rule but **never removes the old one**, and both sit at **priority 100**:
 
@@ -1221,7 +1251,7 @@ The app can put all of this back. SETTINGS carries an uninstall that restores ea
 The uninstall in SETTINGS removes the app from the router, not the user's VPNs. It restores both boot scripts from their `.old` copies, removes every watchdog `cru` entry, unsets the fifteen NVRAM keys the app writes, and deletes `/jffs/cfg-pia-wg`. Tunnel configuration (`wgcN_*`) is deliberately untouched: the tunnels keep working and stay manageable from the router's own web interface.
 
 > [!NOTE]
-> **A disabled default connection does NOT block traffic.** Observed 2026-09-10 with the app fully uninstalled including its NVRAM settings, the router rebooted, the default connection set to wgc5, wgc5 DISABLED, no other WireGuard client enabled, and every device assigned to that disabled slot: LAN traffic left via the WAN rather than being blocked. The default connection names where unassigned traffic SHOULD go; it is not a kill switch, and stock has none - see [Assigning a device with no DHCP reservation creates one](#assigning-a-device-with-no-dhcp-reservation-crea) for what fail-closed behaviour actually takes, and [Email alerting](#email-alerting) for how the app words it. A user who wants fail-closed behaviour needs the default connection pointed at a tunnel that is actually up.
+> **A disabled default connection does NOT block traffic.** Observed 2026-09-10 with the app fully uninstalled including its NVRAM settings, the router rebooted, the default connection set to wgc5, wgc5 DISABLED, no other WireGuard client enabled, and every device assigned to that disabled slot: LAN traffic left via the WAN rather than being blocked. The default connection names where unassigned traffic SHOULD go; it is not a kill switch, and stock has none - see [What happens when the tunnel drops](#what-happens-when-the-tunnel-drops) for what fail-closed behaviour actually takes, and [Email alerting](#email-alerting) for how the app words it. A user who wants fail-closed behaviour needs the default connection pointed at a tunnel that is actually up.
 
 Both replacement scripts carry `# <name> - auto-generated by cfg-pia-wg; *do* *not* edit.` as their second line, and the uninstall will not delete a file without it. That header was added to `S50downloadmaster` in 428: it had been recognised by its REPLACEMENT markers, which the restored original does not carry either - so a SECOND uninstall saw a file it did not recognise and deleted the router's own script. Reported 2026-09-10.
 
