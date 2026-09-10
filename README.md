@@ -48,6 +48,7 @@
     - [8.3.1. Write external storage (android.permission.WRITE\_EXTERNAL\_STORAGE)](#831-write-external-storage-androidpermissionwrite_external_storage)
     - [8.3.2. Read external storage (android.permission.READ\_EXTERNAL\_STORAGE)](#832-read-external-storage-androidpermissionread_external_storage)
 - [9. Security](#9-security)
+  - [9.1. How to check the watchdog script yourself](#91-how-to-check-the-watchdog-script-yourself)
 - [10. Privacy](#10-privacy)
 - [11. Bugs and feature requests](#11-bugs-and-feature-requests)
 - [12. Donations](#12-donations)
@@ -539,7 +540,36 @@ first configured this router.
 
 ## 7. What does the app do to my router?
 
-A great question to ask as anything that talks to your router programatically should be under extreme scrutiny. A great deal of thinking, research, analysis, and experimentation went into implementing the two features to manage your router's VPN configuration and deploy a watchdog. Please see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) for full details including a flow chart of user interactions and two diagrams showing network calls and representative IP traffic flows.
+A fair question - anything that talks to your router on your behalf deserves scrutiny. Here is the
+whole list.
+
+**When you manage a slot**, it writes that slot's WireGuard settings into the router's NVRAM, and
+restarts that one tunnel. Nothing else is touched, and nothing happens at all until you press a
+button.
+
+**When you deploy a watchdog**, it also writes:
+
+- a small shell script per watched slot, in a folder of its own on the router
+- two scheduled entries per slot - the check itself, and a nightly rotate of that slot's log
+- the watchdog's settings in NVRAM, **including your PIA and SMTP passwords in plain text**, because the router has to be able to re-authenticate with PIA while you are asleep
+- on stock firmware only, the two helper programs from section 4, into the same folder
+- enough to make those schedules survive a reboot: on Merlin, two lines in the router's own startup script; on stock, which has no equivalent, the startup area that Download Master provides. **Anything it replaces is kept beside the original and put back on uninstall.**
+
+**What it never does.** No firmware is modified. No packages are installed beyond the two helpers.
+No ports are opened. None of your traffic is routed anywhere by the app, and none of it goes to us -
+there is no server on our side to send it to.
+
+**You can take it all off again.** The hamburger menu's **Settings** screen has an **UNINSTALL**
+that removes the scripts, the schedules, the app's NVRAM settings and the folder, and restores the
+startup files it replaced. It deliberately leaves your **VPN slots and tunnels alone** - those are
+yours, and DELETE on the Manage screen is what removes them. Device assignments and the default
+connection are left in place for the same reason.
+
+**And you can read the script before you trust it** - see
+[9.1. How to check the watchdog script yourself](#91-how-to-check-the-watchdog-script-yourself).
+
+Full technical detail, including a flow chart of user interactions and diagrams of network calls and
+traffic flows: [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md).
 
 ---
 
@@ -586,6 +616,34 @@ The application can export generated WG configuration files to the device.
 
 We take credential safety and application hardening seriously. Please see the [SECURITY.md](./SECURITY.md) for details on our secure development practices, data handling lifecycle, and instructions on how to privately report potential vulnerabilities.
 
+### 9.1. How to check the watchdog script yourself
+
+This app asks a lot of you: it writes a script that holds your PIA password and runs as root on your
+router, on a schedule, indefinitely. You should not have to take that on trust, and you do not have
+to - the script is there to be read.
+
+**Where it is.** `/jffs/cfg-pia-wg/watchdog_wgcN.sh`, one file per watched slot, where `N` is the
+slot number. SSH into the router and `cat` it.
+
+**It is plain shell.** Never obfuscated, never minified, never compressed or encoded. What you read
+is exactly what runs. It is a few hundred lines of POSIX `sh` with comments left in.
+
+**It matches what is in this repository.** The script is generated from a template you can read in
+[`lib/router_watchdog.dart`](lib/router_watchdog.dart). The only differences between that text and
+the file on your router are the slot number, the path to `jq`, and which mail command your firmware
+uses - and a test in the repo fails the build if any placeholder is left unfilled. The boot script
+the app installs on stock firmware has an exact copy in
+[`scripts/S50downloadmaster-TEMPLATE.sh`](scripts/S50downloadmaster-TEMPLATE.sh), and another test
+fails if the two ever drift apart.
+
+**You can always tell our files from yours.** Every file the app writes to your router carries
+`auto-generated by cfg-pia-wg` on its second line, and the uninstall refuses to delete a file that
+does not have it.
+
+**See everything it has stored.** [`scripts/showall.sh`](scripts/showall.sh) prints every NVRAM value
+the app has written, passwords included, so you can check for yourself what is on the router.
+[`scripts/clearall.sh`](scripts/clearall.sh) removes them.
+
 ---
 
 ## 10. Privacy
@@ -597,6 +655,10 @@ This application does not collect analytics, advertising identifiers, or persona
 ## 11. Bugs and feature requests
 
 Found a bug or want to request a feature? [Open an issue here](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues).
+
+The quickest route is from inside the app: **About** -> **CREATE GITHUB ISSUE** opens a new issue
+with your app version, build number and firmware already filled in. **COPY BUILD INFO** on the same
+screen gives you the same block to paste anywhere else.
 
 ---
 
