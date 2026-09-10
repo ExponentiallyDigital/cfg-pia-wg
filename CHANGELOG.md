@@ -42,18 +42,18 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
-PENDING ARCHITECTURE - pass 3, stale claims and internal references
-
-- FIX: fourteen references to ARCHITECTURE's own section NUMBERS, every one of them pointing at a numbering the document stopped using. The earlier pass caught the references FROM other files and missed the ones inside this one. All now name the section, and a link check confirms all 99 resolve.
-- FIX: "the app does not write any of this yet", at the head of the device assignment section. It has written it since build 421.
-- CHG: the last of the two-cost model removed from the sections that leaned on it - the reserved/unreserved table, the reservation-is-permanent finding, and the removal warning. The distinction the screen needs is still reserved versus not; the reason is now that an unpinned address moves and takes the assignment with it, not that writing one bounces the LAN.
-
 PENDING ARCHITECTURE - pass 3, narrative
 
 - ADD: an opening. What the app does, the one idea needed before any of the detail makes sense - the two firmwares drive WireGuard in completely different ways - and where to start reading when a firmware update breaks something.
 - CHG: the six provisioning steps say what they do rather than describe themselves. The certificate step now records what actually happens: the PIA root is fetched at runtime, the platform trust store is turned off for the call, and the server certificate is accepted only when its Common Name matches.
 - ADD: "What happens when the tunnel drops" is its own section. The rule that decides whether an assignment fails closed or leaks was buried inside a section about DHCP reservations, in a blockquote, three screens from the heading.
 - FIX: the plain-language walkthrough of a push never said it was the Merlin path. It uses `stop_wgc` and `start_vpnrouting0`, neither of which exists on stock.
+
+PENDING ARCHITECTURE - pass 3, stale claims and internal references
+
+- FIX: fourteen references to ARCHITECTURE's own section NUMBERS, every one of them pointing at a numbering the document stopped using. The earlier pass caught the references FROM other files and missed the ones inside this one. All now name the section, and a link check confirms all 99 resolve.
+- FIX: "the app does not write any of this yet", at the head of the device assignment section. It has written it since build 421.
+- CHG: the last of the two-cost model removed from the sections that leaned on it - the reserved/unreserved table, the reservation-is-permanent finding, and the removal warning. The distinction the screen needs is still reserved versus not; the reason is now that an unpinned address moves and takes the assignment with it, not that writing one bounces the LAN.
 
 PENDING ARCHITECTURE - prior designs appendix
 
