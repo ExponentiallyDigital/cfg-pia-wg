@@ -35,6 +35,17 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.57 build 427 - naming things the same way everywhere
+
+- CHG: **a tunnel is `wgc1:pia-aus_melbourne` everywhere now.** The device assignment screen wrote `wgc1 - pia-aus_melbourne` while every log line, email and slot heading in the app used the colon form, so the same tunnel looked like two different things depending on which screen you were on. Rows, the picker, the apply confirmation and the router log line for a default-connection change all go through `slotLabel` now.
+- CHG: the picker lists tunnels in wgcN order within the active and disabled groups. It came back in `vpnc_clientlist` order, which is creation order, so a router built out of sequence showed wgc4 above wgc3.
+- CHG: an active watchdog is teal in the picker. It is the one fact there worth spotting while choosing, so it is the one that is not grey.
+- ADD: **every device reassignment is written to the ROUTER log**, not just the app log. The app log dies with the app, and a reassignment that explains where a device's traffic went weeks later has to survive that.
+- CHG: APPLY and DISCARD CHANGES share one centred row at HOME's height, and DISCARD CHANGES is capitalised like every other button label.
+- ADD: **the watchdog reconfigure history on the ABOUT screen**, set apart from the build info because it describes the router rather than the app: "Since 2026-09-01: 4 successful & 1 unsuccessful reconfigures". The same three NVRAM counters the alert emails carry, shortened for the width.
+- INF: absent entirely when the router has never recorded any, so an untouched router shows no empty gap. Both ABOUT rows come from ONE round trip, which is also why tapping either row's login link fills in the other.
+- TST: seven - the wgcN ordering, the teal watchdog note, the button row and its capitals, the history line rendering, no history row when there are no counters, one round trip for both rows, and the reassignment reaching the router log.
+
 2026-09-11 v0.8.56 build 426 - two log screens that behave the same
 
 - FIX: **the router log showed only its last 41,644 characters.** It tailed 500 lines, and `/tmp/syslog.log` reached 512 KB in a day on the test router. It now opens on the newest 32 KB and pages BACKWARDS on demand: scroll near the top and the next page is fetched, with the scroll position corrected so what you are reading does not move under you.

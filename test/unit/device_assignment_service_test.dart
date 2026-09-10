@@ -296,11 +296,14 @@ void main() {
           base: s,
           changes: {'192.168.1.20': 5},
           reservationsToCreate: {},
-          changeDescriptions: const ['Box: default - Internet -> wgc5 - pia-aus_perth'],
+          changeDescriptions: const ['Box: default - Internet -> wgc5:pia-aus_perth'],
         );
 
         expect(logged, contains('Applying 1 device change:'));
-        expect(logged, contains('  Box: default - Internet -> wgc5 - pia-aus_perth'));
+        expect(logged, contains('  Box: default - Internet -> wgc5:pia-aus_perth'));
+        // The same line in the ROUTER log: the app log dies with the app, and a reassignment that
+        // explains a device's traffic weeks later has to survive.
+        expect(c.commands.firstWhere((x) => x.contains('logger'), orElse: () => ''), contains('reassigned'));
         expect(logged.any((l) => l == 'Applying...'), isFalse, reason: 'that told the reader nothing');
       });
 
@@ -317,12 +320,12 @@ void main() {
           reservationsToCreate: {},
           newDefaultIndex: 5,
           defaultFrom: 'Internet',
-          defaultTo: 'wgc5 - pia-aus_perth',
+          defaultTo: 'wgc5:pia-aus_perth',
         );
 
-        expect(logged.join('\n'), contains('from Internet to wgc5 - pia-aus_perth'));
+        expect(logged.join('\n'), contains('from Internet to wgc5:pia-aus_perth'));
         final syslog = c.commands.firstWhere((x) => x.contains('logger'), orElse: () => '');
-        expect(syslog, contains('default WAN connection set from Internet to wgc5 - pia-aus_perth'));
+        expect(syslog, contains('default WAN connection set from Internet to wgc5:pia-aus_perth'));
       });
     });
 

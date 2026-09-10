@@ -494,6 +494,13 @@ class RouterEmailFacts {
         'Watchdog: ${desc.isEmpty ? 'region not yet set, configuration pending deployment' : 'wgc$slot:$desc'}',
       ];
 
+  /// The same three counters, short enough for the ABOUT screen's width.
+  ///
+  /// Null when the router has never recorded any, which is the state before a watchdog has ever
+  /// run: the screen then shows nothing at all rather than an empty row.
+  String? get shortHistoryLine =>
+      sinceDate.isEmpty ? null : 'Since $sinceDate: $okCount successful & $failCount unsuccessful reconfigures';
+
   String get historyLine => 'Since ${sinceDate.isEmpty ? 'today' : sinceDate} this router has recorded '
       '$okCount successful and $failCount failed reconfigurations.';
 
@@ -1231,6 +1238,28 @@ class RouterWatchdog {
   /// Read for the ABOUT screen, which has no slot in mind - it is asking what is on the router
   /// at all, so that a user running a newer app than their router can see the gap.
   Future<String?> deployedScriptVersion() async => parseScriptVersion(await _read(kDeployedScriptHeaderCommand));
+
+  /// The deployed script's version and the reconfigure history, in ONE round trip.
+  ///
+  /// Both rows on ABOUT come from the router and neither is worth a handshake of its own, so the
+  /// screen asks once and fills in both - which is also why tapping either row's login link fills
+  /// in the other.
+  Future<({String? version, String? history})> aboutRouterFacts() async {
+    final raw = await _read('$kDeployedScriptHeaderCommand; echo "$_aboutSep"; '
+        r'''printf '%s@@%s@@%s' "$(nvram get cfg_pia_wg_sdate)" "$(nvram get cfg_pia_wg_reconfig_ok)" '''
+        r'''"$(nvram get cfg_pia_wg_reconfig_fail)"''');
+    final parts = raw.split(_aboutSep);
+    final counters = (parts.length > 1 ? parts[1] : '').trim().split('@@');
+    String at(int i) => i < counters.length ? counters[i].trim() : '';
+    final facts = RouterEmailFacts(
+      sinceDate: at(0),
+      okCount: at(1).isEmpty ? '0' : at(1),
+      failCount: at(2).isEmpty ? '0' : at(2),
+    );
+    return (version: parseScriptVersion(parts.first), history: facts.shortHistoryLine);
+  }
+
+  static const String _aboutSep = '@@CFGPIAWGABOUT@@';
 
   Future<String> getWatchdogLog(int slot) => _read('cat /tmp/watchdog_wgc$slot.log 2>/dev/null');
 
