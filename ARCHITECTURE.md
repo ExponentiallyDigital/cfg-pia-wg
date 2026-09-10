@@ -46,14 +46,16 @@
   - [7.1. Shell script](#shell-script)
     - [7.1.1. Backoff](#backoff)
     - [7.1.2. Email alerting](#email-alerting)
-  - [7.2. Cron entries](#cron-entries)
-    - [7.2.1. The router's service queue, and how it wedges](#the-routers-service-queue-and-how-it-wedges)
-    - [7.2.2. The second init script, and how both are made recoverable](#the-second-init-script-and-how-both-are-made-rec)
-    - [7.2.3. What an uninstall leaves behind](#what-an-uninstall-leaves-behind)
-  - [7.3. USB storage for Download Master](#usb-storage-for-download-master)
-  - [7.4. Watchdog NVRAM fields](#watchdog-nvram-fields)
-  - [7.5. Sample `cfg-pia-wg` output](#sample-cfg-pia-wg-output)
-  - [7.6. `curl` refuses to run from cron](#curl-refuses-to-run-from-cron)
+  - [7.2. When the script runs, and when it does nothing](#when-the-script-runs-and-when-it-does-nothing)
+  - [7.3. What a reconfigure does](#what-a-reconfigure-does)
+  - [7.4. Cron entries](#cron-entries)
+    - [7.4.1. The router's service queue, and how it wedges](#the-routers-service-queue-and-how-it-wedges)
+    - [7.4.2. The second init script, and how both are made recoverable](#the-second-init-script-and-how-both-are-made-rec)
+    - [7.4.3. What an uninstall leaves behind](#what-an-uninstall-leaves-behind)
+  - [7.5. USB storage for Download Master](#usb-storage-for-download-master)
+  - [7.6. Watchdog NVRAM fields](#watchdog-nvram-fields)
+  - [7.7. Sample `cfg-pia-wg` output](#sample-cfg-pia-wg-output)
+  - [7.8. `curl` refuses to run from cron](#curl-refuses-to-run-from-cron)
 - [8. Network traffic](#network-traffic)
 - [9. Output & session destruction](#output-session-destruction)
 - [10. Build provenance (the About screen)](#build-provenance-the-about-screen)
@@ -1080,7 +1082,93 @@ Every message is plain text with four sections — `WHAT HAPPENED`, `ROUTER`, `H
 > [!NOTE]
 > The failure email's router-log excerpt can contain the PIA **username** (`Requesting PIA token for user ...`). It never contains the password or the token — the script logs the token's length only.
 
-### 7.2. <a name='cron-entries'></a>Cron entries
+### 7.2. <a name='when-the-script-runs-and-when-it-does-nothing'></a>When the script runs, and when it does nothing
+
+Most runs do nothing, which is the point. The expensive path costs a PIA token and a key registration, so everything before it exists to avoid taking it.
+
+```mermaid
+flowchart TD
+    CRON["cron fires<br/><i>every N minutes</i>"] --> DETACH
+    DEPLOY["app runs it with 'deploy'<br/><i>immediately after SAVE</i>"] --> LOAD
+
+    DETACH{"started by cron?"}
+    DETACH -->|yes| REEXEC["re-exec detached,<br/>wait for PPid = 1"]
+    REEXEC --> LOAD
+    DETACH -->|no| LOAD
+
+    LOAD["read settings from NVRAM"] --> ENABLED{"wgcN_enable = 0<br/>and not a deploy?"}
+    ENABLED -->|yes| STOP1["exit 0 - the user turned<br/>this tunnel off"]
+    ENABLED -->|no| IFACE
+
+    IFACE{"is wgcN up?<br/><i>ip -o link show up</i>"}
+    IFACE -->|no| BACKOFF
+    IFACE -->|yes| HS{"handshake<br/>newer than 300s?"}
+    HS -->|yes| OK["record success,<br/>reset backoff, exit 0"]
+    HS -->|no| PING{"ping through wgcN?"}
+    PING -->|yes| OK
+    PING -->|no| BACKOFF
+
+    BACKOFF{"inside the<br/>backoff window?"}
+    BACKOFF -->|yes| STOP2["log why, exit 0"]
+    BACKOFF -->|no| WAN{"is the WAN up?"}
+    WAN -->|no| STOP3["exit 0 - not our problem,<br/>and no alert"]
+    WAN -->|yes| RECONF["RECONFIGURE<br/><i>see the next section</i>"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef stop fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    class CRON,DEPLOY,OK go
+    class STOP1,STOP2,STOP3 stop
+    class RECONF work
+```
+
+**Why each gate is there.**
+
+The **detach** exists because ASUS's curl refuses to run with `crond` in its process ancestry - see [`curl` refuses to run from cron](#curl-refuses-to-run-from-cron). Without it the watchdog can never fetch a token, and therefore can never recover a tunnel.
+
+The **enable check** stops the watchdog undoing a decision the user just made. A tunnel switched off in the web interface looks exactly like a tunnel that dropped.
+
+The **handshake** is the primary liveness test and the only firmware-independent one. `ping -I wgcN` is a Merlin fallback: on stock the router's own traffic is not routed into the tunnel, so a failed ping there says nothing at all. Ping alone used to be the whole test, and it reconfigured healthy tunnels often enough to get the PIA account temporarily refused.
+
+The **backoff** is what stops a genuinely broken tunnel hammering PIA. It doubles from 2 minutes to a 30-minute ceiling.
+
+The **WAN check** is last before the expensive path, and it exits SILENTLY. If the router has no internet, a tunnel being down is neither surprising nor something an email can help with.
+
+### 7.3. <a name='what-a-reconfigure-does'></a>What a reconfigure does
+
+Reached only when everything above has failed. Every step can abort, and an abort sends the failure alert and increments the failure counter.
+
+```mermaid
+flowchart TD
+    A["fetch the PIA CA cert<br/><i>cached after the first run</i>"] --> B
+    B["POST for a session token<br/><i>with the PIA credentials from NVRAM</i>"] --> C
+    C["fetch the region's server list"] --> D
+    D["ping every candidate,<br/>take the lowest latency"] --> E
+    E["generate a fresh WireGuard keypair"] --> F
+    F["register the public key<br/><i>addKey on the chosen server, port 1337</i>"] --> G
+    G["write 16 wgcN_* values to NVRAM"] --> H
+    H["stop the interface"] --> I
+    I["start the interface"] --> J
+    J["restart VPN routing"] --> K
+    K{"is wgcN up<br/>after 3 seconds?"}
+    K -->|yes| OK["Reconfig SUCCESS<br/>bump the success counter,<br/>send the recovery alert"]
+    K -->|no| FAIL["abort - bump the failure counter,<br/>send the failure alert"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class OK go
+    class FAIL bad
+    class A,B,C,D,E,F,G,H,I,J step
+```
+
+**A fresh keypair every time is deliberate.** PIA's `addKey` binds a public key to a session; reusing an old one after a server change gives a tunnel that comes up and carries nothing.
+
+**The three service calls at the end are the fragile part.** They go through `notify_rc`, so they are queued rather than executed, and a wedged queue discards them silently - the config is written perfectly and nothing acts on it. See [The router's service queue](#the-routers-service-queue-and-how-it-wedges).
+
+**Emails are a branch of this flow, not a separate one.** `send_alert` is called from exactly two places: the success at the bottom, and `abort` anywhere above it. Both carry the same facts - what happened, what to do, the router, the history, and the last ten log lines - so a failure and its recovery read as two halves of one story. Detail in [Email alerting](#email-alerting).
+
+### 7.4. <a name='cron-entries'></a>Cron entries
 
 A `cru` (`crontab`) entry drives the configurable periodic health check. An additional job rotates the watchdog router log file at midnight. To avoid filling the JFFS partition, all logging is stored in `/tmp`. Watchdog logs do not persist after a reboot or power loss.
 
@@ -1111,7 +1199,7 @@ Stock has no user-script hook of its own, so the app **replaces** `S50downloadma
 
 The deployed copy is LF-terminated: the repo template `scripts/S50downloadmaster-TEMPLATE.sh` is CRLF, and a CRLF shebang makes the router's kernel refuse to exec it. `test/unit/s50_template_test.dart` fails if the two drift apart.
 
-#### 7.2.1. <a name='the-routers-service-queue-and-how-it-wedges'></a>The router's service queue, and how it wedges
+#### 7.4.1. <a name='the-routers-service-queue-and-how-it-wedges'></a>The router's service queue, and how it wedges
 
 Every `service <name>` call goes through `notify_rc`, which records what it is doing in the `rc_service` NVRAM key (with the pid in `rc_service_pid`) and clears it when the action finishes. A later call that finds the key set waits for it - `rc_service: waitting "<name>" via ...` - and after 15 seconds **discards itself**: `rc_service: skip the event: <name>`.
 
@@ -1137,7 +1225,7 @@ Related: an interface seen up ONCE is not up. The app reported "wgc1 enabled" a 
 
 Full evidence in `.claude/testing/2026-09-10_rc-service-stuck-runsheet.md`.
 
-#### 7.2.2. <a name='the-second-init-script-and-how-both-are-made-rec'></a>The second init script, and how both are made recoverable
+#### 7.4.2. <a name='the-second-init-script-and-how-both-are-made-rec'></a>The second init script, and how both are made recoverable
 
 `S50asuslighttpd` sits beside `S50downloadmaster` in `/opt/etc/init.d` and is run by the same triggers - at boot, and again on **every VPN up or down**. It contains `sleep` calls, and with a VPN set to start at boot they stall the boot until the tunnel is disabled by hand. Nothing in it is wanted here, so a watchdog deploy replaces it with a stub that returns immediately whatever trigger it is given (`scripts/S50asuslighttpd-TEMPLATE.sh`, embedded as `kS50AsusLighttpdTemplate`, chmod 700).
 
@@ -1155,7 +1243,7 @@ The stub is rewritten on every deploy rather than once, so a firmware update tha
 
 The app can put all of this back. SETTINGS carries an uninstall that restores each script from its `.old` copy and deletes `/jffs/cfg-pia-wg` - in that order, so a failure at the last step still leaves a router that boots the way it originally did. Where no `.old` exists the app's own copy is removed rather than left behind, and the confirmation says which of the two happened for each script. Cron entries, NVRAM and the tunnels are deliberately untouched: they belong to the watchdog and the slots, which have their own DELETE.
 
-#### 7.2.3. <a name='what-an-uninstall-leaves-behind'></a>What an uninstall leaves behind
+#### 7.4.3. <a name='what-an-uninstall-leaves-behind'></a>What an uninstall leaves behind
 
 The uninstall in SETTINGS removes the app from the router, not the user's VPNs. It restores both boot scripts from their `.old` copies, removes every watchdog `cru` entry, unsets the fifteen NVRAM keys the app writes, and deletes `/jffs/cfg-pia-wg`. Tunnel configuration (`wgcN_*`) is deliberately untouched: the tunnels keep working and stay manageable from the router's own web interface.
 
@@ -1164,7 +1252,7 @@ The uninstall in SETTINGS removes the app from the router, not the user's VPNs. 
 
 Both replacement scripts carry `# <name> - auto-generated by cfg-pia-wg; *do* *not* edit.` as their second line, and the uninstall will not delete a file without it. That header was added to `S50downloadmaster` in 428: it had been recognised by its REPLACEMENT markers, which the restored original does not carry either - so a SECOND uninstall saw a file it did not recognise and deleted the router's own script. Reported 2026-09-10.
 
-### 7.3. <a name='usb-storage-for-download-master'></a>USB storage for Download Master
+### 7.5. <a name='usb-storage-for-download-master'></a>USB storage for Download Master
 
 Stock has no user-script hook of its own, so the app takes over an init script that Download Master installs (see "The boot hook, and why it is Download Master"). Download Master in turn installs onto a USB stick, which makes the stick's filesystem a prerequisite of the whole boot-persistence mechanism.
 
@@ -1186,7 +1274,7 @@ The router's own Format tool only offers NTFS, FAT and HFS, so an ext4 partition
 
 Authoritative source: [ASUS Plug-n-Share Disks Compatibility List](https://www.asus.com/us/support/faq/1047043/).
 
-### 7.4. <a name='watchdog-nvram-fields'></a>Watchdog NVRAM fields
+### 7.6. <a name='watchdog-nvram-fields'></a>Watchdog NVRAM fields
 
 All watchdog configuration is stored on your router's NVRAM. Defaults are as follows:
 
@@ -1212,7 +1300,7 @@ cfg_pia_wg_reconfig_fail=0
 
 (where `N` is the slot number 1-5)
 
-### 7.5. <a name='sample-cfg-pia-wg-output'></a>Sample `cfg-pia-wg` output
+### 7.7. <a name='sample-cfg-pia-wg-output'></a>Sample `cfg-pia-wg` output
 
 Standalone configuration file, suitable for importing into various WireGuard clients/routers:
 
@@ -1230,7 +1318,7 @@ PersistentKeepalive = 25
 AllowedIPs          = 0.0.0.0/0
 ```
 
-### 7.6. <a name='curl-refuses-to-run-from-cron'></a>`curl` refuses to run from cron
+### 7.8. <a name='curl-refuses-to-run-from-cron'></a>`curl` refuses to run from cron
 
 `/usr/sbin/curl` on stock ASUS firmware inspects its own process ancestry at startup and **refuses to run if `crond` appears anywhere in the chain**. The rejection is silent in every way that matters: exit status 0, no HTTP status, no response body, and nothing on stderr. The only trace is a line in `/jffs/curllst`.
 
