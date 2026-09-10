@@ -213,7 +213,7 @@ To manage Wireguard Merlin uses VPN Director, stock ASUS uses VPN Fusion. These 
 VPN Director exposes each slot directly: there is no clientlist and no unit indirection. Write the `wgcN_*` keys, commit, then act on the slot **by its own number**.
 
 ```text
-   nvram set wgcN_*      (17 keys, section 3.1)
+   nvram set wgcN_*      (17 keys, see the field reference)
           │
    nvram commit          always BEFORE the service call, so the
           │              service cannot read a half-written slot
@@ -264,7 +264,7 @@ Disable as above, wait for the interface to go, then `nvram unset` all 17 `wgcN_
   nvram get jffs2_on
   ```
 
-  The app sets and commits them if they are not already on. Stock has no equivalent and no `/jffs/scripts` hook directory, so the watchdog persists its cron entries differently there — see section 5.2.
+  The app sets and commits them if they are not already on. Stock has no equivalent and no `/jffs/scripts` hook directory, so the watchdog persists its cron entries differently there — see [Cron entries](#cron-entries).
 
 #### 4.1.5. <a name='firmware-detection'></a>Firmware detection
 
@@ -361,7 +361,7 @@ The below examples are for `wgc5`, which is the first WG VPN created. **NB** the
 
   1. set `wgcN_enable=1`
   2. set `vpnc_clientlist` index 5 (vpn state) to `1` (active) — do this **before** step 3, since a slot with no profile gains a new row here and the unit is that row's index
-  3. set `vpnc_unit=N` where `N` is the 0-based index of the slot's row in `vpnc_clientlist` (see 4.2)
+  3. set `vpnc_unit=N` where `N` is the 0-based index of the slot's row in `vpnc_clientlist` (see [The three numbers that name one profile](#the-three-numbers-that-name-one-profile))
   4. exec `service restart_vpnc`
 
   `service restart_default_wan` is run by the UI when "apply to all devices" is enabled/disabled.
@@ -372,7 +372,7 @@ There is **no** `start_vpnc` command, which is why enable uses `restart_vpnc`.
 
   1. set `wgcN_enable=0`
   2. set `vpnc_clientlist` index 5 (vpn state) to `0` (disabled)
-  3. set `vpnc_unit=N` where `N` is the 0-based index of the slot's row in `vpnc_clientlist` (see 4.2)
+  3. set `vpnc_unit=N` where `N` is the 0-based index of the slot's row in `vpnc_clientlist` (see [The three numbers that name one profile](#the-three-numbers-that-name-one-profile))
   4. exec `service stop_vpnc`
 
 > [!WARNING]
@@ -541,13 +541,13 @@ Resolved by `vpncUnitForSlot` in `router_slot_service.dart`, which reads the lis
 
 ## 6. <a name='device-assignment-stock'></a>Device assignment (stock)
 
-
 How stock binds a LAN device to a VPN profile, and the NVRAM lists involved. Measured on hardware 2026-09-06 and 2026-09-07 by diffing NVRAM either side of each WebUI action; see `.claude/plans/plan_vpn_device_assignments.md` for the method and for what is still unverified.
 
 > [!NOTE]
 > Every IP address, hostname and MAC address in this section is invented, including in the sample records. Real values are never recorded in this repository.
 
-The app does not write any of this yet. It is documented here because it is the reference the feature is being built against, and because two of the keys - `vpnc_dev_policy_list` and `vpnc_default_wan` - are ones `scripts/clearall.sh` already touches.
+The app writes two of these keys - `vpnc_dev_policy_list` and `vpnc_default_wan` - from the DEVICE ASSIGNMENT screen, and reads the rest. `scripts/clearall.sh` touches the same two.
+
 ### 6.1. <a name='vpnc-default-wan'></a>`vpnc_default_wan`
 
 An integer naming the VPN that unassigned devices use. It is **index 6 (0-based)** of that profile's `vpnc_clientlist` record - the same number the `vpncN_*` runtime keys are indexed by, not the slot number and not `vpnc_unit`.
@@ -607,10 +607,10 @@ What matters is the consequence, which does not depend on the inference being ri
 
 | Test | Means | Assigning it |
 | --- | --- | --- |
-| MAC is in `dhcp_staticlist` | reserved, address pinned | cheap - no `dhcp_staticlist` write, so no whole-LAN bounce |
-| MAC is not | ordinary lease, address can move | needs a reservation created first - the expensive path in 3.3.6 |
+| MAC is in `dhcp_staticlist` | reserved, the address is pinned | nothing extra to write |
+| MAC is not | ordinary lease, the address can move | the app creates the reservation first, or the assignment decays at the next lease change |
 
-Two states, not three. On the measured network that is four devices cheap and six expensive, rather than the seven-and-three an `IP Method` reading would have suggested.
+Two states, not three. On the measured network that is four devices reserved and six not, rather than the seven-and-three an `IP Method` reading would have suggested.
 
 > [!CAUTION]
 > **Devices behind an AiMesh node are seen differently by the main router - RESOLVED 2026-09-08, and it does not block assignment.**
@@ -625,15 +625,16 @@ Two states, not three. On the measured network that is four devices cheap and si
 > | `/tmp/nmp_cache.js` | yes, with the IP and the user's name for it |
 > | `/proc/net/arp` | yes, on `br0` |
 >
-> So such a device can be listed and assigned. It also confirms the two-source design in 2.1 is **necessary rather than tidy**: `nmp_cl_json.js` carries no address, so the IP has to come from `nmp_cache.js` for every device, not just these.
+> So such a device can be listed and assigned. It also confirms the two-source design in [Reading the two device JSON files](#reading-the-two-device-json-files) is **necessary rather than tidy**: `nmp_cl_json.js` carries no address, so the IP has to come from `nmp_cache.js` for every device, not just these.
 >
 > The kernel messages themselves are cosmetic. They appear only in `dmesg`, never in `/tmp/syslog.log`, because `/proc/sys/kernel/printk` reads `5 4 1 7` - only priorities below 5 are forwarded, and these are informational.
 
 > [!NOTE]
 > **The guest network is a separate bridge** (`br1`, a different subnet) and is isolated from the LAN by design. **DECIDED 2026-09-08: guest devices are never offered for assignment.** They cannot reach the LAN, and routing them through a VPN slot is a different proposition from routing a LAN device.
+
 Two behaviours confirmed 2026-09-06:
 
-- **Removing a reservation is as disruptive as adding one.** Deleting one entry in the WebUI dropped a 5 GHz laptop hard enough to kill an RDP session running over it. Any `dhcp_staticlist` write goes through the heavy path, in both directions - which is what makes item 9 worth testing.
+- **Removing a reservation in the WebUI is disruptive.** Deleting one entry there dropped a 5 GHz laptop hard enough to kill an RDP session running over it - the signature of `restart_net_and_phy`, which the WebUI calls and the app does not. The app never removes a reservation anyway, for the reason below.
 - **A device keeps its address after its reservation is removed.** The tablet held the same IP on a plain lease afterwards, reappearing in the client list as `Automatic IP`. So removing a reservation does not immediately break an assignment keyed on that IP - it just stops guaranteeing it, and the breakage arrives silently at some later renewal. That is a worse failure than an immediate one, and it is an argument for the app never removing a reservation on unassign.
 
 > [!NOTE]
@@ -699,7 +700,7 @@ Other traps in the same pair of files:
 - **`conn_ts` is not a last-seen time.** It reads `0` for every wired device, and the wireless ones share a value to within three seconds - the last reboot. It is a wireless association timestamp, not a last-seen time.
 - **Liveness comes from `nmp_cl_json.js`, never from `nmp_cache.js`.** Measured 2026-09-08 on a device powered off for ten minutes: `nmp_cl_json.js` had updated to `"online": 0`, while `nmp_cache.js` still read `"isOnline": "1"`. Sourcing liveness from `nmp_cache.js` - the obvious choice, since every other field comes from there - would show every device as permanently online.
 - **An offline device KEEPS its `ip` in `nmp_cache.js`**, so it stays assignable. The address is only genuinely unavailable when a device is unreserved, powered off, AND has not connected since the last reboot, because `/tmp` is rebuilt at boot.
-- The router itself does not appear in `nmp_cache.js` at all. A mesh node does, indistinguishable from a client - see 3.3.5a.
+- The router itself does not appear in `nmp_cache.js` at all. A mesh node does, indistinguishable from a client - see [`cfg_device_list` - the router and its mesh nodes](#cfg-device-list-the-router-and-its-mesh-nodes).
 
 ### 6.7. <a name='cfg-device-list-the-router-and-its-mesh-nodes'></a>`cfg_device_list` - the router and its mesh nodes
 
@@ -715,7 +716,7 @@ Records separated by `<`, fields by `>`: `name>IP>MAC>flag`. The flag is `1` for
 
 This matters because a mesh node is otherwise indistinguishable from an ordinary client. Measured 2026-09-08: the node appears in `nmp_cache.js` with `isGateway: "0"`, exactly like a laptop, so that field is no help. `lan_hwaddr` and `label_mac` identify the router alone and say nothing about nodes.
 
-A related field, not needed for exclusion but worth knowing: `nmp_cache.js` carries `amesh_isReClient` and `amesh_papMac` on devices connected THROUGH a node, where `amesh_papMac` is the node MAC. That identifies a device behind the mesh - which is assignable like any other (see 3.3.3) - not the node itself.
+A related field, not needed for exclusion but worth knowing: `nmp_cache.js` carries `amesh_isReClient` and `amesh_papMac` on devices connected THROUGH a node, where `amesh_papMac` is the node MAC. That identifies a device behind the mesh - which is assignable like any other (see [Reserved or not - the distinction the screen needs](#reserved-or-not-the-distinction-the-screen-needs)) - not the node itself.
 
 ### 6.8. <a name='vpnc-dev-policy-list-the-assignment'></a>`vpnc_dev_policy_list` - the assignment
 
@@ -807,10 +808,7 @@ Three things follow, and all three change the design:
 
 - **Assigning to the "Internet Connection" profile creates a reservation too.** It is not VPN-specific: binding a device to *any* profile pins its address, because every profile is keyed by IP. So the expensive path is reached by an action that does not look like it involves a VPN at all.
 - **Unassigning does NOT remove the reservation.** This was previously an open sub-question answered only by inference; here the policy list is empty and all ten reservations remain. Reservations accumulate and are never cleaned up.
-- **The cost is per device, once, ever.** After a user has assigned devices even briefly, every one of them is reserved, and from then on every assignment - and reassignment - takes the cheap path. The whole-LAN bounce is a first-touch cost, not a recurring one.
-
-> [!NOTE]
-> The corollary for the app: a router that has ever used VPN Fusion is likely to have a reservation for every device already, so the expensive path is the exception in practice. A **freshly reset** router is where it bites - which is exactly the state a new user is in. Do not let the rarity argue away the warning.
+- **The reservation is created once and stays.** After a user has assigned devices even briefly, every one of them is reserved, so later assignments and reassignments write nothing to `dhcp_staticlist` at all. A router that has ever used VPN Fusion is likely to arrive in that state already.
 
 #### 6.8.4. <a name='vpnc-dev-policy-list-tmp'></a>`vpnc_dev_policy_list_tmp`
 
@@ -848,7 +846,7 @@ All of these go through `notify_rc`, which queues and returns immediately, so no
 
 #### 6.8.6. <a name='vpnc-default-wan-uses-the-same-identifier'></a>`vpnc_default_wan` uses the same identifier
 
-Turning on "apply to all devices" for wgc1 set `vpnc_default_wan=9` - the clientlist index 6 again, not the slot. Turning it off set it back to `0`. So `0` means plain WAN and any other value is an index-6 identifier, which settles the open question in 3.3.1.
+Turning on "apply to all devices" for wgc1 set `vpnc_default_wan=9` - the clientlist index 6 again, not the slot. Turning it off set it back to `0`. So `0` means plain WAN and any other value is an index-6 identifier, which settles the open question in [`vpnc_default_wan`](#vpnc-default-wan).
 
 #### 6.8.7. <a name='enabled-is-what-separates-on-the-internet-from-f'></a>`enabled` is what separates "on the internet" from "follows the default" - CONFIRMED 2026-09-08
 
@@ -992,11 +990,11 @@ Three points of care, all covered by `staleRuleTables` in `lib/device_assignment
 
 ## 7. <a name='watchdog-details'></a>Watchdog details
 
-Deploying a watchdog writes three things to the router, plus the settings in section 5.3:
+Deploying a watchdog writes three things to the router, plus the settings in [Watchdog NVRAM fields](#watchdog-nvram-fields):
 
 1. a slot-specific shell script, `/jffs/cfg-pia-wg/watchdog_wgcN.sh`
 2. two `cru` entries — the periodic check and a nightly log rotation
-3. reboot persistence for those entries, which differs by firmware (section 5.2)
+3. reboot persistence for those entries, which differs by firmware ([Cron entries](#cron-entries))
 
 The app then runs the script once by hand, as `watchdog_wgcN.sh deploy`, so the watchdog is live immediately rather than at its next scheduled tick.
 
@@ -1016,7 +1014,7 @@ Each run asks one question: is this tunnel carrying traffic?
 
 A healthy check writes the time to `/tmp/watchdog_last_ping_success_wgcN`, resets the backoff counter and exits.
 
-A failed check reconfigures: fetch a PIA token, fetch the region's server list, ping every candidate and take the lowest latency, generate a fresh keypair, register the public key with `addKey`, write the 16 `wgcN_*` values, and restart the interface. Full flow in section 2.2.
+A failed check reconfigures: fetch a PIA token, fetch the region's server list, ping every candidate and take the lowest latency, generate a fresh keypair, register the public key with `addKey`, write the 16 `wgcN_*` values, and restart the interface. Full flow in [What a reconfigure does](#what-a-reconfigure-does).
 
 #### 7.1.1. <a name='backoff'></a>Backoff
 
@@ -1052,7 +1050,7 @@ Times carry a **numeric UTC offset** (`+1000`), never a zone name. `%Z` prints w
 
 An alert that **could not be sent** is counted in `/tmp/watchdog_unsent_wgcN` and reported by the next email that does get through (`2 earlier alert(s) could not be sent, the most recent at ...`). An alert about lost connectivity is the one most likely to be undeliverable - a downed default tunnel takes DNS with it - and a stale alert arriving hours later is worse than a line of context on a live one.
 
-Every message is plain text with four sections — `WHAT HAPPENED`, `ROUTER`, `HISTORY`, and on failures `WHAT TO DO` and `ROUTER LOG` — ordered answer first, action second, evidence last. `HISTORY` reports the lifetime counters from section 3. Worked examples are in [README.md section 5.3.1](README.md#531-email-alerts).
+Every message is plain text with four sections — `WHAT HAPPENED`, `ROUTER`, `HISTORY`, and on failures `WHAT TO DO` and `ROUTER LOG` — ordered answer first, action second, evidence last. `HISTORY` reports the lifetime counters from [Router WireGuard NVRAM fields](#router-wireguard-nvram-fields). Worked examples are in [README.md section 5.3.1](README.md#531-email-alerts).
 
 > [!NOTE]
 > The failure email's router-log excerpt can contain the PIA **username** (`Requesting PIA token for user ...`). It never contains the password or the token — the script logs the token's length only.
@@ -1223,7 +1221,7 @@ The app can put all of this back. SETTINGS carries an uninstall that restores ea
 The uninstall in SETTINGS removes the app from the router, not the user's VPNs. It restores both boot scripts from their `.old` copies, removes every watchdog `cru` entry, unsets the fifteen NVRAM keys the app writes, and deletes `/jffs/cfg-pia-wg`. Tunnel configuration (`wgcN_*`) is deliberately untouched: the tunnels keep working and stay manageable from the router's own web interface.
 
 > [!NOTE]
-> **A disabled default connection does NOT block traffic.** Observed 2026-09-10 with the app fully uninstalled including its NVRAM settings, the router rebooted, the default connection set to wgc5, wgc5 DISABLED, no other WireGuard client enabled, and every device assigned to that disabled slot: LAN traffic left via the WAN rather than being blocked. The default connection names where unassigned traffic SHOULD go; it is not a kill switch, and stock has none (3.3.6, and the alert-email wording in 5.5). A user who wants fail-closed behaviour needs the default connection pointed at a tunnel that is actually up.
+> **A disabled default connection does NOT block traffic.** Observed 2026-09-10 with the app fully uninstalled including its NVRAM settings, the router rebooted, the default connection set to wgc5, wgc5 DISABLED, no other WireGuard client enabled, and every device assigned to that disabled slot: LAN traffic left via the WAN rather than being blocked. The default connection names where unassigned traffic SHOULD go; it is not a kill switch, and stock has none - see [Assigning a device with no DHCP reservation creates one](#assigning-a-device-with-no-dhcp-reservation-crea) for what fail-closed behaviour actually takes, and [Email alerting](#email-alerting) for how the app words it. A user who wants fail-closed behaviour needs the default connection pointed at a tunnel that is actually up.
 
 Both replacement scripts carry `# <name> - auto-generated by cfg-pia-wg; *do* *not* edit.` as their second line, and the uninstall will not delete a file without it. That header was added to `S50downloadmaster` in 428: it had been recognised by its REPLACEMENT markers, which the restored original does not carry either - so a SECOND uninstall saw a file it did not recognise and deleted the router's own script. Reported 2026-09-10.
 
@@ -1265,7 +1263,7 @@ wgcN_wd_secondary_ip=1.1.1.1
 wgcN_wd_smtp_pass=
 wgcN_wd_smtp_server=
 wgcN_wd_smtp_user=
-# global (see section 3 for the full description of each)
+# global (the NVRAM field reference describes each of these)
 cfg_pia_wg_password=
 cfg_pia_wg_user=
 cfg_pia_wg_sdate=
