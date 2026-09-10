@@ -42,6 +42,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING TESTING - a test that every Markdown link resolves
+
+- ADD: `test/unit/markdown_links_test.dart`. Every `[text](target)` between the repo's own Markdown files must resolve, file and anchor. Anchors are generated from heading text, so any reword silently breaks every link into that heading - and a rewrite is exactly when a written-down rule gets forgotten. Same approach as the LAN-identifier guard: a rule nobody can forget beats one written down.
+- INF: it reproduces GitHub's slug rule, including the two details that would otherwise produce false failures - each space becomes its own hyphen, so `A & B` yields a double hyphen, and a heading indented up to three spaces is still a heading.
+- INF: `.claude/plans/` is out of scope. Those record what was believed at the time and are not kept current.
+
 PENDING TESTING - pass 2, the things a tester could not guess
 
 - ADD: **"When something looks broken, check these first"**, second section in the file. The wedged service queue, curl refusing a caller with `crond` in its ancestry, and a stale `ip rule` after a reassignment. Each presents as a completely different fault, and a tester following this document last week would have had no way to find any of them.
