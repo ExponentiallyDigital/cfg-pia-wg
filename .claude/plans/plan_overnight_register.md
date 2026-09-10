@@ -17,6 +17,22 @@ The note predates that change. I have NOT touched it: my permission this run cov
 and this is a user-visible string in `lib/screens/settings_screen.dart`. The README and TESTING now
 describe what the code actually does, so the app is the only thing saying the wrong thing.
 
+**A section-1 working agreement now pulls against plan 4 item 5.** The agreement says every NVRAM
+variable the app writes must be described in ARCHITECTURE **and** "Describe it in §4.9 here as
+well". Item 5 asks §4.9 to stop duplicating ARCHITECTURE. I have split the difference rather than
+touch section 1, which you told me not to: §4.9 still NAMES every key, so a key that exists only in
+code is still visible there, but what a key MEANS now lives in one place. If you want the agreement
+to match, the wording to change is "Describe it in §4.9 here as well" -> "List it in §4.9 here as
+well, with whatever the app does with it".
+
+**I left §4.8, §4.8.1 and §4.10a alone**, though plan 4 item 5 names them alongside §4.9. §4.9 was
+genuinely two documents describing the same firmware. Those three are not: they are the reasons the
+CODE looks the way it does - the dropbear 9000-byte exec limit, BusyBox `tr` having no character
+classes, the TLS floor that is a minimum and not a pin, Android forcing edge-to-edge at SDK 36.
+ARCHITECTURE does not carry any of that, so pointing at it would point at nothing. Say the word and
+I will trim them, but every line I checked passed your own test - "would I get this wrong without
+being told".
+
 ## Tests I had to change
 
 **Added `test/unit/markdown_links_test.dart`** - the link check from plan 2, pre-approved. It passes
