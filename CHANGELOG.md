@@ -42,6 +42,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING TESTING - pass 1, one section per thing a user does
+
+- CHG: the end-to-end manual test moves from the bottom of the file to the top and becomes the spine. Its nine checklist items are now sections, in the order a user meets them, and the material that used to sit above it - email, watchdog checks, NVRAM - is filed underneath the function it belongs to.
+- CHG: stable `<a name>` anchors on all 25 headings, keyed on the title rather than the number, and a regenerated TOC. Same convention as ARCHITECTURE, so a link into either survives a renumber.
+- INF: position and heading level only. A word-level comparison of the file before and after accounts for every line: nothing is lost except the old TOC, three section labels absorbed into the sections that replaced them, and the `<br>` separators the old checklist used.
+
 PENDING ARCHITECTURE - pass 3, narrative
 
 - ADD: an opening. What the app does, the one idea needed before any of the detail makes sense - the two firmwares drive WireGuard in completely different ways - and where to start reading when a firmware update breaks something.

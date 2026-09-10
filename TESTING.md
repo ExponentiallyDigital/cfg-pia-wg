@@ -1,166 +1,92 @@
 # Notes on testing cfg-pia-wg
 
-- [1. Testing email send from SSH](#1-testing-email-send-from-ssh)
-  - [1.1. Construct the command line](#11-construct-the-command-line)
-  - [1.2. Construct the test email](#12-construct-the-test-email)
-  - [1.3. How the Commands Work](#13-how-the-commands-work)
-  - [1.4. Certificate information](#14-certificate-information)
-- [2. Testing the watchdog feature](#2-testing-the-watchdog-feature)
-  - [2.1. Checks](#21-checks)
-    - [2.1.1. Invalidate the registration (the important one)](#211-invalidate-the-registration-the-important-one)
-    - [2.1.2. What does NOT work: moving the endpoint](#212-what-does-not-work-moving-the-endpoint)
-    - [2.1.3. Peer removed (the fast one)](#213-peer-removed-the-fast-one)
-    - [2.1.4. Interface down](#214-interface-down)
-    - [2.1.5. What a healthy check looks like](#215-what-a-healthy-check-looks-like)
-    - [2.1.6. Backoff](#216-backoff)
-      - [Walking the whole ladder in two minutes, with no PIA traffic](#walking-the-whole-ladder-in-two-minutes-with-no-pia-traffic)
-    - [2.1.7. What no longer works](#217-what-no-longer-works)
-- [3. Examining nvram settings](#3-examining-nvram-settings)
-- [4. Full end-end-to-end manual test](#4-full-end-end-to-end-manual-test)
+- [1. Before you start](#before-you-start)
+- [2. Home screen](#home-screen)
+- [3. Standalone (generate)](#standalone-generate)
+- [4. Manage](#manage)
+- [5. Watchdog](#watchdog)
+  - [5.1. Checks](#checks)
+    - [5.1.1. Invalidate the registration (the important one)](#invalidate-the-registration-the-important-one)
+    - [5.1.2. What does NOT work: moving the endpoint](#what-does-not-work-moving-the-endpoint)
+    - [5.1.3. Peer removed (the fast one)](#peer-removed-the-fast-one)
+    - [5.1.4. Interface down](#interface-down)
+    - [5.1.5. What a healthy check looks like](#what-a-healthy-check-looks-like)
+    - [5.1.6. Backoff](#backoff)
+    - [5.1.7. Walking the whole backoff ladder in two minutes, with no PIA traffic](#walking-the-whole-backoff-ladder-in-two-minutes-)
+  - [5.2. Applying a config, and what it should leave behind](#applying-a-config-and-what-it-should-leave-behin)
+  - [5.3. Files deployed to the router](#files-deployed-to-the-router)
+  - [5.4. Testing email send from SSH](#testing-email-send-from-ssh)
+    - [5.4.1. Construct the command line](#construct-the-command-line)
+    - [5.4.2. Construct the test email](#construct-the-test-email)
+    - [5.4.3. How the Commands Work](#how-the-commands-work)
+    - [5.4.4. Certificate information](#certificate-information)
+- [6. App log](#app-log)
+- [7. About](#about)
+- [8. Credentials and exit](#credentials-and-exit)
+- [9. Firmware coverage](#firmware-coverage)
+- [10. Examining nvram settings](#examining-nvram-settings)
 
-## 1. Testing email send from SSH
+## 1. <a name='before-you-start'></a>Before you start
 
-If the watchdog feature is used, cfg-pia-wg employs the below commands to send emails. If you are having issues with sending email alerts you can test locally via SSH with the following examples.
-
-As a fully blown `sendmail` is not available, cfg-pia-wg uses the built-in BusyBox `sendmail` applet paired with `openssl s_client` to establish a secure email connection. Email is sent with TLS 1.3 encryption, a verified CA bundle is used to ensure that the endpoint is actually who it should be, and enforces strict cryptographic handshake failures.
-
-This ensures that emails are sent without exposing account credentials to eavesdropping or man-in-the-middle attacks.
-
-### 1.1. Construct the command line
-
-Replace `sender@example.com`, `recipient@example.com`, and `APP_PASSWORD` in the below:
-
-```bash
-sendmail -v \
-    -H "exec openssl s_client -quiet -tls1_3 -connect smtp.gmail.com:465 -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error" \
-    -au"sender@example.com" -ap"APP_PASSWORD" \
-    -f"sender@example.com" recipient@example.com \
-    < /tmp/test-email.txt
-```
-
-> [!CAUTION]
-> **APP PASSWORD**: the above example exposes your app password to bash history, `ps`, and process lists. These are cleared at reboot though. Remember, this is **only** for testing purposes. A more secure approach uses input stuffing from a file eg. one-time setup with `nano /tmp/.smtp-pass` enter your password then save the file, secure the file with `chmod 600 /tmp/.smtp-pass` the `sendmail` command line would then be modified with `-ap$(cat /tmp/.smtp-pass)`.
-
-### 1.2. Construct the test email
-
-Replace `sender@example.com`, `Sender Name`, `Recipient Name`, and `recipient@example.com` in the below:
-
-```bash
-cat << EOF > /tmp/test-email.txt
-From: Sender Name <sender@example.com>
-To: Recipient Name <recipient@example.com>
-Subject: Test Email from Command Line - $(date '+%Y-%m-%d %H:%M:%S')
-Date: $(date -R)
-Message-ID: <$(date +%s).test@$(uname -n)>
-MIME-Version: 1.0
-Content-Type: text/plain; charset=utf-8
-Content-Transfer-Encoding: 7bit
-
-Hello,
-
-This is a test email created via command line.
-
-✓ Created at: $(date '+%Y-%m-%d %H:%M:%S')
-✓ Host: $(uname -n)
-✓ Purpose: Testing email delivery
-
-Best regards,
-Command Line Tester
-
----
-Test Email • $(date '+%Y-%m-%d %H:%M:%S')
-EOF
-```
-
-> [!NOTE]
-> **Message-ID**: Google may silently **not** deliver the test email if you reuse the same test message without updating the `Message-ID:` by recreating `/tmp/test-email.txt`.
-> [!TIP]
-> **EOF**: Using `EOF` without single quotes allows variable expansion. Typically you would use `'EOF'`, but we need the `date` and `hostnames` expanded, which is why we use `cat << EOF >`.
-
-### 1.3. How the Commands Work
-
-The first command constructs a valid, raw RFC-compliant email body inside a temporary file (/tmp/test-email.txt) using dynamic variables to inject an accurate timestamp, a globally unique Message-ID, and local hostname metadata. The second command executes sendmail in verbose mode (-v), using a custom network handler string (-H) to launch OpenSSL instead of a standard socket connection. The OpenSSL utility wraps the session in TLS 1.3 encryption, cross-references Gmail's public certificates against the router's trusted system authorities (-CAfile), and immediately kills the transmission (-verify_return_error) if any intermediate certificate is missing or invalid. Once a secure channel is verified, sendmail submits the authentication flags (-au and -ap), passes the envelope routing details, and pipes the payload text directly into the authenticated SMTP session.
-
-When executed, you should see something like this from your SSH session:
-
-```bash
-sendmail: send:'NOOP'
-depth=2 C = US, O = Google Trust Services LLC, CN = GTS Root R1
-verify return:1
-depth=1 C = US, O = Google Trust Services, CN = WR2
-verify return:1
-depth=0 CN = smtp.gmail.com
-verify return:1
-sendmail: recv:'220 smtp.gmail.com ESMTP a-very-long-session-id-string - gsmtp'
-sendmail: recv:'250 2.0.0 OK a-very-long-session-id-string - gsmtp'
-sendmail: send:'EHLO sending-server'
-sendmail: recv:'250-smtp.gmail.com at your service, [192.0.2.1]'
-sendmail: recv:'250-SIZE 35882577'
-sendmail: recv:'250-8BITMIME'
-sendmail: recv:'250-AUTH LOGIN PLAIN XOAUTH2 PLAIN-CLIENTTOKEN OAUTHBEARER XOAUTH'
-sendmail: recv:'250-ENHANCEDSTATUSCODES'
-sendmail: recv:'250-PIPELINING'
-sendmail: recv:'250-CHUNKING'
-sendmail: recv:'250 SMTPUTF8'
-sendmail: send:'AUTH LOGIN'
-sendmail: recv:'334 VXNlcm5hbWU6'
-sendmail: send:''                   <- username is not echoed to the screen
-sendmail: recv:'334 UGFzc3dvcmQ6'
-sendmail: send:''                   <- password is not echoed to the screen
-sendmail: recv:'235 2.7.0 Accepted'
-sendmail: send:'MAIL FROM:<sender@example.com>'
-sendmail: recv:'250 2.1.0 OK a-very-long-session-id-string - gsmtp'
-sendmail: send:'RCPT TO:<recipient@example.com>'
-sendmail: recv:'250 2.1.5 OK a-very-long-session-id-string - gsmtp'
-sendmail: send:'DATA'
-sendmail: recv:'354 Go ahead a-very-long-session-id-string - gsmtp'
-sendmail: send:'From: Sender Name <sender@example.com>'
-sendmail: send:'To: Recipient Name <recipient@example.com>'
-sendmail: send:'Subject: Test Email from Command Line - 2026-06-20 11:58:38'
-sendmail: send:'Date: Sat, 20 Jun 2026 11:58:38 +1000'
-sendmail: send:'Message-ID: <1781920718.test@host>'
-sendmail: send:'MIME-Version: 1.0'
-sendmail: send:'Content-Type: text/plain; charset=utf-8'
-sendmail: send:'Content-Transfer-Encoding: 7bit'
-sendmail: send:''
-sendmail: send:'Hello,'
-sendmail: send:''
-sendmail: send:'This is a test email created via command line.'
-sendmail: send:''
-sendmail: send:'✓ Created at: 2026-06-20 11:58:38'
-sendmail: send:'✓ Host: sending-server'
-sendmail: send:'✓ Purpose: Testing email delivery'
-sendmail: send:''
-sendmail: send:'Best regards,'
-sendmail: send:'Command Line Tester'
-sendmail: send:''
-sendmail: send:'---'
-sendmail: send:'Test Email • 2026-06-20 11:58:38'
-sendmail: send:'.'
-sendmail: recv:'250 2.0.0 OK  1781920757 a-very-long-session-id-string - gsmtp'
-sendmail: send:'QUIT'
-read:errno=0
-sendmail: recv:'221 2.0.0 closing connection a-very-long-session-id-string - gsmtp'
-```
-
-### 1.4. Certificate information
-
-If you want to verify certificate use (and it's a _lot_ of information), use
-
-```bash
-openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
-    -CAfile /etc/ssl/certs/ca-certificates.crt \
-    -verify_return_error \
-    -showcerts < /dev/null
-```
+Clear all configs and NVRAM, then reboot the router.
 
 ---
 
-## 2. Testing the watchdog feature
+## 2. <a name='home-screen'></a>Home screen
 
-Manual router tests:
+- all five buttons navigate; HOME and the back key return here
+- "how to use this app" opens the README section
+- "add a Play Store app review" opens the Play listing
+- PAYPAL and PATREON open
 
-### 2.1. Checks
+---
+
+## 3. <a name='standalone-generate'></a>Standalone (generate)
+
+- create a config and apply manually
+- heading reads "GENERATED CONFIG: pia-region_name"
+- clear the DNS field, leave the screen, return - Quad9 defaults are back
+- COPY - 60s countdown, then the clipboard empties with no "cleared" popup
+- SHARE and SAVE
+
+---
+
+## 4. <a name='manage'></a>Manage
+
+- create wgc1-5
+- enable wgc1 & 5
+- edit wgcN
+- ACTIVE badge on every slot whose interface is up, not just one
+- DISABLE leaves `wg show interfaces` empty
+- stock: a third concurrent enable is refused with the VPN-limit dialog
+- DELETE prompt names the VPN being deleted
+
+Applying configs:
+
+- Apply a new config to a blank slot
+- Overwrite an existing slot with a different region's config
+- Overwrite an existing slot with the same region's config
+
+---
+
+## 5. <a name='watchdog'></a>Watchdog
+
+- Create wgc1 & wgc5 - check test email
+- Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
+- force a reconfigure with, check email alerting
+  1. `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`
+  2. `/jffs/cfg-pia-wg/watchdog_wgc1.sh`
+- Check emails
+  1. deploy email says "watchdog deployed", subject SUCCESS, sent even though nothing was wrong
+  2. reconfigure email: outage duration, kill-switch line, new server and latency
+  3. failure email: WHAT TO DO, attempt count, last 10 router-log lines
+  4. HISTORY counters climb; `cfg_pia_wg_sdate` is set once and not rewritten
+  5. subject threads by slot: `cfg-pia-wg alert: SUCCESS - wgc1:pia-<region>`
+- DISABLE shows the PAUSED badge; ENABLE restores the same interval
+- keyboard does not obscure the configure dialog's fields
+- backoff: leave it failing and watch the log - "Backing off after N failed attempts", waits growing 2, 4, 8, 16, 30, 60, 90 min
+
+### 5.1. <a name='checks'></a>Checks
 
 1. check that boot persistence contains the two cru lines (5m watchdog)
 
@@ -253,7 +179,7 @@ So a good test breaks the **crypto or the peer**, leaves the interface up, and t
 > [!WARNING]
 > PIA rate-limits token requests. Since 405 the watchdog backs off on consecutive failures - 2, 4, 8, 16, 30, 60 minutes, capped at 90 - which is what keeps a broken tunnel from provoking it, but two failing watchdogs still climb their ladders independently. If `failed to obtain PIA token` starts appearing, stop and wait 15-30 minutes; the log carries the HTTP status, so `HTTP 403` confirms throttling rather than a fault. Test one slot at a time, and prefer a 5 m check interval over 1 m for reconfigure tests.
 
-#### 2.1.1. Invalidate the registration (the important one)
+#### 5.1.1. <a name='invalidate-the-registration-the-important-one'></a>Invalidate the registration (the important one)
 
 The truest simulation of a PIA registration that has silently died: the interface stays up and keeps sending, the server no longer recognises us, and no handshake ever completes. Replace the interface's private key with a fresh one the server has never seen:
 
@@ -282,7 +208,7 @@ Expected in `/tmp/watchdog_wgc1.log` once the handshake passes 300 s:
 
 Recovery needs no cleanup: the re-negotiation generates a new keypair, registers it, rewrites `wgc1_*` in NVRAM and restarts the slot.
 
-#### 2.1.2. What does NOT work: moving the endpoint
+#### 5.1.2. <a name='what-does-not-work-moving-the-endpoint'></a>What does NOT work: moving the endpoint
 
 ```bash
 # looks right, does nothing - do not use
@@ -291,7 +217,7 @@ wg set wgc1 peer "$(nvram get wgc1_ppub)" endpoint 203.0.113.1:1337
 
 `wg` accepts it and shows the new endpoint, then puts the real one back within seconds and no reconfigure ever happens. That is **endpoint roaming**, a WireGuard feature: a peer's endpoint is updated automatically whenever an authenticated packet arrives from a different source address. The PIA server is still sending, so the endpoint follows it home. Anything that leaves the keys intact will be undone the same way.
 
-#### 2.1.3. Peer removed (the fast one)
+#### 5.1.3. <a name='peer-removed-the-fast-one'></a>Peer removed (the fast one)
 
 Blunter, immune to roaming - there is no peer left for an inbound packet to update - and **detected at the very next check with no 300 s wait**, because removing the peer removes its handshake record too: `latest-handshakes` returns nothing, so the age test fails immediately.
 
@@ -321,7 +247,7 @@ public key from the one you removed, and the next scheduled check should read `H
 
 Running it again inside the backoff window gives `Backing off after N failed attempts: Xs of Ys elapsed` - that is the guard working, not a fault.
 
-#### 2.1.4. Interface down
+#### 5.1.4. <a name='interface-down'></a>Interface down
 
 The one the WebUI gives you. Detected immediately - no 300 s wait, because the script tests `ifconfig` before the handshake:
 
@@ -337,7 +263,7 @@ ifconfig wgc1 down
 
 The reconfigure that follows rewrites the peer and restarts the interface, so the tunnel comes back on its own. If it does not, and the log stops at the token request, check that the deployed script carries a version marker of v0.8.46 build 416 or later - earlier scripts could not fetch a PIA token from cron at all (ARCHITECTURE.md "curl refuses to run from cron"). Clearing `/tmp/watchdog_backoff_wgc1` makes the next tick run in full rather than backing off.
 
-#### 2.1.5. What a healthy check looks like
+#### 5.1.5. <a name='what-a-healthy-check-looks-like'></a>What a healthy check looks like
 
 A working tunnel with an active watchdog will show:
 
@@ -346,7 +272,7 @@ A working tunnel with an active watchdog will show:
 2026-09-04 15:48:00 Handshake 60s ago
 ```
 
-#### 2.1.6. Backoff
+#### 5.1.6. <a name='backoff'></a>Backoff
 
 The wait before the next reconfigure attempt grows with each **consecutive failed attempt** and resets the moment one succeeds:
 
@@ -363,7 +289,7 @@ A check that arrives inside the wait is turned away and says so:
 
 Check `/tmp/watchdog_backoff_wgc1` is created and holds the attempt count and timestamp. The count rises **only when an attempt is actually made** - a run the backoff turned away must leave it alone, or the ladder would climb faster on a 1 m interval than on a 5 m one.
 
-##### Walking the whole ladder in two minutes, with no PIA traffic
+#### 5.1.7. <a name='walking-the-whole-backoff-ladder-in-two-minutes-'></a>Walking the whole backoff ladder in two minutes, with no PIA traffic
 
 **Why not just let it fail for four hours.** Reaching the 90-minute rung honestly means seven consecutive *failed reconfigures*, each of which asks PIA for a token. That is exactly the behaviour that got the account refused with HTTP 403 on 2026-09-04, and it would take most of a day. The test below reaches every rung in about two minutes and asks PIA for nothing at all.
 
@@ -424,20 +350,16 @@ Clean up, then re-enable the watchdog in the app:
 rm -f /tmp/watchdog_backoff_wgc5
 ```
 
-1.  Apply a new config to a blank slot
-    <br>
-2.  Overwrite an existing slot with a different region's config
-    <br>
-3.  Overwrite an existing slot with the same region's config
-    <br>
-4.  check all NVRAM settings are cleared on script & watchdog disable
+### 5.2. <a name='applying-a-config-and-what-it-should-leave-behin'></a>Applying a config, and what it should leave behind
+
+- check all NVRAM settings are cleared on script & watchdog disable
 
 ```bash
 nvram show | grep pia_wg | sort
 nvram show | grep qgc | sort
 ```
 
-18. Files deployed to router
+### 5.3. <a name='files-deployed-to-the-router'></a>Files deployed to the router
 
 Check these get created/cleaned up
 
@@ -453,9 +375,179 @@ Check these get created/cleaned up
 
 Where `N` is the slot number
 
+### 5.4. <a name='testing-email-send-from-ssh'></a>Testing email send from SSH
+
+If the watchdog feature is used, cfg-pia-wg employs the below commands to send emails. If you are having issues with sending email alerts you can test locally via SSH with the following examples.
+
+As a fully blown `sendmail` is not available, cfg-pia-wg uses the built-in BusyBox `sendmail` applet paired with `openssl s_client` to establish a secure email connection. Email is sent with TLS 1.3 encryption, a verified CA bundle is used to ensure that the endpoint is actually who it should be, and enforces strict cryptographic handshake failures.
+
+This ensures that emails are sent without exposing account credentials to eavesdropping or man-in-the-middle attacks.
+
+#### 5.4.1. <a name='construct-the-command-line'></a>Construct the command line
+
+Replace `sender@example.com`, `recipient@example.com`, and `APP_PASSWORD` in the below:
+
+```bash
+sendmail -v \
+    -H "exec openssl s_client -quiet -tls1_3 -connect smtp.gmail.com:465 -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error" \
+    -au"sender@example.com" -ap"APP_PASSWORD" \
+    -f"sender@example.com" recipient@example.com \
+    < /tmp/test-email.txt
+```
+
+> [!CAUTION]
+> **APP PASSWORD**: the above example exposes your app password to bash history, `ps`, and process lists. These are cleared at reboot though. Remember, this is **only** for testing purposes. A more secure approach uses input stuffing from a file eg. one-time setup with `nano /tmp/.smtp-pass` enter your password then save the file, secure the file with `chmod 600 /tmp/.smtp-pass` the `sendmail` command line would then be modified with `-ap$(cat /tmp/.smtp-pass)`.
+
+#### 5.4.2. <a name='construct-the-test-email'></a>Construct the test email
+
+Replace `sender@example.com`, `Sender Name`, `Recipient Name`, and `recipient@example.com` in the below:
+
+```bash
+cat << EOF > /tmp/test-email.txt
+From: Sender Name <sender@example.com>
+To: Recipient Name <recipient@example.com>
+Subject: Test Email from Command Line - $(date '+%Y-%m-%d %H:%M:%S')
+Date: $(date -R)
+Message-ID: <$(date +%s).test@$(uname -n)>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hello,
+
+This is a test email created via command line.
+
+✓ Created at: $(date '+%Y-%m-%d %H:%M:%S')
+✓ Host: $(uname -n)
+✓ Purpose: Testing email delivery
+
+Best regards,
+Command Line Tester
+
+---
+Test Email • $(date '+%Y-%m-%d %H:%M:%S')
+EOF
+```
+
+> [!NOTE]
+> **Message-ID**: Google may silently **not** deliver the test email if you reuse the same test message without updating the `Message-ID:` by recreating `/tmp/test-email.txt`.
+> [!TIP]
+> **EOF**: Using `EOF` without single quotes allows variable expansion. Typically you would use `'EOF'`, but we need the `date` and `hostnames` expanded, which is why we use `cat << EOF >`.
+
+#### 5.4.3. <a name='how-the-commands-work'></a>How the Commands Work
+
+The first command constructs a valid, raw RFC-compliant email body inside a temporary file (/tmp/test-email.txt) using dynamic variables to inject an accurate timestamp, a globally unique Message-ID, and local hostname metadata. The second command executes sendmail in verbose mode (-v), using a custom network handler string (-H) to launch OpenSSL instead of a standard socket connection. The OpenSSL utility wraps the session in TLS 1.3 encryption, cross-references Gmail's public certificates against the router's trusted system authorities (-CAfile), and immediately kills the transmission (-verify_return_error) if any intermediate certificate is missing or invalid. Once a secure channel is verified, sendmail submits the authentication flags (-au and -ap), passes the envelope routing details, and pipes the payload text directly into the authenticated SMTP session.
+
+When executed, you should see something like this from your SSH session:
+
+```bash
+sendmail: send:'NOOP'
+depth=2 C = US, O = Google Trust Services LLC, CN = GTS Root R1
+verify return:1
+depth=1 C = US, O = Google Trust Services, CN = WR2
+verify return:1
+depth=0 CN = smtp.gmail.com
+verify return:1
+sendmail: recv:'220 smtp.gmail.com ESMTP a-very-long-session-id-string - gsmtp'
+sendmail: recv:'250 2.0.0 OK a-very-long-session-id-string - gsmtp'
+sendmail: send:'EHLO sending-server'
+sendmail: recv:'250-smtp.gmail.com at your service, [192.0.2.1]'
+sendmail: recv:'250-SIZE 35882577'
+sendmail: recv:'250-8BITMIME'
+sendmail: recv:'250-AUTH LOGIN PLAIN XOAUTH2 PLAIN-CLIENTTOKEN OAUTHBEARER XOAUTH'
+sendmail: recv:'250-ENHANCEDSTATUSCODES'
+sendmail: recv:'250-PIPELINING'
+sendmail: recv:'250-CHUNKING'
+sendmail: recv:'250 SMTPUTF8'
+sendmail: send:'AUTH LOGIN'
+sendmail: recv:'334 VXNlcm5hbWU6'
+sendmail: send:''                   <- username is not echoed to the screen
+sendmail: recv:'334 UGFzc3dvcmQ6'
+sendmail: send:''                   <- password is not echoed to the screen
+sendmail: recv:'235 2.7.0 Accepted'
+sendmail: send:'MAIL FROM:<sender@example.com>'
+sendmail: recv:'250 2.1.0 OK a-very-long-session-id-string - gsmtp'
+sendmail: send:'RCPT TO:<recipient@example.com>'
+sendmail: recv:'250 2.1.5 OK a-very-long-session-id-string - gsmtp'
+sendmail: send:'DATA'
+sendmail: recv:'354 Go ahead a-very-long-session-id-string - gsmtp'
+sendmail: send:'From: Sender Name <sender@example.com>'
+sendmail: send:'To: Recipient Name <recipient@example.com>'
+sendmail: send:'Subject: Test Email from Command Line - 2026-06-20 11:58:38'
+sendmail: send:'Date: Sat, 20 Jun 2026 11:58:38 +1000'
+sendmail: send:'Message-ID: <1781920718.test@host>'
+sendmail: send:'MIME-Version: 1.0'
+sendmail: send:'Content-Type: text/plain; charset=utf-8'
+sendmail: send:'Content-Transfer-Encoding: 7bit'
+sendmail: send:''
+sendmail: send:'Hello,'
+sendmail: send:''
+sendmail: send:'This is a test email created via command line.'
+sendmail: send:''
+sendmail: send:'✓ Created at: 2026-06-20 11:58:38'
+sendmail: send:'✓ Host: sending-server'
+sendmail: send:'✓ Purpose: Testing email delivery'
+sendmail: send:''
+sendmail: send:'Best regards,'
+sendmail: send:'Command Line Tester'
+sendmail: send:''
+sendmail: send:'---'
+sendmail: send:'Test Email • 2026-06-20 11:58:38'
+sendmail: send:'.'
+sendmail: recv:'250 2.0.0 OK  1781920757 a-very-long-session-id-string - gsmtp'
+sendmail: send:'QUIT'
+read:errno=0
+sendmail: recv:'221 2.0.0 closing connection a-very-long-session-id-string - gsmtp'
+```
+
+#### 5.4.4. <a name='certificate-information'></a>Certificate information
+
+If you want to verify certificate use (and it's a _lot_ of information), use
+
+```bash
+openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
+    -CAfile /etc/ssl/certs/ca-certificates.crt \
+    -verify_return_error \
+    -showcerts < /dev/null
+```
+
 ---
 
-## 3. Examining nvram settings
+---
+
+## 6. <a name='app-log'></a>App log
+
+- one connection exists per session
+- router log: one `dropbear ... Password auth succeeded` per app session, not per button press
+- COPY the log - no countdown armed, and paste keeps its line breaks
+- drop the connection mid-session (reboot the router, or `service restart_vpnc`) - app logs "connection dropped; reconnecting" and the action still completes
+
+---
+
+## 7. <a name='about'></a>About
+
+- COPY BUILD INFO - no clipboard countdown starts
+- licences screen opens and does not bleed through the header
+- DEL PIA CERT - credential prompt prefills IP and username, keyboard does not obscure it
+- CREATE GITHUB ISSUE opens
+
+---
+
+## 8. <a name='credentials-and-exit'></a>Credentials and exit
+
+- password manager fills PIA, SSH and SMTP logins (clear the field first - Android only offers on an empty one)
+- Exit app and the back key both prompt, then wipe credentials and clipboard
+- release build: screenshots blocked, task switcher obscured
+
+---
+
+## 9. <a name='firmware-coverage'></a>Firmware coverage
+
+- repeat 5-7 on the other firmware (stock / Merlin)
+
+---
+
+## 10. <a name='examining-nvram-settings'></a>Examining nvram settings
 
 I've used the below to examine WG on ASUS routers.
 
@@ -543,59 +635,3 @@ Your best source of information is the system log with `tail -f /tmp/syslog.log`
     ```
 
     Both live in `scripts/` in the repository; copy them to the router with `scp`.
-
- ---
-
-## 4. Full end-end-to-end manual test
-
-  1. Clear all configs & nvram, reboot router
-  2. Home screen
-     1. all five buttons navigate; HOME and the back key return here
-     2. "how to use this app" opens the README section
-     3. "add a Play Store app review" opens the Play listing
-     4. PAYPAL and PATREON open
-  3. About
-     1. COPY BUILD INFO - no clipboard countdown starts
-     2. licences screen opens and does not bleed through the header
-     3. DEL PIA CERT - credential prompt prefills IP and username, keyboard does not obscure it
-     4. CREATE GITHUB ISSUE opens
-  4. Standalone (generate)
-     1. create a config and apply manually
-     2. heading reads "GENERATED CONFIG: pia-region_name"
-     3. clear the DNS field, leave the screen, return - Quad9 defaults are back
-     4. COPY - 60s countdown, then the clipboard empties with no "cleared" popup
-     5. SHARE and SAVE
-  5. Manage
-     1. create wgc1-5
-     2. enable wgc1 & 5
-     3. edit wgcN
-     4. ACTIVE badge on every slot whose interface is up, not just one
-     5. DISABLE leaves `wg show interfaces` empty
-     6. stock: a third concurrent enable is refused with the VPN-limit dialog
-     7. DELETE prompt names the VPN being deleted
-  6. Watchdog
-     1. Create wgc1 & wgc5 - check test email
-     2. Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
-     3. force a reconfigure with, check email alerting
-        1. `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`
-        2. `/jffs/cfg-pia-wg/watchdog_wgc1.sh`
-     4. Check emails
-        1. deploy email says "watchdog deployed", subject SUCCESS, sent even though nothing was wrong
-        2. reconfigure email: outage duration, kill-switch line, new server and latency
-        3. failure email: WHAT TO DO, attempt count, last 10 router-log lines
-        4. HISTORY counters climb; `cfg_pia_wg_sdate` is set once and not rewritten
-        5. subject threads by slot: `cfg-pia-wg alert: SUCCESS - wgc1:pia-<region>`
-     5. DISABLE shows the PAUSED badge; ENABLE restores the same interval
-     6. keyboard does not obscure the configure dialog's fields
-     7. backoff: leave it failing and watch the log - "Backing off after N failed attempts", waits growing 2, 4, 8, 16, 30, 60, 90 min
-  7. App log
-     1. one connection exists per session
-     2. router log: one `dropbear ... Password auth succeeded` per app session, not per button press
-     3. COPY the log - no countdown armed, and paste keeps its line breaks
-     4. drop the connection mid-session (reboot the router, or `service restart_vpnc`) - app logs "connection dropped; reconnecting" and the action still completes
-  8. Credentials and exit
-     1. password manager fills PIA, SSH and SMTP logins (clear the field first - Android only offers on an empty one)
-     2. Exit app and the back key both prompt, then wipe credentials and clipboard
-     3. release build: screenshots blocked, task switcher obscured
-  9. Firmware coverage
-     1. repeat 5-7 on the other firmware (stock / Merlin)
