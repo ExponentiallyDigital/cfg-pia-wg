@@ -325,6 +325,8 @@ This manages a self-healing watchdog. When your WG configuration inevitably expi
 > [!TIP]
 > See [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md) for email troubleshooting approaches.
 
+- **DISABLE:** stop the watchdog running without losing its settings. The slot shows a **PAUSED** badge.
+- **ENABLE:** start it again, at the same interval it was using before.
 - **DELETE:** remove the watchdog and clear the slot configuration.
 - **VIEW WATCHDOG LOG:** inspect the router-side watchdog log. Logs are rotated at midnight retaining the current and previous logs and do not persist if the router is rebooted or a power loss occurs.
 
@@ -487,7 +489,10 @@ This can be useful to check the application's log during operations.
 Two entries are not on the main menu:
 
 - **View router log** shows the router's own system log, newest first. Scroll up to load more, including the previous log file if the router still has it. **COPY** takes everything loaded. This is the first place to look when something on the router did not do what you expected.
-- **Settings** holds the things you only do once, including **UNINSTALL** - see [What does the app do to my router?](#7-what-does-the-app-do-to-my-router).
+- **Settings** holds three one-off actions:
+  - **UNINSTALL FEATURES INSTALLED TO ROUTER** - takes the app back off the router, see [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice.
+  - **DEL PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run.
+  - **FORGET ROUTER IP** - deletes the remembered router address. It is the only thing the app keeps on your phone; no SSH credentials are ever stored.
 
 ### 5.8. About
 

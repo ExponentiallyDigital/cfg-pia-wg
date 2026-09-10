@@ -884,7 +884,8 @@ class RouterWatchdog {
     return deleted;
   }
 
-  // Merlin ships jq on $PATH; on stock the user installs it under /jffs/cfg-pia-wg (README §4).
+  // Merlin ships jq on $PATH; on stock it lives under /jffs/cfg-pia-wg, put there by the app's own
+  // installer or by scripts/get-bins.sh (README, "Prerequisites & requirements").
   Future<bool> isJqInstalled() async =>
       isStockFirmware ? (await _run("[ -x '$kStockJqPath' ] && echo 1 || echo 0")) == '1' : (await _read('which jq')).isNotEmpty;
 
