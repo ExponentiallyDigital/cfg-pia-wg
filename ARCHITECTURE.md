@@ -63,6 +63,9 @@
   - [10.2. Where each field comes from](#where-each-field-comes-from)
   - [10.3. Gradle-side notes](#gradle-side-notes)
   - [10.4. GNU licence text](#gnu-licence-text)
+- [11. Appendix: readings that were superseded](#appendix-readings-that-were-superseded)
+  - [11.1. The two-cost model for applying an assignment](#the-two-cost-model-for-applying-an-assignment)
+  - [11.2. Placeholder records in the policy list](#placeholder-records-in-the-policy-list)
 
 ## 1. <a name='how-it-works'></a>How it works
 
@@ -769,7 +772,7 @@ vpnc_dev_policy_list=1>192.168.1.20>>9><1>192.168.1.22>>5>
 > 0>192.168.1.20>>0<0>192.168.1.21>>0<0>192.168.1.22>>0<0>192.168.1.23>>0
 > ```
 >
-> Four records, all `enabled=0` and `vpnc_idx=0`, one for each device holding a **DHCP reservation** (the router itself and the mesh node excluded). So the firmware seeds a disabled placeholder per reserved device, and separately the probe showed unassigning can remove a record outright. **Both forms mean the same thing.**
+> Four records, all `enabled=0` and `vpnc_idx=0`, one for each device holding a **DHCP reservation** (the router itself and the mesh node excluded). Those records were left behind by assignments made and undone rather than seeded by the firmware - see [Placeholder records in the policy list](#placeholder-records-in-the-policy-list) - and the probe separately showed that unassigning can remove a record outright. **Both forms mean the same thing.**
 >
 > Two consequences, and the first is a security bug waiting to happen:
 >
@@ -778,18 +781,17 @@ vpnc_dev_policy_list=1>192.168.1.20>>9><1>192.168.1.22>>5>
 
 #### 6.8.2. <a name='the-starting-state-before-any-vpn-exists'></a>The starting state, before any VPN exists
 
-Observed on a rebuilt router with `wgc1` freshly created and nothing assigned (2026-09-07):
+An **untouched router has an empty `vpnc_dev_policy_list`** - no records at all, not a list of
+zeros. The screen therefore has to render "every device is on the default connection" from an
+empty string. Records that look like placeholders are leftovers from assignments made and undone;
+two earlier readings of them are retracted in [Placeholder records in the policy list](#placeholder-records-in-the-policy-list).
+
+What the WebUI shows in that state, observed on a rebuilt router with `wgc1` freshly created and
+nothing assigned (2026-09-07):
 
 - **"Internet Connection" is itself an entry in the server list**, marked *Default Connection*, with **"Apply to all devices" ON**.
-- Its device list holds exactly the **four devices that have a DHCP reservation** - the same four that appear as `0>IP>>0>` records in `vpnc_dev_policy_list`.
-- The device picker offers **all** known devices, reserved or not, with those four ticked.
+- The device picker offers **all** known devices, reserved or not.
 - A newly created VPN profile starts with **no devices assigned**.
-
-So the placeholder records are very likely not "seeded and disabled" but **devices bound to the Internet connection**, index `0` being the WAN.
-
-**CORRECTED 2026-09-08.** That reading is now the better-supported one: a router with **nine DHCP reservations and a completely empty `vpnc_dev_policy_list`** was captured, so the firmware plainly does NOT seed a placeholder per reserved device. The records seen on 2026-09-06 were left behind by assignments that had been made and undone, not created by the firmware.
-
-Nothing downstream changes, because the rule in the box above never depended on which reading was right - index `0` says unassigned-from-a-VPN either way, and the app must read the index rather than presence in the list. What does change is the expectation: an untouched router has an **empty** policy list, so the screen must render "every device on the default connection" from no records at all rather than from a list of zeros.
 
 #### 6.8.3. <a name='reservations-are-created-by-any-assignment-and-n'></a>Reservations are created by ANY assignment, and never removed - MEASURED 2026-09-08
 
@@ -918,7 +920,7 @@ MAC, IP, empty DNS, **empty hostname**. That follows from the binding being by I
 - For a device using **MAC randomisation** the reservation is pinned to the address it happens to be using now, so it breaks silently at the next rotation. Warn, or refuse.
 
 > [!IMPORTANT]
-> **The tunnel must be disabled before its assignments can be changed.** Confirmed on hardware: the WebUI will not apply an assignment to a running profile, and every observed sequence starts with `stop_vpnc`.
+> **The WebUI disables the tunnel before changing its assignments.** Every observed WebUI sequence starts with `stop_vpnc`. That is the WebUI being careful rather than a rule of the firmware: the app changes assignments on a running profile and they take effect.
 >
 > **A per-device assignment falls through to the DEFAULT CONNECTION when its tunnel drops.**
 > CONFIRMED 2026-09-08 by running the same test twice with different defaults.
@@ -952,34 +954,7 @@ MAC, IP, empty DNS, **empty hostname**. That follows from the binding being by I
 > hand. Assignment, default connection and watchdog are one story, not three features.
 
 > [!NOTE]
-> **SUPERSEDED 2026-09-08 - the heavy path is avoidable.** Measured: writing the reservation and
-> the policy record, then calling only `restart_dnsmasq` and `restart_vpnc_dev_policy`, applied
-> the assignment with **nothing bouncing** - the WAN address was unchanged, the syslog carried no
-> `restart_net_and_phy`, and a wired SSH session did not drop. The WebUI's heavy call is simply
-> heavier than the job needs, and the app can do better than the WebUI here. The two-cost model
-> below is kept for the reasoning, but the app should always use the light pair.
->
-> **A second, independent signal says the same thing.** A day of syslog was searched for the
-> Broadcom multicast-snooping error `bcm_mcast_netlink_process_snoop_cfg,884: interface N could
-> not be found`. It appears in three bursts of ~120 lines each, and every one follows a
-> `restart_net_and_phy` within ten seconds. Nothing else provokes it - `restart_vpnc`,
-> `stop_vpnc`, `restart_vpnc_dev_policy` on its own, `restart_default_wan`, `restart_wgs` and
-> `restart_firewall` all ran repeatedly in the same log and produced none. The heavy call tears
-> down every network device at once, so `mcpd` retries its snooping config against interface
-> indexes that no longer exist until the rebuild settles.
->
-> This is an ASUS defect and not one the app can repair - but the app never triggers it, because
-> the light pair does not rebuild the network stack. The number in the message is a kernel
-> `ifindex`, which is never reused within a boot and resets on reboot; it identifies nothing the
-> app owns and needs no handling.
-
-> [!WARNING]
-> **The WebUI applies an assignment one of two very different ways.**
->
-> - **Device already has a DHCP reservation:** `stop_vpnc` / `restart_vpnc_dev_policy` / `restart_vpnc`. VPN routing bounces for assigned devices. Everything else is untouched. Cheap.
-> - **Device has no reservation:** the firmware creates one, which drags in `restart_net_and_phy` - every switch port bounces, downstream routers and APs drop with everything behind them, and the WAN re-leases. Expensive, and it hits devices that have nothing to do with the assignment.
->
-> So the app should offer devices that already hold a reservation as the ordinary case, and treat "create a reservation for this device" as a distinct, explicitly confirmed action that warns the whole network will drop for a minute. `restart_default_wan`, used by "apply to all devices", was measured as harmless by comparison - it did not drop anything during the run.
+> **Creating the reservation is not expensive, as long as the app creates it.** Measured 2026-09-08: writing `dhcp_staticlist` and `vpnc_dev_policy_list` and then calling only `restart_dnsmasq` and `restart_vpnc_dev_policy` applies the assignment with **nothing bouncing** - the WAN address unchanged, no `restart_net_and_phy` in the syslog, a wired SSH session held. The WebUI reaches for the heavy call for this case and the app does not need to, so the reservation is created without ceremony and without a warning. The two-cost model that preceded this, and the Broadcom defect the heavy call provokes, are in [The two-cost model for applying an assignment](#the-two-cost-model-for-applying-an-assignment).
 
 #### 6.8.10. <a name='stock-leaves-the-old-routing-rule-behind-measure'></a>Stock leaves the old routing rule behind - MEASURED 2026-09-10
 
@@ -1399,5 +1374,67 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 ### 10.4. <a name='gnu-licence-text'></a>GNU licence text
 
 `lib/license_text.dart` holds `./LICENSE` a verbatim raw-string constant, generated at development time, not loaded at runtime and not registered as an asset.
+
+## 11. <a name='appendix-readings-that-were-superseded'></a>Appendix: readings that were superseded
+
+Each entry below was believed, written down, and then measured to be wrong. They are kept together
+here because a wrong idea that fits the evidence is a reasonable one to have twice: the one-line
+retraction where the idea would occur stops it being re-adopted, and this is the working behind it.
+**Nothing in this appendix describes how the app behaves.**
+
+### 11.1. <a name='the-two-cost-model-for-applying-an-assignment'></a>The two-cost model for applying an assignment
+
+Retracted in [Assigning a device with no DHCP reservation creates one](#assigning-a-device-with-no-dhcp-reservation-crea).
+
+The belief, from watching the WebUI apply assignments in 2026-09-06 and -07: applying an assignment
+cost one of two very different amounts, and which one depended on the device.
+
+- **Device already has a DHCP reservation:** `stop_vpnc` / `restart_vpnc_dev_policy` / `restart_vpnc`. VPN routing bounces for assigned devices, everything else untouched. Cheap.
+- **Device has no reservation:** the firmware creates one, which drags in `restart_net_and_phy` - every switch port bounces, downstream routers and APs drop with everything behind them, and the WAN re-leases. Expensive, and it hits devices that have nothing to do with the assignment.
+
+The design that followed was to offer reserved devices as the ordinary case and treat "create a
+reservation for this device" as a separate, explicitly confirmed action that warned the whole
+network would drop for a minute. `restart_default_wan`, used by "apply to all devices", was
+measured as harmless alongside it - it dropped nothing during that run, which later measurement
+of the default-connection change contradicts.
+
+**What killed it, 2026-09-08.** Writing the reservation and the policy record and then calling only
+`restart_dnsmasq` and `restart_vpnc_dev_policy` applied the assignment with **nothing bouncing** -
+the WAN address unchanged, no `restart_net_and_phy` in the syslog, and a wired SSH session that did
+not drop. The expensive branch was never a property of creating a reservation. It was a property of
+how the WebUI chooses to apply one, and the app is not obliged to copy it.
+
+**A second, independent signal said the same thing.** A day of syslog was searched for the Broadcom
+multicast-snooping error `bcm_mcast_netlink_process_snoop_cfg,884: interface N could not be found`.
+It appears in three bursts of around 120 lines each, and every burst follows a `restart_net_and_phy`
+within ten seconds. Nothing else provokes it: `restart_vpnc`, `stop_vpnc`, `restart_vpnc_dev_policy`
+alone, `restart_default_wan`, `restart_wgs` and `restart_firewall` all ran repeatedly in the same log
+and produced none. The heavy call tears down every network device at once, so `mcpd` retries its
+snooping config against interface indexes that no longer exist until the rebuild settles. This is an
+ASUS defect and not one the app can repair, but the app never triggers it, because the light pair
+does not rebuild the network stack. The number in the message is a kernel `ifindex`, never reused
+within a boot and reset on reboot; it identifies nothing the app owns and needs no handling.
+
+### 11.2. <a name='placeholder-records-in-the-policy-list'></a>Placeholder records in the policy list
+
+Retracted in [A record being present does not mean the device is assigned](#how-a-change-is-written) and in [The starting state, before any VPN exists](#the-starting-state-before-any-vpn-exists).
+
+A freshly rebuilt router that had never had a `wgc` slot configured was found on 2026-09-06 with a
+`vpnc_dev_policy_list` already holding one `0>IP>>0>` record per **reserved** device, and none for
+any unreserved one. Two readings were offered for that, a week apart:
+
+1. The firmware seeds a disabled placeholder for every device holding a DHCP reservation.
+2. The records are not placeholders at all but **devices bound to the Internet connection**, index `0` being the WAN. That fits the WebUI, where "Internet Connection" is itself an entry in the server list, and its device list held exactly those four reserved devices, ticked.
+
+**Both are wrong, 2026-09-08.** A router with **nine DHCP reservations and a completely empty
+`vpnc_dev_policy_list`** was captured. The firmware seeds nothing. Those records were left behind by
+assignments that had been made and undone, and the correlation with reservations was a coincidence
+of which devices had been experimented on.
+
+The rule the app depends on survived both readings unchanged, which is why nothing downstream had to
+move: index `0` says unassigned-from-a-VPN whichever story is true, so the app reads the index and
+never mere presence in the list. What did change is the expectation of the empty case. An untouched
+router has **no records at all**, so the screen has to render "every device is on the default
+connection" from an empty string rather than from a list of zeros.
 
 ---
