@@ -21,6 +21,7 @@
 - [5. Router WireGuard NVRAM fields](#router-wireguard-nvram-fields)
   - [5.1. Field reference](#field-reference)
   - [5.2. Stock `vpnc_clientlist`](#stock-vpnc-clientlist)
+  - [5.3. The three numbers that name one profile](#the-three-numbers-that-name-one-profile)
 - [6. Device assignment (stock)](#device-assignment-stock)
   - [6.1. `vpnc_default_wan`](#vpnc-default-wan)
   - [6.2. Shared format](#shared-format)
@@ -488,6 +489,50 @@ pia-aus_melbourne>WireGuard>5>>password>1>5>>>0>0>cfg-pia-wg<pia-aus>WireGuard>4
 |   9   | 0                 | 0             | 0                  | 0                  | 0             |
 |  10   | 0                 | 0             | 0                  | 0                  | 0             |
 |  11   | cfg-pia-wg        | cfg-pia-wg    | cfg-pia-wg         | cfg-pia-wg         | cfg-pia-wg    |
+
+### 5.3. <a name='the-three-numbers-that-name-one-profile'></a>The three numbers that name one profile
+
+The single hardest thing to hold in your head about stock, and the cause of more wrong guesses during development than anything else. One WireGuard profile is referred to by **three different numbers**, and every one of them is used somewhere.
+
+```mermaid
+graph TD
+    P["One profile<br/><i>pia-aus_melbourne</i>"]
+
+    P --> S["<b>Slot number</b> - 1..5<br/>index 2 of the clientlist record"]
+    P --> R["<b>Row index</b> - 0-based<br/>position in vpnc_clientlist"]
+    P --> X["<b>State index</b> - index 6<br/>of the clientlist record"]
+
+    S --> S1["wgcN_* NVRAM keys<br/>wgc1_enable, wgc1_priv, ..."]
+    S --> S2["the interface: wgc1"]
+    S --> S3["nvram set wgc_unit=N"]
+
+    R --> R1["nvram set vpnc_unit=ROW<br/>which profile stop_vpnc and<br/>restart_vpnc act on"]
+
+    X --> X1["nvram set vpnc_default_wan=IDX<br/>the default connection"]
+    X --> X2["vpnc_dev_policy_list index 3<br/>which tunnel a device is pinned to"]
+    X --> X3["ip rule ... lookup IDX<br/>the routing table number"]
+    X --> X4["vpncIDX_* runtime keys"]
+
+    classDef n fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef a fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class P n
+    class S,R,X n
+    class S1,S2,S3,R1,X1,X2,X3,X4 a
+```
+
+**Worked example.** Two profiles, created by this app in the order wgc5 then wgc1:
+
+```text
+vpnc_clientlist=pia-aus_perth>WireGuard>5>>password>1>5>>>0>0>cfg-pia-wg<pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg
+                              ^slot 5                   ^idx 5                            ^slot 1                   ^idx 9
+                 |------------------ row 0 -------------------|            |------------------ row 1 -------------------|
+```
+
+So `pia-aus_melbourne` is **slot 1**, **row 1**, **index 9**. To stop it you write `vpnc_unit=1`; to make it the default connection you write `vpnc_default_wan=9`; to pin a device to it you write `9` into the policy record; its private key is in `wgc1_priv`; and its traffic goes to routing table `9`.
+
+**Why `5 - slot` looked right for so long.** The web interface can only create profiles in the order wgc5, wgc4, wgc3, wgc2, wgc1, so on any list IT built, the row index and `5 - slot` give the same answer. The app lets a user pick any slot, so its lists are in creation order instead - and the moment they differ, `5 - slot` silently targets a profile that may not exist. Confirmed by watching what the web interface itself writes: with rows `[slot 5, slot 1]`, enabling wgc1 from the web interface wrote `vpnc_unit=1`.
+
+Resolved by `vpncUnitForSlot` in `router_slot_service.dart`, which reads the list and returns the row - never arithmetic.
 
 ## 6. <a name='device-assignment-stock'></a>Device assignment (stock)
 

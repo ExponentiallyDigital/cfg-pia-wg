@@ -42,6 +42,11 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 One build, many commits. Newest commit on top; hashes filled in by the final commit of the run.
 
+PENDING ARCHITECTURE - the three numbers that name one profile
+
+- ADD: a diagram of the profile identity problem, with a worked example from a real two-profile list. One WireGuard profile is named by its slot, its clientlist ROW and its index 6, and every one of those is used somewhere - keys and interface by slot, `vpnc_unit` by row, default connection and device pinning and routing table by index 6.
+- INF: this caused more wrong guesses during development than anything else, and prose never fixed it. It also records why `5 - slot` looked right for so long: the web interface can only create profiles in descending slot order, so on any list IT built the row and `5 - slot` agree.
+
 PENDING ARCHITECTURE - firmware dependency register, and a home for the USB finding
 
 - ADD: **"What this app depends on ASUS not changing"**, immediately after the overview. Ten assumptions, each with where the detail lives and what breaks if that assumption fails - because when a firmware update breaks something, the failure almost never looks like its cause. This is the section the document exists for.
