@@ -917,6 +917,29 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    // HOUSE STYLE: HOME is the same control on every screen, so it is the same SIZE on every
+    // screen. The body is capped on a tablet; the chrome is not. Reported from a tablet in 425,
+    // where HOME was full width on ABOUT and DEVICE ASSIGNMENT and 480-wide here.
+    testWidgets('HOME is full width even though the body is capped', (tester) async {
+      tester.view.physicalSize = const Size(1200, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final c = _controller();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        _host(RecordingSSHClient(responder: (_) => ''), SlotModalMode.manage, _slots({1: _slot(1, desc: 'pia-aus')}), c),
+      );
+      await _open(tester);
+
+      final home = tester.getRect(find.byKey(const Key('screen_close')));
+      final row = tester.getRect(find.byKey(const Key('slot_row_1')));
+      expect(row.width, lessThanOrEqualTo(kFormMaxWidth), reason: 'the body is still capped');
+      expect(home.width, greaterThan(kFormMaxWidth), reason: 'the chrome is not');
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('it does not stack a modal depth, because it is a screen', (tester) async {
       final c = _controller();
       addTearDown(c.dispose);
