@@ -6,11 +6,16 @@ Andrew reviews both when back at the keyboard.
 
 ## Decisions needed
 
-**Two README section numbers are still quoted inside ARCHITECTURE** - `README.md section 5.3.1` for the
-email examples and `README.md section 4.1` for the Download Master warning. Both are left as they are
-until the README rewrite settles its own numbering, then pointed at titles like everything else. Flagged
-rather than decided because the README plan forbids touching sections 1-3 and I do not yet know whether
-the numbering below that moves.
+**RESOLVED - the two README section numbers quoted inside ARCHITECTURE** now name their sections, as
+does the one in a `lib/` comment. Both targets survived the README rewrite unmoved.
+
+**The UNINSTALL button on the Settings screen describes itself wrongly.** Its on-screen note reads
+"Tunnels, watchdog settings and cron entries are left alone", but `uninstallFromRouter()` removes
+every `cru` entry it created and every one of the app's NVRAM keys, including the watchdog
+settings - which is what you asked for in the build 425 feedback. Only the TUNNELS are left alone.
+The note predates that change. I have NOT touched it: my permission this run covers comments only,
+and this is a user-visible string in `lib/screens/settings_screen.dart`. The README and TESTING now
+describe what the code actually does, so the app is the only thing saying the wrong thing.
 
 ## Tests I had to change
 
