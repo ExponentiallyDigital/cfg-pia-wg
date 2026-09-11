@@ -45,6 +45,7 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 - INF: `restart_default_wan` resets the key to 0 as it runs, so returning the default to Internet needs no write at all - the teardown half of the sequence is the whole of it.
 - TST: three on the service - the default is reset when it names the profile being deleted, left alone when it names another, and not touched when it already reads 0. The pure tests now assert the Internet pin rather than a fall-through to the default.
 - DOC: ARCHITECTURE and README both record it.
+- DOC: TESTING gains "The full assignment run" - one sequence covering moves, deletes and the default connection, in the order that reaches all three faults measured on 2026-09-11. Written to be worked from on a phone.
 2026-09-11 v0.8.67 build 437 - the save spinner, fixed in a way that cannot come back
 
 - FIX: **the watchdog save spinner sat below the fold.** Fixed in 409, back in 412, fixed again in 425, back again in 435. Every one of those fixes dismissed the keyboard, waited for something, then scrolled the SAVE button into view, and every one was a race against two animations that a single early frame could lose. The spinner is now a full-screen overlay in a `Stack` above the page, so it is not in the scroll view and has no fold to be below. Nothing is left to race.
