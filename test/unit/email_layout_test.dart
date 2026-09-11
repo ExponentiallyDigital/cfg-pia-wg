@@ -29,9 +29,9 @@ WatchdogConfig _cfg({int slot = 1, String subject = 'cfg-pia-wg alert'}) => Watc
 /// The marker-prefixed reply [kEmailFactsCommand] produces, in field order.
 String _factsReply({
   String ddns = '',
-  String lanHost = 'RT-AX88U-1A2B',
+  String lanHost = 'RT-ABCD-1A2B',
   String lanIp = '192.168.1.1',
-  String model = 'RT-AX88U',
+  String model = 'RT-ABCD',
   String firmware = '3.0.0.4.388_24762',
   String time = '2026-09-05 14:32:53 AEST',
   String uptime = '15:11:29 up 19:21, load average: 2.55, 2.39, 2.36',
@@ -136,7 +136,7 @@ void main() {
     });
 
     test('falls back hostname then LAN IP, and never prints "ip (ip)"', () {
-      expect(RouterEmailFacts.parse(_factsReply()).name, 'RT-AX88U-1A2B');
+      expect(RouterEmailFacts.parse(_factsReply()).name, 'RT-ABCD-1A2B');
       final bare = RouterEmailFacts.parse(_factsReply(lanHost: ''));
       expect(bare.name, '192.168.1.1');
       expect(bare.routerRows(1).first, 'Name: 192.168.1.1');

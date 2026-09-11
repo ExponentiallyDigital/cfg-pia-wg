@@ -34,8 +34,8 @@ import 'router_session.dart';
 // Default DNS servers (Quad9), matching the value the standalone form pre-fills.
 const String kDefaultDns = '9.9.9.9, 149.112.112.112';
 
-// Starting points for the router SSH form, used wherever it appears - the router screens and
-// the ABOUT screen's DEL PIA CERT prompt - so the two never disagree. This is the ASUS factory
+// Starting points for the router SSH form, used wherever it appears - the router screens, and the
+// inline prompt ABOUT, SETTINGS and the router log share - so they never disagree. This is the ASUS factory
 // address and is only a first-run fallback: once a connect succeeds, the address the user
 // actually typed is remembered (RouterPrefs) and prefills ahead of it.
 //

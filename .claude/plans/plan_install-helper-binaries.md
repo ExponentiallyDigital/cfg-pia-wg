@@ -68,7 +68,7 @@ Sources, both fetched from the release:
 - `https://github.com/jqlang/jq/releases/download/jq-1.8.2/sha256sum.txt`
 - `https://github.com/muquit/mailsend-go/releases/download/v1.0.12/mailsend-go-v1.0.12-checksums.txt`
 
-The arm64 pair was verified end to end on an RT-AX88U (`uname -m` = `aarch64`). The armhf/arm pair comes from the same published checksum files but has **not** been run on hardware - it is the fallback the execute-test exists to catch.
+The arm64 pair was verified end to end on an RT-ABCD (`uname -m` = `aarch64`). The armhf/arm pair comes from the same published checksum files but has **not** been run on hardware - it is the fallback the execute-test exists to catch.
 
 Only the arm64 side is confirmed working, so treat a 32-bit install as unproven until someone runs it.
 

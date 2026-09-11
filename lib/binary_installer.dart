@@ -390,7 +390,7 @@ class BinaryInstaller {
     // is supported, and "tar failed" and "tar worked but the file is not where expected" need
     // different fixes.
     // `cd` then extract, rather than `tar -C dir`. BusyBox tar reported success while extracting
-    // nothing into the -C directory on an RT-AX88U (build 412, hardware) - it is not worth
+    // nothing into the -C directory on an RT-ABCD (build 412, hardware) - it is not worth
     // establishing which BusyBox builds honour -C after -f when changing directory first removes
     // the question entirely.
     final tar = await run('cd $d && tar -xzf $q 2>&1 && echo __OK__');
@@ -401,7 +401,7 @@ class BinaryInstaller {
 
     // Everything extracted, minus the download itself. Listed first so a failure can name what was
     // actually there - the single most useful thing when the layout is not what was assumed.
-    // `ls -1`, not `find`. On an RT-AX88U (build 412, hardware) `find DIR -type f` returned nothing
+    // `ls -1`, not `find`. On an RT-ABCD (build 412, hardware) `find DIR -type f` returned nothing
     // while `ls -la` on the same directory listed all five extracted files - this BusyBox is built
     // without find's `-type` support, and with stderr discarded a find that ERRORS looks exactly
     // like one that matched nothing. `ls` is always present and its output needs no options.

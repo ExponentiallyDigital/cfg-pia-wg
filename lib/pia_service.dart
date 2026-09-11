@@ -257,17 +257,29 @@ class PiaService {
     required String username,
     required String password,
     required String dns,
+    Region? selected,
     void Function(String)? onProgress,
   }) async {
-    final regions = await fetchRegions(onProgress: onProgress);
-    final selected = regions.firstWhere((r) => r.id == region, orElse: () {
-      throw Exception('Region "$region" not found.');
-    });
-    if (selected.wgServers.isEmpty) {
+    // Resolving the region a SECOND time is what produced "Region not found" on a region the picker
+    // had just offered: the picker's list and this one are two snapshots of a live endpoint, taken
+    // seconds apart, and fetchRegions drops any region that momentarily has no WireGuard servers.
+    // When the caller already holds the record the user chose, use it rather than asking again.
+    // [selected] is ignored if it does not match [region] - the region field is free text, so a
+    // typed id must still be resolved against a fetch.
+    final Region resolved;
+    if (selected != null && selected.id == region) {
+      resolved = selected;
+    } else {
+      final regions = await fetchRegions(onProgress: onProgress);
+      resolved = regions.firstWhere((r) => r.id == region, orElse: () {
+        throw Exception('Region "$region" not found.');
+      });
+    }
+    if (resolved.wgServers.isEmpty) {
       throw Exception('No WG servers in region.');
     }
 
-    final probeResults = await probeLatency(selected.wgServers, regionId: region, onProgress: onProgress);
+    final probeResults = await probeLatency(resolved.wgServers, regionId: region, onProgress: onProgress);
     final responding = probeResults.where((r) => !r.failed).toList();
     if (responding.isEmpty) {
       throw Exception('All latency probes failed.');

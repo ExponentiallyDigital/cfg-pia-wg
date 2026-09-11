@@ -29,17 +29,22 @@ class AppErrors {
   static NavigatorState? _openErrorNav;
 
   /// One system/SSH error at a time.
-  static Future<void> system(BuildContext context, SessionController controller, String message) =>
-      _present(context, controller, [message]);
+  /// [detail] is shown in the dialog but NOT logged: an explanation that helps at the moment of
+  /// failure is noise in a log the user scrolls through later, and the log already carries the
+  /// error itself.
+  static Future<void> system(BuildContext context, SessionController controller, String message, {String? detail}) =>
+      _present(context, controller, [message], detail: detail);
 
   /// All input-validation errors batched into a single dialog. No-op for an empty list.
   static Future<void> inputs(BuildContext context, SessionController controller, List<String> errors) =>
       errors.isEmpty ? Future<void>.value() : _present(context, controller, errors);
 
-  static Future<void> _present(BuildContext context, SessionController controller, List<String> messages) async {
+  static Future<void> _present(BuildContext context, SessionController controller, List<String> messages,
+      {String? detail}) async {
     for (final m in messages) {
       controller.logEntry(m, isError: true);
     }
+    final shown = detail == null ? messages : [...messages, detail];
 
     // Dismiss any error dialog already on screen (spec §3: one at a time).
     if (_openErrorNav?.canPop() ?? false) _openErrorNav!.pop();
@@ -52,7 +57,7 @@ class AppErrors {
       useRootNavigator: true,
       builder: (ctx) => _ErrorDialog(
         title: messages.length > 1 ? 'Please correct the following' : 'Error',
-        messages: messages,
+        messages: shown,
       ),
     );
     if (_token == myToken) _openErrorNav = null;

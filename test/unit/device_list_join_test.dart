@@ -29,7 +29,7 @@ const _customClientlist = 'Console>11:22:33:44:55:66>0>76>>>>>';
 const _dhcpStaticlist = '<11:22:33:44:55:66>192.168.1.87>>Console<44:55:66:77:88:99>192.168.1.40>>Absent';
 
 // The router (flag 1) and one mesh node (flag 0).
-const _cfgDeviceList = '<RT-AX88U>192.168.1.1>AA:BB:CC:DD:EE:FF>1<RT-AC68U>192.168.1.90>33:44:55:66:77:88>0';
+const _cfgDeviceList = '<RT-ABCD>192.168.1.1>AA:BB:CC:DD:EE:FF>1<RT-EFGH>192.168.1.90>33:44:55:66:77:88>0';
 
 List<LanDevice> _join({String? cache}) => buildDeviceList(
       nmpClJson: _nmpClJson,
