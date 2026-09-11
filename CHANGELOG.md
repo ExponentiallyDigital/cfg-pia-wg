@@ -37,6 +37,14 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.68 build 438 - deleting a VPN takes the default connection with it
+
+- FIX: **deleting the VPN that WAS the default connection left the default naming it.** `vpnc_default_wan` is a key of its own, not a policy record, so releasing the per-device pins never touched it. Every device following the default then read as "profile 9", and the firmware was being told to send unassigned traffic to a profile that no longer existed. Reported on hardware 2026-09-11. DELETE now puts the default back to Internet when it is deleting the profile the default names, and leaves a default naming any OTHER profile alone.
+- CHG: **released devices go to Internet, not to the default connection**, which is what the web interface does. Sending a device that was explicitly pinned onto whatever tunnel the default happens to name is a destination nobody chose. The record is `1>IP>>0>`, a pin to the WAN, and the `lookup main` rule that goes with it is kept rather than swept.
+- CHG: a profile index no record carries reads `profile 9 (deleted)` rather than a bare `profile 9`. Short deliberately: it renders inside a device row on a phone.
+- INF: `restart_default_wan` resets the key to 0 as it runs, so returning the default to Internet needs no write at all - the teardown half of the sequence is the whole of it.
+- TST: three on the service - the default is reset when it names the profile being deleted, left alone when it names another, and not touched when it already reads 0. The pure tests now assert the Internet pin rather than a fall-through to the default.
+- DOC: ARCHITECTURE and README both record it.
 2026-09-11 v0.8.67 build 437 - the save spinner, fixed in a way that cannot come back
 
 - FIX: **the watchdog save spinner sat below the fold.** Fixed in 409, back in 412, fixed again in 425, back again in 435. Every one of those fixes dismissed the keyboard, waited for something, then scrolled the SAVE button into view, and every one was a race against two animations that a single early frame could lose. The spinner is now a full-screen overlay in a `Stack` above the page, so it is not in the scroll view and has no fold to be below. Nothing is left to race.
