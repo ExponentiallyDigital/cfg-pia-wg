@@ -108,4 +108,33 @@ void main() {
     }
     expect(offenders, isEmpty, reason: 'use 192.168.1.x for examples:\n${offenders.join('\n')}');
   });
+
+  // A router MODEL is not an identifier the way a MAC or a hostname is, but it is usable intel:
+  // it names the exact hardware, its firmware family and its published vulnerabilities. Guarded
+  // from 2026-09-11, after a sweep found the maintainer's model in the README, TESTING, three
+  // ARCHITECTURE samples, four test fixtures and two source comments.
+  test('no router model from the maintainer network is written down', () {
+    // Every real ASUS model carries digits in the part after the hyphen; none are named here,
+    // because this comment is inside the range the test scans and the first draft flagged itself.
+    // The invented placeholders this repo uses carry none: RT-ABCD for a router, RT-EFGH for a node.
+    // So the rule is simply "no model token with a number in it", which needs no real model
+    // written down here - the same reason the MAC check tests for shape rather than for values.
+    final pattern = RegExp(r'\b(?:RT|GT|DSL|TUF|BRT|EBA|XT|XD)-[A-Z]{1,3}\d{2,6}[A-Z]?\b');
+    final offenders = <String>[];
+    for (final file in _repoFiles()) {
+      final lines = file.readAsStringSync().split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        for (final m in pattern.allMatches(lines[i])) {
+          // The one real model the repo may name: the EXAMPLE answer in the bug-report template,
+          // and the same string in the issue body the About screen prefills. It tells a reporter
+          // what shape of answer is wanted, it is not the maintainer's hardware, and a separate
+          // test already pins those two copies to each other.
+          if (m.group(0) == 'RT-AX86U') continue;
+          offenders.add('${file.path}:${i + 1}  ${m.group(0)}');
+        }
+      }
+    }
+    expect(offenders, isEmpty,
+        reason: 'use RT-ABCD for a router and RT-EFGH for a mesh node:\n${offenders.join('\n')}');
+  });
 }

@@ -44,6 +44,13 @@ class StandaloneConfigScreen extends StatefulWidget {
 class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
   late final PiaService _service = widget.service ?? PiaService();
   final _regionCtrl = TextEditingController();
+
+  /// The record behind the id in [_regionCtrl], when the user chose it from the picker rather
+  /// than typing it. Carried into `generateConfig` so it does not resolve the id against a
+  /// SECOND fetch of a live endpoint - a region with no WireGuard servers in that second
+  /// snapshot is dropped, and the generate then fails on a region just offered. Null whenever
+  /// the field does not match it, which is what makes a typed id still resolve by fetching.
+  Region? _pickedRegion;
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _dnsCtrl = TextEditingController();
@@ -116,7 +123,12 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
       // Launch the sheet but do NOT await it here, otherwise the browse-button spinner would keep
       // animating until the sheet closes. enterModal/exitModal bracket the sheet's lifetime.
       _controller.enterModal();
-      RegionPickerSheet.show(context, regions: regions, onSelected: (id) => setState(() => _regionCtrl.text = id))
+      RegionPickerSheet.show(context, regions: regions, onSelected: (id) {
+        setState(() {
+          _regionCtrl.text = id;
+          _pickedRegion = regions.firstWhere((r) => r.id == id);
+        });
+      })
           .whenComplete(() {
         if (mounted) _controller.exitModal();
       });
@@ -150,8 +162,9 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     _controller.setGeneratedConfig(null, region);
     _controller.logEntry('Starting...');
     try {
+      final picked = _pickedRegion?.id == region ? _pickedRegion : null;
       final config = await _service.generateConfig(
-          region: region, username: username, password: password, dns: dns, onProgress: _controller.onLog);
+          region: region, selected: picked, username: username, password: password, dns: dns, onProgress: _controller.onLog);
       if (!mounted) return;
       _controller.setGeneratedConfig(config, region);
       _controller.logEntry('Config generated successfully.', isSuccess: true);

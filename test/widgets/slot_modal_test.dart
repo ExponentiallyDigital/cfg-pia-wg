@@ -26,10 +26,25 @@ class _FakePia extends PiaService {
     required String username,
     required String password,
     required String dns,
+    Region? selected,
     void Function(String)? onProgress,
   }) async =>
       '[Interface]\nPrivateKey = p\nAddress = 10.0.0.2/32\nDNS = 1.1.1.1\nMTU = 1420\n\n'
       '[Peer]\nPublicKey = q\nEndpoint = 1.2.3.4:1337\nAllowedIPs = 0.0.0.0/0\n';
+}
+
+/// Fails the generate the way PIA did on hardware, after the picker had already offered the region.
+class _FailingPia extends _FakePia {
+  @override
+  Future<String> generateConfig({
+    required String region,
+    required String username,
+    required String password,
+    required String dns,
+    Region? selected,
+    void Function(String)? onProgress,
+  }) async =>
+      throw Exception('Region "\$region" not found.');
 }
 
 SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
@@ -62,7 +77,8 @@ RouterSlots _slots(Map<int, SlotInfo> override, {Set<int> active = const {}, boo
   return RouterSlots(slots: m, activeSlots: active, isMerlin: merlin, maxActiveSlots: maxActive);
 }
 
-Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, SessionController c, {int verifyMaxAttempts = 1}) {
+Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, SessionController c,
+    {int verifyMaxAttempts = 1, PiaService? pia}) {
   return SessionScope(
     controller: c,
     child: MaterialApp(
@@ -77,7 +93,7 @@ Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, Se
                 controller: c,
                 connect: () async => ssh,
                 initialSlots: initial,
-                piaService: _FakePia(),
+                piaService: pia ?? _FakePia(),
                 slotServiceFactory: (cl) => RouterSlotService(cl,
                     onLog: c.onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts),
               ),
@@ -196,6 +212,68 @@ void main() {
       expect(ssh.ran('nvram set wgc2_desc="pia-aus_melbourne"'), isTrue); // stored with the app prefix
       // Created but not started.
       expect(ssh.ran('start_wgc'), isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a failed ENABLE explains itself in the dialog, and not in the log', (tester) async {
+      // The hint belongs where the user is looking when it happens. In the log it is noise on every
+      // scroll, and the log already carries the error itself.
+      final c = _controller();
+      // Targets are stored, so no prompt; the interface never appears, so the enable fails the way
+      // a stale config fails on hardware.
+      final ssh = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
+          if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
+          return '';
+        },
+      );
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_enable')));
+      await tester.tap(find.byKey(const Key('slot_enable')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('rotation interval'), findsOneWidget, reason: 'the dialog explains');
+      expect(c.log.where((e) => e.message.contains('rotation interval')), isEmpty, reason: 'the log does not');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a CREATE that fails does NOT announce that the slot was created', (tester) async {
+      // Reported from hardware 2026-09-11: the generate failed with "Region not found", the error
+      // was shown, and then "wgc2 has been created. Remember to ENABLE it" appeared over the top of
+      // it. The slot runner reported the error and returned nothing, so CREATE announced success
+      // without ever asking whether there had been any.
+      final c = _controller()
+        ..piaUsername = 'p1234567'
+        ..piaPassword = 'secret';
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({}), c, pia: _FailingPia()));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_2')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('aus_melbourne').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'CONTINUE'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('not found'), findsWidgets, reason: 'the failure must be reported');
+      // Dismiss the error dialog; nothing may follow it.
+      await tester.tap(find.widgetWithText(TextButton, 'OK').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Slot created'), findsNothing);
+      expect(ssh.ran('nvram set wgc2_desc'), isFalse);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

@@ -1,11 +1,17 @@
 # ARCHITECTURE.md
 
 This app provisions Private Internet Access WireGuard configurations onto an ASUS router, and keeps
-them working. It does three separate jobs, and most of this document is about the second and third:
+them working. It does four separate jobs, and most of this document is about the last three:
 
 1. **Generate a configuration** from PIA and hand it to you. No router is involved, and nothing is stored.
 2. **Write one into a router slot** over SSH, start the tunnel, and prove that traffic is really flowing through it.
 3. **Deploy a watchdog** onto the router, which checks the tunnel on a schedule and rebuilds it unattended when it fails.
+4. **Pin individual LAN devices to a tunnel**, so one device uses a VPN and another does not. Stock firmware only - Merlin does this through VPN Director, which the app does not drive.
+
+**"Slot" means one of the five WireGuard client profiles the router hardware provides**, numbered 1
+to 5 and named `wgc1` to `wgc5`. They are fixed: the router has five, the app can fill any of them,
+and a slot holds one PIA server at a time. Nearly everything the app does to a router is scoped to a
+single slot, and almost every NVRAM key below is prefixed `wgcN_` for that reason.
 
 **One idea is needed before the detail makes sense.** The two firmwares drive WireGuard in completely
 different ways. Asuswrt-Merlin exposes each of the five client slots directly through VPN Director;
@@ -48,7 +54,7 @@ update breaks something: the failure almost never looks like its cause.
   - [6.1. `vpnc_default_wan`](#vpnc-default-wan)
   - [6.2. Shared format](#shared-format)
   - [6.3. `dhcp_staticlist`](#dhcp-staticlist)
-    - [6.3.1. Reserved or not - the distinction the screen needs](#reserved-or-not-the-distinction-the-screen-needs)
+    - [6.3.1. Telling a reserved address from a leased one](#reserved-or-not-the-distinction-the-screen-needs)
   - [6.4. `custom_clientlist`](#custom-clientlist)
   - [6.5. Practical notes](#practical-notes)
   - [6.6. Reading the two device JSON files](#reading-the-two-device-json-files)
@@ -302,6 +308,14 @@ Disable as above, wait for the interface to go, then `nvram unset` all 17 `wgcN_
 
 VPN Fusion abstracts the underlying per slot calls to manipulate WG VPNs. Find the profile's **row** in `vpnc_clientlist`, set `vpnc_unit` to that row's 0-based index, then exec the `service` command:
 
+> [!IMPORTANT]
+> **`vpnc_unit` must be set before every `service` call in this section, and it is what the call
+> acts on.** `stop_vpnc` and `restart_vpnc` take no argument: the only thing telling VPN Fusion
+> which profile is meant is the value sitting in `vpnc_unit` when the call is made. It keeps its
+> last value, so a call made without setting it first acts on whatever was targeted previously -
+> silently, and with no error. This applies to **all** of the operations below, not just the one
+> that happens to mention it.
+
 ```text
         vpnc_clientlist
               │
@@ -363,18 +377,18 @@ The below examples are for `wgc5`, which is the first WG VPN created. **NB** the
   wgc5_ep_addr=45.130.141.215       # FQDN or public IP of the remote PIA WireGuard peer endpoint
   wgc5_ep_addr_r=45.130.141.215     # resolved numeric IP if `wgcN_ep_addr` is a DNS name; set when the interface initialises
   wgc5_ep_port=1337                 # end point port; PIA WG uses port 1337
-  wgc5_mtu=                         # maximum transmission unit, picked up from the conf file that created this slot (defaults to??)
+  wgc5_mtu=                         # maximum transmission unit, taken from the conf file that created this slot
   wgc5_nat=1                        # 1=enable, 0=disabled
   wgc5_ppub=PUBLIC_KEY              # PIA VPN server public key
   wgc5_priv=PRIVATE_KEY             # PIA user's private key
   wgc5_psk=                         # preshared key, not used by PIA.
-  
-  # VPN Fusion keys - do these get created for us?
+
+  # VPN Fusion runtime keys, created when the slot is enabled
   vpnc5_dns=9.9.9.9 149.112.112.112 # DNS servers, set when slot is enabled, unset when disabled
   vpnc5_dut_disc=5                  # unknown, unset when slot is enabled, when disabled this is the slot #
   vpnc5_sbstate_t=0                 # unknown
   vpnc5_state_t=2                   # TBC. interface exists=2
-  vpnc_unit=0                       # the unit being acted on where 0=wgc5, 1=wgc4, 2=wgc3, 3=wgc2, 4=wgc1; retains last set value.
+  vpnc_unit=0                       # the ROW of the profile being acted on; retains its last value.
   ```
 
   2. `vpnc_clientlist` is created and contains
@@ -586,7 +600,7 @@ vpnc_clientlist=pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg
                                                             ^ index 6 = 9
 ```
 
-So `vpnc_default_wan=9` means slot 1, `pia-aus_melbourne`. Confirm what `0` means (phase 0).
+So `vpnc_default_wan=9` means slot 1, `pia-aus_melbourne`. `0` means the plain internet - no VPN.
 
 ### 6.2. <a name='shared-format'></a>Shared format
 
@@ -618,7 +632,7 @@ Trailing fields are treated as empty if absent, so `<MAC>IP` alone is valid and 
 > [!NOTE]
 > On 384.13 through the 386 branch, ASUS and Merlin briefly split hostnames into a separate `dhcp_hostnames` variable (`<MAC>hostname`). Current firmware is back on the reunified four-field layout, but any older script found on the forums may assume the split.
 
-#### 6.3.1. <a name='reserved-or-not-the-distinction-the-screen-needs'></a>Reserved or not - the distinction the screen needs
+#### 6.3.1. <a name='reserved-or-not-the-distinction-the-screen-needs'></a>Telling a reserved address from a leased one
 
 **Do not use the WebUI `IP Method` column as a design input.** It is not stable, and it does not mean what it appears to.
 
@@ -629,7 +643,7 @@ So `Static IP` is very unlikely to mean "this device is configured with a static
 What matters is the consequence, which does not depend on the inference being right:
 
 - **A device can change `IP Method` on its own.** Anything derived from it would silently change with it.
-- **`Static IP` does not imply a stable address.** Those devices are on ordinary DHCP leases; treating them as already-pinned would produce exactly the silent assignment decay this feature must avoid.
+- **`Static IP` does not imply a stable address.** Those devices are on ordinary DHCP leases; treating them as already-pinned means an assignment that stops working at some later lease renewal, with nothing to show for it.
 
 **Use `dhcp_staticlist` membership instead**, which is authoritative, stable, and the thing the firmware itself keys the reservation on:
 
@@ -668,7 +682,7 @@ Two behaviours confirmed 2026-09-06:
 > [!NOTE]
 > A real example of the fragile combination has been observed: a device with a **randomised MAC** (locally-administered bit set) that also holds a **reservation**. It looks pinned and is not; the reservation dies at the next MAC rotation and the assignment goes with it, silently.
 >
-> The WebUI does **not** flag this. Its `Device Type` column carries a vendor or DHCP-fingerprint string (`Microsoft`, `Sony Interactive Entertainment Inc.`, `android-dhcp-17`, and sometimes the literal `Loading manufacturer..`, a transient UI state that leaks into the export). It is not an enum and nothing in it identifies a randomised address, so the locally-administered-bit check is the app's own work, not something to read off the firmware.
+> The WebUI does **not** flag this. Its `Device Type` column carries a vendor or DHCP-fingerprint string (`Microsoft`, `Sony Interactive Entertainment Inc.`, `android-dhcp-17`, and sometimes the literal `Loading manufacturer..`, a transient UI state that leaks into the client table the WebUI exports - which is where the observations in this section come from). It is not an enum and nothing in it identifies a randomised address, so the locally-administered-bit check is the app's own work, not something to read off the firmware.
 
 > [!NOTE]
 > **Nothing in the client list identifies the AiMesh node or the router itself** - the WebUI simply omits both from the export. So excluding them from the assignable list needs a signal from elsewhere; check what `/jffs/nmp_cl_json.js` carries for them before assuming.
@@ -703,7 +717,7 @@ hostname1>00:01:02:03:04:05>0>4>>>>><hostname2>05:04:03:02:01:00>0>60>>>>><hostn
 **Records are NOT a fixed nine indexes.** Measured 2026-09-06 on a six-record list, the counts were 9, 9, 9, 8, 6 and 6 - the WebUI writes some trailing empties and drops others, apparently depending on which firmware version created the entry. A parser that requires nine indexes rejects most of a real list.
 
 ```text
-device1>AA:BB:CC:DD:EE:FF>0>60>>>>><device4>0A:0B:0C:0D:0E:0F>0>4>>>><RT-AC68U>05:04:03:02:01:00>0>24>>
+device1>AA:BB:CC:DD:EE:FF>0>60>>>>><device4>0A:0B:0C:0D:0E:0F>0>4>>>><RT-EFGH>05:04:03:02:01:00>0>24>>
 ```
 
 Split on `<`, then on `>`, and treat any index past the end as empty. Group type `0` means unknown and gives a generic icon.
@@ -735,7 +749,7 @@ Other traps in the same pair of files:
 Read-only for this app, and the answer to "which entries in the device list are not really devices".
 
 ```text
-cfg_device_list=<RT-AX88U>192.168.1.1>AA:BB:CC:DD:EE:FF>1<RT-AC68U>192.168.1.90>0A:0B:0C:0D:0E:0F>0
+cfg_device_list=<RT-ABCD>192.168.1.1>AA:BB:CC:DD:EE:FF>1<RT-EFGH>192.168.1.90>0A:0B:0C:0D:0E:0F>0
 ```
 
 Records separated by `<`, fields by `>`: `name>IP>MAC>flag`. The flag is `1` for the router itself and `0` for a mesh node.
@@ -744,7 +758,7 @@ Records separated by `<`, fields by `>`: `name>IP>MAC>flag`. The flag is `1` for
 
 This matters because a mesh node is otherwise indistinguishable from an ordinary client. Measured 2026-09-08: the node appears in `nmp_cache.js` with `isGateway: "0"`, exactly like a laptop, so that field is no help. `lan_hwaddr` and `label_mac` identify the router alone and say nothing about nodes.
 
-A related field, not needed for exclusion but worth knowing: `nmp_cache.js` carries `amesh_isReClient` and `amesh_papMac` on devices connected THROUGH a node, where `amesh_papMac` is the node MAC. That identifies a device behind the mesh - which is assignable like any other (see [Reserved or not - the distinction the screen needs](#reserved-or-not-the-distinction-the-screen-needs)) - not the node itself.
+A related field, not needed for exclusion but worth knowing: `nmp_cache.js` carries `amesh_isReClient` and `amesh_papMac` on devices connected THROUGH a node, where `amesh_papMac` is the node MAC. That identifies a device behind the mesh - which is assignable like any other (see [Telling a reserved address from a leased one](#reserved-or-not-the-distinction-the-screen-needs)) - not the node itself.
 
 ### 6.8. <a name='vpnc-dev-policy-list-the-assignment'></a>`vpnc_dev_policy_list` - the assignment
 
@@ -832,7 +846,7 @@ dhcp_staticlist=<AA:BB:CC:DD:EE:FF>192.168.1.20>>hostname1<...> 4 named, typed b
 vpnc_dev_policy_list=                                          nothing assigned
 ```
 
-Three things follow, and all three change the design:
+Three things follow:
 
 - **Assigning to the "Internet Connection" profile creates a reservation too.** It is not VPN-specific: binding a device to *any* profile pins its address, because every profile is keyed by IP. So the expensive path is reached by an action that does not look like it involves a VPN at all.
 - **Unassigning does NOT remove the reservation.** This was previously an open sub-question answered only by inference; here the policy list is empty and all ten reservations remain. Reservations accumulate and are never cleaned up.
@@ -1133,7 +1147,7 @@ The **enable check** stops the watchdog undoing a decision the user just made. A
 
 The **handshake** is the primary liveness test and the only firmware-independent one. `ping -I wgcN` is a Merlin fallback: on stock the router's own traffic is not routed into the tunnel, so a failed ping there says nothing at all. Ping alone used to be the whole test, and it reconfigured healthy tunnels often enough to get the PIA account temporarily refused.
 
-The **backoff** is what stops a genuinely broken tunnel hammering PIA. It doubles from 2 minutes to a 30-minute ceiling.
+The **backoff** is what stops a genuinely broken tunnel hammering PIA. It climbs 2, 4, 8, 16, 30, 60 minutes and stops at a ceiling of 90.
 
 The **WAN check** is last before the expensive path, and it exits SILENTLY. If the router has no internet, a tunnel being down is neither surprising nor something an email can help with.
 
@@ -1190,7 +1204,7 @@ A `cru` (`crontab`) entry drives the configurable periodic health check. An addi
 Stock has no user-script hook of its own, so the app **replaces** `S50downloadmaster` wholesale with its own template (`lib/s50_template.dart`), carrying across only the `cru` lines it finds between the `# ********** REPLACEMENT START/END **********` markers of the previous copy. Whatever else the file held is discarded.
 
 > [!IMPORTANT]
-> **Settled design - do not change it.** This approach was arrived at after weeks of evaluating the alternatives on stock, and it is the one that works. Treat a proposal to replace it as needing that whole evaluation redone, not as a cleanup.
+> **Every other way of doing this on stock was tried first, over several weeks, and none of them held.** Stock offers no user-script hook, no `services-start` equivalent, and nothing else in `/opt/etc/init.d` that the firmware guarantees to run. Replacing this means repeating that search, so it is not a tidy-up job.
 >
 > **It does replace a working Download Master installation.** A real `S50downloadmaster` is 52,525 bytes and the app template is around 700, measured either side of an install 2026-09-07. Harmless for the documented setup, where Download Master is installed and then left alone; not harmless for someone who actually downloads with it. [README.md, Enabling prequisites](README.md#41-enabling-prequisites) says so, without going into how.
 >
@@ -1244,7 +1258,7 @@ The third test is a string match: `REPLACEMENT START` for `S50downloadmaster`, `
 
 The stub is rewritten on every deploy rather than once, so a firmware update that restores the original is undone the next time a watchdog is deployed.
 
-The app can put all of this back. SETTINGS carries an uninstall that restores each script from its `.old` copy and deletes `/jffs/cfg-pia-wg` - in that order, so a failure at the last step still leaves a router that boots the way it originally did. Where no `.old` exists the app's own copy is removed rather than left behind, and the confirmation says which of the two happened for each script. Cron entries, NVRAM and the tunnels are deliberately untouched: they belong to the watchdog and the slots, which have their own DELETE.
+The app can put all of this back. SETTINGS carries an uninstall that restores each script from its `.old` copy and deletes `/jffs/cfg-pia-wg` - in that order, so a failure at the last step still leaves a router that boots the way it originally did. Where no `.old` exists the app's own copy is removed rather than left behind, and the confirmation says which of the two happened for each script. The cron schedules and every NVRAM key the app wrote go with it. **The tunnels are deliberately untouched**: the `wgcN_*` keys and the profiles belong to the user, and the Manage screen's DELETE is what removes those.
 
 #### 7.4.3. <a name='what-an-uninstall-leaves-behind'></a>What an uninstall leaves behind
 
@@ -1263,9 +1277,9 @@ Download Master writes `asusware.arm` and `Download2` to the root of the partiti
 
 | Format | Supported | Notes |
 | --- | :-: | --- |
-| **ext4** | yes | **Recommended.** No file-size cap, native Unix permissions for the package install |
+| **ext4** | yes | No file-size cap, native Unix permissions for the package install. Technically the best, but it cannot be made on the router |
 | ext2 / ext3 | yes | Fine; 8 GB file-size cap |
-| NTFS | yes | Read and write both supported |
+| **NTFS** | yes | **Recommended in the README.** Read and write both supported, and it is the one format here that both Windows and the router's own Format tool can create |
 | FAT32 | yes | Mounts, but the 4 GB file-size cap is a problem for large downloads |
 | FAT16 | yes | 2 GB limit, avoid |
 | HFS+ | partial | ASUS marks it with an undefined asterisk; treat as read-only |

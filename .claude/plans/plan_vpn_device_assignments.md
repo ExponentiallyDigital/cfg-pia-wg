@@ -190,7 +190,7 @@ hostname1>00:01:02:03:04:05>0>4>>>>><hostname2>05:04:03:02:01:00>0>60>>>>><hostn
 **Records are NOT a fixed nine indexes.** Measured 2026-09-06 on a six-record list, the counts were 9, 9, 9, 8, 6 and 6 - the WebUI writes some trailing empties and drops others, apparently depending on which firmware version created the entry. A parser that requires nine indexes rejects most of a real list.
 
 ```text
-device1>AA:BB:CC:DD:EE:FF>0>60>>>>><device4>0A:0B:0C:0D:0E:0F>0>4>>>><RT-AC68U>05:04:03:02:01:00>0>24>>
+device1>AA:BB:CC:DD:EE:FF>0>60>>>>><device4>0A:0B:0C:0D:0E:0F>0>4>>>><RT-EFGH>05:04:03:02:01:00>0>24>>
 ```
 
 Split on `<`, then on `>`, and treat any index past the end as empty. Group type `0` means unknown and gives a generic icon.
@@ -514,7 +514,7 @@ Section 3.3.5's truncation warning is the same failure `_writeFile` already guar
 
 ### Both questions are answered; phase 2 can be built
 
-`scripts/verify-device-assignment.sh` was run on an RT-AX88U 2026-09-08 and settled both. What it changes in the design:
+`scripts/verify-device-assignment.sh` was run on an RT-ABCD 2026-09-08 and settled both. What it changes in the design:
 
 | | Result | Consequence |
 | --- | --- | --- |

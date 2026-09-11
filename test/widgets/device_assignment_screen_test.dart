@@ -24,7 +24,7 @@ const _clientlist = 'pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-w
 
 const _policyList = '1>192.168.1.50>>3>';
 const _staticlist = '<11:22:33:44:55:66>192.168.1.20>>Box';
-const _cfgDeviceList = '<RT-AX88U>192.168.1.1>AA:BB:CC:DD:EE:FF>1';
+const _cfgDeviceList = '<RT-ABCD>192.168.1.1>AA:BB:CC:DD:EE:FF>1';
 
 // Box is reserved and online. Laptop is unreserved and on the OpenVPN profile. Ghost is offline,
 // has no cached address at all so it cannot be assigned, and carries a locally-administered MAC -

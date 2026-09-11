@@ -45,8 +45,14 @@ class TestPiaService extends PiaService {
     required this.keypair,
   });
 
+  /// How many times `generateConfig` went back for the server list. A caller that already holds
+  /// the record it chose should leave this at zero - resolving twice is what produced a "not found"
+  /// on a region the picker had just offered.
+  int fetchCount = 0;
+
   @override
   Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async {
+    fetchCount++;
     onProgress?.call('fetching');
     return regions;
   }
@@ -335,6 +341,55 @@ void main() {
         service.generateConfig(region: 'aus_melbourne', username: 'p123456', password: 'secret', dns: '1.1.1.1'),
         throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('Region "aus_melbourne" not found.'))),
       );
+    });
+
+    test('a region handed in is used as-is, and the server list is NOT fetched again', () async {
+      // The list this service would return no longer holds the region - exactly the case that broke
+      // a CREATE on hardware, where the picker offered ca_ontario and a fetch six seconds later did
+      // not list it. Handing the record in has to be enough.
+      const server = WgServer(ip: '1.1.1.1', cn: 'server');
+      final service = TestPiaService(
+        regions: const [],
+        probeResults: const [ProbeResult(server: server, latency: Duration(milliseconds: 10))],
+        token: 'token',
+        regResponse: const RegResponse(status: 'OK', serverKey: 'serverkey', peerIP: '10.0.0.1', serverPort: 1337),
+        keypair: ('private', 'public'),
+      );
+
+      final config = await service.generateConfig(
+        region: 'ca_ontario',
+        selected: const Region(id: 'ca_ontario', wgServers: [server]),
+        username: 'p123456',
+        password: 'secret',
+        dns: '1.1.1.1',
+      );
+
+      expect(config, contains('Endpoint = 1.1.1.1:1337'));
+      expect(service.fetchCount, 0, reason: 'the caller already had the region; asking again is the bug');
+    });
+
+    test('a handed-in region for a DIFFERENT id is ignored and the id is resolved by fetching', () async {
+      // The region field is free text, so a typed id must still resolve normally. A stale record
+      // left over from an earlier pick must never be used for it.
+      final service = TestPiaService(
+        regions: const [],
+        probeResults: const [],
+        token: 'token',
+        regResponse: const RegResponse(status: 'OK', serverKey: 'serverkey', peerIP: '10.0.0.1', serverPort: 1337),
+        keypair: ('private', 'public'),
+      );
+
+      await expectLater(
+        service.generateConfig(
+          region: 'aus_perth',
+          selected: const Region(id: 'ca_ontario', wgServers: [WgServer(ip: '1.1.1.1', cn: 'server')]),
+          username: 'p123456',
+          password: 'secret',
+          dns: '1.1.1.1',
+        ),
+        throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('Region "aus_perth" not found.'))),
+      );
+      expect(service.fetchCount, 1);
     });
 
     test('generateConfig throws when selected region has no servers', () async {

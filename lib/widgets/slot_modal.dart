@@ -36,6 +36,13 @@ import 'error_presenter.dart';
 import 'log_buttons.dart';
 import 'region_picker_sheet.dart';
 
+/// Shown in the DIALOG when an ENABLE fails, and deliberately not written to the app log: an
+/// explanation that helps at the moment of failure is noise in a log read later, and the log
+/// already carries the error itself. Nearly every failed enable is this.
+const String kStaleConfigHint =
+    "PIA configurations expire on PIA's own rotation interval, so one that was created and then left "
+    'unused can go stale.';
+
 enum SlotModalMode { manage, watchdog }
 
 class SlotModal extends StatefulWidget {
@@ -88,7 +95,9 @@ class _SlotModalState extends State<SlotModal> {
   // Runs [op] with a new slot service over the shared connection, refreshes the slot list, then
   // (with the processing overlay already cleared) surfaces any error — the spinner must not
   // animate under an awaited modal.
-  Future<void> _runSlot(Future<void> Function(RouterSlotService) op) async {
+  /// Returns true when [op] completed. The caller needs to know: this reports the error itself,
+  /// so a caller that went on to announce success was announcing it after a failure.
+  Future<bool> _runSlot(Future<void> Function(RouterSlotService) op) async {
     setState(() => _processing = true);
     Object? error;
     try {
@@ -100,6 +109,7 @@ class _SlotModalState extends State<SlotModal> {
     await _refresh();
     if (mounted) setState(() => _processing = false);
     if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
+    return error == null;
   }
 
   // ── Generic dialog helpers ────────────────────────────────────────────────────────
@@ -134,12 +144,16 @@ class _SlotModalState extends State<SlotModal> {
       );
 
   // Region picker that returns the chosen id (or null if dismissed).
-  Future<String?> _pickRegion() async {
-    String? chosen;
+  /// Returns the region RECORD, not just its id. `generateConfig` would otherwise fetch the server
+  /// list a second time and resolve the id against that - and a region with no WireGuard servers in
+  /// the second snapshot is dropped, which failed a CREATE on a region the picker had just offered.
+  Future<Region?> _pickRegion() async {
+    Region? chosen;
     try {
       final regions = await widget.piaService.fetchRegions(onProgress: _c.onLog);
       if (!mounted) return null;
-      await RegionPickerSheet.show(context, regions: regions, onSelected: (id) => chosen = id);
+      await RegionPickerSheet.show(context,
+          regions: regions, onSelected: (id) => chosen = regions.firstWhere((r) => r.id == id));
     } catch (e) {
       if (mounted) await AppErrors.system(context, _c, 'Failed to load regions: ${e.toString().replaceAll('Exception: ', '')}');
     }
@@ -155,18 +169,23 @@ class _SlotModalState extends State<SlotModal> {
           message: 'Slot wgc$slot currently holds "${info.desc}". Creating a new configuration will overwrite it.');
       if (!ok) return;
     }
-    final regionId = await _pickRegion();
-    if (regionId == null) return;
+    final region = await _pickRegion();
+    if (region == null) return;
+    final regionId = region.id;
     final creds = await _piaCredsDialog();
     if (creds == null) return;
 
-    await _runSlot((svc) async {
+    final created = await _runSlot((svc) async {
       _c.logEntry('Generating configuration for $regionId...');
-      final config = await widget.piaService
-          .generateConfig(region: regionId, username: creds.$1, password: creds.$2, dns: creds.$3, onProgress: _c.onLog);
+      final config = await widget.piaService.generateConfig(
+          region: regionId, selected: region, username: creds.$1, password: creds.$2, dns: creds.$3, onProgress: _c.onLog);
       await svc.createConfigToSlot(slot: slot, config: config, regionId: regionId);
     });
-    if (mounted) await _info('Slot created', 'wgc$slot has been created. Remember to ENABLE it via the ENABLE button.');
+    // Only on success. This used to fire whatever happened, so a failed generate was followed by
+    // "wgc5 has been created" over the top of the error saying it had not been.
+    if (created && mounted) {
+      await _info('Slot created', 'wgc$slot has been created. Remember to ENABLE it via the ENABLE button.');
+    }
   }
 
   Future<void> _enableManage() async {
@@ -219,7 +238,9 @@ class _SlotModalState extends State<SlotModal> {
     }
     await _refresh();
     if (mounted) setState(() => _processing = false);
-    if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
+    if (error != null && mounted) {
+      await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''), detail: kStaleConfigHint);
+    }
   }
 
   Future<void> _disableManage() {

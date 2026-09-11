@@ -586,9 +586,3 @@ class _LicenceParagraph extends StatelessWidget {
     );
   }
 }
-
-/// Router SSH details, asked for inline when the session has none.
-///
-/// The router screens normally collect these, but ABOUT is reachable without visiting one and its
-/// DEL PIA CERT button needs them. Whatever the session already holds is prefilled; what the user
-/// enters goes back into the session, so a later router screen starts connected.

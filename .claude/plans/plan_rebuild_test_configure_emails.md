@@ -121,7 +121,7 @@ Interval: 5 minutes
 
 ROUTER
 Name: my-router.asuscomm.com (192.168.1.1)
-Model: RT-AX88U, firmware 3.0.0.4.388_24762
+Model: RT-ABCD, firmware 3.0.0.4.388_24762
 Time: 2026-09-05 14:32:53 AEST
 Uptime: 15:11:29 up 19:21, load average: 2.55, 2.39, 2.36
 Watchdog: wgc1:pia-aus_melbourne, deployed by cfg-pia-wg v0.8.34 build 404
@@ -244,7 +244,7 @@ Interval: 5 minutes
 
 ROUTER
 Name: my-router.asuscomm.com (192.168.1.1)
-Model: RT-AX88U, firmware 3.0.0.4.388_24762
+Model: RT-ABCD, firmware 3.0.0.4.388_24762
 Time: 2026-09-05 14:32:53 AEST
 Uptime: 15:11:29 up 19:21, load average: 2.55, 2.39, 2.36
 Watchdog: wgc1:pia-aus_melbourne
