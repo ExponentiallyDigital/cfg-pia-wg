@@ -13,7 +13,15 @@
 
 See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for "deep" backlog.
 
-- DOC: Sequenced documentation updates: ARCHITECTURE, TESTING, README, COINTEXT.
+- CHG: **settings screen** - remove the two headings, "ROUTER" and "THIS DEVICE".
+- ADD: **settings screen** - `REBOOT ROUTER` as the LAST entry, with an icon of its own to match the others. Confirm before doing it: "Are you sure? This will disconnect all devices including WiFi connections."
+- commit.
+- CHG: **about screen** - the version line matches the block below it in size and weight, loses the gap under it, and reads `cfg-pia-wg: v0.8.68 build 438`. It currently stands apart from the build information it belongs to.
+- CHG: **about screen** - `Open source licenses` moves to the END of the links line: `ReadMe | Change log | Security policy | Privacy policy | Open source licenses`.
+- CHG: **about screen** - a section break above AND below that links line: a thin centred grey rule, 25% of the screen width. The GNU licence text follows the lower one.
+- commit.
+- ADD: **README** - the headline feature is that this app is DEVICE centric where ASUS is SLOT centric, and say so in the introduction. The stock interface makes you reason about five slots and stop a tunnel before you can see what is using it; this one shows a list of devices and lets you move any of them between VPNs in one screen. Always-on self-healing tunnels are the other half, not the whole story.
+- ADD: **README** - recommend turning OFF Android battery optimisation for the app, as a bullet in the Notes section. Backgrounding the app with it on can kill the process mid-action - measured 2026-09-11, where it dropped an SSH session during a watchdog deploy and again during an email send.
 - commit.
 - ADD: implement RevenueCat.
 - commit.
