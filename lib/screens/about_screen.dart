@@ -284,6 +284,8 @@ class _AboutScreenState extends State<AboutScreen> {
             ),
             // url links display
             const SizedBox(height: 20),
+            const _SectionRule(),
+            const SizedBox(height: 20),
             // The label IS the link, and the URL is not shown. A raw GitHub blob URL is 70-odd
             // characters of noise that wraps across two lines on a phone and tells the reader
             // nothing they wanted to know; the destination is already named by the label.
@@ -300,25 +302,19 @@ class _AboutScreenState extends State<AboutScreen> {
                     key: Key('about_link_$i'),
                     TextSpan(text: _kLinks[i].$1, style: _linkStyle, recognizer: _recognisers[i]),
                   ),
-                  if (i < _kLinks.length - 1) const Text('|', style: TextStyle(color: kMuted, fontSize: 12)),
+                  const Text('|', style: TextStyle(color: kMuted, fontSize: 12)),
                 ],
-              ],
-            ),
-            // "Open source: licenses" display
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text.rich(
+                // Last in the same line rather than alone underneath it. It goes to the same kind
+                // of place as the four before it, so it reads as one set of destinations.
+                Text.rich(
                   key: const Key('about_licenses_link'),
-                  // Whole phrase tappable, like the four above it - a two-word link inside a
-                  // longer sentence is a small target and reads as an afterthought.
                   TextSpan(text: 'Open source licenses', style: _linkStyle, recognizer: _licencesRecognizer),
                 ),
-              ),
+              ],
             ),
             // "GNU GPL license" display:
+            const SizedBox(height: 20),
+            const _SectionRule(),
             const SizedBox(height: 20),
             const Text(
               kLicenseText,
@@ -329,6 +325,19 @@ class _AboutScreenState extends State<AboutScreen> {
       ),
     );
   }
+}
+
+/// A quarter-width grey hairline, centred. The screen is three unrelated things stacked - build
+/// information, links, and several hundred lines of licence - and without a break between them they
+/// read as one long wall. A full-width rule would carry more weight than the division deserves.
+class _SectionRule extends StatelessWidget {
+  const _SectionRule();
+
+  @override
+  Widget build(BuildContext context) => FractionallySizedBox(
+        widthFactor: 0.25,
+        child: Container(height: 1, color: kBorder),
+      );
 }
 
 const TextStyle _labelStyle = TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600);
@@ -385,23 +394,22 @@ class _BuildInfoBlock extends StatelessWidget {
 
   static String headline(BuildInfo? i) {
     String v(String Function(BuildInfo) field) => i == null ? _kPending : field(i);
-    return 'cfg-pia-wg v${v((b) => b.versionName)} build ${v((b) => b.buildNumber)}';
+    return 'cfg-pia-wg: v${v((b) => b.versionName)} build ${v((b) => b.buildNumber)}';
   }
 
   /// Exactly what selecting this block yields, and what the COPY button writes to the clipboard.
   static String asPlainText(BuildInfo? i, {String scriptStatus = ''}) =>
-      '${headline(i)}\n\n${rows(i, scriptStatus: scriptStatus).map((r) => '${r.$1}: ${r.$2}').join('\n')}';
+      '${headline(i)}\n${rows(i, scriptStatus: scriptStatus).map((r) => '${r.$1}: ${r.$2}').join('\n')}';
 
   @override
   Widget build(BuildContext context) {
     final data = rows(info, scriptStatus: scriptStatus);
     return Text.rich(
       TextSpan(children: [
-        TextSpan(
-          text: headline(info),
-          style: const TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w600),
-        ),
-        const TextSpan(text: '\n\n'),
+        // Same size and weight as the rows below it, and no blank line: it is the first line of
+        // the table, not a heading over it. Set apart, it read as a title for a block it belongs to.
+        TextSpan(text: headline(info), style: _labelStyle),
+        const TextSpan(text: '\n'),
         for (var n = 0; n < data.length; n++) ...[
           TextSpan(text: '${data[n].$1}: ', style: _labelStyle),
           // The login prompt is the only value here that is tappable. Same weight and size as

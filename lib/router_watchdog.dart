@@ -1335,6 +1335,25 @@ class RouterWatchdog {
 
   static const String _aboutSep = '@@CFGPIAWGABOUT@@';
 
+  /// Reboots the router.
+  ///
+  /// **A ghost `rc_service` marker discards a reboot request like any other event.** Measured
+  /// 2026-09-10: the web interface reported the router rebooting and it was not, and a power cycle
+  /// was the only way out. So the queue is cleared first, or this button can silently do nothing -
+  /// which is the worst possible outcome for a control whose whole purpose is recovery.
+  ///
+  /// The connection dies as the command runs, so a dropped session here IS the success case and
+  /// nothing waits for a reply.
+  Future<void> rebootRouter() async {
+    await _logRouter('reboot requested from the app');
+    await _serviceQueue.clearIfStale();
+    try {
+      await _read('reboot');
+    } catch (_) {
+      // The router went down mid-command, which is what was asked for.
+    }
+  }
+
   Future<String> getWatchdogLog(int slot) => _read('cat /tmp/watchdog_wgc$slot.log 2>/dev/null');
 
   /// Empties the slot's watchdog log, leaving the file in place.

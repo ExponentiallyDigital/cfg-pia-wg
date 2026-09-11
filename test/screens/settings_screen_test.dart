@@ -250,15 +250,18 @@ void main() {
     testWidgets('each action is a full-width row that explains what it removes', (tester) async {
       await _pumpSettings(tester);
 
-      for (final key in ['settings_uninstall', 'settings_del_pia_cert', 'settings_forget_router_ip']) {
+      const keys = ['settings_uninstall', 'settings_del_pia_cert', 'settings_forget_router_ip', 'settings_reboot_router'];
+      for (final key in keys) {
         expect(find.byKey(Key(key)), findsOneWidget, reason: key);
       }
-      // Stacked, not wrapped side by side: uninstall first, then the cert, then the device.
-      final uninstall = tester.getCenter(find.byKey(const Key('settings_uninstall'))).dy;
-      final cert = tester.getCenter(find.byKey(const Key('settings_del_pia_cert'))).dy;
-      final forget = tester.getCenter(find.byKey(const Key('settings_forget_router_ip'))).dy;
-      expect(uninstall, lessThan(cert));
-      expect(cert, lessThan(forget));
+      // Stacked in that order, and REBOOT last: it is the only one that acts on the whole router
+      // rather than on this app's own footprint.
+      final tops = [for (final k in keys) tester.getCenter(find.byKey(Key(k))).dy];
+      expect(tops, orderedEquals(List.of(tops)..sort()));
+      // The two category headings are gone: four rows that each say what they touch do not need
+      // sorting into "ROUTER" and "THIS DEVICE".
+      expect(find.text('ROUTER'), findsNothing);
+      expect(find.text('THIS DEVICE'), findsNothing);
       expect(tester.takeException(), isNull, reason: 'no overflow');
     });
 
@@ -503,6 +506,58 @@ void main() {
       await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextFormField, '192.168.1.1'), findsOneWidget);
+    });
+  });
+
+  group('REBOOT ROUTER', () {
+    SessionController connected() => SessionController(tickInterval: const Duration(hours: 1))
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true;
+
+    Future<void> pump(WidgetTester tester, SessionController c, RecordingSSHClient ssh) async {
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(
+          controller: c,
+          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('asks first, and CANCEL sends nothing', (tester) async {
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await pump(tester, connected(), ssh);
+
+      await tester.tap(find.byKey(const Key('settings_reboot_router')));
+      await tester.pumpAndSettle();
+      expect(find.text('Are you sure? This will disconnect all devices including WiFi connections.'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('settings_reboot_cancel')));
+      await tester.pumpAndSettle();
+      expect(ssh.ran('reboot'), isFalse);
+    });
+
+    testWidgets('clears a ghost service marker BEFORE asking the router to reboot', (tester) async {
+      // Measured 2026-09-10: a wedged queue discards a reboot request like any other event, and
+      // the web interface reported a reboot that never happened. A recovery control that can
+      // silently do nothing is worse than no control at all.
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('rc_service') ? 'restart_vpnc@@999@@dead' : '');
+      await pump(tester, connected(), ssh);
+
+      await tester.tap(find.byKey(const Key('settings_reboot_router')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_reboot_confirm')));
+      await tester.pumpAndSettle();
+
+      final cleared = ssh.commands.indexWhere((c) => c.contains('rc_service='));
+      final reboot = ssh.commands.indexOf('reboot');
+      expect(cleared, isNot(-1), reason: 'the ghost has to be cleared');
+      expect(reboot, isNot(-1), reason: 'and the reboot still has to be sent');
+      expect(cleared, lessThan(reboot));
+      expect(find.textContaining('Reboot requested'), findsOneWidget);
     });
   });
 }

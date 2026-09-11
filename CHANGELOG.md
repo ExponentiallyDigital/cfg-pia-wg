@@ -13,16 +13,6 @@
 
 See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for "deep" backlog.
 
-- CHG: **settings screen** - remove the two headings, "ROUTER" and "THIS DEVICE".
-- ADD: **settings screen** - `REBOOT ROUTER` as the LAST entry, with an icon of its own to match the others. Confirm before doing it: "Are you sure? This will disconnect all devices including WiFi connections."
-- commit.
-- CHG: **about screen** - the version line matches the block below it in size and weight, loses the gap under it, and reads `cfg-pia-wg: v0.8.68 build 438`. It currently stands apart from the build information it belongs to.
-- CHG: **about screen** - `Open source licenses` moves to the END of the links line: `ReadMe | Change log | Security policy | Privacy policy | Open source licenses`.
-- CHG: **about screen** - a section break above AND below that links line: a thin centred grey rule, 25% of the screen width. The GNU licence text follows the lower one.
-- commit.
-- ADD: **README** - the headline feature is that this app is DEVICE centric where ASUS is SLOT centric, and say so in the introduction. The stock interface makes you reason about five slots and stop a tunnel before you can see what is using it; this one shows a list of devices and lets you move any of them between VPNs in one screen. Always-on self-healing tunnels are the other half, not the whole story.
-- ADD: **README** - recommend turning OFF Android battery optimisation for the app, as a bullet in the Notes section. Backgrounding the app with it on can kill the process mid-action - measured 2026-09-11, where it dropped an SSH session during a watchdog deploy and again during an email send.
-- commit.
 - ADD: implement RevenueCat.
 - commit.
 - REL: release **v8.x.y** to GPS alpha track, review [Play Console technical quality requirements](https://support.google.com/googleplay/android-developer/answer/17492799), specifically:
@@ -45,6 +35,16 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-12 v0.8.70 build 440 - the UI review list
+
+- ADD: **REBOOT ROUTER on the settings screen**, last in the list, behind a confirmation that says what it costs: "Are you sure? This will disconnect all devices including WiFi connections." It clears a ghost service marker BEFORE asking, because a wedged queue discards a reboot request like any other event - measured 2026-09-10, where the web interface reported a reboot that never happened. A recovery control that can silently do nothing is worse than no control.
+- CHG: the settings screen loses its "ROUTER" and "THIS DEVICE" headings. Four rows that each say what they touch do not need sorting into categories.
+- CHG: **the About version line joins the block it belongs to.** Same size and weight as the rows under it, no blank line between them, and it reads `cfg-pia-wg: v0.8.70 build 440`. It was a larger, heavier line standing over the table, which made it look like a title rather than the first row.
+- CHG: `Open source licenses` moves to the END of the links line, so all five destinations read as one set rather than four and an afterthought. The row still wraps on a narrow screen, which is why the test asserts reading order rather than a shared line.
+- ADD: a section break above and below that links line - a thin centred grey rule, a quarter of the screen wide. The screen is three unrelated things stacked, and without a break they read as one wall.
+- ADD: **README - the device view is the headline feature, and now says so in the introduction.** A router thinks in slots, and finding out which device is using one generally means stopping it to see what breaks. This app lists devices and moves any of them in one tap.
+- ADD: README - turn OFF Android battery optimisation for the app, with the setting path. Backgrounding it otherwise freezes the process mid-action: measured 2026-09-11, an SSH session dropped during a watchdog deploy and an alert email abandoned halfway through.
+- TST: four - the reboot asks first and CANCEL sends nothing, the ghost marker is cleared before the reboot is sent, the four settings rows are in order with no headings, and the About links read in order with a rule above and below them.
 2026-09-12 v0.8.69 build 439 - the service queue stops calling our own commands ghosts
 
 - FIX: **the app was clearing the `rc_service` marker its own call had just set, about a second after making it.** `rc_service_pid` holds the pid of `notify_rc`, which queues the work and exits immediately, so "that process has gone" is true the instant ANY call returns - including one whose service is still running. Every service call in an eighteen-step hardware run on 2026-09-12 logged `cleared stale rc_service marker`, which meant the wait-for-the-queue step was declaring the call a ghost on its first poll and returning without waiting for anything.

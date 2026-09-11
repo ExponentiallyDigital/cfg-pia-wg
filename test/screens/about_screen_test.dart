@@ -166,7 +166,7 @@ void main() {
         kotlinVersion: '2.3.20',
       );
       final body = params(info)['body']!;
-      expect(body, contains('cfg-pia-wg v9.9.9 build 999'));
+      expect(body, contains('cfg-pia-wg: v9.9.9 build 999'));
       expect(body, contains('Commit hash: abc1234'));
       expect(body, contains('Kotlin: 2.3.20'));
       // Fenced so GitHub renders it verbatim rather than collapsing the lines.
@@ -194,7 +194,7 @@ void main() {
 
     await _pumpAbout(tester);
 
-    expect(find.textContaining('cfg-pia-wg v9.9.9 build 999', findRichText: true), findsOneWidget);
+    expect(find.textContaining('cfg-pia-wg: v9.9.9 build 999', findRichText: true), findsOneWidget);
     expect(find.textContaining('Built by: Google Play at 2026-07-29 03:34:57 UTC', findRichText: true), findsOneWidget);
     expect(find.textContaining('Build type: release', findRichText: true), findsOneWidget);
     expect(find.textContaining('Commit hash: abc1234', findRichText: true), findsOneWidget);
@@ -212,7 +212,7 @@ void main() {
 
     await _pumpAbout(tester);
 
-    expect(find.textContaining('cfg-pia-wg v$kUnknownBuildValue build $kUnknownBuildValue', findRichText: true), findsOneWidget);
+    expect(find.textContaining('cfg-pia-wg: v$kUnknownBuildValue build $kUnknownBuildValue', findRichText: true), findsOneWidget);
     expect(find.textContaining('Commit hash: $kUnknownBuildValue', findRichText: true), findsOneWidget);
     expect(find.textContaining('Kotlin: $kUnknownBuildValue', findRichText: true), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -233,7 +233,7 @@ void main() {
 
     await _pumpAbout(tester);
 
-    expect(find.textContaining('cfg-pia-wg v1.2.3 build 7', findRichText: true), findsOneWidget);
+    expect(find.textContaining('cfg-pia-wg: v1.2.3 build 7', findRichText: true), findsOneWidget);
     expect(find.textContaining('Commit hash: $kUnknownBuildValue', findRichText: true), findsOneWidget);
   });
 
@@ -397,7 +397,7 @@ void main() {
 
       expect(block, isNotEmpty, reason: 'the build info should live in one Text widget');
       final lines = block.split('\n');
-      expect(lines.first, 'cfg-pia-wg v9.9.9 build 999');
+      expect(lines.first, 'cfg-pia-wg: v9.9.9 build 999');
       expect(lines, contains('Commit hash: abc1234'));
       expect(lines, contains('Kotlin: 2.3.20'));
       // The exact defect: a label glued onto the previous row's value.
@@ -425,7 +425,8 @@ void main() {
 
       addTearDown(c.dispose);
       expect(copied, isNotNull);
-      expect(copied, startsWith('cfg-pia-wg v9.9.9 build 999\n\n'));
+      expect(copied, startsWith('cfg-pia-wg: v9.9.9 build 999\nWatchdog script'),
+          reason: 'the version line is the first ROW of the block, not a heading over it');
       expect(copied, contains('\nCommit hash: abc1234\n'));
       expect(copied, endsWith('Kotlin: 2.3.20'));
       expect(copied, isNot(contains('releaseCommit hash')));
@@ -487,7 +488,7 @@ void main() {
 
       expect(launched, hasLength(1));
       expect(launched.single, startsWith('https://github.com/ExponentiallyDigital/cfg-pia-wg/issues/new?'));
-      expect(Uri.parse(launched.single).queryParameters['body'], contains('cfg-pia-wg v9.9.9 build 999'));
+      expect(Uri.parse(launched.single).queryParameters['body'], contains('cfg-pia-wg: v9.9.9 build 999'));
     });
   });
 
@@ -581,4 +582,36 @@ void main() {
     }
   });
 
+
+  testWidgets('the licences link is the LAST of the links, not a line of its own', (tester) async {
+    // It used to sit alone below them. It goes to the same kind of place as the other four, so it
+    // belongs in the same set. The row WRAPS on a narrow screen, which is why this asserts reading
+    // order rather than a shared y - on a phone these will be two rows and that is by design.
+    _mockChannel(tester, (call) async => _hostReply);
+    await _pumpAbout(tester);
+
+    final keys = ['about_link_0', 'about_link_1', 'about_link_2', 'about_link_3', 'about_licenses_link'];
+    final positions = [for (final k in keys) tester.getCenter(find.byKey(Key(k)))];
+    for (var i = 1; i < positions.length; i++) {
+      final prev = positions[i - 1], here = positions[i];
+      final after = here.dy > prev.dy + 1 || (here.dy < prev.dy + 1 && here.dx > prev.dx);
+      expect(after, isTrue, reason: '${keys[i]} must read after ${keys[i - 1]}');
+    }
+  });
+
+  testWidgets('a section rule sits above and below the links line', (tester) async {
+    // The screen is three unrelated things stacked - build information, links, and several
+    // hundred lines of licence text - and without a break they read as one wall.
+    _mockChannel(tester, (call) async => _hostReply);
+    await _pumpAbout(tester);
+
+    final rules = find.byWidgetPredicate((w) => w is FractionallySizedBox && w.widthFactor == 0.25);
+    expect(rules, findsNWidgets(2));
+
+    final links = tester.getCenter(find.byKey(const Key('about_link_0'))).dy;
+    final ys = tester.widgetList(rules).toList().asMap().keys.map((i) => tester.getCenter(rules.at(i)).dy).toList()
+      ..sort();
+    expect(ys.first, lessThan(links), reason: 'one above the links');
+    expect(ys.last, greaterThan(links), reason: 'and one below, before the licence text');
+  });
 }
