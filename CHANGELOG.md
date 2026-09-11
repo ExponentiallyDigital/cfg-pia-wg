@@ -38,6 +38,13 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.62 build 432 - deleting a VPN releases the devices pinned to it
+
+- FIX: **a device pinned to a deleted VPN kept its pin, and silently moved to whatever region was created in that slot next.** Stock names a pin by the profile's index 6 and never releases one, so after a DELETE the record went on naming an index that no longer existed: the web interface could not show it, this app could only call it "profile 5", and the device's traffic followed that index wherever it led. Reported on hardware 2026-09-11. DELETE now sends those devices back to the default connection before the profile goes, and NAMES each one it moves - in the app log and in the router syslog.
+- FIX: the routing rules went with them. Stock leaves a device's old `ip rule` in place on a reassignment and does the same on a delete, so a released device would have kept using the deleted profile's routing table until something else cleared it.
+- CHG: the overwrite confirmation says what overwriting actually does to assignments. The profile survives a CREATE over an existing slot, so every device pinned to it stays pinned and starts using the new region without being asked. Stock only.
+- DOC: README - a device assigned to a tunnel that is merely turned OFF keeps its assignment and falls through to the default connection until it comes back. That is different from deleting, and the two were not distinguished.
+- TST: seven - which devices a profile index holds, that index 0 is not a pin, that releasing rewrites only those records, that a record naming an OpenVPN profile survives byte for byte, and on the service side that a delete releases and names the pinned device, removes its stale rule, and writes no policy list at all when nothing was pinned.
 2026-09-11 v0.8.61 build 431 - CREATE tells the truth, and so does the uninstall button
 
 - FIX: **CREATE announced success after a failure.** The slot runner reported the error and returned nothing, so CREATE went on to say "wgcN has been created. Remember to ENABLE it" over the top of the error saying it had not been. It now reports whether the work completed, and the confirmation only fires when it did.

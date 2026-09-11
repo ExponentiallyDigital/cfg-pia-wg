@@ -24,6 +24,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
+import '../firmware.dart';
 import '../pia_service.dart';
 import '../router_slot_service.dart';
 import '../router_watchdog.dart';
@@ -166,7 +167,10 @@ class _SlotModalState extends State<SlotModal> {
     final info = _slots.slots[slot]!;
     if (!info.isEmpty) {
       final ok = await _confirm('Overwrite wgc$slot?',
-          message: 'Slot wgc$slot currently holds "${info.desc}". Creating a new configuration will overwrite it.');
+          message: 'Slot wgc$slot currently holds "${info.desc}". Creating a new configuration will overwrite it.'
+              // The profile survives an overwrite, so its index 6 does too, and so does every pin
+              // naming it. Those devices follow the new region without being asked.
+              '${isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region.' : ''}');
       if (!ok) return;
     }
     final region = await _pickRegion();

@@ -497,6 +497,49 @@ void main() {
       expect(lastPoll, lessThan(firstUnset), reason: 'cleanup must not race the stop');
     });
 
+    // Reported on hardware 2026-09-11: a device pinned to wgc5 kept its pin after the slot was
+    // deleted. The web interface could not show it, this app could only call it "profile 5", and
+    // when a new region was created in that slot the device silently moved to it.
+    test('devices pinned to the deleted profile go back to the default connection', () async {
+      useStock();
+      final logs = <String>[];
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>5>>pw>1>5>>>0>0>cfg-pia-wg';
+          if (cmd.contains('vpnc_dev_policy_list')) return '1>192.168.1.20>>5><1>192.168.1.21>>9><0>192.168.1.22>>0>';
+          if (cmd.contains('dhcp_staticlist')) return '<AA:BB:CC:DD:EE:FF>192.168.1.20>>';
+          if (cmd.contains('custom_clientlist')) return '<Tablet>AA:BB:CC:DD:EE:FF>0>0>>';
+          if (cmd.contains('ip rule show')) return '100:\tfrom 192.168.1.20 lookup 5\n32766:\tfrom all lookup main';
+          return '';
+        },
+      );
+      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)).deleteSlot(5);
+
+      // .20 was on this profile and is released; .21 is on another and .22 is already on the
+      // default, so both pass through byte for byte.
+      expect(
+        c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list=')),
+        contains('0>192.168.1.20>>0><1>192.168.1.21>>9><0>192.168.1.22>>0>'),
+      );
+      // Named, not just counted - the user has to know which device moved.
+      expect(logs.any((m) => m.contains('Tablet (192.168.1.20)')), isTrue);
+      // Stock leaves the routing rule behind too, so it goes by hand.
+      expect(c.ran('ip rule del from 192.168.1.20 lookup 5'), isTrue);
+    });
+
+    test('a slot with no pinned devices writes no policy list at all', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>5>>pw>1>5>>>0>0>cfg-pia-wg';
+          if (cmd.contains('vpnc_dev_policy_list')) return '0>192.168.1.22>>0>';
+          return '';
+        },
+      );
+      await svc(c).deleteSlot(5);
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list=')), isFalse);
+    });
+
     test('an already-stopped slot costs a single poll', () async {
       useStock();
       final c = router();
