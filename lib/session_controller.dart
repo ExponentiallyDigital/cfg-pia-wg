@@ -14,26 +14,52 @@
 // Copyright (C) 2026 Andrew Newbury.
 //
 // Holds the credentials, generated config, application log, and the 60-second clipboard
-// auto-clear timer that must persist while the user moves between the workflow screens. NOTHING
-// here is ever written to device storage — it lives only in memory and is wiped on "Exit app"
-// and when the app is backed out via the main menu.
+// auto-clear timer that must persist while the user moves between the workflow screens.
+//
+// Everything here is volatile and is wiped on "Exit app" and when the app is backed out via
+// the main menu. ONE value is written to device storage and survives that wipe: the router LAN
+// address, held by RouterPrefs in router_prefs.dart, which explains why. No credential ever
+// goes there - not the PIA login, not the SSH password, not the SMTP password.
 
 import 'dart:async';
 
+import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'clipboard_service.dart';
+import 'router_prefs.dart';
+import 'router_session.dart';
+
 // Default DNS servers (Quad9), matching the value the standalone form pre-fills.
 const String kDefaultDns = '9.9.9.9, 149.112.112.112';
+
+// Starting points for the router SSH form, used wherever it appears - the router screens, and the
+// inline prompt ABOUT, SETTINGS and the router log share - so they never disagree. This is the ASUS factory
+// address and is only a first-run fallback: once a connect succeeds, the address the user
+// actually typed is remembered (RouterPrefs) and prefills ahead of it.
+//
+// It carries the default port explicitly. The field's hint shows the `host:port` form, but a hint
+// only appears while the field is EMPTY and this one is always prefilled - so the hint was never
+// seen and the syntax was undiscoverable. Showing `:22` in the value itself is the only place a
+// user actually looks. splitHostPort parses it back, so nothing downstream sees the port.
+//
+// Do not replace this with a real router address - router_prefs_test.dart fails the build if the
+// host half changes.
+const String kDefaultRouterIp = '192.168.50.1:22';
+const String kDefaultSshUsername = 'admin';
 
 /// The navigable destinations. [routeName] doubles as the [RouteSettings] name used by the
 /// destination observer to track which screen is on top (for the drawer's no-op-on-current).
 enum AppDestination {
   menu('main_menu', 'Main menu'),
-  standalone('standalone', 'Generate PIA WireGuard config'),
+  standalone('standalone', 'Standalone PIA WireGuard config'),
   manageRouter('manage_router', 'Manage PIA WireGuard config'),
   watchdog('watchdog', 'Watchdog WireGuard management'),
+  deviceAssignment('device_assignment', 'VPN device assignment'),
+  routerLog('router_log', 'View router log'),
   log('log', 'View app log'),
+  settings('settings', 'Settings'),
   about('about', 'About');
 
   const AppDestination(this.routeName, this.title);
@@ -43,8 +69,12 @@ enum AppDestination {
 /// A single timestamped line in the in-memory application log.
 class LogEntry {
   final String message;
-  final bool isError, isSuccess;
-  LogEntry(this.message, {this.isError = false, this.isSuccess = false});
+
+  /// [isWarning] is the third state, and it exists because red was being spent on things that
+  /// needed no action - a dropped SSH connection the app is already reconnecting, a stuck router
+  /// command it has already cleared. A log where most of the red is routine is a log nobody reads.
+  final bool isError, isSuccess, isWarning;
+  LogEntry(this.message, {this.isError = false, this.isSuccess = false, this.isWarning = false});
 }
 
 /// The shared, volatile session state. Exposed to the widget tree via [SessionScope].
@@ -55,11 +85,16 @@ class SessionController extends ChangeNotifier {
     Duration clipboardTimeout = const Duration(seconds: 60),
     Duration tickInterval = const Duration(seconds: 1),
     Future<void> Function(String text)? clipboardWriter,
+    RouterPrefs? routerPrefs,
   })  : _clipboardTimeout = clipboardTimeout,
         _tickInterval = tickInterval,
-        _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter;
+        _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter,
+        _routerPrefs = routerPrefs ?? RouterPrefs();
 
-  static Future<void> _defaultClipboardWriter(String text) => Clipboard.setData(ClipboardData(text: text));
+  // An empty write means "clear", and clearing goes through the host so Android does not show
+  // its clipboard popup for it - see clipboard_service.dart.
+  static Future<void> _defaultClipboardWriter(String text) =>
+      text.isEmpty ? clearSystemClipboard() : Clipboard.setData(ClipboardData(text: text));
 
   // ── Credentials & config (volatile) ─────────────────────────────────────────
   String piaUsername = '';
@@ -70,6 +105,56 @@ class SessionController extends ChangeNotifier {
   String sshPassword = '';
   String? generatedConfig;
   String generatedRegionId = '';
+
+  // ── Remembered router address (the only persisted value) ─────────────────────
+  final RouterPrefs _routerPrefs;
+
+  /// The address remembered from a previous session, or empty if there is none. Prefills the SSH
+  /// form ahead of [kDefaultRouterIp], and is deliberately NOT cleared by [wipeAll] - it is not a
+  /// credential, and wiping it on every exit would defeat the point of storing it.
+  String rememberedRouterIp = '';
+
+  /// Reads the remembered address into [rememberedRouterIp]. Called once at startup.
+  Future<void> loadRememberedRouterIp() async {
+    rememberedRouterIp = await _routerPrefs.load();
+    if (rememberedRouterIp.isNotEmpty) notifyListeners();
+  }
+
+  /// Remembers [ip]. Call ONLY after a connect to it has succeeded, so an address that does not
+  /// work is never stored. A rejected or failed write leaves the previous value alone.
+  Future<void> rememberRouterIp(String ip) async {
+    final stored = await _routerPrefs.remember(ip);
+    if (stored.isEmpty || stored == rememberedRouterIp) return;
+    rememberedRouterIp = stored;
+    logEntry('Router address remembered. Clear it with FORGET ROUTER IP on the About screen.');
+    notifyListeners();
+  }
+
+  /// Deletes the stored address. Wired to FORGET ROUTER IP on the About screen.
+  Future<void> forgetRouterIp() async {
+    await _routerPrefs.forget();
+    rememberedRouterIp = '';
+    // The session value shadows the remembered one in [routerIpPrefill], and simply opening a
+    // router screen copies the prefill into it - so clearing only the stored copy left the address
+    // still on screen and the button looking broken. Forgetting has to mean forgetting.
+    routerIp = '';
+    // ...and the auto-reconnect on re-entering a router screen must not fire against an address
+    // the user has just asked the app to drop.
+    routerConnected = false;
+    logEntry('Remembered router address deleted from device storage.');
+    notifyListeners();
+  }
+
+  // ---- Declined helper-binary installs ----------------------------------------
+  /// Sets of missing-binary paths the user has said "not now" to. Session-scoped deliberately:
+  /// re-entering the screen must not re-ask, but a restart should, because by then they may have
+  /// installed them by hand. Not persisted - a refusal is not a setting.
+  final Set<String> declinedBinaryInstalls = {};
+
+  /// What the SSH form should start with: what the user typed this session, else the address
+  /// remembered from a previous one, else the ASUS factory default.
+  String get routerIpPrefill =>
+      routerIp.isNotEmpty ? routerIp : (rememberedRouterIp.isNotEmpty ? rememberedRouterIp : kDefaultRouterIp);
 
   // ── Application log ──────────────────────────────────────────────────────────
   final List<LogEntry> log = [];
@@ -93,19 +178,75 @@ class SessionController extends ChangeNotifier {
   // True once a router SSH connect has succeeded this session (drives auto-reconnect on entry).
   bool routerConnected = false;
 
+  /// Whether a screen away from the router screens can act on the router WITHOUT asking first.
+  ///
+  /// `routerConnected` is the load-bearing part. Three non-empty strings is not the same question:
+  /// merely opening MANAGE writes the FACTORY DEFAULT address into `routerIp` before the user has
+  /// typed anything, so a test of "are these fields filled in" says yes for a session that has
+  /// never reached a router. Reported on a tablet in 423 - DEL PIA CERT, the ABOUT script-version
+  /// link and the router log all tried to connect to 192.168.50.1 instead of asking.
+  bool get canReuseRouterSession =>
+      routerConnected && routerIp.trim().isNotEmpty && sshUsername.trim().isNotEmpty && sshPassword.isNotEmpty;
+
+  // ── Staged device assignments ──────────────────────────────────────────────────
+  // Held here rather than on DeviceAssignmentScreen's State, which is rebuilt from scratch every
+  // time the screen is entered - so a glance at the log discarded a dozen staged assignments and
+  // the user had to make them all again. Volatile like everything else here: cleared on APPLY, on
+  // Discard, and by wipeAll.
+  //
+  // IP -> profile index 6, or null for "follows the default connection". Nothing here has been
+  // written to the router; apply() re-reads and refuses on a conflict before it writes anything.
+  final Map<String, int?> stagedAssignments = {};
+  int? stagedDefaultIndex;
+
+  void clearStagedAssignments() {
+    stagedAssignments.clear();
+    stagedDefaultIndex = null;
+  }
+
+  // ── Router SSH session ─────────────────────────────────────────────────────────
+  // One connection, reused by every action, rather than a handshake and a dropbear login line per
+  // button press. Owned here because this is what already owns the credentials and the session
+  // lifetime, so every existing exit path tears it down for free.
+  RouterSession? _routerSession;
+  String _routerSessionKey = '';
+
+  /// The shared router connection, opened lazily by [RouterSession] itself.
+  ///
+  /// A change of router IP, username or password gets a NEW session: the old one is pointed at a
+  /// different box, or authenticated as a different user, and reusing it would silently ignore
+  /// what the user just typed.
+  RouterSession routerSession(Future<SSHClient> Function() connect) {
+    final key = [routerIp, sshUsername, sshPassword].join('\u0000');
+    final existing = _routerSession;
+    if (existing != null && _routerSessionKey == key) return existing;
+    if (existing != null) unawaited(existing.close());
+    _routerSessionKey = key;
+    return _routerSession = RouterSession(connect: connect, onLog: onLog);
+  }
+
+  /// Drops the shared connection. Idempotent; the next action opens a fresh one.
+  Future<void> closeRouterSession() async {
+    final s = _routerSession;
+    _routerSession = null;
+    _routerSessionKey = '';
+    await s?.close();
+  }
+
   // ── Logging ────────────────────────────────────────────────────────────────────
-  void logEntry(String msg, {bool isError = false, bool isSuccess = false}) {
+  void logEntry(String msg, {bool isError = false, bool isSuccess = false, bool isWarning = false}) {
     final now = DateTime.now();
     final ts = '${now.hour.toString().padLeft(2, '0')}:'
         '${now.minute.toString().padLeft(2, '0')}:'
         '${now.second.toString().padLeft(2, '0')}';
-    log.add(LogEntry('[$ts] $msg', isError: isError, isSuccess: isSuccess));
+    log.add(LogEntry('[$ts] $msg', isError: isError, isSuccess: isSuccess, isWarning: isWarning));
     notifyListeners();
   }
 
-  // Adapter matching the `void Function(String, {bool isError, bool isSuccess})` callback
+  // Adapter matching the `void Function(String, {bool isError, bool isSuccess, bool isWarning})` callback
   // shape used throughout router_push / router_watchdog / watchdog_dialog.
-  void onLog(String msg, {bool isError = false, bool isSuccess = false}) => logEntry(msg, isError: isError, isSuccess: isSuccess);
+  void onLog(String msg, {bool isError = false, bool isSuccess = false, bool isWarning = false}) =>
+      logEntry(msg, isError: isError, isSuccess: isSuccess, isWarning: isWarning);
 
   // Stores the generated standalone config (and its region) so it survives screen navigation
   // and is wiped with everything else on idle / close.
@@ -144,11 +285,21 @@ class SessionController extends ChangeNotifier {
   }
 
   // ── Clipboard ──────────────────────────────────────────────────────────────────
-  Future<void> copyToClipboard(String text) async {
+  // The 60-second auto-clear exists to get SECRETS off the clipboard - the generated config and
+  // the credentials in it. Pass armAutoClear: false for anything that is not one (a watchdog log):
+  // arming it there makes the conf screen count down over harmless text and then wipe whatever the
+  // user meant to paste. Such a copy also stands down a countdown left over from an earlier
+  // sensitive copy, because that secret is no longer on the clipboard - it has just been replaced.
+  Future<void> copyToClipboard(String text, {bool armAutoClear = true}) async {
     await _clipboardWriter(text);
-    _clipboardDeadline = DateTime.now().add(_clipboardTimeout);
-    clipboardSeconds = _clipboardTimeout.inSeconds;
-    _ensureTicking();
+    if (armAutoClear) {
+      _clipboardDeadline = DateTime.now().add(_clipboardTimeout);
+      clipboardSeconds = _clipboardTimeout.inSeconds;
+      _ensureTicking();
+    } else {
+      _clipboardDeadline = null;
+      clipboardSeconds = 0;
+    }
     notifyListeners();
   }
 
@@ -175,6 +326,9 @@ class SessionController extends ChangeNotifier {
     generatedConfig = null;
     generatedRegionId = '';
     routerConnected = false;
+    clearStagedAssignments();
+    declinedBinaryInstalls.clear();
+    await closeRouterSession();
     await clearClipboard();
     logEntry(reason == null
         ? 'All credentials and WireGuard configuration wiped from memory.'

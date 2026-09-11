@@ -68,8 +68,8 @@ class _RegionPickerSheetState extends State<RegionPickerSheet> {
             child: TextField(
               autofocus: true,
               style: const TextStyle(color: kText, fontFamily: 'monospace'),
-              decoration: const InputDecoration(
-                  hintText: 'Filter regions...', prefixIcon: Icon(Icons.search, color: kMuted, size: 18)),
+              decoration:
+                  const InputDecoration(hintText: 'Filter regions...', prefixIcon: Icon(Icons.search, color: kMuted, size: 18)),
               onChanged: (v) => setState(() => _filter = v),
             ),
           ),
@@ -91,8 +91,7 @@ class _RegionPickerSheetState extends State<RegionPickerSheet> {
                       children: [
                         const Icon(Icons.chevron_right, color: kHighlight, size: 16),
                         const SizedBox(width: 10),
-                        Expanded(
-                            child: Text(r.id, style: const TextStyle(color: kText, fontFamily: 'monospace', fontSize: 13))),
+                        Expanded(child: Text(r.id, style: const TextStyle(color: kText, fontFamily: 'monospace', fontSize: 13))),
                         Text('${r.wgServers.length} server${r.wgServers.length == 1 ? '' : 's'}',
                             style: const TextStyle(color: kHint, fontSize: 11)),
                       ],

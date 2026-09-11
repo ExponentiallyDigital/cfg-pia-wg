@@ -1,22 +1,12 @@
-# CHANGELOG.md
+# BACKLOG.md
 
 - [1. Backlog](#1-backlog)
   - [1.1. All](#11-all)
     - [1.1.1. DOC - documentation updates](#111-doc---documentation-updates)
-    - [1.1.2. GUI - changes to the user interface](#112-gui---changes-to-the-user-interface)
-    - [1.1.3. CHG - functional code changes](#113-chg---functional-code-changes)
-    - [1.1.4. FIX - bug fixes](#114-fix---bug-fixes)
-    - [1.1.5. FTR - future implementation](#115-ftr---future-implementation)
-    - [1.1.6. TST - testing changes](#116-tst---testing-changes)
-    - [1.1.7. REL - release process changes](#117-rel---release-process-changes)
-  - [1.2. v0.8.xx freemium](#12-v08xx-freemium)
-    - [1.2.1. Accounts \& Play Console setup](#121-accounts--play-console-setup)
-    - [1.2.2. RevenueCat dashboard setup](#122-revenuecat-dashboard-setup)
-    - [1.2.3. Codebase integration](#123-codebase-integration)
-    - [1.2.4. Security \& router diagnostics](#124-security--router-diagnostics)
-    - [1.2.5. Sandbox testing \& QA](#125-sandbox-testing--qa)
-    - [1.2.6. Documentation and publicity](#126-documentation-and-publicity)
-    - [1.2.7. Launch \& post-launch](#127-launch--post-launch)
+    - [1.1.2. FTR - future implementation](#112-ftr---future-implementation)
+  - [1.2. v0.9.xx freemium](#12-v09xx-freemium)
+  - [1.3. Codebase cleanup](#13-codebase-cleanup)
+  - [1.4. v1.0.0 iOS version](#14-v100-ios-version)
 
 ## 1. Backlog
 
@@ -24,115 +14,65 @@
 
 #### 1.1.1. DOC - documentation updates
 
-- DOC: Add practical workflows to achieve specific outcomes.
-- DOC: describe how to test a reconfigure event: remove a slot's config via the Web UI, apply that, then enter a valid region name as the slot description and apply that, or the reconfigure won't occur. Add a warning about that to README.md as well as TESTING.md: leaving 'ghost' watchdogs. "Deleting a slot via the Web UI can leave a watchdog running that can't connect to anything as it has no region name as a title: "ERROR: wgc4_desc is empty". Fix by adding a valid region name e.g. "au_adelaide-pf" to that slot in the Web UI (only that field is needed) which enables the VPN to be reloaded at the next `cronIntervalMinutes`, then remove the watchdog via the app.
-- DOC: add to TESTING.md: `wgcX_rip` is updated by the Web GUI via an unknown method (review Asus_WRT src), router log shows no `service` script(s) were were run to display this in the web GUI. It is not the public IP address (which is served from a pool to external sites), it is the router's IP address on PIA's infrastructure (?) and always differs from `wgc1_ep_addr` and `wgcX_ep_addr_r` (except PIA's webiste shows the public IP address as `wgc1_ep_addr*` vs other sites which showed `wgcX_rip` as the public ip address).
-- DOC: once stock firmware version operating, remove references to Merlin firmware requirement in Play Store description, README.md, and ARCHITECTURE.md. Remove Merlin environment check function.
-- DOC: NB factory restore does **not** remove custom NVRAM values! Exposure of credentials (PIA & smtp) if router is sold/given away.
-- ASUS default router ip is 192.168.50.1 - code uses 192.168.1.1 as default
+- DOC: **give each ARCHITECTURE section its own overview.** The document has one at the top, added in the build 430 rewrite, but the sections do not: most open with mechanism before saying what the thing is for or why a reader should care. `The router's service queue` was given one on 2026-09-12 and reads far better for it. Device assignment (section 6) and the SSH commands (section 4) are the two that need it most. Roughly fifteen minutes a section.
+- DOC: Update `README.md` screenshots.
+- DOC: Update `README.md` [5. Using the app](https://github.com/ExponentiallyDigital/cfg-pia-wg#5-using-the-app).
+- DOC: Update Play Store description.
+- DOC: Update Play Store screenshots.
+- REL: Update version to 0.9 branch when first releasing stock support (and see the backlog item on performance profiling when sent to GPS alpha track).
 
-#### 1.1.2. GUI - changes to the user interface
+#### 1.1.2. FTR - future implementation
 
-- GUI: App log has no carriage return/line feed when copied to clipboard. Text copied from Watchdog log has line terminators, as does the Router Config conf file.
-- GUI: Can't copy/paste text from About screen (not required if implement GH issue creation from About, but that requires a GH account)
-- GUI: When switching back and forth to/from the app to copy/paste details into email alert config, the modal became reduced in size, could still enter and edit fields. Cosmetic, fixed by switching to another app then back again.
-- GUI: Edge-to-edge may not display for all users. From Android 15, apps targeting SDK 35 will display edge-to-edge by default. Apps targeting SDK 35 should handle insets to make sure that their app displays correctly on Android 15 and later. Investigate this issue and allow time to test edge-to-edge and make the required updates. Alternatively, call enableEdgeToEdge() for Kotlin or EdgeToEdge.enable() for Java for backward compatibility.
-
-#### 1.1.3. CHG - functional code changes
-
-- CHG: Remove 'WATCHDOG_EOF' text from test email:
-         This is a test email from the cfg-pia-wg watchdog (slot wgcX).
-         WATCHDOG_EOF
-- CHG: rebuild test/reconfigure email: router DNS name, date and time, why it was sent (test/reconfigure), the region, and cronIntervalMinutes; add lifetime number of reconfigure events (write start date and update total count to NVRAM).
-- CHG when you enable/disable/delete a slot, add to the router log the region that slot was previously using e.g.
-        Enabled wgc1 -> 01 cfg-pia-wg: Enabled wgc1 (region-name)
-        Disabled wgc1 -> Disabled wgc1 (region-name)
-        Deleted wgc1 configuration -> Deleted wgc1 configuration (region-name)
-- CHG: On disable, log lines are repeated (and needs the region name per above)
-        cfg-pia-wg: Disabled wgc1
-        cfg-pia-wg: Watchdog disabled for wgc1
-        cfg-pia-wg: Disabled wgc1
-- CHG: If a Conf slot is already disabled, grey out the DISABLE button (only gets logged once to router log though vs above).
-- CHG: Creating writes the region name to router log, deleting/disabling does not, review code path for
-        Deleted wgc1 configuration
-        Created wgc1 configuration (aus_melbourne)
-- CHG: Replace app exit and config clipboard copy timer expiration behaviours with clearPrimaryClip(), and remove the two associated comments in README.md.
-- CHG: Add option to remove/update cached ca cert (in case it becomes stale).
-- CHG: Watchdog email alert `SMTP username field` is finicky when pasting from the clipboard - increase size of input field/get smaller fingers?
-
-#### 1.1.4. FIX - bug fixes
-
-- FIX: If editing an existing watchdog slot, at save you are asked if you want to overwrite, but if you create a watchdog on an empty slot you aren't prompted and that removes any existing watchdog. Add a prompt explaining that!
-- FIX: "home" button is not in green text with a green button border, after activating any of the four main menu items - Manage and Watchdog screens have a modal on top so that's actually correct (for those two situations only).
-- FIX: When viewing the router watchdog log, if you COPY the log and then enter the conf menu it will detect that and start the clear timer as it only knows that something from this app placed data on the clipboard.
-- FIX: In generate, if you delete DNS entries then go to another screen then re-enter generate, the default DNS addresses are not displayed but are still used when generating a new conf file. Add a check that if that field is ever blank, then the quad 9 defaults are inserted.
-
-#### 1.1.5. FTR - future implementation
-
-- FTR: Consider adding back an idle app timeout of of XX minutes, if timer expires clear all credentials. This would defuse the ability to reveal passwords and copy/paste if app is left idle. Consider calling session destruction through exit path but don't actually exit when timer expires. Had originally implemented this in **pre 0.6.05 build 334**, was set to 10m.
-- FTR: Enable creation of a GitHub issue from ABOUT screen, open on GitHub with build info of running app (but that requires a GitHub login/account).
-- FTR: Add localisation strings: French, Spanish, after that decide which ones next. (Google auto transations break charcater limits of PS Description)
-
-#### 1.1.6. TST - testing changes
-
-- TST: reiew opportunities to increase code base testing, examnine `ftr` report for functions with low coverage
-
-#### 1.1.7. REL - release process changes
-
-- REL: ./scripts/pin-actions-latest.* chokes if comment missing
-- REL: check build-config/gradle.properties default values are still suitable.
-- REL: Improve memory and performance with R8 optimisation, review: optimisation rate 41%, obfuscation rate 42%, shrinking rate 42%.
-- REL: Fix `.github/workflows/quality_and_security.yml` warning "CodeQL (java-kotlin) Cannot build an overlay-base database because build-mode is set to "manual" instead of "none". Falling back to creating a normal full database instead."
-- REL: Fix `.github/workflows/release.yml` "Warning: WARNING!! 'track' is deprecated and will be removed in a future release. Please migrate to 'tracks'".
-- REL: Add README note that SBOM (build provenance) is for the aab pushed to the PS.
+- FTR: Add localisation strings: French, Spanish, Spanish (latin), after that decide which ones next. (Google auto transations break character limits of PS Description)
+- FTR: edit a device's display name from the assignment screen, writing `custom_clientlist`. Two sharp edges make it more than a text field: `<` and `>` are the record and field delimiters, so an unvalidated name corrupts every device name on the router; and appending a record for a device that has none writes index 3, so a naive `0` downgrades that device's icon to generic in both the WebUI and the ASUS app - the detected type has to be carried over from `nmp_cl_json.js` first. Also needs the service call that makes it take effect, which is unknown.
+- ADD: deploy a script like `.\scripts\showall.sh` to `jffs/cfg-pia-wg` that creates diagnostic information, decide what to do about secrets in the file
 
 ---
 
-### 1.2. v0.8.xx freemium
+### 1.2. v0.9.xx freemium
 
-- CHG: freemium version, move all but conf generation to a one-off lifetime paid function. Implementation plan:
+**Moved out on 2026-09-12.** The implementation, including the product decision and the price still
+to be set, is in [`.claude/plans/plan_revenuecat-implementation.md`](.claude/plans/plan_revenuecat-implementation.md).
+The release chores that used to sit here - documentation, publicity, launch and store optimisation -
+are in the CHANGELOG pending list, because they happen at release time rather than during the build.
 
-  #### 1.2.1. Accounts & Play Console setup
+---
 
-  - **In-app product creation:** Create a **Non-consumable** in-app product (e.g., `cfg-pia-wg_pro_unlock`) set to US$x.yy.
-  - **Play Store compliance:** Complete **Data safety form** to reflect RevenueCat, and add to Privacy Policy.
+### 1.3. Codebase cleanup
 
-  #### 1.2.2. RevenueCat dashboard setup
+Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
 
-  - **Link accounts:** Connect Google Play Console credentials to RevenueCat via service account keys.
-  - **Configure entitlements:** Create an **Entitlement** named `pro_feature` and map to `cfg-pia-wg_pro_unlock`.
+> [!IMPORTANT]
+> Do not start the firmware abstraction until stock support has soaked in release. It touches every path stock support just landed on, and a regression here would be indistinguishable from a stock-support bug - the same reasoning that gave SSH connection reuse its own build number.
 
-  #### 1.2.3. Codebase integration
+- Map codebase
+  - By file and by function (done 2026-09-01, now in `CONTEXT.md`)
+  - Identify redundant or duplicated code
+- Optimise and simplify
+  - nvram statements
+  - Duplication of variables
+  - Complexity reduction/reduce lines of code
+    - audit large/long/complex source files
+    - audit naming of source code files
+- Abstract firmware from Manage and watchdog. Measured 2026-09-05: 27 `isStockFirmware` branches across six files, 21 of them in `router_slot_service.dart` (14) and `router_watchdog.dart` (7). Both stock bugs found this session were "the stock branch does not match the Merlin branch's intent".
+  - Create functions to act on classes of activities
+  - Split out to functions
+  - Model on `buildWatchdogScript`, which already resolves firmware once and substitutes the differences (`__KILLSW__`, `__MAILHDR__`, `__MAILCMD__`) rather than branching at runtime
+  - Take it in slices, each on its own build: start/stop first, then slot reading, then cron persistence, then delete
+- Largest files, measured 2026-09-05: `router_watchdog.dart` 1,554 lines, `router_slot_service.dart` 842, `slot_modal.dart` 767. The email layout in `router_watchdog.dart` (`buildEmailBody`, `RouterEmailFacts`, the section constants) is self-contained and would move out with no behaviour change.
 
-  - **Flutter dependencies:** Add `purchases_flutter` and `flutter_secure_storage` to `pubspec.yaml`.
-  - **Billing service singleton:** Implement RevenueCat initialisation, real-time entitlement status updates, purchase triggers, and purchase restoration.
-  - **Paywall UI modal:** Build a `PaywallBottomSheet` highlighting watchdog's zero-touch automation, PIA key renewal fix, and lifetime access model.
-  - **PayPal/Patreon:** remove links from main app screen.
+### 1.4. v1.0.0 iOS version
 
-  #### 1.2.4. Security & router diagnostics
+**Parked** - US$99/year Apple Developer Program against an unknown iOS user base. Early thinking, and what actually blocks it: `.claude/plans/plan_ios-port.md`.
 
-  - **Pre-flight diagnostic:** Verify SSH connectivity and JFFS script execution readiness *before* displaying unlock feature to prevent purchases on incompatible setups.
+- The router half ports for free: `dartssh2` is pure Dart, and the watchdog script runs on the router, which does not care what phone deployed it.
+- The platform hardening does not. `FLAG_SECURE` has **no iOS equivalent** - screenshots cannot be blocked, only the task-switcher snapshot can be covered. `README.md` and `SECURITY.md` state that guarantee unconditionally today and would need to state it per-platform.
+- The silent clipboard clear is an Android method channel (`ClipboardManager.clearPrimaryClip()`); iOS needs `UIPasteboard.general.items = []` or the 60-second auto-clear regresses to the system copy popup that 403 removed.
+- Non-code costs: a Mac or hosted runner for signing, a materially stricter App Store review, and a release pipeline (`release.yml`, SBOM, Gradle lockfiles) that is Android-shaped throughout.
 
-  #### 1.2.5. Sandbox testing & QA
+**Worth doing whether or not iOS ever happens:**
 
-  - **Licence testing:** Add developer Gmail under *Google Play Console -> Licence testing*.
-  - **Internal test track:** Build and upload `flutter build appbundle` (`.aab`) to the Internal Testing track.
-  - **Sandbox verification:** Run `flutter run` on device to test:
-  - **E2E test:** Generate and Manage execute freely; watchdog invokes unlock feature.
-  - **Purchase flow:** complete test transaction via Google’s *"Test card, always approves"*.
-  - **Declined card handling:** Test error handling using *"Test card, always declines"*.
-  - **Restoration flow:** test "Restore Purchases" button.
-  - **Offline access:** disconnect internet and verify cached local entitlements allow watchdog to execute.
+- FIX: `openPlayStoreReview()` fails **silently** on iOS today - `openStoreListing()` needs an `appStoreId` there and throws without one, which the catch swallows into a `false`. Latent now, on a platform we do not ship to, but it is still a silent catch.
+- DOC: phrase the hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
 
-  #### 1.2.6. Documentation and publicity
-
-  - **Update screenshots:** create & upload phone and tablet screenshots x8.
-  - **Trademark protection:** add to README that app name, logos, and branding are reserved trademarks.
-  - **Transparency:** explain in README that pre-built convenience binaries are available via the Google Play Store to defray development costs and support ongoing app updates.
-  - **Publicise**: update Play Store description. Post to SNB and Reddit (r/AsuswrtMerlin, r/PrivateInternetAccess, r/WireGuard).
-
-  #### 1.2.7. Launch & post-launch
-
-  - **Changelog:** Add to v0.8.00 changelog, explain why watchdog is monetised.
-  - **Store optimisation (ASO):** include high-intent keywords: *Asuswrt-Merlin, PIA WireGuard token auto-renew, Asus router VPN, NVRAM SSH scripts*.
-  - **Reconfigure review prompt:** add link to reconfigure email seeking an app review (add an NVRAM timestamp when watchdog first deployed and increment an NVRAM counter when a reconfigure occurs - see CHG backlog item).
+---

@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea for this addon
+about: Suggest an idea for the cfg-pia-wg app
 title: "[FEATURE] ...insert a short feature description..."
 labels: ''
 assignees: ExponentiallyDigital

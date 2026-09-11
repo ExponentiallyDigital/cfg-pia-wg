@@ -14,9 +14,12 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
+import 'router_session.dart';
 import 'screens/main_menu_screen.dart';
 import 'session_controller.dart';
 import 'widgets/app_scaffold.dart';
@@ -27,12 +30,18 @@ class DestinationObserver extends NavigatorObserver {
   final SessionController controller;
   DestinationObserver(this.controller);
 
-  void _update(Route<dynamic>? route) {
-    // Only page routes change the current destination; dialogs / bottom sheets (the slot modal,
-    // EDIT, error, region picker) must NOT, so the active drawer item stays highlighted while a
-    // modal is open.
-    if (route is! PageRoute) return;
-    final name = route.settings.name;
+  // The page routes only, in stack order. Dialogs (the slot modal, EDIT, error, region picker)
+  // are deliberately absent: they must not change the destination, so the active drawer item
+  // stays highlighted while a modal is open.
+  //
+  // Tracked rather than read off `previousRoute` on a pop. With a modal open under a pushed page,
+  // popping that page reports the DIALOG as the previous route, which used to be ignored - so
+  // `currentDestination` kept naming the page just left, and the drawer no-opped the next time
+  // that entry was tapped. Reported after mixing the back button with the hamburger menu.
+  final _pages = <Route<dynamic>>[];
+
+  void _sync() {
+    final name = _pages.isEmpty ? null : _pages.last.settings.name;
     controller.currentDestination = AppDestination.values.firstWhere(
       (d) => d.routeName == name,
       orElse: () => AppDestination.menu,
@@ -40,11 +49,33 @@ class DestinationObserver extends NavigatorObserver {
   }
 
   @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => _update(route);
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is! PageRoute) return;
+    _pages.add(route);
+    _sync();
+  }
+
   @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => _update(previousRoute);
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => _forget(route);
+
   @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) => _update(newRoute);
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) => _forget(route);
+
+  void _forget(Route<dynamic> route) {
+    if (route is! PageRoute) return;
+    _pages.remove(route);
+    _sync();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    final at = oldRoute == null ? -1 : _pages.indexOf(oldRoute);
+    if (at >= 0) _pages.removeAt(at);
+    if (newRoute is PageRoute) {
+      at >= 0 ? _pages.insert(at, newRoute) : _pages.add(newRoute);
+    }
+    _sync();
+  }
 }
 
 ThemeData buildAppTheme() => ThemeData(
@@ -90,7 +121,12 @@ ThemeData buildAppTheme() => ThemeData(
 class PiaWgApp extends StatefulWidget {
   // Injectable for tests so timers can run on short intervals.
   final SessionController? controller;
-  const PiaWgApp({super.key, this.controller});
+
+  /// How long backgrounding is tolerated before the router connection is dropped. Injectable so a
+  /// test does not have to wait five minutes to prove the timer fires.
+  final Duration sessionGrace;
+
+  const PiaWgApp({super.key, this.controller, this.sessionGrace = kBackgroundSessionGrace});
 
   @override
   State<PiaWgApp> createState() => _PiaWgAppState();
@@ -105,10 +141,16 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // The router address remembered from a previous session. Fire and forget: a router screen
+    // reads it when it prefills, and the controller notifies if it arrives after that.
+    _controller.loadRememberedRouterIp();
   }
+
+  Timer? _sessionCloseTimer;
 
   @override
   void dispose() {
+    _sessionCloseTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     // Only dispose a controller we created ourselves.
     if (widget.controller == null) _controller.dispose();
@@ -117,7 +159,23 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _controller.resyncOnResume();
+    if (state == AppLifecycleState.resumed) {
+      // Back before the grace expired: the connection was never closed, so nothing to reopen.
+      _sessionCloseTimer?.cancel();
+      _sessionCloseTimer = null;
+      _controller.resyncOnResume();
+    }
+    // An authenticated router session held open behind a locked screen is a wider exposure than
+    // credentials sitting in memory - but closing it the instant the app is paused charges a
+    // reconnect for every glance at the router's WebUI. Hence the grace; see
+    // kBackgroundSessionGrace. A wipe closes it immediately regardless of this timer.
+    if (state == AppLifecycleState.paused) {
+      _sessionCloseTimer?.cancel();
+      _sessionCloseTimer = Timer(widget.sessionGrace, () {
+        _sessionCloseTimer = null;
+        unawaited(_controller.closeRouterSession());
+      });
+    }
   }
 
   @override

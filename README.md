@@ -24,14 +24,21 @@
 - [2. Features](#2-features)
 - [3. Pre-built release](#3-pre-built-release)
 - [4. Prerequisites \& requirements](#4-prerequisites--requirements)
+  - [4.1. Enabling prequisites](#41-enabling-prequisites)
+    - [Why Download Master is needed](#why-download-master-is-needed)
+    - [Preparing the USB stick](#preparing-the-usb-stick)
+    - [Installing Download Master](#installing-download-master)
+    - [Installing the helper binaries](#installing-the-helper-binaries)
 - [5. Using the app](#5-using-the-app)
   - [5.1. Generate a PIA WireGuard configuration](#51-generate-a-pia-wireguard-configuration)
   - [5.2. Manage router PIA WireGuard configuration](#52-manage-router-pia-wireguard-configuration)
   - [5.3. Watchdog WireGuard management](#53-watchdog-wireguard-management)
-  - [5.4. View app log](#54-view-app-log)
-  - [5.5. Exit app](#55-exit-app)
-  - [5.6. Hamburger menu](#56-hamburger-menu)
-  - [5.7. About](#57-about)
+    - [5.3.1. Email alerts](#531-email-alerts)
+  - [5.4. VPN device assignment](#54-vpn-device-assignment)
+  - [5.5. View app log](#55-view-app-log)
+  - [5.6. Exit app](#56-exit-app)
+  - [5.7. Hamburger menu](#57-hamburger-menu)
+  - [5.8. About](#58-about)
 - [6. Notes](#6-notes)
 - [7. What does the app do to my router?](#7-what-does-the-app-do-to-my-router)
 - [8. App permissions](#8-app-permissions)
@@ -41,6 +48,7 @@
     - [8.3.1. Write external storage (android.permission.WRITE\_EXTERNAL\_STORAGE)](#831-write-external-storage-androidpermissionwrite_external_storage)
     - [8.3.2. Read external storage (android.permission.READ\_EXTERNAL\_STORAGE)](#832-read-external-storage-androidpermissionread_external_storage)
 - [9. Security](#9-security)
+  - [9.1. How to check the watchdog script yourself](#91-how-to-check-the-watchdog-script-yourself)
 - [10. Privacy](#10-privacy)
 - [11. Bugs and feature requests](#11-bugs-and-feature-requests)
 - [12. Donations](#12-donations)
@@ -50,13 +58,21 @@
 
 A native Android app that generates and optionally applies ready-to-use WireGuard (WG) configuration files for the Private Internet Access (PIA) VPN service. It authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WG keypair, and lets you copy the complete `.conf` to the clipboard, or share or save it to an app or location of your choice.
 
-If you have an ASUS router running [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) firmware, you can also **manage** WG configs directly on your router and deploy a **self-healing** watchdog with optional email alerting that makes your configuration truly "set and forget".
+If you have an ASUS router — stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) — you can also **manage** WG configs directly on your router and deploy a **self-healing** watchdog with optional email alerting that makes your configuration truly "set and forget".
+
+**The part people do not expect is the device view.** Your router thinks in SLOTS: five numbered
+VPN profiles, and to find out which of your devices is using one you generally have to stop it and
+see what breaks. **cfg-pia-wg thinks in DEVICES.** One screen lists everything on your network and
+what each one is using right now, and moving a device to a different VPN - or off VPN entirely - is
+one tap on that device. No slot numbers, nothing to stop first, and nothing to work out afterwards.
+
+That is the other half of what this app is for. Tunnels that stay up on their own is the first half.
 
 This app is based on my command line Windows/Linux app [cfg-pia-wg-cmd](https://github.com/ExponentiallyDigital/cfg-pia-wg-cmd).
 
 ## 1. Why use this?
 
-Creating a valid PIA WG config by hand requires expertise in API authentication, WG key generation and correctly assembling connection metadata. **cfg-pia-wg** automates that work and adds router-side **slot management** (organising WG configs across the router's five WG VPN client configuration slots) and **self-healing** watchdog support for Merlin-firmware ASUS routers.
+Creating a valid PIA WG config by hand requires expertise in API authentication, WG key generation and correctly assembling connection metadata. **cfg-pia-wg** automates that work and adds router-side **slot management** (organising WG configs across the router's five WG VPN client configuration slots), **self-healing** watchdog support, and **per-device VPN assignment** - sending one device out through a VPN while another goes straight to the internet - for ASUS routers running either stock or Merlin firmware.
 
 ### 1.1. Why use WireGuard?
 
@@ -78,11 +94,14 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
 - **Secure clipboard handling:** when copying a generated config, a visible 60-second countdown starts, then clears the clipboard automatically at expiry.
 - **Share/save support:** share generated `.conf` via the Android share function and save it to a file location of your choice.
 - **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WG slot configurations directly.
-- **Merlin watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log.
+- **Watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log. Works on stock and Merlin; on stock it additionally needs `jq`, `mailsend-go` and DownloadMaster (see [4. Prerequisites](#4-prerequisites--requirements)).
+- **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
+- **One remembered setting:** a successful router connect stores the router LAN address - and nothing else - in the app private storage, so you do not retype it every session. Clear it with **FORGET ROUTER IP** on the ABOUT screen. See [SECURITY.md](SECURITY.md).
 - **No persistent credential storage (app):** PIA credentials, router SSH credentials and generated configs are stored only in volatile application memory and are never written to your device's storage.
 - **Watchdog credential storage (router):** deploying the watchdog stores the necessary PIA credentials in router NVRAM so it can monitor and self-heal independently of the app. This is a deliberate trade-off for "set and forget" operation, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
 - **Automated lowest-latency server selection:** measures live latency across all available servers in your selected region, ensuring that you provision with the fastest node.
-- **Native task-switcher protection:** `(FLAG_SECURE)` enforces native OS-level window flags to block third-party screenshot capturing and automatically obscures the app layout view inside the Android Recent Apps / Task Switcher interface.
+- **Native task-switcher protection:** `(FLAG_SECURE)` enforces native OS-level window flags to block third-party screenshot capturing and automatically obscures the app layout view inside the Android Recent Apps / Task Switcher interface. Debug builds skip the flag so the app can be captured while testing; every release build sets it.
+- **Password manager support:** every credential field accepts autofill from your device's password manager (KeePass, Bitwarden, Google Password Manager - whatever is registered as the autofill service). PIA, router SSH and SMTP logins are kept in separate autofill groups, so your manager can hold a different entry for each and you pick between them. A "save password?" prompt is offered only after credentials have actually worked, never when you back out of a form.
 - **Input field hardening:** user credential entry textboxes disable predictive text caching, auto-correction, and keyboard learning behaviours.
 - **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials and the system clipboard.
 - **Professional-grade build chain:** all releases undergo automated security and quality checks with
@@ -105,34 +124,112 @@ If you want to build your own, see [BUILDING.md](https://github.com/Exponentiall
 
 ## 4. Prerequisites & requirements
 
-For anything more than basic copy/past config generation with **Generate PIA WireGuard configuration**, this app requires [Merlin Firmware](https://www.asuswrt-merlin.net/) on your ASUS router. Additionally:
+From version 0.9, this app extends support to Stock ASUS firmware; [Merlin Firmware](https://www.asuswrt-merlin.net/) continues to be supported.
 
-1. Enable the SSH server. This is used by the **Manage** and **Watchdog** functions. Enable this on your router via
+If you don't have an ASUS router, you can still use the `Generate PIA WireGuard configuration` function to create standalone PIA configuration files from your phone/tablet. If that's you, you can skip to [5. Using the app](#5-using-the-app).
+
+### 4.1. Enabling prequisites
+
+To manage WireGuard configs and/or deploy a watchdog, you'll need to do a one time set up:
+
+1. Enable the SSH server via your web browser - this setting is not available in the ASUS app - go to
 
 ```text
-Administration\System\Service -> "Enable SSH" (LAN only is recommended).
+Advanced Settings\Administration\System\Service -> "Enable SSH" (LAN only is recommended).
 ```
 
-2. Enable the `JFFS` partition. Used by **Manage** and **Watchdog** functions (this _should_ be enabled by default on ASUS routers running firmware version 378.50 or newer). This allows the watchdog script and settings to survive reboots/power cycling:
+If you change the SSH port from the default 22 - the router's own web interface suggests you do - enter the router address in the app as `address:port`, for example `192.168.50.1:2222`. A plain address means port 22.
+
+2. If your'e on recent stock firmware skip to the next step. If you're using Merlin, enable the `JFFS` partition. This _should_ be enabled by default on ASUS routers running firmware version 378.50 or newer. This allows the watchdog script and settings to survive reboots/power cycling:
 
 ```text
-Administration\System\Basic Config -> "Enable JFFS custom scripts and config"
+Advanced Settings\Administration\System\Basic Config -> "Enable JFFS custom scripts and config"
 ```
 
+3. Install the `jq` and `mailsend-go` helper apps.
+
+**On Merlin there is nothing to do - skip the rest of this step.** Merlin already ships `jq`, and it sends the alert emails using tools it already has, so neither helper is needed.
+
+**On stock firmware** both are needed, and there is one more thing to do first. It needs a USB stick.
+
+#### Why Download Master is needed
+
+On stock firmware, scheduled tasks do not survive a reboot on their own. Download Master provides the `/opt` structure the app uses to keep a watchdog running across reboots and power cycles. It is a prerequisite, not something you will use.
+
+> [!IMPORTANT]
+> **Install Download Master, then leave it alone.** The app takes over part of its installation, so Download Master itself will not work afterwards. That is more than losing a download manager: Download Master is also how some people reach files on a USB disk attached to the router, and that goes with it. If you use it for anything at all, this app's watchdog is not compatible with it on stock firmware. Reinstalling or updating it later puts the original back, and your watchdogs stop surviving reboots until you redeploy them from the app.
+
+#### Preparing the USB stick
+
+Download Master installs onto the stick, so it needs a writable partition with a few hundred MB free.
+
+**Format it NTFS, as a single primary partition on an MBR table.** Windows makes NTFS natively and so does the router's own Format tool, which is why it is the one to pick. The format that catches people out is **exFAT, which will not mount at all** - and any stick over 32 GB that Windows formatted is exFAT by default, so check rather than assume. ext4 and FAT32 also work if you already have one.
+
+Full compatibility table and the reasons behind each of those constraints: [ARCHITECTURE.md, USB storage for Download Master](ARCHITECTURE.md#usb-storage-for-download-master).
+
+#### Installing Download Master
+
+1. Insert the prepared USB stick into the router.
+2. Log in to the router's web interface.
+3. Go to **USB Application**.
+4. Under **Download Master**, click **Install**.
+
+    ![Download Master install button](images/dm-install-1.png)
+
+5. Select the USB storage device to install onto.
+
+    ![Selecting the USB device](images/dm-install-2.png)
+
+6. The disk is checked, then the packages are downloaded, installed and configured.
+
+    ![Installation in progress](images/dm-install-3.png)
+
+7. It looks like this when it finishes.
+
+    ![Installation complete](images/dm-install-4.png)
+
+8. **Do not launch Download Master**, and do not click **Disable** or **Check update**.
+
+    ![Leave Download Master alone](images/dm-install-5.png)
+
+That is it - nothing else to configure.
+
+#### Installing the helper binaries
+
+**On stock firmware the app does this for you.** Open **MANAGE** or **WATCHDOG** and, if either
+helper is missing, the app offers to install it. It shows what it is about to download, where it
+goes, and the SHA-256 checksum it will verify before anything is put in place. `mailsend-go` is only
+needed if you want email alerts.
+
+<!-- SCREENSHOT: the INSTALL HELPERS dialog showing the two binaries, their sources and checksums -->
+
+If your router turns out to be an architecture there is no published build for, the app says so and
+you can fall back to installing them by hand over SSH with
+[`scripts/get-bins.sh`](scripts/get-bins.sh). That script is for stock only; Merlin needs neither
+binary.
 > [!TIP]
-> Firmware flashing (upgrading the router's software) [may require redeployment](https://github-wiki-see.page/m/RMerl/asuswrt-merlin.ng/wiki/JFFS) of PIA WG configs. Test your VPN is active after applying a new firmware version.
+> Firmware flashing (upgrading your router's software) [_may_ require redeployment](https://github-wiki-see.page/m/RMerl/asuswrt-merlin.ng/wiki/JFFS) of PIA WG configs. Always test your VPN is active after applying a new firmware version.
 
-3. Watchdog and tunnel verification use ICMP ping from the router's WAN and WG interfaces.
+4. Watchdog and tunnel verification use ICMP ping from the router's WAN and WG interfaces. You shouldn't need to do anything here, but it is required.
 
 ## 5. Using the app
 
-The app opens to a main menu with five choices:
+> [!TIP]
+> Before using the `Manage PIA WireGuard config` or `Watchdog WireGuard management` functions for the first time, it's recommended that you make a backup of your router configuration via the WebUI -> Advanced Settings -> Administration -> Restore/Save/Upload Setting -> Save setting.
+
+The app opens with six options:
 
 - Generate PIA WireGuard configuration
-- Manage router PIA WireGuard configuration
-- Watchdog WireGuard management
+- Manage router PIA WireGuard configuration ¹
+- Watchdog WireGuard management ¹
+- VPN device assignment ¹²
 - View app log
 - Exit app
+
+The two footnotes under the buttons say what the markers mean: ¹ needs SSH connectivity to an
+ASUS router, and ² is stock firmware only.
+
+Below those are two links: **how to use this app**, which opens this section of the README, and **add a Play Store app review**, which opens the app's Play Store listing.
 
 <p align="center">
   <img src="./images/main-menu.png" alt="Main menu" width="300">
@@ -154,15 +251,18 @@ The app opens to a main menu with five choices:
   Standalone config generation
 </p>
 
-1. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing. Copying a config to the clipboard starts a 60 second timer, displayed on screen, after which the clipboard is automatically cleared by copying an empty string to it, so you'll see a system dialogue like "copied" when the timer expires.
+6. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing. Copying a config to the clipboard starts a 60 second timer, displayed on screen, after which the clipboard is automatically cleared.
 
 ### 5.2. Manage router PIA WireGuard configuration
 
 This enables full management of WG slots.
 
 1. Tap **Manage router PIA WireGuard configuration**.
-2. Enter router IP, SSH username, and SSH password (defaults are prefilled if available).
+2. Enter router IP, SSH username, and SSH password. The **address** is filled in for you if the app connected successfully before; the username and password never are, because neither is ever stored.
 3. Tap **CONNECT TO ROUTER**.
+
+> [!TIP]
+> To fill the credentials from your password manager, tap the username or password field and choose the entry it offers. Android only suggests for a field that is **empty**, and both of those start empty, so they prompt straight away.
 
 <p align="center">
   <img src="./images/router-slot-management.png" alt="Router slot management" width="300">
@@ -170,7 +270,10 @@ This enables full management of WG slots.
   Router slot management
 </p>
 
-1. Select a slot and choose one of the slot actions:
+> [!NOTE]
+> The screenshots in this section were taken on **Merlin**. Stock looks the same apart from the two settings named at the end of this section, which Merlin has and stock does not.
+
+4. Select a slot and choose one of the slot actions:
 
 - **CREATE**:
   - first, select a region:
@@ -209,6 +312,9 @@ This enables full management of WG slots.
 - **DISABLE:** disable the selected slot.
 - **DELETE:** remove the slot configuration and disable any associated watchdog.
 
+> [!NOTE]
+> **The EDIT screen is shorter on stock firmware.** The kill switch and the inbound firewall setting are Merlin features - stock has neither, so the app does not offer them there. Everything else is the same on both.
+
 ### 5.3. Watchdog WireGuard management
 
 This manages a self-healing watchdog. When your WG configuration inevitably expires, it is automatically renewed and an optional email alert sent when connectivity has been restored.
@@ -223,7 +329,7 @@ This manages a self-healing watchdog. When your WG configuration inevitably expi
   Watchdog management
 </p>
 
-1. Select a slot and use the watchdog actions:
+4. Select a slot and use the watchdog actions:
    - **CREATE/EDIT:** deploy router-side watchdog scripts and cron jobs for the selected slot.
 
 <p align="center">
@@ -235,10 +341,151 @@ This manages a self-healing watchdog. When your WG configuration inevitably expi
 > [!TIP]
 > See [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md) for email troubleshooting approaches.
 
+- **DISABLE:** stop the watchdog running without losing its settings. The slot shows a **PAUSED** badge.
+- **ENABLE:** start it again, at the same interval it was using before.
 - **DELETE:** remove the watchdog and clear the slot configuration.
 - **VIEW WATCHDOG LOG:** inspect the router-side watchdog log. Logs are rotated at midnight retaining the current and previous logs and do not persist if the router is rebooted or a power loss occurs.
 
-### 5.4. View app log
+#### 5.3.1. Email alerts
+
+If you fill in the email fields when configuring a watchdog, the router sends you a plain-text alert whenever it rebuilds a tunnel — and one when it tries and fails. Alerts come from your own SMTP account, so nothing is routed through a third party.
+
+**You will need an app password, not your normal one.** Gmail and Outlook both refuse plain password sign-in from a device like this. Turn on two-step verification first - neither provider will issue an app password without it - then create one here and paste it into the SMTP password field:
+
+- **Gmail:** <https://myaccount.google.com/apppasswords>
+- **Outlook / Microsoft:** <https://account.live.com/proofs/AppPassword> Full walkthrough and how to test it by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md).
+
+Use **TEST EMAIL** in the configuration dialog before you save. It sends the same kind of message through the same path, so a test that arrives is a real guarantee that alerts will too.
+
+Every email carries the same sections: what happened, what to do about it (failures only), which router this is, and a running count of how well the watchdog has been doing.
+
+**When a tunnel is rebuilt:**
+
+```text
+Subject: cfg-pia-wg alert: SUCCESS - wgc1:pia-region_name
+
+Connectivity was lost and the tunnel has been rebuilt.
+
+WHAT HAPPENED
+Event: reconfigured successfully on attempt 2
+Tunnel was down for: 6m 12s (last seen good 2026-09-05 14:26:41 AEST)
+Kill switch: ON - no traffic left the router while it was down
+Reconnected to: region_name408 (45.134.140.101:1337), 9 ms
+Interval: 5 minutes
+
+ROUTER
+Name: my-router.asuscomm.com (192.168.1.1)
+Model: <your router model>, firmware <your firmware version>
+Time: 2026-09-05 14:32:53 AEST
+Uptime: 15:11:29 up 19:21, load average: 2.55, 2.39, 2.36
+Watchdog: wgc1:pia-region_name, deployed by cfg-pia-wg <version> build <number>
+
+HISTORY
+Since 2026-09-01 this router has recorded 4 successful and 1 failed reconfigurations.
+
+If cfg-pia-wg is useful to you, please consider submitting a review by tapping on the home screen link or via https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga
+
+Thank you,
+cfg-pia-wg by Exponentially Digital
+```
+
+**When it cannot be rebuilt**, two more sections appear — what to try, and the tail of the router's own watchdog log so you can see the attempt rather than take the summary on trust:
+
+```text
+Subject: cfg-pia-wg alert: FAILED - wgc1:pia-region_name
+
+Connectivity was lost and the tunnel could NOT be rebuilt.
+
+WHAT HAPPENED
+Event: failed to obtain PIA token (exit 0, HTTP 403, body 34B: {"error":"rate limit exceeded"})
+Tunnel has been down for: 41m 09s (last seen good 2026-09-05 13:58:12 AEST)
+Kill switch: none on this firmware; while it was down, its devices fell through to the default connection, pia-other_region, so they stayed on a VPN
+Attempt: 8 since the last success, retrying per schedule, 5 minutes
+
+WHAT TO DO
+1. Check your PIA username and password in the app, under WATCHDOG then CONFIGURE.
+2. Open VIEW WATCHDOG LOG in the app for the full history.
+3. PIA rate-limits repeated token requests; if the code above is 403, wait 30 minutes before intervening.
+4. Is your PIA billing account active?
+
+ROUTER
+Name: my-router.asuscomm.com (192.168.1.1)
+Model: <your router model>, firmware <your firmware version>
+Time: 2026-09-05 14:39:02 AEST
+Uptime: 15:17:38 up 19:27, load average: 1.02, 1.15, 1.09
+Watchdog: wgc1:pia-region_name, deployed by cfg-pia-wg <version> build <number>
+
+HISTORY
+Since 2026-09-01 this router has recorded 4 successful and 2 failed reconfigurations.
+
+ROUTER LOG (last 10 lines)
+2026-09-05 14:38:41 Checking wgc1 pia-region_name connectivity
+2026-09-05 14:38:44 No handshake and both pings failed (9.9.9.9, 1.1.1.1)
+2026-09-05 14:38:44 Connectivity lost; reconfiguring (attempt #8)
+2026-09-05 14:38:44 WAN has internet connectivity
+2026-09-05 14:38:45 Using cached CA cert
+2026-09-05 14:38:45 Requesting PIA token for user p1234567
+2026-09-05 14:38:46 ERROR: failed to obtain PIA token (exit 0, HTTP 403)
+```
+
+Notes on reading these:
+
+- **Kill switch** answers the question that matters most when a tunnel drops — did anything leave the router unprotected? The line reports the state your router was actually in, not a generic warning.
+  - On **Merlin**, which has a kill switch: on, or available but not enabled.
+  - On **stock**, which has none, it says where the affected devices went instead, and there are three answers. If the dropped tunnel was itself the default connection, its devices had no internet at all - no leak. If some other tunnel is the default, they fell through to that and stayed on a VPN. Only if the default is the plain internet did anything travel unprotected.
+  - This is why the default connection is worth setting deliberately: on stock it is the whole difference between a leak and an outage. See [VPN device assignment](#54-vpn-device-assignment).
+- **Interval** is read from the router, not from the form you are filling in, so it can never claim a schedule that is not actually running.
+- **Since `date`** counts every re-configuration this router has made, across all slots, from the day the app first configured it.
+- The router log excerpt includes your **PIA username** (never the password, and never the token). The email travels through your own mail provider, but bear it in mind before forwarding one.
+
+> [!NOTE]
+> **An alert can only be sent if the router can still reach your mail server.** A tunnel failure that also takes DNS down with it — which happens when the failed tunnel was the router's default connection — leaves the watchdog unable to resolve your SMTP host, so that alert never leaves the router. The attempt is always recorded in the router-side watchdog log, and the next email that does get through says how many were missed. If alerts matter to you, it is worth leaving at least one tunnel unassigned as the default connection.
+
+The first email you receive will be the deployment itself — `Event: watchdog deployed` — sent even though there was nothing to fix. That is deliberate: it confirms the whole alerting path works, at the moment you set it up rather than months later during an outage.
+
+### 5.4. VPN device assignment
+
+**Stock firmware only.** Merlin does the same job through VPN Director, which this app does not drive.
+
+Normally every device on your network follows the router's default connection. This screen lets you
+send particular devices through a particular VPN tunnel and leave everything else alone - a games
+console straight out to the internet, a laptop through Melbourne, everything else through Perth.
+
+1. Tap **VPN device assignment** on the main menu, or pick it from the hamburger menu.
+2. Enter router IP, SSH username and password, then tap **CONNECT TO ROUTER**.
+3. Every device the router knows about is listed, with what it is using now.
+4. Tap a device to pick **Internet** or one of your WireGuard slots. Offline devices are listed too, greyed, at the bottom.
+5. **APPLY** shows every change as `from -> to` and asks before touching anything. **DISCARD CHANGES** puts them all back.
+
+<!-- SCREENSHOT: the device list, one device changed, APPLY and DISCARD CHANGES showing -->
+
+**Default connection** sits at the top of the screen and covers every device you have *not* assigned.
+
+> [!IMPORTANT]
+> Changing the default connection restarts **every** tunnel on the router, so anything using a VPN
+> loses its connection for about a minute. The app warns you before it does it. Assigning individual
+> devices does none of this and is safe at any time.
+
+<!-- SCREENSHOT: the default connection picker -->
+
+> [!IMPORTANT]
+> **Assigning a device is not a kill switch.** If the tunnel it is pinned to drops, that device does
+> not lose its connection - it falls through to whatever the default connection is. If the default
+> is **Internet**, it carries on unprotected until the tunnel comes back.
+>
+> To get fail-closed behaviour instead, point the **default connection** at the same tunnel you
+> assigned the devices to. Then a drop means those devices have no internet rather than an
+> unprotected one, and a watchdog on that tunnel is what decides how long that lasts.
+
+Five things that catch people out:
+
+1. **A device the router has never seen an address for cannot be assigned.** Connect it to your network once, then come back and it will be there.
+2. **Assigning a device pins its address permanently.** That is what stops the assignment drifting onto a different device later. The pin stays behind when you unassign - the router never removes one, and neither does this app.
+3. **A randomised MAC address breaks the assignment silently.** Those devices are tagged in the list. Phones randomise per network by default, and the assignment stops working the next time the address rotates, with nothing to tell you. Turn randomisation off for your home network in the phone's Wi-Fi settings.
+4. **A device assigned to a tunnel you then turn OFF keeps its assignment**, and falls through to the default connection while that tunnel is down. It picks the tunnel up again when you turn it back on. Deleting the tunnel is different: the app moves its devices to Internet, tells you which ones it moved, and puts the default connection back to Internet if that tunnel was it.
+5. **Guest network devices never appear.** They cannot reach your LAN at all, so putting one on a VPN is a different question from the one this screen answers.
+
+### 5.5. View app log
 
 Use the **View app log** screen to inspect in-app log entries and clear them with **CLEAR LOG**.
 
@@ -248,11 +495,11 @@ Use the **View app log** screen to inspect in-app log entries and clear them wit
   App log
 </p>
 
-### 5.5. Exit app
+### 5.6. Exit app
 
-The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard. The clipboard is cleared by copying an empty string to it, so you'll see a system dialogue like "copied" when you exit the app.
+The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard.
 
-### 5.6. Hamburger menu
+### 5.7. Hamburger menu
 
 You can quickly jump between functions via the hamburger menu, always shown in the <span style="color: green; font-weight: bold;">top left corner</span> of each screen:
 
@@ -270,7 +517,15 @@ This can be useful to check the application's log during operations.
   Hamburger Menu
 </p>
 
-### 5.7. About
+Two entries are not on the main menu:
+
+- **View router log** shows the router's own system log, newest first. Scroll up to load more, including the previous log file if the router still has it. **COPY** takes everything loaded. This is the first place to look when something on the router did not do what you expected.
+- **Settings** holds three one-off actions:
+  - **UNINSTALL FEATURES INSTALLED TO ROUTER** - removes everything the app put on the router, see [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice.
+  - **DEL PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run.
+  - **FORGET ROUTER IP** - deletes the remembered router address. It is the only thing the app keeps on your phone; no SSH credentials are ever stored.
+
+### 5.8. About
 
 Build information and documentation links live in the hamburger menu's **About** screen:
 
@@ -280,34 +535,83 @@ Build information and documentation links live in the hamburger menu's **About**
   About
 </p>
 
+The screen shows the app version and build number, the build fingerprint and the licence, and offers two buttons and a link:
+
+- **COPY BUILD INFO** — copies the whole block as plain text, for pasting into a bug report. This is not a secret, so it does not start the 60-second clipboard countdown.
+- **CREATE GITHUB ISSUE** — opens a new issue against the repository in your browser, with the build details already filled in.
+- **Open source licenses** — the full licence text for every third-party component.
+
+It also reports two things about the router itself, which it reads over SSH if the app is connected:
+the **watchdog script version deployed there**, flagged when it is older than the copy in the app -
+the signal to redeploy - and a running history, `Since <date>: X successful & Y unsuccessful
+reconfigures`, counted across every slot since the app first configured that router.
+
 ---
 
 ## 6. Notes
 
 - **Pre-shared keys:** PIA WG does not use pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
 - **Time-to-live constraints:** PIA WG configs expire without warning per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
+- **Turn OFF battery optimisation for this app.** Android will otherwise freeze it the moment you
+  switch away, and the work it was doing on your router stops mid-action - an SSH session dropped
+  during a watchdog deployment, an alert email abandoned halfway through. Nothing is damaged, but
+  it fails for a reason you cannot see. On most phones: **Settings -> Apps -> cfg-pia-wg ->
+  Battery -> Unrestricted**. Worth doing before you deploy your first watchdog.
 - **Key safety:** generated configs contains private encryption keys. Treat them like passwords and manage them securely.
-- **PIA maintenance:** PIA occasionally take regions offline for maintenance so you might be expecting to have an exit node in say Perth, but online tools may show you as exiting from Adelaide.
+- **PIA maintenance:** PIA occasionally take regions offline for maintenance so you might be expecting to have an exit node in say pia-region_one, but online tools may show you as exiting from pia-region_two.
 - **Check your VPN is working:** with services like [PIA what is my ip](https://www.privateinternetaccess.com/what-is-my-ip), [ipaddress.my](https://ipaddress.my/?lang=en_US), [2ip.io](https://2ip.io), and [showmyip.com](https://www.showmyip.com). However, these sites may cache your location in the browser and they sometimes return a stale exit region if used multiple times. To be absolutely sure, close your browser rather than just refreshing the page.
 - **Watchdog shortcut:** If you deploy a _watchdog_ on an empty slot, that will also create the config for that slot in one step.
+- **Change things in one place at a time.** The router's web interface writes the whole VPN list back when you press **Apply all settings**, using the copy it loaded when the page was opened - so a change made in this app can be overwritten by a web page that was open before you made it. If you use both, finish and apply in one before switching to the other, and reload the web page afterwards.
+- ***Maximum VPN count:** ASUS limit two concurrent VPNs on stock firmware, this is enforced by the app. On Merlin, there is no VPN limit.
 
-> [!IMPORTANT]
-> This app supports a maximum of one active WG VPN at any time.
->
-> When you save a config to your router, that "slot" will become the active VPN **replacing** any previously active slot.
->
-> Any slot with a kill switch will be **deactivated** and the kill switch, NAT, and firewalling (if enabled) will be applied to the **newly** enabled slot.
+<br>
+
+> [!NOTE]
+> When manually adding a VPN via the router's web GUI, the watchdog function requires the VPN description match the PIA region name exactly eg `aus_melbourne`. If you use the watchdog function and manually set the slot description to something other than "pia-region_name", then the watchdog will fail to identify what region it should use when a reconfigure event occurs.
 
 <br>
 
 > [!WARNING]
-> When manually adding a VPN via the router's web GUI, the watchdog function requires the VPN description match the PIA region name exactly eg `aus_melbourne`.
+> If you sell or give away your router, clear it before it leaves your hands. The watchdog stores your PIA and SMTP passwords in NVRAM in plain text, and a router handed over as-is hands those over with it.
+>
+> **The way to do that is in the app: hamburger menu -> Settings -> UNINSTALL.** It removes every setting the app wrote, the watchdog schedules, the scripts and the whole `/jffs/cfg-pia-wg` folder, and puts back the two boot scripts it replaced. Then delete your VPN slots from the Manage screen, which is what removes the tunnels themselves. If you would rather check by hand, `scripts/showall.sh` prints everything that is stored and `scripts/clearall.sh` removes it; both are in the [GitHub repo](https://github.com/ExponentiallyDigital/cfg-pia-wg).
+>
+> **A factory reset does clear them.** Measured 2026-09-07 on stock firmware (RT-ABCD): marker values were written to NVRAM and committed, and neither the WebUI factory-default restore nor the WPS-button hard reset left any of them behind - including one shaped like `cfg_pia_wg_password` and one shaped like `wgcN_wd_smtp_pass`. Earlier releases of this page claimed the opposite; that claim was never tested and was wrong. Merlin has not been tested, so if you are on Merlin, use the scripts above rather than relying on the reset.
 
 ---
 
 ## 7. What does the app do to my router?
 
-A great question to ask as anything that talks to your router programatically should be under extreme scrutiny. A great deal of thinking, research, analysis, and experimentation went into implementing the two features to manage your router's VPN configuration and deploy a watchdog. Please see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) for full details including a flow chart of user interactions and two diagrams showing network calls and representative IP traffic flows.
+A fair question - anything that talks to your router on your behalf deserves scrutiny. Here is the
+whole list.
+
+**When you manage a slot**, it writes that slot's WireGuard settings into the router's NVRAM, and
+restarts that one tunnel. Nothing else is touched, and nothing happens at all until you press a
+button.
+
+**When you deploy a watchdog**, it also writes:
+
+- a small shell script per watched slot, in a folder of its own on the router
+- two scheduled entries per slot - the check itself, and a nightly rotate of that slot's log
+- the watchdog's settings in NVRAM, **including your PIA and SMTP passwords in plain text**, because the router has to be able to re-authenticate with PIA while you are asleep
+- on stock firmware only, the two helper programs from section 4, into the same folder
+- enough to make those schedules survive a reboot: on Merlin, two lines in the router's own startup script; on stock, which has no equivalent, the startup area that Download Master provides. **Anything it replaces is kept beside the original and put back on uninstall.**
+
+**What it never does.** No firmware is modified. No packages are installed beyond the two helpers.
+No ports are opened. None of your traffic is routed anywhere by the app, and none of it goes to us -
+there is no server on our side to send it to.
+
+**You can take it all off again.** The hamburger menu's **Settings** screen has an **UNINSTALL**
+that removes the scripts, the schedules, the app's NVRAM settings and the folder, and restores the
+startup files it replaced. It deliberately leaves your **VPN slots and tunnels alone** - those are
+yours, and DELETE on the Manage screen is what removes them. Device assignments and the default
+connection are left in place for the same reason.
+
+**And you can read the script before you trust it** - see
+[9.1. How to check the watchdog script yourself](#91-how-to-check-the-watchdog-script-yourself).
+
+Full technical detail, including a flow chart of user interactions and diagrams of network calls and
+traffic flows: [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md).
 
 ---
 
@@ -354,6 +658,40 @@ The application can export generated WG configuration files to the device.
 
 We take credential safety and application hardening seriously. Please see the [SECURITY.md](./SECURITY.md) for details on our secure development practices, data handling lifecycle, and instructions on how to privately report potential vulnerabilities.
 
+### 9.1. How to check the watchdog script yourself
+
+This app asks a lot of you: it writes a script that holds your PIA password and runs as root on your
+router, on a schedule, indefinitely. You should not have to take that on trust, and you do not have
+to - the script is there to be read.
+
+**Where it is.** `/jffs/cfg-pia-wg/watchdog_wgcN.sh`, one file per watched slot, where `N` is the
+slot number. SSH into the router and `cat` it.
+
+**It is plain shell.** Never obfuscated, never minified, never compressed or encoded. What you read
+is exactly what runs. It is a few hundred lines of POSIX `sh` with comments left in.
+
+**It matches what is in this repository.** The script is generated from a template you can read in
+[`lib/router_watchdog.dart`](lib/router_watchdog.dart). The only differences between that text and
+the file on your router are the slot number, the path to `jq`, and which mail command your firmware
+uses.
+
+**The boot scripts are checked automatically, and there are two of them.** On stock the app
+installs `S50downloadmaster` and `S50asuslighttpd`, and the repo carries an exact copy of each -
+[`scripts/S50downloadmaster-TEMPLATE.sh`](scripts/S50downloadmaster-TEMPLATE.sh) and
+[`scripts/S50asuslighttpd-TEMPLATE.sh`](scripts/S50asuslighttpd-TEMPLATE.sh). The project has an
+automated test suite that has to pass before a release can be built. It refuses to pass if the copy
+shipped inside the app differs from the file in the repo by even one character, or if the watchdog
+script is built with any placeholder left unfilled. So a release cannot exist in which the
+published text and the deployed text disagree - not as a promise, but because the build stops.
+
+**You can always tell our files from yours.** Every file the app writes to your router carries
+`auto-generated by cfg-pia-wg` on its second line, and the uninstall refuses to delete a file that
+does not have it.
+
+**See everything it has stored.** [`scripts/showall.sh`](scripts/showall.sh) prints every NVRAM value
+the app has written, passwords included, so you can check for yourself what is on the router.
+[`scripts/clearall.sh`](scripts/clearall.sh) removes them.
+
 ---
 
 ## 10. Privacy
@@ -365,6 +703,10 @@ This application does not collect analytics, advertising identifiers, or persona
 ## 11. Bugs and feature requests
 
 Found a bug or want to request a feature? [Open an issue here](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues).
+
+The quickest route is from inside the app: **About** -> **CREATE GITHUB ISSUE** opens a new issue
+with your app version, build number and firmware already filled in. **COPY BUILD INFO** on the same
+screen gives you the same block to paste anywhere else.
 
 ---
 

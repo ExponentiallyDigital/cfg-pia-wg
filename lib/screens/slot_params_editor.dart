@@ -20,6 +20,8 @@
 import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
+import '../firmware.dart';
+import '../router_slot_service.dart' show slotLabel;
 import '../widgets/common_fields.dart';
 
 // Default values for editable fields that have one (spec 3.3), pre-filled when NVRAM is blank.
@@ -34,8 +36,12 @@ const Map<String, String> _kEditableDefaults = {
 class SlotParamsEditor extends StatefulWidget {
   final int slot;
   final Map<String, String> initial; // bare-keyed nvram values (addr, alive, ...)
+  // The slot's description, for the heading. Passed in rather than read from [initial] because on
+  // stock the authoritative copy is vpnc_clientlist index 0 - a slot created in the router WebUI
+  // has no wgcN_desc mirror for readSlotParams to find.
+  final String desc;
   final Future<void> Function(Map<String, String> editableParams) onSave;
-  const SlotParamsEditor({super.key, required this.slot, required this.initial, required this.onSave});
+  const SlotParamsEditor({super.key, required this.slot, required this.initial, required this.onSave, this.desc = ''});
 
   @override
   State<SlotParamsEditor> createState() => _SlotParamsEditorState();
@@ -95,10 +101,11 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
       backgroundColor: kSurface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 480,
-          maxHeight: MediaQuery.of(context).size.height * 1,
-        ),
+        // Width only. The height must come from the incoming constraints - inside the app chrome
+        // the Scaffold has already taken the keyboard off the body, so any cap computed from the
+        // screen height is too large and the card spills down behind the keyboard. Unbounded here
+        // lets SingleChildScrollView shrink-wrap to the space it is given and scroll past that.
+        constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -106,7 +113,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('EDIT wgc${widget.slot}',
+                Text('EDIT ${slotLabel(widget.slot, widget.desc)}',
                     style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
                 const SizedBox(height: 16),
                 _text('addr', 'Local tunnel IP (CIDR)', hint: 'e.g. 10.x.x.x/32'),
@@ -120,20 +127,23 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 _text('alive', 'Persistent keepalive (s)', keyboard: TextInputType.number),
                 _text('aips', 'Allowed IPs'),
                 const SizedBox(height: 4),
-                _switch('Kill switch', _enforce, (v) => setState(() => _enforce = v), const Key('slot_enforce')),
-                _switch('Inbound firewall', _fw, (v) => setState(() => _fw = v), const Key('slot_fw')),
+                // enforce / fw / ep_addr_r / rip do not exist on stock (ARCHITECTURE.md "Field reference").
+                if (!isStockFirmware) ...[
+                  _switch('Kill switch', _enforce, (v) => setState(() => _enforce = v), const Key('slot_enforce')),
+                  _switch('Inbound firewall', _fw, (v) => setState(() => _fw = v), const Key('slot_fw')),
+                ],
                 _switch('NAT', _nat, (v) => setState(() => _nat = v), const Key('slot_nat')),
                 const SizedBox(height: 8),
                 _readOnly('Enabled', widget.initial['enable'] == '1' ? 'YES' : 'NO'),
-                _readOnly('Resolved endpoint IP (ep_addr_r)', widget.initial['ep_addr_r'] ?? ''),
+                if (!isStockFirmware) _readOnly('Resolved endpoint IP (ep_addr_r)', widget.initial['ep_addr_r'] ?? ''),
                 _readOnly('Preshared key (psk, unused by PIA)', widget.initial['psk'] ?? ''),
-                _readOnly('Router public IP (rip)', widget.initial['rip'] ?? ''),
+                if (!isStockFirmware) _readOnly('Router public IP (rip)', widget.initial['rip'] ?? ''),
                 const SizedBox(height: 16),
                 ElevatedButton(
                   key: const Key('slot_params_save'),
                   onPressed: (_saving || !_canSave) ? null : _save,
                   child: _saving
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kOnPrimary))
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
                       : const Text('SAVE'),
                 ),
                 const SizedBox(height: 8),

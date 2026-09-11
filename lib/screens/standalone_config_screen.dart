@@ -21,11 +21,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../app_colors.dart';
 import '../pia_service.dart';
+import '../router_watchdog.dart' show isValidIpv4;
 import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/common_fields.dart';
@@ -43,6 +45,13 @@ class StandaloneConfigScreen extends StatefulWidget {
 class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
   late final PiaService _service = widget.service ?? PiaService();
   final _regionCtrl = TextEditingController();
+
+  /// The record behind the id in [_regionCtrl], when the user chose it from the picker rather
+  /// than typing it. Carried into `generateConfig` so it does not resolve the id against a
+  /// SECOND fetch of a live endpoint - a region with no WireGuard servers in that second
+  /// snapshot is dropped, and the generate then fails on a region just offered. Null whenever
+  /// the field does not match it, which is what makes a typed id still resolve by fetching.
+  Region? _pickedRegion;
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _dnsCtrl = TextEditingController();
@@ -62,6 +71,10 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
       _usernameCtrl.addListener(_onCredChanged);
       _passwordCtrl.addListener(_onCredChanged);
       _dnsCtrl.addListener(() => _controller.dns = _dnsCtrl.text);
+      // Clearing the field stores a blank in the session, so coming back showed an empty field
+      // while PiaService quietly generated with the Quad9 defaults anyway. Put them back where
+      // the user can see them, so the field always says what a generate will use.
+      _restoreDefaultDns();
       _regionCtrl.addListener(() => setState(() {}));
     }
   }
@@ -74,6 +87,25 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     super.dispose();
   }
 
+  // Tops the DNS field back up to two servers from the Quad9 defaults. Called on entry and again
+  // just before generating - not on every keystroke, which would stop the field being cleared to
+  // retype it. The listener mirrors the value into the session.
+  //
+  // Both servers, not just an empty field: deleting one of the two and leaving the screen used to
+  // keep the survivor, so the config was generated with a single DNS server and no fallback -
+  // silently, because a field with something in it looks deliberate.
+  /// Fills the field from the defaults only when it is EMPTY.
+  ///
+  /// It used to top a single entry up to two, which quietly overrode a user who wanted one DNS
+  /// server and had typed exactly that.
+  void _restoreDefaultDns() {
+    if (_dnsCtrl.text.trim().isNotEmpty) return;
+    _dnsCtrl.text = kDefaultDns;
+  }
+
+  /// The DNS entries as typed, empties dropped. One or two are both fine.
+  List<String> get _dnsEntries => _dnsCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+
   // Mirror PIA credentials into the shared session so other screens pre-fill them.
   void _onCredChanged() {
     _controller.piaUsername = _usernameCtrl.text;
@@ -82,9 +114,7 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
   }
 
   bool get _canGenerate =>
-      _regionCtrl.text.trim().isNotEmpty &&
-      _usernameCtrl.text.trim().isNotEmpty &&
-      _passwordCtrl.text.trim().isNotEmpty;
+      _regionCtrl.text.trim().isNotEmpty && _usernameCtrl.text.trim().isNotEmpty && _passwordCtrl.text.trim().isNotEmpty;
 
   Future<void> _loadRegions() async {
     setState(() => _loadingRegions = true);
@@ -97,7 +127,12 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
       // Launch the sheet but do NOT await it here, otherwise the browse-button spinner would keep
       // animating until the sheet closes. enterModal/exitModal bracket the sheet's lifetime.
       _controller.enterModal();
-      RegionPickerSheet.show(context, regions: regions, onSelected: (id) => setState(() => _regionCtrl.text = id))
+      RegionPickerSheet.show(context, regions: regions, onSelected: (id) {
+        setState(() {
+          _regionCtrl.text = id;
+          _pickedRegion = regions.firstWhere((r) => r.id == id);
+        });
+      })
           .whenComplete(() {
         if (mounted) _controller.exitModal();
       });
@@ -112,6 +147,7 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
   }
 
   Future<void> _generate() async {
+    _restoreDefaultDns(); // generate with what the field shows, never with a hidden default
     final region = _regionCtrl.text.trim(),
         username = _usernameCtrl.text.trim(),
         password = _passwordCtrl.text.trim(),
@@ -121,6 +157,14 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     if (region.isEmpty) errors.add('Region is required.');
     if (username.isEmpty) errors.add('PIA username is required.');
     if (password.isEmpty) errors.add('PIA password is required.');
+    // Checked on GENERATE rather than per keystroke, and never corrected silently: a half-typed
+    // address like "149.137" reaches the config and the tunnel resolves nothing. The range is not
+    // checked - an unusual resolver is the user's business - only that it is four numbers.
+    final malformed = _dnsEntries.where((e) => !isValidIpv4(e)).toList();
+    for (final bad in malformed) {
+      errors.add('"$bad" is not a valid DNS address. Use one or two, like 9.9.9.9, 149.112.112.112.');
+    }
+    if (_dnsEntries.length > 2) errors.add('Enter at most two DNS addresses.');
     if (errors.isNotEmpty) {
       await AppErrors.inputs(context, _controller, errors);
       return;
@@ -130,11 +174,15 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     _controller.setGeneratedConfig(null, region);
     _controller.logEntry('Starting...');
     try {
-      final config =
-          await _service.generateConfig(region: region, username: username, password: password, dns: dns, onProgress: _controller.onLog);
+      final picked = _pickedRegion?.id == region ? _pickedRegion : null;
+      final config = await _service.generateConfig(
+          region: region, selected: picked, username: username, password: password, dns: dns, onProgress: _controller.onLog);
       if (!mounted) return;
       _controller.setGeneratedConfig(config, region);
       _controller.logEntry('Config generated successfully.', isSuccess: true);
+      // PIA accepted these credentials, so this is the one moment worth offering to save them.
+      // The AutofillGroups cancel on dispose, so nothing is offered on any other path.
+      TextInput.finishAutofillContext();
     } catch (e) {
       if (mounted) await AppErrors.system(context, _controller, e.toString().replaceAll('Exception: ', ''));
     } finally {
@@ -149,8 +197,12 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     }
   }
 
+  // The region the on-screen config belongs to. The controller's value is authoritative once a
+  // config exists; the field is the fallback for the moment before it is stored.
+  String get _configRegion => _controller.generatedRegionId.isEmpty ? _regionCtrl.text.trim() : _controller.generatedRegionId;
+
   Future<void> _share(String config) async {
-    final region = _controller.generatedRegionId.isEmpty ? _regionCtrl.text.trim() : _controller.generatedRegionId;
+    final region = _configRegion;
     final filename = 'pia-$region.conf';
     final dir = await getTemporaryDirectory();
     final tempFile = File('${dir.path}/$filename');
@@ -173,12 +225,22 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
         children: [
           RegionRow(controller: _regionCtrl, loading: _loadingRegions, onBrowse: _loadRegions),
           const SizedBox(height: 16),
-          PiaUsernameField(controller: _usernameCtrl),
-          const SizedBox(height: 12),
-          PiaPasswordField(
-            controller: _passwordCtrl,
-            visible: _passwordVisible,
-            onToggle: () => setState(() => _passwordVisible = !_passwordVisible),
+          // Its own AutofillGroup, holding ONLY the PIA credentials: a password manager must not
+          // be able to conflate these with the router's SSH login.
+          AutofillGroup(
+            onDisposeAction: AutofillContextAction.cancel,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                PiaUsernameField(controller: _usernameCtrl),
+                const SizedBox(height: 12),
+                PiaPasswordField(
+                  controller: _passwordCtrl,
+                  visible: _passwordVisible,
+                  onToggle: () => setState(() => _passwordVisible = !_passwordVisible),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           DnsField(controller: _dnsCtrl),
@@ -189,7 +251,7 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
               key: const Key('generate_config'),
               onPressed: (_loading || !_canGenerate) ? null : _generate,
               child: _loading
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kOnPrimary))
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
                   : const Text('GENERATE CONFIG'),
             ),
           ),
@@ -200,6 +262,7 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
               if (config == null) return const SizedBox.shrink();
               return _GeneratedConfigSection(
                 config: config,
+                region: _configRegion,
                 clipboardSeconds: _controller.clipboardSeconds,
                 onCopy: () => _copy(config),
                 onShare: () => _share(config),
@@ -214,10 +277,12 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
 
 class _GeneratedConfigSection extends StatelessWidget {
   final String config;
+  final String region;
   final int clipboardSeconds;
   final VoidCallback onCopy, onShare;
   const _GeneratedConfigSection({
     required this.config,
+    required this.region,
     required this.clipboardSeconds,
     required this.onCopy,
     required this.onShare,
@@ -229,8 +294,10 @@ class _GeneratedConfigSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 24),
-        const Text('GENERATED CONFIG',
-            style: TextStyle(color: kHighlight, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+        // Named after the region, matching the pia-<region>.conf that SHARE / SAVE writes.
+        Text(region.isEmpty ? 'GENERATED CONFIG' : 'GENERATED CONFIG: pia-$region',
+            key: const Key('generated_config_label'),
+            style: const TextStyle(color: kHighlight, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
         const SizedBox(height: 8),
         Container(
           padding: const EdgeInsets.all(14),
@@ -260,7 +327,8 @@ class _GeneratedConfigSection extends StatelessWidget {
                   if (clipboardSeconds > 0) ...[
                     const SizedBox(height: 6),
                     Text('Clearing clipboard in $clipboardSeconds seconds',
-                        style: const TextStyle(color: kError, fontSize: 10, fontFamily: 'monospace'), textAlign: TextAlign.center),
+                        style: const TextStyle(color: kError, fontSize: 10, fontFamily: 'monospace'),
+                        textAlign: TextAlign.center),
                   ],
                 ],
               ),

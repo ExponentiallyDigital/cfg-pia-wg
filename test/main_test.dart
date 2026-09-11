@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/app_shell.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 
@@ -41,13 +42,35 @@ void main() {
       final c = quietController();
       await pumpApp(tester, c);
 
-      for (final key in const ['menu_manage_router', 'menu_watchdog', 'menu_log']) {
+      for (final key in const ['menu_manage_router', 'menu_watchdog']) {
         await tester.tap(find.byKey(Key(key)));
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('screen_close')), findsOneWidget);
         await tester.tap(find.byKey(const Key('screen_close')));
         await tester.pumpAndSettle();
       }
+
+      // The app log carries its own HOME in the three-button row, like both other log screens.
+      await tester.tap(find.byKey(const Key('menu_log')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('app_log_home')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('app_log_home')));
+      await tester.pumpAndSettle();
+
+      await disposeApp(tester, c);
+    });
+
+    // The screen HOME button matches the slot modal's: teal text and border, not muted/grey.
+    testWidgets('screen HOME is teal', (tester) async {
+      final c = quietController();
+      await pumpApp(tester, c);
+      await tester.tap(find.byKey(const Key('menu_manage_router')));
+      await tester.pumpAndSettle();
+
+      final style = tester.widget<OutlinedButton>(find.byKey(const Key('screen_close'))).style!;
+      const states = <WidgetState>{};
+      expect(style.foregroundColor!.resolve(states), kHighlight);
+      expect(style.side!.resolve(states)!.color, kHighlight);
 
       await disposeApp(tester, c);
     });
@@ -80,7 +103,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Confirmation dialog (all exit paths) — Exit proceeds.
-      expect(find.text('Exit application?'), findsOneWidget);
+      expect(find.text('Exit cfg-pia-wg?'), findsOneWidget);
       await tester.tap(find.widgetWithText(TextButton, 'EXIT'));
       await tester.pumpAndSettle();
 
