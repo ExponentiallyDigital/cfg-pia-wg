@@ -215,7 +215,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         // Names what is being overwritten, the same shape the delete prompts use.
         title: Text('Overwrite ${slotLabel(widget.slotIndex, widget.regionDesc)}?',
             style: const TextStyle(color: kText, fontSize: 15)),
-        content: const Text('This will reset both this watchdog and any underlying VPN region. CONTINUE chooses the new region',
+        content: const Text('This will reset both this watchdog and any underlying VPN region.',
             style: TextStyle(color: kMuted, fontSize: 13)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
@@ -445,7 +445,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                     child: _loading
                         ? const SizedBox(
                             height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
-                        : const Text('SAVE'),
+                        // SAVE is not the end of the flow - a region picker follows it. Saying so
+                        // on the button stops the picker arriving as a surprise.
+                        : const Text('SAVE & SELECT REGION'),
                   ),
                 ),
           const SizedBox(height: 8),

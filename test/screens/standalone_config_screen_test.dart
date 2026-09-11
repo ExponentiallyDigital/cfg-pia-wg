@@ -96,23 +96,36 @@ void main() {
     // Reported 2026-09-06: deleting ONE of the two servers and leaving the screen kept the
     // survivor, so a config was generated with a single DNS server and no fallback - silently,
     // because a field with something in it looks deliberate.
-    testWidgets('a single remaining server is topped back up to two', (tester) async {
+    // One DNS server is a legitimate choice, and topping it up to two overrode a user who had
+    // typed exactly what they wanted. The defaults now fill an EMPTY field and nothing else.
+    testWidgets('a single server is left alone, not topped up to two', (tester) async {
       final c = _controller([])..dns = '1.1.1.1';
       await tester.pumpWidget(_host(c));
       await tester.pumpAndSettle();
 
-      expect(dnsText(tester), '1.1.1.1, 9.9.9.9', reason: 'what the user typed keeps its place');
+      expect(dnsText(tester), '1.1.1.1');
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
 
-    testWidgets('a server the user already typed is not duplicated', (tester) async {
-      final c = _controller([])..dns = '149.112.112.112';
+    testWidgets('a malformed address is refused on GENERATE, and not corrected behind the user', (tester) async {
+      // Reported 2026-09-11: a config generated with "149.137" in the DNS field. It resolves
+      // nothing, and the tunnel comes up looking healthy.
+      final c = _controller([])
+        ..dns = '9.9.9.9, 149.137'
+        ..piaUsername = 'p1234567'
+        ..piaPassword = 'secret';
       await tester.pumpWidget(_host(c));
       await tester.pumpAndSettle();
 
-      expect(dnsText(tester), '149.112.112.112, 9.9.9.9');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Region ID'), 'aus_melbourne');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('GENERATE CONFIG'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('"149.137" is not a valid DNS address'), findsOneWidget);
+      expect(dnsText(tester), '9.9.9.9, 149.137', reason: 'what the user typed is still there to correct');
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

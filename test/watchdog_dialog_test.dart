@@ -103,6 +103,8 @@ void main() {
     expect(find.text('WATCHDOG · wgc1:aus_melbourne'), findsOneWidget);
     expect(find.byKey(const Key('wd_primary')), findsOneWidget);
     expect(find.byKey(const Key('wd_save')), findsOneWidget);
+    // SAVE is not the end of the flow - a region picker follows it, and the label says so.
+    expect(find.text('SAVE & SELECT REGION'), findsOneWidget);
     // DISABLE / VIEW LOG are now slot-modal actions, not part of EDIT.
     expect(find.text('DISABLE'), findsNothing);
     expect(find.text('VIEW LOG'), findsNothing);

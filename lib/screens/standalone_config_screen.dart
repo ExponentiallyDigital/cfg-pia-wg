@@ -27,6 +27,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../app_colors.dart';
 import '../pia_service.dart';
+import '../router_watchdog.dart' show isValidIpv4;
 import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/common_fields.dart';
@@ -93,14 +94,17 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
   // Both servers, not just an empty field: deleting one of the two and leaving the screen used to
   // keep the survivor, so the config was generated with a single DNS server and no fallback -
   // silently, because a field with something in it looks deliberate.
+  /// Fills the field from the defaults only when it is EMPTY.
+  ///
+  /// It used to top a single entry up to two, which quietly overrode a user who wanted one DNS
+  /// server and had typed exactly that.
   void _restoreDefaultDns() {
-    final entered = _dnsCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    if (entered.length >= 2) return;
-    final defaults = kDefaultDns.split(',').map((e) => e.trim());
-    // Whatever the user typed keeps its place; the gap is filled from the defaults, without
-    // repeating a server they have already entered.
-    _dnsCtrl.text = [...entered, ...defaults.where((s) => !entered.contains(s))].take(2).join(', ');
+    if (_dnsCtrl.text.trim().isNotEmpty) return;
+    _dnsCtrl.text = kDefaultDns;
   }
+
+  /// The DNS entries as typed, empties dropped. One or two are both fine.
+  List<String> get _dnsEntries => _dnsCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
 
   // Mirror PIA credentials into the shared session so other screens pre-fill them.
   void _onCredChanged() {
@@ -153,6 +157,14 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     if (region.isEmpty) errors.add('Region is required.');
     if (username.isEmpty) errors.add('PIA username is required.');
     if (password.isEmpty) errors.add('PIA password is required.');
+    // Checked on GENERATE rather than per keystroke, and never corrected silently: a half-typed
+    // address like "149.137" reaches the config and the tunnel resolves nothing. The range is not
+    // checked - an unusual resolver is the user's business - only that it is four numbers.
+    final malformed = _dnsEntries.where((e) => !isValidIpv4(e)).toList();
+    for (final bad in malformed) {
+      errors.add('"$bad" is not a valid DNS address. Use one or two, like 9.9.9.9, 149.112.112.112.');
+    }
+    if (_dnsEntries.length > 2) errors.add('Enter at most two DNS addresses.');
     if (errors.isNotEmpty) {
       await AppErrors.inputs(context, _controller, errors);
       return;

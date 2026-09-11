@@ -76,6 +76,10 @@ class _AboutScreenState extends State<AboutScreen> {
   /// "which script is actually out there" is a question this screen exists to answer.
   String? _scriptVersion;
 
+  /// The router's own model and firmware, read on the same round trip and used only to fill in
+  /// a bug report. Empty until a successful look.
+  String _routerModel = '', _routerFirmware = '';
+
   /// "Since yyyy-mm-dd: X successful & Y unsuccessful reconfigures", or null when the router has
   /// never recorded any - in which case the screen shows nothing rather than an empty row.
   String? _historyLine;
@@ -143,6 +147,7 @@ class _AboutScreenState extends State<AboutScreen> {
     String? version;
     String? history;
     String? error;
+    var model = '', firmware = '';
     try {
       final client =
           controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
@@ -151,6 +156,8 @@ class _AboutScreenState extends State<AboutScreen> {
       final facts = await RouterWatchdog(client, onLog: controller.onLog).aboutRouterFacts();
       version = facts.version;
       history = facts.history;
+      model = facts.model;
+      firmware = facts.firmware;
       await controller.rememberRouterIp(ip);
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
@@ -164,6 +171,8 @@ class _AboutScreenState extends State<AboutScreen> {
       _scriptChecked = error == null;
       _scriptVersion = version;
       _historyLine = history;
+      _routerModel = model;
+      _routerFirmware = firmware;
     });
     if (error != null && mounted) {
       await AppErrors.system(context, controller, 'Could not read the deployed watchdog script: $error');
@@ -263,7 +272,8 @@ class _AboutScreenState extends State<AboutScreen> {
                       ),
                       TextButton.icon(
                         key: const Key('about_create_issue'),
-                        onPressed: () => _launch(bugReportUrl(snap.data, scriptStatus: _scriptStatus)),
+                        onPressed: () => _launch(bugReportUrl(snap.data,
+                            scriptStatus: _scriptStatus, model: _routerModel, firmware: _routerFirmware)),
                         icon: const Icon(Icons.bug_report_outlined, size: 16, color: kHighlight),
                         label: const Text('CREATE GITHUB ISSUE', style: TextStyle(color: kHighlight, fontSize: 12)),
                       ),
@@ -417,7 +427,7 @@ class _BuildInfoBlock extends StatelessWidget {
 ///
 /// The template's own Environment bullets are not reproduced - they still ask for an addon and a
 /// game version - so that section carries the build info plus the router fields instead.
-String bugReportUrl(BuildInfo? info, {String scriptStatus = ''}) {
+String bugReportUrl(BuildInfo? info, {String scriptStatus = '', String model = '', String firmware = ''}) {
   final firmware = firmwareDetected ? routerFirmware.name : 'not detected this session';
   // UNKNOWN, not the screen's "login to router to retrieve" - that is an instruction to the
   // user standing in front of the app, and it tells whoever reads the issue nothing at all.
@@ -447,8 +457,8 @@ ${_BuildInfoBlock.asPlainText(info, scriptStatus: script)}
 Router firmware: $firmware
 ```
 
-- Router model: [e.g. RT-AX86U]
-- Router firmware version: [e.g. 3.0.0.4.388_24762]
+- Router model: ${model.isEmpty ? '[e.g. RT-AX86U]' : model}
+- Router firmware version: ${firmware.isEmpty ? '[e.g. 3.0.0.4.388_24762]' : firmware}
 
 **Additional context**
 Add any other context about the problem here.

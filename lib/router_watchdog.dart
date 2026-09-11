@@ -824,7 +824,9 @@ class RouterWatchdog {
       throw Exception('Writing $path failed: the router has $size bytes of a $expected byte file. '
           'The $what was NOT deployed - check free space on the router filesystem.');
     }
-    onLog?.call('$what written to $path ($size bytes).', isSuccess: true);
+    // "updated" rather than "written to": the boot script is rewritten on a PAUSE as well as a
+    // deploy, and "written to" read as though a pause had redeployed something.
+    onLog?.call('$what updated: $path ($size bytes).', isSuccess: true);
   }
 
   Future<void> _writeScript(int slot, String body) async {
@@ -1310,10 +1312,11 @@ class RouterWatchdog {
   /// Both rows on ABOUT come from the router and neither is worth a handshake of its own, so the
   /// screen asks once and fills in both - which is also why tapping either row's login link fills
   /// in the other.
-  Future<({String? version, String? history})> aboutRouterFacts() async {
+  Future<({String? version, String? history, String model, String firmware})> aboutRouterFacts() async {
     final raw = await _read('$kDeployedScriptHeaderCommand; echo "$_aboutSep"; '
-        r'''printf '%s@@%s@@%s' "$(nvram get cfg_pia_wg_sdate)" "$(nvram get cfg_pia_wg_reconfig_ok)" '''
-        r'''"$(nvram get cfg_pia_wg_reconfig_fail)"''');
+        r'''printf '%s@@%s@@%s@@%s@@%s' "$(nvram get cfg_pia_wg_sdate)" "$(nvram get cfg_pia_wg_reconfig_ok)" '''
+        r'''"$(nvram get cfg_pia_wg_reconfig_fail)" "$(nvram get productid)" '''
+        r'''"$(nvram get buildno)_$(nvram get extendno)"''');
     final parts = raw.split(_aboutSep);
     final counters = (parts.length > 1 ? parts[1] : '').trim().split('@@');
     String at(int i) => i < counters.length ? counters[i].trim() : '';
@@ -1322,7 +1325,12 @@ class RouterWatchdog {
       okCount: at(1).isEmpty ? '0' : at(1),
       failCount: at(2).isEmpty ? '0' : at(2),
     );
-    return (version: parseScriptVersion(parts.first), history: facts.shortHistoryLine);
+    return (
+      version: parseScriptVersion(parts.first),
+      history: facts.shortHistoryLine,
+      model: at(3),
+      firmware: at(4),
+    );
   }
 
   static const String _aboutSep = '@@CFGPIAWGABOUT@@';
@@ -1930,7 +1938,7 @@ if [ -z "$SERVERS" ]; then
   rm -f "$TMPSRVRAW"
   case "$ALLIDS" in
     ''|0) abort "the PIA server list downloaded but could not be parsed ($(head -n 1 "$TMPERR" | cut -c1-120)). Check $JQ runs on this router." ;;
-    *) abort "region '$REGION' is not in PIA's server list ($ALLIDS regions offered). Check the slot description matches a PIA region id exactly." ;;
+    *) abort "PIA no longer lists the region '$REGION' ($ALLIDS regions offered). Either the slot description does not match a PIA region id exactly, or PIA has taken that region out of service - regions have been seen to drop off the list and come back. Pick another region in the app if it does not return." ;;
   esac
 fi
 rm -f "$TMPSRVRAW"
