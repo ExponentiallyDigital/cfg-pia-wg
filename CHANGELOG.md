@@ -37,6 +37,13 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-12 v0.8.69 build 439 - the service queue stops calling our own commands ghosts
+
+- FIX: **the app was clearing the `rc_service` marker its own call had just set, about a second after making it.** `rc_service_pid` holds the pid of `notify_rc`, which queues the work and exits immediately, so "that process has gone" is true the instant ANY call returns - including one whose service is still running. Every service call in an eighteen-step hardware run on 2026-09-12 logged `cleared stale rc_service marker`, which meant the wait-for-the-queue step was declaring the call a ghost on its first poll and returning without waiting for anything.
+- CHG: a marker now has to sit UNCHANGED, with its process gone, for ten seconds before it is called a ghost, and a marker that CHANGES restarts that clock - a queue that is moving is a queue doing its job. A service that is genuinely working clears its own marker when it finishes, so time is the only honest test. The wedge this guards against lasted ninety minutes; the wait costs nothing.
+- INF: two consequences of the old behaviour. The wedge guard was not doing its job, because it cleared any marker on sight rather than telling a hung service from a call in flight. And the warning fired on every action, which is the surest way to train someone to ignore the one line that matters.
+- TST: four - a service that finishes normally is waited for and nothing is cleared, a marker that never moves is cleared once it has sat long enough, a queue moving through three different services is never called a ghost, and the pre-call guard waits before deciding too.
+- DOC: ARCHITECTURE records why the pid cannot be used as a liveness signal.
 2026-09-11 v0.8.68 build 438 - deleting a VPN takes the default connection with it
 
 - FIX: **deleting the VPN that WAS the default connection left the default naming it.** `vpnc_default_wan` is a key of its own, not a policy record, so releasing the per-device pins never touched it. Every device following the default then read as "profile 9", and the firmware was being told to send unassigned traffic to a profile that no longer existed. Reported on hardware 2026-09-11. DELETE now puts the default back to Internet when it is deleting the profile the default names, and leaves a default naming any OTHER profile alone.

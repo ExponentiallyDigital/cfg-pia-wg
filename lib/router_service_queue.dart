@@ -109,6 +109,7 @@ class RouterServiceQueue {
     this.logRouter,
     this.pollInterval = const Duration(seconds: 2),
     this.maxPolls = 20,
+    this.ghostPolls = 5,
   });
 
   /// A tolerant read - a probe that fails is not a reason to fail the action it guards.
@@ -125,6 +126,21 @@ class RouterServiceQueue {
   final Duration pollInterval;
   final int maxPolls;
 
+  /// How many consecutive polls an unchanged marker must survive before it is called a ghost.
+  ///
+  /// **`rc_service_pid` is not a liveness signal.** It holds the pid of `notify_rc`, which queues
+  /// the work and exits immediately, so "the process is gone" is true the instant any call returns
+  /// - including one whose service is still running. Measured 2026-09-12: every single service call
+  /// in an eighteen-step run logged "cleared stale rc_service marker" about a second after issuing
+  /// it, which means [awaitIdle] was declaring the app's OWN call a ghost on its first poll and
+  /// returning without waiting for anything.
+  ///
+  /// A service that is genuinely working clears its own marker when it finishes, so the only honest
+  /// test is time: a marker that has sat unchanged, with its process gone, for longer than any real
+  /// service takes. At the default two-second interval that is ten seconds. The wedge this guards
+  /// against lasted ninety minutes, so waiting is free.
+  final int ghostPolls;
+
   Future<RcServiceState> state() async => parseRcService(await read(kRcServiceCommand));
 
   /// Clears a ghost marker so the next service call is honoured. Returns what it found.
@@ -132,8 +148,28 @@ class RouterServiceQueue {
   /// Call this BEFORE issuing a service call. A ghost costs the caller a 15-second wait and then
   /// silently discards the work, which is indistinguishable from the command having run.
   Future<RcServiceState> clearIfStale() async {
-    final s = await state();
+    final s = await _settled();
     if (!s.stale) return s;
+    return _clear(s);
+  }
+
+  /// Reads the marker, then gives anything it finds [ghostPolls] chances to clear on its own.
+  ///
+  /// Returns as soon as the queue goes idle. A marker that CHANGES restarts the count, because a
+  /// queue that is moving is a queue doing its job.
+  Future<RcServiceState> _settled() async {
+    var s = await state();
+    var unchanged = 0;
+    while (!s.idle && unchanged < ghostPolls) {
+      await Future<void>.delayed(pollInterval);
+      final next = await state();
+      unchanged = (next.service == s.service && next.pid == s.pid) ? unchanged + 1 : 0;
+      s = next;
+    }
+    return s;
+  }
+
+  Future<RcServiceState> _clear(RcServiceState s) async {
     onLog?.call(
         'The router was stuck on an earlier command and would have ignored this one. Cleared it and '
         'carried on - nothing for you to do (full details in router log).',
@@ -150,19 +186,23 @@ class RouterServiceQueue {
   /// [RouterServiceWedgedException] only for a marker whose process is STILL ALIVE after the whole
   /// timeout - that one the app cannot fix, and saying so beats another opaque failure.
   Future<void> awaitIdle() async {
-    for (var i = 0; i < maxPolls; i++) {
-      final s = await state();
-      if (s.idle) return;
-      if (s.stale) {
-        await clearIfStale();
+    var s = await state();
+    var unchanged = 0;
+    for (var i = 0; i < maxPolls && !s.idle; i++) {
+      await Future<void>.delayed(pollInterval);
+      final next = await state();
+      unchanged = (next.service == s.service && next.pid == s.pid) ? unchanged + 1 : 0;
+      s = next;
+      // Only now is it a ghost. Clearing on the FIRST sighting cleared the app's own call a second
+      // after making it, which made this method return without ever waiting for anything.
+      if (unchanged >= ghostPolls && s.stale) {
+        await _clear(s);
         return;
       }
-      await Future<void>.delayed(pollInterval);
     }
-    final s = await state();
     if (s.idle) return;
     if (s.stale) {
-      await clearIfStale();
+      await _clear(s);
       return;
     }
     throw RouterServiceWedgedException(s);
