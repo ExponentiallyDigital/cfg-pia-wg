@@ -796,7 +796,7 @@ class _FormDialog extends StatelessWidget {
 /// over the action row at the bottom of the card, and a tap meant for Copy landed on CLEAR
 /// (reported 2026-09-10). A full screen gives the text room to be selected without the selection's
 /// toolbar and the app's buttons competing for the same 48 pixels.
-class _WatchdogLogScreen extends StatelessWidget {
+class _WatchdogLogScreen extends StatefulWidget {
   const _WatchdogLogScreen({
     required this.slot,
     required this.text,
@@ -808,6 +808,34 @@ class _WatchdogLogScreen extends StatelessWidget {
   final String text;
   final Future<void> Function() onCopy;
   final Future<void> Function() onClear;
+
+  @override
+  State<_WatchdogLogScreen> createState() => _WatchdogLogScreenState();
+}
+
+class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
+  final _scroll = ScrollController();
+
+  int get slot => widget.slot;
+  String get text => widget.text;
+  Future<void> Function() get onCopy => widget.onCopy;
+  Future<void> Function() get onClear => widget.onClear;
+
+  @override
+  void initState() {
+    super.initState();
+    // The newest entry is the reason this screen was opened. After the first layout, so the extent
+    // is real; the log is a single text block, so one jump is enough.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   Future<void> _confirmClear(BuildContext context) async {
     final ok = await showDialog<bool>(
@@ -852,6 +880,7 @@ class _WatchdogLogScreen extends StatelessWidget {
           // No side margins: the log is a wide monospace block and every column it loses to
           // padding is a wrapped line. Full screen height AND full screen width.
           child: SingleChildScrollView(
+            controller: _scroll,
             // Room below the last line for Android's selection toolbar to land on. It is placed
             // relative to the selection rather than the layout, so this helps rather than fixes -
             // the in-app COPY below is what makes the system toolbar unnecessary.

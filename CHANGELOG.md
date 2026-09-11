@@ -38,6 +38,13 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.64 build 434 - colour in the router log
+
+- ADD: **the router log picks out the app's own lines in colour.** This app's lines are teal, the watchdog's are amber, the router's own stay grey. A page of syslog is otherwise a wall of identical text and the lines anyone opened the screen for are a handful among hundreds.
+- INF: both the app and the deployed watchdog write under the tag `cfg-pia-wg`, and the only thing separating them is the interface prefix the script adds to every line. Giving the script its own tag would be unambiguous, but a tag change reaches a router only on its next watchdog deploy, so every router in the field would go on emitting the old one. The prefix costs nothing and works today.
+- CHG: the whole page is still ONE text run, so selection and COPY are unchanged - a widget per line would have broken both.
+- CHG: the watchdog log opens scrolled to its newest entry, matching the app log and the router log.
+- TST: four on the classifier - the app, the watchdog, a two-digit interface, and that naming an interface in a kernel line is not the same as being tagged by us.
 2026-09-11 v0.8.63 build 433 - the app log reads like the other two log screens
 
 - CHG: **the app log is built like the router and watchdog logs.** The log fills the screen, and COPY / CLEAR / HOME sit in one pinned row of equal-width bordered buttons at the bottom. CLEAR used to be a small button in the top right corner and there was no COPY at all.

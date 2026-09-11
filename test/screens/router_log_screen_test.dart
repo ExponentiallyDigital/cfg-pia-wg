@@ -179,4 +179,30 @@ void main() {
       expect(find.text('No log read yet.'), findsOneWidget);
     });
   });
+
+  group("telling our lines from the router's", () {
+    // Both the app and the deployed watchdog write under the tag `cfg-pia-wg`; only the interface
+    // prefix the script adds separates them. A page of syslog is otherwise a wall of identical
+    // grey, and the lines worth reading are a handful among hundreds.
+    test('a line with the tag and no interface prefix is the app', () {
+      expect(classifyLogLine('Sep 11 12:00:01 router cfg-pia-wg: Laptop (192.168.1.20) -> wgc5 reassigned'),
+          RouterLogSource.app);
+    });
+
+    test('the same tag with an interface prefix is the watchdog on the router', () {
+      expect(classifyLogLine('Sep 11 12:00:01 router cfg-pia-wg: wgc1: Checking wgc1 connectivity'),
+          RouterLogSource.watchdog);
+    });
+
+    test('a two-digit interface is still the watchdog', () {
+      expect(classifyLogLine('cfg-pia-wg: wgc10: something'), RouterLogSource.watchdog);
+    });
+
+    test('everything else is the router itself', () {
+      expect(classifyLogLine('Sep 11 12:00:01 router dropbear[123]: Password auth succeeded'), RouterLogSource.other);
+      expect(classifyLogLine(''), RouterLogSource.other);
+      expect(classifyLogLine('Sep 11 kernel: wgc1 is up'), RouterLogSource.other,
+          reason: 'naming an interface is not the same as being tagged by us');
+    });
+  });
 }

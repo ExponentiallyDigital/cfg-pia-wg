@@ -214,6 +214,30 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     }
   }
 
+  /// One page, with the app's own lines picked out by colour.
+  ///
+  /// A syslog page is a wall of identical grey, and the lines anyone opens this screen for are a
+  /// handful among hundreds. Built as ONE `Text.rich` per page rather than a widget per line, so
+  /// the whole page stays a single selectable run and COPY still yields the text as it reads.
+  static Widget _colourise(String page) {
+    const base = TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace');
+    final lines = page.split('\n');
+    return Text.rich(
+      TextSpan(children: [
+        for (var i = 0; i < lines.length; i++)
+          TextSpan(
+            text: i == lines.length - 1 ? lines[i] : '${lines[i]}\n',
+            style: switch (classifyLogLine(lines[i])) {
+              RouterLogSource.app => const TextStyle(color: kHighlight),
+              RouterLogSource.watchdog => const TextStyle(color: kWarn),
+              RouterLogSource.other => null,
+            },
+          ),
+      ]),
+      style: base,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -250,8 +274,7 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
                             child: Text('- start of the router log -',
                                 textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 11)),
                           ),
-                        for (final page in _pages)
-                          Text(page, style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace')),
+                        for (final page in _pages) _colourise(page),
                       ]),
                     ),
                   ),
