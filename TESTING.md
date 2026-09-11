@@ -22,6 +22,7 @@
     - [6.4.3. How the Commands Work](#how-the-commands-work)
     - [6.4.4. Certificate information](#certificate-information)
 - [7. Device assignment](#device-assignment)
+  - [7.1. The full assignment run](#the-full-assignment-run)
 - [8. App log](#app-log)
 - [9. Router log](#router-log)
 - [10. Settings](#settings)
@@ -645,6 +646,62 @@ The default connection - read the warning above first:
 - `ip rule show` gains a pair at priority 10000
 - an **unassigned** device now leaves through that tunnel. Check from the device
 - set it back to Internet and confirm the pair goes and unassigned traffic returns to the WAN
+
+---
+
+### 7.1. <a name='the-full-assignment-run'></a>The full assignment run
+
+One sequence covering moves, deletes and the default connection, in an order that reaches the three
+faults measured on 2026-09-11. Short enough to work from on a phone.
+
+Substitute your own device's last octet for `.51` throughout. **CHK** means run all three:
+
+```bash
+ip rule show | grep 0.51
+nvram get vpnc_dev_policy_list | tr '<' '\n' | grep 0.51
+nvram get vpnc_default_wan
+```
+
+"Exit IP" means check from the DEVICE itself, on a what-is-my-IP page. Never from the router: the
+router's own traffic is not policy-routed, so it tells you nothing about where a device goes.
+
+Set up:
+
+- delete every VPN, reboot, CHK - expect no `.51` lines and a default of `0`
+- create wgc1, enable it
+- create wgc5 in a different region, enable it, default connection = Internet
+- `nvram get vpnc_clientlist` and note **field 7** of each record. That is the number its `ip rule` will use, and it is not the slot number - on one run wgc1 was 9 and wgc5 was 5
+
+Moves:
+
+- phone to wgc1: CHK + exit IP
+- phone to wgc5: CHK + exit IP
+- phone to **Internet**: CHK + exit IP, expect ONE rule, `lookup main`
+- phone to wgc5: CHK + exit IP, expect ONE rule, `lookup 5`, and no `main`
+- phone to wgc1: CHK + exit IP
+- phone to the default: CHK, expect no `.51` rule at all
+- reboot, CHK
+
+The same moves without ever touching Internet, as the control:
+
+- phone to wgc1, then wgc5, then wgc1, CHK after each - expect exactly one rule every time
+
+Deletes:
+
+- phone to wgc5, then DELETE wgc5 in the app: CHK + exit IP. Expect the app log to NAME the phone, a record of `1>...>>0>`, a rule of `lookup main`, and the phone's own address as its exit IP
+- recreate wgc5 in a different region: CHK, and confirm the phone is **not** on it
+- set the default to wgc1: CHK, the default reads wgc1's number
+- phone to wgc5
+- DELETE wgc1, the one that IS the default: CHK + exit IP. Expect the default back to `0`, every tunnel to restart, and the phone still on wgc5
+- phone to the default: exit IP is your own
+- DELETE wgc5, with the phone pinned to it and it not being the default: CHK + exit IP, the phone lands on Internet
+
+> [!IMPORTANT]
+> Three steps carry behaviour that is easy to get wrong, and each one was a real fault:
+>
+> - **Internet, then straight to a tunnel.** Pinning to Internet writes `lookup main`, and until build 436 a sweep that matched only digits could not see it. The device stayed on the WAN through every later move until the router was rebooted.
+> - **Deleting a VPN with devices pinned to it.** Those devices go to **Internet**, matching the web interface, not to the default connection. A device that was explicitly pinned must never land on a tunnel nobody chose.
+> - **Deleting the VPN that IS the default connection.** `vpnc_default_wan` is a key rather than a policy record, so nothing that rewrites the policy list touches it. Left behind, every device following the default reads as `profile 9 (deleted)`.
 
 ---
 
