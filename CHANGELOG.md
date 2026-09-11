@@ -38,6 +38,15 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.65 build 435 - the last of the test-pass list
+
+- ADD: **CREATE GITHUB ISSUE fills in the router model and firmware.** They were placeholders a reporter had to look up, so nobody did. Both come from two extra reads on a round trip the About screen already makes. A reporter on an unsupported router or an ancient firmware is the case this answers, and the issue is editable before it is submitted.
+- ADD: **a malformed DNS address is refused on GENERATE**, naming the entry that is wrong and leaving it on screen to correct. A config generated with "149.137" in it resolves nothing and the tunnel still comes up looking healthy. The range is not checked - an unusual resolver is the user's business - only that the address is four numbers.
+- CHG: **one DNS server is now a legitimate choice.** A single entry used to be topped up to two from the defaults, which quietly overrode a user who had typed exactly what they wanted. The defaults fill an EMPTY field and nothing else.
+- CHG: the watchdog SAVE button reads **SAVE & SELECT REGION**, because a region picker follows it, and the overwrite prompt no longer describes that next dialog.
+- CHG: "Boot persistence script written to ..." is now "updated". Pausing a watchdog rewrites that file too, and "written to" read as though a pause had redeployed something.
+- CHG: the watchdog alert for a region PIA has stopped listing says so. It blamed the slot description, which is only one of the two causes - a region can drop off PIA's list and come back, which is what took a CREATE down on 2026-09-11. Needs a redeploy per slot to take effect.
+- TST: two - a malformed DNS entry is refused and not corrected behind the user, and the SAVE button says what it is about to do.
 2026-09-11 v0.8.64 build 434 - colour in the router log
 
 - ADD: **the router log picks out the app's own lines in colour.** This app's lines are teal, the watchdog's are amber, the router's own stay grey. A page of syslog is otherwise a wall of identical text and the lines anyone opened the screen for are a handful among hundreds.
