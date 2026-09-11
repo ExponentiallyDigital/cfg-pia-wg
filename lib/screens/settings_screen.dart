@@ -294,8 +294,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _Action(
           keyValue: 'settings_uninstall',
           label: 'UNINSTALL FEATURES INSTALLED TO ROUTER',
-          note: 'Restores the two boot scripts the app replaced and deletes $kRouterAppDir. '
-              'Tunnels, watchdog settings and cron entries are left alone.',
+          note: 'Restores the two boot scripts the app replaced, deletes $kRouterAppDir, and removes the '
+              'watchdog schedules and every setting the app wrote. Your VPN tunnels are left alone.',
           icon: Icons.delete_forever_outlined,
           destructive: true,
           onTap: _busy ? null : _uninstall,

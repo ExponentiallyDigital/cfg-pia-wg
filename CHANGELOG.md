@@ -38,6 +38,10 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.61 build 431 - the uninstall button says what it does
+
+- FIX: the UNINSTALL note on SETTINGS read "Tunnels, watchdog settings and cron entries are left alone". Only the tunnels are: since build 425 the uninstall also removes every watchdog schedule it created and every NVRAM key the app wrote, history included. The confirmation dialog behind the button had it right all along, so the button was the one screen element contradicting both the dialog and the documentation.
+
 2026-09-11 v0.8.60 build 430 - documentation rebuild
 
 One build, sixteen commits. Newest on top. Four documents rebuilt in the order they depend on
