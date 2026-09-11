@@ -1246,40 +1246,66 @@ The deployed copy is LF-terminated: the repo template `scripts/S50downloadmaster
 
 #### 7.4.1. <a name='the-routers-service-queue-and-how-it-wedges'></a>The router's service queue, and how it wedges
 
-Every `service <name>` call goes through `notify_rc`, which records what it is doing in the `rc_service` NVRAM key (with the pid in `rc_service_pid`) and clears it when the action finishes. A later call that finds the key set waits for it - `rc_service: waitting "<name>" via ...` - and after 15 seconds **discards itself**: `rc_service: skip the event: <name>`.
+The router runs one service action at a time, and it uses a single NVRAM key as the whole of its
+bookkeeping.
 
-A brief wait is ordinary and harmless. A service that never finishes is not: the key is never cleared, and every event sent to the router from then on is discarded for as long as it stays up.
+Every `service <name>` call goes through `notify_rc`. It writes what it is doing into `rc_service`,
+writes a pid into `rc_service_pid`, and clears both when the action finishes. A later call that finds
+`rc_service` already set waits for it - `rc_service: waitting "<name>" via ...` - and after 15
+seconds gives up and **throws itself away**: `rc_service: skip the event: <name>`.
 
-Measured 2026-09-10. `service restart_vpnc` hung at 17:40:25 and the router spent ninety minutes discarding everything:
+A short wait is ordinary. The key is doing its job, and the second call runs a moment later.
+
+**A service that never finishes is the problem.** It never clears the key, so every event sent to the
+router from then on is discarded, silently, for as long as the router stays up.
+
+Measured 2026-09-10. `service restart_vpnc` hung at 17:40:25 and the router spent ninety minutes
+discarding everything sent to it:
 
 - Four watchdog reconfigures fetched a PIA token, registered a key and wrote a complete tunnel config that nothing acted on. Each ended `wgc1 did not come up after reconfiguration`.
 - The app reported `router command failed (exit 1)` with no hint as to why.
 - A `reboot` request was discarded too. The web interface said the router was rebooting; it was not. **A power cycle was the only way out.**
-- After the power cycle the key read empty at boot and cleared itself normally, so this is a wedge rather than how the firmware behaves.
+- After the power cycle the key was empty at boot and cleared itself normally from then on, so this is a wedge rather than how the firmware behaves.
 
-`rc_service_pid` is what makes it recoverable. A key naming a process that no longer exists is a **ghost**, and clearing it by hand restores normal service - though only for one call, because that call sets the key again and the next one waits on whatever it left behind.
+**Telling a wedge from ordinary work is the hard part.**
 
-> [!IMPORTANT]
-> **`rc_service_pid` is not a liveness signal.** It holds the pid of `notify_rc`, which queues the
-> work and exits immediately, so "that process has gone" is true the instant ANY call returns -
-> including one whose service is still running. Measured 2026-09-12: an eighteen-step hardware run
-> logged `cleared stale rc_service marker` about a second after every single service call, because
-> the app was reading the marker its own call had just set and declaring it a ghost.
->
-> A service that is genuinely working clears its own marker when it finishes, so the only honest
-> test is TIME: a marker that has sat unchanged, with its process gone, for longer than any real
-> service takes. The app waits ten seconds before calling one a ghost, and restarts that clock
-> whenever the marker CHANGES - a queue that is moving is a queue doing its job. The wedge this
-> guards against lasted ninety minutes, so the wait costs nothing.
+Clearing the key by hand fixes it. The difficulty is knowing when to: clearing a key that a running
+service still needs is the same mistake in the other direction.
 
-The app handles this in `lib/router_service_queue.dart`:
+**The obvious test does not work.** `rc_service_pid` looks like it answers "is it still working?" and
+it does not. It names `notify_rc`, the process that puts the job in the queue and then exits
+immediately. The job itself runs somewhere else. So within about a second of **every** call, finished
+or not, the pid names a process that is gone.
 
-| Before a service call | Read the key and its pid. If the pid is gone, clear the key and log it. |
+Measured 2026-09-12: an eighteen-step hardware run logged `cleared stale rc_service marker` after
+every single service call, because the app was reading the key its own call had just set, finding the
+pid gone, and calling it a ghost. Two things followed from that. The step meant to wait for a call to
+finish returned in about a second without waiting for anything. And the warning fired so often that
+it stopped meaning anything, which is the surest way to miss the one time it is real.
+
+**So the app asks a different question: has anything changed?** A service that is genuinely working
+clears its own key when it finishes. One that has hung never will. Time is the only honest signal
+left.
+
+**What the app does**, in `lib/router_service_queue.dart`:
+
+| Situation | What happens |
 | --- | --- |
-| After a service call | Poll until the key clears. A ghost appearing mid-wait is cleared the same way. |
-| Key set, pid ALIVE, past the timeout | `RouterServiceWedgedException` - the app cannot fix this, so it names the service and says to power cycle. |
+| The key is empty | Carry on. This is the normal case. |
+| The key is set, and clears within 10 seconds | Wait for it. Something was running and it finished. Nothing is cleared and nothing is logged. |
+| The key CHANGES while being watched | The queue is moving, so it is working. The ten seconds start again from the new value. |
+| The same key sits unchanged for 10 seconds, pid gone | A ghost. Clear it, warn in the app log, and write the detail to the router's syslog. |
+| The key is set and its pid really is alive, past the timeout | `RouterServiceWedgedException`. The app cannot fix this one, so it names the service and says to power cycle. Rare, because of the pid behaviour above. |
 
-Related: an interface seen up ONCE is not up. The app reported "wgc1 enabled" a second after `restart_vpnc` because it caught the interface mid-restart, then ran the deploy script against a tunnel on its way back down. Two consecutive sightings are required.
+Ten seconds is longer than any service this app issues takes, and the wedge it guards against lasted
+ninety minutes - so waiting costs nothing and guessing costs everything.
+
+The check runs **before** each service call as well as after, because a wedge clears for one call
+only: that call sets the key again, and the next one waits on whatever it left behind.
+
+Related, and the same kind of mistake: an interface seen up ONCE is not up. The app reported
+"wgc1 enabled" a second after `restart_vpnc` because it caught the interface mid-restart, then ran
+the deploy script against a tunnel on its way back down. Two consecutive sightings are required.
 
 Full evidence in `.claude/testing/2026-09-10_rc-service-stuck-runsheet.md`.
 
