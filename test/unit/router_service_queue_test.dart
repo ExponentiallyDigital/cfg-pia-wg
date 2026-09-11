@@ -47,8 +47,15 @@ class _FakeRouter {
     _alive = false;
   }
 
+  /// The queue moving on to a different service, which is what a working queue looks like.
+  void becomes(String service, int pid) {
+    _service = service;
+    _pid = pid;
+    _alive = false;
+  }
+
   RouterServiceQueue get queue =>
-      RouterServiceQueue(read: read, run: run, pollInterval: Duration.zero, maxPolls: 5);
+      RouterServiceQueue(read: read, run: run, pollInterval: Duration.zero, maxPolls: 12, ghostPolls: 3);
 }
 
 void main() {
@@ -145,5 +152,58 @@ void main() {
     expect(kRcServiceCommand, contains('nvram get rc_service_pid'));
     // kill -0 tests for a process without signalling it.
     expect(kRcServiceCommand, contains('kill -0'));
+  });
+
+  // `rc_service_pid` holds the pid of `notify_rc`, which queues the work and exits at once - so
+  // "the process is gone" is true the instant ANY call returns, including one whose service is
+  // still running. Measured 2026-09-12: every service call in an eighteen-step run logged
+  // "cleared stale rc_service marker" about a second after issuing it, which meant awaitIdle was
+  // calling the app's own in-flight call a ghost and returning without waiting for anything.
+  group('a marker is given time to prove itself a ghost', () {
+    test('a service that finishes normally is waited for, and nothing is cleared', () async {
+      final r = _FakeRouter(service: 'restart_vpnc', pid: 4960)
+        ..onRead = (n) {};
+      // Clears itself on the third look, the way a real service does when it finishes.
+      r.onRead = (n) {
+        if (n >= 3) r.goIdle();
+      };
+
+      await r.queue.awaitIdle();
+
+      expect(r.commands, isNot(contains(kClearRcServiceCommand)),
+          reason: 'it finished on its own; there was never a ghost');
+      expect(r.reads, greaterThanOrEqualTo(3), reason: 'it has to have actually waited');
+    });
+
+    test('a marker that never moves IS cleared, once it has sat long enough', () async {
+      final r = _FakeRouter(service: 'restart_vpnc', pid: 4960);
+      await r.queue.awaitIdle();
+      expect(r.commands, contains(kClearRcServiceCommand));
+    });
+
+    test('a queue that keeps moving is never called a ghost', () async {
+      // Three different services in turn: the queue is busy, not stuck.
+      final r = _FakeRouter(service: 'stop_vpnc', pid: 1);
+      var step = 0;
+      r.onRead = (n) {
+        step++;
+        if (step == 2) r.becomes('restart_default_wan', 2);
+        if (step == 4) r.becomes('restart_vpnc', 3);
+        if (step >= 6) r.goIdle();
+      };
+
+      await r.queue.awaitIdle();
+      expect(r.commands, isNot(contains(kClearRcServiceCommand)));
+    });
+
+    test('clearIfStale also waits before deciding', () async {
+      final r = _FakeRouter(service: 'restart_vpnc', pid: 4960);
+      r.onRead = (n) {
+        if (n >= 2) r.goIdle();
+      };
+
+      await r.queue.clearIfStale();
+      expect(r.commands, isNot(contains(kClearRcServiceCommand)));
+    });
   });
 }

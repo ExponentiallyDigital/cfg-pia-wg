@@ -1259,6 +1259,19 @@ Measured 2026-09-10. `service restart_vpnc` hung at 17:40:25 and the router spen
 
 `rc_service_pid` is what makes it recoverable. A key naming a process that no longer exists is a **ghost**, and clearing it by hand restores normal service - though only for one call, because that call sets the key again and the next one waits on whatever it left behind.
 
+> [!IMPORTANT]
+> **`rc_service_pid` is not a liveness signal.** It holds the pid of `notify_rc`, which queues the
+> work and exits immediately, so "that process has gone" is true the instant ANY call returns -
+> including one whose service is still running. Measured 2026-09-12: an eighteen-step hardware run
+> logged `cleared stale rc_service marker` about a second after every single service call, because
+> the app was reading the marker its own call had just set and declaring it a ghost.
+>
+> A service that is genuinely working clears its own marker when it finishes, so the only honest
+> test is TIME: a marker that has sat unchanged, with its process gone, for longer than any real
+> service takes. The app waits ten seconds before calling one a ghost, and restarts that clock
+> whenever the marker CHANGES - a queue that is moving is a queue doing its job. The wedge this
+> guards against lasted ninety minutes, so the wait costs nothing.
+
 The app handles this in `lib/router_service_queue.dart`:
 
 | Before a service call | Read the key and its pid. If the pid is gone, clear the key and log it. |
