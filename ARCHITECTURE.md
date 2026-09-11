@@ -1246,6 +1246,21 @@ The deployed copy is LF-terminated: the repo template `scripts/S50downloadmaster
 
 #### 7.4.1. <a name='the-routers-service-queue-and-how-it-wedges'></a>The router's service queue, and how it wedges
 
+**In one paragraph.** The app changes nothing on a router by itself. Everything it does - enabling a
+tunnel, applying a device assignment, changing the default connection - is a request for the
+firmware to restart one of its own services, and the firmware takes those requests through a queue.
+That queue can jam. When it does, the router stops acting on anything it is told while still
+reporting success, so the app appears to work perfectly and changes nothing at all. This section is
+how that happens, how to recognise it, and what `lib/router_service_queue.dart` does about it.
+
+**Why it is worth a section of its own.** A jammed queue is the most misleading failure this project
+has met. Nothing errors. The app says the tunnel is up, the logs read normally, and every command
+appears to succeed - while the router quietly discards all of it, including a request to reboot. The
+first time it happened it took ninety minutes and a power cycle, and the cause was invisible until
+someone thought to read one NVRAM key.
+
+The mechanism, then the trap, then what the app does.
+
 The router runs one service action at a time, and it uses a single NVRAM key as the whole of its
 bookkeeping.
 
