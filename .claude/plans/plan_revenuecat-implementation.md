@@ -1,111 +1,239 @@
-# RevenueCat Implementation Plan — Lifetime Unlock App
+# RevenueCat implementation plan
 
-Compiled from advisory session with Rico (RevenueCat) — 2026-08-05.
+**What this is.** One document covering the paid tier: what is being sold, what has already been
+decided, what RevenueCat actually does, and the order to build it in. Compiled from an advisory
+session with Rico at RevenueCat on 2026-08-05, an app-specific review on 2026-09-05, and the backlog
+items that were folded in on 2026-09-12.
 
-## App Context / Requirements
-
-- **Framework:** Flutter / Dart
-- **Platforms:** Android now; iOS to be added later
-- **Functionality:** 3 main functions — 2 free, 1 paid
-- **Monetization:** One-off **lifetime** fee for the third function
-- **Auth:** No login system (anonymous users only)
-- **Offline:** App must work without a connection during use; paid status must be cached
-
-**The product decision, moved here from BACKLOG.md on 2026-09-12:**
-
-- NEW: Freemium version using RevenueCat, move all but standalone conf generation to a one-off lifetime paid function, non-freemium makes screens accessible but read only, advise once per session when entering a freemium gated function, explain how to unlock all capabilities.
-- TBC: Determine cost - smaller user base, higher investment.
+**Status: nothing is built.** `lib/entitlement.dart` holds the seam - `Entitlement.isUnlocked`
+returns `true` for everyone - and nothing else in the app knows about any of this.
 
 ---
 
-## 1. Does RevenueCat replace Google Play Billing?
+## 1. What is being sold
 
-- **No — it sits on top of it.**
-- Google Play Billing still processes the payment; Google remains merchant of record and takes their cut.
-- RevenueCat's Android SDK **wraps** Google's `BillingClient`, validates receipts, and becomes the **single source of truth** for subscription/entitlement status across Android, iOS, and web.
-- You still need your Google Play Console account and products configured in Play.
-- **RevenueCat Billing** is a separate billing engine but is **web-only** (uses Stripe). It is NOT a replacement for Google Play on Android — in-app purchases on Android must still go through Google Play billing.
+- **Freemium using RevenueCat.** Everything except standalone config generation moves behind a one-off lifetime paid function. Locked screens stay accessible but READ ONLY, and entering a gated function advises once per session and explains how to unlock all capabilities.
+- **Price: TBC.** A smaller user base against a higher investment.
+- **Free:** standalone PIA config generation, and the app log.
+- **Paid:** the router functions - manage slots, deploy a watchdog, assign devices.
 
----
-
-## 2. Product Model — Lifetime One-Off Unlock
-
-- Model as a **non-consumable** in-app product.
-- Add it to an **Offering** (as a package) and attach it to a single **Entitlement** (e.g. `pro`).
-- The two free functions need no product and no entitlement gating.
-- iOS later: create the equivalent non-consumable IAP in App Store Connect, attach to the same entitlement.
-
-### Critical Android caveat
-
-- RevenueCat only treats one-time products as non-consumable in **Android SDK 7.11.0+**.
-- On older SDKs the purchase is **consumed**, letting the user buy again AND breaking restore.
-- **Action:** configure the product as **non-consumable** in the RevenueCat dashboard AND use a recent SDK.
+Modelled as **one non-consumable product**, in **one offering**, attached to **one entitlement**.
+No subscriptions, no tiers, no login. Android now; iOS later on the same entitlement.
 
 ---
 
-## 3. Offline Access
+## 2. Decided already - do not relitigate
 
-Two distinct mechanisms:
+**An unlocked watchdog cannot be re-locked, and that is accepted.** The watchdog runs on the router,
+on cron, with the app nowhere in the picture. Once deployed it keeps re-negotiating PIA for as long
+as the router has power, whatever the entitlement says afterwards.
 
-### Cached CustomerInfo (this is what covers you)
+Decided 2026-09-05: the paid tier is cashflow to cover development, not enforcement. The source is on
+GitHub and anyone can build it themselves for nothing; the charge buys not having to. A refund that
+leaves a working watchdog behind is a rounding error against that. Two consequences:
 
-- Once entitled, `CustomerInfo` is cached on-device; `getCustomerInfo()` returns it synchronously, even fully offline.
-- For a **lifetime (non-expiring) entitlement, cached "paid" status persists offline indefinitely** until the cache is invalidated.
-- The 3-day offline grace period in the docs applies to *expiring subscriptions*, not lifetime unlocks.
-- Cache refresh triggers: 5 min in foreground, 25 hrs in background, or on purchase/restore.
-- `logOut()` clears the cache (not relevant to you since no logins).
+- **The gate belongs on DEPLOYING a watchdog, not on one working.** Offline entitlement checks are therefore nearly free here, because the thing being paid for does not run in the app at all.
+- **Never build revocation, a phone-home, or a licence check into the deployed script.** It would be defeatable in a text editor, it would add a failure mode to the one thing that has to be reliable unattended, and it contradicts the decision above.
 
-### Offline Entitlements (does NOT help one-time purchases)
+**The paywall comes AFTER the pre-flight check, never before.** Nobody should be sold an unlock for a
+router that cannot run it, and nobody without the entitlement should be asked to install helper
+binaries onto their router for a feature they cannot use. Ordering, strictly: entitlement, then
+dependencies, then the offer to install them. A user without the entitlement who opens MANAGE or
+WATCHDOG on stock must see the paywall, never "jq is missing". Worth a test that pins the order,
+because a later refactor will reorder it without noticing.
 
-- Separate fallback for when RevenueCat servers are unreachable *at the moment of purchase*.
-- **Does not work for one-time purchases (consumables/non-consumables).**
-- **Implication:** the user needs connectivity ONCE, at purchase time, to activate the lifetime unlock. After a successful purchase, offline access is covered by the cache.
-- UX: show a clear "connect to complete purchase" state when offline.
+**The donation buttons go.** PayPal and Patreon come off the home screen. Keep the "add a Play Store
+app review" link: the watchdog alert emails say *"by tapping on the home screen link"*, so removing
+it makes that wording stale. The `spacer` above the footer is sized for the donation block and will
+need re-spacing.
 
----
-
-## 4. No Logins + Device Migration (new/wiped/upgraded handset)
-
-- With no login, each install gets a fresh **anonymous App User ID**. A new device = new anonymous ID with no purchase history.
-- Google Play natively ties the non-consumable purchase to the user's Google account, but **RevenueCat isn't told automatically** on a fresh install.
-- A **restore call** (`restorePurchases()`) is what makes the SDK query the store, send receipts to RevenueCat, and re-attach the entitlement to the new anonymous ID.
-- **Restore behavior:** keep the default **"Transfer to new App User ID"** (Project settings -> General). Required for anonymous restore; two anonymous IDs owning the same receipt are merged (aliased).
-
-### Why a Restore button (if the store owns the receipt)?
-
-- The store **has** the receipt, but something has to go **ask** for it — that's `restorePurchases()`.
-- On a new anonymous install there's no cache to fall back on, and the SDK won't auto-claim store purchases for an unknown anonymous user.
-- Options: **silent auto-restore** on first launch/paywall, AND a **visible button**.
-- The visible button is **required by Apple's App Store review guidelines** for apps selling non-consumables (matters when you ship iOS).
-
-### Billing Client 8 gotcha
-
-- Play Billing Library 8 removed the ability to query _consumed_ one-time products.
-- If the product is ever treated as consumable, it **cannot be restored** on a new device.
-- Fix is fully in your control: keep it **non-consumable** (SDK 7.11.0+).
-- Recovery fallbacks if a purchase was consumed: manual transfer in dashboard by Order ID, or the Restore by Order ID API. Don't rely on these at scale.
-
-### Cross-platform note
-
-- Cross-platform recovery (bought on Android, restore on iOS) without a login is NOT possible — anonymous IDs are per-store. If needed later, that's when an optional login becomes worth considering.
+**The security wording gets fixed in the same change that adds the dependency.** README and
+SECURITY.md both say absolutely that nothing is written to device storage. An entitlement cache is
+compatible with the intent but contradicts the sentence. Separate *credentials* (never stored, still
+true) from *purchase state* (cached, not sensitive) when the dependency lands, not after. Being
+caught overstating this would cost more than the feature is worth.
 
 ---
 
-## 5. Implementation Steps
+## 3. Open questions
 
-### Dashboard setup (do first)
+- **The price.** Not set.
+- **What "read only" means on each screen.** A locked MANAGE screen showing the slot list is useful; a locked DEVICE ASSIGNMENT screen showing every device and refusing to move one may be more irritating than showing nothing. Needs a decision per screen.
+- **Whether the once-per-session advice is a dialog, a banner, or the paywall itself.**
+- **Play Console Data safety form.** Needs completing to reflect RevenueCat, and the Privacy Policy needs a line. This is a store-rejection item rather than a nicety: the SDK sees a pseudonymous app-user id.
+---
 
-1. Add Android app (Play Console link + service account creds for server notifications). Add iOS app later.
-2. Create lifetime IAP as **non-consumable**; mirror in Google Play Console.
-3. Create one entitlement (e.g. `pro`); attach the lifetime product.
-4. Create a default offering with one package containing the lifetime product.
-5. Confirm restore behavior = **Transfer to new App User ID** (default).
+## 4. How RevenueCat works, where it changes what we build
 
-### Install SDK
+Only the parts that affect a decision. The reference docs are at the end.
 
-- Add `purchases_flutter` (latest at time of writing: **10.7.0**) to `pubspec.yaml`.
-- Android: add `BILLING` permission to `AndroidManifest.xml`.
-- iOS (later): enable **In-App Purchase** capability in Xcode.
+**It does not replace Google Play Billing, it sits on top.** Google still processes the payment,
+remains merchant of record and takes their cut. The RevenueCat SDK wraps Google's `BillingClient`,
+validates receipts, and becomes the single source of truth for entitlement status across platforms.
+The Play Console account and the products configured in Play are still needed. RevenueCat's own
+billing engine is web-only and is not an alternative on Android.
+
+**The product must be NON-CONSUMABLE, and the SDK must be recent.** RevenueCat only treats one-time
+products as non-consumable from **Android SDK 7.11.0**. On anything older the purchase is *consumed*,
+which lets the user buy it twice and breaks restore permanently - Play Billing Library 8 removed the
+ability to query consumed one-time products, so a consumed purchase cannot be restored on a new
+device at all. Configure it as non-consumable in the dashboard AND ship a current SDK. This is the
+single most expensive thing to get wrong, because it is only discovered when a real customer changes
+phone.
+
+**Offline works, through the cache, once the purchase has happened.** `CustomerInfo` is cached
+on-device and `getCustomerInfo()` returns it even fully offline. For a lifetime entitlement that
+cached status persists indefinitely. The cache refreshes after 5 minutes in the foreground, 25 hours
+in the background, or on any purchase or restore.
+
+**But the purchase itself needs connectivity, once.** RevenueCat's "Offline Entitlements" feature
+sounds like it covers this and does not: it explicitly excludes one-time purchases. So the UI needs a
+clear "connect to complete the purchase" state, and after that first success the user can be offline
+forever.
+
+**No login means anonymous ids, which means restore matters.** Each install gets a fresh anonymous
+App User ID, so a new or wiped phone has no purchase history. Google Play ties the purchase to the
+user's Google account, but RevenueCat is not told automatically - something has to go and ask, and
+that something is `restorePurchases()`. Provide both a silent auto-restore on first launch and a
+visible button. Apple requires the visible button for non-consumables, which matters when iOS lands.
+
+**Restore behaviour must stay "Transfer to new App User ID"** (Project settings, General - it is the
+default). Anonymous restore depends on it: two anonymous ids owning the same receipt get merged.
+
+**Cross-platform restore is not possible without a login.** Bought on Android, restored on iOS, will
+not work while ids are anonymous. If that ever matters, that is the moment an optional login earns
+its place - not before.
+---
+
+## 5. Build order
+
+One sequence. Each step says what it touches in this codebase. Steps 1 and 2 are console work with
+no code, and they have to be first: the SDK cannot be tested against products that do not exist.
+
+### 1. Google Play Console
+
+- Create a **non-consumable** in-app product, `cfg-pia-wg_pro_unlock`, at the agreed price.
+- Complete the **Data safety form** to reflect RevenueCat, and add the matching line to the Privacy Policy.
+
+### 2. RevenueCat dashboard
+
+- Add the Android app: link Play Console, add service-account credentials for server notifications.
+- Create the lifetime IAP as **non-consumable**, mirroring the Play product.
+- Create one entitlement, `pro_feature`, and attach the product.
+- Create a default offering with one package containing it.
+- Confirm restore behaviour is **Transfer to new App User ID**.
+
+### 3. Add the SDK and configure it
+
+- `purchases_flutter` in `pubspec.yaml`. **Check the current version at the time you add it** - it was 10.12.0 on 2026-09-12, and the floor that matters is Android SDK 7.11.0 for non-consumable handling.
+- `BILLING` permission in `AndroidManifest.xml`. Check whether `README.md` section "App permissions" needs a new entry.
+- Configure at launch with the Android key. **No `logIn` call** - anonymous throughout.
+- This is a STRICT dependency-locked project: `gradle.lockfile` and `pubspec.lock` both need regenerating, and the lockfile set is part of the build.
+
+### 4. Fill in the seam
+
+- `lib/entitlement.dart` already exists and returns `true`. Give it a real implementation over `getCustomerInfo()`, returning false on any failure so a brand-new offline install is locked rather than crashing.
+- Keep it the ONLY place the rest of the app asks. Every screen should call the seam, never the SDK.
+
+### 5. Gate the three paid screens
+
+- MANAGE, WATCHDOG and DEVICE ASSIGNMENT. Standalone generation and the app log stay free.
+- **Order: entitlement, then dependencies, then the offer to install them.** See section 2.
+- Locked screens are accessible but read only, with the once-per-session advice.
+
+### 6. The paywall
+
+- A modal offering the lifetime unlock. Lead on what it buys: a watchdog that renews PIA keys without anyone touching it, and device assignment.
+- Shown only after the pre-flight passes.
+- Needs an offline state: "connect to complete the purchase".
+
+### 7. Restore
+
+- Silent auto-restore on first launch, plus a visible button. Settings is the natural home for the button, beside the other one-off actions.
+
+### 8. Home screen cleanup
+
+- Remove PayPal and Patreon, keep the review link, re-space the footer.
+
+### 9. Documentation, in the same commit as the dependency
+
+- `SECURITY.md` "Secret management": separate credentials from purchase state.
+- `README.md`: the same, plus the permission if one was added.
+
+### 10. The pre-flight gap - worth doing regardless of freemium
+
+`RouterSlotService.missingStockBinaries` checks `jq` and `mailsend-go`. Nothing checks that
+`/opt/etc/init.d` exists, which is what Download Master provides and what boot persistence depends
+on. See section 7 for what actually happens today, which is not what the old backlog said.
+
+---
+
+## 6. Testing
+
+**This is the slow part, and it cannot be done from a local build.** A purchase flow needs a signed
+build on a Play track and a licence-tester account. Budget for the loop being minutes rather than
+seconds, and sequence the code so that as much as possible is verifiable without it.
+
+Setup:
+
+- Add the developer Gmail under **Play Console -> Licence testing**.
+- Upload an `.aab` to the **internal** track. `release.yml` does this on a tag push; `promote.yml` moves a build between tracks afterwards without rebuilding.
+
+The runs that matter:
+
+- **Entitlement gating:** generation and the app log work untouched; the three router screens show the paywall.
+- **Ordering:** a locked user on stock sees the paywall, NOT "jq is missing", and is never offered a binary install.
+- **Purchase:** complete one with Google's *"Test card, always approves"*.
+- **Declined:** repeat with *"Test card, always declines"* and check the error path.
+- **The one that finds the expensive bug:** purchase, uninstall, reinstall, restore, and confirm the unlock comes back. This is what proves the product was configured non-consumable.
+- **Offline:** disconnect, confirm the cached entitlement still unlocks.
+- **Offline purchase:** disconnect BEFORE buying and confirm the "connect to complete" state appears rather than a crash or a silent failure.
+
+Before merging to main: run Quality & security on the branch.
+
+---
+
+## 7. What already exists in this app
+
+The pre-flight the backlog asked for is mostly written and running:
+
+| Check | Where it lives |
+| --- | --- |
+| SSH reachable, credentials accepted | `RouterSlotsScreen._onConnect` |
+| Firmware identified, stock or Merlin | `RouterSlotService.readFirmwareTag` + `classifyFirmwareTag` |
+| Stock: `jq` and `mailsend-go` present | `RouterSlotService.missingStockBinaries` |
+| Merlin: JFFS custom scripts enabled | `RouterWatchdog.enableJffsScripts` |
+| The entitlement seam | `lib/entitlement.dart`, returns `true` today |
+| Stock: `/opt` present for boot persistence | **not checked** |
+
+**On that last row, the old backlog wording was stronger than the evidence.** It said the watchdog
+"deploys, works, and then silently loses its cron entries at the next reboot". Reading the code on
+2026-09-12, what actually happens depends on the router:
+
+- **If `/opt/etc/init.d` does not exist**, the heredoc write fails, `_writeFile` compares `wc -c` against the expected byte count, and the deploy throws. So it is not silent. But the message says *"check free space on the router filesystem"*, which is the wrong diagnosis and would send someone hunting in the wrong place.
+- **If `/opt/etc/init.d` exists but is not a working Download Master install**, the write succeeds, the cron entries install, and nothing runs the script at the next boot. That case IS silent, and matches what the backlog described.
+
+Either way the fix is the same and cheap: probe for the directory during the pre-flight and say what
+is missing in the user's terms. Worth doing whether or not the paid tier ever ships.
+
+---
+
+## 8. Reference docs
+
+- Flutter installation: <https://www.revenuecat.com/docs/getting-started/installation/flutter>
+- Google Play product setup: <https://www.revenuecat.com/docs/getting-started/entitlements/android-products>
+- Non-subscription purchases: <https://www.revenuecat.com/docs/platform-resources/non-subscriptions>
+- Customer info and entitlements: <https://www.revenuecat.com/docs/customers/customer-info>
+- Caching: <https://www.revenuecat.com/docs/test-and-launch/debugging/caching>
+- Restore behaviour: <https://www.revenuecat.com/docs/projects/restore-behavior>
+- Implementation responsibilities: <https://www.revenuecat.com/docs/platform-resources/implementation-responsibilities>
+
+---
+
+## 9. Sample code from the advisory session
+
+Kept as written on 2026-08-05. Treat as illustrative: check it against the current SDK before using
+any of it, and note that all of it belongs behind `lib/entitlement.dart` rather than in a screen.
 
 ### Configure at launch (no logIn call — anonymous)
 
@@ -175,124 +303,3 @@ Offer both silent auto-restore and a visible button.
 
 - Enable **Google Play server notifications** (Pub/Sub) now; Apple Server Notifications with iOS.
 - Add a **CustomerInfo listener** (`Purchases.addCustomerInfoUpdateListener`) to reactively update UI.
-
-### Recommended build order
-
-1. Dashboard: product (non-consumable) -> entitlement -> offering.
-2. Install + configure SDK (Android key).
-3. Gate paid function via `getCustomerInfo()`.
-4. Wire purchase + restore.
-5. Test in Play internal testing track with a license tester: purchase -> uninstall -> reinstall -> restore -> confirm unlock persists offline.
-6. Add iOS: app, iOS key, non-consumable IAP on the same entitlement.
-
----
-
-## Key Reference Docs
-
-- Caching: https://www.revenuecat.com/docs/test-and-launch/debugging/caching
-- Getting Subscription Status / Offline Entitlements: https://www.revenuecat.com/docs/customers/customer-info
-- Non-Subscription Purchases: https://www.revenuecat.com/docs/platform-resources/non-subscriptions
-- Google Play Product Setup: https://www.revenuecat.com/docs/getting-started/entitlements/android-products
-- Restore Behavior: https://www.revenuecat.com/docs/projects/restore-behavior
-- Flutter installation: https://www.revenuecat.com/docs/getting-started/installation/flutter
-- Implementation Responsibilities: https://www.revenuecat.com/docs/platform-resources/implementation-responsibilities
----
-
-## Addendum 2026-09-05 — app-specific notes
-
-Everything above is RevenueCat mechanics from the advisory session. These are the things specific to *this* app, found while reviewing the backlog. Backlog item: `BACKLOG.md` section 1.2.
-
-### An unlocked watchdog cannot be re-locked, and that is accepted
-
-The watchdog runs **on the router**, on cron, with the app nowhere in the picture. Once deployed it keeps re-negotiating PIA for as long as the router is powered, whatever the entitlement says afterwards. There is no mechanism — and should be none — for the app to reach in and stop a watchdog because a purchase was refunded.
-
-**Decision (2026-09-05): accepted.** The point of the paid tier is cashflow to cover development costs, not enforcement. The source stays on GitHub and anyone can build it themselves for nothing; the charge buys not having to. A refund path that leaves a working watchdog behind is a rounding error against that.
-
-Two consequences worth keeping straight:
-
-- Section 3 above (offline access) is nearly free for the watchdog specifically — it needs no entitlement check at run time because it does not run in the app at all. The gate belongs on **deploying** one, not on it working.
-- Do not build revocation logic, a phone-home, or a licence check inside the deployed script. It would be defeatable in a text editor, it would add a failure mode to something whose whole job is to be reliable unattended, and it contradicts the decision above.
-
-### Gate the purchase behind the pre-flight check that already exists
-
-Section 1.2.4 of the backlog asks for a pre-flight diagnostic so nobody buys an unlock their router cannot use. Most of it is already written and running:
-
-| Check | Where it lives now |
-| --- | --- |
-| SSH reachable and credentials accepted | `RouterSlotsScreen._onConnect` |
-| Firmware identified (stock vs Merlin) | `RouterSlotService.readFirmwareTag` + `classifyFirmwareTag` |
-| Stock: `jq` and `mailsend-go` present | `RouterSlotService.missingStockBinaries` |
-| Merlin: JFFS custom scripts enabled | `RouterWatchdog.enableJffsScripts` reads `jffs2_scripts` / `jffs2_on` |
-| Stock: `/opt` present for boot persistence | not checked today — DownloadMaster installed? |
-
-The last row is the gap, and it is the one most likely to bite: without `/opt/etc/init.d/` the watchdog deploys and works, then silently loses its cron entries at the next reboot. Worth adding as a check regardless of freemium.
-
-Sequence the paywall **after** the pre-flight passes, not before, so the purchase button only appears to someone whose router can actually run the thing.
-
-### `flutter_secure_storage` versus the app's stated posture
-
-README and SECURITY.md both say plainly that nothing is written to device storage. An entitlement token is not a credential, so caching one is compatible with the *intent* — but the sentences are currently absolute and would read as contradicted.
-
-Fix the wording when the dependency lands, not after: SECURITY.md "Secret management" should distinguish *credentials* (never stored, still true) from *purchase state* (cached, not sensitive, and what it is used for). Getting caught overstating this would cost more than the feature is worth.
-
-### The home screen after PayPal and Patreon go
-
-Section 1.2.3 removes both donation buttons. That leaves the home screen's footer as just the two links — "how to use this app" and "add a Play Store app review" — with the `spacer` above them sized for a block that is no longer there. Small layout job, but do not forget the review link's own text: the alert emails say *"by tapping on the home screen link"*, so that link has to survive the redesign or the email wording goes stale.
-
-### Play Console data safety
-
-Adding RevenueCat means an SDK that sees a pseudonymous app-user id. The Data safety form and the privacy policy both need updating before the release that carries it — this is a store-rejection item, not a nicety.
-
----
-
-## Work breakdown
-
-Moved here verbatim from `BACKLOG.md` section 1.2 on 2026-09-12, so the implementation lives in one
-place. The release chores that used to sit alongside it - documentation, publicity, launch and ASO -
-went to the CHANGELOG pending list instead, because they are not implementation.
-
-This is the raw material for the WIP items, not the sequence itself. The order below is the order it
-was written in, which is not necessarily the order to build in - see "Recommended build order" above,
-and the sequencing decision still to be made.
-
-### Accounts & Play Console setup
-
-- **In-app product creation:** Create a **Non-consumable** in-app product (e.g., `cfg-pia-wg_pro_unlock`) set to US$x.yy.
-- **Play Store compliance:** Complete **Data safety form** to reflect RevenueCat, and add to Privacy Policy. Store-rejection item, not a nicety - the SDK sees a pseudonymous app-user id.
-
-### RevenueCat dashboard setup
-
-- **Link accounts:** Connect Google Play Console credentials to RevenueCat via service account keys.
-- **Configure entitlements:** Create an **Entitlement** named `pro_feature` and map to `cfg-pia-wg_pro_unlock`.
-
-### Codebase integration
-
-- **Flutter dependencies:** Add `purchases_flutter` and `flutter_secure_storage` to `pubspec.yaml`.
-- **Billing service singleton:** Implement RevenueCat initialisation, real-time entitlement status updates, purchase triggers, and purchase restoration.
-- **Paywall UI modal:** Build a `PaywallBottomSheet` highlighting watchdog's zero-touch automation, PIA key renewal fix, and lifetime access model.
-- **PayPal/Patreon:** remove links from main app screen. Re-space the home-screen footer afterwards - the `spacer` above it is sized for the donation block. Keep the "add a Play Store app review" link: the watchdog alert emails say "by tapping on the home screen link", so removing it makes that wording stale.
-
-### Entitlement check must precede every dependency check
-
-- **Order: entitlement, then dependencies, then the offer to install them.** A user without `pro_feature` who opens MANAGE or WATCHDOG on stock must see the paywall, never "jq is missing". Telling someone to install a dependency for a feature they cannot use either way wastes their time and reads as a bug.
-- Applies to the helper-binary install (`.claude/plans/plan_install-helper-binaries.md`) and to anything else that probes the router before the gate. **Never prompt to download binaries onto the router of a user who has not unlocked the feature** - it is work done on their hardware for something they cannot run.
-- Worth a test that pins the ordering, because it is the kind of thing a later refactor reorders without noticing.
-
-### Security & router diagnostics
-
-- **Pre-flight diagnostic:** Verify SSH connectivity and JFFS script execution readiness *before* displaying unlock feature to prevent purchases on incompatible setups. Most of this already exists - see the table in the plan addendum. The one missing check is `/opt` on stock (DownloadMaster installed): without it the watchdog deploys, works, and then silently loses its cron entries at the next reboot. **Worth adding regardless of freemium.**
-- **Do not build revocation into the deployed watchdog script.** A deployed watchdog runs on the router with the app nowhere in the picture, so entitlement cannot be enforced after the fact - accepted deliberately (see plan addendum). A licence check inside the script would be defeatable in a text editor and would add a failure mode to the one thing that has to be reliable unattended.
-- **`flutter_secure_storage` versus the stated posture:** `README.md` and `SECURITY.md` both say absolutely that nothing is written to device storage. Caching an entitlement is compatible with the intent but contradicts the wording. Reword "Secret management" to separate *credentials* (never stored) from *purchase state* (cached, not sensitive) in the same change that adds the dependency.
-
-### Sandbox testing & QA
-
-- **Licence testing:** Add developer Gmail under *Google Play Console -> Licence testing*.
-- **Internal test track:** Build and upload `flutter build appbundle` (`.aab`) to the Internal Testing track.
-- **Sandbox verification:** Run `flutter run` on device to test:
-- **E2E test:** Generate and Manage execute freely; watchdog invokes unlock feature.
-- **Purchase flow:** complete test transaction via Google’s *"Test card, always approves"*.
-- **Declined card handling:** Test error handling using *"Test card, always declines"*.
-- **Restoration flow:** test "Restore Purchases" button.
-- **Offline access:** disconnect internet and verify cached local entitlements allow watchdog to execute.
-- Check if we need to update the list of Android permissions the app now uses, see `README.md` section "8. App permissions".
-- Run a sonar scan on the Dev branch before merging to main.
