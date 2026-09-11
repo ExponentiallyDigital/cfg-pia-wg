@@ -234,35 +234,65 @@ void main() {
         '32766:\tfrom all lookup main\n';
 
     test('the rule for the tunnel the device left is stale', () {
-      expect(staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: 5), [9]);
+      expect(staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: 5), ['9']);
     });
 
     test('unassigning leaves nothing behind - every per-device rule goes', () {
-      expect(staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: null), [9, 5]);
+      expect(staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: null), ['9', '5']);
     });
 
-    test('the default-connection rule is never touched', () {
-      // `from all iif br0 lookup 5` at priority 10000 IS the default connection. Deleting it
-      // would send every unassigned device straight out of the WAN.
-      expect(staleRuleTables(twoRules, ip: 'all', keepIndex: null), isEmpty);
+    test('a rule belonging to no device is never returned for one', () {
+      // `from all iif br0 lookup 5` at priority 10000 IS the default connection, and
+      // `32766: from all lookup main` is the router's own fallback. Deleting either would break
+      // the whole LAN. Neither names a device, so neither can ever match one.
+      final swept = staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: null);
+      expect(swept, isNot(contains('main')));
+      expect(swept, isNot(contains('local')));
+      expect(swept.length, 2, reason: 'only the two per-device rules');
     });
 
     test('a duplicate of the correct rule is stale too, but one copy is kept', () {
       const dupes = '100:\tfrom 192.168.1.51 lookup 5\n100:\tfrom 192.168.1.51 lookup 5\n';
-      expect(staleRuleTables(dupes, ip: '192.168.1.51', keepIndex: 5), [5]);
+      expect(staleRuleTables(dupes, ip: '192.168.1.51', keepIndex: 5), ['5']);
     });
 
     test('other devices are left alone, and a prefix match is not a match', () {
       const others = '100:\tfrom 192.168.1.5 lookup 9\n'
           '100:\tfrom 192.168.1.510 lookup 9\n'
           '100:\tfrom 192.168.1.51 lookup 9\n';
-      expect(staleRuleTables(others, ip: '192.168.1.51', keepIndex: null), [9]);
+      expect(staleRuleTables(others, ip: '192.168.1.51', keepIndex: null), ['9']);
     });
 
     test('nothing to do when the device already has only its own rule', () {
-      expect(staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: 9), [5]);
+      expect(staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: 9), ['5']);
       expect(staleRuleTables('100:\tfrom 192.168.1.51 lookup 5\n', ip: '192.168.1.51', keepIndex: 5), isEmpty);
       expect(staleRuleTables('', ip: '192.168.1.51', keepIndex: 5), isEmpty);
+    });
+
+    // Reported on hardware 2026-09-11. Pinning a device to the plain internet - index 0 - makes
+    // the firmware write `lookup main` for it, and matching only digits left that rule invisible.
+    // At equal priority `main` was listed first and won, so a device that had ever been on
+    // Internet stayed there through every later move until the router was rebooted.
+    group('a device pinned to the plain internet', () {
+      const internetThenTunnel = '100:\tfrom 192.168.1.51 lookup main\n'
+          '100:\tfrom 192.168.1.51 lookup 5\n'
+          '32766:\tfrom all lookup main\n';
+
+      test('moving OFF Internet sweeps its lookup main rule', () {
+        expect(staleRuleTables(internetThenTunnel, ip: '192.168.1.51', keepIndex: 5), ['main']);
+      });
+
+      test('index 0 KEEPS lookup main - that is the rule it is supposed to have', () {
+        expect(staleRuleTables(internetThenTunnel, ip: '192.168.1.51', keepIndex: 0), ['5']);
+      });
+
+      test('going back to the default connection sweeps both', () {
+        expect(staleRuleTables(internetThenTunnel, ip: '192.168.1.51', keepIndex: null), ['main', '5']);
+      });
+
+      test("the router's own fallback is still untouched", () {
+        expect(staleRuleTables(internetThenTunnel, ip: '192.168.1.51', keepIndex: 5).length, 1);
+      });
     });
   });
 }

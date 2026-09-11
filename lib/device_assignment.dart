@@ -148,16 +148,34 @@ const String kIpRuleCommand = 'ip rule show';
 /// it; only `restart_net_and_phy` does, and that bounces every switch port and re-leases the WAN.
 ///
 /// A duplicate of the CORRECT rule is stale too: one is kept and any further copies are returned.
-List<int> staleRuleTables(String ipRuleOutput, {required String ip, int? keepIndex}) {
-  final stale = <int>[];
+///
+/// **The table is not always a number.** Pinning a device to the plain internet - index 0 - makes
+/// the firmware write `lookup main` for it, and matching only digits made that rule invisible here.
+/// Measured 2026-09-11: a device moved to Internet and then to wgc5 kept both, with `main` first -
+///
+/// ```text
+/// 100:    from 192.168.1.51 lookup main  <- Internet, stale, and matched first
+/// 100:    from 192.168.1.51 lookup 5     <- wgc5, correct, never reached
+/// ```
+///
+/// so once a device had been on Internet it stayed there until the router was rebooted. The `from`
+/// address is what makes this safe: the global `32766: from all lookup main` and the priority-10000
+/// `from all iif br0` rules name `all`, never a device, so they can never match.
+List<String> staleRuleTables(String ipRuleOutput, {required String ip, int? keepIndex}) {
+  // What this device SHOULD be routed by: its profile's table, `main` when it is pinned to the
+  // plain internet, and nothing at all when it follows the default connection.
+  final keep = keepIndex == null
+      ? null
+      : keepIndex == 0
+          ? 'main'
+          : '$keepIndex';
+  final stale = <String>[];
   var kept = false;
   for (final line in ipRuleOutput.split('\n')) {
-    final m = RegExp(r'from (\S+) lookup ([0-9]+)').firstMatch(line);
-    // `lookup main` and the priority-10000 `from all iif br0` default-connection rules are not
-    // per-device and must never be touched; both fail the match above.
+    final m = RegExp(r'from (\S+) lookup (\S+)').firstMatch(line);
     if (m == null || m.group(1) != ip) continue;
-    final table = int.parse(m.group(2)!);
-    if (table == keepIndex && !kept) {
+    final table = m.group(2)!;
+    if (table == keep && !kept) {
       kept = true;
       continue;
     }

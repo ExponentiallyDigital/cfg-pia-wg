@@ -38,6 +38,13 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.66 build 436 - a device that had been on Internet was stuck there
+
+- FIX: **once a device had been assigned to Internet, every later assignment had no effect until the router was rebooted.** Pinning a device to the plain internet makes the firmware write `from <ip> lookup main` at priority 100, and the stale-rule sweep matched `lookup <digits>` only - so that rule was invisible to it. Every later move added its own numeric rule underneath, `main` was still listed first, and at equal priority the kernel takes them in order. NVRAM, the web interface and the app all agreed the device was on wgc5 while its traffic went out of the WAN. Reported on hardware 2026-09-11.
+- CHG: the sweep matches the routing table by NAME rather than by number, and knows that index 0 is supposed to have `lookup main` - so moving TO Internet keeps that rule and moving off it removes it.
+- INF: the `from` address is what keeps this safe. The global `32766: from all lookup main` and the priority-10000 `from all iif br0` default-connection rules name `all` and never a device, so a per-device sweep cannot reach them however the table is written.
+- TST: four - moving off Internet sweeps `lookup main`, index 0 keeps it, returning to the default sweeps both, and no rule belonging to `all` is ever returned for a device.
+- DOC: ARCHITECTURE records the measurement beside the stale-rule section it corrects.
 2026-09-11 v0.8.65 build 435 - the last of the test-pass list
 
 - ADD: **CREATE GITHUB ISSUE fills in the router model and firmware.** They were placeholders a reporter had to look up, so nobody did. Both come from two extra reads on a round trip the About screen already makes. A reporter on an unsupported router or an ancient firmware is the case this answers, and the issue is editable before it is submitted.
