@@ -60,6 +60,14 @@ A native Android app that generates and optionally applies ready-to-use WireGuar
 
 If you have an ASUS router — stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) — you can also **manage** WG configs directly on your router and deploy a **self-healing** watchdog with optional email alerting that makes your configuration truly "set and forget".
 
+**The part people do not expect is the device view.** Your router thinks in SLOTS: five numbered
+VPN profiles, and to find out which of your devices is using one you generally have to stop it and
+see what breaks. **cfg-pia-wg thinks in DEVICES.** One screen lists everything on your network and
+what each one is using right now, and moving a device to a different VPN - or off VPN entirely - is
+one tap on that device. No slot numbers, nothing to stop first, and nothing to work out afterwards.
+
+That is the other half of what this app is for. Tunnels that stay up on their own is the first half.
+
 This app is based on my command line Windows/Linux app [cfg-pia-wg-cmd](https://github.com/ExponentiallyDigital/cfg-pia-wg-cmd).
 
 ## 1. Why use this?
@@ -544,6 +552,11 @@ reconfigures`, counted across every slot since the app first configured that rou
 
 - **Pre-shared keys:** PIA WG does not use pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
 - **Time-to-live constraints:** PIA WG configs expire without warning per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
+- **Turn OFF battery optimisation for this app.** Android will otherwise freeze it the moment you
+  switch away, and the work it was doing on your router stops mid-action - an SSH session dropped
+  during a watchdog deployment, an alert email abandoned halfway through. Nothing is damaged, but
+  it fails for a reason you cannot see. On most phones: **Settings -> Apps -> cfg-pia-wg ->
+  Battery -> Unrestricted**. Worth doing before you deploy your first watchdog.
 - **Key safety:** generated configs contains private encryption keys. Treat them like passwords and manage them securely.
 - **PIA maintenance:** PIA occasionally take regions offline for maintenance so you might be expecting to have an exit node in say pia-region_one, but online tools may show you as exiting from pia-region_two.
 - **Check your VPN is working:** with services like [PIA what is my ip](https://www.privateinternetaccess.com/what-is-my-ip), [ipaddress.my](https://ipaddress.my/?lang=en_US), [2ip.io](https://2ip.io), and [showmyip.com](https://www.showmyip.com). However, these sites may cache your location in the browser and they sometimes return a stale exit region if used multiple times. To be absolutely sure, close your browser rather than just refreshing the page.

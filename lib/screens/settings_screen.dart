@@ -274,6 +274,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ));
   }
 
+  Future<void> _rebootRouter() async {
+    final creds = await _credentials();
+    if (creds == null || !mounted) return;
+    final (ip, user, pass) = creds;
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: kSurface,
+            title: const Text('Reboot the router?', style: TextStyle(color: kHighlight, fontSize: 14)),
+            content: const Text(
+              'Are you sure? This will disconnect all devices including WiFi connections.',
+              style: TextStyle(color: kText, fontSize: 12),
+            ),
+            actions: [
+              TextButton(
+                key: const Key('settings_reboot_cancel'),
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('CANCEL'),
+              ),
+              TextButton(
+                key: const Key('settings_reboot_confirm'),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('REBOOT', style: TextStyle(color: kError)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    setState(() => _busy = true);
+    String? error;
+    try {
+      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      await RouterWatchdog(client, onLog: _c.onLog).rebootRouter();
+      await _c.rememberRouterIp(ip);
+    } catch (e) {
+      error = e.toString().replaceAll('Exception: ', '');
+    }
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    if (error != null) {
+      await AppErrors.system(context, _c, 'Could not reboot the router: $error');
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Reboot requested. The router takes a minute or two to come back.')),
+    );
+  }
+
   /// No confirm prompt: nothing is lost that cannot be retyped, and the button is only enabled when
   /// there is something to clear.
   Future<void> _forgetRouterIp() async {
@@ -289,8 +340,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return AppScaffold(
       maxContentWidth: kFormMaxWidth,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        const Text('ROUTER', style: TextStyle(color: kHighlight, fontSize: 12, letterSpacing: 1.5)),
-        const SizedBox(height: 12),
         _Action(
           keyValue: 'settings_uninstall',
           label: 'UNINSTALL FEATURES INSTALLED TO ROUTER',
@@ -307,9 +356,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: Icons.gpp_bad_outlined,
           onTap: _busy ? null : _deletePiaCert,
         ),
-        const SizedBox(height: 20),
-        const Text('THIS DEVICE', style: TextStyle(color: kHighlight, fontSize: 12, letterSpacing: 1.5)),
-        const SizedBox(height: 12),
         // The router address is the one thing the app keeps on device storage, so it needs a way to
         // be cleared. Greyed out when there is nothing stored.
         ListenableBuilder(
@@ -321,6 +367,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.wifi_off_outlined,
             onTap: _c.rememberedRouterIp.isEmpty || _busy ? null : _forgetRouterIp,
           ),
+        ),
+        _Action(
+          keyValue: 'settings_reboot_router',
+          label: 'REBOOT ROUTER',
+          note: 'Restarts the router. Everything on your network loses its connection while it comes back.',
+          icon: Icons.restart_alt_outlined,
+          destructive: true,
+          onTap: _busy ? null : _rebootRouter,
         ),
         if (_busy) ...[
           const SizedBox(height: 24),
