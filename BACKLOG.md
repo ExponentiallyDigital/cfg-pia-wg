@@ -22,7 +22,7 @@
 
 #### 1.1.1. DOC - documentation updates
 
-- DOC: add to headline features section of README how much easier it is to assign clients to VPNs; stock is tunnel based vs cfg-pia-wg which is client (device) based.
+- DOC: **give each ARCHITECTURE section its own overview.** The document has one at the top, added in the build 430 rewrite, but the sections do not: most open with mechanism before saying what the thing is for or why a reader should care. `The router's service queue` was given one on 2026-09-12 and reads far better for it. Device assignment (section 6) and the SSH commands (section 4) are the two that need it most. Roughly fifteen minutes a section.
 - DOC: Update `README.md` screenshots.
 - DOC: Update `README.md` [5. Using the app](https://github.com/ExponentiallyDigital/cfg-pia-wg#5-using-the-app).
 - DOC: Update Play Store description.
