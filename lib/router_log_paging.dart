@@ -53,6 +53,37 @@ List<int> parseLogSizes(String raw, {int expected = 2}) {
 }
 
 /// Which bytes of which file a page covers.
+/// Who wrote a syslog line, as far as this app can tell.
+enum RouterLogSource {
+  /// Neither this app nor its watchdog - the firmware, the kernel, dropbear, everything else.
+  other,
+
+  /// This app, over SSH.
+  app,
+
+  /// The watchdog script running on the router.
+  watchdog,
+}
+
+/// Both the app and the deployed watchdog write to syslog under the tag `cfg-pia-wg`. The script
+/// prefixes every line with its interface, and that prefix is the only thing separating them:
+///
+/// ```text
+/// cfg-pia-wg: wgc1: Checking wgc1 pia-region_name connectivity   <- the watchdog, on the router
+/// cfg-pia-wg: Laptop (192.168.1.20) -> wgc5 reassigned           <- this app, over SSH
+/// ```
+///
+/// Giving the script a tag of its own would be unambiguous, but a tag change only reaches a router
+/// on the next watchdog deploy, so every router already in the field would go on emitting the old
+/// one. This costs nothing and works today.
+RouterLogSource classifyLogLine(String line) {
+  final m = _tagPattern.firstMatch(line);
+  if (m == null) return RouterLogSource.other;
+  return m.group(1) == null ? RouterLogSource.app : RouterLogSource.watchdog;
+}
+
+final RegExp _tagPattern = RegExp(r'cfg-pia-wg:\s*(wgc\d+:)?');
+
 class LogPage {
   const LogPage({required this.file, required this.fromEnd, required this.length, required this.reachesStart});
 
