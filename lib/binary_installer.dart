@@ -235,7 +235,7 @@ class BinaryInstaller {
   BinaryInstaller(this.run, {this.onLog});
 
   final Future<String> Function(String cmd) run;
-  final void Function(String message, {bool isError, bool isSuccess})? onLog;
+  final void Function(String message, {bool isError, bool isSuccess, bool isWarning})? onLog;
 
   /// Writes to the app log AND the router syslog, so a failure is diagnosable from the router
   /// afterwards rather than only from a screenshot of the app. Mirrors RouterWatchdog._logRouter.

@@ -290,7 +290,7 @@ void main() {
         final s = await _state(c);
         final logged = <String>[];
         final svc = DeviceAssignmentService(c, pollInterval: Duration.zero,
-            onLog: (m, {isError = false, isSuccess = false}) => logged.add(m));
+            onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logged.add(m));
 
         await svc.apply(
           base: s,
@@ -312,7 +312,7 @@ void main() {
         final s = await _state(c);
         final logged = <String>[];
         final svc = DeviceAssignmentService(c, pollInterval: Duration.zero,
-            onLog: (m, {isError = false, isSuccess = false}) => logged.add(m));
+            onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logged.add(m));
 
         await svc.apply(
           base: s,

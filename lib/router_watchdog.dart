@@ -739,7 +739,7 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
 
 class RouterWatchdog {
   final SSHClient client;
-  final void Function(String, {bool isError, bool isSuccess})? onLog;
+  final void Function(String, {bool isError, bool isSuccess, bool isWarning})? onLog;
 
   /// Interface-up polling, matching RouterSlotService's cadence. Injectable so a test does not
   /// wait on real time.
@@ -766,6 +766,7 @@ class RouterWatchdog {
         read: (cmd) => _read(cmd),
         run: (cmd) => _run(cmd),
         onLog: onLog,
+        logRouter: _logRouter,
         pollInterval: verifyPollInterval,
         maxPolls: verifyMaxAttempts,
       );

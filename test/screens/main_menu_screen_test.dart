@@ -126,7 +126,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('drawer_log')));
     await tester.pumpAndSettle();
-    expect(find.text('CLEAR LOG'), findsOneWidget);
+    expect(find.byKey(const Key('app_log_clear')), findsOneWidget);
 
     await _teardown(tester, c);
   });
@@ -139,7 +139,7 @@ void main() {
     // Go to the log screen, then use the drawer HOME entry to come back.
     await tester.tap(find.byKey(const Key('menu_log')));
     await tester.pumpAndSettle();
-    expect(find.text('CLEAR LOG'), findsOneWidget);
+    expect(find.byKey(const Key('app_log_clear')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('app_hamburger')));
     await tester.pumpAndSettle();
@@ -194,7 +194,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('drawer_log')));
     await tester.pumpAndSettle();
-    expect(find.text('CLEAR LOG'), findsOneWidget); // log screen
+    expect(find.byKey(const Key('app_log_clear')), findsOneWidget); // log screen
 
     await _teardown(tester, c);
   });

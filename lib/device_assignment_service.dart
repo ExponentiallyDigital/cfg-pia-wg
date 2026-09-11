@@ -86,7 +86,7 @@ class DeviceAssignmentService {
   });
 
   final SSHClient client;
-  final void Function(String message, {bool isError, bool isSuccess})? onLog;
+  final void Function(String message, {bool isError, bool isSuccess, bool isWarning})? onLog;
 
   /// How the default-connection sequence waits for each `service` call to finish. `notify_rc`
   /// QUEUES the call and returns immediately, so issuing the next step straight away races it -

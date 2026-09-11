@@ -118,7 +118,7 @@ void main() {
     test('is reported to the app log, so an odd pause in the log has an explanation', () async {
       final opener = _Opener(failures: (client) => client == 0 ? (call) => SSHStateError('closed') : null);
       final lines = <String>[];
-      final session = RouterSession(connect: opener.call, onLog: (m, {isError = false, isSuccess = false}) => lines.add(m));
+      final session = RouterSession(connect: opener.call, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => lines.add(m));
 
       await session.run('x');
 

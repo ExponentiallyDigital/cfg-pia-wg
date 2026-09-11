@@ -64,7 +64,7 @@ class RouterSession implements SSHClient {
   /// Opens a brand-new authenticated client. Injected so tests need no socket.
   final Future<SSHClient> Function() connect;
 
-  final void Function(String, {bool isError, bool isSuccess})? onLog;
+  final void Function(String, {bool isError, bool isSuccess, bool isWarning})? onLog;
 
   SSHClient? _client;
   Future<SSHClient>? _opening;
@@ -139,7 +139,7 @@ class RouterSession implements SSHClient {
       // where a double write shows up as a byte-count mismatch in `_writeScript` and is reported
       // rather than silently accepted - and the next deploy truncates the file first anyway.
       _drop();
-      onLog?.call('Router SSH connection dropped; reconnecting.', isError: true);
+      onLog?.call('Router SSH connection dropped; reconnecting.', isWarning: true);
       final fresh = await client();
       return await fresh.run(command, environment: environment, runInPty: runInPty, stderr: stderr, stdout: stdout);
     }
@@ -164,7 +164,7 @@ class RouterSession implements SSHClient {
     } catch (e) {
       if (_closed || !isConnectionLost(e)) rethrow;
       _drop();
-      onLog?.call('Router SSH connection dropped; reconnecting.', isError: true);
+      onLog?.call('Router SSH connection dropped; reconnecting.', isWarning: true);
       final fresh = await client();
       return await fresh.runWithResult(command, runInPty: runInPty, stdout: stdout, stderr: stderr, environment: environment);
     }
