@@ -1032,6 +1032,21 @@ Three points of care, all covered by `staleRuleTables` in `lib/device_assignment
 
 ---
 
+> [!IMPORTANT]
+> **The table is not always a number.** A device pinned to the plain internet - `vpnc_dev_policy_list`
+> index 6 of `0` - gets `from <ip> lookup main`, not a numeric table. Measured 2026-09-11: a device
+> moved to Internet and then to wgc5 held both rules, with `main` listed first and winning.
+>
+> ```text
+> 100:    from 192.168.1.51 lookup main  <- Internet, stale, matched first
+> 100:    from 192.168.1.51 lookup 5     <- wgc5, correct, never reached
+> ```
+>
+> So a device that had ever been pinned to Internet stayed on the WAN through every later
+> reassignment until the router was rebooted. Any sweep of these rules has to match the table by
+> NAME rather than by number. The `from` address is what keeps that safe: the global
+> `32766: from all lookup main` and the priority-10000 `from all iif br0` rules name `all`, never a
+> device, so a per-device sweep can never reach them.
 ## 7. <a name='watchdog-details'></a>Watchdog details
 
 Deploying a watchdog writes three things to the router, plus the settings in [Watchdog NVRAM fields](#watchdog-nvram-fields):
