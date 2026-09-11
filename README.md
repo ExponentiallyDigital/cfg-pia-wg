@@ -469,12 +469,13 @@ console straight out to the internet, a laptop through Melbourne, everything els
 > assigned the devices to. Then a drop means those devices have no internet rather than an
 > unprotected one, and a watchdog on that tunnel is what decides how long that lasts.
 
-Four things that catch people out:
+Five things that catch people out:
 
 1. **A device the router has never seen an address for cannot be assigned.** Connect it to your network once, then come back and it will be there.
 2. **Assigning a device pins its address permanently.** That is what stops the assignment drifting onto a different device later. The pin stays behind when you unassign - the router never removes one, and neither does this app.
 3. **A randomised MAC address breaks the assignment silently.** Those devices are tagged in the list. Phones randomise per network by default, and the assignment stops working the next time the address rotates, with nothing to tell you. Turn randomisation off for your home network in the phone's Wi-Fi settings.
-4. **Guest network devices never appear.** They cannot reach your LAN at all, so putting one on a VPN is a different question from the one this screen answers.
+4. **A device assigned to a tunnel you then turn OFF keeps its assignment**, and falls through to the default connection while that tunnel is down. It picks the tunnel up again when you turn it back on. Deleting the tunnel is different: the app sends its devices back to the default connection and tells you which ones it moved.
+5. **Guest network devices never appear.** They cannot reach your LAN at all, so putting one on a VPN is a different question from the one this screen answers.
 
 ### 5.5. View app log
 

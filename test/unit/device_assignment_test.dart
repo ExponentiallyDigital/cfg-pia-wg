@@ -10,6 +10,37 @@ import 'package:flutter_test/flutter_test.dart';
 const _twoAssigned = '1>192.168.1.20>>9><1>192.168.1.22>>5>';
 
 void main() {
+  group('releasing a profile that is going away', () {
+    const list = '1>192.168.1.20>>5><1>192.168.1.21>>9><1>192.168.1.22>>5><0>192.168.1.23>>0>';
+
+    test('names every device pinned to the index, in list order', () {
+      expect(devicesPinnedTo(parseDevicePolicyList(list), 5), ['192.168.1.20', '192.168.1.22']);
+    });
+
+    test('an index nothing is pinned to yields nothing', () {
+      expect(devicesPinnedTo(parseDevicePolicyList(list), 3), isEmpty);
+    });
+
+    test('index 0 is not a pin - those devices are already on the default', () {
+      expect(devicesPinnedTo(parseDevicePolicyList(list), 0), isEmpty);
+    });
+
+    test('releasing sends only those devices back, leaving every other record untouched', () {
+      final out = serialiseDevicePolicyList(releaseDevicesFrom(parseDevicePolicyList(list), 5));
+      expect(out, '0>192.168.1.20>>0><1>192.168.1.21>>9><0>192.168.1.22>>0><0>192.168.1.23>>0>');
+    });
+
+    test('a record naming a VPN this app does not manage survives byte for byte', () {
+      // Index 3 here is an OpenVPN profile. Releasing index 5 must not read it, rewrite it or drop
+      // it - the user made that assignment somewhere else.
+      const withForeign = '1>192.168.1.20>>5><1>192.168.1.50>>3>';
+      expect(
+        serialiseDevicePolicyList(releaseDevicesFrom(parseDevicePolicyList(withForeign), 5)),
+        '0>192.168.1.20>>0><1>192.168.1.50>>3>',
+      );
+    });
+  });
+
   group('DevicePolicy parsing', () {
     test('reads the address and the profile index from a real list', () {
       final recs = parseDevicePolicyList(_twoAssigned);

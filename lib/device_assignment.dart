@@ -97,6 +97,27 @@ List<DevicePolicy> setDevicePolicy(List<DevicePolicy> records, {required String 
   return out;
 }
 
+/// The addresses pinned to [vpncIndex], in list order.
+///
+/// Used when a profile is about to stop existing. A policy record keeps naming the index of a
+/// deleted profile: the web interface cannot show it, the assignment screen can only call it
+/// "profile N", and the device's traffic goes wherever that index now leads - including to whatever
+/// region is next created in that slot. Measured on hardware 2026-09-11.
+List<String> devicesPinnedTo(List<DevicePolicy> records, int vpncIndex) => [
+      for (final r in records)
+        if (r.isAssigned && r.vpncIndex == vpncIndex) r.ip,
+    ];
+
+/// Sends every device pinned to [vpncIndex] back to the default connection.
+///
+/// Records for other addresses pass through byte for byte, including ones naming a VPN this app
+/// does not manage. Unassigning writes `0>IP>>0>` rather than dropping the record, matching what
+/// the web interface leaves behind.
+List<DevicePolicy> releaseDevicesFrom(List<DevicePolicy> records, int vpncIndex) => [
+      for (final r in records)
+        if (r.isAssigned && r.vpncIndex == vpncIndex) r.copyWith(enabled: false, vpncIndex: 0) else r,
+    ];
+
 /// The `vpnc_clientlist` index 6 [ip] is pinned to: `0` for the plain internet, a profile index for
 /// a tunnel, or null when the device has no pin and follows the default connection.
 int? assignedIndexFor(List<DevicePolicy> records, String ip) {

@@ -24,6 +24,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'router_command.dart';
 import 'router_service_queue.dart';
 import 'firmware.dart';
+import 'device_assignment.dart';
 import 'router_watchdog.dart' show buildLoggerCommand, shellSingleQuote;
 
 // The per-slot WireGuard NVRAM keys (without the `wgcN_` prefix), in the order router_push.dart
@@ -419,6 +420,45 @@ class RouterSlotService {
   }
 
   // Read/modify/write of vpnc_clientlist. The caller commits.
+  /// Sends every device pinned to [vpncIndex] back to the default connection, and removes the
+  /// routing rules that pointed at it.
+  ///
+  /// Names each device it moves. The policy list is keyed by IP, so the names come from
+  /// `dhcp_staticlist` (address to MAC) and `custom_clientlist` (MAC to the user's own name) -
+  /// two reads, and every pinned device has a reservation because assigning one creates it.
+  Future<void> _releasePinnedDevices(int vpncIndex) async {
+    final policies = parseDevicePolicyList(await _read('nvram get vpnc_dev_policy_list'));
+    final pinned = devicesPinnedTo(policies, vpncIndex);
+    if (pinned.isEmpty) return;
+
+    final byIp = <String, String>{};
+    parseDhcpStaticlist(await _read('nvram get dhcp_staticlist')).forEach((mac, ip) => byIp[ip] = mac);
+    final names = parseCustomClientlistNames(await _read('nvram get custom_clientlist'));
+    String label(String ip) {
+      final name = names[byIp[ip]?.toUpperCase()];
+      return name == null || name.isEmpty ? ip : '$name ($ip)';
+    }
+
+    onLog?.call('Moving ${pinned.length} device${pinned.length == 1 ? '' : 's'} to the default connection:');
+    for (final ip in pinned) {
+      onLog?.call('  ${label(ip)}');
+      await _logRouter('${label(ip)} released to the default connection - its VPN was deleted');
+    }
+    final updated = serialiseDevicePolicyList(releaseDevicesFrom(policies, vpncIndex));
+    await _run('nvram set vpnc_dev_policy_list=${shellSingleQuote(updated)}');
+    await _run('nvram commit');
+    await _run('service restart_vpnc_dev_policy', allowFailure: true);
+
+    // Stock leaves the old rule behind on a reassignment and does the same here, so the device
+    // would keep using the deleted profile's routing table until something else cleared it.
+    final rules = await _read(kIpRuleCommand);
+    for (final ip in pinned) {
+      for (final table in staleRuleTables(rules, ip: ip)) {
+        await _run('ip rule del from $ip lookup $table', allowFailure: true);
+      }
+    }
+  }
+
   Future<void> _editVpncClientlist(List<VpncRecord> Function(List<VpncRecord>) edit) async {
     final current = parseVpncClientlist(await _read('nvram get vpnc_clientlist'));
     await _run('nvram set vpnc_clientlist=${shellSingleQuote(serialiseVpncClientlist(edit(current)))}');
@@ -831,6 +871,11 @@ class RouterSlotService {
       // Resolve the runtime-state index from the record while it is still there - it is index 6,
       // not the slot number, so wgc1 leaves vpnc9_* behind.
       final stateIdx = vpncStateIndexForSlot(parseVpncClientlist(await _read('nvram get vpnc_clientlist')), slot);
+      // BEFORE the record goes: a device pinned to this profile keeps naming its index 6 forever.
+      // Stock never releases one, so the device ends up on whatever region is created in that slot
+      // next, the web interface cannot show the pin, and this screen can only call it "profile N".
+      // Measured on hardware 2026-09-11.
+      await _releasePinnedDevices(stateIdx);
       for (final key in kVpncRuntimeKeys) {
         await _run('nvram unset vpnc${stateIdx}_$key', allowFailure: true);
       }
