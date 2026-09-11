@@ -420,6 +420,16 @@ Links, in order: ReadMe, Change log, Security policy, Privacy policy, plus an `O
 
 **A LONG form belongs on a page, not in a dialog.** `WatchdogDialog` shipped the same bug twice - 409 and again in 412 - with SAVE and its spinner below a fold that would not scroll, because a shrink-wrapping `SingleChildScrollView` inside an unbounded card has no overflow to scroll and no arithmetic makes it. It is now an `AppScaffold` page, where the scroll view sits in an `Expanded` and therefore has a bounded viewport by construction. Reach for a page whenever the form is longer than a few fields.
 
+**A PROGRESS SPINNER never goes inside the scroll view.** Same bug, four separate fixes - 409,
+412, 425, 435 - and every one of them dismissed the keyboard, waited for something, then scrolled
+the SAVE button into view. Each was a race against two animations, and a scroll arriving one frame
+early is indistinguishable from no fix at all. The spinner now lives in a `Positioned.fill` overlay
+in a `Stack` ABOVE the `AppScaffold`, so there is no fold for it to be below and nothing left to
+race. The button keeps its label rather than becoming a spinner. `SlotModal` and
+`DeviceAssignmentScreen` already did this; `WatchdogDialog` was the last one that did not.
+`watchdog_dialog_test.dart` asserts the structural property - the overlay has no `Scrollable`
+ancestor - because that is the only form of it a later change cannot quietly undo.
+
 For a SHORT form that is genuinely a detour, use `_FormDialog` (`slot_modal.dart`) or the same structure by hand - `Dialog` > `ConstrainedBox(maxWidth: 480)` > `SingleChildScrollView` > `Padding` > `Column`, with the buttons as the last row of the scrolling column. **Width only**: the height must come from the incoming constraints, since inside the chrome the Scaffold has already taken the keyboard off the body and any cap computed from the screen height is too big. `SlotParamsEditor` still does this.
 
 The chrome's header takes ~104 logical px off the top, so with a keyboard up a dialog only gets `screen - header - keyboard` (on a 731-tall phone with a 436 keyboard that is ~166 px). It scrolls; that is the space there is while the header stays above dialogs.

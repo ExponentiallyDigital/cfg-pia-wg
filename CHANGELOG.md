@@ -14,7 +14,6 @@
 See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for "deep" backlog.
 
 - DOC: Sequenced documentation updates: ARCHITECTURE, TESTING, README, COINTEXT.
-- BUG: when deploying a watchdog (even with build 429) while saving, the spinner is below the fold and the last edited field is showing as editable. This has been a repeating issue across multiple builds.
 - commit.
 - ADD: implement RevenueCat.
 - commit.
@@ -38,6 +37,13 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.67 build 437 - the save spinner, fixed in a way that cannot come back
+
+- FIX: **the watchdog save spinner sat below the fold.** Fixed in 409, back in 412, fixed again in 425, back again in 435. Every one of those fixes dismissed the keyboard, waited for something, then scrolled the SAVE button into view, and every one was a race against two animations that a single early frame could lose. The spinner is now a full-screen overlay in a `Stack` above the page, so it is not in the scroll view and has no fold to be below. Nothing is left to race.
+- CHG: the SAVE button keeps its label during a save instead of turning into a spinner. That is what put the one thing the user needed to see inside the scroll view in the first place, and it also leaves a grey blob where the label was, which reads as the button breaking.
+- CHG: focus is still dropped on save, so the keyboard retracts and the last-edited field loses its green border - the other half of what made a save look like nothing had happened. Nothing waits on it any more.
+- TST: the STRUCTURAL property, which is the only form of this a later change cannot quietly undo: the progress overlay must have no `Scrollable` ancestor, must cover the whole screen, and the SAVE button must still be showing its label. Put the spinner back in the button and it gains a scrollable ancestor and the test fails.
+- DOC: CONTEXT carries the rule beside the "a long form belongs on a page" one it belongs with.
 2026-09-11 v0.8.66 build 436 - a device that had been on Internet was stuck there
 
 - FIX: **once a device had been assigned to Internet, every later assignment had no effect until the router was rebooted.** Pinning a device to the plain internet makes the firmware write `from <ip> lookup main` at priority 100, and the stale-rule sweep matched `lookup <digits>` only - so that rule was invisible to it. Every later move added its own numeric rule underneath, `main` was still listed first, and at equal priority the kernel takes them in order. NVRAM, the web interface and the app all agreed the device was on wgc5 while its traffic went out of the WAN. Reported on hardware 2026-09-11.

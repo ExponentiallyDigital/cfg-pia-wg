@@ -1,6 +1,6 @@
 name: cfg_pia_wg
 description: cfg-pia-wg
-version: 0.8.66+436
+version: 0.8.67+437
 environment:
   sdk: ">=3.0.0 <4.0.0"
   flutter: ">=3.10.0"

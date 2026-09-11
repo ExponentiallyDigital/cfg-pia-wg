@@ -1,4 +1,7 @@
 // test/watchdog_dialog_test.dart - widget tests for the watchdog EDIT dialog (save-redeploy).
+import 'dart:async';
+
+import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -29,6 +32,7 @@ Widget _host(
   bool slotIsEmpty = false,
   String piaUser = 'p1234567',
   String piaPass = 'secret',
+  Future<SSHClient> Function()? connect,
 }) {
   return SessionScope(
     controller: c,
@@ -41,7 +45,7 @@ Widget _host(
           controller: c,
           piaUsername: piaUser,
           piaPassword: piaPass,
-          connect: () async => client,
+          connect: connect ?? () async => client,
           piaService: _FakePia(),
           serviceFactory: (cl) => RouterWatchdog(cl, onLog: c.onLog),
         ),
@@ -78,6 +82,39 @@ void main() {
       expect(save.top, greaterThanOrEqualTo(0.0));
     });
 
+    // Fixed in 409, back in 412, fixed again in 425, back again in 435. Every one of those fixes
+    // scrolled the SAVE button into view after waiting for the keyboard, and every one of them was
+    // a race that one early frame could lose. The STRUCTURAL property is what cannot regress: the
+    // spinner does not live in the scroll view, so it has no fold to be below. Put it back inside
+    // the SAVE button and it gains a Scrollable ancestor, and this fails.
+    testWidgets('the saving spinner is not in the scroll view and covers the screen', (tester) async {
+      tester.view.physicalSize = const Size(360, 560);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+      // A connect that never returns holds the dialog in its busy state to be inspected. The load
+      // on entry goes through the same path a save does, and sets the same flag.
+      final held = Completer<SSHClient>();
+      addTearDown(() => held.complete(ssh));
+      await tester.pumpWidget(_host(ssh, c, connect: () => held.future));
+      // pump, not pumpAndSettle: the spinner animates forever, which is the point of it.
+      await tester.pump();
+
+      // The SAVE button never turns into a spinner; its label stays put underneath.
+      expect(find.text('SAVE & SELECT REGION'), findsOneWidget);
+      final overlay = find.byKey(const Key('wd_saving_overlay'));
+      expect(overlay, findsOneWidget, reason: 'a save shows a progress overlay');
+      expect(
+        find.ancestor(of: overlay, matching: find.byType(Scrollable)),
+        findsNothing,
+        reason: 'in a scroll view it can be below the fold, which is this bug, four times over',
+      );
+      expect(tester.getRect(overlay), const Rect.fromLTWH(0, 0, 360, 560));
+      expect(find.descendant(of: overlay, matching: find.byType(CircularProgressIndicator)), findsOneWidget);
+    });
     testWidgets('is a page, so it does not carry a Dialog of its own', (tester) async {
       final c = _controller();
       addTearDown(c.dispose);
