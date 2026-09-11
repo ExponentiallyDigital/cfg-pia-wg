@@ -439,10 +439,10 @@ class RouterSlotService {
       return name == null || name.isEmpty ? ip : '$name ($ip)';
     }
 
-    onLog?.call('Moving ${pinned.length} device${pinned.length == 1 ? '' : 's'} to the default connection:');
+    onLog?.call('Moving ${pinned.length} device${pinned.length == 1 ? '' : 's'} to Internet:');
     for (final ip in pinned) {
       onLog?.call('  ${label(ip)}');
-      await _logRouter('${label(ip)} released to the default connection - its VPN was deleted');
+      await _logRouter('${label(ip)} moved to Internet - its VPN was deleted');
     }
     final updated = serialiseDevicePolicyList(releaseDevicesFrom(policies, vpncIndex));
     await _run('nvram set vpnc_dev_policy_list=${shellSingleQuote(updated)}');
@@ -451,12 +451,38 @@ class RouterSlotService {
 
     // Stock leaves the old rule behind on a reassignment and does the same here, so the device
     // would keep using the deleted profile's routing table until something else cleared it.
+    // keepIndex 0 because these devices are now pinned to the internet, and THAT rule - the
+    // `lookup main` the firmware writes for index 0 - is the one they are supposed to keep.
     final rules = await _read(kIpRuleCommand);
     for (final ip in pinned) {
-      for (final table in staleRuleTables(rules, ip: ip)) {
+      for (final table in staleRuleTables(rules, ip: ip, keepIndex: 0)) {
         await _run('ip rule del from $ip lookup $table', allowFailure: true);
       }
     }
+  }
+
+  /// Puts the default connection back to Internet when the profile being deleted IS the default.
+  ///
+  /// `vpnc_default_wan` is a key of its own, not a policy record, so releasing the per-device pins
+  /// does not touch it. Deleting the slot it names left it pointing at a profile that no longer
+  /// existed: every device following the default then rendered as "profile 9", and the firmware was
+  /// being told to send unassigned traffic somewhere that was not there. Reported 2026-09-11.
+  ///
+  /// `restart_default_wan` RESETS the key to 0 as it runs, so Internet needs no write at all - only
+  /// the teardown half of the sequence the assignment screen uses.
+  Future<void> _clearDefaultConnectionIfThisSlot(int stateIdx, int slot) async {
+    final current = int.tryParse((await _read('nvram get vpnc_default_wan')).trim()) ?? 0;
+    if (current == 0 || current != stateIdx) return;
+
+    onLog?.call('This VPN was the default connection; setting the default back to Internet...');
+    await _logRouter('default WAN connection reset to Internet - wgc$slot was deleted');
+    await _run('service restart_default_wan');
+    for (var i = 0; i < verifyMaxAttempts; i++) {
+      if ((await _read('nvram get vpnc_default_wan')).trim() == '0') break;
+      await Future<void>.delayed(verifyPollInterval);
+    }
+    await _run('service restart_vpnc');
+    onLog?.call('Default connection is now Internet.', isSuccess: true);
   }
 
   Future<void> _editVpncClientlist(List<VpncRecord> Function(List<VpncRecord>) edit) async {
@@ -877,6 +903,7 @@ class RouterSlotService {
       // next, the web interface cannot show the pin, and this screen can only call it "profile N".
       // Measured on hardware 2026-09-11.
       await _releasePinnedDevices(stateIdx);
+      await _clearDefaultConnectionIfThisSlot(stateIdx, slot);
       for (final key in kVpncRuntimeKeys) {
         await _run('nvram unset vpnc${stateIdx}_$key', allowFailure: true);
       }

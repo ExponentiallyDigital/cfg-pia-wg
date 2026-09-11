@@ -276,7 +276,10 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       // two different things depending on which screen you were on.
       return slot == null ? p.desc : slotLabel(slot, p.desc);
     }
-    return 'profile $idx';
+    // No profile carries this index any more. It happens when a VPN is deleted from somewhere
+    // else while the default connection still names it. Kept SHORT: this renders inside a device
+    // row on a phone, where anything longer wraps or clips.
+    return 'profile $idx (deleted)';
   }
 
   Future<void> _pick(LanDevice d) async {

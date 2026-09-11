@@ -25,9 +25,13 @@ void main() {
       expect(devicesPinnedTo(parseDevicePolicyList(list), 0), isEmpty);
     });
 
-    test('releasing sends only those devices back, leaving every other record untouched', () {
+    // Internet, not the default connection: the web interface does the same, and sending a device
+    // that was explicitly pinned onto whatever tunnel the default happens to name would be a
+    // destination nobody chose. `1>IP>>0>` is a pin to the WAN; `0>IP>>0>` would mean follow the
+    // default, which is a different answer.
+    test('released devices are pinned to Internet, and every other record is untouched', () {
       final out = serialiseDevicePolicyList(releaseDevicesFrom(parseDevicePolicyList(list), 5));
-      expect(out, '0>192.168.1.20>>0><1>192.168.1.21>>9><0>192.168.1.22>>0><0>192.168.1.23>>0>');
+      expect(out, '1>192.168.1.20>>0><1>192.168.1.21>>9><1>192.168.1.22>>0><0>192.168.1.23>>0>');
     });
 
     test('a record naming a VPN this app does not manage survives byte for byte', () {
@@ -36,7 +40,7 @@ void main() {
       const withForeign = '1>192.168.1.20>>5><1>192.168.1.50>>3>';
       expect(
         serialiseDevicePolicyList(releaseDevicesFrom(parseDevicePolicyList(withForeign), 5)),
-        '0>192.168.1.20>>0><1>192.168.1.50>>3>',
+        '1>192.168.1.20>>0><1>192.168.1.50>>3>',
       );
     });
   });

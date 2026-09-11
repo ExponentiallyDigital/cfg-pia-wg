@@ -1047,6 +1047,19 @@ Three points of care, all covered by `staleRuleTables` in `lib/device_assignment
 > NAME rather than by number. The `from` address is what keeps that safe: the global
 > `32766: from all lookup main` and the priority-10000 `from all iif br0` rules name `all`, never a
 > device, so a per-device sweep can never reach them.
+
+> [!IMPORTANT]
+> **`vpnc_default_wan` is a key, not a policy record, so nothing that rewrites the policy list
+> touches it.** Deleting the profile the default connection names leaves the key pointing at an
+> index no record carries. Measured 2026-09-11: every device following the default then reported
+> as `profile 9`, and unassigned traffic was being aimed at a profile that no longer existed.
+>
+> `restart_default_wan` resets the key to `0` as it runs, so returning the default to the plain
+> internet needs no write at all - the teardown half of the sequence is the whole of it. The app
+> does this as part of DELETE, and moves the devices that were pinned to that profile onto the
+> internet rather than onto the default, which is what the web interface does. Sending an
+> explicitly pinned device to the default would put it on whatever tunnel the default happens to
+> name, which nobody chose.
 ## 7. <a name='watchdog-details'></a>Watchdog details
 
 Deploying a watchdog writes three things to the router, plus the settings in [Watchdog NVRAM fields](#watchdog-nvram-fields):

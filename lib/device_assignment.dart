@@ -108,14 +108,19 @@ List<String> devicesPinnedTo(List<DevicePolicy> records, int vpncIndex) => [
         if (r.isAssigned && r.vpncIndex == vpncIndex) r.ip,
     ];
 
-/// Sends every device pinned to [vpncIndex] back to the default connection.
+/// Moves every device pinned to [vpncIndex] onto the plain internet.
+///
+/// **Internet, not the default connection**, which is what the web interface does when a profile is
+/// deleted. Sending them to the default would put a device that was explicitly pinned onto whatever
+/// tunnel the default happens to name, without anyone choosing that; the internet is the one
+/// destination that is never a surprise. The record stays ENABLED with index 0 - `1>IP>>0>` - which
+/// is a pin to the WAN, not `0>IP>>0>`, which would mean "follow the default".
 ///
 /// Records for other addresses pass through byte for byte, including ones naming a VPN this app
-/// does not manage. Unassigning writes `0>IP>>0>` rather than dropping the record, matching what
-/// the web interface leaves behind.
+/// does not manage.
 List<DevicePolicy> releaseDevicesFrom(List<DevicePolicy> records, int vpncIndex) => [
       for (final r in records)
-        if (r.isAssigned && r.vpncIndex == vpncIndex) r.copyWith(enabled: false, vpncIndex: 0) else r,
+        if (r.isAssigned && r.vpncIndex == vpncIndex) r.copyWith(enabled: true, vpncIndex: 0) else r,
     ];
 
 /// The `vpnc_clientlist` index 6 [ip] is pinned to: `0` for the plain internet, a profile index for

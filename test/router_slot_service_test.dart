@@ -500,7 +500,7 @@ void main() {
     // Reported on hardware 2026-09-11: a device pinned to wgc5 kept its pin after the slot was
     // deleted. The web interface could not show it, this app could only call it "profile 5", and
     // when a new region was created in that slot the device silently moved to it.
-    test('devices pinned to the deleted profile go back to the default connection', () async {
+    test('devices pinned to the deleted profile are moved to Internet', () async {
       useStock();
       final logs = <String>[];
       final c = RecordingSSHClient(
@@ -515,16 +515,62 @@ void main() {
       );
       await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).deleteSlot(5);
 
-      // .20 was on this profile and is released; .21 is on another and .22 is already on the
-      // default, so both pass through byte for byte.
+      // .20 was on this profile and is pinned to Internet; .21 is on another and .22 already
+      // follows the default, so both pass through byte for byte.
       expect(
         c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list=')),
-        contains('0>192.168.1.20>>0><1>192.168.1.21>>9><0>192.168.1.22>>0>'),
+        contains('1>192.168.1.20>>0><1>192.168.1.21>>9><0>192.168.1.22>>0>'),
       );
       // Named, not just counted - the user has to know which device moved.
       expect(logs.any((m) => m.contains('Tablet (192.168.1.20)')), isTrue);
       // Stock leaves the routing rule behind too, so it goes by hand.
       expect(c.ran('ip rule del from 192.168.1.20 lookup 5'), isTrue);
+    });
+
+    // Reported 2026-09-11: deleting wgc1 left `vpnc_default_wan` still naming its index 6, so every
+    // device following the default rendered as "profile 9" and the firmware was pointed at a
+    // profile that no longer existed. The key is not a policy record, so releasing the pins did
+    // not touch it.
+    test('deleting the slot that IS the default connection puts the default back to Internet', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+          if (cmd.contains('vpnc_default_wan')) return '0'; // already cleared by restart_default_wan
+          return '';
+        },
+      );
+      await svc(c).deleteSlot(1);
+      expect(c.ran('service restart_default_wan'), isFalse, reason: 'the key already read 0');
+    });
+
+    test('the default connection is reset when it names the profile being deleted', () async {
+      useStock();
+      var reads = 0;
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+          // Names this profile until restart_default_wan has run, then reads 0 like the real one.
+          if (cmd.contains('vpnc_default_wan')) return reads++ == 0 ? '9' : '0';
+          return '';
+        },
+      );
+      await svc(c).deleteSlot(1);
+      expect(c.ran('service restart_default_wan'), isTrue);
+      expect(c.ran('service restart_vpnc'), isTrue);
+    });
+
+    test('a default connection naming ANOTHER profile is left alone', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+          if (cmd.contains('vpnc_default_wan')) return '5'; // wgc5 is the default, not this one
+          return '';
+        },
+      );
+      await svc(c).deleteSlot(1);
+      expect(c.ran('service restart_default_wan'), isFalse);
     });
 
     test('a slot with no pinned devices writes no policy list at all', () async {
