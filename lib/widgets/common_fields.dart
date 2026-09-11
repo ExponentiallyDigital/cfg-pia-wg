@@ -295,12 +295,14 @@ class LogPanel extends StatelessWidget {
   static Color _colour(LogEntry e) {
     if (e.isSuccess) return Colors.white;
     if (e.isError) return kError;
+    if (e.isWarning) return kWarn;
     return kHighlight;
   }
 
   static IconData _icon(LogEntry e) {
     if (e.isSuccess) return Icons.check_circle_outline;
     if (e.isError) return Icons.error_outline;
+    if (e.isWarning) return Icons.warning_amber_outlined;
     return Icons.info_outline;
   }
 

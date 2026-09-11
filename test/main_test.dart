@@ -42,13 +42,20 @@ void main() {
       final c = quietController();
       await pumpApp(tester, c);
 
-      for (final key in const ['menu_manage_router', 'menu_watchdog', 'menu_log']) {
+      for (final key in const ['menu_manage_router', 'menu_watchdog']) {
         await tester.tap(find.byKey(Key(key)));
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('screen_close')), findsOneWidget);
         await tester.tap(find.byKey(const Key('screen_close')));
         await tester.pumpAndSettle();
       }
+
+      // The app log carries its own HOME in the three-button row, like both other log screens.
+      await tester.tap(find.byKey(const Key('menu_log')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('app_log_home')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('app_log_home')));
+      await tester.pumpAndSettle();
 
       await disposeApp(tester, c);
     });
@@ -57,7 +64,7 @@ void main() {
     testWidgets('screen HOME is teal', (tester) async {
       final c = quietController();
       await pumpApp(tester, c);
-      await tester.tap(find.byKey(const Key('menu_log')));
+      await tester.tap(find.byKey(const Key('menu_manage_router')));
       await tester.pumpAndSettle();
 
       final style = tester.widget<OutlinedButton>(find.byKey(const Key('screen_close'))).style!;

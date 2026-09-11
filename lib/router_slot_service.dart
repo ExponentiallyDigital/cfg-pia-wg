@@ -341,7 +341,7 @@ class RouterSlots {
 
 class RouterSlotService {
   final SSHClient client;
-  final void Function(String, {bool isError, bool isSuccess})? onLog;
+  final void Function(String, {bool isError, bool isSuccess, bool isWarning})? onLog;
 
   // Interface-up verification cadence (injectable so unit tests don't wait real time).
   final Duration verifyPollInterval;
@@ -504,6 +504,7 @@ class RouterSlotService {
         read: (cmd) => _read(cmd),
         run: (cmd) => _run(cmd),
         onLog: onLog,
+        logRouter: _logRouter,
         pollInterval: verifyPollInterval,
         maxPolls: verifyMaxAttempts,
       );

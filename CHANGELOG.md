@@ -38,6 +38,15 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-11 v0.8.63 build 433 - the app log reads like the other two log screens
+
+- CHG: **the app log is built like the router and watchdog logs.** The log fills the screen, and COPY / CLEAR / HOME sit in one pinned row of equal-width bordered buttons at the bottom. CLEAR used to be a small button in the top right corner and there was no COPY at all.
+- CHG: it opens scrolled to the NEWEST entry. The reason anyone opens a log is to see what just happened; opening at the top meant scrolling past a session to reach it.
+- CHG: the "LOG" field label above the panel is gone. The screen is the log.
+- ADD: **a third log severity - warning, in amber.** Red was being spent on things that need no action, and a log where most of the red is routine is a log nobody reads.
+- CHG: "Router SSH connection dropped; reconnecting" is a warning, not an error. The app reconnects by itself, and a genuine failure to connect is still reported in red by whatever was trying to run.
+- CHG: **the stuck-router-command message says what it means.** It read "The router was still marked as running stop_vpnc, but that process (pid 11025) has gone" - the router's own bookkeeping, with the consequence buried at the end. It now reads "The router was stuck on an earlier command and would have ignored this one. Cleared it and carried on - nothing for you to do", in amber, with the pid and the service name written to the ROUTER syslog where the detail belongs.
+- TST: five on the new screen - it opens at the newest entry, carries the three buttons and no field label, COPY takes the log verbatim and arms no clipboard countdown, COPY and CLEAR grey out on an empty log, and a warning renders amber where an error renders red.
 2026-09-11 v0.8.62 build 432 - deleting a VPN releases the devices pinned to it
 
 - FIX: **a device pinned to a deleted VPN kept its pin, and silently moved to whatever region was created in that slot next.** Stock names a pin by the profile's index 6 and never releases one, so after a DELETE the record went on naming an index that no longer existed: the web interface could not show it, this app could only call it "profile 5", and the device's traffic followed that index wherever it led. Reported on hardware 2026-09-11. DELETE now sends those devices back to the default connection before the profile goes, and NAMES each one it moves - in the app log and in the router syslog.

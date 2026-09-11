@@ -166,7 +166,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       }
 
       final svc = widget.serviceFactory?.call(client) ??
-          DeviceAssignmentService(client, onLog: (m, {isError = false, isSuccess = false}) => _c.logEntry(m, isError: isError, isSuccess: isSuccess));
+          DeviceAssignmentService(client, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => _c.logEntry(m, isError: isError, isSuccess: isSuccess));
       final state = await svc.read();
       // Watchdog state for the picker. A tolerated failure: the notes go blank rather than the
       // whole screen failing, because assignment does not depend on knowing them.

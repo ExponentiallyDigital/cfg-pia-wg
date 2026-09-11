@@ -106,6 +106,7 @@ class RouterServiceQueue {
     required this.read,
     required this.run,
     this.onLog,
+    this.logRouter,
     this.pollInterval = const Duration(seconds: 2),
     this.maxPolls = 20,
   });
@@ -116,7 +117,11 @@ class RouterServiceQueue {
   /// A strict write, used only to clear a ghost marker.
   final Future<String> Function(String cmd) run;
 
-  final void Function(String message, {bool isError, bool isSuccess})? onLog;
+  final void Function(String message, {bool isError, bool isSuccess, bool isWarning})? onLog;
+
+  /// Writes one line to the ROUTER's own syslog. The app log gets a sentence for the user; this
+  /// gets the detail, because whoever reads a syslog later is asking a different question.
+  final Future<void> Function(String message)? logRouter;
   final Duration pollInterval;
   final int maxPolls;
 
@@ -129,8 +134,11 @@ class RouterServiceQueue {
   Future<RcServiceState> clearIfStale() async {
     final s = await state();
     if (!s.stale) return s;
-    onLog?.call('The router was still marked as running "${s.service}", but that process (pid '
-        '${s.pid ?? '?'}) has gone. Clearing it so this command is not discarded.');
+    onLog?.call(
+        'The router was stuck on an earlier command and would have ignored this one. Cleared it and '
+        'carried on - nothing for you to do (full details in router log).',
+        isWarning: true);
+    await logRouter?.call('INFO: cleared stale rc_service marker "${s.service}" (pid ${s.pid ?? '?'})');
     await run(kClearRcServiceCommand);
     return const RcServiceState(service: '', pid: null, pidAlive: false);
   }

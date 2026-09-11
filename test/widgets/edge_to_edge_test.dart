@@ -56,9 +56,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // The HOME button sits at the very bottom of a screen, so it is the one that a navigation bar
-    // would swallow first.
+    // would swallow first. On a log screen that is the button ROW's HOME, not AppScaffold's.
     final limit = tester.view.physicalSize.height / tester.view.devicePixelRatio - navBar;
-    expect(tester.getBottomLeft(find.byKey(const Key('screen_close'))).dy, lessThanOrEqualTo(limit));
+    expect(tester.getBottomLeft(find.byKey(const Key('app_log_home'))).dy, lessThanOrEqualTo(limit));
 
     await disposeApp(tester, c);
   });

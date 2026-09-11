@@ -69,8 +69,12 @@ enum AppDestination {
 /// A single timestamped line in the in-memory application log.
 class LogEntry {
   final String message;
-  final bool isError, isSuccess;
-  LogEntry(this.message, {this.isError = false, this.isSuccess = false});
+
+  /// [isWarning] is the third state, and it exists because red was being spent on things that
+  /// needed no action - a dropped SSH connection the app is already reconnecting, a stuck router
+  /// command it has already cleared. A log where most of the red is routine is a log nobody reads.
+  final bool isError, isSuccess, isWarning;
+  LogEntry(this.message, {this.isError = false, this.isSuccess = false, this.isWarning = false});
 }
 
 /// The shared, volatile session state. Exposed to the widget tree via [SessionScope].
@@ -230,18 +234,19 @@ class SessionController extends ChangeNotifier {
   }
 
   // ── Logging ────────────────────────────────────────────────────────────────────
-  void logEntry(String msg, {bool isError = false, bool isSuccess = false}) {
+  void logEntry(String msg, {bool isError = false, bool isSuccess = false, bool isWarning = false}) {
     final now = DateTime.now();
     final ts = '${now.hour.toString().padLeft(2, '0')}:'
         '${now.minute.toString().padLeft(2, '0')}:'
         '${now.second.toString().padLeft(2, '0')}';
-    log.add(LogEntry('[$ts] $msg', isError: isError, isSuccess: isSuccess));
+    log.add(LogEntry('[$ts] $msg', isError: isError, isSuccess: isSuccess, isWarning: isWarning));
     notifyListeners();
   }
 
-  // Adapter matching the `void Function(String, {bool isError, bool isSuccess})` callback
+  // Adapter matching the `void Function(String, {bool isError, bool isSuccess, bool isWarning})` callback
   // shape used throughout router_push / router_watchdog / watchdog_dialog.
-  void onLog(String msg, {bool isError = false, bool isSuccess = false}) => logEntry(msg, isError: isError, isSuccess: isSuccess);
+  void onLog(String msg, {bool isError = false, bool isSuccess = false, bool isWarning = false}) =>
+      logEntry(msg, isError: isError, isSuccess: isSuccess, isWarning: isWarning);
 
   // Stores the generated standalone config (and its region) so it survives screen navigation
   // and is wiped with everything else on idle / close.

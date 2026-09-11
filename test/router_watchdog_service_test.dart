@@ -29,7 +29,7 @@ WatchdogConfig cfg({int slot = 1, int interval = 5, bool email = false}) => Watc
 /// router `notify_rc` queues the service call, so the interface is not up when it returns. The
 /// fakes here mostly never bring one up, so the production 2s x 5 would add half a minute to this
 /// file alone.
-RouterWatchdog _wd(SSHClient c, {void Function(String, {bool isError, bool isSuccess})? onLog}) =>
+RouterWatchdog _wd(SSHClient c, {void Function(String, {bool isError, bool isSuccess, bool isWarning})? onLog}) =>
     RouterWatchdog(c, onLog: onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: 3);
 
 void main() {
@@ -428,7 +428,7 @@ void main() {
     test('a slot that never comes up still deploys, and says so', () async {
       final logs = <(String, bool)>[];
       final c = RecordingSSHClient(responder: (cmd) => cmd == 'ip -o link show up' ? 'wgs1' : '');
-      await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add((m, isError)))
+      await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add((m, isError)))
           .deployWatchdog(cfg(slot: 1, interval: 5));
 
       expect(c.commands.any((cmd) => cmd.endsWith('watchdog_wgc1.sh deploy')), isTrue);
@@ -665,7 +665,7 @@ void main() {
           return '';
         },
       );
-      final st = await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logged.add(m)).getWatchdogStatus(1);
+      final st = await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logged.add(m)).getWatchdogStatus(1);
 
       expect(st.scriptVersion, 'v0.8.44 build 414');
       expect(st.scriptIsCurrent, isFalse);
@@ -678,7 +678,7 @@ void main() {
     test('says nothing about versions when there is no watchdog to be stale', () async {
       final logged = <String>[];
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('cru l') ? '0' : '');
-      await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logged.add(m)).getWatchdogStatus(1);
+      await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logged.add(m)).getWatchdogStatus(1);
       expect(logged.join('\n'), isNot(contains('script')));
     });
 
@@ -919,7 +919,7 @@ void main() {
   test('a failing mutation logs an ERROR to syslog and the app log, then rethrows', () async {
     final c = RecordingSSHClient(throwOn: ['chmod']);
     final appLog = <String>[];
-    final svc = _wd(c, onLog: (m, {isError = false, isSuccess = false}) => appLog.add(m));
+    final svc = _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => appLog.add(m));
     await expectLater(svc.deployWatchdog(cfg(slot: 1)), throwsA(isA<Exception>()));
     expect(c.commands.any((cmd) => cmd.contains('logger -t cfg-pia-wg') && cmd.contains('ERROR')), isTrue);
     expect(appLog.any((m) => m.contains('failed')), isTrue);
@@ -943,7 +943,7 @@ void main() {
       useStock();
       final logs = <(String, bool)>[];
       final c = failingMailer();
-      final ok = await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add((m, isError)))
+      final ok = await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add((m, isError)))
           .testEmail(cfg(slot: 1, email: true));
 
       expect(ok, isFalse);
@@ -962,7 +962,7 @@ void main() {
       final logs = <String>[];
       final c = RecordingSSHClient(responder: (_) => 'EXITCODE:0');
       final ok =
-          await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)).testEmail(cfg(slot: 1, email: true));
+          await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).testEmail(cfg(slot: 1, email: true));
 
       expect(ok, isTrue);
       expect(logs.any((m) => m.contains('Test email sent to to@example.com')), isTrue);
@@ -975,7 +975,7 @@ void main() {
       useStock();
       final logs = <String>[];
       final c = failingMailer();
-      await _wd(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)).testEmail(cfg(slot: 1, email: true));
+      await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).testEmail(cfg(slot: 1, email: true));
 
       expect(c.ran('openssl s_client'), isTrue);
       expect(logs.any((m) => m.contains('probe smtp.example.com:465')), isTrue);

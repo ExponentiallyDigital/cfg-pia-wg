@@ -112,7 +112,7 @@ Future<RouterResult> runRouterCommand(
   SSHClient client,
   String cmd, {
   bool allowFailure = false,
-  void Function(String message, {bool isError, bool isSuccess})? onLog,
+  void Function(String message, {bool isError, bool isSuccess, bool isWarning})? onLog,
 }) async {
   final raw = await client.runWithResult(cmd);
   final result = RouterResult(

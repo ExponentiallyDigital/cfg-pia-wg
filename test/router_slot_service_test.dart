@@ -19,7 +19,7 @@ const _sampleConfig = '[Interface]\n'
 // Fast service: no real delay during the interface-up verification loop.
 RouterSlotService svc(
   RecordingSSHClient c, {
-  void Function(String, {bool isError, bool isSuccess})? onLog,
+  void Function(String, {bool isError, bool isSuccess, bool isWarning})? onLog,
   int verifyMaxAttempts = 2,
 }) =>
     RouterSlotService(c, onLog: onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts);
@@ -69,7 +69,7 @@ void main() {
     test('logs "unconfigured" when every slot is empty and reports success', () async {
       final logs = <String>[];
       final c = RecordingSSHClient(responder: (_) => '');
-      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)).fetchSlots();
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).fetchSlots();
       expect(logs, contains('All WireGuard slots are unconfigured.'));
       expect(logs, contains('Successfully retrieved router config.'));
     });
@@ -238,7 +238,7 @@ void main() {
       await expectLater(
         svc(
           c,
-          onLog: (m, {isError = false, isSuccess = false}) => logs.add(m),
+          onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m),
         ).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
         throwsA(isA<Exception>()),
       );
@@ -253,7 +253,7 @@ void main() {
       final logs = <String>[];
       final c = RecordingSSHClient(responder: (_) => '', throwOn: ['wgc1_alive=25']);
       await expectLater(
-        svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
+        svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m))
             .createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
         throwsA(isA<Exception>()),
       );
@@ -273,7 +273,7 @@ void main() {
         throwOn: ['wgc1_alive=25'],
       )..failWith['nvram set wgc1_addr='] = 'nvram: write failed';
       await expectLater(
-        svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
+        svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m))
             .createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
         throwsA(isA<Exception>()),
       );
@@ -433,7 +433,7 @@ void main() {
     test('disableSlot gives up rather than hanging, and still reports', () async {
       final logs = <String>[];
       final c = router(upFor: 99);
-      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m), verifyMaxAttempts: 2).disableSlot(2);
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m), verifyMaxAttempts: 2).disableSlot(2);
       expect(logs.any((m) => m.contains('still up after the stop')), isTrue);
       expect(logs.any((m) => m.contains('disabled.')), isTrue);
     });
@@ -513,7 +513,7 @@ void main() {
           return '';
         },
       );
-      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)).deleteSlot(5);
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).deleteSlot(5);
 
       // .20 was on this profile and is released; .21 is on another and .22 is already on the
       // default, so both pass through byte for byte.
@@ -552,7 +552,7 @@ void main() {
       useStock();
       final logs = <String>[];
       final c = router(upFor: 99, clientlist: 'pia-aus_perth>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
-      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m), verifyMaxAttempts: 2).deleteSlot(3);
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m), verifyMaxAttempts: 2).deleteSlot(3);
 
       expect(logs.any((m) => m.contains('wgc3:pia-aus_perth is still up after the stop')), isTrue);
       expect(c.ran('nvram unset wgc3_enable'), isTrue);
@@ -855,7 +855,7 @@ void main() {
           },
         );
         try {
-          await probe.$2(svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)));
+          await probe.$2(svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)));
         } catch (_) {
           // The message content is what matters here, not whether the action succeeded.
         }
@@ -879,7 +879,7 @@ void main() {
       useMerlin();
       final logs = <String>[];
       final c = RecordingSSHClient(responder: (_) => '');
-      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)).disableSlot(3);
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).disableSlot(3);
       expect(logs.any((m) => m.contains('Disabling wgc3...')), isTrue);
     });
 
@@ -1025,7 +1025,7 @@ void main() {
         throwOn: ['wgc1_alive=25'],
       );
       await expectLater(
-        svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
+        svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m))
             .createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
         throwsA(isA<Exception>()),
       );
@@ -1037,7 +1037,7 @@ void main() {
       useStock();
       final logs = <String>[];
       final c = RecordingSSHClient(responder: (_) => '');
-      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m))
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m))
           .createConfigToSlot(slot: 2, config: _sampleConfig, regionId: 'r');
       expect(logs.any((m) => m.contains('Backing up')), isFalse);
     });

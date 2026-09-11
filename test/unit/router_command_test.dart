@@ -135,7 +135,7 @@ void main() {
     test('BOTH are logged - a tolerated failure is still diagnosable', () async {
       final logged = <String>[];
       await runRouterCommand(_Fake(stderr: 'nope', exitCode: 1), 'cru d x',
-          allowFailure: true, onLog: (m, {bool isError = false, bool isSuccess = false}) => logged.add(m));
+          allowFailure: true, onLog: (m, {bool isError = false, bool isSuccess = false, bool isWarning = false}) => logged.add(m));
       expect(logged.single, allOf(contains('exit 1'), contains('nope'), contains('cru d x')));
     });
 
@@ -143,7 +143,7 @@ void main() {
       // The difference between "worth recording" and "worth interrupting someone over". If every
       // absent-key probe raised an error, the one that mattered would be dismissed with the rest.
       final flags = <bool>[];
-      void capture(String m, {bool isError = false, bool isSuccess = false}) => flags.add(isError);
+      void capture(String m, {bool isError = false, bool isSuccess = false, bool isWarning = false}) => flags.add(isError);
 
       await runRouterCommand(_Fake(exitCode: 1), 'cru d x', allowFailure: true, onLog: capture);
       expect(flags.single, isFalse);
@@ -162,7 +162,7 @@ void main() {
       final logged = <String>[];
       try {
         await runRouterCommand(_Fake(exitCode: 1), "nvram set wgc1_wd_smtp_pass='hunter2'",
-            onLog: (m, {bool isError = false, bool isSuccess = false}) => logged.add(m));
+            onLog: (m, {bool isError = false, bool isSuccess = false, bool isWarning = false}) => logged.add(m));
       } catch (_) {
         // expected
       }
@@ -182,7 +182,7 @@ void main() {
     test('success logs nothing', () async {
       final logged = <String>[];
       await runRouterCommand(_Fake(stdout: 'ok'), 'nvram get x',
-          onLog: (m, {bool isError = false, bool isSuccess = false}) => logged.add(m));
+          onLog: (m, {bool isError = false, bool isSuccess = false, bool isWarning = false}) => logged.add(m));
       expect(logged, isEmpty);
     });
   });
@@ -195,7 +195,7 @@ void main() {
       useMerlin();
       final ssh = RecordingSSHClient()..failWith['nvram set wgc1_enable=1'] = 'nvram: write failed';
       final logged = <String>[];
-      final svc = RouterSlotService(ssh, onLog: (m, {bool isError = false, bool isSuccess = false}) => logged.add(m));
+      final svc = RouterSlotService(ssh, onLog: (m, {bool isError = false, bool isSuccess = false, bool isWarning = false}) => logged.add(m));
 
       await expectLater(() => svc.enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(anything));
       expect(logged.any((l) => l.contains('exit 1') && l.contains('write failed')), isTrue,
@@ -206,7 +206,7 @@ void main() {
       useMerlin();
       final ssh = RecordingSSHClient()..failWith['nvram get wgc1_desc'] = 'nvram: cannot read';
       final logged = <String>[];
-      final svc = RouterSlotService(ssh, onLog: (m, {bool isError = false, bool isSuccess = false}) => logged.add(m));
+      final svc = RouterSlotService(ssh, onLog: (m, {bool isError = false, bool isSuccess = false, bool isWarning = false}) => logged.add(m));
 
       // fetchSlots reads a description per slot; one unreadable key must not fail the whole read.
       await svc.fetchSlots();
