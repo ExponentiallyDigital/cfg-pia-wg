@@ -64,6 +64,7 @@ class PiaUsernameField extends StatelessWidget {
             labelText: 'PIA username',
             hintText: 'e.g. p1234567',
             prefixIcon: Icon(Icons.person_outline, color: kMuted, size: 18)),
+        autofillHints: const [AutofillHints.username],
         autocorrect: false,
         enableSuggestions: false,
       );
@@ -97,6 +98,10 @@ class ObscuredField extends StatelessWidget {
   final IconData prefixIcon;
   final bool visible;
   final VoidCallback onToggle;
+
+  /// Passed through to the platform so a password manager can offer to fill this field. Empty
+  /// means "no autofill" - on Android that is what an absent hint list already means.
+  final List<String> autofillHints;
 //  final bool enableInteractiveSelection; // disable copy if password field is revealed
   const ObscuredField({
     super.key,
@@ -105,6 +110,7 @@ class ObscuredField extends StatelessWidget {
     required this.prefixIcon,
     required this.visible,
     required this.onToggle,
+    this.autofillHints = const <String>[],
 //    this.enableInteractiveSelection = true, // disable copy if password field is revealed
   });
 
@@ -112,6 +118,7 @@ class ObscuredField extends StatelessWidget {
   Widget build(BuildContext context) => TextFormField(
         controller: controller,
         obscureText: !visible,
+        autofillHints: autofillHints,
         style: _kMono,
 //        enableInteractiveSelection: enableInteractiveSelection, // disable copy if password field is revealed
         decoration: InputDecoration(
@@ -140,6 +147,7 @@ class PiaPasswordField extends StatelessWidget {
         label: 'PIA password',
         prefixIcon: Icons.lock_outline,
         visible: visible,
+        autofillHints: const [AutofillHints.password],
 //        enableInteractiveSelection: false, // disable copy if password field is revealed
         onToggle: onToggle,
       );
@@ -154,7 +162,14 @@ class RouterIpField extends StatelessWidget {
   Widget build(BuildContext context) => TextFormField(
         controller: controller,
         style: _kMono,
-        decoration: const InputDecoration(labelText: 'Router IP', prefixIcon: Icon(Icons.router, color: kMuted, size: 18)),
+        decoration: const InputDecoration(
+          labelText: 'Router IP',
+          // The SSH daemon does not have to be on 22, and the router's own WebUI encourages moving
+          // it. Accepting host:port here keeps that on one line rather than adding a field that is
+          // blank for almost everyone.
+          hintText: '192.168.50.1  or  192.168.50.1:2222',
+          prefixIcon: Icon(Icons.router, color: kMuted, size: 18),
+        ),
       );
 }
 
@@ -168,6 +183,7 @@ class SshUsernameField extends StatelessWidget {
         controller: controller,
         style: _kMono,
         decoration: const InputDecoration(labelText: 'SSH Username', prefixIcon: Icon(Icons.person, color: kMuted, size: 18)),
+        autofillHints: const [AutofillHints.username],
       );
 }
 
@@ -184,6 +200,7 @@ class SshPasswordField extends StatelessWidget {
         label: 'SSH Password',
         prefixIcon: Icons.lock,
         visible: visible,
+        autofillHints: const [AutofillHints.password],
 //        enableInteractiveSelection: false, // disable copy if password field is revealed
         onToggle: onToggle,
       );
@@ -262,57 +279,54 @@ class SlotBadge extends StatelessWidget {
 }
 
 /// Renders the in-memory application log (from main.dart `_LogPanel`).
+///
+/// The whole log is ONE `Text.rich` rather than a widget per entry. `SelectionArea` joins the text
+/// of separate widgets with no separator, so a widget-per-entry layout copies as one run-on line
+/// ("...via SSH...[10:19:34] Router firmware..."). Keeping the entries in a single span tree puts
+/// the line breaks inside the text, where a selection carries them. Same fix as the About screen's
+/// build info block. The per-entry icons are `WidgetSpan`s: a placeholder splits the paragraph into
+/// selectable fragments but contributes no character of its own, so the copy stays clean.
 class LogPanel extends StatelessWidget {
   final List<LogEntry> entries;
   const LogPanel({super.key, required this.entries});
 
+  static const TextStyle _style = TextStyle(fontSize: 11, fontFamily: 'monospace', height: 1.7);
+
+  static Color _colour(LogEntry e) {
+    if (e.isSuccess) return Colors.white;
+    if (e.isError) return kError;
+    if (e.isWarning) return kWarn;
+    return kHighlight;
+  }
+
+  static IconData _icon(LogEntry e) {
+    if (e.isSuccess) return Icons.check_circle_outline;
+    if (e.isError) return Icons.error_outline;
+    if (e.isWarning) return Icons.warning_amber_outlined;
+    return Icons.info_outline;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SelectionArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (entries.isEmpty)
-            const Text('Ready.', style: TextStyle(color: kHighlight, fontSize: 11, fontFamily: 'monospace'))
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: entries.map((e) {
-                final Color color;
-                if (e.isSuccess) {
-                  color = Colors.white;
-                } else if (e.isError) {
-                  color = kError;
-                } else {
-                  color = kHighlight;
-                }
-
-                final IconData icon;
-                if (e.isSuccess) {
-                  icon = Icons.check_circle_outline;
-                } else if (e.isError) {
-                  icon = Icons.error_outline;
-                } else {
-                  icon = Icons.info_outline;
-                }
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(icon, size: 12, color: color),
-                      const SizedBox(width: 6),
-                      Expanded(
-                          child: Text(e.message,
-                              style: TextStyle(color: color, fontSize: 11, fontFamily: 'monospace', height: 1.4))),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-        ],
-      ),
-    );
+    if (entries.isEmpty) {
+      return const SelectionArea(
+        child: Text('Ready.', style: TextStyle(color: kHighlight, fontSize: 11, fontFamily: 'monospace')),
+      );
+    }
+    final spans = <InlineSpan>[];
+    for (var i = 0; i < entries.length; i++) {
+      final e = entries[i];
+      final colour = _colour(e);
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: Icon(_icon(e), size: 12, color: colour),
+        ),
+      ));
+      spans.add(TextSpan(text: e.message, style: _style.copyWith(color: colour)));
+      if (i < entries.length - 1) spans.add(const TextSpan(text: '\n'));
+    }
+    return SelectionArea(child: Text.rich(TextSpan(children: spans), style: _style));
   }
 }

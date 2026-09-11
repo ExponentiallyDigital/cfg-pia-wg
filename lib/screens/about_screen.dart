@@ -19,12 +19,19 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:dartssh2/dartssh2.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_colors.dart';
 import '../build_info_service.dart';
+import '../firmware.dart';
 import '../license_text.dart';
+import '../router_slot_service.dart';
+import '../router_watchdog.dart';
+import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/ssh_creds_dialog.dart';
+import '../widgets/error_presenter.dart';
 
 const String _kRepoUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg';
 const String _kRepoBlobUrl = '$_kRepoUrl/blob/main';
@@ -32,10 +39,8 @@ const String _kPrivacyUrl = 'https://www.exponentiallydigital.com/cfg-pia-wg/pri
 
 /// Label/URL pairs, rendered in this order.
 const List<(String, String)> _kLinks = [
-  ('GitHub source code repository', _kRepoUrl),
   ('ReadMe', '$_kRepoBlobUrl/README.md'),
   ('Change log', '$_kRepoBlobUrl/CHANGELOG.md'),
-  ('Architecture', '$_kRepoBlobUrl/ARCHITECTURE.md'),
   ('Security policy', '$_kRepoBlobUrl/SECURITY.md'),
   ('Privacy policy', _kPrivacyUrl),
 ];
@@ -52,7 +57,9 @@ void _showOpenSourceLicences(BuildContext context) {
 }
 
 class AboutScreen extends StatefulWidget {
-  const AboutScreen({super.key});
+  /// Injected by tests so DEL CACHED PIA CERT can run without a router.
+  final Future<SSHClient> Function(String ip, String user, String pass)? testClientFactory;
+  const AboutScreen({super.key, this.testClientFactory});
 
   @override
   State<AboutScreen> createState() => _AboutScreenState();
@@ -62,6 +69,23 @@ class _AboutScreenState extends State<AboutScreen> {
   // Held in state rather than created inline in the FutureBuilder, which would re-invoke the
   // channel on every rebuild.
   late final Future<BuildInfo> _buildInfo;
+
+  /// What the router has deployed, once we have looked. Three states, and they are different
+  /// questions: not looked yet (offer to log in), looked and found a version, looked and found no
+  /// script at all. The app updates from the store while the script only changes on a deploy, so
+  /// "which script is actually out there" is a question this screen exists to answer.
+  String? _scriptVersion;
+
+  /// The router's own model and firmware, read on the same round trip and used only to fill in
+  /// a bug report. Empty until a successful look.
+  String _routerModel = '', _routerFirmware = '';
+
+  /// "Since yyyy-mm-dd: X successful & Y unsuccessful reconfigures", or null when the router has
+  /// never recorded any - in which case the screen shows nothing rather than an empty row.
+  String? _historyLine;
+  bool _scriptChecked = false, _scriptLoading = false;
+  late final TapGestureRecognizer _scriptLoginRecogniser;
+  late final TapGestureRecognizer _historyLoginRecogniser;
 
   // One recogniser per link, owned by this State so they can be disposed. A tappable TextSpan
   // (rather than an InkWell around the whole row) is what lets a long GitHub URL wrap mid-line
@@ -79,8 +103,87 @@ class _AboutScreenState extends State<AboutScreen> {
     for (final (_, url) in _kLinks) {
       _recognisers.add(TapGestureRecognizer()..onTap = () => _launch(url));
     }
-    // Add a dedicated recogniser for the licenses link (index 6, after the 5 kLinks entries).
+    // A dedicated recogniser for the licences link, which is not one of the _kLinks entries.
     _licencesRecognizer = TapGestureRecognizer()..onTap = () => _showOpenSourceLicences(context);
+    _scriptLoginRecogniser = TapGestureRecognizer()..onTap = () => _loadScriptVersion(prompt: true);
+    // Either link fetches both rows, because one round trip answers both questions.
+    _historyLoginRecogniser = TapGestureRecognizer()..onTap = () => _loadScriptVersion(prompt: true);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Free when the session already has a connection: no prompt, no extra handshake, and the row
+    // is filled in by the time the user looks at it. Never prompts on its own - ABOUT is reachable
+    // without any intention of touching the router.
+    if (_scriptChecked || _scriptLoading) return;
+    if (SessionScope.of(context).canReuseRouterSession) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadScriptVersion();
+      });
+    }
+  }
+
+  /// Reads the deployed script's version. With [prompt], asks for credentials when the session has
+  /// none - which is what the "login to router to retrieve" link does.
+  Future<void> _loadScriptVersion({bool prompt = false}) async {
+    final controller = SessionScope.of(context);
+    var ip = controller.routerIp.trim(), user = controller.sshUsername.trim(), pass = controller.sshPassword;
+    if (!controller.canReuseRouterSession) {
+      if (!prompt) return;
+      final entered = await showDialog<(String, String, String)?>(
+        context: context,
+        builder: (_) => SshCredsDialog(initialIp: controller.routerIpPrefill, initialUser: user, initialPass: pass),
+      );
+      if (entered == null || !mounted) return;
+      (ip, user, pass) = entered;
+      controller
+        ..routerIp = ip
+        ..sshUsername = user
+        ..sshPassword = pass;
+    }
+
+    setState(() => _scriptLoading = true);
+    String? version;
+    String? history;
+    String? error;
+    var model = '', firmware = '';
+    try {
+      final client =
+          controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      // Both ABOUT rows in one round trip - neither is worth a handshake of its own, and it means
+      // tapping either row's login link fills in the other.
+      final facts = await RouterWatchdog(client, onLog: controller.onLog).aboutRouterFacts();
+      version = facts.version;
+      history = facts.history;
+      model = facts.model;
+      firmware = facts.firmware;
+      await controller.rememberRouterIp(ip);
+    } catch (e) {
+      error = e.toString().replaceAll('Exception: ', '');
+    }
+    if (!mounted) return;
+    setState(() {
+      _scriptLoading = false;
+      // Only a SUCCESSFUL look counts as having looked. A refused login must leave the link there
+      // to try again, not replace it with "not deployed" - which would be a different answer to a
+      // question we never got to ask.
+      _scriptChecked = error == null;
+      _scriptVersion = version;
+      _historyLine = history;
+      _routerModel = model;
+      _routerFirmware = firmware;
+    });
+    if (error != null && mounted) {
+      await AppErrors.system(context, controller, 'Could not read the deployed watchdog script: $error');
+    }
+  }
+
+  /// The plain-text value of the `Watchdog script` row, which is also what COPY BUILD INFO writes.
+  String get _scriptStatus {
+    if (_scriptLoading) return 'reading...';
+    if (!_scriptChecked) return kScriptLoginPrompt;
+    return _scriptVersion ?? 'not deployed';
   }
 
   @override
@@ -88,9 +191,25 @@ class _AboutScreenState extends State<AboutScreen> {
     for (final recogniser in _recognisers) {
       recogniser.dispose();
     }
+    _scriptLoginRecogniser.dispose();
+    _historyLoginRecogniser.dispose();
     super.dispose();
   }
 
+  // armAutoClear: false - build info is not a secret, so the 60s auto-clear meant for credentials
+  // must not be armed for it. Going through the controller rather than Clipboard directly also
+  // stands down a countdown left by an earlier config copy, which would otherwise wipe the build
+  // info the user has just copied.
+  Future<void> _copyBuildInfo(BuildContext context, BuildInfo? info) async {
+    await SessionScope.of(context)
+        .copyToClipboard(_BuildInfoBlock.asPlainText(info, scriptStatus: _scriptStatus), armAutoClear: false);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Build info copied.')));
+    }
+  }
+
+  // The cached PIA CA lives on the router, so this needs the SSH details the router screens
+  // collect. They are session state, not stored, so the button says so rather than failing.
   /// Same pattern as the header bar's author/repo links: guard, launch, silently no-op.
   Future<void> _launch(String urlStr) async {
     final url = Uri.parse(urlStr);
@@ -102,123 +221,284 @@ class _AboutScreenState extends State<AboutScreen> {
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          FutureBuilder<BuildInfo>(
-            future: _buildInfo,
-            builder: (context, snap) => _BuildInfoBlock(info: snap.data),
-          ),
-          // url links display
-          const SizedBox(height: 20),
-          for (var i = 0; i < _kLinks.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: SelectableText.rich(
-                TextSpan(children: [
-                  TextSpan(text: '${_kLinks[i].$1}: ', style: _labelStyle),
-                  TextSpan(
-                    text: _kLinks[i].$2,
-                    style: const TextStyle(
-                      color: kHighlight,
-                      fontSize: 12,
-                      decoration: TextDecoration.underline,
-                      decorationColor: kHighlight,
-                    ),
-                    recognizer: _recognisers[i],
+      // One selection region for the whole screen, so a drag - or the long-press "Select all" -
+      // spans the build info, the links and the licence text, and copies to the system clipboard.
+      // Children below are plain Text on purpose: a SelectableText nested in a SelectionArea keeps
+      // its own private selection and the region skips over it.
+      child: SelectionArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FutureBuilder<BuildInfo>(
+              future: _buildInfo,
+              builder: (context, snap) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _BuildInfoBlock(
+                    info: snap.data,
+                    scriptStatus: _scriptStatus,
+                    scriptLoginRecogniser: _scriptChecked || _scriptLoading ? null : _scriptLoginRecogniser,
                   ),
-                ]),
+                  // The watchdog's own history, set apart from the build info because it describes
+                  // the ROUTER rather than this app. Absent entirely when the router has no
+                  // counters, so an untouched router shows no empty gap where it would have been.
+                  if (_historyLine != null || !_scriptChecked) ...[
+                    const SizedBox(height: 16),
+                    Text.rich(
+                      key: const Key('about_watchdog_history'),
+                      _historyLine != null
+                          ? TextSpan(text: _historyLine, style: _valueStyle)
+                          : TextSpan(
+                              children: [
+                                const TextSpan(text: 'Watchdog history: ', style: _labelStyle),
+                                TextSpan(text: kScriptLoginPrompt, style: _linkStyle, recognizer: _historyLoginRecogniser),
+                              ],
+                            ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  // Wrap, not Row: the two labels together overflow a narrow phone, so they sit
+                  // side by side when there is room and fall to a second line when there is not.
+                  Wrap(
+                    spacing: 4,
+                    children: [
+                      // A copy path that does not depend on the Android selection toolbar, which is
+                      // awkward to reach for a selection this close to the top of the screen.
+                      TextButton.icon(
+                        key: const Key('about_copy_build_info'),
+                        onPressed: () => _copyBuildInfo(context, snap.data),
+                        icon: const Icon(Icons.copy, size: 16, color: kHighlight),
+                        label: const Text('COPY BUILD INFO', style: TextStyle(color: kHighlight, fontSize: 12)),
+                      ),
+                      TextButton.icon(
+                        key: const Key('about_create_issue'),
+                        onPressed: () => _launch(bugReportUrl(snap.data,
+                            scriptStatus: _scriptStatus, model: _routerModel, firmware: _routerFirmware)),
+                        icon: const Icon(Icons.bug_report_outlined, size: 16, color: kHighlight),
+                        label: const Text('CREATE GITHUB ISSUE', style: TextStyle(color: kHighlight, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          // "Open source: licenses" display
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SelectableText.rich(
-                TextSpan(children: [
-                  TextSpan(text: 'Open source: ', style: _labelStyle),
-                  TextSpan(
-                    text: 'licenses',
-                    style: const TextStyle(
-                      color: kHighlight,
-                      fontSize: 12,
-                      decoration: TextDecoration.underline,
-                      decorationColor: kHighlight,
-                    ),
-                    recognizer: _licencesRecognizer,
+            // url links display
+            const SizedBox(height: 20),
+            const _SectionRule(),
+            const SizedBox(height: 20),
+            // The label IS the link, and the URL is not shown. A raw GitHub blob URL is 70-odd
+            // characters of noise that wraps across two lines on a phone and tells the reader
+            // nothing they wanted to know; the destination is already named by the label.
+            // One line, pipe-separated, wrapping when it has to. Wrap rather than Text.rich with
+            // inline separators: a wrapped RichText puts its second line straight under the first,
+            // and two rows of tap targets 12px apart is a mis-tap waiting to happen. runSpacing is
+            // what buys the gap.
+            Wrap(
+              spacing: 10,
+              runSpacing: 14,
+              children: [
+                for (var i = 0; i < _kLinks.length; i++) ...[
+                  Text.rich(
+                    key: Key('about_link_$i'),
+                    TextSpan(text: _kLinks[i].$1, style: _linkStyle, recognizer: _recognisers[i]),
                   ),
-                ]),
-              ),
+                  const Text('|', style: TextStyle(color: kMuted, fontSize: 12)),
+                ],
+                // Last in the same line rather than alone underneath it. It goes to the same kind
+                // of place as the four before it, so it reads as one set of destinations.
+                Text.rich(
+                  key: const Key('about_licenses_link'),
+                  TextSpan(text: 'Open source licenses', style: _linkStyle, recognizer: _licencesRecognizer),
+                ),
+              ],
             ),
-          ),
-          // "GNU GPL license" display:
-          const SizedBox(height: 20),
-          const SelectableText(
-            kLicenseText,
-            style: TextStyle(color: Colors.white70, fontSize: 10, height: 1.4),
-          ),
-        ],
+            // "GNU GPL license" display:
+            const SizedBox(height: 20),
+            const _SectionRule(),
+            const SizedBox(height: 20),
+            const Text(
+              kLicenseText,
+              style: TextStyle(color: Colors.white70, fontSize: 10, height: 1.4),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+/// A quarter-width grey hairline, centred. The screen is three unrelated things stacked - build
+/// information, links, and several hundred lines of licence - and without a break between them they
+/// read as one long wall. A full-width rule would carry more weight than the division deserves.
+class _SectionRule extends StatelessWidget {
+  const _SectionRule();
+
+  @override
+  Widget build(BuildContext context) => FractionallySizedBox(
+        widthFactor: 0.25,
+        child: Container(height: 1, color: kBorder),
+      );
 }
 
 const TextStyle _labelStyle = TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600);
+
+/// Every tappable line on this screen. One style, so they read as a set.
+const TextStyle _linkStyle = TextStyle(
+  color: kHighlight,
+  fontSize: 12,
+  decoration: TextDecoration.underline,
+  decorationColor: kHighlight,
+);
 const TextStyle _valueStyle = TextStyle(color: kText, fontSize: 12);
 
 /// The metadata block. [info] is null while the channel call is in flight.
+///
+/// Rendered as ONE Text.rich rather than a widget per row. SelectionArea joins the text of separate
+/// widgets with no separator, so a row-per-widget layout copied as one run-on line; keeping the
+/// newlines inside a single Text is what carries them to the clipboard.
+/// What the `Watchdog script` row offers when the app has no router session to answer with.
+const String kScriptLoginPrompt = 'login to router to retrieve';
+
 class _BuildInfoBlock extends StatelessWidget {
   final BuildInfo? info;
-  const _BuildInfoBlock({required this.info});
+
+  /// The deployed watchdog script's version, or [kScriptLoginPrompt], or 'not deployed'.
+  final String scriptStatus;
+
+  /// Non-null only when [scriptStatus] is the login prompt, which is the one value here that is a
+  /// link rather than a fact.
+  final TapGestureRecognizer? scriptLoginRecogniser;
+
+  const _BuildInfoBlock({required this.info, this.scriptStatus = '', this.scriptLoginRecogniser});
+
+  /// `label: value` pairs in display order. [i] is null while the channel call is in flight.
+  ///
+  /// The router's script version comes FIRST. It is the one line here that can disagree with the
+  /// rest: everything else describes the app the user is holding, while this describes what is
+  /// actually running on their router, which only changes when a watchdog is deployed.
+  static List<(String, String)> rows(BuildInfo? i, {String scriptStatus = ''}) {
+    String v(String Function(BuildInfo) field) => i == null ? _kPending : field(i);
+    return [
+      if (scriptStatus.isNotEmpty) ('Watchdog script', scriptStatus),
+      ('Built by', '${v((b) => b.installer)} at ${v((b) => b.buildTimestamp)}'),
+      ('Build type', v((b) => b.buildType)),
+      ('Commit hash', v((b) => b.commitHash)),
+      ('Git branch/tag', v((b) => b.gitBranch)),
+      ('Build runner ID', v((b) => b.runnerId)),
+      ('CPU Architecture (ABI)', v((b) => b.cpuAbi)),
+      ('Target Android version', v((b) => b.osVersion)),
+      ('Compile SDK', v((b) => b.compileSdk)),
+      ('Kotlin', v((b) => b.kotlinVersion)),
+    ];
+  }
+
+  static String headline(BuildInfo? i) {
+    String v(String Function(BuildInfo) field) => i == null ? _kPending : field(i);
+    return 'cfg-pia-wg: v${v((b) => b.versionName)} build ${v((b) => b.buildNumber)}';
+  }
+
+  /// Exactly what selecting this block yields, and what the COPY button writes to the clipboard.
+  static String asPlainText(BuildInfo? i, {String scriptStatus = ''}) =>
+      '${headline(i)}\n${rows(i, scriptStatus: scriptStatus).map((r) => '${r.$1}: ${r.$2}').join('\n')}';
 
   @override
   Widget build(BuildContext context) {
-    final i = info;
-    String v(String Function(BuildInfo) field) => i == null ? _kPending : field(i);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SelectableText(
-          'cfg-pia-wg v${v((b) => b.versionName)} build ${v((b) => b.buildNumber)}',
-          style: const TextStyle(color: kText, fontSize: 14, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        _MetaRow('Built by', '${v((b) => b.installer)} at ${v((b) => b.buildTimestamp)}'),
-        _MetaRow('Build type', v((b) => b.buildType)),
-        _MetaRow('Commit hash', v((b) => b.commitHash)),
-        _MetaRow('Git branch/tag', v((b) => b.gitBranch)),
-        _MetaRow('Build runner ID', v((b) => b.runnerId)),
-        _MetaRow('CPU Architecture (ABI)', v((b) => b.cpuAbi)),
-        _MetaRow('Target Android version', v((b) => b.osVersion)),
-        _MetaRow('Compile SDK', v((b) => b.compileSdk)),
-        _MetaRow('Kotlin', v((b) => b.kotlinVersion)),
-      ],
+    final data = rows(info, scriptStatus: scriptStatus);
+    return Text.rich(
+      TextSpan(children: [
+        // Same size and weight as the rows below it, and no blank line: it is the first line of
+        // the table, not a heading over it. Set apart, it read as a title for a block it belongs to.
+        TextSpan(text: headline(info), style: _labelStyle),
+        const TextSpan(text: '\n'),
+        for (var n = 0; n < data.length; n++) ...[
+          TextSpan(text: '${data[n].$1}: ', style: _labelStyle),
+          // The login prompt is the only value here that is tappable. Same weight and size as
+          // every other value, so the block still reads as one table rather than a call to action.
+          if (n == 0 && scriptLoginRecogniser != null)
+            TextSpan(text: data[n].$2, style: _linkStyle, recognizer: scriptLoginRecogniser)
+          else
+            TextSpan(text: data[n].$2, style: _valueStyle),
+          if (n < data.length - 1) const TextSpan(text: '\n'),
+        ],
+      ]),
+      // Stands in for the old per-row 4px padding, now that the rows share one paragraph.
+      style: const TextStyle(height: 1.45),
     );
   }
 }
 
-/// A `Label: value` line. Text.rich rather than a fixed-width label column so a long value wraps
-/// instead of being clipped on a narrow screen.
-class _MetaRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _MetaRow(this.label, this.value);
+/// A prefilled "new bug report" URL for the running build.
+///
+/// Mirrors the section headings of `.github/ISSUE_TEMPLATE/bug_report.md`: GitHub applies a
+/// template OR a `body` parameter, never both, so passing the build info means reproducing the
+/// headings here. test/screens/about_screen_test.dart fails if the two drift apart.
+///
+/// The template's own Environment bullets are not reproduced - they still ask for an addon and a
+/// game version - so that section carries the build info plus the router fields instead.
+String bugReportUrl(BuildInfo? info, {String scriptStatus = '', String model = '', String firmware = ''}) {
+  final firmware = firmwareDetected ? routerFirmware.name : 'not detected this session';
+  // UNKNOWN, not the screen's "login to router to retrieve" - that is an instruction to the
+  // user standing in front of the app, and it tells whoever reads the issue nothing at all.
+  final script = scriptStatus.isEmpty || scriptStatus == kScriptLoginPrompt ? 'UNKNOWN' : scriptStatus;
+  final body = '''
+**Describe the bug**
+A clear and concise description of what the bug is.
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: SelectableText.rich(
-        TextSpan(children: [
-          TextSpan(text: '$label: ', style: _labelStyle),
-          TextSpan(text: value, style: _valueStyle),
-        ]),
-      ),
-    );
+**To Reproduce**
+Steps to reproduce the behavior:
+
+1. Go to '...'
+2. Click on '....'
+3. Scroll down to '....'
+4. See error
+
+**Expected behavior**
+A clear and concise description of what you expected to happen.
+
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
+
+**Environment (please complete the following information):**
+
+```text
+${_BuildInfoBlock.asPlainText(info, scriptStatus: script)}
+Router firmware: $firmware
+```
+
+- Router model: ${model.isEmpty ? '[e.g. RT-AX86U]' : model}
+- Router firmware version: ${firmware.isEmpty ? '[e.g. 3.0.0.4.388_24762]' : firmware}
+
+**Additional context**
+Add any other context about the problem here.
+''';
+  return Uri.parse('$_kRepoUrl/issues/new')
+      .replace(queryParameters: {'title': '[BUG] ...insert a short title...', 'body': body}).toString();
+}
+
+/// Licence notices grouped by package, sorted by package name. Each notice is one entry's
+/// paragraphs, kept intact so [LicenseParagraph.indent] survives to the renderer.
+///
+/// LicenseRegistry yields one entry per licence TEXT, each naming every package that text covers.
+/// Rendering entries directly therefore repeats a package once per distinct notice -
+/// `accessibility` appeared 16 times, once per Chromium copyright year. Grouping the other way
+/// round lists each package once, which is what Flutter's own licence page does.
+///
+/// Identical notices within a package collapse to one; ones differing only by year do not, since
+/// they are genuinely different notices.
+List<(String, List<List<LicenseParagraph>>)> groupLicensesByPackage(List<LicenseEntry> entries) {
+  final byPackage = <String, List<List<LicenseParagraph>>>{};
+  final seen = <String, Set<String>>{};
+  for (final entry in entries) {
+    // paragraphs is documented as expensive, so resolve it once per entry, not once per package.
+    final paragraphs = entry.paragraphs.toList();
+    final key = paragraphs.map((p) => '${p.indent}:${p.text}').join('\n');
+    for (final package in entry.packages) {
+      final notices = byPackage.putIfAbsent(package, () => <List<LicenseParagraph>>[]);
+      if (seen.putIfAbsent(package, () => <String>{}).add(key)) notices.add(paragraphs);
+    }
   }
+  final packages = byPackage.keys.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  return [for (final p in packages) (p, byPackage[p]!)];
 }
 
 // ── Open-source license dialog ─────────────────────────────────────────────────
@@ -271,28 +551,55 @@ class _LicensesDialogState extends State<_LicensesDialog> {
             );
           }
 
-          return ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            children: [
-              for (final entry in snapshot.data!) ...[
-                Text(
-                  entry.packages.join(', '),
-                  style: const TextStyle(
-                    color: kText,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+          final grouped = groupLicensesByPackage(snapshot.data!);
+          // Its own selection region: the About screen's does not extend into this dialog.
+          return SelectionArea(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              children: [
+                for (final (package, notices) in grouped) ...[
+                  Text(
+                    package,
+                    style: const TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600),
                   ),
-                ),
-                const SizedBox(height: 6),
-                SelectableText(
-                  entry.paragraphs.map((p) => p.text).join('\n\n'),
-                  style: const TextStyle(color: kMuted, fontSize: 10, height: 1.4),
-                ),
-                const Divider(color: kBorder, height: 24),
+                  for (var n = 0; n < notices.length; n++) ...[
+                    if (n > 0) const SizedBox(height: 12),
+                    // Paragraph by paragraph, honouring indent and the centred-header marker, the
+                    // way the framework's own licence page does. Text is never altered: hard line
+                    // breaks inside a paragraph are already lost upstream, where
+                    // LicenseEntryWithLineBreaks joins a paragraph's lines with spaces.
+                    for (final paragraph in notices[n]) _LicenceParagraph(paragraph),
+                  ],
+                  const Divider(color: kBorder, height: 24),
+                ],
               ],
-            ],
+            ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// One licence paragraph, indented or centred per [LicenseParagraph.indent].
+class _LicenceParagraph extends StatelessWidget {
+  final LicenseParagraph paragraph;
+  const _LicenceParagraph(this.paragraph);
+
+  @override
+  Widget build(BuildContext context) {
+    final centered = paragraph.indent == LicenseParagraph.centeredIndent;
+    return Padding(
+      padding: EdgeInsets.only(top: 8, left: centered ? 0 : 16.0 * paragraph.indent),
+      child: Text(
+        paragraph.text,
+        textAlign: centered ? TextAlign.center : TextAlign.start,
+        style: TextStyle(
+          color: kMuted,
+          fontSize: 10,
+          height: 1.4,
+          fontWeight: centered ? FontWeight.bold : FontWeight.normal,
+        ),
       ),
     );
   }

@@ -1,5 +1,7 @@
 // test/router_slot_service_test.dart - RouterSlotService tests over a fake SSH client.
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/firmware.dart';
+import 'package:cfg_pia_wg/router_service_queue.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
 
 import 'watchdog_test_utils.dart';
@@ -17,7 +19,7 @@ const _sampleConfig = '[Interface]\n'
 // Fast service: no real delay during the interface-up verification loop.
 RouterSlotService svc(
   RecordingSSHClient c, {
-  void Function(String, {bool isError, bool isSuccess})? onLog,
+  void Function(String, {bool isError, bool isSuccess, bool isWarning})? onLog,
   int verifyMaxAttempts = 2,
 }) =>
     RouterSlotService(c, onLog: onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts);
@@ -33,13 +35,13 @@ void main() {
           if (cmd.contains('wgc1_enable')) return '1';
           if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
           if (cmd.contains('wgc1_wd_email_enabled')) return '1';
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
           return '';
         },
       );
       final result = await svc(c).fetchSlots();
       expect(result.isMerlin, isTrue);
-      expect(result.activeSlot, 1);
+      expect(result.activeSlots, {1});
       expect(result.slots[1]!.desc, 'aus_melbourne');
       expect(result.slots[1]!.killSwitch, isTrue);
       expect(result.slots[1]!.enabled, isTrue);
@@ -67,16 +69,144 @@ void main() {
     test('logs "unconfigured" when every slot is empty and reports success', () async {
       final logs = <String>[];
       final c = RecordingSSHClient(responder: (_) => '');
-      await svc(c, onLog: (m, {isError = false, isSuccess = false}) => logs.add(m)).fetchSlots();
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).fetchSlots();
       expect(logs, contains('All WireGuard slots are unconfigured.'));
       expect(logs, contains('Successfully retrieved router config.'));
     });
 
-    test('watchdog flag is false on non-Merlin firmware', () async {
+    // cru exists on stock too, so the watchdog probe is no longer gated on the firmware tag.
+    test('watchdog flag follows cru regardless of the firmware tag', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('cru l') ? '1' : '');
       final result = await svc(c).fetchSlots();
       expect(result.isMerlin, isFalse);
-      expect(result.slots[1]!.watchdogActive, isFalse);
+      expect(result.slots[1]!.watchdogActive, isTrue);
+    });
+  });
+
+  group('fetchSlots on stock', () {
+    // One profile in slot 1 (active) and one in slot 3 (inactive); slot 3 also has a live watchdog.
+    RecordingSSHClient stockRouter() => RecordingSSHClient(
+          responder: (cmd) {
+            if (cmd.contains('vpnc_clientlist')) {
+              return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg<pia-aus_perth>WireGuard>3>>pw2>0>7>>>0>0>cfg-pia-wg';
+            }
+            if (cmd.contains('cru l') && cmd.contains('watchdog_wgc3')) return '1';
+            if (cmd.contains('ip -o link show up')) return 'wgc1';
+            // Slot 1 HAS a clientlist row, so its per-slot key must never win.
+            if (cmd.contains('nvram get wgc1_desc')) return 'STOCK-SHOULD-NOT-READ-THIS';
+            return '';
+          },
+        );
+
+    test('reads desc and enabled from vpnc_clientlist, not from per-slot keys', () async {
+      useStock();
+      final c = stockRouter();
+      final result = await svc(c).fetchSlots();
+
+      expect(result.slots[1]!.desc, 'pia-aus_melbourne');
+      expect(result.slots[1]!.enabled, isTrue);
+      expect(result.slots[3]!.desc, 'pia-aus_perth');
+      expect(result.slots[3]!.enabled, isFalse);
+      expect(result.slots[2]!.isEmpty, isTrue);
+      expect(result.activeSlots, {1});
+      expect(result.slots[3]!.watchdogActive, isTrue);
+      // The Merlin-only per-slot reads must not happen for a slot that has a row.
+      expect(c.ran('nvram get wgc1_desc'), isFalse);
+      expect(c.ran('nvram get wgc1_enable'), isFalse);
+      expect(c.ran('nvram get wgc1_enforce'), isFalse);
+    });
+
+    // Reported: a watchdog deployed before the deploy path wrote the clientlist row left the slot
+    // showing "<empty slot>" with every button greyed out but CREATE.
+    test('falls back to wgcN_desc when the slot has no clientlist row', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return ''; // no rows at all
+          if (cmd.contains('nvram get wgc4_desc')) return 'pia-aus_perth';
+          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc4')) return '1';
+          return '';
+        },
+      );
+      final result = await svc(c).fetchSlots();
+
+      expect(result.slots[4]!.desc, 'pia-aus_perth');
+      expect(result.slots[4]!.isEmpty, isFalse, reason: 'the slot must not read as unconfigured');
+      expect(result.slots[2]!.isEmpty, isTrue, reason: 'nothing to fall back to');
+    });
+
+    // Reported: a watchdog that was demonstrably running showed as PAUSED, so it could not be
+    // disabled. The active probe asked the ROUTER to expand $kRouterAppDir - a Dart constant the
+    // router knows nothing about - so the -s test ran against '/watchdog_wgcN.sh' and always
+    // failed. Any command the app sends must carry resolved paths.
+    test('the watchdog probe sends a resolved script path, not a Dart constant', () async {
+      final c = stockRouter();
+      await svc(c).fetchSlots();
+
+      final probe = c.commands.firstWhere((cmd) => cmd.contains('cru l'), orElse: () => '');
+      expect(probe, contains('/jffs/cfg-pia-wg/watchdog_wgc1.sh'));
+      expect(probe, isNot(contains(r'$kRouterAppDir')));
+    });
+
+    test('a watchdog counts as active only with BOTH a cron entry and its script', () async {
+      RecordingSSHClient router({required bool cron, required bool script}) => RecordingSSHClient(
+            responder: (cmd) {
+              if (cmd.contains('vpnc_clientlist')) return 'pia-x>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+              // The router evaluates the whole `cru l ... && [ -s ... ] && echo 1 || echo 0`.
+              if (cmd.contains('cru l')) return (cron && script) ? '1' : '0';
+              return '';
+            },
+          );
+
+      expect((await svc(router(cron: true, script: true)).fetchSlots()).slots[1]!.watchdogActive, isTrue);
+      expect((await svc(router(cron: true, script: false)).fetchSlots()).slots[1]!.watchdogActive, isFalse,
+          reason: 'cru pointing at a script that is not there is not a watchdog');
+    });
+
+    test('never reports a kill switch (stock has no enforce field)', () async {
+      useStock();
+      final result = await svc(stockRouter()).fetchSlots();
+      expect(result.slots.values.every((s) => !s.killSwitch), isTrue);
+    });
+  });
+
+  // Regression: activeSlot used RegExp.firstMatch, so with two tunnels up only one was ever
+  // badged, and which one depended on the order `wg` happened to print them.
+  group('fetchSlots active interfaces', () {
+    test('A CONFIGURED BUT DOWN INTERFACE IS NOT ACTIVE', () async {
+      // Reported from hardware 2026-09-09. `ifconfig wgc1 down` left the app badging the slot
+      // ACTIVE while the router's own web interface showed "connecting" and no traffic passed.
+      // `wg show interfaces` lists configured DEVICES and says nothing about link state:
+      //
+      //   up    51: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP> ... state UNKNOWN
+      //   down  51: wgc1: <POINTOPOINT,NOARP>             ... state DOWN
+      //
+      // Note the `state` word is UNKNOWN when it IS up, so matching on that would fail always -
+      // the UP flag is the signal, and `ip -o link show up` filters on it.
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('wg show interfaces')) return 'wgs1 wgc1'; // configured
+        if (cmd.contains('ip -o link show up')) return ' '; // nothing up
+        return '';
+      });
+      expect((await svc(c).fetchSlots()).activeSlots, isEmpty);
+    });
+
+    Future<Set<int>> active(String wgOutput) async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('ip -o link show up') ? wgOutput : '');
+      return (await svc(c).fetchSlots()).activeSlots;
+    }
+
+    test('reports every interface that is up, not just the first', () async {
+      expect(await active('wgc1\nwgc3'), {1, 3});
+      expect(await active('wgc5 wgc2'), {2, 5});
+    });
+
+    test('no interfaces up means no active slots', () async {
+      expect(await active(''), isEmpty);
+    });
+
+    test('a single interface still reports one slot', () async {
+      expect(await active('wgc4'), {4});
     });
   });
 
@@ -86,7 +216,7 @@ void main() {
       await svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'aus_melbourne');
 
       expect(c.ran('nvram set wgc1_enable=0'), isTrue);
-      expect(c.ran('nvram set wgc1_desc="aus_melbourne"'), isTrue);
+      expect(c.ran('nvram set wgc1_desc="pia-aus_melbourne"'), isTrue); // stored with the app prefix
       expect(c.ran('nvram set wgc1_addr="10.0.0.2/32"'), isTrue);
       expect(c.ran('nvram set wgc1_ep_addr="203.0.113.5"'), isTrue);
       expect(c.ran('nvram set wgc1_ep_port="1337"'), isTrue);
@@ -96,7 +226,7 @@ void main() {
       expect(c.count('nvram set wgc1_'), 17);
       // Must NOT activate the slot.
       expect(c.ran('start_wgc'), isFalse);
-      expect(c.ran('wg show interfaces'), isFalse);
+      expect(c.ran('ip -o link show up'), isFalse);
     });
 
     test('backs up an occupied slot and restores it on write failure', () async {
@@ -108,12 +238,59 @@ void main() {
       await expectLater(
         svc(
           c,
-          onLog: (m, {isError = false, isSuccess = false}) => logs.add(m),
+          onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m),
         ).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
         throwsA(isA<Exception>()),
       );
       expect(logs.any((m) => m.contains('Backing up existing wgc1')), isTrue);
-      expect(logs.any((m) => m.contains('wgc1 config restored')), isTrue);
+      expect(logs.any((m) => m.contains('config restored')), isTrue);
+    });
+
+    // The gap that produced the half-written wgc5 of 2026-09-08. `backup` is only populated for an
+    // OCCUPIED slot, so a create into an EMPTY one that failed part-way took the `if (backup !=
+    // null)` branch, did nothing, and left the keys written and uncommitted.
+    test('a failed create into an EMPTY slot unsets what it wrote', () async {
+      final logs = <String>[];
+      final c = RecordingSSHClient(responder: (_) => '', throwOn: ['wgc1_alive=25']);
+      await expectLater(
+        svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m))
+            .createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        throwsA(isA<Exception>()),
+      );
+      expect(logs.any((m) => m.contains('Backing up')), isFalse, reason: 'nothing to back up');
+      expect(c.ran('nvram unset wgc1_desc'), isTrue);
+      expect(c.ran('nvram unset wgc1_addr'), isTrue);
+      expect(c.ran('nvram commit'), isTrue, reason: 'the clear must be flushed, or it survives in RAM');
+      expect(logs.any((m) => m.contains('clearing the half-written wgc1')), isTrue);
+    });
+
+    test('a restore that itself fails says CRITICAL rather than restored', () async {
+      // Before 413 the restore ran through client.run, which discards the exit code - so a restore
+      // that failed still logged 'config restored' and the user was told their slot was safe.
+      final logs = <String>[];
+      final c = RecordingSSHClient(
+        responder: (cmd) => cmd.contains('nvram get') ? 'backup_val' : '',
+        throwOn: ['wgc1_alive=25'],
+      )..failWith['nvram set wgc1_addr='] = 'nvram: write failed';
+      await expectLater(
+        svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m))
+            .createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        throwsA(isA<Exception>()),
+      );
+      expect(logs.any((m) => m.contains('CRITICAL: could not restore')), isTrue);
+      expect(logs.any((m) => m.contains('config restored')), isFalse);
+    });
+
+    test('restored values are single-quoted, so a quote in the old value cannot break out', () async {
+      final c = RecordingSSHClient(
+        responder: (cmd) => cmd.contains('nvram get') ? r'a"b' : '',
+        throwOn: ['wgc1_alive=25'],
+      );
+      await expectLater(
+        svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        throwsA(isA<Exception>()),
+      );
+      expect(c.ran("nvram set wgc1_addr='a\"b'"), isTrue);
     });
   });
 
@@ -121,7 +298,7 @@ void main() {
     test('enables, verifies the interface, pings both targets and succeeds', () async {
       final c = RecordingSSHClient(
         responder: (cmd) {
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
           if (cmd.contains('ping -I wgc1')) return 'OK';
           return '';
         },
@@ -129,9 +306,86 @@ void main() {
       await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
       expect(c.ran('nvram set wgc1_enable=1'), isTrue);
       expect(c.ran('service "start_wgc 1"'), isTrue);
-      expect(c.ran('ping -I wgc1 -c 1 -W 5'), isTrue);
+      expect(c.ran('ping -I wgc1 -c 1 -w 5'), isTrue);
       // No revert on success.
       expect(c.ran('nvram set wgc1_enable=0'), isFalse);
+    });
+
+    // Reported from hardware: a slot whose PIA registration had expired still produced a wgcN
+    // device, so ENABLE said ACTIVE while the router WebUI sat on "connecting" for ever. `wg` showed
+    // the tunnel sending and never receiving, with no handshake at all.
+    group('handshake gate', () {
+      RecordingSSHClient router({required String handshake}) => RecordingSSHClient(
+            responder: (cmd) {
+              if (cmd.contains('ip -o link show up')) return 'wgc1';
+              if (cmd.contains('latest-handshakes')) return handshake;
+              if (cmd.contains('date +%s')) return '$kFakeNow';
+              if (cmd.contains('ping -I wgc1')) return 'OK';
+              return '';
+            },
+          );
+
+      test('a tunnel the peer never answered is refused and reverted', () async {
+        final c = router(handshake: '0'); // wg reports 0 for "never"
+        await expectLater(
+          svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
+          throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('never answered'))),
+        );
+        expect(c.ran('nvram set wgc1_enable=0'), isTrue, reason: 'the slot must not be left half-up');
+      });
+
+      test('a fresh handshake is accepted', () async {
+        final c = router(handshake: '${kFakeNow - 5}');
+        await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
+        expect(c.ran('nvram set wgc1_enable=0'), isFalse);
+      });
+
+      test('handshakeAge takes the newest peer on the router and reports null for none', () async {
+        final c = RecordingSSHClient(
+          responder: (cmd) {
+            // The router reduces the peer list; the fake stands in for that awk.
+            if (cmd.contains('latest-handshakes')) return '${kFakeNow - 12}';
+            if (cmd.contains('date +%s')) return '$kFakeNow';
+            return '';
+          },
+        );
+        expect(await svc(c).handshakeAge(1), 12);
+        // The reduction has to be a max over the peers, not the first line.
+        expect(c.commands.firstWhere((cmd) => cmd.contains('latest-handshakes')), contains(r'if ($2 > m) m = $2'));
+
+        final never = RecordingSSHClient(responder: (cmd) => cmd.contains('latest-handshakes') ? '0' : '');
+        expect(await svc(never).handshakeAge(1), isNull, reason: 'wg reports 0 for a peer that never answered');
+      });
+
+      // On stock the ping is routed over the WAN from the tunnel's source address, so it answered
+      // OK for a dead tunnel. It must not be able to veto - or rescue - an enable there.
+      test('stock does not block an enable on a ping failure', () async {
+        useStock();
+        final c = RecordingSSHClient(
+          responder: (cmd) {
+            if (cmd.contains('vpnc_clientlist')) return 'pia-x>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+            if (cmd.contains('ip -o link show up')) return 'wgc1';
+            if (cmd.contains('latest-handshakes')) return '${kFakeNow - 3}';
+            if (cmd.contains('date +%s')) return '$kFakeNow';
+            return ''; // every ping fails
+          },
+        );
+        await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
+        expect(c.ran('nvram set wgc1_enable=0'), isFalse, reason: 'the handshake is the gate on stock');
+      });
+
+      test('stock still refuses when there is no handshake', () async {
+        useStock();
+        final c = RecordingSSHClient(
+          responder: (cmd) {
+            if (cmd.contains('vpnc_clientlist')) return 'pia-x>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+            if (cmd.contains('ip -o link show up')) return 'wgc1';
+            if (cmd.contains('latest-handshakes')) return '0';
+            return '';
+          },
+        );
+        await expectLater(svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
+      });
     });
 
     test('reverts and throws when the interface never comes up', () async {
@@ -144,13 +398,51 @@ void main() {
     test('reverts and throws when a ping target is unreachable', () async {
       final c = RecordingSSHClient(
         responder: (cmd) {
-          if (cmd.contains('wg show interfaces')) return 'wgc1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
           if (cmd.contains('ping -I wgc1')) return 'FAIL';
           return '';
         },
       );
       await expectLater(svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
       expect(c.ran('nvram set wgc1_enable=0'), isTrue);
+    });
+  });
+
+  // The caller refreshes as soon as these return, so they must not return while the interface is
+  // still listed - that is what left the ACTIVE badge on a just-disabled slot.
+  group('stop paths wait for the interface', () {
+    RecordingSSHClient router({required int upFor}) {
+      var polls = 0;
+      return RecordingSSHClient(
+        responder: (cmd) => cmd.contains('ip -o link show up') ? (polls++ < upFor ? 'wgc2' : '') : '',
+      );
+    }
+
+    test('disableSlot returns only once the slot has gone', () async {
+      final c = router(upFor: 2);
+      await svc(c, verifyMaxAttempts: 5).disableSlot(2);
+      expect(c.count('ip -o link show up'), 3); // two while up, one confirming it went
+    });
+
+    test('an already-stopped slot costs a single poll', () async {
+      final c = router(upFor: 0);
+      await svc(c).disableSlot(2);
+      expect(c.count('ip -o link show up'), 1);
+    });
+
+    test('disableSlot gives up rather than hanging, and still reports', () async {
+      final logs = <String>[];
+      final c = router(upFor: 99);
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m), verifyMaxAttempts: 2).disableSlot(2);
+      expect(logs.any((m) => m.contains('still up after the stop')), isTrue);
+      expect(logs.any((m) => m.contains('disabled.')), isTrue);
+    });
+
+    test('a failed enable reverts and waits too', () async {
+      // Interface never comes up -> _revertEnable, whose stop must also settle.
+      final c = RecordingSSHClient(responder: (_) => '');
+      await expectLater(svc(c).enableSlot(2, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
+      expect(c.ran('nvram set wgc2_enable=0'), isTrue);
     });
   });
 
@@ -175,6 +467,194 @@ void main() {
       // the +2 accounts for the extra two manual keys being deleted
       expect(c.count('nvram unset wgc3_'), kSlotNvramKeys.length + 2);
       expect(c.ran('nvram commit'), isTrue);
+    });
+  });
+
+  // The stop is asynchronous, so DELETE waits for the tunnel to actually go before clearing keys -
+  // otherwise the firmware re-creates wgcN_enable behind the unset.
+  group('deleteSlot cleanup', () {
+    // Interface reported up for [upFor] polls, then gone.
+    RecordingSSHClient router({int upFor = 0, String clientlist = ''}) {
+      var polls = 0;
+      return RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return clientlist;
+          if (cmd.contains('ip -o link show up')) return polls++ < upFor ? 'wgc3' : '';
+          return '';
+        },
+      );
+    }
+
+    test('waits for the interface to go before unsetting anything', () async {
+      useStock();
+      final c = router(upFor: 2, clientlist: 'a>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
+      await svc(c, verifyMaxAttempts: 5).deleteSlot(3);
+
+      final lastPoll = c.commands.lastIndexOf('ip -o link show up');
+      final firstUnset = c.commands.indexWhere((cmd) => cmd.startsWith('nvram unset'));
+      expect(lastPoll, isNot(-1));
+      expect(firstUnset, isNot(-1));
+      expect(lastPoll, lessThan(firstUnset), reason: 'cleanup must not race the stop');
+    });
+
+    // Reported on hardware 2026-09-11: a device pinned to wgc5 kept its pin after the slot was
+    // deleted. The web interface could not show it, this app could only call it "profile 5", and
+    // when a new region was created in that slot the device silently moved to it.
+    test('devices pinned to the deleted profile are moved to Internet', () async {
+      useStock();
+      final logs = <String>[];
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>5>>pw>1>5>>>0>0>cfg-pia-wg';
+          if (cmd.contains('vpnc_dev_policy_list')) return '1>192.168.1.20>>5><1>192.168.1.21>>9><0>192.168.1.22>>0>';
+          if (cmd.contains('dhcp_staticlist')) return '<AA:BB:CC:DD:EE:FF>192.168.1.20>>';
+          if (cmd.contains('custom_clientlist')) return '<Tablet>AA:BB:CC:DD:EE:FF>0>0>>';
+          if (cmd.contains('ip rule show')) return '100:\tfrom 192.168.1.20 lookup 5\n32766:\tfrom all lookup main';
+          return '';
+        },
+      );
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).deleteSlot(5);
+
+      // .20 was on this profile and is pinned to Internet; .21 is on another and .22 already
+      // follows the default, so both pass through byte for byte.
+      expect(
+        c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list=')),
+        contains('1>192.168.1.20>>0><1>192.168.1.21>>9><0>192.168.1.22>>0>'),
+      );
+      // Named, not just counted - the user has to know which device moved.
+      expect(logs.any((m) => m.contains('Tablet (192.168.1.20)')), isTrue);
+      // Stock leaves the routing rule behind too, so it goes by hand.
+      expect(c.ran('ip rule del from 192.168.1.20 lookup 5'), isTrue);
+    });
+
+    // Reported 2026-09-11: deleting wgc1 left `vpnc_default_wan` still naming its index 6, so every
+    // device following the default rendered as "profile 9" and the firmware was pointed at a
+    // profile that no longer existed. The key is not a policy record, so releasing the pins did
+    // not touch it.
+    test('deleting the slot that IS the default connection puts the default back to Internet', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+          if (cmd.contains('vpnc_default_wan')) return '0'; // already cleared by restart_default_wan
+          return '';
+        },
+      );
+      await svc(c).deleteSlot(1);
+      expect(c.ran('service restart_default_wan'), isFalse, reason: 'the key already read 0');
+    });
+
+    test('the default connection is reset when it names the profile being deleted', () async {
+      useStock();
+      var reads = 0;
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+          // Names this profile until restart_default_wan has run, then reads 0 like the real one.
+          if (cmd.contains('vpnc_default_wan')) return reads++ == 0 ? '9' : '0';
+          return '';
+        },
+      );
+      await svc(c).deleteSlot(1);
+      expect(c.ran('service restart_default_wan'), isTrue);
+      expect(c.ran('service restart_vpnc'), isTrue);
+    });
+
+    test('a default connection naming ANOTHER profile is left alone', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+          if (cmd.contains('vpnc_default_wan')) return '5'; // wgc5 is the default, not this one
+          return '';
+        },
+      );
+      await svc(c).deleteSlot(1);
+      expect(c.ran('service restart_default_wan'), isFalse);
+    });
+
+    test('a slot with no pinned devices writes no policy list at all', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>5>>pw>1>5>>>0>0>cfg-pia-wg';
+          if (cmd.contains('vpnc_dev_policy_list')) return '0>192.168.1.22>>0>';
+          return '';
+        },
+      );
+      await svc(c).deleteSlot(5);
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list=')), isFalse);
+    });
+
+    test('an already-stopped slot costs a single poll', () async {
+      useStock();
+      final c = router();
+      await svc(c).deleteSlot(3);
+      expect(c.count('ip -o link show up'), 1);
+    });
+
+    // Giving up must still clear the configuration - that is what the user asked for.
+    test('clears anyway, with a warning, if the interface never goes', () async {
+      useStock();
+      final logs = <String>[];
+      final c = router(upFor: 99, clientlist: 'pia-aus_perth>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m), verifyMaxAttempts: 2).deleteSlot(3);
+
+      expect(logs.any((m) => m.contains('wgc3:pia-aus_perth is still up after the stop')), isTrue);
+      expect(c.ran('nvram unset wgc3_enable'), isTrue);
+      expect(c.ran('nvram commit'), isTrue);
+    });
+
+    test('unsets wgcN_enable and the VPN Fusion runtime keys on stock', () async {
+      useStock();
+      // Slot 3's index 6 is 7, so its runtime keys are vpnc7_*, not vpnc3_*.
+      final c = router(clientlist: 'a>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
+      await svc(c).deleteSlot(3);
+
+      expect(c.ran('nvram unset wgc3_enable'), isTrue);
+      for (final key in kVpncRuntimeKeys) {
+        expect(c.ran('nvram unset vpnc7_$key'), isTrue, reason: key);
+      }
+      expect(kVpncRuntimeKeys, ['dut_disc', 'sbstate_t', 'state_t']);
+      // Nothing else's runtime state is touched.
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram unset vpnc') && !cmd.contains('vpnc7_')), isFalse);
+    });
+
+    // Reproduces the hardware report: create + enable + delete wgc1 left vpnc9_* behind, because
+    // the keys are indexed by index 6 (9 for slot 1), not by the slot number.
+    test('wgc1 clears vpnc9_*, not vpnc1_*', () async {
+      useStock();
+      var polls = 0;
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+          if (cmd.contains('ip -o link show up')) return polls++ < 1 ? 'wgc1' : '';
+          return '';
+        },
+      );
+      await svc(c).deleteSlot(1);
+
+      for (final key in kVpncRuntimeKeys) {
+        expect(c.ran('nvram unset vpnc9_$key'), isTrue, reason: key);
+        expect(c.ran('nvram unset vpnc1_$key'), isFalse, reason: 'slot number is the wrong index');
+      }
+    });
+
+    // vpncN_* is VPN Fusion state; Merlin does not drive WireGuard through it.
+    test('leaves the VPN Fusion keys alone on Merlin', () async {
+      useMerlin();
+      final c = router();
+      await svc(c).deleteSlot(3);
+      expect(c.ran('nvram unset wgc3_enable'), isTrue);
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram unset vpnc')), isFalse);
+    });
+
+    // Deliberately excluded from the sweep.
+    test('does not unset vpncN_dns', () async {
+      useStock();
+      final c = router(clientlist: 'a>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg');
+      await svc(c).deleteSlot(3);
+      expect(c.ran('nvram unset vpnc3_dns'), isFalse);
     });
   });
 
@@ -221,9 +701,643 @@ void main() {
     test('pingViaSlot binds to the interface with a 5s timeout', () async {
       final ok = RecordingSSHClient(responder: (_) => 'OK');
       expect(await svc(ok).pingViaSlot('8.8.8.8', 2), isTrue);
-      expect(ok.ran('ping -I wgc2 -c 1 -W 5'), isTrue);
+      expect(ok.ran('ping -I wgc2 -c 1 -w 5'), isTrue);
       final fail = RecordingSSHClient(responder: (_) => 'FAIL');
       expect(await svc(fail).pingViaSlot('8.8.8.8', 2), isFalse);
+    });
+  });
+
+  // Stock caps concurrent tunnels via vpnc_max_conn; Merlin has no such key.
+  group('fetchSlots concurrency cap', () {
+    Future<int?> cap({required bool stock, String maxConn = ''}) async {
+      stock ? useStock() : useMerlin();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_max_conn')) return maxConn;
+          if (cmd.contains('3rd-party')) return stock ? '' : 'merlin';
+          return '';
+        },
+      );
+      return (await svc(c).fetchSlots()).maxActiveSlots;
+    }
+
+    test('stock follows the router setting', () async {
+      expect(await cap(stock: true, maxConn: '2'), 2);
+      expect(await cap(stock: true, maxConn: '3'), 3);
+      expect(await cap(stock: true, maxConn: '1'), 1);
+    });
+
+    test('stock falls back to the documented default when unreadable', () async {
+      expect(await cap(stock: true), kDefaultStockMaxActiveSlots);
+      expect(await cap(stock: true, maxConn: 'not-a-number'), kDefaultStockMaxActiveSlots);
+      expect(await cap(stock: true, maxConn: '0'), kDefaultStockMaxActiveSlots);
+      expect(kDefaultStockMaxActiveSlots, 2);
+    });
+
+    test('Merlin reports no cap and is never asked', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('3rd-party') ? 'merlin' : '');
+      expect((await svc(c).fetchSlots()).maxActiveSlots, isNull);
+      expect(c.ran('vpnc_max_conn'), isFalse);
+    });
+  });
+
+  group('firmware detection + binary probes', () {
+    test('readFirmwareTag returns the raw nvram value', () async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('3rd-party') ? 'merlin' : '');
+      expect(await svc(c).readFirmwareTag(), 'merlin');
+      expect(c.ran('nvram get 3rd-party'), isTrue);
+    });
+
+    test('readFirmwareTag propagates an SSH failure', () async {
+      final c = RecordingSSHClient(throwOn: ['3rd-party']);
+      await expectLater(svc(c).readFirmwareTag(), throwsA(isA<Exception>()));
+    });
+
+    test('missingStockBinaries reports absent paths in probe order', () async {
+      final none = RecordingSSHClient(responder: (_) => '1');
+      expect(await svc(none).missingStockBinaries(needMailsend: true), isEmpty);
+
+      final both = RecordingSSHClient(responder: (_) => '0');
+      expect(await svc(both).missingStockBinaries(needMailsend: true), [kStockJqPath, kStockMailsendPath]);
+
+      final jqOnly = RecordingSSHClient(responder: (cmd) => cmd.contains('mailsend-go') ? '1' : '0');
+      expect(await svc(jqOnly).missingStockBinaries(needMailsend: true), [kStockJqPath]);
+    });
+
+    test('manage mode does not probe for the mail binary', () async {
+      final c = RecordingSSHClient(responder: (_) => '1');
+      await svc(c).missingStockBinaries(needMailsend: false);
+      expect(c.ran(kStockJqPath), isTrue);
+      expect(c.ran('mailsend-go'), isFalse);
+    });
+  });
+
+  group('slot description prefix (pure)', () {
+    test('slotDescFor adds the prefix', () {
+      expect(slotDescFor('aus_melbourne'), 'pia-aus_melbourne');
+      expect(kSlotDescPrefix, 'pia-');
+    });
+
+    // CREATE over an existing slot re-saves whatever is there; the prefix must not compound.
+    test('slotDescFor is idempotent and leaves an empty id alone', () {
+      expect(slotDescFor('pia-aus_melbourne'), 'pia-aus_melbourne');
+      expect(slotDescFor(''), '');
+      expect(slotDescFor('  aus_perth '), 'pia-aus_perth');
+    });
+
+    // The router script does the same with the shell's ${DESC#pia-}; they must agree.
+    test('regionIdFromDesc is the inverse, and tolerates unprefixed descriptions', () {
+      expect(regionIdFromDesc('pia-aus_melbourne'), 'aus_melbourne');
+      expect(regionIdFromDesc('aus_melbourne'), 'aus_melbourne'); // written before the prefix existed
+      expect(regionIdFromDesc(''), '');
+      for (final id in ['aus_melbourne', 'us_east', 'uk_london']) {
+        expect(regionIdFromDesc(slotDescFor(id)), id, reason: id);
+      }
+    });
+  });
+
+  // Three different indexes exist on one profile: the slot number, the clientlist row
+  // (vpnc_unit), and index 6 (the vpncN_* runtime keys). They coincide often enough to mislead.
+  group('vpncStateIndexForSlot (pure)', () {
+    const sample = 'a>WireGuard>5>>pw>1>5>>>0>0>Web<b>WireGuard>1>>pw>0>9>>>0>0>Web';
+
+    test('reads index 6, which is not the slot number', () {
+      final recs = parseVpncClientlist(sample);
+      expect(vpncStateIndexForSlot(recs, 1), 9); // the hardware case: wgc1 -> vpnc9_*
+      expect(vpncStateIndexForSlot(recs, 5), 5); // slot 5 is where the two rules coincide
+    });
+
+    test('falls back to 10 - slot when the slot has no record', () {
+      expect(vpncStateIndexForSlot(const [], 1), 9);
+      expect(vpncStateIndexForSlot(const [], 4), 6);
+    });
+
+    test('honours an index 6 that does not follow 10 - slot', () {
+      // Reading the record beats computing it: a profile carrying an unexpected value still
+      // resolves to the keys the firmware actually created.
+      final recs = parseVpncClientlist('a>WireGuard>2>>pw>1>3>>>0>0>Web');
+      expect(vpncStateIndexForSlot(recs, 2), 3);
+    });
+
+    test('falls back when index 6 is blank or unparseable', () {
+      expect(vpncStateIndexForSlot(parseVpncClientlist('a>WireGuard>2>>pw>1>>>>0>0>Web'), 2), 8);
+      expect(vpncStateIndexForSlot(parseVpncClientlist('a>WireGuard>2>>pw>1>x>>>0>0>Web'), 2), 8);
+    });
+
+    test('is a different index from vpnc_unit and from the slot', () {
+      final recs = parseVpncClientlist(sample);
+      expect(vpncUnitForSlot(recs, 1), 1); // clientlist row
+      expect(vpncStateIndexForSlot(recs, 1), 9); // index 6
+      // and the slot itself is 1 - three distinct numbers for one profile.
+    });
+
+    test('buildVpncRecord writes an index 6 the helper reads back', () {
+      for (final slot in [1, 2, 3, 4, 5]) {
+        final rec = buildVpncRecord(slot: slot, desc: 'x', active: false);
+        expect(vpncStateIndexForSlot([rec], slot), 10 - slot, reason: 'slot $slot');
+      }
+    });
+  });
+
+  group('slotLabel (pure)', () {
+    test('names the slot with its description when there is one', () {
+      expect(slotLabel(1, 'pia-aus_melbourne'), 'wgc1:pia-aus_melbourne');
+      expect(slotLabel(5, ' pia-aus_perth '), 'wgc5:pia-aus_perth');
+    });
+
+    test('falls back to the bare slot for an unconfigured one', () {
+      expect(slotLabel(3, ''), 'wgc3');
+      expect(slotLabel(3, '   '), 'wgc3');
+    });
+  });
+
+  group('fetchSlotLabel', () {
+    test('stock reads the description from vpnc_clientlist, not the desc mirror', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus_perth>WireGuard>5>>pw>1>5>>>0>0>cfg-pia-wg' : 'MIRROR',
+      );
+      expect(await fetchSlotLabel(5, (cmd) async => c.responder!(cmd)), 'wgc5:pia-aus_perth');
+    });
+
+    test('Merlin reads wgcN_desc, having no clientlist', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('wgc2_desc') ? 'pia-us_east' : '');
+      expect(await fetchSlotLabel(2, (cmd) async => c.responder!(cmd)), 'wgc2:pia-us_east');
+    });
+
+    test('an unknown slot degrades to the bare name', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (_) => '');
+      expect(await fetchSlotLabel(4, (cmd) async => c.responder!(cmd)), 'wgc4');
+    });
+
+    // A label is decoration: a lookup failure must never break or mask the action being logged.
+    test('a failed lookup degrades to the bare name rather than throwing', () async {
+      expect(await fetchSlotLabel(1, (_) async => throw Exception('ssh down')), 'wgc1');
+    });
+  });
+
+  group('log messages name the slot', () {
+    test('enable, disable and delete all carry the description', () async {
+      useStock();
+      for (final probe in [
+        (
+          'Enabling wgc1:pia-aus_perth...',
+          (RouterSlotService s) => s.enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1')
+        ),
+        ('Disabling wgc1:pia-aus_perth...', (RouterSlotService s) => s.disableSlot(1)),
+        ('Deleting wgc1:pia-aus_perth configuration...', (RouterSlotService s) => s.deleteSlot(1)),
+      ]) {
+        final logs = <String>[];
+        final c = RecordingSSHClient(
+          responder: (cmd) {
+            if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+            if (cmd.contains('ip -o link show up')) return 'wgc1';
+            if (cmd.contains('ping -I')) return 'OK';
+            if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
+            return '';
+          },
+        );
+        try {
+          await probe.$2(svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)));
+        } catch (_) {
+          // The message content is what matters here, not whether the action succeeded.
+        }
+        expect(logs, contains(probe.$1));
+        // No line still names the slot bare. Raw router output (`wg show interfaces: wgc1`) is
+        // excluded - that is the router's own text, not the app naming a slot.
+        final appLines = logs.where((m) => !m.contains('interfaces up:'));
+        expect(appLines.any((m) => m.contains(RegExp(r'wgc1(?!:)'))), isFalse, reason: probe.$1);
+      }
+    });
+
+    test('the router syslog gets the same label', () async {
+      useStock();
+      final c = RecordingSSHClient(
+          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus_perth>WireGuard>2>>pw>1>8>>>0>0>cfg-pia-wg' : '');
+      await svc(c).disableSlot(2);
+      expect(c.commands.any((cmd) => cmd.contains('logger') && cmd.contains('wgc2:pia-aus_perth')), isTrue);
+    });
+
+    test('an unconfigured slot still logs, just without a description', () async {
+      useMerlin();
+      final logs = <String>[];
+      final c = RecordingSSHClient(responder: (_) => '');
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).disableSlot(3);
+      expect(logs.any((m) => m.contains('Disabling wgc3...')), isTrue);
+    });
+
+    test('the description is read once however many lines mention it', () async {
+      useStock();
+      final c = RecordingSSHClient(
+          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus_perth>WireGuard>2>>pw>1>8>>>0>0>cfg-pia-wg' : '');
+      await svc(c).disableSlot(2);
+      // disableSlot logs 3 lines naming the slot; _setVpncActive and _runVpncService read the
+      // clientlist for their own reasons, so only assert the label did not add a read per line.
+      expect(c.count('nvram get vpnc_clientlist'), lessThanOrEqualTo(3));
+    });
+  });
+
+  group('vpnc_clientlist parsing (pure)', () {
+    // Verbatim from ARCHITECTURE.md "Stock vpnc_clientlist".
+    const sample = 'pia-aus_melbourne>WireGuard>5>>mel-pwd>1>5>>>0>0>cfg-pia-wg'
+        '<pia-aus>WireGuard>4>>aus-pwd>0>6>>>0>0>cfg-pia-wg'
+        '<pia-au_brisbane-pf>WireGuard>3>>bris-pwd>0>7>>>0>0>cfg-pia-wg'
+        '<pia-au_adelaide-pf>WireGuard>2>>adf-pwd>0>8>>>0>0>cfg-pia-wg'
+        '<pia-aus_perth>WireGuard>1>>perth-pwd>0>9>>>0>0>cfg-pia-wg';
+
+    test('parses the documented worked example', () {
+      final recs = parseVpncClientlist(sample);
+      expect(recs, hasLength(5));
+      expect(recs.first.desc, 'pia-aus_melbourne');
+      expect(recs.first.protocol, 'WireGuard');
+      expect(recs.first.slot, 5);
+      expect(recs.first.active, isTrue);
+      expect(recs.last.slot, 1);
+      expect(recs.last.active, isFalse);
+    });
+
+    test('round-trips byte-for-byte', () {
+      expect(serialiseVpncClientlist(parseVpncClientlist(sample)), sample);
+    });
+
+    test('an empty nvram value parses to no records', () {
+      expect(parseVpncClientlist(''), isEmpty);
+      expect(parseVpncClientlist('   '), isEmpty);
+      expect(serialiseVpncClientlist(const []), '');
+    });
+
+    test('short records are padded so field access is total', () {
+      final r = parseVpncClientlist('desc>WireGuard>2').single;
+      expect(r.fields, hasLength(VpncRecord.fieldCount));
+      expect(r.active, isFalse);
+      expect(r.slot, 2);
+    });
+
+    test('buildVpncRecord fills only the fields we understand', () {
+      final f = buildVpncRecord(slot: 3, desc: 'pia-aus', active: true).fields;
+      expect(f[0], 'pia-aus'); // description
+      expect(f[1], 'WireGuard'); // protocol
+      expect(f[2], '3'); // slot
+      expect(f[4], 'password'); // password
+      expect(f[5], '1'); // active
+      expect(f[6], '7'); // iptables ID = 10 - slot
+      expect(f[9], '0'); // tunnel = 0
+      expect(f[10], '0'); // wan_idx = 0
+      expect(f[11], 'cfg-pia-wg'); // 12 fixed
+      for (final idx in [3, 7, 8]) {
+        expect(f[idx], '', reason: 'field ${idx + 1} must be empty');
+      }
+    });
+
+    test('upsert rewrites only desc and active, preserving unknown fields', () {
+      final updated = upsertVpncRecord(parseVpncClientlist(sample), slot: 4, desc: 'pia-nz', active: true);
+      final rec = updated.firstWhere((r) => r.slot == 4);
+      expect(rec.desc, 'pia-nz');
+      expect(rec.active, isTrue);
+      expect(rec.fields[4], 'aus-pwd'); // index 4 untouched
+      expect(rec.fields[6], '6'); // index 6 untouched
+      expect(updated, hasLength(5)); // no record added
+    });
+
+    test('upsert appends a new record when the slot has none', () {
+      final updated = upsertVpncRecord(const [], slot: 2, desc: 'pia-aus', active: false);
+      expect(updated, hasLength(1));
+      expect(updated.single.slot, 2);
+      expect(updated.single.fields[6], '8');
+    });
+
+    test('remove drops just that slot', () {
+      final updated = removeVpncRecord(parseVpncClientlist(sample), 3);
+      expect(updated, hasLength(4));
+      expect(updated.any((r) => r.slot == 3), isFalse);
+    });
+  });
+
+  // vpnc_unit selects the profile's ROW in vpnc_clientlist, NOT `5 - slot`. Measured against the
+  // WebUI: with rows [slot 5, slot 1] it writes vpnc_unit=1 for slot 1.
+  group('vpncUnitForSlot (pure)', () {
+    test('a WebUI-ordered list gives the same answers as the old 5 - slot rule', () {
+      // The WebUI can only create profiles in slot order 5,4,3,2,1, which is exactly why the wrong
+      // rule went unnoticed. Row index must not regress this case.
+      final webUiOrder = parseVpncClientlist(
+        'a>WireGuard>5>>pw>1>5>>>0>0>Web<b>WireGuard>4>>pw>0>6>>>0>0>Web<c>WireGuard>3>>pw>0>7>>>0>0>Web',
+      );
+      for (final slot in [5, 4, 3]) {
+        expect(vpncUnitForSlot(webUiOrder, slot), 5 - slot, reason: 'slot $slot');
+      }
+    });
+
+    test('an out-of-order list follows the row, which 5 - slot gets wrong', () {
+      // The exact arrangement from the hardware measurement.
+      final rows = parseVpncClientlist(
+        'aus_melbourne>WireGuard>5>>password>0>5>>>0>0>cfg-pia-wg<aus_perth>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg',
+      );
+      expect(vpncUnitForSlot(rows, 5), 0);
+      expect(vpncUnitForSlot(rows, 1), 1); // 5 - slot would say 4, a row that does not exist
+    });
+
+    test('a slot with no profile has no unit', () {
+      expect(vpncUnitForSlot(parseVpncClientlist('a>WireGuard>5>>pw>1>5>>>0>0>Web'), 2), isNull);
+      expect(vpncUnitForSlot(const [], 1), isNull);
+    });
+  });
+
+  group('stock slot mutations', () {
+    test('createConfigToSlot writes 14 keys and upserts vpnc_clientlist as inactive', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (_) => '');
+      await svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'aus_melbourne');
+      expect(c.count('nvram set wgc1_'), slotKeysFor(RouterFirmware.stock).length);
+      expect(c.count('nvram set wgc1_'), 14);
+      // The region mirror the router-side watchdog reads with a bare `nvram get`.
+      expect(c.ran('nvram set wgc1_desc="pia-aus_melbourne"'), isTrue); // stored with the app prefix
+      // Fields stock does not have are never written.
+      for (final key in kMerlinOnlySlotKeys) {
+        expect(c.ran('nvram set wgc1_$key='), isFalse, reason: '$key is Merlin-only');
+      }
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus_melbourne>WireGuard>1>>password>0>9>>>0>0>cfg-pia-wg'"), isTrue);
+    });
+
+    // A profile created in the router web UI has a vpnc_clientlist record but no desc mirror; it
+    // must still be backed up, or an overwrite that fails halfway loses it.
+    test('backs up a web-UI-created slot that has no desc mirror', () async {
+      useStock();
+      final logs = <String>[];
+      final c = RecordingSSHClient(
+        responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg' : '',
+        throwOn: ['wgc1_alive=25'],
+      );
+      await expectLater(
+        svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m))
+            .createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        throwsA(isA<Exception>()),
+      );
+      expect(logs.any((m) => m.contains('Backing up existing wgc1')), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg'"), isTrue);
+    });
+
+    test('does not back up a genuinely empty stock slot', () async {
+      useStock();
+      final logs = <String>[];
+      final c = RecordingSSHClient(responder: (_) => '');
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m))
+          .createConfigToSlot(slot: 2, config: _sampleConfig, regionId: 'r');
+      expect(logs.any((m) => m.contains('Backing up')), isFalse);
+    });
+
+    test('createConfigToSlot restores vpnc_clientlist when the write fails', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) => cmd.contains('nvram get') ? 'backup_val' : '',
+        throwOn: ['wgc1_alive=25'], // fail mid-write, after the backup
+      );
+      await expectLater(
+        svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        throwsA(isA<Exception>()),
+      );
+      expect(c.ran("nvram set vpnc_clientlist='backup_val'"), isTrue);
+    });
+
+    test('a failed create into an empty STOCK slot also drops the vpnc_clientlist row', () async {
+      // The empty-slot clear has to undo both halves of the write, or it leaves the mirror image
+      // of the observed fault: a row in the list naming a slot whose keys are gone.
+      useStock();
+      final c = RecordingSSHClient(responder: (_) => '', throwOn: ['nvram commit']);
+      await expectLater(
+        svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r'),
+        throwsA(isA<Exception>()),
+      );
+      expect(c.ran('nvram unset wgc1_desc'), isTrue);
+      expect(c.ran('nvram set vpnc_clientlist='), isTrue, reason: 'the row is rewritten without slot 1');
+    });
+
+    test('enableSlot flips the vpnc active flag as well as wgcN_enable', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
+          // These need to be checked in reverse order of specificity: ping -I first
+          if (cmd.contains('ping -I')) return 'OK';
+          if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
+          return '';
+        },
+      );
+      await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
+      expect(c.ran('nvram set wgc1_enable=1'), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg'"), isTrue);
+    });
+
+    test('disableSlot clears the vpnc active flag', () async {
+      useStock();
+      final c = RecordingSSHClient(
+          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus>WireGuard>2>>pw>1>8>>>0>0>cfg-pia-wg' : '');
+      await svc(c).disableSlot(2);
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>2>>pw>0>8>>>0>0>cfg-pia-wg'"), isTrue);
+    });
+
+    test('deleteSlot removes the vpnc record and skips the Merlin-only keys', () async {
+      useStock();
+      final c = RecordingSSHClient(
+        responder: (cmd) => cmd.contains('vpnc_clientlist')
+            ? 'a>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg<b>WireGuard>3>>pw>0>7>>>0>0>cfg-pia-wg'
+            : '',
+      );
+      await svc(c).deleteSlot(3);
+      expect(c.ran("nvram set vpnc_clientlist='a>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg'"), isTrue);
+      expect(c.ran('nvram unset wgc3_desc'), isTrue); // the mirror is ours to clean up
+      expect(c.ran('nvram unset wgc3_enforce'), isFalse);
+      expect(c.count('nvram unset wgc3_'), slotKeysFor(RouterFirmware.stock).length + 2);
+    });
+
+    // Regression: disable used `service restart_vpnc`, which cleared wgcN_enable and the
+    // clientlist active flag — so the WebUI read "disconnected" — but left the interface up.
+    // ARCHITECTURE.md "Stop/Disable" specifies stop_vpnc, confirmed on hardware.
+    test('disableSlot stops the tunnel rather than restarting it', () async {
+      useStock();
+      final c = RecordingSSHClient(
+          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus>WireGuard>2>>pw>1>8>>>0>0>cfg-pia-wg' : '');
+      await svc(c).disableSlot(2);
+      expect(c.ran('service stop_vpnc'), isTrue);
+      expect(c.ran('restart_vpnc'), isFalse);
+    });
+
+    test('deleteSlot stops the tunnel rather than restarting it', () async {
+      useStock();
+      final c = RecordingSSHClient(
+          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'pia-aus>WireGuard>3>>pw>1>7>>>0>0>cfg-pia-wg' : '');
+      await svc(c).deleteSlot(3);
+      expect(c.ran('service stop_vpnc'), isTrue);
+      expect(c.ran('restart_vpnc'), isFalse);
+    });
+
+    test('a failed enable reverts with stop_vpnc', () async {
+      useStock();
+      // Interface never comes up -> _revertEnable. `wgs1` is the WireGuard SERVER interface, which
+      // a real router reports alongside the clients - so this says "something is up, but not wgc1"
+      // rather than leaving the answer empty, which the fake would fill in from the enable flag.
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('vpnc_clientlist')) return 'pia-aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+        if (cmd == 'ip -o link show up') return 'wgs1';
+        return '';
+      });
+      await expectLater(svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
+      expect(c.ran('service stop_vpnc'), isTrue);
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg'"), isTrue);
+    });
+
+    // Enable is the one path that keeps restart_vpnc — there is no start_vpnc on stock.
+    test('enableSlot still restarts, and targets the row not 5 - slot', () async {
+      useStock();
+      // Rows [slot 5, slot 1] — the arrangement that made the old rule ask for a nonexistent unit.
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) {
+            return 'aus_melbourne>WireGuard>5>>pw>0>5>>>0>0>cfg-pia-wg<aus_perth>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+          }
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
+          if (cmd.contains('ping -I')) return 'OK';
+          if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
+          return '';
+        },
+      );
+      await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
+      expect(c.ran('nvram set vpnc_unit=1'), isTrue); // row index
+      expect(c.ran('nvram set vpnc_unit=4'), isFalse); // the old 5 - slot value
+      expect(c.ran('service restart_vpnc'), isTrue);
+    });
+
+    // The router discards a service call, silently, if a previous one left its rc_service marker
+    // behind. Measured 2026-09-10: ninety minutes of that, and four watchdog reconfigures that
+    // wrote a perfect config nothing acted on.
+    group('the rc_service queue', () {
+      RecordingSSHClient stock({required String marker, required bool alive}) {
+        var cleared = false;
+        return RecordingSSHClient(responder: (cmd) {
+          if (cmd.contains('vpnc_clientlist')) return 'aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+          if (cmd.contains('rc_service')) {
+            return cleared ? '@@@@dead' : '$marker@@4023@@${alive ? 'alive' : 'dead'}';
+          }
+          if (cmd.startsWith('nvram set rc_service')) {
+            cleared = true;
+            return '';
+          }
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
+          if (cmd.contains('ping -I')) return 'OK';
+          if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
+          return '';
+        });
+      }
+
+      test('a ghost marker is cleared BEFORE the service call, or the call is discarded', () async {
+        useStock();
+        final c = stock(marker: 'restart_vpnc', alive: false);
+        await svc(c).runVpncService(1, 'restart_vpnc');
+
+        final cleared = c.commands.indexWhere((x) => x.startsWith('nvram set rc_service'));
+        final called = c.commands.indexOf('service restart_vpnc');
+        expect(cleared, greaterThan(-1), reason: 'the ghost was never cleared');
+        expect(cleared, lessThan(called), reason: 'clearing after the call is too late');
+      });
+
+      test('an idle router is not written to', () async {
+        useStock();
+        final c = stock(marker: '', alive: false);
+        await svc(c).runVpncService(1, 'restart_vpnc');
+        expect(c.commands.any((x) => x.startsWith('nvram set rc_service')), isFalse);
+      });
+
+      // The one case the app cannot fix: a marker whose process is still alive after the whole
+      // timeout. Reporting it beats another opaque "router command failed (exit 1)".
+      test('a router still busy after the timeout is reported as wedged', () async {
+        useStock();
+        final c = stock(marker: 'restart_vpnc', alive: true);
+        await expectLater(svc(c).runVpncService(1, 'restart_vpnc'), throwsA(isA<RouterServiceWedgedException>()));
+      });
+    });
+
+    test('the unit is read after the row is appended for a slot that had none', () async {
+      useStock();
+      // Slot 3 has no record; _setVpncActive appends it, so its unit is the new last row (1).
+      var list = 'aus_melbourne>WireGuard>5>>pw>0>5>>>0>0>cfg-pia-wg';
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.startsWith('nvram set vpnc_clientlist=')) {
+            list = cmd.substring("nvram set vpnc_clientlist='".length, cmd.length - 1);
+            return '';
+          }
+          if (cmd.contains('vpnc_clientlist')) return list;
+          if (cmd.contains('ip -o link show up')) return 'wgc3';
+          if (cmd.contains('ping -I')) return 'OK';
+          if (cmd.contains('ip -4 addr show wgc3')) return 'inet 10.0.0.2/32';
+          return '';
+        },
+      );
+      await svc(c).enableSlot(3, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
+      expect(c.ran('nvram set vpnc_unit=1'), isTrue);
+    });
+
+    test('enabling a slot with no profile fails with an actionable message', () async {
+      useStock();
+      // No record, and _setVpncActive is bypassed by having the write silently drop.
+      final c = RecordingSSHClient(responder: (_) => '');
+      await expectLater(
+        svc(c).enableSlot(2, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
+        throwsA(predicate((e) => e.toString().contains('no vpnc_clientlist profile'))),
+      );
+    });
+
+    test('stopping a slot with no profile is a no-op, not an error', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (_) => '');
+      await svc(c).disableSlot(4); // must not throw
+      expect(c.ran('service stop_vpnc'), isFalse);
+      expect(c.ran('nvram set wgc4_enable=0'), isTrue);
+    });
+
+    test('Merlin keeps its own service calls and never sets vpnc_unit', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (_) => '');
+      await svc(c).disableSlot(2);
+      expect(c.ran('service "stop_wgc 2"; service start_vpnrouting0'), isTrue);
+      expect(c.ran('vpnc_unit'), isFalse);
+      expect(c.ran('stop_vpnc'), isFalse);
+    });
+
+    test('readSlotParams reports Merlin-only keys as empty without reading them', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('wgc1_addr') ? '10.0.0.2/32' : '');
+      final params = await svc(c).readSlotParams(1);
+      expect(params['addr'], '10.0.0.2/32');
+      expect(params.keys, containsAll(kSlotNvramKeys)); // shape stays stable for the editor
+      for (final key in kMerlinOnlySlotKeys) {
+        expect(params[key], '');
+        expect(c.ran('nvram get wgc1_$key'), isFalse);
+      }
+    });
+
+    test('writeSlotParams skips Merlin-only keys and keeps the vpnc desc in step', () async {
+      useStock();
+      final c = RecordingSSHClient(
+          responder: (cmd) => cmd.contains('vpnc_clientlist') ? 'old>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg' : '');
+      await svc(c).writeSlotParams(1, {'mtu': '1420', 'desc': 'pia-aus', 'enforce': '1', 'fw': '1'});
+      expect(c.ran("nvram set wgc1_mtu='1420'"), isTrue);
+      expect(c.ran("nvram set wgc1_desc='pia-aus'"), isTrue);
+      expect(c.ran('nvram set wgc1_enforce'), isFalse);
+      expect(c.ran('nvram set wgc1_fw'), isFalse);
+      expect(c.ran("nvram set vpnc_clientlist='pia-aus>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg'"), isTrue);
+    });
+
+    test('Merlin leaves vpnc_clientlist alone entirely', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (_) => '');
+      await svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'r');
+      await svc(c).disableSlot(1);
+      await svc(c).deleteSlot(1);
+      expect(c.ran('vpnc_clientlist'), isFalse);
     });
   });
 }

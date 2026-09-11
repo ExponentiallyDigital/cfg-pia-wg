@@ -19,6 +19,7 @@
 // below it (spec 3.1).
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -36,25 +37,76 @@ class AppChrome extends StatefulWidget {
   State<AppChrome> createState() => _AppChromeState();
 }
 
+/// System bar appearance for the whole app.
+///
+/// From Android 15 (SDK 35) the system draws the app edge-to-edge and ignores `statusBarColor` /
+/// `navigationBarColor`; at SDK 36 - what `flutter.targetSdkVersion` resolves to - there is no
+/// opt-out, and Flutter enables edge-to-edge on every Android version anyway.
+///
+/// The ICON colour is already right without this: `MaterialApp` calls
+/// `SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light)` whenever the theme is dark
+/// (material/app.dart `_themeBuilder`), and this app is unconditionally dark. What that default
+/// does NOT give is transparent bars - it sets an opaque black `systemNavigationBarColor` and
+/// leaves `statusBarColor` at whatever the Activity theme says. On Android 14 and below, where
+/// those colours are still honoured, that paints a black navigation bar against kBg (#12141A).
+/// This region makes both bars transparent so the app's own background shows through, and it is
+/// re-applied every frame, unlike MaterialApp's one-shot call, so a dialog carrying an AppBar
+/// cannot leave a different style behind.
+///
+/// `systemNavigationBarContrastEnforced` is deliberately left at its default: the system's own
+/// scrim behind a 3-button navigation bar is cheap insurance and we cannot verify its absence in
+/// a widget test.
+const SystemUiOverlayStyle kSystemOverlayStyle = SystemUiOverlayStyle(
+  statusBarColor: Colors.transparent,
+  statusBarIconBrightness: Brightness.light, // Android: icon colour (same as MaterialApp's default here)
+  statusBarBrightness: Brightness.dark, // iOS: brightness of what is BEHIND the bar
+  systemNavigationBarColor: Colors.transparent,
+  systemNavigationBarDividerColor: Colors.transparent,
+  systemNavigationBarIconBrightness: Brightness.light,
+);
+
 class _AppChromeState extends State<AppChrome> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
     final controller = SessionScope.of(context);
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: kBg,
-      drawer: AppDrawer(
-        navigatorKey: widget.navigatorKey,
-        controller: controller,
-        onCloseDrawer: () => _scaffoldKey.currentState?.closeDrawer(),
-      ),
-      body: SafeArea(
-        child: Column(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: kSystemOverlayStyle,
+      child: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: kBg,
+        drawer: AppDrawer(
+          navigatorKey: widget.navigatorKey,
+          controller: controller,
+          onCloseDrawer: () => _scaffoldKey.currentState?.closeDrawer(),
+        ),
+        // Deliberately NOT one SafeArea around the whole body: under edge-to-edge the header's
+        // kSurface has to reach the top of the window, so the header insets its own content and
+        // the navigator below takes the remaining edges (bottom + landscape cutouts).
+        body: Column(
           children: [
             AppHeaderBar(onMenu: () => _scaffoldKey.currentState?.openDrawer()),
-            Expanded(child: widget.child),
+            Expanded(
+              // The Builder is load-bearing: it puts the context BELOW the Scaffold, so
+              // removePadding copies the body's MediaQueryData - the one whose bottom viewInsets
+              // the Scaffold has already removed because it resized for the keyboard. Using the
+              // AppChrome context here re-injected the outer data, and every dialog then padded
+              // itself by the keyboard height a second time inside an already-shrunken box,
+              // collapsing to a sliver.
+              //
+              // removeTop because the header has ALREADY cleared the status bar; leaving it makes
+              // anything below inset for it twice - showDialog wraps its child in a SafeArea
+              // (useSafeArea defaults to true), which pushed the full-screen licences dialog down
+              // by the status bar height and left the screen behind showing through the gap.
+              child: Builder(
+                builder: (bodyContext) => MediaQuery.removePadding(
+                  context: bodyContext,
+                  removeTop: true,
+                  child: SafeArea(top: false, child: widget.child),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -78,73 +130,107 @@ class AppHeaderBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: kSurface,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Row(
-        children: [
-          // NB: no Tooltip here — the chrome sits beside the Navigator's Overlay, so an
-          // Overlay-dependent Tooltip would assert. The hamburger icon is self-explanatory.
-          IconButton(
-            key: const Key('app_hamburger'),
-            icon: const Icon(Icons.menu, color: kText),
-            onPressed: onMenu,
-          ),
-          Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(color: kHighlight, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'cfg-pia-wg',
-                  style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                Row(
+      // Edge-to-edge: the bar's colour runs behind the status bar while its content is padded
+      // clear of it (and of a landscape cutout). bottom: false - the navigator owns that edge.
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            children: [
+              // NB: no Tooltip here — the chrome sits beside the Navigator's Overlay, so an
+              // Overlay-dependent Tooltip would assert. The hamburger icon is self-explanatory.
+              IconButton(
+                key: const Key('app_hamburger'),
+                icon: const Icon(Icons.menu, color: kText),
+                onPressed: onMenu,
+              ),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(color: kHighlight, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('by ', style: TextStyle(color: kMuted, fontSize: 10)),
-                    MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: InkWell(
-                        onTap: () => _launch('https://www.exponentiallydigital.com'),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 2),
-                          child: Text(
-                            'Exponentially Digital',
-                            style: TextStyle(color: kMuted, fontSize: 10, decoration: TextDecoration.underline),
+                    const Text(
+                      'cfg-pia-wg',
+                      style: TextStyle(color: kText, fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('by ', style: TextStyle(color: kMuted, fontSize: 10)),
+                        MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: InkWell(
+                            onTap: () => _launch('https://www.exponentiallydigital.com'),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 2),
+                              child: Text(
+                                'Exponentially Digital',
+                                style: TextStyle(color: kMuted, fontSize: 10, decoration: TextDecoration.underline),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: InkWell(
-              onTap: () => _launch('https://github.com/ExponentiallyDigital/cfg-pia-wg'),
-              child: FutureBuilder<PackageInfo>(
-                future: PackageInfo.fromPlatform(),
-                builder: (context, snap) => Text(
-                  snap.hasData ? 'v${snap.data!.version}' : 'v...',
-                  style: const TextStyle(color: kMuted, fontSize: 11, decoration: TextDecoration.underline),
+              ),
+              const SizedBox(width: 8),
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: InkWell(
+                  onTap: () => _launch('https://github.com/ExponentiallyDigital/cfg-pia-wg'),
+                  child: FutureBuilder<PackageInfo>(
+                    future: PackageInfo.fromPlatform(),
+                    builder: (context, snap) => Text(
+                      snap.hasData ? 'v${snap.data!.version}' : 'v...',
+                      style: const TextStyle(color: kMuted, fontSize: 11, decoration: TextDecoration.underline),
+                    ),
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+            ],
           ),
-          const SizedBox(width: 8),
-        ],
+        ),
       ),
     );
   }
 }
+
+/// Stands in for a router login form while the session's EXISTING connection is being reused.
+///
+/// All three router screens reconnect on their own when they already have a working session, but
+/// they used to render the login form for the whole of that reconnect - so entering MANAGE,
+/// WATCHDOG or DEVICE ASSIGNMENT flashed a form asking for credentials the app already had, on a
+/// screen the user was about to be taken off. Worse than untidy: it invites typing into a field
+/// that is about to be replaced.
+///
+/// The form is for the case where there is nothing to reuse. This is the case where there is.
+class ReconnectingBody extends StatelessWidget {
+  const ReconnectingBody({super.key});
+
+  @override
+  Widget build(BuildContext context) => Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [
+          CircularProgressIndicator(color: kHighlight),
+          SizedBox(height: 20),
+          Text('Reconnecting to the router...', style: TextStyle(color: kMuted, fontSize: 13)),
+        ],
+      );
+}
+
+/// The width a form or a list reads well at. It is what the pre-418 dialogs used as their
+/// `maxWidth`, kept so those screens look the same on a tablet now that they are pages.
+const double kFormMaxWidth = 480;
 
 /// Per-screen body wrapper: a scrollable padded content area plus an optional HOME button that
 /// returns to a fresh main menu (spec 2.1; stack-growth is intentional).
@@ -152,13 +238,35 @@ class AppScaffold extends StatelessWidget {
   final Widget child;
   final bool showClose;
   final bool fillViewport;
-  const AppScaffold({super.key, required this.child, this.showClose = true, this.fillViewport = false});
+
+  /// Caps the content and centres it, for screens that were 480-wide cards before 418. Left null
+  /// on the screens that were always full width. Without it a slot row on a tablet sits alone at
+  /// the far left of a very wide line, which is what a dialog's `maxWidth` used to prevent.
+  final double? maxContentWidth;
+
+  const AppScaffold({
+    super.key,
+    required this.child,
+    this.showClose = true,
+    this.fillViewport = false,
+    this.maxContentWidth,
+  });
+
+  /// Centres [inner] within [maxContentWidth], or returns it untouched when there is no cap.
+  Widget _capped(Widget inner) => maxContentWidth == null
+      ? inner
+      : Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxContentWidth!), child: inner));
 
   @override
   Widget build(BuildContext context) {
     const bodyPadding = EdgeInsets.all(20);
 
-    return ColoredBox(
+    // Material, not a ColoredBox. It paints the same background, and it gives the page a Material
+    // ancestor of its own - which a ColoredBox actively prevents: anything inking below it (a
+    // ListTile, a Switch row) finds the chrome's Material with an opaque box in between, and
+    // Flutter asserts that the splash will be invisible. It also lets a screen be pushed anywhere
+    // without depending on what is above it.
+    return Material(
       color: kBg,
       child: Column(
         children: [
@@ -170,12 +278,12 @@ class AppScaffold extends StatelessWidget {
 
                 return SingleChildScrollView(
                   padding: bodyPadding,
-                  child: fillViewport
+                  child: _capped(fillViewport
                       ? ConstrainedBox(
                           constraints: BoxConstraints(minHeight: minHeight),
                           child: IntrinsicHeight(child: child),
                         )
-                      : child,
+                      : child),
                 );
               },
             ),
@@ -183,13 +291,17 @@ class AppScaffold extends StatelessWidget {
           if (showClose)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              // NOT capped, even when the body is. HOME is the same control on every screen and it
+              // reads as one only if it is the same size on every screen - a 480-wide HOME under a
+              // 480-wide column looked deliberate in isolation and inconsistent beside ABOUT and
+              // DEVICE ASSIGNMENT, which have no cap. Reported from a tablet, 425.
               child: SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
                   key: const Key('screen_close'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: kMuted,
-                    side: const BorderSide(color: kBorder),
+                    foregroundColor: kHighlight,
+                    side: const BorderSide(color: kHighlight),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   onPressed: () => navigateToDestination(context, SessionScope.of(context), AppDestination.menu),

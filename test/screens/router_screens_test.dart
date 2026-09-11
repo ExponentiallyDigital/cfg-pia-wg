@@ -2,23 +2,44 @@
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
 import 'package:cfg_pia_wg/screens/manage_router_screen.dart';
 import 'package:cfg_pia_wg/screens/watchdog_management_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
 
 import '../watchdog_test_utils.dart';
 
 SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
 
+/// A router that reports Merlin and has nothing else configured.
+RecordingSSHClient _merlinSsh([String Function(String)? extra]) => RecordingSSHClient(
+      responder: (cmd) => cmd.contains('3rd-party') ? 'merlin' : (extra?.call(cmd) ?? ''),
+    );
+
+/// Stock reports an empty 3rd-party tag; `[ -x … ]` probes answer 1 when the binary is present.
+RecordingSSHClient _stockSsh({bool jq = true, bool mailsend = true, String Function(String)? extra}) => RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains(kStockJqPath) && cmd.contains('-x')) return jq ? '1' : '0';
+        if (cmd.contains(kStockMailsendPath) && cmd.contains('-x')) return mailsend ? '1' : '0';
+        return extra?.call(cmd) ?? '';
+      },
+    );
+
 RouterSlotService _fastSvc(SSHClient c, SessionController ctrl) =>
     RouterSlotService(c, onLog: ctrl.onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: 1);
 
-Widget _manage(RecordingSSHClient ssh, SessionController c) => SessionScope(
+/// [factory] overrides how the connection is made, so a test can make it fail.
+Widget _manage(RecordingSSHClient ssh, SessionController c, {Future<SSHClient> Function(String, String, String)? factory}) =>
+    SessionScope(
       controller: c,
       child: MaterialApp(
         home: Scaffold(
-          body: ManageRouterScreen(testClientFactory: (ip, u, p) async => ssh, slotServiceFactory: (cl) => _fastSvc(cl, c)),
+          body: ManageRouterScreen(
+            testClientFactory: factory ?? (ip, u, p) async => ssh,
+            slotServiceFactory: (cl) => _fastSvc(cl, c),
+          ),
         ),
       ),
     );
@@ -40,6 +61,10 @@ Future<void> _fillCreds(WidgetTester tester) async {
 }
 
 void main() {
+  // Detection caches into a library global; every test must start from "not yet detected".
+  setUp(resetRouterFirmware);
+  tearDown(resetRouterFirmware);
+
   testWidgets('CONNECT is disabled until IP + username + password are filled', (tester) async {
     final c = _controller();
     final ssh = RecordingSSHClient(responder: (_) => '');
@@ -54,14 +79,18 @@ void main() {
     c.dispose();
   });
 
-  testWidgets('router IP and SSH username default to 192.168.1.1 / admin', (tester) async {
+  // The username is deliberately left EMPTY. A password manager will not overwrite a field that
+  // already has content, so prefilling 'admin' cost a manual clear before every autofill - fixed
+  // on the assignment screen in 413 and regressed here in 414, because the two screens carried the
+  // same line and only one was changed.
+  testWidgets('router IP defaults to the ASUS factory address, and the username is left blank', (tester) async {
     final c = _controller();
     final ssh = RecordingSSHClient(responder: (_) => '');
     await tester.pumpWidget(_manage(ssh, c));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(TextFormField, '192.168.1.1'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'admin'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, kDefaultRouterIp), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'admin'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();
@@ -84,6 +113,54 @@ void main() {
     c.dispose();
   });
 
+  // Reported from hardware: entering any of the three router screens flashed the login form while
+  // the session's existing connection was being reused. It asks for credentials the app already
+  // holds, on a screen the user is about to be taken off, and it is a field they might type into.
+  testWidgets('a reconnect never shows the login form, not even for a frame', (tester) async {
+    final c = _controller()
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true;
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('3rd-party') ? 'merlin' : '');
+    await tester.pumpWidget(_manage(ssh, c));
+
+    // The FIRST frame, before the post-frame reconnect has even been scheduled to run.
+    expect(find.byType(ReconnectingBody), findsOneWidget);
+    expect(find.byKey(const Key('connect_router')), findsNothing);
+
+    await tester.pumpAndSettle();
+    expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+    expect(find.byType(ReconnectingBody), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  testWidgets('a FAILED reconnect hands the form back, because now it is needed', (tester) async {
+    final c = _controller()
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true;
+    await tester.pumpWidget(_manage(
+      RecordingSSHClient(responder: (_) => ''),
+      c,
+      factory: (ip, u, p) async => throw Exception('connection refused'),
+    ));
+    expect(find.byType(ReconnectingBody), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'OK'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('connect_router')), findsOneWidget);
+    expect(find.byType(ReconnectingBody), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
   testWidgets('SSH credentials pre-fill from the shared session', (tester) async {
     final c = _controller()
       ..routerIp = '10.0.0.1'
@@ -97,6 +174,103 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();
+  });
+
+  // The point of the change in 406: a button press should not cost a handshake and a
+  // `dropbear[NNNN]: Password auth succeeded` line in the router log.
+  group('connection reuse', () {
+    /// Counts how many times a real connection would have been opened.
+    ({Widget widget, List<String> opens}) manageCounting(RecordingSSHClient ssh, SessionController c) {
+      final opens = <String>[];
+      return (
+        opens: opens,
+        widget: SessionScope(
+          controller: c,
+          child: MaterialApp(
+            home: Scaffold(
+              body: ManageRouterScreen(
+                testClientFactory: (ip, u, p) async {
+                  opens.add(ip);
+                  return ssh;
+                },
+                slotServiceFactory: (cl) => _fastSvc(cl, c),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('a second CONNECT reuses the open connection', (tester) async {
+      final c = _controller();
+      final ssh = _merlinSsh();
+      final h = manageCounting(ssh, c);
+      await tester.pumpWidget(h.widget);
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+      expect(h.opens, hasLength(1));
+
+      // Leave the screen and come back, which is the only route to a second connect now that the
+      // slot list replaces the form in place: re-entry finds routerConnected set and reconnects on
+      // its own. The old code opened a second SSH connection here.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(h.widget);
+      await tester.pumpAndSettle();
+
+      expect(h.opens, hasLength(1), reason: 'one handshake for the whole session');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('backgrounding the app drops the connection', (tester) async {
+      final c = _controller();
+      final h = manageCounting(_merlinSsh(), c);
+      await tester.pumpWidget(h.widget);
+      await tester.pumpAndSettle();
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      // An authenticated session held open behind a locked screen is a wider exposure than
+      // credentials in memory; PiaWgApp closes it on pause. Here the controller stands in for it.
+      await c.closeRouterSession();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(h.widget);
+      await tester.pumpAndSettle();
+
+      expect(h.opens, hasLength(2), reason: 'and the next action reconnects');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
+  // Reported from hardware: back from the slot list dropped the user on a login form that had
+  // already done its job, while the device assignment screen - which swaps state in place - went
+  // where they expected. The slot list now replaces the form in the SAME screen, so there is no
+  // intermediate route for back to land on.
+  testWidgets('connecting replaces the form in place, pushing no route to go back to', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = _merlinSsh();
+    await tester.pumpWidget(_manage(ssh, c));
+    await tester.pumpAndSettle();
+    await _fillCreds(tester);
+
+    final before = tester.widget<Navigator>(find.byType(Navigator).first);
+    await tester.tap(find.byKey(const Key('connect_router')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+    expect(find.byKey(const Key('connect_router')), findsNothing, reason: 'the form is gone, not covered');
+    // Same navigator, same depth: nothing was pushed, so back leaves the screen entirely.
+    expect(tester.widget<Navigator>(find.byType(Navigator).first), same(before));
+
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('manage CONNECT opens the slot modal', (tester) async {
@@ -138,20 +312,229 @@ void main() {
     c.dispose();
   });
 
-  testWidgets('watchdog CONNECT on non-Merlin firmware is rejected', (tester) async {
-    final c = _controller();
-    final ssh = RecordingSSHClient(responder: (_) => ''); // 3rd-party != merlin
-    await tester.pumpWidget(_watchdog(ssh, c));
-    await tester.pumpAndSettle();
+  group('firmware detection', () {
+    testWidgets('an empty 3rd-party tag is stock, and the watchdog screen opens once both binaries exist', (tester) async {
+      final c = _controller();
+      await tester.pumpWidget(_watchdog(_stockSsh(), c));
+      await tester.pumpAndSettle();
 
-    await _fillCreds(tester);
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      expect(routerFirmware, RouterFirmware.stock);
+      expect(find.text('WATCHDOG CONFIGURATION'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('an unrecognised firmware is rejected with a tappable README link', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('3rd-party') ? 'tomato' : '');
+      await tester.pumpWidget(_watchdog(ssh, c));
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Your firmware type is not supported'), findsOneWidget);
+      expect(find.byKey(const Key('firmware_notice_link')), findsOneWidget);
+      expect(find.text('WATCHDOG CONFIGURATION'), findsNothing);
+      // The flag stays unset so the next navigation re-probes.
+      expect(firmwareDetected, isFalse);
+
+      await tester.tap(find.byKey(const Key('firmware_notice_ok')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('firmware_notice')), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a router that cannot be reached is a CONNECTION error, not a firmware one', (tester) async {
+      // Reported on hardware 2026-09-08: typing an unreachable address produced "Unable to
+      // determine router firmware type". RouterSession connects lazily, so the connect call does
+      // no I/O and the timeout surfaced inside the firmware probe, whose catch relabels anything.
+      // Worse, it only misreported on the FIRST connect of a session - afterwards the firmware is
+      // cached and the probe is skipped - so the same mistake gave two different messages.
+      final c = _controller();
+      await tester.pumpWidget(_manage(
+        RecordingSSHClient(),
+        c,
+        factory: (ip, u, p) async => throw Exception('SocketConnection timed out, host: \$ip'),
+      ));
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Router SSH connection error'), findsOneWidget);
+      expect(find.textContaining('timed out'), findsOneWidget);
+      expect(find.textContaining('firmware type'), findsNothing, reason: 'the address was wrong, not the firmware');
+      expect(firmwareDetected, isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a failed firmware probe surfaces an error and leaves the flag unset', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(throwOn: ['3rd-party']);
+      await tester.pumpWidget(_manage(ssh, c));
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Unable to determine router firmware type'), findsOneWidget);
+      expect(firmwareDetected, isFalse);
+      expect(find.text('WIREGUARD CONFIGURATION'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // Once detected, the flag is authoritative for the rest of the session: a router that would
+    // now answer "merlin" must not flip an already-cached stock verdict.
+    testWidgets('an already-detected firmware is not re-probed', (tester) async {
+      useStock();
+      final c = _controller();
+      final ssh = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd.contains('3rd-party')) return 'merlin';
+          if (cmd.contains('-x')) return '1';
+          return '';
+        },
+      );
+      await tester.pumpWidget(_manage(ssh, c));
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      expect(routerFirmware, RouterFirmware.stock);
+      expect(ssh.ran(kStockJqPath), isTrue); // took the stock path despite the merlin tag
+      expect(ssh.ran('nvram get vpnc_clientlist'), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
+  // Missing binaries bring up an offer to install them. Declining closes it and says nothing
+  // more - the dialog already covered what happens next, so repeating it immediately would be
+  // nagging. The manual-instructions notice appears on the NEXT visit, which is what these tests
+  // then check, so connecting a second time is part of the flow rather than a workaround.
+  Future<void> declineThenReconnect(WidgetTester tester) async {
+    expect(find.byKey(const Key('install_binaries')), findsOneWidget,
+        reason: 'the app should offer to install what is missing before explaining how to do it by hand');
+    await tester.tap(find.byKey(const Key('install_binaries_decline')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('firmware_notice')), findsNothing,
+        reason: 'declining is an informed choice; do not immediately repeat what the dialog just said');
+
     await tester.tap(find.byKey(const Key('connect_router')));
     await tester.pumpAndSettle();
+  }
 
-    expect(find.text('WATCHDOG CONFIGURATION'), findsNothing);
-    expect(find.textContaining('Merlin'), findsWidgets);
+  group('stock helper binaries', () {
+    testWidgets('watchdog mode names both missing binaries and does not open the modal', (tester) async {
+      final c = _controller();
+      await tester.pumpWidget(_watchdog(_stockSsh(jq: false, mailsend: false), c));
+      await tester.pumpAndSettle();
 
-    await tester.pumpWidget(const SizedBox());
-    c.dispose();
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      await declineThenReconnect(tester);
+      // One path per line, not a comma-separated sentence: as prose they ran together with the
+      // words around them and a reader had to pick them out.
+      expect(find.textContaining('Unable to locate:'), findsOneWidget);
+      expect(find.textContaining('$kStockJqPath\n$kStockMailsendPath'), findsOneWidget);
+      // The app can fix this, so the notice offers to rather than dead-ending on a warning.
+      expect(find.byKey(const Key('firmware_notice_install')), findsOneWidget);
+      expect(find.byKey(const Key('firmware_notice_link')), findsOneWidget);
+      expect(find.text('WATCHDOG CONFIGURATION'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a single missing binary is named on its own', (tester) async {
+      final c = _controller();
+      await tester.pumpWidget(_watchdog(_stockSsh(mailsend: false), c));
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      await declineThenReconnect(tester);
+      expect(find.textContaining('Unable to locate:'), findsOneWidget);
+      expect(find.textContaining(kStockMailsendPath), findsOneWidget);
+      expect(find.textContaining(kStockJqPath), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('manage mode ignores a missing mail binary — it never sends email', (tester) async {
+      final c = _controller();
+      await tester.pumpWidget(_manage(_stockSsh(mailsend: false), c));
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('manage mode is still blocked when jq is missing', (tester) async {
+      final c = _controller();
+      await tester.pumpWidget(_manage(_stockSsh(jq: false), c));
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      await declineThenReconnect(tester);
+      expect(find.textContaining('Unable to locate:'), findsOneWidget);
+      expect(find.textContaining(kStockJqPath), findsOneWidget);
+      expect(find.text('WIREGUARD CONFIGURATION'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('Merlin is never probed for the stock binaries', (tester) async {
+      final c = _controller();
+      final ssh = _merlinSsh();
+      await tester.pumpWidget(_watchdog(ssh, c));
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      // The BINARIES, not the directory: the watchdog script lives under kRouterAppDir on both
+      // firmwares now, so the app legitimately names that path on Merlin too.
+      expect(ssh.ran(kStockJqPath), isFalse);
+      expect(ssh.ran(kStockMailsendPath), isFalse);
+      expect(find.text('WATCHDOG CONFIGURATION'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
   });
 }

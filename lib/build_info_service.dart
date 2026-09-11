@@ -15,14 +15,13 @@
 //
 // The values originate in two places: android/app/build.gradle.kts bakes the git/CI/toolchain
 // facts into BuildConfig at configuration time, and MainActivity.kt adds the device-side facts
-// (installer, ABI, OS version) before handing the lot over this channel. This is the app's only
-// platform channel.
+// (installer, ABI, OS version) before handing the lot over this channel. The app's other
+// platform channel is clipboard_service.dart's.
 
 import 'package:flutter/services.dart';
 
 /// The channel MainActivity.kt registers in `configureFlutterEngine`.
-const MethodChannel buildInfoChannel =
-    MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/build_info');
+const MethodChannel buildInfoChannel = MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/build_info');
 
 /// The method the channel answers.
 const String kGetBuildInfoMethod = 'getBuildInfo';

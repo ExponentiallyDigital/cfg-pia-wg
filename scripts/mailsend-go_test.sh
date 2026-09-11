@@ -38,7 +38,9 @@ cfg-pia-wg watchdog.
 EOF
 
 # --- Run mailsend-go in the background ---
-./mailsend-go -info -ssl -verifyCert -printCerts \
+# NB using `info` exits after info is printed
+#./mailsend-go -debug -ssl -verifyCert -printCerts -info\
+./mailsend-go -debug -ssl -verifyCert \
   -smtp "$SMTP_HOST" \
   -port "$SMTP_PORT" \
   -sub "Memory Test" \

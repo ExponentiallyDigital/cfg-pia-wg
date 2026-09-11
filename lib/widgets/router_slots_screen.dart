@@ -17,17 +17,65 @@
 // the router IP / SSH credentials (pre-filled from the shared session), connect, fetch the slots,
 // then open the parameterised SlotModal in the appropriate mode.
 
+import 'dart:convert';
+
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../app_colors.dart';
+import '../firmware.dart';
 import '../pia_service.dart';
 import '../router_slot_service.dart';
 import '../router_watchdog.dart';
+import '../binary_installer.dart';
 import '../session_controller.dart';
+import 'install_binaries_dialog.dart';
 import 'app_scaffold.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
+import 'firmware_notice.dart';
 import 'slot_modal.dart';
+
+/// What came of offering to install the missing helper binaries. Distinguishes a fresh refusal
+/// from one made earlier in the session: the first has just been told everything the follow-up
+/// notice would say, the second has not been told anything this time round.
+enum _InstallOutcome { installed, justDeclined, previouslyDeclined, failed }
+
+/// Outcome of the firmware gate. Carries what to show rather than showing it, so the connect
+/// spinner can be cleared before any dialog is awaited.
+class _FirmwareGate {
+  final bool passed;
+  final String? errorMessage; // system error (detection failed)
+  final List<String> missingBinaries; // stock helper binaries that are absent
+
+  const _FirmwareGate.ok()
+      : passed = true,
+        errorMessage = null,
+        missingBinaries = const [];
+  const _FirmwareGate.error(this.errorMessage)
+      : passed = false,
+        missingBinaries = const [];
+  const _FirmwareGate.unsupported()
+      : passed = false,
+        errorMessage = null,
+        missingBinaries = const [];
+  const _FirmwareGate.missingBinaries(this.missingBinaries)
+      : passed = false,
+        errorMessage = null;
+
+  /// Shows the outcome. Returns true when the user asked to install the missing binaries, which
+  /// only the missing-binaries notice can offer - the other two have nothing the app can fix.
+  Future<bool> present(BuildContext context, SessionController c) async {
+    if (errorMessage != null) {
+      await AppErrors.system(context, c, errorMessage!);
+      return false;
+    }
+    if (missingBinaries.isNotEmpty) return showMissingBinariesNotice(context, c, missingBinaries);
+    await showUnsupportedFirmwareNotice(context, c);
+    return false;
+  }
+}
 
 class RouterSlotsScreen extends StatefulWidget {
   final SlotModalMode mode;
@@ -55,6 +103,16 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _sshVisible = false, _connecting = false, _prefilled = false;
+
+  /// Null until CONNECT succeeds; the slot list once it has. This screen IS the slot list
+  /// afterwards - it does not push one - so the back button leaves for the menu rather than
+  /// returning the user to a login form that has already done its job.
+  RouterSlots? _slots;
+
+  /// True from the first frame of a re-entry that will reconnect on its own, false once that
+  /// attempt has either produced a slot list or failed and left the form to be used.
+  bool _autoConnecting = false;
+
   late SessionController _c;
 
   @override
@@ -64,8 +122,14 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     if (!_prefilled) {
       _prefilled = true;
       // Defaults for a fresh session; never overwrite values the user already entered.
-      _ipCtrl.text = _c.routerIp.isNotEmpty ? _c.routerIp : '192.168.1.1';
-      _userCtrl.text = _c.sshUsername.isNotEmpty ? _c.sshUsername : 'admin';
+      // routerIpPrefill is session value, then the address remembered from a previous session,
+      // then the ASUS factory default.
+      _ipCtrl.text = _c.routerIpPrefill;
+      // Left BLANK when the session has no username yet. A password manager will not overwrite a
+      // field that already has content, so prefilling 'admin' cost a manual clear before every
+      // autofill. Reported on the assignment screen (B3, 2026-09-08), fixed there, and it came
+      // back here in 414 - the two screens had the same line and only one of them was changed.
+      _userCtrl.text = _c.sshUsername;
       _passCtrl.text = _c.sshPassword;
       _c.routerIp = _ipCtrl.text;
       _c.sshUsername = _userCtrl.text;
@@ -73,8 +137,11 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       _userCtrl.addListener(_sync);
       _passCtrl.addListener(_sync);
 
-      // If we already connected this session, re-connect and jump straight to the slot modal.
+      // If we already connected this session, re-connect and go straight to the slot list. The
+      // flag is set HERE, synchronously, so the very first frame shows the reconnect placeholder
+      // rather than a login form asking for credentials the app already holds and is already using.
       if (_c.routerConnected && _canConnect) {
+        _autoConnecting = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _onConnect();
         });
@@ -100,70 +167,213 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
 
   bool get _canConnect => _ipCtrl.text.trim().isNotEmpty && _userCtrl.text.trim().isNotEmpty && _passCtrl.text.trim().isNotEmpty;
 
-  // A fresh client each call (so a dropped connection self-heals on the next action).
-  Future<SSHClient> _connect() {
+  // The shared session, not a fresh client: one handshake and one dropbear login line per app
+  // session instead of per action. A dropped connection used to self-heal by virtue of the next
+  // action reconnecting; RouterSession.run now does that explicitly, with one retry.
+  Future<SSHClient> _connect() async {
     final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
-    if (widget.testClientFactory != null) return widget.testClientFactory!(ip, user, pass);
-    return openSshClient(ip, user, pass);
+    return _c.routerSession(
+        () => widget.testClientFactory != null ? widget.testClientFactory!(ip, user, pass) : openSshClient(ip, user, pass));
   }
 
   RouterSlotService _slotSvc(SSHClient c) => widget.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
 
+  // Firmware detection + the stock precondition checks. Pure SSH work: the outcome is reported
+  // back so the caller can present it once the connect spinner has been cleared.
+  //
+  // Detection runs once per app session; any failure leaves the flag unset so the next navigation
+  // to a router screen retries it.
+  Future<_FirmwareGate> _checkFirmware(RouterSlotService svc) async {
+    if (!firmwareDetected) {
+      final String tag;
+      try {
+        tag = await svc.readFirmwareTag();
+      } catch (e) {
+        return _FirmwareGate.error('Unable to determine router firmware type: ${e.toString().replaceAll('Exception: ', '')}');
+      }
+      final detected = classifyFirmwareTag(tag);
+      if (detected == null) return const _FirmwareGate.unsupported();
+      setRouterFirmware(detected);
+      _c.logEntry('Router firmware detected: ${detected.name}.');
+    }
+
+    if (!isStockFirmware) return const _FirmwareGate.ok();
+    // The manage screen never sends email, so it does not need the mail binary.
+    final missing = await svc.missingStockBinaries(needMailsend: widget.mode == SlotModalMode.watchdog);
+    return missing.isEmpty ? const _FirmwareGate.ok() : _FirmwareGate.missingBinaries(missing);
+  }
+
   Future<void> _onConnect() async {
+    // Nothing here is typed into, and a dialog closing restores focus to whatever had it last -
+    // so without this the keyboard reopens over the connect spinner on a field the user has
+    // finished with.
+    FocusScope.of(context).unfocus();
     setState(() => _connecting = true);
     _c.logEntry('Connecting to router at ${_ipCtrl.text.trim()} via SSH...');
-    SSHClient? client;
     RouterSlots? slots;
+    _FirmwareGate? gate;
+    String? connectError;
     try {
-      client = await _connect();
-      slots = await _slotSvc(client).fetchSlots();
-      _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
-    } catch (e) {
-      if (mounted) {
-        await AppErrors.system(context, _c, 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}');
+      final client = await _connect();
+      // Force the connection HERE, so a bad address or a refused login is reported as what it is.
+      // RouterSession connects lazily, so `_connect()` does no I/O - the first command did, which
+      // meant a connection failure surfaced inside _checkFirmware and was relabelled "Unable to
+      // determine router firmware type". Only on the first connect of a session, since after that
+      // the firmware is cached and the probe is skipped - which is why the same mistake reported
+      // two different errors depending on what had happened earlier.
+      await client.authenticated;
+      final svc = _slotSvc(client);
+      // Detection has to precede fetchSlots: on stock the slot list comes from vpnc_clientlist.
+      gate = await _checkFirmware(svc);
+      if (gate.passed) {
+        slots = await svc.fetchSlots();
+        _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
+        // Only now, with the connect proven: a wrong address must never be stored.
+        await _c.rememberRouterIp(_ipCtrl.text.trim());
+        // The router accepted these credentials: offer to save them, and only here.
+        TextInput.finishAutofillContext();
       }
+    } catch (e) {
+      connectError = 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}';
     } finally {
-      client?.close();
-      if (mounted) setState(() => _connecting = false);
+      // Both flags together: on the failure paths below the user needs the form, and this is the
+      // point at which it stops being a lie to show it.
+      if (mounted) {
+        setState(() {
+          _connecting = false;
+          _autoConnecting = false;
+        });
+      }
     }
-    if (slots == null || !mounted) return;
+    if (!mounted) return;
 
-    // DISABLED MERLIN, comment out below to disable Merlin check
-    if (widget.mode == SlotModalMode.watchdog && !slots.isMerlin) {
-      await AppErrors.system(context, _c, 'The VPN watchdog requires Merlin firmware on your router.');
+    // Spinner is off, so it is safe to await a modal (see .claude/CONTEXT.md, "Async + UI").
+    if (connectError != null) return AppErrors.system(context, _c, connectError);
+    if (gate != null && !gate.passed) {
+      // Missing binaries are the one gate failure the app can do something about, so offer
+      // rather than just explaining. Everything else still just explains.
+      if (gate.missingBinaries.isNotEmpty) {
+        final outcome = await _offerInstall(gate.missingBinaries);
+        if (!mounted) return;
+        if (outcome == _InstallOutcome.installed) return _onConnect(); // retry the gate, do not assume
+        // Declining is an informed choice - the dialog said what happens and where to read more -
+        // so following it with the same information again is nagging. The notice still appears on
+        // the NEXT visit, which is where it stops being a repeat and starts being a reminder.
+        if (outcome == _InstallOutcome.justDeclined) return;
+      }
+      if (!mounted) return;
+      // INSTALL on the notice leads straight into the install the user just declined, rather than
+      // dead-ending on a warning about something the app can fix from here.
+      if (await gate.present(context, _c) && mounted) {
+        _c.declinedBinaryInstalls.remove(gate.missingBinaries.join(','));
+        return _onConnect();
+      }
       return;
     }
+    if (slots == null) return;
 
-    _c.enterModal();
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => SlotModal(
-        mode: widget.mode,
-        controller: _c,
-        connect: _connect,
-        initialSlots: slots!,
-        piaService: widget.piaService ?? PiaService(),
-        slotServiceFactory: widget.slotServiceFactory,
-        watchdogServiceFactory: widget.watchdogServiceFactory,
-      ),
-    );
-    if (mounted) _c.exitModal();
+    // Shown IN PLACE, not pushed and not in a dialog. This screen is the connect form until it has
+    // connected and the slot list afterwards, which is exactly how the device assignment screen
+    // works - and it is what makes the back button leave for the menu rather than dropping the
+    // user back on a spent login form. 418 pushed a second route and got that wrong; 419 does not
+    // navigate at all, so there is no extra route to name, to observe, or to go back to.
+    //
+    // enterModal/exitModal are deliberately not called: modalDepth says something is stacked OVER
+    // a screen, and this is the screen.
+    setState(() => _slots = slots);
+  }
+
+  /// Offers to install [missing], and does it if the user agrees.
+  Future<_InstallOutcome> _offerInstall(List<String> missing) async {
+    final key = missing.join(',');
+    // Already said no this session: fall straight through to the notice rather than re-asking.
+    if (_c.declinedBinaryInstalls.contains(key)) return _InstallOutcome.previouslyDeclined;
+    if (await showInstallBinariesDialog(context, _c, missing) != InstallChoice.install) {
+      _c.declinedBinaryInstalls.add(key);
+      return _InstallOutcome.justDeclined;
+    }
+
+    if (!mounted) return _InstallOutcome.failed;
+    FocusScope.of(context).unfocus(); // the dialog just handed focus back to a field
+    setState(() => _connecting = true);
+    var allOk = true;
+    String? failure;
+    try {
+      final client = await _connect();
+      final installer = BinaryInstaller(
+        (cmd) async => utf8.decode(await client.run(cmd)).trim(),
+        onLog: _c.onLog,
+      );
+      for (final path in missing) {
+        final binary = kHelperBinaries[path];
+        if (binary == null) continue;
+        final result = await installer.install(binary);
+        if (!result.ok) {
+          allOk = false;
+          failure = '${binary.name}: ${result.error}';
+          break; // no point installing the second one if the first failed for a shared reason
+        }
+      }
+    } catch (e) {
+      allOk = false;
+      failure = e.toString().replaceAll('Exception: ', '');
+    } finally {
+      if (mounted) setState(() => _connecting = false);
+    }
+    if (!mounted) return _InstallOutcome.failed;
+
+    if (!allOk) {
+      // Do not remember this as a refusal - the user said yes, the install failed, and trying
+      // again after fixing the cause is a reasonable thing to want to do.
+      // 'Could not install X: reason' - the reason is a phrase, so it needs the colon to read as
+      // a sentence. Without it, build 412 produced 'Could not install the archive extracted to
+      // nothing', which parses as nonsense on first reading.
+      await AppErrors.system(context, _c, 'Could not install ${failure ?? 'the helper program: unknown error'}');
+      return _InstallOutcome.failed;
+    }
+    return _InstallOutcome.installed;
   }
 
   @override
   Widget build(BuildContext context) {
+    // Three states of one screen. SlotModal brings its own AppScaffold, so there is no nesting.
+    final slots = _slots;
+    if (slots == null && _autoConnecting) {
+      return const AppScaffold(fillViewport: true, child: ReconnectingBody());
+    }
+    if (slots != null) {
+      return SlotModal(
+        mode: widget.mode,
+        controller: _c,
+        connect: _connect,
+        initialSlots: slots,
+        piaService: widget.piaService ?? PiaService(),
+        slotServiceFactory: widget.slotServiceFactory,
+        watchdogServiceFactory: widget.watchdogServiceFactory,
+      );
+    }
     return AppScaffold(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           RouterIpField(controller: _ipCtrl),
           const SizedBox(height: 12),
-          SshUsernameField(controller: _userCtrl),
-          const SizedBox(height: 12),
-          SshPasswordField(
-            controller: _passCtrl,
-            visible: _sshVisible,
-            onToggle: () => setState(() => _sshVisible = !_sshVisible),
+          // The router IP stays outside the group - it is not a secret, and a password manager
+          // has no business filling it.
+          AutofillGroup(
+            onDisposeAction: AutofillContextAction.cancel,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SshUsernameField(controller: _userCtrl),
+                const SizedBox(height: 12),
+                SshPasswordField(
+                  controller: _passCtrl,
+                  visible: _sshVisible,
+                  onToggle: () => setState(() => _sshVisible = !_sshVisible),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -172,8 +382,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
               key: const Key('connect_router'),
               onPressed: (_connecting || !_canConnect) ? null : _onConnect,
               child: _connecting
-                  ? const SizedBox(
-                      height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF12141A)))
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
                   : const Text('CONNECT TO ROUTER'),
             ),
           ),

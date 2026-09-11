@@ -26,17 +26,29 @@ on:
           - beta
           - alpha
 
+permissions: {}
+concurrency:
+  group: promote-play-${{ inputs.source_track }}-${{ inputs.target_track }}
+  cancel-in-progress: false # don't kill the in-flight one; queue the second
+
 jobs:
   promote:
     name: Promote Google Play Track
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       # ------------------------------------------------------------
       # Promotes existing release on Google Play Console from
       # source_track to target_track without downloading/re-uploading files.
       # ------------------------------------------------------------
+      - name: Validate inputs
+        if: inputs.source_track == inputs.target_track
+        run: |
+          echo "::error::source_track and target_track are both '${{ inputs.source_track }}' — nothing to promote."
+          exit 1
       - name: Promote track on Google Play
+        if: inputs.source_track != inputs.target_track
         uses: kevin-david/promote-play-release@d1ed59ca4fd7456b9d8cae062a3684e93b412425 # v1.2.0
         with:
           service-account-json-raw: ${{ secrets.PLAY_CONSOLE_JSON_KEY }}

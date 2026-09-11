@@ -1,6 +1,9 @@
 <#
 .SYNOPSIS
-Builder script (enhanced version) - PowerShell Port
+Builder script
+
+.VERSION
+0.2.0
 #>
 
 ###############################################################################
