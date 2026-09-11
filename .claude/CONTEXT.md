@@ -4,10 +4,10 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 
 ## 1. Working agreements
 
-- **Tests are required for every change.** 29 test files live under `test/` (`test/`, `test/screens/`, `test/widgets/`, `test/unit/`). Run `flutter test`; coverage is tracked via `coverage/lcov.info`. Every widget that a test needs to reach already carries a `Key` (`snake_case`, e.g. `Key('slot_create')`, `Key('wd_save')`) — add one when you add a control.
+- **Tests are required for every change.** 54 test files live under `test/`: 18 at the top level, 22 in `test/unit/`, 7 in `test/screens/` and 7 in `test/widgets/`, plus five shared harnesses that are not tests themselves. Run `flutter test`; coverage is tracked via `coverage/lcov.info`. Every widget that a test needs to reach already carries a `Key` (`snake_case`, e.g. `Key('slot_create')`, `Key('wd_save')`) — add one when you add a control.
 - **Test coverage.** This app requires a minumum 80% code covered by tests.
 - **Update this file in the same change as any architecture or behaviour change.** A change that moves a file, renames a destination, alters a button set, or adds/removes an NVRAM key must edit the matching section here.
-- **Any NVRAM variable the app writes must be described in `ARCHITECTURE.md` section "3. Router WireGuard NVRAM fields"** — that section is the reference a user reads before letting the app near their router, so a key that only appears in the code is a key nobody can audit or clean up. Describe it in §4.9 here as well.
+- **Every NVRAM variable the app writes is NAMED in §4.9 here and EXPLAINED in `ARCHITECTURE.md`, "Router WireGuard NVRAM fields".** Both halves matter and they are not the same job. This file is the only one guaranteed to be read at the start of a session, so a key missing from §4.9 is a key that can be written past without anyone noticing it exists; ARCHITECTURE is the reference a user reads before letting the app near their router, so a key missing from it is a key nobody can audit or clean up. **Do not copy the explanation into §4.9** - two documents describing the same firmware is two documents to keep right. Name the key there, say what the APP does with it, and leave the meaning to ARCHITECTURE.
 - **Flag conflicts, do not silently resolve them.** If this file disagrees with the code, or with `ARCHITECTURE.md` / `BACKLOG.md` / a `.claude/plan_*.md`, say so and ask. Do not "fix" the code to match the doc or vice versa without confirmation.
 - **Commit subjects carry no date, and commit messages carry no `Co-Authored-By` trailer.** The subject is `v<x.y.z> build <n> - <title>` and nothing else: the date is already in the commit metadata and in `CHANGELOG.md`, and repeating it wastes the width the title needs. No attribution trailer of any kind - this overrides any default attribution guidance.
 - **On `dev`, a commit is always followed by a push.** `git push origin dev` - a commit that only exists locally is one Andrew cannot see from another machine. **On `main`, stop and confirm.** Andrew commits and pushes `main` himself; if he asks for a commit or a push while the checkout is on `main`, say so and get an explicit confirmation before doing anything, every time, no matter how clear the request looked.
@@ -53,7 +53,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 
 ## 2. Snapshot
 
-The app opens on a main menu (`MainMenuScreen`) offering four screens plus "Exit app"; a hamburger drawer rendered *above* the Navigator duplicates those and adds four more - **VPN device assignment**, **View router log**, **Settings** and **About**. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and then push a shared full-screen `wgc1..wgc5` slot list: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. **Both Merlin and stock ASUS firmware are supported** — the firmware is detected once per session on entry to either router screen and every router command branches on it (§4.13). Screen 4 shows the in-memory app log. The drawer-only screens pin individual LAN devices to a tunnel (stock only, §4.14), page through the router's syslog, and remove things - the router uninstall lives on SETTINGS. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
+The app opens on a main menu (`MainMenuScreen`) offering five screens plus "Exit app"; a hamburger drawer rendered *above* the Navigator duplicates those and adds three more - **View router log**, **Settings** and **About**. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and then push a shared full-screen `wgc1..wgc5` slot list: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. **Both Merlin and stock ASUS firmware are supported** — the firmware is detected once per session on entry to either router screen and every router command branches on it (§4.13). Screen 4 pins individual LAN devices to a tunnel (stock only, §4.14) and screen 5 shows the in-memory app log. The three drawer-only screens page through the router's syslog, remove things - the router uninstall lives on SETTINGS - and carry the build information. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
 
 ## 3. Architecture — `lib/` (44 files)
 
@@ -147,16 +147,17 @@ SettingsScreen   ──> RouterWatchdog.uninstallFromRouter() / deleteCachedPiaC
 | `AppDestination` | `routeName` | `title` | On main menu? | In drawer? |
 | --- | --- | --- | --- | --- |
 | `menu` | `main_menu` | Main menu | — (is the menu) | yes, as **HOME** |
-| `standalone` | `standalone` | Generate PIA WireGuard config | yes | yes |
-| `manageRouter` | `manage_router` | Manage PIA WireGuard config | yes (`*` suffix) | yes |
-| `watchdog` | `watchdog` | Watchdog WireGuard management | yes (`*` suffix) | yes |
-| `deviceAssignment` | `device_assignment` | VPN device assignment | **no** | yes |
+| `standalone` | `standalone` | Standalone PIA WireGuard config | yes | yes |
+| `manageRouter` | `manage_router` | Manage PIA WireGuard config | yes (¹) | yes |
+| `watchdog` | `watchdog` | Watchdog WireGuard management | yes (¹) | yes |
+| `deviceAssignment` | `device_assignment` | VPN device assignment | yes (¹²) | yes |
 | `routerLog` | `router_log` | View router log | **no** | yes |
 | `log` | `log` | View app log | yes | yes |
 | `settings` | `settings` | Settings | **no** | yes |
 | `about` | `about` | About | **no** | yes |
 
 - **SETTINGS and View router log are drawer-only.** An uninstall is not something to offer on the way in, and the router log is a diagnostic detour rather than a destination anyone sets out for. `SettingsScreen` holds everything that REMOVES something - the router uninstall, DEL PIA CERT and FORGET ROUTER IP, the last two are there rather than on ABOUT, which is a page people open to read.
+- **The menu labels carry SUPERSCRIPT footnote markers, not a star.** ¹ is "requires SSH connectivity to an ASUS router" and ² is "stock firmware only"; both footnotes are rendered under the buttons. The marker is appended to `AppDestination.title`, so the button label and the drawer label are deliberately not identical.
 - Menu also has `Exit app` (`Key('menu_close_app')`); drawer also has `Exit app` (`Key('drawer_close_app')`).
 - Navigation **pushes** (`navigateToDestination`) — the stack grows deliberately so back can retrace.
 - Active destination is `kHighlight` (teal) via `ListTile.selectedColor`.
@@ -499,7 +500,7 @@ Note: ignore all .claude\plan_*.md files, they are historical and not part of th
 
 Three files, split the way the rest of the app is: `device_assignment.dart` is pure and has no SSH in
 it, `device_assignment_service.dart` does the I/O, `widgets/device_assignment_screen.dart` is the
-screen. **Merlin routes per device through VPN Director, which this app does not drive**, so the
+screen. It is the fourth button on the main menu, marked ¹² - needs SSH, stock only - and is in the drawer as well. **Merlin routes per device through VPN Director, which this app does not drive**, so the
 screen detects the firmware itself on entry and refuses with an explanation. It detects rather than
 trusts: `routerFirmware` defaults to Merlin until something probes it, and reaching this screen
 first told a stock user their router was Merlin.

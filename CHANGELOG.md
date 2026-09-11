@@ -40,6 +40,11 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 2026-09-11 v0.8.61 build 431 - the uninstall button says what it does
 
+- CHG: the working agreement on NVRAM keys now says what each document is for. Every key is NAMED in CONTEXT §4.9 and EXPLAINED in ARCHITECTURE, and the explanation is deliberately not copied into both. CONTEXT is the only file guaranteed to be read at the start of a session, so a key missing from it can be written past; ARCHITECTURE is what a user audits.
+- FIX: **CONTEXT said the main menu had four screens and that VPN device assignment was drawer-only.** It has been the fourth button on the menu since build 414. The README was wrong the same way and listed five choices where there are six.
+- FIX: the destination table described the main-menu suffix as a star. It is a superscript numeral, and there are two of them - ¹ for "needs SSH" and ² for "stock firmware only".
+- FIX: CONTEXT claimed 29 test files. There are 54, plus five shared harnesses.
+- FIX: the destination table had the standalone screen's title wrong.
 - FIX: the UNINSTALL note on SETTINGS read "Tunnels, watchdog settings and cron entries are left alone". Only the tunnels are: since build 425 the uninstall also removes every watchdog schedule it created and every NVRAM key the app wrote, history included. The confirmation dialog behind the button had it right all along, so the button was the one screen element contradicting both the dialog and the documentation.
 
 2026-09-11 v0.8.60 build 430 - documentation rebuild

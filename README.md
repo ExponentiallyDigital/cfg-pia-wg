@@ -208,13 +208,17 @@ script Merlin users run.
 > [!TIP]
 > Before using the `Manage PIA WireGuard config` or `Watchdog WireGuard management` functions for the first time, it's recommended that you make a backup of your router configuration via the WebUI -> Advanced Settings -> Administration -> Restore/Save/Upload Setting -> Save setting.
 
-The app opens to a main menu with five choices:
+The app opens to a main menu with six choices:
 
 - Generate PIA WireGuard configuration
-- Manage router PIA WireGuard configuration
-- Watchdog WireGuard management
+- Manage router PIA WireGuard configuration ¹
+- Watchdog WireGuard management ¹
+- VPN device assignment ¹²
 - View app log
 - Exit app
+
+The two footnotes under the buttons say what the markers mean: ¹ needs SSH connectivity to an
+ASUS router, and ² is stock firmware only.
 
 Below those are two links: **how to use this app**, which opens this section of the README, and **add a Play Store app review**, which opens the app's Play Store listing.
 
@@ -429,7 +433,7 @@ Normally every device on your network follows the router's default connection. T
 send particular devices through a particular VPN tunnel and leave everything else alone - a games
 console straight out to the internet, a laptop through Melbourne, everything else through Perth.
 
-1. Open **VPN device assignment** from the hamburger menu.
+1. Tap **VPN device assignment** on the main menu, or pick it from the hamburger menu.
 2. Enter router IP, SSH username and password, then tap **CONNECT TO ROUTER**.
 3. Every device the router knows about is listed, with what it is using now.
 4. Tap a device to pick **Internet** or one of your WireGuard slots. Offline devices are listed too, greyed, at the bottom.
