@@ -11,6 +11,11 @@ Compiled from advisory session with Rico (RevenueCat) — 2026-08-05.
 - **Auth:** No login system (anonymous users only)
 - **Offline:** App must work without a connection during use; paid status must be cached
 
+**The product decision, moved here from BACKLOG.md on 2026-09-12:**
+
+- NEW: Freemium version using RevenueCat, move all but standalone conf generation to a one-off lifetime paid function, non-freemium makes screens accessible but read only, advise once per session when entering a freemium gated function, explain how to unlock all capabilities.
+- TBC: Determine cost - smaller user base, higher investment.
+
 ---
 
 ## 1. Does RevenueCat replace Google Play Billing?
@@ -237,3 +242,57 @@ Section 1.2.3 removes both donation buttons. That leaves the home screen's foote
 ### Play Console data safety
 
 Adding RevenueCat means an SDK that sees a pseudonymous app-user id. The Data safety form and the privacy policy both need updating before the release that carries it — this is a store-rejection item, not a nicety.
+
+---
+
+## Work breakdown
+
+Moved here verbatim from `BACKLOG.md` section 1.2 on 2026-09-12, so the implementation lives in one
+place. The release chores that used to sit alongside it - documentation, publicity, launch and ASO -
+went to the CHANGELOG pending list instead, because they are not implementation.
+
+This is the raw material for the WIP items, not the sequence itself. The order below is the order it
+was written in, which is not necessarily the order to build in - see "Recommended build order" above,
+and the sequencing decision still to be made.
+
+### Accounts & Play Console setup
+
+- **In-app product creation:** Create a **Non-consumable** in-app product (e.g., `cfg-pia-wg_pro_unlock`) set to US$x.yy.
+- **Play Store compliance:** Complete **Data safety form** to reflect RevenueCat, and add to Privacy Policy. Store-rejection item, not a nicety - the SDK sees a pseudonymous app-user id.
+
+### RevenueCat dashboard setup
+
+- **Link accounts:** Connect Google Play Console credentials to RevenueCat via service account keys.
+- **Configure entitlements:** Create an **Entitlement** named `pro_feature` and map to `cfg-pia-wg_pro_unlock`.
+
+### Codebase integration
+
+- **Flutter dependencies:** Add `purchases_flutter` and `flutter_secure_storage` to `pubspec.yaml`.
+- **Billing service singleton:** Implement RevenueCat initialisation, real-time entitlement status updates, purchase triggers, and purchase restoration.
+- **Paywall UI modal:** Build a `PaywallBottomSheet` highlighting watchdog's zero-touch automation, PIA key renewal fix, and lifetime access model.
+- **PayPal/Patreon:** remove links from main app screen. Re-space the home-screen footer afterwards - the `spacer` above it is sized for the donation block. Keep the "add a Play Store app review" link: the watchdog alert emails say "by tapping on the home screen link", so removing it makes that wording stale.
+
+### Entitlement check must precede every dependency check
+
+- **Order: entitlement, then dependencies, then the offer to install them.** A user without `pro_feature` who opens MANAGE or WATCHDOG on stock must see the paywall, never "jq is missing". Telling someone to install a dependency for a feature they cannot use either way wastes their time and reads as a bug.
+- Applies to the helper-binary install (`.claude/plans/plan_install-helper-binaries.md`) and to anything else that probes the router before the gate. **Never prompt to download binaries onto the router of a user who has not unlocked the feature** - it is work done on their hardware for something they cannot run.
+- Worth a test that pins the ordering, because it is the kind of thing a later refactor reorders without noticing.
+
+### Security & router diagnostics
+
+- **Pre-flight diagnostic:** Verify SSH connectivity and JFFS script execution readiness *before* displaying unlock feature to prevent purchases on incompatible setups. Most of this already exists - see the table in the plan addendum. The one missing check is `/opt` on stock (DownloadMaster installed): without it the watchdog deploys, works, and then silently loses its cron entries at the next reboot. **Worth adding regardless of freemium.**
+- **Do not build revocation into the deployed watchdog script.** A deployed watchdog runs on the router with the app nowhere in the picture, so entitlement cannot be enforced after the fact - accepted deliberately (see plan addendum). A licence check inside the script would be defeatable in a text editor and would add a failure mode to the one thing that has to be reliable unattended.
+- **`flutter_secure_storage` versus the stated posture:** `README.md` and `SECURITY.md` both say absolutely that nothing is written to device storage. Caching an entitlement is compatible with the intent but contradicts the wording. Reword "Secret management" to separate *credentials* (never stored) from *purchase state* (cached, not sensitive) in the same change that adds the dependency.
+
+### Sandbox testing & QA
+
+- **Licence testing:** Add developer Gmail under *Google Play Console -> Licence testing*.
+- **Internal test track:** Build and upload `flutter build appbundle` (`.aab`) to the Internal Testing track.
+- **Sandbox verification:** Run `flutter run` on device to test:
+- **E2E test:** Generate and Manage execute freely; watchdog invokes unlock feature.
+- **Purchase flow:** complete test transaction via Google’s *"Test card, always approves"*.
+- **Declined card handling:** Test error handling using *"Test card, always declines"*.
+- **Restoration flow:** test "Restore Purchases" button.
+- **Offline access:** disconnect internet and verify cached local entitlements allow watchdog to execute.
+- Check if we need to update the list of Android permissions the app now uses, see `README.md` section "8. App permissions".
+- Run a sonar scan on the Dev branch before merging to main.

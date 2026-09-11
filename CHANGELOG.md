@@ -15,10 +15,19 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 - ADD: implement RevenueCat.
 - commit.
+- DOC: **documentation and publicity**, moved from BACKLOG 1.2.7 on 2026-09-12:
+  - **Update screenshots:** create & upload phone and tablet screenshots x8.
+  - **Trademark protection:** add to README that app name, logos, and branding are reserved trademarks.
+  - **Transparency:** explain in README that pre-built convenience binaries are available via the Google Play Store to defray development costs and support ongoing app updates.
+  - **Publicise**: update Play Store description. Post to SNB and Reddit (r/AsuswrtMerlin, r/PrivateInternetAccess, r/WireGuard).
+- commit.
 - REL: release **v8.x.y** to GPS alpha track, review [Play Console technical quality requirements](https://support.google.com/googleplay/android-developer/answer/17492799), specifically:
   - [r8-analyzer/SKILL.md](https://github.com/android/skills/tree/main/performance/r8-analyzer)
   - [Perfetto Skills](https://github.com/google/perfetto/tree/main/ai/skills)
   - [profilers/android-profiler](https://github.com/android/skills/tree/main/profilers/android-profiler)
+- REL: **launch and post-launch**, moved from BACKLOG 1.2.8 on 2026-09-12:
+  - **Changelog:** Add to v0.9.00 changelog, explain why watchdog is monetised.
+  - **Store optimisation (ASO):** include high-intent keywords: *Asuswrt-Merlin, PIA WireGuard token auto-renew, Asus router VPN, NVRAM SSH scripts*.
 - commit.
 
 ### 1.2. WIP
