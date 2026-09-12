@@ -1,3 +1,0 @@
-Release v9.9.9
-
-> No CHANGELOG block was found for this tag. Check that CHANGELOG.md carries a `<date> v9.9.9 build <n> - <title>` heading under the implemented history.
