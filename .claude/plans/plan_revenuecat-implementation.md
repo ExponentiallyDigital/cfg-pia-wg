@@ -135,6 +135,46 @@ cutting it later tells everyone who paid that they were wrong to. Start here and
 
 ---
 
+## 3b. The paywall, and where it appears
+
+**Contextual, never interstitial.** The paywall opens when someone taps a control that writes -
+DEPLOY, APPLY, CREATE, ENABLE - and at no other time. Not on launch, not on entering a screen. An
+on-entry prompt fires at exactly the people the read-only view exists to welcome: they came to look
+and the first thing that happens is a sales pitch. That is the placement that earns one-star
+reviews from people who were browsing.
+
+**A quiet line on entry, the paywall on action.** A small non-modal "read only - unlock to make
+changes" marker in the header tells them the state once, without selling. The sell arrives when they
+have shown they want the thing. No banners: banner blindness is real, and a persistent one reads as
+advertising in an app whose whole character is that it does not behave like that.
+
+**Say what THIS action would have done.** A feature grid converts worse than one sentence about the
+button they just pressed. "Deploy this and your Melbourne tunnel repairs itself when PIA rotates the
+key, without you touching it."
+
+### The honest story - lead with this
+
+The audience is technical, and reacts badly to countdown timers, scarcity language and anything that
+smells engineered. It reacts well to plain claims that happen to be true. Every line below is
+literally true of this app, which is unusual enough to be the strongest conversion lever available:
+
+- **One payment.** No subscription, ever.
+- **It keeps working offline** once bought, and forever.
+- **Nothing is tracked.** No analytics, no advertising id, no usage data. There is no server on our side to send it to.
+- **Your credentials are never stored on the device.** The only thing written to your phone is the router address, and there is a button to forget it.
+- **The source is on GitHub**, and the build instructions are good enough to follow. You are paying for not having to.
+- **Generating standalone configs stays free**, for everyone, forever, with or without a router.
+- **What you buy is the router side**: slot management, per-device VPN assignment, and a watchdog that repairs your tunnel unattended.
+
+Say them plainly. Do not dress them up - the plainness is the point, and this audience can tell.
+
+### Two implementation details that are easy to get wrong
+
+- **Show the store's own localised price string** from the offering (`package.storeProduct.priceString`). Never hardcode a number: the wrong currency destroys trust instantly and silently.
+- **A visible "already purchased?" restore link on the paywall.** It removes double-purchase anxiety and saves support mail, and Apple will require it when iOS lands anyway.
+
+---
+
 ## 4. How RevenueCat works, where it changes what we build
 
 Only the parts that affect a decision. The reference docs are at the end.
