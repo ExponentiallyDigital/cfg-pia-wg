@@ -64,3 +64,6 @@ key.properties
 .claude/testing/
 # Widget Preview related
 .widget_preview/
+
+# Written by release.yml's changelog parser at build time, and by any local test of it.
+github_release_notes.txt
