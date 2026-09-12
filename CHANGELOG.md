@@ -44,6 +44,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-12 v0.8.71 build 441 - the watchdog checks it can survive a reboot
+
+- ADD: **stock is checked for the init directory Download Master provides, before a watchdog can be saved.** Nothing checked it, and without `/opt/etc/init.d` a watchdog is not durable. Which way that failed depended on the router and neither was any use: with the directory absent the script write failed and reported a byte-count mismatch that reads like a full filesystem, and with the directory present but no working Download Master the write succeeded, cron installed, and nothing ran it at the next boot. The second is silent, which is the worse of the two.
+- CHG: it BLOCKS rather than warns, alongside the existing `jq` check, because a watchdog that stops at the next power cut and says nothing is worse than one never deployed.
+- CHG: the message names the cause in the user's terms - "Download Master is not installed on this router" - rather than the missing path. Nobody installs Download Master for its own sake, and naming a directory sends them looking in the wrong place.
+- TST: three - the directory is probed and SAVE is disabled with the reason shown, Merlin is never asked because it uses `services-start`, and a stock router with both preconditions met is unaffected.
 2026-09-12 v0.8.70 build 440 - the UI review list
 
 - ADD: **REBOOT ROUTER on the settings screen**, last in the list, behind a confirmation that says what it costs: "Are you sure? This will disconnect all devices including WiFi connections." It clears a ghost service marker BEFORE asking, because a wedged queue discards a reboot request like any other event - measured 2026-09-10, where the web interface reported a reboot that never happened. A recovery control that can silently do nothing is worse than no control.
