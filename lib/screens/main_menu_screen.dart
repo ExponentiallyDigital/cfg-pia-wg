@@ -25,8 +25,6 @@ import '../widgets/app_scaffold.dart';
 
 /// Deep link to the README section that walks through each screen.
 const kHelpUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#5-using-the-app';
-const _paypalDonationUrl = 'https://www.paypal.com/donate/?hosted_button_id=QJYPGRLG2RPBS';
-const _patreonDonationUrl = 'https://www.patreon.com/cw/ExponentiallyDigital';
 const _scaffoldBodyPadding = 20.0;
 
 Future<void> _launchExternalUrl(String urlStr) async {
@@ -44,7 +42,7 @@ class MainMenuScreen extends StatelessWidget {
     final controller = SessionScope.of(context);
     final spacer = 2 * (Theme.of(context).textTheme.bodyMedium?.fontSize ?? 14.0);
     final targetBottomGap = MediaQuery.sizeOf(context).height * 0.05;
-    final donationBottomGap = targetBottomGap > _scaffoldBodyPadding ? targetBottomGap - _scaffoldBodyPadding : 0.0;
+    final bottomGap = targetBottomGap > _scaffoldBodyPadding ? targetBottomGap - _scaffoldBodyPadding : 0.0;
 
     return PopScope(
       canPop: false,
@@ -107,75 +105,14 @@ class MainMenuScreen extends StatelessWidget {
                 textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 12)),
             const SizedBox(height: 12),
             const _HelpLink(),
+            // Spacer for a tall screen, the SizedBox for a short one: on a phone that has to scroll
+            // the Spacer collapses to nothing and the ask ends up crammed under the help line.
             const Spacer(),
-            const _ReviewLink(),
             SizedBox(height: spacer),
-            const _DonationBlock(),
-            SizedBox(height: donationBottomGap),
+            const _ReviewLink(),
+            SizedBox(height: bottomGap),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _DonationBlock extends StatelessWidget {
-  const _DonationBlock();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: const [
-        Text(
-          'Support development:',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: kMuted, fontSize: 12, fontWeight: FontWeight.w600),
-        ),
-        SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _DonationButton(
-              keyValue: 'donate_paypal',
-              label: 'PAYPAL',
-              url: _paypalDonationUrl,
-            ),
-            SizedBox(width: 12),
-            _DonationButton(
-              keyValue: 'donate_patreon',
-              label: 'PATREON',
-              url: _patreonDonationUrl,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _DonationButton extends StatelessWidget {
-  final String keyValue;
-  final String label;
-  final String url;
-  const _DonationButton({required this.keyValue, required this.label, required this.url});
-
-  @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 104),
-      child: OutlinedButton(
-        key: Key(keyValue),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: kHighlight,
-          side: const BorderSide(color: kHighlight),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-        ),
-        onPressed: () async => _launchExternalUrl(url),
-        child: Text(label, textAlign: TextAlign.center),
       ),
     );
   }
@@ -254,7 +191,7 @@ class _HelpLinkState extends State<_HelpLink> {
   }
 }
 
-/// Tappable "(*) add a Play Store app review" line above the donation block.
+/// Tappable "(*) add a Play Store app review" line at the foot of the menu.
 ///
 /// The whole line is the target, not just the glyphs: this is a 12px row, and a `TextSpan`
 /// recogniser only fires on the text itself, which is a small thing to hit accurately. A plain

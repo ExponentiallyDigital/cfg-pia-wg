@@ -15,6 +15,7 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 - ADD: implement RevenueCat.
 - commit.
+- DOC: create a digrammatic representation of how RC and GPS interact from an accounts, API, and message flow state, add to TESTING.md.
 - DOC: **documentation and publicity**, moved from BACKLOG 1.2.7 on 2026-09-12:
   - **Update screenshots:** create & upload phone and tablet screenshots x8.
   - **Trademark protection:** add to README that app name, logos, and branding are reserved trademarks.
@@ -43,6 +44,50 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-12 v0.8.74 build 444 - the seam has something behind it
+
+- ADD: **`entitlement.dart` is a real implementation over RevenueCat.** It is still the only place the app asks about payment and the only file that imports the SDK; every gated screen reads the same `isUnlocked` it read yesterday. The seam existed for exactly this: landing purchasing replaced one implementation instead of editing every caller.
+- ADD: **the key is not compiled in.** It arrives as `--dart-define=REVENUECAT_ANDROID_KEY`, from a repository secret. Not for secrecy - RevenueCat's public key is meant to be embedded and can be read out of any APK in a minute. It is so that a build WITHOUT it behaves correctly.
+- CHG: **a keyless build sells nothing and withholds nothing.** Google Play refuses purchases from an artifact it did not distribute, so a self-built copy carrying a compiled-in key would show a paywall its owner could never complete. That is the opposite of what the paywall says. Building it yourself is the free path, and now the code says so rather than just the copy.
+- ADD: **the release build FAILS when that secret is empty**, before it compiles anything. The failure it prevents is silent: an app that cannot ask who has paid withholds nothing, ships the paid features to everyone, and looks entirely normal doing it.
+- CHG: with a key present the default is LOCKED. A first run that cannot reach the store has no evidence of a purchase, and inventing one would hand the app to anyone who turns off their wifi. A returning customer is covered by the SDK's own cache, so being offline never locks out someone who paid.
+- ADD: **the store starts off the first frame**, and the price is fetched once at launch rather than when the paywall opens. A spinner where the price should be is the worst possible moment to make someone wait. An unreachable store logs a warning and leaves the paywall reading correctly with its button disabled.
+- CHG: one place applies a customer record, whether it came from launch, the SDK's own listener, a purchase or a restore, and it holds the notify callback itself. No path can update the entitlement without telling the UI.
+- CHG: a cancelled purchase is a normal outcome and returns false. It is not an error and must not be reported as one.
+- CHG: **`android:allowBackup="false"` stays.** RevenueCat advises turning backups on so their anonymous user id survives a reinstall; that advice is for CONSUMED products, which Billing Client 8 can no longer query. A non-consumable comes back from the signed-in Google account with no local state, so restore already works, and this app holds router and PIA credentials.
+- ADD: **RESTORE PURCHASE on the settings screen**, hidden in a build that cannot sell, where it could only ever report "no purchase found". It is the only row on that screen that gives something back rather than removing it, and it is there because someone with a new phone looks in settings before they look at a paywall.
+- CHG: **restore is never automatic.** RevenueCat's guidance is that calling it programmatically can raise an operating-system sign-in prompt, and one of those on a cold start that nobody asked for is alarming and inexplicable. The plan had specified a silent auto-restore; that was wrong.
+- ADD: the launch path calls `syncPurchases` instead, which is the sanctioned programmatic call and raises no prompt. A reinstall or a new phone arrives as a fresh anonymous id holding nothing, and this hands it whatever Google Play already knows the account owns. Nobody has to press anything, and nothing is stored on the device.
+- TST: two more on the seam - a keyless build is unlocked and sells nothing, and the entitlement id still reads `router_features`. Spelled wrong, purchases succeed and unlock nothing, and only a customer ever finds out.
+- DOC: **`SECURITY.md` says what a purchase costs in privacy terms**, in both the places that matter. Purchase state is not a credential and is not held on the device; the app never sees a card number or a billing address; RevenueCat is told a pseudonymous installation identifier it generated itself and nothing about who you are, because the app makes no account and never calls its `logIn`. There is still no analytics, no advertising identifier and no usage tracking.
+- DOC: **TESTING.md gains "Buying and restoring"**, including the two things a local build cannot test and the reason, the refund that has to relock the app without a reinstall, and the sign-in prompt that must never appear at launch. Also the licence-tester trap: the tester list and the track opt-in are separate, and missing the second charges real money.
+- DOC: the plan carries drafted Data safety answers, written to agree with `SECURITY.md` line for line. Three documents disagreeing about what leaves the device is a reason for a reviewer to reject.
+- DOC: the plan records where the key lives and why. It briefly also carried an open question about the GitHub release APK undercutting the Play sale; that question does not exist, because releases publish no binaries at all. The SBOM and the licence manifest are the only attachments and the bundle goes straight to Play.
+2026-09-12 v0.8.73 build 443 - the billing library Play actually looks for
+
+- ADD: **`purchases_flutter` 10.12.0, bringing Google Play Billing Library 8.3.0.** The SDK arrives before the RevenueCat key that configures it, because Play forced the order. Play will not let you create a one-time product until it has an uploaded artifact that can actually transact, and it judges that by what the artifact links. An upload carrying only the permission was reported back as "Play Billing Library version AIDL", the legacy interface, against a floor of 8.0.0.
+- CHG: **nothing calls the SDK.** It is linked, not configured, and no purchase code runs, so no data leaves the device. Verified in the release bundle rather than assumed: `billing.properties` reports `billing_client=8.3.0` and the classes survive R8, which is what Play reads. A dependency that R8 strips would have satisfied the compiler and failed the console.
+- CHG: the three `gradle.lockfile`s regenerated. Dependency locking is strict here and refused the build until they were, which is the system working.
+- DOC: `THIRD-PARTY-NOTICES.md` gains `purchases_flutter` and its one transitive, `equatable`, both MIT.
+- REL: version bump. Play refused the upload with "version code 442 has already been used", so the one-time product setup carries on against 443.
+
+2026-09-12 v0.8.72 build 442 - the paywall, and what stays free
+
+- ADD: **the entitlement seam is now reactive.** `Entitlement.isUnlocked` is mirrored on `SessionController` as `isUnlocked`, and `setUnlocked` notifies. A gated control has to rebuild the instant a purchase completes, or someone who has just paid is left looking at the button they paid for, still greyed. It still answers true for everyone: nothing can be withheld until the app has a way to take money.
+- ADD: **`widgets/paywall.dart`, the one place the app asks to be paid.** A page, not a dialog. The content grows and a long form in an unbounded card is the bug this project shipped four times, with SAVE below a fold that would not scroll; a page has a bounded viewport by construction.
+- CHG: it opens CONTEXTUALLY, on tapping a control that would create or change something, and at no other time. Not on launch and not on entering a screen. An on-entry prompt fires at exactly the people the read-only view exists to welcome.
+- ADD: one sentence per gated action saying what THAT action would have done, rather than a feature grid. The watchdog sentence carries the most weight, because a locked user opening WATCHDOG sees a screen with nothing on it and is the only case that cannot demonstrate itself.
+- ADD: **a 'what stays free' section below the fold**, in the same words used everywhere else: generating standalone configurations is free forever, you can always look at your router, you can always remove things including taking the app back off the router, and the source is on GitHub if you would rather build it.
+- CHG: the price shown is the store's OWN localised string, never a hardcoded number. The wrong currency destroys trust instantly and silently. With no store reachable the button reads "Not available right now" and is disabled, which is a real runtime state rather than a placeholder.
+- ADD: **gating on the rule that created or changed is paid, removed is free.** CREATE, ENABLE, EDIT and the watchdog's own enable open the paywall; DISABLE, DELETE and VIEW LOG do not. Someone who stops paying attention can always undo what the app did, including uninstalling it from the router, without being asked for money to do it.
+- CHG: **the entitlement check runs BEFORE the firmware and dependency checks** on the slots screen. Reversed, a locked user on stock without `jq` is told to go and install packages on their router to reach a screen they cannot use anyway, which is a worse first impression than the price.
+- CHG: a control greyed for its own reasons stays greyed and does not become a sales pitch. Selling something that would not have worked anyway is the fastest way to earn a refund.
+- TST: ten - four on the seam itself, including that `wipeAll` does not take the entitlement away, and six on the screens. Two of those are a new `router_slots_screen_test.dart` that exists for one property, and it is a property about ORDER rather than output: the same router with the same missing binaries, differing only in who is asking. Swapping those two checks compiles and passes everything else.
+- CHG: **the PayPal and PATREON buttons come off the home screen.** Asking for money twice, in two different ways, on the same screen reads as pleading. The Play Store review link stays and is now the last line, with a fixed gap above it so it cannot ride up under the help line on a phone that has to scroll.
+- ADD: **`com.android.vending.BILLING` in the manifest.** Necessary, and it turned out not to be sufficient on its own, which is what 443 is about. It is a normal permission: no runtime prompt, no dialog, and it grants nothing on the device.
+- DOC: README gains permission 8.4, saying what billing does and does not give the app: Google Play handles the payment, no card number reaches this app or its developer, and the only question the app asks is whether this installation holds the purchase.
+- DOC: **TESTING.md gains a "Locked, with no entitlement" section**, and CONTEXT records the gating rule in one place. A rule this easy to state - created or changed is paid, removed is free - is worth writing down once rather than inferring from six call sites.
 
 2026-09-12 v0.8.71 build 441 - the watchdog checks it can survive a reboot
 

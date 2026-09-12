@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
+import 'package:cfg_pia_wg/entitlement.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
@@ -1351,6 +1352,97 @@ void main() {
       // The old wording buried the consequence in a second line; the question carries it now.
       expect(find.text('Delete watchdog and VPN wgc1:aus_melbourne?'), findsOneWidget);
       expect(find.textContaining('underlying region'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
+  // GATED is create or change; FREE is remove. A locked user can always undo, never build.
+  // Each case below is a one-line change away from being wrong, and a wrong one either traps
+  // someone's router behind a purchase or gives the product away.
+  group('what a locked user can do', () {
+    setUp(() => Entitlement.debugSetUnlocked(false));
+    tearDown(() => Entitlement.debugSetUnlocked(null));
+
+    testWidgets('manage: CREATE, ENABLE and EDIT open the paywall; DISABLE and DELETE just work', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(
+          _host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}, active: {1}), c));
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+
+      for (final key in ['slot_create', 'slot_enable', 'slot_edit']) {
+        // ENABLE is greyed on an active slot for its own reasons, so only assert the live ones.
+        final b = _btn(tester, key);
+        if (b.onPressed == null) continue;
+        await tester.ensureVisible(find.byKey(Key(key)));
+        await tester.tap(find.byKey(Key(key)));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('paywall_buy')), findsOneWidget, reason: key);
+        await tester.tap(find.byKey(const Key('paywall_close')));
+        await tester.pumpAndSettle();
+      }
+
+      // Nothing reached the router: the paywall stands in FRONT of the work, not after it.
+      expect(ssh.ran('nvram set wgc1_enable=1'), isFalse);
+
+      // DISABLE is free. Never trap a running tunnel behind a purchase.
+      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('paywall_buy')), findsNothing);
+      expect(ssh.ran('nvram set wgc1_enable=0'), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('watchdog: CREATE/EDIT opens the paywall, DELETE and the log do not', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+          ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c));
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+
+      await tester.ensureVisible(find.byKey(const Key('slot_edit')));
+      await tester.tap(find.byKey(const Key('slot_edit')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('paywall_buy')), findsOneWidget);
+      // The watchdog pitch has to do the selling: a locked WATCHDOG screen shows nothing to look at.
+      expect(find.textContaining('emails you to say it did'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('paywall_close')));
+      await tester.pumpAndSettle();
+
+      // Stopping and removing stay free: never trap a script on someone's router.
+      await tester.ensureVisible(find.byKey(const Key('slot_wd_disable')));
+      await tester.tap(find.byKey(const Key('slot_wd_disable')));
+      await tester.pumpAndSettle();
+      // Its own confirmation, not a paywall.
+      expect(find.byKey(const Key('paywall_buy')), findsNothing);
+      expect(find.text('Disable watchdog wgc1?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'DISABLE'));
+      await tester.pumpAndSettle();
+      expect(ssh.ran('cru d watchdog_wgc1'), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a button greyed for its OWN reasons stays greyed, it does not become a sales pitch', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({}), c));
+      await _open(tester);
+
+      // No slot selected: every action is meaningless, so none may offer to sell anything.
+      for (final key in ['slot_create', 'slot_enable', 'slot_edit', 'slot_disable', 'slot_delete']) {
+        expect(_btn(tester, key).onPressed, isNull, reason: key);
+      }
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

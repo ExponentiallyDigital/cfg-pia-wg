@@ -21,7 +21,9 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 import 'router_session.dart';
 import 'screens/main_menu_screen.dart';
+import 'entitlement.dart';
 import 'session_controller.dart';
+import 'widgets/paywall.dart';
 import 'widgets/app_scaffold.dart';
 
 /// Keeps [SessionController.currentDestination] in sync with the route on top so the drawer can
@@ -144,6 +146,25 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
     // The router address remembered from a previous session. Fire and forget: a router screen
     // reads it when it prefills, and the controller notifies if it arrives after that.
     _controller.loadRememberedRouterIp();
+    unawaited(_startPurchasing());
+  }
+
+  /// Brings up the store, off the first frame.
+  ///
+  /// Nothing here blocks startup and nothing here can fail loudly: a build with no key does not
+  /// sell, a store that cannot be reached leaves the paywall saying so, and everything that is not
+  /// a paid feature works throughout. The price is fetched once, here, rather than when the paywall
+  /// opens - a spinner where the price should be is the worst possible moment to make someone wait.
+  Future<void> _startPurchasing() async {
+    if (!Entitlement.purchasingAvailable) return;
+    await Entitlement.configure(
+      onChanged: _controller.setUnlocked,
+      onLog: (message) => _controller.logEntry(message, isWarning: true),
+    );
+    _controller.setUnlocked(Entitlement.isUnlocked);
+    final price = await Entitlement.price();
+    if (price == null) return; // no offering reachable; the paywall reads correctly without one
+    Paywall.offer = PaywallOffer(price: price, purchase: Entitlement.purchase, restore: Entitlement.restore);
   }
 
   Timer? _sessionCloseTimer;

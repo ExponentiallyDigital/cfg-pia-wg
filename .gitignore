@@ -53,6 +53,12 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Google service account credentials - the Play upload key for CI and the one RevenueCat holds.
+# Both live outside the repo; these patterns are a net, not a place to put them.
+*service-account*.json
+*-iam-gserviceaccount*.json
+secrets/
+
 # Remember to never publicly share your keystore.
 # See https://flutter.dev/to/reference-keystore
 key.properties

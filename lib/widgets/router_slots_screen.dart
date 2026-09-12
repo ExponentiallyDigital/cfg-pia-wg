@@ -198,6 +198,13 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     }
 
     if (!isStockFirmware) return const _FirmwareGate.ok();
+
+    // ENTITLEMENT BEFORE DEPENDENCIES. A locked user is welcome to look at their router, but must
+    // never be told "jq is missing" or offered an install: that is work on their hardware, for a
+    // feature they cannot use, in answer to a question they did not ask. They see the paywall when
+    // they reach for something instead. Do not reorder - a later refactor will want to.
+    if (!_c.isUnlocked) return const _FirmwareGate.ok();
+
     // The manage screen never sends email, so it does not need the mail binary.
     final missing = await svc.missingStockBinaries(needMailsend: widget.mode == SlotModalMode.watchdog);
     return missing.isEmpty ? const _FirmwareGate.ok() : _FirmwareGate.missingBinaries(missing);

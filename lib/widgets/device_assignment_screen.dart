@@ -32,6 +32,7 @@ import '../device_assignment_service.dart';
 import '../firmware.dart';
 import '../router_slot_service.dart';
 import '../session_controller.dart';
+import 'paywall.dart';
 import 'app_scaffold.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
@@ -407,6 +408,12 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
   // ── Apply ────────────────────────────────────────────────────────────────────────
 
   Future<void> _apply() async {
+    // The gate for this screen. Reading the device list, tapping through the pickers and staging
+    // changes are all free - seeing your own devices is the most persuasive thing this screen can
+    // do. APPLY is the moment something changes on the router, so it is the moment that is gated.
+    if (!_c.isUnlocked) {
+      if (!await Paywall.show(context, _c, pitch: Pitch.assign) || !mounted) return;
+    }
     final state = _state!;
     // A device gains a reservation when it has none: the policy record is keyed by IP, and an
     // address that is not pinned will eventually move to another device.

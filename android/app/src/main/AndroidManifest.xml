@@ -7,6 +7,11 @@
     <!-- Required for TCP latency probes and API calls -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Google Play Billing. Declared BEFORE any billing code exists, because Play will not let you
+         create a one-time product until it has seen an uploaded artifact asking for this. The SDK
+         declares it too; identical uses-permission entries merge, so both can stand. -->
+    <uses-permission android:name="com.android.vending.BILLING" />
+
     <!-- Required to write config files to external/shared storage if user chooses -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28"/>
