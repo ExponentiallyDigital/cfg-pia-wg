@@ -58,7 +58,16 @@ refund window is the de-facto trial** and costs nothing to build - but it only r
 Play server notifications are wired to RevenueCat, so that is not optional. Do not advertise it:
 the terms are Google's to change.
 
-**Reads are free, writes are gated. Decided 2026-09-12.** A locked user can connect to their router
+**Gated is CREATE or CHANGE. Free is REMOVE. Decided 2026-09-12.** The sharper form of "reads free,
+writes gated", and it settles the edge cases in one line: a locked user can always undo, never
+build. Free even without the entitlement - SETTINGS UNINSTALL, REBOOT ROUTER, DEL PIA CERT, FORGET
+ROUTER IP, slot DELETE, watchdog DELETE and watchdog DISABLE. Trapping your software, or a script
+you deployed, on a stranger's router behind a purchase turns a pricing decision into a complaint.
+
+One consequence accepted knowingly: DISABLE is free and ENABLE is not, so a locked user can pause a
+grandfathered watchdog and then need to pay to restart it. That is their choice to make.
+
+**Reads are free.** A locked user can connect to their router
 and SEE their own slots, devices, status and logs - their own data is far more persuasive than mock
 data, and less work. Anything that writes NVRAM, deploys a script or changes a routing rule needs
 the entitlement. Two carve-outs on principle: **SETTINGS UNINSTALL and REBOOT ROUTER stay free even
