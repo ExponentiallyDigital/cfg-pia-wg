@@ -204,94 +204,84 @@ jobs:
           EOF
 
       # ------------------------------------------------------------
-      # Step I: Parse unreleased blocks from CHANGELOG.md & sort items
+      # Step I: Pull this release's block out of CHANGELOG.md
       # ------------------------------------------------------------
-      - name: Parse and sort release notes from CHANGELOG.md
+      - name: Read release notes from CHANGELOG.md
         id: changelog_parser
         env:
           TARGET_TAG: ${{ steps.tag.outputs.val }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         shell: python
         run: |
-          import re
+          # Takes ONLY the block for the tag being released.
+          #
+          # It used to take every block down to the newest already-published tag, which was fine
+          # while releases were frequent and became sixty builds of notes when they were not. It
+          # also SORTED the lines alphabetically, which suited three bullets and destroyed a block
+          # with commit sub-headings, because the bullets separated from their headings. The order
+          # a block is written in carries meaning - the most important change is put first on
+          # purpose - so it is kept.
           import os
-          import json
-          import urllib.request
+          import re
 
           changelog_path = "CHANGELOG.md"
           target_tag = os.environ.get("TARGET_TAG", "")
-          repo = os.environ.get("GITHUB_REPOSITORY", "")
-          token = os.environ.get("GITHUB_TOKEN", "")
 
-          # Helper function checking if a tag is already associated with a published release
-          def is_already_released(tag_name):
-              if not repo or not token or not tag_name:
-                  return False
-              url = f"https://api.github.com/repos/{repo}/releases/tags/{tag_name}"
-              req = urllib.request.Request(url, headers={
-                  "Authorization": f"Bearer {token}",
-                  "Accept": "application/vnd.github+json",
-                  "User-Agent": "GitHub-Actions-Release-Script"
-              })
-              try:
-                  with urllib.request.urlopen(req) as response:
-                      return response.status == 200
-              except Exception:
-                  return False
+          # Anchored to a HEADING, and matched on the title rather than its number. The number has
+          # already changed once - the section became 1.3 when the WIP list was added above it - and
+          # the old parser looked for "1.2.", matched nothing, and silently published a release
+          # whose entire body was "Release v0.8.70". The table of contents carries the same words
+          # higher up the file, which is what the "#" test guards against.
+          def is_history_heading(line):
+              return line.startswith("#") and "Implemented - chronological change history" in line
 
-          header_heading = "1.2. Implemented - chronological change history"
-          version_header_re = re.compile(r'^\d{4}-\d{2}-\d{2}\s+(v\d+\.\d+\.\d+.*)')
+          version_header_re = re.compile(r"^\d{4}-\d{2}-\d{2}\s+v\d+\.\d+\.\d+")
 
-          blocks = []
-          current_block = None
-          in_target_section = False
+          out = []
+          header = ""
+          in_history = False
+          in_block = False
 
           if os.path.exists(changelog_path):
               with open(changelog_path, "r", encoding="utf-8") as f:
-                  for line in f:
-                      stripped = line.strip()
+                  for raw in f:
+                      line = raw.rstrip()
 
-                      # 1. Scan down until reaching history section header
-                      if header_heading in stripped:
-                          in_target_section = True
+                      if not in_history:
+                          in_history = is_history_heading(line)
                           continue
 
-                      if not in_target_section:
+                      if version_header_re.match(line.strip()):
+                          if in_block:
+                              break          # the next release down; this block is complete
+                          found = re.search(r"v\d+\.\d+\.\d+", line)
+                          if found and found.group(0) == target_tag:
+                              in_block = True
+                              header = line.strip()
                           continue
 
-                      # 2. Match version release header (e.g. 2026-08-03 v0.7.06 build 366)
-                      m = version_header_re.match(stripped)
-                      if m:
-                          tag_match = re.search(r'v\d+\.\d+\.\d+', stripped)
-                          extracted_tag = tag_match.group(0) if tag_match else ""
+                      if in_block:
+                          out.append(line)
 
-                          # Stop scanning if reaching an older release that is ALREADY published
-                          if current_block and extracted_tag and extracted_tag != target_tag:
-                              if is_already_released(extracted_tag):
-                                  break
+          while out and not out[-1].strip():
+              out.pop()
 
-                          current_block = {"header": stripped, "lines": []}
-                          blocks.append(current_block)
-                          continue
-
-                      # 3. Collect change log items under active block
-                      if current_block is not None and stripped:
-                          current_block["lines"].append(stripped)
-
-          # 4. Sort contents alphabetically within each individual release block
-          formatted_output = []
-          for block in blocks:
-              block["lines"].sort()
-              block_text = block["header"] + "\n\n" + "\n".join(block["lines"])
-              formatted_output.append(block_text)
-
-          final_notes = "\n\n".join(formatted_output) if formatted_output else f"Release {target_tag}"
+          if header:
+              notes = header + "\n\n" + "\n".join(out).strip()
+          else:
+              # Loud rather than quiet. A release with no notes is a mistake, and the old fallback
+              # of a bare "Release <tag>" made it look deliberate.
+              notes = (
+                  "Release " + target_tag + "\n\n"
+                  "> No CHANGELOG block was found for this tag. Check that CHANGELOG.md carries a "
+                  "`<date> " + target_tag + " build <n> - <title>` heading under the implemented history."
+              )
+              print("::warning::no CHANGELOG block found for " + target_tag)
 
           with open("github_release_notes.txt", "w", encoding="utf-8") as f:
-              f.write(final_notes)
+              f.write(notes)
 
-      # ------------------------------------------------------------
+          print(notes)
+
       # Step J: Deploy App Bundle (.aab) to Google Play Internal Testing Track
       # ------------------------------------------------------------
       - name: Upload release to Google Play Store
