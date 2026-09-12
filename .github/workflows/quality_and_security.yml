@@ -19,6 +19,13 @@ on:
   workflow_call:
   workflow_dispatch:
 
+# One run per ref at a time. Pushing three times in a minute used to start three fifteen-minute
+# runs that all scanned code already superseded, which is how the CPU-minute limit was reached in
+# the first place. The newest push is the only one whose answer anyone wants.
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   security-events: write
