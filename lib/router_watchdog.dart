@@ -892,6 +892,19 @@ class RouterWatchdog {
   Future<bool> isJqInstalled() async =>
       isStockFirmware ? (await _run("[ -x '$kStockJqPath' ] && echo 1 || echo 0")) == '1' : (await _read('which jq')).isNotEmpty;
 
+  /// True when stock has the init directory the app's boot persistence depends on.
+  ///
+  /// **Merlin always passes**: it has `/jffs/scripts/services-start` and needs nothing here.
+  ///
+  /// On stock the directory comes from Download Master, and without it a watchdog is not durable.
+  /// Which way that fails depends on the router, and neither is any use to the person in front of
+  /// it: with no `/opt/etc/init.d` at all the script write fails and reports a byte-count mismatch
+  /// that reads like a full filesystem, and with the directory present but no working Download
+  /// Master the write succeeds, cron installs, and nothing runs it at the next boot. Checking
+  /// first turns both into one sentence the user can act on.
+  Future<bool> isBootPersistenceReady() async =>
+      !isStockFirmware || (await _run("[ -d '$kStockBootDir' ] && echo 1 || echo 0")) == '1';
+
   // Ensures the watchdog script has somewhere to live. jffs2_scripts / jffs2_on are a Merlin
   // custom-scripts feature; on stock only the directory matters.
   Future<void> enableJffsScripts() async {
