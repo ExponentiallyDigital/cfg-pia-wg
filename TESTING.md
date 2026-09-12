@@ -818,7 +818,10 @@ The buy:
 
 The refund, which is the trial:
 
-- refund the order in Play Console, then wait for the notification to reach RevenueCat
+- refund the order in Play Console, choosing **refund and revoke** where offered, then wait for the notification to reach RevenueCat
+- **turn on the Sandbox toggle** to see any of it. RevenueCat hides test activity from transaction views by default, so a working purchase looks like no purchase at all. The toggle sits beside Recent Transactions
+- customer COUNTS never move for a refund. A customer record is created on first launch and persists; only the entitlement goes. Read the individual customer record, not the dashboard totals
+- expect ghost customers after every release. Play's pre-launch report runs the app on its own devices, each launch creating an anonymous customer that never buys anything. Measured 2026-09-12: seven of them, United States, Android 30, within twenty minutes of the upload
 - the app relocks **without being reinstalled**. If it does not, real-time developer notifications
   are not wired up (step 23 of the plan) and the refund window cannot be used as a trial
 

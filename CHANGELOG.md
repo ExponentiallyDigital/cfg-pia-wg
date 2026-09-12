@@ -45,6 +45,14 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
+2026-09-13 v0.8.75 build 445 - the store says why, when it has nothing to sell
+
+- ADD: **the app log now names WHY the paywall has nothing to offer.** Three faults, fixed in three different places, all presented as one greyed button reading "Not available right now": the store unreachable, no offering marked current in the RevenueCat dashboard, and an offering whose product Google Play will not price. It now says which. Written after the first hardware purchase test spent an hour on the third of those.
+- FIX: **CI - the Sonar scan is skipped on Dependabot runs.** A Dependabot-triggered workflow does not read the normal Actions secrets, it reads a separate Dependabot store, so the token arrived empty and the scanner died on startup with exit code 3 - which reads like a code problem and is not one. Copying the token into that store would be the wrong fix: these pull requests bump GitHub Actions, so they edit the very workflow files that would then run holding it.
+- CHG: nothing is lost by skipping. An action version bump changes no Dart code, and the Monday scheduled run scans the default branch every week regardless.
+- DOC: TESTING gains what a purchase test actually looks like from the dashboard side. Sandbox activity is hidden from RevenueCat's transaction views by default, so a working purchase looks like no purchase; customer counts never move for a refund; and Play's pre-launch report adds ghost customers after every release, measured at seven from the United States within twenty minutes of an upload.
+- DOC: the plan records the Test Store trap that cost an hour. RevenueCat's setup wizard builds the default offering around its own Test Store product, which Google Play cannot price, and the control for fixing it is only in the offering's EDIT view - not on the offering page, not on the product page, and not in the three-dot menu.
+- DOC: BACKLOG gains showing where a pinned device is really exiting when its slot is down. Measured on hardware: the policy record survives a disable, the router drops the routing rule, and the device falls through to the default connection and keeps working. Correct behaviour, but the screen still names the pinned slot, which is true of the configuration and false of the traffic.
 2026-09-12 v0.8.74 build 444 - the seam has something behind it
 
 ```play
