@@ -46,6 +46,17 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 2026-09-12 v0.8.71 build 441 - the watchdog checks it can survive a reboot
 
+```play
+Watchdog reliability, and two device assignment fixes.
+
+The app now checks your router can keep a watchdog schedule across a reboot, and tells you
+before you save one rather than failing quietly weeks later.
+
+Fixed: a device sent to the plain internet stayed there, ignoring later changes, until a restart.
+
+Fixed: deleting a VPN returns its devices to the internet, and resets the default connection if
+it pointed at the VPN you deleted.
+```
 - ADD: **stock is checked for the init directory Download Master provides, before a watchdog can be saved.** Nothing checked it, and without `/opt/etc/init.d` a watchdog is not durable. Which way that failed depended on the router and neither was any use: with the directory absent the script write failed and reported a byte-count mismatch that reads like a full filesystem, and with the directory present but no working Download Master the write succeeded, cron installed, and nothing ran it at the next boot. The second is silent, which is the worse of the two.
 - CHG: it BLOCKS rather than warns, alongside the existing `jq` check, because a watchdog that stops at the next power cut and says nothing is worse than one never deployed.
 - CHG: the message names the cause in the user's terms - "Download Master is not installed on this router" - rather than the missing path. Nobody installs Download Master for its own sake, and naming a directory sends them looking in the wrong place.
@@ -55,6 +66,8 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 - FIX: **the GitHub release note was silently empty.** The parser looked for a CHANGELOG heading by NUMBER - "1.2. Implemented - chronological change history" - and that section became 1.3 when the WIP list was added above it. No match, no blocks, and the release body fell back to the bare string "Release v0.8.70". It now matches the TITLE, anchored to a heading line so the table of contents entry above it cannot match first, and it says so loudly with a `::warning::` when a tag has no block rather than publishing something that looks deliberate.
 - CHG: the note carries ONLY the block for the tag being released. It used to collect every block down to the newest published tag, which was right when releases were frequent and would have produced sixty builds of notes after a long gap.
 - CHG: the note is no longer sorted alphabetically. That suited three bullets and destroyed a block with commit sub-headings, because the bullets separated from the heading they belonged to. The order a block is written in carries meaning: the most important change goes first on purpose.
+- ADD: **the Google Play "what's new" is generated too, from a ```` ```play ```` fence in the release block.** One CHANGELOG block now feeds both audiences: everything outside the fence goes to GitHub, the fence itself goes to Play. They cannot be the same words - Play allows 500 Unicode characters, renders no markdown, and will not make a URL tappable - so a developer preamble sent there arrives as literal asterisks and a dead link, cut off mid-word. Play used to get a bare link to the hosted changelog and the real notes were typed into Play Console by hand.
+- ADD: the build FAILS if that note exceeds 500 characters, and warns if a release block has no fence. Both are caught in CI rather than by Play, or worse by nobody. The first draft of this release's own note came in at 512 characters and was refused.
 - CHG: **CI - one Quality & security run per ref at a time**, newest wins. Three pushes in a minute used to start three fifteen-minute runs all scanning code that was already superseded, which is how the CPU-minute limit was reached.
 2026-09-12 v0.8.70 build 440 - the UI review list
 

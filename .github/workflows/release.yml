@@ -197,14 +197,11 @@ jobs:
           GH_RELEASE_NAME="v${CLEAN_VER} (build ${VERSION_CODE})"
           echo "gh_release_name=$GH_RELEASE_NAME" >> $GITHUB_OUTPUT
 
-          # Create distribution directory for Google Play Store release notes
+          # The note itself is written by the next step, out of CHANGELOG.md.
           mkdir -p distribution/whatsnew
-          cat <<'EOF' > distribution/whatsnew/whatsnew-en-AU
-          Please see https://exponentiallydigital.com/cfg-pia-wg/changelog
-          EOF
 
       # ------------------------------------------------------------
-      # Step I: Pull this release's block out of CHANGELOG.md
+      # Step I: Both release notes, out of this release's CHANGELOG block
       # ------------------------------------------------------------
       - name: Read release notes from CHANGELOG.md
         id: changelog_parser
@@ -212,16 +209,25 @@ jobs:
           TARGET_TAG: ${{ steps.tag.outputs.val }}
         shell: python
         run: |
-          # Takes ONLY the block for the tag being released.
+          # ONE source, TWO audiences.
           #
-          # It used to take every block down to the newest already-published tag, which was fine
-          # while releases were frequent and became sixty builds of notes when they were not. It
-          # also SORTED the lines alphabetically, which suited three bullets and destroyed a block
-          # with commit sub-headings, because the bullets separated from their headings. The order
-          # a block is written in carries meaning - the most important change is put first on
-          # purpose - so it is kept.
+          # The block for the tag being released produces both notes. Everything in it except the
+          # ```play fence becomes the GitHub release body, for someone reading a repository. The
+          # contents of that fence become the Google Play "what's new", for someone deciding whether
+          # to tap Update.
+          #
+          # They cannot be the same text. Play allows 500 Unicode characters per language, renders
+          # NO markdown, and does not make a URL tappable - so a developer preamble pasted there
+          # shows literal asterisks and a dead link, truncated mid-word. Writing both in the same
+          # CHANGELOG block is what keeps them in step without a second trip to Play Console.
+          #
+          # Neither is sorted. The order a block is written in carries meaning.
           import os
           import re
+          import sys
+
+          PLAY_LIMIT = 500          # Unicode characters per language, per Google's own docs
+          FALLBACK = "Please see https://exponentiallydigital.com/cfg-pia-wg/changelog"
 
           changelog_path = "CHANGELOG.md"
           target_tag = os.environ.get("TARGET_TAG", "")
@@ -236,10 +242,12 @@ jobs:
 
           version_header_re = re.compile(r"^\d{4}-\d{2}-\d{2}\s+v\d+\.\d+\.\d+")
 
-          out = []
+          gh_lines = []
+          play_lines = []
           header = ""
           in_history = False
           in_block = False
+          in_play = False
 
           if os.path.exists(changelog_path):
               with open(changelog_path, "r", encoding="utf-8") as f:
@@ -259,14 +267,27 @@ jobs:
                               header = line.strip()
                           continue
 
-                      if in_block:
-                          out.append(line)
+                      if not in_block:
+                          continue
 
-          while out and not out[-1].strip():
-              out.pop()
+                      if not in_play and line.strip().startswith("```play"):
+                          in_play = True
+                          continue
+                      if in_play:
+                          if line.strip().startswith("```"):
+                              in_play = False
+                          else:
+                              play_lines.append(line)
+                          continue
 
+                      gh_lines.append(line)
+
+          while gh_lines and not gh_lines[-1].strip():
+              gh_lines.pop()
+
+          # ---- GitHub release body ----
           if header:
-              notes = header + "\n\n" + "\n".join(out).strip()
+              notes = header + "\n\n" + "\n".join(gh_lines).strip()
           else:
               # Loud rather than quiet. A release with no notes is a mistake, and the old fallback
               # of a bare "Release <tag>" made it look deliberate.
@@ -280,7 +301,25 @@ jobs:
           with open("github_release_notes.txt", "w", encoding="utf-8") as f:
               f.write(notes)
 
+          # ---- Google Play what's new ----
+          play = "\n".join(play_lines).strip()
+          if not play:
+              play = FALLBACK
+              print("::warning::no ```play block in the CHANGELOG entry for " + target_tag +
+                    " - Play gets the changelog link instead of real notes")
+          elif len(play) > PLAY_LIMIT:
+              # Caught HERE rather than by Play rejecting the upload, or worse, silently truncating.
+              print("::error::the ```play note for " + target_tag + " is " + str(len(play)) +
+                    " characters; Google Play allows " + str(PLAY_LIMIT))
+              sys.exit(1)
+
+          with open("distribution/whatsnew/whatsnew-en-AU", "w", encoding="utf-8") as f:
+              f.write(play + "\n")
+
+          print("--- GitHub ---")
           print(notes)
+          print("--- Google Play (" + str(len(play)) + "/" + str(PLAY_LIMIT) + ") ---")
+          print(play)
 
       # Step J: Deploy App Bundle (.aab) to Google Play Internal Testing Track
       # ------------------------------------------------------------
