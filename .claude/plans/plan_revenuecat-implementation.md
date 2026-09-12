@@ -42,6 +42,39 @@ dependencies, then the offer to install them. A user without the entitlement who
 WATCHDOG on stock must see the paywall, never "jq is missing". Worth a test that pins the order,
 because a later refactor will reorder it without noticing.
 
+**A one-off purchase, never a subscription. Decided 2026-09-12.** Not on taste, though the taste
+runs that way too: **a subscription cannot be enforced here.** The watchdog runs on the router with
+the app out of the picture, so a lapsed subscriber keeps the whole benefit, and a subscription you
+cannot revoke is a donation with worse reviews. There is a second reason underneath it - the pitch
+is "you will never think about this again", and billing someone monthly for not thinking about
+something is a contradiction they notice at renewal, which is when set-and-forget utilities churn
+hardest. This also rules out a Play free trial, which is a subscription-only construct.
+
+**No hand-built trial either. Decided 2026-09-12.** A timer would be app-side state on anonymous
+users, so a reinstall resets it, and a watchdog deployed on day one is kept forever regardless. The
+only way to close that would be an expiry inside the deployed script, which is forbidden for the
+reasons above and would additionally be a time bomb on someone else's router. **Google Play's own
+refund window is the de-facto trial** and costs nothing to build - but it only re-locks the app if
+Play server notifications are wired to RevenueCat, so that is not optional. Do not advertise it:
+the terms are Google's to change.
+
+**Reads are free, writes are gated. Decided 2026-09-12.** A locked user can connect to their router
+and SEE their own slots, devices, status and logs - their own data is far more persuasive than mock
+data, and less work. Anything that writes NVRAM, deploys a script or changes a routing rule needs
+the entitlement. Two carve-outs on principle: **SETTINGS UNINSTALL and REBOOT ROUTER stay free even
+for someone who has never paid.** Trapping your software on a stranger's router behind a purchase
+turns a pricing decision into a complaint.
+
+**Locked controls stay live and open the paywall.** A greyed button teaches "this app is broken"; a
+button that answers teaches "this is the paid part", at the moment they are most interested.
+
+**Existing users are grandfathered. Decided 2026-09-12.** Anyone who already has the app keeps full
+use. A previously-free app that gates its existing users gets punished in reviews, and ratings are
+what decide whether anyone new ever finds a niche tool.
+
+**Self-building is never gated.** `BUILDING.md` is deliberately detailed enough that a low-skill
+user can produce their own build, and that stays true. The charge buys not having to.
+
 **The donation buttons go.** PayPal and Patreon come off the home screen. Keep the "add a Play Store
 app review" link: the watchdog alert emails say *"by tapping on the home screen link"*, so removing
 it makes that wording stale. The `spacer` above the footer is sized for the donation block and will
@@ -57,10 +90,43 @@ caught overstating this would cost more than the feature is worth.
 
 ## 3. Open questions
 
-- **The price.** Not set.
-- **What "read only" means on each screen.** A locked MANAGE screen showing the slot list is useful; a locked DEVICE ASSIGNMENT screen showing every device and refusing to move one may be more irritating than showing nothing. Needs a decision per screen.
+- **The price.** Not set - see "Pricing" below. It blocks creating the Play product, and nothing else: the gating, the paywall and the restore can all be built and tested against a faked entitlement first.
 - **Whether the once-per-session advice is a dialog, a banner, or the paywall itself.**
+- **What the paywall says about the watchdog.** A locked user opening WATCHDOG sees a screen with nothing on it, because there is no watchdog yet. Slot management and device assignment demonstrate themselves in read-only; the watchdog cannot. The copy has to carry it alone, and showing an example reconfigure alert may do more than any description - that email IS the product.
 - **Play Console Data safety form.** Needs completing to reflect RevenueCat, and the Privacy Policy needs a line. This is a store-rejection item rather than a nicety: the SDK sees a pseudonymous app-user id.
+---
+
+## 3a. Pricing
+
+Open, and stuck for weeks. What is settled is the SHAPE of the answer, which narrows it a long way.
+
+**The price is not "what is this worth".** Enforcement is impossible and the source is public, so
+the only question a motivated user asks is whether paying is cheaper than the alternative. The
+alternative is an hour with `BUILDING.md`. Price under the value of that hour and the calculation
+never starts.
+
+**The market is small by construction:** PIA subscribers, who own an ASUS router, whose firmware
+allows SSH, who have found the app. The brand that leads the market gives users no SSH at all. With
+a market that size, the gap between two candidate prices is small in absolute revenue and large in
+conversion - and every extra user is also a review, a bug report and a reason for the next person
+to find it. **Optimise for adoption, not for revenue per user.**
+
+**Too low is also wrong.** A router utility priced like a wallpaper app reads as a trinket to a
+technical audience. The free tier already does real work, so this is an upgrade rather than a gate
+on a shell, which supports a real number rather than a token one.
+
+**The decision is reversible in one direction only.** Raising a one-off price later costs nothing:
+existing owners keep what they bought and early buyers got a deal. Cutting it later tells everyone
+who paid full price that they were wrong to. **So start at the low end of the plausible band and
+raise it if conversion says to.**
+
+Google takes 15% below USD 1M/year, so the take is 85%. Let Play convert regionally rather than
+fixing one price.
+
+**Recommendation: USD 4.99**, with 7.99 the defensible alternative if it should feel like a tool
+rather than an impulse. Overrule it on instinct if the instinct is strong - this is a judgement, not
+a calculation, and it is not the decision that determines whether the app is any good.
+
 ---
 
 ## 4. How RevenueCat works, where it changes what we build
