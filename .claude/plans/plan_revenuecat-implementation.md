@@ -101,9 +101,13 @@ caught overstating this would cost more than the feature is worth.
 Open, and stuck for weeks. What is settled is the SHAPE of the answer, which narrows it a long way.
 
 **The price is not "what is this worth".** Enforcement is impossible and the source is public, so
-the only question a motivated user asks is whether paying is cheaper than the alternative. The
-alternative is an hour with `BUILDING.md`. Price under the value of that hour and the calculation
-never starts.
+the only question a motivated user asks is whether paying is cheaper than the alternative.
+
+That alternative is dearer than it looks. The first draft of this section guessed "an hour with
+`BUILDING.md`"; the maintainer, forty years in IT, reports the build environment took considerably
+longer than that to stand up. Flutter, the Android SDK, signing keys and a locked dependency set is
+most of a day for someone competent and doing it for the first time. **So this leg of the argument
+points UP, not down**, and there is more headroom than a first look suggests.
 
 **The market is small by construction:** PIA subscribers, who own an ASUS router, whose firmware
 allows SSH, who have found the app. The brand that leads the market gives users no SSH at all. With
@@ -123,9 +127,11 @@ raise it if conversion says to.**
 Google takes 15% below USD 1M/year, so the take is 85%. Let Play convert regionally rather than
 fixing one price.
 
-**Recommendation: USD 4.99**, with 7.99 the defensible alternative if it should feel like a tool
-rather than an impulse. Overrule it on instinct if the instinct is strong - this is a judgement, not
-a calculation, and it is not the decision that determines whether the app is any good.
+**Decided 2026-09-12: USD 4.99 as the entry point**, taken as a starting position rather than a
+final answer. Two of the three arguments point low - the small market, and adoption being worth more
+than revenue per head on a project that is an exploration rather than a living. The third, the cost
+of self-building, points high and is the reason the headroom exists. Raising it later costs nothing;
+cutting it later tells everyone who paid that they were wrong to. Start here and watch.
 
 ---
 
