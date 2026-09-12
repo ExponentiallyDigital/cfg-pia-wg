@@ -28,6 +28,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'clipboard_service.dart';
+import 'entitlement.dart';
 import 'router_prefs.dart';
 import 'router_session.dart';
 
@@ -187,6 +188,26 @@ class SessionController extends ChangeNotifier {
   /// link and the router log all tried to connect to 192.168.50.1 instead of asking.
   bool get canReuseRouterSession =>
       routerConnected && routerIp.trim().isNotEmpty && sshUsername.trim().isNotEmpty && sshPassword.isNotEmpty;
+
+  // ── Entitlement ────────────────────────────────────────────────────────────────
+
+  /// Whether the paid router features are available to this user.
+  ///
+  /// Mirrored onto the controller rather than read from [Entitlement] at each call site, because
+  /// it CHANGES while the app is running - a purchase, a restore, or a refund arriving through
+  /// Play's server notifications - and every gated control has to rebuild when it does. Screens
+  /// already listen to this controller, so they get that for free.
+  ///
+  /// Deliberately NOT cleared by [wipeAll]: what someone has bought is not session state.
+  bool get isUnlocked => _unlocked;
+  bool _unlocked = Entitlement.isUnlocked;
+
+  /// Called once at startup and again whenever the source of truth reports a change.
+  void setUnlocked(bool value) {
+    if (value == _unlocked) return;
+    _unlocked = value;
+    notifyListeners();
+  }
 
   // ── Staged device assignments ──────────────────────────────────────────────────
   // Held here rather than on DeviceAssignmentScreen's State, which is rebuilt from scratch every

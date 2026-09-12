@@ -7,6 +7,7 @@
 // MACs are invented - see test/unit/no_lan_identifiers_test.dart.
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/device_assignment_service.dart';
+import 'package:cfg_pia_wg/entitlement.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_session.dart';
 import 'package:dartssh2/dartssh2.dart';
@@ -582,5 +583,34 @@ void main() {
     await tester.tap(find.byKey(const Key('device_connect')));
     await tester.pumpAndSettle();
     expect(find.textContaining('stock-firmware feature'), findsOneWidget);
+  });
+
+  // Looking at your own devices is the most persuasive thing this screen can do, so browsing and
+  // staging stay free for everyone. APPLY is the moment the router changes, and the only gate.
+  group('what a locked user can do', () {
+    setUp(() => Entitlement.debugSetUnlocked(false));
+    tearDown(() => Entitlement.debugSetUnlocked(null));
+
+    testWidgets('browses and stages freely; APPLY opens the paywall and writes nothing', (tester) async {
+      final ssh = await _pumpConnected(tester);
+      expect(find.text('Box - 192.168.1.20'), findsOneWidget, reason: 'the list is free to look at');
+
+      await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('pick_5')));
+      await tester.pumpAndSettle();
+      expect(find.text('APPLY 1 CHANGE'), findsOneWidget, reason: 'staging is free, and shows the tally');
+
+      await tester.tap(find.byKey(const Key('device_apply')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('paywall_buy')), findsOneWidget);
+      expect(ssh.commands.any((c) => c.contains('nvram set')), isFalse,
+          reason: 'the paywall stands in FRONT of the write, not after it');
+
+      // Closing it leaves the staged change where it was: nothing is lost by declining.
+      await tester.tap(find.byKey(const Key('paywall_close')));
+      await tester.pumpAndSettle();
+      expect(find.text('APPLY 1 CHANGE'), findsOneWidget);
+    });
   });
 }

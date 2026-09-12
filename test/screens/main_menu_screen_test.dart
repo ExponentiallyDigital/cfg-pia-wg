@@ -45,9 +45,11 @@ void main() {
     expect(tester.widget<Text>(find.text('² stock firmware only')).textAlign, TextAlign.center);
     expect(tester.widget<Text>(find.byKey(const Key('menu_help'))).textAlign, TextAlign.center);
     expect(find.byKey(const Key('menu_review')), findsOneWidget);
-    expect(find.text('Support development:'), findsOneWidget);
-    expect(find.byKey(const Key('donate_paypal')), findsOneWidget);
-    expect(find.byKey(const Key('donate_patreon')), findsOneWidget);
+    // The donation block went when the app gained a price. Asking for money twice, in two different
+    // ways, on the same screen reads as pleading; the review ask is the only thing left down there.
+    expect(find.text('Support development:'), findsNothing);
+    expect(find.byKey(const Key('donate_paypal')), findsNothing);
+    expect(find.byKey(const Key('donate_patreon')), findsNothing);
 
     await _teardown(tester, c);
   });
@@ -270,15 +272,22 @@ void main() {
       await _teardown(tester, c);
     });
 
-    testWidgets('sits above the donation block, with a gap between them', (tester) async {
+    // It used to sit above the donation block. With that gone it is the last thing on the screen,
+    // and the Spacer above it has to keep it there rather than letting it ride up under the help
+    // line - a stray SizedBox in the wrong place is exactly how that regresses.
+    testWidgets('is the last line on the screen, with air above it', (tester) async {
       final c = _quietController();
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
 
-      final review = tester.getBottomLeft(find.byKey(const Key('menu_review')));
-      final donate = tester.getTopLeft(find.text('Support development:'));
-      expect(review.dy, lessThan(donate.dy), reason: 'the ask comes first');
-      expect(donate.dy - review.dy, greaterThan(16), reason: 'a few lines of air, not a tight stack');
+      final help = tester.getBottomLeft(find.byKey(const Key('menu_help')));
+      final review = tester.getTopLeft(find.byKey(const Key('menu_review')));
+      expect(help.dy, lessThan(review.dy), reason: 'help first, then the ask');
+      expect(review.dy - help.dy, greaterThan(16), reason: 'a few lines of air, not a tight stack');
+
+      final reviewBottom = tester.getBottomLeft(find.byKey(const Key('menu_review'))).dy;
+      expect(reviewBottom, lessThan(tester.view.physicalSize.height / tester.view.devicePixelRatio),
+          reason: 'still on screen, not pushed off by the Spacer');
 
       await _teardown(tester, c);
     });

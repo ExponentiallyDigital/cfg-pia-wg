@@ -24,6 +24,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
+import '../entitlement.dart';
 import '../firmware.dart';
 import '../router_slot_service.dart' show openSshClient;
 import '../review_service.dart';
@@ -327,6 +328,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// No confirm prompt: nothing is lost that cannot be retyped, and the button is only enabled when
   /// there is something to clear.
+  /// Only ever from this button. See `Entitlement.restore` for why it is never automatic.
+  Future<void> _restorePurchase() async {
+    setState(() => _busy = true);
+    String message;
+    try {
+      message = await Entitlement.restore()
+          ? 'Purchase restored. Everything is unlocked.'
+          : 'No purchase found on this Google account.';
+    } catch (e) {
+      message = 'Could not reach the store: ${e.toString().replaceAll('Exception: ', '')}';
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _c.setUnlocked(Entitlement.isUnlocked);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _forgetRouterIp() async {
     await _c.forgetRouterIp();
     if (!mounted) return;
@@ -376,6 +394,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           destructive: true,
           onTap: _busy ? null : _rebootRouter,
         ),
+        // The only row here that gives something back rather than removing it. It is on this screen
+        // because this is where the app's one-off actions live, and because someone hunting for it
+        // after a new phone will look under settings before they look at a paywall.
+        if (Entitlement.purchasingAvailable)
+          _Action(
+            keyValue: 'settings_restore_purchase',
+            label: 'RESTORE PURCHASE',
+            note: 'Recovers the unlock on a new phone or after a reinstall. Nothing is stored on this device: '
+                'the purchase belongs to your Google account.',
+            icon: Icons.restore_outlined,
+            onTap: _busy ? null : _restorePurchase,
+          ),
         if (_busy) ...[
           const SizedBox(height: 24),
           const Center(child: CircularProgressIndicator(color: kHighlight)),

@@ -54,6 +54,11 @@ Widget _host(
   );
 }
 
+/// A stock router with both preconditions satisfied: `jq` installed, and the init directory that
+/// Download Master provides. Tests about anything else should not have to think about them.
+String _stockReady(String cmd) =>
+    cmd.contains(kStockJqPath) || cmd.contains("-d '$kStockBootDir'") ? '1' : '';
+
 void main() {
   // The reason this screen is a page and not a Dialog (418). As a card its height was wrong twice
   // over - 409 and again in 412 - and each time SAVE and the spinner that replaces it sat below a
@@ -297,13 +302,45 @@ void main() {
       useStock();
       final c = _controller();
       addTearDown(c.dispose);
-      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains(kStockJqPath) ? '1' : '');
+      final ssh = RecordingSSHClient(responder: _stockReady);
       await tester.pumpWidget(_host(ssh, c));
       await tester.pumpAndSettle();
 
       expect(ssh.ran("[ -x '$kStockJqPath' ]"), isTrue);
       expect(ssh.ran('which jq'), isFalse);
       expect(find.textContaining('is not installed'), findsNothing);
+      expect(tester.widget<ElevatedButton>(find.byKey(const Key('wd_save'))).onPressed, isNotNull);
+    });
+
+    // Without /opt/etc/init.d a watchdog deploys, runs, and then loses its cron entries at the
+    // next reboot with nothing said. Blocked rather than warned about, because a watchdog that
+    // stops at the next power cut is worse than one never deployed.
+    testWidgets("no Download Master directory blocks SAVE and says why in the user's terms", (tester) async {
+      useStock();
+      final c = _controller();
+      addTearDown(c.dispose);
+      // jq is there; the init directory is not.
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains(kStockJqPath) ? '1' : '');
+      await tester.pumpWidget(_host(ssh, c));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran("[ -d '$kStockBootDir' ]"), isTrue, reason: 'the directory has to be probed');
+      expect(find.byKey(const Key('wd_boot_dir_missing')), findsOneWidget);
+      expect(find.textContaining('Download Master is not installed'), findsWidgets,
+          reason: 'named as the cause, not as a missing path');
+      expect(tester.widget<ElevatedButton>(find.byKey(const Key('wd_save'))).onPressed, isNull);
+    });
+
+    testWidgets('Merlin is never asked about it', (tester) async {
+      useMerlin();
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/usr/bin/jq' : '');
+      await tester.pumpWidget(_host(ssh, c));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran("[ -d '$kStockBootDir' ]"), isFalse, reason: 'Merlin uses services-start');
+      expect(find.byKey(const Key('wd_boot_dir_missing')), findsNothing);
       expect(tester.widget<ElevatedButton>(find.byKey(const Key('wd_save'))).onPressed, isNotNull);
     });
 
@@ -323,7 +360,7 @@ void main() {
       useStock();
       final c = _controller();
       addTearDown(c.dispose);
-      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains(kStockJqPath) ? '1' : '');
+      final ssh = RecordingSSHClient(responder: _stockReady);
       await tester.pumpWidget(_host(ssh, c));
       await tester.pumpAndSettle();
 

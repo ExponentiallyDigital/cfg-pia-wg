@@ -77,6 +77,10 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   /// The SAVE button, so a save can scroll its own spinner into view. The dialog scrolls, and with
   /// the keyboard up the button sits below the fold - which is what made a save look inert.
   bool _jqMissing = false;
+
+  /// Stock only: the init directory Download Master provides. Without it a watchdog deploys and
+  /// then loses its cron entries at the next reboot, so it is a precondition, not a warning.
+  bool _bootDirMissing = false;
   bool _piaPassVisible = false;
   bool _smtpPassVisible = false;
   WatchdogStatus? _status;
@@ -143,22 +147,31 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   Future<void> _load() async {
     await _withService((svc) async {
       final jq = await svc.isJqInstalled();
+      final bootReady = await svc.isBootPersistenceReady();
       final status = await svc.getWatchdogStatus(widget.slotIndex);
       final cfg = await svc.loadConfig(widget.slotIndex);
       if (!mounted) return;
       setState(() {
         _jqMissing = !jq;
+        _bootDirMissing = !bootReady;
         _status = status;
         _applyConfig(cfg);
       });
     });
-    if (_jqMissing && mounted) {
+    if (!mounted) return;
+    if (_jqMissing) {
       await AppErrors.system(context, _c, '$_jqLabel is not installed on the router; the watchdog cannot be configured.');
+    } else if (_bootDirMissing) {
+      await AppErrors.system(context, _c, kBootDirMissingMessage);
     }
   }
 
   // Names the actual path on stock, where jq lives outside $PATH and the user installs it by hand.
   String get _jqLabel => isStockFirmware ? kStockJqPath : 'jq';
+
+  /// Blocked, not warned about: a watchdog with no boot persistence stops at the next power cut
+  /// and says nothing, which is worse than never having deployed one.
+  bool get _blocked => _jqMissing || _bootDirMissing;
 
   void _applyConfig(WatchdogConfig c) {
     _intervalCtrl.text = '${c.cronIntervalMinutes}';
@@ -228,6 +241,10 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   Future<void> _save() async {
     if (_jqMissing) {
       await AppErrors.system(context, _c, 'Cannot save: $_jqLabel is not installed on the router.');
+      return;
+    }
+    if (_bootDirMissing) {
+      await AppErrors.system(context, _c, kBootDirMissingMessage);
       return;
     }
     // Drop focus so the keyboard retracts and the last-edited field loses its green border; a
@@ -363,6 +380,11 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                 Text('$_jqLabel is not installed on the router — install jq before enabling.',
                     style: const TextStyle(color: kError, fontSize: 12)),
               ],
+              if (_bootDirMissing) ...[
+                const SizedBox(height: 12),
+                const Text(kBootDirMissingMessage,
+                    key: Key('wd_boot_dir_missing'), style: TextStyle(color: kError, fontSize: 12)),
+              ],
               const SizedBox(height: 16),
               _field(_intervalCtrl, 'Check interval (minutes)', const Key('wd_interval'), keyboard: TextInputType.number),
               _field(_primaryCtrl, 'Primary ping IP', const Key('wd_primary')),
@@ -422,7 +444,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
               const SizedBox(height: 16),
               ElevatedButton(
                 key: const Key('wd_save'),
-                onPressed: (_loading || _jqMissing) ? null : _save,
+                onPressed: (_loading || _blocked) ? null : _save,
                 // SAVE is not the end of the flow - a region picker follows it. Saying so on the
                 // button stops the picker arriving as a surprise. The label STAYS during a save:
                 // the spinner is the overlay, not the button. A spinner in the button put the one
