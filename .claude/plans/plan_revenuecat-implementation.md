@@ -257,16 +257,32 @@ no code, and they have to be first: the SDK cannot be tested against products th
 
 ### 1. Google Play Console
 
-- Create a **non-consumable** in-app product, `cfg-pia-wg_pro_unlock`, at the agreed price.
-- Complete the **Data safety form** to reflect RevenueCat, and add the matching line to the Privacy Policy.
+Menu labels move; the nouns are stable. Do these in order, because two of them have waiting time.
+
+1. **Payments profile - START THIS FIRST.** Selling anything needs a Google payments profile with identity and bank details verified. This is the long pole: it can take days, and nothing below can be tested until it clears. If the account has only ever published free apps, assume it is not set up.
+2. **Create the in-app product.** Monetise, then Products, then In-app products.
+   - Product ID `cfg-pia-wg_pro_unlock`. **Permanent.** It cannot be changed or reused later, even if the product is deleted. Choose once.
+   - Name and description are shown in Google's own purchase sheet, so write them for a buyer.
+   - Price USD 6.99 as the base; let Play convert the rest and check the AU price lands near 9.99.
+   - **Activate it.** New products are inactive and a purchase against an inactive product fails with an unhelpful error.
+3. **A release must exist on a track** before any purchase works. The internal track already has one.
+4. **Licence testing.** Setup, then Licence testing, and add the tester Gmail accounts. Testers get Google's test cards, purchases cost nothing and can be repeated. **A licence tester also has to be opted in to the testing track** - the two lists are separate and forgetting the second is the usual cause of "it just charges me".
+5. **Data safety form.** Must declare what RevenueCat sees: a pseudonymous app user id, purchase history, and device/diagnostic data. Store-rejection item, not a nicety. Keep it consistent with the wording in `SECURITY.md` and `README.md`.
+6. **Service account for RevenueCat.** A Google Cloud service account with Play Developer API access, granted permissions under Users and permissions in Play Console, then download the JSON key. **Google's own docs warn that permissions can take up to 24-48 hours to propagate**, so it may work only the following day. Do not spend an evening debugging it.
+7. **Real-time developer notifications.** RevenueCat gives a Pub/Sub topic name; paste it into Monetise, then Monetisation setup. **Not optional here**: without it a refund never reaches RevenueCat and the app stays unlocked, which is the whole mechanism behind using Play's refund window as the trial.
 
 ### 2. RevenueCat dashboard
 
-- Add the Android app: link Play Console, add service-account credentials for server notifications.
-- Create the lifetime IAP as **non-consumable**, mirroring the Play product.
-- Create one entitlement, `pro_feature`, and attach the product.
-- Create a default offering with one package containing it.
-- Confirm restore behaviour is **Transfer to new App User ID**.
+1. Create an account and a **Project**.
+2. **Add an app** to it: platform Android, package name `com.exponentiallydigital.pia_wireguard_cfga` exactly, and upload the Play service account JSON from step 6 above.
+3. **Copy the public Android SDK key.** It starts `goog_`. This is the one value the code needs, and the only thing blocking implementation.
+4. **Create the product** `cfg-pia-wg_pro_unlock`, or import it from Play. **Type: non-consumable.** This is the single most expensive setting to get wrong - see section 4 - and it is only discovered when a real customer changes phone.
+5. **Create the entitlement** `pro_feature` and attach the product to it.
+6. **Create the default offering** with one package containing the product.
+7. **Project settings, General: confirm restore behaviour is "Transfer to new App User ID"**, which is the default. Anonymous restore depends on it.
+8. **Copy the Pub/Sub topic** back into Play Console, closing the loop from step 7 above.
+
+**When you have the `goog_` key, implementation is unblocked.** Everything before that point can be built and tested against a faked entitlement.
 
 ### 3. Add the SDK and configure it
 
