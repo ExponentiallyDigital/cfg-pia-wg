@@ -4,6 +4,7 @@
 // ABOUT is a page people open to read; every button on this one destroys something.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/entitlement.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_prefs.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
@@ -263,6 +264,16 @@ void main() {
       expect(find.text('ROUTER'), findsNothing);
       expect(find.text('THIS DEVICE'), findsNothing);
       expect(tester.takeException(), isNull, reason: 'no overflow');
+    });
+
+    // RESTORE PURCHASE is the one row here that gives something back rather than taking it away,
+    // and it is conditional: a build with no store key cannot sell and so has nothing to restore.
+    // Showing it there would offer a recovery that can only ever report "no purchase found".
+    testWidgets('RESTORE PURCHASE is absent in a build that cannot sell', (tester) async {
+      await _pumpSettings(tester);
+
+      expect(Entitlement.purchasingAvailable, isFalse, reason: 'no --dart-define under flutter test');
+      expect(find.byKey(const Key('settings_restore_purchase')), findsNothing);
     });
 
     // ABOUT is reachable without ever visiting a router screen, so the credentials are asked for

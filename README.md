@@ -47,6 +47,7 @@
   - [8.3. Storage access](#83-storage-access)
     - [8.3.1. Write external storage (android.permission.WRITE\_EXTERNAL\_STORAGE)](#831-write-external-storage-androidpermissionwrite_external_storage)
     - [8.3.2. Read external storage (android.permission.READ\_EXTERNAL\_STORAGE)](#832-read-external-storage-androidpermissionread_external_storage)
+  - [8.4. Billing (com.android.vending.BILLING)](#84-billing-comandroidvendingbilling)
 - [9. Security](#9-security)
   - [9.1. How to check the watchdog script yourself](#91-how-to-check-the-watchdog-script-yourself)
 - [10. Privacy](#10-privacy)
@@ -651,6 +652,16 @@ The application can export generated WG configuration files to the device.
 
 - used only on older Android versions where required by the operating system
 - allows the application to verify exported configuration files
+
+### 8.4. Billing (com.android.vending.BILLING)
+
+Required to offer the one-off in-app purchase through Google Play.
+
+- it is a normal permission: nothing is requested at runtime and no dialog appears
+- it grants no access to your device, your files or your network
+- payment is handled entirely by Google Play. The app never sees a card number, and no payment
+  detail reaches this app or its developer
+- the app asks Google Play whether this installation holds the purchase, and nothing else
 
 ---
 

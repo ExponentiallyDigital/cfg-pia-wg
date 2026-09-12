@@ -70,10 +70,21 @@ String appVersionLabel = '';
 /// Merlin runs cron entries from services-start; stock has no equivalent, so the app replaces an
 /// unused init script that the firmware already executes at boot and on firewall restart.
 const String kServicesStartPath = '/jffs/scripts/services-start';
-const String kS50Path = '/opt/etc/init.d/S50downloadmaster';
+/// The directory stock runs at boot, and the whole of the app's boot persistence on that firmware.
+///
+/// It exists because Download Master was installed. Without it a watchdog's cron entries do not
+/// survive a reboot, so its absence is a precondition failure rather than a runtime one.
+const String kStockBootDir = '/opt/etc/init.d';
+
+const String kS50Path = '$kStockBootDir/S50downloadmaster';
+
+/// Shown when stock has no [kStockBootDir]. Names the cause in the user's terms rather than the
+/// directory: nobody installs Download Master for its own sake, and "/opt/etc/init.d is missing"
+/// sends them looking in the wrong place.
+const String kBootDirMissingMessage = 'Download Master is not installed on this router. The watchdog needs it so its schedule survives a reboot - without it the watchdog would stop at the next power cut and say nothing. See the README, Prerequisites.';
 
 /// The sibling init script, replaced by a do-nothing stub - see [kS50AsusLighttpdTemplate].
-const String kS50LighttpdPath = '/opt/etc/init.d/S50asuslighttpd';
+const String kS50LighttpdPath = '$kStockBootDir/S50asuslighttpd';
 
 /// Where an original init script is kept before the app replaces it. The uninstall feature
 /// renames these back, so a router can be returned to how it was found.

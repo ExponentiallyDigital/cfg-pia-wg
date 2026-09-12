@@ -3,6 +3,7 @@
 # Triggers on git tag pushes matching "v*" (e.g. v0.7.06)
 # =================================================================
 name: "Build and release"
+run-name: "Release - ${{ github.event_name }} - ${{ github.ref_name }}"
 
 on:
   push:
@@ -135,20 +136,33 @@ jobs:
       - name: Build release assets
         env:
           BUILD_APK: ${{ inputs.build_apk }}
+          REVENUECAT_ANDROID_KEY: ${{ secrets.REVENUECAT_ANDROID_KEY }}
         run: |
           TAG="${{ steps.tag.outputs.val }}"
           flutter pub get --enforce-lockfile
           dart run flutter_launcher_icons
 
+          # The Play build MUST carry the RevenueCat key. Without it the app cannot ask who has
+          # paid, so it withholds nothing and the paid features ship to everyone - silently, and
+          # looking entirely normal. Fail here instead, where it is one line in a log.
+          if [ -z "$REVENUECAT_ANDROID_KEY" ]; then
+            echo "::error::REVENUECAT_ANDROID_KEY is empty. The Play build would ship unlocked to everyone."
+            exit 1
+          fi
+
           # 1. Always build App Bundle (.aab)
-          flutter build appbundle --release
+          flutter build appbundle --release --dart-define=REVENUECAT_ANDROID_KEY="$REVENUECAT_ANDROID_KEY"
           mv build/app/outputs/bundle/release/cfg_pia_wg-release.aab \
              build/cfg-pia-wg-${TAG}_google-play-store.aab
 
           # 2. Conditionally build release/debug APKs if requested via workflow inputs
+          # Opt-in, and never attached to the GitHub release - the release carries the SBOM and the
+          # licence manifest and nothing else. These APKs are a diagnostic copy of what went to
+          # Play, so they get the same key: a keyless one would behave differently from the
+          # artifact it is meant to represent.
           if [ "$BUILD_APK" = "release-apk" ]; then
             echo "Building Release APK..."
-            flutter build apk --release
+            flutter build apk --release --dart-define=REVENUECAT_ANDROID_KEY="$REVENUECAT_ANDROID_KEY"
             mv build/app/outputs/flutter-apk/app-release.apk \
                build/cfg-pia-wg-${TAG}_release.apk
 
@@ -196,101 +210,130 @@ jobs:
           GH_RELEASE_NAME="v${CLEAN_VER} (build ${VERSION_CODE})"
           echo "gh_release_name=$GH_RELEASE_NAME" >> $GITHUB_OUTPUT
 
-          # Create distribution directory for Google Play Store release notes
+          # The note itself is written by the next step, out of CHANGELOG.md.
           mkdir -p distribution/whatsnew
-          cat <<'EOF' > distribution/whatsnew/whatsnew-en-AU
-          Please see https://exponentiallydigital.com/cfg-pia-wg/changelog
-          EOF
 
       # ------------------------------------------------------------
-      # Step I: Parse unreleased blocks from CHANGELOG.md & sort items
+      # Step I: Both release notes, out of this release's CHANGELOG block
       # ------------------------------------------------------------
-      - name: Parse and sort release notes from CHANGELOG.md
+      - name: Read release notes from CHANGELOG.md
         id: changelog_parser
         env:
           TARGET_TAG: ${{ steps.tag.outputs.val }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         shell: python
         run: |
-          import re
+          # ONE source, TWO audiences.
+          #
+          # The block for the tag being released produces both notes. Everything in it except the
+          # ```play fence becomes the GitHub release body, for someone reading a repository. The
+          # contents of that fence become the Google Play "what's new", for someone deciding whether
+          # to tap Update.
+          #
+          # They cannot be the same text. Play allows 500 Unicode characters per language, renders
+          # NO markdown, and does not make a URL tappable - so a developer preamble pasted there
+          # shows literal asterisks and a dead link, truncated mid-word. Writing both in the same
+          # CHANGELOG block is what keeps them in step without a second trip to Play Console.
+          #
+          # Neither is sorted. The order a block is written in carries meaning.
           import os
-          import json
-          import urllib.request
+          import re
+          import sys
+
+          PLAY_LIMIT = 500          # Unicode characters per language, per Google's own docs
+          FALLBACK = "Please see https://exponentiallydigital.com/cfg-pia-wg/changelog"
 
           changelog_path = "CHANGELOG.md"
           target_tag = os.environ.get("TARGET_TAG", "")
-          repo = os.environ.get("GITHUB_REPOSITORY", "")
-          token = os.environ.get("GITHUB_TOKEN", "")
 
-          # Helper function checking if a tag is already associated with a published release
-          def is_already_released(tag_name):
-              if not repo or not token or not tag_name:
-                  return False
-              url = f"https://api.github.com/repos/{repo}/releases/tags/{tag_name}"
-              req = urllib.request.Request(url, headers={
-                  "Authorization": f"Bearer {token}",
-                  "Accept": "application/vnd.github+json",
-                  "User-Agent": "GitHub-Actions-Release-Script"
-              })
-              try:
-                  with urllib.request.urlopen(req) as response:
-                      return response.status == 200
-              except Exception:
-                  return False
+          # Anchored to a HEADING, and matched on the title rather than its number. The number has
+          # already changed once - the section became 1.3 when the WIP list was added above it - and
+          # the old parser looked for "1.2.", matched nothing, and silently published a release
+          # whose entire body was "Release v0.8.70". The table of contents carries the same words
+          # higher up the file, which is what the "#" test guards against.
+          def is_history_heading(line):
+              return line.startswith("#") and "Implemented - chronological change history" in line
 
-          header_heading = "1.2. Implemented - chronological change history"
-          version_header_re = re.compile(r'^\d{4}-\d{2}-\d{2}\s+(v\d+\.\d+\.\d+.*)')
+          version_header_re = re.compile(r"^\d{4}-\d{2}-\d{2}\s+v\d+\.\d+\.\d+")
 
-          blocks = []
-          current_block = None
-          in_target_section = False
+          gh_lines = []
+          play_lines = []
+          header = ""
+          in_history = False
+          in_block = False
+          in_play = False
 
           if os.path.exists(changelog_path):
               with open(changelog_path, "r", encoding="utf-8") as f:
-                  for line in f:
-                      stripped = line.strip()
+                  for raw in f:
+                      line = raw.rstrip()
 
-                      # 1. Scan down until reaching history section header
-                      if header_heading in stripped:
-                          in_target_section = True
+                      if not in_history:
+                          in_history = is_history_heading(line)
                           continue
 
-                      if not in_target_section:
+                      if version_header_re.match(line.strip()):
+                          if in_block:
+                              break          # the next release down; this block is complete
+                          found = re.search(r"v\d+\.\d+\.\d+", line)
+                          if found and found.group(0) == target_tag:
+                              in_block = True
+                              header = line.strip()
                           continue
 
-                      # 2. Match version release header (e.g. 2026-08-03 v0.7.06 build 366)
-                      m = version_header_re.match(stripped)
-                      if m:
-                          tag_match = re.search(r'v\d+\.\d+\.\d+', stripped)
-                          extracted_tag = tag_match.group(0) if tag_match else ""
-
-                          # Stop scanning if reaching an older release that is ALREADY published
-                          if current_block and extracted_tag and extracted_tag != target_tag:
-                              if is_already_released(extracted_tag):
-                                  break
-
-                          current_block = {"header": stripped, "lines": []}
-                          blocks.append(current_block)
+                      if not in_block:
                           continue
 
-                      # 3. Collect change log items under active block
-                      if current_block is not None and stripped:
-                          current_block["lines"].append(stripped)
+                      if not in_play and line.strip().startswith("```play"):
+                          in_play = True
+                          continue
+                      if in_play:
+                          if line.strip().startswith("```"):
+                              in_play = False
+                          else:
+                              play_lines.append(line)
+                          continue
 
-          # 4. Sort contents alphabetically within each individual release block
-          formatted_output = []
-          for block in blocks:
-              block["lines"].sort()
-              block_text = block["header"] + "\n\n" + "\n".join(block["lines"])
-              formatted_output.append(block_text)
+                      gh_lines.append(line)
 
-          final_notes = "\n\n".join(formatted_output) if formatted_output else f"Release {target_tag}"
+          while gh_lines and not gh_lines[-1].strip():
+              gh_lines.pop()
+
+          # ---- GitHub release body ----
+          if header:
+              notes = header + "\n\n" + "\n".join(gh_lines).strip()
+          else:
+              # Loud rather than quiet. A release with no notes is a mistake, and the old fallback
+              # of a bare "Release <tag>" made it look deliberate.
+              notes = (
+                  "Release " + target_tag + "\n\n"
+                  "> No CHANGELOG block was found for this tag. Check that CHANGELOG.md carries a "
+                  "`<date> " + target_tag + " build <n> - <title>` heading under the implemented history."
+              )
+              print("::warning::no CHANGELOG block found for " + target_tag)
 
           with open("github_release_notes.txt", "w", encoding="utf-8") as f:
-              f.write(final_notes)
+              f.write(notes)
 
-      # ------------------------------------------------------------
+          # ---- Google Play what's new ----
+          play = "\n".join(play_lines).strip()
+          if not play:
+              play = FALLBACK
+              print("::warning::no ```play block in the CHANGELOG entry for " + target_tag +
+                    " - Play gets the changelog link instead of real notes")
+          elif len(play) > PLAY_LIMIT:
+              # Caught HERE rather than by Play rejecting the upload, or worse, silently truncating.
+              print("::error::the ```play note for " + target_tag + " is " + str(len(play)) +
+                    " characters; Google Play allows " + str(PLAY_LIMIT))
+              sys.exit(1)
+
+          with open("distribution/whatsnew/whatsnew-en-AU", "w", encoding="utf-8") as f:
+              f.write(play + "\n")
+
+          print("--- GitHub ---")
+          print(notes)
+          print("--- Google Play (" + str(len(play)) + "/" + str(PLAY_LIMIT) + ") ---")
+          print(play)
+
       # Step J: Deploy App Bundle (.aab) to Google Play Internal Testing Track
       # ------------------------------------------------------------
       - name: Upload release to Google Play Store

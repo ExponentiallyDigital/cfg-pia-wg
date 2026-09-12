@@ -35,6 +35,7 @@ import 'app_scaffold.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
 import 'log_buttons.dart';
+import 'paywall.dart';
 import 'region_picker_sheet.dart';
 
 /// Shown in the DIALOG when an ENABLE fails, and deliberately not written to the app log: an
@@ -578,6 +579,18 @@ class _SlotModalState extends State<SlotModal> {
     // and gating on the flag alone would strand a user with a running tunnel and a greyed DISABLE.
     final stoppable = enabled || (info != null && _slots.activeSlots.contains(info.index));
 
+    // Gated is CREATE or CHANGE; free is REMOVE. A locked user can always undo, never build.
+    //
+    // An action that is ALREADY null stays null: it is greyed for a reason of its own - nothing to
+    // stop, no slot selected - and turning that into a sales pitch would be answering a question
+    // the user did not ask. The paywall is only ever the answer to a deliberate tap.
+    VoidCallback? gated(String pitch, VoidCallback? action) {
+      if (action == null || _c.isUnlocked) return action;
+      return () async {
+        if (await Paywall.show(context, _c, pitch: pitch) && mounted) action();
+      };
+    }
+
     Widget btn(String key, String label, VoidCallback? onTap) => Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: SizedBox(
@@ -588,11 +601,12 @@ class _SlotModalState extends State<SlotModal> {
 
     if (widget.mode == SlotModalMode.manage) {
       return [
-        btn('slot_create', 'CREATE', info == null ? null : _create),
+        btn('slot_create', 'CREATE', gated(Pitch.create, info == null ? null : _create)),
         // ENABLE is greyed when the slot is already active (only one interface active at a time).
-        btn('slot_enable', 'ENABLE', (hasDesc && !enabled) ? _enableManage : null),
-        btn('slot_edit', 'EDIT', hasDesc ? _editManage : null),
-        // Greyed once the slot is down - nothing left to stop.
+        btn('slot_enable', 'ENABLE', gated(Pitch.enable, (hasDesc && !enabled) ? _enableManage : null)),
+        btn('slot_edit', 'EDIT', gated(Pitch.edit, hasDesc ? _editManage : null)),
+        // DISABLE and DELETE are free even without the entitlement. Greyed once the slot is down -
+        // nothing left to stop.
         btn('slot_disable', 'DISABLE', (hasDesc && stoppable) ? _disableManage : null),
         btn('slot_delete', 'DELETE', hasDesc ? _deleteManage : null),
       ];
@@ -604,8 +618,10 @@ class _SlotModalState extends State<SlotModal> {
     // keeps the settings, so ENABLE only lights up for a slot that has settings but no schedule.
     final wdConfigured = info?.watchdogConfigured ?? false;
     return [
-      btn('slot_edit', 'CREATE/EDIT', info != null ? _editWatchdog : null),
-      btn('slot_wd_enable', 'ENABLE', (hasDesc && wdConfigured && !wdActive) ? _enableWatchdog : null),
+      btn('slot_edit', 'CREATE/EDIT', gated(Pitch.watchdog, info != null ? _editWatchdog : null)),
+      btn('slot_wd_enable', 'ENABLE',
+          gated(Pitch.watchdogEnable, (hasDesc && wdConfigured && !wdActive) ? _enableWatchdog : null)),
+      // Stopping and removing stay free: never trap a script on someone's router behind a purchase.
       btn('slot_wd_disable', 'DISABLE', (hasDesc && wdActive) ? _disableWatchdog : null),
       btn('slot_delete', 'DELETE', hasDesc ? _deleteWatchdog : null),
       // Configured is enough: /tmp/watchdog_wgcN.log outlives the schedule, and the log of the

@@ -1,9 +1,13 @@
 name: "Quality & security"
+run-name: "Quality & security - ${{ github.event_name }} - ${{ github.ref_name }}"
 
 on:
   push:
     branches:
-      - main
+      # NOT main. A commit reaching main came through a pull request, which is checked below, and
+      # anything being released is checked again by release.yml before it publishes - so scanning
+      # the merge commit as well was the same code a third time. The cost of that was real: three
+      # runs of fifteen minutes each is what drove development off main in the first place.
       - "feature/**"
       - "fix/**"
     # REMOVED: tags: ['v*'] — release.yaml handles tag triggers via workflow_call
@@ -14,6 +18,13 @@ on:
     - cron: "25 17 * * 1"
   workflow_call:
   workflow_dispatch:
+
+# One run per ref at a time. Pushing three times in a minute used to start three fifteen-minute
+# runs that all scanned code already superseded, which is how the CPU-minute limit was reached in
+# the first place. The newest push is the only one whose answer anyone wants.
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

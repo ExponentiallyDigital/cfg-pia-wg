@@ -28,8 +28,10 @@
 - [10. Settings](#settings)
 - [11. About](#about)
 - [12. Credentials and exit](#credentials-and-exit)
-- [13. Firmware coverage](#firmware-coverage)
-- [14. Examining nvram settings](#examining-nvram-settings)
+- [13. Locked, with no entitlement](#locked-with-no-entitlement)
+- [14. Buying and restoring](#buying-and-restoring)
+- [15. Firmware coverage](#firmware-coverage)
+- [16. Examining nvram settings](#examining-nvram-settings)
 
 ## 1. <a name='before-you-start'></a>Before you start
 
@@ -72,7 +74,7 @@ perfect the whole time. Detail in
 - all five buttons navigate; HOME and the back key return here
 - "how to use this app" opens the README section
 - "add a Play Store app review" opens the Play listing
-- PAYPAL and PATREON open
+- there is no donation block: the PAYPAL and PATREON buttons went when the app gained a price
 
 ---
 
@@ -768,7 +770,79 @@ wg show interfaces                        # UNCHANGED - the tunnels are not ours
 
 ---
 
-## 13. <a name='firmware-coverage'></a>Firmware coverage
+## 13. <a name='locked-with-no-entitlement'></a>Locked, with no entitlement
+
+Until the store is wired up, force this state with `Entitlement.debugSetUnlocked(false)`. Everything
+below is what someone who has not paid should see, and the point of each check is that the app stays
+useful and honest rather than becoming a wall.
+
+- standalone generation works end to end, exactly as it does for a buyer
+- MANAGE, WATCHDOG and DEVICE ASSIGNMENT all open and show the real router
+- on stock with `jq` or `mailsend-go` missing, there is **no** offer to install them - the paywall is
+  what a locked user meets, not an errand on their own hardware
+- CREATE, ENABLE, EDIT and the watchdog's CREATE/EDIT and ENABLE open the paywall, and nothing
+  reaches the router
+- DISABLE, DELETE and VIEW LOG work, on both screens. Never trap a running tunnel or a deployed
+  script behind a purchase
+- on device assignment, browsing and staging are free and the tally counts up; APPLY opens the
+  paywall, writes nothing, and closing it leaves the staged changes where they were
+- a button greyed for its own reasons stays greyed. Selling something that would not have worked is
+  the fastest way to earn a refund
+- the paywall never appears on launch or on entering a screen, only on a tap
+- with no store reachable the buy button reads "Not available right now" and is disabled
+
+---
+
+## 14. <a name='buying-and-restoring'></a>Buying and restoring
+
+Needs a build that went up to a track, carrying the store key. **`flutter run` cannot test any of
+this**: Google Play refuses purchases from an artifact it did not distribute, and a local build has
+no key anyway, so it is unlocked and never shows a paywall. That is the designed behaviour, not a
+broken test setup.
+
+Before starting, in Play Console: the tester account is on the **licence testers** list AND opted in
+to the **testing track**. Two separate lists. Miss the second and the purchase charges real money.
+
+The buy:
+
+- install from the track, on an account that has never bought it
+- every gated control opens the paywall: CREATE, ENABLE, EDIT, the watchdog's CREATE/EDIT and
+  ENABLE, and APPLY on device assignment
+- the paywall opens on the TAP, never on launch and never on entering a screen
+- the price on the button is the store's own, in the tester's currency, not a hardcoded number
+- NOT NOW returns to exactly where you were, with any staged device changes still staged
+- buy it. Google's sheet says "test card, always approves"
+- **every gated control is live the moment you land back**, with no restart and no revisit. The
+  entitlement is reactive; if a screen is still greyed, that is the bug this is looking for
+- the log shows no warning about the store
+
+The refund, which is the trial:
+
+- refund the order in Play Console, then wait for the notification to reach RevenueCat
+- the app relocks **without being reinstalled**. If it does not, real-time developer notifications
+  are not wired up (step 23 of the plan) and the refund window cannot be used as a trial
+
+The restore, on a second device or after a reinstall:
+
+- uninstall and reinstall from the track. `android:allowBackup="false"` means nothing local survives
+- it should come back **already unlocked**, with nothing pressed: the launch path calls
+  `syncPurchases`, which asks Play what this account owns
+- if it does not, SETTINGS -> RESTORE PURCHASE. Expect "Purchase restored. Everything is unlocked."
+- on a Google account that has NOT bought it, the same button says "No purchase found on this
+  Google account." That is a normal answer, not an error
+- **no operating-system sign-in prompt may appear at launch.** One appearing means something is
+  calling restore programmatically, which RevenueCat's guidance forbids
+
+Offline:
+
+- aeroplane mode, having already bought: still unlocked. The SDK's cache covers this
+- aeroplane mode on a fresh install that has never bought: locked, and the paywall button reads
+  "Not available right now" and is disabled. Locked is correct - there is no evidence of a purchase,
+  and assuming one would hand the app to anyone who turns off their wifi
+
+---
+
+## 15. <a name='firmware-coverage'></a>Firmware coverage
 
 Repeat [Manage](#manage), [Watchdog](#watchdog) and [App log](#app-log) on the other firmware.
 
@@ -779,7 +853,7 @@ and ships `jq` already.
 
 ---
 
-## 14. <a name='examining-nvram-settings'></a>Examining nvram settings
+## 16. <a name='examining-nvram-settings'></a>Examining nvram settings
 
 I've used the below to examine WG on ASUS routers.
 
