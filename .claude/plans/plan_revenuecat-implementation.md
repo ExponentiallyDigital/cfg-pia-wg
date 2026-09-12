@@ -127,11 +127,35 @@ raise it if conversion says to.**
 Google takes 15% below USD 1M/year, so the take is 85%. Let Play convert regionally rather than
 fixing one price.
 
-**Decided 2026-09-12: USD 4.99 as the entry point**, taken as a starting position rather than a
-final answer. Two of the three arguments point low - the small market, and adoption being worth more
-than revenue per head on a project that is an exploration rather than a living. The third, the cost
-of self-building, points high and is the reason the headroom exists. Raising it later costs nothing;
-cutting it later tells everyone who paid that they were wrong to. Start here and watch.
+**Decided 2026-09-12: USD 6.99**, which lands near AU$9.99, with Play converting the rest.
+
+It moved up from 4.99 during the same conversation, for two reasons. The cost of self-building was
+badly underestimated in the first draft - most of a day, not an hour - so there is headroom. And the
+maintainer, who is squarely in the target market, would buy at AU$10 "without hesitation", which
+means the threshold is above that rather than at it. Creator bias runs one way and is worth
+discounting for, but being your own customer is better evidence than a guess.
+
+The "start low and raise later" argument was dropped on inspection. It assumes a feedback loop that
+will not exist: a trickle of installs in a niche never produces a signal clean enough to justify a
+price change, so deferring the decision only means guessing again later with no better information.
+Pick the number you believe in now.
+
+### What the market actually looks like
+
+Two calls for beta testers in 2026-07, on r/PrivateInternetAccess and r/WireGuard, drew **7,000
+combined views and zero testers**.
+
+That is worth reading carefully rather than gloomily. "Beta tester" is a far higher-friction ask
+than "buy a finished thing for seven dollars": it wants an unfinished app, the exact hardware, and a
+continuing relationship with a stranger. Zero on that funnel does not predict zero sales. Both posts
+also predate stock firmware support, and **most ASUS owners run stock**, so the addressable hardware
+has grown a long way since the measurement.
+
+What it does say is that **discovery is the binding constraint, not price.** Seven thousand people
+saw it and none acted, which is not a number problem. Concretely: the Play listing, its screenshots
+and its keywords are worth more effort than any pricing decision, and a post that says "here is a
+finished thing that fixes X" will do better than one asking for help testing. The router-enthusiast
+forums are a better-targeted audience than either subreddit.
 
 ---
 
