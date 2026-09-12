@@ -3,6 +3,7 @@
 # Triggers on git tag pushes matching "v*" (e.g. v0.7.06)
 # =================================================================
 name: "Build and release"
+run-name: "Release - ${{ github.event_name }} - ${{ github.ref_name }}"
 
 on:
   push:

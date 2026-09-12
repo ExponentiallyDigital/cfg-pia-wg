@@ -3,6 +3,7 @@
 # Trigger manually via Actions tab after verifying build on physical devices
 # ==========================================================================
 name: "Promote release"
+run-name: "Promote - ${{ inputs.source_track }} to ${{ inputs.target_track }}"
 
 on:
   workflow_dispatch:

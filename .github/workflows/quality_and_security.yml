@@ -1,9 +1,13 @@
 name: "Quality & security"
+run-name: "Quality & security - ${{ github.event_name }} - ${{ github.ref_name }}"
 
 on:
   push:
     branches:
-      - main
+      # NOT main. A commit reaching main came through a pull request, which is checked below, and
+      # anything being released is checked again by release.yml before it publishes - so scanning
+      # the merge commit as well was the same code a third time. The cost of that was real: three
+      # runs of fifteen minutes each is what drove development off main in the first place.
       - "feature/**"
       - "fix/**"
     # REMOVED: tags: ['v*'] — release.yaml handles tag triggers via workflow_call
