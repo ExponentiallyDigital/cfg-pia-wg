@@ -20,6 +20,16 @@ returns `true` for everyone - and nothing else in the app knows about any of thi
 Modelled as **one non-consumable product**, in **one offering**, attached to **one entitlement**.
 No subscriptions, no tiers, no login. Android now; iOS later on the same entitlement.
 
+**Product `lifetime_unlock`. Entitlement `router_features`.** Two names for what feels like one
+thing, and the difference is worth holding on to: a **product** is what Google sells and takes money
+for, an **entitlement** is what the app checks. They are separate so a second product - an iOS
+purchase, a bundle, a promotional grant - can unlock the same capability without a line of code
+changing. **The app never asks about a product id, only about the entitlement.**
+
+The entitlement is named after what the money buys, so it reads correctly where it is used: does
+this customer have router features. Get these two out of step and the failure is silent - a paying
+customer stays locked and it looks like a purchase problem.
+
 ---
 
 ## 2. Decided already - do not relitigate
@@ -261,7 +271,9 @@ Menu labels move; the nouns are stable. Do these in order, because two of them h
 
 1. **Payments profile - START THIS FIRST.** Selling anything needs a Google payments profile with identity and bank details verified. This is the long pole: it can take days, and nothing below can be tested until it clears. If the account has only ever published free apps, assume it is not set up.
 2. **Create the in-app product.** Monetise, then Products, then In-app products.
-   - Product ID `cfg-pia-wg_pro_unlock`. **Permanent.** It cannot be changed or reused later, even if the product is deleted. Choose once.
+   - Product ID `lifetime_unlock`. **Permanent** - it cannot be changed or reused later, even if the product is deleted.
+   - Google's rule: start with a number or lowercase letter, and only numbers, lowercase letters, underscores and periods after that. **No hyphens.** The first name considered here was `cfg-pia-wg_pro_unlock`, which Play would have rejected.
+   - No app-name prefix: the product already lives inside the package and RevenueCat scopes it by project, so a prefix repeats what everything around it already knows. "Lifetime" rather than "pro" because it names the MODEL, which is the thing being sold - bought once, kept, not a subscription.
    - Name and description are shown in Google's own purchase sheet, so write them for a buyer.
    - Price USD 6.99 as the base; let Play convert the rest and check the AU price lands near 9.99.
    - **Activate it.** New products are inactive and a purchase against an inactive product fails with an unhelpful error.
@@ -276,8 +288,8 @@ Menu labels move; the nouns are stable. Do these in order, because two of them h
 1. Create an account and a **Project**.
 2. **Add an app** to it: platform Android, package name `com.exponentiallydigital.pia_wireguard_cfga` exactly, and upload the Play service account JSON from step 6 above.
 3. **Copy the public Android SDK key.** It starts `goog_`. This is the one value the code needs, and the only thing blocking implementation.
-4. **Create the product** `cfg-pia-wg_pro_unlock`, or import it from Play. **Type: non-consumable.** This is the single most expensive setting to get wrong - see section 4 - and it is only discovered when a real customer changes phone.
-5. **Create the entitlement** `pro_feature` and attach the product to it.
+4. **Create the product** `lifetime_unlock`, or import it from Play. **Type: non-consumable.** This is the single most expensive setting to get wrong - see section 4 - and it is only discovered when a real customer changes phone.
+5. **Create the entitlement** `router_features` and attach the product to it.
 6. **Create the default offering** with one package containing the product.
 7. **Project settings, General: confirm restore behaviour is "Transfer to new App User ID"**, which is the default. Anonymous restore depends on it.
 8. **Copy the Pub/Sub topic** back into Play Console, closing the loop from step 7 above.
@@ -413,7 +425,7 @@ await Purchases.configure(config);
 Future<bool> hasPro() async {
   try {
     final info = await Purchases.getCustomerInfo();
-    return info.entitlements.active.containsKey('pro');
+    return info.entitlements.active.containsKey('router_features');
   } catch (_) {
     return false; // no cache yet (brand-new install, offline)
   }
@@ -431,7 +443,7 @@ final package = offerings.current?.availablePackages.first;
 if (package != null) {
   try {
     final info = await Purchases.purchasePackage(package);
-    final unlocked = info.entitlements.active.containsKey('pro');
+    final unlocked = info.entitlements.active.containsKey('router_features');
     // reveal the paid function
   } on PlatformException catch (e) {
     final code = PurchasesErrorHelper.getErrorCode(e);
@@ -450,7 +462,7 @@ Purchase needs connectivity once; show a "connect to complete purchase" state if
 Future<void> restore() async {
   try {
     final info = await Purchases.restorePurchases();
-    final unlocked = info.entitlements.active.containsKey('pro');
+    final unlocked = info.entitlements.active.containsKey('router_features');
     // update UI
   } on PlatformException catch (e) {
     // show error
