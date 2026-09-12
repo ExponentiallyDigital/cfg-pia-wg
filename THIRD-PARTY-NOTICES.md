@@ -26,6 +26,7 @@ The packages below remain subject to their respective upstream licences. The ver
 | [`cross_file`](https://pub.dev/packages/cross_file) | 0.3.5+4 | [BSD-3-Clause](https://pub.dev/packages/cross_file/license) | transitive |
 | [`crypto`](https://pub.dev/packages/crypto) | 3.0.7 | [BSD-3-Clause](https://pub.dev/packages/crypto/license) | transitive |
 | [`dartssh2`](https://pub.dev/packages/dartssh2) | 2.22.5 | [MIT](https://pub.dev/packages/dartssh2/license) | direct |
+| [`equatable`](https://pub.dev/packages/equatable) | 2.1.0 | [MIT](https://pub.dev/packages/equatable/license) | transitive |
 | [`fake_async`](https://pub.dev/packages/fake_async) | 1.3.3 | [BSD-3-Clause](https://pub.dev/packages/fake_async/license) | transitive |
 | [`ffi`](https://pub.dev/packages/ffi) | 2.2.0 | [BSD-3-Clause](https://pub.dev/packages/ffi/license) | transitive |
 | [`ffi_leak_tracker`](https://pub.dev/packages/ffi_leak_tracker) | 0.1.2 | [BSD-3-Clause](https://pub.dev/packages/ffi_leak_tracker/license) | transitive |
@@ -68,6 +69,7 @@ The packages below remain subject to their respective upstream licences. The ver
 | [`pointycastle`](https://pub.dev/packages/pointycastle) | 4.0.0 | [MIT](https://pub.dev/packages/pointycastle/license) | transitive |
 | [`posix`](https://pub.dev/packages/posix) | 6.5.2 | [BSD-3-Clause](https://pub.dev/packages/posix/license) | transitive |
 | [`pub_semver`](https://pub.dev/packages/pub_semver) | 2.2.0 | [BSD-3-Clause](https://pub.dev/packages/pub_semver/license) | transitive |
+| [`purchases_flutter`](https://pub.dev/packages/purchases_flutter) | 10.12.0 | [MIT](https://pub.dev/packages/purchases_flutter/license) | direct |
 | [`record_use`](https://pub.dev/packages/record_use) | 0.6.0 | [BSD-3-Clause](https://pub.dev/packages/record_use/license) | transitive |
 | [`share_plus`](https://pub.dev/packages/share_plus) | 13.3.0 | [BSD-3-Clause](https://pub.dev/packages/share_plus/license) | direct |
 | [`share_plus_platform_interface`](https://pub.dev/packages/share_plus_platform_interface) | 7.2.0 | [BSD-3-Clause](https://pub.dev/packages/share_plus_platform_interface/license) | transitive |

@@ -262,71 +262,178 @@ its place - not before.
 
 ## 5. Build order
 
-One sequence. Each step says what it touches in this codebase. Steps 1 and 2 are console work with
-no code, and they have to be first: the SDK cannot be tested against products that do not exist.
+The console work is one sequence across three consoles, and it is easy to lose your place in it because you keep going back to Play. So it is written as a single run of numbered steps: do them in order, top to bottom, and treat the console names as headings telling you where to click rather than as sections to work through separately.
+
+**WAIT** marks the place where you stop and let Google catch up. Nothing after it works until it clears, so that is a coffee, not a bug.
+
+Everything after step 25 is code, and none of it needs you.
 
 ### 1. Google Play Console
 
-Menu labels move; the nouns are stable. Do these in order, because two of them have waiting time.
+**Play Console - set the product up**
 
-1. **Payments profile - START THIS FIRST.** Selling anything needs a Google payments profile with identity and bank details verified. This is the long pole: it can take days, and nothing below can be tested until it clears. If the account has only ever published free apps, assume it is not set up.
-2. **Create the in-app product.** Monetise, then Products, then In-app products.
-   - Product ID `lifetime_unlock`. **Permanent** - it cannot be changed or reused later, even if the product is deleted.
-   - Google's rule: start with a number or lowercase letter, and only numbers, lowercase letters, underscores and periods after that. **No hyphens.** The first name considered here was `cfg-pia-wg_pro_unlock`, which Play would have rejected.
-   - No app-name prefix: the product already lives inside the package and RevenueCat scopes it by project, so a prefix repeats what everything around it already knows. "Lifetime" rather than "pro" because it names the MODEL, which is the thing being sold - bought once, kept, not a subscription.
-   - Name and description are shown in Google's own purchase sheet, so write them for a buyer.
-   - Price USD 6.99 as the base; let Play convert the rest and check the AU price lands near 9.99.
-   - **Activate it.** New products are inactive and a purchase against an inactive product fails with an unhelpful error.
-3. **A release must exist on a track** before any purchase works. The internal track already has one.
-4. **Licence testing.** Setup, then Licence testing, and add the tester Gmail accounts. Testers get Google's test cards, purchases cost nothing and can be repeated. **A licence tester also has to be opted in to the testing track** - the two lists are separate and forgetting the second is the usual cause of "it just charges me".
-5. **Data safety form.** Must declare what RevenueCat sees: a pseudonymous app user id, purchase history, and device/diagnostic data. Store-rejection item, not a nicety. Keep it consistent with the wording in `SECURITY.md` and `README.md`.
-6. **Service account for RevenueCat.** A Google Cloud service account with Play Developer API access, granted permissions under Users and permissions in Play Console, then download the JSON key. **Google's own docs warn that permissions can take up to 24-48 hours to propagate**, so it may work only the following day. Do not spend an evening debugging it.
-7. **Real-time developer notifications.** RevenueCat gives a Pub/Sub topic name; paste it into Monetise, then Monetisation setup. **Not optional here**: without it a refund never reaches RevenueCat and the app stays unlocked, which is the whole mechanism behind using Play's refund window as the trial.
+1. [x] **Payments profile.** Identity and bank details verified. Days, not minutes, if it is not already done.
+2. [x] **Upload a build that links the billing library.** Any track, internal is fine. See "why this order" below - this is the step the plan originally got wrong.
+3. [x] **Monetise with Play, One-time products, create it.** Product ID `lifetime_unlock`, one buy purchase option, priced.
+4. [x] **Activate it.** New products are inactive, and buying an inactive product fails with an unhelpful error.
+
+**Google Cloud - create the identity**
+
+5. [x] **APIs and services, Enable APIs.** Enable **Google Play Android Developer API**.
+6. [x] Enable **Google Play Developer Reporting API**.
+7. [x] Enable **Cloud Pub/Sub API**. Needed later, at step 23.
+8. [x] **Create the service account**, and under IAM give it **Pub/Sub Editor** and **Monitoring Viewer**. Pub/Sub Admin only if Editor turns out to be too little.
+    - **Pub/Sub Editor, NOT Pub/Sub Lite Editor.** Two different products with adjacent entries in the role picker, and Lite is a separate service that Google has since retired. Picked by mistake here on 2026-09-12; it grants nothing RevenueCat can use and the error message names only "the Google Cloud Pub/Sub API", which reads like the API is not enabled rather than like the wrong role.
+    - **If "Connect to Google" then says it cannot CREATE a topic, escalate to Pub/Sub Admin.** RevenueCat's own docs offer that as the remedy for a permission error, and creating a topic is more than viewing one. Check two things first: that the Cloud Pub/Sub API is enabled on the SAME project the service account belongs to, and that a few minutes have passed - IAM is usually quick but not instant.
+    - **Leave it on Admin afterwards.** Tempting to step back to Editor once the topic exists, but Editor already includes `pubsub.topics.create`, so creation alone should not have failed - which points at the other thing "Connect to Google" has to do: set the topic's IAM policy so Google's own notification account may publish to it. That needs Admin. Unproven, but it fits, and the cost of being wrong is one-sided: too little permission here means refund notifications stop arriving, in silence, and that notification is the entire mechanism behind treating Play's refund window as the trial. The account is dedicated to RevenueCat and scoped to a project holding one topic, so Admin on it is a small surface.
+    - Remove the **Pub/Sub Lite Editor** role if it is still attached. It grants nothing here and it is the thing that will confuse the next person reading the IAM list.
+    - **This is IAM and Admin, IAM, Grant access - NOT the Service Accounts page.** The role is granted on the PROJECT, with the service account as the principal. The Service Accounts page has its own permissions tab that controls who may act as the account, which is a different thing and does not grant it anything.
+    - The symptom of getting this wrong is precise and worth recognising: RevenueCat shows **Valid credentials** for Play and separately reports *"your Google service account credentials do not have permissions to access the Google Cloud Pub/Sub API"*. Play access working while Pub/Sub is refused means the invite at step 10 succeeded and the project-level IAM grant did not.
+9. [x] **Create a key, type JSON, download it.** This is a credential. It lives in a keysafe, never in this repo.
+
+**Play Console - let the identity in.** Creating the account granted it nothing. This is where access actually happens.
+
+10. [x] **Users and permissions, Invite new users.** The invitee is the `client_email` inside that JSON, ending `@<project>.iam.gserviceaccount.com`.
+11. [x] **Grant four permissions, all at ACCOUNT level:** *View app information and download bulk reports (read-only)*, *View financial data, orders and cancellation survey responses*, *Manage orders and subscriptions*, and *Manage store presence*. The last one is under Store presence and is the one people miss; in-app products need it.
+12. [x] **Edit and save any product description.** RevenueCat's documented nudge: it often validates the credentials immediately instead of overnight. **WAIT** - up to 36 hours otherwise. A user showing ACTIVE in Play Console means the invite landed, not that the API can use it yet.
 
 ### 2. RevenueCat dashboard
 
-1. Create an account and a **Project**.
-2. **Add an app** to it: platform Android, package name `com.exponentiallydigital.pia_wireguard_cfga` exactly, and upload the Play service account JSON from step 6 above.
-3. **Copy the public Android SDK key.** It starts `goog_`. This is the one value the code needs, and the only thing blocking implementation.
-4. **Create the product** `lifetime_unlock`, or import it from Play. **Type: non-consumable.** This is the single most expensive setting to get wrong - see section 4 - and it is only discovered when a real customer changes phone.
-5. **Create the entitlement** `router_features` and attach the product to it.
-6. **Create the default offering** with one package containing the product.
-7. **Project settings, General: confirm restore behaviour is "Transfer to new App User ID"**, which is the default. Anonymous restore depends on it.
-8. **Copy the Pub/Sub topic** back into Play Console, closing the loop from step 7 above.
+**RevenueCat - connect it up.** Renumbered 2026-09-12 to match the order RevenueCat's own interface asks for things, which is not the order this plan first guessed.
 
-**When you have the `goog_` key, implementation is unblocked.** Everything before that point can be built and tested against a faked entitlement.
+13. [x] **Create an account and a Project.**
+14. [x] **Create the entitlement** `router_features`. The spelling matters: the app checks this exact string. RevenueCat asks for the entitlement before a product exists, so attaching one happens later, at step 19.
+15. [x] **Add a new Play Store configuration.** RevenueCat defaults this to a test sandbox.
+16. [x] **Add an app.** Platform Android, package name `com.exponentiallydigital.pia_wireguard_cfga` exactly, and upload the JSON from step 9.
+17. [x] **Copy the public Android SDK key.** It starts `goog_`, and it is the **Public API Key** on the app's card under Apps. **This is the one value the code needs.** It appears as soon as the app exists, so it can be handed over while RevenueCat is still complaining about the Play connection.
+    - **Not the Test configuration key** further down that same page. That one drives RevenueCat's sandbox, where every transaction is fake. Ship it by mistake and the app never talks to Play at all, while looking like it works.
+18. [x] **Import the product** `lifetime_unlock` from Play, or create it. **Type: non-consumable.** The single most expensive setting to get wrong - see section 4 - and it only shows up when a real customer changes phone.
+19. [*] **Attach the product to the `router_features` entitlement.** Created at step 14 with nothing in it. An entitlement with no product attached grants nobody anything, and it fails silently: purchases succeed and the app stays locked. AN: it's already attached.
+    - **Expect TWO products and two attachments, not one.** RevenueCat creates a **Test Store** twin beside the Play Store product - `lifetime` next to `lifetime_unlock` - and attaches it to the same entitlement. That is correct and wanted: it is what lets the app be tested without Play. It also means the audit log shows `product_created` and `entitlement_products_attached` twice for what was one piece of work. The twin is inert in production, because the Test Store only grants anything to RevenueCat's own sandbox key.
+20. [*] **Create the default offering**, one package, containing the product. AN: it's already created.
+21. [x] **Project settings, General.** Confirm restore behaviour is **Transfer to new App User ID**, which is the default. Anonymous restore depends on it. AN: that is th defefault, it's under option "Transferring purchases seen on multiple App User IDs"
+22. [x] **Copy the Pub/Sub topic name** RevenueCat gives you. It is not on the project page: go to the **Google Play app settings** for the app, and press **Connect to Google**, which lists the available topics and generates the id. **That list only appears once the service credentials from step 12 have validated**, so an empty or missing Pub/Sub section is the propagation wait showing itself, not a step you skipped.
+
+**Play Console - close the loop**
+
+23. [x] **Play Console, the app dashboard, Monetise, Monetisation setup.** Paste that topic id next to **Topic name** under Real-time developer notifications, choose the notification content, and save.
+    - **Notification content: pick "subscriptions, voided purchases and all one-time products"**, the second option, not the default. The default covers voids but leaves out the rest of the one-time product lifecycle, and RevenueCat's guidance is to include them when you sell one-time products. A refund that arrives late, or not at all, leaves the app unlocked for someone who has had their money back - and the refund window IS the trial here.
+    - **Grant Google itself publish rights on the topic**, or **Send test notification** fails with a message blaming the topic format, Google Cloud setup and permissions all at once. In Google Cloud, Pub/Sub, Topics, the topic, Permissions: add the principal `google-play-developer-notifications@system.gserviceaccount.com` with the role **Pub/Sub Publisher**. This is Google's own account, the same string for every developer, and it is separate from your service account - that one lets RevenueCat READ, this one lets Play WRITE.
+    - **Then send the test notification.** RevenueCat calls it the way to verify Pub/Sub is connected to your account, and it costs nothing to find out today rather than from a customer whose refund never took effect.
+    - **A pass looks like nothing.** A brief "notification sent" and no error is the whole of it. Play reports no delivery confirmation and RevenueCat surfaces no test event, so silence here is success. An actual failure is loud, and names topic format, Cloud setup and permissions all at once. **Not optional here:** without it a refund never reaches RevenueCat and the app stays unlocked, which is the whole mechanism behind using Play's refund window as the trial. This is also what clears RevenueCat's own "no Pub/Sub" warning, so seeing that warning before this step is expected rather than a mistake.
+24. [x] **Licence testing.** In Google Play Console: Settings, Licence testing, add the tester Gmail accounts. Then opt those same accounts into the **internal** and **closed** testing tracks - two separate lists, and forgetting the second is the usual cause of "it just charged me".
+    - Done 2026-09-12. The accounts, their licence response and their track membership are recorded in `.claude/testing/2026-09-12_purchase-test-accounts.md`, which is gitignored because it names real addresses. Nothing in the repo names a tester.
+25. [x] **Data safety form.** Submitted 2026-09-12. Select the app, then **Monitor and improve**, **Policy and programs**, **App content**, and the **ACTIONED** tab. Data safety is one of the sections there. (Measured 2026-09-12; Google's own help article says only "go to the App content page".) Declare what RevenueCat sees: a pseudonymous app user id, purchase history, device and diagnostic data. A store-rejection item, not a nicety. Keep it consistent with `SECURITY.md` and `README.md`.
+
+
+**Data safety, drafted answers.** Play's wording shifts, so treat these as the position to hold rather than exact field names. The position is already written up in `SECURITY.md` under "Secret management" and "Data handling & privacy" - keep all three consistent, because a reviewer who finds them disagreeing has a reason to reject.
+
+| Question | Answer | Why |
+| --- | --- | --- |
+| Does your app collect or share any of the required user data types? | **Yes** | Only once purchasing is live. Before that the honest answer was no. |
+| Is all collected data encrypted in transit? | **Yes** | |
+| Does the app allow users to create an account? | **No** | |
+| Can users log in with accounts created outside the app? | **No** | There is no login of any kind. |
+| Do you provide a way to request data deletion? | **Leave the optional question unanswered** | Answering yes obliges a published deletion URL, and there is no account to delete. Nothing published claims otherwise. |
+| **Financial info, purchase history** | **Collected**, not shared. Purposes: **App functionality AND Analytics**. Users can choose. | The ONLY data type to tick. RevenueCat's own guidance names it and nothing else. Analytics belongs there because the RevenueCat dashboard reports revenue back to the developer - that is analytics on purchases, and it is not usage tracking. "Users can choose" because the data exists only if someone buys, and the app is fully usable without buying. |
+| Is the purchase history processed ephemerally? | **No** | Ephemeral means in memory, for one request, then gone. RevenueCat stores the record so the app can ask on every launch, so a purchase survives a reinstall, and so a refund can take the unlock away. Answering yes would be untrue and would hide the disclosure from the store listing. |
+| Device or other IDs | **Do NOT tick** | RevenueCat says this applies only to integrations using an advertising identifier such as `gpsAdId` or `androidId`. There are none here, and the anonymous installation id does not trigger it. |
+| App info and performance, diagnostics or crash logs | **Do NOT tick** | RevenueCat states plainly that it does not collect crash logs or diagnostics, and this app has no crash reporting of its own. |
+| Shared, for anything | **No** | RevenueCat is a service provider acting for the developer, which Google does not count as sharing. It WOULD become sharing with custom app user ids or any personally identifiable value - which is one more reason the app never calls `logIn`. |
+
+What must NOT be claimed: any location, contacts, messages, photos, personal identifiers, or advertising id. None of those are touched, and the app still carries no analytics and no usage tracking of any kind.
+
+> [!IMPORTANT]
+> Four things here are easy to get wrong, and three of them already went wrong once:
+>
+> - **Steps 1 to 4 are not "console work with no code".** Play will not let you create a one-time product until it has an artifact that can actually transact. See "why this order" below.
+> - **Step 9 does not grant access.** A service account is an identity and nothing more. Until step 10 invites it, Play gives it nothing, and the error you get says nothing useful about which half is missing.
+> - **Step 12 is a wait, not a failure.** ACTIVE in the user list is the invite, not the API.
+> - **Step 18, non-consumable.** A consumable cannot be restored under Billing Client 8, and the customer finds that out, not you.
+> - **Step 19, attaching the product to the entitlement.** RevenueCat lets you create an empty entitlement and never warns you it is empty. A purchase against one succeeds and unlocks nothing.
+
+**What was entered, 2026-09-12**
+
+- One-time product: Product ID `lifetime_unlock`, tags blank
+- Product description: Name "cfg-pia-wg lifetime unlock"; Description "Router setup, watchdog and device assignment. One payment, no subscription."; Icon `assets/icon/icon.png`
+- Tax and compliance: Digital app sales, all ages, no country or region restrictions
+- Purchase option: ID `lifetime-unlock`, type Buy, tags blank
+- Availability and pricing: all regions, US$6.99, landing at AU$9.99
+
+**On the purchase option ID.** Nothing in this app's source will ever name it: the code asks RevenueCat for the entitlement and RevenueCat resolves the product and its option. Two reasons it still matters. **Keep it to ONE buy option** - RevenueCat only auto-imports a Google one-time product that is backwards compatible, and Google marks the FIRST buy option backwards compatible automatically, so one option keeps the import automatic and a second is something to configure by hand. And treat the ID as **permanent**, like the product ID. `lifetime-unlock` mirrors the product ID, which is what you want when it appears in a Play report beside other rows. Hyphens are legal here and illegal in the product ID, which is why the two are spelled differently.
+
+**On the product ID `lifetime_unlock`.** Permanent, and it cannot be reused even if the product is deleted. Google's rule is start with a number or lowercase letter, then numbers, lowercase letters, underscores and periods only. **No hyphens** - the first name considered was `cfg-pia-wg_pro_unlock`, which Play would have rejected. No app-name prefix, because the product already lives inside the package and RevenueCat scopes it by project. "Lifetime" rather than "pro" names the MODEL, which is the thing being sold.
+
+**Why this order, and what the plan had wrong**
+
+This section used to say steps 1 to 4 were console work with no code. That is wrong, and it stops you dead at the first product you try to create. It took two attempts to find the real requirement:
+
+1. The products page first says **"to add one-time products, you need to add the BILLING permission to your APK"**, and offers nothing else.
+2. Adding the permission and uploading is still not enough. Play then reports **"your app currently uses Play Billing Library version AIDL and must be updated to at least version 8.0.0"**. Play judges an artifact by the billing library it LINKS, not by what it asks for, and an app with the permission and no library reads as the legacy AIDL interface.
+
+So the real precondition is the SDK itself, which is section 3 below, and section 3 has to happen before section 1 can finish. **This is not blocked on the `goog_` key:** the key CONFIGURES RevenueCat, it does not link it, and Play only cares that the library is present.
+
+Done: the manifest permission in build 442, and `purchases_flutter` 10.12.0, bringing Play Billing Library 8.3.0, in build 443. Nothing calls it. Build 442 was uploaded and its version code is spent, so 443 is the build that carries the library up to a track.
+
+Two things worth knowing for next time. **R8 must not strip it** - a bare `com.android.billingclient` dependency with nothing referencing it would compile and then fail the console, because Play reads `billing.properties` and the classes out of the shipped artifact. Going through the Flutter plugin avoids that, since the generated registrant references it. And **dependency locking will refuse the build** until all three `gradle.lockfile`s are regenerated with `cd android && ./gradlew :generateLockfiles`.
+
+Play's menu has also been relabelled. **Monetise with Play** now holds *App pricing*, *One-time products* and *Subscriptions*. What older docs call an "in-app product" is a **one-time product** in the current console.
+
 
 ### 3. Add the SDK and configure it
 
-- `purchases_flutter` in `pubspec.yaml`. **Check the current version at the time you add it** - it was 10.12.0 on 2026-09-12, and the floor that matters is Android SDK 7.11.0 for non-consumable handling.
-- `BILLING` permission in `AndroidManifest.xml`. Check whether `README.md` section "App permissions" needs a new entry.
-- Configure at launch with the Android key. **No `logIn` call** - anonymous throughout.
-- This is a STRICT dependency-locked project: `gradle.lockfile` and `pubspec.lock` both need regenerating, and the lockfile set is part of the build.
+- `purchases_flutter` in `pubspec.yaml`. **Done in build 443 at 10.12.0**, pulled forward because Play would not accept an upload without a billing library - see "why this order, and what the plan had wrong" above. It resolves to RevenueCat Android 10.20.0 and Play Billing Library 8.3.0; the floor that matters for non-consumable handling is Android SDK 7.11.0, comfortably met.
+- It also pulls `purchases-store-amazon`, which is dead weight for a Play-only app. Not removed: it has not been measured and an exclusion is the kind of thing that breaks a purchase months later. Worth a look if size becomes an issue.
+- `BILLING` permission in `AndroidManifest.xml`. Done in 442, with `README.md` section 8.4 to match.
+- Configure at launch with the Android key. **No `logIn` call** - anonymous throughout. Done in build 444, off the first frame in `app_shell.dart`, and it cannot fail loudly: a keyless build never starts the SDK, and an unreachable store logs a warning and leaves the paywall saying so.
+- This is a STRICT dependency-locked project: `gradle.lockfile` and `pubspec.lock` both need regenerating, and the lockfile set is part of the build. Done in 443. The build fails with "resolved X which is not part of the dependency lock state" until `cd android && ./gradlew :generateLockfiles` has run.
+
+### 3a. Where the key lives, and the GitHub APK question
+
+**The key is NOT compiled in.** It arrives as `--dart-define=REVENUECAT_ANDROID_KEY=...`, supplied by `release.yml` from a repository secret of the same name. Not for secrecy: RevenueCat's public key is designed to be embedded and can be read out of any APK in a minute. The reason is what a build WITHOUT it should do.
+
+Google Play refuses purchases from an artifact it did not distribute. So a self-built copy carrying a compiled-in key would show a paywall its owner could never complete - the worst of both worlds, and a direct contradiction of what the paywall says: the source is on GitHub, and what you are paying for is not having to build it. A keyless build therefore has **no purchasing at all and everything unlocked**, which is that promise made good.
+
+The corollary is that the Play build must never be keyless, because it would ship the paid features to everyone while looking entirely normal. `release.yml` fails with an `::error::` when the secret is empty, before it builds anything.
+
+**No binaries are published, so there is no free pre-built path.** A GitHub release here carries the SBOM and the licence manifest and nothing else; the `.aab` goes straight to Play. APK builds are opt-in via a workflow input, are never attached to a release, and exist as a diagnostic copy of what shipped - so they carry the same key, because a keyless one would behave differently from the artifact it is meant to represent.
+
+This was briefly written up as an open question with three options. It is not one: the premise, that GitHub hands out a working binary, was wrong.
+
+**Local builds are keyless too**, and that is fine - Play Billing cannot work from `flutter run` regardless. Real purchase testing happens against a build that went up to a track, with licence testers (step 24).
 
 ### 4. Fill in the seam
 
-- `lib/entitlement.dart` already exists and returns `true`. Give it a real implementation over `getCustomerInfo()`, returning false on any failure so a brand-new offline install is locked rather than crashing.
+- `lib/entitlement.dart` already exists and returns `true`. Give it a real implementation over `getCustomerInfo()`, returning false on any failure so a brand-new offline install is locked rather than crashing. **Done in build 444.** It defaults to locked once a key is present, and a returning customer is covered by the SDK's own cache, so offline does not lock out someone who has paid.
 - Keep it the ONLY place the rest of the app asks. Every screen should call the seam, never the SDK.
+
+**Build 442 delivered sections 5, 6 and 8, against a stubbed offering.** The gates, the paywall page, the reactive seam and the home-screen cleanup are in and tested; `Paywall.offer` is null until something sets it, which the page renders as a disabled "Not available right now" button. What is left is sections 3, 4 and 7 - the SDK, the real seam implementation and restore - all of which need the `goog_` key.
 
 ### 5. Gate the three paid screens
 
 - MANAGE, WATCHDOG and DEVICE ASSIGNMENT. Standalone generation and the app log stay free.
-- **Order: entitlement, then dependencies, then the offer to install them.** See section 2.
+- **Order: entitlement, then dependencies, then the offer to install them.** Pinned by `test/widgets/router_slots_screen_test.dart`.
 - Locked screens are accessible but read only, with the once-per-session advice.
+- Done in 442. The device screen gates at APPLY rather than at entry, because looking at your own devices is the most persuasive thing that screen can do.
 
 ### 6. The paywall
 
-- A modal offering the lifetime unlock. Lead on what it buys: a watchdog that renews PIA keys without anyone touching it, and device assignment.
+- Done in 442, as a PAGE rather than a modal - the content grows, and an unbounded card is the bug this project shipped four times. A page offering the lifetime unlock. Lead on what it buys: a watchdog that renews PIA keys without anyone touching it, and device assignment.
 - Shown only after the pre-flight passes.
 - Needs an offline state: "connect to complete the purchase".
 
 ### 7. Restore
 
-- Silent auto-restore on first launch, plus a visible button. Settings is the natural home for the button, beside the other one-off actions.
+- **Corrected 2026-09-12: there is no silent auto-restore, and there must not be.** RevenueCat's own guidance is that `restorePurchases` must never be called programmatically, because it can raise an operating-system sign-in prompt - and one of those on a cold start, that nobody asked for, is alarming and inexplicable. Restore is only ever a button the user pressed.
+- **The launch path uses `syncPurchases` instead**, which is the sanctioned programmatic call and raises no prompt. Done in build 444: after configure, and only when the entitlement is not already held, it hands the fresh anonymous id whatever Google Play already knows the account owns. That covers the reinstall and new-phone cases without anyone pressing anything.
+- **The button is on the settings screen** (`settings_restore_purchase`), beside the other one-off actions, and it is hidden entirely in a build that cannot sell - there, it could only ever report "no purchase found". The paywall carries the same action. Done in build 444.
+- Note what is NOT needed: no flag in `router_prefs.dart`, which `no_secret_prefs_test` would refuse anyway, and no local state of any kind. The purchase belongs to the Google account.
+- **`android:allowBackup="false"` stays.** RevenueCat's own advice for Billing Client 8 is to enable app backups so their shared-preferences file survives a reinstall and the anonymous app user id comes back with it. Do not take that advice here. It exists for CONSUMED one-time products, which Billing Client 8 can no longer query; a non-consumable is still returned by Play for the signed-in Google account, so `restorePurchases()` recovers it with no local state at all. Backups are off in this app deliberately, because it holds router and PIA credentials, and buying that back for a restore path that already works would be a poor trade.
+- The dependency to watch is the product staying **non-consumable**. If it were ever consumed, the reasoning above collapses and there is no way back for a customer who reinstalls.
 
 ### 8. Home screen cleanup
 
-- Remove PayPal and Patreon, keep the review link, re-space the footer.
+- Remove PayPal and Patreon, keep the review link, re-space the footer. Done in 442. The review link needed a fixed gap above it as well as the `Spacer`: on a screen short enough to scroll the Spacer collapses to nothing and the ask ends up crammed under the help line.
 
 ### 9. Documentation, in the same commit as the dependency
 

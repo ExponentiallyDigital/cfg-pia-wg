@@ -136,20 +136,33 @@ jobs:
       - name: Build release assets
         env:
           BUILD_APK: ${{ inputs.build_apk }}
+          REVENUECAT_ANDROID_KEY: ${{ secrets.REVENUECAT_ANDROID_KEY }}
         run: |
           TAG="${{ steps.tag.outputs.val }}"
           flutter pub get --enforce-lockfile
           dart run flutter_launcher_icons
 
+          # The Play build MUST carry the RevenueCat key. Without it the app cannot ask who has
+          # paid, so it withholds nothing and the paid features ship to everyone - silently, and
+          # looking entirely normal. Fail here instead, where it is one line in a log.
+          if [ -z "$REVENUECAT_ANDROID_KEY" ]; then
+            echo "::error::REVENUECAT_ANDROID_KEY is empty. The Play build would ship unlocked to everyone."
+            exit 1
+          fi
+
           # 1. Always build App Bundle (.aab)
-          flutter build appbundle --release
+          flutter build appbundle --release --dart-define=REVENUECAT_ANDROID_KEY="$REVENUECAT_ANDROID_KEY"
           mv build/app/outputs/bundle/release/cfg_pia_wg-release.aab \
              build/cfg-pia-wg-${TAG}_google-play-store.aab
 
           # 2. Conditionally build release/debug APKs if requested via workflow inputs
+          # Opt-in, and never attached to the GitHub release - the release carries the SBOM and the
+          # licence manifest and nothing else. These APKs are a diagnostic copy of what went to
+          # Play, so they get the same key: a keyless one would behave differently from the
+          # artifact it is meant to represent.
           if [ "$BUILD_APK" = "release-apk" ]; then
             echo "Building Release APK..."
-            flutter build apk --release
+            flutter build apk --release --dart-define=REVENUECAT_ANDROID_KEY="$REVENUECAT_ANDROID_KEY"
             mv build/app/outputs/flutter-apk/app-release.apk \
                build/cfg-pia-wg-${TAG}_release.apk
 
