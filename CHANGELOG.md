@@ -47,6 +47,16 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 2026-09-12 v0.8.74 build 444 - the seam has something behind it
 
+```play
+cfg-pia-wg now has a one-off unlock for the router features. One payment, no subscription, no trial to forget to cancel.
+
+Generating standalone PIA WireGuard configurations stays free for everyone, forever.
+
+You can always look at your router, and you can always remove anything this app set up, including taking it off the router entirely. Those never cost anything.
+
+Nothing is tracked. No analytics, no advertising id.
+```
+- REL: **this is the release that introduces the price**, and it spans three build numbers. Builds 442 and 443 were spent getting Play to accept an artifact that could actually transact, so they exist as version codes rather than as releases; their entries are below. What a user meets is one thing: gated controls open a paywall, everything else carries on as it did.
 - ADD: **`entitlement.dart` is a real implementation over RevenueCat.** It is still the only place the app asks about payment and the only file that imports the SDK; every gated screen reads the same `isUnlocked` it read yesterday. The seam existed for exactly this: landing purchasing replaced one implementation instead of editing every caller.
 - ADD: **the key is not compiled in.** It arrives as `--dart-define=REVENUECAT_ANDROID_KEY`, from a repository secret. Not for secrecy - RevenueCat's public key is meant to be embedded and can be read out of any APK in a minute. It is so that a build WITHOUT it behaves correctly.
 - CHG: **a keyless build sells nothing and withholds nothing.** Google Play refuses purchases from an artifact it did not distribute, so a self-built copy carrying a compiled-in key would show a paywall its owner could never complete. That is the opposite of what the paywall says. Building it yourself is the free path, and now the code says so rather than just the copy.
