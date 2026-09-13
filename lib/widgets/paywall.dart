@@ -25,6 +25,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
+import '../entitlement.dart';
 import '../session_controller.dart';
 import 'app_scaffold.dart';
 
@@ -52,12 +53,22 @@ abstract class Paywall {
   /// Opens the paywall for [pitch] - one sentence about the action the user just tried to take.
   /// Returns true when they came back entitled.
   static Future<bool> show(BuildContext context, SessionController c, {required String pitch}) async {
+    c.logEntry('Paywall shown for ${Pitch.nameOf(pitch)}.');
     final unlocked = await Navigator.of(context).push<bool>(
           MaterialPageRoute(builder: (_) => _PaywallScreen(pitch: pitch, controller: c)),
         ) ??
         false;
+    if (!unlocked) c.logEntry('Paywall closed. Still locked.');
     return unlocked;
   }
+}
+
+/// What a restore says, wherever it was started. The paywall and the settings screen ask the same
+/// question, so they give the same answers - and share them, so the two cannot drift apart.
+abstract class RestoreMessages {
+  static const restored = 'Purchase restored. Everything is unlocked.';
+  static const noneFound = 'No purchase found on this Google account.';
+  static String failed(Object e) => 'Could not reach the store: ${Entitlement.describeStoreError(e)}';
 }
 
 /// The sentence at the top of the paywall, one per gated action.
@@ -67,17 +78,28 @@ abstract class Paywall {
 /// WATCHDOG sees a screen with nothing on it, so unlike the other two it cannot demonstrate itself.
 abstract class Pitch {
   static const create = 'Creating a VPN writes a fresh PIA configuration straight into a router slot, '
-      'picking the fastest server in your region. No computer, no scripts.';
-  static const enable = 'Enabling brings the tunnel up and then checks that traffic is really flowing '
+      'picking the fastest server in your region. No desktop, no laptop, no unfathomable scripts.';
+  static const enable = 'Enabling brings a tunnel up and then checks that traffic is really flowing '
       'through it, rather than assuming.';
-  static const edit = "Editing writes the slot's settings back to your router.";
+  static const edit = "Editing writes a slot's settings back to your router.";
   static const watchdog = 'A watchdog is the whole point of this app. It lives on your router and checks '
-      'this tunnel every few minutes; when PIA rotates the key and the tunnel dies, it fetches a new one, '
-      'rebuilds the connection and emails you to say it did. You find out from the email, not from a '
-      'week of wondering why the VPN was off.';
+      'this tunnel at your chosen check interval; when PIA rotates the key and the tunnel dies, it fetches a '
+      'new one, rebuilds the connection and emails you to say it did. You find out from the email, not from '
+      'a week of wondering why the VPN was off, or worse, not knowing you were unprotected.';
   static const watchdogEnable = "Enabling puts the watchdog's schedule back on the router.";
   static const assign = 'Assigning sends this device out through a VPN while everything else on your '
       'network carries on as it was. One tap per device, no slot numbers to work out.';
+
+  /// The control a pitch belongs to, for the app log.
+  static String nameOf(String pitch) => switch (pitch) {
+        Pitch.create => 'CREATE',
+        Pitch.enable => 'ENABLE',
+        Pitch.edit => 'EDIT',
+        Pitch.watchdog => 'watchdog CREATE/EDIT',
+        Pitch.watchdogEnable => 'watchdog ENABLE',
+        Pitch.assign => 'device assignment APPLY',
+        _ => 'a paid feature',
+      };
 }
 
 class _PaywallScreen extends StatefulWidget {
@@ -94,26 +116,61 @@ class _PaywallScreenState extends State<_PaywallScreen> {
 
   SessionController get _c => widget.controller;
 
-  Future<void> _run(Future<bool> Function() action, String failure) async {
+  // Every outcome reaches the app log as well as the screen. A declined card or a slow approval used to
+  // flash a message at the foot of the screen and vanish, leaving nothing to read back afterwards and
+  // nothing to paste into a bug report.
+  Future<void> _purchase(PaywallOffer offer) async {
+    _c.logEntry('Purchase started.');
     setState(() => _busy = true);
-    var ok = false;
-    String? error;
     try {
-      ok = await action();
+      final unlocked = await offer.purchase();
+      if (!mounted) return;
+      if (unlocked) {
+        _finish('Purchase complete. Router features unlocked.');
+        return;
+      }
+      _c.logEntry('Purchase cancelled.');
     } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+      if (!mounted) return;
+      // A slow card is not a failure: the unlock arrives when Google Play confirms the payment.
+      final pending = Entitlement.isPaymentPending(e);
+      final detail = Entitlement.describeStoreError(e);
+      final message = pending ? detail : 'Purchase failed: $detail';
+      _c.logEntry(message, isError: !pending, isWarning: pending);
+      _snack(message);
     }
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (ok) {
-      _c.setUnlocked(true);
-      Navigator.of(context).pop(true);
-      return;
-    }
-    if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$failure $error')));
-    }
+    if (mounted) setState(() => _busy = false);
   }
+
+  Future<void> _restore(PaywallOffer offer) async {
+    _c.logEntry('Restore started.');
+    setState(() => _busy = true);
+    try {
+      final unlocked = await offer.restore();
+      if (!mounted) return;
+      if (unlocked) {
+        _finish(RestoreMessages.restored);
+        return;
+      }
+      // It used to say nothing at all when the account held no purchase.
+      _c.logEntry(RestoreMessages.noneFound);
+      _snack(RestoreMessages.noneFound);
+    } catch (e) {
+      if (!mounted) return;
+      final message = RestoreMessages.failed(e);
+      _c.logEntry(message, isError: true);
+      _snack(message);
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  void _finish(String message) {
+    _c.logEntry(message, isSuccess: true);
+    _c.setUnlocked(true);
+    Navigator.of(context).pop(true);
+  }
+
+  void _snack(String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
@@ -130,7 +187,7 @@ class _PaywallScreenState extends State<_PaywallScreen> {
         // purpose: whoever is still reading at that point wants detail, and whoever is not has
         // already decided.
         for (final line in const [
-          'One payment. No subscription, ever.',
+          'One lifetime payment. No subscription, ever.',
           'Works offline once bought, and keeps working.',
           'Nothing is tracked. No analytics, no advertising id.',
         ])
@@ -149,14 +206,14 @@ class _PaywallScreenState extends State<_PaywallScreen> {
         else ...[
           ElevatedButton(
             key: const Key('paywall_buy'),
-            onPressed: offer == null ? null : () => _run(offer.purchase, 'Purchase failed:'),
+            onPressed: offer == null ? null : () => _purchase(offer),
             // The store's own string, so the currency is always the buyer's.
-            child: Text(offer == null ? 'Not available right now' : 'UNLOCK - ${offer.price}'),
+            child: Text(offer == null ? 'Not available right now' : 'UNLOCK FOR LIFE - ${offer.price}'),
           ),
           const SizedBox(height: 8),
           TextButton(
             key: const Key('paywall_restore'),
-            onPressed: offer == null ? null : () => _run(offer.restore, 'Restore failed:'),
+            onPressed: offer == null ? null : () => _restore(offer),
             child: const Text('Already purchased? Restore', style: TextStyle(color: kHighlight, fontSize: 13)),
           ),
           TextButton(
@@ -172,10 +229,10 @@ class _PaywallScreenState extends State<_PaywallScreen> {
         const Text('What stays free', style: TextStyle(color: kHighlight, fontSize: 12, letterSpacing: 1.5)),
         const SizedBox(height: 8),
         const Text(
-          'Generating standalone PIA WireGuard configurations is free for everyone, forever, with or '
-          'without a router.\n\n'
+          'Generating standalone PIA WireGuard configurations is free for everyone, forever.\n\n'
           'You can always look at your router - slots, devices, status and logs - and you can always '
-          'remove things, including taking this app back off the router entirely.\n\n'
+          'remove things, including completely removing any watchdogs, their helper apps, and all app '
+          'configurations deployed to your router; configured VPNs are fully retained.\n\n'
           'The source is on GitHub and the build instructions are good enough to follow. What you are '
           'paying for is not having to.',
           style: TextStyle(color: kMuted, fontSize: 12, height: 1.5),

@@ -1443,6 +1443,7 @@ void main() {
         await tester.tap(find.byKey(Key(key)));
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('paywall_buy')), findsOneWidget, reason: key);
+        await tester.ensureVisible(find.byKey(const Key('paywall_close')));
         await tester.tap(find.byKey(const Key('paywall_close')));
         await tester.pumpAndSettle();
       }
@@ -1478,6 +1479,7 @@ void main() {
       expect(find.byKey(const Key('paywall_buy')), findsOneWidget);
       // The watchdog pitch has to do the selling: a locked WATCHDOG screen shows nothing to look at.
       expect(find.textContaining('emails you to say it did'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('paywall_close')));
       await tester.tap(find.byKey(const Key('paywall_close')));
       await tester.pumpAndSettle();
 
