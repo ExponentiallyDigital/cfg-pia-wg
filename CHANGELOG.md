@@ -45,6 +45,10 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 2026-09-13 v0.8.76 build 446 - documentation updates
 
+- CHG: **settings in the agreed order**: REBOOT ROUTER, FORGET ROUTER IP, REMOVE CACHED PIA CERT, UNINSTALL FEATURES DEPLOYED TO ROUTER, then RESTORE PURCHASE on a store build.
+- CHG: UNINSTALL FEATURES INSTALLED TO ROUTER is renamed UNINSTALL FEATURES DEPLOYED TO ROUTER.
+- FIX: **the uninstall's "are you sure" buttons follow the house style.** Both were teal-bordered, the destructive UNINSTALL included, and they sat in the opposite order to every other confirmation. CANCEL now comes first in grey and UNINSTALL second in red. The button change earlier in this build missed them because they were styled by hand.
+- TST: the settings rows in the agreed order under their new names.
 - FIX: **the GitHub issue carries the router's firmware version.** A local variable holding the firmware type was named `firmware` and shadowed the version passed in, so both firmware lines in a report said only "stock" and the version never arrived. It now reads, for example, "Router firmware: stock 3.0.0.4.388_25127", and the type comes from the router itself rather than only from an earlier visit to a router screen.
 - ADD: **Router firmware on the About screen**, type and version, once the router has been read.
 - ADD: **License status in the build info**: licensed, unlicenced, or homegrown for a copy built without a store key. It travels with the rest of the block into COPY BUILD INFO and CREATE GITHUB ISSUE.

@@ -734,7 +734,8 @@ Deletes:
 
 ## 10. <a name='settings'></a>Settings
 
-- UNINSTALL asks twice, and the second prompt says what it is about to do
+- the rows run REBOOT ROUTER, FORGET ROUTER IP, REMOVE CACHED PIA CERT, UNINSTALL FEATURES DEPLOYED TO ROUTER, then RESTORE PURCHASE on a store build
+- UNINSTALL FEATURES DEPLOYED TO ROUTER asks twice, and the second prompt says what it is about to do, with CANCEL first in grey and UNINSTALL second in red
 - afterwards, on the router:
 
 ```bash
