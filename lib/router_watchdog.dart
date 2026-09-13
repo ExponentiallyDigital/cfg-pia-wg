@@ -998,8 +998,14 @@ class RouterWatchdog {
   // gets here - the same gate the MANAGE ENABLE path applies.
   Future<void> deployWatchdog(WatchdogConfig config, {String? desc}) => _guard('deploy', () async {
         await enableJffsScripts();
+        // Both read before the NVRAM write replaces the description. A slot that is already up and
+        // keeps its region needs no restart; a changed region does not qualify, because the running
+        // tunnel belongs to the old one.
+        final slot = config.slotIndex;
+        final regionChanged = desc != null && desc.isNotEmpty && slotDescFor(desc) != await _read('nvram get wgc${slot}_desc');
+        final alreadyUp = !regionChanged && (await _read(kUpInterfacesCommand)).contains('wgc$slot');
         await _writeWatchdogNvram(config, desc: desc);
-        await enableVpnSlot(config.slotIndex);
+        await enableVpnSlot(slot, alreadyUp: alreadyUp);
         await _writeScript(config.slotIndex, buildWatchdogScript(config));
         await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
         await _run(buildCronRotateLine(config.slotIndex));
@@ -1016,14 +1022,24 @@ class RouterWatchdog {
         onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
       });
 
-  // Enables the underlying WireGuard slot
-  Future<void> enableVpnSlot(int slot) => _guard('enable VPN slot', () async {
+  // Enables the underlying WireGuard slot.
+  //
+  // [alreadyUp] is a deploy onto a tunnel that is running on the region it keeps. The flags are still
+  // written, so the router and this app both read the slot as enabled, but no service call is made.
+  // On stock that call is `restart_vpnc`, which rebuilds VPN routing for every tunnel: measured
+  // 2026-09-13, adding a watchdog to an already-running wgc4 ran it.
+  Future<void> enableVpnSlot(int slot, {bool alreadyUp = false}) => _guard('enable VPN slot', () async {
         final slots = RouterSlotService(client, onLog: onLog);
         await _run('nvram set wgc${slot}_enable=1');
         // Stock shows a profile as connected from its clientlist flag, not wgcN_enable - and the
         // row has to exist before the service call, since vpnc_unit is that row's index.
         await slots.writeVpncProfile(slot, desc: await _descFor(slot), active: true);
         await _run('nvram commit');
+        if (alreadyUp) {
+          await _logRouter('${await _label(slot)} is already up; its tunnel was left running');
+          onLog?.call('${await _label(slot)} is already up, so its tunnel was left running.', isSuccess: true);
+          return;
+        }
         // Stock drives WireGuard through VPN Fusion; start_wgc is Merlin's. Same calls MANAGE
         // makes, so a watchdog-managed tunnel comes up the same way as a hand-enabled one.
         if (isStockFirmware) {

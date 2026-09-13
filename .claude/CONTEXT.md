@@ -255,7 +255,7 @@ Row badges: `● ACTIVE` (`activeSlots.contains(n)`), `⚑ KILL SWITCH` (`enforc
 
 | Action | Behaviour |
 | --- | --- |
-| CREATE | Overwrite confirm if `!isEmpty` → region picker → `_PiaCredsDialog` → `generateConfig` → `createConfigToSlot`. Backs up the 17 existing keys first and restores them on failure. Writes `enable=0`, `enforce=0`, `fw=1`, `nat=1`, `psk=""`, `rip=""`, `ep_addr_r=""`. Ends with an info dialog telling the user to press ENABLE. |
+| CREATE | Overwrite confirm if `!isEmpty` → region picker → `_PiaCredsDialog` → `generateConfig` → `createConfigToSlot`. Backs up the 17 existing keys first and restores them on failure. Writes `enable=0`, `enforce=0`, `fw=1`, `nat=1`, `psk=""`, `rip=""`, `ep_addr_r=""`. Ends with an info dialog telling the user to press ENABLE. **A running slot is stopped first:** `createConfigToSlot` reads the up-interface list and runs `disableSlot` before the backup, because new settings never reach an interface that is already up (measured 2026-09-14: the old server kept running under the new label). It returns whether it stopped one; the overwrite confirm warns when the slot is enabled or active, and the info dialog says the old tunnel was stopped. |
 | ENABLE | Reads `wgcN_wd_primary_ip` / `_secondary_ip`; if either is blank, prompts (`_PingTargetsDialog`, defaults `8.8.8.8` / `1.1.1.1`) and writes them. Applies the concurrency gate (below), then calls `enableSlot`. **Other slots are left running.** |
 | `enableSlot` | `enable=1` → commit → `service "start_wgc N"; service restart_vpnrouting0` → polls `wg show interfaces` up to `verifyMaxAttempts` (30) × `verifyPollInterval` (2 s) → pings **both** targets via `-I wgcN -c 1 -W 5`. **Both must pass**; any failure reverts to `enable=0` and throws. |
 | EDIT | `readSlotParams` → `SlotParamsEditor` → `writeSlotParams` (values shell-single-quoted). |
@@ -285,7 +285,7 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 **`RouterWatchdog.deployWatchdog` — the order is load-bearing:**
 1. `enableJffsScripts` (`jffs2_scripts=1`, `jffs2_on=1`)
 2. `_writeWatchdogNvram` (per-slot `wgcN_wd_*` + global PIA creds + optional `wgcN_desc`) + commit
-3. `enableVpnSlot`
+3. `enableVpnSlot` — with `alreadyUp` when the slot's interface is up and the deploy keeps its region (both read before step 2 rewrites `wgcN_desc`): the enable flags and the clientlist row are still written, but no service call is made, because stock's `restart_vpnc` rebuilds VPN routing for every tunnel. A changed region always takes the full enable.
 4. heredoc-write `/jffs/scripts/watchdog_wgcN.sh` (30 s timeout) + `chmod +x`
 5. `cru a watchdog_wgcN "*/M * * * *" …` and `cru a watchdog_log_rotate_wgcN "0 0 * * *" …`
 6. `_ensureServicesStart` — recreate `/jffs/scripts/services-start` if absent, strip prior entries for this slot, append both `cru` lines

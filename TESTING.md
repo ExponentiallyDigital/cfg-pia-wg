@@ -98,6 +98,7 @@ perfect the whole time. Detail in
 - DISABLE leaves `wg show interfaces` empty
 - stock: a third concurrent enable is refused with the VPN-limit dialog
 - DELETE prompt names the VPN being deleted
+- CREATE over a slot whose tunnel is running, in a different region: the overwrite prompt says it will be stopped first; afterwards `wg show interfaces` no longer lists it, the slot shows disabled, and the dialog says the old tunnel was stopped. ENABLE, then `wg show wgcN latest-handshakes` shows a DIFFERENT peer key from before
 
 Applying configs:
 
@@ -112,6 +113,7 @@ Applying configs:
 - Create wgc1 & wgc5 - check test email
 - the region is chosen on the form, pre-filled with the slot's own, before SAVE & DEPLOY; a configured slot still warns before it is overwritten, and a region PIA does not have is refused
 - Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
+- create a watchdog on a slot that is already up, keeping its region: the router log says it "is already up; its tunnel was left running", there is NO `restart_vpnc` in the syslog, and the other tunnels keep their handshakes
 - force a reconfigure, then check the email alerting
   1. `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`
   2. `/jffs/cfg-pia-wg/watchdog_wgc1.sh`
