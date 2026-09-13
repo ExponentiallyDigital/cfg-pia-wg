@@ -43,12 +43,31 @@ const _cache = '{'
 
 const _sep = '@@CFGPIAWG@@';
 
-String _blob() => ['', _clientlist, _policyList, '9', _staticlist, '', _cfgDeviceList, _clJson, _cache, '']
-    .join('\n$_sep\n');
+String _blob({String policy = _policyList, String defaultKey = '9'}) =>
+    ['', _clientlist, policy, defaultKey, _staticlist, '', _cfgDeviceList, _clJson, _cache, ''].join('\n$_sep\n');
 
-RecordingSSHClient _router() => RecordingSSHClient(responder: (cmd) {
-      if (cmd.contains('cfg_device_list')) return _blob();
-      if (cmd == 'nvram get vpnc_dev_policy_list') return _policyList;
+/// The tunnel check's one round trip: the up interfaces, the router clock (10000), then each slot the
+/// command asks about, in its order.
+String _health(String cmd, Map<int, int> handshakes) => [
+      '',
+      '3: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP>',
+      '10000',
+      for (final m in RegExp(r'wg show wgc(\d) latest-handshakes').allMatches(cmd))
+        handshakes.containsKey(int.parse(m.group(1)!)) ? 'peerkey=\t${handshakes[int.parse(m.group(1)!)]}' : '',
+      '',
+    ].join('\n$_sep\n');
+
+RecordingSSHClient _router({
+  String policy = _policyList,
+  String defaultKey = '9',
+  // wgc1's server answered 50 seconds ago on the router clock.
+  Map<int, int> handshakes = const {1: 9950},
+}) =>
+    RecordingSSHClient(responder: (cmd) {
+      if (cmd.contains('cfg_device_list')) return _blob(policy: policy, defaultKey: defaultKey);
+      // Before the plain interface check below: the tunnel check's round trip contains that command.
+      if (cmd.contains('latest-handshakes')) return _health(cmd, handshakes);
+      if (cmd == 'nvram get vpnc_dev_policy_list') return policy;
       if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
       if (cmd == 'nvram get dhcp_staticlist') return _staticlist;
       // wgc1 up, wgc5 down - so the picker has one of each to tag. `ip -o link show up` is the
@@ -66,8 +85,8 @@ Widget _wrap(RecordingSSHClient ssh) => SessionScope(
       ),
     );
 
-Future<RecordingSSHClient> _pumpConnected(WidgetTester tester) async {
-  final ssh = _router();
+Future<RecordingSSHClient> _pumpConnected(WidgetTester tester, {RecordingSSHClient? router}) async {
+  final ssh = router ?? _router();
   await tester.pumpWidget(_wrap(ssh));
   await tester.enterText(find.byType(TextFormField).first, '192.168.1.1');
   await tester.enterText(find.byType(TextFormField).at(1), 'admin');
@@ -249,6 +268,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('pick_internet')));
     await tester.pumpAndSettle();
+    // The exit notes can push APPLY under the pinned HOME button; a user scrolls, and so does this.
+    await tester.ensureVisible(find.byKey(const Key('device_apply')));
     await tester.tap(find.byKey(const Key('device_apply')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('apply_confirm')));
@@ -390,6 +411,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pick_5')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('device_apply')));
     await tester.tap(find.byKey(const Key('device_apply')));
     await tester.pumpAndSettle();
 
@@ -413,6 +435,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pick_5')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('device_apply')));
     await tester.tap(find.byKey(const Key('device_apply')));
     await tester.pumpAndSettle();
     expect(find.textContaining('will also be given a fixed address'), findsNothing);
@@ -424,6 +447,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pick_9')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('device_apply')));
     await tester.tap(find.byKey(const Key('device_apply')));
     await tester.pumpAndSettle();
     expect(find.textContaining('will also be given a fixed address'), findsOneWidget);
@@ -436,6 +460,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pick_9')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('device_apply')));
     await tester.tap(find.byKey(const Key('device_apply')));
     await tester.pumpAndSettle();
     expect(find.textContaining('does not manage'), findsOneWidget);
@@ -462,6 +487,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pick_5')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('device_apply')));
     await tester.tap(find.byKey(const Key('device_apply')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('apply_confirm')));
@@ -520,6 +546,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('default_pick_5')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('device_apply')));
     await tester.tap(find.byKey(const Key('device_apply')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('apply_confirm')));
@@ -605,6 +632,101 @@ void main() {
     expect(find.textContaining('stock-firmware feature'), findsOneWidget);
   });
 
+  // Reported 2026-09-13 while testing on hardware: devices were moved onto a tunnel that looked fine
+  // and was not, and the screen gave no hint. APPLY now reads the tunnels first.
+  group('APPLY checks the tunnels it moves devices onto', () {
+    Future<void> stage(WidgetTester tester, String row, String pick) async {
+      await tester.tap(find.byKey(Key(row)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key(pick)));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('device_apply')));
+      await tester.tap(find.byKey(const Key('device_apply')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a tunnel that is not running is named, with where the device goes meanwhile - and still applies',
+        (tester) async {
+      final ssh = await _pumpConnected(tester);
+      await stage(tester, 'row_11:22:33:44:55:66', 'pick_5');
+
+      expect(
+          find.text('wgc5:pia-aus_perth is not running. Until it is enabled, Box will use the default connection, '
+              'wgc1:pia-aus_melbourne.'),
+          findsOneWidget);
+      await tester.tap(find.byKey(const Key('apply_confirm')));
+      await tester.pumpAndSettle();
+      expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isTrue,
+          reason: 'a warning, not a block: assigning to a disabled slot is legitimate');
+    });
+
+    testWidgets('a server that has not answered for a while is named, with how long', (tester) async {
+      await _pumpConnected(tester, router: _router(handshakes: const {1: 9000}));
+      await stage(tester, 'row_11:22:33:44:55:66', 'pick_9');
+
+      expect(
+          find.text('wgc1:pia-aus_melbourne is up, but its server has not answered for 16 minutes. '
+              'Box may have no internet.'),
+          findsOneWidget);
+    });
+
+    testWidgets('a healthy tunnel adds nothing to the confirmation', (tester) async {
+      await _pumpConnected(tester);
+      await stage(tester, 'row_11:22:33:44:55:66', 'pick_9');
+
+      expect(find.textContaining('is not running'), findsNothing);
+      expect(find.textContaining('has not answered'), findsNothing);
+    });
+
+    testWidgets('a new default connection that is not running gets its own warning', (tester) async {
+      await _pumpConnected(tester);
+      await tester.tap(find.byKey(const Key('default_picker')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('default_pick_5')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('device_apply')));
+      await tester.tap(find.byKey(const Key('device_apply')));
+      await tester.pumpAndSettle();
+
+      expect(
+          find.text('wgc5:pia-aus_perth is not running. Until it is, devices on the default connection are not on that VPN.'),
+          findsOneWidget);
+      await tester.tap(find.text('CANCEL'));
+      await tester.pumpAndSettle();
+    });
+  });
+
+  // Measured on hardware 2026-09-13: a device pinned to a disabled slot keeps its pin and falls
+  // through to the default connection, while the screen went on naming the slot.
+  group('where a device actually exits when its tunnel is not running', () {
+    testWidgets('a device pinned to a stopped tunnel shows the default it falls through to', (tester) async {
+      await _pumpConnected(tester, router: _router(policy: '1>192.168.1.20>>5>'));
+
+      expect(
+          tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
+          'wgc5:pia-aus_perth is not running - traffic uses wgc1:pia-aus_melbourne');
+      // The picker still names the assignment: the pin is intact, and enabling wgc5 restores it.
+      expect(
+          find.descendant(of: find.byKey(const Key('row_11:22:33:44:55:66')), matching: find.text('wgc5:pia-aus_perth')),
+          findsOneWidget);
+    });
+
+    testWidgets('a default that is not running sends unassigned devices to the internet', (tester) async {
+      await _pumpConnected(tester, router: _router(defaultKey: '5'));
+
+      expect(tester.widget<Text>(find.byKey(const Key('default_exit'))).data,
+          'wgc5:pia-aus_perth is not running - unassigned devices use Internet, with no VPN');
+      expect(tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
+          'wgc5:pia-aus_perth is not running - traffic uses Internet, with no VPN');
+    });
+
+    testWidgets('running tunnels, and a VPN this app does not manage, add no note', (tester) async {
+      await _pumpConnected(tester);
+      expect(find.byKey(const Key('default_exit')), findsNothing);
+      expect(find.textContaining('is not running'), findsNothing, reason: 'the OpenVPN profile state is unknown, not down');
+    });
+  });
+
   // Looking at your own devices is the most persuasive thing this screen can do, so browsing and
   // staging stay free for everyone. APPLY is the moment the router changes, and the only gate.
   group('what a locked user can do', () {
@@ -621,6 +743,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('APPLY 1 CHANGE'), findsOneWidget, reason: 'staging is free, and shows the tally');
 
+      await tester.ensureVisible(find.byKey(const Key('device_apply')));
       await tester.tap(find.byKey(const Key('device_apply')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('paywall_buy')), findsOneWidget);

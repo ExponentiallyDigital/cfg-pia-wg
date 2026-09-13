@@ -395,4 +395,27 @@ void main() {
       expect(c.ran('restart_default_wan'), isFalse);
     });
   });
+
+  group('tunnelHealth', () {
+    test('asks for nothing when there is nothing to check', () async {
+      final c = _client();
+      expect(await _svc(c).tunnelHealth({}), isEmpty);
+      expect(c.commands, isEmpty);
+    });
+
+    test('reads every slot in one round trip, against the router clock', () async {
+      final c = RecordingSSHClient(
+          responder: (_) => ['', '3: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP>', '10000', 'peer=\t9950', 'peer=\t0', '']
+              .join('\n$_sep\n'));
+      final h = await _svc(c).tunnelHealth({5, 1});
+
+      expect(c.commands, hasLength(1), reason: 'a phone on wifi pays for every round trip');
+      expect(c.commands.single, contains('wg show wgc1 latest-handshakes'));
+      expect(c.commands.single, contains('wg show wgc5 latest-handshakes'));
+      expect(h[1]!.up, isTrue);
+      expect(h[1]!.handshakeAgeSeconds, 50);
+      expect(h[5]!.up, isFalse);
+      expect(h[5]!.handshakeAgeSeconds, isNull);
+    });
+  });
 }

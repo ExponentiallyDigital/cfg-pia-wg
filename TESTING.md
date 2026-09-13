@@ -718,6 +718,18 @@ Deletes:
 > - **Deleting a VPN with devices pinned to it.** Those devices go to **Internet**, matching the web interface, not to the default connection. A device that was explicitly pinned must never land on a tunnel nobody chose.
 > - **Deleting the VPN that IS the default connection.** `vpnc_default_wan` is a key rather than a policy record, so nothing that rewrites the policy list touches it. Left behind, every device following the default reads as `profile 9 (deleted)`.
 
+### 7.2. <a name='end-to-end-before-a-release'></a>End-to-end, before a release
+
+Device assignment is a signature feature: run this on the release build. After each step CHK as in 7.1 plus `wg show interfaces`; on the device, exit IP and `ping google.com`; in the app, the row and any note under it.
+
+- **between tunnels:** phone to wgc1, then wgc5. ONE rule, the new one; exit is wgc5's region
+- **to and from the default:** phone to the default, then back to wgc5. No `.51` rule while on the default and exit follows it; ONE rule again after
+- **to a disabled slot:** disable wgc5, phone to wgc5. APPLY warns "wgc5:... is not running... will use the default connection"; the row notes where traffic goes; exit is the default's region. Enable wgc5: exit moves to wgc5 without reassigning, and the note goes
+- **a silent server:** on a slot with no watchdog, `wg set wgcN peer "$(nvram get wgcN_ppub)" remove`, wait 4 minutes, move a device onto it: APPLY warns its server has not answered. DISABLE and ENABLE the slot afterwards
+- **delete and recreate with devices assigned:** phone to wgc5, DELETE wgc5: the phone lands on Internet. CREATE wgc5 again: the phone is NOT on it
+- **changing the default connection** (read the caution above first): default to wgc1, every unassigned device exits wgc1's region and the phone pinned to wgc5 does not. Disable wgc1: the default panel notes unassigned devices use Internet - confirm from an unassigned device, as this one is inferred
+- **a reboot:** reboot, CHK. Every assignment and the default survive, and each device exits where its row says
+
 ---
 
 ## 8. <a name='app-log'></a>App log
