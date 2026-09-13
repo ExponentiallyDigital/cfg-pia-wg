@@ -50,6 +50,13 @@ RouterFirmware? classifyFirmwareTag(String raw) {
   return null;
 }
 
+/// How a firmware is named to a person: `stock` or `Merlin`, or empty when it is not known.
+String firmwareLabel(RouterFirmware? firmware) => switch (firmware) {
+      RouterFirmware.stock => 'stock',
+      RouterFirmware.merlin => 'Merlin',
+      null => '',
+    };
+
 // ─── Paths ───────────────────────────────────────────────────────────────────────
 // Stock has no jq or mail binary on $PATH; the user installs both here (README §4).
 /// The app's own directory on the router. Holds the binaries the user installs for stock

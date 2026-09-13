@@ -89,6 +89,8 @@ abstract class Pitch {
   static const watchdogEnable = "Enabling puts the watchdog's schedule back on the router.";
   static const assign = 'Assigning sends this device out through a VPN while everything else on your '
       'network carries on as it was. One tap per device, no slot numbers to work out.';
+  static const redeploy = "Redeploying writes this app version's watchdog script to your router, so the fixes "
+      'in your update reach the watchdog too. Tunnels, schedules and settings are left exactly as they are.';
 
   /// The control a pitch belongs to, for the app log.
   static String nameOf(String pitch) => switch (pitch) {
@@ -98,6 +100,7 @@ abstract class Pitch {
         Pitch.watchdog => 'watchdog CREATE/EDIT',
         Pitch.watchdogEnable => 'watchdog ENABLE',
         Pitch.assign => 'device assignment APPLY',
+        Pitch.redeploy => 'watchdog REDEPLOY',
         _ => 'a paid feature',
       };
 }

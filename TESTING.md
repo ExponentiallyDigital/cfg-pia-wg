@@ -760,7 +760,10 @@ wg show interfaces                        # UNCHANGED - the tunnels are not ours
 - COPY BUILD INFO - no clipboard countdown starts
 - licences screen opens and does not bleed through the header
 - CREATE GITHUB ISSUE opens
-- the deployed watchdog script version is shown, and is flagged when it is older than the app's copy
+- the deployed watchdog script version is shown; when it differs from the app's it is amber, with REDEPLOY TO UPDATE VERSION under it, which updates the script without restarting any tunnel and leaves the row plain again
+- Router firmware shows the type and version once the router has been read, and CREATE GITHUB ISSUE carries both
+- License status reads homegrown on a self-built copy, and licensed or unlicenced on a store build
+- more space around the grey section rules
 - the history line reads `Since <yyyy-mm-dd>: X successful & Y unsuccessful reconfigures`
 
 ---

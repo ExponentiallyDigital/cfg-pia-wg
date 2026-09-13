@@ -45,6 +45,13 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 2026-09-13 v0.8.76 build 446 - documentation updates
 
+- FIX: **the GitHub issue carries the router's firmware version.** A local variable holding the firmware type was named `firmware` and shadowed the version passed in, so both firmware lines in a report said only "stock" and the version never arrived. It now reads, for example, "Router firmware: stock 3.0.0.4.388_25127", and the type comes from the router itself rather than only from an earlier visit to a router screen.
+- ADD: **Router firmware on the About screen**, type and version, once the router has been read.
+- ADD: **License status in the build info**: licensed, unlicenced, or homegrown for a copy built without a store key. It travels with the rest of the block into COPY BUILD INFO and CREATE GITHUB ISSUE.
+- ADD: **an out-of-date watchdog script shows amber on the About screen, with REDEPLOY TO UPDATE VERSION under it.** It rewrites only the script files already on the router, for the firmware it finds there, then reads the version straight back. No tunnel is restarted and no schedule or setting changes, because the script reads its settings from the router on every run. It sits behind the paywall, as a change to the router.
+- CHG: more space around the About screen's grey section rules.
+- DOC: CONTEXT and TESTING cover the new rows and the redeploy offer.
+- TST: the three licence states; the firmware status with and without a version; the issue carrying firmware type, version and licence; amber and the redeploy offer only for an out-of-date script; and redeploy writing only existing scripts, refusing unsupported firmware and finding nothing to do.
 - ADD: **errors in the router log are red.** A line the app or its watchdog wrote that reports a fault - ERROR, failed, connectivity lost, down or absent, never answered, no Internet - shows in red rather than teal or amber. The firmware's own lines stay plain even when they say failed, so red always means this app.
 - ADD: **the watchdog log shows yesterday as well as today.** The log rotates into a `.old` copy at midnight and the viewer only ever read today's file, so an alert emailed overnight usually pointed at lines the screen could not show. It now reads the rotated copy first and then today's, and a file not existing yet is not reported as a failure.
 - CHG: CLEAR on the watchdog log also deletes the rotated copy, since the viewer now shows it. Clearing only today's file would have refilled the screen with yesterday's lines the moment it reopened.

@@ -708,6 +708,38 @@ void main() {
         reason: 'oldest first, so the text reads in time order');
   });
 
+  group('redeploying the watchdog script', () {
+    // Answers the post-write size check from what was actually written, whatever else it is asked.
+    RecordingSSHClient router({String firmwareTag = '', String deployed = '5'}) {
+      late final RecordingSSHClient c;
+      c = RecordingSSHClient(responder: (cmd) {
+        final size = RegExp(r"wc -c < '([^']+)'").firstMatch(cmd);
+        if (size != null) return '${c.files[size.group(1)]?.length ?? 0}';
+        if (cmd.contains('3rd-party')) return firmwareTag;
+        if (cmd.contains('] && echo')) return deployed;
+        return '';
+      });
+      return c;
+    }
+
+    test('rewrites only the scripts already on the router, and touches nothing else', () async {
+      final c = router(deployed: '5');
+      expect(await _wd(c).redeployScripts(), [5]);
+      expect(c.ran("wc -c < '/jffs/cfg-pia-wg/watchdog_wgc5.sh'"), isTrue, reason: 'written, and the write proved');
+      expect(c.ran("wc -c < '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isFalse, reason: 'no script there, so none put there');
+      expect(c.commands.any((x) => x.startsWith('cru ') || x.startsWith('service ') || x.startsWith('nvram set')), isFalse,
+          reason: 'no schedule, tunnel or setting changes');
+    });
+
+    test('refuses a firmware it does not support rather than guessing which script to write', () async {
+      await expectLater(_wd(router(firmwareTag: 'something-else')).redeployScripts(), throwsException);
+    });
+
+    test('finds nothing to do when no script is deployed', () async {
+      expect(await _wd(router(deployed: '')).redeployScripts(), isEmpty);
+    });
+  });
+
   test('loadConfig maps nvram keys to fields (per-slot + global PIA)', () async {
     final c = RecordingSSHClient(
       responder: (cmd) {
