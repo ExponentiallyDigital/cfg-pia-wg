@@ -448,6 +448,49 @@ void main() {
       expect(enableIndex, lessThan(deployIndex));
     });
 
+    // Measured 2026-09-13: creating a watchdog on a wgc4 that was already up ran `restart_vpnc`,
+    // which on stock rebuilds VPN routing for every tunnel.
+    test('a slot that is already up, keeping its region, is not restarted', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'ip -o link show up') return 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_melbourne';
+        if (cmd.contains('nvram get vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
+
+      expect(c.ran('restart_vpnc'), isFalse);
+      expect(c.ran('nvram set wgc1_enable=1'), isTrue, reason: 'the flags are still written');
+      expect(c.commands.any((cmd) => cmd.endsWith('watchdog_wgc1.sh deploy')), isTrue);
+      expect(c.commands.where((cmd) => cmd.contains('logger')).join('\n'), contains('already up'));
+    });
+
+    test('Merlin skips the restart too, including when the form passes no region', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'ip -o link show up') return 'wgc1';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
+
+      // Exact commands: the watchdog script uploaded by the same deploy mentions start_wgc itself.
+      expect(c.commands.contains('service "start_wgc 1"; service restart_vpnrouting0'), isFalse);
+    });
+
+    // A changed region is not skipped: the running tunnel belongs to the old region.
+    test('a region change on a running slot still goes through the enable', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'ip -o link show up') return 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_perth';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
+
+      expect(c.commands.contains('service "start_wgc 1"; service restart_vpnrouting0'), isTrue);
+    });
+
     // The completion line is the router-side record that the deploy finished, not just started.
     test('writes a completion message to the router syslog once deployed', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
