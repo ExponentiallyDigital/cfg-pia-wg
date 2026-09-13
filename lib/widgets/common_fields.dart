@@ -70,22 +70,46 @@ class PiaUsernameField extends StatelessWidget {
       );
 }
 
+/// Under the DNS field wherever the servers become a stock slot's. Measured 2026-09-13: the firmware
+/// redirects a device assigned to the VPN to the FIRST server (`VPN_FUSION` DNAT) and never tries the
+/// second, so a first server that stops answering through that tunnel leaves the device reaching IP
+/// addresses but not names.
+const String kDnsFirstServerNote =
+    'Devices assigned to this VPN use only the first server. If they reach IP addresses but not names, '
+    'try a different first server.';
+
+const String _kDnsExamples = 'Quad9: 9.9.9.9, 149.112.112.112 | Cloudflare: 1.1.1.1, 1.0.0.1';
+
 /// DNS servers field (from main.dart `_buildDnsField`).
 class DnsField extends StatelessWidget {
   final TextEditingController controller;
-  const DnsField({super.key, required this.controller});
+
+  /// Adds [kDnsFirstServerNote] under the examples. Only where the servers become a stock slot's:
+  /// STANDALONE's `.conf` goes to another client, which uses both servers.
+  final bool firstServerNote;
+
+  const DnsField({super.key, required this.controller, this.firstServerNote = false});
 
   @override
   Widget build(BuildContext context) => TextFormField(
         controller: controller,
         style: const TextStyle(color: kText, fontFamily: 'monospace', fontSize: 13),
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           labelText: 'DNS servers',
           hintText: kDefaultDns,
-          prefixIcon: Icon(Icons.dns_outlined, color: kMuted, size: 18),
-          helperText: 'Quad9: 9.9.9.9, 149.112.112.112 | Cloudflare: 1.1.1.1, 1.0.0.1',
-          helperStyle: TextStyle(color: kHighlight, fontSize: 11),
+          prefixIcon: const Icon(Icons.dns_outlined, color: kMuted, size: 18),
+          helperText: firstServerNote ? null : _kDnsExamples,
+          helperStyle: const TextStyle(color: kHighlight, fontSize: 11),
           helperMaxLines: 2, // <-- allows wrapping on small screens
+          // The note in grey under the teal examples, so the two read as a suggestion and a caution.
+          helper: firstServerNote
+              ? const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(_kDnsExamples, style: TextStyle(color: kHighlight, fontSize: 11)),
+                  SizedBox(height: 2),
+                  Text(kDnsFirstServerNote,
+                      key: Key('dns_first_server_note'), style: TextStyle(color: kMuted, fontSize: 11)),
+                ])
+              : null,
         ),
       );
 }

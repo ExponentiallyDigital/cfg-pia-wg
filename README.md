@@ -272,7 +272,7 @@ This enables full management of WG slots.
     <br>
     Region selection
   </p>
-  - Then supply PIA credentials and preferred DNS server addresses:
+  - Then supply PIA credentials and preferred DNS server addresses. On stock firmware a device assigned to this VPN uses only the **first** DNS server, and the field says so:
   <p align="center">
     <img src="./images/pia-creds.png" alt="App log" width="250">
     <br>
@@ -429,7 +429,7 @@ Notes on reading these:
 - The router log excerpt includes your **PIA username** (never the password, and never the token). The email travels through your own mail provider, but bear it in mind before forwarding one.
 
 > [!NOTE]
-> **An alert can only be sent if the router can still reach your mail server.** A tunnel failure that also takes DNS down with it — which happens when the failed tunnel was the router's default connection — leaves the watchdog unable to resolve your SMTP host, so that alert never leaves the router. The attempt is always recorded in the router-side watchdog log, and the next email that does get through says how many were missed. If alerts matter to you, it is worth leaving at least one tunnel unassigned as the default connection.
+> **An alert can only be sent if the router can still reach your mail server.** If it cannot — its internet connection is down, or it cannot look up your mail server's name at that moment — that alert never leaves the router. The attempt is always recorded in the router-side watchdog log, and the next email that does get through says how many were missed.
 
 The first email you receive will be the deployment itself — `Event: watchdog deployed` — sent even though there was nothing to fix. That is deliberate: it confirms the whole alerting path works, at the moment you set it up rather than months later during an outage.
 
@@ -467,13 +467,14 @@ console straight out to the internet, a laptop through Melbourne, everything els
 > assigned the devices to. Then a drop means those devices have no internet rather than an
 > unprotected one, and a watchdog on that tunnel is what decides how long that lasts.
 
-Five things that catch people out:
+Six things that catch people out:
 
 1. **A device the router has never seen an address for cannot be assigned.** Connect it to your network once, then come back and it will be there.
 2. **Assigning a device pins its address permanently.** That is what stops the assignment drifting onto a different device later. The pin stays behind when you unassign - the router never removes one, and neither does this app.
 3. **A randomised MAC address breaks the assignment silently.** Those devices are tagged in the list. Phones randomise per network by default, and the assignment stops working the next time the address rotates, with nothing to tell you. Turn randomisation off for your home network in the phone's Wi-Fi settings.
 4. **A device assigned to a tunnel you then turn OFF keeps its assignment**, and falls through to the default connection while that tunnel is down. It picks the tunnel up again when you turn it back on. The list shows it: a note under the device says where its traffic goes meanwhile. Deleting the tunnel is different: the app moves its devices to Internet, tells you which ones it moved, and puts the default connection back to Internet if that tunnel was it.
 5. **Guest network devices never appear.** They cannot reach your LAN at all, so putting one on a VPN is a different question from the one this screen answers.
+6. **A device assigned to a VPN uses only that VPN's first DNS server.** The router sends every lookup from it there and never tries the second, so if the first stops answering through that tunnel the device reaches IP addresses but not names. Change the first server with MANAGE, then EDIT.
 
 ### 5.5. APP LOG - View the app log
 

@@ -384,9 +384,8 @@ void main() {
       expect(s, contains(r'if [ -f "$TMPTOK" ]; then'), reason: 'the diagnostics too');
     });
 
-    // An alert about lost connectivity is the one most likely to be undeliverable: a downed
-    // default tunnel takes DNS with it. Rather than resend it late, the next email that gets
-    // through says how many were missed.
+    // An alert about lost connectivity can be undeliverable for the reason it fired. Rather than
+    // resend it late, the next email that gets through says how many were missed.
     test('an undeliverable alert is counted and reported by the next one that lands', () {
       final s = script();
       expect(s, contains(r'UNSENTFILE="/tmp/watchdog_unsent_${IFACE}"'));

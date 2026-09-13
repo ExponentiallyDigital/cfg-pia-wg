@@ -98,6 +98,7 @@ perfect the whole time. Detail in
 - DISABLE leaves `wg show interfaces` empty
 - stock: a third concurrent enable is refused with the VPN-limit dialog
 - DELETE prompt names the VPN being deleted
+- stock: CREATE's credentials dialog and EDIT's DNS field both say assigned devices use only the first server; Merlin and STANDALONE do not
 - CREATE over a slot whose tunnel is running, in a different region: the overwrite prompt says it will be stopped first; afterwards `wg show interfaces` no longer lists it, the slot shows disabled, and the dialog says the old tunnel was stopped. ENABLE, then `wg show wgcN latest-handshakes` shows a DIFFERENT peer key from before
 
 Applying configs:
