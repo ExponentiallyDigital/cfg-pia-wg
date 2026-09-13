@@ -102,7 +102,9 @@ class AppDrawer extends StatelessWidget {
     required this.onCloseDrawer,
   });
 
-  static const _destinations = [
+  /// Every destination, in order. The main menu builds its buttons from this same list, so the two
+  /// always offer the same screens with the same names in the same order.
+  static const destinations = [
     AppDestination.standalone,
     AppDestination.manageRouter,
     AppDestination.watchdog,
@@ -136,7 +138,7 @@ class AppDrawer extends StatelessWidget {
               },
             ),
             const Divider(color: kBorder, height: 1),
-            for (final d in _destinations)
+            for (final d in destinations)
               ListTile(
                 key: Key('drawer_${d.routeName}'),
                 // No explicit text colour here so selectedColor (active = green) takes effect.
@@ -154,7 +156,7 @@ class AppDrawer extends StatelessWidget {
             ListTile(
               key: const Key('drawer_close_app'),
               leading: const Icon(Icons.power_settings_new, color: kError, size: 20),
-              title: const Text('Exit app', style: TextStyle(color: kError, fontSize: 13)),
+              title: const Text('EXIT', style: TextStyle(color: kError, fontSize: 13)),
               onTap: () {
                 onCloseDrawer();
                 final navContext = navigatorKey.currentContext;

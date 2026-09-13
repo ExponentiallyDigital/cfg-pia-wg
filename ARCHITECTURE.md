@@ -151,11 +151,15 @@ graph TD
   }
 }}%%
     A["Start app"] --> B["Main menu"]
-    B --> C["Generate standalone PIA WireGuard configuration"]
-    B --> D["Manage router PIA WireGuard configuration*"]
-    B --> E["Watchdog WireGuard management*"]
-    B --> F["View app log"]
-    B --> G["Exit app"]
+    B --> C["STANDALONE: generate a PIA WireGuard configuration"]
+    B --> D["MANAGE: router PIA WireGuard configuration"]
+    B --> E["WATCHDOG: WireGuard management"]
+    B --> MDA["DEVICE ASSIGNMENT"]
+    B --> MRL["ROUTER LOG"]
+    B --> F["APP LOG"]
+    B --> MSET["SETTINGS"]
+    B --> MABOUT["ABOUT"]
+    B --> G["EXIT"]
 
     C --> H["Enter region, PIA username/password, DNS"]
     H --> I{"Tap GENERATE CONFIG"}

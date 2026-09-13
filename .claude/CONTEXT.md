@@ -56,7 +56,7 @@ Android (Flutter) app that provisions Private Internet Access WireGuard configur
 
 ## 2. Snapshot
 
-The app opens on a main menu (`MainMenuScreen`) offering five screens plus "Exit app"; a hamburger drawer rendered *above* the Navigator duplicates those and adds three more - **View router log**, **Settings** and **About**. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and then push a shared full-screen `wgc1..wgc5` slot list: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. **Both Merlin and stock ASUS firmware are supported** — the firmware is detected once per session on entry to either router screen and every router command branches on it (§4.13). Screen 4 pins individual LAN devices to a tunnel (stock only, §4.14) and screen 5 shows the in-memory app log. The three drawer-only screens page through the router's syslog, remove things - the router uninstall lives on SETTINGS - and carry the build information. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
+The app opens on a main menu (`MainMenuScreen`) offering all eight destinations plus EXIT; a hamburger drawer rendered *above* the Navigator duplicates those and adds three more - **View router log**, **Settings** and **About**. Screen 1 generates a standalone PIA WireGuard config (region → credentials → `GENERATE CONFIG`) with a 60-second clipboard auto-clear and SHARE/SAVE. Screens 2 and 3 SSH into an ASUS router and then push a shared full-screen `wgc1..wgc5` slot list: *manage* mode does CREATE / ENABLE / EDIT / DISABLE / DELETE of WireGuard slots; *watchdog* mode does CREATE-EDIT / DELETE / VIEW ROUTER WATCHDOG LOG and deploys a router-side POSIX-sh watchdog that re-negotiates PIA on ping failure. **Both Merlin and stock ASUS firmware are supported** — the firmware is detected once per session on entry to either router screen and every router command branches on it (§4.13). Screen 4 pins individual LAN devices to a tunnel (stock only, §4.14) and screen 5 shows the in-memory app log. The three drawer-only screens page through the router's syslog, remove things - the router uninstall lives on SETTINGS - and carry the build information. All credentials and generated config are volatile — held only in `SessionController` and wiped on every exit path — though PIA and SMTP credentials *are* written to router NVRAM in plaintext when a watchdog is deployed.
 
 ## 3. Architecture — `lib/` (44 files)
 
@@ -92,7 +92,7 @@ The app opens on a main menu (`MainMenuScreen`) offering five screens plus "Exit
 
 | File | Role |
 | --- | --- |
-| `main_menu_screen.dart` | 5 buttons + `* requires SSH connectivity` footnote + a "(?) how to use this app" link (`Key('menu_help')`, `kHelpUrl` -> README section 5), then, at the foot, a "(*) add a Play Store app review" link (`Key('menu_review')` -> `review_service.dart`). The PayPal/Patreon donation block was removed when the app gained a price - one ask per screen. `PopScope(canPop: false)` routes the Android back key to `confirmAndExit`. |
+| `main_menu_screen.dart` | Nine buttons: every destination from `AppDrawer.destinations`, in that order and labelled with its title, then EXIT (`Key('menu_close_app')`). Each key is `menu_` plus the route name. Directly beneath them, with no gap between the two, a "(?) how to use this app" link (`Key('menu_help')`, `kHelpUrl` -> README section 5) and a "(*) add a Play Store app review" link (`Key('menu_review')` -> `review_service.dart`); spare height goes below them. The PayPal/Patreon donation block was removed when the app gained a price - one ask per screen. `PopScope(canPop: false)` routes the Android back key to `confirmAndExit`. |
 | `standalone_config_screen.dart` | Region row / PIA username / password / DNS → `GENERATE CONFIG`; renders the generated config under a `GENERATED CONFIG: pia-<region>` heading (`Key('generated_config_label')`, same stem as the shared `pia-<region>.conf`) with COPY (+ countdown) and SHARE / SAVE. |
 | `manage_router_screen.dart` | 47 lines — thin wrapper: `RouterSlotsScreen(mode: SlotModalMode.manage, …)`. |
 | `watchdog_management_screen.dart` | 47 lines — thin wrapper: `RouterSlotsScreen(mode: SlotModalMode.watchdog, …)`. |
@@ -152,18 +152,18 @@ SettingsScreen   ──> RouterWatchdog.uninstallFromRouter() / deleteCachedPiaC
 | `AppDestination` | `routeName` | `title` | On main menu? | In drawer? |
 | --- | --- | --- | --- | --- |
 | `menu` | `main_menu` | Main menu | — (is the menu) | yes, as **HOME** |
-| `standalone` | `standalone` | Standalone PIA WireGuard config | yes | yes |
-| `manageRouter` | `manage_router` | Manage PIA WireGuard config | yes (¹) | yes |
-| `watchdog` | `watchdog` | Watchdog WireGuard management | yes (¹) | yes |
-| `deviceAssignment` | `device_assignment` | VPN device assignment | yes (¹²) | yes |
-| `routerLog` | `router_log` | View router log | **no** | yes |
-| `log` | `log` | View app log | yes | yes |
-| `settings` | `settings` | Settings | **no** | yes |
-| `about` | `about` | About | **no** | yes |
+| `standalone` | `standalone` | STANDALONE | yes | yes |
+| `manageRouter` | `manage_router` | MANAGE | yes | yes |
+| `watchdog` | `watchdog` | WATCHDOG | yes | yes |
+| `deviceAssignment` | `device_assignment` | DEVICE ASSIGNMENT | yes | yes |
+| `routerLog` | `router_log` | ROUTER LOG | yes | yes |
+| `log` | `log` | APP LOG | yes | yes |
+| `settings` | `settings` | SETTINGS | yes | yes |
+| `about` | `about` | ABOUT | yes | yes |
 
-- **SETTINGS and View router log are drawer-only.** An uninstall is not something to offer on the way in, and the router log is a diagnostic detour rather than a destination anyone sets out for. `SettingsScreen` holds everything that REMOVES something - the router uninstall, REMOVE CACHED PIA CERT and FORGET ROUTER IP, the last two are there rather than on ABOUT, which is a page people open to read.
-- **The menu labels carry SUPERSCRIPT footnote markers, not a star.** ¹ is "requires SSH connectivity to an ASUS router" and ² is "stock firmware only"; both footnotes are rendered under the buttons. The marker is appended to `AppDestination.title`, so the button label and the drawer label are deliberately not identical.
-- Menu also has `Exit app` (`Key('menu_close_app')`); drawer also has `Exit app` (`Key('drawer_close_app')`).
+- **Every destination is on the main menu as well as in the drawer.** Decided 2026-09-13. SETTINGS, ROUTER LOG and ABOUT used to be drawer-only, on the grounds that an uninstall is not something to offer on the way in; the decision now is that nothing should need the hamburger to be found. The menu builds its buttons from `AppDrawer.destinations`, so the two cannot drift. `SettingsScreen` holds everything that REMOVES something - the router uninstall, REMOVE CACHED PIA CERT and FORGET ROUTER IP, the last two are there rather than on ABOUT, which is a page people open to read.
+- **Menu and drawer labels are identical: the destination titles, in capitals, with no footnote markers.** The superscripts for "requires SSH connectivity to an ASUS router" and "stock firmware only", and the two footnotes under the buttons, were removed 2026-09-13.
+- Menu also has `EXIT` (`Key('menu_close_app')`); drawer also has `EXIT` (`Key('drawer_close_app')`).
 - Navigation **pushes** (`navigateToDestination`) — the stack grows deliberately so back can retrace.
 - Active destination is `kHighlight` (teal) via `ListTile.selectedColor`.
 - **`RouterSlotsScreen` IS the slot list once it has connected - it does not push one.** The connect form and the list are two states of one screen, the way the device assignment screen works, so the back button leaves for the menu instead of returning to a spent login form. Neither navigates at all, so there is no extra route to name, to observe, or to go back to. `SlotModal` still pushes `WatchdogDialog` as a page, with `settings.name` set to the watchdog destination so `DestinationObserver` keeps the drawer highlighting it - an unrecognised name silently resets that to the menu.
@@ -523,7 +523,7 @@ Note: ignore all .claude\plan_*.md files, they are historical and not part of th
 
 Three files, split the way the rest of the app is: `device_assignment.dart` is pure and has no SSH in
 it, `device_assignment_service.dart` does the I/O, `widgets/device_assignment_screen.dart` is the
-screen. It is the fourth button on the main menu, marked ¹² - needs SSH, stock only - and is in the drawer as well. **Merlin routes per device through VPN Director, which this app does not drive**, so the
+screen. It is the fourth button on the main menu and is in the drawer as well. It needs SSH and stock firmware, which the menu no longer marks. **Merlin routes per device through VPN Director, which this app does not drive**, so the
 screen detects the firmware itself on entry and refuses with an explanation. It detects rather than
 trusts: `routerFirmware` defaults to Merlin until something probes it, and reaching this screen
 first told a stock user their router was Merlin.

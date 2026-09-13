@@ -999,7 +999,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Still the same open modal - no reopen.
-      expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+      expect(find.text('MANAGE CONFIGURATION'), findsOneWidget);
       expect(find.text('● ACTIVE'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
@@ -1368,12 +1368,12 @@ void main() {
       final ssh = RecordingSSHClient(responder: (_) => '');
       await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
       await _open(tester);
-      expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+      expect(find.text('MANAGE CONFIGURATION'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('screen_close')));
       await tester.pumpAndSettle();
 
-      expect(find.text('WIREGUARD CONFIGURATION'), findsNothing);
+      expect(find.text('MANAGE CONFIGURATION'), findsNothing);
       expect(find.byType(MainMenuScreen), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());

@@ -20,29 +20,38 @@ Future<void> _teardown(WidgetTester tester, SessionController c) async {
 }
 
 void main() {
-  testWidgets('main menu shows six entries, both footnotes, hamburger and header', (tester) async {
+  testWidgets('main menu shows all nine entries in drawer order, with no footnotes', (tester) async {
     final c = _quietController();
     await tester.pumpWidget(PiaWgApp(controller: c));
     await tester.pumpAndSettle();
 
     expect(find.text('cfg-pia-wg'), findsOneWidget); // static header
     expect(find.byKey(const Key('app_hamburger')), findsOneWidget); // hamburger
-    expect(find.byKey(const Key('menu_standalone')), findsOneWidget);
-    expect(find.byKey(const Key('menu_manage_router')), findsOneWidget);
-    expect(find.byKey(const Key('menu_watchdog')), findsOneWidget);
-    expect(find.byKey(const Key('menu_device_assignment')), findsOneWidget);
-    expect(find.byKey(const Key('menu_log')), findsOneWidget);
-    expect(find.byKey(const Key('menu_close_app')), findsOneWidget);
-    // Two markers now: device assignment needs SSH AND stock firmware, so the single '*' was
-    // renumbered rather than overloaded.
-    expect(find.text('¹ requires SSH connectivity to an ASUS router'), findsOneWidget);
-    expect(find.text('² stock firmware only'), findsOneWidget);
+    // Every destination, capitalised and in the drawer's order, then EXIT (2026-09-13).
+    const labels = {
+      'menu_standalone': 'STANDALONE',
+      'menu_manage_router': 'MANAGE',
+      'menu_watchdog': 'WATCHDOG',
+      'menu_device_assignment': 'DEVICE ASSIGNMENT',
+      'menu_router_log': 'ROUTER LOG',
+      'menu_log': 'APP LOG',
+      'menu_settings': 'SETTINGS',
+      'menu_about': 'ABOUT',
+      'menu_close_app': 'EXIT',
+    };
+    final tops = <double>[];
+    for (final entry in labels.entries) {
+      expect(find.descendant(of: find.byKey(Key(entry.key)), matching: find.text(entry.value)), findsOneWidget,
+          reason: entry.key);
+      tops.add(tester.getTopLeft(find.byKey(Key(entry.key))).dy);
+    }
+    expect(tops, orderedEquals(List.of(tops)..sort()), reason: 'in the order listed, EXIT last');
+    // The superscript markers and both footnotes are gone.
+    expect(find.textContaining('requires SSH connectivity'), findsNothing);
+    expect(find.textContaining('stock firmware only'), findsNothing);
+    expect(find.textContaining('¹'), findsNothing);
     expect(find.byKey(const Key('menu_help')), findsOneWidget);
     expect(find.textContaining('Select from the above'), findsNothing);
-    // Both trailing lines are centred; the Column stretches them, so alignment is the Text's job.
-    expect(tester.widget<Text>(find.text('¹ requires SSH connectivity to an ASUS router')).textAlign,
-        TextAlign.center);
-    expect(tester.widget<Text>(find.text('² stock firmware only')).textAlign, TextAlign.center);
     expect(tester.widget<Text>(find.byKey(const Key('menu_help'))).textAlign, TextAlign.center);
     expect(find.byKey(const Key('menu_review')), findsOneWidget);
     // The donation block went when the app gained a price. Asking for money twice, in two different
@@ -209,7 +218,7 @@ void main() {
     await tester.tap(find.byKey(const Key('app_hamburger')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('drawer_about')), findsOneWidget);
-    // Ordering: About is the last destination, directly under "View app log".
+    // Ordering: ABOUT is the last destination, below APP LOG.
     final logY = tester.getCenter(find.byKey(const Key('drawer_log'))).dy;
     final aboutY = tester.getCenter(find.byKey(const Key('drawer_about'))).dy;
     expect(aboutY, greaterThan(logY));
@@ -243,6 +252,7 @@ void main() {
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(find.byKey(const Key('menu_review')));
       await tester.tap(find.byKey(const Key('menu_review')));
       await tester.pumpAndSettle();
 
@@ -261,6 +271,9 @@ void main() {
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
 
+      // Under nine buttons it starts below the fold on the test surface, so scroll to it first.
+      await tester.ensureVisible(find.byKey(const Key('menu_review')));
+      await tester.pumpAndSettle();
       final row = tester.getRect(find.byKey(const Key('menu_review')));
       expect(row.height, greaterThan(24), reason: 'a bare 12px line is not a comfortable target');
       // Well off to the side of the centred text, and still inside the row.
@@ -272,22 +285,18 @@ void main() {
       await _teardown(tester, c);
     });
 
-    // It used to sit above the donation block. With that gone it is the last thing on the screen,
-    // and the Spacer above it has to keep it there rather than letting it ride up under the help
-    // line - a stray SizedBox in the wrong place is exactly how that regresses.
-    testWidgets('is the last line on the screen, with air above it', (tester) async {
+    // 2026-09-13: the help and review lines sit together directly under the buttons, with no gap between
+    // them. They used to be split - help under the footnotes, the review pushed down to the foot.
+    testWidgets('sits directly under the help line, which sits under the buttons', (tester) async {
       final c = _quietController();
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
 
-      final help = tester.getBottomLeft(find.byKey(const Key('menu_help')));
-      final review = tester.getTopLeft(find.byKey(const Key('menu_review')));
-      expect(help.dy, lessThan(review.dy), reason: 'help first, then the ask');
-      expect(review.dy - help.dy, greaterThan(16), reason: 'a few lines of air, not a tight stack');
-
-      final reviewBottom = tester.getBottomLeft(find.byKey(const Key('menu_review'))).dy;
-      expect(reviewBottom, lessThan(tester.view.physicalSize.height / tester.view.devicePixelRatio),
-          reason: 'still on screen, not pushed off by the Spacer');
+      final exitBottom = tester.getBottomLeft(find.byKey(const Key('menu_close_app'))).dy;
+      final help = tester.getRect(find.byKey(const Key('menu_help')));
+      final review = tester.getRect(find.byKey(const Key('menu_review')));
+      expect(help.top, greaterThan(exitBottom), reason: 'after the buttons');
+      expect(review.top, moreOrLessEquals(help.bottom, epsilon: 1), reason: 'no gap between the two lines');
 
       await _teardown(tester, c);
     });
@@ -319,6 +328,7 @@ void main() {
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(find.byKey(const Key('menu_review')));
       await tester.tap(find.byKey(const Key('menu_review')));
       await tester.pumpAndSettle();
 
