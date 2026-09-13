@@ -422,6 +422,7 @@ class _SlotModalState extends State<SlotModal> {
       settings: RouteSettings(name: AppDestination.watchdog.routeName),
       builder: (ctx) => _WatchdogLogScreen(
         slot: slot,
+        desc: _slots.slots[slot]?.desc ?? '',
         text: logText,
         // Not a secret: copying a log must not arm the 60s auto-clear, which would count down on
         // the config screen and then wipe the log the user has just copied.
@@ -835,12 +836,16 @@ class _FormDialog extends StatelessWidget {
 class _WatchdogLogScreen extends StatefulWidget {
   const _WatchdogLogScreen({
     required this.slot,
+    required this.desc,
     required this.text,
     required this.onCopy,
     required this.onClear,
   });
 
   final int slot;
+
+  /// The slot's region, so the heading reads wgc1:aus_melbourne rather than a bare wgc1.
+  final String desc;
   final String text;
   final Future<void> Function() onCopy;
   final Future<void> Function() onClear;
@@ -853,6 +858,7 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
   final _scroll = ScrollController();
 
   int get slot => widget.slot;
+  String get label => slotLabel(widget.slot, widget.desc);
   String get text => widget.text;
   Future<void> Function() get onCopy => widget.onCopy;
   Future<void> Function() get onClear => widget.onClear;
@@ -878,10 +884,10 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: kSurface,
-            title: Text('Clear the watchdog log for wgc$slot?', style: const TextStyle(color: kText, fontSize: 15)),
+            title: Text('Clear the watchdog log for $label?', style: const TextStyle(color: kText, fontSize: 15)),
             content: Text(
-              'Empties /tmp/watchdog_wgc$slot.log on the router. The watchdog keeps writing to it '
-              'from its next run. Nothing else changes.',
+              "Empties /tmp/watchdog_wgc$slot.log on the router and deletes yesterday's rotated copy. The "
+              'watchdog keeps writing to it from its next run. Nothing else changes.',
               style: const TextStyle(color: kMuted, fontSize: 13),
             ),
             actions: [
@@ -913,7 +919,7 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('WATCHDOG LOG · wgc$slot', style: const TextStyle(color: kHighlight, fontSize: 13)),
+              Text('WATCHDOG LOG · $label', style: const TextStyle(color: kHighlight, fontSize: 13)),
               const SizedBox(height: 8),
               Expanded(
                 child: SingleChildScrollView(

@@ -309,7 +309,10 @@ void main() {
       final c = RecordingSSHClient(responder: (_) => '');
       await _wd(c).clearWatchdogLog(1);
 
-      expect(c.commands.any((x) => x.contains('rm ') && x.contains('watchdog_wgc1.log')), isFalse);
+      expect(c.commands.any((x) => RegExp(r'rm [^;]*watchdog_wgc1\.log($|[\s;])').hasMatch(x)), isFalse,
+          reason: 'the live log is truncated, never removed');
+      expect(c.ran('rm -f /tmp/watchdog_wgc1.log.old'), isTrue,
+          reason: "yesterday's rotated copy goes too, because the viewer shows it");
       expect(c.commands.any((x) => x.contains('> /tmp/watchdog_wgc1.log')), isTrue);
       expect(c.commands.any((x) => x.contains('logger')), isTrue, reason: 'the router log records it');
     });
@@ -693,6 +696,16 @@ void main() {
   test('getWatchdogLog returns cat output', () async {
     final c = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'line1\nline2' : '');
     expect(await _wd(c).getWatchdogLog(1), 'line1\nline2');
+  });
+
+  test("getWatchdogLog reads yesterday's rotated copy first, and tolerates either being absent", () async {
+    final c = RecordingSSHClient(responder: (_) => '');
+    await _wd(c).getWatchdogLog(1);
+    final cmd = c.commands.singleWhere((x) => x.contains('watchdog_wgc1.log'));
+    expect(cmd, contains("if [ -f '/tmp/watchdog_wgc1.log.old' ]"));
+    expect(cmd, contains("if [ -f '/tmp/watchdog_wgc1.log' ]"));
+    expect(cmd.indexOf("'/tmp/watchdog_wgc1.log.old'"), lessThan(cmd.lastIndexOf("'/tmp/watchdog_wgc1.log'")),
+        reason: 'oldest first, so the text reads in time order');
   });
 
   test('loadConfig maps nvram keys to fields (per-slot + global PIA)', () async {

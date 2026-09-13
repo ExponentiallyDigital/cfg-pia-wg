@@ -1381,15 +1381,27 @@ class RouterWatchdog {
     onLog?.call('Router reboot requested. It takes a minute or two to come back.', isWarning: true);
   }
 
-  Future<String> getWatchdogLog(int slot) => _read('cat /tmp/watchdog_wgc$slot.log 2>/dev/null');
+  /// The slot's watchdog log as one text: yesterday's rotated copy first, then today's.
+  ///
+  /// The log rotates into `.log.old` at midnight, and reading only the live file showed nothing from
+  /// before then - which, for an alert emailed overnight, was usually the part worth reading. Either
+  /// file may be missing: there is no `.old` before the first rotation and no log before the first run.
+  /// Neither is a failure, so neither is logged as one.
+  Future<String> getWatchdogLog(int slot) {
+    final log = '/tmp/watchdog_wgc$slot.log';
+    return _read("if [ -f '$log.old' ]; then cat '$log.old'; fi; if [ -f '$log' ]; then cat '$log'; fi");
+  }
 
-  /// Empties the slot's watchdog log, leaving the file in place.
+  /// Empties the slot's watchdog log, leaving the file in place, and deletes yesterday's rotated copy.
   ///
   /// Truncated rather than deleted: the script appends to it on every run and never creates it,
   /// so removing the file outright would lose every line until the next reboot. `:` writes
   /// nothing and is a shell builtin, so this needs no binary the router might not have.
+  ///
+  /// The rotated copy goes too, because the viewer shows it: clearing only today's file would refill
+  /// the screen with yesterday's lines the moment it reopened.
   Future<void> clearWatchdogLog(int slot) async {
-    await _run(': > /tmp/watchdog_wgc$slot.log');
+    await _run(': > /tmp/watchdog_wgc$slot.log; rm -f /tmp/watchdog_wgc$slot.log.old');
     await _logRouter('Watchdog log cleared for wgc$slot');
   }
 

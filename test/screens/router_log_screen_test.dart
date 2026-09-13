@@ -204,5 +204,20 @@ void main() {
       expect(classifyLogLine('Sep 11 kernel: wgc1 is up'), RouterLogSource.other,
           reason: 'naming an interface is not the same as being tagged by us');
     });
+
+    // Our errors in red. A firmware line that happens to say "failed" stays as it is.
+    test('an error the app or the watchdog wrote is picked out', () {
+      expect(isRouterLogError('Sep 11 12:00:01 router cfg-pia-wg: ERROR during deploy: timed out'), isTrue);
+      expect(isRouterLogError('Sep 11 12:00:01 router cfg-pia-wg: Email FAILED (exit=1) stderr=[]'), isTrue);
+      expect(isRouterLogError('cfg-pia-wg: wgc1: No handshake and both pings failed (9.9.9.9, 1.1.1.1)'), isTrue);
+      expect(isRouterLogError('cfg-pia-wg: wgc1: Connectivity lost; reconfiguring (attempt #2)'), isTrue);
+      expect(isRouterLogError('cfg-pia-wg: wgc1: Interface wgc1 is down or absent'), isTrue);
+    });
+
+    test('an ordinary line of ours is not an error, and neither is the firmware saying failed', () {
+      expect(isRouterLogError('cfg-pia-wg: wgc1: Primary ping OK (9.9.9.9)'), isFalse);
+      expect(isRouterLogError('Sep 11 12:00:01 router cfg-pia-wg: Enabled wgc1:aus_melbourne'), isFalse);
+      expect(isRouterLogError('Sep 11 12:00:01 router dnsmasq[1]: failed to access /tmp/x'), isFalse);
+    });
   });
 }

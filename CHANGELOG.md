@@ -45,6 +45,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 2026-09-13 v0.8.76 build 446 - documentation updates
 
+- ADD: **errors in the router log are red.** A line the app or its watchdog wrote that reports a fault - ERROR, failed, connectivity lost, down or absent, never answered, no Internet - shows in red rather than teal or amber. The firmware's own lines stay plain even when they say failed, so red always means this app.
+- ADD: **the watchdog log shows yesterday as well as today.** The log rotates into a `.old` copy at midnight and the viewer only ever read today's file, so an alert emailed overnight usually pointed at lines the screen could not show. It now reads the rotated copy first and then today's, and a file not existing yet is not reported as a failure.
+- CHG: CLEAR on the watchdog log also deletes the rotated copy, since the viewer now shows it. Clearing only today's file would have refilled the screen with yesterday's lines the moment it reopened.
+- CHG: **the watchdog log's heading names the region as well as the slot**, for example WATCHDOG LOG · wgc1:aus_melbourne, and so does the question before CLEAR.
+- DOC: CONTEXT no longer says the drawer offers three screens the main menu lacks, which stopped being true in the navigation change. TESTING checks the router log's colours and the watchdog log's rotated copy.
+- TST: our error lines are red and the firmware's are not; the watchdog log reads the rotated copy first and tolerates either file being absent; CLEAR truncates the live log and removes the rotated copy; and the heading names the region.
 - CHG: **the main menu offers every destination**, in the drawer's order: STANDALONE, MANAGE, WATCHDOG, DEVICE ASSIGNMENT, ROUTER LOG, APP LOG, SETTINGS, ABOUT, then EXIT. ROUTER LOG, SETTINGS and ABOUT were drawer-only. The menu now builds its buttons from the drawer's own list, so the two cannot offer different screens or put them in a different order.
 - CHG: **shorter names, identical on the menu and in the drawer.** "Standalone PIA WireGuard config" is STANDALONE, "Manage PIA WireGuard config" is MANAGE, "Watchdog WireGuard management" is WATCHDOG, "VPN device assignment" is DEVICE ASSIGNMENT, "View router log" is ROUTER LOG, "View app log" is APP LOG, and "Exit app" is EXIT.
 - CHG: the superscript markers on the menu buttons, and the two footnotes under them, "requires SSH connectivity to an ASUS router" and "stock firmware only", are gone.
