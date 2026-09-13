@@ -841,6 +841,29 @@ class RouterWatchdog {
     await _writeFile(watchdogScriptPath(slot), body, what: 'Watchdog script');
   }
 
+  /// Replaces every deployed watchdog script with this build's, and changes nothing else.
+  ///
+  /// The script reads its settings from NVRAM on every run, so bringing it up to date needs only the
+  /// file: no tunnel is restarted, no schedule changes and no setting is rewritten. A slot is only
+  /// touched if its script is already there - one with settings but no script is a watchdog someone
+  /// removed, not an old one. The firmware is read afresh rather than assumed, because ABOUT can be
+  /// opened without ever visiting a router screen, and the Merlin script on a stock router would break
+  /// the very watchdog it was meant to update. Returns the slots updated.
+  Future<List<int>> redeployScripts() async {
+    final firmware = classifyFirmwareTag(await _read('nvram get 3rd-party'));
+    if (firmware == null) {
+      throw Exception('this router firmware is not supported, so its watchdog scripts were left alone.');
+    }
+    final probes = [for (var s = 1; s <= 5; s++) "[ -s '${watchdogScriptPath(s)}' ] && echo $s"].join('; ');
+    final deployed = RegExp(r'\d+').allMatches(await _read('$probes; true')).map((m) => int.parse(m.group(0)!)).toList();
+    for (final slot in deployed) {
+      await _writeScript(slot, buildWatchdogScript(await loadConfig(slot), firmware: firmware));
+      await _logRouter('Watchdog script updated to ${appVersionLabel.isEmpty ? 'this app version' : appVersionLabel} '
+          'for ${await _label(slot)}');
+    }
+    return deployed;
+  }
+
   Future<String> _runHeredoc(String cmd, String path) async {
     try {
       return await _run(cmd).timeout(const Duration(seconds: 30));
@@ -1332,11 +1355,11 @@ class RouterWatchdog {
   /// Both rows on ABOUT come from the router and neither is worth a handshake of its own, so the
   /// screen asks once and fills in both - which is also why tapping either row's login link fills
   /// in the other.
-  Future<({String? version, String? history, String model, String firmware})> aboutRouterFacts() async {
+  Future<({String? version, String? history, String model, String firmware, String type})> aboutRouterFacts() async {
     final raw = await _read('$kDeployedScriptHeaderCommand; echo "$_aboutSep"; '
-        r'''printf '%s@@%s@@%s@@%s@@%s' "$(nvram get cfg_pia_wg_sdate)" "$(nvram get cfg_pia_wg_reconfig_ok)" '''
+        r'''printf '%s@@%s@@%s@@%s@@%s@@%s' "$(nvram get cfg_pia_wg_sdate)" "$(nvram get cfg_pia_wg_reconfig_ok)" '''
         r'''"$(nvram get cfg_pia_wg_reconfig_fail)" "$(nvram get productid)" '''
-        r'''"$(nvram get buildno)_$(nvram get extendno)"''');
+        r'''"$(nvram get buildno)_$(nvram get extendno)" "$(nvram get 3rd-party)"''');
     final parts = raw.split(_aboutSep);
     final counters = (parts.length > 1 ? parts[1] : '').trim().split('@@');
     String at(int i) => i < counters.length ? counters[i].trim() : '';
@@ -1350,6 +1373,9 @@ class RouterWatchdog {
       history: facts.shortHistoryLine,
       model: at(3),
       firmware: at(4),
+      // Only when the facts came back at all. An empty 3rd-party tag means stock, but an empty reply
+      // means nothing was read, and calling that stock would be a guess.
+      type: parts.length > 1 ? firmwareLabel(classifyFirmwareTag(at(5))) : '',
     );
   }
 

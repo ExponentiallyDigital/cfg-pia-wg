@@ -26,12 +26,14 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../app_colors.dart';
 import '../build_info_service.dart';
+import '../entitlement.dart';
 import '../firmware.dart';
 import '../license_text.dart';
 import '../router_slot_service.dart';
 import '../router_watchdog.dart';
 import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/paywall.dart';
 import '../widgets/ssh_creds_dialog.dart';
 import '../widgets/error_presenter.dart';
 
@@ -80,12 +82,12 @@ class _AboutScreenState extends State<AboutScreen> {
 
   /// The router's own model and firmware, read on the same round trip and used only to fill in
   /// a bug report. Empty until a successful look.
-  String _routerModel = '', _routerFirmware = '';
+  String _routerModel = '', _routerFirmware = '', _routerType = '';
 
   /// "Since yyyy-mm-dd: X successful & Y unsuccessful reconfigures", or null when the router has
   /// never recorded any - in which case the screen shows nothing rather than an empty row.
   String? _historyLine;
-  bool _scriptChecked = false, _scriptLoading = false;
+  bool _scriptChecked = false, _scriptLoading = false, _redeploying = false;
   late final TapGestureRecognizer _scriptLoginRecogniser;
   late final TapGestureRecognizer _historyLoginRecogniser;
 
@@ -149,7 +151,7 @@ class _AboutScreenState extends State<AboutScreen> {
     String? version;
     String? history;
     String? error;
-    var model = '', firmware = '';
+    var model = '', firmware = '', type = '';
     try {
       final client =
           controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
@@ -160,6 +162,7 @@ class _AboutScreenState extends State<AboutScreen> {
       history = facts.history;
       model = facts.model;
       firmware = facts.firmware;
+      type = facts.type;
       await controller.rememberRouterIp(ip);
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
@@ -175,6 +178,7 @@ class _AboutScreenState extends State<AboutScreen> {
       _historyLine = history;
       _routerModel = model;
       _routerFirmware = firmware;
+      _routerType = type;
     });
     if (error != null && mounted) {
       await AppErrors.system(context, controller, 'Could not read the deployed watchdog script: $error');
@@ -186,6 +190,55 @@ class _AboutScreenState extends State<AboutScreen> {
     if (_scriptLoading) return 'reading...';
     if (!_scriptChecked) return kScriptLoginPrompt;
     return _scriptVersion ?? 'not deployed';
+  }
+
+  /// True when the router's script was stamped by a different app version than this one. The app
+  /// updates from the store and the script only on a deploy, so the two drift apart silently.
+  bool get _scriptStale =>
+      _scriptChecked && _scriptVersion != null && appVersionLabel.isNotEmpty && _scriptVersion != appVersionLabel;
+
+  /// The Router firmware row's value, or empty until something has told us.
+  String get _firmwareStatus =>
+      _routerType.isEmpty && _routerFirmware.isEmpty ? '' : routerFirmwareStatus(type: _routerType, version: _routerFirmware);
+
+  String _licence(BuildContext context) =>
+      licenceStatus(purchasingAvailable: Entitlement.purchasingAvailable, unlocked: SessionScope.of(context).isUnlocked);
+
+  // A change to the router, so it is paid: created or changed is paid, removed is free. It replaces only
+  // the script files - the script reads its settings from NVRAM on every run, so no tunnel, schedule or
+  // setting is touched - and reads the version straight back, so the row shows what is really there.
+  Future<void> _redeployScripts() async {
+    final controller = SessionScope.of(context);
+    if (!controller.isUnlocked) {
+      if (!await Paywall.show(context, controller, pitch: Pitch.redeploy) || !mounted) return;
+    }
+    setState(() => _redeploying = true);
+    final ip = controller.routerIp.trim(), user = controller.sshUsername.trim(), pass = controller.sshPassword;
+    String? error, version;
+    var slots = <int>[];
+    try {
+      final client =
+          controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      final watchdog = RouterWatchdog(client, onLog: controller.onLog);
+      slots = await watchdog.redeployScripts();
+      version = (await watchdog.aboutRouterFacts()).version;
+    } catch (e) {
+      error = e.toString().replaceAll('Exception: ', '');
+    }
+    if (!mounted) return;
+    setState(() {
+      _redeploying = false;
+      if (error == null) _scriptVersion = version;
+    });
+    if (error != null) {
+      await AppErrors.system(context, controller, 'Could not update the watchdog script: $error');
+      return;
+    }
+    final message = slots.isEmpty
+        ? 'No deployed watchdog script to update.'
+        : 'Watchdog script updated on ${slots.map((s) => 'wgc$s').join(', ')}.';
+    controller.logEntry(message, isSuccess: slots.isNotEmpty);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -203,8 +256,9 @@ class _AboutScreenState extends State<AboutScreen> {
   // stands down a countdown left by an earlier config copy, which would otherwise wipe the build
   // info the user has just copied.
   Future<void> _copyBuildInfo(BuildContext context, BuildInfo? info) async {
-    await SessionScope.of(context)
-        .copyToClipboard(_BuildInfoBlock.asPlainText(info, scriptStatus: _scriptStatus), armAutoClear: false);
+    await SessionScope.of(context).copyToClipboard(
+        _BuildInfoBlock.asPlainText(info, scriptStatus: _scriptStatus, firmware: _firmwareStatus, licence: _licence(context)),
+        armAutoClear: false);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Build info copied.')));
     }
@@ -239,8 +293,27 @@ class _AboutScreenState extends State<AboutScreen> {
                   _BuildInfoBlock(
                     info: snap.data,
                     scriptStatus: _scriptStatus,
+                    scriptStale: _scriptStale,
+                    firmware: _firmwareStatus,
+                    licence: _licence(context),
                     scriptLoginRecogniser: _scriptChecked || _scriptLoading ? null : _scriptLoginRecogniser,
                   ),
+                  // The amber value above, and the way to fix it right under it. Only once the router has
+                  // been read and its script turns out to be from another app version.
+                  if (_scriptStale) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppButton(
+                        keyValue: 'about_redeploy_scripts',
+                        label: 'REDEPLOY TO UPDATE VERSION',
+                        icon: Icons.system_update_alt,
+                        fontSize: 12,
+                        busy: _redeploying,
+                        onPressed: _redeploying ? null : _redeployScripts,
+                      ),
+                    ),
+                  ],
                   // The watchdog's own history, set apart from the build info because it describes
                   // the ROUTER rather than this app. Absent entirely when the router has no
                   // counters, so an untouched router shows no empty gap where it would have been.
@@ -280,7 +353,11 @@ class _AboutScreenState extends State<AboutScreen> {
                         icon: Icons.bug_report_outlined,
                         fontSize: 12,
                         onPressed: () => _launch(bugReportUrl(snap.data,
-                            scriptStatus: _scriptStatus, model: _routerModel, firmware: _routerFirmware)),
+                            scriptStatus: _scriptStatus,
+                            model: _routerModel,
+                            firmware: _routerFirmware,
+                            firmwareType: _routerType,
+                            licence: _licence(context))),
                       ),
                     ],
                   ),
@@ -288,9 +365,9 @@ class _AboutScreenState extends State<AboutScreen> {
               ),
             ),
             // url links display
-            const SizedBox(height: 20),
+            const SizedBox(height: 40),
             const _SectionRule(),
-            const SizedBox(height: 20),
+            const SizedBox(height: 40),
             // The label IS the link, and the URL is not shown. A raw GitHub blob URL is 70-odd
             // characters of noise that wraps across two lines on a phone and tells the reader
             // nothing they wanted to know; the destination is already named by the label.
@@ -318,9 +395,9 @@ class _AboutScreenState extends State<AboutScreen> {
               ],
             ),
             // "GNU GPL license" display:
-            const SizedBox(height: 20),
+            const SizedBox(height: 40),
             const _SectionRule(),
-            const SizedBox(height: 20),
+            const SizedBox(height: 40),
             const Text(
               kLicenseText,
               style: TextStyle(color: Colors.white70, fontSize: 10, height: 1.4),
@@ -374,17 +451,35 @@ class _BuildInfoBlock extends StatelessWidget {
   /// link rather than a fact.
   final TapGestureRecognizer? scriptLoginRecogniser;
 
-  const _BuildInfoBlock({required this.info, this.scriptStatus = '', this.scriptLoginRecogniser});
+  /// True when the deployed script is from another app version, which draws its value in amber.
+  final bool scriptStale;
+
+  /// The Router firmware row: type and version, or empty until the router has been read.
+  final String firmware;
+
+  /// The License status row: licensed, unlicenced or homegrown.
+  final String licence;
+
+  const _BuildInfoBlock({
+    required this.info,
+    this.scriptStatus = '',
+    this.scriptLoginRecogniser,
+    this.scriptStale = false,
+    this.firmware = '',
+    this.licence = '',
+  });
 
   /// `label: value` pairs in display order. [i] is null while the channel call is in flight.
   ///
   /// The router's script version comes FIRST. It is the one line here that can disagree with the
   /// rest: everything else describes the app the user is holding, while this describes what is
   /// actually running on their router, which only changes when a watchdog is deployed.
-  static List<(String, String)> rows(BuildInfo? i, {String scriptStatus = ''}) {
+  static List<(String, String)> rows(BuildInfo? i, {String scriptStatus = '', String firmware = '', String licence = ''}) {
     String v(String Function(BuildInfo) field) => i == null ? _kPending : field(i);
     return [
       if (scriptStatus.isNotEmpty) ('Watchdog script', scriptStatus),
+      if (firmware.isNotEmpty) ('Router firmware', firmware),
+      if (licence.isNotEmpty) ('License status', licence),
       ('Built by', '${v((b) => b.installer)} at ${v((b) => b.buildTimestamp)}'),
       ('Build type', v((b) => b.buildType)),
       ('Commit hash', v((b) => b.commitHash)),
@@ -403,12 +498,14 @@ class _BuildInfoBlock extends StatelessWidget {
   }
 
   /// Exactly what selecting this block yields, and what the COPY button writes to the clipboard.
-  static String asPlainText(BuildInfo? i, {String scriptStatus = ''}) =>
-      '${headline(i)}\n${rows(i, scriptStatus: scriptStatus).map((r) => '${r.$1}: ${r.$2}').join('\n')}';
+  static String asPlainText(BuildInfo? i, {String scriptStatus = '', String firmware = '', String licence = ''}) {
+    final lines = rows(i, scriptStatus: scriptStatus, firmware: firmware, licence: licence).map((r) => '${r.$1}: ${r.$2}');
+    return '${headline(i)}\n${lines.join('\n')}';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final data = rows(info, scriptStatus: scriptStatus);
+    final data = rows(info, scriptStatus: scriptStatus, firmware: firmware, licence: licence);
     return Text.rich(
       TextSpan(children: [
         // Same size and weight as the rows below it, and no blank line: it is the first line of
@@ -421,6 +518,9 @@ class _BuildInfoBlock extends StatelessWidget {
           // every other value, so the block still reads as one table rather than a call to action.
           if (n == 0 && scriptLoginRecogniser != null)
             TextSpan(text: data[n].$2, style: _linkStyle, recognizer: scriptLoginRecogniser)
+          else if (n == 0 && scriptStale)
+            // Amber, the app's out-of-date colour, with the redeploy offer directly under the block.
+            TextSpan(text: data[n].$2, style: _valueStyle.copyWith(color: kWarn))
           else
             TextSpan(text: data[n].$2, style: _valueStyle),
           if (n < data.length - 1) const TextSpan(text: '\n'),
@@ -432,6 +532,19 @@ class _BuildInfoBlock extends StatelessWidget {
   }
 }
 
+/// The Router firmware value, in the About block and in the issue: type and version once the router
+/// has been read, the type alone when only this session knows it, and a plain "not detected" otherwise.
+String routerFirmwareStatus({String type = '', String version = ''}) {
+  final t = type.isNotEmpty ? type : (firmwareDetected ? firmwareLabel(routerFirmware) : '');
+  if (t.isEmpty && version.isEmpty) return 'not detected this session';
+  return [t, version].where((part) => part.isNotEmpty).join(' ');
+}
+
+/// "homegrown" for a copy built without a store key - it cannot sell anything, so it unlocks
+/// everything - and otherwise whether this installation holds the unlock.
+String licenceStatus({required bool purchasingAvailable, required bool unlocked}) =>
+    !purchasingAvailable ? 'homegrown' : (unlocked ? 'licensed' : 'unlicenced');
+
 /// A prefilled "new bug report" URL for the running build.
 ///
 /// Mirrors the section headings of `.github/ISSUE_TEMPLATE/bug_report.md`: GitHub applies a
@@ -440,8 +553,17 @@ class _BuildInfoBlock extends StatelessWidget {
 ///
 /// The template's own Environment bullets are not reproduced - they still ask for an addon and a
 /// game version - so that section carries the build info plus the router fields instead.
-String bugReportUrl(BuildInfo? info, {String scriptStatus = '', String model = '', String firmware = ''}) {
-  final firmware = firmwareDetected ? routerFirmware.name : 'not detected this session';
+String bugReportUrl(
+  BuildInfo? info, {
+  String scriptStatus = '',
+  String model = '',
+  String firmware = '',
+  String firmwareType = '',
+  String licence = '',
+}) {
+  // This was once a local called `firmware`, and it SHADOWED the parameter of the same name: the version
+  // read from the router never reached the report, and both firmware lines said only "stock".
+  final firmwareLine = routerFirmwareStatus(type: firmwareType, version: firmware);
   // UNKNOWN, not the screen's "login to router to retrieve" - that is an instruction to the
   // user standing in front of the app, and it tells whoever reads the issue nothing at all.
   final script = scriptStatus.isEmpty || scriptStatus == kScriptLoginPrompt ? 'UNKNOWN' : scriptStatus;
@@ -466,8 +588,8 @@ If applicable, add screenshots to help explain your problem.
 **Environment (please complete the following information):**
 
 ```text
-${_BuildInfoBlock.asPlainText(info, scriptStatus: script)}
-Router firmware: $firmware
+${_BuildInfoBlock.asPlainText(info, scriptStatus: script, licence: licence)}
+Router firmware: $firmwareLine
 ```
 
 - Router model: ${model.isEmpty ? '[e.g. RT-AX86U]' : model}
