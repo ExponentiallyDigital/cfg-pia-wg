@@ -540,7 +540,8 @@ void main() {
 
     testWidgets('asks first, and CANCEL sends nothing', (tester) async {
       final ssh = RecordingSSHClient(responder: (_) => '');
-      await pump(tester, connected(), ssh);
+      final c = connected();
+      await pump(tester, c, ssh);
 
       await tester.tap(find.byKey(const Key('settings_reboot_router')));
       await tester.pumpAndSettle();
@@ -549,6 +550,8 @@ void main() {
       await tester.tap(find.byKey(const Key('settings_reboot_cancel')));
       await tester.pumpAndSettle();
       expect(ssh.ran('reboot'), isFalse);
+      expect(c.log.any((e) => e.message.contains('reboot requested')), isFalse,
+          reason: 'a cancelled reboot must not claim one was requested');
     });
 
     testWidgets('clears a ghost service marker BEFORE asking the router to reboot', (tester) async {
@@ -556,7 +559,8 @@ void main() {
       // the web interface reported a reboot that never happened. A recovery control that can
       // silently do nothing is worse than no control at all.
       final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('rc_service') ? 'restart_vpnc@@999@@dead' : '');
-      await pump(tester, connected(), ssh);
+      final c = connected();
+      await pump(tester, c, ssh);
 
       await tester.tap(find.byKey(const Key('settings_reboot_router')));
       await tester.pumpAndSettle();
@@ -564,11 +568,15 @@ void main() {
       await tester.pumpAndSettle();
 
       final cleared = ssh.commands.indexWhere((c) => c.contains('rc_service='));
-      final reboot = ssh.commands.indexOf('reboot');
+      // One command, flush then reboot, so nothing can run between the two.
+      final reboot = ssh.commands.indexOf('sync; reboot');
       expect(cleared, isNot(-1), reason: 'the ghost has to be cleared');
       expect(reboot, isNot(-1), reason: 'and the reboot still has to be sent');
       expect(cleared, lessThan(reboot));
       expect(find.textContaining('Reboot requested'), findsOneWidget);
+      // The router log records it too, but that log is on the device going down. The app log is
+      // the one still readable while it comes back.
+      expect(c.log.any((e) => e.message.contains('Router reboot requested')), isTrue);
     });
   });
 }

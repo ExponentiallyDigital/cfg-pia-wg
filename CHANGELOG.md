@@ -13,8 +13,6 @@
 
 See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for "deep" backlog.
 
-- ADD: implement RevenueCat.
-- commit.
 - DOC: create a digrammatic representation of how RC and GPS interact from an accounts, API, and message flow state, add to TESTING.md.
 - DOC: **documentation and publicity**, moved from BACKLOG 1.2.7 on 2026-09-12:
   - **Update screenshots:** create & upload phone and tablet screenshots x8.
@@ -22,7 +20,7 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
   - **Transparency:** explain in README that pre-built convenience binaries are available via the Google Play Store to defray development costs and support ongoing app updates.
   - **Publicise**: update Play Store description. Post to SNB and Reddit (r/AsuswrtMerlin, r/PrivateInternetAccess, r/WireGuard).
 - commit.
-- REL: release **v8.x.y** to GPS alpha track, review [Play Console technical quality requirements](https://support.google.com/googleplay/android-developer/answer/17492799), specifically:
+- QUALITY: review latest build against [Play Console technical quality requirements](https://support.google.com/googleplay/android-developer/answer/17492799), specifically:
   - [r8-analyzer/SKILL.md](https://github.com/android/skills/tree/main/performance/r8-analyzer)
   - [Perfetto Skills](https://github.com/google/perfetto/tree/main/ai/skills)
   - [profilers/android-profiler](https://github.com/android/skills/tree/main/profilers/android-profiler)
@@ -44,6 +42,14 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 ---
 
 ### 1.3. Implemented - chronological change history
+
+2026-09-13 v0.8.76 build 446 - documentation updates
+
+- FIX: rebooting the router now writes to the app log as well as the router log. The router's log is on the device that is about to go dark, so the app log is the one the user can still read while it comes back.
+- CHG: REBOOT ROUTER now sends `sync; reboot`. Stock already runs an emergency sync on its way down, but the app should not rely on each firmware's shutdown path to get the watchdog scripts and boot hook in /jffs onto flash. No `nvram commit`: app writes already commit, and committing here would persist changes the app did not make.
+- CHG: updated privacy policy formatting, replaced GitHub issue link with email address.
+- NOTE: RevenueCat fully implemented, some UI facing code changes to follow. 
+- ...
 
 2026-09-13 v0.8.75 build 445 - the store says why, when it has nothing to sell
 
