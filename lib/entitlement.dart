@@ -121,6 +121,41 @@ abstract class Entitlement {
   /// no local state at all, and why `android:allowBackup="false"` costs nothing here.
   static Future<bool> restore() async => _apply(await Purchases.restorePurchases());
 
+  /// True when [e] is Google Play saying the payment has not cleared yet - a slow card, or a bank that
+  /// needs approving. Not a failure: the unlock arrives when it clears.
+  static bool isPaymentPending(Object e) {
+    if (e is! PlatformException) return false;
+    try {
+      return PurchasesErrorHelper.getErrorCode(e) == PurchasesErrorCode.paymentPendingError;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// A sentence a person can act on for anything a purchase or restore throws, with the store's own
+  /// error code in brackets so the app log still helps in a bug report.
+  ///
+  /// The paywall used to show the plugin's raw exception text, and log nothing at all.
+  static String describeStoreError(Object e) {
+    if (e is! PlatformException) return e.toString().replaceAll('Exception: ', '');
+    final PurchasesErrorCode code;
+    try {
+      code = PurchasesErrorHelper.getErrorCode(e);
+    } catch (_) {
+      return e.message ?? e.code;
+    }
+    final detail = switch (code) {
+      PurchasesErrorCode.paymentPendingError => 'Payment is pending. The unlock arrives once Google Play confirms it.',
+      PurchasesErrorCode.networkError => 'Could not reach the store. Check the connection and try again.',
+      PurchasesErrorCode.productAlreadyPurchasedError => 'This Google account already owns the unlock. Use Restore.',
+      PurchasesErrorCode.purchaseNotAllowedError => 'Purchases are not allowed on this device or account.',
+      PurchasesErrorCode.productNotAvailableForPurchaseError => 'The unlock is not available to buy right now.',
+      PurchasesErrorCode.storeProblemError => 'Google Play could not complete the payment.',
+      _ => e.message ?? 'The store reported an error.',
+    };
+    return '$detail (${code.name})';
+  }
+
   /// The first package of the current offering, or null when there is nothing to sell.
   ///
   /// Says WHY in the app log. Three different faults all present as one disabled button reading

@@ -33,6 +33,7 @@ import '../review_service.dart';
 import '../router_watchdog.dart';
 import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/paywall.dart';
 import '../widgets/error_presenter.dart';
 import '../widgets/ssh_creds_dialog.dart';
 
@@ -337,11 +338,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _busy = true);
     String message;
     try {
-      message = await Entitlement.restore()
-          ? 'Purchase restored. Everything is unlocked.'
-          : 'No purchase found on this Google account.';
+      message = await Entitlement.restore() ? RestoreMessages.restored : RestoreMessages.noneFound;
     } catch (e) {
-      message = 'Could not reach the store: ${e.toString().replaceAll('Exception: ', '')}';
+      message = RestoreMessages.failed(e);
     }
     if (!mounted) return;
     setState(() => _busy = false);
