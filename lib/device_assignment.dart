@@ -189,6 +189,121 @@ List<String> staleRuleTables(String ipRuleOutput, {required String ip, int? keep
   return stale;
 }
 
+// ─── Is the tunnel a change moves devices onto actually carrying traffic? ──────────────
+
+/// How recently a tunnel's server must have answered for APPLY to say nothing about it.
+///
+/// WireGuard re-handshakes every two minutes on a tunnel that is passing traffic, so three minutes
+/// allows for one late renewal. Watchdog logs showed ages up to 111 seconds on healthy tunnels.
+const Duration kStaleHandshake = Duration(minutes: 3);
+
+/// A tunnel as APPLY sees it: whether its interface is up, and how long since its server answered.
+class TunnelHealth {
+  const TunnelHealth({required this.up, this.handshakeAgeSeconds});
+
+  final bool up;
+
+  /// Seconds since the latest handshake, or null when there has never been one.
+  final int? handshakeAgeSeconds;
+
+  /// Up, but its server has not answered within [kStaleHandshake], or ever.
+  ///
+  /// Not proof of a working path either way: measured 2026-09-13, a `us_alabama` server handshook
+  /// normally while carrying no DNS. This catches "not answering", not every failure.
+  bool get stale => up && (handshakeAgeSeconds == null || handshakeAgeSeconds! > kStaleHandshake.inSeconds);
+}
+
+/// The newest handshake in `wg show wgcN latest-handshakes` output, one `<peer key> <epoch>` line per
+/// peer, or 0 when there has never been one.
+int latestHandshakeEpoch(String raw) {
+  var newest = 0;
+  for (final line in raw.split('\n')) {
+    final parts = line.trim().split(RegExp(r'\s+'));
+    if (parts.length < 2) continue;
+    final epoch = int.tryParse(parts.last) ?? 0;
+    if (epoch > newest) newest = epoch;
+  }
+  return newest;
+}
+
+/// Joins the up-interface list, the router's clock and each slot's handshakes into [TunnelHealth].
+///
+/// Ages are taken against the ROUTER's clock, never the phone's: the two can disagree by minutes,
+/// which is the whole size of the threshold. A clock that cannot be read raises no alarm.
+Map<int, TunnelHealth> parseTunnelHealth({
+  required String upInterfaces,
+  required String routerNow,
+  required Map<int, String> handshakes,
+}) {
+  final now = int.tryParse(routerNow.trim());
+  final out = <int, TunnelHealth>{};
+  handshakes.forEach((slot, raw) {
+    final epoch = latestHandshakeEpoch(raw);
+    final int? age;
+    if (epoch == 0) {
+      age = null;
+    } else if (now == null) {
+      age = 0;
+    } else {
+      age = now - epoch < 0 ? 0 : now - epoch;
+    }
+    out[slot] = TunnelHealth(up: upInterfaces.contains('wgc$slot'), handshakeAgeSeconds: age);
+  });
+  return out;
+}
+
+/// "Box", "Box and Laptop", "Box, Laptop and Phone".
+String joinNames(List<String> names) {
+  if (names.length <= 1) return names.join();
+  return '${names.sublist(0, names.length - 1).join(', ')} and ${names.last}';
+}
+
+/// "1 minute", "16 minutes", "2 hours": how long a tunnel's server has been silent.
+String describeSilence(int seconds) {
+  final minutes = seconds ~/ 60;
+  if (minutes < 120) return '$minutes minute${minutes == 1 ? '' : 's'}';
+  return '${minutes ~/ 60} hours';
+}
+
+/// What APPLY's confirmation says about [tunnel] before moving [who] onto it, or null when it looks
+/// healthy.
+///
+/// [fallback] is where [who] goes while the tunnel is not running: a device pinned to a stopped
+/// tunnel falls through to the default connection (measured 2026-09-13). Leave it null for the
+/// default connection itself.
+String? tunnelWarning(TunnelHealth health, {required String tunnel, required String who, String? fallback}) {
+  if (!health.up) {
+    return fallback == null
+        ? '$tunnel is not running. Until it is, $who are not on that VPN.'
+        : '$tunnel is not running. Until it is enabled, $who will use $fallback.';
+  }
+  if (!health.stale) return null;
+  final age = health.handshakeAgeSeconds;
+  final silence = age == null ? 'has not answered since it started' : 'has not answered for ${describeSilence(age)}';
+  final subject = who.isEmpty ? who : who[0].toUpperCase() + who.substring(1);
+  return '$tunnel is up, but its server $silence. $subject may have no internet.';
+}
+
+/// Where a device's traffic actually leaves while its tunnel is not running, as a profile index 6 (0
+/// is the plain internet), or null when it leaves where its assignment says or that cannot be told.
+///
+/// Two hops at most. A device pinned to a stopped tunnel falls through to the default connection
+/// (measured 2026-09-13: the pin stays, the `ip rule` goes), and a default that is not running either
+/// leaves the plain internet. [pinned] is the device's own assignment, null when it follows the
+/// default. [isUp] answers for a tunnel index, or null when that is not known - a VPN this app does
+/// not manage, or a slot read that failed - and an unknown anywhere on the path answers nothing.
+int? actualExitIndex({required int? pinned, required int? defaultIndex, required bool? Function(int index) isUp}) {
+  final def = defaultIndex ?? 0;
+  final target = pinned ?? def;
+  if (target == 0) return null;
+  final up = isUp(target);
+  if (up == null || up) return null;
+  if (pinned == null || def == 0 || def == target) return 0;
+  final defaultUp = isUp(def);
+  if (defaultUp == null) return null;
+  return defaultUp ? def : 0;
+}
+
 // ─── Devices ────────────────────────────────────────────────────────────────────────
 
 /// A LAN device as the assignment screen sees it, joined from up to four router sources.

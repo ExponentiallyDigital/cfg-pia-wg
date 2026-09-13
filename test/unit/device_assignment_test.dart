@@ -299,4 +299,116 @@ void main() {
       });
     });
   });
+
+  group('the tunnel check before APPLY', () {
+    test('the newest handshake of any peer, or 0 when there has never been one', () {
+      expect(latestHandshakeEpoch('peerA=\t1789305451'), 1789305451);
+      expect(latestHandshakeEpoch('peerA=\t100\npeerB=\t250'), 250);
+      expect(latestHandshakeEpoch('peerA=\t0'), 0);
+      expect(latestHandshakeEpoch(''), 0);
+    });
+
+    test('three minutes is fine, a second more is not', () {
+      expect(const TunnelHealth(up: true, handshakeAgeSeconds: 180).stale, isFalse);
+      expect(const TunnelHealth(up: true, handshakeAgeSeconds: 181).stale, isTrue);
+      expect(const TunnelHealth(up: true).stale, isTrue, reason: 'never answered');
+      expect(const TunnelHealth(up: false).stale, isFalse, reason: 'down is its own warning');
+    });
+
+    test('ages are taken against the router clock', () {
+      final h = parseTunnelHealth(
+        upInterfaces: '55: wgc4: <POINTOPOINT,NOARP,UP,LOWER_UP>',
+        routerNow: '10000',
+        handshakes: {4: 'peer=\t9900', 5: ''},
+      );
+      expect(h[4]!.up, isTrue);
+      expect(h[4]!.handshakeAgeSeconds, 100);
+      expect(h[5]!.up, isFalse);
+      expect(h[5]!.handshakeAgeSeconds, isNull);
+    });
+
+    test('an unreadable router clock raises no alarm', () {
+      final h = parseTunnelHealth(upInterfaces: 'wgc1', routerNow: '', handshakes: {1: 'peer=\t9900'});
+      expect(h[1]!.stale, isFalse);
+    });
+
+    test('a tunnel that is not running names where the devices go meanwhile', () {
+      expect(
+        tunnelWarning(const TunnelHealth(up: false),
+            tunnel: 'wgc5:pia-aus_perth', who: 'Box', fallback: 'the default connection, wgc1:pia-aus_melbourne'),
+        'wgc5:pia-aus_perth is not running. Until it is enabled, Box will use the default connection, '
+        'wgc1:pia-aus_melbourne.',
+      );
+    });
+
+    test('the default connection has nothing further to fall back to', () {
+      expect(
+        tunnelWarning(const TunnelHealth(up: false), tunnel: 'wgc5:pia-aus_perth', who: 'devices on the default connection'),
+        'wgc5:pia-aus_perth is not running. Until it is, devices on the default connection are not on that VPN.',
+      );
+    });
+
+    test('a silent server says for how long, and its sentence starts with a capital', () {
+      expect(
+        tunnelWarning(const TunnelHealth(up: true, handshakeAgeSeconds: 960),
+            tunnel: 'wgc1:pia-aus_melbourne', who: 'devices on the default connection'),
+        'wgc1:pia-aus_melbourne is up, but its server has not answered for 16 minutes. '
+        'Devices on the default connection may have no internet.',
+      );
+      expect(
+        tunnelWarning(const TunnelHealth(up: true), tunnel: 'wgc1:pia-aus_melbourne', who: 'Box'),
+        'wgc1:pia-aus_melbourne is up, but its server has not answered since it started. Box may have no internet.',
+      );
+    });
+
+    test('a healthy tunnel says nothing', () {
+      expect(tunnelWarning(const TunnelHealth(up: true, handshakeAgeSeconds: 30), tunnel: 'wgc1', who: 'Box'), isNull);
+    });
+
+    test('silence reads in minutes, then hours', () {
+      expect(describeSilence(60), '1 minute');
+      expect(describeSilence(960), '16 minutes');
+      expect(describeSilence(7200), '2 hours');
+    });
+
+    test('names join the way a sentence does', () {
+      expect(joinNames(['Box']), 'Box');
+      expect(joinNames(['Box', 'Laptop']), 'Box and Laptop');
+      expect(joinNames(['Box', 'Laptop', 'Phone']), 'Box, Laptop and Phone');
+    });
+  });
+
+  // wgc1 at index 9, wgc5 at index 5, as in the fixtures above.
+  group('where a device actually exits', () {
+    bool? Function(int) upOnly(Set<int> up) => (i) => up.contains(i);
+
+    test('a tunnel that is running is where the traffic goes, so there is nothing to say', () {
+      expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: upOnly({5, 9})), isNull);
+    });
+
+    test('pinned to a tunnel that is not running falls through to a running default', () {
+      expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: upOnly({9})), 9);
+    });
+
+    test('and to the plain internet when the default is not running either - two hops, no more', () {
+      expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: upOnly({})), 0);
+      expect(actualExitIndex(pinned: 5, defaultIndex: 0, isUp: upOnly({})), 0);
+      expect(actualExitIndex(pinned: 5, defaultIndex: 5, isUp: upOnly({})), 0, reason: 'the default IS the stopped tunnel');
+    });
+
+    test('following a default that is not running means the plain internet', () {
+      expect(actualExitIndex(pinned: null, defaultIndex: 9, isUp: upOnly({})), 0);
+      expect(actualExitIndex(pinned: null, defaultIndex: 9, isUp: upOnly({9})), isNull);
+    });
+
+    test('the plain internet is never a detour', () {
+      expect(actualExitIndex(pinned: 0, defaultIndex: 9, isUp: upOnly({})), isNull);
+      expect(actualExitIndex(pinned: null, defaultIndex: null, isUp: upOnly({})), isNull);
+    });
+
+    test('an unknown state anywhere on the path answers nothing rather than guessing', () {
+      expect(actualExitIndex(pinned: 3, defaultIndex: 9, isUp: (_) => null), isNull, reason: 'a VPN this app does not manage');
+      expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: (i) => i == 5 ? false : null), isNull);
+    });
+  });
 }
