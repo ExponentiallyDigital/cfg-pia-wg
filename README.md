@@ -35,8 +35,8 @@
   - [5.3. WATCHDOG  - Watchdog WireGuard management](#53-watchdog----watchdog-wireguard-management)
     - [5.3.1. Email alerts](#531-email-alerts)
   - [5.4. VPN device assignment](#54-vpn-device-assignment)
-  - [5.5. View app log](#55-view-app-log)
-  - [5.6. Exit app](#56-exit-app)
+  - [5.5. APP LOG - View the app log](#55-app-log---view-the-app-log)
+  - [5.6. EXIT - Close the app](#56-exit---close-the-app)
   - [5.7. Hamburger menu](#57-hamburger-menu)
   - [5.8. About](#58-about)
 - [6. Notes](#6-notes)
@@ -299,7 +299,7 @@ This enables full management of WG slots.
   Editing a slot
 </p>
 
-- **DISABLE:** disable the selected slot.
+- **DISABLE:** disable the selected slot, after asking. Any watchdog on the slot is stopped too. The settings stay on the router, so **ENABLE** brings the tunnel back.
 - **DELETE:** remove the slot configuration and disable any associated watchdog.
 
 > [!NOTE]
@@ -319,7 +319,7 @@ This manages a self-healing watchdog. When your WG configurations inevitably exp
 </p>
 
 3. Select a slot and use the watchdog actions:
-   - **CREATE/EDIT:** deploy router-side watchdog scripts and cron jobs for the selected slot.
+   - **CREATE/EDIT:** choose the region and the watchdog settings on one form, then tap **SAVE & DEPLOY** to deploy router-side watchdog scripts and cron jobs for the selected slot. The region starts as the slot's own, so saving an active watchdog without changing it leaves its tunnel alone. Choosing a region for a slot that already holds a configuration asks before overwriting it.
 
 <p align="center">
   <img src="./images/configuring-watchdog.png" alt="App log" width="300">
@@ -330,7 +330,7 @@ This manages a self-healing watchdog. When your WG configurations inevitably exp
 - **DISABLE:** stop the watchdog running without losing its settings. The slot shows a **PAUSED** badge.
 - **ENABLE:** start it again, at the same interval it was using before.
 - **DELETE:** remove the watchdog and clear the slot configuration.
-- **VIEW WATCHDOG LOG:** inspect the router-side watchdog log. Logs are rotated at midnight retaining the current and previous logs and do not persist if the router is rebooted or a power loss occurs.
+- **VIEW WATCHDOG LOG:** inspect the router-side watchdog log, including the previous log when the router still has it. **CLEAR** deletes both. Logs are rotated at midnight retaining the current and previous logs and do not persist if the router is rebooted or a power loss occurs.
 
 #### 5.3.1. Email alerts
 
@@ -395,7 +395,8 @@ WHAT TO DO
 1. Check your PIA username and password in the app, under WATCHDOG then CONFIGURE.
 2. Open VIEW WATCHDOG LOG in the app for the full history.
 3. PIA rate-limits repeated token requests; if the code above is 403, wait 30 minutes before intervening.
-4. Is your PIA billing account active?
+4. Review your router log.
+5. Is your PIA user account active?
 
 ROUTER
 Name: my-router.asuscomm.com (192.168.1.1)
@@ -421,7 +422,7 @@ Notes on reading these:
 
 - **Kill switch** answers the question that matters most when a tunnel drops — did anything leave the router unprotected? The line reports the state your router was actually in, not a generic warning.
   - On **Merlin**, which has a kill switch: on, or available but not enabled.
-  - On **stock**, which has none, it says where the affected devices went instead, and there are three answers. If the dropped tunnel was itself the default connection, its devices had no internet at all - no leak. If some other tunnel is the default, they fell through to that and stayed on a VPN. Only if the default is the plain internet did anything travel unprotected.
+  - On **stock**, which has none, it says where the affected devices went instead. If the dropped tunnel was itself the default connection, its devices had no internet at all - no leak. If no devices are assigned to it and it is not the default, it says so, because nothing depended on it. If another WireGuard tunnel is the default and that tunnel is up, they fell through to it and stayed on a VPN. If the default is down too, or is not a WireGuard tunnel the watchdog can check, it says the default was not confirmed up and they may have had no VPN. Only if the default is the plain internet did they certainly travel unprotected.
   - This is why the default connection is worth setting deliberately: on stock it is the whole difference between a leak and an outage. See [VPN device assignment](#54-vpn-device-assignment).
 - **Interval** is read from the router, not from the form you are filling in, so it can never claim a schedule that is not actually running.
 - **Since `date`** counts every re-configuration this router has made, across all slots, from the day the app first configured it.
@@ -440,7 +441,7 @@ Normally every device on your network follows the router's default connection. T
 send particular devices through a particular VPN tunnel and leave everything else alone - a games
 console straight out to the internet, a laptop through Melbourne, everything else through Perth.
 
-1. Tap **VPN device assignment** on the main menu, or pick it from the hamburger menu.
+1. Tap **DEVICE ASSIGNMENT** on the main menu, or pick it from the hamburger menu.
 2. Enter router IP, SSH username and password, then tap **CONNECT TO ROUTER**.
 3. Every device the router knows about is listed, with what it is using now.
 4. Tap a device to pick **Internet** or one of your WireGuard slots. Offline devices are listed too, greyed, at the bottom.
@@ -474,9 +475,9 @@ Five things that catch people out:
 4. **A device assigned to a tunnel you then turn OFF keeps its assignment**, and falls through to the default connection while that tunnel is down. It picks the tunnel up again when you turn it back on. Deleting the tunnel is different: the app moves its devices to Internet, tells you which ones it moved, and puts the default connection back to Internet if that tunnel was it.
 5. **Guest network devices never appear.** They cannot reach your LAN at all, so putting one on a VPN is a different question from the one this screen answers.
 
-### 5.5. View app log
+### 5.5. APP LOG - View the app log
 
-Use the **View app log** screen to inspect in-app log entries and clear them with **CLEAR LOG**.
+Use the **APP LOG** screen to inspect in-app log entries, **COPY** them, or clear them with **CLEAR**.
 
 <p align="center">
   <img src="./images/app-log.png" alt="App log" width="300">
@@ -484,9 +485,9 @@ Use the **View app log** screen to inspect in-app log entries and clear them wit
   App log
 </p>
 
-### 5.6. Exit app
+### 5.6. EXIT - Close the app
 
-The **Exit app** action confirms before closing the app, and it wipes all volatile session data plus the system clipboard.
+**EXIT** confirms before closing the app, and it wipes all volatile session data plus the system clipboard.
 
 ### 5.7. Hamburger menu
 
@@ -506,17 +507,19 @@ This can be useful to check the application's log during operations.
   Hamburger Menu
 </p>
 
-Two entries are not on the main menu:
+The hamburger menu and the main menu hold the same destinations. Two of them in more detail:
 
-- **View router log** shows the router's own system log, newest first. Scroll up to load more, including the previous log file if the router still has it. **COPY** takes everything loaded. This is the first place to look when something on the router did not do what you expected.
-- **Settings** holds three one-off actions:
-  - **UNINSTALL FEATURES INSTALLED TO ROUTER** - removes everything the app put on the router, see [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice.
-  - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run.
+- **ROUTER LOG** shows the router's own system log, newest first. Scroll up to load more, including the previous log file if the router still has it. Lines reporting an error or a failure are shown in red. **COPY** takes everything loaded. This is the first place to look when something on the router did not do what you expected.
+- **SETTINGS** holds one-off actions, including:
+  - **REBOOT ROUTER** - restarts the router, after asking.
   - **FORGET ROUTER IP** - deletes the remembered router address. It is the only thing the app keeps on your phone; no SSH credentials are ever stored.
+  - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run.
+  - **UNINSTALL FEATURES DEPLOYED TO ROUTER** - completely removes any watchdogs, their helper apps, and all app configuration deployed to your router; configured VPNs are kept. See [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice.
+  - **RESTORE PURCHASE** - checks Google Play for the one-off purchase on the account in use, and says so if none is found.
 
 ### 5.8. About
 
-Build information and documentation links live in the hamburger menu's **About** screen:
+Build information and documentation links live in the **ABOUT** screen:
 
 <p align="center">
   <img src="./images/about.png" alt="App log" width="300">
@@ -530,10 +533,12 @@ The screen shows the app version and build number, the build fingerprint and the
 - **CREATE GITHUB ISSUE** — opens a new issue against the repository in your browser, with the build details already filled in.
 - **Open source licenses** — the full licence text for every third-party component.
 
-It also reports two things about the router itself, which it reads over SSH if the app is connected:
-the **watchdog script version deployed there**, flagged when it is older than the copy in the app -
-the signal to redeploy - and a running history, `Since <date>: X successful & Y unsuccessful
-reconfigures`, counted across every slot since the app first configured that router.
+It also reports on the router itself, which it reads over SSH if the app is connected, and on this installation:
+
+- **Watchdog script** - the version deployed on the router, shown in amber when it is older than the copy in the app. **REDEPLOY TO UPDATE VERSION** appears underneath it and rewrites every deployed watchdog script with the current one.
+- **Router firmware** - whether the router runs stock or Merlin firmware, and its version.
+- **License status** - `licensed` when the one-off purchase is held on the Google account in use, `unlicenced` when it is not, and `homegrown` for a build you made yourself.
+- a running history, `Since <date>: X successful & Y unsuccessful reconfigures`, counted across every slot since the app first configured that router.
 
 ---
 
@@ -563,7 +568,7 @@ reconfigures`, counted across every slot since the app first configured that rou
 > [!WARNING]
 > If you sell or give away your router, clear it before it leaves your hands. The watchdog stores your PIA and SMTP passwords in NVRAM in plain text, and a router handed over as-is hands those over with it.
 >
-> **The way to do that is in the app: hamburger menu -> Settings -> UNINSTALL.** It removes every setting the app wrote, the watchdog schedules, the scripts and the whole `/jffs/cfg-pia-wg` folder, and puts back the two boot scripts it replaced. Then delete your VPN slots from the Manage screen, which is what removes the tunnels themselves. If you would rather check by hand, `scripts/showall.sh` prints everything that is stored and `scripts/clearall.sh` removes it; both are in the [GitHub repo](https://github.com/ExponentiallyDigital/cfg-pia-wg).
+> **The way to do that is in the app: SETTINGS -> UNINSTALL FEATURES DEPLOYED TO ROUTER.** It removes every setting the app wrote, the watchdog schedules, the scripts and the whole `/jffs/cfg-pia-wg` folder, and puts back the two boot scripts it replaced. Then delete your VPN slots from the Manage screen, which is what removes the tunnels themselves. If you would rather check by hand, `scripts/showall.sh` prints everything that is stored and `scripts/clearall.sh` removes it; both are in the [GitHub repo](https://github.com/ExponentiallyDigital/cfg-pia-wg).
 >
 > **A factory reset does clear them.** Measured 2026-09-07 on stock firmware (RT-ABCD): marker values were written to NVRAM and committed, and neither the WebUI factory-default restore nor the WPS-button hard reset left any of them behind - including one shaped like `cfg_pia_wg_password` and one shaped like `wgcN_wd_smtp_pass`. Earlier releases of this page claimed the opposite; that claim was never tested and was wrong. Merlin has not been tested, so if you are on Merlin, use the scripts above rather than relying on the reset.
 
@@ -590,7 +595,7 @@ button.
 No ports are opened. None of your traffic is routed anywhere by the app, and none of it goes to us -
 there is no server on our side to send it to.
 
-**You can take it all off again.** The hamburger menu's **Settings** screen has an **UNINSTALL**
+**You can take it all off again.** The **SETTINGS** screen has **UNINSTALL FEATURES DEPLOYED TO ROUTER**,
 that removes the scripts, the schedules, the app's NVRAM settings and the folder, and restores the
 startup files it replaced. It deliberately leaves your **VPN slots and tunnels alone** - those are
 yours, and DELETE on the Manage screen is what removes them. Device assignments and the default
