@@ -113,7 +113,14 @@ Applying configs:
 - Create wgc1 & wgc5 - check test email
 - the region is chosen on the form, pre-filled with the slot's own, before SAVE & DEPLOY; a configured slot still warns before it is overwritten, and a region PIA does not have is refused
 - Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
-- create a watchdog on a slot that is already up, keeping its region: the router log says it "is already up; its tunnel was left running", there is NO `restart_vpnc` in the syslog, and the other tunnels keep their handshakes
+- region on the watchdog form - each time check the peer key (`wg show wgcN latest-handshakes`), exit location, router log and email:
+  - running slot, same region: router log "is already up; its tunnel was left running", NO `restart_vpnc`, other tunnels keep their handshakes
+  - running slot, new region: prompt says the tunnel is rebuilt; router log "Cleared ... rebuilds it", "Deploying: bringing wgcN up", "Deploy SUCCESS: region pia-<new>"; NEW peer key; exit is the new region; SUCCESS email names the new server
+  - disabled configured slot, new region: as above, and the slot ends enabled
+  - empty slot (the watchdog shortcut): as above
+  - stock: the WebUI shows the rebuilt slot connected
+  - a device assigned to the slot: on the default connection during the rebuild, back on the slot after
+  - rebuild fails (wrong PIA password): FAILED email, the old region does NOT come back, retries on the backoff; correct the password, SAVE & DEPLOY recovers
 - force a reconfigure, then check the email alerting
   1. `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`
   2. `/jffs/cfg-pia-wg/watchdog_wgc1.sh`

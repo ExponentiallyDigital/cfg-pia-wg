@@ -319,7 +319,7 @@ This manages a self-healing watchdog. When your WG configurations inevitably exp
 </p>
 
 3. Select a slot and use the watchdog actions:
-   - **CREATE/EDIT:** choose the region and the watchdog settings on one form, then tap **SAVE & DEPLOY** to deploy router-side watchdog scripts and cron jobs for the selected slot. The region starts as the slot's own, so saving an active watchdog without changing it leaves its tunnel alone. Choosing a region for a slot that already holds a configuration asks before overwriting it.
+   - **CREATE/EDIT:** choose the region and the watchdog settings on one form, then tap **SAVE & DEPLOY** to deploy router-side watchdog scripts and cron jobs for the selected slot. The region starts as the slot's own, so saving an active watchdog without changing it leaves its tunnel alone. Choosing a region for a slot that already holds a configuration asks before overwriting it. Changing the region rebuilds the tunnel on the new one: it is down while that happens, and devices assigned to it use the default connection until it is back.
 
 <p align="center">
   <img src="./images/configuring-watchdog.png" alt="App log" width="300">

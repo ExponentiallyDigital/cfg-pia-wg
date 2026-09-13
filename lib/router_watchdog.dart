@@ -999,13 +999,14 @@ class RouterWatchdog {
   Future<void> deployWatchdog(WatchdogConfig config, {String? desc}) => _guard('deploy', () async {
         await enableJffsScripts();
         // Both read before the NVRAM write replaces the description. A slot that is already up and
-        // keeps its region needs no restart; a changed region does not qualify, because the running
-        // tunnel belongs to the old one.
+        // keeps its region needs no restart. A changed region is a rebuild: the running tunnel belongs
+        // to the old region, so it is cleared first and the deploy run below builds the new one.
         final slot = config.slotIndex;
         final regionChanged = desc != null && desc.isNotEmpty && slotDescFor(desc) != await _read('nvram get wgc${slot}_desc');
-        final alreadyUp = !regionChanged && (await _read(kUpInterfacesCommand)).contains('wgc$slot');
+        final up = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
+        if (regionChanged) await _clearForRebuild(slot, running: up, region: desc);
         await _writeWatchdogNvram(config, desc: desc);
-        await enableVpnSlot(slot, alreadyUp: alreadyUp);
+        await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
         await _writeScript(config.slotIndex, buildWatchdogScript(config));
         await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
         await _run(buildCronRotateLine(config.slotIndex));
@@ -1022,13 +1023,39 @@ class RouterWatchdog {
         onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
       });
 
+  /// Leaves [slot] as the empty-slot watchdog shortcut finds it, so the deploy run builds it on [region].
+  ///
+  /// A region change is a rebuild, not an edit. New settings never reach an interface that is already
+  /// up, and the script's deploy run leaves a tunnel with a recent handshake alone - so the old server
+  /// kept running under the new region's name, the fault CREATE had (measured 2026-09-14). Restarting
+  /// does not help either: it reloads the old server's keys. So a running tunnel is stopped, waiting
+  /// for the interface to go (on stock `restart_vpnc` alone leaves it up), and the old server's keys
+  /// and endpoint are blanked so nothing can bring it back before the deploy run rebuilds the slot.
+  Future<void> _clearForRebuild(int slot, {required bool running, required String region}) async {
+    final label = await _label(slot);
+    if (running) {
+      onLog?.call('$label is running; stopping it so the watchdog can rebuild it on $region.');
+      await RouterSlotService(client, onLog: onLog, verifyPollInterval: verifyPollInterval, verifyMaxAttempts: verifyMaxAttempts)
+          .disableSlot(slot);
+    }
+    for (final key in const ['priv', 'ppub', 'ep_addr']) {
+      await _run("nvram set wgc${slot}_$key=''");
+    }
+    await _logRouter('Cleared $label so its watchdog rebuilds it on $region');
+  }
+
   // Enables the underlying WireGuard slot.
   //
   // [alreadyUp] is a deploy onto a tunnel that is running on the region it keeps. The flags are still
   // written, so the router and this app both read the slot as enabled, but no service call is made.
   // On stock that call is `restart_vpnc`, which rebuilds VPN routing for every tunnel: measured
   // 2026-09-13, adding a watchdog to an already-running wgc4 ran it.
-  Future<void> enableVpnSlot(int slot, {bool alreadyUp = false}) => _guard('enable VPN slot', () async {
+  //
+  // [rebuilding] is a slot `_clearForRebuild` has just emptied. It takes the full enable - the same
+  // sequence the empty-slot shortcut has always used, VPN Fusion's setup on stock included - but
+  // does not wait for an interface: there are no keys to bring one up until the deploy run writes them.
+  Future<void> enableVpnSlot(int slot, {bool alreadyUp = false, bool rebuilding = false}) =>
+      _guard('enable VPN slot', () async {
         final slots = RouterSlotService(client, onLog: onLog);
         await _run('nvram set wgc${slot}_enable=1');
         // Stock shows a profile as connected from its clientlist flag, not wgcN_enable - and the
@@ -1049,6 +1076,11 @@ class RouterWatchdog {
           await _serviceQueue.clearIfStale();
           await _run('service "start_wgc $slot"; service restart_vpnrouting0');
           await _serviceQueue.awaitIdle();
+        }
+        if (rebuilding) {
+          await _logRouter('Enabled ${await _label(slot)}; its watchdog builds the tunnel next');
+          onLog?.call('${await _label(slot)} enabled; the watchdog builds its tunnel next.', isSuccess: true);
+          return;
         }
         // `notify_rc` queues the service call and returns at once, so the interface is NOT up
         // when this returns. deployWatchdog used to exec the script about a second later, which

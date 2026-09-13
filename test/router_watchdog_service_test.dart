@@ -478,17 +478,79 @@ void main() {
       expect(c.commands.contains('service "start_wgc 1"; service restart_vpnrouting0'), isFalse);
     });
 
-    // A changed region is not skipped: the running tunnel belongs to the old region.
-    test('a region change on a running slot still goes through the enable', () async {
+    // The CREATE fault again, on the watchdog form (found 2026-09-14): a region change wrote only the new
+    // name, and the deploy run left the old server's tunnel alone because its handshake was recent. A
+    // region change is a rebuild: stop the tunnel, blank the old server, and let the deploy run build it.
+    test('a region change on a running slot stops it and clears the old server before anything else', () async {
       useMerlin();
+      var stopped = false;
       final c = RecordingSSHClient(responder: (cmd) {
-        if (cmd == 'ip -o link show up') return 'wgc1';
+        if (cmd == 'service "stop_wgc 1"; service start_vpnrouting0') stopped = true;
+        if (cmd == 'ip -o link show up') return stopped ? '' : 'wgc1';
         if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_perth';
         return cmd.contains('jffs2') ? '0' : '';
       });
       await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
 
-      expect(c.commands.contains('service "start_wgc 1"; service restart_vpnrouting0'), isTrue);
+      final stop = c.commands.indexOf('service "stop_wgc 1"; service start_vpnrouting0');
+      final blank = c.commands.indexOf("nvram set wgc1_ppub=''");
+      final name = c.commands.indexOf("nvram set wgc1_desc='pia-aus_melbourne'");
+      final run = c.commands.indexWhere((cmd) => cmd.endsWith('watchdog_wgc1.sh deploy'));
+      expect(stop, isNot(-1), reason: 'the running tunnel is stopped');
+      expect(blank, greaterThan(stop), reason: 'then the old server is blanked');
+      expect(c.ran("nvram set wgc1_priv=''"), isTrue);
+      expect(c.ran("nvram set wgc1_ep_addr=''"), isTrue);
+      expect(name, greaterThan(blank));
+      expect(run, greaterThan(name), reason: 'and the deploy run builds the new one');
+      expect(c.ran('nvram set wgc1_enable=1'), isTrue);
+    });
+
+    test('a region change on a slot that is not running clears the old server without a stop', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_perth';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
+
+      expect(c.commands.contains('service "stop_wgc 1"; service start_vpnrouting0'), isFalse);
+      final blank = c.commands.indexOf("nvram set wgc1_ppub=''");
+      final start = c.commands.indexOf('service "start_wgc 1"; service restart_vpnrouting0');
+      expect(blank, isNot(-1));
+      expect(start, greaterThan(blank), reason: 'the enable cannot bring back a server it no longer has');
+    });
+
+    test('on stock the stop is stop_vpnc, and the restart that follows has no old server to reload', () async {
+      useStock();
+      var stopped = false;
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'service stop_vpnc') stopped = true;
+        if (cmd == 'ip -o link show up') return stopped ? '' : 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-us_alabama';
+        if (cmd.contains('nvram get vpnc_clientlist')) return 'pia-us_alabama>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_perth');
+
+      final stop = c.commands.indexOf('service stop_vpnc');
+      final blank = c.commands.indexOf("nvram set wgc1_ppub=''");
+      final restart = c.commands.indexOf('service restart_vpnc');
+      expect(stop, isNot(-1));
+      expect(blank, greaterThan(stop));
+      expect(restart, greaterThan(blank));
+    });
+
+    test('an unchanged region clears nothing', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'ip -o link show up') return 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_melbourne';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
+
+      expect(c.ran("nvram set wgc1_ppub=''"), isFalse);
+      expect(c.commands.contains('service "stop_wgc 1"; service start_vpnrouting0'), isFalse);
     });
 
     // The completion line is the router-side record that the deploy finished, not just started.

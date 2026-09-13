@@ -250,7 +250,10 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     }
   }
 
-  Future<bool> _confirmOverwrite() async {
+  Future<bool> _confirmOverwrite(String region) async {
+    // A changed region is a rebuild (RouterWatchdog._clearForRebuild), and the tunnel is down while it
+    // happens. Saying so is the difference between an informed tap and a surprise outage.
+    final rebuild = region != _regionIdOf(widget.regionDesc);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -258,8 +261,13 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         // Names what is being overwritten, the same shape the delete prompts use.
         title: Text('Overwrite ${slotLabel(widget.slotIndex, widget.regionDesc)}?',
             style: const TextStyle(color: kText, fontSize: 15)),
-        content: const Text('This will reset both this watchdog and any underlying VPN region.',
-            style: TextStyle(color: kMuted, fontSize: 13)),
+        content: Text(
+            rebuild
+                ? 'This rebuilds the tunnel on $region. If it is running, it goes down while that happens, and '
+                    'devices assigned to it use the default connection until it is back. This watchdog\'s settings '
+                    'are replaced too.'
+                : 'This will reset both this watchdog and any underlying VPN region.',
+            style: const TextStyle(color: kMuted, fontSize: 13)),
         actions: [
           AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
           AppButton(label: 'CONTINUE', onPressed: () => Navigator.pop(ctx, true)),
@@ -307,7 +315,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         await AppErrors.inputs(context, _c, [problem]);
         return;
       }
-      if (!widget.slotIsEmpty && !await _confirmOverwrite()) return;
+      if (!widget.slotIsEmpty && !await _confirmOverwrite(region)) return;
       newDesc = region;
     }
 
