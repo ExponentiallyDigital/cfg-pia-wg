@@ -334,6 +334,69 @@ void main() {
       c.dispose();
     });
 
+    // Measured on hardware 2026-09-14: CREATE over a running slot left the old tunnel running under
+    // the new region's name, and then told the user to ENABLE a slot that was already up.
+    testWidgets('CREATE over a running slot warns, stops it before writing, and says it was stopped', (tester) async {
+      useMerlin();
+      final c = _controller()
+        ..piaUsername = 'p1234567'
+        ..piaPassword = 'secret';
+      var stopped = false;
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('stop_wgc')) stopped = true;
+        if (cmd.contains('ip -o link show up')) return stopped ? '' : 'wgc1';
+        return '';
+      });
+      await tester.pumpWidget(
+          _host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'us_alabama', enabled: true)}, active: {1}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('it will be stopped first'), findsOneWidget);
+      await tester.tap(_inDialog('CONFIRM'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('aus_melbourne').last);
+      await tester.pumpAndSettle();
+      await tester.tap(_inDialog('CONTINUE'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Slot created'), findsOneWidget);
+      expect(find.textContaining('Its old tunnel was stopped'), findsOneWidget);
+      final stop = ssh.commands.indexWhere((cmd) => cmd.contains('stop_wgc 1'));
+      final write = ssh.commands.indexWhere((cmd) => cmd.startsWith('nvram set wgc1_desc'));
+      expect(stop, isNot(-1));
+      expect(write, isNot(-1));
+      expect(stop, lessThan(write));
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('CREATE over a configured slot that is not running does not mention stopping it', (tester) async {
+      useMerlin();
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'us_alabama')}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Overwrite wgc1?'), findsOneWidget);
+      expect(find.textContaining('stopped first'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
     testWidgets('ENABLE with stored ping targets enables the slot', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(
