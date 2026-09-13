@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/entitlement.dart';
+import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
+import 'package:cfg_pia_wg/widgets/common_fields.dart';
 import 'package:cfg_pia_wg/widgets/slot_modal.dart';
 
 import '../watchdog_test_utils.dart';
@@ -392,6 +394,44 @@ void main() {
 
       expect(find.text('Overwrite wgc1?'), findsOneWidget);
       expect(find.textContaining('stopped first'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // The servers typed at CREATE become the slot's, and stock sends an assigned device to the first only.
+    Future<void> openCreds(WidgetTester tester, RecordingSSHClient ssh, SessionController c, {required bool merlin}) async {
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({}, merlin: merlin), c));
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_2')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('aus_melbourne').last);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('CREATE on stock notes that assigned devices use only the first DNS server', (tester) async {
+      useStock();
+      addTearDown(resetRouterFirmware);
+      final c = _controller();
+      await openCreds(tester, RecordingSSHClient(responder: (_) => ''), c, merlin: false);
+
+      expect(find.byKey(const Key('dns_first_server_note')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('CREATE on Merlin does not', (tester) async {
+      useMerlin();
+      addTearDown(resetRouterFirmware);
+      final c = _controller();
+      await openCreds(tester, RecordingSSHClient(responder: (_) => ''), c, merlin: true);
+
+      expect(find.byType(DnsField), findsOneWidget, reason: 'the credentials dialog is open');
+      expect(find.byKey(const Key('dns_first_server_note')), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

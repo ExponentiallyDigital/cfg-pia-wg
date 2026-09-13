@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/screens/standalone_config_screen.dart';
@@ -12,6 +13,7 @@ import 'package:cfg_pia_wg/widgets/common_fields.dart';
 
 import '../http_test_helpers.dart';
 import '../pia_generate_harness.dart';
+import '../watchdog_test_utils.dart';
 
 SessionController _controller(List<String> clipWrites) =>
     SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (t) async => clipWrites.add(t));
@@ -46,6 +48,21 @@ void main() {
     await tester.enterText(find.widgetWithText(TextFormField, 'PIA password'), 'secret');
     await tester.pump();
     expect(btn().onPressed, isNotNull); // green
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  // STANDALONE's .conf goes to another client, which uses both servers, so the stock note never applies.
+  testWidgets('the first-server DNS note never shows here, even with a stock router detected', (tester) async {
+    useStock();
+    addTearDown(resetRouterFirmware);
+    final c = _controller([]);
+    await tester.pumpWidget(_host(c));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('dns_first_server_note')), findsNothing);
+    expect(find.textContaining('use only the first server'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();

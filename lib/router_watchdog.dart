@@ -1676,9 +1676,9 @@ LOGTAG="cfg-pia-wg"
 LOGFILE="/tmp/watchdog_${IFACE}.log"
 STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"
 BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
-# Count + time of alerts the mailer could not deliver. An alert about lost connectivity is the one
-# most likely to be undeliverable - a downed default tunnel takes DNS with it - so the next email
-# that DOES get through says how many were missed. /tmp: losing it on a reboot is fine.
+# Count + time of alerts the mailer could not deliver. An alert about lost connectivity can be
+# undeliverable for the reason it fired, so the next email that DOES get through says how many
+# were missed. /tmp: losing it on a reboot is fine.
 UNSENTFILE="/tmp/watchdog_unsent_${IFACE}"
 CACERT="__CACERT__"
 JQ="__JQ__"

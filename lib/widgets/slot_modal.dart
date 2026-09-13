@@ -726,7 +726,8 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
           ),
         ),
         const SizedBox(height: 10),
-        DnsField(controller: _dnsCtrl),
+        // These servers become the slot's, and stock sends an assigned device to the first one only.
+        DnsField(controller: _dnsCtrl, firstServerNote: isStockFirmware),
         if (_error != null) ...[
           const SizedBox(height: 14),
           Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
