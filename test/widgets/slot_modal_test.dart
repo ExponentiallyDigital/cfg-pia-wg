@@ -161,9 +161,37 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('slot_disable')));
       await tester.tap(find.byKey(const Key('slot_disable')));
       await tester.pumpAndSettle();
+      // It asks first, and nothing reaches the router until it is answered.
+      expect(find.textContaining('Disable VPN wgc1'), findsOneWidget);
+      expect(ssh.ran('nvram set wgc1_enable=0'), isFalse);
+      await tester.tap(_inDialog('DISABLE'));
+      await tester.pumpAndSettle();
 
       expect(ssh.ran('nvram set wgc1_enable=0'), isTrue);
       expect(ssh.ran('service "stop_wgc 1"'), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('DISABLE asks first, says a running watchdog stops too, and CANCEL sends nothing', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+          ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true, watchdog: true)}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('stops its watchdog'), findsOneWidget);
+      await tester.tap(_inDialog('CANCEL'));
+      await tester.pumpAndSettle();
+      expect(ssh.ran('nvram set wgc1_enable=0'), isFalse);
+      expect(ssh.ran('cru d watchdog_wgc1'), isFalse);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -549,6 +577,32 @@ void main() {
 
       expect(find.byKey(const Key('watchdog_log_text')), findsOneWidget);
       expect(find.textContaining('LOG-DATA-XYZ'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // Reported from a tablet: the log sat in a narrow centred strip with a wide seam either side.
+    testWidgets('the watchdog log spans the width, padded like the app and router logs', (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'short line' : '');
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c),
+      );
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_view_log')));
+      await tester.tap(find.byKey(const Key('slot_view_log')));
+      await tester.pumpAndSettle();
+
+      final box = tester.getRect(find.byKey(const Key('watchdog_log_text')));
+      expect(box.left, 16, reason: 'the same side padding as the other two logs');
+      expect(box.right, 1600 - 16, reason: 'stretched to the width, not centred on a short line');
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -940,6 +994,8 @@ void main() {
       await tester.pump();
       await tester.ensureVisible(find.byKey(const Key('slot_disable')));
       await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+      await tester.tap(_inDialog('DISABLE'));
       await tester.pumpAndSettle();
 
       // Still the same open modal - no reopen.
@@ -1399,6 +1455,8 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_disable')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('paywall_buy')), findsNothing);
+      await tester.tap(_inDialog('DISABLE'));
+      await tester.pumpAndSettle();
       expect(ssh.ran('nvram set wgc1_enable=0'), isTrue);
 
       await tester.pumpWidget(const SizedBox());

@@ -251,10 +251,22 @@ class _SlotModalState extends State<SlotModal> {
     }
   }
 
-  Future<void> _disableManage() {
+  // Asks first, as DELETE does and as the watchdog screen's DISABLE does. It used to take a tunnel down,
+  // and any watchdog running on it, on a single tap - the one action in either set that did not ask.
+  Future<void> _disableManage() async {
     final slot = _selected;
-    final wdActive = _selectedInfo?.watchdogActive ?? false;
-    return _runSlot((svc) async {
+    final info = _selectedInfo;
+    final wdActive = info?.watchdogActive ?? false;
+    final ok = await _confirm(
+      'Disable VPN ${slotLabel(slot, info?.desc ?? '')}?',
+      message: wdActive
+          ? 'Takes the tunnel down and stops its watchdog. The VPN settings stay on the router, so ENABLE '
+              'brings the tunnel back.'
+          : 'Takes the tunnel down. The settings stay on the router, so ENABLE brings it back.',
+      confirmLabel: 'DISABLE',
+    );
+    if (!ok) return;
+    await _runSlot((svc) async {
       if (wdActive) await _wdSvc(svc.client).stopWatchdog(slot); // disabling also stops its watchdog
       await svc.disableSlot(slot);
     });
@@ -894,27 +906,33 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
     return Material(
       color: kBg,
       child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text('WATCHDOG LOG · wgc$slot', style: const TextStyle(color: kHighlight, fontSize: 13)),
-          ),
-        ),
+        // Laid out exactly as the app log and the router log are: padded like them, with the text
+        // STRETCHED across the width. It was neither. A SelectableText in a plain Column is centred, so on a
+        // tablet the lines sat in a narrow strip with a wide empty seam either side.
         Expanded(
-          // No side margins: the log is a wide monospace block and every column it loses to
-          // padding is a wrapped line. Full screen height AND full screen width.
-          child: SingleChildScrollView(
-            controller: _scroll,
-            // Room below the last line for Android's selection toolbar to land on. It is placed
-            // relative to the selection rather than the layout, so this helps rather than fixes -
-            // the in-app COPY below is what makes the system toolbar unnecessary.
-            padding: const EdgeInsets.only(bottom: 72),
-            child: SelectableText(
-              text,
-              key: const Key('watchdog_log_text'),
-              style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace'),
-            ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('WATCHDOG LOG · wgc$slot', style: const TextStyle(color: kHighlight, fontSize: 13)),
+              const SizedBox(height: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  // Room below the last line for Android's selection toolbar to land on. It is placed
+                  // relative to the selection rather than the layout, so this helps rather than fixes -
+                  // the in-app COPY below is what makes the system toolbar unnecessary.
+                  padding: const EdgeInsets.only(bottom: 72),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: SelectableText(
+                      text,
+                      key: const Key('watchdog_log_text'),
+                      style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace'),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
           ),
         ),
         Padding(
