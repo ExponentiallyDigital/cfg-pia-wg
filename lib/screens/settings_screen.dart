@@ -17,7 +17,9 @@
 // the build metadata and the licence text, which is a page people open to read rather than to act
 // on - and the uninstall belongs beside them rather than anywhere a stray tap could reach it.
 //
-// Drawer only, never on the main menu: an uninstall is not something to offer on the way in.
+// On the main menu as well as in the drawer since 2026-09-13. It used to be drawer-only, on the grounds
+// that an uninstall is not something to offer on the way in; the decision now is that nothing should
+// need the hamburger to be found.
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/gestures.dart';

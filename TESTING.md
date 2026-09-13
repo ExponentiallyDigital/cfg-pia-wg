@@ -71,7 +71,8 @@ perfect the whole time. Detail in
 
 ## 3. <a name='home-screen'></a>Home screen
 
-- all five buttons navigate; HOME and the back key return here
+- all nine buttons navigate, in drawer order and with the same names as the drawer; HOME and the back key return here
+- no footnotes under the buttons, and the help and review lines sit together directly under EXIT
 - "how to use this app" opens the README section
 - "add a Play Store app review" opens the Play listing
 - there is no donation block: the PAYPAL and PATREON buttons went when the app gained a price
@@ -765,7 +766,7 @@ wg show interfaces                        # UNCHANGED - the tunnels are not ours
 ## 12. <a name='credentials-and-exit'></a>Credentials and exit
 
 - password manager fills PIA, SSH and SMTP logins (clear the field first - Android only offers on an empty one)
-- Exit app and the back key both prompt, then wipe credentials and clipboard
+- EXIT and the back key both prompt, then wipe credentials and clipboard
 - release build: screenshots blocked, task switcher obscured
 
 ---

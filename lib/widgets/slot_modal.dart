@@ -496,7 +496,7 @@ class _SlotModalState extends State<SlotModal> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(widget.mode == SlotModalMode.manage ? 'WIREGUARD CONFIGURATION' : 'WATCHDOG CONFIGURATION',
+              Text(widget.mode == SlotModalMode.manage ? 'MANAGE CONFIGURATION' : 'WATCHDOG CONFIGURATION',
                   style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
               const SizedBox(height: 16),
               _slotList(),
