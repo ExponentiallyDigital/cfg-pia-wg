@@ -54,7 +54,7 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 ### 1.3. Implemented - chronological change history
 
-2026-09-13 v0.8.76 build 446 - documentation updates
+2026-09-13 v0.8.76 build 446 - one house style, every screen on the menu, and tunnels that match their labels
 
 - FIX: **changing a slot's region on the watchdog form rebuilds the tunnel on the new region.** Found while fixing CREATE: SAVE & DEPLOY wrote only the new region name, and the deploy run left the old server's tunnel alone because its handshake was recent, so the old server kept running under the new name. A region change now stops a running tunnel, blanks the old server's keys and endpoint, and lets the deploy run build the tunnel on the new region - the path the empty-slot watchdog shortcut already takes. The overwrite prompt says the tunnel is down while that happens and that assigned devices use the default connection meanwhile. No change to the router script.
 - TST: a region change stopping a running tunnel and blanking the old server before the new name is written and the deploy runs, on Merlin and on stock (`stop_vpnc`, then the restart); a slot that is not running cleared without a stop; an unchanged region clearing nothing; and the form's prompt warning of the rebuild only when the region changes.
