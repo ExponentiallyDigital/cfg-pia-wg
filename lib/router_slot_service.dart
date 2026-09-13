@@ -419,6 +419,22 @@ class RouterSlotService {
     return (raw == null || raw < 1) ? kDefaultStockMaxActiveSlots : raw;
   }
 
+  /// Stock's cap on simultaneous VPNs as the router holds it, or the ASUS default when the key is unset.
+  Future<int> readMaxActiveVpns() => _readMaxActiveSlots();
+
+  /// Sets stock's cap on simultaneous VPNs to [count], from 2 to 5.
+  ///
+  /// A USER DECISION, taken on the settings screen behind a plain warning, and deliberately not written
+  /// up anywhere outside the code. ASUS supports nothing above its default of 2, the key caps every VPN
+  /// on the router rather than only this app's slots, and values above 2 are documented to break boot
+  /// on some routers. The app honours the choice; it does not recommend it.
+  Future<void> setMaxActiveVpns(int count) async {
+    if (count < 2 || count > 5) throw ArgumentError.value(count, 'count', 'must be from 2 to 5');
+    await _run('nvram set vpnc_max_conn=$count');
+    await _run('nvram commit');
+    await _logRouter('Maximum active VPNs set to $count');
+  }
+
   // Read/modify/write of vpnc_clientlist. The caller commits.
   /// Sends every device pinned to [vpncIndex] back to the default connection, and removes the
   /// routing rules that pointed at it.
