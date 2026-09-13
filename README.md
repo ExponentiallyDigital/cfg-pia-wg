@@ -278,7 +278,7 @@ This enables full management of WG slots.
     <br>
     Supply credentials and DNS
   </p>
-  - The slot's configuration is then generated and saved, but <u>**not**</u> enabled.
+  - The slot's configuration is then generated and saved, but <u>**not**</u> enabled. If the slot's tunnel was running, it is stopped first, so the old server cannot carry on under the new region's name.
     <br>
 
 - **ENABLE:** activates the slot and verifies the interface by using two ping targets over the new VPN interface, not the WAN interface. If the connectivity check fails, the slot is reverted to disabled. Recommended connectivity checking addresses are

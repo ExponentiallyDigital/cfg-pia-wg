@@ -186,7 +186,7 @@ graph TD
 
     subgraph MGR["Manage router flow"]
       D4 --> D5["Select slot + action"]
-      D5 --> D5a["CREATE: pick region, enter PIA creds, generateConfig, createConfigToSlot (write NVRAM disabled)"]
+      D5 --> D5a["CREATE: pick region, enter PIA creds, generateConfig, createConfigToSlot (stop the tunnel if running, write NVRAM disabled)"]
       D5 --> D5b["ENABLE: read watchdog targets, disable other active slot, enableSlot with connectivity check, revert on failure"]
       D5 --> D5c["EDIT: readSlotParams, edit parameters, writeSlotParams"]
       D5 --> D5d["DISABLE: stop watchdog if present, disableSlot"]

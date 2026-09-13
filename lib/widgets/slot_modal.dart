@@ -169,12 +169,17 @@ class _SlotModalState extends State<SlotModal> {
   Future<void> _create() async {
     final slot = _selected;
     final info = _slots.slots[slot]!;
+    // The service stops a running tunnel before it writes (createConfigToSlot); say so up front.
+    final running = info.enabled || _slots.activeSlots.contains(slot);
     if (!info.isEmpty) {
       final ok = await _confirm('Overwrite wgc$slot?',
           message: 'Slot wgc$slot currently holds "${info.desc}". Creating a new configuration will overwrite it.'
+              '${running ? '\n\nIts tunnel is running, so it will be stopped first. The new configuration stays disabled '
+                  'until you ENABLE it.' : ''}'
               // The profile survives an overwrite, so its index 6 does too, and so does every pin
               // naming it. Those devices follow the new region without being asked.
-              '${isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region.' : ''}');
+              '${isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region'
+                  '${running ? ' once the slot is enabled. Until then it uses the default connection.' : '.'}' : ''}');
       if (!ok) return;
     }
     final region = await _pickRegion();
@@ -183,16 +188,22 @@ class _SlotModalState extends State<SlotModal> {
     final creds = await _piaCredsDialog();
     if (creds == null) return;
 
+    var stopped = false;
     final created = await _runSlot((svc) async {
       _c.logEntry('Generating configuration for $regionId...');
       final config = await widget.piaService.generateConfig(
           region: regionId, selected: region, username: creds.$1, password: creds.$2, dns: creds.$3, onProgress: _c.onLog);
-      await svc.createConfigToSlot(slot: slot, config: config, regionId: regionId);
+      stopped = await svc.createConfigToSlot(slot: slot, config: config, regionId: regionId);
     });
     // Only on success. This used to fire whatever happened, so a failed generate was followed by
     // "wgc5 has been created" over the top of the error saying it had not been.
     if (created && mounted) {
-      await _info('Slot created', 'wgc$slot has been created. Remember to ENABLE it via the ENABLE button.');
+      await _info(
+          'Slot created',
+          stopped
+              ? 'wgc$slot has been created. Its old tunnel was stopped, so the slot is disabled. Remember to ENABLE it via '
+                  'the ENABLE button.'
+              : 'wgc$slot has been created. Remember to ENABLE it via the ENABLE button.');
     }
   }
 
