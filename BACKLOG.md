@@ -4,6 +4,7 @@
   - [1.1. All](#11-all)
     - [1.1.1. DOC - documentation updates](#111-doc---documentation-updates)
     - [1.1.2. FTR - future implementation](#112-ftr---future-implementation)
+    - [1.1.3. Unconfirmed BUGs](#113-unconfirmed-bugs)
   - [1.2. v0.9.xx freemium](#12-v09xx-freemium)
   - [1.3. Codebase cleanup](#13-codebase-cleanup)
   - [1.4. v1.0.0 iOS version](#14-v100-ios-version)
@@ -28,6 +29,12 @@
 - FTR: **show where a pinned device is ACTUALLY exiting when its slot is down.** Measured on hardware 2026-09-13: disabling a slot leaves the `vpnc_dev_policy_list` record intact and the router removes the `ip rule`, so the device falls through to the default connection and keeps working. Correct behaviour, but the assignment screen still names the pinned slot, which is true of the configuration and false of the traffic. Proposal: when the pinned slot is not active, mute the slot label and append where it really goes, resolved rather than assumed - the default connection if that is up, otherwise the plain internet, two hops at most. The picker value must NOT change: the pin is intact and re-enabling the slot restores it. The default-connection panel needs the same treatment when the default itself is down.
 - FTR: edit a device's display name from the assignment screen, writing `custom_clientlist`. Two sharp edges make it more than a text field: `<` and `>` are the record and field delimiters, so an unvalidated name corrupts every device name on the router; and appending a record for a device that has none writes index 3, so a naive `0` downgrades that device's icon to generic in both the WebUI and the ASUS app - the detected type has to be carried over from `nmp_cl_json.js` first. Also needs the service call that makes it take effect, which is unknown.
 - ADD: deploy a script like `.\scripts\showall.sh` to `jffs/cfg-pia-wg` that creates diagnostic information, decide what to do about secrets in the file
+
+#### 1.1.3. Unconfirmed BUGs
+
+- AN-2026-09-13_001: all LAN devices lost internet while deploying a watchdog to wgc5 with five tunnels up; not reproduced.
+- AN-2026-09-13_002: an AiMesh node appeared in device assignment as an unassignable device; no longer appears in a live list.
+- AN-2026-09-13_003: copying several selected router log lines lost the line feeds; retested and they were kept.
 
 ---
 
