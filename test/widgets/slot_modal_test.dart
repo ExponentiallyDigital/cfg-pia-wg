@@ -577,6 +577,8 @@ void main() {
 
       expect(find.byKey(const Key('watchdog_log_text')), findsOneWidget);
       expect(find.textContaining('LOG-DATA-XYZ'), findsOneWidget);
+      // The heading names the region as well as the slot.
+      expect(find.text('WATCHDOG LOG · wgc1:aus_melbourne'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -648,7 +650,9 @@ void main() {
       await tester.tap(find.byKey(const Key('watchdog_log_clear_confirm')));
       await tester.pumpAndSettle();
       expect(ssh.commands.any((x) => x.contains('> /tmp/watchdog_wgc1.log')), isTrue);
-      expect(ssh.commands.any((x) => x.contains('rm ') && x.contains('watchdog_wgc1.log')), isFalse);
+      expect(ssh.commands.any((x) => RegExp(r'rm [^;]*watchdog_wgc1\.log($|[\s;])').hasMatch(x)), isFalse,
+          reason: 'the live log is truncated, never removed');
+      expect(ssh.ran('rm -f /tmp/watchdog_wgc1.log.old'), isTrue, reason: 'the rotated copy the viewer shows goes too');
 
       await tester.pumpWidget(const SizedBox());
     });

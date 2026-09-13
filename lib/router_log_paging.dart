@@ -82,6 +82,21 @@ RouterLogSource classifyLogLine(String line) {
   return m.group(1) == null ? RouterLogSource.app : RouterLogSource.watchdog;
 }
 
+/// True for a line this app or its watchdog wrote that reports a fault, which the router log screen
+/// shows in red. Only OUR lines: the firmware says "failed" about plenty of things that are none of
+/// this app's business, and turning those red would bury the ones that are.
+///
+/// Matched on the wording the app and the script actually use - "ERROR", "failed", "Connectivity
+/// lost", "down or absent", "never answered", "no Internet" - rather than on a new tag, which would
+/// only reach a router on its next watchdog deploy.
+bool isRouterLogError(String line) =>
+    classifyLogLine(line) != RouterLogSource.other && _errorPattern.hasMatch(line);
+
+final RegExp _errorPattern = RegExp(
+  r'\berror\b|\bfailed\b|connectivity lost|down or absent|never answered|no internet',
+  caseSensitive: false,
+);
+
 final RegExp _tagPattern = RegExp(r'cfg-pia-wg:\s*(wgc\d+:)?');
 
 class LogPage {

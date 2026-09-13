@@ -123,6 +123,7 @@ Applying configs:
 - DISABLE shows the PAUSED badge; ENABLE restores the same interval
 - keyboard does not obscure the configure dialog's fields
 - backoff: leave it failing and watch the log - "Backing off after N failed attempts", waits growing 2, 4, 8, 16, 30, 60, 90 min
+- VIEW ROUTER WATCHDOG LOG: the heading names the slot and its region, the text fills the width on a tablet, and after midnight yesterday's lines appear above today's; CLEAR empties both
 
 ### 6.1. <a name='checks'></a>Checks
 
@@ -722,6 +723,7 @@ Deletes:
 - opens on the newest 32 KB of `/tmp/syslog.log`, scrolled to the bottom
 - scrolling to the top loads the previous 32 KB and **keeps your place** - the text you were reading must not jump
 - a partial first line is trimmed, so no page ever starts mid-word
+- lines the app wrote are teal and lines the watchdog wrote are amber; any of those reporting an error - ERROR, failed, connectivity lost, down or absent, never answered, no Internet - are red instead, while the firmware's own lines stay plain even when they say failed
 - reaching the start of `syslog.log` continues into the rotated `syslog.log-1` if the router has one, and says so
 - COPY takes everything loaded, not just the visible page, and no clipboard countdown is armed
 - REFRESH returns to the newest page
