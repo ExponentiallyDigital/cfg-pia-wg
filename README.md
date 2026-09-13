@@ -30,9 +30,9 @@
     - [Installing Download Master](#installing-download-master)
     - [Installing the helper binaries](#installing-the-helper-binaries)
 - [5. Using the app](#5-using-the-app)
-  - [5.1. Generate a PIA WireGuard configuration](#51-generate-a-pia-wireguard-configuration)
-  - [5.2. Manage router PIA WireGuard configuration](#52-manage-router-pia-wireguard-configuration)
-  - [5.3. Watchdog WireGuard management](#53-watchdog-wireguard-management)
+  - [5.1. STANDALONE - Generate a PIA WireGuard configuration](#51-standalone---generate-a-pia-wireguard-configuration)
+  - [5.2. MANAGE - Manage router PIA WireGuard configuration](#52-manage---manage-router-pia-wireguard-configuration)
+  - [5.3. WATCHDOG  - Watchdog WireGuard management](#53-watchdog----watchdog-wireguard-management)
     - [5.3.1. Email alerts](#531-email-alerts)
   - [5.4. VPN device assignment](#54-vpn-device-assignment)
   - [5.5. View app log](#55-view-app-log)
@@ -61,11 +61,7 @@ A native Android app that generates and optionally applies ready-to-use WireGuar
 
 If you have an ASUS router — stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) — you can also **manage** WG configs directly on your router and deploy a **self-healing** watchdog with optional email alerting that makes your configuration truly "set and forget".
 
-**The part people do not expect is the device view.** Your router thinks in SLOTS: five numbered
-VPN profiles, and to find out which of your devices is using one you generally have to stop it and
-see what breaks. **cfg-pia-wg thinks in DEVICES.** One screen lists everything on your network and
-what each one is using right now, and moving a device to a different VPN - or off VPN entirely - is
-one tap on that device. No slot numbers, nothing to stop first, and nothing to work out afterwards.
+**The part people do not expect is the device view.** Your router thinks in SLOTS: five numbered VPN profiles, and to find out which of your devices is using one you generally have to stop it and see what breaks. **cfg-pia-wg thinks in DEVICES.** One screen lists everything on your network and what each one is using right now, and moving a device to a different VPN - or off VPN entirely - is one tap on that device. No slot numbers, nothing to stop first, and nothing to work out afterwards.
 
 That is the other half of what this app is for. Tunnels that stay up on their own is the first half.
 
@@ -79,7 +75,7 @@ Creating a valid PIA WG config by hand requires expertise in API authentication,
 
 PIA's WG configs are ephemeral and expire without warning. While OpenVPN offers long-lived configs, the protocol is CPU-intensive, which on many routers becomes a bottleneck limiting throughput.
 
-Switching to WG reduces overhead, allowing your hardware to operate closer to your actual ISP's provisioned speed. In a real-world test with a 500 Mbps plan (546 Mbps measured baseline), speeds jumped from a peak of 136 Mbps on OpenVPN to 499 Mbps with WG on the same hardware, a 75–81% throughput sacrifice under OpenVPN:
+Switching to WG reduces overhead, allowing your hardware to operate closer to your actual ISP's provisioned speed. In a real-world test with a 500/50 Mbps plan (546 Mbps measured baseline), speeds jumped from a peak of 136 Mbps on OpenVPN to 499 Mbps with WG on the same hardware, a 75–81% throughput sacrifice under OpenVPN:
 
 <p align="center">
   <img src="./images/vpn-protocol-comparison.png" alt="VPN protocol comparison" width="100%">
@@ -93,22 +89,22 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
 
 - **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
 - **Secure clipboard handling:** when copying a generated config, a visible 60-second countdown starts, then clears the clipboard automatically at expiry.
-- **Share/save support:** share generated `.conf` via the Android share function and save it to a file location of your choice.
+- **Share/save support:** share generated a `.conf` via the Android share function and save it to a file location of your choice.
 - **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WG slot configurations directly.
 - **Watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log. Works on stock and Merlin; on stock it additionally needs `jq`, `mailsend-go` and DownloadMaster (see [4. Prerequisites](#4-prerequisites--requirements)).
 - **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
-- **One remembered setting:** a successful router connect stores the router LAN address - and nothing else - in the app private storage, so you do not retype it every session. Clear it with **FORGET ROUTER IP** on the ABOUT screen. See [SECURITY.md](SECURITY.md).
+- **One remembered setting:** a successful router connect stores the router LAN address - and nothing else - in the app private storage, so you do not retype it every session. Clear it with **FORGET ROUTER IP** in the SETTINGS screen. See [SECURITY.md](SECURITY.md).
 - **No persistent credential storage (app):** PIA credentials, router SSH credentials and generated configs are stored only in volatile application memory and are never written to your device's storage.
 - **Watchdog credential storage (router):** deploying the watchdog stores the necessary PIA credentials in router NVRAM so it can monitor and self-heal independently of the app. This is a deliberate trade-off for "set and forget" operation, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
 - **Automated lowest-latency server selection:** measures live latency across all available servers in your selected region, ensuring that you provision with the fastest node.
-- **Native task-switcher protection:** `(FLAG_SECURE)` enforces native OS-level window flags to block third-party screenshot capturing and automatically obscures the app layout view inside the Android Recent Apps / Task Switcher interface. Debug builds skip the flag so the app can be captured while testing; every release build sets it.
+- **Native task-switcher protection:** `(FLAG_SECURE)` enforces native OS-level window flags to block third-party screenshot capturing and automatically obscures the app layout view inside the Android Recent Apps / Task Switcher interface. Debug builds skip the flag to enable screenshotting while testing; every release build sets it.
 - **Password manager support:** every credential field accepts autofill from your device's password manager (KeePass, Bitwarden, Google Password Manager - whatever is registered as the autofill service). PIA, router SSH and SMTP logins are kept in separate autofill groups, so your manager can hold a different entry for each and you pick between them. A "save password?" prompt is offered only after credentials have actually worked, never when you back out of a form.
 - **Input field hardening:** user credential entry textboxes disable predictive text caching, auto-correction, and keyboard learning behaviours.
 - **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials and the system clipboard.
 - **Professional-grade build chain:** all releases undergo automated security and quality checks with
   - [SonarQube](https://docs.sonarsource.com/sonarqube-cloud) - code quality and test coverage;
   - [OSV](https://github.com/google/osv-scanner) - open-source dependency scanning against Google's vulnerability database flagging out-of-date third-party packages;
-  - [Dependabot](https://docs.github.com/code-security/dependabot) - automates version updates to monitor and patch insecure or outdated dependencies;
+  - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
   - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks; and
   - Pinned GitHub Action hashes across [release.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/release.yml), [promote.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/promote.yml), and [quality_and_security.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/quality_and_security.yml) ensure automated builds execute with specific, verified tool versions.
@@ -133,7 +129,7 @@ If you don't have an ASUS router, you can still use the `Generate PIA WireGuard 
 
 To manage WireGuard configs and/or deploy a watchdog, you'll need to do a one time set up:
 
-1. Enable the SSH server via your web browser - this setting is not available in the ASUS app - go to
+1. With the ASUS WebUi, enable the SSH server - this setting is not available in the ASUS app - go to
 
 ```text
 Advanced Settings\Administration\System\Service -> "Enable SSH" (LAN only is recommended).
@@ -149,7 +145,7 @@ Advanced Settings\Administration\System\Basic Config -> "Enable JFFS custom scri
 
 3. Install the `jq` and `mailsend-go` helper apps.
 
-**On Merlin there is nothing to do - skip the rest of this step.** Merlin already ships `jq`, and it sends the alert emails using tools it already has, so neither helper is needed.
+**On Merlin there is nothing more to do - skip the rest of this step.** Merlin already ships `jq`, and it sends alert emails using tools it already has.
 
 **On stock firmware** both are needed, and there is one more thing to do first. It needs a USB stick.
 
@@ -158,13 +154,13 @@ Advanced Settings\Administration\System\Basic Config -> "Enable JFFS custom scri
 On stock firmware, scheduled tasks do not survive a reboot on their own. Download Master provides the `/opt` structure the app uses to keep a watchdog running across reboots and power cycles. It is a prerequisite, not something you will use.
 
 > [!IMPORTANT]
-> **Install Download Master, then leave it alone.** The app takes over part of its installation, so Download Master itself will not work afterwards. That is more than losing a download manager: Download Master is also how some people reach files on a USB disk attached to the router, and that goes with it. If you use it for anything at all, this app's watchdog is not compatible with it on stock firmware. Reinstalling or updating it later puts the original back, and your watchdogs stop surviving reboots until you redeploy them from the app.
+> **Install Download Master, then leave it alone.** The app takes over part of its installation, so Download Master itself will not operate afterwards: this app's watchdog is not compatible with it on stock firmware. Reinstalling or updating DM will stop any deployed watchdogs from surviving reboots until you redeploy them from the app.
 
 #### Preparing the USB stick
 
 Download Master installs onto the stick, so it needs a writable partition with a few hundred MB free.
 
-**Format it NTFS, as a single primary partition on an MBR table.** Windows makes NTFS natively and so does the router's own Format tool, which is why it is the one to pick. The format that catches people out is **exFAT, which will not mount at all** - and any stick over 32 GB that Windows formatted is exFAT by default, so check rather than assume. ext4 and FAT32 also work if you already have one.
+**Format it as NTFS, a single primary partition on an MBR table.** Windows makes NTFS natively. Don't use **exFAT** as it won't - any stick over 32 GB that Windows formatted is exFAT by default, so check rather than assume. ext4 and FAT32 also work.
 
 Full compatibility table and the reasons behind each of those constraints: [ARCHITECTURE.md, USB storage for Download Master](ARCHITECTURE.md#usb-storage-for-download-master).
 
@@ -181,7 +177,7 @@ Full compatibility table and the reasons behind each of those constraints: [ARCH
 
     ![Selecting the USB device](images/dm-install-2.png)
 
-6. The disk is checked, then the packages are downloaded, installed and configured.
+6. The disk is checked, and DM packages are downloaded, installed and configured.
 
     ![Installation in progress](images/dm-install-3.png)
 
@@ -197,17 +193,11 @@ That is it - nothing else to configure.
 
 #### Installing the helper binaries
 
-**On stock firmware the app does this for you.** Open **MANAGE** or **WATCHDOG** and, if either
-helper is missing, the app offers to install it. It shows what it is about to download, where it
-goes, and the SHA-256 checksum it will verify before anything is put in place. `mailsend-go` is only
-needed if you want email alerts.
+**On stock firmware the app does this for you.** Open **MANAGE** or **WATCHDOG** and, if either helper is missing, the app offers to install it. It shows what it is about to download, where it goes, and the SHA-256 checksum it will verify before anything is put in place. `mailsend-go` is only needed if you want email alerts.
 
 <!-- SCREENSHOT: the INSTALL HELPERS dialog showing the two binaries, their sources and checksums -->
 
-If your router turns out to be an architecture there is no published build for, the app says so and
-you can fall back to installing them by hand over SSH with
-[`scripts/get-bins.sh`](scripts/get-bins.sh). That script is for stock only; Merlin needs neither
-binary.
+If your router uses an architecture there is no published build for, the app says so and you can fall back to installing them by hand over SSH with [`scripts/get-bins.sh`](scripts/get-bins.sh). That script is for stock only; Merlin needs neither binary.
 > [!TIP]
 > Firmware flashing (upgrading your router's software) [_may_ require redeployment](https://github-wiki-see.page/m/RMerl/asuswrt-merlin.ng/wiki/JFFS) of PIA WG configs. Always test your VPN is active after applying a new firmware version.
 
@@ -216,21 +206,21 @@ binary.
 ## 5. Using the app
 
 > [!TIP]
-> Before using the `Manage PIA WireGuard config` or `Watchdog WireGuard management` functions for the first time, it's recommended that you make a backup of your router configuration via the WebUI -> Advanced Settings -> Administration -> Restore/Save/Upload Setting -> Save setting.
+> Before using the `MANAGE` or `WATCHDOG` functions for the first time, it's recommended that you make a backup of your router configuration via the WebUI -> Advanced Settings -> Administration -> Restore/Save/Upload Setting -> Save setting.
 
-The app opens with six options:
+The app opens with nine options:
 
-- Generate PIA WireGuard configuration
-- Manage router PIA WireGuard configuration ¹
-- Watchdog WireGuard management ¹
-- VPN device assignment ¹²
-- View app log
-- Exit app
+- STANDALONE
+- MANAGE
+- WATCHDOG
+- DEVICE ASSIGNMENT
+- ROUTER LOG
+- APP LOG
+- SETTINGS
+- ABOUT
+- EXIT
 
-The two footnotes under the buttons say what the markers mean: ¹ needs SSH connectivity to an
-ASUS router, and ² is stock firmware only.
-
-Below those are two links: **how to use this app**, which opens this section of the README, and **add a Play Store app review**, which opens the app's Play Store listing.
+Below that are two links: **how to use this app**, which opens this section of the README, and **add a Play Store app review**, which opens the app's Play Store listing.
 
 <p align="center">
   <img src="./images/main-menu.png" alt="Main menu" width="300">
@@ -238,9 +228,9 @@ Below those are two links: **how to use this app**, which opens this section of 
   Main menu
 </p>
 
-### 5.1. Generate a PIA WireGuard configuration
+### 5.1. STANDALONE - Generate a PIA WireGuard configuration
 
-1. Tap **Generate PIA WireGuard configuration**.
+1. Tap **STANDALONE**.
 2. Choose a region from the filterable region list.
 3. Enter your PIA username, password, and DNS values.
 4. Tap **GENERATE CONFIG** once all required fields are filled.
@@ -254,16 +244,15 @@ Below those are two links: **how to use this app**, which opens this section of 
 
 6. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing. Copying a config to the clipboard starts a 60 second timer, displayed on screen, after which the clipboard is automatically cleared.
 
-### 5.2. Manage router PIA WireGuard configuration
+### 5.2. MANAGE - Manage router PIA WireGuard configuration
 
 This enables full management of WG slots.
 
-1. Tap **Manage router PIA WireGuard configuration**.
-2. Enter router IP, SSH username, and SSH password. The **address** is filled in for you if the app connected successfully before; the username and password never are, because neither is ever stored.
-3. Tap **CONNECT TO ROUTER**.
+1. Tap **MANAGE**.
+2. If prompted, enter router IP, SSH username, and SSH password. The **address** is filled in for you if the app connected successfully before; the username and password never are, because neither is ever stored. Tap **CONNECT TO ROUTER**.
 
 > [!TIP]
-> To fill the credentials from your password manager, tap the username or password field and choose the entry it offers. Android only suggests for a field that is **empty**, and both of those start empty, so they prompt straight away.
+> To fill the credentials from your password manager, tap the username or password field and choose the entry it offers. Android only suggests for a field that is **empty**, and both of those start empty, so they should prompt straight away.
 
 <p align="center">
   <img src="./images/router-slot-management.png" alt="Router slot management" width="300">
@@ -272,7 +261,7 @@ This enables full management of WG slots.
 </p>
 
 > [!NOTE]
-> The screenshots in this section were taken on **Merlin**. Stock looks the same apart from the two settings named at the end of this section, which Merlin has and stock does not.
+> The screenshots in this section were taken on **stock** firmware. **Merlin** firmware will look slightly different.
 
 4. Select a slot and choose one of the slot actions:
 
@@ -314,15 +303,14 @@ This enables full management of WG slots.
 - **DELETE:** remove the slot configuration and disable any associated watchdog.
 
 > [!NOTE]
-> **The EDIT screen is shorter on stock firmware.** The kill switch and the inbound firewall setting are Merlin features - stock has neither, so the app does not offer them there. Everything else is the same on both.
+> Merlin adds a kill switch and inbound firewall toggle.
 
-### 5.3. Watchdog WireGuard management
+### 5.3. WATCHDOG  - Watchdog WireGuard management
 
-This manages a self-healing watchdog. When your WG configuration inevitably expires, it is automatically renewed and an optional email alert sent when connectivity has been restored.
+This manages a self-healing watchdog. When your WG configurations inevitably expire, they are automatically renewed and an optional email alert sent when connectivity has been restored.
 
-1. Tap **Watchdog WireGuard management**.
-2. Enter router IP, SSH username, and SSH password.
-3. Tap **CONNECT TO ROUTER**.
+1. Tap **WATCHDOG**.
+2. If prompted, enter router IP, SSH username, and SSH password and tap **CONNECT TO ROUTER**.
 
 <p align="center">
   <img src="./images/watchdog-management.png" alt="Watchdog management" width="300">
@@ -330,7 +318,7 @@ This manages a self-healing watchdog. When your WG configuration inevitably expi
   Watchdog management
 </p>
 
-4. Select a slot and use the watchdog actions:
+3. Select a slot and use the watchdog actions:
    - **CREATE/EDIT:** deploy router-side watchdog scripts and cron jobs for the selected slot.
 
 <p align="center">
@@ -338,9 +326,6 @@ This manages a self-healing watchdog. When your WG configuration inevitably expi
   <br>
   Configuring a watchdog
 </p>
-
-> [!TIP]
-> See [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md) for email troubleshooting approaches.
 
 - **DISABLE:** stop the watchdog running without losing its settings. The slot shows a **PAUSED** badge.
 - **ENABLE:** start it again, at the same interval it was using before.
@@ -358,7 +343,10 @@ If you fill in the email fields when configuring a watchdog, the router sends yo
 
 Use **TEST EMAIL** in the configuration dialog before you save. It sends the same kind of message through the same path, so a test that arrives is a real guarantee that alerts will too.
 
-Every email carries the same sections: what happened, what to do about it (failures only), which router this is, and a running count of how well the watchdog has been doing.
+> [!TIP]
+> See [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md) for email troubleshooting approaches.
+
+Every email carries the same sections: what happened, what to do about it (failures only), which router this is, and a running count of how well the watchdog is earning its keep.
 
 **When a tunnel is rebuilt:**
 
@@ -523,7 +511,7 @@ Two entries are not on the main menu:
 - **View router log** shows the router's own system log, newest first. Scroll up to load more, including the previous log file if the router still has it. **COPY** takes everything loaded. This is the first place to look when something on the router did not do what you expected.
 - **Settings** holds three one-off actions:
   - **UNINSTALL FEATURES INSTALLED TO ROUTER** - removes everything the app put on the router, see [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice.
-  - **DEL PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run.
+  - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run.
   - **FORGET ROUTER IP** - deletes the remembered router address. It is the only thing the app keeps on your phone; no SSH credentials are ever stored.
 
 ### 5.8. About
@@ -618,7 +606,12 @@ traffic flows: [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia
 
 ## 8. App permissions
 
-The app uses the following Android permissions:
+In summary, the app requires only the following:
+
+- Have full network access
+- View network connections
+- Google Play billing service
+- Google Play license check
 
 ### 8.1. Internet (android.permission.INTERNET)
 
@@ -637,7 +630,7 @@ Required to:
 
 - detect whether the device currently has network connectivity
 - avoid unnecessary network requests when offline
-- provide better error handling and diagnostics
+- provide error handling and process diagnostics
 
 ### 8.3. Storage access
 

@@ -1,11 +1,11 @@
 # App Name: cfg-pia-wg
 Short name: The simplest way to manage and maintain PIA WireGuard configs on your router.
-Full description (3,965/4000 characters):
+Full description (3,856/4000 characters):
 
 WireGuard (WG) configuration application for Private Internet Access (PIA) users.
 
 ▶ Enjoy the peace of mind that comes from a persistent VPN on your router
-▶ Deploy a self-healing watchdog to automatically re-create your VPN (Asuswrt-Merlin firmware)
+▶ Deploy a self-healing watchdog on ASUS routers to automatically re-create your VPN
 ▶ Send optional reconfig email alerts
 ▶ Manage ASUS router WG VPNs
 ▶ Create a standalone config file
@@ -13,7 +13,7 @@ WireGuard (WG) configuration application for Private Internet Access (PIA) users
 
 AUTOMATE
 
-When your WG VPN config expires, as it periodically does, this app replaces manual scripts with a streamlined workflow. It connects to PIA's provisioning API, benchmarks latency, and exports a .conf payload in seconds. For Asuswrt-Merlin-based routers, write configs directly into client slots seamlessly, no computer required.
+When your WG VPN configs expire, as they periodically do, this app replaces manual scripts with a streamlined workflow. It connects to PIA's provisioning API, benchmarks latency, and exports a .conf payload in seconds. For ASUS routers, write configs directly into client slots seamlessly, no computer required.
 
 SIMPLICITY: couch-to-router in seconds
 
@@ -21,7 +21,7 @@ Generating configs by hand requires significant expertise. Official scripts requ
 
 WHY RUN A VPN ON YOUR ROUTER?
 
-Configuring a VPN at the router level secures your entire household, protecting devices like smart TVs and consoles that cannot run VPN software. While OpenVPN offers stability, it is resource-intensive, capping speeds at around 100 Mbps on mid-range hardware and pinning the router CPU at 100%. Switching to WG reduces overhead, allowing your hardware to operate closer to your actual ISP speed. Testing on a 500 Mbps connection (actual 546 Mbps) saw speeds jump from 135 Mbps under OpenVPN to 498 Mbps with WG on identical hardware.
+Configuring a VPN at the router level secures your entire household, protecting devices like smart TVs and consoles that cannot run VPN software. While OpenVPN offers stability, it is resource-intensive, capping speeds at around 100 Mbps on mid-range hardware and pinning the router CPU at 100%. Switching to WG reduces overhead, allowing your hardware to operate closer to your actual ISP speed. Testing on a 500 Mbps connection (actual 546 Mbps) saw speeds jump from 136 Mbps under OpenVPN to 499 Mbps with WG on identical hardware.
 
 CORE FUNCTIONALITY & SECURITY
 
@@ -33,7 +33,7 @@ OPEN SOURCE & DISCLAIMERS
 
 Verifiable build provenance, pinned dependencies to mitigate vulnerabilities, and open-source code are available for public audit. Comprehensive deployment flows, local build steps, architecture and diagrams are available on GitHub.
 
-Requires an active PIA subscription. Router push requires an ASUS router running Asuswrt-Merlin firmware with WG client support and SSH access enabled. Speeds depend on your router CPU & ISP plan.
+Router push requires an ASUS router with WG client support and SSH access enabled. Speeds depend on your router CPU & ISP plan.
 
 This is a free, independent, open-source app released under the GNU General Public License v3.0. It requires an active Private Internet Access (PIA) account subscription to authenticate with the provisioning endpoints. This app is not affiliated with, endorsed by, sponsored by, or associated with Private Internet Access, WireGuard or ASUS. WireGuard® is a registered trademark of Jason A. Donenfeld. Private Internet Access & PIA are trademarks of their respective owner. ASUS is a trademark of ASUSTek Computer Inc.
 
