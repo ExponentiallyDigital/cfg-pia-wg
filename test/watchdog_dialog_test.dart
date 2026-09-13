@@ -11,6 +11,7 @@ import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/watchdog_dialog.dart';
 import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
+import 'package:cfg_pia_wg/widgets/common_fields.dart';
 
 import 'watchdog_test_utils.dart';
 
@@ -109,7 +110,7 @@ void main() {
       await tester.pump();
 
       // The SAVE button never turns into a spinner; its label stays put underneath.
-      expect(find.text('SAVE & SELECT REGION'), findsOneWidget);
+      expect(find.text('SAVE & DEPLOY'), findsOneWidget);
       final overlay = find.byKey(const Key('wd_saving_overlay'));
       expect(overlay, findsOneWidget, reason: 'a save shows a progress overlay');
       expect(
@@ -145,8 +146,8 @@ void main() {
     expect(find.text('WATCHDOG · wgc1:aus_melbourne'), findsOneWidget);
     expect(find.byKey(const Key('wd_primary')), findsOneWidget);
     expect(find.byKey(const Key('wd_save')), findsOneWidget);
-    // SAVE is not the end of the flow - a region picker follows it, and the label says so.
-    expect(find.text('SAVE & SELECT REGION'), findsOneWidget);
+    // The region is chosen on the form, so SAVE deploys, and the label says so.
+    expect(find.text('SAVE & DEPLOY'), findsOneWidget);
     // DISABLE / VIEW LOG are now slot-modal actions, not part of EDIT.
     expect(find.text('DISABLE'), findsNothing);
     expect(find.text('VIEW LOG'), findsNothing);
@@ -237,7 +238,7 @@ void main() {
     expect(ssh.ran('cru a watchdog_wgc1'), isTrue);
   });
 
-  testWidgets('save on a disabled empty slot picks a region and writes wgcN_desc', (tester) async {
+  testWidgets('save on a disabled empty slot deploys the region chosen on the form', (tester) async {
     final c = _controller();
     addTearDown(c.dispose);
     final ssh = RecordingSSHClient(
@@ -253,14 +254,11 @@ void main() {
     await tester.pumpWidget(_host(ssh, c, slotIsEmpty: true));
     await tester.pumpAndSettle();
 
+    // The region is on the form, chosen with everything else, so SAVE & DEPLOY goes straight on.
     await tester.ensureVisible(find.byKey(const Key('wd_save')));
     await tester.tap(find.byKey(const Key('wd_save')));
     await tester.pumpAndSettle();
-
-    // Region picker (fake PiaService) appears; choose the region.
-    expect(find.text('aus_melbourne'), findsWidgets);
-    await tester.tap(find.text('aus_melbourne').last);
-    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing, reason: 'no picker arriving after SAVE');
 
     expect(ssh.ran("nvram set wgc1_desc='pia-aus_melbourne'"), isTrue); // same prefix as MANAGE
     expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
@@ -295,6 +293,51 @@ void main() {
 
     expect(ssh.ran('/usr/sbin/sendmail'), isTrue);
     expect(ssh.ran('TEST email'), isTrue, reason: 'the subject says what kind of mail this is');
+  });
+
+  // The region is on the form, as it is on STANDALONE, rather than a picker arriving after SAVE.
+  testWidgets("the region is chosen on the form, pre-filled with the slot's own", (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c));
+    await tester.pumpAndSettle();
+
+    final field = find.descendant(of: find.byType(RegionRow), matching: find.byType(TextFormField));
+    expect(field, findsOneWidget);
+    expect(tester.widget<TextFormField>(field).controller!.text, 'aus_melbourne');
+  });
+
+  testWidgets('a region PIA does not have is refused before anything reaches the router', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c, slotIsEmpty: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.descendant(of: find.byType(RegionRow), matching: find.byType(TextFormField)), 'nowhere_at_all');
+    await tester.ensureVisible(find.byKey(const Key('wd_save')));
+    await tester.tap(find.byKey(const Key('wd_save')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('"nowhere_at_all" is not a PIA WireGuard region'), findsOneWidget);
+    expect(ssh.ran('nvram set wgc1_desc'), isFalse);
+  });
+
+  testWidgets('an empty region asks for one', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c, slotIsEmpty: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.descendant(of: find.byType(RegionRow), matching: find.byType(TextFormField)), '');
+    await tester.ensureVisible(find.byKey(const Key('wd_save')));
+    await tester.tap(find.byKey(const Key('wd_save')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Choose a region first.'), findsOneWidget);
+    expect(ssh.ran('nvram set wgc1_desc'), isFalse);
   });
 
   group('stock firmware', () {

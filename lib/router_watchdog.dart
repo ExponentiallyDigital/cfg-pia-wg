@@ -420,7 +420,7 @@ const List<String> kEmailWhatToDo = [
   '2. Open VIEW WATCHDOG LOG in the app for the full history.',
   '3. PIA rate-limits repeated token requests; if the code above is 403, wait 30 minutes before intervening.',
   '4. Review your router log.',
-  '5. Is your PIA billing account active?',
+  '5. Is your PIA user account active?',
 ];
 
 /// The footer on every ALERT email. Not on the test email: that one is sent from the very screen
@@ -665,15 +665,34 @@ const String _kMailHdrMerlin = r'''  {
 // the only case the old sentence described. A warning that cries wolf twice for every time it is
 // right is one people learn to ignore, so the script reads `vpnc_default_wan` and says which of
 // the three actually happened.
+//
+// Refined 2026-09-13, so that no branch claims what it has not checked. A tunnel nothing is assigned to,
+// and which is not the default, does not talk about "its devices". "Still on a VPN" is said only when
+// the default is a WireGuard tunnel whose interface is up; one that is down, or that is not WireGuard
+// and so cannot be checked here, is reported as not confirmed. Its awk counts the enabled policy
+// records naming this tunnel's state index (device_assignment.dart, `enabled>IP>?>vpnc_idx>`). The
+// branch shares one sentence across the tenses, as Merlin's OFF case does, to keep the script inside
+// its size guard.
 const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
 [ -n "$DEFIDX" ] || DEFIDX=0
 # Index 2 of a vpnc_clientlist record is the slot, index 6 the state index the default is named by.
 MYIDX="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" '$3==s {print $7; exit}')"
 DEFNAME="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v d="$DEFIDX" '$7==d {print $1; exit}')"
+# Slot of a WireGuard default, and how many devices are pinned to this tunnel.
+DEFSLOT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v d="$DEFIDX" '$7==d && $2=="WireGuard" {print $3; exit}')"
+PINNED="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {n++} END {print n+0}')"
 if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then
   KILLSW_UP="none on this firmware, but this tunnel is the default connection - if it drops, its devices lose internet rather than leaking"
   KILLSW_FIXED="none on this firmware; this tunnel is the default connection, so its devices had no internet rather than an unprotected one"
   KILLSW_DOWN="none on this firmware; this tunnel is the default connection, so its devices have no internet rather than an unprotected one"
+elif [ "$PINNED" = "0" ]; then
+  KILLSW_UP="none on this firmware, but no devices are assigned to this tunnel and it is not the default connection"
+  KILLSW_FIXED="$KILLSW_UP"
+  KILLSW_DOWN="$KILLSW_UP"
+elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ] && { [ -z "$DEFSLOT" ] || ! ip -o link show up 2>/dev/null | grep -q " wgc$DEFSLOT:"; }; then
+  KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection, $DEFNAME, which is not confirmed up, so they may have no VPN"
+  KILLSW_FIXED="none on this firmware; while it was down, its devices fell through to the default connection, $DEFNAME, which was not confirmed up, so they may have had no VPN"
+  KILLSW_DOWN="none on this firmware; its devices are falling through to the default connection, $DEFNAME, which is not confirmed up, so they may have no VPN"
 elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ]; then
   KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection, $DEFNAME, so they stay on a VPN"
   KILLSW_FIXED="none on this firmware; while it was down, its devices fell through to the default connection, $DEFNAME, so they stayed on a VPN"
@@ -1661,16 +1680,9 @@ __BACKOFF__
 
 log "Watchdog started for $IFACE${APPVER:+ [script $APPVER]}"
 
-# A tunnel the user turned off in the WebUI looks exactly like a tunnel that dropped. Without
-# this the watchdog reconfigures it, brings it back up and emails an alert - undoing what the
-# user just did and telling them their VPN failed.
-#
-# This is not a corner case: changing a device assignment REQUIRES disabling the tunnel first,
-# so every assignment would trip it. Observed 2026-09-07 22:45.
-#
-# Only an explicit "0" stands down. An empty value means the firmware does not keep the key,
-# which is not the same as the user having said no, and must not silently stop the watchdog.
-# A deploy is explicit user intent and runs regardless.
+# A tunnel turned off in the WebUI looks like one that dropped; reviving it would undo the user,
+# and changing a device assignment requires exactly that. Only an explicit "0" stands down - empty
+# means the firmware keeps no key. A deploy is explicit user intent and runs regardless.
 ENABLED="$(nvram get ${K}enable)"
 if [ "$RUNMODE" != "deploy" ] && [ "$ENABLED" = "0" ]; then
   log "$IFACE is disabled in the router; standing down until it is enabled again"
@@ -1984,11 +1996,8 @@ TOKEN=""
 # cannot suppress it - curl that could not resolve the host printed two errors to the console.
 [ -f "$TMPTOK" ] && TOKEN="$("$JQ" -r '.token // empty' < "$TMPTOK" 2>/dev/null)"
 if [ -z "$TOKEN" ]; then
-  # curl exits 0 for an HTTP error unless --fail is used, and this call deliberately does not
-  # use it - so exit 0 WITH an HTTP code means the server answered and the answer was not a
-  # token. Exit 0 with NO code and NO stderr is a different animal: curl reported success and
-  # produced nothing whatsoever. That is what was seen once, during a WAN restart, and the old
-  # message could not tell the two apart. Naming it is what makes the next occurrence readable.
+  # No --fail, so exit 0 WITH an HTTP code is an answer that was not a token. Exit 0 with NO code
+  # and NO stderr is curl producing nothing at all, seen once during a WAN restart.
   BSZ=0
   BODY=""
   if [ -f "$TMPTOK" ]; then
