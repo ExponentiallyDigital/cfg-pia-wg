@@ -801,6 +801,13 @@ class RouterWatchdog {
   /// A read: returns stdout and never throws, whatever the exit code.
   Future<String> _read(String cmd) => _run(cmd, allowFailure: true);
 
+  /// Runs [read] over [path] only when the file exists. A file the watchdog has not created yet - no
+  /// ping has succeeded, no script is deployed - is an ordinary answer, and logging it as "router
+  /// command failed" alarmed people who had done nothing wrong. A file that IS there but cannot be
+  /// read still fails, and still says so.
+  Future<String> _readIfExists(String path, {String read = 'cat'}) =>
+      _read("if [ -f '$path' ]; then $read '$path'; fi");
+
   // Heredoc writes can stall if the SSH channel hangs; bound them at 30s and
   // surface a troubleshooting message on timeout.
   /// Writes the watchdog script and proves it landed.
@@ -1293,12 +1300,12 @@ class RouterWatchdog {
     final interfaceEnabled = (await _read('nvram get wgc${slot}_enable')) == '1';
     final interfacePresent = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
     final enabled = cronEnabled && interfaceEnabled && interfacePresent;
-    final ping = await _read('cat /tmp/watchdog_last_ping_success_wgc$slot 2>/dev/null');
+    final ping = await _readIfExists('/tmp/watchdog_last_ping_success_wgc$slot');
 
     // Which script is actually on the router. The app updates from the store; the script only
     // changes when a watchdog is deployed, so someone can run a build whose fixes have never
     // reached their router and have no way to tell. Both versions go to both logs.
-    final scriptVersion = parseScriptVersion(await _read("sed -n '2p' '${watchdogScriptPath(slot)}' 2>/dev/null"));
+    final scriptVersion = parseScriptVersion(await _readIfExists(watchdogScriptPath(slot), read: "sed -n '2p'"));
     final status = WatchdogStatus(
       isEnabled: enabled,
       lastSuccessfulPing: parseLastPing(ping),

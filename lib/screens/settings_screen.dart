@@ -13,7 +13,7 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// Everything here removes something. FORGET ROUTER IP and DEL PIA CERT used to sit on ABOUT, among
+// Everything here removes something. FORGET ROUTER IP and REMOVE CACHED PIA CERT used to sit on ABOUT, among
 // the build metadata and the licence text, which is a page people open to read rather than to act
 // on - and the uninstall belongs beside them rather than anywhere a stray tap could reach it.
 //
@@ -373,7 +373,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         _Action(
           keyValue: 'settings_del_pia_cert',
-          label: 'DEL PIA CERT',
+          label: 'REMOVE CACHED PIA CERT',
           note: 'Removes $kPiaCaCertPath. The watchdog downloads a fresh copy on its next run.',
           icon: Icons.gpp_bad_outlined,
           onTap: _busy ? null : _deletePiaCert,

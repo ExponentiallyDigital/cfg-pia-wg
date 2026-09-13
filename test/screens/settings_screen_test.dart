@@ -228,7 +228,7 @@ void main() {
     });
   });
 
-  group('DEL PIA CERT', () {
+  group('REMOVE CACHED PIA CERT', () {
     Future<void> pumpWithSsh(WidgetTester tester, SessionController c, RecordingSSHClient ssh) async {
       addTearDown(() => c.dispose());
       await tester.pumpWidget(MaterialApp(
