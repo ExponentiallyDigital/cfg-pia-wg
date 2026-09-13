@@ -1864,6 +1864,14 @@ __MAILCMD__
     printf '%s\n%s\n' "$((MISSED + 1))" "$(date '+%Y-%m-%d %H:%M:%S')" > "$UNSENTFILE"
     SMTP_ERR=$(cat "$TMPERR" 2>/dev/null | tail -20 | tr '\n' '|')
     log "Email FAILED (mailer exit=$MAIL_EXIT) stderr=[${SMTP_ERR:-none}]"
+    # How name resolution looked at that moment. The undelivered alert of 2026-09-06 failed on
+    # `lookup ... server misbehaving` and nothing recorded which servers were asked, which way they
+    # were reached, or whether the name resolved. Only the interface of the route, never the whole
+    # route: this log is quoted in failure emails, and the route names the WAN address.
+    NS="$(awk '/^nameserver/ {printf "%s ", $2}' /etc/resolv.conf 2>/dev/null)"
+    NSDEV="$(ip route get "${NS%% *}" 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')"
+    LOOKUP="$(nslookup "$SMTP_HOST" 2>&1 | tail -n +3 | grep -m 2 -E 'Address|resolve' | tr '\n' ' ')"
+    log "Email diag: resolv.conf [${NS:-none}] via ${NSDEV:-unknown}; $SMTP_HOST resolves to [${LOOKUP:-nothing}]"
 
     # No nc probe: BusyBox here is `nc IPADDR PORT` with no options, so `nc -w 5` failed on a
     # usage error and called every host unreachable. openssl answers the same question honestly.

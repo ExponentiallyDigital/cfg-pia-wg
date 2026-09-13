@@ -725,8 +725,9 @@ void main() {
     // the script can exceed dropbear's 9000-byte MAX_CMD_LEN without a single command doing so.
     // (Crossing it as one command is what closed the connection mid-deploy in 402.) Raised
     // 8700 -> 9000 in 400, then 9500 and 10000 in 402, and 24576 in 404 when the alert emails grew
-    // a body worth reading (which took the script from ~9 KB to ~15 KB), and 26624 in 420. Prune
-    // the script's comments before raising it again.
+    // a body worth reading (which took the script from ~9 KB to ~15 KB), 26624 in 420, and 28160 in 447
+    // for the failed-send DNS diagnostics - growth agreed 2026-09-14, since the script is written in
+    // chunks. Prune the script's comments before raising it again.
     //
     // The guard used to be `stock <= merlin`, on the reasoning that Merlin was the known-good
     // baseline and stock must not balloon past it. That stopped holding in 420: stock now carries
@@ -737,8 +738,8 @@ void main() {
     test('neither variant grows the deploy payload', () {
       final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
       final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
-      expect(merlin, lessThan(26624));
-      expect(stock, lessThan(26624));
+      expect(merlin, lessThan(28160));
+      expect(stock, lessThan(28160));
     });
   });
 

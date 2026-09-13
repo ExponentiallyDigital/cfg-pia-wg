@@ -392,6 +392,23 @@ void main() {
       expect(s, contains(r'> "$UNSENTFILE"'), reason: 'recorded when the mailer fails');
       expect(s, contains(r'rm -f "$UNSENTFILE"'), reason: 'and cleared once one gets through');
       expect(s, contains('earlier alert(s) could not be sent'));
+    });
+
+    // Observability, 2026-09-14: the undelivered alert of 2026-09-06 left nothing to say why DNS had
+    // failed. A failed send now records the resolvers, the way to them, and what the host resolved to.
+    test('a failed send records how name resolution looked at that moment', () {
+      final s = script();
+      final failed = s.indexOf('log "Email FAILED (mailer exit=');
+      final diag = s.indexOf('log "Email diag: resolv.conf [');
+      final sent = s.indexOf('log "Alert email sent');
+      expect(failed, isNot(-1));
+      expect(diag, greaterThan(failed), reason: 'in the failure branch, after the mailer error');
+      expect(diag, lessThan(sent), reason: 'and never on a send that worked');
+      expect(s, contains(r'''awk '/^nameserver/ {printf "%s ", $2}' /etc/resolv.conf'''));
+      expect(s, contains(r'''nslookup "$SMTP_HOST"'''));
+      // Only the interface name leaves `ip route get`: the full route carries the WAN address, and
+      // this log is quoted in failure emails.
+      expect(s, contains(r'''if ($i == "dev") {print $(i + 1); exit}'''));
       // Read before the body is built, so the line describes alerts missed BEFORE this one.
       expect(s.indexOf('{ read -r MISSED; read -r MISSEDAT; }'), lessThan(s.indexOf('earlier alert(s)')));
     });
