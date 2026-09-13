@@ -79,7 +79,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    ElevatedButton save() => tester.widget<ElevatedButton>(find.byKey(const Key('slot_params_save')));
+    OutlinedButton save() => tester.widget<OutlinedButton>(find.byKey(const Key('slot_params_save')));
     expect(save().onPressed, isNull);
 
     await tester.enterText(find.byKey(const Key('slot_addr')), '10.0.0.2/32');

@@ -172,7 +172,8 @@ void main() {
 
   testWidgets('staged changes can be discarded in one go', (tester) async {
     await _pumpConnected(tester);
-    expect(find.byKey(const Key('device_discard')), findsNothing, reason: 'nothing staged yet');
+    expect(tester.widget<OutlinedButton>(find.byKey(const Key('device_discard'))).onPressed, isNull,
+        reason: 'shown, but nothing is staged to discard yet');
 
     await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
     await tester.pumpAndSettle();
@@ -188,7 +189,7 @@ void main() {
   testWidgets('APPLY is disabled until something is staged, and counts changes', (tester) async {
     await _pumpConnected(tester);
     final apply = find.byKey(const Key('device_apply'));
-    expect(tester.widget<FilledButton>(apply).onPressed, isNull);
+    expect(tester.widget<OutlinedButton>(apply).onPressed, isNull);
     expect(find.text('APPLY 0 CHANGES'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
@@ -197,7 +198,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('APPLY 1 CHANGE'), findsOneWidget);
-    expect(tester.widget<FilledButton>(apply).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(apply).onPressed, isNotNull);
   });
 
   testWidgets('STAGING WRITES NOTHING - only APPLY does', (tester) async {
@@ -314,7 +315,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('device_discard')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('device_discard')), findsNothing);
+    expect(tester.widget<OutlinedButton>(find.byKey(const Key('device_discard'))).onPressed, isNull);
   });
 
   // The list came back in creation order, so a user who built wgc1 then wgc5 then wgc2 saw wgc4
@@ -362,6 +363,25 @@ void main() {
     // Capitals, like every other button label in the app.
     expect(find.text('DISCARD CHANGES'), findsOneWidget);
     expect(find.text('Discard changes'), findsNothing);
+  });
+
+  // Item 10: the pair follows the pending state rather than appearing and disappearing. Red DISCARD and
+  // teal APPLY while something is staged; both grey and disabled otherwise. APPLY lost its fill.
+  testWidgets('DISCARD and APPLY are grey with nothing staged, red and teal with something', (tester) async {
+    await _pumpConnected(tester);
+    Color border(String key) =>
+        tester.widget<OutlinedButton>(find.byKey(Key(key))).style!.side!.resolve(<WidgetState>{})!.color;
+
+    expect(border('device_discard'), kHint);
+    expect(border('device_apply'), kHint);
+
+    await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pick_5')));
+    await tester.pumpAndSettle();
+
+    expect(border('device_discard'), kError);
+    expect(border('device_apply'), kHighlight);
   });
 
   testWidgets('APPLY confirms, then writes', (tester) async {

@@ -116,6 +116,7 @@ The app opens on a main menu (`MainMenuScreen`) offering five screens plus "Exit
 | `install_binaries_dialog.dart` | The offer to install the missing stock helper binaries, and its progress. |
 | `ssh_creds_dialog.dart` | The router login prompt used AWAY from the router screens - ABOUT, SETTINGS and the router log are all reachable without ever visiting one. |
 | `log_buttons.dart` | `LogButtonRow` / `LogButton` - the three bordered equal-width buttons both log screens carry. The deliberate exception to full-width HOME. |
+| `app_button.dart` | `AppButton` and `ButtonRole` - the house button. Bordered and unfilled, one colour per role: action teal, destructive red, dismiss grey, disabled `kHint`. `AppButton.tint` is the only place a button colour is decided; `LogButton` and the settings rows use it too. |
 | `common_fields.dart` | `RegionRow`, `PiaUsernameField`, `DnsField`, `ObscuredField`, `PiaPasswordField`, `RouterIpField`, `SshUsernameField`, `SshPasswordField`, `ClearButton`, `IconActionButton`, `SlotBadge`, `LogPanel`. The credential fields carry `autofillHints` (`username` / `password`); `ObscuredField` takes them as a parameter so both password fields can pass their own. Non-secrets (`RouterIpField`, `DnsField`) deliberately carry none - Android treats an absent hint list as "autofill disabled", which is what we want there. |
 | `error_presenter.dart` | `AppErrors.system` / `AppErrors.inputs` + `_ErrorDialog`. Static `_token`/`_openErrorNav` let a newer error dismiss an older one. |
 | `region_picker_sheet.dart` | `RegionPickerSheet` — filterable `DraggableScrollableSheet` region list, shared by standalone / CREATE / watchdog EDIT. |
@@ -177,7 +178,7 @@ SettingsScreen   ──> RouterWatchdog.uninstallFromRouter() / deleteCachedPiaC
   - **Labels are upper case.** Actions on a screen are full width; actions in a dialog keep their label's width.
   - **A picker is a button.** Device assignment's per-device selector is grey-bordered, and amber when it holds a staged change that has not been applied.
   - **State-driven pairs follow their state.** Device assignment's DISCARD is red and APPLY teal while changes are pending; with nothing pending both are grey and disabled rather than hidden.
-  - Nobody styles a button by hand. They are built through the shared button widget so a new screen cannot drift from this.
+  - **Nobody styles a button by hand.** Buttons are `AppButton` (`widgets/app_button.dart`). Controls with a layout of their own - HOME, the log button row, the settings rows - keep that layout but take their colour from `AppButton.tint`, so a new screen cannot drift from this.
 - **Screens that were 480-wide cards pass `AppScaffold(maxContentWidth: kFormMaxWidth)`.** Without it a slot row on a tablet sits alone at the far left of a very wide line. The cap covers the HOME button too, or it runs the full width under a narrower column. A phone is narrower than the cap and is unaffected.
 - Every HOME is `AppScaffold`'s: pinned at the bottom, full width, outside the scroll view, pushing a fresh menu. No screen builds its own.
 - Exit paths (back key on menu, menu button, drawer entry) → `confirmAndExit` → `wipeAll` → `SystemNavigator.pop()`.

@@ -71,9 +71,9 @@ void main() {
     await tester.pumpWidget(_manage(ssh, c));
     await tester.pumpAndSettle();
 
-    expect(tester.widget<ElevatedButton>(find.byKey(const Key('connect_router'))).onPressed, isNull);
+    expect(tester.widget<OutlinedButton>(find.byKey(const Key('connect_router'))).onPressed, isNull);
     await _fillCreds(tester);
-    expect(tester.widget<ElevatedButton>(find.byKey(const Key('connect_router'))).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(find.byKey(const Key('connect_router'))).onPressed, isNotNull);
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();
@@ -151,7 +151,7 @@ void main() {
     expect(find.byType(ReconnectingBody), findsOneWidget);
 
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, 'OK'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'OK'));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('connect_router')), findsOneWidget);

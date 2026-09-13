@@ -21,6 +21,8 @@
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
+import 'widgets/app_button.dart';
+
 import 'app_colors.dart';
 import 'firmware.dart';
 import 'pia_service.dart';
@@ -230,8 +232,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         content: const Text('This will reset both this watchdog and any underlying VPN region.',
             style: TextStyle(color: kMuted, fontSize: 13)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('CONTINUE')),
+          AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
+          AppButton(label: 'CONTINUE', onPressed: () => Navigator.pop(ctx, true)),
         ],
       ),
     );
@@ -434,30 +436,32 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                OutlinedButton.icon(
-                  key: const Key('wd_test_email'),
+                AppButton(
+                  keyValue: 'wd_test_email',
+                  label: 'TEST EMAIL',
+                  icon: Icons.mail_outline,
                   onPressed: _loading ? null : _testEmail,
-                  icon: const Icon(Icons.mail_outline, size: 16),
-                  label: const Text('TEST EMAIL'),
                 ),
               ],
               const SizedBox(height: 16),
-              ElevatedButton(
-                key: const Key('wd_save'),
+              AppButton(
+                keyValue: 'wd_save',
+                fullWidth: true,
                 onPressed: (_loading || _blocked) ? null : _save,
                 // SAVE is not the end of the flow - a region picker follows it. Saying so on the
                 // button stops the picker arriving as a surprise. The label STAYS during a save:
                 // the spinner is the overlay, not the button. A spinner in the button put the one
                 // thing the user needed to see inside the scroll view, where it could be below
                 // the fold - which it was, in 409, 412, 425 and again in 435.
-                child: const Text('SAVE & SELECT REGION'),
+                label: 'SAVE & SELECT REGION',
               ),
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerRight,
-                child: TextButton(
+                child: AppButton(
+                  label: 'CLOSE',
+                  role: ButtonRole.dismiss,
                   onPressed: _loading ? null : () => Navigator.of(context).pop(),
-                  child: const Text('CLOSE', style: TextStyle(color: kMuted)),
                 ),
               ),
             ],

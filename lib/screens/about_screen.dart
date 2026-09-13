@@ -19,6 +19,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import '../widgets/app_button.dart';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -260,22 +262,25 @@ class _AboutScreenState extends State<AboutScreen> {
                   // Wrap, not Row: the two labels together overflow a narrow phone, so they sit
                   // side by side when there is room and fall to a second line when there is not.
                   Wrap(
-                    spacing: 4,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
                       // A copy path that does not depend on the Android selection toolbar, which is
                       // awkward to reach for a selection this close to the top of the screen.
-                      TextButton.icon(
-                        key: const Key('about_copy_build_info'),
+                      AppButton(
+                        keyValue: 'about_copy_build_info',
+                        label: 'COPY BUILD INFO',
+                        icon: Icons.copy,
+                        fontSize: 12,
                         onPressed: () => _copyBuildInfo(context, snap.data),
-                        icon: const Icon(Icons.copy, size: 16, color: kHighlight),
-                        label: const Text('COPY BUILD INFO', style: TextStyle(color: kHighlight, fontSize: 12)),
                       ),
-                      TextButton.icon(
-                        key: const Key('about_create_issue'),
+                      AppButton(
+                        keyValue: 'about_create_issue',
+                        label: 'CREATE GITHUB ISSUE',
+                        icon: Icons.bug_report_outlined,
+                        fontSize: 12,
                         onPressed: () => _launch(bugReportUrl(snap.data,
                             scriptStatus: _scriptStatus, model: _routerModel, firmware: _routerFirmware)),
-                        icon: const Icon(Icons.bug_report_outlined, size: 16, color: kHighlight),
-                        label: const Text('CREATE GITHUB ISSUE', style: TextStyle(color: kHighlight, fontSize: 12)),
                       ),
                     ],
                   ),

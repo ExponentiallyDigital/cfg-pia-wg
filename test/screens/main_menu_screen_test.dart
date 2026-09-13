@@ -162,7 +162,7 @@ void main() {
     expect(find.text('Exit cfg-pia-wg?'), findsOneWidget);
 
     // Cancel keeps the app open.
-    await tester.tap(find.widgetWithText(TextButton, 'CANCEL'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'CANCEL'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('menu_standalone')), findsOneWidget);
 
