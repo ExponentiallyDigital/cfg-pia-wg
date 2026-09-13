@@ -171,7 +171,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('jq is not installed'), findsWidgets);
-    final save = tester.widget<ElevatedButton>(find.byKey(const Key('wd_save')));
+    final save = tester.widget<OutlinedButton>(find.byKey(const Key('wd_save')));
     expect(save.onPressed, isNull);
   });
 
@@ -309,7 +309,7 @@ void main() {
       expect(ssh.ran("[ -x '$kStockJqPath' ]"), isTrue);
       expect(ssh.ran('which jq'), isFalse);
       expect(find.textContaining('is not installed'), findsNothing);
-      expect(tester.widget<ElevatedButton>(find.byKey(const Key('wd_save'))).onPressed, isNotNull);
+      expect(tester.widget<OutlinedButton>(find.byKey(const Key('wd_save'))).onPressed, isNotNull);
     });
 
     // Without /opt/etc/init.d a watchdog deploys, runs, and then loses its cron entries at the
@@ -328,7 +328,7 @@ void main() {
       expect(find.byKey(const Key('wd_boot_dir_missing')), findsOneWidget);
       expect(find.textContaining('Download Master is not installed'), findsWidgets,
           reason: 'named as the cause, not as a missing path');
-      expect(tester.widget<ElevatedButton>(find.byKey(const Key('wd_save'))).onPressed, isNull);
+      expect(tester.widget<OutlinedButton>(find.byKey(const Key('wd_save'))).onPressed, isNull);
     });
 
     testWidgets('Merlin is never asked about it', (tester) async {
@@ -341,7 +341,7 @@ void main() {
 
       expect(ssh.ran("[ -d '$kStockBootDir' ]"), isFalse, reason: 'Merlin uses services-start');
       expect(find.byKey(const Key('wd_boot_dir_missing')), findsNothing);
-      expect(tester.widget<ElevatedButton>(find.byKey(const Key('wd_save'))).onPressed, isNotNull);
+      expect(tester.widget<OutlinedButton>(find.byKey(const Key('wd_save'))).onPressed, isNotNull);
     });
 
     testWidgets('a missing jq names the stock path in the banner', (tester) async {
@@ -353,7 +353,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('$kStockJqPath is not installed'), findsWidgets);
-      expect(tester.widget<ElevatedButton>(find.byKey(const Key('wd_save'))).onPressed, isNull);
+      expect(tester.widget<OutlinedButton>(find.byKey(const Key('wd_save'))).onPressed, isNull);
     });
 
     testWidgets('TEST EMAIL goes through mailsend-go', (tester) async {

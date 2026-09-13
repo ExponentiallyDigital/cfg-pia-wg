@@ -23,6 +23,8 @@
 
 import 'package:flutter/material.dart';
 
+import 'app_button.dart';
+
 import '../app_colors.dart';
 
 /// Equal-width buttons across one row, so the set reads as one control rather than three.
@@ -58,11 +60,7 @@ class LogButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tint = onPressed == null
-        ? kMuted
-        : destructive
-            ? kError
-            : kHighlight;
+    final tint = AppButton.tint(destructive ? ButtonRole.destructive : ButtonRole.action, enabled: onPressed != null);
     return OutlinedButton(
       key: Key(keyValue),
       style: OutlinedButton.styleFrom(

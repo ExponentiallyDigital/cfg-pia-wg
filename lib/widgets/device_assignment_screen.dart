@@ -26,6 +26,8 @@ import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
+import 'app_button.dart';
+
 import '../app_colors.dart';
 import '../device_assignment.dart';
 import '../device_assignment_service.dart';
@@ -550,13 +552,11 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         // screens beside it in the menu (B8n feedback 2026-09-08).
         SizedBox(
           width: double.infinity,
-          child: ElevatedButton(
-            key: const Key('device_connect'),
+          child: AppButton(
+            keyValue: 'device_connect',
+            label: 'CONNECT TO ROUTER',
+            busy: _busy,
             onPressed: _busy || !_canConnect ? null : _connect,
-            child: _busy
-                ? const SizedBox(
-                    height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
-                : const Text('CONNECT TO ROUTER'),
           ),
         ),
       ]);
@@ -614,26 +614,22 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       const SizedBox(height: 8),
       // One centred row, both buttons at HOME's height so the three read as one set rather than
       // three sizes stacked up the screen. Their widths are left to their labels.
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        if (_pendingCount > 0) ...[
-          OutlinedButton(
-            key: const Key('device_discard'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: kMuted,
-              side: const BorderSide(color: kMuted),
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-            ),
-            onPressed: _busy ? null : () => setState(_c.clearStagedAssignments),
-            child: const Text('DISCARD CHANGES'),
-          ),
-          const SizedBox(width: 12),
-        ],
-        FilledButton(
-          key: const Key('device_apply'),
-          style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16)),
-          onPressed: _busy || _pendingCount == 0 ? null : _apply,
+      //
+      // Both are always shown and follow the pending state: with changes staged, DISCARD is red and
+      // APPLY teal; with none, both are grey and disabled. A Wrap rather than a Row, because the two
+      // labels side by side are wider than a small phone.
+      Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 8, children: [
+        AppButton(
+          keyValue: 'device_discard',
+          label: 'DISCARD CHANGES',
+          role: ButtonRole.destructive,
+          onPressed: _busy || _pendingCount == 0 ? null : () => setState(_c.clearStagedAssignments),
+        ),
+        AppButton(
+          keyValue: 'device_apply',
           // 'APPLY 1' read as a step number rather than a count (B3 feedback).
-          child: Text(_pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES'),
+          label: _pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES',
+          onPressed: _busy || _pendingCount == 0 ? null : _apply,
         ),
       ]),
       // AppScaffold pins HOME to the bottom over the scroll view, which clipped APPLY when the
@@ -722,7 +718,8 @@ class _PickerButton extends StatelessWidget {
           // teal picker made the whole row one colour and the pending state disappeared into it
           // (B2 feedback 2026-09-08). Amber also carries the right meaning: not yet written.
           foregroundColor: changed ? kWarn : kText,
-          side: BorderSide(color: changed ? kWarn : kBorder),
+          // Grey, not kBorder: at kBorder the outline all but vanished and the picker read as text.
+          side: BorderSide(color: changed ? kWarn : kMuted),
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
           alignment: Alignment.centerLeft,
         ),
@@ -797,11 +794,8 @@ class _ApplyDialog extends StatelessWidget {
           ]),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCEL')),
-          FilledButton(
-              key: const Key('apply_confirm'),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('APPLY')),
+          AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(context, false)),
+          AppButton(keyValue: 'apply_confirm', label: 'APPLY', onPressed: () => Navigator.pop(context, true)),
         ],
       );
 }
@@ -843,7 +837,7 @@ class _PickerDialog extends StatelessWidget {
           width: double.maxFinite,
           child: ListView(shrinkWrap: true, children: children),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL'))],
+        actions: [AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(context))],
       );
 }
 

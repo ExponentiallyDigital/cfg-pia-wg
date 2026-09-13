@@ -18,6 +18,8 @@
 // current destination is a no-op.
 
 import 'package:flutter/material.dart';
+
+import 'app_button.dart';
 import 'package:flutter/services.dart';
 
 import '../app_colors.dart';
@@ -81,10 +83,8 @@ Future<void> confirmAndExit(BuildContext context, SessionController controller) 
       content: const Text('All credentials and configuration will be wiped from memory.',
           style: TextStyle(color: kMuted, fontSize: 13)),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-        TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('EXIT', style: TextStyle(color: kError, fontWeight: FontWeight.w700))),
+        AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
+        AppButton(label: 'EXIT', role: ButtonRole.destructive, onPressed: () => Navigator.pop(ctx, true)),
       ],
     ),
   );

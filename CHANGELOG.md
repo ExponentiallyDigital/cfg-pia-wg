@@ -45,6 +45,13 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 2026-09-13 v0.8.76 build 446 - documentation updates
 
+- CHG: **one house style for every button** outside the main menu and the paywall: bordered, unfilled, with the border and label in one colour that says what the button does. Teal does something, red destroys, removes, discards, reboots or exits, and grey is a way out that changes nothing. Disabled is darker again, so a greyed-out action never reads as a live CANCEL. The app had drifted into four looks chosen screen by screen - filled teal, bare text links, bordered teal and bordered grey - and a colour cannot mean anything while the same action wears a different one on the next screen.
+- CHG: the slot buttons on MANAGE and WATCHDOG, both CONNECT TO ROUTER buttons, GENERATE CONFIG, the slot editor's SAVE, the watchdog form's SAVE and TEST EMAIL, and every dialog's buttons move onto it. DELETE is red on both slot screens.
+- CHG: device assignment's DISCARD CHANGES and APPLY are always shown and follow the pending state: red and teal with changes staged, grey and disabled with none. APPLY loses its fill, and the two wrap onto separate lines on a phone too narrow for both labels.
+- FIX: the device assignment picker's outline was drawn in the panel border colour and all but vanished, so it read as plain text. It is grey now, and amber while it holds a staged change.
+- CHG: COPY BUILD INFO and CREATE GITHUB ISSUE on the About screen are bordered buttons rather than text links.
+- DOC: CONTEXT records the house button style and its two exemptions, so a later change cannot quietly reintroduce a fill or a bare link.
+- TST: the colour for each role and the disabled colour are pinned, and so is device assignment's DISCARD and APPLY pair in both states.
 - FIX: rebooting the router now writes to the app log as well as the router log. The router's log is on the device that is about to go dark, so the app log is the one the user can still read while it comes back.
 - CHG: REBOOT ROUTER now sends `sync; reboot`. Stock already runs an emergency sync on its way down, but the app should not rely on each firmware's shutdown path to get the watchdog scripts and boot hook in /jffs onto flash. No `nvram commit`: app writes already commit, and committing here would persist changes the app did not make.
 - CHG: updated privacy policy formatting, replaced GitHub issue link with email address.

@@ -104,7 +104,7 @@ void main() {
 
       // Confirmation dialog (all exit paths) — Exit proceeds.
       expect(find.text('Exit cfg-pia-wg?'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'EXIT'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'EXIT'));
       await tester.pumpAndSettle();
 
       expect(c.piaUsername, isEmpty);

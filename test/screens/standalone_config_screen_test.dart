@@ -38,7 +38,7 @@ void main() {
     await tester.pumpWidget(_host(c));
     await tester.pumpAndSettle();
 
-    ElevatedButton btn() => tester.widget<ElevatedButton>(find.byKey(const Key('generate_config')));
+    OutlinedButton btn() => tester.widget<OutlinedButton>(find.byKey(const Key('generate_config')));
     expect(btn().onPressed, isNull); // grey
 
     await tester.enterText(find.widgetWithText(TextFormField, 'Region ID'), kTestRegion);

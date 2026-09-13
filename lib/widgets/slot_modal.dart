@@ -23,6 +23,8 @@
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
+import 'app_button.dart';
+
 import '../app_colors.dart';
 import '../firmware.dart';
 import '../pia_service.dart';
@@ -124,10 +126,11 @@ class _SlotModalState extends State<SlotModal> {
         // A question that already names the slot and its region needs no explanatory body.
         content: message == null ? null : Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-          TextButton(
+          AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
+          AppButton(
+            label: confirmLabel,
+            role: destructive ? ButtonRole.destructive : ButtonRole.action,
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(confirmLabel, style: TextStyle(color: destructive ? kError : kHighlight, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -141,7 +144,7 @@ class _SlotModalState extends State<SlotModal> {
           backgroundColor: kSurface,
           title: Text(title, style: const TextStyle(color: kHighlight, fontSize: 15)),
           content: Text(message, style: const TextStyle(color: kText, fontSize: 13)),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+          actions: [AppButton(label: 'OK', onPressed: () => Navigator.pop(ctx))],
         ),
       );
 
@@ -595,7 +598,13 @@ class _SlotModalState extends State<SlotModal> {
           padding: const EdgeInsets.only(bottom: 8),
           child: SizedBox(
             width: double.infinity,
-            child: ElevatedButton(key: Key(key), onPressed: _processing ? null : onTap, child: Text(label)),
+            // DELETE is the one destructive action in either set; everything else here does something.
+            child: AppButton(
+              keyValue: key,
+              label: label,
+              role: key == 'slot_delete' ? ButtonRole.destructive : ButtonRole.action,
+              onPressed: _processing ? null : onTap,
+            ),
           ),
         );
 
@@ -791,10 +800,9 @@ class _FormDialog extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, null),
-                        child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-                    TextButton(onPressed: onConfirm, child: Text(confirmLabel)),
+                    AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(context, null)),
+                    const SizedBox(width: 8),
+                    AppButton(label: confirmLabel, onPressed: onConfirm),
                   ],
                 ),
               ],
@@ -865,11 +873,12 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
               style: const TextStyle(color: kMuted, fontSize: 13),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-              TextButton(
-                key: const Key('watchdog_log_clear_confirm'),
+              AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
+              AppButton(
+                keyValue: 'watchdog_log_clear_confirm',
+                label: 'CLEAR',
+                role: ButtonRole.destructive,
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('CLEAR', style: TextStyle(color: kError, fontWeight: FontWeight.w700)),
               ),
             ],
           ),

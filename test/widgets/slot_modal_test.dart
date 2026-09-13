@@ -112,7 +112,12 @@ Future<void> _open(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-ElevatedButton _btn(WidgetTester tester, String key) => tester.widget<ElevatedButton>(find.byKey(Key(key)));
+OutlinedButton _btn(WidgetTester tester, String key) => tester.widget<OutlinedButton>(find.byKey(Key(key)));
+
+// A button inside the open dialog. Every button is bordered now, so a dialog's DELETE, ENABLE or DISABLE
+// has the same widget type and label as the slot button behind it; scoping to the dialog tells them apart.
+Finder _inDialog(String label) =>
+    find.descendant(of: find.byType(Dialog), matching: find.widgetWithText(OutlinedButton, label));
 
 void main() {
   group('manage mode', () {
@@ -177,7 +182,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Confirm dialog.
-      await tester.tap(find.widgetWithText(TextButton, 'DELETE'));
+      await tester.tap(_inDialog('DELETE'));
       await tester.pumpAndSettle();
 
       expect(ssh.ran('nvram unset wgc1_desc'), isTrue);
@@ -206,7 +211,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // PIA credentials dialog (pre-filled) -> continue.
-      await tester.tap(find.widgetWithText(TextButton, 'CONTINUE'));
+      await tester.tap(_inDialog('CONTINUE'));
       await tester.pumpAndSettle();
 
       expect(ssh.ran('nvram set wgc2_enable=0'), isTrue);
@@ -266,12 +271,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('aus_melbourne').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(TextButton, 'CONTINUE'));
+      await tester.tap(_inDialog('CONTINUE'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('not found'), findsWidgets, reason: 'the failure must be reported');
       // Dismiss the error dialog; nothing may follow it.
-      await tester.tap(find.widgetWithText(TextButton, 'OK').last);
+      await tester.tap(_inDialog('OK').last);
       await tester.pumpAndSettle();
       expect(find.text('Slot created'), findsNothing);
       expect(ssh.ran('nvram set wgc2_desc'), isFalse);
@@ -293,7 +298,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Overwrite wgc1?'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'CANCEL'));
+      await tester.tap(_inDialog('CANCEL'));
       await tester.pumpAndSettle();
       expect(find.text('aus_melbourne'), findsWidgets); // still on the modal, no region picker
 
@@ -347,7 +352,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('enable_primary_ip')), findsOneWidget); // prompt with defaults
-      await tester.tap(find.widgetWithText(TextButton, 'ENABLE'));
+      await tester.tap(_inDialog('ENABLE'));
       await tester.pumpAndSettle();
 
       expect(ssh.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
@@ -830,7 +835,7 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_delete')));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(TextButton, 'DELETE'));
+      await tester.tap(_inDialog('DELETE'));
       await tester.pumpAndSettle();
 
       expect(ssh.ran('cru d watchdog_wgc1'), isTrue);
@@ -1066,7 +1071,7 @@ void main() {
   });
 
   group('DISABLE gating', () {
-    Future<ElevatedButton> disableBtn(WidgetTester tester, SlotInfo slot, {Set<int> active = const {}}) async {
+    Future<OutlinedButton> disableBtn(WidgetTester tester, SlotInfo slot, {Set<int> active = const {}}) async {
       final c = _controller();
       addTearDown(c.dispose);
       await tester.pumpWidget(
@@ -1425,7 +1430,7 @@ void main() {
       // Its own confirmation, not a paywall.
       expect(find.byKey(const Key('paywall_buy')), findsNothing);
       expect(find.text('Disable watchdog wgc1?'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'DISABLE'));
+      await tester.tap(_inDialog('DISABLE'));
       await tester.pumpAndSettle();
       expect(ssh.ran('cru d watchdog_wgc1'), isTrue);
 

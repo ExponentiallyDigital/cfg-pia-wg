@@ -20,6 +20,8 @@
 
 import 'package:flutter/material.dart';
 
+import 'app_button.dart';
+
 import '../app_colors.dart';
 import 'common_fields.dart';
 
@@ -108,12 +110,14 @@ class SshCredsDialogState extends State<SshCredsDialog> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
-                      key: const Key('about_ssh_cancel'),
+                    AppButton(
+                      keyValue: 'about_ssh_cancel',
+                      label: 'CANCEL',
+                      role: ButtonRole.dismiss,
                       onPressed: () => Navigator.pop(context, null),
-                      child: const Text('CANCEL', style: TextStyle(color: kMuted)),
                     ),
-                    TextButton(key: const Key('about_ssh_continue'), onPressed: _onContinue, child: const Text('CONTINUE')),
+                    const SizedBox(width: 8),
+                    AppButton(keyValue: 'about_ssh_continue', label: 'CONTINUE', onPressed: _onContinue),
                   ],
                 ),
               ],

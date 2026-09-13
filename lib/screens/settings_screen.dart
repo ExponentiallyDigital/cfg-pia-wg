@@ -23,6 +23,8 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/app_button.dart';
+
 import '../app_colors.dart';
 import '../entitlement.dart';
 import '../firmware.dart';
@@ -92,15 +94,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             actions: [
-              TextButton(
-                key: const Key('settings_uninstall_cancel'),
+              AppButton(
+                keyValue: 'settings_uninstall_cancel',
+                label: 'CANCEL',
+                role: ButtonRole.dismiss,
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('CANCEL'),
               ),
-              TextButton(
-                key: const Key('settings_uninstall_confirm'),
+              AppButton(
+                keyValue: 'settings_uninstall_confirm',
+                label: 'REMOVE',
+                role: ButtonRole.destructive,
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('REMOVE', style: TextStyle(color: kError)),
               ),
             ],
           ),
@@ -144,11 +148,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Text('Please restart your router.', style: TextStyle(color: kWarn, fontSize: 12)),
         ]),
         actions: [
-          TextButton(
-            key: const Key('settings_uninstall_done'),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
+          AppButton(keyValue: 'settings_uninstall_done', label: 'OK', onPressed: () => Navigator.pop(ctx)),
         ],
       ),
     );
@@ -238,15 +238,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(color: kText, fontSize: 12),
             ),
             actions: [
-              TextButton(
-                key: const Key('settings_del_cert_cancel'),
+              AppButton(
+                keyValue: 'settings_del_cert_cancel',
+                label: 'CANCEL',
+                role: ButtonRole.dismiss,
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('CANCEL'),
               ),
-              TextButton(
-                key: const Key('settings_del_cert_confirm'),
+              AppButton(
+                keyValue: 'settings_del_cert_confirm',
+                label: 'DELETE',
+                role: ButtonRole.destructive,
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('DELETE', style: TextStyle(color: kError)),
               ),
             ],
           ),
@@ -290,15 +292,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(color: kText, fontSize: 12),
             ),
             actions: [
-              TextButton(
-                key: const Key('settings_reboot_cancel'),
+              AppButton(
+                keyValue: 'settings_reboot_cancel',
+                label: 'CANCEL',
+                role: ButtonRole.dismiss,
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('CANCEL'),
               ),
-              TextButton(
-                key: const Key('settings_reboot_confirm'),
+              AppButton(
+                keyValue: 'settings_reboot_confirm',
+                label: 'REBOOT',
+                role: ButtonRole.destructive,
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('REBOOT', style: TextStyle(color: kError)),
               ),
             ],
           ),
@@ -436,12 +440,7 @@ class _Action extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = onTap != null;
-    final tint = !enabled
-        ? kMuted
-        : destructive
-            ? kError
-            : kHighlight;
+    final tint = AppButton.tint(destructive ? ButtonRole.destructive : ButtonRole.action, enabled: onTap != null);
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [

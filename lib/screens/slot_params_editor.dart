@@ -19,6 +19,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../widgets/app_button.dart';
+
 import '../app_colors.dart';
 import '../firmware.dart';
 import '../router_slot_service.dart' show slotLabel;
@@ -139,19 +141,20 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 _readOnly('Preshared key (psk, unused by PIA)', widget.initial['psk'] ?? ''),
                 if (!isStockFirmware) _readOnly('Router public IP (rip)', widget.initial['rip'] ?? ''),
                 const SizedBox(height: 16),
-                ElevatedButton(
-                  key: const Key('slot_params_save'),
+                AppButton(
+                  keyValue: 'slot_params_save',
+                  label: 'SAVE',
+                  fullWidth: true,
+                  busy: _saving,
                   onPressed: (_saving || !_canSave) ? null : _save,
-                  child: _saving
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
-                      : const Text('SAVE'),
                 ),
                 const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton(
+                  child: AppButton(
+                    label: 'CANCEL',
+                    role: ButtonRole.dismiss,
                     onPressed: _saving ? null : () => Navigator.of(context).pop(false),
-                    child: const Text('CANCEL', style: TextStyle(color: kMuted)),
                   ),
                 ),
               ],
