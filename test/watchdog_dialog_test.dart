@@ -31,6 +31,7 @@ Widget _host(
   RecordingSSHClient client,
   SessionController c, {
   bool slotIsEmpty = false,
+  String regionDesc = 'aus_melbourne',
   String piaUser = 'p1234567',
   String piaPass = 'secret',
   Future<SSHClient> Function()? connect,
@@ -41,7 +42,7 @@ Widget _host(
       home: Scaffold(
         body: WatchdogDialog(
           slotIndex: 1,
-          regionDesc: 'aus_melbourne',
+          regionDesc: regionDesc,
           slotIsEmpty: slotIsEmpty,
           controller: c,
           piaUsername: piaUser,
@@ -191,9 +192,48 @@ void main() {
 
     expect(find.text('Overwrite wgc1:aus_melbourne?'), findsOneWidget);
     expect(find.text('Overwrite wgc1?'), findsNothing);
+    expect(find.textContaining('rebuilds the tunnel'), findsNothing, reason: 'the region is unchanged');
 
     await tester.tap(find.text('CANCEL'));
     await tester.pumpAndSettle();
+  });
+
+  // The fault CREATE had, on this form (2026-09-14): a new region was written as a name while the old
+  // server kept running. A region change is now a rebuild, and the prompt says what that costs.
+  testWidgets('changing the region warns that the tunnel is rebuilt, then stops it and clears the old server',
+      (tester) async {
+    useMerlin();
+    final c = _controller();
+    addTearDown(c.dispose);
+    var stopped = false;
+    final ssh = RecordingSSHClient(responder: (cmd) {
+      if (cmd == 'service "stop_wgc 1"; service start_vpnrouting0') stopped = true;
+      if (cmd.contains('which jq')) return '/opt/bin/jq';
+      if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+      if (cmd.contains('nvram get wgc1_enable')) return '1';
+      if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_perth';
+      if (cmd.contains('ip -o link show up')) return stopped ? '' : 'wgc1';
+      if (cmd.contains('ping')) return 'OK';
+      return '';
+    });
+    await tester.pumpWidget(_host(ssh, c, regionDesc: 'aus_perth'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.descendant(of: find.byType(RegionRow), matching: find.byType(TextFormField)), 'aus_melbourne');
+    await tester.ensureVisible(find.byKey(const Key('wd_save')));
+    await tester.tap(find.byKey(const Key('wd_save')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Overwrite wgc1:aus_perth?'), findsOneWidget);
+    expect(find.textContaining('This rebuilds the tunnel on aus_melbourne'), findsOneWidget);
+    await tester.tap(find.text('CONTINUE'));
+    await tester.pumpAndSettle();
+
+    final stop = ssh.commands.indexOf('service "stop_wgc 1"; service start_vpnrouting0');
+    final blank = ssh.commands.indexOf("nvram set wgc1_ppub=''");
+    expect(stop, isNot(-1));
+    expect(blank, greaterThan(stop));
+    expect(ssh.ran("nvram set wgc1_desc='pia-aus_melbourne'"), isTrue);
   });
 
   testWidgets('save blocked with a batched error dialog when a required IP is empty', (tester) async {
