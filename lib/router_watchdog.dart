@@ -1361,10 +1361,17 @@ class RouterWatchdog {
     await _logRouter('reboot requested from the app');
     await _serviceQueue.clearIfStale();
     try {
-      await _read('reboot');
+      // Flush first. The firmware's own reboot path does an emergency sync on stock, but the app
+      // should not depend on each firmware's shutdown sequence to get the watchdog scripts and the
+      // boot hook in /jffs onto flash. No `nvram commit`: every app write already commits, and
+      // committing here would also persist whatever else is pending that the app did not write.
+      await _read('sync; reboot');
     } catch (_) {
       // The router went down mid-command, which is what was asked for.
     }
+    // The router's own log has the request, but that log is on the device that is about to go dark.
+    // The app log is the one the user can still read while it comes back.
+    onLog?.call('Router reboot requested. It takes a minute or two to come back.', isWarning: true);
   }
 
   Future<String> getWatchdogLog(int slot) => _read('cat /tmp/watchdog_wgc$slot.log 2>/dev/null');
