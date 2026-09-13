@@ -125,6 +125,7 @@ Applying configs:
 - force a reconfigure, then check the email alerting
   1. `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`
   2. `/jffs/cfg-pia-wg/watchdog_wgc1.sh`
+- a failed send explains itself: set a wrong SMTP password, SAVE & DEPLOY. VIEW WATCHDOG LOG shows `Email FAILED`, then `Email diag: resolv.conf [<servers>] via <interface>; <smtp host> resolves to [<addresses>]` - an interface name only, no WAN address. Put the password back and SAVE & DEPLOY
 - Check emails
   1. deploy email says "watchdog deployed", subject SUCCESS, sent even though nothing was wrong
   2. reconfigure email: outage duration, kill-switch line, new server and latency
