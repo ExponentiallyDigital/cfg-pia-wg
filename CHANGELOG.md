@@ -45,6 +45,12 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 
 2026-09-13 v0.8.76 build 446 - documentation updates
 
+- CHG: **the watchdog form chooses its region on the form**, with the same region row STANDALONE has, pre-filled with the slot's own region. The button reads SAVE & DEPLOY. The picker used to arrive after SAVE, as a surprise at the end of a long form. A configured slot still warns before it is overwritten, and a region typed into the field is checked against PIA's list before anything reaches the router.
+- FIX: **the watchdog email no longer talks about "its devices" when nothing is assigned to the tunnel.** On stock it counts the devices assigned to the tunnel, and one with none that is not the default connection says so.
+- FIX: **the watchdog email checks the default connection before saying devices stayed on a VPN.** "Still on a VPN" is now said only when the default is a WireGuard tunnel whose interface is up. A default that is down, or is not WireGuard and so cannot be checked, is reported as not confirmed up, and devices may have had no VPN. These reach a router on its next deploy, or through REDEPLOY TO UPDATE VERSION on the About screen.
+- CHG: the email's checklist asks "Is your PIA user account active?" rather than "billing account".
+- DOC: CONTEXT and TESTING cover the region on the watchdog form and the new kill-switch wording.
+- TST: the region pre-filled on the form, an unknown region refused, an empty one asked for, and SAVE & DEPLOY going straight on with no picker; and the new kill-switch cases on stock, with every case still carrying all three tenses.
 - CHG: **settings in the agreed order**: REBOOT ROUTER, FORGET ROUTER IP, REMOVE CACHED PIA CERT, UNINSTALL FEATURES DEPLOYED TO ROUTER, then RESTORE PURCHASE on a store build.
 - CHG: UNINSTALL FEATURES INSTALLED TO ROUTER is renamed UNINSTALL FEATURES DEPLOYED TO ROUTER.
 - FIX: **the uninstall's "are you sure" buttons follow the house style.** Both were teal-bordered, the destructive UNINSTALL included, and they sat in the opposite order to every other confirmation. CANCEL now comes first in grey and UNINSTALL second in red. The button change earlier in this build missed them because they were styled by hand.

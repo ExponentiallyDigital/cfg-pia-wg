@@ -71,7 +71,7 @@ void main() {
       expect(s.indexOf(kSectionHistory), lessThan(s.indexOf(kSectionRouterLog)));
       expect(s.indexOf(kSectionRouterLog), lessThan(s.indexOf(kEmailReviewLine)));
       expect(s, contains('4. Review your router log.'));
-      expect(s, contains('5. Is your PIA billing account active?'));
+      expect(s, contains('5. Is your PIA user account active?'));
     });
 
     // The steps are numbered in the text, so inserting one means renumbering the rest. A duplicate
@@ -280,9 +280,24 @@ void main() {
         expect(stock, isNot(contains('traffic is reaching the internet without the VPN')));
       });
 
-      test('each of the three cases still carries all three tenses', () {
+      // 2026-09-13: "its devices" was said even when nothing was assigned to the tunnel.
+      test('a tunnel nothing is assigned to, which is not the default, says nothing depends on it', () {
+        expect(stock, contains(r'''$1=="1" && $4==i {n++} END {print n+0}'''));
+        expect(stock, contains('no devices are assigned to this tunnel and it is not the default connection'));
+        expect(stock, isNot(contains('so nothing depends on it')));
+      });
+
+      // 2026-09-13: "so they stay on a VPN" was claimed without looking at whether the default was up.
+      test('"still on a VPN" is said only for a WireGuard default whose interface is up', () {
+        expect(stock, contains(r'''{ [ -z "$DEFSLOT" ] || ! ip -o link show up 2>/dev/null | grep -q " wgc$DEFSLOT:"; }; then'''));
+        expect(stock, contains('which is not confirmed up, so they may have no VPN'));
+        expect(stock.indexOf('which is not confirmed up'), lessThan(stock.indexOf('so they are still on a VPN')),
+            reason: 'the unconfirmed branch has to be tested first');
+      });
+
+      test('each of the five cases still carries all three tenses', () {
         for (final v in ['KILLSW_UP=', 'KILLSW_FIXED=', 'KILLSW_DOWN=']) {
-          expect(RegExp(RegExp.escape(v)).allMatches(stock).length, 3, reason: '$v needs one per case');
+          expect(RegExp(RegExp.escape(v)).allMatches(stock).length, 5, reason: '$v needs one per case');
         }
       });
     });

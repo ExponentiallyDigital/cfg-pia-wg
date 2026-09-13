@@ -110,6 +110,7 @@ Applying configs:
 ## 6. <a name='watchdog'></a>Watchdog
 
 - Create wgc1 & wgc5 - check test email
+- the region is chosen on the form, pre-filled with the slot's own, before SAVE & DEPLOY; a configured slot still warns before it is overwritten, and a region PIA does not have is refused
 - Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
 - force a reconfigure, then check the email alerting
   1. `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`
@@ -120,6 +121,7 @@ Applying configs:
   3. failure email: WHAT TO DO, attempt count, last 10 router-log lines
   4. HISTORY counters climb; `cfg_pia_wg_sdate` is set once and not rewritten
   5. subject threads by slot: `cfg-pia-wg alert: SUCCESS - wgc1:pia-<region>`
+  6. on stock, the kill-switch line: a tunnel with no devices assigned that is not the default says so rather than talking about its devices; "still on a VPN" only when the default is a WireGuard tunnel that is up; a default that is down, or not WireGuard, says devices may have had no VPN
 - DISABLE shows the PAUSED badge; ENABLE restores the same interval
 - keyboard does not obscure the configure dialog's fields
 - backoff: leave it failing and watch the log - "Backing off after N failed attempts", waits growing 2, 4, 8, 16, 30, 60, 90 min
