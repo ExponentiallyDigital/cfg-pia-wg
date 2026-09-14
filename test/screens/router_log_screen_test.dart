@@ -3,6 +3,7 @@
 // Every alert email and half the failure messages end with "check your router log", which used to
 // mean leaving the app for an SSH client. The log reached 512 KB in a day on the maintainer's
 // router and the firmware rotates it rather than truncating, so it is read in pages, newest first.
+import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/router_log_paging.dart';
 import 'package:cfg_pia_wg/screens/router_log_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
@@ -218,6 +219,21 @@ void main() {
       expect(isRouterLogError('cfg-pia-wg: wgc1: Primary ping OK (9.9.9.9)'), isFalse);
       expect(isRouterLogError('Sep 11 12:00:01 router cfg-pia-wg: Enabled wgc1:aus_melbourne'), isFalse);
       expect(isRouterLogError('Sep 11 12:00:01 router dnsmasq[1]: failed to access /tmp/x'), isFalse);
+    });
+  });
+
+  // ID-034: the watchdog's lines were amber, which everywhere else in the app means a warning, so a healthy line looked
+  // like a problem. They are lavender, apart from teal (the app), red (errors), amber and the plain text.
+  group('line colours', () {
+    test('the app teal, the watchdog lavender, errors red, the firmware plain', () {
+      expect(routerLogLineColour('Sep 11 12:00:01 router cfg-pia-wg: Laptop (192.168.1.20) -> wgc5 reassigned'), kHighlight);
+      expect(routerLogLineColour('cfg-pia-wg: wgc1: Handshake 25s ago'), kWatchdogText);
+      expect(routerLogLineColour('cfg-pia-wg: wgc1: Connectivity lost; reconfiguring (attempt #2)'), kError);
+      expect(routerLogLineColour('Sep 11 12:00:01 router dropbear[123]: Password auth succeeded'), isNull);
+    });
+
+    test('the watchdog colour is none of the others', () {
+      expect({kWatchdogText, kHighlight, kError, kWarn, kText}, hasLength(5));
     });
   });
 }

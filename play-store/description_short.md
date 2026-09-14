@@ -1,0 +1,1 @@
+PIA WireGuard for ASUS routers: tap a device, pick a VPN, never renew a config

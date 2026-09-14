@@ -58,6 +58,23 @@ Widget screenForDestination(AppDestination dest) {
   }
 }
 
+/// The icon for each destination (ID-031). The main menu and the drawer both take theirs from here, so the same
+/// screen never carries two different icons. `menu` is HOME, which only the drawer shows.
+IconData destinationIcon(AppDestination dest) => switch (dest) {
+      AppDestination.menu => Icons.home_outlined,
+      AppDestination.standalone => Icons.note_add_outlined,
+      AppDestination.manageRouter => Icons.app_registration_outlined,
+      AppDestination.watchdog => Icons.monitor_heart_outlined,
+      AppDestination.deviceAssignment => Icons.hub_outlined,
+      AppDestination.routerLog => Icons.router_outlined,
+      AppDestination.log => Icons.list_alt_outlined,
+      AppDestination.settings => Icons.settings_outlined,
+      AppDestination.about => Icons.info_outline,
+    };
+
+/// EXIT's icon, on the main menu and in the drawer.
+const IconData kExitIcon = Icons.power_settings_new;
+
 /// Pushes [dest] onto the stack (no-op if already the current destination).
 void navigateToDestination(BuildContext context, SessionController controller, AppDestination dest) {
   if (controller.currentDestination == dest) return;
@@ -127,8 +144,10 @@ class AppDrawer extends StatelessWidget {
             // HOME: grey normally, house-green when the main menu is the current screen.
             ListTile(
               key: const Key('drawer_menu'),
+              leading: Icon(destinationIcon(AppDestination.menu), size: 20),
               title: const Text('HOME', style: TextStyle(fontSize: 13)),
               textColor: kMuted,
+              iconColor: kMuted,
               selectedColor: kHighlight,
               selected: controller.currentDestination == AppDestination.menu,
               onTap: () {
@@ -141,9 +160,11 @@ class AppDrawer extends StatelessWidget {
             for (final d in destinations)
               ListTile(
                 key: Key('drawer_${d.routeName}'),
-                // No explicit text colour here so selectedColor (active = green) takes effect.
+                // Grey icon and white label normally; selectedColor turns both green on the current screen.
+                leading: Icon(destinationIcon(d), size: 20),
                 title: Text(d.title, style: const TextStyle(fontSize: 13)),
                 textColor: kText,
+                iconColor: kMuted,
                 selectedColor: kHighlight,
                 selected: controller.currentDestination == d,
                 onTap: () {
@@ -155,7 +176,7 @@ class AppDrawer extends StatelessWidget {
             const Divider(color: kBorder, height: 1),
             ListTile(
               key: const Key('drawer_close_app'),
-              leading: const Icon(Icons.power_settings_new, color: kError, size: 20),
+              leading: const Icon(kExitIcon, color: kError, size: 20),
               title: const Text('EXIT', style: TextStyle(color: kError, fontSize: 13)),
               onTap: () {
                 onCloseDrawer();

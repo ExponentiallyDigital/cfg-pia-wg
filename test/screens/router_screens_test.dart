@@ -290,7 +290,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('MANAGE CONFIGURATION'), findsOneWidget);
-    expect(find.text('aus_melbourne'), findsWidgets);
+    expect(find.text('wgc1:aus_melbourne'), findsWidgets);
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();

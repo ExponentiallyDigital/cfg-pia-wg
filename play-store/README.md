@@ -54,9 +54,3 @@ Add a second file alongside `whatsnew-en-AU` in the same directory. Today the wo
 `en-AU`, so a second locale means teaching the parser about a second fence. Nothing needs it yet.
 
 ---
-
-## Known stale content
-
-`description.md` still describes the watchdog as Asuswrt-Merlin only. Stock ASUS firmware has been
-supported since the 0.8 line, and device assignment is not mentioned at all. Updating the store
-description is on the CHANGELOG pending list under documentation and publicity.

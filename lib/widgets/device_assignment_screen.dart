@@ -801,13 +801,21 @@ class _DeviceRow extends StatelessWidget {
       if (!device.online) 'offline',
       if (device.hasRandomisedMac) 'random MAC',
     ];
-    final head = [device.displayName, if (device.ip != null) device.ip!, ...tags].join(' - ');
+    // The name and its exceptions on the first line, the address and MAC on the second (ID-032). The MAC is what
+    // tells apart two devices the router gives the same name, and what matches the router's own client list.
+    final head = tags.isEmpty ? device.displayName : '${device.displayName} - ${tags.join(' | ')}';
+    final address = [if (device.ip != null) device.ip!, device.mac].join(' ');
     return Opacity(
       opacity: device.online ? 1 : 0.55,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         // Teal, not the body grey: on a phone the whole screen read as one undifferentiated block
         // and the device names are what the eye needs to land on first (B1 feedback 2026-09-08).
         Text(head, style: const TextStyle(color: kHighlight, fontSize: 13)),
+        Text(
+          address,
+          key: Key('addr_${device.mac}'),
+          style: const TextStyle(color: kMuted, fontSize: 12, fontFamily: 'monospace'),
+        ),
         const SizedBox(height: 4),
         if (device.assignable)
           _PickerButton(keyValue: 'row_${device.mac}', label: label, changed: changed, muted: note != null, onTap: onTap)
