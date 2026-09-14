@@ -8,7 +8,7 @@ void main() {
     final c = quietController();
     await pumpAppAtStandalone(tester, c);
 
-    final btn = tester.widget<ElevatedButton>(find.byKey(const Key('generate_config')));
+    final btn = tester.widget<OutlinedButton>(find.byKey(const Key('generate_config')));
     expect(btn.onPressed, isNull);
 
     await disposeApp(tester, c);

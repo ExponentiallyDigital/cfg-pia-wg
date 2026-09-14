@@ -26,6 +26,8 @@ import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
+import 'app_button.dart';
+
 import '../app_colors.dart';
 import '../device_assignment.dart';
 import '../device_assignment_service.dart';
@@ -61,6 +63,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   late SessionController _c;
   DeviceAssignmentService? _service;
+  RouterSlotService? _slotSvc;
   AssignmentState? _state;
 
   /// True from the first frame of a re-entry that will reconnect on its own, false once that
@@ -184,6 +187,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       _c.routerConnected = true;
       setState(() {
         _service = svc;
+        _slotSvc = slotSvc;
         _state = state;
         _slotInfo = slots;
         _activeSlots = active;
@@ -346,6 +350,26 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   Set<int>? _activeSlots;
 
+  /// Whether the tunnel behind a profile index is up: null for a VPN this app does not manage, or a
+  /// slot state that could not be read.
+  bool? _isUpIndex(int index) {
+    for (final p in _wireguardProfiles) {
+      if (p.vpncStateIndex == index) return _slotActive(p);
+    }
+    return null;
+  }
+
+  /// The note under a picker whose tunnel is not running: where the traffic really goes. Null when it
+  /// goes where the picker says, or that cannot be told. [pinned] is the device's own assignment, null
+  /// when it follows the default; the default connection panel passes null with [forDefault].
+  String? _exitNote(int? pinned, {bool forDefault = false}) {
+    final def = _stagedDefault ?? _state!.defaultIndex;
+    final exit = actualExitIndex(pinned: pinned, defaultIndex: def, isUp: _isUpIndex);
+    if (exit == null) return null;
+    final where = exit == 0 ? 'Internet, with no VPN' : _labelForIndex(exit);
+    return '${_labelForIndex(pinned ?? def ?? 0)} is not running - ${forDefault ? 'unassigned devices use' : 'traffic uses'} $where';
+  }
+
   Widget _pickerTile(BuildContext ctx,
           {required String key, required String label, required String note, required Object? value, bool? active}) =>
       Padding(
@@ -424,9 +448,14 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       if (_staged[ip] != null && !d.reserved) reservations[d.mac] = ip;
     }
 
+    // The tunnels this apply moves devices onto, read now rather than trusted from connect time.
+    final tunnelWarnings = await _tunnelWarnings(state);
+    if (!mounted) return;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => _ApplyDialog(
+        tunnelWarnings: tunnelWarnings,
         lines: [
           for (final entry in _staged.entries)
             _ChangeLine(
@@ -509,10 +538,86 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     } catch (e) {
       failure ??= 'Applied, but could not re-read the router: $e';
     }
+    // Tunnel state too: a default-connection change stops and restarts the tunnels, and the notes
+    // under the pickers are only as current as this.
+    try {
+      final fetched = await _slotSvc?.fetchSlots();
+      if (fetched != null && mounted) {
+        setState(() {
+          _slotInfo = fetched.slots;
+          _activeSlots = fetched.activeSlots;
+        });
+      }
+    } catch (_) {
+      // The notes keep what they had; the assignment itself is unaffected.
+    }
 
     dismissProgress();
     if (mounted) setState(() => _busy = false);
     if (failure != null && mounted) await AppErrors.system(context, _c, failure);
+  }
+
+  /// What APPLY's confirmation says about the tunnels this apply moves devices onto.
+  ///
+  /// Warnings, never a block: assigning a device to a disabled slot is legitimate, and the device
+  /// uses the default connection until the slot is enabled. The same read refreshes the row notes.
+  Future<List<String>> _tunnelWarnings(AssignmentState state) async {
+    String nameOf(String ip) =>
+        state.devices.firstWhere((d) => d.ip == ip, orElse: () => LanDevice(mac: ip)).displayName;
+    final slotOf = <int, int>{
+      for (final p in _wireguardProfiles)
+        if (p.slot != null) p.vpncStateIndex!: p.slot!,
+    };
+    final defaultAfter = _stagedDefault ?? state.defaultIndex ?? 0;
+    // Devices pinned onto each tunnel, by profile index, in the order they were staged.
+    final onto = <int, List<String>>{};
+    for (final e in _staged.entries) {
+      final idx = e.value;
+      if (idx != null && slotOf.containsKey(idx)) onto.putIfAbsent(idx, () => []).add(nameOf(e.key));
+    }
+    // The default connection's tunnel, when this apply changes the default or sends a device to it.
+    final checkDefault = slotOf.containsKey(defaultAfter) && (_stagedDefault != null || _staged.containsValue(null));
+    final slots = {for (final idx in onto.keys) slotOf[idx]!, if (checkDefault) slotOf[defaultAfter]!};
+    if (slots.isEmpty) return const [];
+
+    setState(() => _busy = true);
+    try {
+      final health = await _service!.tunnelHealth(slots);
+      if (mounted) {
+        setState(() => _activeSlots = {
+              ...?_activeSlots?.where((s) => !health.containsKey(s)),
+              for (final e in health.entries)
+                if (e.value.up) e.key,
+            });
+      }
+      final warnings = <String>[];
+      for (final e in onto.entries) {
+        final h = health[slotOf[e.key]];
+        if (h == null) continue;
+        // Where these devices go meanwhile, resolved as the row notes are, with this tunnel down.
+        final exit = actualExitIndex(
+            pinned: e.key, defaultIndex: defaultAfter, isUp: (i) => i == e.key ? false : _isUpIndex(i));
+        final fallback = exit == 0
+            ? 'the plain internet, with no VPN'
+            : exit == null
+                ? 'the default connection'
+                : 'the default connection, ${_labelForIndex(exit)}';
+        final w = tunnelWarning(h, tunnel: _labelForIndex(e.key), who: joinNames(e.value), fallback: fallback);
+        if (w != null) warnings.add(w);
+      }
+      if (checkDefault) {
+        final h = health[slotOf[defaultAfter]];
+        final w = h == null
+            ? null
+            : tunnelWarning(h, tunnel: _labelForIndex(defaultAfter), who: 'devices on the default connection');
+        if (w != null) warnings.add(w);
+      }
+      return warnings;
+    } catch (e) {
+      return ['The tunnels could not be checked before applying, so whether they are running is not known: $e'];
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   bool _isForeignIndex(int? idx) =>
@@ -550,19 +655,18 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         // screens beside it in the menu (B8n feedback 2026-09-08).
         SizedBox(
           width: double.infinity,
-          child: ElevatedButton(
-            key: const Key('device_connect'),
+          child: AppButton(
+            keyValue: 'device_connect',
+            label: 'CONNECT TO ROUTER',
+            busy: _busy,
             onPressed: _busy || !_canConnect ? null : _connect,
-            child: _busy
-                ? const SizedBox(
-                    height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
-                : const Text('CONNECT TO ROUTER'),
           ),
         ),
       ]);
 
   Widget _buildList() {
     final state = _state!;
+    final defaultNote = _exitNote(null, forDefault: true);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       // Two panels on different grounds. The default connection is a router-wide setting and the
       // list below it is per-device; read as one continuous column they were indistinguishable,
@@ -580,8 +684,13 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             keyValue: 'default_picker',
             label: _defaultLabel,
             changed: _stagedDefault != null,
+            muted: defaultNote != null,
             onTap: _busy ? null : _pickDefault,
           ),
+          if (defaultNote != null) ...[
+            const SizedBox(height: 4),
+            Text(defaultNote, key: const Key('default_exit'), style: const TextStyle(color: kWarn, fontSize: 12)),
+          ],
           const SizedBox(height: 6),
           const Text(
             'Devices set to "default" use this. Assigned devices fall back to it if their tunnel drops.',
@@ -603,6 +712,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
               label: _labelForDevice(_effectiveIndex(d)),
               changed: _staged.containsKey(d.ip),
               foreign: _isForeign(d),
+              note: d.assignable ? _exitNote(_effectiveIndex(d)) : null,
               onTap: _busy || !d.assignable ? null : () => _pick(d),
             ),
           ],
@@ -614,26 +724,22 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       const SizedBox(height: 8),
       // One centred row, both buttons at HOME's height so the three read as one set rather than
       // three sizes stacked up the screen. Their widths are left to their labels.
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        if (_pendingCount > 0) ...[
-          OutlinedButton(
-            key: const Key('device_discard'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: kMuted,
-              side: const BorderSide(color: kMuted),
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-            ),
-            onPressed: _busy ? null : () => setState(_c.clearStagedAssignments),
-            child: const Text('DISCARD CHANGES'),
-          ),
-          const SizedBox(width: 12),
-        ],
-        FilledButton(
-          key: const Key('device_apply'),
-          style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16)),
-          onPressed: _busy || _pendingCount == 0 ? null : _apply,
+      //
+      // Both are always shown and follow the pending state: with changes staged, DISCARD is red and
+      // APPLY teal; with none, both are grey and disabled. A Wrap rather than a Row, because the two
+      // labels side by side are wider than a small phone.
+      Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 8, children: [
+        AppButton(
+          keyValue: 'device_discard',
+          label: 'DISCARD CHANGES',
+          role: ButtonRole.destructive,
+          onPressed: _busy || _pendingCount == 0 ? null : () => setState(_c.clearStagedAssignments),
+        ),
+        AppButton(
+          keyValue: 'device_apply',
           // 'APPLY 1' read as a step number rather than a count (B3 feedback).
-          child: Text(_pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES'),
+          label: _pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES',
+          onPressed: _busy || _pendingCount == 0 ? null : _apply,
         ),
       ]),
       // AppScaffold pins HOME to the bottom over the scroll view, which clipped APPLY when the
@@ -676,12 +782,17 @@ class _DeviceRow extends StatelessWidget {
     required this.changed,
     required this.foreign,
     required this.onTap,
+    this.note,
   });
 
   final LanDevice device;
   final String label;
   final bool changed, foreign;
   final VoidCallback? onTap;
+
+  /// Where the traffic really goes when the tunnel is not running; null when it goes where the picker
+  /// says.
+  final String? note;
 
   @override
   Widget build(BuildContext context) {
@@ -699,19 +810,28 @@ class _DeviceRow extends StatelessWidget {
         Text(head, style: const TextStyle(color: kHighlight, fontSize: 13)),
         const SizedBox(height: 4),
         if (device.assignable)
-          _PickerButton(keyValue: 'row_${device.mac}', label: label, changed: changed, onTap: onTap)
+          _PickerButton(keyValue: 'row_${device.mac}', label: label, changed: changed, muted: note != null, onTap: onTap)
         else
           const Text('connect this device once to assign it', style: TextStyle(color: kHint, fontSize: 12)),
+        // Where the traffic really goes. The picker keeps naming the assignment - the pin is intact, and
+        // enabling the tunnel restores it - so this is a note, never a change of value.
+        if (note != null) ...[
+          const SizedBox(height: 4),
+          Text(note!, key: Key('exit_${device.mac}'), style: const TextStyle(color: kWarn, fontSize: 12)),
+        ],
       ]),
     );
   }
 }
 
 class _PickerButton extends StatelessWidget {
-  const _PickerButton({required this.keyValue, required this.label, required this.changed, required this.onTap});
+  const _PickerButton(
+      {required this.keyValue, required this.label, required this.changed, required this.onTap, this.muted = false});
 
   final String keyValue, label;
-  final bool changed;
+
+  /// [muted] greys a label whose tunnel is not running, so the note beneath it reads first.
+  final bool changed, muted;
   final VoidCallback? onTap;
 
   @override
@@ -721,8 +841,9 @@ class _PickerButton extends StatelessWidget {
           // Amber for a staged change, never teal. The device name above is already teal, so a
           // teal picker made the whole row one colour and the pending state disappeared into it
           // (B2 feedback 2026-09-08). Amber also carries the right meaning: not yet written.
-          foregroundColor: changed ? kWarn : kText,
-          side: BorderSide(color: changed ? kWarn : kBorder),
+          foregroundColor: changed ? kWarn : (muted ? kMuted : kText),
+          // Grey, not kBorder: at kBorder the outline all but vanished and the picker read as text.
+          side: BorderSide(color: changed ? kWarn : kMuted),
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
           alignment: Alignment.centerLeft,
         ),
@@ -747,10 +868,14 @@ class _ApplyDialog extends StatelessWidget {
     required this.reservationNames,
     required this.foreignNames,
     required this.restartsTunnels,
+    this.tunnelWarnings = const [],
   });
 
   final List<_ChangeLine> lines;
   final List<String> reservationNames, foreignNames;
+
+  /// What the tunnel check found about the tunnels this apply moves devices onto.
+  final List<String> tunnelWarnings;
 
   /// True when the default connection is being changed. That is the one operation on this screen
   /// with a real cost - see DeviceAssignmentService._setDefaultConnection.
@@ -767,6 +892,10 @@ class _ApplyDialog extends StatelessWidget {
               Text(l.name, style: const TextStyle(color: kText, fontSize: 13)),
               Text('${l.from} -> ${l.to}', style: const TextStyle(color: kMuted, fontSize: 12)),
               const SizedBox(height: 6),
+            ],
+            for (final w in tunnelWarnings) ...[
+              const SizedBox(height: 8),
+              Text(w, style: const TextStyle(color: kWarn, fontSize: 12)),
             ],
             if (reservationNames.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -797,11 +926,8 @@ class _ApplyDialog extends StatelessWidget {
           ]),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCEL')),
-          FilledButton(
-              key: const Key('apply_confirm'),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('APPLY')),
+          AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(context, false)),
+          AppButton(keyValue: 'apply_confirm', label: 'APPLY', onPressed: () => Navigator.pop(context, true)),
         ],
       );
 }
@@ -843,7 +969,7 @@ class _PickerDialog extends StatelessWidget {
           width: double.maxFinite,
           child: ListView(shrinkWrap: true, children: children),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL'))],
+        actions: [AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(context))],
       );
 }
 

@@ -71,7 +71,8 @@ perfect the whole time. Detail in
 
 ## 3. <a name='home-screen'></a>Home screen
 
-- all five buttons navigate; HOME and the back key return here
+- all nine buttons navigate, in drawer order and with the same names as the drawer; HOME and the back key return here
+- no footnotes under the buttons, and the help and review lines sit together directly under EXIT
 - "how to use this app" opens the README section
 - "add a Play Store app review" opens the Play listing
 - there is no donation block: the PAYPAL and PATREON buttons went when the app gained a price
@@ -97,6 +98,8 @@ perfect the whole time. Detail in
 - DISABLE leaves `wg show interfaces` empty
 - stock: a third concurrent enable is refused with the VPN-limit dialog
 - DELETE prompt names the VPN being deleted
+- stock: CREATE's credentials dialog and EDIT's DNS field both say assigned devices use only the first server; Merlin and STANDALONE do not
+- CREATE over a slot whose tunnel is running, in a different region: the overwrite prompt says it will be stopped first; afterwards `wg show interfaces` no longer lists it, the slot shows disabled, and the dialog says the old tunnel was stopped. ENABLE, then `wg show wgcN latest-handshakes` shows a DIFFERENT peer key from before
 
 Applying configs:
 
@@ -109,19 +112,31 @@ Applying configs:
 ## 6. <a name='watchdog'></a>Watchdog
 
 - Create wgc1 & wgc5 - check test email
+- the region is chosen on the form, pre-filled with the slot's own, before SAVE & DEPLOY; a configured slot still warns before it is overwritten, and a region PIA does not have is refused
 - Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
+- region on the watchdog form - each time check the peer key (`wg show wgcN latest-handshakes`), exit location, router log and email:
+  - running slot, same region: router log "is already up; its tunnel was left running", NO `restart_vpnc`, other tunnels keep their handshakes
+  - running slot, new region: prompt says the tunnel is rebuilt; router log "Cleared ... rebuilds it", "Deploying: bringing wgcN up", "Deploy SUCCESS: region pia-<new>"; NEW peer key; exit is the new region; SUCCESS email names the new server
+  - disabled configured slot, new region: as above, and the slot ends enabled
+  - empty slot (the watchdog shortcut): as above
+  - stock: the WebUI shows the rebuilt slot connected
+  - a device assigned to the slot: on the default connection during the rebuild, back on the slot after
+  - rebuild fails (wrong PIA password): FAILED email, the old region does NOT come back, retries on the backoff; correct the password, SAVE & DEPLOY recovers
 - force a reconfigure, then check the email alerting
   1. `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`
   2. `/jffs/cfg-pia-wg/watchdog_wgc1.sh`
+- a failed send explains itself: set a wrong SMTP password, SAVE & DEPLOY. VIEW WATCHDOG LOG shows `Email FAILED`, then `Email diag: resolv.conf [<servers>] via <interface>; <smtp host> resolves to [<addresses>]` - an interface name only, no WAN address. Put the password back and SAVE & DEPLOY
 - Check emails
   1. deploy email says "watchdog deployed", subject SUCCESS, sent even though nothing was wrong
   2. reconfigure email: outage duration, kill-switch line, new server and latency
   3. failure email: WHAT TO DO, attempt count, last 10 router-log lines
   4. HISTORY counters climb; `cfg_pia_wg_sdate` is set once and not rewritten
   5. subject threads by slot: `cfg-pia-wg alert: SUCCESS - wgc1:pia-<region>`
+  6. on stock, the kill-switch line: a tunnel with no devices assigned that is not the default says so rather than talking about its devices; "still on a VPN" only when the default is a WireGuard tunnel that is up; a default that is down, or not WireGuard, says devices may have had no VPN
 - DISABLE shows the PAUSED badge; ENABLE restores the same interval
 - keyboard does not obscure the configure dialog's fields
 - backoff: leave it failing and watch the log - "Backing off after N failed attempts", waits growing 2, 4, 8, 16, 30, 60, 90 min
+- VIEW ROUTER WATCHDOG LOG: the heading names the slot and its region, the text fills the width on a tablet, and after midnight yesterday's lines appear above today's; CLEAR empties both
 
 ### 6.1. <a name='checks'></a>Checks
 
@@ -705,6 +720,18 @@ Deletes:
 > - **Deleting a VPN with devices pinned to it.** Those devices go to **Internet**, matching the web interface, not to the default connection. A device that was explicitly pinned must never land on a tunnel nobody chose.
 > - **Deleting the VPN that IS the default connection.** `vpnc_default_wan` is a key rather than a policy record, so nothing that rewrites the policy list touches it. Left behind, every device following the default reads as `profile 9 (deleted)`.
 
+### 7.2. <a name='end-to-end-before-a-release'></a>End-to-end, before a release
+
+Device assignment is a signature feature: run this on the release build. After each step CHK as in 7.1 plus `wg show interfaces`; on the device, exit IP and `ping google.com`; in the app, the row and any note under it.
+
+- **between tunnels:** phone to wgc1, then wgc5. ONE rule, the new one; exit is wgc5's region
+- **to and from the default:** phone to the default, then back to wgc5. No `.51` rule while on the default and exit follows it; ONE rule again after
+- **to a disabled slot:** disable wgc5, phone to wgc5. APPLY warns "wgc5:... is not running... will use the default connection"; the row notes where traffic goes; exit is the default's region. Enable wgc5: exit moves to wgc5 without reassigning, and the note goes
+- **a silent server:** on a slot with no watchdog, `wg set wgcN peer "$(nvram get wgcN_ppub)" remove`, wait 4 minutes, move a device onto it: APPLY warns its server has not answered. DISABLE and ENABLE the slot afterwards
+- **delete and recreate with devices assigned:** phone to wgc5, DELETE wgc5: the phone lands on Internet. CREATE wgc5 again: the phone is NOT on it
+- **changing the default connection** (read the caution above first): default to wgc1, every unassigned device exits wgc1's region and the phone pinned to wgc5 does not. Disable wgc1: the default panel notes unassigned devices use Internet - confirm from an unassigned device, as this one is inferred
+- **a reboot:** reboot, CHK. Every assignment and the default survive, and each device exits where its row says
+
 ---
 
 ## 8. <a name='app-log'></a>App log
@@ -721,6 +748,7 @@ Deletes:
 - opens on the newest 32 KB of `/tmp/syslog.log`, scrolled to the bottom
 - scrolling to the top loads the previous 32 KB and **keeps your place** - the text you were reading must not jump
 - a partial first line is trimmed, so no page ever starts mid-word
+- lines the app wrote are teal and lines the watchdog wrote are amber; any of those reporting an error - ERROR, failed, connectivity lost, down or absent, never answered, no Internet - are red instead, while the firmware's own lines stay plain even when they say failed
 - reaching the start of `syslog.log` continues into the rotated `syslog.log-1` if the router has one, and says so
 - COPY takes everything loaded, not just the visible page, and no clipboard countdown is armed
 - REFRESH returns to the newest page
@@ -731,7 +759,8 @@ Deletes:
 
 ## 10. <a name='settings'></a>Settings
 
-- UNINSTALL asks twice, and the second prompt says what it is about to do
+- the rows run REBOOT ROUTER, FORGET ROUTER IP, REMOVE CACHED PIA CERT, UNINSTALL FEATURES DEPLOYED TO ROUTER, then RESTORE PURCHASE on a store build
+- UNINSTALL FEATURES DEPLOYED TO ROUTER asks twice, and the second prompt says what it is about to do, with CANCEL first in grey and UNINSTALL second in red
 - afterwards, on the router:
 
 ```bash
@@ -746,8 +775,8 @@ wg show interfaces                        # UNCHANGED - the tunnels are not ours
 - **run UNINSTALL a second time on the same router.** It must report that each script is not ours
   and delete nothing. A second run that removes the router's own `S50downloadmaster` is the 425 bug
   and the reason both scripts now carry an `auto-generated by cfg-pia-wg` header line
-- DEL PIA CERT removes the cached PIA CA and the next reconfigure fetches it again
-- with no live router session, DEL PIA CERT asks for credentials inline - the prompt prefills the remembered address, leaves the username blank, and the keyboard does not obscure it
+- REMOVE CACHED PIA CERT removes the cached PIA CA and the next reconfigure fetches it again
+- with no live router session, REMOVE CACHED PIA CERT asks for credentials inline - the prompt prefills the remembered address, leaves the username blank, and the keyboard does not obscure it
 - FORGET ROUTER IP clears the saved address, and the next connect screen opens empty
 
 ---
@@ -757,7 +786,10 @@ wg show interfaces                        # UNCHANGED - the tunnels are not ours
 - COPY BUILD INFO - no clipboard countdown starts
 - licences screen opens and does not bleed through the header
 - CREATE GITHUB ISSUE opens
-- the deployed watchdog script version is shown, and is flagged when it is older than the app's copy
+- the deployed watchdog script version is shown; when it differs from the app's it is amber, with REDEPLOY TO UPDATE VERSION under it, which updates the script without restarting any tunnel and leaves the row plain again
+- Router firmware shows the type and version once the router has been read, and CREATE GITHUB ISSUE carries both
+- License status reads homegrown on a self-built copy, and licensed or unlicenced on a store build
+- more space around the grey section rules
 - the history line reads `Since <yyyy-mm-dd>: X successful & Y unsuccessful reconfigures`
 
 ---
@@ -765,7 +797,7 @@ wg show interfaces                        # UNCHANGED - the tunnels are not ours
 ## 12. <a name='credentials-and-exit'></a>Credentials and exit
 
 - password manager fills PIA, SSH and SMTP logins (clear the field first - Android only offers on an empty one)
-- Exit app and the back key both prompt, then wipe credentials and clipboard
+- EXIT and the back key both prompt, then wipe credentials and clipboard
 - release build: screenshots blocked, task switcher obscured
 
 ---
@@ -818,7 +850,10 @@ The buy:
 
 The refund, which is the trial:
 
-- refund the order in Play Console, then wait for the notification to reach RevenueCat
+- refund the order in Play Console, choosing **refund and revoke** where offered, then wait for the notification to reach RevenueCat
+- **turn on the Sandbox toggle** to see any of it. RevenueCat hides test activity from transaction views by default, so a working purchase looks like no purchase at all. The toggle sits beside Recent Transactions
+- customer COUNTS never move for a refund. A customer record is created on first launch and persists; only the entitlement goes. Read the individual customer record, not the dashboard totals
+- expect ghost customers after every release. Play's pre-launch report runs the app on its own devices, each launch creating an anonymous customer that never buys anything. Measured 2026-09-12: seven of them, United States, Android 30, within twenty minutes of the upload
 - the app relocks **without being reinstalled**. If it does not, real-time developer notifications
   are not wired up (step 23 of the plan) and the refund window cannot be used as a trial
 

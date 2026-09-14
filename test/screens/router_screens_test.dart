@@ -71,9 +71,9 @@ void main() {
     await tester.pumpWidget(_manage(ssh, c));
     await tester.pumpAndSettle();
 
-    expect(tester.widget<ElevatedButton>(find.byKey(const Key('connect_router'))).onPressed, isNull);
+    expect(tester.widget<OutlinedButton>(find.byKey(const Key('connect_router'))).onPressed, isNull);
     await _fillCreds(tester);
-    expect(tester.widget<ElevatedButton>(find.byKey(const Key('connect_router'))).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(find.byKey(const Key('connect_router'))).onPressed, isNotNull);
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();
@@ -107,7 +107,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // No manual CONNECT tap — the modal opens automatically.
-    expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+    expect(find.text('MANAGE CONFIGURATION'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();
@@ -130,7 +130,7 @@ void main() {
     expect(find.byKey(const Key('connect_router')), findsNothing);
 
     await tester.pumpAndSettle();
-    expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+    expect(find.text('MANAGE CONFIGURATION'), findsOneWidget);
     expect(find.byType(ReconnectingBody), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
@@ -151,7 +151,7 @@ void main() {
     expect(find.byType(ReconnectingBody), findsOneWidget);
 
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, 'OK'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'OK'));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('connect_router')), findsOneWidget);
@@ -265,7 +265,7 @@ void main() {
     await tester.tap(find.byKey(const Key('connect_router')));
     await tester.pumpAndSettle();
 
-    expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+    expect(find.text('MANAGE CONFIGURATION'), findsOneWidget);
     expect(find.byKey(const Key('connect_router')), findsNothing, reason: 'the form is gone, not covered');
     // Same navigator, same depth: nothing was pushed, so back leaves the screen entirely.
     expect(tester.widget<Navigator>(find.byType(Navigator).first), same(before));
@@ -289,7 +289,7 @@ void main() {
     await tester.tap(find.byKey(const Key('connect_router')));
     await tester.pumpAndSettle();
 
-    expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+    expect(find.text('MANAGE CONFIGURATION'), findsOneWidget);
     expect(find.text('aus_melbourne'), findsWidgets);
 
     await tester.pumpWidget(const SizedBox());
@@ -392,7 +392,7 @@ void main() {
 
       expect(find.textContaining('Unable to determine router firmware type'), findsOneWidget);
       expect(firmwareDetected, isFalse);
-      expect(find.text('WIREGUARD CONFIGURATION'), findsNothing);
+      expect(find.text('MANAGE CONFIGURATION'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -493,7 +493,7 @@ void main() {
       await tester.tap(find.byKey(const Key('connect_router')));
       await tester.pumpAndSettle();
 
-      expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+      expect(find.text('MANAGE CONFIGURATION'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -511,7 +511,7 @@ void main() {
       await declineThenReconnect(tester);
       expect(find.textContaining('Unable to locate:'), findsOneWidget);
       expect(find.textContaining(kStockJqPath), findsOneWidget);
-      expect(find.text('WIREGUARD CONFIGURATION'), findsNothing);
+      expect(find.text('MANAGE CONFIGURATION'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

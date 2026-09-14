@@ -226,7 +226,36 @@ void main() {
       expect(c.count('nvram set wgc1_'), 17);
       // Must NOT activate the slot.
       expect(c.ran('start_wgc'), isFalse);
-      expect(c.ran('ip -o link show up'), isFalse);
+      // Looking is not activating: CREATE reads the interface list to find a tunnel it must stop.
+      expect(c.ran('stop_wgc'), isFalse, reason: 'nothing was running, so nothing is stopped');
+    });
+
+    // Measured on hardware 2026-09-14: overwriting a running wgc4 wrote the new region's settings
+    // while the old server's tunnel carried on under the new label.
+    test('a running slot is stopped before anything is written, and it says so', () async {
+      useMerlin();
+      var stopped = false;
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('stop_wgc')) stopped = true;
+        if (cmd.contains('ip -o link show up')) return stopped ? '' : 'wgc1';
+        return '';
+      });
+      expect(await svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'aus_perth'), isTrue);
+
+      final stop = c.commands.indexWhere((cmd) => cmd.contains('stop_wgc 1'));
+      final write = c.commands.indexWhere((cmd) => cmd.startsWith('nvram set wgc1_desc'));
+      expect(stop, isNot(-1));
+      expect(write, isNot(-1));
+      expect(stop, lessThan(write), reason: 'stopped before the new configuration lands');
+      expect(c.ran('nvram set wgc1_enable=0'), isTrue);
+      expect(c.ran('start_wgc'), isFalse, reason: 'and left disabled');
+    });
+
+    test('a slot that is not running returns false and is not stopped', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('ip -o link show up') ? 'wgs1 wgc2' : '');
+      expect(await svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'aus_perth'), isFalse);
+      expect(c.ran('stop_wgc'), isFalse);
     });
 
     test('backs up an occupied slot and restores it on write failure', () async {
@@ -1099,6 +1128,24 @@ void main() {
         throwsA(isA<Exception>()),
       );
       expect(c.ran("nvram set vpnc_clientlist='backup_val'"), isTrue);
+    });
+
+    test('CREATE over a running stock slot stops it with stop_vpnc, never a restart', () async {
+      useStock();
+      var stopped = false;
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('stop_vpnc')) stopped = true;
+        if (cmd.contains('vpnc_clientlist')) return 'pia-us_alabama>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        if (cmd.contains('ip -o link show up')) return stopped ? '' : 'wgc1';
+        return '';
+      });
+      expect(await svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'aus_perth'), isTrue);
+
+      final stop = c.commands.indexOf('service stop_vpnc');
+      final write = c.commands.indexWhere((cmd) => cmd.startsWith('nvram set wgc1_desc'));
+      expect(stop, isNot(-1));
+      expect(stop, lessThan(write));
+      expect(c.ran('restart_vpnc'), isFalse);
     });
 
     test('a failed create into an empty STOCK slot also drops the vpnc_clientlist row', () async {

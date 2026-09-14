@@ -20,6 +20,8 @@
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import 'app_button.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_colors.dart';
@@ -140,16 +142,16 @@ class _FirmwareNoticeDialogState extends State<_FirmwareNoticeDialog> {
       // OK and INSTALL on the same row. Telling a user what is missing and then leaving them to
       // find the install elsewhere is a dead end when the app can do it from here.
       actions: [
-        TextButton(
-          key: const Key('firmware_notice_ok'),
+        AppButton(
+          keyValue: 'firmware_notice_ok',
+          label: 'OK',
           onPressed: () => Navigator.of(context).pop(FirmwareNoticeChoice.dismissed),
-          child: const Text('OK', style: TextStyle(color: kHighlight, fontWeight: FontWeight.w700)),
         ),
         if (widget.offerInstall)
-          TextButton(
-            key: const Key('firmware_notice_install'),
+          AppButton(
+            keyValue: 'firmware_notice_install',
+            label: 'INSTALL',
             onPressed: () => Navigator.of(context).pop(FirmwareNoticeChoice.install),
-            child: const Text('INSTALL', style: TextStyle(color: kHighlight, fontWeight: FontWeight.w700)),
           ),
       ],
     );

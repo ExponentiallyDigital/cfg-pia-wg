@@ -18,6 +18,8 @@
 // current destination is a no-op.
 
 import 'package:flutter/material.dart';
+
+import 'app_button.dart';
 import 'package:flutter/services.dart';
 
 import '../app_colors.dart';
@@ -81,10 +83,8 @@ Future<void> confirmAndExit(BuildContext context, SessionController controller) 
       content: const Text('All credentials and configuration will be wiped from memory.',
           style: TextStyle(color: kMuted, fontSize: 13)),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-        TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('EXIT', style: TextStyle(color: kError, fontWeight: FontWeight.w700))),
+        AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
+        AppButton(label: 'EXIT', role: ButtonRole.destructive, onPressed: () => Navigator.pop(ctx, true)),
       ],
     ),
   );
@@ -102,7 +102,9 @@ class AppDrawer extends StatelessWidget {
     required this.onCloseDrawer,
   });
 
-  static const _destinations = [
+  /// Every destination, in order. The main menu builds its buttons from this same list, so the two
+  /// always offer the same screens with the same names in the same order.
+  static const destinations = [
     AppDestination.standalone,
     AppDestination.manageRouter,
     AppDestination.watchdog,
@@ -136,7 +138,7 @@ class AppDrawer extends StatelessWidget {
               },
             ),
             const Divider(color: kBorder, height: 1),
-            for (final d in _destinations)
+            for (final d in destinations)
               ListTile(
                 key: Key('drawer_${d.routeName}'),
                 // No explicit text colour here so selectedColor (active = green) takes effect.
@@ -154,7 +156,7 @@ class AppDrawer extends StatelessWidget {
             ListTile(
               key: const Key('drawer_close_app'),
               leading: const Icon(Icons.power_settings_new, color: kError, size: 20),
-              title: const Text('Exit app', style: TextStyle(color: kError, fontSize: 13)),
+              title: const Text('EXIT', style: TextStyle(color: kError, fontSize: 13)),
               onTap: () {
                 onCloseDrawer();
                 final navContext = navigatorKey.currentContext;

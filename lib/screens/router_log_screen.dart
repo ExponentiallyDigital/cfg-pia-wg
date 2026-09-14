@@ -227,11 +227,14 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
         for (var i = 0; i < lines.length; i++)
           TextSpan(
             text: i == lines.length - 1 ? lines[i] : '${lines[i]}\n',
-            style: switch (classifyLogLine(lines[i])) {
-              RouterLogSource.app => const TextStyle(color: kHighlight),
-              RouterLogSource.watchdog => const TextStyle(color: kWarn),
-              RouterLogSource.other => null,
-            },
+            // Red wins: an error from the app or the watchdog is the line anyone opened this for.
+            style: isRouterLogError(lines[i])
+                ? const TextStyle(color: kError)
+                : switch (classifyLogLine(lines[i])) {
+                    RouterLogSource.app => const TextStyle(color: kHighlight),
+                    RouterLogSource.watchdog => const TextStyle(color: kWarn),
+                    RouterLogSource.other => null,
+                  },
           ),
       ]),
       style: base,

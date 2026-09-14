@@ -19,6 +19,8 @@
 
 import 'package:flutter/material.dart';
 
+import 'app_button.dart';
+
 import '../app_colors.dart';
 import '../session_controller.dart';
 
@@ -99,10 +101,7 @@ class _ErrorDialog extends StatelessWidget {
             .toList(),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('OK', style: TextStyle(color: kHighlight, fontWeight: FontWeight.w700)),
-        ),
+        AppButton(label: 'OK', onPressed: () => Navigator.of(context).pop()),
       ],
     );
   }

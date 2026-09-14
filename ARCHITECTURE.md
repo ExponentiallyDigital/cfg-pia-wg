@@ -151,11 +151,15 @@ graph TD
   }
 }}%%
     A["Start app"] --> B["Main menu"]
-    B --> C["Generate standalone PIA WireGuard configuration"]
-    B --> D["Manage router PIA WireGuard configuration*"]
-    B --> E["Watchdog WireGuard management*"]
-    B --> F["View app log"]
-    B --> G["Exit app"]
+    B --> C["STANDALONE: generate a PIA WireGuard configuration"]
+    B --> D["MANAGE: router PIA WireGuard configuration"]
+    B --> E["WATCHDOG: WireGuard management"]
+    B --> MDA["DEVICE ASSIGNMENT"]
+    B --> MRL["ROUTER LOG"]
+    B --> F["APP LOG"]
+    B --> MSET["SETTINGS"]
+    B --> MABOUT["ABOUT"]
+    B --> G["EXIT"]
 
     C --> H["Enter region, PIA username/password, DNS"]
     H --> I{"Tap GENERATE CONFIG"}
@@ -182,7 +186,7 @@ graph TD
 
     subgraph MGR["Manage router flow"]
       D4 --> D5["Select slot + action"]
-      D5 --> D5a["CREATE: pick region, enter PIA creds, generateConfig, createConfigToSlot (write NVRAM disabled)"]
+      D5 --> D5a["CREATE: pick region, enter PIA creds, generateConfig, createConfigToSlot (stop the tunnel if running, write NVRAM disabled)"]
       D5 --> D5b["ENABLE: read watchdog targets, disable other active slot, enableSlot with connectivity check, revert on failure"]
       D5 --> D5c["EDIT: readSlotParams, edit parameters, writeSlotParams"]
       D5 --> D5d["DISABLE: stop watchdog if present, disableSlot"]
@@ -1120,7 +1124,7 @@ A fourth, the **test email**, is sent by the app from the watchdog configuration
 
 Times carry a **numeric UTC offset** (`+1000`), never a zone name. `%Z` prints whatever the zone is *called*, and cron inherits `TZ` from init - on ASUS that is `/etc/TZ`, a POSIX string like `UTC-10DST,...` which literally names the zone "UTC" while offsetting by +10. Every cron-fired alert therefore labelled a correct local time as UTC, while manual and app-fired ones said AEST, because a dropbear login shell sets no `TZ` at all and falls back to `/etc/localtime`.
 
-An alert that **could not be sent** is counted in `/tmp/watchdog_unsent_wgcN` and reported by the next email that does get through (`2 earlier alert(s) could not be sent, the most recent at ...`). An alert about lost connectivity is the one most likely to be undeliverable - a downed default tunnel takes DNS with it - and a stale alert arriving hours later is worse than a line of context on a live one.
+An alert that **could not be sent** is counted in `/tmp/watchdog_unsent_wgcN` and reported by the next email that does get through (`2 earlier alert(s) could not be sent, the most recent at ...`). An alert about lost connectivity can be undeliverable for the reason it fired - one on 2026-09-06 failed with `lookup smtp.gmail.com ... server misbehaving` - and a stale alert arriving hours later is worse than a line of context on a live one. The cause that day is not known. It was not the default connection: traffic the router creates never follows it, the watchdog resolves through `/etc/resolv.conf` (the WAN's DNS first on the test router), and on 2026-09-14 a test email was sent while a tunnel's encrypted DNS was blocked. So that the next one explains itself, a failed send also logs `Email diag: resolv.conf [...] via <interface>; <SMTP host> resolves to [...]` - the nameservers in `/etc/resolv.conf`, the interface the first one is reached through (never the whole route, which names the WAN address and would travel in the next failure email's log excerpt), and what the SMTP host resolved to at that moment.
 
 Every message is plain text with four sections — `WHAT HAPPENED`, `ROUTER`, `HISTORY`, and on failures `WHAT TO DO` and `ROUTER LOG` — ordered answer first, action second, evidence last. `HISTORY` reports the lifetime counters from [Router WireGuard NVRAM fields](#router-wireguard-nvram-fields). Worked examples are in [README.md, Email alerts](README.md#531-email-alerts).
 
