@@ -4,6 +4,7 @@
   - [1.1. All](#11-all)
     - [1.1.1. DOC - documentation updates](#111-doc---documentation-updates)
     - [1.1.2. FTR - future implementation](#112-ftr---future-implementation)
+    - [1.1.3. Unconfirmed BUGs](#113-unconfirmed-bugs)
   - [1.2. v0.9.xx freemium](#12-v09xx-freemium)
   - [1.3. Codebase cleanup](#13-codebase-cleanup)
   - [1.4. v1.0.0 iOS version](#14-v100-ios-version)
@@ -27,6 +28,12 @@
 - FTR: Add localisation strings: French, Spanish, Spanish (latin), after that decide which ones next. (Google auto transations break character limits of PS Description)
 - FTR: edit a device's display name from the assignment screen, writing `custom_clientlist`. Two sharp edges make it more than a text field: `<` and `>` are the record and field delimiters, so an unvalidated name corrupts every device name on the router; and appending a record for a device that has none writes index 3, so a naive `0` downgrades that device's icon to generic in both the WebUI and the ASUS app - the detected type has to be carried over from `nmp_cl_json.js` first. Also needs the service call that makes it take effect, which is unknown.
 - ADD: deploy a script like `.\scripts\showall.sh` to `jffs/cfg-pia-wg` that creates diagnostic information, decide what to do about secrets in the file
+- FTR: **the router's own DNS follows the first tunnel, not the default connection** - firmware behaviour, recorded. Was AN-2026-09-13_001: all LAN devices lost internet while deploying a watchdog to wgc5 with five tunnels up, an outage not seen again. Traced 2026-09-14 on stock: a LAN device that asks the router - unassigned, or pinned to Internet - is answered by dnsmasq, which sends everything but the ISP's own domain to stubby at `127.0.1.1`, which uses DNS-over-TLS to the servers in the WebUI's WAN DNS Setting. The firmware adds `from all to <slot DNS> iif lo lookup <table>` for each running tunnel's DNS servers, so when those match the WebUI's servers (Quad9 on the test router) stubby's port 853 leaves through the lowest-numbered table's tunnel, whatever the default connection is - traffic the router creates never follows the default, whose rules match `iif br0` and `br1` only. **Reproduced** after a reboot with wgc1 the only tunnel: blocking TCP 853 out of wgc1 timed out lookups for a device pinned to Internet and for one following the default, while ping kept working for both; a device assigned to wgc1 still resolved, because the firmware sends its DNS to the slot's first server on port 53 through its own tunnel. The router's own programs - the watchdog's `mailsend-go` and `curl`, `nslookup` - are not on this path: `/etc/resolv.conf` lists the WAN's DNS first, and a test email went out while blocked, so the 2026-09-06 undelivered alert (`server misbehaving`) is unexplained again. The app must not change the user's DNS settings (CONTEXT), so its only response is information - see CHANGELOG Pending. Runsheet in `.claude/testing/`.
+
+#### 1.1.3. Unconfirmed BUGs
+
+- AN-2026-09-13_002: an AiMesh node appeared in device assignment as an unassignable device; no longer appears in a live list.
+- AN-2026-09-13_003: copying several selected router log lines lost the line feeds; retested and they were kept.
 
 ---
 

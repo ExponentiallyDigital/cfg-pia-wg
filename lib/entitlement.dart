@@ -65,6 +65,7 @@ abstract class Entitlement {
     void Function(String message) onLog = _ignore,
   }) async {
     if (!purchasingAvailable) return;
+    _onLog = onLog;
     try {
       await Purchases.setLogLevel(LogLevel.error);
       await Purchases.configure(PurchasesConfiguration(androidKey));
@@ -120,15 +121,66 @@ abstract class Entitlement {
   /// no local state at all, and why `android:allowBackup="false"` costs nothing here.
   static Future<bool> restore() async => _apply(await Purchases.restorePurchases());
 
-  /// The first package of the current offering. Null when the store is unreachable or the
-  /// dashboard has no offering configured.
+  /// True when [e] is Google Play saying the payment has not cleared yet - a slow card, or a bank that
+  /// needs approving. Not a failure: the unlock arrives when it clears.
+  static bool isPaymentPending(Object e) {
+    if (e is! PlatformException) return false;
+    try {
+      return PurchasesErrorHelper.getErrorCode(e) == PurchasesErrorCode.paymentPendingError;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// A sentence a person can act on for anything a purchase or restore throws, with the store's own
+  /// error code in brackets so the app log still helps in a bug report.
+  ///
+  /// The paywall used to show the plugin's raw exception text, and log nothing at all.
+  static String describeStoreError(Object e) {
+    if (e is! PlatformException) return e.toString().replaceAll('Exception: ', '');
+    final PurchasesErrorCode code;
+    try {
+      code = PurchasesErrorHelper.getErrorCode(e);
+    } catch (_) {
+      return e.message ?? e.code;
+    }
+    final detail = switch (code) {
+      PurchasesErrorCode.paymentPendingError => 'Payment is pending. The unlock arrives once Google Play confirms it.',
+      PurchasesErrorCode.networkError => 'Could not reach the store. Check the connection and try again.',
+      PurchasesErrorCode.productAlreadyPurchasedError => 'This Google account already owns the unlock. Use Restore.',
+      PurchasesErrorCode.purchaseNotAllowedError => 'Purchases are not allowed on this device or account.',
+      PurchasesErrorCode.productNotAvailableForPurchaseError => 'The unlock is not available to buy right now.',
+      PurchasesErrorCode.storeProblemError => 'Google Play could not complete the payment.',
+      _ => e.message ?? 'The store reported an error.',
+    };
+    return '$detail (${code.name})';
+  }
+
+  /// The first package of the current offering, or null when there is nothing to sell.
+  ///
+  /// Says WHY in the app log. Three different faults all present as one disabled button reading
+  /// "Not available right now", and they are fixed in three different places: the store being
+  /// unreachable, no offering marked CURRENT in the RevenueCat dashboard, and an offering whose
+  /// product Google Play would not return - which is what a newly activated product looks like
+  /// before it has propagated. Guessing between those from the button alone wastes an evening.
   static Future<Package?> _package() async {
     if (!purchasingAvailable) return null;
     try {
       final offerings = await Purchases.getOfferings();
-      final packages = offerings.current?.availablePackages ?? const [];
-      return packages.isEmpty ? null : packages.first;
-    } catch (_) {
+      final current = offerings.current;
+      if (current == null) {
+        _log('No current offering. In RevenueCat, mark an offering as Current (${offerings.all.length} exist).');
+        return null;
+      }
+      final packages = current.availablePackages;
+      if (packages.isEmpty) {
+        _log('Offering "${current.identifier}" has no packages Play would return. A product activated in the last '
+            'few hours may not have propagated yet.');
+        return null;
+      }
+      return packages.first;
+    } catch (e) {
+      _log('Could not read the store offerings: ${_plain(e)}');
       return null;
     }
   }
@@ -137,6 +189,9 @@ abstract class Entitlement {
   // listener, a purchase or a restore. Holding the callback here rather than passing it in means
   // no path can quietly update the entitlement without telling the UI.
   static void Function(bool)? _onChanged;
+  static void Function(String)? _onLog;
+
+  static void _log(String message) => _onLog?.call(message);
 
   static bool _apply(CustomerInfo info) {
     final held = info.entitlements.active.containsKey(entitlementId);

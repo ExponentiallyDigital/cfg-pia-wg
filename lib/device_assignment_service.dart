@@ -146,6 +146,29 @@ class DeviceAssignmentService {
     );
   }
 
+  /// Whether each of [slots] is up, and how long since its server last answered, in one round trip.
+  ///
+  /// For APPLY's confirmation. A tunnel that is down accepts an assignment and carries nothing, and one
+  /// whose server has stopped answering looks up while carrying nothing either. Read at APPLY rather
+  /// than at connect, because the list may have been open for a long time.
+  Future<Map<int, TunnelHealth>> tunnelHealth(Set<int> slots) async {
+    if (slots.isEmpty) return const {};
+    final ordered = slots.toList()..sort();
+    final parts = (await _read([
+      'echo "$_sep"; $kUpInterfacesCommand',
+      'echo "$_sep"; date +%s',
+      for (final slot in ordered) 'echo "$_sep"; wg show wgc$slot latest-handshakes 2>/dev/null',
+      'echo "$_sep"',
+    ].join('; ')))
+        .split(_sep);
+    String at(int i) => i + 1 < parts.length ? parts[i + 1].trim() : '';
+    return parseTunnelHealth(
+      upInterfaces: at(0),
+      routerNow: at(1),
+      handshakes: {for (var i = 0; i < ordered.length; i++) ordered[i]: at(2 + i)},
+    );
+  }
+
   /// Changes the default connection - the setting that decides where an unassigned device goes,
   /// and where an ASSIGNED device falls back to when its tunnel drops (ARCHITECTURE.md "vpnc_dev_policy_list - the assignment").
   ///

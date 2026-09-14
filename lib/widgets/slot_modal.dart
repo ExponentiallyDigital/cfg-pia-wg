@@ -23,6 +23,8 @@
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
+import 'app_button.dart';
+
 import '../app_colors.dart';
 import '../firmware.dart';
 import '../pia_service.dart';
@@ -124,10 +126,11 @@ class _SlotModalState extends State<SlotModal> {
         // A question that already names the slot and its region needs no explanatory body.
         content: message == null ? null : Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-          TextButton(
+          AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
+          AppButton(
+            label: confirmLabel,
+            role: destructive ? ButtonRole.destructive : ButtonRole.action,
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(confirmLabel, style: TextStyle(color: destructive ? kError : kHighlight, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -141,7 +144,7 @@ class _SlotModalState extends State<SlotModal> {
           backgroundColor: kSurface,
           title: Text(title, style: const TextStyle(color: kHighlight, fontSize: 15)),
           content: Text(message, style: const TextStyle(color: kText, fontSize: 13)),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+          actions: [AppButton(label: 'OK', onPressed: () => Navigator.pop(ctx))],
         ),
       );
 
@@ -166,12 +169,17 @@ class _SlotModalState extends State<SlotModal> {
   Future<void> _create() async {
     final slot = _selected;
     final info = _slots.slots[slot]!;
+    // The service stops a running tunnel before it writes (createConfigToSlot); say so up front.
+    final running = info.enabled || _slots.activeSlots.contains(slot);
     if (!info.isEmpty) {
       final ok = await _confirm('Overwrite wgc$slot?',
           message: 'Slot wgc$slot currently holds "${info.desc}". Creating a new configuration will overwrite it.'
+              '${running ? '\n\nIts tunnel is running, so it will be stopped first. The new configuration stays disabled '
+                  'until you ENABLE it.' : ''}'
               // The profile survives an overwrite, so its index 6 does too, and so does every pin
               // naming it. Those devices follow the new region without being asked.
-              '${isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region.' : ''}');
+              '${isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region'
+                  '${running ? ' once the slot is enabled. Until then it uses the default connection.' : '.'}' : ''}');
       if (!ok) return;
     }
     final region = await _pickRegion();
@@ -180,16 +188,22 @@ class _SlotModalState extends State<SlotModal> {
     final creds = await _piaCredsDialog();
     if (creds == null) return;
 
+    var stopped = false;
     final created = await _runSlot((svc) async {
       _c.logEntry('Generating configuration for $regionId...');
       final config = await widget.piaService.generateConfig(
           region: regionId, selected: region, username: creds.$1, password: creds.$2, dns: creds.$3, onProgress: _c.onLog);
-      await svc.createConfigToSlot(slot: slot, config: config, regionId: regionId);
+      stopped = await svc.createConfigToSlot(slot: slot, config: config, regionId: regionId);
     });
     // Only on success. This used to fire whatever happened, so a failed generate was followed by
     // "wgc5 has been created" over the top of the error saying it had not been.
     if (created && mounted) {
-      await _info('Slot created', 'wgc$slot has been created. Remember to ENABLE it via the ENABLE button.');
+      await _info(
+          'Slot created',
+          stopped
+              ? 'wgc$slot has been created. Its old tunnel was stopped, so the slot is disabled. Remember to ENABLE it via '
+                  'the ENABLE button.'
+              : 'wgc$slot has been created. Remember to ENABLE it via the ENABLE button.');
     }
   }
 
@@ -248,10 +262,22 @@ class _SlotModalState extends State<SlotModal> {
     }
   }
 
-  Future<void> _disableManage() {
+  // Asks first, as DELETE does and as the watchdog screen's DISABLE does. It used to take a tunnel down,
+  // and any watchdog running on it, on a single tap - the one action in either set that did not ask.
+  Future<void> _disableManage() async {
     final slot = _selected;
-    final wdActive = _selectedInfo?.watchdogActive ?? false;
-    return _runSlot((svc) async {
+    final info = _selectedInfo;
+    final wdActive = info?.watchdogActive ?? false;
+    final ok = await _confirm(
+      'Disable VPN ${slotLabel(slot, info?.desc ?? '')}?',
+      message: wdActive
+          ? 'Takes the tunnel down and stops its watchdog. The VPN settings stay on the router, so ENABLE '
+              'brings the tunnel back.'
+          : 'Takes the tunnel down. The settings stay on the router, so ENABLE brings it back.',
+      confirmLabel: 'DISABLE',
+    );
+    if (!ok) return;
+    await _runSlot((svc) async {
       if (wdActive) await _wdSvc(svc.client).stopWatchdog(slot); // disabling also stops its watchdog
       await svc.disableSlot(slot);
     });
@@ -407,6 +433,7 @@ class _SlotModalState extends State<SlotModal> {
       settings: RouteSettings(name: AppDestination.watchdog.routeName),
       builder: (ctx) => _WatchdogLogScreen(
         slot: slot,
+        desc: _slots.slots[slot]?.desc ?? '',
         text: logText,
         // Not a secret: copying a log must not arm the 60s auto-clear, which would count down on
         // the config screen and then wipe the log the user has just copied.
@@ -481,7 +508,7 @@ class _SlotModalState extends State<SlotModal> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(widget.mode == SlotModalMode.manage ? 'WIREGUARD CONFIGURATION' : 'WATCHDOG CONFIGURATION',
+              Text(widget.mode == SlotModalMode.manage ? 'MANAGE CONFIGURATION' : 'WATCHDOG CONFIGURATION',
                   style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
               const SizedBox(height: 16),
               _slotList(),
@@ -595,7 +622,13 @@ class _SlotModalState extends State<SlotModal> {
           padding: const EdgeInsets.only(bottom: 8),
           child: SizedBox(
             width: double.infinity,
-            child: ElevatedButton(key: Key(key), onPressed: _processing ? null : onTap, child: Text(label)),
+            // DELETE is the one destructive action in either set; everything else here does something.
+            child: AppButton(
+              keyValue: key,
+              label: label,
+              role: key == 'slot_delete' ? ButtonRole.destructive : ButtonRole.action,
+              onPressed: _processing ? null : onTap,
+            ),
           ),
         );
 
@@ -693,7 +726,8 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
           ),
         ),
         const SizedBox(height: 10),
-        DnsField(controller: _dnsCtrl),
+        // These servers become the slot's, and stock sends an assigned device to the first one only.
+        DnsField(controller: _dnsCtrl, firstServerNote: isStockFirmware),
         if (_error != null) ...[
           const SizedBox(height: 14),
           Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
@@ -791,10 +825,9 @@ class _FormDialog extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, null),
-                        child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-                    TextButton(onPressed: onConfirm, child: Text(confirmLabel)),
+                    AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(context, null)),
+                    const SizedBox(width: 8),
+                    AppButton(label: confirmLabel, onPressed: onConfirm),
                   ],
                 ),
               ],
@@ -815,12 +848,16 @@ class _FormDialog extends StatelessWidget {
 class _WatchdogLogScreen extends StatefulWidget {
   const _WatchdogLogScreen({
     required this.slot,
+    required this.desc,
     required this.text,
     required this.onCopy,
     required this.onClear,
   });
 
   final int slot;
+
+  /// The slot's region, so the heading reads wgc1:aus_melbourne rather than a bare wgc1.
+  final String desc;
   final String text;
   final Future<void> Function() onCopy;
   final Future<void> Function() onClear;
@@ -833,6 +870,7 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
   final _scroll = ScrollController();
 
   int get slot => widget.slot;
+  String get label => slotLabel(widget.slot, widget.desc);
   String get text => widget.text;
   Future<void> Function() get onCopy => widget.onCopy;
   Future<void> Function() get onClear => widget.onClear;
@@ -858,18 +896,19 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: kSurface,
-            title: Text('Clear the watchdog log for wgc$slot?', style: const TextStyle(color: kText, fontSize: 15)),
+            title: Text('Clear the watchdog log for $label?', style: const TextStyle(color: kText, fontSize: 15)),
             content: Text(
-              'Empties /tmp/watchdog_wgc$slot.log on the router. The watchdog keeps writing to it '
-              'from its next run. Nothing else changes.',
+              "Empties /tmp/watchdog_wgc$slot.log on the router and deletes yesterday's rotated copy. The "
+              'watchdog keeps writing to it from its next run. Nothing else changes.',
               style: const TextStyle(color: kMuted, fontSize: 13),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-              TextButton(
-                key: const Key('watchdog_log_clear_confirm'),
+              AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
+              AppButton(
+                keyValue: 'watchdog_log_clear_confirm',
+                label: 'CLEAR',
+                role: ButtonRole.destructive,
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('CLEAR', style: TextStyle(color: kError, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -885,27 +924,33 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
     return Material(
       color: kBg,
       child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text('WATCHDOG LOG · wgc$slot', style: const TextStyle(color: kHighlight, fontSize: 13)),
-          ),
-        ),
+        // Laid out exactly as the app log and the router log are: padded like them, with the text
+        // STRETCHED across the width. It was neither. A SelectableText in a plain Column is centred, so on a
+        // tablet the lines sat in a narrow strip with a wide empty seam either side.
         Expanded(
-          // No side margins: the log is a wide monospace block and every column it loses to
-          // padding is a wrapped line. Full screen height AND full screen width.
-          child: SingleChildScrollView(
-            controller: _scroll,
-            // Room below the last line for Android's selection toolbar to land on. It is placed
-            // relative to the selection rather than the layout, so this helps rather than fixes -
-            // the in-app COPY below is what makes the system toolbar unnecessary.
-            padding: const EdgeInsets.only(bottom: 72),
-            child: SelectableText(
-              text,
-              key: const Key('watchdog_log_text'),
-              style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace'),
-            ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('WATCHDOG LOG · $label', style: const TextStyle(color: kHighlight, fontSize: 13)),
+              const SizedBox(height: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  // Room below the last line for Android's selection toolbar to land on. It is placed
+                  // relative to the selection rather than the layout, so this helps rather than fixes -
+                  // the in-app COPY below is what makes the system toolbar unnecessary.
+                  padding: const EdgeInsets.only(bottom: 72),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: SelectableText(
+                      text,
+                      key: const Key('watchdog_log_text'),
+                      style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace'),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
           ),
         ),
         Padding(

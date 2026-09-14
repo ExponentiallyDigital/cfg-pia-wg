@@ -13,21 +13,25 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// This is the slot modal's CREATE/EDIT action for the watchdog screen. SAVE writes the watchdog
-// parameters (and, when the watchdog is not yet active, selects/overwrites the region as wgcN_desc)
-// to NVRAM and then deploys the script + cron via RouterWatchdog.deployWatchdog — this is the only
+// This is the slot modal's CREATE/EDIT action for the watchdog screen. SAVE & DEPLOY writes the
+// watchdog parameters - and, when the watchdog is not yet active or the region has changed, the region
+// chosen on the form as wgcN_desc - to NVRAM and then deploys the script + cron via
+// RouterWatchdog.deployWatchdog — this is the only
 // path that brings a watchdog up, so there is no separate ENABLE action.
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
+import 'widgets/app_button.dart';
+
 import 'app_colors.dart';
 import 'firmware.dart';
 import 'pia_service.dart';
-import 'router_slot_service.dart' show slotLabel;
+import 'router_slot_service.dart' show kSlotDescPrefix, slotLabel;
 import 'router_watchdog.dart';
 import 'session_controller.dart';
 import 'widgets/app_scaffold.dart';
+import 'widgets/common_fields.dart';
 import 'widgets/error_presenter.dart';
 import 'widgets/region_picker_sheet.dart';
 
@@ -59,6 +63,9 @@ class WatchdogDialog extends StatefulWidget {
 }
 
 class _WatchdogDialogState extends State<WatchdogDialog> {
+  /// The PIA region, chosen on the form. Pre-filled with the slot's own, so saving an active watchdog
+  /// without touching it keeps the tunnel it has.
+  late final _regionCtrl = TextEditingController(text: _regionIdOf(widget.regionDesc));
   final _intervalCtrl = TextEditingController(text: '5');
   final _primaryCtrl = TextEditingController(text: '8.8.8.8');
   final _secondaryCtrl = TextEditingController(text: '1.1.1.1');
@@ -73,6 +80,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
 
   bool _emailEnabled = false;
   bool _loading = false;
+  bool _loadingRegions = false;
 
   /// The SAVE button, so a save can scroll its own spinner into view. The dialog scrolls, and with
   /// the keyboard up the button sits below the fold - which is what made a save look inert.
@@ -111,6 +119,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     // Runs on every exit path (SAVE, CLOSE, barrier dismiss), so whatever was typed is retained.
     _rememberPiaCreds();
     for (final c in [
+      _regionCtrl,
       _intervalCtrl,
       _primaryCtrl,
       _secondaryCtrl,
@@ -207,19 +216,44 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         smtpPassword: _smtpPassCtrl.text,
       );
 
-  Future<String?> _pickRegion() async {
-    String? chosen;
-    try {
-      final regions = await (widget.piaService ?? PiaService()).fetchRegions(onProgress: _c.onLog);
-      if (!mounted) return null;
-      await RegionPickerSheet.show(context, regions: regions, onSelected: (id) => chosen = id);
-    } catch (e) {
-      if (mounted) await AppErrors.system(context, _c, 'Failed to load regions: ${e.toString().replaceAll('Exception: ', '')}');
-    }
-    return chosen;
+  /// The PIA region id a slot description names: the description without the app's prefix.
+  static String _regionIdOf(String desc) {
+    final d = desc.trim();
+    return d.startsWith(kSlotDescPrefix) ? d.substring(kSlotDescPrefix.length) : d;
   }
 
-  Future<bool> _confirmOverwrite() async {
+  // The same picker STANDALONE uses, on the form itself. It used to arrive after SAVE, as a surprise at
+  // the end of a long form. The field can be typed into as well.
+  Future<void> _browseRegions() async {
+    setState(() => _loadingRegions = true);
+    try {
+      final regions = await (widget.piaService ?? PiaService()).fetchRegions(onProgress: _c.onLog);
+      if (!mounted) return;
+      setState(() => _loadingRegions = false);
+      await RegionPickerSheet.show(context, regions: regions, onSelected: (id) => setState(() => _regionCtrl.text = id));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingRegions = false);
+      await AppErrors.system(context, _c, 'Failed to load regions: ${e.toString().replaceAll('Exception: ', '')}');
+    }
+  }
+
+  /// Null when [region] is a PIA WireGuard region, otherwise what to tell the user. Checked against the
+  /// live list because the field can be typed into, and a watchdog deployed against a region PIA does
+  /// not have would only fail later, on the router, at its first reconfigure.
+  Future<String?> _regionProblem(String region) async {
+    try {
+      final regions = await (widget.piaService ?? PiaService()).fetchRegions(onProgress: _c.onLog);
+      return regions.any((r) => r.id == region) ? null : '"$region" is not a PIA WireGuard region. Choose one from the list.';
+    } catch (e) {
+      return 'Could not check the region with PIA: ${e.toString().replaceAll('Exception: ', '')}';
+    }
+  }
+
+  Future<bool> _confirmOverwrite(String region) async {
+    // A changed region is a rebuild (RouterWatchdog._clearForRebuild), and the tunnel is down while it
+    // happens. Saying so is the difference between an informed tap and a surprise outage.
+    final rebuild = region != _regionIdOf(widget.regionDesc);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -227,11 +261,16 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         // Names what is being overwritten, the same shape the delete prompts use.
         title: Text('Overwrite ${slotLabel(widget.slotIndex, widget.regionDesc)}?',
             style: const TextStyle(color: kText, fontSize: 15)),
-        content: const Text('This will reset both this watchdog and any underlying VPN region.',
-            style: TextStyle(color: kMuted, fontSize: 13)),
+        content: Text(
+            rebuild
+                ? 'This rebuilds the tunnel on $region. If it is running, it goes down while that happens, and '
+                    'devices assigned to it use the default connection until it is back. This watchdog\'s settings '
+                    'are replaced too.'
+                : 'This will reset both this watchdog and any underlying VPN region.',
+            style: const TextStyle(color: kMuted, fontSize: 13)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL', style: TextStyle(color: kMuted))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('CONTINUE')),
+          AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
+          AppButton(label: 'CONTINUE', onPressed: () => Navigator.pop(ctx, true)),
         ],
       ),
     );
@@ -259,16 +298,25 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       return;
     }
 
-    // When the watchdog is not yet active, a region must be (re)selected; a configured slot is
-    // overwritten only after a warning.
+    // The region comes from the form. It is written - and a configured slot overwritten, only after the
+    // warning - when the watchdog is not yet active or the region has been changed. An active watchdog
+    // saved with its region untouched keeps the tunnel it has.
+    final region = _regionCtrl.text.trim();
+    if (region.isEmpty) {
+      await AppErrors.inputs(context, _c, ['Choose a region first.']);
+      return;
+    }
     String? newDesc;
     final enabled = _status?.isEnabled == true;
-    if (!enabled) {
-      if (!widget.slotIsEmpty) {
-        if (!await _confirmOverwrite()) return;
+    if (!enabled || region != _regionIdOf(widget.regionDesc)) {
+      final problem = await _regionProblem(region);
+      if (!mounted) return;
+      if (problem != null) {
+        await AppErrors.inputs(context, _c, [problem]);
+        return;
       }
-      newDesc = await _pickRegion();
-      if (newDesc == null) return;
+      if (!widget.slotIsEmpty && !await _confirmOverwrite(region)) return;
+      newDesc = region;
     }
 
     final saved = await _withService((svc) async {
@@ -386,6 +434,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                     key: Key('wd_boot_dir_missing'), style: TextStyle(color: kError, fontSize: 12)),
               ],
               const SizedBox(height: 16),
+              // The region, chosen here with everything else - the same row STANDALONE has.
+              RegionRow(controller: _regionCtrl, loading: _loadingRegions, onBrowse: _browseRegions),
+              const SizedBox(height: 12),
               _field(_intervalCtrl, 'Check interval (minutes)', const Key('wd_interval'), keyboard: TextInputType.number),
               _field(_primaryCtrl, 'Primary ping IP', const Key('wd_primary')),
               _field(_secondaryCtrl, 'Secondary ping IP', const Key('wd_secondary')),
@@ -434,30 +485,31 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                OutlinedButton.icon(
-                  key: const Key('wd_test_email'),
+                AppButton(
+                  keyValue: 'wd_test_email',
+                  label: 'TEST EMAIL',
+                  icon: Icons.mail_outline,
                   onPressed: _loading ? null : _testEmail,
-                  icon: const Icon(Icons.mail_outline, size: 16),
-                  label: const Text('TEST EMAIL'),
                 ),
               ],
               const SizedBox(height: 16),
-              ElevatedButton(
-                key: const Key('wd_save'),
+              AppButton(
+                keyValue: 'wd_save',
+                fullWidth: true,
                 onPressed: (_loading || _blocked) ? null : _save,
-                // SAVE is not the end of the flow - a region picker follows it. Saying so on the
-                // button stops the picker arriving as a surprise. The label STAYS during a save:
-                // the spinner is the overlay, not the button. A spinner in the button put the one
-                // thing the user needed to see inside the scroll view, where it could be below
-                // the fold - which it was, in 409, 412, 425 and again in 435.
-                child: const Text('SAVE & SELECT REGION'),
+                // The region is chosen on the form now, so SAVE is the deploy and says so. The label
+                // STAYS during a save: the spinner is the overlay, not the button. A spinner in the
+                // button put the one thing the user needed to see inside the scroll view, where it
+                // could be below the fold - which it was, in 409, 412, 425 and again in 435.
+                label: 'SAVE & DEPLOY',
               ),
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerRight,
-                child: TextButton(
+                child: AppButton(
+                  label: 'CLOSE',
+                  role: ButtonRole.dismiss,
                   onPressed: _loading ? null : () => Navigator.of(context).pop(),
-                  child: const Text('CLOSE', style: TextStyle(color: kMuted)),
                 ),
               ),
             ],

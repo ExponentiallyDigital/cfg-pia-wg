@@ -25,7 +25,6 @@ import '../widgets/app_scaffold.dart';
 
 /// Deep link to the README section that walks through each screen.
 const kHelpUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#5-using-the-app';
-const _scaffoldBodyPadding = 20.0;
 
 Future<void> _launchExternalUrl(String urlStr) async {
   final url = Uri.parse(urlStr);
@@ -41,8 +40,6 @@ class MainMenuScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = SessionScope.of(context);
     final spacer = 2 * (Theme.of(context).textTheme.bodyMedium?.fontSize ?? 14.0);
-    final targetBottomGap = MediaQuery.sizeOf(context).height * 0.05;
-    final bottomGap = targetBottomGap > _scaffoldBodyPadding ? targetBottomGap - _scaffoldBodyPadding : 0.0;
 
     return PopScope(
       canPop: false,
@@ -56,36 +53,16 @@ class MainMenuScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _MenuButton(
-              keyValue: 'menu_standalone',
-              label: AppDestination.standalone.title,
-              onTap: () => navigateToDestination(context, controller, AppDestination.standalone),
-            ),
-            const SizedBox(height: 12),
-            _MenuButton(
-              keyValue: 'menu_manage_router',
-              label: '${AppDestination.manageRouter.title}¹',
-              onTap: () => navigateToDestination(context, controller, AppDestination.manageRouter),
-            ),
-            const SizedBox(height: 12),
-            _MenuButton(
-              keyValue: 'menu_watchdog',
-              label: '${AppDestination.watchdog.title}¹',
-              onTap: () => navigateToDestination(context, controller, AppDestination.watchdog),
-            ),
-            const SizedBox(height: 12),
-            _MenuButton(
-              keyValue: 'menu_device_assignment',
-              label: '${AppDestination.deviceAssignment.title}¹²',
-              onTap: () => navigateToDestination(context, controller, AppDestination.deviceAssignment),
-            ),
-            const SizedBox(height: 12),
-            _MenuButton(
-              keyValue: 'menu_log',
-              label: AppDestination.log.title,
-              onTap: () => navigateToDestination(context, controller, AppDestination.log),
-            ),
-            const SizedBox(height: 12),
+            // Every destination the drawer offers, in the drawer's order, built from the drawer's own list so
+            // the two cannot drift. The keys are unchanged: each is `menu_` plus the route name.
+            for (final d in AppDrawer.destinations) ...[
+              _MenuButton(
+                keyValue: 'menu_${d.routeName}',
+                label: d.title,
+                onTap: () => navigateToDestination(context, controller, d),
+              ),
+              const SizedBox(height: 12),
+            ],
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(
@@ -95,22 +72,15 @@ class MainMenuScreen extends StatelessWidget {
                     side: const BorderSide(color: kError),
                     padding: const EdgeInsets.symmetric(vertical: 16)),
                 onPressed: () => confirmAndExit(context, controller),
-                child: const Text('Exit app'),
+                child: const Text('EXIT'),
               ),
             ),
             SizedBox(height: spacer),
-            const Text('¹ requires SSH connectivity to an ASUS router',
-                textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 12)),
-            const Text('² stock firmware only',
-                textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 12)),
-            const SizedBox(height: 12),
+            // The two links sit together, directly under the buttons, with nothing between them. Any spare
+            // height goes BELOW them, so a tall screen does not push them apart or down to the foot.
             const _HelpLink(),
-            // Spacer for a tall screen, the SizedBox for a short one: on a phone that has to scroll
-            // the Spacer collapses to nothing and the ask ends up crammed under the help line.
-            const Spacer(),
-            SizedBox(height: spacer),
             const _ReviewLink(),
-            SizedBox(height: bottomGap),
+            const Spacer(),
           ],
         ),
       ),
@@ -143,7 +113,7 @@ class _MenuButton extends StatelessWidget {
   }
 }
 
-/// Tappable "(?) how to use this app" line under the SSH footnote, opening the README section of
+/// Tappable "(?) how to use this app" line directly under the menu buttons, opening the README section of
 /// the same name. The recogniser is owned by a State so it can be disposed; the same pattern as
 /// the About screen's links.
 class _HelpLink extends StatefulWidget {
@@ -191,7 +161,7 @@ class _HelpLinkState extends State<_HelpLink> {
   }
 }
 
-/// Tappable "(*) add a Play Store app review" line at the foot of the menu.
+/// Tappable "(*) add a Play Store app review" line directly under the help line.
 ///
 /// The whole line is the target, not just the glyphs: this is a 12px row, and a `TextSpan`
 /// recogniser only fires on the text itself, which is a small thing to hit accurately. A plain

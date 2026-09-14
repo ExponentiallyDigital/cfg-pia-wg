@@ -1,7 +1,9 @@
 // test/screens/slot_params_editor_test.dart - WireGuard slot parameter editor (spec 3.3).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/screens/slot_params_editor.dart';
+import 'package:cfg_pia_wg/widgets/common_fields.dart';
 
 import '../watchdog_test_utils.dart';
 
@@ -60,6 +62,25 @@ void main() {
     expect(tester.getRect(find.text('EDIT wgc1:aus_melbourne')).bottom, lessThanOrEqualTo(keyboardTop));
   });
 
+  // Measured 2026-09-13: stock sends a device assigned to a VPN to the slot's FIRST DNS server only.
+  testWidgets('on stock the DNS field says assigned devices use only the first server', (tester) async {
+    useStock();
+    addTearDown(resetRouterFirmware);
+    await tester.pumpWidget(_editor());
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text(kDnsFirstServerNote), findsOneWidget);
+  });
+
+  testWidgets('Merlin, where the app assigns no devices, does not', (tester) async {
+    useMerlin();
+    addTearDown(resetRouterFirmware);
+    await tester.pumpWidget(_editor());
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text(kDnsFirstServerNote), findsNothing);
+  });
+
   testWidgets('SAVE is disabled until every editable text field is filled', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -79,7 +100,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    ElevatedButton save() => tester.widget<ElevatedButton>(find.byKey(const Key('slot_params_save')));
+    OutlinedButton save() => tester.widget<OutlinedButton>(find.byKey(const Key('slot_params_save')));
     expect(save().onPressed, isNull);
 
     await tester.enterText(find.byKey(const Key('slot_addr')), '10.0.0.2/32');

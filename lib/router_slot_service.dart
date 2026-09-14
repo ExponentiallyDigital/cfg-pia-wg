@@ -419,6 +419,22 @@ class RouterSlotService {
     return (raw == null || raw < 1) ? kDefaultStockMaxActiveSlots : raw;
   }
 
+  /// Stock's cap on simultaneous VPNs as the router holds it, or the ASUS default when the key is unset.
+  Future<int> readMaxActiveVpns() => _readMaxActiveSlots();
+
+  /// Sets stock's cap on simultaneous VPNs to [count], from 2 to 5.
+  ///
+  /// A USER DECISION, taken on the settings screen behind a plain warning, and deliberately not written
+  /// up anywhere outside the code. ASUS supports nothing above its default of 2, the key caps every VPN
+  /// on the router rather than only this app's slots, and values above 2 are documented to break boot
+  /// on some routers. The app honours the choice; it does not recommend it.
+  Future<void> setMaxActiveVpns(int count) async {
+    if (count < 2 || count > 5) throw ArgumentError.value(count, 'count', 'must be from 2 to 5');
+    await _run('nvram set vpnc_max_conn=$count');
+    await _run('nvram commit');
+    await _logRouter('Maximum active VPNs set to $count');
+  }
+
   // Read/modify/write of vpnc_clientlist. The caller commits.
   /// Sends every device pinned to [vpncIndex] back to the default connection, and removes the
   /// routing rules that pointed at it.
@@ -640,7 +656,8 @@ class RouterSlotService {
 
   // ── Create (write to NVRAM, leave DISABLED, do not touch the active tunnel) ─────────
   // Mirrors router_push.dart Step 4 but sets enable=0 and skips the stop/start/verify.
-  Future<void> createConfigToSlot({required int slot, required String config, required String regionId}) async {
+  /// Returns true when the slot's tunnel was running and had to be stopped first.
+  Future<bool> createConfigToSlot({required int slot, required String config, required String regionId}) async {
     // Stored descriptions carry the app's prefix so they stand out among any other VPNs on the
     // router; the router script strips it again before using the value as a PIA region id.
     final desc = slotDescFor(regionId);
@@ -675,6 +692,18 @@ class RouterSlotService {
     // Names the slot as it is NOW - the restore path puts this configuration back.
     final oldLabel = await _label(slot);
 
+    // A running tunnel is stopped BEFORE anything is written. Writing a new region's settings does
+    // not reach an interface that is already up, so the old server carried on under the new label.
+    // Measured on hardware 2026-09-14: wgc4 overwritten from us_alabama to aus_perth kept the
+    // Alabama peer key and tunnel address, while the app, the WebUI and the assignment screen all
+    // said aus_perth. Stopping first also means the backup below records a disabled slot, which is
+    // what is on the router if a failed write has to put it back.
+    final wasRunning = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
+    if (wasRunning) {
+      onLog?.call('$oldLabel is running; stopping it before its configuration is replaced.');
+      await disableSlot(slot);
+    }
+
     Map<String, String>? backup;
     String? vpncBackup;
     try {
@@ -705,6 +734,7 @@ class RouterSlotService {
       onLog?.call('NVRAM committed.', isSuccess: true);
       onLog?.call('Config written to ${await _label(slot)} (disabled).', isSuccess: true);
       await _logRouter('Created ${await _label(slot)} configuration');
+      return wasRunning;
     } catch (e) {
       // Both branches go through _run, not client.run: a restore that itself fails must reach the
       // CRITICAL line rather than reporting success on a discarded exit code (build 413).

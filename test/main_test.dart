@@ -87,7 +87,7 @@ void main() {
       await disposeApp(tester, c);
     });
 
-    testWidgets('Exit app confirms, wipes credentials and asks the platform to exit', (tester) async {
+    testWidgets('EXIT confirms, wipes credentials and asks the platform to exit', (tester) async {
       final calls = <String>[];
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
         calls.add(call.method);
@@ -99,12 +99,14 @@ void main() {
       await pumpApp(tester, c);
       c.piaUsername = 'p1234567';
 
+      await tester.ensureVisible(find.byKey(const Key('menu_close_app')));
       await tester.tap(find.byKey(const Key('menu_close_app')));
       await tester.pumpAndSettle();
 
       // Confirmation dialog (all exit paths) — Exit proceeds.
       expect(find.text('Exit cfg-pia-wg?'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'EXIT'));
+      // The menu's own button is labelled EXIT too now, so the dialog's is found inside the dialog.
+      await tester.tap(find.descendant(of: find.byType(Dialog), matching: find.widgetWithText(OutlinedButton, 'EXIT')));
       await tester.pumpAndSettle();
 
       expect(c.piaUsername, isEmpty);

@@ -420,7 +420,7 @@ const List<String> kEmailWhatToDo = [
   '2. Open VIEW WATCHDOG LOG in the app for the full history.',
   '3. PIA rate-limits repeated token requests; if the code above is 403, wait 30 minutes before intervening.',
   '4. Review your router log.',
-  '5. Is your PIA billing account active?',
+  '5. Is your PIA user account active?',
 ];
 
 /// The footer on every ALERT email. Not on the test email: that one is sent from the very screen
@@ -665,15 +665,34 @@ const String _kMailHdrMerlin = r'''  {
 // the only case the old sentence described. A warning that cries wolf twice for every time it is
 // right is one people learn to ignore, so the script reads `vpnc_default_wan` and says which of
 // the three actually happened.
+//
+// Refined 2026-09-13, so that no branch claims what it has not checked. A tunnel nothing is assigned to,
+// and which is not the default, does not talk about "its devices". "Still on a VPN" is said only when
+// the default is a WireGuard tunnel whose interface is up; one that is down, or that is not WireGuard
+// and so cannot be checked here, is reported as not confirmed. Its awk counts the enabled policy
+// records naming this tunnel's state index (device_assignment.dart, `enabled>IP>?>vpnc_idx>`). The
+// branch shares one sentence across the tenses, as Merlin's OFF case does, to keep the script inside
+// its size guard.
 const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
 [ -n "$DEFIDX" ] || DEFIDX=0
 # Index 2 of a vpnc_clientlist record is the slot, index 6 the state index the default is named by.
 MYIDX="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" '$3==s {print $7; exit}')"
 DEFNAME="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v d="$DEFIDX" '$7==d {print $1; exit}')"
+# Slot of a WireGuard default, and how many devices are pinned to this tunnel.
+DEFSLOT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v d="$DEFIDX" '$7==d && $2=="WireGuard" {print $3; exit}')"
+PINNED="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {n++} END {print n+0}')"
 if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then
   KILLSW_UP="none on this firmware, but this tunnel is the default connection - if it drops, its devices lose internet rather than leaking"
   KILLSW_FIXED="none on this firmware; this tunnel is the default connection, so its devices had no internet rather than an unprotected one"
   KILLSW_DOWN="none on this firmware; this tunnel is the default connection, so its devices have no internet rather than an unprotected one"
+elif [ "$PINNED" = "0" ]; then
+  KILLSW_UP="none on this firmware, but no devices are assigned to this tunnel and it is not the default connection"
+  KILLSW_FIXED="$KILLSW_UP"
+  KILLSW_DOWN="$KILLSW_UP"
+elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ] && { [ -z "$DEFSLOT" ] || ! ip -o link show up 2>/dev/null | grep -q " wgc$DEFSLOT:"; }; then
+  KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection, $DEFNAME, which is not confirmed up, so they may have no VPN"
+  KILLSW_FIXED="none on this firmware; while it was down, its devices fell through to the default connection, $DEFNAME, which was not confirmed up, so they may have had no VPN"
+  KILLSW_DOWN="none on this firmware; its devices are falling through to the default connection, $DEFNAME, which is not confirmed up, so they may have no VPN"
 elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ]; then
   KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection, $DEFNAME, so they stay on a VPN"
   KILLSW_FIXED="none on this firmware; while it was down, its devices fell through to the default connection, $DEFNAME, so they stayed on a VPN"
@@ -801,6 +820,13 @@ class RouterWatchdog {
   /// A read: returns stdout and never throws, whatever the exit code.
   Future<String> _read(String cmd) => _run(cmd, allowFailure: true);
 
+  /// Runs [read] over [path] only when the file exists. A file the watchdog has not created yet - no
+  /// ping has succeeded, no script is deployed - is an ordinary answer, and logging it as "router
+  /// command failed" alarmed people who had done nothing wrong. A file that IS there but cannot be
+  /// read still fails, and still says so.
+  Future<String> _readIfExists(String path, {String read = 'cat'}) =>
+      _read("if [ -f '$path' ]; then $read '$path'; fi");
+
   // Heredoc writes can stall if the SSH channel hangs; bound them at 30s and
   // surface a troubleshooting message on timeout.
   /// Writes the watchdog script and proves it landed.
@@ -832,6 +858,29 @@ class RouterWatchdog {
   Future<void> _writeScript(int slot, String body) async {
     await _run("mkdir -p '$kRouterAppDir'");
     await _writeFile(watchdogScriptPath(slot), body, what: 'Watchdog script');
+  }
+
+  /// Replaces every deployed watchdog script with this build's, and changes nothing else.
+  ///
+  /// The script reads its settings from NVRAM on every run, so bringing it up to date needs only the
+  /// file: no tunnel is restarted, no schedule changes and no setting is rewritten. A slot is only
+  /// touched if its script is already there - one with settings but no script is a watchdog someone
+  /// removed, not an old one. The firmware is read afresh rather than assumed, because ABOUT can be
+  /// opened without ever visiting a router screen, and the Merlin script on a stock router would break
+  /// the very watchdog it was meant to update. Returns the slots updated.
+  Future<List<int>> redeployScripts() async {
+    final firmware = classifyFirmwareTag(await _read('nvram get 3rd-party'));
+    if (firmware == null) {
+      throw Exception('this router firmware is not supported, so its watchdog scripts were left alone.');
+    }
+    final probes = [for (var s = 1; s <= 5; s++) "[ -s '${watchdogScriptPath(s)}' ] && echo $s"].join('; ');
+    final deployed = RegExp(r'\d+').allMatches(await _read('$probes; true')).map((m) => int.parse(m.group(0)!)).toList();
+    for (final slot in deployed) {
+      await _writeScript(slot, buildWatchdogScript(await loadConfig(slot), firmware: firmware));
+      await _logRouter('Watchdog script updated to ${appVersionLabel.isEmpty ? 'this app version' : appVersionLabel} '
+          'for ${await _label(slot)}');
+    }
+    return deployed;
   }
 
   Future<String> _runHeredoc(String cmd, String path) async {
@@ -949,8 +998,15 @@ class RouterWatchdog {
   // gets here - the same gate the MANAGE ENABLE path applies.
   Future<void> deployWatchdog(WatchdogConfig config, {String? desc}) => _guard('deploy', () async {
         await enableJffsScripts();
+        // Both read before the NVRAM write replaces the description. A slot that is already up and
+        // keeps its region needs no restart. A changed region is a rebuild: the running tunnel belongs
+        // to the old region, so it is cleared first and the deploy run below builds the new one.
+        final slot = config.slotIndex;
+        final regionChanged = desc != null && desc.isNotEmpty && slotDescFor(desc) != await _read('nvram get wgc${slot}_desc');
+        final up = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
+        if (regionChanged) await _clearForRebuild(slot, running: up, region: desc);
         await _writeWatchdogNvram(config, desc: desc);
-        await enableVpnSlot(config.slotIndex);
+        await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
         await _writeScript(config.slotIndex, buildWatchdogScript(config));
         await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
         await _run(buildCronRotateLine(config.slotIndex));
@@ -967,14 +1023,50 @@ class RouterWatchdog {
         onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
       });
 
-  // Enables the underlying WireGuard slot
-  Future<void> enableVpnSlot(int slot) => _guard('enable VPN slot', () async {
+  /// Leaves [slot] as the empty-slot watchdog shortcut finds it, so the deploy run builds it on [region].
+  ///
+  /// A region change is a rebuild, not an edit. New settings never reach an interface that is already
+  /// up, and the script's deploy run leaves a tunnel with a recent handshake alone - so the old server
+  /// kept running under the new region's name, the fault CREATE had (measured 2026-09-14). Restarting
+  /// does not help either: it reloads the old server's keys. So a running tunnel is stopped, waiting
+  /// for the interface to go (on stock `restart_vpnc` alone leaves it up), and the old server's keys
+  /// and endpoint are blanked so nothing can bring it back before the deploy run rebuilds the slot.
+  Future<void> _clearForRebuild(int slot, {required bool running, required String region}) async {
+    final label = await _label(slot);
+    if (running) {
+      onLog?.call('$label is running; stopping it so the watchdog can rebuild it on $region.');
+      await RouterSlotService(client, onLog: onLog, verifyPollInterval: verifyPollInterval, verifyMaxAttempts: verifyMaxAttempts)
+          .disableSlot(slot);
+    }
+    for (final key in const ['priv', 'ppub', 'ep_addr']) {
+      await _run("nvram set wgc${slot}_$key=''");
+    }
+    await _logRouter('Cleared $label so its watchdog rebuilds it on $region');
+  }
+
+  // Enables the underlying WireGuard slot.
+  //
+  // [alreadyUp] is a deploy onto a tunnel that is running on the region it keeps. The flags are still
+  // written, so the router and this app both read the slot as enabled, but no service call is made.
+  // On stock that call is `restart_vpnc`, which rebuilds VPN routing for every tunnel: measured
+  // 2026-09-13, adding a watchdog to an already-running wgc4 ran it.
+  //
+  // [rebuilding] is a slot `_clearForRebuild` has just emptied. It takes the full enable - the same
+  // sequence the empty-slot shortcut has always used, VPN Fusion's setup on stock included - but
+  // does not wait for an interface: there are no keys to bring one up until the deploy run writes them.
+  Future<void> enableVpnSlot(int slot, {bool alreadyUp = false, bool rebuilding = false}) =>
+      _guard('enable VPN slot', () async {
         final slots = RouterSlotService(client, onLog: onLog);
         await _run('nvram set wgc${slot}_enable=1');
         // Stock shows a profile as connected from its clientlist flag, not wgcN_enable - and the
         // row has to exist before the service call, since vpnc_unit is that row's index.
         await slots.writeVpncProfile(slot, desc: await _descFor(slot), active: true);
         await _run('nvram commit');
+        if (alreadyUp) {
+          await _logRouter('${await _label(slot)} is already up; its tunnel was left running');
+          onLog?.call('${await _label(slot)} is already up, so its tunnel was left running.', isSuccess: true);
+          return;
+        }
         // Stock drives WireGuard through VPN Fusion; start_wgc is Merlin's. Same calls MANAGE
         // makes, so a watchdog-managed tunnel comes up the same way as a hand-enabled one.
         if (isStockFirmware) {
@@ -984,6 +1076,11 @@ class RouterWatchdog {
           await _serviceQueue.clearIfStale();
           await _run('service "start_wgc $slot"; service restart_vpnrouting0');
           await _serviceQueue.awaitIdle();
+        }
+        if (rebuilding) {
+          await _logRouter('Enabled ${await _label(slot)}; its watchdog builds the tunnel next');
+          onLog?.call('${await _label(slot)} enabled; the watchdog builds its tunnel next.', isSuccess: true);
+          return;
         }
         // `notify_rc` queues the service call and returns at once, so the interface is NOT up
         // when this returns. deployWatchdog used to exec the script about a second later, which
@@ -1293,12 +1390,12 @@ class RouterWatchdog {
     final interfaceEnabled = (await _read('nvram get wgc${slot}_enable')) == '1';
     final interfacePresent = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
     final enabled = cronEnabled && interfaceEnabled && interfacePresent;
-    final ping = await _read('cat /tmp/watchdog_last_ping_success_wgc$slot 2>/dev/null');
+    final ping = await _readIfExists('/tmp/watchdog_last_ping_success_wgc$slot');
 
     // Which script is actually on the router. The app updates from the store; the script only
     // changes when a watchdog is deployed, so someone can run a build whose fixes have never
     // reached their router and have no way to tell. Both versions go to both logs.
-    final scriptVersion = parseScriptVersion(await _read("sed -n '2p' '${watchdogScriptPath(slot)}' 2>/dev/null"));
+    final scriptVersion = parseScriptVersion(await _readIfExists(watchdogScriptPath(slot), read: "sed -n '2p'"));
     final status = WatchdogStatus(
       isEnabled: enabled,
       lastSuccessfulPing: parseLastPing(ping),
@@ -1325,11 +1422,11 @@ class RouterWatchdog {
   /// Both rows on ABOUT come from the router and neither is worth a handshake of its own, so the
   /// screen asks once and fills in both - which is also why tapping either row's login link fills
   /// in the other.
-  Future<({String? version, String? history, String model, String firmware})> aboutRouterFacts() async {
+  Future<({String? version, String? history, String model, String firmware, String type})> aboutRouterFacts() async {
     final raw = await _read('$kDeployedScriptHeaderCommand; echo "$_aboutSep"; '
-        r'''printf '%s@@%s@@%s@@%s@@%s' "$(nvram get cfg_pia_wg_sdate)" "$(nvram get cfg_pia_wg_reconfig_ok)" '''
+        r'''printf '%s@@%s@@%s@@%s@@%s@@%s' "$(nvram get cfg_pia_wg_sdate)" "$(nvram get cfg_pia_wg_reconfig_ok)" '''
         r'''"$(nvram get cfg_pia_wg_reconfig_fail)" "$(nvram get productid)" '''
-        r'''"$(nvram get buildno)_$(nvram get extendno)"''');
+        r'''"$(nvram get buildno)_$(nvram get extendno)" "$(nvram get 3rd-party)"''');
     final parts = raw.split(_aboutSep);
     final counters = (parts.length > 1 ? parts[1] : '').trim().split('@@');
     String at(int i) => i < counters.length ? counters[i].trim() : '';
@@ -1343,6 +1440,9 @@ class RouterWatchdog {
       history: facts.shortHistoryLine,
       model: at(3),
       firmware: at(4),
+      // Only when the facts came back at all. An empty 3rd-party tag means stock, but an empty reply
+      // means nothing was read, and calling that stock would be a guess.
+      type: parts.length > 1 ? firmwareLabel(classifyFirmwareTag(at(5))) : '',
     );
   }
 
@@ -1361,21 +1461,40 @@ class RouterWatchdog {
     await _logRouter('reboot requested from the app');
     await _serviceQueue.clearIfStale();
     try {
-      await _read('reboot');
+      // Flush first. The firmware's own reboot path does an emergency sync on stock, but the app
+      // should not depend on each firmware's shutdown sequence to get the watchdog scripts and the
+      // boot hook in /jffs onto flash. No `nvram commit`: every app write already commits, and
+      // committing here would also persist whatever else is pending that the app did not write.
+      await _read('sync; reboot');
     } catch (_) {
       // The router went down mid-command, which is what was asked for.
     }
+    // The router's own log has the request, but that log is on the device that is about to go dark.
+    // The app log is the one the user can still read while it comes back.
+    onLog?.call('Router reboot requested. It takes a minute or two to come back.', isWarning: true);
   }
 
-  Future<String> getWatchdogLog(int slot) => _read('cat /tmp/watchdog_wgc$slot.log 2>/dev/null');
+  /// The slot's watchdog log as one text: yesterday's rotated copy first, then today's.
+  ///
+  /// The log rotates into `.log.old` at midnight, and reading only the live file showed nothing from
+  /// before then - which, for an alert emailed overnight, was usually the part worth reading. Either
+  /// file may be missing: there is no `.old` before the first rotation and no log before the first run.
+  /// Neither is a failure, so neither is logged as one.
+  Future<String> getWatchdogLog(int slot) {
+    final log = '/tmp/watchdog_wgc$slot.log';
+    return _read("if [ -f '$log.old' ]; then cat '$log.old'; fi; if [ -f '$log' ]; then cat '$log'; fi");
+  }
 
-  /// Empties the slot's watchdog log, leaving the file in place.
+  /// Empties the slot's watchdog log, leaving the file in place, and deletes yesterday's rotated copy.
   ///
   /// Truncated rather than deleted: the script appends to it on every run and never creates it,
   /// so removing the file outright would lose every line until the next reboot. `:` writes
   /// nothing and is a shell builtin, so this needs no binary the router might not have.
+  ///
+  /// The rotated copy goes too, because the viewer shows it: clearing only today's file would refill
+  /// the screen with yesterday's lines the moment it reopened.
   Future<void> clearWatchdogLog(int slot) async {
-    await _run(': > /tmp/watchdog_wgc$slot.log');
+    await _run(': > /tmp/watchdog_wgc$slot.log; rm -f /tmp/watchdog_wgc$slot.log.old');
     await _logRouter('Watchdog log cleared for wgc$slot');
   }
 
@@ -1557,9 +1676,9 @@ LOGTAG="cfg-pia-wg"
 LOGFILE="/tmp/watchdog_${IFACE}.log"
 STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"
 BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
-# Count + time of alerts the mailer could not deliver. An alert about lost connectivity is the one
-# most likely to be undeliverable - a downed default tunnel takes DNS with it - so the next email
-# that DOES get through says how many were missed. /tmp: losing it on a reboot is fine.
+# Count + time of alerts the mailer could not deliver. An alert about lost connectivity can be
+# undeliverable for the reason it fired, so the next email that DOES get through says how many
+# were missed. /tmp: losing it on a reboot is fine.
 UNSENTFILE="/tmp/watchdog_unsent_${IFACE}"
 CACERT="__CACERT__"
 JQ="__JQ__"
@@ -1609,16 +1728,9 @@ __BACKOFF__
 
 log "Watchdog started for $IFACE${APPVER:+ [script $APPVER]}"
 
-# A tunnel the user turned off in the WebUI looks exactly like a tunnel that dropped. Without
-# this the watchdog reconfigures it, brings it back up and emails an alert - undoing what the
-# user just did and telling them their VPN failed.
-#
-# This is not a corner case: changing a device assignment REQUIRES disabling the tunnel first,
-# so every assignment would trip it. Observed 2026-09-07 22:45.
-#
-# Only an explicit "0" stands down. An empty value means the firmware does not keep the key,
-# which is not the same as the user having said no, and must not silently stop the watchdog.
-# A deploy is explicit user intent and runs regardless.
+# A tunnel turned off in the WebUI looks like one that dropped; reviving it would undo the user,
+# and changing a device assignment requires exactly that. Only an explicit "0" stands down - empty
+# means the firmware keeps no key. A deploy is explicit user intent and runs regardless.
 ENABLED="$(nvram get ${K}enable)"
 if [ "$RUNMODE" != "deploy" ] && [ "$ENABLED" = "0" ]; then
   log "$IFACE is disabled in the router; standing down until it is enabled again"
@@ -1752,6 +1864,14 @@ __MAILCMD__
     printf '%s\n%s\n' "$((MISSED + 1))" "$(date '+%Y-%m-%d %H:%M:%S')" > "$UNSENTFILE"
     SMTP_ERR=$(cat "$TMPERR" 2>/dev/null | tail -20 | tr '\n' '|')
     log "Email FAILED (mailer exit=$MAIL_EXIT) stderr=[${SMTP_ERR:-none}]"
+    # How name resolution looked at that moment. The undelivered alert of 2026-09-06 failed on
+    # `lookup ... server misbehaving` and nothing recorded which servers were asked, which way they
+    # were reached, or whether the name resolved. Only the interface of the route, never the whole
+    # route: this log is quoted in failure emails, and the route names the WAN address.
+    NS="$(awk '/^nameserver/ {printf "%s ", $2}' /etc/resolv.conf 2>/dev/null)"
+    NSDEV="$(ip route get "${NS%% *}" 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')"
+    LOOKUP="$(nslookup "$SMTP_HOST" 2>&1 | tail -n +3 | grep -m 2 -E 'Address|resolve' | tr '\n' ' ')"
+    log "Email diag: resolv.conf [${NS:-none}] via ${NSDEV:-unknown}; $SMTP_HOST resolves to [${LOOKUP:-nothing}]"
 
     # No nc probe: BusyBox here is `nc IPADDR PORT` with no options, so `nc -w 5` failed on a
     # usage error and called every host unreachable. openssl answers the same question honestly.
@@ -1932,11 +2052,8 @@ TOKEN=""
 # cannot suppress it - curl that could not resolve the host printed two errors to the console.
 [ -f "$TMPTOK" ] && TOKEN="$("$JQ" -r '.token // empty' < "$TMPTOK" 2>/dev/null)"
 if [ -z "$TOKEN" ]; then
-  # curl exits 0 for an HTTP error unless --fail is used, and this call deliberately does not
-  # use it - so exit 0 WITH an HTTP code means the server answered and the answer was not a
-  # token. Exit 0 with NO code and NO stderr is a different animal: curl reported success and
-  # produced nothing whatsoever. That is what was seen once, during a WAN restart, and the old
-  # message could not tell the two apart. Naming it is what makes the next occurrence readable.
+  # No --fail, so exit 0 WITH an HTTP code is an answer that was not a token. Exit 0 with NO code
+  # and NO stderr is curl producing nothing at all, seen once during a WAN restart.
   BSZ=0
   BODY=""
   if [ -f "$TMPTOK" ]; then

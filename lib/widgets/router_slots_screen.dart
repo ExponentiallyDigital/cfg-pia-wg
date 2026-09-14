@@ -21,9 +21,10 @@ import 'dart:convert';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
+
+import 'app_button.dart';
 import 'package:flutter/services.dart';
 
-import '../app_colors.dart';
 import '../firmware.dart';
 import '../pia_service.dart';
 import '../router_slot_service.dart';
@@ -385,12 +386,11 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              key: const Key('connect_router'),
+            child: AppButton(
+              keyValue: 'connect_router',
+              label: 'CONNECT TO ROUTER',
+              busy: _connecting,
               onPressed: (_connecting || !_canConnect) ? null : _onConnect,
-              child: _connecting
-                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
-                  : const Text('CONNECT TO ROUTER'),
             ),
           ),
         ],

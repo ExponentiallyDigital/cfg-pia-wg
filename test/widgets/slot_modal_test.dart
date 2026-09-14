@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/entitlement.dart';
+import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
+import 'package:cfg_pia_wg/widgets/common_fields.dart';
 import 'package:cfg_pia_wg/widgets/slot_modal.dart';
 
 import '../watchdog_test_utils.dart';
@@ -112,7 +114,12 @@ Future<void> _open(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-ElevatedButton _btn(WidgetTester tester, String key) => tester.widget<ElevatedButton>(find.byKey(Key(key)));
+OutlinedButton _btn(WidgetTester tester, String key) => tester.widget<OutlinedButton>(find.byKey(Key(key)));
+
+// A button inside the open dialog. Every button is bordered now, so a dialog's DELETE, ENABLE or DISABLE
+// has the same widget type and label as the slot button behind it; scoping to the dialog tells them apart.
+Finder _inDialog(String label) =>
+    find.descendant(of: find.byType(Dialog), matching: find.widgetWithText(OutlinedButton, label));
 
 void main() {
   group('manage mode', () {
@@ -156,9 +163,37 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('slot_disable')));
       await tester.tap(find.byKey(const Key('slot_disable')));
       await tester.pumpAndSettle();
+      // It asks first, and nothing reaches the router until it is answered.
+      expect(find.textContaining('Disable VPN wgc1'), findsOneWidget);
+      expect(ssh.ran('nvram set wgc1_enable=0'), isFalse);
+      await tester.tap(_inDialog('DISABLE'));
+      await tester.pumpAndSettle();
 
       expect(ssh.ran('nvram set wgc1_enable=0'), isTrue);
       expect(ssh.ran('service "stop_wgc 1"'), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('DISABLE asks first, says a running watchdog stops too, and CANCEL sends nothing', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+          ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true, watchdog: true)}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('stops its watchdog'), findsOneWidget);
+      await tester.tap(_inDialog('CANCEL'));
+      await tester.pumpAndSettle();
+      expect(ssh.ran('nvram set wgc1_enable=0'), isFalse);
+      expect(ssh.ran('cru d watchdog_wgc1'), isFalse);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -177,7 +212,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Confirm dialog.
-      await tester.tap(find.widgetWithText(TextButton, 'DELETE'));
+      await tester.tap(_inDialog('DELETE'));
       await tester.pumpAndSettle();
 
       expect(ssh.ran('nvram unset wgc1_desc'), isTrue);
@@ -206,7 +241,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // PIA credentials dialog (pre-filled) -> continue.
-      await tester.tap(find.widgetWithText(TextButton, 'CONTINUE'));
+      await tester.tap(_inDialog('CONTINUE'));
       await tester.pumpAndSettle();
 
       expect(ssh.ran('nvram set wgc2_enable=0'), isTrue);
@@ -266,12 +301,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('aus_melbourne').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(TextButton, 'CONTINUE'));
+      await tester.tap(_inDialog('CONTINUE'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('not found'), findsWidgets, reason: 'the failure must be reported');
       // Dismiss the error dialog; nothing may follow it.
-      await tester.tap(find.widgetWithText(TextButton, 'OK').last);
+      await tester.tap(_inDialog('OK').last);
       await tester.pumpAndSettle();
       expect(find.text('Slot created'), findsNothing);
       expect(ssh.ran('nvram set wgc2_desc'), isFalse);
@@ -293,9 +328,110 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Overwrite wgc1?'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'CANCEL'));
+      await tester.tap(_inDialog('CANCEL'));
       await tester.pumpAndSettle();
       expect(find.text('aus_melbourne'), findsWidgets); // still on the modal, no region picker
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // Measured on hardware 2026-09-14: CREATE over a running slot left the old tunnel running under
+    // the new region's name, and then told the user to ENABLE a slot that was already up.
+    testWidgets('CREATE over a running slot warns, stops it before writing, and says it was stopped', (tester) async {
+      useMerlin();
+      final c = _controller()
+        ..piaUsername = 'p1234567'
+        ..piaPassword = 'secret';
+      var stopped = false;
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('stop_wgc')) stopped = true;
+        if (cmd.contains('ip -o link show up')) return stopped ? '' : 'wgc1';
+        return '';
+      });
+      await tester.pumpWidget(
+          _host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'us_alabama', enabled: true)}, active: {1}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('it will be stopped first'), findsOneWidget);
+      await tester.tap(_inDialog('CONFIRM'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('aus_melbourne').last);
+      await tester.pumpAndSettle();
+      await tester.tap(_inDialog('CONTINUE'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Slot created'), findsOneWidget);
+      expect(find.textContaining('Its old tunnel was stopped'), findsOneWidget);
+      final stop = ssh.commands.indexWhere((cmd) => cmd.contains('stop_wgc 1'));
+      final write = ssh.commands.indexWhere((cmd) => cmd.startsWith('nvram set wgc1_desc'));
+      expect(stop, isNot(-1));
+      expect(write, isNot(-1));
+      expect(stop, lessThan(write));
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('CREATE over a configured slot that is not running does not mention stopping it', (tester) async {
+      useMerlin();
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'us_alabama')}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Overwrite wgc1?'), findsOneWidget);
+      expect(find.textContaining('stopped first'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // The servers typed at CREATE become the slot's, and stock sends an assigned device to the first only.
+    Future<void> openCreds(WidgetTester tester, RecordingSSHClient ssh, SessionController c, {required bool merlin}) async {
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({}, merlin: merlin), c));
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_2')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('aus_melbourne').last);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('CREATE on stock notes that assigned devices use only the first DNS server', (tester) async {
+      useStock();
+      addTearDown(resetRouterFirmware);
+      final c = _controller();
+      await openCreds(tester, RecordingSSHClient(responder: (_) => ''), c, merlin: false);
+
+      expect(find.byKey(const Key('dns_first_server_note')), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('CREATE on Merlin does not', (tester) async {
+      useMerlin();
+      addTearDown(resetRouterFirmware);
+      final c = _controller();
+      await openCreds(tester, RecordingSSHClient(responder: (_) => ''), c, merlin: true);
+
+      expect(find.byType(DnsField), findsOneWidget, reason: 'the credentials dialog is open');
+      expect(find.byKey(const Key('dns_first_server_note')), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -347,7 +483,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('enable_primary_ip')), findsOneWidget); // prompt with defaults
-      await tester.tap(find.widgetWithText(TextButton, 'ENABLE'));
+      await tester.tap(_inDialog('ENABLE'));
       await tester.pumpAndSettle();
 
       expect(ssh.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
@@ -544,6 +680,34 @@ void main() {
 
       expect(find.byKey(const Key('watchdog_log_text')), findsOneWidget);
       expect(find.textContaining('LOG-DATA-XYZ'), findsOneWidget);
+      // The heading names the region as well as the slot.
+      expect(find.text('WATCHDOG LOG · wgc1:aus_melbourne'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // Reported from a tablet: the log sat in a narrow centred strip with a wide seam either side.
+    testWidgets('the watchdog log spans the width, padded like the app and router logs', (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'short line' : '');
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus_melbourne', watchdog: true)}), c),
+      );
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_view_log')));
+      await tester.tap(find.byKey(const Key('slot_view_log')));
+      await tester.pumpAndSettle();
+
+      final box = tester.getRect(find.byKey(const Key('watchdog_log_text')));
+      expect(box.left, 16, reason: 'the same side padding as the other two logs');
+      expect(box.right, 1600 - 16, reason: 'stretched to the width, not centred on a short line');
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -589,7 +753,9 @@ void main() {
       await tester.tap(find.byKey(const Key('watchdog_log_clear_confirm')));
       await tester.pumpAndSettle();
       expect(ssh.commands.any((x) => x.contains('> /tmp/watchdog_wgc1.log')), isTrue);
-      expect(ssh.commands.any((x) => x.contains('rm ') && x.contains('watchdog_wgc1.log')), isFalse);
+      expect(ssh.commands.any((x) => RegExp(r'rm [^;]*watchdog_wgc1\.log($|[\s;])').hasMatch(x)), isFalse,
+          reason: 'the live log is truncated, never removed');
+      expect(ssh.ran('rm -f /tmp/watchdog_wgc1.log.old'), isTrue, reason: 'the rotated copy the viewer shows goes too');
 
       await tester.pumpWidget(const SizedBox());
     });
@@ -830,7 +996,7 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_delete')));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(TextButton, 'DELETE'));
+      await tester.tap(_inDialog('DELETE'));
       await tester.pumpAndSettle();
 
       expect(ssh.ran('cru d watchdog_wgc1'), isTrue);
@@ -936,9 +1102,11 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('slot_disable')));
       await tester.tap(find.byKey(const Key('slot_disable')));
       await tester.pumpAndSettle();
+      await tester.tap(_inDialog('DISABLE'));
+      await tester.pumpAndSettle();
 
       // Still the same open modal - no reopen.
-      expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+      expect(find.text('MANAGE CONFIGURATION'), findsOneWidget);
       expect(find.text('● ACTIVE'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
@@ -1066,7 +1234,7 @@ void main() {
   });
 
   group('DISABLE gating', () {
-    Future<ElevatedButton> disableBtn(WidgetTester tester, SlotInfo slot, {Set<int> active = const {}}) async {
+    Future<OutlinedButton> disableBtn(WidgetTester tester, SlotInfo slot, {Set<int> active = const {}}) async {
       final c = _controller();
       addTearDown(c.dispose);
       await tester.pumpWidget(
@@ -1307,12 +1475,12 @@ void main() {
       final ssh = RecordingSSHClient(responder: (_) => '');
       await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
       await _open(tester);
-      expect(find.text('WIREGUARD CONFIGURATION'), findsOneWidget);
+      expect(find.text('MANAGE CONFIGURATION'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('screen_close')));
       await tester.pumpAndSettle();
 
-      expect(find.text('WIREGUARD CONFIGURATION'), findsNothing);
+      expect(find.text('MANAGE CONFIGURATION'), findsNothing);
       expect(find.byType(MainMenuScreen), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
@@ -1382,6 +1550,7 @@ void main() {
         await tester.tap(find.byKey(Key(key)));
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('paywall_buy')), findsOneWidget, reason: key);
+        await tester.ensureVisible(find.byKey(const Key('paywall_close')));
         await tester.tap(find.byKey(const Key('paywall_close')));
         await tester.pumpAndSettle();
       }
@@ -1394,6 +1563,8 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_disable')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('paywall_buy')), findsNothing);
+      await tester.tap(_inDialog('DISABLE'));
+      await tester.pumpAndSettle();
       expect(ssh.ran('nvram set wgc1_enable=0'), isTrue);
 
       await tester.pumpWidget(const SizedBox());
@@ -1415,6 +1586,7 @@ void main() {
       expect(find.byKey(const Key('paywall_buy')), findsOneWidget);
       // The watchdog pitch has to do the selling: a locked WATCHDOG screen shows nothing to look at.
       expect(find.textContaining('emails you to say it did'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('paywall_close')));
       await tester.tap(find.byKey(const Key('paywall_close')));
       await tester.pumpAndSettle();
 
@@ -1425,7 +1597,7 @@ void main() {
       // Its own confirmation, not a paywall.
       expect(find.byKey(const Key('paywall_buy')), findsNothing);
       expect(find.text('Disable watchdog wgc1?'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'DISABLE'));
+      await tester.tap(_inDialog('DISABLE'));
       await tester.pumpAndSettle();
       expect(ssh.ran('cru d watchdog_wgc1'), isTrue);
 

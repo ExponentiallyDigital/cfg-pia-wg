@@ -309,7 +309,10 @@ void main() {
       final c = RecordingSSHClient(responder: (_) => '');
       await _wd(c).clearWatchdogLog(1);
 
-      expect(c.commands.any((x) => x.contains('rm ') && x.contains('watchdog_wgc1.log')), isFalse);
+      expect(c.commands.any((x) => RegExp(r'rm [^;]*watchdog_wgc1\.log($|[\s;])').hasMatch(x)), isFalse,
+          reason: 'the live log is truncated, never removed');
+      expect(c.ran('rm -f /tmp/watchdog_wgc1.log.old'), isTrue,
+          reason: "yesterday's rotated copy goes too, because the viewer shows it");
       expect(c.commands.any((x) => x.contains('> /tmp/watchdog_wgc1.log')), isTrue);
       expect(c.commands.any((x) => x.contains('logger')), isTrue, reason: 'the router log records it');
     });
@@ -443,6 +446,111 @@ void main() {
       expect(enableIndex, isNot(-1));
       expect(deployIndex, isNot(-1));
       expect(enableIndex, lessThan(deployIndex));
+    });
+
+    // Measured 2026-09-13: creating a watchdog on a wgc4 that was already up ran `restart_vpnc`,
+    // which on stock rebuilds VPN routing for every tunnel.
+    test('a slot that is already up, keeping its region, is not restarted', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'ip -o link show up') return 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_melbourne';
+        if (cmd.contains('nvram get vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
+
+      expect(c.ran('restart_vpnc'), isFalse);
+      expect(c.ran('nvram set wgc1_enable=1'), isTrue, reason: 'the flags are still written');
+      expect(c.commands.any((cmd) => cmd.endsWith('watchdog_wgc1.sh deploy')), isTrue);
+      expect(c.commands.where((cmd) => cmd.contains('logger')).join('\n'), contains('already up'));
+    });
+
+    test('Merlin skips the restart too, including when the form passes no region', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'ip -o link show up') return 'wgc1';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
+
+      // Exact commands: the watchdog script uploaded by the same deploy mentions start_wgc itself.
+      expect(c.commands.contains('service "start_wgc 1"; service restart_vpnrouting0'), isFalse);
+    });
+
+    // The CREATE fault again, on the watchdog form (found 2026-09-14): a region change wrote only the new
+    // name, and the deploy run left the old server's tunnel alone because its handshake was recent. A
+    // region change is a rebuild: stop the tunnel, blank the old server, and let the deploy run build it.
+    test('a region change on a running slot stops it and clears the old server before anything else', () async {
+      useMerlin();
+      var stopped = false;
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'service "stop_wgc 1"; service start_vpnrouting0') stopped = true;
+        if (cmd == 'ip -o link show up') return stopped ? '' : 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_perth';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
+
+      final stop = c.commands.indexOf('service "stop_wgc 1"; service start_vpnrouting0');
+      final blank = c.commands.indexOf("nvram set wgc1_ppub=''");
+      final name = c.commands.indexOf("nvram set wgc1_desc='pia-aus_melbourne'");
+      final run = c.commands.indexWhere((cmd) => cmd.endsWith('watchdog_wgc1.sh deploy'));
+      expect(stop, isNot(-1), reason: 'the running tunnel is stopped');
+      expect(blank, greaterThan(stop), reason: 'then the old server is blanked');
+      expect(c.ran("nvram set wgc1_priv=''"), isTrue);
+      expect(c.ran("nvram set wgc1_ep_addr=''"), isTrue);
+      expect(name, greaterThan(blank));
+      expect(run, greaterThan(name), reason: 'and the deploy run builds the new one');
+      expect(c.ran('nvram set wgc1_enable=1'), isTrue);
+    });
+
+    test('a region change on a slot that is not running clears the old server without a stop', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_perth';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
+
+      expect(c.commands.contains('service "stop_wgc 1"; service start_vpnrouting0'), isFalse);
+      final blank = c.commands.indexOf("nvram set wgc1_ppub=''");
+      final start = c.commands.indexOf('service "start_wgc 1"; service restart_vpnrouting0');
+      expect(blank, isNot(-1));
+      expect(start, greaterThan(blank), reason: 'the enable cannot bring back a server it no longer has');
+    });
+
+    test('on stock the stop is stop_vpnc, and the restart that follows has no old server to reload', () async {
+      useStock();
+      var stopped = false;
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'service stop_vpnc') stopped = true;
+        if (cmd == 'ip -o link show up') return stopped ? '' : 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-us_alabama';
+        if (cmd.contains('nvram get vpnc_clientlist')) return 'pia-us_alabama>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_perth');
+
+      final stop = c.commands.indexOf('service stop_vpnc');
+      final blank = c.commands.indexOf("nvram set wgc1_ppub=''");
+      final restart = c.commands.indexOf('service restart_vpnc');
+      expect(stop, isNot(-1));
+      expect(blank, greaterThan(stop));
+      expect(restart, greaterThan(blank));
+    });
+
+    test('an unchanged region clears nothing', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'ip -o link show up') return 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_melbourne';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
+
+      expect(c.ran("nvram set wgc1_ppub=''"), isFalse);
+      expect(c.commands.contains('service "stop_wgc 1"; service start_vpnrouting0'), isFalse);
     });
 
     // The completion line is the router-side record that the deploy finished, not just started.
@@ -693,6 +801,48 @@ void main() {
   test('getWatchdogLog returns cat output', () async {
     final c = RecordingSSHClient(responder: (cmd) => cmd.contains('watchdog_wgc1.log') ? 'line1\nline2' : '');
     expect(await _wd(c).getWatchdogLog(1), 'line1\nline2');
+  });
+
+  test("getWatchdogLog reads yesterday's rotated copy first, and tolerates either being absent", () async {
+    final c = RecordingSSHClient(responder: (_) => '');
+    await _wd(c).getWatchdogLog(1);
+    final cmd = c.commands.singleWhere((x) => x.contains('watchdog_wgc1.log'));
+    expect(cmd, contains("if [ -f '/tmp/watchdog_wgc1.log.old' ]"));
+    expect(cmd, contains("if [ -f '/tmp/watchdog_wgc1.log' ]"));
+    expect(cmd.indexOf("'/tmp/watchdog_wgc1.log.old'"), lessThan(cmd.lastIndexOf("'/tmp/watchdog_wgc1.log'")),
+        reason: 'oldest first, so the text reads in time order');
+  });
+
+  group('redeploying the watchdog script', () {
+    // Answers the post-write size check from what was actually written, whatever else it is asked.
+    RecordingSSHClient router({String firmwareTag = '', String deployed = '5'}) {
+      late final RecordingSSHClient c;
+      c = RecordingSSHClient(responder: (cmd) {
+        final size = RegExp(r"wc -c < '([^']+)'").firstMatch(cmd);
+        if (size != null) return '${c.files[size.group(1)]?.length ?? 0}';
+        if (cmd.contains('3rd-party')) return firmwareTag;
+        if (cmd.contains('] && echo')) return deployed;
+        return '';
+      });
+      return c;
+    }
+
+    test('rewrites only the scripts already on the router, and touches nothing else', () async {
+      final c = router(deployed: '5');
+      expect(await _wd(c).redeployScripts(), [5]);
+      expect(c.ran("wc -c < '/jffs/cfg-pia-wg/watchdog_wgc5.sh'"), isTrue, reason: 'written, and the write proved');
+      expect(c.ran("wc -c < '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isFalse, reason: 'no script there, so none put there');
+      expect(c.commands.any((x) => x.startsWith('cru ') || x.startsWith('service ') || x.startsWith('nvram set')), isFalse,
+          reason: 'no schedule, tunnel or setting changes');
+    });
+
+    test('refuses a firmware it does not support rather than guessing which script to write', () async {
+      await expectLater(_wd(router(firmwareTag: 'something-else')).redeployScripts(), throwsException);
+    });
+
+    test('finds nothing to do when no script is deployed', () async {
+      expect(await _wd(router(deployed: '')).redeployScripts(), isEmpty);
+    });
   });
 
   test('loadConfig maps nvram keys to fields (per-slot + global PIA)', () async {

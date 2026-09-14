@@ -27,6 +27,8 @@
 // entry. See .claude/plans/plan_install-helper-binaries.md.
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import 'app_button.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_colors.dart';
@@ -166,15 +168,16 @@ class _InstallBinariesDialogState extends State<_InstallBinariesDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          key: const Key('install_binaries_decline'),
+        AppButton(
+          keyValue: 'install_binaries_decline',
+          label: 'NOT NOW',
+          role: ButtonRole.dismiss,
           onPressed: () => Navigator.pop(context, InstallChoice.decline),
-          child: const Text('NOT NOW', style: TextStyle(color: kMuted)),
         ),
-        TextButton(
-          key: const Key('install_binaries_confirm'),
+        AppButton(
+          keyValue: 'install_binaries_confirm',
+          label: 'INSTALL',
           onPressed: () => Navigator.pop(context, InstallChoice.install),
-          child: const Text('INSTALL', style: TextStyle(color: kHighlight, fontWeight: FontWeight.w700)),
         ),
       ],
     );

@@ -19,6 +19,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../widgets/app_button.dart';
+
 import '../app_colors.dart';
 import '../firmware.dart';
 import '../router_slot_service.dart' show slotLabel;
@@ -122,7 +124,8 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 _text('ep_port', 'Endpoint port', keyboard: TextInputType.number),
                 _text('ppub', 'Server public key'),
                 _privField(),
-                _text('dns', 'DNS servers'),
+                // Stock sends a device assigned to this slot to the first server only.
+                _text('dns', 'DNS servers', helper: isStockFirmware ? kDnsFirstServerNote : null),
                 _text('mtu', 'MTU', keyboard: TextInputType.number),
                 _text('alive', 'Persistent keepalive (s)', keyboard: TextInputType.number),
                 _text('aips', 'Allowed IPs'),
@@ -139,19 +142,20 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 _readOnly('Preshared key (psk, unused by PIA)', widget.initial['psk'] ?? ''),
                 if (!isStockFirmware) _readOnly('Router public IP (rip)', widget.initial['rip'] ?? ''),
                 const SizedBox(height: 16),
-                ElevatedButton(
-                  key: const Key('slot_params_save'),
+                AppButton(
+                  keyValue: 'slot_params_save',
+                  label: 'SAVE',
+                  fullWidth: true,
+                  busy: _saving,
                   onPressed: (_saving || !_canSave) ? null : _save,
-                  child: _saving
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight))
-                      : const Text('SAVE'),
                 ),
                 const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton(
+                  child: AppButton(
+                    label: 'CANCEL',
+                    role: ButtonRole.dismiss,
                     onPressed: _saving ? null : () => Navigator.of(context).pop(false),
-                    child: const Text('CANCEL', style: TextStyle(color: kMuted)),
                   ),
                 ),
               ],
@@ -162,7 +166,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
     );
   }
 
-  Widget _text(String key, String label, {String? hint, TextInputType? keyboard}) {
+  Widget _text(String key, String label, {String? hint, String? helper, TextInputType? keyboard}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: TextField(
@@ -172,7 +176,14 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
         autocorrect: false,
         enableSuggestions: false,
         style: const TextStyle(color: kText, fontFamily: 'monospace', fontSize: 13),
-        decoration: InputDecoration(labelText: label, hintText: hint, isDense: true),
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          isDense: true,
+          helperText: helper,
+          helperMaxLines: 3,
+          helperStyle: const TextStyle(color: kMuted, fontSize: 11),
+        ),
       ),
     );
   }
