@@ -1,0 +1,1 @@
+Per-device PIA WireGuard VPNs for ASUS routers, managed from your phone. Tap a device, pick a VPN, done. Self-healing watchdog renews expired configs and emails you. Standalone .conf generation for any WireGuard client. Zero credential persistence, open source, GPL v3. 

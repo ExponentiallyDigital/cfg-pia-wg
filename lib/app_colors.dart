@@ -31,3 +31,4 @@ const kError = Color(0xFFFF5C5C); // error / destructive
 const kOnPrimary = Color(0xFF12141A); // text on accent buttons
 const kConfigBg = Color(0xFF0E1016); // generated-config / log viewport background
 const kWarn = Color(0xFFEF9F27); // kill-switch badge
+const kWatchdogText = Color(0xFFB69CFF); // watchdog lines in the router log: apart from teal, red, amber and kText

@@ -330,7 +330,25 @@ void main() {
       expect(find.text('Overwrite wgc1?'), findsOneWidget);
       await tester.tap(_inDialog('CANCEL'));
       await tester.pumpAndSettle();
-      expect(find.text('aus_melbourne'), findsWidgets); // still on the modal, no region picker
+      expect(find.text('wgc1:aus_melbourne'), findsOneWidget); // still on the modal, no region picker
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-035: a slot reads as one name, the way every log line and dialog already names it.
+    testWidgets('a slot row reads wgcN:region on one line, and an empty slot says so', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'pia-aus_melbourne')}), c));
+      await _open(tester);
+
+      Finder inRow(int slot, String text) =>
+          find.descendant(of: find.byKey(Key('slot_row_$slot')), matching: find.text(text));
+      expect(inRow(1, 'wgc1:pia-aus_melbourne'), findsOneWidget);
+      expect(inRow(1, 'wgc1'), findsNothing, reason: 'no separate slot line any more');
+      expect(inRow(1, 'pia-aus_melbourne'), findsNothing, reason: 'no separate region line any more');
+      expect(inRow(2, 'wgc2 <empty slot>'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

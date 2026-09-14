@@ -1,5 +1,7 @@
 # 1. CHANGELOG.md
 
+** DO NOT ALTER THE STRUCTURE OF THIS FILE** it is used by GitHub actions workflows.
+
 - [1. Changes](#1-changes)
   - [1.1. Pending to do](#11-pending-to-do)
   - [1.2. WIP](#12-wip)
@@ -7,45 +9,115 @@
 
 ---
 
+## Prefix codes
+
+Work items below use these three-letter prefixes.
+
+| Prefix | Meaning |
+|---|---|
+| ADD | New feature or capability added |
+| ARC | Architecture, design or structure notes |
+| BLD | Build process or build scripts |
+| BUG | Known bug or defect |
+| CFG | Configuration change |
+| CHG | General change to existing behaviour |
+| DEC | Design decision recorded |
+| DELETE | Removal of a file, feature, or item |
+| DOC | Documentation |
+| FIX | Bug fix |
+| GUI | User interface change |
+| INF | Informational note, points elsewhere for detail |
+| MOD | Code modification or optimisation |
+| NOTE | General note |
+| REL | Release process or release readiness item |
+| SEC | Security related change |
+| TST | Test added or updated |
+| UI | User interface, element or copy level |
+
+Bold the first sentence only on multi-sentence items, as a scannable headline. Single-sentence items stay plain.
+
+**Unique IDs**
+
+Every new work item gets an ID. This is the standard from the v0.8.78 build 448 release (and the current Pending/WIP items) onward. It was not applied retrospectively: v0.8.77 build 447 and every earlier release keep their original, ID-free form.
+
+IDs are shared with BACKLOG.md: one number line across both files, so an ID always points to exactly one item no matter which file it lives in.
+
+Format: `ID-NNN XXX:`, where `XXX` is the item's prefix code, placed at the start of the bullet before the prefix.
+
+Example:
+
+- ID-014 FIX: the watchdog passes a tunnel that handshakes but cannot resolve names...
+
+To assign a new ID, search **both** CHANGELOG.md and BACKLOG.md for the highest existing `ID-NNN` and use the next number. No separate counter or log to maintain, and nothing already in either file needs to be touched or renumbered.
+
+When adding several items in one sitting, look up the highest existing ID once, then increment by one for each new item in that batch.
+
+---
+
+ [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) contains work items that are longer term and yet to be release prioritised. Unverified bugs live in BACKLOG.md, never in this file.
+
+---
+
 ## 1. Changes
+
+This file contains lists of work items in a specific and purposeful relative sequence. All work items are sequenced in descending relative importance, this portrays the intended implementation sequence. The exception is "1.3. Implemented": each release block lists its completed work items in chronological implementation sequence, oldest first, so the most recently completed item is at the bottom of its block.
+
+1. work items listed under "1.1. Pending to do" are planned for the **next** release.
+2. "1.2. WIP" lists work items that are being actively worked on for the **current** release; and
+3. "1.3. Implemented - the chronological change history" which lists, in sequence, every release and its work items.
+
+---
 
 ### 1.1. Pending to do
 
-See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) for "deep" backlog.
+Work items for the **next** release:
 
-- FTR (next build): **say when a slot's DNS is the same as the router's own encrypted-DNS servers.** When they match, the firmware's per-tunnel `iif lo` rule sends the router's own DNS-over-TLS - the lookups for every device that resolves through the router - through the first tunnel, so that one tunnel failing takes names away from the whole LAN (BACKLOG: the router's own DNS follows the first tunnel). The app must not change either setting (CONTEXT: the user's WebUI DNS settings are theirs), so this is information only: a note at stock CREATE and EDIT naming the overlap. Measured 2026-09-14: the WebUI's list is `dnspriv_rulelist`, as `<IP>port>hostname>` records (`<9.9.9.9>853>dns.quad9.net><149.112.112.112>853>dns.quad9.net>` on the test router), with `dnspriv_enable` `1` while DNS-over-TLS is on.
-- FIX (design first, after release): **the watchdog passes a tunnel that handshakes but cannot resolve names.** Measured on hardware 2026-09-13/14: devices pinned to `wgc4` got no answer from 9.9.9.9 on UDP 53 or TCP 853 (conntrack `[UNREPLIED]`), while ping to 9.9.9.9 and HTTPS and DNS over HTTPS to 1.1.1.1 worked through the same tunnel. The server was `us_alabama`. It seemed to recur after `wgc4` was recreated on `aus_perth`, but the WireGuard peer key and tunnel address were unchanged - the recreate never reached the running tunnel (see the CREATE entry above) - so both runs were Alabama. The same Quad9 redirect worked on `wgc3` (`france`), and every slot's firewall rules, allowed IPs, DNS and MTU were identical, so nothing points at the slot. Devices pinned to it had no name resolution, and the watchdog logged a recent handshake every five minutes and never moved it to another server. Confirmed 2026-09-14: after `wgc4` was deleted and recreated on `aus_perth` (new peer key, exit shown as Perth), a device pinned to it resolved names through the same Quad9 redirect. Needs a probe that exercises the slot's own DNS servers through the tunnel. The design is open: on stock the router's own traffic is not routed into `wgcN` (`to <dns> iif lo lookup <table>` matches the lowest table first), which is why `ping -I` was abandoned. Design input, 2026-09-14: the router's OWN lookup (`nslookup <name> 127.0.1.1`, through stubby) travels through the FIRST tunnel whenever slot DNS matches the router's DNS-over-TLS servers, and failing it takes name lookups from every device that resolves through the router (BACKLOG AN-2026-09-13_001, reproduced). It is cheap to run on the router and worth probing - but it tests that first tunnel, not the watchdog's own slot, so it is one half of the design, not all of it.
-- DOC: create a digrammatic representation of how RC and GPS interact from an accounts, API, and message flow state, add to TESTING.md.
-- DOC: **documentation and publicity**, moved from BACKLOG 1.2.7 on 2026-09-12:
-  - **Update screenshots:** create & upload phone and tablet screenshots x8.
-  - **Trademark protection:** add to README that app name, logos, and branding are reserved trademarks.
-  - **Transparency:** explain in README that pre-built convenience binaries are available via the Google Play Store to defray development costs and support ongoing app updates.
-  - **Publicise**: update Play Store description. Post to SNB and Reddit (r/AsuswrtMerlin, r/PrivateInternetAccess, r/WireGuard).
-- commit.
-- QUALITY: review latest build against [Play Console technical quality requirements](https://support.google.com/googleplay/android-developer/answer/17492799), specifically:
+- ID-004 CHG: **cap the in-memory app log.** `SessionController.log` grows without limit - `logEntry` only ever appends - and the log screen renders every entry. Each is small and the whole thing is wiped on exit, so it is not a problem today; a long session with a chatty watchdog is where it would start to show. A few hundred entries, dropping the oldest, is cheap insurance. Noticed 2026-09-07 while checking app size after Google tightened their performance requirements.
+- ID-005 ADD: **say when a slot's DNS is the same as the router's own encrypted-DNS servers.** When they match, the firmware's per-tunnel `iif lo` rule sends the router's own DNS-over-TLS - the lookups for every device that resolves through the router - through the first tunnel, so that one tunnel failing takes names away from the whole LAN (BACKLOG ID-001: the router's own DNS follows the first tunnel). The app must not change either setting (CONTEXT: the user's WebUI DNS settings are theirs), so this is information only: a note at stock CREATE and EDIT naming the overlap. Measured 2026-09-14: the WebUI's list is `dnspriv_rulelist`, as `<IP>port>hostname>` records (`<9.9.9.9>853>dns.quad9.net><149.112.112.112>853>dns.quad9.net>` on the test router), with `dnspriv_enable` `1` while DNS-over-TLS is on.
+- ID-006 FIX: **the watchdog passes a tunnel that handshakes but cannot resolve names.** Measured on hardware 2026-09-13/14: devices pinned to `wgc4` got no answer from 9.9.9.9 on UDP 53 or TCP 853 (conntrack `[UNREPLIED]`), while ping to 9.9.9.9 and HTTPS and DNS over HTTPS to 1.1.1.1 worked through the same tunnel. The server was `us_alabama`. It seemed to recur after `wgc4` was recreated on `aus_perth`, but the WireGuard peer key and tunnel address were unchanged - the recreate never reached the running tunnel (see the CREATE entry above) - so both runs were Alabama. The same Quad9 redirect worked on `wgc3` (`france`), and every slot's firewall rules, allowed IPs, DNS and MTU were identical, so nothing points at the slot. Devices pinned to it had no name resolution, and the watchdog logged a recent handshake every five minutes and never moved it to another server. Confirmed 2026-09-14: after `wgc4` was deleted and recreated on `aus_perth` (new peer key, exit shown as Perth), a device pinned to it resolved names through the same Quad9 redirect. Needs a probe that exercises the slot's own DNS servers through the tunnel. The design is open: on stock the router's own traffic is not routed into `wgcN` (`to <dns> iif lo lookup <table>` matches the lowest table first), which is why `ping -I` was abandoned. Design input, 2026-09-14: the router's OWN lookup (`nslookup <name> 127.0.1.1`, through stubby) travels through the FIRST tunnel whenever slot DNS matches the router's DNS-over-TLS servers, and failing it takes name lookups from every device that resolves through the router (BACKLOG ID-001, reproduced). It is cheap to run on the router and worth probing - but it tests that first tunnel, not the watchdog's own slot, so it is one half of the design, not all of it.
+- ID-007 ADD: Automate updating `THIRD-PARTY-NOTICES.md`, and add as part of `scripts\build.ps1/sh all`. Add to GitHub actions script `.github\workflows\release.yml`.
+- ID-010 REL: review build against [Play Console technical quality requirements](https://support.google.com/googleplay/android-developer/answer/17492799), specifically:
   - [r8-analyzer/SKILL.md](https://github.com/android/skills/tree/main/performance/r8-analyzer)
   - [Perfetto Skills](https://github.com/google/perfetto/tree/main/ai/skills)
   - [profilers/android-profiler](https://github.com/android/skills/tree/main/profilers/android-profiler)
-- REL: **launch and post-launch**, moved from BACKLOG 1.2.8 on 2026-09-12:
-  - **Changelog:** Add to v0.9.00 changelog, explain why watchdog is monetised.
-  - **Store optimisation (ASO):** include high-intent keywords: *Asuswrt-Merlin, PIA WireGuard token auto-renew, Asus router VPN, NVRAM SSH scripts*.
-- commit.
+  
+---
 
 ### 1.2. WIP
 
-**longer term:**
-- DELETE: `.claude\testing\2026-09-07_pristine-lan-reference.md` once device assignment is complete and tested.
-- commit.
-- ADD: Automate updating `THIRD-PARTY-NOTICES.md`, and add as part of `scripts\build.ps1/sh all`. Add to GitHub actions script `.github\workflows\release.yml`.
-- commit.
-- CHG: **cap the in-memory app log.** `SessionController.log` grows without limit - `logEntry` only ever appends - and the log screen renders every entry. Each is small and the whole thing is wiped on exit, so it is not a problem today; a long session with a chatty watchdog is where it would start to show. A few hundred entries, dropping the oldest, is cheap insurance. Noticed 2026-09-07 while checking app size after Google tightened their performance requirements.
-- commit.
+Work items for the **current** release:
+
+- ID-008 DOC: Update screenshots: create & upload phone and tablet screenshots x8 to GPS.
+- ID-011 CFG: set the router's default DNS to CloudFlare, so they are different to the Quad9 DNS addresses set for VPN tunnels,therefore avoiding the issue of router DNS traffic being forced into the first VPN tunnel. Try this, test and the review outcome. If this works, add a prominent note in README under prerequisites. If this is successful then implemeing this may remove the need for work items in section "1.1. Pending to do", or in BACKLOG. if this is unsuccessful then we will review next steps and how that affects items for release.
 
 ---
 
 ### 1.3. Implemented - chronological change history
 
-2026-09-14 v0.8.77 build 447 - device assignment you can check
+This section contains, in chronological order, all **completed** work items that are ready for the **current** release, or have been **committed** to a release. Each block commences with a header that contains the date that work commenced, the version and build number, followed by a very brief summary in one sentence or less describing what that release contains. Following the header are **completed** work items.
+
+Every release committed to GitHub **must** contain the version formatted as "vN.N.NN" and build number formatted as "build NNN", a dash and the brief summary, then a new line and all completed work items in chronological implementation sequence.
+
+When a work item in "1.2. WIP" is completed, move it to the bottom of the current release block below, keeping its ID.
+
+Whoever commits a build opens the next release block - a new header line above the current one - and bumps the version and build number in `pubspec.yaml` to match.
+
+2026-09-14 v0.8.78 build 448 - fixes and user facing changes
+
+- ID-012 DOC: updated `./play-store/description.md`, now only contains the Google Play Store description. Needs automation, yet to be created, to alter release.yml to update the GPS description automatically. A BACKLOG work items has been created to automate this through a GitHub actions workflow.
+- ID-013 DOC: added `./play-store/description_short.md` and `./play-store/copy_reqs.md`, the latter stores the maximum character count for description and short description.
+- ID-014 DOC: added `./.github/description.md`, this is the GitHub repo description.
+- ID-015 DELETE: `.claude\testing\2026-09-07_pristine-lan-reference.md` once device assignment is complete and tested.
+- ID-016 INF: The RevenueCat implementation, product decisions and price is in [`.claude/plans/plan_revenuecat-implementation.md`](.claude/plans/plan_revenuecat-implementation.md)
+- ID-030 INF: adopted the `ID-NNN` unique identifier convention, shared as one number line across CHANGELOG.md and BACKLOG.md. Applied to Pending, WIP and this release in CHANGELOG, and backfilled across all existing prefixed items in BACKLOG. Earlier CHANGELOG releases (v0.8.77 build 447 and before) were not retrofitted. Extensive edits to BACKLOG and CHANGELOG implementing a prompted backlog management workflow.
+- ID-009 DOC: Trademark protection: add to README that app name, logos, and branding are reserved trademarks.
+- ID-031 CHG: **the main menu is a left-aligned list with an icon for every destination.** It had eight teal-filled buttons with centred labels, and with an icon centred beside each label every row's icon started in a different place, so the screen read as nine disjointed bundles. Each destination is now a row - icon, label, chevron - with a `#12141A` fill (the screen colour) and a teal border and label. EXIT keeps its red outline, gains the power icon, has no chevron and sits a little apart. On a tablet the list stops at 520 wide and centres, and the help and review links line up with it. The drawer shows the same icons, plus HOME, and both take them from one function, `destinationIcon`, so they cannot drift. Icons: STANDALONE `note_add_outlined`, MANAGE `app_registration_outlined`, WATCHDOG `monitor_heart_outlined`, DEVICE ASSIGNMENT `hub_outlined`, ROUTER LOG `router_outlined`, APP LOG `list_alt_outlined`, SETTINGS `settings_outlined`, ABOUT `info_outline`, EXIT `power_settings_new`, HOME `home_outlined`. CONTEXT's house style no longer exempts the main menu, and TESTING's home screen checks and the main menu tests cover the rows, the icons, the tablet cap and the drawer.
+- ID-032 CHG: **device assignment rows show each device's MAC address.** A row's first line is the device name and its exceptions - `offline`, `random MAC`, `DHCP` - separated by ` | `; the second line is the IP address and MAC in grey, or the MAC alone when no address is known. The MAC tells apart two devices with the same name and matches the router's own client list.
+- ID-033 CHG: APP LOG and ROUTER LOG are headed with their menu names, in teal capitals, placed and styled like the VIEW WATCHDOG LOG heading.
+- ID-034 CHG: **the watchdog's lines in the router log are lavender, not amber.** Amber means a warning everywhere else in the app, so healthy watchdog lines looked like problems. The app's lines stay teal, errors red and the firmware's own lines plain; lavender (`#B69CFF`) is distinct from all of them.
+- ID-035 CHG: MANAGE and WATCHDOG list each slot on one line, `wgc1:pia-region_name`, the way every log line and dialog already names a slot, with the slot in teal and the region in white; an empty slot reads `wgc2 <empty slot>`.
+
+2026-09-14 v0.8.77 build 447 - device assignment you can check, and DNS you can see
 
 - ADD: **a failed alert email records how name resolution looked at that moment.** After `Email FAILED`, the watchdog log gains `Email diag: resolv.conf [...] via <interface>; <SMTP host> resolves to [...]` - the nameservers in `/etc/resolv.conf`, the interface the first one is reached through, and what the SMTP host resolved to, or the lookup's error. The one undelivered alert so far, on 2026-09-06, failed on `server misbehaving` and left nothing to say why; the next one explains itself. The route is cut down to its interface name, because the full route names the WAN address and the log is quoted in failure emails.
 - DOC: CHANGELOG Pending records where the router keeps its DNS-over-TLS list (`dnspriv_rulelist`), the measurement the slot-DNS overlap note was waiting on. ARCHITECTURE, CONTEXT and TESTING describe the new log line.
@@ -120,7 +192,6 @@ See [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BA
 - CHG: REBOOT ROUTER now sends `sync; reboot`. Stock already runs an emergency sync on its way down, but the app should not rely on each firmware's shutdown path to get the watchdog scripts and boot hook in /jffs onto flash. No `nvram commit`: app writes already commit, and committing here would persist changes the app did not make.
 - CHG: updated privacy policy formatting, replaced GitHub issue link with email address.
 - NOTE: RevenueCat fully implemented, some UI facing code changes to follow. 
-- ...
 
 2026-09-13 v0.8.75 build 445 - the store says why, when it has nothing to sell
 
@@ -1632,6 +1703,4 @@ e79ea61 ARCHITECTURE - pass 1, restructure
 - fixup html intermediary file name (caused resultant doc title issue)
 - renamed `$ADDON` to `$RELEASE` in release.yaml (was carried over from WoW addon packaging)
 - split release.yaml into code scan and actual release
-- automated security/quality analysis: Flutter analyse, SonarCube, Google OSV dependency scan, Mobile security scanning (MobSF), Dependabot dependency management, and CodeQL analysis.
-- clear the clipboard after 60 seconds if conf copied there
-- review Actions CI pipeline - add Flutter analyse, rename pipeline
+- automated security/quality analysis: Flutter analyse, SonarCube, Google OSV dependency scan, Mobile security scanning (MobSF), Dependabot depende

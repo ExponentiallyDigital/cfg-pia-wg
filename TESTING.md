@@ -72,7 +72,10 @@ perfect the whole time. Detail in
 ## 3. <a name='home-screen'></a>Home screen
 
 - all nine buttons navigate, in drawer order and with the same names as the drawer; HOME and the back key return here
-- no footnotes under the buttons, and the help and review lines sit together directly under EXIT
+- no footnotes under the buttons, and the help and review lines sit together directly under EXIT, lined up with the rows
+- each row: its own icon at the left, its label, a chevron at the right; the icons form one straight column and the labels start in line; EXIT is red with a power icon and no chevron
+- on a tablet the list is no wider than 520 and sits centred; on a phone it fills the width
+- the drawer shows the same icon beside each destination, plus a home icon beside HOME
 - "how to use this app" opens the README section
 - "add a Play Store app review" opens the Play listing
 - there is no donation block: the PAYPAL and PATREON buttons went when the app gained a price
@@ -95,6 +98,7 @@ perfect the whole time. Detail in
 - enable wgc1 & 5
 - edit wgcN
 - ACTIVE badge on every slot whose interface is up, not just one
+- each slot reads `wgcN:pia-region_name` on one line, on MANAGE and on WATCHDOG; an empty slot reads `wgcN <empty slot>`
 - DISABLE leaves `wg show interfaces` empty
 - stock: a third concurrent enable is refused with the VPN-limit dialog
 - DELETE prompt names the VPN being deleted
@@ -631,7 +635,8 @@ Stock only. Merlin routes per device through VPN Director and the app does not o
 The list:
 
 - every LAN device appears, offline ones dimmed and sorted last
-- a device with no DHCP reservation carries a `DHCP` tag; one with a locally-administered address carries `random MAC`
+- each device reads `name - tags` on its first line, tags separated by `|`, and `IP MAC` on its second - the MAC alone when no address is known
+- a device with no DHCP reservation carries a `DHCP` tag, one with a locally-administered address carries `random MAC`, and one that is off carries `offline`
 - a device with no known address shows "connect this device once to assign it" and no picker
 - the router itself, any AiMesh node, and guest-network devices never appear at all
 
@@ -736,6 +741,7 @@ Device assignment is a signature feature: run this on the release build. After e
 
 ## 8. <a name='app-log'></a>App log
 
+- headed APP LOG in teal capitals, where VIEW WATCHDOG LOG has its heading
 - one connection exists per session
 - router log: one `dropbear ... Password auth succeeded` per app session, not per button press
 - COPY the log - no countdown armed, and paste keeps its line breaks
@@ -745,10 +751,11 @@ Device assignment is a signature feature: run this on the release build. After e
 
 ## 9. <a name='router-log'></a>Router log
 
+- headed ROUTER LOG in teal capitals, where VIEW WATCHDOG LOG has its heading
 - opens on the newest 32 KB of `/tmp/syslog.log`, scrolled to the bottom
 - scrolling to the top loads the previous 32 KB and **keeps your place** - the text you were reading must not jump
 - a partial first line is trimmed, so no page ever starts mid-word
-- lines the app wrote are teal and lines the watchdog wrote are amber; any of those reporting an error - ERROR, failed, connectivity lost, down or absent, never answered, no Internet - are red instead, while the firmware's own lines stay plain even when they say failed
+- lines the app wrote are teal and lines the watchdog wrote are lavender, never amber, which would read as a warning; any of those reporting an error - ERROR, failed, connectivity lost, down or absent, never answered, no Internet - are red instead, while the firmware's own lines stay plain even when they say failed
 - reaching the start of `syslog.log` continues into the rotated `syslog.log-1` if the router has one, and says so
 - COPY takes everything loaded, not just the visible page, and no clipboard countdown is armed
 - REFRESH returns to the newest page
