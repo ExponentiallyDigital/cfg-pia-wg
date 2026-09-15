@@ -1,258 +1,1042 @@
-# Notes on testing cfg-pia-wg
+# Testing cfg-pia-wg
 
-- [1. Before you start](#before-you-start)
-- [2. When something looks broken, check these first](#when-something-looks-broken-check-these-first)
-- [3. Home screen](#home-screen)
-- [4. Standalone (generate)](#standalone-generate)
-- [5. Manage](#manage)
-- [6. Watchdog](#watchdog)
-  - [6.1. Checks](#checks)
-    - [6.1.1. Invalidate the registration (the important one)](#invalidate-the-registration-the-important-one)
-    - [6.1.2. What does NOT work: moving the endpoint](#what-does-not-work-moving-the-endpoint)
-    - [6.1.3. Peer removed (the fast one)](#peer-removed-the-fast-one)
-    - [6.1.4. Interface down](#interface-down)
-    - [6.1.5. What a healthy check looks like](#what-a-healthy-check-looks-like)
-    - [6.1.6. Backoff](#backoff)
-    - [6.1.7. Walking the whole backoff ladder in two minutes, with no PIA traffic](#walking-the-whole-backoff-ladder-in-two-minutes-)
-  - [6.2. Applying a config, and what it should leave behind](#applying-a-config-and-what-it-should-leave-behin)
-  - [6.3. Files deployed to the router](#files-deployed-to-the-router)
-  - [6.4. Testing email send by hand](#testing-email-send-from-ssh)
-    - [6.4.1. Construct the command line (Merlin)](#construct-the-command-line)
-    - [6.4.2. Construct the test email](#construct-the-test-email)
-    - [6.4.3. How the Commands Work](#how-the-commands-work)
-    - [6.4.4. Certificate information](#certificate-information)
-- [7. Device assignment](#device-assignment)
-  - [7.1. The full assignment run](#the-full-assignment-run)
-- [8. App log](#app-log)
-- [9. Router log](#router-log)
-- [10. Settings](#settings)
-- [11. About](#about)
-- [12. Credentials and exit](#credentials-and-exit)
-- [13. Locked, with no entitlement](#locked-with-no-entitlement)
-- [14. Buying and restoring](#buying-and-restoring)
-- [15. Firmware coverage](#firmware-coverage)
-- [16. Examining nvram settings](#examining-nvram-settings)
+The automated tests prove the code does what it says. They cannot prove what a real router, a real PIA account and a real device's traffic actually do, and that is where this app earns its keep or lets someone down. This file is that check: a run sheet to walk through before a release, then the reference behind it.
 
-## 1. <a name='before-you-start'></a>Before you start
+**Part 1. Run sheet**
 
-Clear all configs and NVRAM, then reboot the router.
+- [How to use the run sheet](#how-to-use)
+- [PRE. Before you start](#pre)
+- [CON. Connecting to the router](#con)
+- [HOM. Home screen and drawer](#hom)
+- [STD. Standalone](#std)
+- [MAN. Manage](#man)
+- [WD. Watchdog](#wd)
+- [BRK. Break a tunnel](#brk)
+- [DEV. Device assignment](#dev)
+- [DEF. Default connection](#def)
+- [LOG. App log and router log](#log)
+- [SET. Settings](#set)
+- [ABT. About](#abt)
+- [EXT. Exit, background and session](#ext)
+- [LCK. Locked, with no purchase (store build)](#lck)
+- [BUY. Buying and restoring (store build)](#buy)
+- [MRL. Merlin (a separate day)](#mrl)
+- [END. Last, because it removes things](#end)
+
+**Part 2. Reference**
+
+- [R1. When something looks broken, check these first](#r1)
+- [R2. How the watchdog decides a tunnel is broken](#r2)
+- [R3. The backoff ladder](#r3)
+- [R4. What the watchdog leaves on the router](#r4)
+- [R5. Device assignment and default connection notes](#r5)
+- [R6. Sending email by hand](#r6)
+- [R7. Examining NVRAM](#r7)
+- [R8. Store testing notes](#r8)
 
 ---
 
-## 2. <a name='when-something-looks-broken-check-these-first'></a>When something looks broken, check these first
+# Part 1. Run sheet
 
-Each of these presents as a different fault from the one it is, and none of them is guessable. Check
-them before spending time anywhere else.
+## <a name='how-to-use'></a>How to use the run sheet
 
-**`rc_service: skip the event:` in `/tmp/syslog.log`.** The router is silently discarding every
-service call it is given, and has been since some earlier one hung without finishing. Nothing works
-after that - not the app, not the web interface, not `reboot`. **Only a power cycle clears it.**
-The app now detects and clears the stale marker before deploying, but if you see this line while
-testing by hand, stop: nothing you observe afterwards means anything. Detail in
-[ARCHITECTURE.md, The router's service queue and how it wedges](ARCHITECTURE.md#the-routers-service-queue-and-how-it-wedges).
+- Each test has a label, such as `MAN-3`. Labels never change. A new test takes the next number in its group; nothing is ever renumbered.
 
-**A token fetch that exits 0 with no HTTP status, no body and nothing on stderr.** Stock's
-`/usr/sbin/curl` walks its own process ancestry and refuses to run when `crond` appears in the chain.
-It does not fail, it does nothing, which is far harder to spot. Confirm it by looking for
-`Invalid caller(crond)` in `/jffs/curllst`. Detail in
-[ARCHITECTURE.md, `curl` refuses to run from cron](ARCHITECTURE.md#curl-refuses-to-run-from-cron).
+- For a run, copy this file to `.claude/testing/<date>_e2e.md` and write PASS, FAIL or SKIP under each label, with anything worth keeping.
 
-> [!CAUTION]
-> `/jffs/curllst` is world-readable, survives reboots, and records **full command lines including
-> `-u user:password`**. Redact it before pasting it anywhere, including into a bug report.
+- **Do:** what you do. **See:** what you get back. **Pass if:** how you know, only where it is not obvious.
 
-**A device assignment that is written correctly and has no effect.** Check `ip rule show` before
-anything else. Stock never removes a device's previous rule when it is reassigned, so both rules sit
-at priority 100 and the older one matches first. The record in `vpnc_dev_policy_list` will look
-perfect the whole time. Detail in
-[ARCHITECTURE.md, Stock leaves the old routing rule behind](ARCHITECTURE.md#stock-leaves-the-old-routing-rule-behind-measure).
+- Stock firmware unless a test says otherwise. Merlin is a separate day: see [MRL](#mrl).
 
----
+- Guest Wi-Fi is out of scope. The app does not manage its traffic or assignments.
 
-## 3. <a name='home-screen'></a>Home screen
+Devices:
 
-- all nine buttons navigate, in drawer order and with the same names as the drawer; HOME and the back key return here
-- no footnotes under the buttons, and the help and review lines sit together directly under EXIT, lined up with the rows
-- each row: its own icon at the left, its label, a chevron at the right; the icons form one straight column and the labels start in line; EXIT is red with a power icon and no chevron
-- on a tablet the list is no wider than 520 and sits centred; on a phone it fills the width
-- the drawer shows the same icon beside each destination, plus a home icon beside HOME
-- "how to use this app" opens the README section
-- "add a Play Store app review" opens the Play listing in the Play Store app, not as a web page inside cfg-pia-wg
-- there is no donation block: the PAYPAL and PATREON buttons went when the app gained a price
+- **APP** is the phone running the app. It uses a random MAC.
 
----
+- **TABLET** and **DESKTOP** are the devices you move between tunnels. Both have fixed MACs.
 
-## 4. <a name='standalone-generate'></a>Standalone (generate)
+- **PHONE** is the same phone as APP, used only where a test says so, for the random MAC case.
 
-- create a config and apply manually
-- heading reads "GENERATED CONFIG: pia-region_name"
-- clear the DNS field, leave the screen, return - Quad9 defaults are back
-- COPY - 60s countdown, then the clipboard empties with no "cleared" popup
-- SHARE and SAVE
+- A virtual phone on the desktop can run the app, but the router sees it as DESKTOP. It is not a separate device to assign.
 
----
+Shorthand:
 
-## 5. <a name='manage'></a>Manage
+- **Exit IP**: open a what-is-my-IP page on that device. Never check from the router: the router's own traffic does not follow assignments.
 
-- create wgc1-5
-- enable wgc1 & 5
-- edit wgcN
-- ACTIVE badge on every slot whose interface is up, not just one
-- each slot reads `wgcN:pia-region_name` on one line, on MANAGE and on WATCHDOG; an empty slot reads `wgcN <empty slot>`
-- DISABLE leaves `wg show interfaces` empty
-- stock: a third concurrent enable is refused with the VPN-limit dialog
-- DELETE prompt names the VPN being deleted
-- stock: CREATE's credentials dialog and EDIT's DNS field both say assigned devices use only the first server; Merlin and STANDALONE do not
-- CREATE over a slot whose tunnel is running, in a different region: the overwrite prompt says it will be stopped first; afterwards `wg show interfaces` no longer lists it, the slot shows disabled, and the dialog says the old tunnel was stopped. ENABLE, then `wg show wgcN latest-handshakes` shows a DIFFERENT peer key from before
-
-Applying configs:
-
-- Apply a new config to a blank slot
-- Overwrite an existing slot with a different region's config
-- Overwrite an existing slot with the same region's config
-
----
-
-## 6. <a name='watchdog'></a>Watchdog
-
-- Create wgc1 & wgc5 - check test email
-- TEST EMAIL before the first SAVE & DEPLOY, and again after changing the region on the form: the subject ends `TEST email - wgcN:pia-<the region on the form>` and the body's Watchdog row names the same region
-- email fields pre-fill, every one including SMTP server:port and password: deploy a watchdog with email on wgc1, then open a new watchdog on another slot - the fields carry wgc1's; change them there and open a third - it carries the changed ones; restart the app and open a new one - it carries the lowest-numbered slot's from the router; a slot with its own settings always shows its own
-- the region is chosen on the form, pre-filled with the slot's own, before SAVE & DEPLOY; a configured slot still warns before it is overwritten, and a region PIA does not have is refused
-- Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
-- region on the watchdog form - each time check the peer key (`wg show wgcN latest-handshakes`), exit location, router log and email:
-  - running slot, same region: router log "is already up; its tunnel was left running", NO `restart_vpnc`, other tunnels keep their handshakes
-  - running slot, new region: prompt says the tunnel is rebuilt; router log "Cleared ... rebuilds it", "Deploying: bringing wgcN up", "Deploy SUCCESS: region pia-<new>"; NEW peer key; exit is the new region; SUCCESS email names the new server
-  - disabled configured slot, new region: as above, and the slot ends enabled
-  - empty slot (the watchdog shortcut): as above
-  - empty slot, in ROUTER LOG: the deploy's first check reads `Interface wgcN is not up yet` or `Not connected yet: no handshake, and no answer from ...`, in lavender - never the red `No handshake and both pings failed`
-  - stock: the WebUI shows the rebuilt slot connected
-  - a device assigned to the slot: on the default connection during the rebuild, back on the slot after
-  - rebuild fails (wrong PIA password): FAILED email, the old region does NOT come back, retries on the backoff; correct the password, SAVE & DEPLOY recovers
-- force a reconfigure, then check the email alerting
-  1. `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`
-  2. `/jffs/cfg-pia-wg/watchdog_wgc1.sh`
-- a failed send explains itself: set a wrong SMTP password, SAVE & DEPLOY. VIEW WATCHDOG LOG shows `Email FAILED`, then `Email diag: resolv.conf [<servers>] via <interface>; <smtp host> resolves to [<addresses>]` - an interface name only, no WAN address. Put the password back and SAVE & DEPLOY
-- Check emails
-  1. deploy email says "watchdog deployed", subject SUCCESS, sent even though nothing was wrong
-  2. reconfigure email: outage duration, kill-switch line, new server and latency
-  3. failure email: WHAT TO DO, attempt count, last 10 router-log lines
-  4. HISTORY counters climb; `cfg_pia_wg_sdate` is set once and not rewritten
-  5. subject threads by slot: `cfg-pia-wg alert: SUCCESS - wgc1:pia-<region>`
-  6. on stock, the kill-switch line: a tunnel with no devices assigned that is not the default says so rather than talking about its devices; "still on a VPN" only when the default is a WireGuard tunnel that is up; a default that is down, or not WireGuard, says devices may have had no VPN
-- DISABLE shows the PAUSED badge; ENABLE restores the same interval
-- keyboard does not obscure the configure dialog's fields
-- backoff: leave it failing and watch the log - "Backing off after N failed attempts", waits growing 2, 4, 8, 16, 30, 60, 90 min
-- VIEW ROUTER WATCHDOG LOG: the heading names the slot and its region, the text fills the width on a tablet, and after midnight yesterday's lines appear above today's; CLEAR empties both
-
-### 6.1. <a name='checks'></a>Checks
-
-1. check that boot persistence contains the two cru lines (5m watchdog)
-
-On Merlin that is `/jffs/scripts/services-start`; on stock the app owns the replacement block of `/opt/etc/init.d/S50downloadmaster` instead, between the `REPLACEMENT START` / `REPLACEMENT END` markers.
+- **CHK**: on the router, with the device's own address in place of `<ip>`:
 
 ```bash
-#!/bin/sh
-cru a watchdog_wgc1 "*/5 * * * *" /jffs/cfg-pia-wg/watchdog_wgc1.sh
-cru a watchdog_log_rotate_wgc1 "0 0 * * *" "mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log"
+ip rule show | grep -w <ip>
+nvram get vpnc_dev_policy_list | tr '<' '\n' | grep -w <ip>
+nvram get vpnc_default_wan
 ```
 
-2. check cron and cru are updated in realtime, test 1m and 10m
+---
 
-```bash
-user@host:/tmp/home/root# crontab -l
-*/1 * * * * /jffs/cfg-pia-wg/watchdog_wgc1.sh #watchdog_wgc1#
-0 0 * * * mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
+## <a name='pre'></a>PRE. Before you start
 
-user@host:/tmp/home/root# cru l
-*/1 * * * * /jffs/cfg-pia-wg/watchdog_wgc1.sh #watchdog_wgc1#
-0 0 * * * mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log #watchdog_log_rotate_wgc1#
-```
+**PRE-1** Clean router
 
-3. Is the deployed watchdog script correct?
+- Do: copy `scripts/clearall.sh` and `scripts/showall.sh` to the router, run `./clearall.sh`, then delete every VPN in the WebUI.
+- Do: `rm -f /jffs/cfg-pia-wg/jq /jffs/cfg-pia-wg/mailsend-go`, so CON-4 can test the install.
+- Do: reboot the router.
+- See: `./showall.sh` shows no `wgcN_`, `cfg_pia_wg_` or watchdog entries.
 
-Compare a post processed instance of `const String _kWatchdogScriptTemplate` in `lib\router_watchdog.dart` with `/jffs/cfg-pia-wg/watchdog_wgcN.sh`
+**PRE-2** Router is accepting service calls
 
-4. check NVRAM is set correctly
+- Do: `grep "rc_service: skip the event" /tmp/syslog.log`
+- Pass if: nothing. If anything prints, power cycle before testing. See [R1](#r1).
 
-```bash
-user@host:/tmp/home/root# nvram show | grep wgc1
-wgc1_wd_check_interval=1
-wgc1_wd_email_enabled=0
-wgc1_wd_email_from=
-wgc1_wd_email_subject=cfg-pia-wg watchdog alert
-wgc1_wd_email_to=
-wgc1_wd_primary_ip=8.8.8.8
-wgc1_wd_secondary_ip=1.1.1.1
-wgc1_wd_smtp_pass=
-wgc1_wd_smtp_server=
-wgc1_wd_smtp_user=
-```
+**PRE-3** Note your own public address
 
-```bash
-user@host:/tmp/home/root# nvram show | grep cfg-pia-wg
-cfg-pia-wg_password=REDACTED
-cfg-pia-wg_user=REDACTED
-```
+- Do: exit IP on DESKTOP.
+- See: your ISP's address. Write it down; later tests compare against it.
 
-6. Check `/tmp/watchdog_last_ping_success_wgcN`
+**PRE-4** Have to hand
 
-Check that this file is created when a ping succeeds.
+- PIA username and password.
+- An SMTP account with an app password, for example Gmail.
+- The router WebUI open on DESKTOP.
 
-7. Check logs are generated
+---
 
-Check `/tmp/watchdog_wgcN.log` is generated
+## <a name='con'></a>CON. Connecting to the router
 
-8. Check router syslog entries are created
+**CON-1** Wrong SSH password
 
-Conduct, deploy, delete, reconfigure actions. Ensure these are logged to syslog.
+- Do: MANAGE, enter the right IP and username and a wrong password, CONNECT TO ROUTER.
+- See: "Router SSH connection error: ..." and the form stays, with what you typed.
 
-9. Update `check interval` from 1 to 100 ensure NVRAM written, `cron` and `crontab` updated
+**CON-2** Unreachable address
 
-10. Check cleanup ocurs when `DISABLE`/`DELETE` selected in UI
+- Do: MANAGE, IP `192.168.50.254`, CONNECT TO ROUTER.
+- See: an error within a few seconds, not a hang.
 
-- cron jobs removed, check with `crontab -l` and `cru l`
-- `/jffs/scripts/services-start` should only contain `#!/bin/sh`
-- add a comment to `/jffs/scripts/services-start`, start watchdog and remove watchdog, comment should persist
-- all files deleted
+**CON-3** Good login
 
-11. File permissions
+- Do: MANAGE, right details, CONNECT TO ROUTER.
+- See: the slot list.
+- See: APP LOG has "Router firmware detected: stock." and, the first time, "Router address remembered."
 
-Check `/jffs/scripts/services-start` permission is 777 `-rwxrwxrwx`
-Check `/jffs/cfg-pia-wg/watchdog_wgcN.sh` permission is 777 `-rwxrwxrwx`
+**CON-4** Helper programs missing, declined
 
-12. Reboot and check that cron and crontab are correct
-    <br>
-13. Force a reconfigure to occur
+- Do: WATCHDOG, connect.
+- See: "Install helper programs?", listing `jq` and `mailsend-go` with versions and checksums.
+- Do: NOT NOW.
+- See: back on the connect form, with no second warning.
 
-The watchdog decides a tunnel is alive from its **WireGuard handshake**: `wg show wgcN latest-handshakes` reduced to its newest peer, healthy if under 300 seconds old. A ping bound to the interface is only a fallback, because on stock the router's own traffic is not policy-routed into `wgcN` and `ping -I` fails on a perfectly healthy tunnel.
+**CON-5** Helper programs missing, installed
 
-So a good test breaks the **crypto or the peer**, leaves the interface up, and touches neither the WAN nor NVRAM. Two things that look like good tests are not: disabling the interface in the WebUI exercises only the "interface down or absent" path and disturbs routing, and moving the peer's endpoint is undone within seconds by WireGuard's endpoint roaming - see [What does NOT work: moving the endpoint](#what-does-not-work-moving-the-endpoint).
+- Do: WATCHDOG, connect again in the same session.
+- See: a warning starting "Unable to locate:", with INSTALL.
+- Do: INSTALL, then INSTALL in the dialog.
+- See: it installs and connects.
+- Pass if: `ls -l /jffs/cfg-pia-wg` lists `jq` and `mailsend-go`.
 
-> [!IMPORTANT]
-> The clock runs from the **last handshake**, not from when you broke the tunnel. `wg show wgcN latest-handshakes` tells you exactly where you are; the watchdog reacts at the first check where that age exceeds 300 s, so worst case is 300 s **plus** one check interval. A check logging `Handshake 264s ago` after you broke it is the window working, not a failure - wait for the next one. Removing the peer - see [Peer removed (the fast one)](#peer-removed-the-fast-one) - skips the wait entirely.
+**CON-6** Address with a port
 
-> [!CAUTION]
-> Any LAN client policy-routed through the slot loses internet for the duration of the test - the tunnel really is dead. That is confirmation the test worked, but do not run it on a slot something depends on.
+- Do: connect with `192.168.50.1:22` as the address.
+- See: connects as normal.
 
-> [!WARNING]
-> PIA rate-limits token requests. Since 405 the watchdog backs off on consecutive failures - 2, 4, 8, 16, 30, 60 minutes, capped at 90 - which is what keeps a broken tunnel from provoking it, but two failing watchdogs still climb their ladders independently. If `failed to obtain PIA token` starts appearing, stop and wait 15-30 minutes; the log carries the HTTP status, so `HTTP 403` confirms throttling rather than a fault. Test one slot at a time, and prefer a 5 m check interval over 1 m for reconfigure tests.
+---
 
-#### 6.1.1. <a name='invalidate-the-registration-the-important-one'></a>Invalidate the registration (the important one)
+## <a name='hom'></a>HOM. Home screen and drawer
 
-The truest simulation of a PIA registration that has silently died: the interface stays up and keeps sending, the server no longer recognises us, and no handshake ever completes. Replace the interface's private key with a fresh one the server has never seen:
+**HOM-1** Every row goes where it says
+
+- Do: tap each of the nine rows, then HOME.
+- See: each opens its screen; HOME and the back key return.
+
+**HOM-2** Rows line up
+
+- See: each row has its icon at the left, its label, and a chevron at the right.
+- See: icons in one straight column, labels starting in line.
+- See: EXIT is red with a power icon and no chevron.
+
+**HOM-3** Drawer matches
+
+- Do: open the drawer.
+- See: the same destinations in the same order, the same icons, plus a home icon beside HOME.
+
+**HOM-4** Links
+
+- Do: "how to use this app".
+- See: the README section opens.
+- Do: "add a Play Store app review".
+- See: the Play Store app opens the listing, not a web page inside cfg-pia-wg.
+
+**HOM-5** Tablet
+
+- Do: open the app on TABLET.
+- See: the list is no wider than 520 and centred. On the phone it fills the width.
+
+**HOM-6** Nothing that should not be there
+
+- See: no footnotes under the rows, no PAYPAL or PATREON buttons.
+- See: the help and review lines sit together directly under EXIT.
+
+---
+
+## <a name='std'></a>STD. Standalone
+
+**STD-1** Generate a config
+
+- Do: choose a region with the browse button, enter PIA details, GENERATE CONFIG.
+- See: the heading `GENERATED CONFIG: pia-<region>` and the config text.
+- See: the password manager offers to save.
+
+**STD-2** Region filter
+
+- Do: browse, type part of a region name in the filter.
+- See: the list narrows; tapping a row fills the field.
+
+**STD-3** Typed region that does not exist
+
+- Do: type `pia-nowhere`, GENERATE CONFIG.
+- See: an error ending "not found."
+
+**STD-4** Wrong PIA password
+
+- Do: a real region, wrong password, GENERATE CONFIG.
+- See: an error starting "Auth error:".
+
+**STD-5** Bad DNS
+
+- Do: DNS `9.9.9`, GENERATE CONFIG.
+- See: "... is not a valid DNS address ...".
+- Do: DNS `1.1.1.1, 8.8.8.8, 9.9.9.9`.
+- See: "Enter at most two DNS addresses."
+
+**STD-6** DNS default comes back
+
+- Do: clear the DNS field, leave the screen, return.
+- See: the Quad9 addresses are back.
+
+**STD-7** Copy clears itself
+
+- Do: COPY.
+- See: "Config copied" and a 60 second countdown under COPY.
+- Do: leave the screen before it ends.
+- See: after 60 seconds, APP LOG has "Clipboard auto cleared." and pasting gives nothing.
+
+**STD-8** Share and save
+
+- Do: SHARE / SAVE, send it to yourself.
+- See: a file called `pia-<region>.conf`.
+- Do (optional): import it into the router WebUI as a WireGuard client, and connect.
+- See: it connects.
+
+**STD-9** Config survives leaving the screen
+
+- Do: leave STANDALONE and come back.
+- See: the generated config is still shown.
+
+---
+
+## <a name='man'></a>MAN. Manage
+
+**MAN-1** Create wgc1
+
+- Do: select wgc1, CREATE, choose a region, enter PIA details, CONTINUE.
+- See: "Slot created" and "wgc1 has been created. Remember to ENABLE it via the ENABLE button."
+
+**MAN-2** Create wgc5, in a different region
+
+- Do: as MAN-1 for wgc5.
+- See: both rows read `wgcN:pia-<region>`; empty slots read `wgcN <empty slot>`.
+
+**MAN-3** Enable asks for check targets the first time
+
+- Do: select wgc1, ENABLE.
+- See: "Connectivity check targets", filled in with 8.8.8.8 and 1.1.1.1.
+- Do: ENABLE.
+- See: APP LOG `wgc1:pia-<region> enabled and verified.` and the ACTIVE badge.
+
+**MAN-4** Two tunnels up
+
+- Do: ENABLE wgc5.
+- See: ACTIVE on both rows, not just one.
+- Pass if: `wg show interfaces` lists both.
+
+**MAN-5** Stock VPN limit
+
+- Do: create wgc3, ENABLE it while wgc1 and wgc5 are up.
+- See: "VPN limit reached". Nothing is written to the router.
+
+**MAN-6** Edit
+
+- Do: select wgc1, EDIT, clear one field.
+- See: SAVE greyed.
+- Do: put it back, change DNS to `9.9.9.9`, SAVE.
+- Pass if: `nvram get wgc1_dns` reads `9.9.9.9`.
+
+**MAN-7** Stock DNS note
+
+- See: CREATE's credentials dialog and EDIT's DNS field both say assigned devices use only the first server. STANDALONE does not.
+
+**MAN-8** Disable
+
+- Do: select wgc5, DISABLE, confirm.
+- See: the ACTIVE badge goes.
+- Pass if: `wg show interfaces` no longer lists wgc5.
+
+**MAN-9** Create over a running tunnel, new region
+
+- Do: with wgc1 up, note `wg show wgc1 latest-handshakes`, then CREATE on wgc1 in a different region.
+- See: the overwrite prompt says the tunnel will be stopped first.
+- See: afterwards the slot shows disabled and the dialog says the old tunnel was stopped.
+- Do: ENABLE.
+- Pass if: `wg show wgc1 latest-handshakes` shows a DIFFERENT peer key.
+
+**MAN-10** Overwrite with the same region
+
+- Do: CREATE on a configured slot, same region.
+- See: the overwrite prompt, then "Slot created".
+
+**MAN-11** Enable that fails turns the slot back off (optional, slow)
+
+- Do: EDIT wgc5, change `ep_addr` to `192.0.2.1`, SAVE, ENABLE.
+- See: after a minute or two, an error that the tunnel came up but the PIA server never answered.
+- See: the slot shows disabled.
+- Do: CREATE wgc5 again to repair it.
+
+**MAN-12** Delete
+
+- Do: select wgc3, DELETE.
+- See: the prompt names the VPN: `Delete VPN wgc3:pia-<region>?`
+- See: the row reads `wgc3 <empty slot>`.
+
+---
+
+## <a name='wd'></a>WD. Watchdog
+
+Use a 5 minute check interval throughout. PIA rate-limits token requests: test one slot at a time.
+
+**WD-1** Form checks what you type
+
+- Do: WATCHDOG, select wgc1, CREATE/EDIT. Turn on "Enable email alerts", SMTP server `smtp.gmail.com` with no port, SAVE & DEPLOY.
+- See: "SMTP server must be in host:port format".
+
+**WD-2** Region PIA does not have
+
+- Do: type region `pia-nowhere`, SAVE & DEPLOY.
+- See: "... is not a PIA WireGuard region. Choose one from the list."
+
+**WD-3** Test email, before any deploy
+
+- Do: fill in email with `smtp.gmail.com:465` and a good app password, TEST EMAIL.
+- See: APP LOG "Test email sent to ...".
+- Pass if: the subject ends `TEST email - wgc1:pia-<region on the form>`.
+
+**WD-4** Test email follows the form's region
+
+- Do: change the region on the form, TEST EMAIL.
+- Pass if: the subject and the body's Watchdog row name the new region.
+
+**WD-5** Test email failure
+
+- Do: wrong SMTP password, TEST EMAIL.
+- See: "The test email could not be sent. ..." and red lines in APP LOG saying what the router reported.
+- Do: put the right password back.
+
+**WD-6** Unreachable check target warns, still saves
+
+- Do: primary ping IP `192.0.2.1`, SAVE & DEPLOY.
+- See: "Primary IP 192.0.2.1 is not reachable from the router." and "The settings will still be saved."
+- Do: set it back to `8.8.8.8` and SAVE & DEPLOY.
+
+**WD-7** Deploy on a running slot, same region
+
+- Do: with wgc1 up, SAVE & DEPLOY keeping its region.
+- See: ROUTER LOG "... is already up; its tunnel was left running".
+- Pass if: wgc5's handshake keeps counting up (no tunnel restart).
+- See: a SUCCESS email saying "watchdog deployed".
+
+**WD-8** Deploy on a running slot, new region
+
+- Do: SAVE & DEPLOY wgc1 with a different region.
+- See: the prompt says the tunnel is rebuilt on the new region.
+- See: ROUTER LOG "Cleared ... rebuilds it", "Deploying: bringing wgc1 up", `Deploy SUCCESS: region pia-<new region>`.
+- Pass if: a NEW peer key in `wg show wgc1 latest-handshakes`, and exit IP on a device pinned to wgc1 is the new region.
+- See: that pinned device uses the default connection during the rebuild, and is back on wgc1 after.
+- See: the WebUI shows wgc1 connected.
+
+**WD-9** Deploy on an empty slot
+
+- Do: select wgc2, CREATE/EDIT, choose a region, SAVE & DEPLOY.
+- See: the slot ends enabled with WATCHDOG ACTIVE.
+- See: ROUTER LOG's first check reads "Interface wgc2 is not up yet" or "Not connected yet: ...", in lavender, never the red "No handshake and both pings failed".
+
+**WD-10** Email settings fill in
+
+- Do: open CREATE/EDIT on another slot.
+- See: every email field carries wgc1's, SMTP server, port and password included.
+- Do: change them there, then open a third slot.
+- See: the changed ones.
+- Do: restart the app, open a new slot.
+- See: the lowest-numbered slot's settings from the router.
+
+**WD-11** Pause and resume
+
+- Do: select wgc1, DISABLE, confirm.
+- See: WATCHDOG PAUSED; the tunnel stays ACTIVE; VIEW ROUTER WATCHDOG LOG still works.
+- Pass if: `cru l` has no `watchdog_wgc1` lines.
+- Do: ENABLE.
+- See: WATCHDOG ACTIVE, at the same interval.
+
+**WD-12** Two watchdogs, delete one
+
+- Do: watchdogs on wgc1 and wgc5. WATCHDOG, select wgc5, DELETE.
+- See: "Delete watchdog and VPN wgc5:...?". Afterwards wgc5 is empty.
+- See: APP LOG "Another watchdog is still configured; keeping the shared PIA credentials."
+- Pass if: `nvram get cfg_pia_wg_user` is still set.
+
+**WD-13** Emails
+
+- See: the deploy email says "watchdog deployed", subject SUCCESS.
+- See: subjects thread by slot: `cfg-pia-wg alert: SUCCESS - wgc1:pia-<region>`.
+- See: HISTORY counters in every email; `nvram get cfg_pia_wg_sdate` never changes.
+- See, after BRK-1: the rebuild email has the outage duration, the kill-switch line, the new server and its latency.
+- See, after BRK-5: the failure email has WHAT TO DO, the attempt count and the last 10 router log lines.
+- See, on stock, the kill-switch line: a tunnel with no devices assigned that is not the default says so; "still on a VPN" appears only when the default is a WireGuard tunnel that is up; a default that is down, or not WireGuard, says devices may have had no VPN.
+
+**WD-14** A failed email explains itself
+
+- Do: wrong SMTP password, SAVE & DEPLOY.
+- See: VIEW ROUTER WATCHDOG LOG has "Email FAILED", then `Email diag: resolv.conf [...] via <interface>; <smtp host> resolves to [...]`. An interface name only, no WAN address.
+- Do: right password, SAVE & DEPLOY.
+
+**WD-15** Cannot save without jq
+
+- Do: on the router `mv /jffs/cfg-pia-wg/jq /jffs/cfg-pia-wg/jq.bak`, then open CREATE/EDIT.
+- See: a red banner that jq is not installed; SAVE & DEPLOY refuses.
+- Do: `mv /jffs/cfg-pia-wg/jq.bak /jffs/cfg-pia-wg/jq`.
+
+**WD-16** Watchdog log
+
+- Do: VIEW ROUTER WATCHDOG LOG.
+- See: the heading names the slot and region; newest lines at the bottom; on a tablet the text fills the width.
+- See: after midnight, yesterday's lines above today's.
+- Do: CLEAR, confirm.
+- See: "Watchdog log cleared for wgc1." and an empty log.
+
+**WD-17** Survives a reboot
+
+- Do: reboot the router, wait for it.
+- Pass if: `cru l` lists `watchdog_wgc1` and `watchdog_log_rotate_wgc1`, and the next check logs `Handshake Ns ago`.
+
+**WD-18** Keyboard
+
+- See: on the form, the keyboard never covers the field you are typing in.
+
+**WD-19** Change the check interval
+
+- Do: CREATE/EDIT on wgc1, interval `10`, SAVE & DEPLOY.
+- Pass if: `nvram get wgc1_wd_check_interval` reads `10`, and `cru l` and the boot persistence file both show `*/10 * * * *` for `watchdog_wgc1`.
+- Do: set it back to `5`.
+
+---
+
+## <a name='brk'></a>BRK. Break a tunnel
+
+The most common real failure is PIA silently expiring a registration. There is no published schedule: it can be a day or a couple of weeks. The interface stays up, the server stops answering, and the handshake ages out. BRK-1 reproduces exactly that. Why the others are chosen, and why some obvious methods are not used, is in [R2](#r2).
+
+Anything pinned to the slot loses internet during these tests. That is the test working. Use a slot nothing important depends on, with a watchdog, email on, and a 5 minute interval.
+
+**BRK-1** Expired registration (the real one, slow)
+
+- Do: pin TABLET to wgc1. Note `nvram get wgc1_ppub`.
+- Do: on the router:
 
 ```bash
 wg genkey > /tmp/breakit
 wg set wgc1 private-key /tmp/breakit
 rm -f /tmp/breakit
-
-wg show wgc1 latest-handshakes    # stops advancing from here
 ```
 
-Nothing can undo this from the far end - the server cannot authenticate a key it was never given - so the tunnel stays dead until the watchdog re-registers.
+- Do: wait. It takes 5 minutes after the last handshake, plus up to one check interval.
+- See: watchdog log "No handshake and both pings failed", "Connectivity lost; reconfiguring (attempt #1)", then `Reconfig SUCCESS: region pia-<region> via ...`.
+- See: a SUCCESS email with the outage duration and the new server.
+- Pass if: `wg show wgc1` lists the NEW key from `nvram get wgc1_ppub`, the next check logs `Handshake Ns ago`, and TABLET's exit IP is back in the region.
+- Note: on stock this also settles BACKLOG ID-070. Write down whether the new key reached the interface.
 
-Expected in `/tmp/watchdog_wgc1.log` once the handshake passes 300 s:
+**BRK-2** Expired registration (the quick one)
+
+- Do: on the router:
+
+```bash
+wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
+/jffs/cfg-pia-wg/watchdog_wgc1.sh
+```
+
+- See: the script returns at once; a few seconds later the watchdog log shows the same sequence as BRK-1, with no 5 minute wait.
+- Pass if: as BRK-1.
+
+**BRK-3** Interface down
+
+- Do: `ifconfig wgc1 down`, then `/jffs/cfg-pia-wg/watchdog_wgc1.sh`.
+- See: watchdog log "Interface wgc1 is down or absent", then "Connectivity lost; reconfiguring (attempt #1)", then "Reconfig SUCCESS".
+- Pass if: `wg show interfaces` lists wgc1 again and the next check logs `Handshake Ns ago`.
+- Note: if it ends "did not come up after reconfiguration", write that against BACKLOG ID-070.
+
+**BRK-4** A tunnel you turned off is left alone
+
+- Do: turn wgc1 off in the WebUI. Check `nvram get wgc1_enable` reads `0`.
+- Do: `/jffs/cfg-pia-wg/watchdog_wgc1.sh`, wait 15 seconds.
+- See: watchdog log "wgc1 is disabled in the router; standing down until it is enabled again".
+- Pass if: the tunnel stays off and no email arrives.
+- Do: turn wgc1 back on in the WebUI.
+
+**BRK-5** A rebuild that fails
+
+- Do: WATCHDOG CREATE/EDIT on wgc1, wrong PIA password, SAVE & DEPLOY.
+- Do: break it as in BRK-2.
+- See: watchdog log "ERROR: failed to obtain PIA token ..." and a FAILED email with WHAT TO DO, the attempt count and the last 10 router log lines.
+- Pass if: `cat /tmp/watchdog_backoff_wgc1` has a count of 1 and a timestamp.
+- Do: right password, SAVE & DEPLOY.
+- See: it recovers and emails SUCCESS.
+- Do not repeat this test straight away: PIA refuses repeated token requests for a while.
+
+**BRK-6** Backoff ladder, with no PIA traffic
+
+- Do: WATCHDOG DISABLE on wgc5 (it shows PAUSED).
+- Do: `wg set wgc5 peer "$(nvram get wgc5_ppub)" remove`
+- Do: copy `scripts/test-backoff.sh` to the router, run `./test-backoff.sh 5`.
+- See: waits of 120, 240, 480, 960, 1800, 3600, 5400, 5400 seconds, and the script exits 0.
+- Do: WATCHDOG ENABLE on wgc5.
+- Why it is safe, and the loop by hand: [R3](#r3).
+
+---
+
+## <a name='dev'></a>DEV. Device assignment
+
+Stock only. Assigning a device does not restart any tunnel; changing the default connection does, and has its own section, [DEF](#def). Set up: wgc1 and wgc5 up in different regions, default connection Internet.
+
+**DEV-1** The list
+
+- See: every LAN device, offline ones dimmed and last.
+- See: first line `name - tags`, tags separated by `|`; second line `IP MAC`, or the MAC alone when no address is known.
+- See: tags `DHCP` (no reservation), `random MAC`, `offline`.
+- See: a device with no known address shows "connect this device once to assign it" and no picker.
+- See: the router itself and AiMesh nodes are not listed.
+
+**DEV-2** Stage, then discard
+
+- Do: pick wgc1 for TABLET.
+- See: the row marks itself changed; "APPLY 1 CHANGE" and DISCARD CHANGES appear.
+- Do: DISCARD CHANGES.
+- See: the row is back as it was. Nothing was written: CHK shows no change.
+
+**DEV-3** Staged changes survive leaving the screen
+
+- Do: pick wgc1 for TABLET, go HOME, come back to DEVICE ASSIGNMENT.
+- See: the change is still staged.
+
+**DEV-4** Assign TABLET, which has no reservation
+
+- Do: TABLET to wgc1, APPLY 1 CHANGE.
+- See: the confirmation lists `from -> to` and says TABLET will also be given a fixed address.
+- Do: APPLY.
+- Pass if: CHK shows ONE rule for TABLET, `nvram get dhcp_staticlist` has TABLET, nothing else on the LAN dropped, and TABLET's exit IP is wgc1's region.
+- See: `tail /tmp/syslog.log` names TABLET and where it moved.
+
+**DEV-5** Tunnel to tunnel
+
+- Do: TABLET to wgc5, APPLY.
+- Pass if: CHK shows ONE rule, the new one, and exit IP is wgc5's region.
+
+**DEV-6** To Internet, then straight to a tunnel
+
+- Do: TABLET to Internet, APPLY.
+- Pass if: CHK shows ONE rule, `lookup main`; exit IP is your own.
+- Do: TABLET to wgc5, APPLY.
+- Pass if: ONE rule, not `lookup main`; exit IP is wgc5's region.
+
+**DEV-7** Back to the default
+
+- Do: TABLET to "default - Internet", APPLY.
+- Pass if: CHK shows no rule for TABLET; exit IP is your own.
+
+**DEV-8** Several devices in one APPLY
+
+- Do: TABLET to wgc1 and DESKTOP to wgc5, APPLY 2 CHANGES.
+- See: one confirmation listing both.
+- Pass if: CHK for each shows ONE rule, and each exit IP matches its tunnel.
+
+**DEV-9** Quick router-side check
+
+- Do: `ip route get 1.1.1.1 from <DESKTOP ip> iif br0`
+- Pass if: the output names `dev wgc5`.
+
+**DEV-10** DNS goes through the tunnel
+
+- Do: on DESKTOP (pinned to wgc5), run a DNS leak test page.
+- Pass if: only the slot's first DNS server, or PIA's, appears. Not your ISP's.
+
+**DEV-11** To a disabled slot
+
+- Do: MANAGE DISABLE wgc5. DEVICE ASSIGNMENT, TABLET to wgc5.
+- See: the confirmation warns wgc5 is not running and TABLET will use the default connection.
+- Do: APPLY.
+- See: TABLET's row notes where its traffic goes. Exit IP is your own.
+- Do: MANAGE ENABLE wgc5.
+- Pass if: TABLET's exit IP moves to wgc5's region without reassigning, and the note goes.
+
+**DEV-12** To a server that stopped answering
+
+- Do: on a slot with no watchdog, `wg set wgcN peer "$(nvram get wgcN_ppub)" remove`, wait 4 minutes, move TABLET onto it.
+- See: the confirmation warns its server has not answered.
+- Do: DISABLE and ENABLE the slot afterwards.
+
+**DEV-13** Offline device
+
+- Do: switch TABLET off. Refresh the screen.
+- See: TABLET dimmed with `offline`, still with a picker.
+- Do: TABLET to wgc1, APPLY.
+- Pass if: CHK shows the record. Switch TABLET on: exit IP is wgc1's region.
+
+**DEV-14** Someone else changed the router
+
+- Do: stage DESKTOP to wgc1 in the app, do not apply.
+- Do: in the WebUI, change the VPN assignment of a device that already has a reservation, and apply.
+- Do: back in the app, APPLY.
+- See: "The router changed while you were editing ... Nothing was written, and your staged changes have been cleared. ..."
+- Pass if: CHK for DESKTOP is unchanged.
+
+**DEV-15** Delete a VPN with devices on it
+
+- Do: TABLET to wgc5, APPLY. MANAGE DELETE wgc5.
+- See: APP LOG names TABLET, moved to Internet.
+- Pass if: CHK shows a `lookup main` rule; exit IP is your own.
+- Do: CREATE wgc5 again, ENABLE.
+- Pass if: TABLET is NOT on wgc5.
+
+**DEV-16** The random MAC phone
+
+- Do: PHONE to wgc1, APPLY.
+- Pass if: CHK shows ONE rule; PHONE's exit IP is wgc1's region.
+- Note: the reservation is tied to today's MAC. Restart the phone and see whether it keeps its address; if it gets a new one, the assignment no longer applies to it. Write down which.
+
+**DEV-17** Survives a reboot
+
+- Do: reboot the router.
+- Pass if: CHK unchanged for every device, and each exit IP matches its row.
+
+---
+
+## <a name='def'></a>DEF. Default connection
+
+Changing the default stops every tunnel and starts them again, for about a minute. Anything using any tunnel drops. Do not run this on a router someone is relying on. Set up: wgc1 and wgc5 up in different regions, TABLET on "default", DESKTOP pinned to wgc5.
+
+**DEF-1** Internet to a tunnel
+
+- Do: note `wg show interfaces`. Set the default to wgc1, APPLY.
+- See: the confirmation warns tunnels stop and restart.
+- Pass if: `nvram get vpnc_default_wan` reads wgc1's index 6 (see [R5](#r5)), `ip rule show` has two rules at priority 10000, TABLET's exit IP is wgc1's region, and DESKTOP stays on wgc5.
+
+**DEF-2** Every tunnel comes back
+
+- Do: `wg show interfaces` after DEF-1.
+- Pass if: the same list as before.
+
+**DEF-3** Tunnel to a different tunnel, directly
+
+- Do: default to wgc5, APPLY.
+- Pass if: `nvram get vpnc_default_wan` reads wgc5's index 6, and TABLET's exit IP is wgc5's region.
+
+**DEF-4** A device pinned to Internet ignores the default
+
+- Do: DESKTOP to Internet, APPLY.
+- Pass if: DESKTOP's exit IP is your own while TABLET's is wgc5's region.
+- Do: DESKTOP back to wgc5.
+
+**DEF-5** A watchdog during the change
+
+- Do: watchdog active on wgc1, 5 minute interval. Change the default, APPLY.
+- See: watchdog log over the next 10 minutes.
+- Pass if: the tunnels are back within about a minute. Write down whether the watchdog logged an outage or rebuilt.
+
+**DEF-6** Default tunnel down, unassigned device (fail open or closed)
+
+- Do: default to wgc1, no watchdog on wgc1. MANAGE DISABLE wgc1.
+- See: the default panel notes wgc1 is not running and unassigned devices use Internet.
+- Do: exit IP on TABLET.
+- Write down: your own address means it fails OPEN (what the app expects). No internet means it fails CLOSED, and the panel note is wrong.
+- Do: ENABLE wgc1.
+
+**DEF-7** Default tunnel down, device pinned to that same tunnel (fail open or closed)
+
+- Do: default to wgc1, DESKTOP pinned to wgc1. MANAGE DISABLE wgc1.
+- Do: exit IP and `ping google.com` on DESKTOP.
+- Write down: your own address means it fails OPEN, and two documents are wrong: ARCHITECTURE, which predicts "no internet, no leak", and README 5.4, which tells users this setup gives fail-closed behaviour. No internet means it fails CLOSED, and the app's note under DESKTOP's row is wrong.
+- Do: ENABLE wgc1, DESKTOP back to wgc5.
+
+**DEF-8** Back to Internet
+
+- Do: default to Internet, APPLY.
+- Pass if: `nvram get vpnc_default_wan` reads `0`, the priority 10000 rules are gone, and TABLET's exit IP is your own.
+
+**DEF-9** Delete the VPN that is the default
+
+- Do: default to wgc1, APPLY. DESKTOP on wgc5. MANAGE DELETE wgc1.
+- Pass if: `nvram get vpnc_default_wan` reads `0`, every tunnel restarts, TABLET's exit IP is your own, and DESKTOP is still on wgc5.
+
+**DEF-10** Survives a reboot
+
+- Do: default to wgc5, reboot.
+- Pass if: the default and every assignment survive, and each exit IP matches.
+
+---
+
+## <a name='log'></a>LOG. App log and router log
+
+**LOG-1** App log
+
+- See: headed APP LOG in teal capitals.
+- Do: COPY, paste somewhere.
+- See: "App log copied.", no countdown, and the paste keeps its line breaks.
+- Do: CLEAR.
+- See: "Ready."
+
+**LOG-2** One connection per session
+
+- Pass if: the router's syslog has one `dropbear ... Password auth succeeded` per app session, not one per button press.
+
+**LOG-3** Connection drops mid-session
+
+- Do: with MANAGE open, reboot the router. When it is back, press ENABLE or DISABLE.
+- See: APP LOG "Router SSH connection dropped; reconnecting." and the action completes.
+
+**LOG-4** Router log paging
+
+- Do: ROUTER LOG.
+- See: headed ROUTER LOG, opens at the newest lines.
+- Do: scroll to the top.
+- See: older lines load and the text you were reading does not jump; no page starts mid-word.
+- See: at the very start, it continues into the rotated log if there is one, then "- start of the router log -".
+- Do: select text across the join between two loaded pages.
+- See: it selects in one run.
+
+**LOG-5** Router log colours
+
+- See: the app's lines teal, the watchdog's lavender, never amber.
+- See: any of those reporting an error in red; the firmware's own lines plain, even when they say failed.
+
+**LOG-6** Router log copy and refresh
+
+- Do: COPY.
+- See: "Router log copied.", everything loaded, no countdown.
+- Do: REFRESH.
+- See: back at the newest lines.
+
+**LOG-7** Router log without a session
+
+- Do: EXIT the app, reopen, go straight to ROUTER LOG.
+- See: it asks for router details; CANCEL leaves "No log read yet."
+
+---
+
+## <a name='set'></a>SET. Settings
+
+**SET-1** Rows
+
+- See: REBOOT ROUTER, FORGET ROUTER IP, REMOVE CACHED PIA CERT, UNINSTALL FEATURES DEPLOYED TO ROUTER, RESTORE PURCHASE (store build only), MAX ACTIVE VPNS.
+
+**SET-2** One login covers the screen
+
+- Do: with no router session, REMOVE CACHED PIA CERT.
+- See: a login prompt with the remembered address filled in, the username blank, and the keyboard not covering it.
+- Do: log in.
+- Do: MAX ACTIVE VPNS, then leave SETTINGS and come back and use REBOOT ROUTER's prompt.
+- Pass if: no second login.
+
+**SET-3** A failed login is not kept
+
+- Do: EXIT, reopen, SETTINGS, REMOVE CACHED PIA CERT with a wrong password.
+- See: an error. The next action asks again, prefilled.
+
+**SET-4** Remove cached PIA cert
+
+- Do: REMOVE CACHED PIA CERT, DELETE.
+- See: "Cached PIA certificate deleted."
+- Do: again.
+- See: "No cached PIA certificate on the router."
+- See: the next watchdog reconfigure logs that it is downloading the certificate.
+
+**SET-5** Max active VPNs
+
+- Do: MAX ACTIVE VPNS, enter `6`.
+- See: "Enter a number from 2 to 5."
+- Do: enter `3`, SAVE.
+- See: "Maximum active VPNs set to 3."
+- Pass if: a third tunnel now enables.
+- Do: set it back to `2`.
+
+**SET-6** Reboot
+
+- Do: REBOOT ROUTER, REBOOT.
+- See: "Rebooting the router" with a percentage.
+- See: it closes with "The router answered again after N seconds."
+
+**SET-7** Forget router IP
+
+- Do: FORGET ROUTER IP, FORGET.
+- See: "Remembered router address deleted." and the row greys out.
+- Pass if: the next connect form opens with the default address.
+
+**SET-8** Every action leaves a trail
+
+- Pass if: each action above wrote a line to APP LOG, and those that touched the router wrote one to ROUTER LOG too.
+
+UNINSTALL is at the very end of the run: [END](#end).
+
+---
+
+## <a name='abt'></a>ABT. About
+
+**ABT-1** Router facts without a session
+
+- Do: EXIT, reopen, ABOUT.
+- See: "login to router to retrieve" on the watchdog rows.
+- Do: tap it, log in.
+- See: the watchdog script version, the router firmware, and the history line fill in.
+
+**ABT-2** Version rows
+
+- See: Router firmware shows stock and its version.
+- See: License status reads homegrown on a self-built copy; licensed or unlicenced on a store build.
+- See: `Since <yyyy-mm-dd>: X successful & Y unsuccessful reconfigures`
+
+**ABT-3** Script from another version
+
+- Do: install a build with a different version over the top, open ABOUT.
+- See: the script version in amber with REDEPLOY TO UPDATE VERSION under it.
+- Do: REDEPLOY TO UPDATE VERSION.
+- See: "Watchdog script updated on wgc1, ..." and the row goes plain.
+- Pass if: no tunnel restarted (`wg show wgcN latest-handshakes` keeps counting).
+
+**ABT-4** Buttons and links
+
+- Do: COPY BUILD INFO.
+- See: "Build info copied.", no countdown.
+- Do: CREATE GITHUB ISSUE.
+- See: a prefilled issue carrying the firmware type and version.
+- Do: Open source licenses.
+- See: it opens and does not bleed through the header.
+
+---
+
+## <a name='ext'></a>EXT. Exit, background and session
+
+**EXT-1** Password managers
+
+- Do: clear each login field, then tap it.
+- See: the password manager offers PIA, SSH and SMTP logins.
+
+**EXT-2** Exit wipes
+
+- Do: EXIT from the menu, and separately the back key on the home screen.
+- See: both ask "Exit cfg-pia-wg?" first.
+- Do: EXIT.
+- Pass if: on reopening, credentials are blank, staged device changes are gone, and the clipboard is empty.
+
+**EXT-3** Router address survives exit
+
+- Do: reopen after EXIT, MANAGE.
+- See: the router address is filled in.
+
+**EXT-4** Background under 5 minutes
+
+- Do: in MANAGE, switch to another app for 1 minute, come back, press an action.
+- Pass if: no new `Password auth succeeded` in the router's syslog.
+
+**EXT-5** Background over 5 minutes
+
+- Do: switch away for 6 minutes, come back, press an action.
+- Pass if: it reconnects by itself, with one new `Password auth succeeded`.
+
+**EXT-6** Release build privacy
+
+- See: screenshots blocked, and the app obscured in the task switcher.
+
+**EXT-7** Rotate mid-action
+
+- Do: start a watchdog SAVE & DEPLOY, rotate the tablet while it runs.
+- Pass if: it completes and the screen is still usable.
+
+**EXT-8** Leave mid-action
+
+- Do: start an APPLY, open the drawer and go to APP LOG.
+- Pass if: the apply completes (APP LOG shows it) and nothing is left half done.
+
+---
+
+## <a name='lck'></a>LCK. Locked, with no purchase (store build)
+
+Needs a store build, installed from a testing track, on an account that has not bought it. A self-built copy is always unlocked.
+
+**LCK-1** Free things work
+
+- Pass if: STANDALONE generates end to end; MANAGE, WATCHDOG and DEVICE ASSIGNMENT open and show the real router.
+
+**LCK-2** No install offer when locked
+
+- Do: stock, with `jq` missing, connect.
+- Pass if: no install dialog and no missing-program warning.
+
+**LCK-3** Paid controls open the paywall
+
+- Do: tap each: MANAGE CREATE, ENABLE, EDIT; WATCHDOG CREATE/EDIT, ENABLE; DEVICE ASSIGNMENT APPLY; ABOUT REDEPLOY TO UPDATE VERSION; SETTINGS MAX ACTIVE VPNS.
+- See: the paywall each time, and nothing reaches the router.
+
+**LCK-4** Removing is free
+
+- Pass if: DISABLE, DELETE and VIEW LOG work on both MANAGE and WATCHDOG.
+
+**LCK-5** Staging is free
+
+- Do: stage device changes, APPLY, NOT NOW.
+- See: the changes still staged.
+
+**LCK-6** Paywall only on a tap
+
+- Pass if: never on launch, never on entering a screen. A button greyed for its own reasons stays greyed.
+
+**LCK-7** No store
+
+- Do: aeroplane mode, fresh install.
+- See: locked; the buy button reads "Not available right now" and is disabled.
+
+---
+
+## <a name='buy'></a>BUY. Buying and restoring (store build)
+
+Before starting, read [R8](#r8): the tester must be on BOTH Play Console lists, or the purchase charges real money.
+
+**BUY-1** Buy
+
+- Do: any paid control, then buy.
+- See: the price is the store's own, in your currency.
+- See: Google's sheet says "test card, always approves".
+- See: "Purchase complete. Router features unlocked." and the action you tapped carries on.
+- Pass if: every paid control is live straight away, with no restart, and APP LOG has no warning about the store.
+
+**BUY-2** Not now
+
+- Do: a paid control, NOT NOW.
+- See: back exactly where you were.
+
+**BUY-3** Refund relocks
+
+- Do: refund and revoke in Play Console. Wait for RevenueCat.
+- Pass if: the app relocks without a reinstall.
+
+**BUY-4** Restore on reinstall
+
+- Do: uninstall, reinstall from the track.
+- Pass if: already unlocked, with nothing pressed, and no sign-in prompt at launch.
+
+**BUY-5** Restore by hand
+
+- Do: SETTINGS, RESTORE PURCHASE.
+- See: APP LOG "Restore started.", then "Purchase restored. Everything is unlocked."
+- Do: the same on an account that never bought it.
+- See: "No purchase found on this Google account."
+
+**BUY-6** Offline after buying
+
+- Do: aeroplane mode on the device that bought it.
+- See: still unlocked.
+
+---
+
+## <a name='mrl'></a>MRL. Merlin (a separate day)
+
+Repeat on Merlin: CON-1 to CON-3 and CON-6, HOM, MAN (not MAN-5 or MAN-7), WD (not WD-15), BRK, LOG, SET, ABT, EXT.
+
+**MRL-1** Device assignment refuses
+
+- Do: DEVICE ASSIGNMENT, connect.
+- See: "Device assignment is a stock-firmware feature. ..."
+
+**MRL-2** No VPN limit
+
+- Do: SETTINGS, MAX ACTIVE VPNS.
+- See: "Merlin has no limit on active VPNs, so there is nothing to change."
+
+**MRL-3** Kill switch
+
+- See: the KILL SWITCH badge and the editor's kill switch control, which stock does not show.
+
+**MRL-4** Nothing installed
+
+- Pass if: no install offer at connect, and no `jq` or `mailsend-go` under `/jffs/cfg-pia-wg`.
+
+**MRL-5** Boot persistence
+
+- Pass if: the two `cru` lines for each watched slot are in `/jffs/scripts/services-start`.
+
+---
+
+## <a name='end'></a>END. Last, because it removes things
+
+**END-1** Uninstall
+
+- Do: SETTINGS, UNINSTALL FEATURES DEPLOYED TO ROUTER.
+- See: two prompts; the second says what it will do, with CANCEL first in grey and UNINSTALL second in red.
+- See: "Removed from the router", one line per step, and "Please restart your router."
+- Pass if, on the router:
+
+```bash
+ls -l /opt/etc/init.d/S50downloadmaster /opt/etc/init.d/S50asuslighttpd   # restored, or gone
+cru l                                    # no watchdog entries
+nvram show | grep cfg_pia_wg             # nothing
+nvram show | grep -E 'wgc[1-9]_wd_'      # nothing
+ls /jffs/cfg-pia-wg                      # gone
+wg show interfaces                       # UNCHANGED: the tunnels are not the app's to remove
+```
+
+**END-2** Uninstall twice
+
+- Do: UNINSTALL again on the same router.
+- Pass if: it reports each script is not the app's and deletes nothing. Removing the router's own `S50downloadmaster` here is the bug the header line prevents.
+
+---
+
+# Part 2. Reference
+
+## <a name='r1'></a>R1. When something looks broken, check these first
+
+Each of these presents as a different fault from the one it is, and none of them is guessable.
+
+**`rc_service: skip the event:` in `/tmp/syslog.log`.** The router is silently discarding every service call it is given, and has been since an earlier one hung. Nothing works after that: not the app, not the WebUI, not `reboot`. Only a power cycle clears it. The app detects and clears the stale marker before deploying, but if you see this line while testing by hand, stop: nothing you observe afterwards means anything. Detail in [ARCHITECTURE.md, The router's service queue and how it wedges](ARCHITECTURE.md#the-routers-service-queue-and-how-it-wedges).
+
+**A token fetch that exits 0 with no HTTP status, no body and nothing on stderr.** Stock's `/usr/sbin/curl` refuses to run when `crond` is among its parent processes. It does not fail, it does nothing. Confirm it by looking for `Invalid caller(crond)` in `/jffs/curllst`. Detail in [ARCHITECTURE.md, `curl` refuses to run from cron](ARCHITECTURE.md#curl-refuses-to-run-from-cron).
+
+> [!CAUTION]
+> `/jffs/curllst` is world-readable, survives reboots, and records full command lines including `-u user:password`. Redact it before pasting it anywhere, a bug report included.
+
+**A device assignment that is written correctly and has no effect.** Check `ip rule show` first. Stock never removes a device's previous rule when it is reassigned, so both rules sit at priority 100 and the older one wins. The record in `vpnc_dev_policy_list` looks perfect the whole time. Detail in [ARCHITECTURE.md, Stock leaves the old routing rule behind](ARCHITECTURE.md#stock-leaves-the-old-routing-rule-behind-measure).
+
+## <a name='r2'></a>R2. How the watchdog decides a tunnel is broken
+
+Each check, the watchdog decides in this order:
+
+- If `wgcN_enable` is `0` and this is not a deploy, it stands down: the user turned the tunnel off.
+- If the interface is not up (`ip -o link show up`), the tunnel is broken. Detected at once.
+- If the newest handshake (`wg show wgcN latest-handshakes`) is under 300 seconds old, the tunnel is healthy.
+- Otherwise it pings the two check targets through the interface. On stock that ping always fails, because the router's own traffic is not routed into `wgcN`, so on stock the handshake is the only real test.
+
+So a good test breaks the crypto or the peer, or takes the interface down, and touches neither the WAN nor the check targets.
+
+**The clock runs from the last handshake, not from when you broke the tunnel.** `wg show wgcN latest-handshakes` shows where you are. The watchdog reacts at the first check where that age passes 300 seconds, so the worst case is 300 seconds plus one check interval. A check logging `Handshake 264s ago` after you broke it is the window working. Removing the peer skips the wait, because it removes the handshake record too.
+
+**PIA rate-limits token requests.** The watchdog backs off after failed attempts ([R3](#r3)), but two failing watchdogs climb their ladders independently. If `failed to obtain PIA token` appears with `HTTP 403`, stop and wait 15 to 30 minutes. Test one slot at a time, at a 5 minute interval.
+
+**When PIA expires a registration.** There is nothing published about when PIA rotates or expires a key registration: it has been seen after a day and after a couple of weeks. Observed, not measured: a config seems to age faster when a nearby region is enabled after another nearby region was disabled, plausibly because they are hosted in the same data centre. That is why BRK-1, which lets the handshake age out, is the test that matters most.
+
+Expected watchdog log for a registration that died (BRK-1), once the handshake passes 300 seconds:
 
 ```text
 2026-09-04 16:40:00 Checking wgc1 pia-aus_melbourne connectivity
@@ -262,57 +1046,23 @@ Expected in `/tmp/watchdog_wgc1.log` once the handshake passes 300 s:
 2026-09-04 16:40:09 Requesting PIA token for user pNNNNNNN
 2026-09-04 16:40:09 PIA token obtained (len=124)
 ...
-2026-09-04 16:40:15 Reconfig SUCCESS: region pia-aus_melbourne via 45.130.141.215:1337
+2026-09-04 16:40:15 Reconfig SUCCESS: region pia-aus_melbourne via 192.0.2.10:1337
 ```
 
-Recovery needs no cleanup: the re-negotiation generates a new keypair, registers it, rewrites `wgc1_*` in NVRAM and restarts the slot.
-
-#### 6.1.2. <a name='what-does-not-work-moving-the-endpoint'></a>What does NOT work: moving the endpoint
-
-```bash
-# looks right, does nothing - do not use
-wg set wgc1 peer "$(nvram get wgc1_ppub)" endpoint 203.0.113.1:1337
-```
-
-`wg` accepts it and shows the new endpoint, then puts the real one back within seconds and no reconfigure ever happens. That is **endpoint roaming**, a WireGuard feature: a peer's endpoint is updated automatically whenever an authenticated packet arrives from a different source address. The PIA server is still sending, so the endpoint follows it home. Anything that leaves the keys intact will be undone the same way.
-
-#### 6.1.3. <a name='peer-removed-the-fast-one'></a>Peer removed (the fast one)
-
-Blunter, immune to roaming - there is no peer left for an inbound packet to update - and **detected at the very next check with no 300 s wait**, because removing the peer removes its handshake record too: `latest-handshakes` returns nothing, so the age test fails immediately.
-
-Do not wait for cron: run the script by hand straight after, and the check interval stops mattering.
-
-```bash
-wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
-wg show wgc1                     # no peer listed
-/jffs/cfg-pia-wg/watchdog_wgc1.sh
-```
-
-Verified on 2026-09-04 with a 5 m interval, reconfigured immediately:
+Peer removed (BRK-2), verified 2026-09-04 with a 5 minute interval:
 
 ```text
 18:49:13 Checking wgc1 pia-aus_melbourne connectivity
 18:49:13 No handshake and both pings failed (8.8.8.8, 1.1.1.1)
 18:49:13 Connectivity lost; reconfiguring (attempt #1)
 18:49:14 PIA token obtained (len=124)
-18:49:14 Selected server 45.130.141.159 (Server-12444-0a) for region pia-aus_melbourne
+18:49:14 Selected server 192.0.2.11 (Server-12444-0a) for region pia-aus_melbourne
 18:49:20 Interface wgc1 is up
-18:49:20 Reconfig SUCCESS: region pia-aus_melbourne via 45.130.141.159:1337
+18:49:20 Reconfig SUCCESS: region pia-aus_melbourne via 192.0.2.11:1337
 18:50:00 Handshake 44s ago
 ```
 
-Confirm the recovery, not just the log: `wg show wgc1` should list a peer again with a **different**
-public key from the one you removed, and the next scheduled check should read `Handshake Ns ago`.
-
-Running it again inside the backoff window gives `Backing off after N failed attempts: Xs of Ys elapsed` - that is the guard working, not a fault.
-
-#### 6.1.4. <a name='interface-down'></a>Interface down
-
-The one the WebUI gives you. Detected immediately - no 300 s wait, because the script tests `ifconfig` before the handshake:
-
-```bash
-ifconfig wgc1 down
-```
+Interface down (BRK-3):
 
 ```text
 2026-09-04 16:45:00 Checking wgc1 pia-aus_melbourne connectivity
@@ -320,24 +1070,39 @@ ifconfig wgc1 down
 2026-09-04 16:45:00 Connectivity lost; reconfiguring (attempt #1)
 ```
 
-The reconfigure that follows rewrites the peer and restarts the interface, so the tunnel comes back on its own. If it does not, and the log stops at the token request, check that the deployed script carries a version marker of v0.8.46 build 416 or later - earlier scripts could not fetch a PIA token from cron at all (ARCHITECTURE.md "curl refuses to run from cron"). Clearing `/tmp/watchdog_backoff_wgc1` makes the next tick run in full rather than backing off.
-
-#### 6.1.5. <a name='what-a-healthy-check-looks-like'></a>What a healthy check looks like
-
-A working tunnel with an active watchdog will show:
+A healthy check:
 
 ```text
 2026-09-04 15:48:00 Checking wgcN pia-region_name connectivity
 2026-09-04 15:48:00 Handshake 60s ago
 ```
 
-#### 6.1.6. <a name='backoff'></a>Backoff
+The server addresses in these examples are invented.
 
-The wait before the next reconfigure attempt grows with each **consecutive failed attempt** and resets the moment one succeeds:
+**"Reconfig SUCCESS" only means the interface came up.** The script does not check for a handshake afterwards (BACKLOG ID-063). The proof of recovery is the next check logging `Handshake Ns ago`, and a new peer key in `wg show wgcN`.
 
-| Consecutive failures |     1 |     2 |     3 |      4 |      5 |      6 |           7+ |
-| -------------------- | ----: | ----: | ----: | -----: | -----: | -----: | -----------: |
-| Wait                 | 2 min | 4 min | 8 min | 16 min | 30 min | 60 min | 90 min (cap) |
+**Methods that look right and are not used:**
+
+- **Moving the peer's endpoint** (`wg set wgcN peer ... endpoint 203.0.113.1:1337`). WireGuard accepts it, then puts the real endpoint back within seconds: endpoint roaming updates a peer's endpoint whenever an authenticated packet arrives from it. No reconfigure ever happens. Anything that leaves the keys intact is undone the same way.
+- **Turning the tunnel off in the WebUI.** Tests the stand-down (BRK-4), not recovery.
+- **MANAGE DISABLE or DELETE, or WATCHDOG DISABLE.** Each removes or pauses the watchdog itself.
+- **Blocking the server with a firewall rule.** If the rebuild picks the same server, registration over TCP still works and the interface comes up, so it can log a false `Reconfig SUCCESS`.
+- **Pulling the WAN cable.** The watchdog finds no internet on the WAN and exits without alerting, and the whole LAN goes offline with it.
+- **Unreachable check targets.** The same targets are the WAN check, so the run exits quietly.
+
+If a rebuild stops at the token request, check that the deployed script carries a version of v0.8.46 build 416 or later: earlier scripts could not fetch a PIA token from cron at all. Deleting `/tmp/watchdog_backoff_wgcN` makes the next check run in full rather than backing off.
+
+## <a name='r3'></a>R3. The backoff ladder
+
+The wait before the next rebuild attempt grows with each consecutive failed attempt, and resets at the next healthy check:
+
+- 1 failure: 2 minutes
+- 2: 4 minutes
+- 3: 8 minutes
+- 4: 16 minutes
+- 5: 30 minutes
+- 6: 60 minutes
+- 7 or more: 90 minutes, the cap
 
 A check that arrives inside the wait is turned away and says so:
 
@@ -346,46 +1111,28 @@ A check that arrives inside the wait is turned away and says so:
 2026-09-04 16:41:00 Backing off after 3 failed attempts: 45s of 480s elapsed
 ```
 
-Check `/tmp/watchdog_backoff_wgc1` is created and holds the attempt count and timestamp. The count rises **only when an attempt is actually made** - a run the backoff turned away must leave it alone, or the ladder would climb faster on a 1 m interval than on a 5 m one.
+`/tmp/watchdog_backoff_wgcN` holds the attempt count and a timestamp. The count rises only when an attempt is actually made. A run the backoff turned away must leave it alone, or the ladder would climb faster on a 1 minute interval than on a 5 minute one.
 
-#### 6.1.7. <a name='walking-the-whole-backoff-ladder-in-two-minutes-'></a>Walking the whole backoff ladder in two minutes, with no PIA traffic
+**Why BRK-6 does not just let it fail for four hours.** Reaching the 90 minute rung honestly means seven consecutive failed rebuilds, each asking PIA for a token. That got the account refused with HTTP 403 on 2026-09-04, and takes most of a day.
 
-**Why not just let it fail for four hours.** Reaching the 90-minute rung honestly means seven consecutive *failed reconfigures*, each of which asks PIA for a token. That is exactly the behaviour that got the account refused with HTTP 403 on 2026-09-04, and it would take most of a day. The test below reaches every rung in about two minutes and asks PIA for nothing at all.
+**Why it is safe.** The backoff gate sits after the connectivity check and before the first PIA call. A run the gate turns away logs one line and exits, so pre-loading the counter exercises the real arithmetic in the real deployed script without a single token request.
 
-**Why it is safe.** The backoff gate sits **after** the connectivity check and **before** the first PIA call. A run the gate turns away logs one line and exits, so pre-loading the counter exercises the real arithmetic in the real deployed script without a single token request.
+**Why the watchdog is paused first.** Otherwise cron fires its own checks during the test, and one that arrives after a wait has elapsed would perform a genuine rebuild part-way through.
 
-**Why the watchdog must be PAUSED first.** Otherwise `cru` fires its own checks during the test. A scheduled run that arrives when the wait *has* elapsed would perform a genuine reconfigure - PIA traffic, a new key, and a reset counter part-way through the loop. Pausing removes the cron entries and leaves the script and settings in place, so only your manual runs execute.
+**Why the check must be failing.** A healthy tunnel exits at the handshake check and never reaches the backoff.
 
-**Why the timestamp is `now`.** The gate compares `now - LAST` against the rung's wait. Writing `$(date +%s)` as `LAST` guarantees roughly zero elapsed, so every rung is inside its window and every run is turned away - which is the state being tested.
-
-**Why the check must be failing.** A healthy tunnel exits at the handshake check and never reaches the backoff block at all.
-
-Set up so nothing else can interfere:
-
-1. In the app, **DISABLE** the watchdog on the slot you are testing. It shows PAUSED, the `cru` entries go, and the script and settings stay - so only your manual runs execute and no scheduled check can surprise you.
-2. Make the check fail. Either DISABLE the slot in MANAGE, so the interface goes away entirely, or remove the peer:
-
-   ```bash
-   wg set wgc5 peer "$(nvram get wgc5_ppub)" remove
-   ```
-
-Then run `scripts/test-backoff.sh` on the router (copy it across with `scp`). It re-checks both preconditions and refuses rather than misleading you, walks every rung, checks the two properties below, cleans up after itself, and exits non-zero on any failure:
-
-```bash
-./test-backoff.sh 5        # slot number; defaults to 5
-```
-
-Each iteration pre-loads the counter with a timestamp of *now*, so the wait cannot have elapsed and the script must turn the run away. The same loop by hand, if you would rather:
+`scripts/test-backoff.sh` checks both preconditions and refuses rather than misleading you, walks every rung, checks the two properties below, cleans up, and exits non-zero on any failure. The same loop by hand:
 
 ```bash
 for n in 1 2 3 4 5 6 7 12; do
     printf '%s\n%s\n' "$n" "$(date +%s)" > /tmp/watchdog_backoff_wgc5
     /jffs/cfg-pia-wg/watchdog_wgc5.sh >/dev/null 2>&1
+    sleep 12
     echo "CNT=$n -> $(grep 'Backing off' /tmp/watchdog_wgc5.log | tail -1)"
 done
 ```
 
-Expected, in order: **120, 240, 480, 960, 1800, 3600, 5400, 5400** seconds. Verified on stock (RT-ABCD, build 409, 2026-09-06):
+Verified on stock, build 409, 2026-09-06:
 
 ```text
 CNT=1  -> Backing off after 1 failed attempts: 1s of 120s elapsed
@@ -398,29 +1145,16 @@ CNT=7  -> Backing off after 7 failed attempts: 0s of 5400s elapsed
 CNT=12 -> Backing off after 12 failed attempts: 0s of 5400s elapsed
 ```
 
-Two things to confirm while you are there, because they are the properties most easily broken by a later change:
+The two properties most easily broken by a later change:
 
-- `grep -c 'Requesting PIA token' /tmp/watchdog_wgc5.log` does not change across the loop. If it does, the gate has moved to *after* the first PIA call and a broken tunnel is once again hammering PIA on every check.
-- `head -1 /tmp/watchdog_backoff_wgc5` still reads `12` afterwards. A turned-away run must not increment the counter - if it does, the ladder climbs at a rate that depends on the check interval, so a 1 m watchdog escalates five times faster than a 5 m one.
+- `grep -c 'Requesting PIA token' /tmp/watchdog_wgc5.log` does not change across the loop. If it does, the gate has moved after the first PIA call.
+- `head -1 /tmp/watchdog_backoff_wgc5` still reads `12` afterwards. A turned-away run must not increment the counter.
 
-Clean up, then re-enable the watchdog in the app:
+Clean up with `rm -f /tmp/watchdog_backoff_wgc5`, then ENABLE the watchdog in the app.
 
-```bash
-rm -f /tmp/watchdog_backoff_wgc5
-```
+## <a name='r4'></a>R4. What the watchdog leaves on the router
 
-### 6.2. <a name='applying-a-config-and-what-it-should-leave-behin'></a>Applying a config, and what it should leave behind
-
-- check all NVRAM settings are cleared on script & watchdog disable
-
-```bash
-nvram show | grep pia_wg | sort
-nvram show | grep qgc | sort
-```
-
-### 6.3. <a name='files-deployed-to-the-router'></a>Files deployed to the router
-
-On both firmwares:
+**Files, on both firmwares:**
 
 ```text
 /jffs/cfg-pia-wg/                         # everything the app owns lives here
@@ -429,51 +1163,103 @@ On both firmwares:
 /tmp/watchdog_wgcN.log                    # and .log.old after the nightly rotate
 /tmp/watchdog_last_ping_success_wgcN
 /tmp/watchdog_backoff_wgcN
+/tmp/watchdog_unsent_wgcN                 # only after an alert email failed to send
 ```
 
-Stock also gets, because it has no `/jffs/scripts` hooks:
+**Stock also has**, because it has no `/jffs/scripts` hooks:
 
 ```text
 /jffs/cfg-pia-wg/jq                       # installed by the app
-/jffs/cfg-pia-wg/mailsend-go              # installed by the app, only if email is enabled
+/jffs/cfg-pia-wg/mailsend-go              # installed by the app, for the watchdog screen
 /opt/etc/init.d/S50downloadmaster         # boot persistence, replacement block only
 /opt/etc/init.d/S50asuslighttpd           # a stub that returns immediately
 ```
 
-Merlin instead uses `/jffs/scripts/services-start` for boot persistence, and **nothing is
-installed onto it at all**: it ships `jq` on `$PATH` and sends mail with the BusyBox `sendmail`
-applet it already has, so neither helper binary is needed or present. If you find `jq` or
-`mailsend-go` under `/jffs/cfg-pia-wg` on a Merlin router, something put them there by hand.
+Merlin uses `/jffs/scripts/services-start` for boot persistence and has nothing installed: it ships `jq` and sends mail with the BusyBox `sendmail` it already has. `jq` or `mailsend-go` under `/jffs/cfg-pia-wg` on a Merlin router was put there by hand.
 
-Three things to check on those two init scripts, because all three are recent:
+**Checks on those files:**
 
-- each carries `# <name> - auto-generated by cfg-pia-wg; *do* *not* edit.` as its **second line**
-- where one replaced a real script, the original is beside it with a `.old` suffix
-- the watchdog script carries a version line, and the About screen reports it
+- Both init scripts carry `# <name> - auto-generated by cfg-pia-wg; *do* *not* edit.` as their second line.
+- Where one replaced a real script, the original is beside it with a `.old` suffix.
+- The watchdog script carries a version line, and ABOUT reports it.
+- Boot persistence holds two lines per watched slot, between the `REPLACEMENT START` and `REPLACEMENT END` markers on stock:
 
-Where `N` is the slot number.
+```bash
+cru a watchdog_wgc1 "*/5 * * * *" /jffs/cfg-pia-wg/watchdog_wgc1.sh
+cru a watchdog_log_rotate_wgc1 "0 0 * * *" "mv /tmp/watchdog_wgc1.log /tmp/watchdog_wgc1.log.old && touch /tmp/watchdog_wgc1.log"
+```
 
-**What an uninstall leaves behind.** SETTINGS -> UNINSTALL removes everything above, every
-`cfg_pia_wg_*` and `wgcN_wd_*` NVRAM key, and every `cru` entry it created. It does **not** touch the
-tunnels: `wgcN_*` keys, the profiles and `vpnc_clientlist` are the user's, not the app's, and DELETE
-on the Manage screen is what removes those. Device assignments and the default connection are left
-alone for the same reason.
+- `cru l` and `crontab -l` show the same two lines, updated immediately when the interval changes.
+- Removing a watchdog's lines leaves the boot persistence file at permissions `700`, and anything else in it untouched.
 
-### 6.4. <a name='testing-email-send-from-ssh'></a>Testing email send by hand
+**NVRAM, per watched slot** (`nvram show | grep wgc1_wd_`), ten keys:
 
-**Use the TEST EMAIL button first.** The watchdog dialog sends a real message through the settings on
-screen and reports what the server said, which is faster than anything below and tests the same path
-the watchdog will use. What follows is for when that button fails and you need to see why.
+```text
+wgc1_wd_check_interval=5
+wgc1_wd_email_enabled=0
+wgc1_wd_email_from=
+wgc1_wd_email_subject=cfg-pia-wg alert
+wgc1_wd_email_to=
+wgc1_wd_primary_ip=8.8.8.8
+wgc1_wd_secondary_ip=1.1.1.1
+wgc1_wd_smtp_pass=
+wgc1_wd_smtp_server=
+wgc1_wd_smtp_user=
+```
 
-**The two firmwares send mail differently, and only one of them is documented below.**
+**NVRAM, shared** (`nvram show | grep cfg_pia_wg`):
 
-| Firmware | Sends with | Comes from |
-| --- | --- | --- |
-| Merlin | BusyBox `sendmail` wrapped in `openssl s_client` for implicit TLS | built in |
-| Stock | `mailsend-go`, `-ssl -verifyCert` | installed by the app into `/jffs/cfg-pia-wg` |
+```text
+cfg_pia_wg_password=...
+cfg_pia_wg_reconfig_fail=1     # lifetime failed rebuilds, all slots
+cfg_pia_wg_reconfig_ok=4       # lifetime successful rebuilds, all slots
+cfg_pia_wg_sdate=2026-09-01    # the day the app first configured this router
+cfg_pia_wg_user=...
+```
 
-Stock has **no `sendmail` of any kind** - not the BusyBox applet, not a real one - which is why the second exists. The hand-testing recipe
-below is the **Merlin** one. The stock equivalent is a single command:
+The three counter keys are seeded together by whichever of a watchdog deploy or a test email comes first, and committed once per alert rather than once per check, because `nvram commit` writes flash.
+
+**What WATCHDOG DISABLE, WATCHDOG DELETE and UNINSTALL remove:**
+
+- DISABLE removes the slot's two `cru` jobs and its boot persistence lines. The script, the settings and the tunnel stay.
+- DELETE removes the jobs, the lines, the script, the `/tmp` files and the ten `wgcN_wd_*` keys, stops the tunnel and deletes the VPN. The shared PIA credentials go only when no other slot still has a scheduled watchdog.
+- UNINSTALL removes every file above, every `cfg_pia_wg_*` and `wgcN_wd_*` key, and every `cru` entry the app created. It does not touch the tunnels: `wgcN_*`, the profiles and `vpnc_clientlist` are the user's, and so are device assignments and the default connection.
+
+## <a name='r5'></a>R5. Device assignment and default connection notes
+
+**One profile has three numbers.** Its slot (wgcN), its row in `vpnc_clientlist` (which `vpnc_unit` wants), and its index 6. `vpnc_default_wan` and `vpnc_dev_policy_list` want index 6, so a value of `9` is normal on a five-slot router. Read each profile's index 6 as field 7 of its record in `nvram get vpnc_clientlist | tr '<' '\n'`. On one run wgc1 was 9 and wgc5 was 5. See [ARCHITECTURE.md, The three numbers that name one profile](ARCHITECTURE.md#the-three-numbers-that-name-one-profile).
+
+**Records and rules:**
+
+- Pinned to a tunnel: `1><ip>>><index 6>>`, and one rule at priority 100, `lookup <index 6>`.
+- Pinned to Internet: `1><ip>>>0>`, and one rule, `lookup main`.
+- Following the default: `0><ip>>>0>`, and no rule for that address.
+- The default connection itself: two rules at priority 10000, `from all iif br0` and `from all iif br1`, both `lookup <index 6>`. A per-device rule at priority 100 always wins over them.
+
+**Three behaviours that were each a real fault:**
+
+- **Internet, then straight to a tunnel.** Pinning to Internet writes `lookup main`, and until build 436 the stale-rule sweep matched only digits and could not see it. The device stayed on the WAN through every later move until a reboot. DEV-6 tests it.
+- **Deleting a VPN with devices pinned to it.** Those devices go to Internet, matching the WebUI, not to the default connection. A device that was explicitly pinned must never land on a tunnel nobody chose. DEV-15 tests it.
+- **Deleting the VPN that is the default.** `vpnc_default_wan` is a key, not a policy record, so nothing that rewrites the policy list touches it. Left behind, every device following the default read as `profile 9 (deleted)`. DEF-9 tests it.
+
+**Reservations.** Assigning a device with no DHCP reservation adds one to `dhcp_staticlist`, applied with `restart_dnsmasq` and `restart_vpnc_dev_policy`. Nothing on the LAN drops. Unassigning removes the policy record and keeps the reservation: that is the firmware's behaviour, and the app does not remove it. The WebUI's own way of adding or removing a reservation restarts the network and the physical layer (every switch port, a new WAN lease), so avoid making reservation changes in the WebUI mid-test.
+
+**A reservation is tied to a MAC.** A phone with a random MAC per network keeps its assignment only while it keeps that MAC. DEV-16 records what happens.
+
+**`nvram get` straight after a `service` call proves nothing.** `notify_rc` queues and returns at once. Poll for the effect instead: the interface appearing in `wg show interfaces`, or the key changing.
+
+## <a name='r6'></a>R6. Sending email by hand
+
+**Use TEST EMAIL first.** It sends a real message through the settings on screen and reports what the server said, using the same path as the watchdog. What follows is for when that fails and you need to see why.
+
+The two firmwares send mail differently:
+
+- **Merlin:** BusyBox `sendmail` wrapped in `openssl s_client` for implicit TLS. Built in.
+- **Stock:** `mailsend-go`, with `-ssl -verifyCert`. Installed by the app into `/jffs/cfg-pia-wg`. Stock has no `sendmail` of any kind.
+
+Both use TLS with a verified CA bundle and fail the handshake rather than falling back, so an alert never leaves the router with the credentials exposed.
+
+**Stock:**
 
 ```bash
 /jffs/cfg-pia-wg/mailsend-go -ssl -verifyCert \
@@ -483,18 +1269,9 @@ below is the **Merlin** one. The stock equivalent is a single command:
     body -file /tmp/test-email.txt
 ```
 
-`mailsend-go` builds its own RFC-822 headers from those flags, so the body file it takes is the
-message text alone - no `From:`, `To:` or `Subject:` lines, and no blank separator line. That is the
-one difference that will catch you out if you copy the Merlin body below.
+`mailsend-go` builds its own headers from those flags, so its body file is the message text alone: no `From:`, `To:` or `Subject:` lines, and no blank separator line. That is the one difference that catches you out if you copy the Merlin body below.
 
-Both routes use TLS with a verified CA bundle and fail the handshake rather than falling back, so an
-alert never leaves the router with the credentials exposed.
-
-#### 6.4.1. <a name='construct-the-command-line'></a>Construct the command line (Merlin)
-
-**Merlin only.** This is the BusyBox `sendmail` route, and stock has no `sendmail` to run it
-with - use the `mailsend-go` command above instead. Replace `sender@example.com`,
-`recipient@example.com`, and `APP_PASSWORD` in the below:
+**Merlin.** Replace `sender@example.com`, `recipient@example.com` and `APP_PASSWORD`:
 
 ```bash
 sendmail -v \
@@ -505,11 +1282,9 @@ sendmail -v \
 ```
 
 > [!CAUTION]
-> **APP PASSWORD**: the above example exposes your app password to bash history, `ps`, and process lists. These are cleared at reboot though. Remember, this is **only** for testing purposes. A more secure approach uses input stuffing from a file eg. one-time setup with `nano /tmp/.smtp-pass` enter your password then save the file, secure the file with `chmod 600 /tmp/.smtp-pass` the `sendmail` command line would then be modified with `-ap$(cat /tmp/.smtp-pass)`.
+> The command above exposes the app password to shell history and the process list, both cleared at reboot. For anything but a quick test, put the password in a file: `nano /tmp/.smtp-pass`, `chmod 600 /tmp/.smtp-pass`, then use `-ap$(cat /tmp/.smtp-pass)`.
 
-#### 6.4.2. <a name='construct-the-test-email'></a>Construct the test email
-
-Replace `sender@example.com`, `Sender Name`, `Recipient Name`, and `recipient@example.com` in the below:
+**The test message (Merlin).** Replace the names and addresses:
 
 ```bash
 cat << EOF > /tmp/test-email.txt
@@ -526,92 +1301,35 @@ Hello,
 
 This is a test email created via command line.
 
-✓ Created at: $(date '+%Y-%m-%d %H:%M:%S')
-✓ Host: $(uname -n)
-✓ Purpose: Testing email delivery
+Created at: $(date '+%Y-%m-%d %H:%M:%S')
+Host: $(uname -n)
 
-Best regards,
 Command Line Tester
-
----
-Test Email • $(date '+%Y-%m-%d %H:%M:%S')
 EOF
 ```
 
-> [!NOTE]
-> **Message-ID**: Google may silently **not** deliver the test email if you reuse the same test message without updating the `Message-ID:` by recreating `/tmp/test-email.txt`.
-> [!TIP]
-> **EOF**: Using `EOF` without single quotes allows variable expansion. Typically you would use `'EOF'`, but we need the `date` and `hostnames` expanded, which is why we use `cat << EOF >`.
+- Recreate the file for every send: Google may silently not deliver a repeat of the same `Message-ID:`.
+- `EOF` is unquoted on purpose, so `date` and `uname` expand.
 
-#### 6.4.3. <a name='how-the-commands-work'></a>How the Commands Work
+**How the Merlin command works.** `sendmail -v` runs verbosely. `-H` hands the connection to `openssl s_client`, which wraps it in TLS 1.3, checks the server's certificate chain against the router's trusted authorities (`-CAfile`), and stops the transmission (`-verify_return_error`) if any certificate is missing or invalid. Once the channel is verified, `sendmail` authenticates (`-au`, `-ap`), sends the envelope, and pipes the message into the session. A good run ends with lines like:
 
-The first command constructs a valid, raw RFC-compliant email body inside a temporary file (/tmp/test-email.txt) using dynamic variables to inject an accurate timestamp, a globally unique Message-ID, and local hostname metadata. The second command executes sendmail in verbose mode (-v), using a custom network handler string (-H) to launch OpenSSL instead of a standard socket connection. The OpenSSL utility wraps the session in TLS 1.3 encryption, cross-references Gmail's public certificates against the router's trusted system authorities (-CAfile), and immediately kills the transmission (-verify_return_error) if any intermediate certificate is missing or invalid. Once a secure channel is verified, sendmail submits the authentication flags (-au and -ap), passes the envelope routing details, and pipes the payload text directly into the authenticated SMTP session.
-
-When executed, you should see something like this from your SSH session:
-
-```bash
-sendmail: send:'NOOP'
-depth=2 C = US, O = Google Trust Services LLC, CN = GTS Root R1
-verify return:1
-depth=1 C = US, O = Google Trust Services, CN = WR2
-verify return:1
-depth=0 CN = smtp.gmail.com
-verify return:1
-sendmail: recv:'220 smtp.gmail.com ESMTP a-very-long-session-id-string - gsmtp'
-sendmail: recv:'250 2.0.0 OK a-very-long-session-id-string - gsmtp'
-sendmail: send:'EHLO sending-server'
-sendmail: recv:'250-smtp.gmail.com at your service, [192.0.2.1]'
-sendmail: recv:'250-SIZE 35882577'
-sendmail: recv:'250-8BITMIME'
-sendmail: recv:'250-AUTH LOGIN PLAIN XOAUTH2 PLAIN-CLIENTTOKEN OAUTHBEARER XOAUTH'
-sendmail: recv:'250-ENHANCEDSTATUSCODES'
-sendmail: recv:'250-PIPELINING'
-sendmail: recv:'250-CHUNKING'
-sendmail: recv:'250 SMTPUTF8'
-sendmail: send:'AUTH LOGIN'
-sendmail: recv:'334 VXNlcm5hbWU6'
-sendmail: send:''                   <- username is not echoed to the screen
-sendmail: recv:'334 UGFzc3dvcmQ6'
-sendmail: send:''                   <- password is not echoed to the screen
+```text
 sendmail: recv:'235 2.7.0 Accepted'
 sendmail: send:'MAIL FROM:<sender@example.com>'
-sendmail: recv:'250 2.1.0 OK a-very-long-session-id-string - gsmtp'
+sendmail: recv:'250 2.1.0 OK ... - gsmtp'
 sendmail: send:'RCPT TO:<recipient@example.com>'
-sendmail: recv:'250 2.1.5 OK a-very-long-session-id-string - gsmtp'
+sendmail: recv:'250 2.1.5 OK ... - gsmtp'
 sendmail: send:'DATA'
-sendmail: recv:'354 Go ahead a-very-long-session-id-string - gsmtp'
-sendmail: send:'From: Sender Name <sender@example.com>'
-sendmail: send:'To: Recipient Name <recipient@example.com>'
-sendmail: send:'Subject: Test Email from Command Line - 2026-06-20 11:58:38'
-sendmail: send:'Date: Sat, 20 Jun 2026 11:58:38 +1000'
-sendmail: send:'Message-ID: <1781920718.test@host>'
-sendmail: send:'MIME-Version: 1.0'
-sendmail: send:'Content-Type: text/plain; charset=utf-8'
-sendmail: send:'Content-Transfer-Encoding: 7bit'
-sendmail: send:''
-sendmail: send:'Hello,'
-sendmail: send:''
-sendmail: send:'This is a test email created via command line.'
-sendmail: send:''
-sendmail: send:'✓ Created at: 2026-06-20 11:58:38'
-sendmail: send:'✓ Host: sending-server'
-sendmail: send:'✓ Purpose: Testing email delivery'
-sendmail: send:''
-sendmail: send:'Best regards,'
-sendmail: send:'Command Line Tester'
-sendmail: send:''
-sendmail: send:'---'
-sendmail: send:'Test Email • 2026-06-20 11:58:38'
-sendmail: send:'.'
-sendmail: recv:'250 2.0.0 OK  1781920757 a-very-long-session-id-string - gsmtp'
+sendmail: recv:'354 Go ahead ... - gsmtp'
+...
+sendmail: recv:'250 2.0.0 OK ... - gsmtp'
 sendmail: send:'QUIT'
-read:errno=0
-sendmail: recv:'221 2.0.0 closing connection a-very-long-session-id-string - gsmtp'
+sendmail: recv:'221 2.0.0 closing connection ... - gsmtp'
 ```
 
-#### 6.4.4. <a name='certificate-information'></a>Certificate information
+The username and password are not echoed.
 
-If you want to verify certificate use (and it's a _lot_ of information), use
+**Certificate detail** (a lot of output):
 
 ```bash
 openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
@@ -620,383 +1338,79 @@ openssl s_client -connect smtp.gmail.com:465 -tls1_3 \
     -showcerts < /dev/null
 ```
 
----
+## <a name='r7'></a>R7. Examining NVRAM
 
----
+What the fields mean is in [ARCHITECTURE.md, Router WireGuard NVRAM fields](ARCHITECTURE.md#router-wireguard-nvram-fields). This section is only how to look at them.
 
-## 7. <a name='device-assignment'></a>Device assignment
+The best source of information is `tail -f /tmp/syslog.log`. It shows every `service` call, such as `service restart_vpnc`.
 
-Stock only. Merlin routes per device through VPN Director and the app does not offer this screen there.
-
-> [!CAUTION]
-> **The default-connection test drops every tunnel on the router for about a minute.** Changing the
-> default runs `restart_default_wan`, which stops every WireGuard client, applies the change, then
-> starts them again. Anything using any tunnel loses its connection for the duration, and a watchdog
-> on an affected slot will see a real outage and may reconfigure. Do not run that part on a router
-> anyone is relying on. **Assigning a device does none of this** and is safe to test at any time.
-
-The list:
-
-- every LAN device appears, offline ones dimmed and sorted last
-- each device reads `name - tags` on its first line, tags separated by `|`, and `IP MAC` on its second - the MAC alone when no address is known
-- a device with no DHCP reservation carries a `DHCP` tag, one with a locally-administered address carries `random MAC`, and one that is off carries `offline`
-- a device with no known address shows "connect this device once to assign it" and no picker
-- the router itself, any AiMesh node, and guest-network devices never appear at all
-
-Assigning:
-
-- pick a slot for one device - the row marks itself changed, and APPLY and DISCARD CHANGES appear
-- DISCARD CHANGES puts every row back and writes nothing to the router
-- APPLY lists each change as `from -> to` and asks before doing anything
-- afterwards `nvram get vpnc_dev_policy_list` holds `1><ip>>><index6>>` for that device, where the last number is the profile's **index 6**, not its slot
-- `ip rule show` holds exactly **one** rule for that address at priority 100
-- the app writes a line to the router's syslog for each reassignment - `tail /tmp/syslog.log` should name the device and where it moved
-
-Reassigning:
-
-- move the same device to a different slot, APPLY, then run `ip rule show` again
-- there must still be exactly ONE rule for that address. Two means the app's stale-rule cleanup did not run, and the older rule will win silently
-- the device's own traffic is the real test: check its public address from the device itself, not from the router - the router's own traffic is not policy-routed into the tunnel
-
-Reservations:
-
-- assign a device that has no reservation. `nvram get dhcp_staticlist` gains `<MAC>IP>>` and **nothing on the LAN drops** - the app applies the change with `restart_dnsmasq` and `restart_vpnc_dev_policy`, not the web interface's heavier call
-- unassign it again. The policy record goes; the reservation stays. That is the firmware, and the app deliberately does not remove it
-
-The default connection - read the warning above first:
-
-- note what is up: `wg show interfaces`
-- set the default to a tunnel and APPLY. Every tunnel stops and restarts
-- `nvram get vpnc_default_wan` reads that profile's **index 6**. `0` means plain internet
-- `ip rule show` gains a pair at priority 10000
-- an **unassigned** device now leaves through that tunnel. Check from the device
-- set it back to Internet and confirm the pair goes and unassigned traffic returns to the WAN
-
----
-
-### 7.1. <a name='the-full-assignment-run'></a>The full assignment run
-
-One sequence covering moves, deletes and the default connection, in an order that reaches the three
-faults measured on 2026-09-11. Short enough to work from on a phone.
-
-Substitute your own device's last octet for `.51` throughout. **CHK** means run all three:
+- The two helper scripts, the fastest way to start a clean run. Copy them from `scripts/` with `scp`:
 
 ```bash
-ip rule show | grep 0.51
-nvram get vpnc_dev_policy_list | tr '<' '\n' | grep 0.51
-nvram get vpnc_default_wan
+./showall.sh    # every wgcN_, vpncN_, vpnc_ and cfg_pia_wg_ key, plus wg interfaces and cru
+./clearall.sh   # unset all of them, including the counters, and commit
 ```
 
-"Exit IP" means check from the DEVICE itself, on a what-is-my-IP page. Never from the router: the
-router's own traffic is not policy-routed, so it tells you nothing about where a device goes.
-
-Set up:
-
-- delete every VPN, reboot, CHK - expect no `.51` lines and a default of `0`
-- create wgc1, enable it
-- create wgc5 in a different region, enable it, default connection = Internet
-- `nvram get vpnc_clientlist` and note **field 7** of each record. That is the number its `ip rule` will use, and it is not the slot number - on one run wgc1 was 9 and wgc5 was 5
-
-Moves:
-
-- phone to wgc1: CHK + exit IP
-- phone to wgc5: CHK + exit IP
-- phone to **Internet**: CHK + exit IP, expect ONE rule, `lookup main`
-- phone to wgc5: CHK + exit IP, expect ONE rule, `lookup 5`, and no `main`
-- phone to wgc1: CHK + exit IP
-- phone to the default: CHK, expect no `.51` rule at all
-- reboot, CHK
-
-The same moves without ever touching Internet, as the control:
-
-- phone to wgc1, then wgc5, then wgc1, CHK after each - expect exactly one rule every time
-
-Deletes:
-
-- phone to wgc5, then DELETE wgc5 in the app: CHK + exit IP. Expect the app log to NAME the phone, a record of `1>...>>0>`, a rule of `lookup main`, and the phone's own address as its exit IP
-- recreate wgc5 in a different region: CHK, and confirm the phone is **not** on it
-- set the default to wgc1: CHK, the default reads wgc1's number
-- phone to wgc5
-- DELETE wgc1, the one that IS the default: CHK + exit IP. Expect the default back to `0`, every tunnel to restart, and the phone still on wgc5
-- phone to the default: exit IP is your own
-- DELETE wgc5, with the phone pinned to it and it not being the default: CHK + exit IP, the phone lands on Internet
-
-> [!IMPORTANT]
-> Three steps carry behaviour that is easy to get wrong, and each one was a real fault:
->
-> - **Internet, then straight to a tunnel.** Pinning to Internet writes `lookup main`, and until build 436 a sweep that matched only digits could not see it. The device stayed on the WAN through every later move until the router was rebooted.
-> - **Deleting a VPN with devices pinned to it.** Those devices go to **Internet**, matching the web interface, not to the default connection. A device that was explicitly pinned must never land on a tunnel nobody chose.
-> - **Deleting the VPN that IS the default connection.** `vpnc_default_wan` is a key rather than a policy record, so nothing that rewrites the policy list touches it. Left behind, every device following the default reads as `profile 9 (deleted)`.
-
-### 7.2. <a name='end-to-end-before-a-release'></a>End-to-end, before a release
-
-Device assignment is a signature feature: run this on the release build. After each step CHK as in 7.1 plus `wg show interfaces`; on the device, exit IP and `ping google.com`; in the app, the row and any note under it.
-
-- **between tunnels:** phone to wgc1, then wgc5. ONE rule, the new one; exit is wgc5's region
-- **to and from the default:** phone to the default, then back to wgc5. No `.51` rule while on the default and exit follows it; ONE rule again after
-- **to a disabled slot:** disable wgc5, phone to wgc5. APPLY warns "wgc5:... is not running... will use the default connection"; the row notes where traffic goes; exit is the default's region. Enable wgc5: exit moves to wgc5 without reassigning, and the note goes
-- **a silent server:** on a slot with no watchdog, `wg set wgcN peer "$(nvram get wgcN_ppub)" remove`, wait 4 minutes, move a device onto it: APPLY warns its server has not answered. DISABLE and ENABLE the slot afterwards
-- **delete and recreate with devices assigned:** phone to wgc5, DELETE wgc5: the phone lands on Internet. CREATE wgc5 again: the phone is NOT on it
-- **changing the default connection** (read the caution above first): default to wgc1, every unassigned device exits wgc1's region and the phone pinned to wgc5 does not. Disable wgc1: the default panel notes unassigned devices use Internet - confirm from an unassigned device, as this one is inferred
-- **a reboot:** reboot, CHK. Every assignment and the default survive, and each device exits where its row says
-
----
-
-## 8. <a name='app-log'></a>App log
-
-- headed APP LOG in teal capitals, where VIEW WATCHDOG LOG has its heading
-- one connection exists per session
-- router log: one `dropbear ... Password auth succeeded` per app session, not per button press
-- COPY the log - no countdown armed, and paste keeps its line breaks
-- drop the connection mid-session (reboot the router, or `service restart_vpnc`) - app logs "connection dropped; reconnecting" and the action still completes
-
----
-
-## 9. <a name='router-log'></a>Router log
-
-- headed ROUTER LOG in teal capitals, where VIEW WATCHDOG LOG has its heading
-- opens on the newest 32 KB of `/tmp/syslog.log`, scrolled to the bottom
-- scrolling to the top loads the previous 32 KB and **keeps your place** - the text you were reading must not jump
-- a partial first line is trimmed, so no page ever starts mid-word
-- lines the app wrote are teal and lines the watchdog wrote are lavender, never amber, which would read as a warning; any of those reporting an error - ERROR, failed, connectivity lost, down or absent, never answered, no Internet - are red instead, while the firmware's own lines stay plain even when they say failed
-- reaching the start of `syslog.log` continues into the rotated `syslog.log-1` if the router has one, and says so
-- COPY takes everything loaded, not just the visible page, and no clipboard countdown is armed
-- REFRESH returns to the newest page
-- text selects across page boundaries in one run
-- HOME leaves
-
----
-
-## 10. <a name='settings'></a>Settings
-
-- the rows run REBOOT ROUTER, FORGET ROUTER IP, REMOVE CACHED PIA CERT, UNINSTALL FEATURES DEPLOYED TO ROUTER, then RESTORE PURCHASE on a store build
-- UNINSTALL FEATURES DEPLOYED TO ROUTER asks twice, and the second prompt says what it is about to do, with CANCEL first in grey and UNINSTALL second in red
-- afterwards, on the router:
+- WireGuard:
 
 ```bash
-ls -l /opt/etc/init.d/S50downloadmaster /opt/etc/init.d/S50asuslighttpd   # restored, or gone
-cru l                                    # no watchdog entries
-nvram show | grep cfg_pia_wg             # nothing
-nvram show | grep -E 'wgc[1-9]_wd_'      # nothing
-ls /jffs/cfg-pia-wg                       # gone
-wg show interfaces                        # UNCHANGED - the tunnels are not ours to remove
+wg                  # show everything
+wg show interfaces  # interface names only
 ```
 
-- **run UNINSTALL a second time on the same router.** It must report that each script is not ours
-  and delete nothing. A second run that removes the router's own `S50downloadmaster` is the 425 bug
-  and the reason both scripts now carry an `auto-generated by cfg-pia-wg` header line
-- REMOVE CACHED PIA CERT removes the cached PIA CA and the next reconfigure fetches it again
-- with no live router session, REMOVE CACHED PIA CERT asks for credentials inline - the prompt prefills the remembered address, leaves the username blank, and the keyboard does not obscure it
-- FORGET ROUTER IP clears the saved address, and the next connect screen opens empty
-- with no live router session, log in once on SETTINGS (REMOVE CACHED PIA CERT, say): MAX ACTIVE VPNS and REBOOT ROUTER then go straight on, with no second login - also after leaving SETTINGS and coming back
-- a login that fails is not kept: the next action asks again, prefilled
-- every SETTINGS action leaves a line in APP LOG - what it did, that there was nothing to do, or the error - and the ones that act on the router leave a line in ROUTER LOG too
-- RESTORE PURCHASE logs "Restore started." and then what it found
+- Watch interfaces come and go, once a second for a minute:
 
----
+```bash
+i=1; while [ $i -le 60 ]; do echo "$(date +%H:%M:%S) - $(wg show interfaces)"; sleep 1; i=$((i+1)); done
+```
 
-## 11. <a name='about'></a>About
+- Watch `vpnc_unit`, which changes as each slot is acted on:
 
-- COPY BUILD INFO - no clipboard countdown starts
-- licences screen opens and does not bleed through the header
-- CREATE GITHUB ISSUE opens
-- the deployed watchdog script version is shown; when it differs from the app's it is amber, with REDEPLOY TO UPDATE VERSION under it, which updates the script without restarting any tunnel and leaves the row plain again
-- Router firmware shows the type and version once the router has been read, and CREATE GITHUB ISSUE carries both
-- License status reads homegrown on a self-built copy, and licensed or unlicenced on a store build
-- more space around the grey section rules
-- the history line reads `Since <yyyy-mm-dd>: X successful & Y unsuccessful reconfigures`
+```bash
+i=1; while [ $i -le 9999 ]; do echo "$(date +%H:%M:%S) - $(nvram get vpnc_unit)"; usleep 500000; i=$((i+1)); done
+```
 
----
+- Watch the processes that run when a VPN comes up, goes down, or is created or deleted:
 
-## 12. <a name='credentials-and-exit'></a>Credentials and exit
+```bash
+i=1; while [ $i -le 30000 ]; do echo "$(date +%H:%M:%S) - $(ps | grep -E "vpnc|vpn|openvpn|wg" | grep -v grep | head -5)"; usleep 200000; i=$((i+1)); done
+```
 
-- password manager fills PIA, SSH and SMTP logins (clear the field first - Android only offers on an empty one)
-- EXIT and the back key both prompt, then wipe credentials and clipboard
-- release build: screenshots blocked, task switcher obscured
+> [!WARNING]
+> Very small `usleep` values can crash `syslogd` or the router.
 
----
+- The VPN profile list, one record per line:
 
-## 13. <a name='locked-with-no-entitlement'></a>Locked, with no entitlement
+```bash
+nvram get vpnc_clientlist | tr "<" "\n"
+```
 
-Until the store is wired up, force this state with `Entitlement.debugSetUnlocked(false)`. Everything
-below is what someone who has not paid should see, and the point of each check is that the app stays
-useful and honest rather than becoming a wall.
+- Every WireGuard slot setting:
 
-- standalone generation works end to end, exactly as it does for a buyer
-- MANAGE, WATCHDOG and DEVICE ASSIGNMENT all open and show the real router
-- on stock with `jq` or `mailsend-go` missing, there is **no** offer to install them - the paywall is
-  what a locked user meets, not an errand on their own hardware
-- CREATE, ENABLE, EDIT and the watchdog's CREATE/EDIT and ENABLE open the paywall, and nothing
-  reaches the router
-- DISABLE, DELETE and VIEW LOG work, on both screens. Never trap a running tunnel or a deployed
-  script behind a purchase
-- on device assignment, browsing and staging are free and the tally counts up; APPLY opens the
-  paywall, writes nothing, and closing it leaves the staged changes where they were
-- a button greyed for its own reasons stays greyed. Selling something that would not have worked is
-  the fastest way to earn a refund
-- the paywall never appears on launch or on entering a screen, only on a tap
-- with no store reachable the buy button reads "Not available right now" and is disabled
+```bash
+nvram show | grep -E "wgc[1-9]_" | sort
+```
 
----
+- Clear one slot by hand (the first slot the WebUI creates is always wgc5):
 
-## 14. <a name='buying-and-restoring'></a>Buying and restoring
+```bash
+for v in wgc5_addr wgc5_aips wgc5_alive wgc5_dns wgc5_enable wgc5_ep_addr wgc5_ep_addr_r wgc5_ep_port wgc5_mtu wgc5_nat wgc5_ppub wgc5_priv wgc5_psk; do nvram unset "$v"; done; nvram commit
+```
 
-Needs a build that went up to a track, carrying the store key. **`flutter run` cannot test any of
-this**: Google Play refuses purchases from an artifact it did not distribute, and a local build has
-no key anyway, so it is unlocked and never shows a paywall. That is the designed behaviour, not a
-broken test setup.
+- VPN runtime state, and the `vpnc_` keys including `vpnc_unit` and `vpnc_max_conn`:
 
-Before starting, in Play Console: the tester account is on the **licence testers** list AND opted in
-to the **testing track**. Two separate lists. Miss the second and the purchase charges real money.
+```bash
+nvram show | grep -E "vpnc([1-9]|1[0-6])_" | sort
+nvram show | grep -E "vpnc_" | sort
+```
 
-The buy:
+## <a name='r8'></a>R8. Store testing notes
 
-- install from the track, on an account that has never bought it
-- every gated control opens the paywall: CREATE, ENABLE, EDIT, the watchdog's CREATE/EDIT and
-  ENABLE, and APPLY on device assignment
-- the paywall opens on the TAP, never on launch and never on entering a screen
-- the price on the button is the store's own, in the tester's currency, not a hardcoded number
-- NOT NOW returns to exactly where you were, with any staged device changes still staged
-- buy it. Google's sheet says "test card, always approves"
-- **every gated control is live the moment you land back**, with no restart and no revisit. The
-  entitlement is reactive; if a screen is still greyed, that is the bug this is looking for
-- the log shows no warning about the store
-
-The refund, which is the trial:
-
-- refund the order in Play Console, choosing **refund and revoke** where offered, then wait for the notification to reach RevenueCat
-- **turn on the Sandbox toggle** to see any of it. RevenueCat hides test activity from transaction views by default, so a working purchase looks like no purchase at all. The toggle sits beside Recent Transactions
-- customer COUNTS never move for a refund. A customer record is created on first launch and persists; only the entitlement goes. Read the individual customer record, not the dashboard totals
-- expect ghost customers after every release. Play's pre-launch report runs the app on its own devices, each launch creating an anonymous customer that never buys anything. Measured 2026-09-12: seven of them, United States, Android 30, within twenty minutes of the upload
-- the app relocks **without being reinstalled**. If it does not, real-time developer notifications
-  are not wired up (step 23 of the plan) and the refund window cannot be used as a trial
-
-The restore, on a second device or after a reinstall:
-
-- uninstall and reinstall from the track. `android:allowBackup="false"` means nothing local survives
-- it should come back **already unlocked**, with nothing pressed: the launch path calls
-  `syncPurchases`, which asks Play what this account owns
-- SETTINGS shows RESTORE PURCHASE, between UNINSTALL FEATURES DEPLOYED TO ROUTER and MAX ACTIVE VPNS. A local build, with no store key, does not show it
-- if it does not, SETTINGS -> RESTORE PURCHASE. Expect "Purchase restored. Everything is unlocked."
-- APP LOG shows `Restore started.` and then what it found, for every outcome below
-- on a Google account that has NOT bought it, the same button says "No purchase found on this
-  Google account." That is a normal answer, not an error
-- **no operating-system sign-in prompt may appear at launch.** One appearing means something is
-  calling restore programmatically, which RevenueCat's guidance forbids
-
-Offline:
-
-- aeroplane mode, having already bought: still unlocked. The SDK's cache covers this
-- aeroplane mode on a fresh install that has never bought: locked, and the paywall button reads
-  "Not available right now" and is disabled. Locked is correct - there is no evidence of a purchase,
-  and assuming one would hand the app to anyone who turns off their wifi
-
----
-
-## 15. <a name='firmware-coverage'></a>Firmware coverage
-
-Repeat [Manage](#manage), [Watchdog](#watchdog) and [App log](#app-log) on the other firmware.
-
-Two sections do not apply on Merlin at all: [Device assignment](#device-assignment) needs VPN
-Fusion, and the parts of [Files deployed to the router](#files-deployed-to-the-router) about the
-init scripts and the installed binaries are stock-only. Merlin has `/jffs/scripts/services-start`
-and ships `jq` already.
-
----
-
-## 16. <a name='examining-nvram-settings'></a>Examining nvram settings
-
-I've used the below to examine WG on ASUS routers.
-
-What the fields **mean** is in
-[ARCHITECTURE.md, Router WireGuard NVRAM fields](ARCHITECTURE.md#router-wireguard-nvram-fields);
-this section is only how to look at them. Two things about stock catch people out while testing,
-and both are worth reading before you start interpreting output:
-
-- **One profile is named by three different numbers** - its slot, its row in `vpnc_clientlist` (`vpnc_unit`), and its index 6. Which one a key wants depends on the key. `vpnc_default_wan` and `vpnc_dev_policy_list` both want index 6, so a value of `9` is perfectly normal on a five-slot router. See [The three numbers that name one profile](ARCHITECTURE.md#the-three-numbers-that-name-one-profile).
-- **`nvram get` after a `service` call proves nothing.** `notify_rc` queues and returns immediately, so the value you read may be from before the call finished. Poll for the effect - the interface appearing in `wg show interfaces`, the key changing - rather than reading once.
-
-Your best source of information is the system log with `tail -f /tmp/syslog.log`. This shows calls to the `service` command wrapper with commands like `service restart_vpnc`. `service` command parameters are not user accessible files.
-
-- Manipulate/see WG configs:
-
-    ```bash
-    wg                  # get/set WG settings
-    wg show interfaces  # show WG device interface names
-    ```
-
-- Poll and display active WG interfaces (substitute `usleep 500000` for `sleep 1` for half-second logging; syslogd can't show microseconds):
-
-    ```bash
-    i=1; while [ $i -le 60 ]; do echo "$(date +%H:%M:%S) - $(wg show interfaces)"; sleep 1; i=$((i+1)); done
-    ```
-
-- as above but for `vpnc_unit` whose content changes depending on which slot is being targetted:
-
-    ```bash
-    i=1; while [ $i -le 9999 ]; do echo "$(date +%H:%M:%S) - $(nvram get vpnc_unit)"; usleep 500000; i=$((i+1)); done
-    ```
-
-- Show all commands run when a VPN comes up/down or is created/deleted, half second resolution:
-
-    ```bash
-    i=1; while [ $i -le 30000 ]; do echo "$(date +%H:%M:%S) - $(ps | grep -E "vpnc|vpn|openvpn|wg" | grep -v grep | head -5)"; usleep 200000; i=$((i+1)); done
-    ```
-
-    > [!WARNING]
-    > Very small `usleep` values may crash syslogd and/or your router.
-
-- Display the contents of `vpnc_clientlist`:
-
-    ```bash
-    nvram get vpnc_clientlist | tr "<" "\n"
-    ```
-
-- Show the contents of all WG slot settings stored in nvram:
-
-    ```bash
-    nvram show | grep -E "wgc[1-9]_" | sort
-    ```
-
-- Clear all wgc5 values (the first WG VPN slot created in the WebUI is always named #5):
-
-    ```bash
-    for v in wgc5_addr wgc5_aips wgc5_alive wgc5_dns wgc5_enable wgc5_ep_addr wgc5_ep_addr_r wgc5_ep_port wgc5_mtu wgc5_nat wgc5_ppub wgc5_priv wgc5_psk; do nvram unset "$v"; done; nvram commit
-    ```
-
-- Show `vpnc_` (where N is 5-9) for WireGuard:
-
-    ```bash
-    nvram show | grep -E "vpnc([1-9]|1[0-6])_" | sort
-    ```
-
-- Show `vpnc_`, this includes `vpnc_unit` (the unit being acted on) and `vpnc_max_conn` the maximum number of concurrent VPNs:
-
-    ```bash
-    nvram show | grep -E "vpnc_" | sort
-    ```
-
-- Show the app's **global** settings - the PIA credentials the watchdog re-authenticates with, and the lifetime counters reported in the HISTORY section of every alert email:
-
-    ```bash
-    nvram show | grep -i cfg_pia | sort
-    ```
-
-    ```text
-    cfg_pia_wg_password=...
-    cfg_pia_wg_reconfig_fail=1     # lifetime failed reconfigures, all slots
-    cfg_pia_wg_reconfig_ok=4       # lifetime successful reconfigures, all slots
-    cfg_pia_wg_sdate=2026-09-01    # the day the app first configured this router
-    cfg_pia_wg_user=...
-    ```
-
-    The three `sdate` / `reconfig_*` keys are seeded together by whichever of a watchdog deploy or a test email happens first, and committed once per alert rather than once per check - `nvram commit` writes flash.
-
-- Two helper scripts do the above wholesale, and are the fastest way to start a clean test run:
-
-    ```bash
-    ./showall.sh    # every wgcN_, vpncN_, vpnc_ and cfg_pia_wg_ key, plus wg interfaces and cru
-    ./clearall.sh   # unset all of them, including the counters, and commit
-    ```
-
-    Both live in `scripts/` in the repository; copy them to the router with `scp`.
+- **A local build cannot test buying.** Google Play refuses purchases from an app it did not distribute, and a local build has no store key, so it is always unlocked and never shows a paywall. That is the designed behaviour.
+- **Two Play Console lists.** The tester account must be on the licence testers list AND opted in to the testing track. Miss the second and the purchase charges real money.
+- **RevenueCat hides test purchases by default.** Turn on the Sandbox toggle beside Recent Transactions, or a working purchase looks like no purchase at all.
+- **Customer counts never move for a refund.** A customer record is created on first launch and persists; only the entitlement goes. Read the individual customer record, not the dashboard totals.
+- **Expect ghost customers after every release.** Play's pre-launch report runs the app on its own devices, and each launch creates an anonymous customer that never buys. Measured 2026-09-12: seven, United States, Android 30, within twenty minutes of the upload.
+- **If a refund does not relock the app**, real-time developer notifications are not wired up, and the refund window cannot be used as a trial.
+- **`android:allowBackup="false"`** means nothing local survives a reinstall. A restored unlock comes from Play, through `syncPurchases` at launch.
+- **No sign-in prompt may appear at launch.** One appearing means something is calling restore programmatically, which RevenueCat's guidance forbids.

@@ -26,7 +26,7 @@
 #
 #      wg set wgc5 peer "$(nvram get wgc5_ppub)" remove
 #
-# Full write-up in TESTING.md section 2.1.6.
+# Full write-up in TESTING.md, reference section "The backoff ladder".
 
 SLOT="${1:-5}"
 IFACE="wgc${SLOT}"
