@@ -506,6 +506,10 @@ void main() {
 
       await tester.tap(find.byKey(const Key('settings_forget_router_ip')));
       await tester.pumpAndSettle();
+      // ID-052: it asks first, naming the address it is about to delete.
+      expect(find.textContaining('Deletes 192.168.1.1 from this phone'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('settings_forget_ip_confirm')));
+      await tester.pumpAndSettle();
 
       expect(find.text('Remembered router address deleted.'), findsOneWidget);
       expect(c.rememberedRouterIp, '');
@@ -513,6 +517,29 @@ void main() {
       // The form goes back to the shipped default, not to a stale value.
       expect(c.routerIpPrefill, kDefaultRouterIp);
       expect(tester.widget<OutlinedButton>(find.byKey(const Key('settings_forget_router_ip'))).onPressed, isNull);
+    });
+
+    testWidgets('CANCEL keeps the address, and logs nothing', (tester) async {
+      final c = controllerWith();
+      await c.rememberRouterIp('192.168.1.1');
+      await _pumpSettings(tester, controller: c);
+
+      await tester.tap(find.byKey(const Key('settings_forget_router_ip')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_forget_ip_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(c.rememberedRouterIp, '192.168.1.1');
+      expect(await prefs.load(), '192.168.1.1');
+      expect(c.log.any((e) => e.message.contains('deleted from device storage')), isFalse);
+    });
+
+    // ID-052: the app log named the wrong screen.
+    testWidgets('remembering an address points at SETTINGS, where the button is', (tester) async {
+      final c = controllerWith();
+      await c.rememberRouterIp('192.168.1.1');
+      expect(c.log.last.message, contains('FORGET ROUTER IP on the SETTINGS screen'));
+      expect(c.log.any((e) => e.message.contains('About screen')), isFalse);
     });
 
     testWidgets('the inline SSH prompt prefills with the remembered address', (tester) async {
@@ -535,16 +562,31 @@ void main() {
       ..sshPassword = 'pw'
       ..routerConnected = true;
 
-    Future<void> pump(WidgetTester tester, SessionController c, RecordingSSHClient ssh) async {
+    Future<void> pump(WidgetTester tester, SessionController c, RecordingSSHClient ssh,
+        {Future<bool> Function(String host, int port)? answers}) async {
       addTearDown(c.dispose);
       await tester.pumpWidget(MaterialApp(
         home: SessionScope(
           controller: c,
-          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+          child: Scaffold(
+            body: SettingsScreen(
+              testClientFactory: (_, __, ___) async => ssh,
+              testRouterAnswers: answers ?? (_, __) async => false,
+            ),
+          ),
         ),
       ));
       await tester.pumpAndSettle();
     }
+
+    Future<void> confirmReboot(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('settings_reboot_router')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_reboot_confirm')));
+      await tester.pumpAndSettle();
+    }
+
+    String percent(WidgetTester tester) => tester.widget<Text>(find.byKey(const Key('reboot_progress_percent'))).data!;
 
     testWidgets('asks first, and CANCEL sends nothing', (tester) async {
       final ssh = RecordingSSHClient(responder: (_) => '');
@@ -581,10 +623,83 @@ void main() {
       expect(cleared, isNot(-1), reason: 'the ghost has to be cleared');
       expect(reboot, isNot(-1), reason: 'and the reboot still has to be sent');
       expect(cleared, lessThan(reboot));
-      expect(find.textContaining('Reboot requested'), findsOneWidget);
+      // ID-054: a count to 100 seconds replaces the one-line snackbar.
+      expect(find.text('Rebooting the router'), findsOneWidget);
       // The router log records it too, but that log is on the device going down. The app log is
       // the one still readable while it comes back.
       expect(c.log.any((e) => e.message.contains('Router reboot requested')), isTrue);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+    });
+
+    // ID-054: a count to 100 seconds, one per cent a second, as the ASUS WebUI shows.
+    testWidgets('counts one per cent a second, with no buttons', (tester) async {
+      await pump(tester, connected(), RecordingSSHClient(responder: (_) => ''));
+      await confirmReboot(tester);
+
+      expect(percent(tester), '0%');
+      final dialog = find.ancestor(of: find.text('Rebooting the router'), matching: find.byType(AlertDialog));
+      expect(find.descendant(of: dialog, matching: find.byType(OutlinedButton)), findsNothing);
+      expect(find.descendant(of: dialog, matching: find.byType(TextButton)), findsNothing);
+      await tester.pump(const Duration(seconds: 1));
+      expect(percent(tester), '1%');
+      await tester.pump(const Duration(seconds: 9));
+      expect(percent(tester), '10%');
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+    });
+
+    // The router is often back well before 100. It closes then - but only once it has gone down first, or a
+    // check in the seconds before the reboot takes hold would close it at once.
+    testWidgets('closes as soon as the router answers again, having gone down first', (tester) async {
+      final c = connected();
+      final replies = [true, false, true];
+      var calls = 0;
+      Future<bool> answers(String host, int port) async => replies[calls < replies.length ? calls++ : replies.length - 1];
+      await pump(tester, c, RecordingSSHClient(responder: (_) => ''), answers: answers);
+      await confirmReboot(tester);
+
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.text('Rebooting the router'), findsOneWidget, reason: 'answering before it went down means nothing');
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.text('Rebooting the router'), findsOneWidget, reason: 'down');
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Rebooting the router'), findsNothing);
+      expect(c.log.last.message, endsWith('] The router answered again after 9 seconds.'));
+      expect(c.log.last.isSuccess, isTrue);
+    });
+
+    testWidgets('stops at 100 seconds and says the router has not answered', (tester) async {
+      final c = connected();
+      await pump(tester, c, RecordingSSHClient(responder: (_) => ''));
+      await confirmReboot(tester);
+
+      await tester.pump(const Duration(seconds: 99));
+      expect(percent(tester), '99%');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Rebooting the router'), findsNothing);
+      expect(c.log.last.message, contains('has not answered after 100 seconds'));
+      expect(c.log.last.isWarning, isTrue);
+    });
+
+    testWidgets('the back key leaves it, and nothing more happens', (tester) async {
+      final c = connected();
+      await pump(tester, c, RecordingSSHClient(responder: (_) => ''));
+      await confirmReboot(tester);
+      await tester.pump(const Duration(seconds: 5));
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('Rebooting the router'), findsNothing);
+
+      final logged = c.log.length;
+      await tester.pump(const Duration(seconds: 120));
+      expect(c.log, hasLength(logged), reason: 'the count stopped when it closed');
     });
   });
 
@@ -655,5 +770,172 @@ void main() {
       expect(find.byKey(const Key('paywall_buy')), findsOneWidget);
       expect(ssh.commands, isEmpty);
     });
+  });
+
+  // ID-046, reported: after logging in on a SETTINGS prompt, MAX ACTIVE VPNS asked for the login again, every
+  // time. The credentials were stored but the session was never marked connected, and a session that has not
+  // connected is not reused.
+  group('a login on SETTINGS is kept for the session', () {
+    Future<SessionController> pumpFresh(WidgetTester tester, RecordingSSHClient ssh, {bool unreachable = false}) async {
+      final c = SessionController(tickInterval: const Duration(hours: 1), routerPrefs: _MemoryRouterPrefs());
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(
+          controller: c,
+          child: Scaffold(
+            body: SettingsScreen(
+              testClientFactory: (_, __, ___) async => unreachable ? throw Exception('Connection refused') : ssh,
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      return c;
+    }
+
+    Future<void> logInAndDeleteCert(WidgetTester tester) async {
+      await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
+      await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextFormField, 'Router IP'), '192.168.1.1');
+      await tester.enterText(find.widgetWithText(TextFormField, 'SSH Username'), 'admin');
+      await tester.enterText(find.widgetWithText(TextFormField, 'SSH Password'), 'pw');
+      await tester.tap(find.byKey(const Key('about_ssh_continue')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_del_cert_confirm')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('one login covers the next action, as it does everywhere else', (tester) async {
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('pia_ca') ? 'DELETED' : '');
+      final c = await pumpFresh(tester, ssh);
+      await logInAndDeleteCert(tester);
+      expect(c.routerConnected, isTrue);
+      expect(c.canReuseRouterSession, isTrue);
+
+      // The action from the report.
+      await tester.ensureVisible(find.byKey(const Key('settings_max_vpns')));
+      await tester.tap(find.byKey(const Key('settings_max_vpns')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SshCredsDialog), findsNothing);
+      expect(ssh.ran('nvram get 3rd-party'), isTrue, reason: 'it went straight to the router');
+    });
+
+    testWidgets('a login that never reached the router is not kept as connected', (tester) async {
+      final c = await pumpFresh(tester, RecordingSSHClient(), unreachable: true);
+      await logInAndDeleteCert(tester);
+
+      expect(find.textContaining('Could not delete the cached certificate'), findsOneWidget);
+      expect(c.routerConnected, isFalse);
+      expect(c.canReuseRouterSession, isFalse, reason: 'the next action asks again');
+      expect(c.routerIp, '192.168.1.1', reason: 'but prefilled with what was typed');
+    });
+  });
+
+  // Every SETTINGS action says what happened in the app log: what it did, that there was nothing to do, or the
+  // error. The ones that act on the router also leave a line in its own log.
+  group('every action leaves a line in the logs', () {
+    SessionController connected() => SessionController(tickInterval: const Duration(hours: 1), routerPrefs: _MemoryRouterPrefs())
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true;
+
+    Future<void> pump(WidgetTester tester, SessionController c, RecordingSSHClient ssh, {Future<bool> Function()? restore}) async {
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(
+          controller: c,
+          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh, testRestore: restore)),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> tap(WidgetTester tester, String key) async {
+      await tester.ensureVisible(find.byKey(Key(key)));
+      await tester.tap(find.byKey(Key(key)));
+      await tester.pumpAndSettle();
+    }
+
+    bool logged(SessionController c, String text, {bool error = false}) =>
+        c.log.any((e) => e.message.contains(text) && e.isError == error);
+
+    testWidgets('REMOVE CACHED PIA CERT: the app log and the router log', (tester) async {
+      final c = connected();
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('pia_ca') ? 'DELETED' : '');
+      await pump(tester, c, ssh);
+      await tap(tester, 'settings_del_pia_cert');
+      await tap(tester, 'settings_del_cert_confirm');
+
+      expect(logged(c, 'Deleted cached PIA certificate'), isTrue);
+      expect(ssh.commands.any((cmd) => cmd.contains('logger -t $kWatchdogLogTag') && cmd.contains('PIA certificate')), isTrue);
+    });
+
+    testWidgets('a failure reaches the app log as an error', (tester) async {
+      final c = connected();
+      await pump(tester, c, RecordingSSHClient(throwOn: ['pia_ca']));
+      await tap(tester, 'settings_del_pia_cert');
+      await tap(tester, 'settings_del_cert_confirm');
+
+      expect(logged(c, 'Could not delete the cached certificate', error: true), isTrue);
+    });
+
+    RecordingSSHClient router({String tag = '', String current = '2'}) => RecordingSSHClient(
+          responder: (cmd) => cmd.contains('3rd-party')
+              ? tag
+              : cmd.contains('nvram get vpnc_max_conn')
+                  ? current
+                  : '',
+        );
+
+    testWidgets('MAX ACTIVE VPNS: a new limit in both logs', (tester) async {
+      final c = connected();
+      final ssh = router();
+      await pump(tester, c, ssh);
+      await tap(tester, 'settings_max_vpns');
+      await tester.enterText(find.byKey(const Key('max_vpns_field')), '3');
+      await tap(tester, 'max_vpns_save');
+
+      expect(logged(c, 'Maximum active VPNs set to 3.'), isTrue);
+      expect(ssh.commands.any((cmd) => cmd.contains('logger -t') && cmd.contains('Maximum active VPNs set to 3')), isTrue);
+    });
+
+    testWidgets('MAX ACTIVE VPNS: the same number again is logged as unchanged, and writes nothing', (tester) async {
+      final c = connected();
+      final ssh = router(current: '2');
+      await pump(tester, c, ssh);
+      await tap(tester, 'settings_max_vpns');
+      await tap(tester, 'max_vpns_save');
+
+      expect(logged(c, 'Maximum active VPNs left at 2, unchanged.'), isTrue);
+      expect(ssh.ran('nvram set vpnc_max_conn'), isFalse);
+    });
+
+    testWidgets('MAX ACTIVE VPNS: nothing to change on Merlin, and it says so in the log', (tester) async {
+      final c = connected();
+      await pump(tester, c, router(tag: 'merlin'));
+      await tap(tester, 'settings_max_vpns');
+
+      expect(logged(c, 'Merlin has no limit on active VPNs'), isTrue);
+    });
+
+    // ID-047: RESTORE PURCHASE wrote nothing to the app log, where the paywall's restore logs every outcome.
+    for (final (name, restore, expected, success, error) in [
+      ('a purchase found', () async => true, 'Purchase restored', true, false),
+      ('no purchase', () async => false, 'No purchase found', false, false),
+      ('the store unreachable', () async => throw Exception('offline'), 'Could not reach the store', false, true),
+    ]) {
+      testWidgets('RESTORE PURCHASE logs that it started, and $name', (tester) async {
+        final c = connected();
+        await pump(tester, c, RecordingSSHClient(), restore: restore);
+        await tap(tester, 'settings_restore_purchase');
+
+        expect(logged(c, 'Restore started.'), isTrue);
+        final outcome = c.log.lastWhere((e) => e.message.contains(expected));
+        expect(outcome.isSuccess, success);
+        expect(outcome.isError, error);
+      });
+    }
   });
 }

@@ -26,6 +26,10 @@ import '../widgets/app_scaffold.dart';
 /// Deep link to the README section that walks through each screen.
 const kHelpUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#5-using-the-app';
 
+/// How wide the menu grows before it stops and centres (ID-031). A phone is narrower than this, so there the rows
+/// use the full width; on a tablet they would otherwise stretch into bars with a long gap between label and chevron.
+const double kMenuMaxWidth = 520;
+
 Future<void> _launchExternalUrl(String urlStr) async {
   final url = Uri.parse(urlStr);
   if (await canLaunchUrl(url)) {
@@ -50,34 +54,34 @@ class MainMenuScreen extends StatelessWidget {
       child: AppScaffold(
         showClose: false,
         fillViewport: true,
+        maxContentWidth: kMenuMaxWidth,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Every destination the drawer offers, in the drawer's order, built from the drawer's own list so
             // the two cannot drift. The keys are unchanged: each is `menu_` plus the route name.
             for (final d in AppDrawer.destinations) ...[
-              _MenuButton(
+              _MenuRow(
                 keyValue: 'menu_${d.routeName}',
+                icon: destinationIcon(d),
                 label: d.title,
                 onTap: () => navigateToDestination(context, controller, d),
               ),
               const SizedBox(height: 12),
             ],
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                key: const Key('menu_close_app'),
-                style: OutlinedButton.styleFrom(
-                    foregroundColor: kError,
-                    side: const BorderSide(color: kError),
-                    padding: const EdgeInsets.symmetric(vertical: 16)),
-                onPressed: () => confirmAndExit(context, controller),
-                child: const Text('EXIT'),
-              ),
+            // EXIT sits a little apart: it is the one row that does not open a screen.
+            const SizedBox(height: 8),
+            _MenuRow(
+              keyValue: 'menu_close_app',
+              icon: kExitIcon,
+              label: 'EXIT',
+              colour: kError,
+              opensScreen: false,
+              onTap: () => confirmAndExit(context, controller),
             ),
             SizedBox(height: spacer),
-            // The two links sit together, directly under the buttons, with nothing between them. Any spare
-            // height goes BELOW them, so a tall screen does not push them apart or down to the foot.
+            // The two links sit together, directly under the rows and lined up with them, with nothing between
+            // them. Any spare height goes BELOW them, so a tall screen does not push them apart or down to the foot.
             const _HelpLink(),
             const _ReviewLink(),
             const Spacer(),
@@ -88,32 +92,56 @@ class MainMenuScreen extends StatelessWidget {
   }
 }
 
-class _MenuButton extends StatelessWidget {
+/// One menu entry, laid out like a drawer row (ID-031): its icon, its label, and a chevron when it opens a screen.
+///
+/// Icon and label used to be centred together, so each row's icon started wherever its label's length put it and
+/// the screen read as nine separate bundles. Left-aligned, the icons form one column and the labels a second, as
+/// they do in the drawer.
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({
+    required this.keyValue,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.colour = kHighlight,
+    this.opensScreen = true,
+  });
+
   final String keyValue;
+  final IconData icon;
   final String label;
   final VoidCallback onTap;
-  const _MenuButton({required this.keyValue, required this.label, required this.onTap});
+  final Color colour;
+  final bool opensScreen;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        key: Key(keyValue),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: kHighlight,
-          foregroundColor: kOnPrimary,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-        ),
-        onPressed: onTap,
-        child: Text(label, textAlign: TextAlign.center),
+    return OutlinedButton(
+      key: Key(keyValue),
+      style: OutlinedButton.styleFrom(
+        // The screen's own colour, so the row reads as bordered rather than filled, like every other button.
+        backgroundColor: kBg,
+        foregroundColor: colour,
+        side: BorderSide(color: colour),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
+        alignment: Alignment.centerLeft,
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      ),
+      onPressed: onTap,
+      child: Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 16),
+          Expanded(child: Text(label)),
+          // EXIT keeps the chevron's width, so every label starts at the same place.
+          opensScreen ? const Icon(Icons.chevron_right, size: 18) : const SizedBox(width: 18),
+        ],
       ),
     );
   }
 }
 
-/// Tappable "(?) how to use this app" line directly under the menu buttons, opening the README section of
+/// Tappable "(?) how to use this app" line directly under the menu rows, opening the README section of
 /// the same name. The recogniser is owned by a State so it can be disposed; the same pattern as
 /// the About screen's links.
 class _HelpLink extends StatefulWidget {
@@ -142,7 +170,7 @@ class _HelpLinkState extends State<_HelpLink> {
   Widget build(BuildContext context) {
     return Text.rich(
       key: const Key('menu_help'),
-      textAlign: TextAlign.center,
+      textAlign: TextAlign.start,
       TextSpan(
         style: const TextStyle(color: kHighlight, fontSize: 12),
         children: [
@@ -185,7 +213,7 @@ class _ReviewLink extends StatelessWidget {
       child: const Padding(
         padding: EdgeInsets.symmetric(vertical: 8),
         child: Text.rich(
-          textAlign: TextAlign.center,
+          textAlign: TextAlign.start,
           TextSpan(
             style: TextStyle(color: kHighlight, fontSize: 12),
             children: [

@@ -22,6 +22,7 @@ import 'router_service_queue.dart';
 import 'firmware.dart';
 import 'router_slot_service.dart' show RouterSlotService, fetchSlotLabel, kUpInterfacesCommand, slotDescFor;
 import 's50_template.dart';
+import 'watchdog_email.dart';
 
 // ─── PIA negotiation endpoints (mirrored from pia_service.dart) ─────────────────
 // Kept in one place so the Bash re-negotiation and the Dart app stay in sync.
@@ -521,12 +522,13 @@ class RouterEmailFacts {
     );
   }
 
-  List<String> routerRows(int slot) => [
+  /// [desc] stands in for the router's own `wgcN_desc` when the caller knows better (ID-049).
+  List<String> routerRows(int slot, {String? desc}) => [
         'Name: $name${lanIp.isEmpty || lanIp == name ? '' : ' ($lanIp)'}',
         if (model.isNotEmpty || firmware.isNotEmpty) 'Model: $model, firmware $firmware',
         if (time.isNotEmpty) 'Time: $time',
         if (uptime.isNotEmpty) 'Uptime: $uptime',
-        'Watchdog: ${desc.isEmpty ? 'region not yet set, configuration pending deployment' : 'wgc$slot:$desc'}',
+        'Watchdog: ${(desc ?? this.desc).isEmpty ? 'region not yet set, configuration pending deployment' : 'wgc$slot:${desc ?? this.desc}'}',
       ];
 
   /// The same three counters, short enough for the ABOUT screen's width.
@@ -933,6 +935,8 @@ class RouterWatchdog {
     final deleted = out.contains('DELETED');
     onLog?.call(deleted ? 'Deleted cached PIA certificate ($kPiaCaCertPath).' : 'No cached PIA certificate to delete.',
         isSuccess: deleted);
+    // The router's own log records it too, like every other change the app makes there (ID-046).
+    if (deleted) await _logRouter('Cached PIA certificate deleted from the app; the watchdog downloads a fresh copy next run');
     return deleted;
   }
 
@@ -1498,6 +1502,10 @@ class RouterWatchdog {
     await _logRouter('Watchdog log cleared for wgc$slot');
   }
 
+  /// Every slot's email settings, in one round trip (ID-050). Only read when the form has no settings of
+  /// its own slot's or the session's to start from.
+  Future<Map<int, EmailSettings>> readEmailSettings() async => parseEmailSettings(await _read(kEmailSettingsCommand));
+
   // Reads the full watchdog config (per-slot + global PIA) back from NVRAM for the dialog.
   Future<WatchdogConfig> loadConfig(int slot) async {
     const keys = [
@@ -1534,11 +1542,15 @@ class RouterWatchdog {
     return RouterEmailFacts.parse(await _run(kEmailFactsCommand(slot)));
   }
 
-  Future<bool> testEmail(WatchdogConfig config) => _guard('test email', () async {
+  /// [desc] is the region on the form, as the slot will carry it (`pia-<region>`). Before the first deploy,
+  /// or after the region is changed on the form, the router's own `wgcN_desc` is empty or the old region, so
+  /// the subject and the Watchdog row take the form's instead, as the deployed email will (ID-049).
+  Future<bool> testEmail(WatchdogConfig config, {String desc = ''}) => _guard('test email', () async {
         final (host, port) = config.smtpHostPort;
         final stock = isStockFirmware;
         final facts = await emailFacts(config.slotIndex);
-        final subject = buildMailSubject(config, status: 'TEST email', desc: facts.desc);
+        final region = desc.trim().isNotEmpty ? desc.trim() : facts.desc;
+        final subject = buildMailSubject(config, status: 'TEST email', desc: region);
 
         final body = buildEmailBody(
           opening: 'This is a test email from cfg-pia-wg. Your SMTP settings work; watchdog alerts '
@@ -1547,7 +1559,7 @@ class RouterWatchdog {
             'Event: test email sent by hand from the watchdog configuration screen',
             facts.intervalRow,
           ],
-          router: facts.routerRows(config.slotIndex),
+          router: facts.routerRows(config.slotIndex, desc: region),
           history: facts.historyLine,
           howToDisable: false,
         );
@@ -1923,7 +1935,8 @@ log "Checking $IFACE $DESC connectivity"
 # show up` lists only interfaces carrying the UP flag; the `state` word is no use because a
 # WireGuard device reads `state UNKNOWN` while up. Measured 2026-09-09.
 if ! ip -o link show up 2>/dev/null | grep -q " $IFACE:"; then
-  log "Interface $IFACE is down or absent"
+  # A deploy run starts before the tunnel exists: there that is the expected state, not a fault (ID-048).
+  if [ "$RUNMODE" = "deploy" ]; then log "Interface $IFACE is not up yet"; else log "Interface $IFACE is down or absent"; fi
 else
   # A handshake is the peer answering; ping -I is not a liveness test on stock, where the
   # router's own traffic is not routed into wgcN. Ping kept as a fallback for Merlin.
@@ -1939,6 +1952,8 @@ else
   elif ping -I "$IFACE" -c 3 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
     log "Secondary ping OK ($SECONDARY_IP)"
     FAIL=0
+  elif [ "$RUNMODE" = "deploy" ]; then
+    log "Not connected yet: no handshake, and no answer from $PRIMARY_IP or $SECONDARY_IP"
   else
     log "No handshake and both pings failed ($PRIMARY_IP, $SECONDARY_IP)"
   fi

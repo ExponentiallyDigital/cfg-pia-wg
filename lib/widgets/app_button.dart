@@ -14,8 +14,8 @@
 // Copyright (C) 2026 Andrew Newbury.
 //
 // HOUSE STYLE (CONTEXT.md): every button is bordered and unfilled, with its border and label in
-// one colour, and that colour says what the button does. The main menu and the paywall are the two
-// exemptions and do not use this.
+// one colour, and that colour says what the button does. The paywall is the one exemption. The main
+// menu follows the same colours in a row layout of its own (ID-031), so it does not use this widget.
 //
 // The app had drifted into four looks - filled teal, bare text links, bordered teal and bordered
 // grey - chosen screen by screen. A reader cannot learn what a colour means when the same action

@@ -203,8 +203,10 @@ void main() {
       resetRouterFirmware();
       final body = Uri.parse(bugReportUrl(null, firmware: '3.0.0.4.388_25127', firmwareType: 'stock'))
           .queryParameters['body']!;
-      expect(body, contains('Router firmware: stock 3.0.0.4.388_25127'));
-      expect(body, contains('- Router firmware version: 3.0.0.4.388_25127'));
+      expect('Router firmware: stock 3.0.0.4.388_25127'.allMatches(body), hasLength(1));
+      // ID-053: once. The version was repeated as a "Router firmware version" bullet under the block.
+      expect(body, isNot(contains('Router firmware version')));
+      expect('3.0.0.4.388_25127'.allMatches(body), hasLength(1));
     });
 
     test('carries the licence status', () {
@@ -546,6 +548,22 @@ void main() {
       final issue = tester.getCenter(find.byKey(const Key('about_create_issue')));
       expect(issue.dy, copy.dy);
       expect(issue.dx, greaterThan(copy.dx), reason: 'the issue button sits to the right');
+    });
+
+    // ID-051: the two buttons sat right under the watchdog history line, against the left edge.
+    testWidgets('sits clear of the watchdog history line, centred under it', (tester) async {
+      _mockChannel(tester, (call) async => _hostReply);
+      await _pumpAbout(tester);
+
+      final history = find.byKey(const Key('about_watchdog_history'));
+      expect(history, findsOneWidget);
+      final copy = tester.getRect(find.byKey(const Key('about_copy_build_info')));
+      final issue = tester.getRect(find.byKey(const Key('about_create_issue')));
+      expect(copy.top - tester.getRect(history).bottom, greaterThanOrEqualTo(20));
+
+      final row = tester.getRect(find.ancestor(of: find.byKey(const Key('about_copy_build_info')), matching: find.byType(Wrap)).first);
+      expect((copy.left + issue.right) / 2, moreOrLessEquals(row.center.dx, epsilon: 1), reason: 'centred in the full width');
+      expect(row.width, tester.getRect(history).width, reason: 'the row spans the column, so centring means something');
     });
 
     testWidgets('opens the new-issue form prefilled with the running build', (tester) async {

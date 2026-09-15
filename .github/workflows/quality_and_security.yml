@@ -38,6 +38,7 @@ jobs:
   # ============================================================
   quality:
     name: Quality & static analysis
+    needs: osv-scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -46,7 +47,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Java
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.1
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: "zulu"
           java-version: "21"
@@ -89,13 +90,14 @@ jobs:
   # ============================================================
   build-debug:
     name: Build debug APK
+    needs: osv-scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Java
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.1
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: "zulu"
           java-version: "21"
@@ -123,16 +125,23 @@ jobs:
           retention-days: 1
 
   # ============================================================
-  # Job 3: OSV dependency vulnerability scan
+  # Job 3: OSV dependency vulnerability scan - every other job waits on it
   # ============================================================
+  # quality, build-debug and codeql `need` this job (and security needs build-debug), so a failed scan - a
+  # vulnerability found, or the scanner itself failing - stops the run rather than spending fifteen minutes
+  # on jobs whose result no longer matters (ID-056).
+  #
+  # No --exclude. osv-scanner renamed it --experimental-exclude, and the v2.6.0 scanner rejects the old name
+  # ("flag provided but not defined: -exclude"). The two paths it named were the runner's own Go toolchain,
+  # which is outside ./ and not visible inside the scanner's container, so they never excluded anything.
+  # The reusable workflow runs the scanner with continue-on-error; before v2.6.0 it then reported a scan
+  # that wrote no results as clean, so a scanner failure could pass unnoticed. v2.6.0 fails the job instead.
   osv-scan:
     name: OSV dependency scan
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
     with:
       scan-args: |-
         -r ./
-        --exclude=/usr/local/go
-        --exclude=/opt/hostedtoolcache/go
     permissions:
       contents: read
       security-events: write
@@ -161,7 +170,7 @@ jobs:
           args: "build/app/outputs/flutter-apk/app-debug.apk --sarif --output mobsfscan.sarif || true"
 
       - name: Upload MobSF results to Security tab
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.38.0
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: mobsfscan.sarif
 
@@ -170,6 +179,7 @@ jobs:
   # ============================================================
   codeql:
     name: CodeQL (${{ matrix.language }})
+    needs: osv-scan
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -189,14 +199,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.38.0
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
       - name: Set up Java
         if: matrix.language == 'java-kotlin'
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.1
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: "zulu"
           java-version: "21"
@@ -217,6 +227,6 @@ jobs:
         run: flutter build apk --debug
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.38.0
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           category: "/language:${{ matrix.language }}"

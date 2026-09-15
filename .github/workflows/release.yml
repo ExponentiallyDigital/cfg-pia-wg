@@ -88,7 +88,7 @@ jobs:
       # Step C: Set up Java & Flutter execution environments
       # ------------------------------------------------------------
       - name: Set up Java
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.1
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: "zulu"
           java-version: "21"
@@ -214,125 +214,18 @@ jobs:
           mkdir -p distribution/whatsnew
 
       # ------------------------------------------------------------
-      # Step I: Both release notes, out of this release's CHANGELOG block
+      # Step I: Both release notes, out of every CHANGELOG block since the previous tag
       # ------------------------------------------------------------
       - name: Read release notes from CHANGELOG.md
         id: changelog_parser
         env:
           TARGET_TAG: ${{ steps.tag.outputs.val }}
-        shell: python
         run: |
-          # ONE source, TWO audiences.
-          #
-          # The block for the tag being released produces both notes. Everything in it except the
-          # ```play fence becomes the GitHub release body, for someone reading a repository. The
-          # contents of that fence become the Google Play "what's new", for someone deciding whether
-          # to tap Update.
-          #
-          # They cannot be the same text. Play allows 500 Unicode characters per language, renders
-          # NO markdown, and does not make a URL tappable - so a developer preamble pasted there
-          # shows literal asterisks and a dead link, truncated mid-word. Writing both in the same
-          # CHANGELOG block is what keeps them in step without a second trip to Play Console.
-          #
-          # Neither is sorted. The order a block is written in carries meaning.
-          import os
-          import re
-          import sys
-
-          PLAY_LIMIT = 500          # Unicode characters per language, per Google's own docs
-          FALLBACK = "Please see https://exponentiallydigital.com/cfg-pia-wg/changelog"
-
-          changelog_path = "CHANGELOG.md"
-          target_tag = os.environ.get("TARGET_TAG", "")
-
-          # Anchored to a HEADING, and matched on the title rather than its number. The number has
-          # already changed once - the section became 1.3 when the WIP list was added above it - and
-          # the old parser looked for "1.2.", matched nothing, and silently published a release
-          # whose entire body was "Release v0.8.70". The table of contents carries the same words
-          # higher up the file, which is what the "#" test guards against.
-          def is_history_heading(line):
-              return line.startswith("#") and "Implemented - chronological change history" in line
-
-          version_header_re = re.compile(r"^\d{4}-\d{2}-\d{2}\s+v\d+\.\d+\.\d+")
-
-          gh_lines = []
-          play_lines = []
-          header = ""
-          in_history = False
-          in_block = False
-          in_play = False
-
-          if os.path.exists(changelog_path):
-              with open(changelog_path, "r", encoding="utf-8") as f:
-                  for raw in f:
-                      line = raw.rstrip()
-
-                      if not in_history:
-                          in_history = is_history_heading(line)
-                          continue
-
-                      if version_header_re.match(line.strip()):
-                          if in_block:
-                              break          # the next release down; this block is complete
-                          found = re.search(r"v\d+\.\d+\.\d+", line)
-                          if found and found.group(0) == target_tag:
-                              in_block = True
-                              header = line.strip()
-                          continue
-
-                      if not in_block:
-                          continue
-
-                      if not in_play and line.strip().startswith("```play"):
-                          in_play = True
-                          continue
-                      if in_play:
-                          if line.strip().startswith("```"):
-                              in_play = False
-                          else:
-                              play_lines.append(line)
-                          continue
-
-                      gh_lines.append(line)
-
-          while gh_lines and not gh_lines[-1].strip():
-              gh_lines.pop()
-
-          # ---- GitHub release body ----
-          if header:
-              notes = header + "\n\n" + "\n".join(gh_lines).strip()
-          else:
-              # Loud rather than quiet. A release with no notes is a mistake, and the old fallback
-              # of a bare "Release <tag>" made it look deliberate.
-              notes = (
-                  "Release " + target_tag + "\n\n"
-                  "> No CHANGELOG block was found for this tag. Check that CHANGELOG.md carries a "
-                  "`<date> " + target_tag + " build <n> - <title>` heading under the implemented history."
-              )
-              print("::warning::no CHANGELOG block found for " + target_tag)
-
-          with open("github_release_notes.txt", "w", encoding="utf-8") as f:
-              f.write(notes)
-
-          # ---- Google Play what's new ----
-          play = "\n".join(play_lines).strip()
-          if not play:
-              play = FALLBACK
-              print("::warning::no ```play block in the CHANGELOG entry for " + target_tag +
-                    " - Play gets the changelog link instead of real notes")
-          elif len(play) > PLAY_LIMIT:
-              # Caught HERE rather than by Play rejecting the upload, or worse, silently truncating.
-              print("::error::the ```play note for " + target_tag + " is " + str(len(play)) +
-                    " characters; Google Play allows " + str(PLAY_LIMIT))
-              sys.exit(1)
-
-          with open("distribution/whatsnew/whatsnew-en-AU", "w", encoding="utf-8") as f:
-              f.write(play + "\n")
-
-          print("--- GitHub ---")
-          print(notes)
-          print("--- Google Play (" + str(len(play)) + "/" + str(PLAY_LIMIT) + ") ---")
-          print(play)
+          # tool/release_notes.dart explains both notes, and why a release covers every block since the
+          # previous tag rather than only its own (ID-044). The checkout's fetch-depth: 0 is what gives it
+          # the tags. It writes github_release_notes.txt and distribution/whatsnew/whatsnew-en-AU, and
+          # fails the run when the Play note is over Google's 500-character limit.
+          dart run tool/release_notes.dart --tag "$TARGET_TAG"
 
       # Step J: Deploy App Bundle (.aab) to Google Play Internal Testing Track
       # ------------------------------------------------------------
@@ -369,6 +262,17 @@ jobs:
           dart run dart_pubspec_licenses:generate -o dart_licenses.json --json
 
       # ------------------------------------------------------------
+      # Step L2: Warn when THIRD-PARTY-NOTICES.md no longer matches what ships
+      # tool/third_party_notices.dart regenerates it in memory from the lockfiles and compares.
+      # A stale file is a warning, never a failure (ID-007); the build steps have already filled the
+      # Gradle cache it reads POMs from.
+      # ------------------------------------------------------------
+      - name: Check THIRD-PARTY-NOTICES.md is current
+        continue-on-error: true
+        run: |
+          dart run tool/third_party_notices.dart --check --dart-licenses dart_licenses.json
+
+      # ------------------------------------------------------------
       # Step M: Generate Software Bill of Materials (SBOM)
       # source-* env vars supply the app's own identity (name, version,
       # supplier) so the SBOM properly describes cfg-pia-wg itself, not
@@ -376,7 +280,7 @@ jobs:
       # text where Syft does find it (npm/pub.dev-adjacent ecosystems).
       # ------------------------------------------------------------
       - name: Generate SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.2
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         env:
           SYFT_SOURCE_NAME: "cfg-pia-wg"
           SYFT_SOURCE_VERSION: ${{ steps.tag.outputs.val }}
@@ -503,7 +407,7 @@ jobs:
 
       - name: Upload release assets to GitHub
         if: ${{ inputs.dry_run != true }}
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.tag.outputs.val }}
           name: ${{ steps.play_info.outputs.gh_release_name }}

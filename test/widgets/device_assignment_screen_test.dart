@@ -135,14 +135,18 @@ void main() {
     expect(find.textContaining('AA:BB:CC:DD:EE:FF'), findsNothing, reason: 'the router is not a device');
   });
 
-  testWidgets('tags only the exception', (tester) async {
+  // ID-032: the name and its exceptions on the first line, the address and MAC on the second.
+  testWidgets('tags only the exception, with the address and MAC underneath', (tester) async {
     await _pumpConnected(tester);
-    // Box is reserved and online, so its line is just name and address.
-    expect(find.text('Box - 192.168.1.20'), findsOneWidget);
+    // Box is reserved and online, so its first line is just its name.
+    expect(find.text('Box'), findsOneWidget);
+    expect(find.text('192.168.1.20 11:22:33:44:55:66'), findsOneWidget);
     // Laptop has no reservation.
-    expect(find.text('Laptop - 192.168.1.50 - DHCP'), findsOneWidget);
-    // Ghost is offline, has no address anywhere, and its address is locally administered.
-    expect(find.text('ghost - offline - random MAC'), findsOneWidget);
+    expect(find.text('Laptop - DHCP'), findsOneWidget);
+    expect(find.text('192.168.1.50 44:55:66:77:88:99'), findsOneWidget);
+    // Ghost is offline, has no address anywhere, and its address is locally administered: the tags share a bar.
+    expect(find.text('ghost - offline | random MAC'), findsOneWidget);
+    expect(find.text('22:33:44:55:66:77'), findsOneWidget, reason: 'no address is known, so the MAC alone');
   });
 
   testWidgets('a device with NO ADDRESS cannot be assigned', (tester) async {
@@ -200,6 +204,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('APPLY 1 CHANGE'), findsOneWidget);
 
+    await tester.ensureVisible(find.byKey(const Key('device_discard')));
     await tester.tap(find.byKey(const Key('device_discard')));
     await tester.pumpAndSettle();
     expect(find.text('APPLY 0 CHANGES'), findsOneWidget);
@@ -334,6 +339,7 @@ void main() {
     await tester.tap(find.byKey(const Key('pick_5')));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.byKey(const Key('device_discard')));
     await tester.tap(find.byKey(const Key('device_discard')));
     await tester.pumpAndSettle();
     expect(tester.widget<OutlinedButton>(find.byKey(const Key('device_discard'))).onPressed, isNull);
@@ -735,7 +741,7 @@ void main() {
 
     testWidgets('browses and stages freely; APPLY opens the paywall and writes nothing', (tester) async {
       final ssh = await _pumpConnected(tester);
-      expect(find.text('Box - 192.168.1.20'), findsOneWidget, reason: 'the list is free to look at');
+      expect(find.text('Box'), findsOneWidget, reason: 'the list is free to look at');
 
       await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
       await tester.pumpAndSettle();

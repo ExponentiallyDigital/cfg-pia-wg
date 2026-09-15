@@ -734,6 +734,15 @@ This app is unsupported and may cause objects in mirrors to be closer than they 
 
 ## 14. Trademark and affiliation notice
 
+The "cfg-pia-wg" name, the app icon, and all associated branding are trademarks of Exponentially Digital. They are reserved in all cases and are not licensed under the GPLv3, which covers the source code only, not the name or the branding.
+
+The GPLv3 licence permits anyone to copy, modify, and redistribute this code, including as a fork or derivative work. That permission does not extend to the trademarks. Any fork, derivative work, or redistribution must:
+
+- Use a different name and app icon, one not confusingly similar to "cfg-pia-wg";
+- Remove all Exponentially Digital branding, including from splash screens, store listings, and documentation;
+- Not state or imply endorsement by, affiliation with, or sponsorship from Exponentially Digital; and 
+- Not use the "cfg-pia-wg" name in its app store listing, package identifier, or repository name in a way that could mislead users into thinking it is the official release.
+
 This is an independent, open-source utility released under the GNU General Public License v3.0. It requires an active Private Internet Access (PIA) account subscription to authenticate with the provisioning endpoints. This application is not affiliated with, endorsed by, sponsored by, or associated with Private Internet Access, WireGuard or ASUS. WireGuard® is a registered trademark of Jason A. Donenfeld. Private Internet Access and PIA are trademarks of their respective owner. ASUS is a trademark of ASUSTek Computer Inc.
 
 ---

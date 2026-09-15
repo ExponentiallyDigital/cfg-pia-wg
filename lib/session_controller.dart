@@ -31,6 +31,7 @@ import 'clipboard_service.dart';
 import 'entitlement.dart';
 import 'router_prefs.dart';
 import 'router_session.dart';
+import 'watchdog_email.dart';
 
 // Default DNS servers (Quad9), matching the value the standalone form pre-fills.
 const String kDefaultDns = '9.9.9.9, 149.112.112.112';
@@ -49,6 +50,20 @@ const String kDefaultDns = '9.9.9.9, 149.112.112.112';
 // host half changes.
 const String kDefaultRouterIp = '192.168.50.1:22';
 const String kDefaultSshUsername = 'admin';
+
+/// The app log's cap, in characters (ID-004). The log is never written to storage, so it holds the most a
+/// user can both see and copy: half the lower of two limits, measured 2026-09-15 with `tool/log_cap_probe.dart`
+/// on an Android 17 emulator. The LOG screen, drawing the log in blocks of 100 lines, added a line within a
+/// 16 ms frame up to about 200,000 characters; the clipboard took 1,000,000 characters and failed at 2,000,000
+/// (TransactionTooLargeException). The screen is the lower, so half of it - about 1,300 lines, some ten
+/// times a heavy session - with room left for a phone slower than the emulator.
+const int kLogCapChars = 100000;
+
+/// The first line of a log that has been cut: shown on the LOG screen and included in COPY, so a log
+/// that is not whole never passes for one.
+String logTruncatedMessage(int lines) => 'Log truncated by $lines ${lines == 1 ? 'line' : 'lines'}: the oldest were '
+    'removed so the whole log can still be shown and copied without slowing the app down. The app never saves '
+    'the log to the phone, so they cannot be recovered.';
 
 /// The navigable destinations. [routeName] doubles as the [RouteSettings] name used by the
 /// destination observer to track which screen is on top (for the drawer's no-op-on-current).
@@ -87,7 +102,9 @@ class SessionController extends ChangeNotifier {
     Duration tickInterval = const Duration(seconds: 1),
     Future<void> Function(String text)? clipboardWriter,
     RouterPrefs? routerPrefs,
+    int logCapChars = kLogCapChars,
   })  : _clipboardTimeout = clipboardTimeout,
+        _logCapChars = logCapChars,
         _tickInterval = tickInterval,
         _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter,
         _routerPrefs = routerPrefs ?? RouterPrefs();
@@ -106,6 +123,10 @@ class SessionController extends ChangeNotifier {
   String sshPassword = '';
   String? generatedConfig;
   String generatedRegionId = '';
+
+  /// The watchdog email settings last entered or read this session, so the next watchdog's form starts from
+  /// them (ID-050). A credential like the others here: wiped when the app exits, never stored on the phone.
+  EmailSettings? watchdogEmail;
 
   // ── Remembered router address (the only persisted value) ─────────────────────
   final RouterPrefs _routerPrefs;
@@ -127,11 +148,11 @@ class SessionController extends ChangeNotifier {
     final stored = await _routerPrefs.remember(ip);
     if (stored.isEmpty || stored == rememberedRouterIp) return;
     rememberedRouterIp = stored;
-    logEntry('Router address remembered. Clear it with FORGET ROUTER IP on the About screen.');
+    logEntry('Router address remembered. Clear it with FORGET ROUTER IP on the SETTINGS screen.');
     notifyListeners();
   }
 
-  /// Deletes the stored address. Wired to FORGET ROUTER IP on the About screen.
+  /// Deletes the stored address. Wired to FORGET ROUTER IP on the SETTINGS screen.
   Future<void> forgetRouterIp() async {
     await _routerPrefs.forget();
     rememberedRouterIp = '';
@@ -159,6 +180,16 @@ class SessionController extends ChangeNotifier {
 
   // ── Application log ──────────────────────────────────────────────────────────
   final List<LogEntry> log = [];
+
+  /// Notifies when [log] changes, and only then (ID-004). The LOG screen listens to this rather than
+  /// to the controller, which also notifies once a second during a clipboard countdown and on every
+  /// modal, router and purchase change - each of which used to lay the whole log out again.
+  Listenable get logChanges => _logRevision;
+  final ValueNotifier<int> _logRevision = ValueNotifier<int>(0);
+
+  final int _logCapChars;
+  int _logChars = 0;
+  int _droppedLines = 0;
 
   // ── Clipboard timer ──────────────────────────────────────────────────────────
   final Duration _clipboardTimeout, _tickInterval;
@@ -261,6 +292,9 @@ class SessionController extends ChangeNotifier {
         '${now.minute.toString().padLeft(2, '0')}:'
         '${now.second.toString().padLeft(2, '0')}';
     log.add(LogEntry('[$ts] $msg', isError: isError, isSuccess: isSuccess, isWarning: isWarning));
+    _logChars += log.last.message.length + 1;
+    if (_logChars > _logCapChars) _trimLog();
+    _logRevision.value++;
     notifyListeners();
   }
 
@@ -270,15 +304,42 @@ class SessionController extends ChangeNotifier {
       logEntry(msg, isError: isError, isSuccess: isSuccess, isWarning: isWarning);
 
   // Stores the generated standalone config (and its region) so it survives screen navigation
-  // and is wiped with everything else on idle / close.
+  // and is wiped with everything else when the app exits.
   void setGeneratedConfig(String? config, String regionId) {
     generatedConfig = config;
     generatedRegionId = regionId;
     notifyListeners();
   }
 
+  // Drops the oldest lines in one chunk, down to 90% of the cap, so a busy log is not trimmed on every new
+  // line. The marker at the top keeps one running count of everything dropped since the log was cleared,
+  // and the newest line always stays.
+  void _trimLog() {
+    final start = _droppedLines > 0 ? 1 : 0;
+    final target = _logCapChars - _logCapChars ~/ 10;
+    var end = start;
+    while (_logChars > target && end < log.length - 1) {
+      _logChars -= log[end].message.length + 1;
+      end++;
+    }
+    if (end == start) return;
+    log.removeRange(start, end);
+    _droppedLines += end - start;
+    final marker = LogEntry(logTruncatedMessage(_droppedLines), isWarning: true);
+    if (start == 1) {
+      _logChars -= log.first.message.length + 1;
+      log[0] = marker;
+    } else {
+      log.insert(0, marker);
+    }
+    _logChars += marker.message.length + 1;
+  }
+
   void clearLog() {
     log.clear();
+    _logChars = 0;
+    _droppedLines = 0;
+    _logRevision.value++;
     notifyListeners();
   }
 
@@ -346,6 +407,7 @@ class SessionController extends ChangeNotifier {
     sshPassword = '';
     generatedConfig = null;
     generatedRegionId = '';
+    watchdogEmail = null;
     routerConnected = false;
     clearStagedAssignments();
     declinedBinaryInstalls.clear();
@@ -372,6 +434,7 @@ class SessionController extends ChangeNotifier {
   void dispose() {
     _tickTimer?.cancel();
     _tickTimer = null;
+    _logRevision.dispose();
     super.dispose();
   }
 }

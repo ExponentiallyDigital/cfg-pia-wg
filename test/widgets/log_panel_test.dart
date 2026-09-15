@@ -85,4 +85,99 @@ void main() {
     });
     expect(colours, [kHighlight, kHighlight, kError, Colors.white]);
   });
+
+  // ID-004: laying out the whole log as one paragraph made every new line cost the length of the log. It is
+  // drawn in blocks of 100 lines, and a new line redraws only the last block.
+  group('a long log', () {
+    List<LogEntry> lines(int n) => [for (var i = 0; i < n; i++) LogEntry('[10:00:00] entry ${i.toString().padLeft(3, '0')}')];
+
+    Iterable<Text> blocks(WidgetTester tester) =>
+        tester.widgetList<Text>(find.descendant(of: find.byType(LogPanel), matching: find.byType(Text)));
+
+    testWidgets('is laid out in blocks of 100 lines', (tester) async {
+      await pumpPanel(tester, lines(250));
+      final texts = blocks(tester).map((t) => t.textSpan!.toPlainText().replaceAll('￼', '')).toList();
+      expect(texts, hasLength(3));
+      expect(texts[0].split('\n'), hasLength(100));
+      expect(texts[2].split('\n'), hasLength(50));
+      expect(texts[1], startsWith('[10:00:00] entry 100'));
+    });
+
+    // The blocks are separate widgets, and SelectionArea joins separate widgets with no separator - the bug
+    // the one-paragraph layout was there to avoid. The line break goes back in between the blocks.
+    testWidgets('select all then copy keeps every line break, across blocks too', (tester) async {
+      String? copied;
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+        return null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+
+      final log = lines(250);
+      await pumpPanel(tester, log);
+      await tester.tapAt(tester.getTopLeft(find.byType(LogPanel)) + const Offset(40, 8));
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+
+      expect(copied, isNotNull);
+      expect(copied!.split('\n'), log.map((e) => e.message).toList());
+      expect(copied, contains('entry 099\n[10:00:00] entry 100'), reason: 'the join between the first two blocks');
+      expect(copied, isNot(contains('￼')));
+    });
+
+    testWidgets('a new line redraws only the last block', (tester) async {
+      final log = lines(250);
+      final revision = ValueNotifier<int>(0);
+      addTearDown(revision.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ValueListenableBuilder<int>(
+              valueListenable: revision,
+              builder: (_, __, ___) => LogPanel(entries: log),
+            ),
+          ),
+        ),
+      ));
+      final before = blocks(tester).toList();
+
+      log.add(LogEntry('[10:00:01] one more'));
+      revision.value++;
+      await tester.pump();
+      final after = blocks(tester).toList();
+
+      expect(identical(after[0], before[0]), isTrue, reason: 'the first block was not rebuilt');
+      expect(identical(after[1], before[1]), isTrue, reason: 'nor the second');
+      expect(identical(after[2], before[2]), isFalse, reason: 'the last one carries the new line');
+      expect(after[2].textSpan!.toPlainText(), endsWith('one more'));
+    });
+
+    // A trim drops lines from the front, which moves every block boundary; nothing stale may survive it.
+    testWidgets('after lines are dropped from the front, every block is built again', (tester) async {
+      final log = lines(250);
+      final revision = ValueNotifier<int>(0);
+      addTearDown(revision.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ValueListenableBuilder<int>(valueListenable: revision, builder: (_, __, ___) => LogPanel(entries: log)),
+          ),
+        ),
+      ));
+
+      log.removeRange(0, 30);
+      revision.value++;
+      await tester.pump();
+      final texts = blocks(tester).map((t) => t.textSpan!.toPlainText().replaceAll('￼', '')).toList();
+      expect(texts, hasLength(3));
+      expect(texts[0], startsWith('[10:00:00] entry 030'));
+      expect(texts[1], startsWith('[10:00:00] entry 130'));
+      expect(texts.join('\n').split('\n'), hasLength(220));
+    });
+  });
 }

@@ -1,59 +1,49 @@
-# App Name: cfg-pia-wg
-Short name: The simplest way to manage and maintain PIA WireGuard configs on your router.
-Full description (3,856/4000 characters):
+Your ASUS router already has a WireGuard client built in. This app makes it effortless to use.
 
-WireGuard (WG) configuration application for Private Internet Access (PIA) users.
+cfg-pia-wg puts every device on your network and every PIA VPN on your router onto one screen, from your phone.
 
-▶ Enjoy the peace of mind that comes from a persistent VPN on your router
-▶ Deploy a self-healing watchdog on ASUS routers to automatically re-create your VPN
-▶ Send optional reconfig email alerts
-▶ Manage ASUS router WG VPNs
-▶ Create a standalone config file
-▶ Extensive in-app and router-based logging
+Devices, not slots
 
-AUTOMATE
+Router VPN clients are organised by slot. This app is organised by device, which is how you actually think about your network. Tap the TV, put it on a UK server. Tap the work laptop, send it straight to the internet. Tap the kids' tablet, put it on the local exit. See at a glance which device is on which VPN without touching a running tunnel. Three taps, done.
 
-When your WG VPN configs expire, as they periodically do, this app replaces manual scripts with a streamlined workflow. It connects to PIA's provisioning API, benchmarks latency, and exports a .conf payload in seconds. For ASUS routers, write configs directly into client slots seamlessly, no computer required.
+Set up once, then forget it
 
-SIMPLICITY: couch-to-router in seconds
+PIA rotates its WireGuard keys and your tunnel dies. You find out a week later. Or never. The watchdog lives on your router, checks each tunnel at your chosen interval, and when a key rotates it fetches a new one, rebuilds the connection and emails you to say it did. You read the email over breakfast. The VPN never missed a beat.
 
-Generating configs by hand requires significant expertise. Official scripts require a steep learning curve. Other workarounds require running desktop software to capture keys. This app makes the migration to high-speed WG completely effortless without needing a computer. The app wraps enterprise-grade automation into a simple mobile interface: tap your desired region from a live latency list, enter your credentials, and deploy directly to your router. An encrypted tunnel is active before you can even stand up from the couch. Optionally, deploy a self-healing script and never touch your WG config again!
+Faster than what you have now
 
-WHY RUN A VPN ON YOUR ROUTER?
+If you're on OpenVPN, your router's CPU is the bottleneck. On a 500 Mbps plan, the same mid-range hardware went from 136 Mbps under OpenVPN to 499 Mbps under WireGuard. That's not a tweak. That's the speed you're already paying your ISP for.
 
-Configuring a VPN at the router level secures your entire household, protecting devices like smart TVs and consoles that cannot run VPN software. While OpenVPN offers stability, it is resource-intensive, capping speeds at around 100 Mbps on mid-range hardware and pinning the router CPU at 100%. Switching to WG reduces overhead, allowing your hardware to operate closer to your actual ISP speed. Testing on a 500 Mbps connection (actual 546 Mbps) saw speeds jump from 136 Mbps under OpenVPN to 499 Mbps with WG on identical hardware.
+And a VPN on the router covers the whole house, including the TV and consoles that can't run a VPN app.
 
-CORE FUNCTIONALITY & SECURITY
+Everything else
 
-The app measures latency across available region nodes to ensure your profile targets the fastest path. It pushes configs directly into your router with automated snapshot backup and state rollback recovery if verification fails. Because PIA WG tokens expire, this app simplifies recurring regeneration down to a few taps or deploy the watchdog and make it set-and-forget!
+▶ Fresh PIA config written straight into a router slot, fastest server in your region picked for you
+▶ Tunnels verified with real traffic, not assumed
+▶ Run more VPNs at once than the ASUS default of two
+▶ Standalone .conf files for any WireGuard client, any router, free forever
 
-Built with a strict zero-persistence footprint to protect credentials and private keys, volatile variables reside exclusively in system RAM and are never written to device storage or logged. Android FLAG_SECURE blocks screenshots and blanks the app view in the Recent Apps interface. Predictive dictionary caching, auto-correction tracking, and keyboard learning behaviours are disabled in interactive textboxes.
+No desktop. No laptop. No scripts. Tap a region, enter your PIA login, deploy. Done before you stand up from the couch.
 
-OPEN SOURCE & DISCLAIMERS
+What it costs
 
-Verifiable build provenance, pinned dependencies to mitigate vulnerabilities, and open-source code are available for public audit. Comprehensive deployment flows, local build steps, architecture and diagrams are available on GitHub.
+Looking is free. Slots, devices, status, logs: always visible, no unlock. Standalone config generation is free for everyone, forever.
 
-Router push requires an ASUS router with WG client support and SSH access enabled. Speeds depend on your router CPU & ISP plan.
+Writing to your router is a one-time US$6.99. Less than a month of the VPN you already pay for, and it never renews. No subscription. No tracking, no analytics, no advertising ID. Works offline once bought and keeps working.
 
-This is a free, independent, open-source app released under the GNU General Public License v3.0. It requires an active Private Internet Access (PIA) account subscription to authenticate with the provisioning endpoints. This app is not affiliated with, endorsed by, sponsored by, or associated with Private Internet Access, WireGuard or ASUS. WireGuard® is a registered trademark of Jason A. Donenfeld. Private Internet Access & PIA are trademarks of their respective owner. ASUS is a trademark of ASUSTek Computer Inc.
+The source is on GitHub and the build instructions are good enough to follow. What you're paying for is not having to.
 
-Source code & README: https://github.com/ExponentiallyDigital/cfg-pia-wg
-Privacy Policy: https://exponentiallydigital.com/pia-wireguard-cfga/privacy.html
+Built for people who read the privacy policy
+
+Credentials and private keys live in RAM only. Never written to storage, never logged. Screenshots blocked, app blanked in Recent Apps, keyboard learning off in every sensitive field. Router writes take a snapshot first and roll back if verification fails. Every file the app puts on your router is marked as its own, and uninstall refuses to delete anything it didn't create.
+
+Open source under GPL v3. Pinned dependencies, verifiable build provenance, automated security scanning on every release. Architecture and build steps are on GitHub. Audit it yourself.
+
+You'll need
+
+An active PIA subscription. An ASUS router with WireGuard client support and SSH enabled, stock or Merlin firmware. Device assignment needs stock ASUS firmware. Standalone config generation works with no router at all.
+
+Not affiliated with, endorsed by or associated with Private Internet Access, WireGuard or ASUS. WireGuard® is a registered trademark of Jason A. Donenfeld. PIA and ASUS are trademarks of their respective owners.
+
+Source: https://github.com/ExponentiallyDigital/cfg-pia-wg
 © 2026 Andrew Newbury, Exponentially Digital
-===================
-
-## Play Store releases
-
-2. Open testing: 352 (0.6.22) Open testing for feedback
-<en-AU>
-This is the first Google Play Store public test release. Please provide feedback as necessary.
-</en-AU>
-
-1. Closed testing: 340 (0.6.10) new UI, self-healing wd + router mgmt
-<en-AU>
-This release delivers a fundamental & extensive redesign of the entire user interface and, for ASUS Merlin-based routers, provides a *self-healing* watchdog with email alerting & full WireGuard client router management.
-
-What's new
-Rebuilt the entire interface with a focus on user workflows. Moved to three main workflows: standalone cfg, router-based WireGuard VPN mgmt, & self-healing watchdog with alerting.
-Extensive updates to all documentation (README, ARCHITECTURE, BUILDING, TESTING)
-</en-AU>

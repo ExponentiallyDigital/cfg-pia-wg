@@ -3,11 +3,13 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/app_shell.dart';
 import 'package:cfg_pia_wg/review_service.dart';
-import '../unit/review_service_test.dart' show FakeInAppReview;
+import '../unit/review_service_test.dart' show installUrlLauncherMock;
 import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/widgets/app_drawer.dart';
 
 // A controller whose 1 Hz countdown tick is pushed far into the future so the live countdown
 // does not schedule frames during the test (otherwise pumpAndSettle would never settle).
@@ -52,7 +54,7 @@ void main() {
     expect(find.textContaining('¹'), findsNothing);
     expect(find.byKey(const Key('menu_help')), findsOneWidget);
     expect(find.textContaining('Select from the above'), findsNothing);
-    expect(tester.widget<Text>(find.byKey(const Key('menu_help'))).textAlign, TextAlign.center);
+    expect(tester.widget<Text>(find.byKey(const Key('menu_help'))).textAlign, TextAlign.start);
     expect(find.byKey(const Key('menu_review')), findsOneWidget);
     // The donation block went when the app gained a price. Asking for money twice, in two different
     // ways, on the same screen reads as pleading; the review ask is the only thing left down there.
@@ -237,17 +239,12 @@ void main() {
   // shipped with it drove the TextSpan's recogniser directly, which bypasses hit-testing entirely -
   // so they would have passed against a link nobody could hit. These tap it for real.
   group('the Play Store review link', () {
-    /// Stands in for the plugin. A method-channel mock is not enough: the plugin chooses its
-    /// behaviour from the host platform in Dart, and a test host is not Android.
-    FakeInAppReview installFakeReview({Object? failWith}) {
-      final fake = FakeInAppReview(failWith: failWith);
-      debugReviewOverride = fake;
-      addTearDown(() => debugReviewOverride = null);
-      return fake;
-    }
+    /// The URLs url_launcher was asked to open.
+    List<String> launchedUrls(List<MethodCall> calls) =>
+        [for (final call in calls.where((c) => c.method == 'launch')) (call.arguments as Map)['url'] as String];
 
     testWidgets('a real tap opens the store listing', (tester) async {
-      final fake = installFakeReview();
+      final calls = installUrlLauncherMock();
       final c = _quietController();
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
@@ -256,17 +253,17 @@ void main() {
       await tester.tap(find.byKey(const Key('menu_review')));
       await tester.pumpAndSettle();
 
-      expect(fake.calls, ['openStoreListing']);
-      // Play's in-app card is quota-limited and reports success whether or not it drew anything,
-      // so a link built on it could not tell a shown card from nothing happening at all.
-      expect(fake.calls, isNot(contains('requestReview')));
+      // The listing itself, every time. Play's in-app card is quota-limited and reports success
+      // whether or not it drew anything, so a link built on it could not tell a shown card from
+      // nothing happening at all.
+      expect(launchedUrls(calls), [kPlayStoreListingUrl]);
 
       await _teardown(tester, c);
     });
 
     // A 12px line is a small thing to hit. The whole row is the target, not just the glyphs.
     testWidgets('the whole row is tappable, not only the text', (tester) async {
-      final fake = installFakeReview();
+      final calls = installUrlLauncherMock();
       final c = _quietController();
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
@@ -280,7 +277,7 @@ void main() {
       await tester.tapAt(Offset(row.left + 8, row.center.dy));
       await tester.pumpAndSettle();
 
-      expect(fake.calls, ['openStoreListing']);
+      expect(launchedUrls(calls), [kPlayStoreListingUrl]);
 
       await _teardown(tester, c);
     });
@@ -323,7 +320,7 @@ void main() {
     // On a host that cannot open Play the tap must still say something, or it looks like the bug
     // it replaced.
     testWidgets('a host that cannot open Play says so in the app log', (tester) async {
-      installFakeReview(failWith: UnsupportedError('no store here'));
+      installUrlLauncherMock(failWith: PlatformException(code: 'ACTIVITY_NOT_FOUND', message: 'no store here'));
       final c = _quietController();
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
@@ -333,6 +330,129 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(c.log.any((e) => e.message.contains('Could not open the Play Store listing')), isTrue);
+
+      await _teardown(tester, c);
+    });
+  });
+
+  // ID-031: the menu is a left-aligned list. Icon and label used to be centred together, so every row's icon
+  // started somewhere different and the screen read as nine disjointed bundles.
+  group('the menu as a list', () {
+    ButtonStyle styleOf(WidgetTester tester, String key) => tester.widget<OutlinedButton>(find.byKey(Key(key))).style!;
+    Finder iconIn(String key, IconData icon) => find.descendant(of: find.byKey(Key(key)), matching: find.byIcon(icon));
+    final rowKeys = [for (final d in AppDrawer.destinations) 'menu_${d.routeName}', 'menu_close_app'];
+
+    testWidgets('each destination is a row: its own icon, its label and a chevron', (tester) async {
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      for (final d in AppDrawer.destinations) {
+        final key = 'menu_${d.routeName}';
+        expect(iconIn(key, destinationIcon(d)), findsOneWidget, reason: '$key has its icon');
+        expect(iconIn(key, Icons.chevron_right), findsOneWidget, reason: '$key opens a screen');
+        final style = styleOf(tester, key);
+        expect(style.backgroundColor!.resolve(<WidgetState>{}), kBg, reason: 'the screen colour, so it reads as bordered');
+        expect(style.side!.resolve(<WidgetState>{})!.color, kHighlight);
+        expect(style.foregroundColor!.resolve(<WidgetState>{}), kHighlight);
+      }
+
+      await _teardown(tester, c);
+    });
+
+    testWidgets('EXIT is red, with the power icon and no chevron', (tester) async {
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      expect(iconIn('menu_close_app', kExitIcon), findsOneWidget);
+      expect(iconIn('menu_close_app', Icons.chevron_right), findsNothing, reason: 'it does not open a screen');
+      expect(styleOf(tester, 'menu_close_app').side!.resolve(<WidgetState>{})!.color, kError);
+
+      await _teardown(tester, c);
+    });
+
+    testWidgets('the icons form one column and the labels start in line', (tester) async {
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      final iconLefts = <double>[];
+      final labelLefts = <double>[];
+      for (final key in rowKeys) {
+        iconLefts.add(tester.getTopLeft(find.descendant(of: find.byKey(Key(key)), matching: find.byType(Icon)).first).dx);
+        labelLefts.add(tester.getTopLeft(find.descendant(of: find.byKey(Key(key)), matching: find.byType(Text)).first).dx);
+      }
+      for (final x in iconLefts) {
+        expect(x, moreOrLessEquals(iconLefts.first, epsilon: 0.5), reason: 'one column of icons');
+      }
+      for (final x in labelLefts) {
+        expect(x, moreOrLessEquals(labelLefts.first, epsilon: 0.5), reason: 'labels start in line, EXIT included');
+      }
+
+      await _teardown(tester, c);
+    });
+
+    test('every destination, HOME and EXIT has a different icon', () {
+      final icons = {for (final d in AppDestination.values) destinationIcon(d), kExitIcon};
+      expect(icons, hasLength(AppDestination.values.length + 1));
+    });
+
+    testWidgets('on a tablet the list stops at the cap and centres', (tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(1280, 800);
+      addTearDown(tester.view.reset);
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      final row = tester.getRect(find.byKey(const Key('menu_standalone')));
+      expect(row.width, lessThanOrEqualTo(kMenuMaxWidth));
+      expect(row.center.dx, moreOrLessEquals(640, epsilon: 1), reason: 'centred on the screen');
+
+      await _teardown(tester, c);
+    });
+
+    testWidgets('on a phone the rows use the full width', (tester) async {
+      // 412, a common Android phone width. At 360 the test font, which draws every glyph a full em wide, overflows
+      // the header's "by Exponentially Digital" line - a test-font artefact that has nothing to do with the menu.
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(412, 915);
+      addTearDown(tester.view.reset);
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      // 20 of body padding each side.
+      expect(tester.getRect(find.byKey(const Key('menu_standalone'))).width, moreOrLessEquals(372, epsilon: 1));
+
+      await _teardown(tester, c);
+    });
+
+    testWidgets('the help and review lines line up with the rows, not the centre', (tester) async {
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<Text>(find.byKey(const Key('menu_help'))).textAlign, TextAlign.start);
+      final review = tester.widget<Text>(find.descendant(of: find.byKey(const Key('menu_review')), matching: find.byType(Text)));
+      expect(review.textAlign, TextAlign.start);
+
+      await _teardown(tester, c);
+    });
+
+    testWidgets('the drawer shows the same icon for each destination, plus HOME and EXIT', (tester) async {
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('app_hamburger')));
+      await tester.pumpAndSettle();
+
+      expect(iconIn('drawer_menu', destinationIcon(AppDestination.menu)), findsOneWidget);
+      for (final d in AppDrawer.destinations) {
+        expect(iconIn('drawer_${d.routeName}', destinationIcon(d)), findsOneWidget, reason: d.routeName);
+      }
+      expect(iconIn('drawer_close_app', kExitIcon), findsOneWidget);
 
       await _teardown(tester, c);
     });
