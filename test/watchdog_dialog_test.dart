@@ -10,6 +10,7 @@ import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/watchdog_dialog.dart';
+import 'package:cfg_pia_wg/watchdog_email.dart';
 import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
 import 'package:cfg_pia_wg/widgets/common_fields.dart';
 
@@ -333,6 +334,104 @@ void main() {
 
     expect(ssh.ran('/usr/sbin/sendmail'), isTrue);
     expect(ssh.ran('TEST email'), isTrue, reason: 'the subject says what kind of mail this is');
+    // ID-049: the router answers nothing for wgc1_desc here, as before a first deploy; the region comes from the form.
+    expect(ssh.ran('TEST email - wgc1:pia-aus_melbourne'), isTrue, reason: 'the region on the form, like the deployed email');
+  });
+
+  // ID-050: typing six email fields for every watchdog is tedious, and some autofill providers will not fill
+  // several at once. The form starts from the slot's own, then the session's, then the lowest other slot's.
+  group('the email fields pre-fill', () {
+    const slot3 = '3\temail_from\tme@x.com\n3\temail_to\tyou@x.com\n3\temail_subject\tMy prefix\n'
+        '3\tsmtp_server\tmail.x.com:587\n3\tsmtp_user\tu3\n3\tsmtp_pass\tp3\n'
+        '5\temail_from\tother@x.com\n5\tsmtp_server\tother.x.com:465\n5\temail_to\tother@x.com\n';
+
+    String Function(String) router({Map<String, String> own = const {}, String others = ''}) => (cmd) {
+          if (cmd.contains('which jq')) return '/opt/bin/jq';
+          if (cmd.startsWith('for s in 1 2 3 4 5')) return others;
+          for (final e in own.entries) {
+            if (cmd == 'nvram get wgc1_wd_${e.key}') return e.value;
+          }
+          return '';
+        };
+
+    Future<void> open(WidgetTester tester, RecordingSSHClient ssh, SessionController c) async {
+      await tester.pumpWidget(_host(ssh, c));
+      await tester.pumpAndSettle();
+      // The fields show once email is switched on; the switch is the user's to flip.
+      await tester.ensureVisible(find.byKey(const Key('wd_email_switch')));
+      await tester.tap(find.byKey(const Key('wd_email_switch')));
+      await tester.pumpAndSettle();
+    }
+
+    String field(WidgetTester tester, String key) =>
+        tester.widget<EditableText>(find.descendant(of: find.byKey(Key(key)), matching: find.byType(EditableText))).controller.text;
+
+    List<String> form(WidgetTester tester) =>
+        [for (final k in ['wd_from', 'wd_to', 'wd_subject', 'wd_smtp_server', 'wd_smtp_user', 'wd_smtp_pass']) field(tester, k)];
+
+    testWidgets("an empty slot takes the lowest-numbered other slot's, every field", (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: router(others: slot3));
+      await open(tester, ssh, c);
+
+      expect(form(tester), ['me@x.com', 'you@x.com', 'My prefix', 'mail.x.com:587', 'u3', 'p3']);
+      expect(ssh.commands.where((cmd) => cmd.startsWith('for s in 1 2 3 4 5')), hasLength(1), reason: 'one round trip');
+    });
+
+    testWidgets('settings entered this session come before other slots', (tester) async {
+      final c = _controller()
+        ..watchdogEmail = const EmailSettings(
+            from: 's@x.com', to: 'session@x.com', subject: 'Session', smtpServer: 'session.x.com:465', smtpUser: 'su', smtpPass: 'sp');
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: router(others: slot3));
+      await open(tester, ssh, c);
+
+      expect(form(tester), ['s@x.com', 'session@x.com', 'Session', 'session.x.com:465', 'su', 'sp']);
+      expect(ssh.ran('for s in 1 2 3 4 5'), isFalse, reason: 'no need to read the other slots');
+    });
+
+    testWidgets("a slot with its own settings always shows its own", (tester) async {
+      final c = _controller()..watchdogEmail = const EmailSettings(to: 'session@x.com', smtpServer: 'session.x.com:465');
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(
+        responder: router(own: {
+          'email_from': 'own@x.com',
+          'email_to': 'own@x.com',
+          'email_subject': 'Own',
+          'smtp_server': 'own.x.com:465',
+          'smtp_user': 'ou',
+          'smtp_pass': 'op',
+        }, others: slot3),
+      );
+      await open(tester, ssh, c);
+
+      expect(form(tester), ['own@x.com', 'own@x.com', 'Own', 'own.x.com:465', 'ou', 'op']);
+      expect(ssh.ran('for s in 1 2 3 4 5'), isFalse);
+    });
+
+    testWidgets('with none anywhere the fields are blank, and the subject keeps its default', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      await open(tester, RecordingSSHClient(responder: router()), c);
+
+      expect(form(tester), ['', '', 'cfg-pia-wg alert', '', '', '']);
+    });
+
+    testWidgets('what is on the form when it closes is kept for the next one', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      await open(tester, RecordingSSHClient(responder: router()), c);
+      await tester.enterText(find.byKey(const Key('wd_to')), 't@x.com');
+      await tester.enterText(find.byKey(const Key('wd_smtp_server')), 'smtp.x.com:465');
+      await tester.enterText(find.byKey(const Key('wd_smtp_pass')), 'secret pass');
+      await tester.pumpWidget(const SizedBox());
+
+      expect(c.watchdogEmail, isNotNull);
+      expect(c.watchdogEmail!.to, 't@x.com');
+      expect(c.watchdogEmail!.smtpServer, 'smtp.x.com:465');
+      expect(c.watchdogEmail!.smtpPass, 'secret pass', reason: 'passwords are not trimmed');
+    });
   });
 
   // The region is on the form, as it is on STANDALONE, rather than a picker arriving after SAVE.

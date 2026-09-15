@@ -878,6 +878,16 @@ void main() {
     expect(c.ran('logger -t cfg-pia-wg'), isTrue);
   });
 
+  // ID-049: the region on the form, which the router does not carry until the first deploy - the subject used
+  // to say only "wgc1" and the body "region not yet set" while the form already named it.
+  test('testEmail names the region it is given, in the subject and the Watchdog row', () async {
+    final c = RecordingSSHClient();
+    await _wd(c).testEmail(cfg(slot: 1, email: true), desc: 'pia-aus_perth');
+    expect(c.ran('TEST email - wgc1:pia-aus_perth'), isTrue);
+    expect(c.ran('Watchdog: wgc1:pia-aus_perth'), isTrue);
+    expect(c.ran('region not yet set'), isFalse);
+  });
+
   // Every email opens with the counters seeded, so "Since <date>" is the day the user started
   // rather than the day of their first reconfigure - which may be months later, or never.
   test('testEmail seeds the lifetime counters and reads the router facts in one round trip', () async {

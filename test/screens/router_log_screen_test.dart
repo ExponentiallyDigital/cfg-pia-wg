@@ -217,6 +217,9 @@ void main() {
 
     test('an ordinary line of ours is not an error, and neither is the firmware saying failed', () {
       expect(isRouterLogError('cfg-pia-wg: wgc1: Primary ping OK (9.9.9.9)'), isFalse);
+      // ID-048: a deploy run's first check, on a slot whose tunnel is not built yet, is the starting state.
+      expect(isRouterLogError('cfg-pia-wg: wgc1: Interface wgc1 is not up yet'), isFalse);
+      expect(isRouterLogError('cfg-pia-wg: wgc1: Not connected yet: no handshake, and no answer from 9.9.9.9 or 1.1.1.1'), isFalse);
       expect(isRouterLogError('Sep 11 12:00:01 router cfg-pia-wg: Enabled wgc1:aus_melbourne'), isFalse);
       expect(isRouterLogError('Sep 11 12:00:01 router dnsmasq[1]: failed to access /tmp/x'), isFalse);
     });

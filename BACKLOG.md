@@ -46,11 +46,10 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 - ID-017 DOC: **give each ARCHITECTURE section its own overview.** The document has one at the top, added in the build 430 rewrite, but the sections do not: most open with mechanism before saying what the thing is for or why a reader should care. `The router's service queue` was given one on 2026-09-12 and reads far better for it. Device assignment (section 6) and the SSH commands (section 4) are the two that need it most. Roughly fifteen minutes a section.
 - ID-018 OPS: **website returns 403 to the assistant's page fetcher.** Not robots.txt - that is advisory and cannot return a status code - so it is a server, CDN or WAF rule, probably on user-agent. Two fetches of the privacy policy were refused, including one after the robots.txt update of 2026-09-12 that allows `ClaudeBot`, `anthropic-ai` and `Claude-Web`. For user-requested fetches the agent is `Claude-User`, which is not in that list. Blocks reading the published privacy policy to check it against the repo copy, and blocks learning house voice from the blog.
-- ID-019 DOC: Update `README.md` screenshots.
-- ID-020 DOC: Update `README.md` [5. Using the app](https://github.com/ExponentiallyDigital/cfg-pia-wg#5-using-the-app).
-- ID-021 DOC: Update Play Store description.
-- ID-022 DOC: Update Play Store screenshots.
-- ID-023 REL: Update version to 0.9 branch when first releasing stock support (and see the backlog item on performance profiling when sent to GPS alpha track).
+- ID-019 DOC: Update `README.md` screenshots. Assigned to Andrew, with its own commit.
+- ID-020 DOC: Update `README.md` [5. Using the app](https://github.com/ExponentiallyDigital/cfg-pia-wg#5-using-the-app). Assigned to Andrew, with its own commit.
+- ID-022 DOC: Update Play Store screenshots. Assigned to Andrew, with its own commit.
+- ID-008 DOC: Update screenshots: create & upload phone and tablet screenshots x8 to GPS. Assigned to Andrew, with its own commit (moved from CHANGELOG WIP 2026-09-15).
 
 #### 1.1.2. FTR - future implementation
 
@@ -59,6 +58,7 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 - ID-026 ADD: deploy a script like `.\scripts\showall.sh` to `jffs/cfg-pia-wg` that creates diagnostic information, decide what to do about secrets in the file.
 - ID-027 DOC: create a digrammatic representation of how RC and GPS interact from an accounts, API, and message flow state, add to TESTING.md.
 - ID-001 FTR: **the router's own DNS follows the first tunnel, not the default connection** - firmware behaviour, recorded. All LAN devices lost internet while deploying a watchdog to wgc5 with five tunnels up, an outage not seen again. Traced 2026-09-14 on stock: a LAN device that asks the router - unassigned, or pinned to Internet - is answered by dnsmasq, which sends everything but the ISP's own domain to stubby at `127.0.1.1`, which uses DNS-over-TLS to the servers in the WebUI's WAN DNS Setting. The firmware adds `from all to <slot DNS> iif lo lookup <table>` for each running tunnel's DNS servers, so when those match the WebUI's servers (Quad9 on the test router) stubby's port 853 leaves through the lowest-numbered table's tunnel, whatever the default connection is - traffic the router creates never follows the default, whose rules match `iif br0` and `br1` only. **Reproduced** after a reboot with wgc1 the only tunnel: blocking TCP 853 out of wgc1 timed out lookups for a device pinned to Internet and for one following the default, while ping kept working for both; a device assigned to wgc1 still resolved, because the firmware sends its DNS to the slot's first server on port 53 through its own tunnel. The router's own programs - the watchdog's `mailsend-go` and `curl`, `nslookup` - are not on this path: `/etc/resolv.conf` lists the WAN's DNS first, and a test email went out while blocked, so the 2026-09-06 undelivered alert (`server misbehaving`) is unexplained again. The app must not change the user's DNS settings (CONTEXT), so its only response is information - see CHANGELOG ID-005. Runsheet in `.claude/testing/`.
+- ID-011 CFG: set the router's default DNS to CloudFlare, so they are different to the Quad9 DNS addresses set for VPN tunnels,therefore avoiding the issue of router DNS traffic being forced into the first VPN tunnel. Try this, test and the review outcome. If this works, add a prominent note in README under prerequisites. If this is successful then implemeing this may remove the need for work items in section "1.1. Pending to do", or in BACKLOG. if this is unsuccessful then we will review next steps and how that affects items for release. Assigned to Andrew: router test on 2026-09-16, with its own commit (moved from CHANGELOG WIP 2026-09-15).
 
 #### 1.1.3. Unconfirmed BUGs
 
@@ -89,6 +89,7 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
   - Model on `buildWatchdogScript`, which already resolves firmware once and substitutes the differences (`__KILLSW__`, `__MAILHDR__`, `__MAILCMD__`) rather than branching at runtime
   - Take it in slices, each on its own build: start/stop first, then slot reading, then cron persistence, then delete
 - Largest files, measured 2026-09-05: `router_watchdog.dart` 1,554 lines, `router_slot_service.dart` 842, `slot_modal.dart` 767. The email layout in `router_watchdog.dart` (`buildEmailBody`, `RouterEmailFacts`, the section constants) is self-contained and would move out with no behaviour change.
+- ID-041 CHG: **analyse and fix the 35 issues reported by the [Sonar Cloud scan](https://sonarcloud.io/project/issues?id=ExponentiallyDigital_cfg-pia-wg&s=IMPACT_RANK&issueStatuses=OPEN%2CCONFIRMED)**, cognitive complexity first. Write a plan and have Andrew approve it before any code changes. On hold with the rest of this section: the changes are likely extensive, with a high blast radius (triaged 2026-09-15).
 
 ### 1.3. v1.0.0 iOS version
 
@@ -101,7 +102,6 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
 
 **Worth doing whether or not iOS ever happens:**
 
-- ID-028 FIX: `openPlayStoreReview()` fails **silently** on iOS today - `openStoreListing()` needs an `appStoreId` there and throws without one, which the catch swallows into a `false`. Latent now, on a platform we do not ship to, but it is still a silent catch.
 - ID-029 DOC: phrase the hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
 
 ---
@@ -122,21 +122,7 @@ When asked to triage BACKLOG new work, work through it in this order:
 
 ---
 
-- CHG: ABOUT screen - add spacing after the "watchdog history" line, the COPY BUILD INFO and CREATE GITHUB ISSUE buttons are too close to the text.
-- CHG: ABOUT screen - centre the two buttons COPY BUILD INFO and CREATE GITHUB ISSUE
-- FIX: SETTINGS screen - selecting any option on this page that requires a login to the router does not reuse router credentials after they have been entered in any login popup in this screen. I went to MANAGE, supplied credentials then went back to ABOUT and now MAX ACTIVE VPNS does not prompt me for router credentials. Also, check that every option in this menu writes a message to the application and router log when it is applied or used successfully or unsuccessfully. Currently no app log events are written after you charge any option in this screen after having entered credentials, after supplying valid credentials they are not used and no login occurs unless the login state has already been cached from outside this screen. I tested using set max VPN, set the value, left the screen, re-entering the option I was asked to login again. Settings screen isn't storing caching credentials but is consuming them if they exist.
-- FIX: SETTINGS screen - if you tap on restore purchase, no message is written to the app log.
-- TST: SETTINGS screen - does uninstall leave anything behind?
-- CHG: ABOUT screen - add a confirmation popup when FORGET ROUTER IP is selected.
-- FIX: ABOUT screen - router firmware version is shown twice in the GitHub issue template created after tapping on CREATE GITHUB ISSUE, do not include the second occurrence.
-- ADD: SETTINGS screen - when REBOOT ROUTER has been selected and the popup accepted, create a popup that displays a counter showing a progress count from 0% to 100%, the counter will use seconds as the unit, so 1%=1 second through to 100 seconds. In that popup do not display any buttons but allow the popup to be navigated away from with the back button.
-- TST: restore purchase button appears on the SETTINGS menu in a GPS build.
-- REL: fix required for /.github/workflows/release.yml. When the actions workflow ran, having added a new tag, all changelog entries between https://github.com/ExponentiallyDigital/cfg-pia-wg/releases/tag/v0.8.74 and https://github.com/ExponentiallyDigital/cfg-pia-wg/releases/tag/v0.8.77 did not appear in the release comments.
-- REL: add automation for updating the Google Play Store (GPS) app description. Create a new manually run workflow. The new description must be taken from ./play-store/description.md. Add a gate that fails and stops upload to GPS if the character count is 4000 or more characters, make the failure message specific and state why the workflow failed to run with how many characters are in the file and by how many it exceeds the maximum value. GitHub actions  script./.GitHub/workflows/promote.yml uses  `kevin-david/promote-play-release`, but other options may apply.
-- CHG: ON HOLD - analyse and fix 35 issues reported by [Sonar Cloud scan](https://sonarcloud.io/project/issues?id=ExponentiallyDigital_cfg-pia-wg&s=IMPACT_RANK&issueStatuses=OPEN%2CCONFIRMED), focus specifically on the cognitive difficulty issues first, create a plan for what to do then have that plan specifically approved by Andrew before proceeding to implement the proposed code changes.
-- FIX: watchdog deployment - when a watchdog is deployed on an empty slot the router log contains "Sep 15 02:35:17 cfg-pia-wg: wgc1: No handshake and both pings failed (8.8.8.8, 1.1.1.1)" despite successfully deploying the watchdog. 
-- ADD: WATCHDOG deployment, if a user has already deployed a watchdog with email alerts enabled, prefill the field data for "from", "to", "SMTP server:port" , "SMTP username" , and "SMTP password". If the user has not created a watchdog in this session and a watchdog exists, prefill the fields with values from NVRAM. If multiple watchdogs already exist and there are no cached credentials , read the NVRAM values ftom the lowest numbered slot.
-- ADD: watchdog email alert - test email subject line does not contain the region name. the deployed email does. Add the region name to the subject line, like we have for the delay and failure emails.
+- TST: SETTINGS screen - does uninstall leave anything behind? Andrew tests this by hand; it stays in BACKLOG and is not scheduled for a build (triaged 2026-09-15).
 
 ---
 

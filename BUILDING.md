@@ -20,6 +20,7 @@
 - [5. Updating GitHub action SHAs](#5-updating-github-action-shas)
   - [5.1. Example transformation](#51-example-transformation)
     - [5.1.1. Why this is a best practice](#511-why-this-is-a-best-practice)
+  - [5.2. Reading the output](#52-reading-the-output)
 - [6. Build chain \& utility notes](#6-build-chain--utility-notes)
 
 The scripts `build.ps1` / `build.sh` in the `./scripts` folder automate a local build or if you prefer to compile and test the application locally, follow the below steps.
@@ -212,8 +213,11 @@ Linux
 
 ## 5. Updating GitHub action SHAs
 
-The `scripts\pin-actions-latest.sh/ps1` scripts automate the process of hardening GitHub Actions by pinning them to secure commit SHAs.
-The script queries the GitHub API for the latest release tags, resolves them to full SHAs across all `.github/workflows/*.yml` files, and rewrites the workflows in-place. Any previously pinned SHAs are automatically re-evaluated and updated if a newer version is available.
+The `scripts\pin-actions-latest.sh/ps1` scripts automate the process of hardening GitHub Actions by pinning them to secure commit SHAs, then check every pin. `build.ps1` and `build.sh` run them before the tests, and stop the build if a pin does not match its tag.
+
+For each action in `.github/workflows/*.yml` the script finds the highest semver tag through the GitHub API, resolves it to a full commit SHA, and rewrites the line in place. Both are cached for 24 hours in the untracked `.github/pin-cache.json`, and a cached SHA is only reused for the tag it was resolved from. When the API cannot answer (offline, rate limited, or a bad token) the tag and SHA come from `git ls-remote`, which needs no token. Last of all, every pin is checked against the tag named in its comment, again with `git ls-remote`, independently of the API and the cache.
+
+The token comes from `GITHUB_TOKEN`. Options: `-n` / `-DryRun` writes nothing, `-f` / `-ForceRefresh` bypasses the tag cache, `-v` / `-Verbose` shows every API request and git lookup, `-d` / `-WorkflowDir` and `-t` / `-Token` override the defaults. Set `NO_COLOR` to turn off colours.
 
 ### 5.1. Example transformation
 
@@ -226,7 +230,7 @@ Before:
 After:
 
 ```bash
-     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2  ## v2.3.8
+     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
 ```
 
 #### 5.1.1. Why this is a best practice
@@ -237,7 +241,39 @@ Pinning workflows to a specific commit SHA, rather than a mutable version tag li
 
 - Ensures build reproducibility: pinning guarantees that the exact same code runs during every workflow execution, preventing unexpected breaking changes or hidden updates from disrupting your CI/CD pipeline.
 
-- Maintains readability via automation: while SHAs are great for security, they are terrible for human readability. The script solves this by automatically appending a comment with the human-readable version tag (e.g., ## v2.3.8), giving you the best of both worlds: strict security and clear version tracking.
+- Maintains readability via automation: while SHAs are great for security, they are terrible for human readability. The script solves this by automatically appending a comment with the human-readable version tag (e.g., # v2.3.8), giving you the best of both worlds: strict security and clear version tracking.
+
+### 5.2. Reading the output
+
+A run prints a header, one line per action (an action used on several lines shows once, as `xN`), then what was written, the check and a summary:
+
+```text
+Pin GitHub Actions: 3 workflow files, 27 uses: lines, 14 actions
+  token    set (API quota 5000 of 5000 left, resets 09:17)
+  cache    .github/pin-cache.json, 14 entries, 24h TTL
+  mode     write
+  git      tags listed for 14 of 14 actions in 3.8s
+
+  actions/checkout x5                  v7.0.1    ok         tag cache 45m, sha cache
+  actions/setup-java x4                v6.0.1    FIXED      dd06d9cba3e5 -> de7274f081f3 (old SHA: v6.0.0)
+  google/osv-scanner-action            v2.6.0    FIXED      6e4298ebc4db -> a345acffa64b (old SHA: v2.5.1)
+  ...
+
+  written  quality_and_security.yml (7 lines), release.yml (3 lines)
+  verify   27 of 27 pins match their tag (git ls-remote)
+  result   10 FIXED, 0 UPDATED, 0 PINNED, 17 ok, 0 SKIPPED, 0 UNRESOLVED; 0 API calls; 6.4s
+```
+
+| Status | Meaning |
+| --- | --- |
+| `ok` | Already pinned to the latest tag's commit. The detail says where the tag and SHA came from: `cache`, `API`, `git`, or `stale cache` when nothing else could answer. |
+| `UPDATED` | A newer release was pinned. |
+| `FIXED` | Same version, but the pinned SHA was not that tag's commit; the detail names the tag the old SHA really was. |
+| `PINNED` | A tag or branch reference (`@v4`) was replaced by a SHA. |
+| `SKIPPED` | The newest tag is older than the pinned one, so the line is left alone rather than downgraded. |
+| `UNRESOLVED` | The tag or SHA could not be looked up; the line is left as it is. |
+
+Exit codes: `0` when every pin matches its tag, `1` when one does not (the check lists each mismatch) or the workflow directory is missing. If GitHub cannot be reached at all, the check reports the pins it could not verify as a warning and exits `0`, so a build without network access still completes.
 
 ## 6. Build chain & utility notes
 

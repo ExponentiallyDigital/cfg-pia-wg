@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/app_shell.dart';
 import 'package:cfg_pia_wg/review_service.dart';
-import '../unit/review_service_test.dart' show FakeInAppReview;
+import '../unit/review_service_test.dart' show installUrlLauncherMock;
 import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/app_drawer.dart';
@@ -239,17 +239,12 @@ void main() {
   // shipped with it drove the TextSpan's recogniser directly, which bypasses hit-testing entirely -
   // so they would have passed against a link nobody could hit. These tap it for real.
   group('the Play Store review link', () {
-    /// Stands in for the plugin. A method-channel mock is not enough: the plugin chooses its
-    /// behaviour from the host platform in Dart, and a test host is not Android.
-    FakeInAppReview installFakeReview({Object? failWith}) {
-      final fake = FakeInAppReview(failWith: failWith);
-      debugReviewOverride = fake;
-      addTearDown(() => debugReviewOverride = null);
-      return fake;
-    }
+    /// The URLs url_launcher was asked to open.
+    List<String> launchedUrls(List<MethodCall> calls) =>
+        [for (final call in calls.where((c) => c.method == 'launch')) (call.arguments as Map)['url'] as String];
 
     testWidgets('a real tap opens the store listing', (tester) async {
-      final fake = installFakeReview();
+      final calls = installUrlLauncherMock();
       final c = _quietController();
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
@@ -258,17 +253,17 @@ void main() {
       await tester.tap(find.byKey(const Key('menu_review')));
       await tester.pumpAndSettle();
 
-      expect(fake.calls, ['openStoreListing']);
-      // Play's in-app card is quota-limited and reports success whether or not it drew anything,
-      // so a link built on it could not tell a shown card from nothing happening at all.
-      expect(fake.calls, isNot(contains('requestReview')));
+      // The listing itself, every time. Play's in-app card is quota-limited and reports success
+      // whether or not it drew anything, so a link built on it could not tell a shown card from
+      // nothing happening at all.
+      expect(launchedUrls(calls), [kPlayStoreListingUrl]);
 
       await _teardown(tester, c);
     });
 
     // A 12px line is a small thing to hit. The whole row is the target, not just the glyphs.
     testWidgets('the whole row is tappable, not only the text', (tester) async {
-      final fake = installFakeReview();
+      final calls = installUrlLauncherMock();
       final c = _quietController();
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
@@ -282,7 +277,7 @@ void main() {
       await tester.tapAt(Offset(row.left + 8, row.center.dy));
       await tester.pumpAndSettle();
 
-      expect(fake.calls, ['openStoreListing']);
+      expect(launchedUrls(calls), [kPlayStoreListingUrl]);
 
       await _teardown(tester, c);
     });
@@ -325,7 +320,7 @@ void main() {
     // On a host that cannot open Play the tap must still say something, or it looks like the bug
     // it replaced.
     testWidgets('a host that cannot open Play says so in the app log', (tester) async {
-      installFakeReview(failWith: UnsupportedError('no store here'));
+      installUrlLauncherMock(failWith: PlatformException(code: 'ACTIVITY_NOT_FOUND', message: 'no store here'));
       final c = _quietController();
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();

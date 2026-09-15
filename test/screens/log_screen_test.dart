@@ -2,6 +2,7 @@
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/screens/log_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/widgets/common_fields.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -74,6 +75,31 @@ void main() {
     c.dispose();
   });
 
+  // ID-004: nothing is copied that is not on screen, and a cut log never passes for a whole one.
+  testWidgets('a truncated log shows its marker first, and COPY carries it', (tester) async {
+    String? copied;
+    final c = SessionController(
+      tickInterval: const Duration(hours: 1),
+      clipboardWriter: (t) async => copied = t,
+      logCapChars: 5000,
+    );
+    for (var i = 0; i < 50; i++) {
+      c.logEntry('line $i '.padRight(89, '.'));
+    }
+    await tester.pumpWidget(_host(c));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Log truncated by 6 lines'), findsOneWidget, reason: 'on screen');
+
+    await tester.tap(find.byKey(const Key('app_log_copy')));
+    await tester.pumpAndSettle();
+    expect(copied, startsWith('Log truncated by 6 lines'));
+    expect(copied!.split('\n'), hasLength(c.log.length), reason: 'the copy is exactly what is on screen');
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
   testWidgets('COPY and CLEAR are disabled while the log is empty', (tester) async {
     final c = _controller();
     await tester.pumpWidget(_host(c));
@@ -82,6 +108,34 @@ void main() {
     expect(tester.widget<OutlinedButton>(find.byKey(const Key('app_log_copy'))).onPressed, isNull);
     expect(tester.widget<OutlinedButton>(find.byKey(const Key('app_log_clear'))).onPressed, isNull);
     expect(tester.widget<OutlinedButton>(find.byKey(const Key('app_log_home'))).onPressed, isNotNull);
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  // ID-004: every rebuild lays out the whole log again, and the controller also notifies once a second
+  // during a clipboard countdown and on every modal and purchase change. The screen rebuilds for the log.
+  testWidgets('redraws when the log changes, not on every other session change', (tester) async {
+    final c = _controller()..logEntry('one');
+    await tester.pumpWidget(_host(c));
+    await tester.pumpAndSettle();
+    final before = tester.widget<LogPanel>(find.byType(LogPanel));
+
+    c
+      ..enterModal()
+      ..exitModal()
+      ..setUnlocked(!c.isUnlocked);
+    await tester.pump();
+    expect(identical(tester.widget<LogPanel>(find.byType(LogPanel)), before), isTrue, reason: 'nothing in the log changed');
+
+    c.logEntry('two');
+    await tester.pump();
+    expect(tester.widget<LogPanel>(find.byType(LogPanel)).entries, hasLength(2));
+    expect(identical(tester.widget<LogPanel>(find.byType(LogPanel)), before), isFalse);
+
+    c.clearLog();
+    await tester.pump();
+    expect(find.text('Ready.'), findsOneWidget, reason: 'CLEAR redraws too');
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();

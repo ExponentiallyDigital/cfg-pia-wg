@@ -26,7 +26,7 @@
 //     fails the build if this file learns to write anything else.
 //   - `android:allowBackup="false"` keeps it off Google Drive, so it never leaves the handset.
 //
-// The user can clear it at any time - "FORGET ROUTER IP" on the About screen.
+// The user can clear it at any time - "FORGET ROUTER IP" on the SETTINGS screen.
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';

@@ -4,7 +4,9 @@ Everything the Google Play listing needs that is not the app itself.
 
 | File | What it is | Who edits it |
 | --- | --- | --- |
-| `description.md` | The store description, short and full. 4000-character cap on the full one. | By hand, then pasted into Play Console |
+| `description.md` | The full store description for `en-AU`. Google Play allows 4,000 characters; the workflow stops at 4,000 or more. | By hand, then published by the **Update Play listing** workflow |
+| `description_short.md` | The short store description for `en-AU`, at most 80 characters. | By hand, published with the full one |
+| `copy_reqs.md` | The character limits for both descriptions. | By hand |
 | `privacy.html` | The privacy policy, published at the URL the listing points to. | By hand |
 | `361 (0.7.01).txt` | A release note from before the pipeline wrote them. Kept as a sample of the house voice. | Nobody - historical |
 
@@ -33,6 +35,12 @@ Fixed: a device sent to the plain internet stayed there, ignoring later changes.
 
 Everything **outside** the fence becomes the GitHub release body. The fence itself becomes the Play
 note. One block, two audiences, written at the same moment so they cannot drift.
+
+A release covers **every block since the previous tag**, not only its own, because not every build is
+tagged (ID-044). The GitHub body carries each of those blocks under its own heading, newest first. The
+Play note is the tagged block's fence when it has one, otherwise the fences of the older blocks the
+release covers, joined. When builds were skipped, write one fence in the tagged block that speaks for
+the whole release: joined fences read as separate notes and reach the 500-character limit sooner.
 
 ### The rules that will bite you
 

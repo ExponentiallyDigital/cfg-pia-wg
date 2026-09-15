@@ -1,6 +1,7 @@
 // test/session_controller_test.dart - unit tests for the shared SessionController.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/watchdog_email.dart';
 
 void main() {
   group('logging', () {
@@ -25,6 +26,96 @@ void main() {
       c.logEntry('a');
       c.clearLog();
       expect(c.log, isEmpty);
+      c.dispose();
+    });
+  });
+
+  // ID-004: the log is kept, always, up to the most a user can both see and copy. Past that the oldest
+  // lines go, and the first line says how many and why.
+  group('the log cap', () {
+    // Every line is exactly 101 characters with its separator: an 11-character timestamp, 89 of text.
+    String line(int i) => 'line ${i.toString().padLeft(3, '0')} '.padRight(89, '.');
+    SessionController capped() => SessionController(clipboardWriter: (_) async {}, logCapChars: 5000);
+    bool isMarker(LogEntry e) => e.message.startsWith('Log truncated by');
+
+    test('under the cap nothing is dropped and there is no marker', () {
+      final c = capped();
+      for (var i = 0; i < 49; i++) {
+        c.logEntry(line(i));
+      }
+      expect(c.log, hasLength(49));
+      expect(c.log.where(isMarker), isEmpty);
+      c.dispose();
+    });
+
+    test('over the cap the oldest go in one chunk, under a first line that says how many and why', () {
+      final c = capped();
+      for (var i = 0; i < 50; i++) {
+        c.logEntry(line(i));
+      }
+      // 5,050 characters: six lines go, taking it to 4,444, just under 90% of the cap.
+      expect(isMarker(c.log.first), isTrue);
+      expect(c.log.first.isWarning, isTrue, reason: 'amber, like any other line worth noticing');
+      expect(c.log.first.message, logTruncatedMessage(6));
+      expect(c.log.first.message, contains('Log truncated by 6 lines'));
+      expect(c.log.first.message, contains('cannot be recovered'));
+      expect(c.log[1].message, contains('line 006'), reason: 'the oldest six went, in order');
+      expect(c.log.last.message, contains('line 049'), reason: 'the newest stays');
+      expect(c.log, hasLength(1 + 44));
+      c.dispose();
+    });
+
+    test('trims in chunks, and keeps one marker with a running count', () {
+      final c = capped();
+      for (var i = 0; i < 51; i++) {
+        c.logEntry(line(i));
+      }
+      expect(c.log.first.message, logTruncatedMessage(6), reason: 'the line after a trim does not trim again');
+
+      for (var i = 51; i < 54; i++) {
+        c.logEntry(line(i));
+      }
+      expect(c.log.where(isMarker), hasLength(1), reason: 'one marker, not one per trim');
+      expect(c.log.first.message, logTruncatedMessage(12));
+      expect(c.log.last.message, contains('line 053'));
+      c.dispose();
+    });
+
+    test('the newest line stays even when it alone is over the cap', () {
+      final c = capped()..logEntry('x' * 6000);
+      expect(c.log, hasLength(1));
+      expect(c.log.single.message, endsWith('x' * 6000));
+
+      c.logEntry(line(1));
+      expect(c.log.first.message, logTruncatedMessage(1));
+      expect(c.log.first.message, contains('by 1 line:'), reason: 'singular');
+      expect(c.log.last.message, contains('line 001'));
+      c.dispose();
+    });
+
+    test('clearLog starts again: no marker, and a fresh count', () {
+      final c = capped();
+      for (var i = 0; i < 50; i++) {
+        c.logEntry(line(i));
+      }
+      c.clearLog();
+      for (var i = 0; i < 49; i++) {
+        c.logEntry(line(i));
+      }
+      expect(c.log.where(isMarker), isEmpty);
+      c.logEntry(line(49));
+      expect(c.log.first.message, logTruncatedMessage(6), reason: 'counted from the clear, not from before it');
+      c.dispose();
+    });
+
+    test('a controller built without a cap uses the measured one', () {
+      final c = SessionController(clipboardWriter: (_) async {});
+      final long = line(0);
+      final fits = kLogCapChars ~/ (long.length + 12);
+      for (var i = 0; i < fits; i++) {
+        c.logEntry(long);
+      }
+      expect(c.log.where(isMarker), isEmpty);
       c.dispose();
     });
   });
@@ -108,7 +199,8 @@ void main() {
         ..sshUsername = 'admin'
         ..sshPassword = 'pw'
         ..generatedConfig = '[Interface]'
-        ..generatedRegionId = 'aus_melbourne';
+        ..generatedRegionId = 'aus_melbourne'
+        ..watchdogEmail = const EmailSettings(to: 't@x.com', smtpServer: 'mail.x.com:465', smtpPass: 'p');
 
       await c.wipeAll();
 
@@ -120,6 +212,7 @@ void main() {
       expect(c.generatedConfig, isNull);
       expect(c.generatedRegionId, isEmpty);
       expect(c.dns, kDefaultDns);
+      expect(c.watchdogEmail, isNull, reason: 'the SMTP password goes with the rest (ID-050)');
       expect(writes, contains(''));
       expect(c.log.any((e) => e.message.contains('wiped from memory')), isTrue);
       c.dispose();

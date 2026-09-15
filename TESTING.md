@@ -77,7 +77,7 @@ perfect the whole time. Detail in
 - on a tablet the list is no wider than 520 and sits centred; on a phone it fills the width
 - the drawer shows the same icon beside each destination, plus a home icon beside HOME
 - "how to use this app" opens the README section
-- "add a Play Store app review" opens the Play listing
+- "add a Play Store app review" opens the Play listing in the Play Store app, not as a web page inside cfg-pia-wg
 - there is no donation block: the PAYPAL and PATREON buttons went when the app gained a price
 
 ---
@@ -116,6 +116,8 @@ Applying configs:
 ## 6. <a name='watchdog'></a>Watchdog
 
 - Create wgc1 & wgc5 - check test email
+- TEST EMAIL before the first SAVE & DEPLOY, and again after changing the region on the form: the subject ends `TEST email - wgcN:pia-<the region on the form>` and the body's Watchdog row names the same region
+- email fields pre-fill, every one including SMTP server:port and password: deploy a watchdog with email on wgc1, then open a new watchdog on another slot - the fields carry wgc1's; change them there and open a third - it carries the changed ones; restart the app and open a new one - it carries the lowest-numbered slot's from the router; a slot with its own settings always shows its own
 - the region is chosen on the form, pre-filled with the slot's own, before SAVE & DEPLOY; a configured slot still warns before it is overwritten, and a region PIA does not have is refused
 - Disable wgc5, create wgc4, enable wgc4 - check nvram and tunnel up
 - region on the watchdog form - each time check the peer key (`wg show wgcN latest-handshakes`), exit location, router log and email:
@@ -123,6 +125,7 @@ Applying configs:
   - running slot, new region: prompt says the tunnel is rebuilt; router log "Cleared ... rebuilds it", "Deploying: bringing wgcN up", "Deploy SUCCESS: region pia-<new>"; NEW peer key; exit is the new region; SUCCESS email names the new server
   - disabled configured slot, new region: as above, and the slot ends enabled
   - empty slot (the watchdog shortcut): as above
+  - empty slot, in ROUTER LOG: the deploy's first check reads `Interface wgcN is not up yet` or `Not connected yet: no handshake, and no answer from ...`, in lavender - never the red `No handshake and both pings failed`
   - stock: the WebUI shows the rebuilt slot connected
   - a device assigned to the slot: on the default connection during the rebuild, back on the slot after
   - rebuild fails (wrong PIA password): FAILED email, the old region does NOT come back, retries on the backoff; correct the password, SAVE & DEPLOY recovers
@@ -785,6 +788,10 @@ wg show interfaces                        # UNCHANGED - the tunnels are not ours
 - REMOVE CACHED PIA CERT removes the cached PIA CA and the next reconfigure fetches it again
 - with no live router session, REMOVE CACHED PIA CERT asks for credentials inline - the prompt prefills the remembered address, leaves the username blank, and the keyboard does not obscure it
 - FORGET ROUTER IP clears the saved address, and the next connect screen opens empty
+- with no live router session, log in once on SETTINGS (REMOVE CACHED PIA CERT, say): MAX ACTIVE VPNS and REBOOT ROUTER then go straight on, with no second login - also after leaving SETTINGS and coming back
+- a login that fails is not kept: the next action asks again, prefilled
+- every SETTINGS action leaves a line in APP LOG - what it did, that there was nothing to do, or the error - and the ones that act on the router leave a line in ROUTER LOG too
+- RESTORE PURCHASE logs "Restore started." and then what it found
 
 ---
 
@@ -869,7 +876,9 @@ The restore, on a second device or after a reinstall:
 - uninstall and reinstall from the track. `android:allowBackup="false"` means nothing local survives
 - it should come back **already unlocked**, with nothing pressed: the launch path calls
   `syncPurchases`, which asks Play what this account owns
+- SETTINGS shows RESTORE PURCHASE, between UNINSTALL FEATURES DEPLOYED TO ROUTER and MAX ACTIVE VPNS. A local build, with no store key, does not show it
 - if it does not, SETTINGS -> RESTORE PURCHASE. Expect "Purchase restored. Everything is unlocked."
+- APP LOG shows `Restore started.` and then what it found, for every outcome below
 - on a Google account that has NOT bought it, the same button says "No purchase found on this
   Google account." That is a normal answer, not an error
 - **no operating-system sign-in prompt may appear at launch.** One appearing means something is

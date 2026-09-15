@@ -17,6 +17,7 @@
 // set of consistently-styled controls (spec §3: "be consistent across all UI elements").
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SelectedContent;
 
 import '../app_colors.dart';
 import '../session_controller.dart';
@@ -304,17 +305,41 @@ class SlotBadge extends StatelessWidget {
 
 /// Renders the in-memory application log (from main.dart `_LogPanel`).
 ///
-/// The whole log is ONE `Text.rich` rather than a widget per entry. `SelectionArea` joins the text
-/// of separate widgets with no separator, so a widget-per-entry layout copies as one run-on line
-/// ("...via SSH...[10:19:34] Router firmware..."). Keeping the entries in a single span tree puts
-/// the line breaks inside the text, where a selection carries them. Same fix as the About screen's
-/// build info block. The per-entry icons are `WidgetSpan`s: a placeholder splits the paragraph into
-/// selectable fragments but contributes no character of its own, so the copy stays clean.
-class LogPanel extends StatelessWidget {
+/// The log is laid out in blocks of [LogPanel.blockSize] lines, each ONE `Text.rich`, and a block whose lines
+/// have not changed is reused as it is (ID-004). Laying out the whole log as a single paragraph made every new
+/// line cost the length of the log: measured with `tool/log_cap_probe.dart` on an emulator, one paragraph missed
+/// a 16 ms frame at about 20,000 characters, blocks of 100 lines not until about 200,000.
+///
+/// Within a block the entries share one span tree, so a selection carries their line breaks: `SelectionArea`
+/// joins the text of separate widgets with no separator, which is why this was never a widget per entry. The
+/// blocks ARE separate widgets, so [_BlockJoiningDelegate] puts the line break back between them. The per-entry
+/// icons are `WidgetSpan`s: a placeholder splits the paragraph into selectable fragments but contributes no
+/// character of its own, so the copy stays clean.
+class LogPanel extends StatefulWidget {
   final List<LogEntry> entries;
   const LogPanel({super.key, required this.entries});
 
+  /// Lines per block: small enough that a new line is cheap, large enough that the blocks stay few.
+  static const int blockSize = 100;
+
+  @override
+  State<LogPanel> createState() => _LogPanelState();
+}
+
+class _LogPanelState extends State<LogPanel> {
   static const TextStyle _style = TextStyle(fontSize: 11, fontFamily: 'monospace', height: 1.7);
+
+  final _selection = _BlockJoiningDelegate();
+
+  /// Block index to the first and last entry it was built from, and the widget. Entries are only ever appended
+  /// or dropped from the front, so a block whose first and last entry are unchanged is unchanged.
+  final Map<int, (LogEntry, LogEntry, Widget)> _blocks = {};
+
+  @override
+  void dispose() {
+    _selection.dispose();
+    super.dispose();
+  }
 
   static Color _colour(LogEntry e) {
     if (e.isSuccess) return Colors.white;
@@ -330,13 +355,7 @@ class LogPanel extends StatelessWidget {
     return Icons.info_outline;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (entries.isEmpty) {
-      return const SelectionArea(
-        child: Text('Ready.', style: TextStyle(color: kHighlight, fontSize: 11, fontFamily: 'monospace')),
-      );
-    }
+  static Widget _block(List<LogEntry> entries) {
     final spans = <InlineSpan>[];
     for (var i = 0; i < entries.length; i++) {
       final e = entries[i];
@@ -351,6 +370,49 @@ class LogPanel extends StatelessWidget {
       spans.add(TextSpan(text: e.message, style: _style.copyWith(color: colour)));
       if (i < entries.length - 1) spans.add(const TextSpan(text: '\n'));
     }
-    return SelectionArea(child: Text.rich(TextSpan(children: spans), style: _style));
+    return Text.rich(TextSpan(children: spans), style: _style);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = widget.entries;
+    if (entries.isEmpty) {
+      _blocks.clear();
+      return const SelectionArea(
+        child: Text('Ready.', style: TextStyle(color: kHighlight, fontSize: 11, fontFamily: 'monospace')),
+      );
+    }
+    final blocks = <Widget>[];
+    for (var k = 0; k * LogPanel.blockSize < entries.length; k++) {
+      final start = k * LogPanel.blockSize;
+      final end = start + LogPanel.blockSize < entries.length ? start + LogPanel.blockSize : entries.length;
+      final cached = _blocks[k];
+      if (cached != null && identical(cached.$1, entries[start]) && identical(cached.$2, entries[end - 1])) {
+        blocks.add(cached.$3);
+        continue;
+      }
+      final block = _block(entries.sublist(start, end));
+      _blocks[k] = (entries[start], entries[end - 1], block);
+      blocks.add(block);
+    }
+    _blocks.removeWhere((k, _) => k >= blocks.length);
+    return SelectionArea(
+      child: SelectionContainer(
+        delegate: _selection,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: blocks),
+      ),
+    );
+  }
+}
+
+/// Copies a selection that spans several blocks with a line break between them, as one paragraph would.
+class _BlockJoiningDelegate extends StaticSelectionContainerDelegate {
+  @override
+  SelectedContent? getSelectedContent() {
+    final parts = [
+      for (final selectable in selectables)
+        if (selectable.getSelectedContent() case final SelectedContent content) content.plainText,
+    ];
+    return parts.isEmpty ? null : SelectedContent(plainText: parts.join('\n'));
   }
 }
