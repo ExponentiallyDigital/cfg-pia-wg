@@ -11,6 +11,7 @@
     - [2.1.6. Build release APK](#216-build-release-apk)
     - [2.1.7. Local output destinations](#217-local-output-destinations)
     - [2.1.8. Sideload](#218-sideload)
+    - [2.1.9. Release: merge, then tag](#219-release-merge-then-tag)
 - [3. Package dependencies](#3-package-dependencies)
 - [4. Dependency pinning \& reproducible builds](#4-dependency-pinning--reproducible-builds)
   - [4.1. Why this matters](#41-why-this-matters)
@@ -145,6 +146,31 @@ To push the compiled app to your phone via Android Debug Bridge (ADB):
 ```bash
 adb install build/app/outputs/flutter-apk/app-release.apk
 ```
+
+#### 2.1.9. Release: merge, then tag
+
+A release is a version tag pushed to GitHub. The tag starts `release.yml`, which runs the quality and security checks, builds the app bundle, uploads it to the Play internal track, and publishes a GitHub release.
+
+1. Merge `dev` into `main` through a pull request.
+2. Read the version in `pubspec.yaml` on `main`, for example `version: 0.8.80+450`. The tag is `v` followed by the part before the `+`: `v0.8.80`. The part after it is the build number, which Play calls the version code.
+3. Tag the merge commit and push the tag:
+
+```bash
+git checkout main
+git pull
+grep '^version:' pubspec.yaml
+git tag v0.8.80
+git push origin v0.8.80
+```
+
+The GitHub release notes are every CHANGELOG block newer than the previous tag, so a tag that names the wrong version publishes the wrong notes. The release's first job, **Tag matches pubspec.yaml**, fails within seconds when the tag is not `v` followed by the version in `pubspec.yaml`, before anything is built or uploaded (ID-062). Its error names the right tag. To recover, delete the wrong tag locally and on the remotes, then tag the same commit correctly:
+
+```bash
+git tag -d v0.8.78
+git push origin :refs/tags/v0.8.78
+```
+
+Play accepts each version code once. Once a build's upload has succeeded, a second tag for the same build fails at the upload, so fix that release's tag and notes on GitHub rather than running the release again.
 
 ---
 
