@@ -27,9 +27,10 @@ import 'widgets/app_button.dart';
 import 'app_colors.dart';
 import 'firmware.dart';
 import 'pia_service.dart';
-import 'router_slot_service.dart' show kSlotDescPrefix, slotLabel;
+import 'router_slot_service.dart' show kSlotDescPrefix, slotDescFor, slotLabel;
 import 'router_watchdog.dart';
 import 'session_controller.dart';
+import 'watchdog_email.dart';
 import 'widgets/app_scaffold.dart';
 import 'widgets/common_fields.dart';
 import 'widgets/error_presenter.dart';
@@ -114,10 +115,37 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     if (pass.isNotEmpty) _c.piaPassword = pass;
   }
 
+  EmailSettings get _emailOnForm => EmailSettings(
+        from: _fromCtrl.text.trim(),
+        to: _toCtrl.text.trim(),
+        subject: _subjectCtrl.text.trim(),
+        smtpServer: _smtpServerCtrl.text.trim(),
+        smtpUser: _smtpUserCtrl.text.trim(),
+        smtpPass: _smtpPassCtrl.text,
+      );
+
+  // Every email field, the SMTP server and port included, from one source (ID-050).
+  void _applyEmail(EmailSettings e) {
+    _fromCtrl.text = e.from;
+    _toCtrl.text = e.to;
+    if (e.subject.isNotEmpty) _subjectCtrl.text = e.subject;
+    _smtpServerCtrl.text = e.smtpServer;
+    _smtpUserCtrl.text = e.smtpUser;
+    _smtpPassCtrl.text = e.smtpPass;
+  }
+
+  // Kept for the next watchdog's form, like the PIA credentials. A form with no server and no recipient
+  // leaves what the session already knows alone.
+  void _rememberEmail() {
+    final e = _emailOnForm;
+    if (!e.isEmpty) _c.watchdogEmail = e;
+  }
+
   @override
   void dispose() {
     // Runs on every exit path (SAVE, CLOSE, barrier dismiss), so whatever was typed is retained.
     _rememberPiaCreds();
+    _rememberEmail();
     for (final c in [
       _regionCtrl,
       _intervalCtrl,
@@ -159,12 +187,25 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       final bootReady = await svc.isBootPersistenceReady();
       final status = await svc.getWatchdogStatus(widget.slotIndex);
       final cfg = await svc.loadConfig(widget.slotIndex);
+      // ID-050: the slot's own email settings, else the session's, else the lowest-numbered other slot's. The
+      // other slots cost a round trip, so they are read only when the first two have nothing.
+      final own = EmailSettings(
+        from: cfg.emailFrom,
+        to: cfg.emailTo,
+        subject: cfg.emailSubject,
+        smtpServer: cfg.smtpServer,
+        smtpUser: cfg.smtpUsername,
+        smtpPass: cfg.smtpPassword,
+      );
+      final prefill = firstEmailSettings(slot: widget.slotIndex, own: own, session: _c.watchdogEmail) ??
+          firstEmailSettings(slot: widget.slotIndex, others: await svc.readEmailSettings());
       if (!mounted) return;
       setState(() {
         _jqMissing = !jq;
         _bootDirMissing = !bootReady;
         _status = status;
         _applyConfig(cfg);
+        if (own.isEmpty && prefill != null) _applyEmail(prefill);
       });
     });
     if (!mounted) return;
@@ -346,7 +387,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       await AppErrors.inputs(context, _c, errors);
       return;
     }
-    final sent = await _withService((svc) => svc.testEmail(_currentConfig()));
+    // The region on the form, which the router does not carry until the first deploy (ID-049).
+    final sent = await _withService((svc) => svc.testEmail(_currentConfig(), desc: slotDescFor(_regionCtrl.text)));
     if (!mounted) return;
     // A failed send used to say nothing on screen and one teal line in the app log telling the
     // user to go and read the ROUTER log. Every diagnostic now lands in the app log, and this

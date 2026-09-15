@@ -735,6 +735,21 @@ void main() {
     // switch to report on and stock has to work out where the traffic went instead. An absolute
     // ceiling says what the guard was always for - JFFS space and reviewability - without tying
     // one firmware's size to the other's.
+    // ID-048, reported: deploying a watchdog on an empty slot put "No handshake and both pings failed" in the
+    // router log although the deploy worked. A deploy run checks the slot before its tunnel exists, so there
+    // "not up" is the starting state, not a fault; a scheduled run still reports it as one.
+    test('a deploy run reports a tunnel not up yet without calling it a failure', () {
+      for (final firmware in [RouterFirmware.merlin, RouterFirmware.stock]) {
+        final script = buildWatchdogScript(_valid(email: true), firmware: firmware);
+        expect(script, contains(r'if [ "$RUNMODE" = "deploy" ]; then log "Interface $IFACE is not up yet"; else log "Interface $IFACE is down or absent"; fi'));
+        expect(script, contains(r'log "Not connected yet: no handshake, and no answer from $PRIMARY_IP or $SECONDARY_IP"'));
+        expect(script, contains(r'log "No handshake and both pings failed ($PRIMARY_IP, $SECONDARY_IP)"'), reason: 'cron runs');
+        // The deploy wording sits after both pings have been tried, and before the cron failure.
+        expect(script.indexOf('Secondary ping OK'), lessThan(script.indexOf('Not connected yet')));
+        expect(script.indexOf('Not connected yet'), lessThan(script.indexOf('No handshake and both pings failed')));
+      }
+    });
+
     test('neither variant grows the deploy payload', () {
       final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
       final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;

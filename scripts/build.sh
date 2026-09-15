@@ -1,15 +1,14 @@
 #!/bin/bash
 #
-# SYNOPSIS: Builder script 
-# VERSION: 0.2.1
+# SYNOPSIS: Builder script
+# VERSION: 0.3.0
 #
 
 ###############################################################################
-# Strict mode + error trap
+# Strict mode
 ###############################################################################
-set -euo pipefail
-
-trap 'echo -e "${RED}✖ Build failed at line ${LINENO}${RESET}" >&2; exit 1' ERR
+# -E: the ERR trap also fires inside functions and subshells, not just at the top level.
+set -Eeuo pipefail
 
 ###############################################################################
 # ANSI colors (using the escape character directly for portability)
@@ -24,29 +23,40 @@ RED="${ESC}[31m"
 RESET="${ESC}[0m"
 
 ###############################################################################
+# Error trap: say what failed, not just where
+###############################################################################
+trap 'echo -e "${RED}✖ Build failed at line ${LINENO}: ${BASH_COMMAND}${RESET}" >&2; exit 1' ERR
+
+fail() {
+    echo -e "${RED}✖ $1 Build stopped.${RESET}" >&2
+    exit 1
+}
+
+###############################################################################
 # Help message (shown when no arguments provided)
 ###############################################################################
 if [ "$#" -eq 0 ]; then
     echo -e "${WHITE}Flutter build script${RESET}"
     echo ""
     echo -e "${CYAN}Usage:${RESET}"
-    echo "  ./build.sh [mode] [options]"
+    echo "  ./scripts/build.sh [mode] [options]"
     echo ""
     echo -e "${CYAN}Modes:${RESET}"
-    echo "  all         Build everything (default)"
+    echo "  all         Build everything"
     echo "  debug       Build only the debug APK"
     echo "  release     Build only the release APK"
     echo "  aab         Build only the Play Store AAB"
     echo ""
     echo -e "${CYAN}Options:${RESET}"
     echo "  --no-clean   Skip running 'flutter clean'"
-    echo "  --skip-test  Skip running tests"
+    echo "  --skip-test  Skip running analyze and tests"
     echo "  --skip-icons Skip generating icons (use existing)"
+    echo "  --skip-pin   Skip pinning and checking the GitHub action SHAs"
     echo ""
     echo -e "${CYAN}Examples:${RESET}"
-    echo "  ./build.sh all"
-    echo "  ./build.sh release --no-clean"
-    echo "  ./build.sh debug"
+    echo "  ./scripts/build.sh all"
+    echo "  ./scripts/build.sh release --no-clean"
+    echo "  ./scripts/build.sh debug"
     echo ""
     exit 0
 fi
@@ -58,6 +68,7 @@ MODE="all"
 RUN_CLEAN=true
 SKIP_TEST=false
 SKIP_ICONS=false
+SKIP_PIN=false
 
 for arg in "$@"; do
     case "$arg" in
@@ -76,13 +87,27 @@ for arg in "$@"; do
         --skip-icons)
             SKIP_ICONS=true
             ;;
+        --skip-pin)
+            SKIP_PIN=true
+            ;;
         *)
             echo -e "${RED}Unknown option: $arg${RESET}"
-            echo "Run './build.sh' with no arguments for help"
+            echo "Run './scripts/build.sh' with no arguments for help"
             exit 1
             ;;
     esac
 done
+
+###############################################################################
+# Work from the repo root, wherever the script was started from
+###############################################################################
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+###############################################################################
+# Logging (bash has no native transcript, so pipe everything through tee)
+###############################################################################
+LOGFILE="build.log"
+exec > >(tee "$LOGFILE") 2>&1
 
 echo -e "${CYAN}Build mode: $MODE${RESET}"
 if [ "$RUN_CLEAN" = true ]; then
@@ -92,70 +117,65 @@ else
 fi
 
 ###############################################################################
-# Logging (bash has no native transcript, so pipe everything through tee)
-###############################################################################
-LOGFILE="build.log"
-exec > >(tee "$LOGFILE") 2>&1
-
-###############################################################################
 # Timing (overall + per build type)
 ###############################################################################
 BUILD_START=$(date +%s)
+# Artefacts older than this file were left over from an earlier build.
+BUILD_STAMP=$(mktemp)
+trap 'rm -f "$BUILD_STAMP"' EXIT
 DEBUG_BUILD_TIME=0
 RELEASE_BUILD_TIME=0
 AAB_BUILD_TIME=0
 
 ###############################################################################
-# Detect Java & Android SDK (via Flutter)
+# Validate environment
 ###############################################################################
 echo -e "${CYAN}Validating environment...${RESET}"
 
-if ! command -v flutter >/dev/null 2>&1; then echo -e "${RED}Flutter not found${RESET}"; exit 1; fi
-if ! command -v dart >/dev/null 2>&1; then echo -e "${RED}Dart not found${RESET}"; exit 1; fi
-
-echo -e "${CYAN}Analyzing environment via Flutter (this may take a moment)...${RESET}"
-# Run doctor once and keep it in memory to extract both paths efficiently
-DOCTOR_OUTPUT=$(flutter doctor -v)
-
-# 1. Parse Java Binary
-JAVA_LINE=$(echo "$DOCTOR_OUTPUT" | grep "Java binary at:" || true)
-if [ -n "$JAVA_LINE" ]; then
-    JAVA_BIN=$(echo "$JAVA_LINE" | sed -E 's/.*Java binary at:[[:space:]]*//' | sed -E 's/[[:space:]]*$//')
-    if [[ "$JAVA_BIN" != *.exe ]] && [ -f "${JAVA_BIN}.exe" ]; then
-        JAVA_BIN="${JAVA_BIN}.exe"
-    fi
-else
-    echo -e "${RED}Java binary not found via flutter doctor.${RESET}"
-    exit 1
+TOOLS=(flutter dart)
+if [ "$SKIP_PIN" = false ]; then
+    TOOLS+=(git curl jq)
 fi
-echo -e "${GREEN}Using Java: $JAVA_BIN${RESET}"
+for tool in "${TOOLS[@]}"; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        fail "$tool not found in PATH."
+    fi
+done
 
-# 2. Check or Parse ANDROID_HOME
+# flutter doctor is slow, so it only runs when ANDROID_HOME has to be found.
 if [ -z "${ANDROID_HOME:-}" ]; then
-    SDK_LINE=$(echo "$DOCTOR_OUTPUT" | grep "Android SDK at" || true)
-    if [ -n "$SDK_LINE" ]; then
-        FLUTTER_ANDROID_SDK=$(echo "$SDK_LINE" | sed -E 's/.*Android SDK at[[:space:]]*//' | sed -E 's/[[:space:]]*$//')
-        if [ -d "$FLUTTER_ANDROID_SDK" ]; then
-            export ANDROID_HOME="$FLUTTER_ANDROID_SDK"
-        fi
+    echo -e "${CYAN}ANDROID_HOME is not set; asking flutter doctor (this may take a moment)...${RESET}"
+    # Only the SDK path is wanted here; nothing else doctor reports should stop the build.
+    DOCTOR_OUTPUT=$(flutter doctor -v || true)
+    FLUTTER_ANDROID_SDK=$(echo "$DOCTOR_OUTPUT" | sed -nE 's/.*Android SDK at[[:space:]]*(.*[^[:space:]])[[:space:]]*$/\1/p' | head -n 1)
+    if [ -n "$FLUTTER_ANDROID_SDK" ] && [ -d "$FLUTTER_ANDROID_SDK" ]; then
+        export ANDROID_HOME="$FLUTTER_ANDROID_SDK"
     fi
 fi
-
-# 3. Final verification for ANDROID_HOME
 if [ -z "${ANDROID_HOME:-}" ]; then
-    echo -e "${RED}ANDROID_HOME is not set and could not be detected via Flutter.${RESET}"
-    exit 1
+    fail "ANDROID_HOME is not set and could not be detected via Flutter."
 fi
-
 echo -e "${GREEN}Environment OK (ANDROID_HOME: $ANDROID_HOME)${RESET}"
 
-# Extract version from pubspec.yaml and strip build number
-VERSION=""
-if [ -f pubspec.yaml ]; then
-    PUBSPEC_VERSION=$(grep -E "^version:" pubspec.yaml || true)
-    if [ -n "$PUBSPEC_VERSION" ]; then
-        VERSION=$(echo "$PUBSPEC_VERSION" | sed -E 's/^version:[[:space:]]*//' | sed -E 's/\+.*$//' | sed -E 's/[[:space:]]*$//')
+# Version and build number from pubspec.yaml, for the release APK's name.
+PUBSPEC_VERSION=$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)[[:space:]]*$/\1 \2/p' pubspec.yaml | head -n 1)
+if [ -z "$PUBSPEC_VERSION" ]; then
+    fail "Could not read 'version: x.y.z+build' from pubspec.yaml."
+fi
+read -r VERSION BUILD_NUMBER <<< "$PUBSPEC_VERSION"
+echo -e "${GREEN}Version: v$VERSION build $BUILD_NUMBER${RESET}"
+
+###############################################################################
+# Pin GitHub actions: early, so a bad pin stops the build before a minute of cleaning and fetching
+###############################################################################
+if [ "$SKIP_PIN" = false ]; then
+    echo -e "${CYAN}Pinning GitHub actions to their latest release SHAs...${RESET}"
+    # Through bash: the script is not marked executable in git. Exit 1 means a pin does not match its tag.
+    if ! bash ./scripts/pin-actions-latest.sh; then
+        fail "A GitHub action pin does not match its tag - see above."
     fi
+else
+    echo -e "${YELLOW}Skipping GitHub action pinning (--skip-pin)${RESET}"
 fi
 
 ###############################################################################
@@ -171,122 +191,131 @@ fi
 ###############################################################################
 # Pre-warm caches
 ###############################################################################
-echo -e "${CYAN}Pre-warming Flutter and Gradle caches...${RESET}"
+echo -e "${CYAN}Pre-warming Flutter caches...${RESET}"
 flutter precache --android
-gradle --refresh-dependencies >/dev/null 2>&1 || true  # native equivalent of || true
 
 ###############################################################################
-# Fetch dependencies + icons in parallel
+# Fetch dependencies, then icons
 ###############################################################################
-echo -e "${CYAN}Upgrading minor versions, fetching dependencies, and generating icons (parallel)...${RESET}"
+echo -e "${CYAN}Fetching dependencies (versions as locked in pubspec.lock)...${RESET}"
 #flutter pub upgrade
 flutter pub get --enforce-lockfile
 
 if [ "$SKIP_ICONS" = false ]; then
+    echo -e "${CYAN}Generating launcher icons...${RESET}"
     dart run flutter_launcher_icons
 else
     echo -e "${YELLOW}Skipping icon generation...${RESET}"
 fi
 
 ###############################################################################
-# Update GitHub action scripts to latest versions
-###############################################################################
-echo -e "${CYAN}Updating GitHub action SHAs to latest versions...${RESET}"
-./scripts/pin-actions-latest.sh
-
-###############################################################################
 # Tests
 ###############################################################################
 if [ "$SKIP_TEST" = false ]; then
-    echo -e "${CYAN}Running tests...${RESET}"
-    flutter analyze
+    echo -e "${CYAN}Running analyze and tests...${RESET}"
+    # --fatal-infos, as CI runs it: an info-level lint that passes here would fail there.
+    flutter analyze --fatal-infos
     flutter test --coverage
 else
-    echo -e "${YELLOW}Skipping tests (--skip-test)...${RESET}"
+    echo -e "${YELLOW}Skipping analyze and tests (--skip-test)...${RESET}"
 fi
 
 ###############################################################################
 # Build steps (conditional, timed)
 ###############################################################################
+APK_DEBUG="build/app/outputs/flutter-apk/app-debug.apk"
+APK_RELEASE="build/cfg-pia-wg-v${VERSION}_build${BUILD_NUMBER}_release.apk"
+AAB_RELEASE="build/app/outputs/bundle/release/cfg_pia_wg-release.aab"
+
 if [ "$MODE" = "debug" ] || [ "$MODE" = "all" ]; then
     echo -e "${GREEN}Compiling debug version...${RESET}"
     START=$(date +%s)
     flutter build apk --debug
-    END=$(date +%s)
-    DEBUG_BUILD_TIME=$((END - START))
+    DEBUG_BUILD_TIME=$(( $(date +%s) - START ))
 fi
 
 if [ "$MODE" = "release" ] || [ "$MODE" = "all" ]; then
     echo -e "${GREEN}Compiling release version...${RESET}"
     START=$(date +%s)
     flutter build apk --release
-    DEFAULT_APK="build/app/outputs/flutter-apk/app-release.apk"
-    TARGET_APK="build/cfg_pia_wg-v${VERSION}_release.apk"
-    if [ -f "$DEFAULT_APK" ]; then
-        mv -f "$DEFAULT_APK" "$TARGET_APK"
-        echo -e "${GREEN}Renamed release APK to: $TARGET_APK${RESET}"
-    fi
-    END=$(date +%s)
-    RELEASE_BUILD_TIME=$((END - START))
+    mv -f "build/app/outputs/flutter-apk/app-release.apk" "$APK_RELEASE"
+    echo -e "${GREEN}Renamed release APK to: $APK_RELEASE${RESET}"
+    RELEASE_BUILD_TIME=$(( $(date +%s) - START ))
 fi
 
 if [ "$MODE" = "aab" ] || [ "$MODE" = "all" ]; then
     echo -e "${GREEN}Compiling signed Android App Bundle (.aab) for Google Play...${RESET}"
     START=$(date +%s)
     flutter build appbundle --release
-    END=$(date +%s)
-    AAB_BUILD_TIME=$((END - START))
+    AAB_BUILD_TIME=$(( $(date +%s) - START ))
 fi
 
 ###############################################################################
-# Artefact summary (sizes only)
+# Third-party notices: regenerated in 'all' mode, once the builds have filled the Gradle cache
 ###############################################################################
-echo ""
-echo -e "${MAGENTA}-------------------------------------------------------------------------------${RESET}"
+if [ "$MODE" = "all" ]; then
+    echo -e "${CYAN}Regenerating THIRD-PARTY-NOTICES.md...${RESET}"
+    # Warn, never fail (ID-007): offline, it leaves the file as it is and exits 3.
+    if ! dart run tool/third_party_notices.dart; then
+        echo -e "${YELLOW}THIRD-PARTY-NOTICES.md was not regenerated - see above.${RESET}"
+    fi
+fi
 
-APK_DEBUG="build/app/outputs/flutter-apk/app-debug.apk"
-APK_RELEASE="build/cfg_pia_wg-v${VERSION}_release.apk"
-AAB_RELEASE="build/app/outputs/bundle/release/cfg_pia_wg-release.aab"
-
-echo -e "${WHITE}Build artefacts:${RESET}"
-
+###############################################################################
+# Artefact summary: only what this mode builds, and only if this run wrote it
+###############################################################################
 # stat flags differ between GNU (Linux) and BSD (macOS), so try both
 get_file_size() {
     stat -c%s "$1" 2>/dev/null || stat -f%z "$1" 2>/dev/null
 }
 
-for f in "$APK_DEBUG" "$APK_RELEASE" "$AAB_RELEASE"; do
-    if [ -f "$f" ]; then
-        SIZE=$(get_file_size "$f")
-        # insert thousands separators for readability
-        FORM_SIZE=$(printf "%d" "$SIZE" | sed -E ':a;s/\B[0-9]{3}\>/,&/;ta')
-        echo -e "${GREEN}$f${RESET}  ${YELLOW}${FORM_SIZE} bytes${RESET}"
+# Thousands separators in plain bash; the sed version relied on GNU-only \B and \>.
+with_commas() {
+    local n="$1" out=""
+    while (( ${#n} > 3 )); do
+        out=",${n: -3}$out"
+        n="${n:0:${#n}-3}"
+    done
+    echo "$n$out"
+}
+
+EXPECTED=()
+if [ "$MODE" = "debug" ] || [ "$MODE" = "all" ]; then EXPECTED+=("Debug APK|$APK_DEBUG|$DEBUG_BUILD_TIME"); fi
+if [ "$MODE" = "release" ] || [ "$MODE" = "all" ]; then EXPECTED+=("Release APK|$APK_RELEASE|$RELEASE_BUILD_TIME"); fi
+if [ "$MODE" = "aab" ] || [ "$MODE" = "all" ]; then EXPECTED+=("Play Store AAB|$AAB_RELEASE|$AAB_BUILD_TIME"); fi
+
+echo ""
+echo -e "${MAGENTA}-------------------------------------------------------------------------------${RESET}"
+echo -e "${WHITE}Build artefacts:${RESET}"
+
+PROBLEMS=0
+for entry in "${EXPECTED[@]}"; do
+    IFS='|' read -r label path seconds <<< "$entry"
+    label=$(printf "%-15s" "$label:")
+    if [ ! -f "$path" ]; then
+        echo -e "${RED}  $label Missing: $path${RESET}"
+        PROBLEMS=$((PROBLEMS + 1))
+        continue
+    fi
+    size="$(with_commas "$(get_file_size "$path")") bytes"
+    if [ "$path" -nt "$BUILD_STAMP" ]; then
+        echo -e "${WHITE}  $label${RESET} ${GREEN}$path${RESET}  ${YELLOW}$size, built in $seconds seconds${RESET}"
     else
-        echo -e "${RED}Missing: $f${RESET}"
+        echo -e "${RED}  $label $path  $size  STALE - left over from an earlier build${RESET}"
+        PROBLEMS=$((PROBLEMS + 1))
     fi
 done
 
 echo -e "${MAGENTA}-------------------------------------------------------------------------------${RESET}"
 
-###############################################################################
-# Build time summary
-###############################################################################
-echo -e "${CYAN}Build time per artefact:${RESET}"
-if [ "$DEBUG_BUILD_TIME" -gt 0 ]; then
-    echo -e "${WHITE}  Debug APK:${RESET}   ${YELLOW}${DEBUG_BUILD_TIME} seconds${RESET}"
-fi
-if [ "$RELEASE_BUILD_TIME" -gt 0 ]; then
-    echo -e "${WHITE}  Release APK:${RESET} ${YELLOW}${RELEASE_BUILD_TIME} seconds${RESET}"
-fi
-if [ "$AAB_BUILD_TIME" -gt 0 ]; then
-    echo -e "${WHITE}  Play Store AAB:${RESET} ${YELLOW}${AAB_BUILD_TIME} seconds${RESET}"
+if (( PROBLEMS > 0 )); then
+    fail "$PROBLEMS artefact(s) missing or stale."
 fi
 
 ###############################################################################
 # Total time
 ###############################################################################
-BUILD_END=$(date +%s)
-TOTAL_TIME=$((BUILD_END - BUILD_START))
+TOTAL_TIME=$(( $(date +%s) - BUILD_START ))
 echo -e "${GREEN}✔ Total build completed in $TOTAL_TIME seconds${RESET}"
 echo ""
 

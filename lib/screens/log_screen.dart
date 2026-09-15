@@ -68,7 +68,9 @@ class _LogScreenState extends State<LogScreen> {
     return Material(
       color: kBg,
       child: ListenableBuilder(
-        listenable: c,
+        // The log's own changes, not every controller notification: the whole log is laid out again on
+        // each rebuild, and a clipboard countdown alone would do that once a second (ID-004).
+        listenable: c.logChanges,
         builder: (context, _) => Column(children: [
           Expanded(
             child: Padding(

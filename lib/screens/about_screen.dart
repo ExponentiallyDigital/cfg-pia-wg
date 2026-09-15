@@ -331,35 +331,41 @@ class _AboutScreenState extends State<AboutScreen> {
                             ),
                     ),
                   ],
-                  const SizedBox(height: 8),
+                  // ID-051: clear of the watchdog history line above, and centred under it.
+                  const SizedBox(height: 20),
                   // Wrap, not Row: the two labels together overflow a narrow phone, so they sit
                   // side by side when there is room and fall to a second line when there is not.
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      // A copy path that does not depend on the Android selection toolbar, which is
-                      // awkward to reach for a selection this close to the top of the screen.
-                      AppButton(
-                        keyValue: 'about_copy_build_info',
-                        label: 'COPY BUILD INFO',
-                        icon: Icons.copy,
-                        fontSize: 12,
-                        onPressed: () => _copyBuildInfo(context, snap.data),
-                      ),
-                      AppButton(
-                        keyValue: 'about_create_issue',
-                        label: 'CREATE GITHUB ISSUE',
-                        icon: Icons.bug_report_outlined,
-                        fontSize: 12,
-                        onPressed: () => _launch(bugReportUrl(snap.data,
-                            scriptStatus: _scriptStatus,
-                            model: _routerModel,
-                            firmware: _routerFirmware,
-                            firmwareType: _routerType,
-                            licence: _licence(context))),
-                      ),
-                    ],
+                  // Full width, or a Wrap shrinks to its buttons and has nothing to centre them in.
+                  SizedBox(
+                    width: double.infinity,
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        // A copy path that does not depend on the Android selection toolbar, which is
+                        // awkward to reach for a selection this close to the top of the screen.
+                        AppButton(
+                          keyValue: 'about_copy_build_info',
+                          label: 'COPY BUILD INFO',
+                          icon: Icons.copy,
+                          fontSize: 12,
+                          onPressed: () => _copyBuildInfo(context, snap.data),
+                        ),
+                        AppButton(
+                          keyValue: 'about_create_issue',
+                          label: 'CREATE GITHUB ISSUE',
+                          icon: Icons.bug_report_outlined,
+                          fontSize: 12,
+                          onPressed: () => _launch(bugReportUrl(snap.data,
+                              scriptStatus: _scriptStatus,
+                              model: _routerModel,
+                              firmware: _routerFirmware,
+                              firmwareType: _routerType,
+                              licence: _licence(context))),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -593,7 +599,6 @@ Router firmware: $firmwareLine
 ```
 
 - Router model: ${model.isEmpty ? '[e.g. RT-AX86U]' : model}
-- Router firmware version: ${firmware.isEmpty ? '[e.g. 3.0.0.4.388_24762]' : firmware}
 
 **Additional context**
 Add any other context about the problem here.
