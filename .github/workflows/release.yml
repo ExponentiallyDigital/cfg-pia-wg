@@ -31,10 +31,50 @@ env:
 
 jobs:
   # =================================================================
+  # Step 0: The tag must name the version being released (ID-062)
+  # =================================================================
+  # The release name and the Play version code come from pubspec.yaml; the release notes, the asset
+  # names and the SBOM version come from the tag. PR #20's merge commit was build 450 (0.8.80) and
+  # was tagged v0.8.78, nothing compared the two, and the GitHub release carried build 448's notes.
+  # This fails within seconds, before the quality checks, the build or the Play upload start.
+  version-check:
+    name: Tag matches pubspec.yaml
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout pubspec.yaml
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: pubspec.yaml
+          sparse-checkout-cone-mode: false
+
+      - name: Compare the tag with pubspec.yaml
+        env:
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          TAG="${INPUT_TAG_NAME:-$REF_NAME}"
+          PUBSPEC_VERSION=$(grep -m1 '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//')
+          VERSION_NAME="${PUBSPEC_VERSION%+*}"
+          VERSION_CODE="${PUBSPEC_VERSION#*+}"
+          if [ -z "$VERSION_NAME" ] || [ "$VERSION_NAME" = "$PUBSPEC_VERSION" ]; then
+            echo "::error title=No version in pubspec.yaml::Could not read version name and build number from pubspec.yaml: '$PUBSPEC_VERSION'"
+            exit 1
+          fi
+          EXPECTED="v${VERSION_NAME#v}"
+          if [ "$TAG" != "$EXPECTED" ]; then
+            echo "::error title=Tag does not match pubspec.yaml::The tag is $TAG, but this commit is version $VERSION_NAME build $VERSION_CODE, so its tag must be $EXPECTED (a manual run passes it as tag_name). Nothing was built or uploaded. Delete the wrong tag with 'git tag -d $TAG' and 'git push origin :refs/tags/$TAG', then tag this commit $EXPECTED and push that tag."
+            exit 1
+          fi
+          echo "Tag $TAG matches pubspec.yaml version $PUBSPEC_VERSION."
+
+  # =================================================================
   # Step 1: Force Quality & Security checks to run first on tag push
   # =================================================================
   quality-and-security:
     name: Quality & security checks
+    needs: version-check
     uses: ./.github/workflows/quality_and_security.yml
     permissions:
       contents: read

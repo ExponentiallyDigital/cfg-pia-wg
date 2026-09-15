@@ -422,7 +422,7 @@ There is **no** `start_vpnc` command, which is why enable uses `restart_vpnc`.
   4. exec `service stop_vpnc`
 
 > [!WARNING]
-> `restart_vpnc` does **not** stop a tunnel. Using it here clears `wgcN_enable` and index 5 — so the WebUI reports the profile disconnected — while the interface stays up and keeps appearing in `wg show interfaces`. Deleting a slot must issue `stop_vpnc` too, and must resolve `vpnc_unit` *before* the row is removed from `vpnc_clientlist`.
+> `restart_vpnc` does **not** stop a tunnel. After steps 1 and 2 the WebUI reports the profile disconnected, but with `restart_vpnc` the interface stays up and keeps appearing in `wg show interfaces`. Deleting a slot must issue `stop_vpnc` too, and must resolve `vpnc_unit` *before* the row is removed from `vpnc_clientlist`. On enable, `wgcN_enable` stays `1` after `restart_vpnc` (measured 2026-09-15 on all five slots, all enabled), and the watchdog relies on it: its script stands down only on an explicit `0`.
 
 #### 4.2.4. <a name='stock-delete'></a>Delete
 
