@@ -13,8 +13,8 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// The third log screen, and built like the other two: the log fills the body and COPY / CLEAR /
-// HOME sit in one pinned row at the bottom. It opens at the newest entry, because the reason
+// The third log screen, and built like the other two: a heading, the log filling the body, and COPY / CLEAR /
+// HOME in one pinned row at the bottom. It opens at the newest entry, because the reason
 // anyone comes here is to see what just happened.
 
 import 'package:flutter/material.dart';
@@ -68,15 +68,28 @@ class _LogScreenState extends State<LogScreen> {
     return Material(
       color: kBg,
       child: ListenableBuilder(
-        listenable: c,
+        // The log's own changes, not every controller notification: the whole log is laid out again on
+        // each rebuild, and a clipboard countdown alone would do that once a second (ID-004).
+        listenable: c.logChanges,
         builder: (context, _) => Column(children: [
           Expanded(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: SingleChildScrollView(
-                controller: _scroll,
-                child: SizedBox(width: double.infinity, child: LogPanel(entries: c.log)),
-              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                // Named like the watchdog log's heading, in the same place and style (ID-033).
+                Text(
+                  AppDestination.log.title,
+                  key: const Key('app_log_heading'),
+                  style: const TextStyle(color: kHighlight, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: _scroll,
+                    child: SizedBox(width: double.infinity, child: LogPanel(entries: c.log)),
+                  ),
+                ),
+              ]),
             ),
           ),
           Padding(

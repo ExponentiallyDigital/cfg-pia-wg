@@ -34,6 +34,20 @@ import '../widgets/error_presenter.dart';
 import '../widgets/log_buttons.dart';
 import '../widgets/ssh_creds_dialog.dart';
 
+/// The colour of one router log line, or null for the plain text colour.
+///
+/// Red wins: an error from the app or the watchdog is the line anyone opened this screen for. The app's own lines
+/// are teal and the watchdog's lavender (ID-034). The watchdog's used to be amber, which everywhere else in this app
+/// means a warning - a staged change, a paused watchdog - so a healthy "Handshake 25s ago" looked like a problem.
+Color? routerLogLineColour(String line) {
+  if (isRouterLogError(line)) return kError;
+  return switch (classifyLogLine(line)) {
+    RouterLogSource.app => kHighlight,
+    RouterLogSource.watchdog => kWatchdogText,
+    RouterLogSource.other => null,
+  };
+}
+
 class RouterLogScreen extends StatefulWidget {
   /// Injected by tests so the screen can be driven without a router.
   final Future<SSHClient> Function(String ip, String user, String pass)? testClientFactory;
@@ -224,21 +238,15 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     final lines = page.split('\n');
     return Text.rich(
       TextSpan(children: [
-        for (var i = 0; i < lines.length; i++)
-          TextSpan(
-            text: i == lines.length - 1 ? lines[i] : '${lines[i]}\n',
-            // Red wins: an error from the app or the watchdog is the line anyone opened this for.
-            style: isRouterLogError(lines[i])
-                ? const TextStyle(color: kError)
-                : switch (classifyLogLine(lines[i])) {
-                    RouterLogSource.app => const TextStyle(color: kHighlight),
-                    RouterLogSource.watchdog => const TextStyle(color: kWarn),
-                    RouterLogSource.other => null,
-                  },
-          ),
+        for (var i = 0; i < lines.length; i++) _line(lines[i], last: i == lines.length - 1),
       ]),
       style: base,
     );
+  }
+
+  static TextSpan _line(String line, {required bool last}) {
+    final colour = routerLogLineColour(line);
+    return TextSpan(text: last ? line : '$line\n', style: colour == null ? null : TextStyle(color: colour));
   }
 
   @override
@@ -249,38 +257,49 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: !_hasContent
-                ? Center(
-                    child: _loading
-                        ? const CircularProgressIndicator(color: kHighlight)
-                        : const Text('No log read yet.', style: TextStyle(color: kMuted, fontSize: 13)),
-                  )
-                // One selection region over every loaded page, so "select all" spans the lot. A
-                // lazily-built list would page more cheaply and would not do that.
-                : SelectionArea(
-                    child: SingleChildScrollView(
-                      controller: _scroll,
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        if (_loading)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Center(
-                              child: SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              // Named like the watchdog log's heading, in the same place and style (ID-033).
+              Text(
+                AppDestination.routerLog.title,
+                key: const Key('router_log_heading'),
+                style: const TextStyle(color: kHighlight, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: !_hasContent
+                    ? Center(
+                        child: _loading
+                            ? const CircularProgressIndicator(color: kHighlight)
+                            : const Text('No log read yet.', style: TextStyle(color: kMuted, fontSize: 13)),
+                      )
+                    // One selection region over every loaded page, so "select all" spans the lot. A
+                    // lazily-built list would page more cheaply and would not do that.
+                    : SelectionArea(
+                        child: SingleChildScrollView(
+                          controller: _scroll,
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            if (_loading)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 12),
+                                child: Center(
+                                  child: SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight),
+                                  ),
+                                ),
+                              )
+                            else if (_exhausted)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8),
+                                child: Text('- start of the router log -',
+                                    textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 11)),
                               ),
-                            ),
-                          )
-                        else if (_exhausted)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Text('- start of the router log -',
-                                textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 11)),
-                          ),
-                        for (final page in _pages) _colourise(page),
-                      ]),
-                    ),
-                  ),
+                            for (final page in _pages) _colourise(page),
+                          ]),
+                        ),
+                      ),
+              ),
+            ]),
           ),
         ),
         Padding(

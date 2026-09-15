@@ -21,6 +21,9 @@
 // that an uninstall is not something to offer on the way in; the decision now is that nothing should
 // need the hamburger to be found.
 
+import 'dart:async';
+import 'dart:io';
+
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -30,7 +33,7 @@ import '../widgets/app_button.dart';
 import '../app_colors.dart';
 import '../entitlement.dart';
 import '../firmware.dart';
-import '../router_slot_service.dart' show RouterSlotService, kDefaultStockMaxActiveSlots, openSshClient;
+import '../router_slot_service.dart' show RouterSlotService, kDefaultStockMaxActiveSlots, openSshClient, splitHostPort;
 import '../review_service.dart';
 import '../router_watchdog.dart';
 import '../session_controller.dart';
@@ -42,7 +45,13 @@ import '../widgets/ssh_creds_dialog.dart';
 class SettingsScreen extends StatefulWidget {
   /// Injected by tests so the router actions can run without a router.
   final Future<SSHClient> Function(String ip, String user, String pass)? testClientFactory;
-  const SettingsScreen({super.key, this.testClientFactory});
+
+  /// Injected by tests in place of the store's restore; it also shows RESTORE PURCHASE in a build with no store key.
+  final Future<bool> Function()? testRestore;
+
+  /// Injected by tests in place of the check that the router answers again after a reboot.
+  final Future<bool> Function(String host, int port)? testRouterAnswers;
+  const SettingsScreen({super.key, this.testClientFactory, this.testRestore, this.testRouterAnswers});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -75,6 +84,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ..sshUsername = entered.$2
       ..sshPassword = entered.$3;
     return entered;
+  }
+
+  /// Records a router action that reached the router. The session then counts as connected, so the next
+  /// action on this screen or any other reuses the credentials rather than asking again (ID-046), and the
+  /// address is remembered.
+  Future<void> _connected(String ip) async {
+    _c.routerConnected = true;
+    await _c.rememberRouterIp(ip);
   }
 
   Future<void> _uninstall() async {
@@ -126,7 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       done = await RouterWatchdog(client, onLog: _c.onLog).uninstallFromRouter();
-      await _c.rememberRouterIp(ip);
+      await _connected(ip);
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
     }
@@ -259,7 +276,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       deleted = await RouterWatchdog(client, onLog: _c.onLog).deleteCachedPiaCert();
-      await _c.rememberRouterIp(ip);
+      await _connected(ip);
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
     }
@@ -312,7 +329,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       await RouterWatchdog(client, onLog: _c.onLog).rebootRouter();
-      await _c.rememberRouterIp(ip);
+      await _connected(ip);
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
     }
@@ -322,22 +339,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await AppErrors.system(context, _c, 'Could not reboot the router: $error');
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Reboot requested. The router takes a minute or two to come back.')),
+    // The shared connection went down with the router; the next action opens a fresh one.
+    unawaited(_c.closeRouterSession());
+    final target = splitHostPort(ip);
+    // ID-054: a count to 100 seconds, as the ASUS WebUI shows, that closes as soon as the router answers again.
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _RebootProgressDialog(
+        host: target.host,
+        port: target.port,
+        answers: widget.testRouterAnswers ?? _routerAnswers,
+        onFinished: (message, {bool isSuccess = false, bool isWarning = false}) {
+          _c.logEntry(message, isSuccess: isSuccess, isWarning: isWarning);
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        },
+      ),
     );
+  }
+
+  /// Whether the router accepts a connection on its SSH port again - up enough to log in to.
+  static Future<bool> _routerAnswers(String host, int port) async {
+    try {
+      final socket = await Socket.connect(host, port, timeout: const Duration(seconds: 2));
+      socket.destroy();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// No confirm prompt: nothing is lost that cannot be retyped, and the button is only enabled when
   /// there is something to clear.
   /// Only ever from this button. See `Entitlement.restore` for why it is never automatic.
   Future<void> _restorePurchase() async {
+    // Logged the way the paywall's restore is, with the same messages; this one wrote nothing (ID-047).
+    _c.logEntry('Restore started.');
     setState(() => _busy = true);
     String message;
+    var failed = false;
     try {
-      message = await Entitlement.restore() ? RestoreMessages.restored : RestoreMessages.noneFound;
+      message = await (widget.testRestore ?? Entitlement.restore)() ? RestoreMessages.restored : RestoreMessages.noneFound;
     } catch (e) {
       message = RestoreMessages.failed(e);
+      failed = true;
     }
+    _c.logEntry(message, isSuccess: message == RestoreMessages.restored, isError: failed);
     if (!mounted) return;
     setState(() => _busy = false);
     _c.setUnlocked(Entitlement.isUnlocked);
@@ -365,7 +412,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       svc = RouterSlotService(client, onLog: _c.onLog);
       firmware = classifyFirmwareTag(await svc.readFirmwareTag());
       if (firmware == RouterFirmware.stock) current = await svc.readMaxActiveVpns();
-      await _c.rememberRouterIp(ip);
+      await _connected(ip);
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
     }
@@ -380,12 +427,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final message = firmware == RouterFirmware.merlin
           ? 'Merlin has no limit on active VPNs, so there is nothing to change.'
           : 'This router firmware is not supported, so nothing was changed.';
+      _c.logEntry(message);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       return;
     }
 
     final chosen = await showDialog<int>(context: context, builder: (_) => _MaxVpnsDialog(current: current));
-    if (chosen == null || chosen == current || !mounted) return;
+    if (chosen == null || !mounted) return;
+    if (chosen == current) {
+      _c.logEntry('Maximum active VPNs left at $current, unchanged.');
+      return;
+    }
 
     setState(() => _busy = true);
     try {
@@ -405,6 +457,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _forgetRouterIp() async {
+    // ID-052: asks first, like the other rows on this screen that remove something.
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: kSurface,
+            title: const Text('Forget the router address?', style: TextStyle(color: kHighlight, fontSize: 14)),
+            content: Text(
+              'Deletes ${_c.rememberedRouterIp} from this phone. The next connect screen starts from the factory '
+              'default instead. No router credentials are stored on this device, so nothing else is removed.',
+              style: const TextStyle(color: kText, fontSize: 12),
+            ),
+            actions: [
+              AppButton(
+                keyValue: 'settings_forget_ip_cancel',
+                label: 'CANCEL',
+                role: ButtonRole.dismiss,
+                onPressed: () => Navigator.pop(ctx, false),
+              ),
+              AppButton(
+                keyValue: 'settings_forget_ip_confirm',
+                label: 'FORGET',
+                role: ButtonRole.destructive,
+                onPressed: () => Navigator.pop(ctx, true),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
     await _c.forgetRouterIp();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -457,7 +538,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // The only row here that gives something back rather than removing it. It is on this screen
         // because this is where the app's one-off actions live, and because someone hunting for it
         // after a new phone will look under settings before they look at a paywall.
-        if (Entitlement.purchasingAvailable)
+        if (Entitlement.purchasingAvailable || widget.testRestore != null)
           _Action(
             keyValue: 'settings_restore_purchase',
             label: 'RESTORE PURCHASE',
@@ -614,5 +695,89 @@ class _MaxVpnsDialogState extends State<_MaxVpnsDialog> {
             ),
           ),
         ),
+      );
+}
+
+/// Counts a reboot up to 100 seconds, one per cent a second as the ASUS WebUI does, and closes as soon as the
+/// router answers again - it is often back well before 100 (ID-054). No buttons: the back key leaves it, and
+/// the reboot carries on either way.
+///
+/// "Answers again" means answering AFTER having stopped: the router takes a few seconds to go down, and a
+/// check that caught it before then would close the count straight away.
+class _RebootProgressDialog extends StatefulWidget {
+  const _RebootProgressDialog({required this.host, required this.port, required this.answers, required this.onFinished});
+
+  final String host;
+  final int port;
+  final Future<bool> Function(String host, int port) answers;
+  final void Function(String message, {bool isSuccess, bool isWarning}) onFinished;
+
+  static const int seconds = 100;
+  static const int checkEverySeconds = 3;
+
+  @override
+  State<_RebootProgressDialog> createState() => _RebootProgressDialogState();
+}
+
+class _RebootProgressDialogState extends State<_RebootProgressDialog> {
+  Timer? _timer;
+  int _elapsed = 0;
+  bool _wentDown = false;
+  bool _checking = false;
+  bool _done = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _tick() async {
+    if (_done || !mounted) return;
+    setState(() => _elapsed++);
+    if (_elapsed >= _RebootProgressDialog.seconds) {
+      _finish('The router has not answered after ${_RebootProgressDialog.seconds} seconds. It may still be starting; '
+          'try again in a minute.', isWarning: true);
+      return;
+    }
+    if (_checking || _elapsed % _RebootProgressDialog.checkEverySeconds != 0) return;
+    _checking = true;
+    final up = await widget.answers(widget.host, widget.port);
+    _checking = false;
+    if (_done || !mounted) return;
+    if (!up) {
+      _wentDown = true;
+    } else if (_wentDown) {
+      _finish('The router answered again after $_elapsed seconds.', isSuccess: true);
+    }
+  }
+
+  void _finish(String message, {bool isSuccess = false, bool isWarning = false}) {
+    _done = true;
+    _timer?.cancel();
+    widget.onFinished(message, isSuccess: isSuccess, isWarning: isWarning);
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        backgroundColor: kSurface,
+        title: const Text('Rebooting the router', style: TextStyle(color: kHighlight, fontSize: 14)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('$_elapsed%', key: const Key('reboot_progress_percent'), style: const TextStyle(color: kText, fontSize: 28)),
+          const SizedBox(height: 12),
+          LinearProgressIndicator(value: _elapsed / _RebootProgressDialog.seconds, color: kHighlight),
+          const SizedBox(height: 12),
+          const Text(
+            'Closes when the router answers again. Back leaves this screen; the reboot carries on.',
+            style: TextStyle(color: kMuted, fontSize: 12),
+          ),
+        ]),
       );
 }

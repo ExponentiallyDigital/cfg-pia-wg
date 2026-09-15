@@ -1,0 +1,107 @@
+# ==========================================================================
+# GitHub Actions Workflow: Update the Google Play store listing text (ID-045)
+# Trigger manually via the Actions tab after editing play-store/description.md
+# or play-store/description_short.md
+# ==========================================================================
+name: "Update Play listing"
+run-name: "Play listing - en-AU - ${{ inputs.check_only && 'check only' || 'publish' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: "Only check the text against the limits; send nothing to Google Play"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: play-listing
+  cancel-in-progress: false # an edit in flight must finish; queue the second run
+
+jobs:
+  listing:
+    name: Update the en-AU store listing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PACKAGE_NAME: com.exponentiallydigital.pia_wireguard_cfga
+      LISTING_LANGUAGE: en-AU
+
+    steps:
+      # ------------------------------------------------------------
+      # Step A: The listing text, and a Dart SDK to check it with
+      # ------------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: "stable"
+          cache: true
+
+      # ------------------------------------------------------------
+      # Step B: Check both descriptions before anything is sent
+      # ------------------------------------------------------------
+      # tool/play_listing.dart: the full description stops at 4,000 characters or more, the short one
+      # above 80. It writes the exact request body, so what was counted is what gets sent, and a failure
+      # exits 1 naming the file, its length and how far over it is.
+      - name: Check the listing text
+        run: dart tool/play_listing.dart --out "$RUNNER_TEMP/listing.json"
+
+      - name: Check only - nothing sent
+        if: ${{ inputs.check_only }}
+        run: echo "::notice::Check only - the listing text is within the limits, and nothing was sent to Google Play."
+
+      # ------------------------------------------------------------
+      # Step C: An access token for the Android Publisher API
+      # ------------------------------------------------------------
+      # The same service account key the release and promote workflows use. It needs the Play Console
+      # permission to edit the store listing, which uploading and promoting releases does not grant.
+      # No credentials file is written to the workspace.
+      - name: Authenticate to Google
+        id: auth
+        if: ${{ !inputs.check_only }}
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          credentials_json: ${{ secrets.PLAY_CONSOLE_JSON_KEY }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/androidpublisher
+          create_credentials_file: false
+          export_environment_variables: false
+
+      # ------------------------------------------------------------
+      # Step D: One edit - open it, patch the listing, commit it
+      # ------------------------------------------------------------
+      # Play changes a store listing only through an edit. If anything fails after the edit is opened,
+      # the edit is deleted rather than left open, and the listing is unchanged.
+      - name: Publish the store listing
+        if: ${{ !inputs.check_only }}
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          set -euo pipefail
+          api="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE_NAME"
+          call() {
+            curl -sS --fail-with-body -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" "$@"
+          }
+
+          edit_id="$(call -X POST -d '{}' "$api/edits" | jq -r '.id')"
+          if [ -z "$edit_id" ] || [ "$edit_id" = "null" ]; then
+            echo "::error::Google Play did not open an edit, so nothing was changed."
+            exit 1
+          fi
+          trap 'if [ -n "${edit_id:-}" ]; then call -X DELETE "$api/edits/$edit_id" > /dev/null || true; echo "::error::The listing was not changed; edit $edit_id was deleted."; fi' ERR
+          echo "Opened edit $edit_id"
+
+          call -X PATCH --data-binary @"$RUNNER_TEMP/listing.json" "$api/edits/$edit_id/listings/$LISTING_LANGUAGE" \
+            | jq -r '"Patched \(.language): full description \(.fullDescription | length) characters, short description \(.shortDescription | length)"'
+
+          call -X POST "$api/edits/$edit_id:commit" | jq -r '"Committed edit \(.id)"'
+          edit_id=""
+          echo "::notice::The $LISTING_LANGUAGE store listing now carries play-store/description.md and play-store/description_short.md."

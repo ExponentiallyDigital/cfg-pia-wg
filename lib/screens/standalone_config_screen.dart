@@ -15,8 +15,8 @@
 //
 // Reuses PiaService for generation; PIA credentials/DNS are read from and written back to the shared
 // SessionController so they pre-fill the router and watchdog screens (spec 2.1.1). The old 180s
-// session timer is gone (replaced by the global 10-minute idle wipe); the 60s clipboard auto-clear
-// lives in the controller and keeps running after leaving the screen.
+// session timer is gone, and so is the idle wipe that replaced it: credentials stay until the app exits.
+// The 60s clipboard auto-clear lives in the controller and keeps running after leaving the screen.
 
 import 'dart:io';
 

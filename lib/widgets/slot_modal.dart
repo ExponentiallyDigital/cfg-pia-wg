@@ -553,15 +553,18 @@ class _SlotModalState extends State<SlotModal> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('wgc$slotNum',
-                            style: const TextStyle(color: kHighlight, fontFamily: 'monospace', fontWeight: FontWeight.bold)),
-                        // configured region for this slot appears in white
-                        Text(
-                          desc,
-                          style: TextStyle(
-                            color: info.isEmpty ? kMuted : Colors.white,
-                            fontSize: 12,
-                          ),
+                        // One line, `wgc1:pia-region_name`, the way every log line and dialog names a slot (ID-035).
+                        // The slot stays teal and the region white; an empty slot says so in grey.
+                        Text.rich(
+                          TextSpan(children: [
+                            TextSpan(
+                              text: 'wgc$slotNum',
+                              style: const TextStyle(color: kHighlight, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                            ),
+                            info.isEmpty
+                                ? TextSpan(text: ' $desc', style: const TextStyle(color: kMuted, fontSize: 12))
+                                : TextSpan(text: ':${desc.trim()}', style: const TextStyle(color: Colors.white)),
+                          ]),
                         ),
                         // A watchdog whose schedule has been removed still has its settings on
                         // the router, so it gets a badge of its own rather than disappearing.
