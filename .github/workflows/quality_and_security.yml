@@ -38,6 +38,7 @@ jobs:
   # ============================================================
   quality:
     name: Quality & static analysis
+    needs: osv-scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -89,6 +90,7 @@ jobs:
   # ============================================================
   build-debug:
     name: Build debug APK
+    needs: osv-scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -123,16 +125,23 @@ jobs:
           retention-days: 1
 
   # ============================================================
-  # Job 3: OSV dependency vulnerability scan
+  # Job 3: OSV dependency vulnerability scan - every other job waits on it
   # ============================================================
+  # quality, build-debug and codeql `need` this job (and security needs build-debug), so a failed scan - a
+  # vulnerability found, or the scanner itself failing - stops the run rather than spending fifteen minutes
+  # on jobs whose result no longer matters (ID-056).
+  #
+  # No --exclude. osv-scanner renamed it --experimental-exclude, and the v2.6.0 scanner rejects the old name
+  # ("flag provided but not defined: -exclude"). The two paths it named were the runner's own Go toolchain,
+  # which is outside ./ and not visible inside the scanner's container, so they never excluded anything.
+  # The reusable workflow runs the scanner with continue-on-error; before v2.6.0 it then reported a scan
+  # that wrote no results as clean, so a scanner failure could pass unnoticed. v2.6.0 fails the job instead.
   osv-scan:
     name: OSV dependency scan
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
     with:
       scan-args: |-
         -r ./
-        --exclude=/usr/local/go
-        --exclude=/opt/hostedtoolcache/go
     permissions:
       contents: read
       security-events: write
@@ -170,6 +179,7 @@ jobs:
   # ============================================================
   codeql:
     name: CodeQL (${{ matrix.language }})
+    needs: osv-scan
     runs-on: ubuntu-latest
     permissions:
       security-events: write

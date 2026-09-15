@@ -25,14 +25,14 @@ Work items below use these three-letter prefixes.
 | DELETE | Removal of a file, feature, or item |
 | DOC | Documentation |
 | FIX | Bug fix |
-| GUI | User interface change |
+| GUI | User interface change, may altapoear under code UI |
 | INF | Informational note, points elsewhere for detail |
 | MOD | Code modification or optimisation |
 | NOTE | General note |
 | REL | Release process or release readiness item |
 | SEC | Security related change |
 | TST | Test added or updated |
-| UI | User interface, element or copy level |
+| UI | User interface, element or copy level, may also appear under code GUI|
 
 Bold the first sentence only on multi-sentence items, as a scannable headline. Single-sentence items stay plain.
 
@@ -81,6 +81,7 @@ Work items for the **current** release:
 - ID-021 DOC: Update Play Store description. The text in `play-store/description.md` and `description_short.md` is done (2026-09-15); this closes when ID-045 first publishes it.
 - ID-005 ADD: **say when a slot's DNS is the same as the router's own encrypted-DNS servers.** When they match, the firmware's per-tunnel `iif lo` rule sends the router's own DNS-over-TLS - the lookups for every device that resolves through the router - through the first tunnel, so that one tunnel failing takes names away from the whole LAN (BACKLOG ID-001: the router's own DNS follows the first tunnel). The app must not change either setting (CONTEXT: the user's WebUI DNS settings are theirs), so this is information only: a note at stock CREATE and EDIT naming the overlap. Measured 2026-09-14: the WebUI's list is `dnspriv_rulelist`, as `<IP>port>hostname>` records (`<9.9.9.9>853>dns.quad9.net><149.112.112.112>853>dns.quad9.net>` on the test router), with `dnspriv_enable` `1` while DNS-over-TLS is on. Waits on ID-011, Andrew's router test in BACKLOG: its result decides this note's wording and the README prerequisite.
 - ID-006 FIX: **the watchdog passes a tunnel that handshakes but cannot resolve names.** Measured on hardware 2026-09-13/14: devices pinned to `wgc4` got no answer from 9.9.9.9 on UDP 53 or TCP 853 (conntrack `[UNREPLIED]`), while ping to 9.9.9.9 and HTTPS and DNS over HTTPS to 1.1.1.1 worked through the same tunnel. The server was `us_alabama`. It seemed to recur after `wgc4` was recreated on `aus_perth`, but the WireGuard peer key and tunnel address were unchanged - the recreate never reached the running tunnel (see the CREATE entry above) - so both runs were Alabama. The same Quad9 redirect worked on `wgc3` (`france`), and every slot's firewall rules, allowed IPs, DNS and MTU were identical, so nothing points at the slot. Devices pinned to it had no name resolution, and the watchdog logged a recent handshake every five minutes and never moved it to another server. Confirmed 2026-09-14: after `wgc4` was deleted and recreated on `aus_perth` (new peer key, exit shown as Perth), a device pinned to it resolved names through the same Quad9 redirect. Needs a probe that exercises the slot's own DNS servers through the tunnel. The design is open: on stock the router's own traffic is not routed into `wgcN` (`to <dns> iif lo lookup <table>` matches the lowest table first), which is why `ping -I` was abandoned. Design input, 2026-09-14: the router's OWN lookup (`nslookup <name> 127.0.1.1`, through stubby) travels through the FIRST tunnel whenever slot DNS matches the router's DNS-over-TLS servers, and failing it takes name lookups from every device that resolves through the router (BACKLOG ID-001, reproduced). It is cheap to run on the router and worth probing - but it tests that first tunnel, not the watchdog's own slot, so it is one half of the design, not all of it. Sequenced last: designed with Andrew once ID-011's router test is done.
+- ID-057 REL: **Andrew: publish the Play Store listing text with the Update Play listing workflow (ID-045), when the new text should be the public description.** A store listing belongs to the app, not to a track - there is no separate Internal Testing description - so a real run replaces the app's main `en-AU` short and full descriptions for everyone, production and every testing track, once Google's review approves the change. Run it with check only first. To choose when an approved change goes live, turn on Managed publishing in Play Console before the real run. The workflow can be started only from `main`, since GitHub runs a manually triggered workflow only from the default branch. Closes ID-021.
 
 ---
 
@@ -93,6 +94,10 @@ Every release committed to GitHub **must** contain the version formatted as "vN.
 When a work item in "1.2. WIP" is completed, move it to the bottom of the current release block below, keeping its ID.
 
 Whoever commits a build opens the next release block - a new header line above the current one - and bumps the version and build number in `pubspec.yaml` to match.
+
+2026-09-15 v0.8.80 build 450 - in progress
+
+- ID-056 FIX: **the OSV dependency scan runs again, and a failed scan stops the Quality & security run.** The pull request from `dev` to `main` failed it with "Incorrect Usage: flag provided but not defined: -exclude". `quality_and_security.yml` passed `--exclude=/usr/local/go` and `--exclude=/opt/hostedtoolcache/go`, added 2026-07-20 when osv-scanner still had `--exclude`; it is now `--experimental-exclude`, and the v2.6.0 scanner that ID-036 pinned rejects the old name. Both paths were the runner's own Go toolchain, outside the scanned `./` and not visible inside the scanner's container, so they never excluded anything and are gone rather than renamed. The failure had been possible to miss: the reusable workflow runs the scanner with `continue-on-error`, and before v2.6.0 it reported a scan that wrote no results as clean; v2.6.0 fails the job instead, which is how this surfaced. Quality, the debug build and CodeQL now `need` the OSV scan (MobSF needs the debug build), so a vulnerability or a scanner failure skips the rest of the run instead of spending fifteen minutes on it; `release.yml` already refuses to release unless the whole workflow succeeds.
 
 2026-09-15 v0.8.79 build 449 - a build pipeline that checks itself, and screens that remember what you told them
 
