@@ -15,6 +15,7 @@
 //
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
 import 'router_command.dart';
@@ -380,11 +381,20 @@ const int kMaxSshCommandBytes = 9000;
 ///
 /// The first truncates (`>`), the rest append (`>>`), so the script can grow without ever
 /// approaching the limit again. Splitting only ever happens at a line boundary.
+/// How many bytes the router will report for [body] once written - what `wc -c` counts.
+///
+/// UTF-8 BYTES, not `String.length`, which counts UTF-16 code units and agrees only for plain ASCII.
+/// The difference failed every watchdog deploy on hardware on 2026-09-20: 77 box-drawing characters,
+/// three bytes each, left the router holding 154 bytes more than the app expected (ID-136). The
+/// trailing newline is the one the heredoc always adds.
+int writtenByteCount(String body) => utf8.encode(body.endsWith('\n') ? body : '$body\n').length;
+
 List<String> heredocWriteCommands(String path, String body, {int maxBytes = 4000}) {
   final b = body.endsWith('\n') ? body : '$body\n';
   final lines = b.split('\n')..removeLast(); // trailing '' from the final newline
   final commands = <String>[];
   final buf = StringBuffer();
+  var bufBytes = 0;
   var first = true;
 
   void flush() {
@@ -392,11 +402,16 @@ List<String> heredocWriteCommands(String path, String body, {int maxBytes = 4000
     commands.add("cat ${first ? '>' : '>>'} '$path' <<'WATCHDOG_EOF'\n${buf}WATCHDOG_EOF\n");
     first = false;
     buf.clear();
+    bufBytes = 0;
   }
 
   for (final line in lines) {
-    if (buf.length + line.length + 1 > maxBytes) flush();
+    // Bytes, as dropbear measures its limit. Counting characters under-counted anything non-ASCII
+    // (ID-136) - harmless at this margin, but the same mistake as the size check it sat beside.
+    final lineBytes = utf8.encode(line).length + 1;
+    if (bufBytes + lineBytes > maxBytes) flush();
     buf.writeln(line);
+    bufBytes += lineBytes;
   }
   flush();
   return commands.isEmpty ? ["cat > '$path' <<'WATCHDOG_EOF'\nWATCHDOG_EOF\n"] : commands;
@@ -981,15 +996,22 @@ class RouterWatchdog {
   /// a missing watchdog script still left cru entries pointing at it, and the app called that
   /// ACTIVE. [what] names the file in the message the user sees.
   Future<void> _writeFile(String path, String body, {required String what, String mode = '+x'}) async {
-    final expected = body.endsWith('\n') ? body.length : body.length + 1;
+    final expected = writtenByteCount(body);
     for (final cmd in heredocWriteCommands(path, body)) {
       await _runHeredoc(cmd, path);
     }
     await _run("chmod $mode '$path'");
     final size = int.tryParse(await _run("wc -c < '$path' 2>/dev/null | tr -d ' '")) ?? 0;
     if (size != expected) {
-      throw Exception('Writing $path failed: the router has $size bytes of a $expected byte file. '
-          'The $what was NOT deployed - check free space on the router filesystem.');
+      // Short and long are different faults, and "check free space" was right for neither case the
+      // app has actually met: a router with 55 MB free reported a long file (ID-136).
+      throw Exception(size < expected
+          ? 'Writing $path failed: the router has $size of the $expected bytes sent, so the file was cut '
+              'short and the $what was NOT deployed. The connection most likely dropped part-way through; '
+              'try again, and if it happens again check that the router has space left on /jffs.'
+          : 'Writing $path failed: the router has $size bytes where $expected were sent, so part of the '
+              'file arrived twice and the $what was NOT deployed. That happens when the connection drops '
+              'and a piece is sent again; try again.');
     }
     // "updated" rather than "written to": the boot script is rewritten on a PAUSE as well as a
     // deploy, and "written to" read as though a pause had redeployed something.
@@ -2162,7 +2184,7 @@ __MAILCMD__
   rm -f "$TMPERR"
 }
 
-# ── Does this tunnel resolve names? (ID-078 / ID-006) ──────────────────────────────────────────
+# -- Does this tunnel resolve names? (ID-078 / ID-006) ------------------------------------------
 #
 # A handshake proves the peer answers the tunnel. It proves nothing about whether anything behind
 # the peer answers: devices pinned to wgc4 went two days without name resolution while the watchdog
@@ -2226,7 +2248,7 @@ dns_probe() {
   return "$DNSRC"
 }
 
-# ── The SMTP host's address, resolved the encrypted way (ID-077) ───────────────────────────────
+# -- The SMTP host's address, resolved the encrypted way (ID-077) -------------------------------
 #
 # This is the lookup worth hiding. The PIA names say the router talks to PIA, which its WireGuard
 # traffic already says; the SMTP hostname names the user's email provider, and nothing else on the

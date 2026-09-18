@@ -1,3 +1,4 @@
+import 'dart:convert';
 // test/router_watchdog_unit_test.dart - pure-function unit tests for the watchdog module.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
@@ -859,6 +860,34 @@ void main() {
         // The normal state for anything built by the watchdog shortcut before ID-126.
         expect(script(), contains('No DNS server set on \$IFACE; skipping the name check'));
       });
+    });
+
+    // ID-136: the script must be plain ASCII. Anything else makes UTF-8 bytes and Dart's character
+    // count disagree - which is exactly how 77 decorative dashes failed every deploy on hardware.
+    test('the deployed script is plain ASCII on both firmwares', () {
+      for (final fw in RouterFirmware.values) {
+        final script = buildWatchdogScript(_valid(email: true), firmware: fw);
+        final odd = script.runes.where((r) => r > 127).map(String.fromCharCode).toSet();
+        expect(odd, isEmpty, reason: '${fw.name} script contains non-ASCII: $odd');
+      }
+    });
+
+    // The failure itself, pinned: a box-drawing dash is three bytes and one character. The old count
+    // said 2 for this; the router said 4.
+    test('the expected size is counted in bytes, as the router counts it', () {
+      expect(writtenByteCount('\u2500\n'), 4);
+      expect(writtenByteCount('\u2500'), 4, reason: 'the heredoc adds the newline');
+      expect(writtenByteCount('abc'), 4, reason: 'plain ASCII is unchanged');
+      expect(writtenByteCount('\u2500' * 77), 77 * 3 + 1);
+    });
+
+    test('heredoc chunks stay under the limit in BYTES, not characters', () {
+      // Each line is 1000 three-byte characters: 1000 characters, 3000 bytes.
+      final body = List.filled(5, '\u2500' * 1000).join('\n');
+      for (final cmd in heredocWriteCommands('/tmp/x', body, maxBytes: 4000)) {
+        final payload = cmd.substring(cmd.indexOf('\n') + 1, cmd.lastIndexOf('WATCHDOG_EOF'));
+        expect(utf8.encode(payload).length, lessThanOrEqualTo(4000));
+      }
     });
 
     test('neither variant grows the deploy payload', () {
