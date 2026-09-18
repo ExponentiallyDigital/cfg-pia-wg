@@ -358,6 +358,9 @@ void main() {
         expect(style.side!.resolve(<WidgetState>{})!.color, kHighlight, reason: 'every outline stays teal (ID-112)');
         expect(style.foregroundColor!.resolve(<WidgetState>{}), destinationColour(d),
             reason: 'icon and label take the destination colour (ID-112)');
+        // ID-128: the chevron means "this opens a screen", which is the same on every row.
+        final chevron = tester.widget<Icon>(iconIn(key, Icons.chevron_right));
+        expect(chevron.color, kHighlight, reason: '$key chevron stays teal');
       }
 
       await _teardown(tester, c);

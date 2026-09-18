@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SelectedContent;
 
 import '../app_colors.dart';
+import '../router_slot_service.dart' show dnsSharedWithRouter;
 import '../session_controller.dart';
 
 const _kMono = TextStyle(color: kText, fontFamily: 'monospace');
@@ -82,6 +83,17 @@ const String kDnsFirstServerNote =
 const String _kDnsExamples = 'Quad9: 9.9.9.9, 149.112.112.112 | Cloudflare: 1.1.1.1, 1.0.0.1';
 
 /// DNS servers field (from main.dart `_buildDnsField`).
+/// Said when a slot's DNS address is one the router uses for its OWN encrypted lookups (ID-005).
+///
+/// Information, not a warning: sharing the address is a reasonable thing to do deliberately, and
+/// the app never changes either setting. What it costs is stated plainly, because the failure is
+/// invisible from the app - a tunnel that looks connected and answers nothing takes name resolution
+/// away from every device that has not been pinned to a slot.
+const String kDnsMatchesRouterNote =
+    'Your router uses this address for its own encrypted DNS. While this slot is running, the '
+    "router's lookups, and those of every device you have not pinned, travel through it - and stop "
+    'if it stops answering.';
+
 class DnsField extends StatelessWidget {
   final TextEditingController controller;
 
@@ -89,10 +101,27 @@ class DnsField extends StatelessWidget {
   /// STANDALONE's `.conf` goes to another client, which uses both servers.
   final bool firstServerNote;
 
-  const DnsField({super.key, required this.controller, this.firstServerNote = false});
+  /// The router's own encrypted-DNS servers, from `RouterSlots.routerDotServers` (ID-005). Empty
+  /// off stock, with DNS Privacy off, or wherever the caller has no router to ask - STANDALONE's
+  /// config goes to another client entirely, so none of this applies there.
+  final Set<String> routerDotServers;
+
+  const DnsField({
+    super.key,
+    required this.controller,
+    this.firstServerNote = false,
+    this.routerDotServers = const {},
+  });
 
   @override
-  Widget build(BuildContext context) => TextFormField(
+  Widget build(BuildContext context) => ValueListenableBuilder<TextEditingValue>(
+        // Rebuilt as the field is typed into, so the note appears on the address that caused it
+        // rather than after a save.
+        valueListenable: controller,
+        builder: (context, value, _) => _field(dnsSharedWithRouter(value.text, routerDotServers)),
+      );
+
+  Widget _field(Set<String> shared) => TextFormField(
         controller: controller,
         style: const TextStyle(color: kText, fontFamily: 'monospace', fontSize: 13),
         decoration: InputDecoration(
@@ -101,14 +130,23 @@ class DnsField extends StatelessWidget {
           prefixIcon: const Icon(Icons.dns_outlined, color: kMuted, size: 18),
           helperText: firstServerNote ? null : _kDnsExamples,
           helperStyle: const TextStyle(color: kHighlight, fontSize: 11),
-          helperMaxLines: 2, // <-- allows wrapping on small screens
-          // The note in grey under the teal examples, so the two read as a suggestion and a caution.
-          helper: firstServerNote
-              ? const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_kDnsExamples, style: TextStyle(color: kHighlight, fontSize: 11)),
-                  SizedBox(height: 2),
-                  Text(kDnsFirstServerNote,
-                      key: Key('dns_first_server_note'), style: TextStyle(color: kMuted, fontSize: 11)),
+          helperMaxLines: 6,
+          // The notes in grey under the teal examples, so they read as a suggestion and then a
+          // caution. The overlap note is amber: it is the one that can cost the whole house its DNS.
+          helper: firstServerNote || shared.isNotEmpty
+              ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text(_kDnsExamples, style: TextStyle(color: kHighlight, fontSize: 11)),
+                  if (firstServerNote) ...[
+                    const SizedBox(height: 2),
+                    const Text(kDnsFirstServerNote,
+                        key: Key('dns_first_server_note'), style: TextStyle(color: kMuted, fontSize: 11)),
+                  ],
+                  if (shared.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text('${shared.join(' and ')}: $kDnsMatchesRouterNote',
+                        key: const Key('dns_matches_router_note'),
+                        style: const TextStyle(color: kWarn, fontSize: 11)),
+                  ],
                 ])
               : null,
         ),

@@ -332,6 +332,30 @@ void main() {
       }
     });
 
+    // ID-065: the credentials are shared by every watchdog on the router, and a PAUSED one has no
+    // cron entry - so asking `cru` alone deleted them out from under it, and its next reconfigure
+    // aborted with "PIA username is not set". More likely since ID-095 made pausing normal.
+    test('a paused watchdog on another slot keeps the shared PIA credentials', () async {
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('cru l')) return ''; // nothing scheduled anywhere
+        // The probe is one shell line that echoes 1 per configured slot; wgc5 is paused, not gone.
+        if (cmd.contains('wgc5_wd_check_interval')) return '1';
+        return '';
+      });
+      await _wd(c).stopWatchdog(1);
+
+      expect(c.commands.any((x) => x.contains('nvram unset cfg_pia_wg_user')), isFalse);
+      expect(c.commands.any((x) => x.contains('nvram unset cfg_pia_wg_password')), isFalse);
+    });
+
+    test('the last watchdog of all still takes the credentials with it', () async {
+      final c = RecordingSSHClient(responder: (_) => '');
+      await _wd(c).stopWatchdog(1);
+
+      expect(c.commands.any((x) => x.contains('nvram unset cfg_pia_wg_user')), isTrue);
+      expect(c.commands.any((x) => x.contains('nvram unset cfg_pia_wg_password')), isTrue);
+    });
+
     // ID-098: raising the VPN cap is a change the app makes to a router-wide setting, so an
     // uninstall puts it back - and only when the app is what moved it.
     test('uninstall puts the VPN cap back to what the app found', () async {
@@ -469,6 +493,47 @@ void main() {
 
     // Measured 2026-09-13: creating a watchdog on a wgc4 that was already up ran `restart_vpnc`,
     // which on stock rebuilds VPN routing for every tunnel.
+    // ID-126: a slot built from the watchdog form used to get no DNS at all. Measured on hardware
+    // 2026-09-19: with no `wgcN_dns` the firmware adds no VPN_FUSION redirect, so a device pinned to
+    // that slot sent its traffic through the tunnel and its name lookups out over the WAN.
+    test('the deploy writes the slot DNS the form supplied', () async {
+      useStock();
+      // A slot that already exists and keeps its region, so the deploy takes its simplest path.
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'ip -o link show up') return 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_melbourne';
+        if (cmd.contains('vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(
+        cfg(slot: 1, interval: 5).copyWith(slotDns: '9.9.9.9, 149.112.112.112'),
+        desc: 'aus_melbourne',
+      );
+
+      expect(c.commands.any((x) => x.contains("nvram set wgc1_dns='9.9.9.9, 149.112.112.112'")), isTrue);
+    });
+
+    test('an empty DNS leaves whatever the slot already has alone', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'ip -o link show up') return 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_melbourne';
+        if (cmd.contains('vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
+
+      expect(c.commands.any((x) => x.contains('nvram set wgc1_dns')), isFalse,
+          reason: 'a slot built in MANAGE keeps its own choice');
+    });
+
+    test('the form reads back the slot DNS that is really there', () async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('wgc1_dns') ? '1.1.1.1, 1.0.0.1' : '');
+      final loaded = await _wd(c).loadConfig(1);
+
+      expect(loaded.slotDns, '1.1.1.1, 1.0.0.1');
+    });
+
     // ID-121 / ID-096: a deploy that fails part way used to leave a slot the app read as configured
     // while the router's web interface showed nothing - keys written, profile row added, slot
     // enabled, and then an abort. It now puts the slot back and says which.

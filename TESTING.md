@@ -119,12 +119,17 @@ nvram get vpnc_default_wan
 **CON-1** Wrong SSH password
 
 - Do: MANAGE, enter the right IP and username and a wrong password, CONNECT TO ROUTER.
-- See: "Router SSH connection error: ..." and the form stays, with what you typed.
+- See: "The router refused that username or password." and the form stays, with what you typed.
+- Pass if: APP LOG carries the raw SSH error under that sentence.
 
 **CON-2** Unreachable address
 
 - Do: MANAGE, IP `192.168.50.254`, CONNECT TO ROUTER.
-- See: an error within a few seconds, not a hang.
+- See: "Could not connect to the router at 192.168.50.254", within a few seconds, not a hang.
+- See: no exception text on screen.
+- Pass if: APP LOG carries the raw `SocketException`, so the detail is not lost.
+- Do: turn Wi-Fi off on the phone and connect again.
+- See: the same sentence, naming the address you typed.
 
 **CON-3** Good login
 
@@ -146,6 +151,7 @@ nvram get vpnc_default_wan
 - Do: INSTALL, then INSTALL in the dialog.
 - See: it installs and connects.
 - Pass if: `ls -l /jffs/cfg-pia-wg` lists `jq` and `mailsend-go`.
+- Pass if: APP LOG ends this sequence with "jq and mailsend-go installed; the router has everything this screen needs." and shows no "Unable to locate" after it.
 
 **CON-6** Address with a port
 
@@ -166,14 +172,20 @@ nvram get vpnc_default_wan
 - See: each row has its icon at the left, its label, and a chevron at the right.
 - See: icons in one straight column, labels starting in line.
 - See: EXIT is red with a power icon and no chevron.
+- See: every outline is teal, while each row's icon and label carry that screen's own colour - STANDALONE teal, MANAGE blue, WATCHDOG green, DEVICE ASSIGNMENT amber, ROUTER LOG purple, APP LOG indigo, SETTINGS and ABOUT grey.
 
 **HOM-3** Drawer matches
 
 - Do: open the drawer.
 - See: the same destinations in the same order, the same icons, plus a home icon beside HOME.
+- See: each row's icon and label in the same colour the menu gives it, with no outline.
+- Do: open the drawer from a screen other than HOME.
+- See: the row for the screen you are on is marked by a filled background, not by a change of colour.
 
 **HOM-4** Links
 
+- See: neither line is underlined, and both icons are a muted khaki-gold.
+- See: both icons sit in the same column as the nine menu icons above them.
 - Do: "how to use this app".
 - See: the README section opens.
 - Do: "add a Play Store app review".
@@ -183,11 +195,20 @@ nvram get vpnc_default_wan
 
 - Do: open the app on TABLET.
 - See: the list is no wider than 520 and centred. On the phone it fills the width.
+- See: the block of rows sits optically centred between the header and HOME - spare height above it as well as below, with slightly more below.
+- Pass if: on the phone nothing moved: the rows still start at the top and the screen scrolls as before.
 
 **HOM-6** Nothing that should not be there
 
 - See: no footnotes under the rows, no PAYPAL or PATREON buttons.
 - See: the help and review lines sit together directly under EXIT.
+
+**HOM-7** Every screen says what it is
+
+- Do: open each of the nine destinations in turn.
+- See: each one is headed with the name of the menu item you tapped, in that item's colour - including STANDALONE, DEVICE ASSIGNMENT, SETTINGS and ABOUT, which had no heading before.
+- See: the headings are all one size and style, spaced capitals.
+- See: the header's "Exponentially Digital" and the version number are not underlined, and both still open their pages.
 
 ---
 
@@ -294,6 +315,17 @@ nvram get vpnc_default_wan
 - See: the ACTIVE badge goes.
 - Pass if: `wg show interfaces` no longer lists wgc5.
 
+**MAN-13** Disable pauses a watchdog rather than removing it
+
+- Do: on a slot that HAS a watchdog, MANAGE, DISABLE.
+- See: the prompt says the watchdog will be paused and that ENABLE brings both back.
+- Do: confirm.
+- See: the slot shows WATCHDOG PAUSED.
+- Pass if: `cru l` has no `watchdog_wgcN` lines, `nvram get wgcN_wd_check_interval` is still set, and `/jffs/cfg-pia-wg/watchdog_wgcN.sh` is still there.
+- Do: ENABLE, with check targets already stored.
+- See: the tunnel comes up and the slot shows WATCHDOG ACTIVE again.
+- Pass if: `cru l` lists both `watchdog_wgcN` lines again, at the interval it had before.
+
 **MAN-9** Create over a running tunnel, new region
 
 - Do: with wgc1 up, note `wg show wgc1 latest-handshakes`, then CREATE on wgc1 in a different region.
@@ -311,14 +343,43 @@ nvram get vpnc_default_wan
 
 - Do: EDIT wgc5, change `ep_addr` to `192.0.2.1`, SAVE, ENABLE.
 - See: after a minute or two, an error that the tunnel came up but the PIA server never answered.
-- See: the slot shows disabled.
-- Do: CREATE wgc5 again to repair it.
+- See: the error offers RECREATE beside NOT NOW.
+- Do: NOT NOW.
+- See: the slot shows disabled and nothing else happened.
+- Do: ENABLE again, then RECREATE on the error.
+- See: the CREATE flow starts for that same slot - region, then PIA credentials and DNS.
+- Pass if: the slot is rebuilt and ENABLE brings it up.
 
 **MAN-12** Delete
 
 - Do: select wgc3, DELETE.
 - See: the prompt names the VPN: `Delete VPN wgc3:pia-<region>?`
 - See: the row reads `wgc3 <empty slot>`.
+
+**MAN-14** Delete takes a paused watchdog with it
+
+- Do: on a slot whose watchdog is PAUSED (MAN-13 leaves one), MANAGE, DELETE.
+- See: the prompt says the watchdog goes too - schedule, script and settings - and that nothing is left to ENABLE.
+- Do: confirm.
+- Pass if: `ls /jffs/cfg-pia-wg/watchdog_wgcN.sh` finds nothing, and `nvram show | grep wgcN_wd_` prints nothing - the SMTP password included.
+
+**MAN-15** Slots read wgc5 first, and the buttons are colour-coded
+
+- See: on MANAGE and on WATCHDOG, the list runs wgc5 at the top down to wgc1.
+- See: DEVICE ASSIGNMENT's picker lists them the same way, except that a RUNNING tunnel sorts above a stopped one.
+- See: CREATE green, ENABLE teal, EDIT blue, DISABLE amber, DELETE red, VIEW ROUTER WATCHDOG LOG grey.
+- See: a greyed-out button is grey whatever its verb colour would be.
+
+**MAN-16** ACTIVE means answered, not merely up
+
+- Do: with wgc1 up and working, open MANAGE.
+- See: `● ACTIVE` in teal.
+- Do: on the router, `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`, then wait five minutes and REFRESH the screen by leaving it and coming back.
+- See: the badge is now amber and reads `● UP, NO ANSWER` - the interface is still up, and nothing is answering it.
+- Pass if: APP LOG says wgc1 is up but its server has not answered for over 5 minutes.
+- Do: ENABLE, or let the watchdog rebuild it.
+- See: teal `● ACTIVE` again.
+- Note: this is what an expired PIA registration looks like, which is why it is worth knowing by sight.
 
 ---
 
@@ -429,8 +490,10 @@ Use a 5 minute check interval throughout. PIA rate-limits token requests: test o
 **WD-16** Watchdog log
 
 - Do: VIEW ROUTER WATCHDOG LOG.
-- See: the heading names the slot and region; newest lines at the bottom; on a tablet the text fills the width.
+- See: the heading names the slot and region, in green; newest lines at the bottom; on a tablet the text fills the width.
 - See: after midnight, yesterday's lines above today's.
+- See: `Deploy SUCCESS`, `Reconfig SUCCESS` and `Alert email sent (SUCCESS)` in teal; errors and lost connectivity in red; the steps of a rebuild - `Deploying`, `CA cert`, `PIA token`, `Servers:`, `Latency to` - in amber.
+- See: the routine `Checking ... connectivity` and `Handshake Ns ago` lines left plain.
 - Do: CLEAR, confirm.
 - See: "Watchdog log cleared for wgc1." and an empty log.
 
@@ -448,6 +511,64 @@ Use a 5 minute check interval throughout. PIA rate-limits token requests: test o
 - Do: CREATE/EDIT on wgc1, interval `10`, SAVE & DEPLOY.
 - Pass if: `nvram get wgc1_wd_check_interval` reads `10`, and `cru l` and the boot persistence file both show `*/10 * * * *` for `watchdog_wgc1`.
 - Do: set it back to `5`.
+
+**WD-23** The watchdog form writes the slot's DNS
+
+- Do: WATCHDOG, CREATE/EDIT on an EMPTY slot. Note the DNS field - it should be filled in, not grey.
+- Do: SAVE & DEPLOY, and wait for it to finish.
+- Pass if: `nvram get wgcN_dns` returns what the field showed.
+- Pass if: `ip rule show | grep "iif lo"` now lists two rules for that slot's DNS addresses.
+- Pass if: `iptables -t nat -S VPN_FUSION | grep <a pinned device's IP>` shows its port-53 lookups redirected to that slot's first DNS server.
+- Note: before this build a slot built here had no DNS at all, so a pinned device's lookups left over the WAN instead of through its tunnel. That is what these three checks are about.
+
+**WD-24** The watchdog's own lookups are encrypted
+
+- See: on the WATCHDOG form, "The watchdog's own encrypted DNS" with Cloudflare and `1.1.1.2` filled in.
+- Do: choose Quad9 from the list.
+- See: the note turns amber, because `9.9.9.9` is an address your slots use - the one arrangement to avoid.
+- Do: choose Cloudflare again, SAVE & DEPLOY.
+- Pass if: the watchdog log's next rebuild says `Name lookups encrypted via security.cloudflare-dns.com (1.1.1.2)`.
+- Pass if: `grep 'Invalid DL URL' /jffs/curllst` finds nothing - the URL is a hostname, which is what stock firmware accepts.
+- Do: to prove it end to end, break the tunnel as in BRK-2 and watch it rebuild.
+- Pass if: it rebuilds normally, and the log carries no "retrying once in 3s WITHOUT encrypted DNS".
+
+**WD-25** The mail server's name is resolved privately too
+
+- Do: with email alerting on, trigger an alert - BRK-2 is the quickest.
+- Pass if: the watchdog log says `SMTP host resolved privately to <address>` before the email goes.
+- Pass if: the email arrives, which proves certificate verification still passed.
+- Pass if, straight afterwards: `grep cfg-pia-wg /etc/hosts` finds nothing. The entry is removed after every send.
+- Do: `cat /etc/hosts` and confirm it looks untouched otherwise.
+- Note: if the log says it could not resolve privately, the mailer looked the name up in the clear and the email still went. That is the designed fallback, not a failure.
+
+**WD-20** PIA credentials are checked before the router is touched
+
+- Do: WATCHDOG, CREATE/EDIT on an EMPTY slot. Note `nvram get wgcN_desc` and `nvram get wgcN_priv` first - both should be empty.
+- Do: enter a wrong PIA password, fill the rest, SAVE & DEPLOY.
+- See: "PIA rejected this username and password", and the form stays open.
+- Pass if: nothing was written - `nvram get wgcN_desc`, `wgcN_priv` and `wgcN_wd_check_interval` are all still empty, `cru l` has no new lines, and no alert email arrives.
+- Do: correct the password, SAVE & DEPLOY.
+- See: it deploys as usual.
+
+**WD-22** A paused watchdog keeps the shared PIA credentials
+
+- Do: watchdogs on wgc1 and wgc5, both deployed.
+- Do: MANAGE, select wgc5, DISABLE - which pauses its watchdog (MAN-13).
+- Do: WATCHDOG, select wgc1, DELETE, confirm. That is the last SCHEDULED watchdog on the router.
+- Pass if: `nvram get cfg_pia_wg_user` and `nvram get cfg_pia_wg_password` are both still set.
+- Do: MANAGE, select wgc5, ENABLE.
+- Pass if: the watchdog runs its next check and rebuilds without "PIA username is not set" in its log.
+
+**WD-21** A deploy that fails puts the slot back
+
+- Do: on a slot that already HOLDS a working configuration, note `nvram get wgcN_ppub` and its region.
+- Do: unplug the router's WAN (or pull its internet), then WATCHDOG, CREATE/EDIT on that slot, choose a DIFFERENT region, SAVE & DEPLOY.
+- See: it fails, and the message names the cause, says the slot was left as it was, and says the watchdog will try again in N minutes.
+- Pass if: `nvram get wgcN_ppub` and `wgcN_desc` are what they were before, and the router's web interface shows the slot exactly as it did.
+- Pass if: `cru l` still lists the watchdog - the schedule stays on purpose, because it is the retry.
+- Do: plug the WAN back in and wait one check interval.
+- See: the watchdog rebuilds the tunnel by itself.
+- Note: on an EMPTY slot the same failure leaves it empty rather than half-built. Worth doing both if there is time.
 
 ---
 
@@ -471,8 +592,9 @@ rm -f /tmp/breakit
 - Do: wait. It takes 5 minutes after the last handshake, plus up to one check interval.
 - See: watchdog log "No handshake and both pings failed", "Connectivity lost; reconfiguring (attempt #1)", then `Reconfig SUCCESS: region pia-<region> via ...`.
 - See: a SUCCESS email with the outage duration and the new server.
+- See: between "Interface wgc1 is up" and the SUCCESS line, "Waiting for a handshake on wgc1" then "Handshake Ns ago after Ns" - the rebuild no longer calls itself a success on the interface alone.
 - Pass if: `wg show wgc1` lists the NEW key from `nvram get wgc1_ppub`, the next check logs `Handshake Ns ago`, and TABLET's exit IP is back in the region.
-- Note: on stock this also settles BACKLOG ID-070. Write down whether the new key reached the interface.
+- Pass if, on stock: the log shows "Restarting wgc1 through VPN Fusion (vpnc_unit=N)" rather than the stop/start pair, and N matches the row wgc1 occupies in `nvram get vpnc_clientlist`, counting from 0.
 
 **BRK-2** Expired registration (the quick one)
 
@@ -489,9 +611,9 @@ wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
 **BRK-3** Interface down
 
 - Do: `ifconfig wgc1 down`, then `/jffs/cfg-pia-wg/watchdog_wgc1.sh`.
-- See: watchdog log "Interface wgc1 is down or absent", then "Connectivity lost; reconfiguring (attempt #1)", then "Reconfig SUCCESS".
+- See: watchdog log "Interface wgc1 is down or absent", then "Connectivity lost; reconfiguring (attempt #1)", then the handshake wait, then "Reconfig SUCCESS".
 - Pass if: `wg show interfaces` lists wgc1 again and the next check logs `Handshake Ns ago`.
-- Note: if it ends "did not come up after reconfiguration", write that against BACKLOG ID-070.
+- Pass if: the SUCCESS email arrives only after the handshake - a rebuild that never handshakes must now end "came up but the PIA server never answered it (no handshake in 20s)" and email FAILED instead.
 
 **BRK-4** A tunnel you turned off is left alone
 
@@ -503,13 +625,27 @@ wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
 
 **BRK-5** A rebuild that fails
 
-- Do: WATCHDOG CREATE/EDIT on wgc1, wrong PIA password, SAVE & DEPLOY.
-- Do: break it as in BRK-2.
-- See: watchdog log "ERROR: failed to obtain PIA token ..." and a FAILED email with WHAT TO DO, the attempt count and the last 10 router log lines.
+The app now asks PIA about the credentials before it writes them (WD-20), so a wrong password typed
+into the form never reaches the router. Break the stored ones instead.
+
+- Do: with a working watchdog on wgc1, on the router: `nvram set cfg_pia_wg_password=wrong && nvram commit`
+- Do: break the tunnel as in BRK-2.
+- See: watchdog log "PIA rejected the username and password stored on this router (HTTP 403)", naming where to fix it - not `exit 0, HTTP 403, body 66B: {`.
+- See: a FAILED email with WHAT TO DO, the attempt count and the last 10 router log lines.
 - Pass if: `cat /tmp/watchdog_backoff_wgc1` has a count of 1 and a timestamp.
-- Do: right password, SAVE & DEPLOY.
+- Do: WATCHDOG CREATE/EDIT on wgc1, enter the right PIA password, SAVE & DEPLOY.
 - See: it recovers and emails SUCCESS.
 - Do not repeat this test straight away: PIA refuses repeated token requests for a while.
+
+**BRK-7** A WAN outage does not climb the backoff ladder
+
+- Do: with a watchdog on wgc1, note `cat /tmp/watchdog_backoff_wgc1` (count and timestamp).
+- Do: unplug the router's internet, then run `/jffs/cfg-pia-wg/watchdog_wgc1.sh` three times, a few seconds apart.
+- See: each run logs only "no Internet on WAN interface, exiting."
+- Pass if: no "Connectivity lost; reconfiguring (attempt #N)" lines, and no alert emails.
+- Pass if: `cat /tmp/watchdog_backoff_wgc1` is UNCHANGED - the outage added no rungs.
+- Do: plug the internet back in, then run the script again.
+- See: it makes a real attempt straight away rather than waiting out a ladder it never earned.
 
 **BRK-6** Backoff ladder, with no PIA traffic
 
@@ -536,6 +672,7 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 **DEV-2** Stage, then discard
 
+- See, before touching anything: DISCARD CHANGES and APPLY 0 CHANGES side by side on one row, both greyed, each half the width.
 - Do: pick wgc1 for TABLET.
 - See: the row marks itself changed; "APPLY 1 CHANGE" and DISCARD CHANGES appear.
 - Do: DISCARD CHANGES.
@@ -719,7 +856,8 @@ Changing the default stops every tunnel and starts them again, for about a minut
 **LOG-3** Connection drops mid-session
 
 - Do: with MANAGE open, reboot the router. When it is back, press ENABLE or DISABLE.
-- See: APP LOG "Router SSH connection dropped; reconnecting." and the action completes.
+- See: APP LOG "Router SSH connection dropped; reconnecting.", then "Router SSH connection re-established.", and the action completes.
+- Pass if: every `Password auth succeeded` in the router's syslog has a line in APP LOG to account for it.
 
 **LOG-4** Router log paging
 
@@ -727,6 +865,8 @@ Changing the default stops every tunnel and starts them again, for about a minut
 - See: headed ROUTER LOG, opens at the newest lines.
 - Do: scroll to the top.
 - See: older lines load and the text you were reading does not jump; no page starts mid-word.
+- Do: scroll back quickly, several screens at a time, letting page after page load.
+- See: it holds your place each time - it neither jumps back to the newest lines nor throws you several screens down.
 - See: at the very start, it continues into the rotated log if there is one, then "- start of the router log -".
 - Do: select text across the join between two loaded pages.
 - See: it selects in one run.
@@ -784,7 +924,9 @@ Changing the default stops every tunnel and starts them again, for about a minut
 - Do: enter `3`, SAVE.
 - See: "Maximum active VPNs set to 3."
 - Pass if: a third tunnel now enables.
+- Pass if: `nvram get cfg_pia_wg_max_conn_prev` reads `2` - what the router had before the app raised it, which END-1 puts back.
 - Do: set it back to `2`.
+- Pass if: `nvram get cfg_pia_wg_max_conn_prev` is now empty - there is nothing left to undo.
 
 **SET-6** Reboot
 
@@ -824,8 +966,8 @@ UNINSTALL is at the very end of the run: [END](#end).
 **ABT-3** Script from another version
 
 - Do: install a build with a different version over the top, open ABOUT.
-- See: the script version in amber with REDEPLOY TO UPDATE VERSION under it.
-- Do: REDEPLOY TO UPDATE VERSION.
+- See: the script version in amber, and UPDATE WATCHDOG VERSION centred on its own line directly above COPY BUILD INFO, in the same amber.
+- Do: UPDATE WATCHDOG VERSION.
 - See: "Watchdog script updated on wgc1, ..." and the row goes plain.
 - Pass if: no tunnel restarted (`wg show wgcN latest-handshakes` keeps counting).
 
@@ -837,6 +979,7 @@ UNINSTALL is at the very end of the run: [END](#end).
 - See: a prefilled issue carrying the firmware type and version.
 - Do: Open source licenses.
 - See: it opens and does not bleed through the header.
+- See: the link row is centred, and none of the five links is underlined; all five still open.
 
 ---
 
@@ -868,6 +1011,7 @@ UNINSTALL is at the very end of the run: [END](#end).
 
 - Do: switch away for 6 minutes, come back, press an action.
 - Pass if: it reconnects by itself, with one new `Password auth succeeded`.
+- Pass if: APP LOG says "Router SSH connection re-established." - the session the app closed on its own used to reopen in silence.
 
 **EXT-6** Release build privacy
 
@@ -882,6 +1026,13 @@ UNINSTALL is at the very end of the run: [END](#end).
 
 - Do: start an APPLY, open the drawer and go to APP LOG.
 - Pass if: the apply completes (APP LOG shows it) and nothing is left half done.
+
+**EXT-9** New icon and splash screen
+
+- See: the launcher icon is the new one, on the home screen and in the app drawer.
+- Do: cold start the app - swipe it away first.
+- See: a dark splash on the app's own background while it starts, not a white flash.
+- See: on Android 12 and later, the system's circular splash uses the same artwork on the same background.
 
 ---
 
@@ -952,10 +1103,14 @@ Before starting, read [R8](#r8): the tester must be on BOTH Play Console lists, 
 
 **BUY-5** Restore by hand
 
-- Do: SETTINGS, RESTORE PURCHASE.
+- Do: SETTINGS, RESTORE PURCHASE, on an account that bought it and a device that has just been reinstalled.
 - See: APP LOG "Restore started.", then "Purchase restored. Everything is unlocked."
+- Do: RESTORE PURCHASE again straight away, now that it is already unlocked.
+- See: "This app is already unlocked on this Google account. Nothing changed." - not "Purchase restored" a second time.
 - Do: the same on an account that never bought it.
 - See: "No purchase found on this Google account."
+- Do: aeroplane mode, then RESTORE PURCHASE.
+- See: a popup saying Google Play could not be reached, with the store's own words kept in APP LOG.
 
 **BUY-6** Offline after buying
 
@@ -1008,7 +1163,10 @@ nvram show | grep cfg_pia_wg             # nothing
 nvram show | grep -E 'wgc[1-9]_wd_'      # nothing
 ls /jffs/cfg-pia-wg                      # gone
 wg show interfaces                       # UNCHANGED: the tunnels are not the app's to remove
+nvram get vpnc_max_conn                  # back to 2, if the app raised it (SET-5); untouched if you set it yourself
 ```
+
+- See: the list of what it did includes either "Put the maximum active VPNs back to 2" or "Left the maximum active VPNs alone - the app never changed it", whichever is true of this run.
 
 **END-2** Uninstall twice
 

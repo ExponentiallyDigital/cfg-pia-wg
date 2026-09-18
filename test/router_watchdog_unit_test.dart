@@ -725,8 +725,9 @@ void main() {
     // the script can exceed dropbear's 9000-byte MAX_CMD_LEN without a single command doing so.
     // (Crossing it as one command is what closed the connection mid-deploy in 402.) Raised
     // 8700 -> 9000 in 400, then 9500 and 10000 in 402, and 24576 in 404 when the alert emails grew
-    // a body worth reading (which took the script from ~9 KB to ~15 KB), 26624 in 420, 28160 in 447, and 29696 in 453 when the
-    // rebuild gained a handshake gate (ID-063) and stock its own restart path (ID-070)
+    // a body worth reading (which took the script from ~9 KB to ~15 KB), 26624 in 420, 28160 in 447, 29696 in 453 when the
+    // rebuild gained a handshake gate (ID-063) and stock its own restart path (ID-070), and 34816 in
+    // 454 for encrypted lookups (ID-076) and the private SMTP lookup (ID-077)
     // for the failed-send DNS diagnostics - growth agreed 2026-09-14, since the script is written in
     // chunks. Prune the script's comments before raising it again.
     //
@@ -786,11 +787,27 @@ void main() {
       }
     });
 
+    // ID-064: a WAN outage must not charge the tunnel for attempts that never happened. The WAN
+    // test sits ABOVE the backoff counter, so an outage neither adds a rung nor logs an attempt.
+    test('the WAN check runs before the backoff ladder', () {
+      for (final fw in RouterFirmware.values) {
+        final script = buildWatchdogScript(_valid(), firmware: fw);
+        final wan = script.indexOf('no Internet on WAN interface, exiting.');
+        final ladder = script.indexOf('# Backoff handling.');
+        final counter = script.indexOf(r'CNT=$((CNT + 1))');
+        final attempt = script.indexOf('Connectivity lost; reconfiguring (attempt');
+        expect(wan, greaterThan(0), reason: fw.name);
+        expect(wan, lessThan(ladder), reason: 'the outage exits before the ladder is touched');
+        expect(wan, lessThan(counter), reason: 'and before the counter is written');
+        expect(wan, lessThan(attempt), reason: 'and before an attempt is claimed in the log');
+      }
+    });
+
     test('neither variant grows the deploy payload', () {
       final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
       final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
-      expect(merlin, lessThan(29696));
-      expect(stock, lessThan(29696));
+      expect(merlin, lessThan(34816));
+      expect(stock, lessThan(34816));
     });
   });
 

@@ -27,7 +27,7 @@ import 'widgets/app_button.dart';
 import 'app_colors.dart';
 import 'firmware.dart';
 import 'pia_service.dart';
-import 'router_slot_service.dart' show kSlotDescPrefix, slotDescFor, slotLabel;
+import 'router_slot_service.dart' show dnsAddressesIn, kSlotDescPrefix, slotDescFor, slotLabel;
 import 'router_watchdog.dart';
 import 'session_controller.dart';
 import 'watchdog_email.dart';
@@ -44,6 +44,9 @@ class WatchdogDialog extends StatefulWidget {
   final String piaUsername, piaPassword; // pre-fill from the session login
   final Future<SSHClient> Function() connect; // captures router ip/user/pass
   final PiaService? piaService; // region listing (defaults to a real PiaService)
+
+  /// The router's own encrypted-DNS servers, so the DNS field can say when the two overlap (ID-005).
+  final Set<String> routerDotServers;
   final RouterWatchdog Function(SSHClient)? serviceFactory; // test seam
 
   const WatchdogDialog({
@@ -57,6 +60,7 @@ class WatchdogDialog extends StatefulWidget {
     this.piaPassword = '',
     this.piaService,
     this.serviceFactory,
+      this.routerDotServers = const {},
   });
 
   @override
@@ -70,6 +74,17 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   final _intervalCtrl = TextEditingController(text: '5');
   final _primaryCtrl = TextEditingController(text: '8.8.8.8');
   final _secondaryCtrl = TextEditingController(text: '1.1.1.1');
+  /// Where the watchdog's own lookups go (ID-076). Prefilled with the default and overridable,
+  /// because the right answer depends on what the rest of the router is doing: the one thing that
+  /// must not happen is picking an address a slot uses, which would route the watchdog's lookups
+  /// into the tunnel it exists to repair.
+  late final _dohUrlCtrl = TextEditingController(text: kDefaultDohResolver.url);
+  late final _dohIpCtrl = TextEditingController(text: kDefaultDohResolver.ip);
+
+  /// The slot's DNS servers (ID-126). Pre-filled with the slot's own when it has them, and with
+  /// the session default when it does not - which is what MANAGE CREATE does, and what a slot built
+  /// from this form never got.
+  late final _dnsCtrl = TextEditingController(text: _c.dns);
   final _piaUserCtrl = TextEditingController();
   final _piaPassCtrl = TextEditingController();
   final _fromCtrl = TextEditingController();
@@ -151,6 +166,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       _intervalCtrl,
       _primaryCtrl,
       _secondaryCtrl,
+      _dnsCtrl,
+      _dohUrlCtrl,
+      _dohIpCtrl,
       _piaUserCtrl,
       _piaPassCtrl,
       _fromCtrl,
@@ -227,6 +245,10 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     _intervalCtrl.text = '${c.cronIntervalMinutes}';
     if (c.primaryIp.isNotEmpty) _primaryCtrl.text = c.primaryIp;
     if (c.secondaryIp.isNotEmpty) _secondaryCtrl.text = c.secondaryIp;
+    if (c.slotDns.trim().isNotEmpty) _dnsCtrl.text = c.slotDns;
+    // A watchdog deployed before build 454 has neither, and gets the default rather than nothing.
+    if (c.dohUrl.trim().isNotEmpty) _dohUrlCtrl.text = c.dohUrl;
+    if (c.dohIp.trim().isNotEmpty) _dohIpCtrl.text = c.dohIp;
     if (widget.piaUsername.isEmpty && c.piaUsername.isNotEmpty) _piaUserCtrl.text = c.piaUsername;
     if (widget.piaPassword.isEmpty && c.piaPassword.isNotEmpty) _piaPassCtrl.text = c.piaPassword;
     _emailEnabled = c.emailAlertsEnabled;
@@ -239,6 +261,56 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     // Credentials recovered from NVRAM count as session-known too, so a user who never typed them
     // still gets them pre-filled elsewhere.
     _rememberPiaCreds();
+  }
+
+  /// Where the WATCHDOG's own lookups go - not the slot's DNS, which is the field above it, and
+  /// the two are easy to confuse. This one is the router asking "where is PIA"; that one is a
+  /// pinned device asking "where is anything" (ID-076).
+  Widget _dohPicker() {
+    final known = kDohResolvers.firstWhere(
+      (r) => r.url == _dohUrlCtrl.text.trim() && r.ip == _dohIpCtrl.text.trim(),
+      orElse: () => const DohResolver('Something else', '', ''),
+    );
+    // The clash that matters: an address this slot also uses for its DNS is routed into this
+    // slot's tunnel, so a broken tunnel would take the watchdog's own lookups with it.
+    final clash = dnsAddressesIn(_dnsCtrl.text).contains(_dohIpCtrl.text.trim()) ||
+        widget.routerDotServers.contains(_dohIpCtrl.text.trim());
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Text("The watchdog's own encrypted DNS", style: TextStyle(color: kHighlight, fontSize: 12)),
+      const SizedBox(height: 4),
+      DropdownButtonFormField<String>(
+        key: const Key('wd_doh_choice'),
+        initialValue: known.url.isEmpty ? '' : known.url,
+        // Without this the menu sizes to its longest label and overflows a narrow phone.
+        isExpanded: true,
+        dropdownColor: kSurface,
+        style: const TextStyle(color: kText, fontSize: 13),
+        decoration: const InputDecoration(isDense: true),
+        items: [
+          for (final r in kDohResolvers)
+            DropdownMenuItem(value: r.url, child: Text(r.label, overflow: TextOverflow.ellipsis)),
+          const DropdownMenuItem(value: '', child: Text('Something else')),
+        ],
+        onChanged: (value) => setState(() {
+          final chosen = kDohResolvers.where((r) => r.url == value);
+          if (chosen.isEmpty) return; // "Something else": leave the fields for the user to fill in
+          _dohUrlCtrl.text = chosen.first.url;
+          _dohIpCtrl.text = chosen.first.ip;
+        }),
+      ),
+      _field(_dohUrlCtrl, 'DoH URL', const Key('wd_doh_url')),
+      _field(_dohIpCtrl, 'DoH server address', const Key('wd_doh_ip')),
+      Text(
+        clash
+            ? 'This address is also used for DNS on this router, so the watchdog\'s own lookups would '
+                'travel through this tunnel - the one it exists to repair. Choose an address nothing else uses.'
+            : 'The watchdog looks up PIA over an encrypted connection to this address. The URL must carry a '
+                'name and the address is how it is reached, which is what stock firmware accepts. Leave both '
+                'empty to look names up in the clear.',
+        key: const Key('wd_doh_note'),
+        style: TextStyle(color: clash ? kWarn : kMuted, fontSize: 11),
+      ),
+    ]);
   }
 
   WatchdogConfig _currentConfig() => WatchdogConfig(
@@ -255,6 +327,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         smtpServer: _smtpServerCtrl.text,
         smtpUsername: _smtpUserCtrl.text,
         smtpPassword: _smtpPassCtrl.text,
+        slotDns: _dnsCtrl.text,
+        dohUrl: _dohUrlCtrl.text,
+        dohIp: _dohIpCtrl.text,
       );
 
   /// The PIA region id a slot description names: the description without the app's prefix.
@@ -512,6 +587,15 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
               _field(_intervalCtrl, 'Check interval (minutes)', const Key('wd_interval'), keyboard: TextInputType.number),
               _field(_primaryCtrl, 'Primary ping IP', const Key('wd_primary')),
               _field(_secondaryCtrl, 'Secondary ping IP', const Key('wd_secondary')),
+              // The slot's own DNS, not a watchdog setting - but this form builds slots, and one
+              // built without it leaves its pinned devices resolving over the WAN (ID-126).
+              DnsField(
+                  controller: _dnsCtrl,
+                  firstServerNote: isStockFirmware,
+                  routerDotServers: widget.routerDotServers),
+              const SizedBox(height: 12),
+              _dohPicker(),
+              const SizedBox(height: 12),
               // PIA and SMTP credentials get a group each: two different logins on one form, and
               // a provider that could not tell them apart would offer the wrong one for both.
               AutofillGroup(

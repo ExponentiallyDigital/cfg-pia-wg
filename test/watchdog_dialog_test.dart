@@ -318,6 +318,7 @@ void main() {
     await tester.pumpWidget(_host(ssh, c));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.byKey(const Key('wd_email_switch')));
     await tester.tap(find.byKey(const Key('wd_email_switch')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('wd_from')), 'f@x.com');
@@ -546,6 +547,7 @@ void main() {
       await tester.pumpWidget(_host(ssh, c));
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(find.byKey(const Key('wd_email_switch')));
       await tester.tap(find.byKey(const Key('wd_email_switch')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('wd_from')), 'f@x.com');

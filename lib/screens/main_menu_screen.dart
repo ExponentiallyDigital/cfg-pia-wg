@@ -156,8 +156,12 @@ class _MenuRow extends StatelessWidget {
           Icon(icon, size: 20),
           const SizedBox(width: 16),
           Expanded(child: Text(label)),
-          // EXIT keeps the chevron's width, so every label starts at the same place.
-          opensScreen ? const Icon(Icons.chevron_right, size: 18) : const SizedBox(width: 18),
+          // EXIT keeps the chevron's width, so every label starts at the same place. The chevron
+          // stays teal whatever colour the row's icon and label take: it means "this opens a
+          // screen", which is the same statement on every row (ID-128).
+          opensScreen
+              ? const Icon(Icons.chevron_right, size: 18, color: kHighlight)
+              : const SizedBox(width: 18),
         ],
       ),
     );
