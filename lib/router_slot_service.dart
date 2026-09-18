@@ -63,6 +63,11 @@ const List<String> kMerlinOnlySlotKeys = ['enforce', 'fw', 'rip'];
 /// sweep by choice.
 const List<String> kVpncRuntimeKeys = ['dut_disc', 'sbstate_t', 'state_t'];
 
+/// Where the app records the `vpnc_max_conn` it found before it first raised the cap, so an
+/// uninstall can put that value back (ID-098). Absent means the app never touched the cap, and an
+/// uninstall leaves it alone.
+const String kMaxActiveVpnsPreviousKey = 'cfg_pia_wg_max_conn_prev';
+
 /// Concurrent-tunnel cap assumed on stock when `vpnc_max_conn` cannot be read. Raising it on the
 /// router is possible, but values above 2 are documented to break boot.
 const int kDefaultStockMaxActiveSlots = 2;
@@ -430,6 +435,18 @@ class RouterSlotService {
   /// on some routers. The app honours the choice; it does not recommend it.
   Future<void> setMaxActiveVpns(int count) async {
     if (count < 2 || count > 5) throw ArgumentError.value(count, 'count', 'must be from 2 to 5');
+    // Remember what the router had BEFORE the app first raised the cap, so an uninstall can put it
+    // back - and only when the app is what moved it (ID-098). Written once: a second raise must not
+    // overwrite the original with the app's own earlier value.
+    if (count > kDefaultStockMaxActiveSlots) {
+      if (int.tryParse((await _read('nvram get $kMaxActiveVpnsPreviousKey')).trim()) == null) {
+        final before = int.tryParse((await _read('nvram get vpnc_max_conn')).trim()) ?? kDefaultStockMaxActiveSlots;
+        await _run('nvram set $kMaxActiveVpnsPreviousKey=$before');
+      }
+    } else {
+      // Back at the default by the user's own hand: there is nothing left for an uninstall to undo.
+      await _run('nvram unset $kMaxActiveVpnsPreviousKey');
+    }
     await _run('nvram set vpnc_max_conn=$count');
     await _run('nvram commit');
     await _logRouter('Maximum active VPNs set to $count');

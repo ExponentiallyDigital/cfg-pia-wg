@@ -27,9 +27,11 @@ import 'package:flutter/material.dart';
 import '../app_colors.dart';
 import '../router_command.dart';
 import '../router_log_paging.dart';
+import '../router_session.dart' show routerConnectMessage;
 import '../router_slot_service.dart' show openSshClient;
 import '../session_controller.dart';
 import '../widgets/app_drawer.dart' show navigateToDestination;
+import '../widgets/app_scaffold.dart';
 import '../widgets/error_presenter.dart';
 import '../widgets/log_buttons.dart';
 import '../widgets/ssh_creds_dialog.dart';
@@ -136,7 +138,7 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     final (ip, user, pass) = creds;
 
     setState(() => _loading = true);
-    String? error;
+    String? error, errorDetail;
     List<int>? sizes;
     String? first;
     LogPage? page;
@@ -150,7 +152,10 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
       _c.routerConnected = true;
       await _c.rememberRouterIp(ip);
     } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+      // Plain English on screen, the raw exception in the log (ID-108).
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
     }
     if (!mounted) return;
     final loaded = page;
@@ -172,25 +177,38 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
-    if (error != null && mounted) await AppErrors.system(context, _c, 'Could not read the router log: $error');
+    if (error != null && mounted) {
+      await AppErrors.system(context, _c, errorDetail == null ? 'Could not read the router log: $error' : error,
+          logDetail: errorDetail);
+    }
   }
 
   /// Fetches one page older than everything loaded, and inserts it ABOVE without moving the view.
   Future<void> _loadOlder() async {
+    // Synchronous, before any await. `_onScroll` checks `_loading` and does not await this, and
+    // `_loading` used to be set only after the credentials future resolved - so a flick that fired
+    // two scroll callbacks in the same gap started two loads, each asking for the SAME page and
+    // each correcting the scroll offset for its own insertion. That is the several-screen jump
+    // reported in ID-099.
+    if (_loading) return;
     final page = nextLogPage(sizes: _sizes, consumed: _consumed);
     if (page == null) {
       setState(() => _exhausted = true);
       return;
     }
+    setState(() => _loading = true);
+    // Anchored to the BOTTOM of the content rather than to how much was added at the top: whatever
+    // appears or disappears above the reader - the page itself, the spinner that was showing while
+    // it loaded - the distance from the last line is what the reader is actually looking at.
+    final anchorFromBottom = _scroll.hasClients ? _scroll.position.maxScrollExtent - _scroll.offset : 0.0;
+
     final creds = await _credentials(prompt: false);
-    if (creds == null || !mounted) return;
+    if (creds == null || !mounted) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     final (ip, user, pass) = creds;
 
-    setState(() => _loading = true);
-    // Everything below the insertion point shifts down by the height of what we add, so the scroll
-    // offset has to move with it or the reader is thrown backwards mid-sentence. maxScrollExtent
-    // grows by exactly that height, which is why the difference is the right correction.
-    final before = _scroll.hasClients ? _scroll.position.maxScrollExtent : 0.0;
     String? text;
     String? error;
     try {
@@ -208,8 +226,9 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;
-      final delta = _scroll.position.maxScrollExtent - before;
-      if (delta > 0) _scroll.jumpTo(_scroll.offset + delta);
+      final max = _scroll.position.maxScrollExtent;
+      final target = (max - anchorFromBottom).clamp(0.0, max);
+      if ((target - _scroll.offset).abs() > 0.5) _scroll.jumpTo(target);
     });
     if (error != null && mounted) await AppErrors.system(context, _c, 'Could not read more of the router log: $error');
   }
@@ -258,12 +277,9 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              // Named like the watchdog log's heading, in the same place and style (ID-033).
-              Text(
-                AppDestination.routerLog.title,
-                key: const Key('router_log_heading'),
-                style: const TextStyle(color: kHighlight, fontSize: 13),
-              ),
+              // Named like the watchdog log's heading, in the same place and style (ID-033),
+              // and coloured from the one destination map (ID-112).
+              destinationHeading(AppDestination.routerLog, key: const Key('router_log_heading')),
               const SizedBox(height: 8),
               Expanded(
                 child: !_hasContent

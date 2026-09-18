@@ -42,6 +42,39 @@ bool isConnectionLost(Object error) {
   return s.contains('closed') || s.contains('connection reset') || s.contains('broken pipe') || s.contains('socketexception');
 }
 
+/// Plain English for a failure to reach the router, or null when the error is something else
+/// (ID-108).
+///
+/// What the user saw with Wi-Fi off was `SocketException: Connection failed (OS Error: Network is
+/// unreachable, errno = 110), address = 192.168.1.1, port = 22`. Every word of that is true and
+/// none of it says the one thing worth knowing. The raw text still goes to the app log, where it
+/// belongs: this is the sentence on the screen, not a replacement for the detail.
+///
+/// Null rather than a catch-all so a caller's own, more specific message - a missing binary, a
+/// refused reconfigure - is never overwritten by a generic one.
+String? routerConnectMessage(Object error, String address) {
+  final where = address.trim().isEmpty ? 'the router' : 'the router at ${address.trim()}';
+  if (error is SSHAuthFailError || error is SSHAuthAbortError) {
+    return 'The router refused that username or password. Check the login you use for $where.';
+  }
+  final s = error.toString().toLowerCase();
+  const unreachable = [
+    'socketexception',
+    'timeoutexception',
+    'timed out',
+    'network is unreachable',
+    'connection refused',
+    'no route to host',
+    'host lookup',
+    'failed host lookup',
+  ];
+  if (error is TimeoutException || unreachable.any(s.contains)) {
+    return 'Could not connect to $where. Check that this device is on the same network as the router '
+        'and that the address is right.';
+  }
+  return null;
+}
+
 /// How long the app may sit in the background before the shared connection is dropped.
 ///
 /// 406 closed it the instant the app was paused. The 2026-09-06 end-to-end test showed what that
@@ -92,10 +125,16 @@ class RouterSession implements SSHClient {
   }
 
   Future<SSHClient> _open() async {
+    // Every connection after the first is worth a line. The drop-and-retry path below announces
+    // itself, but a session the app closed on its own - the background grace expiring - did not:
+    // the next action opened a fresh connection in silence, so the router's log showed a password
+    // auth the app log could not account for (ID-084).
+    final reopening = _connectCount > 0;
     try {
       final c = await connect();
       _connectCount++;
       _client = c;
+      if (reopening) onLog?.call('Router SSH connection re-established.');
       return c;
     } finally {
       _opening = null;

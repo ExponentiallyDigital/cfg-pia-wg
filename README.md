@@ -1,4 +1,4 @@
-# CFG-PIA-WG<img src="./assets/icon/icon.png" alt="PIA WireGuard CFGA" width="150" />
+# CFG-PIA-WG<img src="./assets/icon/app_icon_legacy.png" alt="cfg-pia-wg" width="150" />
 <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/cfg-pia-wg?color=0969DA" alt="Release"></a> 
 <a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-Android-57606A?logo=android&logoColor=white" alt="Platform"></a> 
 <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/cfg-pia-wg?color=0969DA" alt="License"></a> 
@@ -32,9 +32,12 @@
 - [5. Using the app](#5-using-the-app)
   - [5.1. STANDALONE - Generate a PIA WireGuard configuration](#51-standalone---generate-a-pia-wireguard-configuration)
   - [5.2. MANAGE - Manage router PIA WireGuard configuration](#52-manage---manage-router-pia-wireguard-configuration)
+    - [5.2.1. Which slot should carry your main VPN?](#521-which-slot-should-carry-your-main-vpn)
   - [5.3. WATCHDOG  - Watchdog WireGuard management](#53-watchdog----watchdog-wireguard-management)
     - [5.3.1. Email alerts](#531-email-alerts)
   - [5.4. VPN device assignment](#54-vpn-device-assignment)
+    - [5.4.1. Phones and random MAC addresses](#541-phones-and-random-mac-addresses)
+    - [5.4.2. Where the device list comes from](#542-where-the-device-list-comes-from)
   - [5.5. APP LOG - View the app log](#55-app-log---view-the-app-log)
   - [5.6. EXIT - Close the app](#56-exit---close-the-app)
   - [5.7. Hamburger menu](#57-hamburger-menu)
@@ -57,19 +60,21 @@
 - [14. Trademark and affiliation notice](#14-trademark-and-affiliation-notice)
 - [15. License](#15-license)
 
-A native Android app that generates and optionally applies ready-to-use WireGuard (WG) configuration files for the Private Internet Access (PIA) VPN service. It authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WG keypair, and lets you copy the complete `.conf` to the clipboard, or share or save it to an app or location of your choice.
+A native Android app for Private Internet Access (PIA) WireGuard (WG) on ASUS routers, stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/).
 
-If you have an ASUS router — stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) — you can also **manage** WG configs directly on your router and deploy a **self-healing** watchdog with optional email alerting that makes your configuration truly "set and forget".
+**Tunnels that stay up on their own.** A PIA WG configuration expires without warning, and a dead tunnel looks much like a working one until something you care about stops loading. The app deploys a **self-healing** watchdog to the router itself: it checks the tunnel on a schedule, builds a fresh configuration when the old one stops answering, and emails you what happened and how long the tunnel was down. That is what makes "set and forget" true rather than hopeful.
 
 **The part people do not expect is the device view.** Your router thinks in SLOTS: five numbered VPN profiles, and to find out which of your devices is using one you generally have to stop it and see what breaks. **cfg-pia-wg thinks in DEVICES.** One screen lists everything on your network and what each one is using right now, and moving a device to a different VPN - or off VPN entirely - is one tap on that device. No slot numbers, nothing to stop first, and nothing to work out afterwards.
 
-That is the other half of what this app is for. Tunnels that stay up on their own is the first half.
+Underneath both is the plumbing: the app authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WG keypair, and either writes the result into one of the router's five WG slots or hands you the complete `.conf` to copy, share or save. That last part needs no router at all.
 
 This app is based on my command line Windows/Linux app [cfg-pia-wg-cmd](https://github.com/ExponentiallyDigital/cfg-pia-wg-cmd).
 
 ## 1. Why use this?
 
 Creating a valid PIA WG config by hand requires expertise in API authentication, WG key generation and correctly assembling connection metadata. **cfg-pia-wg** automates that work and adds router-side **slot management** (organising WG configs across the router's five WG VPN client configuration slots), **self-healing** watchdog support, and **per-device VPN assignment** - sending one device out through a VPN while another goes straight to the internet - for ASUS routers running either stock or Merlin firmware.
+
+Per-device assignment is the one that changes how the router feels day to day. Instead of deciding which slot is the default and living with it, you decide per device: the work laptop through Melbourne, the games console straight out for the lowest latency it can get, the TV through the region its catalogue expects, everything else wherever the default sends it. Each change is one tap on the device itself, nothing has to be stopped first, and the list tells you afterwards where each device is actually going.
 
 ### 1.1. Why use WireGuard?
 
@@ -87,12 +92,13 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
 
 ## 2. Features
 
+- **Watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log. Works on stock and Merlin; on stock it additionally needs `jq`, `mailsend-go` and DownloadMaster (see [4. Prerequisites](#4-prerequisites--requirements)).
+- **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
+- **Per-device VPN assignment:** pick, per device, whether it leaves through a VPN tunnel or straight out to the internet, from a list of everything on your network and what each one is using right now. One tap per device, nothing to stop first, and the list says where a device's traffic really goes when its tunnel is down. Stock firmware only: Merlin does the same job through VPN Director, which this app does not drive.
 - **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
 - **Secure clipboard handling:** when copying a generated config, a visible 60-second countdown starts, then clears the clipboard automatically at expiry.
 - **Share/save support:** share generated a `.conf` via the Android share function and save it to a file location of your choice.
 - **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WG slot configurations directly.
-- **Watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log. Works on stock and Merlin; on stock it additionally needs `jq`, `mailsend-go` and DownloadMaster (see [4. Prerequisites](#4-prerequisites--requirements)).
-- **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
 - **One remembered setting:** a successful router connect stores the router LAN address - and nothing else - in the app private storage, so you do not retype it every session. Clear it with **FORGET ROUTER IP** in the SETTINGS screen. See [SECURITY.md](SECURITY.md).
 - **No persistent credential storage (app):** PIA credentials, router SSH credentials and generated configs are stored only in volatile application memory and are never written to your device's storage.
 - **Watchdog credential storage (router):** deploying the watchdog stores the necessary PIA credentials in router NVRAM so it can monitor and self-heal independently of the app. This is a deliberate trade-off for "set and forget" operation, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
@@ -305,6 +311,35 @@ This enables full management of WG slots.
 > [!NOTE]
 > Merlin adds a kill switch and inbound firewall toggle.
 
+#### 5.2.1. Which slot should carry your main VPN?
+
+Short version: build the VPN you use for everything in **wgc5**, and work downwards from there.
+
+The first reason is cosmetic. The router's own web interface creates `wgc5` first, and this app
+lists slots the same way - wgc5 at the top, down to wgc1 - so the two agree about which slot is
+"the first one".
+
+The second reason is not cosmetic at all, and it applies when your VPN's DNS servers are the same
+addresses your router uses for its own encrypted DNS lookups. Quad9 and Cloudflare are the usual
+overlap, because they are a sensible answer to both questions. When the addresses match, the
+firmware sends the router's *own* lookups - the ones it makes for every device that has not been
+assigned to a tunnel - through the slot with the lowest routing table number. The tables run `wgc1`
+9 down to `wgc5` 5, so the lowest table belongs to the **highest-numbered** slot. Whichever slot
+that is, it carries name resolution for the whole house.
+
+Two things follow, and both are worth knowing before you pick:
+
+- **A failure there is a failure everywhere.** If that tunnel dies and nothing rebuilds it, devices
+  that resolve through the router stop resolving names at all - not just the ones you assigned to
+  it. That is the argument for putting a watchdog on it, and for giving it an email address to
+  write to.
+- **Moving a region between slots has an order.** Create the new slot, move the pinned devices onto
+  it, and only then delete the old one. Deleting a slot sends its devices to **Internet**, not to
+  your default connection, so doing it the other way round quietly drops them out of the VPN.
+
+If your VPN DNS and your router DNS are different addresses, none of the second reason applies and
+the choice really is yours.
+
 ### 5.3. WATCHDOG  - Watchdog WireGuard management
 
 This manages a self-healing watchdog. When your WG configurations inevitably expire, they are automatically renewed and an optional email alert sent when connectivity has been restored.
@@ -471,10 +506,49 @@ Six things that catch people out:
 
 1. **A device the router has never seen an address for cannot be assigned.** Connect it to your network once, then come back and it will be there.
 2. **Assigning a device pins its address permanently.** That is what stops the assignment drifting onto a different device later. The pin stays behind when you unassign - the router never removes one, and neither does this app.
-3. **A randomised MAC address breaks the assignment silently.** Those devices are tagged in the list. Phones randomise per network by default, and the assignment stops working the next time the address rotates, with nothing to tell you. Turn randomisation off for your home network in the phone's Wi-Fi settings.
+3. **A randomised MAC address breaks the assignment silently.** Those devices are tagged in the list. Phones randomise per network by default, and the assignment stops working the next time the address rotates, with nothing to tell you. [5.4.1](#541-phones-and-random-mac-addresses) has the settings to change, per phone.
 4. **A device assigned to a tunnel you then turn OFF keeps its assignment**, and falls through to the default connection while that tunnel is down. It picks the tunnel up again when you turn it back on. The list shows it: a note under the device says where its traffic goes meanwhile. Deleting the tunnel is different: the app moves its devices to Internet, tells you which ones it moved, and puts the default connection back to Internet if that tunnel was it.
 5. **Guest network devices never appear.** They cannot reach your LAN at all, so putting one on a VPN is a different question from the one this screen answers.
 6. **A device assigned to a VPN uses only that VPN's first DNS server.** The router sends every lookup from it there and never tries the second, so if the first stops answering through that tunnel the device reaches IP addresses but not names. Change the first server with MANAGE, then EDIT.
+
+#### 5.4.1. Phones and random MAC addresses
+
+An assignment is a pin to a MAC address, so a device that changes its MAC quietly stops being the
+device you assigned. It does not lose its connection: it leaves by the default connection instead,
+which is the one thing you did not choose for it. Nothing announces this, which is why the list tags
+those devices.
+
+Phones do it by default, and the switch is per network, so turning it off for your home Wi-Fi costs
+you nothing anywhere else:
+
+- **iOS 27:** Settings > Wi-Fi > your network (the ⓘ) > Private Wi-Fi Address > off.
+- **Android (Pixel):** Settings > Network & internet > Internet > your network (the gear) > Privacy
+  > **Use device MAC**.
+
+Two more ways an Android phone can rotate its address, worth knowing if one keeps coming back:
+
+- Developer options has **Wi-Fi non-persistent MAC randomisation**. With it on, the address changes
+  at a reboot or when the DHCP lease expires, not just when you join a new network.
+- An app can ask for a randomised address through the network suggestion API, and an open network
+  with no captive portal gets one without Developer options being involved at all.
+
+Laptops and desktops usually keep one address per adapter. If in doubt, the tag in the device list
+is the answer: the app reads the address itself and says so.
+
+#### 5.4.2. Where the device list comes from
+
+The list is the router's own view of your network, not a scan this app runs. That has two
+consequences worth expecting rather than reporting:
+
+- **A device can read as offline while it is sitting there working.** The firmware marks a device
+  online when it sees traffic from it, so a quiet one can lag by minutes. It comes back the moment
+  it sends something.
+- **A device you no longer own can linger.** The router holds an entry until its lease expires, and
+  a phone that rotates its address (see [5.4.1](#541-phones-and-random-mac-addresses)) leaves one
+  behind every time it does. A "ghost" with a name you recognise and an address you do not is
+  usually the same phone under a new MAC.
+
+Either way, the router is the authority here: what the list shows is what the router would act on.
 
 ### 5.5. APP LOG - View the app log
 
@@ -552,6 +626,7 @@ It also reports on the router itself, which it reads over SSH if the app is conn
   during a watchdog deployment, an alert email abandoned halfway through. Nothing is damaged, but
   it fails for a reason you cannot see. On most phones: **Settings -> Apps -> cfg-pia-wg ->
   Battery -> Unrestricted**. Worth doing before you deploy your first watchdog.
+- **Extra logins in the router's log are normal.** The router expires an idle SSH session quickly - well inside a session spent reading a screen and deciding what to do - so the app reconnects when it finds the connection gone, and its next action carries on as though nothing happened. What you see afterwards is several `dropbear` logins from your phone for one sitting. That is the app picking the phone back up, not someone else picking the lock.
 - **Key safety:** generated configs contains private encryption keys. Treat them like passwords and manage them securely.
 - **PIA maintenance:** PIA occasionally take regions offline for maintenance so you might be expecting to have an exit node in say pia-region_one, but online tools may show you as exiting from pia-region_two.
 - **Check your VPN is working:** with services like [PIA what is my ip](https://www.privateinternetaccess.com/what-is-my-ip), [ipaddress.my](https://ipaddress.my/?lang=en_US), [2ip.io](https://2ip.io), and [showmyip.com](https://www.showmyip.com). However, these sites may cache your location in the browser and they sometimes return a stale exit region if used multiple times. To be absolutely sure, close your browser rather than just refreshing the page.

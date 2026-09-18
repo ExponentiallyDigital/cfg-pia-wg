@@ -48,6 +48,8 @@ The automated tests prove the code does what it says. They cannot prove what a r
 
 - Stock firmware unless a test says otherwise. Merlin is a separate day: see [MRL](#mrl).
 
+- **Which build you need.** Every group here runs on any build - your own debug or release APK included - except [LCK](#lck) and [BUY](#buy). Those two need the app installed **from Play**, on a testing track, with the account on the licence testers list: a build Play did not distribute is always unlocked and never shows a paywall, so there is nothing there to test. [R8](#r8) has the rest of the store setup.
+
 - Guest Wi-Fi is out of scope. The app does not manage its traffic or assignments.
 
 Devices:

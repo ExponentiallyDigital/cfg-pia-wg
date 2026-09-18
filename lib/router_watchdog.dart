@@ -20,7 +20,15 @@ import 'package:dartssh2/dartssh2.dart';
 import 'router_command.dart';
 import 'router_service_queue.dart';
 import 'firmware.dart';
-import 'router_slot_service.dart' show RouterSlotService, fetchSlotLabel, kUpInterfacesCommand, slotDescFor;
+import 'router_slot_service.dart'
+    show
+        RouterSlotService,
+        fetchSlotLabel,
+        kMaxActiveVpnsPreviousKey,
+        kUpInterfacesCommand,
+        parseVpncClientlist,
+        slotDescFor,
+        slotKeysFor;
 import 's50_template.dart';
 import 'watchdog_email.dart';
 
@@ -286,6 +294,7 @@ class WatchdogStatus {
 /// the user's VPNs, and those stay manageable from the web interface.
 String get kUninstallNvramCommand {
   const globals = [
+    'cfg_pia_wg_max_conn_prev',
     'cfg_pia_wg_password',
     'cfg_pia_wg_reconfig_fail',
     'cfg_pia_wg_reconfig_ok',
@@ -731,6 +740,46 @@ const String _kMailCmdStock = '''  $kStockMailsendPath -ssl -verifyCert \\
     auth -user "\$SMTP_USER" -pass "\$SMTP_PASS" \\
     body -file "\$TMPMAIL" 2>"\$TMPERR"''';
 
+/// How the script restarts a rewritten tunnel on MERLIN: the commands it has always used.
+const String _kRestartMerlin = r'''
+# Increase sleeps on slow routers
+log "Stopping $IFACE"
+service "stop_wgc $SLOT"
+sleep 2
+log "Starting $IFACE"
+service "start_wgc $SLOT"
+log "Restarting VPN routing"
+service restart_vpnrouting0''';
+
+/// How the script restarts a rewritten tunnel on STOCK: the app's own path (ID-070).
+///
+/// Stock drives WireGuard through VPN Fusion, where a tunnel is started by naming its profile in
+/// `vpnc_unit` and calling `restart_vpnc`; there is no `start_vpnc`. The script used the Merlin
+/// commands on both firmwares, which CONTEXT described as inert on stock - a claim taken from one
+/// log of a rebuild on a router whose service queue was stuck, so it proved nothing either way.
+///
+/// `vpnc_unit` is the 0-BASED ROW INDEX of the slot's record in `vpnc_clientlist`, not the slot
+/// number and not `5 - slot`: the same rule [vpncUnitForSlot] implements in the app, measured
+/// against the router's own web interface. Records are separated by `<` and fields by `>`, with
+/// the slot number in field 3.
+///
+/// A slot with no row of its own falls back to the interface commands rather than poking a unit
+/// that does not exist - which is what produced the mystifying "did not come up" failures before
+/// the app learnt this rule.
+const String _kRestartStock = r'''
+UNIT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" 'length($0) == 0 { next } { if ($3 + 0 == s + 0) { print n + 0; exit } n++ }')"
+if [ -n "$UNIT" ]; then
+  log "Restarting $IFACE through VPN Fusion (vpnc_unit=$UNIT)"
+  nvram set vpnc_unit="$UNIT"
+  service restart_vpnc
+else
+  log "No vpnc_clientlist row for $IFACE; restarting the interface directly"
+  service "stop_wgc $SLOT"
+  sleep 2
+  service "start_wgc $SLOT"
+  service restart_vpnrouting0
+fi''';
+
 // Shell appending a fixed block of lines. Generated from the same constants [buildEmailBody] uses,
 // so the script's wording and the app's cannot drift apart.
 String _echoBlock(Iterable<String> lines) => lines.map((l) => '  echo ${shellSingleQuote(l)} >> "\$TMPMAIL"').join('\n');
@@ -747,6 +796,7 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       // enforce / fw / rip / ep_addr_r are Merlin-only (kMerlinOnlySlotKeys). Writing them on
       // stock creates keys nothing reads and DELETE does not clean up.
       .replaceAll('__MERLINONLY__', stock ? '' : _kMerlinOnlyNvsets)
+      .replaceAll('__RESTART__', stock ? _kRestartStock : _kRestartMerlin)
       .replaceAll('__BACKOFF__', buildBackoffCase())
       .replaceAll('__APPVER__', appVersionLabel)
       .replaceAll('__KILLSW__', stock ? _kKillSwitchStock : _kKillSwitchMerlin)
@@ -1000,6 +1050,17 @@ class RouterWatchdog {
   // Concurrent watchdogs are allowed, so this no longer tears down the other slots. How many may
   // run at once is a firmware limit (vpnc_max_conn on stock), enforced by the caller before it
   // gets here - the same gate the MANAGE ENABLE path applies.
+  /// Deploys [config], and puts the slot back as it was if any of it fails (ID-121).
+  ///
+  /// MANAGE CREATE has always been transactional; this was not. It writes the slot's keys, adds the
+  /// profile row, sets the slot enabled and schedules the checks BEFORE running the script, and a
+  /// region change blanks the old server's keys first - so an abort left a slot the app read as
+  /// configured while the router's own web interface showed nothing at all (ID-096). The two views
+  /// now agree, because on a failure there is nothing half-written left to disagree about.
+  ///
+  /// What is deliberately NOT rolled back is the SCHEDULE. On 2026-09-17 it was the scheduled check
+  /// that finished the build after a reboot; taking it away would remove the retry that rescued the
+  /// deploy. The watchdog settings stay for the same reason - the retry needs them.
   Future<void> deployWatchdog(WatchdogConfig config, {String? desc}) => _guard('deploy', () async {
         await enableJffsScripts();
         // Both read before the NVRAM write replaces the description. A slot that is already up and
@@ -1008,24 +1069,85 @@ class RouterWatchdog {
         final slot = config.slotIndex;
         final regionChanged = desc != null && desc.isNotEmpty && slotDescFor(desc) != await _read('nvram get wgc${slot}_desc');
         final up = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
-        if (regionChanged) await _clearForRebuild(slot, running: up, region: desc);
-        await _writeWatchdogNvram(config, desc: desc);
-        await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
-        await _writeScript(config.slotIndex, buildWatchdogScript(config));
-        await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
-        await _run(buildCronRotateLine(config.slotIndex));
-        await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
-        onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
-        await _run(kSeedCountersCommand);
-        await _logRouter('Running ${watchdogScriptPath(config.slotIndex)} deploy');
-        // `deploy` makes this run report itself as a deployment rather than a re-configuration,
-        // and makes it email even when it finds the tunnel already healthy.
-        await _run('${watchdogScriptPath(config.slotIndex)} deploy');
+        // Taken before anything is written, and after the two reads above, which need the slot as
+        // it is now.
+        final before = await _snapshotSlot(slot);
+        try {
+          if (regionChanged) await _clearForRebuild(slot, running: up, region: desc);
+          await _writeWatchdogNvram(config, desc: desc);
+          await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
+          await _writeScript(config.slotIndex, buildWatchdogScript(config));
+          await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
+          await _run(buildCronRotateLine(config.slotIndex));
+          await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
+          onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
+          await _run(kSeedCountersCommand);
+          await _logRouter('Running ${watchdogScriptPath(config.slotIndex)} deploy');
+          // `deploy` makes this run report itself as a deployment rather than a re-configuration,
+          // and makes it email even when it finds the tunnel already healthy.
+          await _run('${watchdogScriptPath(config.slotIndex)} deploy');
+        } catch (e) {
+          final undone = await _restoreSlot(slot, before);
+          final cause = e.toString().replaceAll('Exception: ', '').trim();
+          // Names the cause AND what was done about it: a failure that silently leaves a router in
+          // an unknown state is the thing this whole item is about.
+          throw Exception('$cause $undone Its watchdog stays scheduled and will try again in '
+              '${config.cronIntervalMinutes} minutes.');
+        }
         onLog?.call('Ran ${watchdogScriptPath(config.slotIndex)}', isSuccess: true);
         await _logRouter(
             'Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
         onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
       });
+
+  /// The slot's tunnel configuration as it stands, for [_restoreSlot] to put back (ID-121).
+  ///
+  /// Null keys mean the slot was EMPTY, which is a state worth restoring exactly: a deploy onto an
+  /// empty slot that fails has to leave an empty slot, not a shell of one.
+  Future<({Map<String, String>? keys, String? vpnc})> _snapshotSlot(int slot) async {
+    final keys = <String, String>{};
+    for (final key in slotKeysFor(routerFirmware)) {
+      keys['wgc${slot}_$key'] = await _read('nvram get wgc${slot}_$key');
+    }
+    final vpnc = isStockFirmware ? await _read('nvram get vpnc_clientlist') : null;
+    // On stock a slot built in the router's own web interface has no `desc` mirror, so the
+    // clientlist row is what says it exists.
+    final occupied = (keys['wgc${slot}_desc'] ?? '').isNotEmpty ||
+        (vpnc != null && parseVpncClientlist(vpnc).any((r) => r.slot == slot));
+    return (keys: occupied ? keys : null, vpnc: vpnc);
+  }
+
+  /// Puts [slot] back to [before], and returns the sentence describing what it did.
+  ///
+  /// Best effort by design: the caller is already reporting a failure, and a restore that itself
+  /// fails must say so rather than replace the original cause.
+  Future<String> _restoreSlot(int slot, ({Map<String, String>? keys, String? vpnc}) before) async {
+    final label = await _label(slot);
+    try {
+      if (before.keys != null) {
+        onLog?.call('Deploy failed; putting $label back as it was.', isError: true);
+        for (final entry in before.keys!.entries) {
+          await _run('nvram set ${entry.key}=${shellSingleQuote(entry.value)}');
+        }
+        if (before.vpnc != null) await _run('nvram set vpnc_clientlist=${shellSingleQuote(before.vpnc!)}');
+        await _run('nvram commit');
+        await _logRouter('Deploy failed; $label restored to its previous configuration');
+        return 'wgc$slot was left as it was.';
+      }
+      onLog?.call('Deploy failed; clearing the half-built wgc$slot.', isError: true);
+      for (final key in slotKeysFor(routerFirmware)) {
+        await _run('nvram unset wgc${slot}_$key', allowFailure: true);
+      }
+      if (before.vpnc != null) await _run('nvram set vpnc_clientlist=${shellSingleQuote(before.vpnc!)}');
+      await _run('nvram commit');
+      _labelCache.remove(slot);
+      await _logRouter('Deploy failed; wgc$slot cleared back to empty');
+      return 'wgc$slot was cleared back to empty, which is what the router shows.';
+    } catch (_) {
+      onLog?.call('CRITICAL: could not put wgc$slot back. Check the router.', isError: true);
+      return 'wgc$slot could NOT be put back - check it on the router.';
+    }
+  }
 
   /// Leaves [slot] as the empty-slot watchdog shortcut finds it, so the deploy run builds it on [region].
   ///
@@ -1228,6 +1350,17 @@ class RouterWatchdog {
           removed++;
         }
         done.add(removed == 0 ? 'No watchdog schedules to remove' : 'Removed $removed watchdog schedule(s)');
+
+        // The VPN cap, if the app is what raised it (ID-098). The key records what the router had
+        // before, so a user who set 3 themselves keeps 3 - this puts back a change the app made, it
+        // does not impose a default.
+        final previousCap = int.tryParse((await _read('nvram get $kMaxActiveVpnsPreviousKey')).trim());
+        if (previousCap != null && previousCap >= 1 && previousCap <= 5) {
+          await _read('nvram set vpnc_max_conn=$previousCap');
+          done.add('Put the maximum active VPNs back to $previousCap');
+        } else {
+          done.add('Left the maximum active VPNs alone - the app never changed it');
+        }
 
         // Every key the app ever writes, so an uninstalled router carries none of our settings.
         // The wgcN_* TUNNEL configuration is deliberately NOT touched: the tunnels keep working and
@@ -2080,6 +2213,11 @@ if [ -z "$TOKEN" ]; then
   if [ "$RC" = "0" ] && [ -z "$HTTP" ] && [ -z "$ERRLINE" ]; then
     abort "failed to obtain PIA token: curl reported success but returned nothing at all (no status, no body, no error). Usually means the network was still coming back up."
   fi
+  # A refusal is not a network fault, and saying "exit 0, HTTP 403, body 66B: {" sent the reader
+  # looking for one. PIA answers 401 or 403 when the account is wrong (ID-120).
+  if [ "$HTTP" = "401" ] || [ "$HTTP" = "403" ]; then
+    abort "PIA rejected the username and password stored on this router (HTTP $HTTP). The PIA username is the one PIA issued for the VPN, not an email address and not the router login. Fix it in the app: WATCHDOG, CREATE/EDIT, SAVE & DEPLOY."
+  fi
   abort "failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}, body ${BSZ:-0}B: ${BODY:-empty}) $ERRLINE"
 fi
 rm -f "$TMPTOK"
@@ -2170,14 +2308,7 @@ nvram commit
 log "NVRAM write complete"
 
 # Restart interface
-# Increase sleeps on slow routers
-log "Stopping $IFACE"
-service "stop_wgc $SLOT"
-sleep 2
-log "Starting $IFACE"
-service "start_wgc $SLOT"
-log "Restarting VPN routing"
-service restart_vpnrouting0
+__RESTART__
 
 log "Waiting for $IFACE to initialise"
 sleep 3
@@ -2185,6 +2316,28 @@ if ! ip -o link show up 2>/dev/null | grep -q " $IFACE:"; then
   abort "$IFACE did not come up after reconfiguration (configured: $(wg show interfaces 2>/dev/null | tr -s ' ' | cut -c1-60))"
 fi
 log "Interface $IFACE is up"
+
+# The interface being up says the device exists, not that PIA answered it. A registration that has
+# expired still produces a wgcN that sends and never receives, and until this gate existed the
+# script called that a rebuild that worked: it logged, counted and emailed one while nothing was
+# flowing. Measured 2026-09-19 over four days of router syslog: of nine rebuilds, four
+# had a completed handshake about 4 seconds after the restart, so 20 seconds is generous. It is
+# double what the app's own ENABLE allows, because nobody is watching this one.
+log "Waiting for a handshake on $IFACE"
+HSOK=0
+HSTRY=0
+while [ "$HSTRY" -lt 10 ]; do
+  HSNEW="$(wg show "$IFACE" latest-handshakes 2>/dev/null | awk '{if ($2 > m) m = $2} END {print m + 0}')"
+  if [ "$HSNEW" -gt 0 ]; then
+    HSAGE=$(( $(date +%s) - HSNEW ))
+    log "Handshake ${HSAGE}s ago after $(( HSTRY * 2 ))s"
+    HSOK=1
+    break
+  fi
+  HSTRY=$((HSTRY + 1))
+  sleep 2
+done
+[ "$HSOK" = "1" ] || abort "$IFACE came up but the PIA server never answered it (no handshake in 20s)"
 
 if [ "$RUNMODE" = "deploy" ]; then
   log "Deploy SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"

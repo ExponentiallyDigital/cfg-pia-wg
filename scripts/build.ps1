@@ -202,8 +202,12 @@ flutter pub get --enforce-lockfile
 if (-not $SKIP_ICONS) {
     Write-Host "${CYAN}Generating launcher icons...${RESET}"
     dart run flutter_launcher_icons
+    # The splash screen is generated from the same artwork and written into the platform folders,
+    # so it belongs with the icons rather than with the build (ID-111).
+    Write-Host "${CYAN}Generating the native splash screen...${RESET}"
+    dart run flutter_native_splash:create
 } else {
-    Write-Host "${YELLOW}Skipping icon generation...${RESET}"
+    Write-Host "${YELLOW}Skipping icon and splash generation...${RESET}"
 }
 
 ###############################################################################

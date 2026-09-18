@@ -98,10 +98,11 @@ void main() {
 
     final span = tester.widget<Text>(find.byKey(const Key('menu_help'))).textSpan! as TextSpan;
     expect(span.children, hasLength(2));
-    expect(span.children!.first, isA<WidgetSpan>(), reason: 'the icon leads the line');
+    final icon = (span.children!.first as WidgetSpan).child as Icon;
+    expect(icon.color, kLinkIconColour, reason: 'the khaki-gold the two footer icons share (ID-109)');
     final help = span.children!.last as TextSpan;
-    expect(help.style?.decoration, TextDecoration.underline, reason: 'it has to read as a link');
-    expect(help.recognizer, isNotNull);
+    expect(help.style?.decoration, isNot(TextDecoration.underline), reason: 'no underline (ID-110)');
+    expect(help.recognizer, isNotNull, reason: 'still tappable');
 
     await _teardown(tester, c);
   });
@@ -298,7 +299,7 @@ void main() {
       await _teardown(tester, c);
     });
 
-    testWidgets('is an icon followed by the whole label, underlined', (tester) async {
+    testWidgets('is an icon followed by the whole label, with no underline', (tester) async {
       final c = _quietController();
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
@@ -309,10 +310,11 @@ void main() {
       ));
       final span = text.textSpan! as TextSpan;
       expect(span.children, hasLength(2));
-      expect(span.children!.first, isA<WidgetSpan>(), reason: 'the icon leads the line');
+      final icon = (span.children!.first as WidgetSpan).child as Icon;
+      expect(icon.color, kLinkIconColour, reason: 'the khaki-gold the two footer icons share (ID-109)');
       final label = span.children!.last as TextSpan;
       expect(label.text, ' add a Play Store app review');
-      expect(label.style?.decoration, TextDecoration.underline, reason: 'it has to read as a link');
+      expect(label.style?.decoration, isNot(TextDecoration.underline), reason: 'no underline (ID-110)');
 
       await _teardown(tester, c);
     });
@@ -353,8 +355,9 @@ void main() {
         expect(iconIn(key, Icons.chevron_right), findsOneWidget, reason: '$key opens a screen');
         final style = styleOf(tester, key);
         expect(style.backgroundColor!.resolve(<WidgetState>{}), kBg, reason: 'the screen colour, so it reads as bordered');
-        expect(style.side!.resolve(<WidgetState>{})!.color, kHighlight);
-        expect(style.foregroundColor!.resolve(<WidgetState>{}), kHighlight);
+        expect(style.side!.resolve(<WidgetState>{})!.color, kHighlight, reason: 'every outline stays teal (ID-112)');
+        expect(style.foregroundColor!.resolve(<WidgetState>{}), destinationColour(d),
+            reason: 'icon and label take the destination colour (ID-112)');
       }
 
       await _teardown(tester, c);
@@ -439,6 +442,66 @@ void main() {
       expect(review.textAlign, TextAlign.start);
 
       await _teardown(tester, c);
+    });
+
+    // ID-109: the two footer lines belong to the same column as the rows above them. Their icons
+    // are 16px against the rows' 20px, so it is the icon CENTRES that have to agree, not the edges.
+    testWidgets('the footer links put their icons in the menu icon column', (tester) async {
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      double iconCentre(Finder of) =>
+          tester.getRect(find.descendant(of: of, matching: find.byType(Icon)).first).center.dx;
+
+      final rowIcon = iconCentre(find.byKey(const Key('menu_standalone')));
+      expect(iconCentre(find.byKey(const Key('menu_help'))), moreOrLessEquals(rowIcon, epsilon: 1),
+          reason: 'the help icon sits in the menu icon column');
+      expect(iconCentre(find.byKey(const Key('menu_review'))), moreOrLessEquals(rowIcon, epsilon: 1),
+          reason: 'the review icon sits in the menu icon column');
+
+      await _teardown(tester, c);
+    });
+
+    // ID-107: on a screen taller than the menu the spare height is shared rather than all falling
+    // below the block, and the share is weighted - an evenly split block reads slightly low.
+    group('optical centring', () {
+      Finder spacers() => find.descendant(of: find.byType(MainMenuScreen), matching: find.byType(Spacer));
+
+      testWidgets('a tall screen shares the spare height, more of it below', (tester) async {
+        tester.view.devicePixelRatio = 1.0;
+        tester.view.physicalSize = const Size(1280, 1600);
+        addTearDown(tester.view.reset);
+        final c = _quietController();
+        await tester.pumpWidget(PiaWgApp(controller: c));
+        await tester.pumpAndSettle();
+
+        expect(spacers(), findsNWidgets(2));
+        final above = tester.getRect(spacers().at(0)).height;
+        final below = tester.getRect(spacers().at(1)).height;
+        expect(above, greaterThan(0), reason: 'the block no longer starts at the top');
+        expect(below, greaterThan(above), reason: 'the smaller share goes above');
+        expect(above / below, moreOrLessEquals(10 / 12, epsilon: 0.02));
+
+        await _teardown(tester, c);
+      });
+
+      testWidgets('a short screen is unchanged: there is no spare height to share', (tester) async {
+        // 412 x 640: the menu fills the viewport, so the spacers have nothing to take and the
+        // screen scrolls exactly as it did before ID-107.
+        tester.view.devicePixelRatio = 1.0;
+        tester.view.physicalSize = const Size(412, 640);
+        addTearDown(tester.view.reset);
+        final c = _quietController();
+        await tester.pumpWidget(PiaWgApp(controller: c));
+        await tester.pumpAndSettle();
+
+        for (var i = 0; i < 2; i++) {
+          expect(tester.getRect(spacers().at(i)).height, 0, reason: 'the spacers collapse and the screen scrolls');
+        }
+
+        await _teardown(tester, c);
+      });
     });
 
     testWidgets('the drawer shows the same icon for each destination, plus HOME and EXIT', (tester) async {

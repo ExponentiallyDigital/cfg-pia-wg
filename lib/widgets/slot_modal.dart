@@ -47,6 +47,18 @@ const String kStaleConfigHint =
     "PIA configurations expire on PIA's own rotation interval, so one that was created and then left "
     'unused can go stale.';
 
+/// True for the enable failures that mean "this configuration is no longer registered with PIA",
+/// which is the one failure the app can fix from here by building the slot again (ID-094).
+///
+/// Matched on the three messages `enableSlot` raises for a tunnel that would not carry traffic -
+/// the interface never came up, it came up with no handshake, or nothing answered through it -
+/// rather than on a type, so a rewording has to come here too. A write that failed, a missing
+/// binary or a refused service call is a different kind of problem and keeps the plain dialog.
+bool looksLikeStaleConfig(String message) =>
+    message.contains('did not come up') ||
+    message.contains('never answered it') ||
+    message.contains('Connectivity check failed');
+
 enum SlotModalMode { manage, watchdog }
 
 class SlotModal extends StatefulWidget {
@@ -172,8 +184,10 @@ class _SlotModalState extends State<SlotModal> {
     // The service stops a running tunnel before it writes (createConfigToSlot); say so up front.
     final running = info.enabled || _slots.activeSlots.contains(slot);
     if (!info.isEmpty) {
-      final ok = await _confirm('Overwrite wgc$slot?',
-          message: 'Slot wgc$slot currently holds "${info.desc}". Creating a new configuration will overwrite it.'
+      // The title names what is being overwritten - wgcN:region - so the body does not have to
+      // say it a second time (ID-113). The same shape the watchdog and the delete prompts use.
+      final ok = await _confirm('Overwrite ${slotLabel(slot, info.desc)}?',
+          message: 'Creating a new configuration will overwrite it.'
               '${running ? '\n\nIts tunnel is running, so it will be stopped first. The new configuration stays disabled '
                   'until you ENABLE it.' : ''}'
               // The profile survives an overwrite, so its index 6 does too, and so does every pin
@@ -209,6 +223,10 @@ class _SlotModalState extends State<SlotModal> {
 
   Future<void> _enableManage() async {
     final slot = _selected;
+    // Settings but no schedule is the paused state DISABLE leaves behind, so ENABLE puts the
+    // schedule back with the tunnel (ID-095). A slot with no watchdog settings has nothing to
+    // resume, and neither has one whose watchdog is already scheduled.
+    final resumeWatchdog = (_selectedInfo?.watchdogConfigured ?? false) && !(_selectedInfo?.watchdogActive ?? false);
 
     // 1) Concurrency gate FIRST. It needs no router round trip, so refusing here spares the user
     //    a ping-target prompt for an enable that was never going to happen.
@@ -252,13 +270,26 @@ class _SlotModalState extends State<SlotModal> {
       final svc = _slotSvc(client);
       if (!haveTargets) await svc.writeWatchdogPingTargets(slot, primary, secondary);
       await svc.enableSlot(slot, primaryIp: primary, secondaryIp: secondary);
+      // After the tunnel is up: a schedule put back on a tunnel that failed its check would start
+      // by rebuilding what the app has just reverted.
+      if (resumeWatchdog) await _wdSvc(client).enableWatchdog(slot);
     } catch (e) {
       error = e;
     }
     await _refresh();
     if (mounted) setState(() => _processing = false);
     if (error != null && mounted) {
-      await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''), detail: kStaleConfigHint);
+      final message = error.toString().replaceAll('Exception: ', '');
+      // A tunnel that came up and was never answered, or one that never came up at all, is almost
+      // always a PIA registration that has gone stale - and rebuilding it is the fix. Offer it here
+      // rather than describing it and leaving the user to work out which button that is (ID-094).
+      if (looksLikeStaleConfig(message)) {
+        final rebuild = await AppErrors.systemWithAction(context, _c, message,
+            actionLabel: 'RECREATE', detail: kStaleConfigHint);
+        if (rebuild && mounted) await _create();
+        return;
+      }
+      await AppErrors.system(context, _c, message, detail: kStaleConfigHint);
     }
   }
 
@@ -271,14 +302,18 @@ class _SlotModalState extends State<SlotModal> {
     final ok = await _confirm(
       'Disable VPN ${slotLabel(slot, info?.desc ?? '')}?',
       message: wdActive
-          ? 'Takes the tunnel down and stops its watchdog. The VPN settings stay on the router, so ENABLE '
-              'brings the tunnel back.'
+          ? 'Takes the tunnel down and PAUSES its watchdog - a watchdog left running would rebuild the '
+              'tunnel you just stopped. The script and both sets of settings stay on the router, so ENABLE '
+              'brings the tunnel and the watchdog back together.'
           : 'Takes the tunnel down. The settings stay on the router, so ENABLE brings it back.',
       confirmLabel: 'DISABLE',
     );
     if (!ok) return;
     await _runSlot((svc) async {
-      if (wdActive) await _wdSvc(svc.client).stopWatchdog(slot); // disabling also stops its watchdog
+      // PAUSE, not remove (ID-095). `stopWatchdog` tears down the schedule, the script and the
+      // settings, which is DELETE's job - and on the last watchdog it takes the PIA credentials
+      // with it, leaving nothing for an ENABLE to restore.
+      if (wdActive) await _wdSvc(svc.client).disableWatchdog(slot);
       await svc.disableSlot(slot);
     });
   }
@@ -315,10 +350,24 @@ class _SlotModalState extends State<SlotModal> {
     final slot = _selected;
     final info = _selectedInfo;
     final wdActive = info?.watchdogActive ?? false;
-    final ok = await _confirm('Delete VPN ${slotLabel(slot, info?.desc ?? '')}?', confirmLabel: 'DELETE', destructive: true);
+    // Names both, because it removes both: the watchdog's script, schedule and settings go with
+    // the slot, and neither comes back from an ENABLE afterwards (ID-095).
+    final hasWatchdog = wdActive || (info?.watchdogConfigured ?? false);
+    final ok = await _confirm(
+      'Delete VPN ${slotLabel(slot, info?.desc ?? '')}?',
+      message: hasWatchdog
+          ? 'Removes the VPN and its watchdog: the schedule, the script on the router and the watchdog '
+              'settings. Nothing is left to ENABLE afterwards.'
+          : 'Removes the VPN configuration from the router.',
+      confirmLabel: 'DELETE',
+      destructive: true,
+    );
     if (!ok) return;
     await _runSlot((svc) async {
-      if (wdActive) await _wdSvc(svc.client).stopWatchdog(slot); // deleting also disables its watchdog
+      // stopWatchdog, not disableWatchdog: DELETE is the path that takes the script and the
+      // settings away too. Run for a PAUSED watchdog as well, or MANAGE DELETE leaves the script
+      // and the SMTP password on the router (ID-066).
+      if (hasWatchdog) await _wdSvc(svc.client).stopWatchdog(slot);
       await svc.deleteSlot(slot);
     });
   }
@@ -508,8 +557,12 @@ class _SlotModalState extends State<SlotModal> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(widget.mode == SlotModalMode.manage ? 'MANAGE CONFIGURATION' : 'WATCHDOG CONFIGURATION',
-                  style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+              // The heading carries the colour of the menu item that opened this screen (ID-112).
+              ScreenHeading(
+                widget.mode == SlotModalMode.manage ? 'MANAGE CONFIGURATION' : 'WATCHDOG CONFIGURATION',
+                colour: destinationColour(
+                    widget.mode == SlotModalMode.manage ? AppDestination.manageRouter : AppDestination.watchdog),
+              ),
               const SizedBox(height: 16),
               _slotList(),
               const SizedBox(height: 20),
@@ -533,7 +586,11 @@ class _SlotModalState extends State<SlotModal> {
     return Container(
       decoration: BoxDecoration(color: kField, borderRadius: BorderRadius.circular(8), border: Border.all(color: kBorder)),
       child: Column(
-        children: _slots.slots.entries.map((entry) {
+        // Highest slot first, wgc5 down to wgc1 (ID-101). Display order only - nothing reads the
+        // list's order. It matches the router's own web interface, which creates wgc5 first, and
+        // the advice to make the highest slot the one carrying the router's own DNS: among slots
+        // sharing a DNS address the lowest routing table wins, and that is the highest slot.
+        children: (_slots.slots.entries.toList()..sort((a, b) => b.key.compareTo(a.key))).map((entry) {
           final slotNum = entry.key;
           final info = entry.value;
           final desc = info.isEmpty ? '<empty slot>' : info.desc;
@@ -626,10 +683,12 @@ class _SlotModalState extends State<SlotModal> {
           child: SizedBox(
             width: double.infinity,
             // DELETE is the one destructive action in either set; everything else here does something.
+            // The verb's colour comes from the shared map (ID-118); a disabled button ignores it.
             child: AppButton(
               keyValue: key,
               label: label,
               role: key == 'slot_delete' ? ButtonRole.destructive : ButtonRole.action,
+              colour: slotActionColour(label),
               onPressed: _processing ? null : onTap,
             ),
           ),
@@ -842,6 +901,39 @@ class _FormDialog extends StatelessWidget {
   }
 }
 
+/// The colour of one line of the watchdog's own log, or null for the plain text colour (ID-117).
+///
+/// The log is mostly routine: a handshake age every few minutes, for months. Colour is spent on
+/// the three things someone opens this screen to find - a fault, a rebuild that worked, and the
+/// steps of a rebuild in progress - and everything else is left alone, because a log where most
+/// lines are coloured says nothing.
+///
+/// Matched on the wording the script itself writes (the `log "..."` calls in router_watchdog.dart)
+/// rather than on a marker, so a router still running an older script colours correctly too.
+Color? watchdogLogLineColour(String line) {
+  if (_wdErrorPattern.hasMatch(line)) return kError;
+  if (_wdSuccessPattern.hasMatch(line)) return kHighlight;
+  if (_wdDeployPattern.hasMatch(line)) return kWarn;
+  return null;
+}
+
+/// Red. `ERROR:` is what `abort()` writes; the rest is the wording of the checks that fail.
+final RegExp _wdErrorPattern = RegExp(
+  r'\berror\b|\bfailed\b|connectivity lost|not connected yet|no internet|down or absent|never answered',
+  caseSensitive: false,
+);
+
+/// Teal: the tunnel is up and, for the email, the alert got out. Checked BEFORE the deployment
+/// pattern, which would otherwise claim `Alert email sent (SUCCESS)`.
+final RegExp _wdSuccessPattern = RegExp(r'Deploy SUCCESS|Reconfig SUCCESS|Alert email sent \(SUCCESS\)');
+
+/// Amber: a rebuild is under way. These are the steps between "something is wrong" and an outcome.
+final RegExp _wdDeployPattern = RegExp(
+  r'deploying|reconfigur|ca cert|pia token|servers:|latency to|backing off|token fetch|'
+  r'wan has internet|alert email|email diag|standing down',
+  caseSensitive: false,
+);
+
 /// The watchdog log, full screen.
 ///
 /// A dialog until 423. Selecting the whole log put Android's own "Copy / Share" toolbar directly
@@ -934,7 +1026,7 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('WATCHDOG LOG · $label', style: const TextStyle(color: kHighlight, fontSize: 13)),
+              ScreenHeading('WATCHDOG LOG · $label', colour: kWatchdogColour),
               const SizedBox(height: 8),
               Expanded(
                 child: SingleChildScrollView(
@@ -945,10 +1037,16 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
                   padding: const EdgeInsets.only(bottom: 72),
                   child: SizedBox(
                     width: double.infinity,
-                    child: SelectableText(
-                      text,
+                    child: SelectableText.rich(
+                      TextSpan(children: [
+                        for (final (i, line) in text.split('\n').indexed)
+                          TextSpan(
+                            text: i == 0 ? line : '\n$line',
+                            style: TextStyle(color: watchdogLogLineColour(line) ?? kText),
+                          ),
+                      ]),
                       key: const Key('watchdog_log_text'),
-                      style: const TextStyle(color: kText, fontSize: 11, fontFamily: 'monospace'),
+                      style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
                     ),
                   ),
                 ),

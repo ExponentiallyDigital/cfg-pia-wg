@@ -291,6 +291,28 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     }
   }
 
+  /// Asks PIA whether these credentials work, BEFORE they are written to the router (ID-120).
+  ///
+  /// Returns the sentence to show, or null to carry on. Only a refusal stops a save: PIA being
+  /// unreachable from this phone says nothing about the credentials, and the watchdog does its own
+  /// asking from the router, over the router's connection.
+  ///
+  /// Worth the round trip because the alternative is finding out minutes later, in a FAILED alert
+  /// email, from a router that has already half-built a slot (ID-096).
+  Future<String?> _piaRejection(WatchdogConfig cfg) async {
+    if (cfg.piaUsername.trim().isEmpty || cfg.piaPassword.isEmpty) return null;
+    try {
+      await (widget.piaService ?? PiaService()).getToken(cfg.piaUsername.trim(), cfg.piaPassword, onProgress: _c.onLog);
+      return null;
+    } catch (e) {
+      if (isPiaAuthRejection(e)) return kPiaCredentialsRejected;
+      _c.logEntry('Could not check the PIA credentials before deploying: '
+          '${e.toString().replaceAll('Exception: ', '')} Saving anyway; the router will try for itself.',
+          isWarning: true);
+      return null;
+    }
+  }
+
   Future<bool> _confirmOverwrite(String region) async {
     // A changed region is a rebuild (RouterWatchdog._clearForRebuild), and the tunnel is down while it
     // happens. Saying so is the difference between an informed tap and a surprise outage.
@@ -360,6 +382,14 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       newDesc = region;
     }
 
+    // Before a single NVRAM key is written (ID-120).
+    final rejected = await _piaRejection(cfg);
+    if (!mounted) return;
+    if (rejected != null) {
+      await AppErrors.inputs(context, _c, [rejected]);
+      return;
+    }
+
     final saved = await _withService((svc) async {
       // Pre-save reachability check over the WAN; warns but still allows saving (spec 2.1.3).
       final p = await svc.pingHostViaWan(cfg.primaryIp.trim());
@@ -426,13 +456,13 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.shield_outlined, color: kHighlight, size: 18),
+                  const Icon(Icons.shield_outlined, color: kWatchdogColour, size: 18),
                   const SizedBox(width: 8),
                   // slotLabel, so the heading reads "wgc5:pia-aus_perth" - the same shape the
                   // EDIT modal and every log line use.
                   Expanded(
-                    child: Text('WATCHDOG · ${slotLabel(widget.slotIndex, widget.regionDesc)}',
-                        style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+                    child: ScreenHeading('WATCHDOG · ${slotLabel(widget.slotIndex, widget.regionDesc)}',
+                        colour: kWatchdogColour),
                   ),
                 ],
               ),

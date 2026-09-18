@@ -20,6 +20,7 @@
 import 'package:flutter/material.dart';
 
 import '../widgets/app_button.dart';
+import '../widgets/app_scaffold.dart';
 
 import '../app_colors.dart';
 import '../firmware.dart';
@@ -115,8 +116,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('EDIT ${slotLabel(widget.slot, widget.desc)}',
-                    style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+                ScreenHeading('EDIT ${slotLabel(widget.slot, widget.desc)}', colour: kManageColour),
                 const SizedBox(height: 16),
                 _text('addr', 'Local tunnel IP (CIDR)', hint: 'e.g. 10.x.x.x/32'),
                 _text('desc', 'Region name', hint: 'must match the PIA region for the watchdog'),

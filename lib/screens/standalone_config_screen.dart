@@ -225,6 +225,9 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Named after the menu item that opened it, in that item's colour (ID-112).
+          destinationHeading(AppDestination.standalone, key: const Key('standalone_heading')),
+          const SizedBox(height: 16),
           RegionRow(controller: _regionCtrl, loading: _loadingRegions, onBrowse: _loadRegions),
           const SizedBox(height: 16),
           // Its own AutofillGroup, holding ONLY the PIA credentials: a password manager must not

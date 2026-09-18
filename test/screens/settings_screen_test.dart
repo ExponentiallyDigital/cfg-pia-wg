@@ -825,7 +825,9 @@ void main() {
       final c = await pumpFresh(tester, RecordingSSHClient(), unreachable: true);
       await logInAndDeleteCert(tester);
 
-      expect(find.textContaining('Could not delete the cached certificate'), findsOneWidget);
+      // ID-108: the screen says the plain thing, the log keeps the raw exception.
+      expect(find.textContaining('Could not connect to the router at 192.168.1.1'), findsOneWidget);
+      expect(c.log.any((e) => e.message.contains('Connection refused')), isTrue);
       expect(c.routerConnected, isFalse);
       expect(c.canReuseRouterSession, isFalse, reason: 'the next action asks again');
       expect(c.routerIp, '192.168.1.1', reason: 'but prefilled with what was typed');
@@ -920,14 +922,17 @@ void main() {
       expect(logged(c, 'Merlin has no limit on active VPNs'), isTrue);
     });
 
-    // ID-047: RESTORE PURCHASE wrote nothing to the app log, where the paywall's restore logs every outcome.
-    for (final (name, restore, expected, success, error) in [
-      ('a purchase found', () async => true, 'Purchase restored', true, false),
-      ('no purchase', () async => false, 'No purchase found', false, false),
-      ('the store unreachable', () async => throw Exception('offline'), 'Could not reach the store', false, true),
+    // ID-047: RESTORE PURCHASE wrote nothing to the app log, where the paywall's restore logs every
+    // outcome. ID-091: and it said "Purchase restored" whatever had happened, including when the app
+    // was already unlocked and nothing had changed at all.
+    for (final (name, wasUnlocked, restore, expected, success, error) in [
+      ('a purchase found', false, () async => true, 'Purchase restored', true, false),
+      ('the app was already unlocked', true, () async => true, 'already unlocked', false, false),
+      ('no purchase', false, () async => false, 'No purchase found', false, false),
+      ('the store unreachable', false, () async => throw Exception('offline'), 'Could not reach the store', false, true),
     ]) {
       testWidgets('RESTORE PURCHASE logs that it started, and $name', (tester) async {
-        final c = connected();
+        final c = connected()..setUnlocked(wasUnlocked);
         await pump(tester, c, RecordingSSHClient(), restore: restore);
         await tap(tester, 'settings_restore_purchase');
 
@@ -937,5 +942,16 @@ void main() {
         expect(outcome.isError, error);
       });
     }
+
+    // ID-091: a store that cannot be reached is the one outcome that needs an answer, so it is a
+    // popup rather than a snack bar - with the store's own wording kept in the log behind it.
+    testWidgets('RESTORE PURCHASE shows a popup when the store cannot be reached', (tester) async {
+      final c = connected();
+      await pump(tester, c, RecordingSSHClient(), restore: () async => throw Exception('offline'));
+      await tap(tester, 'settings_restore_purchase');
+
+      expect(find.textContaining('Could not check your purchase with Google Play'), findsOneWidget);
+      expect(logged(c, 'Could not reach the store', error: true), isTrue, reason: 'the detail is in the log');
+    });
   });
 }
