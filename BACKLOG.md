@@ -62,7 +62,7 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.3. Unconfirmed BUGs
 
-`<none>`
+- ID-129 BUG: **an alert email that could not be delivered, reported as `server misbehaving`.** Seen once, 2026-09-06: the watchdog had something to say and the mailer could not resolve the SMTP host. The phrase is Go's resolver saying the DNS server answered with a failure rather than an address. Recorded here because closing ID-001 would otherwise bury it: that item first suspected the router's own lookups riding a tunnel, then ruled it out - `/etc/resolv.conf` listed the WAN's servers first at the time - so the cause is open. Probably prevented rather than explained by ID-077, which resolves the SMTP host over encrypted DNS and hands the mailer an address, so it no longer looks anything up. If it recurs on build 455 or later, the watchdog log now says whether the private lookup worked, which is the first thing to read.
 
 ---
 

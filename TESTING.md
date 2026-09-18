@@ -637,6 +637,39 @@ into the form never reaches the router. Break the stored ones instead.
 - See: it recovers and emails SUCCESS.
 - Do not repeat this test straight away: PIA refuses repeated token requests for a while.
 
+**BRK-8** A tunnel that answers packets but not questions
+
+This is the fault of CHANGELOG ID-006: devices pinned to a slot lost name resolution for two days
+while the watchdog logged a healthy handshake every five minutes. It needs a slot WITH DNS servers
+set, so use one built or edited since build 454.
+
+- Do: note the slot's first DNS server: `nvram get wgc1_dns`.
+- Do: on the router, block it through that tunnel only:
+
+```sh
+iptables -I OUTPUT -o wgc1 -d 9.9.9.9 -j DROP
+```
+
+- Do: run `/jffs/cfg-pia-wg/watchdog_wgc1.sh` and read the log.
+- See: `wgc1: no answer from 9.9.9.9; one more and it counts as broken` - and NOT a rebuild. One
+  failure is not enough on purpose.
+- Do: run it again.
+- See: `wgc1 is up and handshaking, but 9.9.9.9 has answered nothing twice in a row`, then
+  `Name resolution lost on wgc1; reconfiguring`, then a normal rebuild.
+- See: the SUCCESS email says it reconfigured "after its DNS server stopped answering".
+- Do: remove the block: `iptables -D OUTPUT -o wgc1 -d 9.9.9.9 -j DROP`
+- Pass if: `ip rule show | grep 1000:` finds nothing. The probe's temporary rule is removed every
+  time, and a leftover would quietly redirect the router's own lookups.
+
+**BRK-9** The probe skips what it cannot ask
+
+- Do: MANAGE, DISABLE wgc1, then run `/jffs/cfg-pia-wg/watchdog_wgc1.sh`.
+- See: it stands down because the slot is disabled - the name check never runs.
+- Do: ENABLE wgc1 again.
+- Do: on a slot with NO DNS set (an old one, or clear the field in MANAGE EDIT and save), run its script.
+- See: `No DNS server set on wgcN; skipping the name check`, and the check passes as it always did.
+- Pass if: neither case rebuilds anything.
+
 **BRK-7** A WAN outage does not climb the backoff ladder
 
 - Do: with a watchdog on wgc1, note `cat /tmp/watchdog_backoff_wgc1` (count and timestamp).

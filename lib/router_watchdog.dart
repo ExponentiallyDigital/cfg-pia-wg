@@ -2162,6 +2162,70 @@ __MAILCMD__
   rm -f "$TMPERR"
 }
 
+# ── Does this tunnel resolve names? (ID-078 / ID-006) ──────────────────────────────────────────
+#
+# A handshake proves the peer answers the tunnel. It proves nothing about whether anything behind
+# the peer answers: devices pinned to wgc4 went two days without name resolution while the watchdog
+# logged a healthy handshake every five minutes.
+#
+# The probe asks the SLOT's own first DNS server - the one the firmware redirects a pinned device
+# to - and the answer only means something if the question went through this tunnel. Measured
+# 2026-09-19: a stopped slot falls through to the WAN and the lookup succeeds anyway, so the aim is
+# verified before any answer is believed.
+DNS1="$(nvram get ${K}dns | tr ',' ' ' | awk '{print $1}')"
+DNSTABLE=$((10 - SLOT))
+DNSFAILFILE="/tmp/watchdog_dnsfail_${IFACE}"
+DNSRULE=0
+DNSDEAD=0
+
+# A rule this script added, removed. Priority 1000 is the marker: nothing else on the router uses it.
+dns_rule_clean() {
+  [ "$DNSRULE" = "1" ] || return 0
+  ip rule del to "$DNS1" iif lo lookup "$DNSTABLE" priority 1000 2>/dev/null
+  DNSRULE=0
+}
+
+# Anything left behind by a run that was killed mid-probe.
+dns_rule_sweep() {
+  ip rule show 2>/dev/null | awk '$1 == "1000:" {print $5, $9}' | while read -r A T; do
+    [ -n "$A" ] && [ -n "$T" ] && ip rule del to "$A" iif lo lookup "$T" priority 1000 2>/dev/null
+  done
+}
+
+# 0 the server answered, 1 it did not, 2 the question could not be asked through this tunnel.
+dns_probe() {
+  [ -n "$DNS1" ] || { log "No DNS server set on $IFACE; skipping the name check"; return 2; }
+  if ! ip route get "$DNS1" 2>/dev/null | grep -q " dev $IFACE"; then
+    ip rule add to "$DNS1" iif lo lookup "$DNSTABLE" priority 1000 2>/dev/null
+    DNSRULE=1
+    if ! ip route get "$DNS1" 2>/dev/null | grep -q " dev $IFACE"; then
+      # The stopped-slot case. Asking anyway would send the lookup out of the WAN and pass.
+      log "Could not aim a lookup at $DNS1 through $IFACE; skipping the name check"
+      dns_rule_clean
+      return 2
+    fi
+  fi
+  # Bounded by hand: this BusyBox has no `timeout`, and its nslookup waits 20 seconds. A healthy
+  # lookup through a tunnel measured 0.5s, a cold one 2.1s.
+  nslookup example.com "$DNS1" >/dev/null 2>&1 &
+  NSPID=$!
+  NSW=0
+  while [ "$NSW" -lt 6 ] && kill -0 "$NSPID" 2>/dev/null; do
+    sleep 1
+    NSW=$((NSW + 1))
+  done
+  if kill -0 "$NSPID" 2>/dev/null; then
+    kill -9 "$NSPID" 2>/dev/null
+    wait "$NSPID" 2>/dev/null
+    DNSRC=1
+  else
+    wait "$NSPID"
+    DNSRC=$?
+  fi
+  dns_rule_clean
+  return "$DNSRC"
+}
+
 # ── The SMTP host's address, resolved the encrypted way (ID-077) ───────────────────────────────
 #
 # This is the lookup worth hiding. The PIA names say the router talks to PIA, which its WireGuard
@@ -2222,11 +2286,13 @@ abort() {
   send_alert FAILED "$1"
   rm -f "$TMPSRV"
   hosts_clean
+  dns_rule_clean
   exit 1
 }
 
-# Anything left in /etc/hosts by a run that was killed mid-send (ID-077).
+# Anything left behind by a run that was killed: a hosts entry (ID-077) or a routing rule (ID-078).
 hosts_clean
+dns_rule_sweep
 
 # Connectivity check
 FAIL=1
@@ -2261,10 +2327,36 @@ else
   fi
 fi
 
+# Names, not just packets (ID-078 / ID-006). Only when everything cheaper has passed: this exists
+# to catch what those miss, and a tunnel that is already down is not a DNS problem.
+if [ "$FAIL" = "0" ]; then
+  if dns_probe; then
+    rm -f "$DNSFAILFILE"
+  else
+    DNSPRC=$?
+    if [ "$DNSPRC" != "2" ]; then
+      DNSFAILS=0
+      [ -f "$DNSFAILFILE" ] && read -r DNSFAILS < "$DNSFAILFILE"
+      case "$DNSFAILS" in ''|*[!0-9]*) DNSFAILS=0 ;; esac
+      DNSFAILS=$((DNSFAILS + 1))
+      echo "$DNSFAILS" > "$DNSFAILFILE"
+      # Two in a row before acting: one lost packet must not bounce a working tunnel.
+      if [ "$DNSFAILS" -ge 2 ]; then
+        log "$IFACE is up and handshaking, but $DNS1 has answered nothing twice in a row"
+        DNSDEAD=1
+        FAIL=1
+      else
+        log "$IFACE: no answer from $DNS1; one more and it counts as broken"
+      fi
+    fi
+  fi
+fi
+
 # Success: update status
 if [ "$FAIL" = "0" ]; then
   date '+%s %Y-%m-%d %H:%M:%S' > "$STATUSFILE"
   printf '0\n0\n' > "$BACKOFFFILE"
+  rm -f "$DNSFAILFILE"
   # A deploy run always emails, even with nothing to fix: it is the user's proof that alerting
   # works. No addKey happened on this path, so the endpoint comes from NVRAM and there is no
   # server name or latency to report.
@@ -2315,7 +2407,11 @@ if [ "$RUNMODE" = "deploy" ]; then
   # fault in the router log.
   log "Deploying: bringing $IFACE up for the first time${APPVER:+ [script $APPVER]}"
 else
-  log "Connectivity lost; reconfiguring (attempt #$CNT)${APPVER:+ [script $APPVER]}"
+  if [ "$DNSDEAD" = "1" ]; then
+    log "Name resolution lost on $IFACE; reconfiguring (attempt #$CNT)${APPVER:+ [script $APPVER]}"
+  else
+    log "Connectivity lost; reconfiguring (attempt #$CNT)${APPVER:+ [script $APPVER]}"
+  fi
 fi
 
 # Preflight checks
@@ -2529,7 +2625,11 @@ if [ "$RUNMODE" = "deploy" ]; then
   DETAILV="watchdog deployed"
   CONNLABEL="Connected to"
 else
-  DETAILV="reconfigured successfully on attempt $CNT"
+  if [ "$DNSDEAD" = "1" ]; then
+    DETAILV="reconfigured successfully on attempt $CNT, after its DNS server stopped answering"
+  else
+    DETAILV="reconfigured successfully on attempt $CNT"
+  fi
   CONNLABEL="Reconnected to"
   DOWNLABEL="Tunnel was down for"
   # Measure the outage before stamping the status file, or it always reads zero.

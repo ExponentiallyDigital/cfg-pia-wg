@@ -1,6 +1,7 @@
 # ID-078 / ID-006 - a tunnel that handshakes but resolves nothing
 
-**Status: design, for Andrew to approve. No code written.**
+**Status: approved by Andrew and BUILT in build 455 (ID-078, closing ID-006).** Kept as the record of why it is shaped this way; the code is the `dns_probe` function in the script template in
+`lib/router_watchdog.dart`.
 
 **The problem, measured.** CHANGELOG ID-006: devices pinned to `wgc4` had no name resolution for
 two days while the watchdog logged a healthy handshake every five minutes. A WireGuard handshake
@@ -137,12 +138,13 @@ they miss.
 
 ---
 
-## Open questions for Andrew
+## The questions, and what was decided
 
-1. **Probe every check, or only every Nth?** My preference is every check while the handshake is
-   healthy, because the fault is invisible otherwise, but it is your traffic and your router.
-2. **What name should it look up?** Something stable, neutral and not PIA. A rotating label under a
-   domain you control would be ideal and is probably more than this needs.
+1. **Probe every check, or only every Nth?** Every check, while the handshake is healthy. One lookup
+   per slot per interval is nothing, and the fault is invisible any other way.
+2. **What name should it look up?** `example.com` - IANA-reserved, always resolves, neutral, sends
+   no traffic to a real service, and `nslookup` asks the slot's resolver directly so the router's
+   own cache never sees it.
 3. ~~Does `timeout` exist on the router?~~ **Answered 2026-09-19: no.** The design above bounds the
    lookup by hand instead.
 4. **Should a DNS failure email differently from a tunnel failure?** They are different faults with
