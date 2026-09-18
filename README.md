@@ -1,4 +1,7 @@
-# CFG-PIA-WG<img src="./assets/icon/app_icon_legacy.png" alt="cfg-pia-wg" width="150" />
+<h1>
+  <img src="./assets/icon/splash_detail.png" alt="cfg-pia-wg" width="150" align="middle" />
+  &nbsp;CFG-PIA-WG
+</h1>
 <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/cfg-pia-wg?color=0969DA" alt="Release"></a> 
 <a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-Android-57606A?logo=android&logoColor=white" alt="Platform"></a> 
 <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/cfg-pia-wg?color=0969DA" alt="License"></a> 

@@ -171,6 +171,7 @@ The dev dependencies in `pubspec.yaml`, used to build and test the project and n
 | [`dart_pubspec_licenses`](https://pub.dev/packages/dart_pubspec_licenses) | 3.2.0 | [MIT](https://pub.dev/packages/dart_pubspec_licenses/license) |
 | [`flutter_launcher_icons`](https://pub.dev/packages/flutter_launcher_icons) | 0.14.4 | [MIT](https://pub.dev/packages/flutter_launcher_icons/license) |
 | [`flutter_lints`](https://pub.dev/packages/flutter_lints) | 6.0.0 | [BSD-3-Clause](https://pub.dev/packages/flutter_lints/license) |
+| [`flutter_native_splash`](https://pub.dev/packages/flutter_native_splash) | 2.4.8 | [MIT](https://pub.dev/packages/flutter_native_splash/license) |
 | [`flutter_test`](https://pub.dev/packages/flutter_test) | SDK | [Flutter SDK](https://github.com/flutter/flutter/blob/main/LICENSE) |
 | [`mocktail`](https://pub.dev/packages/mocktail) | 1.0.5 | [MIT](https://pub.dev/packages/mocktail/license) |
 
