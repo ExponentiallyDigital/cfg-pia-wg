@@ -725,7 +725,10 @@ void main() {
     // the script can exceed dropbear's 9000-byte MAX_CMD_LEN without a single command doing so.
     // (Crossing it as one command is what closed the connection mid-deploy in 402.) Raised
     // 8700 -> 9000 in 400, then 9500 and 10000 in 402, and 24576 in 404 when the alert emails grew
-    // a body worth reading (which took the script from ~9 KB to ~15 KB), 26624 in 420, and 28160 in 447
+    // a body worth reading (which took the script from ~9 KB to ~15 KB), 26624 in 420, 28160 in 447, 29696 in 453 when the
+    // rebuild gained a handshake gate (ID-063) and stock its own restart path (ID-070), 34816 in
+    // 454 for encrypted lookups (ID-076) and the private SMTP lookup (ID-077), and 38912 in 455 for
+    // the name-resolution probe (ID-078)
     // for the failed-send DNS diagnostics - growth agreed 2026-09-14, since the script is written in
     // chunks. Prune the script's comments before raising it again.
     //
@@ -750,11 +753,119 @@ void main() {
       }
     });
 
+    // ID-070: the script restarts a stock tunnel the way the app does - VPN Fusion, by row index -
+    // rather than with the Merlin interface commands, whose effect on stock was never established.
+    test('stock restarts through VPN Fusion, Merlin through the interface', () {
+      final stock = buildWatchdogScript(_valid(), firmware: RouterFirmware.stock);
+      expect(stock, contains('nvram set vpnc_unit='));
+      expect(stock, contains('service restart_vpnc'));
+      // The row index, not the slot number and not 5 - slot: the rule vpncUnitForSlot implements.
+      expect(stock, contains('nvram get vpnc_clientlist'));
+      expect(stock, contains(r"awk -F'>'"));
+      // A slot with no row still has a way back up.
+      expect(stock, contains(r'service "start_wgc $SLOT"'), reason: 'the fallback');
+
+      final merlin = buildWatchdogScript(_valid(), firmware: RouterFirmware.merlin);
+      expect(merlin, isNot(contains('restart_vpnc')));
+      expect(merlin, contains(r'service "stop_wgc $SLOT"'));
+      expect(merlin, contains('service restart_vpnrouting0'));
+    });
+
+    // ID-063: the interface coming up is not the tunnel working. A rebuild that never handshakes
+    // used to log Reconfig SUCCESS, count itself and email SUCCESS.
+    test('a rebuild waits for a handshake before calling itself a success', () {
+      for (final fw in RouterFirmware.values) {
+        final script = buildWatchdogScript(_valid(), firmware: fw);
+        expect(script, contains('Waiting for a handshake on'), reason: fw.name);
+        expect(script, contains('never answered it (no handshake in 20s)'), reason: fw.name);
+        // The gate sits between the interface check and the success lines, or it proves nothing.
+        expect(script.indexOf('Interface \$IFACE is up'), lessThan(script.indexOf('Waiting for a handshake on')),
+            reason: fw.name);
+        expect(script.indexOf('Waiting for a handshake on'), lessThan(script.indexOf('Reconfig SUCCESS')),
+            reason: fw.name);
+        // Ten tries, two seconds apart: 20 seconds, double what the app's own ENABLE allows.
+        expect(script, contains(r'while [ "$HSTRY" -lt 10 ]'), reason: fw.name);
+      }
+    });
+
+    // ID-064: a WAN outage must not charge the tunnel for attempts that never happened. The WAN
+    // test sits ABOVE the backoff counter, so an outage neither adds a rung nor logs an attempt.
+    test('the WAN check runs before the backoff ladder', () {
+      for (final fw in RouterFirmware.values) {
+        final script = buildWatchdogScript(_valid(), firmware: fw);
+        final wan = script.indexOf('no Internet on WAN interface, exiting.');
+        final ladder = script.indexOf('# Backoff handling.');
+        final counter = script.indexOf(r'CNT=$((CNT + 1))');
+        final attempt = script.indexOf('Connectivity lost; reconfiguring (attempt');
+        expect(wan, greaterThan(0), reason: fw.name);
+        expect(wan, lessThan(ladder), reason: 'the outage exits before the ladder is touched');
+        expect(wan, lessThan(counter), reason: 'and before the counter is written');
+        expect(wan, lessThan(attempt), reason: 'and before an attempt is claimed in the log');
+      }
+    });
+
+    // ID-078 / ID-006: a tunnel that handshakes and resolves nothing used to pass every check.
+    // Each assertion here is a measurement from runsheet AN-2026-09-19_001 turned into a rule.
+    group('the name-resolution probe', () {
+      String script() => buildWatchdogScript(_valid());
+
+      test('asks the slot its own first DNS server', () {
+        final s = script();
+        expect(s, contains('nvram get \${K}dns'), reason: 'the slot own first DNS server');
+        expect(s, contains('nslookup example.com "\$DNS1"'),
+            reason: 'a neutral name that always resolves, and is not a PIA one');
+      });
+
+      test('verifies the aim before believing any answer', () {
+        final s = script();
+        // The stopped-slot case: with a temporary rule pointing at a slot that is down, the route
+        // falls through to the WAN and the lookup succeeds. Measured 2026-09-19 (B8).
+        final add = s.indexOf('ip rule add to "\$DNS1" iif lo lookup "\$DNSTABLE" priority 1000');
+        final verify = s.indexOf('Could not aim a lookup at');
+        expect(add, greaterThan(0));
+        expect(verify, greaterThan(add), reason: 'the second check comes after the rule is added');
+        expect(s, contains('skipping the name check'));
+      });
+
+      test('bounds a lookup by hand, because this BusyBox has no timeout', () {
+        final s = script();
+        expect(s, contains(r'while [ "$NSW" -lt 6 ] && kill -0 "$NSPID"'));
+        expect(s, isNot(contains('timeout 5')), reason: '`which timeout` finds nothing on the router');
+      });
+
+      test('needs two consecutive failures before it acts', () {
+        final s = script();
+        expect(s, contains(r'[ "$DNSFAILS" -ge 2 ]'));
+        expect(s, contains('one more and it counts as broken'));
+        // A success clears the count, or one failure a week would eventually add up to two.
+        expect(s, contains(r'rm -f "$DNSFAILFILE"'));
+      });
+
+      test('says which fault it was, in the log and in the email', () {
+        final s = script();
+        expect(s, contains('Name resolution lost on \$IFACE; reconfiguring'));
+        expect(s, contains('after its DNS server stopped answering'));
+      });
+
+      test('removes its rule on every path', () {
+        final s = script();
+        // After the probe, on abort, and swept at the start of the next run.
+        expect('dns_rule_clean'.allMatches(s).length, greaterThanOrEqualTo(3));
+        expect(s, contains('dns_rule_sweep'));
+        expect(s, contains('1000:'), reason: 'the sweep finds rules by their priority marker');
+      });
+
+      test('a slot with no DNS is skipped, not failed', () {
+        // The normal state for anything built by the watchdog shortcut before ID-126.
+        expect(script(), contains('No DNS server set on \$IFACE; skipping the name check'));
+      });
+    });
+
     test('neither variant grows the deploy payload', () {
       final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
       final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
-      expect(merlin, lessThan(28160));
-      expect(stock, lessThan(28160));
+      expect(merlin, lessThan(38912));
+      expect(stock, lessThan(38912));
     });
   });
 

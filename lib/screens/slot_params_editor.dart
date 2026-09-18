@@ -20,10 +20,11 @@
 import 'package:flutter/material.dart';
 
 import '../widgets/app_button.dart';
+import '../widgets/app_scaffold.dart';
 
 import '../app_colors.dart';
 import '../firmware.dart';
-import '../router_slot_service.dart' show slotLabel;
+import '../router_slot_service.dart' show dnsSharedWithRouter, slotLabel;
 import '../widgets/common_fields.dart';
 
 // Default values for editable fields that have one (spec 3.3), pre-filled when NVRAM is blank.
@@ -43,7 +44,18 @@ class SlotParamsEditor extends StatefulWidget {
   // has no wgcN_desc mirror for readSlotParams to find.
   final String desc;
   final Future<void> Function(Map<String, String> editableParams) onSave;
-  const SlotParamsEditor({super.key, required this.slot, required this.initial, required this.onSave, this.desc = ''});
+
+  /// The router's own encrypted-DNS servers, so the DNS field can say when the two overlap (ID-005).
+  final Set<String> routerDotServers;
+
+  const SlotParamsEditor({
+    super.key,
+    required this.slot,
+    required this.initial,
+    required this.onSave,
+    this.desc = '',
+    this.routerDotServers = const {},
+  });
 
   @override
   State<SlotParamsEditor> createState() => _SlotParamsEditorState();
@@ -115,8 +127,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('EDIT ${slotLabel(widget.slot, widget.desc)}',
-                    style: const TextStyle(color: kHighlight, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+                ScreenHeading('EDIT ${slotLabel(widget.slot, widget.desc)}', colour: kManageColour),
                 const SizedBox(height: 16),
                 _text('addr', 'Local tunnel IP (CIDR)', hint: 'e.g. 10.x.x.x/32'),
                 _text('desc', 'Region name', hint: 'must match the PIA region for the watchdog'),
@@ -125,7 +136,20 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 _text('ppub', 'Server public key'),
                 _privField(),
                 // Stock sends a device assigned to this slot to the first server only.
-                _text('dns', 'DNS servers', helper: isStockFirmware ? kDnsFirstServerNote : null),
+                // ID-005: the overlap note has to follow what is TYPED, so this one field listens
+                // to its own controller rather than taking a fixed helper.
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _ctrls['dns']!,
+                  builder: (context, value, _) {
+                    final shared = dnsSharedWithRouter(value.text, widget.routerDotServers);
+                    return _text('dns', 'DNS servers',
+                        helper: [
+                          if (isStockFirmware) kDnsFirstServerNote,
+                          if (shared.isNotEmpty) '${shared.join(' and ')}: $kDnsMatchesRouterNote',
+                        ].join('\n\n'),
+                        helperColour: shared.isEmpty ? null : kWarn);
+                  },
+                ),
                 _text('mtu', 'MTU', keyboard: TextInputType.number),
                 _text('alive', 'Persistent keepalive (s)', keyboard: TextInputType.number),
                 _text('aips', 'Allowed IPs'),
@@ -166,7 +190,8 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
     );
   }
 
-  Widget _text(String key, String label, {String? hint, String? helper, TextInputType? keyboard}) {
+  Widget _text(String key, String label,
+      {String? hint, String? helper, TextInputType? keyboard, Color? helperColour}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: TextField(
@@ -181,8 +206,8 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
           hintText: hint,
           isDense: true,
           helperText: helper,
-          helperMaxLines: 3,
-          helperStyle: const TextStyle(color: kMuted, fontSize: 11),
+          helperMaxLines: 8,
+          helperStyle: TextStyle(color: helperColour ?? kMuted, fontSize: 11),
         ),
       ),
     );

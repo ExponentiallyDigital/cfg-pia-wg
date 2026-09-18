@@ -63,6 +63,11 @@ const List<String> kMerlinOnlySlotKeys = ['enforce', 'fw', 'rip'];
 /// sweep by choice.
 const List<String> kVpncRuntimeKeys = ['dut_disc', 'sbstate_t', 'state_t'];
 
+/// Where the app records the `vpnc_max_conn` it found before it first raised the cap, so an
+/// uninstall can put that value back (ID-098). Absent means the app never touched the cap, and an
+/// uninstall leaves it alone.
+const String kMaxActiveVpnsPreviousKey = 'cfg_pia_wg_max_conn_prev';
+
 /// Concurrent-tunnel cap assumed on stock when `vpnc_max_conn` cannot be read. Raising it on the
 /// router is possible, but values above 2 are documented to break boot.
 const int kDefaultStockMaxActiveSlots = 2;
@@ -267,6 +272,74 @@ int? vpncUnitForSlot(List<VpncRecord> records, int slot) {
 /// ```
 const String kUpInterfacesCommand = 'ip -o link show up';
 
+/// The WebUI's DNS-over-TLS Server List, and whether DNS Privacy is switched on (ID-005).
+///
+/// `dnspriv_rulelist` holds `<IP>port>hostname>` records, `<` between them and `>` between fields:
+/// `<9.9.9.9>853>dns.quad9.net><149.112.112.112>853>dns.quad9.net>`. `dnspriv_enable` is `1` while
+/// DoT is on; with it off the list is still stored but nothing uses it, so an overlap means nothing.
+const String kDotServerListCommand = 'nvram get dnspriv_enable; echo ---; nvram get dnspriv_rulelist';
+
+/// The addresses in [kDotServerListCommand]'s output, or an empty set when DNS Privacy is off.
+///
+/// These are the addresses the router's own encrypted lookups go to. When a slot uses one of them,
+/// the firmware routes those lookups - and every unpinned device's - through that slot's tunnel
+/// (ID-001). The app only ever SAYS so: the user's DNS settings are the user's (CONTEXT).
+Set<String> parseDotServerList(String raw) {
+  final parts = raw.split('---');
+  if (parts.length < 2 || parts.first.trim() != '1') return {};
+  return {
+    for (final record in parts.last.split('<'))
+      if (record.trim().isNotEmpty)
+        if (record.split('>').first.trim().isNotEmpty) record.split('>').first.trim(),
+  };
+}
+
+/// The addresses in a DNS field, which people write with commas, spaces, or both.
+Set<String> dnsAddressesIn(String raw) => {
+      for (final part in raw.split(RegExp(r'[,\s]+')))
+        if (part.trim().isNotEmpty) part.trim(),
+    };
+
+/// The addresses [slotDns] shares with the router's own encrypted-DNS servers (ID-005). Empty is
+/// the ordinary case and means there is nothing to say.
+Set<String> dnsSharedWithRouter(String slotDns, Set<String> routerDotServers) =>
+    dnsAddressesIn(slotDns).intersection(routerDotServers);
+
+/// How recent a handshake has to be for a tunnel to count as answering (ID-123).
+///
+/// The same 300 seconds the watchdog script uses, and for the same reason: WireGuard renews a
+/// handshake about every two minutes while anything is flowing, and every slot this app creates
+/// carries `alive=25`, so a healthy tunnel handshakes even with no traffic on it.
+const int kAnsweringWithinSeconds = 300;
+
+/// One command for every interface's newest handshake, with the router's clock after it. Read
+/// together so the ages cannot be computed against this phone's clock, which may be minutes out.
+const String kHandshakeAgesCommand = 'wg show all latest-handshakes 2>/dev/null; echo ---; date +%s';
+
+/// Seconds since each slot's newest handshake, from [kHandshakeAgesCommand]'s output.
+///
+/// `wg show all latest-handshakes` prints `<iface>\t<peer key>\t<epoch seconds>` per peer, and 0
+/// for a peer that has never completed one - which is exactly the state an expired PIA
+/// registration leaves behind, so a 0 is dropped rather than read as "just now".
+Map<int, int> parseHandshakeAges(String raw) {
+  final parts = raw.split('---');
+  if (parts.length < 2) return {};
+  final now = int.tryParse(parts.last.trim());
+  if (now == null) return {};
+  final newest = <int, int>{};
+  for (final line in parts.first.split('\n')) {
+    final fields = line.trim().split(RegExp(r'\s+'));
+    if (fields.length < 3) continue;
+    final slot = int.tryParse(RegExp(r'^wgc(\d)$').firstMatch(fields.first)?.group(1) ?? '');
+    final stamp = int.tryParse(fields.last);
+    if (slot == null || stamp == null || stamp <= 0) continue;
+    final age = now - stamp;
+    final clamped = age < 0 ? 0 : age;
+    if (!newest.containsKey(slot) || clamped < newest[slot]!) newest[slot] = clamped;
+  }
+  return newest;
+}
+
 /// Splits a router address into host and port. `192.168.1.1` gives port 22; `192.168.1.1:2222`
 /// gives 2222.
 ///
@@ -325,6 +398,17 @@ class RouterSlots {
   // Every slot whose interface is up per `wg show interfaces`. A Set, not a single index: stock
   // permits more than one tunnel at a time (vpnc_max_conn), and reporting only the first hid that.
   final Set<int> activeSlots;
+
+  /// The addresses the router uses for its OWN encrypted DNS, from `dnspriv_rulelist` (ID-005).
+  /// Empty on Merlin, and empty on stock whenever DNS Privacy is switched off. Read once with the
+  /// slots so the CREATE and EDIT forms can compare without a round trip of their own.
+  final Set<String> routerDotServers;
+
+  /// Of [activeSlots], the ones whose server has answered within [kAnsweringWithinSeconds]
+  /// (ID-123). A slot that is up but NOT in here is the state an expired PIA registration leaves:
+  /// the device exists and sends, and nothing comes back. The badge tells the two apart rather
+  /// than calling both of them ACTIVE.
+  final Set<int> answeringSlots;
   // Informational only — branching reads the session flag in firmware.dart. Kept so the two do not
   // silently disagree; folding them together is a job for the planned firmware abstraction.
   // How many tunnels may run at once, or null for no limit. Stock enforces a cap (vpnc_max_conn,
@@ -335,6 +419,8 @@ class RouterSlots {
     required this.slots,
     required this.activeSlots,
     required this.isMerlin,
+    this.answeringSlots = const {},
+    this.routerDotServers = const {},
     this.maxActiveSlots,
   });
 }
@@ -430,6 +516,18 @@ class RouterSlotService {
   /// on some routers. The app honours the choice; it does not recommend it.
   Future<void> setMaxActiveVpns(int count) async {
     if (count < 2 || count > 5) throw ArgumentError.value(count, 'count', 'must be from 2 to 5');
+    // Remember what the router had BEFORE the app first raised the cap, so an uninstall can put it
+    // back - and only when the app is what moved it (ID-098). Written once: a second raise must not
+    // overwrite the original with the app's own earlier value.
+    if (count > kDefaultStockMaxActiveSlots) {
+      if (int.tryParse((await _read('nvram get $kMaxActiveVpnsPreviousKey')).trim()) == null) {
+        final before = int.tryParse((await _read('nvram get vpnc_max_conn')).trim()) ?? kDefaultStockMaxActiveSlots;
+        await _run('nvram set $kMaxActiveVpnsPreviousKey=$before');
+      }
+    } else {
+      // Back at the default by the user's own hand: there is nothing left for an uninstall to undo.
+      await _run('nvram unset $kMaxActiveVpnsPreviousKey');
+    }
     await _run('nvram set vpnc_max_conn=$count');
     await _run('nvram commit');
     await _logRouter('Maximum active VPNs set to $count');
@@ -620,6 +718,37 @@ class RouterSlotService {
     final ifaceOutput = await _read(kUpInterfacesCommand);
     final activeSlots = RegExp(r'wgc(\d)').allMatches(ifaceOutput).map((m) => int.parse(m.group(1)!)).toSet();
 
+    // One more command, for the difference between a tunnel that is up and one that is working
+    // (ID-123). Best-effort: a router that cannot answer it leaves every up slot reading as
+    // answering, which is the behaviour this had before the distinction existed.
+    Set<int> answering = activeSlots;
+    try {
+      final ages = parseHandshakeAges(await _read(kHandshakeAgesCommand));
+      if (ages.isNotEmpty || activeSlots.isEmpty) {
+        answering = {
+          for (final slot in activeSlots)
+            if ((ages[slot] ?? kAnsweringWithinSeconds + 1) <= kAnsweringWithinSeconds) slot,
+        };
+      }
+    } catch (_) {
+      answering = activeSlots;
+    }
+    for (final slot in activeSlots.difference(answering)) {
+      onLog?.call('wgc$slot is up but its server has not answered for over '
+          '${kAnsweringWithinSeconds ~/ 60} minutes.', isWarning: true);
+    }
+
+    // The router's own encrypted-DNS servers, for the overlap note on CREATE and EDIT (ID-005).
+    // Stock only: Merlin has no `dnspriv_rulelist`, and a failed read simply means no note.
+    var dotServers = <String>{};
+    if (stock) {
+      try {
+        dotServers = parseDotServerList(await _read(kDotServerListCommand));
+      } catch (_) {
+        dotServers = {};
+      }
+    }
+
     // Stock caps concurrent tunnels; follow the router's own setting rather than assuming 2, so a
     // user who changed it gets what they configured. Merlin has no such key, so no limit.
     final maxActiveSlots = stock ? await _readMaxActiveSlots() : null;
@@ -628,7 +757,13 @@ class RouterSlotService {
       onLog?.call('All WireGuard slots are unconfigured.');
     }
     onLog?.call('Successfully retrieved router config.', isSuccess: true);
-    return RouterSlots(slots: slots, activeSlots: activeSlots, isMerlin: isMerlin, maxActiveSlots: maxActiveSlots);
+    return RouterSlots(
+        slots: slots,
+        activeSlots: activeSlots,
+        answeringSlots: answering,
+        routerDotServers: dotServers,
+        isMerlin: isMerlin,
+        maxActiveSlots: maxActiveSlots);
   }
 
   // Reads every per-slot NVRAM value (bare-keyed map) for the parameter editor. Keys the running
@@ -879,7 +1014,9 @@ class RouterSlotService {
   }
 
   // ── Disable ─────────────────────────────────────────────────────────────────────────
-  Future<void> disableSlot(int slot) async {
+  /// Returns false when the interface was still up after the stop, so the caller can say so
+  /// rather than leave the ACTIVE badge to imply it (ID-124).
+  Future<bool> disableSlot(int slot) async {
     onLog?.call('Disabling ${await _label(slot)}...');
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
@@ -895,9 +1032,10 @@ class RouterSlotService {
     // Return only once the tunnel is really down. The stop is queued through notify_rc and returns
     // at once, so a caller that refreshes straight away reads `wg show interfaces` while the
     // interface is still listed and leaves the ACTIVE badge on a slot it just disabled.
-    await _awaitInterfaceDown(slot);
-    await _logRouter('Disabled ${await _label(slot)}');
+    final down = await _awaitInterfaceDown(slot);
+    await _logRouter('Disabled ${await _label(slot)}${down ? '' : ' (its interface is still up)'}');
     onLog?.call('${await _label(slot)} disabled.', isSuccess: true);
+    return down;
   }
 
   // ── Delete (clear the slot's WireGuard config) ──────────────────────────────────────
@@ -947,13 +1085,18 @@ class RouterSlotService {
   // Bounded wait for [slot]'s interface to leave `wg show interfaces`. Checks before sleeping, so
   // an already-stopped slot costs one command and tests stay instant. Reuses the same injectable
   // cadence as the enable-side verification.
-  Future<void> _awaitInterfaceDown(int slot) async {
+  /// True once the interface has gone, false if it is still up when the polling runs out.
+  ///
+  /// The caller decides what to do about a false: DELETE carries on clearing the configuration,
+  /// because leaving it half-removed would be worse, while DISABLE has nothing left to do and says
+  /// so on screen (ID-124). Either way this must not throw - the router has already been told.
+  Future<bool> _awaitInterfaceDown(int slot) async {
     for (var attempt = 0; attempt < verifyMaxAttempts; attempt++) {
-      if (!(await _read(kUpInterfacesCommand)).contains('wgc$slot')) return;
+      if (!(await _read(kUpInterfacesCommand)).contains('wgc$slot')) return true;
       await Future.delayed(verifyPollInterval);
     }
-    // Clearing the configuration is still the right thing to do; say so rather than fail the delete.
-    onLog?.call('${await _label(slot)} is still up after the stop; clearing its configuration anyway.', isError: true);
+    onLog?.call('${await _label(slot)} is still up after the stop.', isError: true);
+    return false;
   }
 
   // ── Edit: write the user-editable slot parameters back ──────────────────────────────

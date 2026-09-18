@@ -9,6 +9,7 @@ import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
+import 'package:cfg_pia_wg/widgets/region_picker_sheet.dart';
 import 'package:cfg_pia_wg/widgets/common_fields.dart';
 import 'package:cfg_pia_wg/widgets/slot_modal.dart';
 
@@ -74,10 +75,23 @@ SlotInfo _slot(
     );
 
 // [active] names every slot whose interface is up — more than one may be.
-RouterSlots _slots(Map<int, SlotInfo> override, {Set<int> active = const {}, bool merlin = true, int? maxActive}) {
+/// [answering] defaults to [active]: a tunnel that is up is normally being answered, and the tests
+/// that predate ID-123 are all about that case. Pass it explicitly for the one that is not.
+RouterSlots _slots(Map<int, SlotInfo> override,
+    {Set<int> active = const {},
+    Set<int>? answering,
+    Set<String> routerDot = const {},
+    bool merlin = true,
+    int? maxActive}) {
   final m = {for (var i = 1; i <= 5; i++) i: _slot(i)};
   override.forEach((k, v) => m[k] = v);
-  return RouterSlots(slots: m, activeSlots: active, isMerlin: merlin, maxActiveSlots: maxActive);
+  return RouterSlots(
+      slots: m,
+      activeSlots: active,
+      answeringSlots: answering ?? active,
+      routerDotServers: routerDot,
+      isMerlin: merlin,
+      maxActiveSlots: maxActive);
 }
 
 Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, SessionController c,
@@ -176,7 +190,7 @@ void main() {
       c.dispose();
     });
 
-    testWidgets('DISABLE asks first, says a running watchdog stops too, and CANCEL sends nothing', (tester) async {
+    testWidgets('DISABLE asks first, says a running watchdog pauses too, and CANCEL sends nothing', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(responder: (_) => '');
       await tester.pumpWidget(_host(
@@ -189,11 +203,129 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_disable')));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('stops its watchdog'), findsOneWidget);
+      // ID-095: pauses, and says so - the settings and the script stay for ENABLE to resume.
+      expect(find.textContaining('PAUSES its watchdog'), findsOneWidget);
       await tester.tap(_inDialog('CANCEL'));
       await tester.pumpAndSettle();
       expect(ssh.ran('nvram set wgc1_enable=0'), isFalse);
       expect(ssh.ran('cru d watchdog_wgc1'), isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-094: an enable that fails because PIA no longer answers this configuration is offered a
+    // rebuild, because rebuilding it is the fix. Every other failure keeps the plain OK dialog.
+    testWidgets('a stale configuration is offered a RECREATE', (tester) async {
+      final c = _controller();
+      // Nothing answers through the tunnel: the connectivity check fails and the slot is reverted.
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
+        if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
+        return '';
+      });
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_enable')));
+      await tester.tap(find.byKey(const Key('slot_enable')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Connectivity check failed'), findsOneWidget);
+      expect(find.byKey(const Key('error_action')), findsOneWidget);
+      expect(find.text('RECREATE'), findsOneWidget);
+
+      // NOT NOW leaves the slot alone: the offer is an offer.
+      await tester.tap(find.byKey(const Key('error_ok')));
+      await tester.pumpAndSettle();
+      expect(find.text('Overwrite wgc1:aus_melbourne?'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('RECREATE from that dialog starts the CREATE flow for the same slot', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
+        if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
+        return '';
+      });
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne')}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_enable')));
+      await tester.tap(find.byKey(const Key('slot_enable')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('error_action')));
+      await tester.pumpAndSettle();
+
+      // The CREATE flow starts by asking which region to build, exactly as the button does.
+      expect(find.byType(RegionPickerSheet), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-095: DISABLE pauses the watchdog rather than tearing it down, and ENABLE puts it back.
+    // It used to call stopWatchdog, which removes the script and the settings - and on the last
+    // watchdog on the router takes the PIA credentials with it, so there was nothing to resume.
+    testWidgets('DISABLE pauses the watchdog, keeping its settings', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+          ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true, watchdog: true)}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+      await tester.tap(_inDialog('DISABLE'));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran('cru d watchdog_wgc1'), isTrue, reason: 'the schedule goes');
+      expect(ssh.commands.any((x) => x.contains('nvram unset wgc1_wd_check_interval')), isFalse,
+          reason: 'the settings stay, or there is nothing to resume');
+      expect(ssh.commands.any((x) => x.contains('rm -f') && x.contains('watchdog_wgc1.sh')), isFalse,
+          reason: 'the script stays too');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('ENABLE puts a paused watchdog back with the tunnel', (tester) async {
+      final c = _controller();
+      // Stored ping targets so ENABLE does not stop to ask, an interface that comes up, and the
+      // stored check interval enableWatchdog reads to rebuild the schedule.
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('wd_check_interval')) return '5';
+        if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
+        if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
+        if (cmd.contains('ip -o link show up')) return 'wgc1';
+        if (cmd.contains('ping')) return 'OK';
+        return '';
+      });
+      await tester.pumpWidget(_host(
+          ssh,
+          SlotModalMode.manage,
+          _slots({1: _slot(1, desc: 'aus_melbourne', watchdogConfigured: true)}),
+          c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_enable')));
+      await tester.tap(find.byKey(const Key('slot_enable')));
+      await tester.pumpAndSettle();
+
+      expect(ssh.commands.any((x) => x.contains('cru a watchdog_wgc1')), isTrue,
+          reason: 'the paused schedule is restored');
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -327,10 +459,29 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_create')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Overwrite wgc1?'), findsOneWidget);
+      // ID-113: the title names the slot AND its region, so the body need not repeat it.
+      expect(find.text('Overwrite wgc1:aus_melbourne?'), findsOneWidget);
+      expect(find.textContaining('currently holds'), findsNothing);
       await tester.tap(_inDialog('CANCEL'));
       await tester.pumpAndSettle();
       expect(find.text('wgc1:aus_melbourne'), findsOneWidget); // still on the modal, no region picker
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-101: display order only - the highest slot first, as the router's own web interface
+    // creates them and as the DNS advice assumes (the lowest routing table wins, which is wgc5).
+    testWidgets('the slots list from wgc5 down to wgc1', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({}), c));
+      await _open(tester);
+
+      final tops = [for (var i = 5; i >= 1; i--) tester.getTopLeft(find.byKey(Key('slot_row_$i'))).dy];
+      for (var i = 1; i < tops.length; i++) {
+        expect(tops[i], greaterThan(tops[i - 1]), reason: 'wgc${5 - i} sits below wgc${6 - i}');
+      }
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -410,7 +561,7 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_create')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Overwrite wgc1?'), findsOneWidget);
+      expect(find.text('Overwrite wgc1:us_alabama?'), findsOneWidget);
       expect(find.textContaining('stopped first'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
@@ -1051,6 +1202,112 @@ void main() {
     });
 
     // Slots run side by side now: enabling one must not disturb another.
+    // ID-005: sharing an address with the router's own encrypted DNS is a real choice with a real
+    // cost, and the app's only job is to say so. It says it on the address that caused it, as the
+    // field is typed into, and says nothing when there is no overlap.
+    testWidgets('CREATE says when the DNS entered is the router\'s own', (tester) async {
+      useStock();
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.manage,
+        _slots({1: _slot(1)}, routerDot: const {'9.9.9.9', '149.112.112.112'}),
+        c,
+      ));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+      // Past the region picker, into the credentials dialog where the DNS is entered.
+      await tester.tap(find.text('aus_melbourne').last);
+      await tester.pumpAndSettle();
+
+      // The session default is Quad9, which is what this router uses for itself.
+      expect(find.byKey(const Key('dns_matches_router_note')), findsOneWidget);
+      expect(find.textContaining('9.9.9.9 and 149.112.112.112'), findsOneWidget);
+
+      await tester.enterText(find.byType(DnsField), '1.1.1.1, 1.0.0.1');
+      await tester.pump();
+      expect(find.byKey(const Key('dns_matches_router_note')), findsNothing,
+          reason: 'different addresses share nothing');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-123: an expired PIA registration leaves an interface that exists, sends and is never
+    // answered. Badging that ACTIVE was the old lie; it now says what it is, in amber.
+    testWidgets('a tunnel that is up but unanswered is not badged ACTIVE', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.manage,
+        _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}, active: {1}, answering: const {}),
+        c,
+      ));
+      await _open(tester);
+
+      expect(find.text('● UP, NO ANSWER'), findsOneWidget);
+      expect(find.text('● ACTIVE'), findsNothing);
+      final badge = tester.widget<SlotBadge>(find.byType(SlotBadge).first);
+      expect(badge.text, kWarn, reason: 'amber: neither healthy nor stopped');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a tunnel answered inside the window keeps ACTIVE', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.manage,
+        _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}, active: {1}, answering: {1}),
+        c,
+      ));
+      await _open(tester);
+
+      expect(find.text('● ACTIVE'), findsOneWidget);
+      expect(find.text('● UP, NO ANSWER'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-124: the app already waited for the interface to go and wrote a line in the app log when
+    // it did not. The screen behind that still badges the slot as up, so it has to say so too.
+    testWidgets('a disable that leaves the interface up says so on screen', (tester) async {
+      final c = _controller();
+      // The interface never leaves `ip -o link show up`, which is the case being tested.
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd == 'ip -o link show up' ? 'wgc1' : '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.manage,
+        _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}, active: {1}),
+        c,
+      ));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+      await tester.tap(_inDialog('DISABLE'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('still up on the router'), findsOneWidget);
+      expect(c.log.any((e) => e.message.contains('is still up after the stop')), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
     testWidgets('ENABLE leaves a slot whose interface is up alone', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(
