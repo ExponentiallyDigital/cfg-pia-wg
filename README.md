@@ -316,65 +316,34 @@ This enables full management of WG slots.
 
 Short version: build the VPN you use for everything in **wgc5**, and work downwards from there.
 
-The first reason is cosmetic. The router's own web interface creates `wgc5` first, and this app
-lists slots the same way - wgc5 at the top, down to wgc1 - so the two agree about which slot is
-"the first one".
+The first reason is cosmetic. The router's own web interface creates `wgc5` first, and this app lists slots the same way - wgc5 at the top, down to wgc1 - so the two agree about which slot is "the first one".
 
-The second reason is not cosmetic at all, and it applies when your VPN's DNS servers are the same
-addresses your router uses for its own encrypted DNS lookups. Quad9 and Cloudflare are the usual
-overlap, because they are a sensible answer to both questions. When the addresses match, the
-firmware sends the router's *own* lookups - the ones it makes for every device that has not been
-assigned to a tunnel - through the slot with the lowest routing table number. The tables run `wgc1`
-9 down to `wgc5` 5, so the lowest table belongs to the **highest-numbered** slot. Whichever slot
-that is, it carries name resolution for the whole house.
+The second reason is not cosmetic at all, and it applies when your VPN's DNS servers are the same addresses your router uses for its own encrypted DNS lookups. Quad9 and Cloudflare are the usual overlap, because they are a sensible answer to both questions. When the addresses match, the firmware sends the router's *own* lookups - the ones it makes for every device that has not been assigned to a tunnel - through the slot with the lowest routing table number. The tables run `wgc1` 9 down to `wgc5` 5, so the lowest table belongs to the **highest-numbered** slot. Whichever slot that is, it carries name resolution for the whole house.
 
 Two things follow, and both are worth knowing before you pick:
 
-- **A failure there is a failure everywhere.** If that tunnel dies and nothing rebuilds it, devices
-  that resolve through the router stop resolving names at all - not just the ones you assigned to
-  it. That is the argument for putting a watchdog on it, and for giving it an email address to
-  write to.
-- **Moving a region between slots has an order.** Create the new slot, move the pinned devices onto
-  it, and only then delete the old one. Deleting a slot sends its devices to **Internet**, not to
-  your default connection, so doing it the other way round quietly drops them out of the VPN.
+- **A failure there is a failure everywhere.** If that tunnel dies and nothing rebuilds it, devices that resolve through the router stop resolving names at all - not just the ones you assigned to   it. That is the argument for putting a watchdog on it, and for giving it an email address to write to.
+- **Moving a region between slots has an order.** Create the new slot, move the pinned devices onto it, and only then delete the old one. Deleting a slot sends its devices to **Internet**, not to your default connection, so doing it the other way round quietly drops them out of the VPN.
 
-If your VPN DNS and your router DNS are different addresses, none of the second reason applies and
-the choice really is yours.
+If your VPN DNS and your router DNS are different addresses, none of the second reason applies and the choice really is yours.
 
 #### 5.2.2. DNS: where your lookups go
 
-> [!IMPORTANT]
-> **Your default connection decides where a device's traffic goes. It does not decide where that
-> device's DNS goes.**
+> [!IMPORTANT] **Your default connection decides where a device's traffic goes. It does not decide where that device's DNS goes.**
 
 That one difference explains most of the surprises people hit. The short version:
 
 - **Pin a device to a slot** and its DNS follows that slot, through that slot's tunnel.
-- **A device that is not pinned** sends its lookups to the router, and the router answers them using
-  its own DNS settings - whatever your default connection is.
-- **Keep your router's DNS addresses away from your slots' DNS addresses**, unless you are choosing
-  to share one deliberately. When a slot uses the same address as the router, the router's own
-  lookups travel through that slot's tunnel, and if that tunnel stops answering while still looking
-  connected, every unpinned device loses name resolution until it is rebuilt.
+- **A device that is not pinned** sends its lookups to the router, and the router answers them using its own DNS settings - whatever your default connection is.
+- **Keep your router's DNS addresses away from your slots' DNS addresses**, unless you are choosing to share one deliberately. When a slot uses the same address as the router, the router's own lookups travel through that slot's tunnel, and if that tunnel stops answering while still looking connected, every unpinned device loses name resolution until it is rebuilt.
 
-**So pin the devices you care about.** A pinned device's traffic and its lookups leave from the same
-place, and nothing else on the router can move them. Following the default connection is fine for
-everything else, but it is the arrangement where the DNS surprise above can bite.
+**So pin the devices you care about.** A pinned device's traffic and its lookups leave from the same place, and nothing else on the router can move them. Following the default connection is fine for everything else, but it is the arrangement where the DNS surprise above can bite.
 
-On stock firmware the app tells you when a slot's DNS matches the addresses your router uses for its
-own encrypted lookups - a note under the DNS field, naming the shared addresses, as you type them.
-It is information rather than a warning: sharing is a reasonable thing to choose on purpose, and the
-app never changes your router's DNS settings.
+On stock firmware the app tells you when a slot's DNS matches the addresses your router uses for its own encrypted lookups - a note under the DNS field, naming the shared addresses, as you type them. It is information rather than a warning: sharing is a reasonable thing to choose on purpose, and the app never changes your router's DNS settings.
 
-Two things it cannot do anything about. The **watchdog's own lookups** happen on the router: since
-build 454 it resolves PIA and your mail server over encrypted DNS, to an address you choose on the
-watchdog form, which keeps your VPN provider and your email provider off the wire in the clear.
-And **this app's lookups on your phone** go through Android's resolver like every other app's -
-turn on Private DNS in Android's settings if that matters to you.
+Two things it cannot do anything about. The **watchdog's own lookups** happen on the router: since build 454 it resolves PIA and your mail server over encrypted DNS, to an address you choose on the watchdog form, which keeps your VPN provider and your email provider off the wire in the clear. And **this app's lookups on your phone** go through Android's resolver like every other app's - turn on Private DNS in Android's settings if that matters to you.
 
-**[ROUTER-DNS.md](ROUTER-DNS.md) is the full version**: why the router answers for unpinned devices,
-two worked setups with diagrams, how to use a slot for parental controls, a table of common DNS
-services, and the routing rules underneath it all for the technically inquisitive.
+**[ROUTER-DNS.md](ROUTER-DNS.md) is the full version**: why the router answers for unpinned devices, two worked setups with diagrams, how to use a slot for parental controls, a table of common DNS services, and the routing rules underneath it all for the technically inquisitive.
 
 ### 5.3. WATCHDOG  - Watchdog WireGuard management
 
@@ -549,13 +518,9 @@ Six things that catch people out:
 
 #### 5.4.1. Phones and random MAC addresses
 
-An assignment is a pin to a MAC address, so a device that changes its MAC quietly stops being the
-device you assigned. It does not lose its connection: it leaves by the default connection instead,
-which is the one thing you did not choose for it. Nothing announces this, which is why the list tags
-those devices.
+An assignment is a pin to a MAC address, so a device that changes its MAC quietly stops being the device you assigned. It does not lose its connection: it leaves by the default connection instead, which is the one thing you did not choose for it. Nothing announces this, which is why the list tags those devices.
 
-Phones do it by default, and the switch is per network, so turning it off for your home Wi-Fi costs
-you nothing anywhere else:
+Phones do it by default, and the switch is per network, so turning it off for your home Wi-Fi costs you nothing anywhere else:
 
 - **iOS 27:** Settings > Wi-Fi > your network (the ⓘ) > Private Wi-Fi Address > off.
 - **Android (Pixel):** Settings > Network & internet > Internet > your network (the gear) > Privacy
@@ -563,26 +528,17 @@ you nothing anywhere else:
 
 Two more ways an Android phone can rotate its address, worth knowing if one keeps coming back:
 
-- Developer options has **Wi-Fi non-persistent MAC randomisation**. With it on, the address changes
-  at a reboot or when the DHCP lease expires, not just when you join a new network.
-- An app can ask for a randomised address through the network suggestion API, and an open network
-  with no captive portal gets one without Developer options being involved at all.
+- Developer options has **Wi-Fi non-persistent MAC randomisation**. With it on, the address changes at a reboot or when the DHCP lease expires, not just when you join a new network.
+- An app can ask for a randomised address through the network suggestion API, and an open network with no captive portal gets one without Developer options being involved at all.
 
-Laptops and desktops usually keep one address per adapter. If in doubt, the tag in the device list
-is the answer: the app reads the address itself and says so.
+Laptops and desktops usually keep one address per adapter. If in doubt, the tag in the device list is the answer: the app reads the address itself and says so.
 
 #### 5.4.2. Where the device list comes from
 
-The list is the router's own view of your network, not a scan this app runs. That has two
-consequences worth expecting rather than reporting:
+The list is the router's own view of your network, not a scan this app runs. That has two consequences worth expecting rather than reporting:
 
-- **A device can read as offline while it is sitting there working.** The firmware marks a device
-  online when it sees traffic from it, so a quiet one can lag by minutes. It comes back the moment
-  it sends something.
-- **A device you no longer own can linger.** The router holds an entry until its lease expires, and
-  a phone that rotates its address (see [5.4.1](#541-phones-and-random-mac-addresses)) leaves one
-  behind every time it does. A "ghost" with a name you recognise and an address you do not is
-  usually the same phone under a new MAC.
+- **A device can read as offline while it is sitting there working.** The firmware marks a device online when it sees traffic from it, so a quiet one can lag by minutes. It comes back the moment it sends something.
+- **A device you no longer own can linger.** The router holds an entry until its lease expires, and a phone that rotates its address (see [5.4.1](#541-phones-and-random-mac-addresses)) leaves one behind every time it does. A "ghost" with a name you recognise and an address you do not is usually the same phone under a new MAC.
 
 Either way, the router is the authority here: what the list shows is what the router would act on.
 

@@ -1,7 +1,6 @@
 # DNS: where your lookups actually go
 
-This is the long version. [README section 5.2.2](README.md#522-dns-where-your-lookups-go) has the
-short one, and links here for the detail.
+This is the long version. [README section 5.2.2](README.md#522-dns-where-your-lookups-go) has the short one, and links here for the detail.
 
 > [!IMPORTANT]
 > **Your default connection decides where a device's traffic goes. It does not decide where that device's DNS goes.**

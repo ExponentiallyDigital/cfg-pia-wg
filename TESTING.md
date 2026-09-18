@@ -270,6 +270,10 @@ nvram get vpnc_default_wan
 
 ## <a name='man'></a>MAN. Manage
 
+**Slots at the start of this group:** all five empty, as PRE-5 or PRE-1 left them. **At the end:** wgc1 and wgc5 configured and running, everything else empty. MAN-9, MAN-11 and MAN-16 each leave a slot broken on purpose and each ends by repairing it - do not skip those steps, because every group after this one assumes wgc1 and wgc5 are up.
+
+MAN-13 and MAN-14 are in the [WD](#wd) group: they need a watchdog to pause, and none exists yet.
+
 **MAN-1** Create wgc1
 
 - Do: select wgc1, CREATE, choose a region, enter PIA details, CONTINUE.
@@ -314,17 +318,7 @@ nvram get vpnc_default_wan
 - Do: select wgc5, DISABLE, confirm.
 - See: the ACTIVE badge goes.
 - Pass if: `wg show interfaces` no longer lists wgc5.
-
-**MAN-13** Disable pauses a watchdog rather than removing it
-
-- Do: on a slot that HAS a watchdog, MANAGE, DISABLE.
-- See: the prompt says the watchdog will be paused and that ENABLE brings both back.
-- Do: confirm.
-- See: the slot shows WATCHDOG PAUSED.
-- Pass if: `cru l` has no `watchdog_wgcN` lines, `nvram get wgcN_wd_check_interval` is still set, and `/jffs/cfg-pia-wg/watchdog_wgcN.sh` is still there.
-- Do: ENABLE, with check targets already stored.
-- See: the tunnel comes up and the slot shows WATCHDOG ACTIVE again.
-- Pass if: `cru l` lists both `watchdog_wgcN` lines again, at the interval it had before.
+- Do: ENABLE it again before moving on. Every group after MAN expects wgc5 up, and MAN-11 - the one test that would otherwise bring it back - is optional.
 
 **MAN-9** Create over a running tunnel, new region
 
@@ -356,13 +350,6 @@ nvram get vpnc_default_wan
 - See: the prompt names the VPN: `Delete VPN wgc3:pia-<region>?`
 - See: the row reads `wgc3 <empty slot>`.
 
-**MAN-14** Delete takes a paused watchdog with it
-
-- Do: on a slot whose watchdog is PAUSED (MAN-13 leaves one), MANAGE, DELETE.
-- See: the prompt says the watchdog goes too - schedule, script and settings - and that nothing is left to ENABLE.
-- Do: confirm.
-- Pass if: `ls /jffs/cfg-pia-wg/watchdog_wgcN.sh` finds nothing, and `nvram show | grep wgcN_wd_` prints nothing - the SMTP password included.
-
 **MAN-15** Slots read wgc5 first, and the buttons are colour-coded
 
 - See: on MANAGE and on WATCHDOG, the list runs wgc5 at the top down to wgc1.
@@ -377,13 +364,21 @@ nvram get vpnc_default_wan
 - Do: on the router, `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`, then wait five minutes and REFRESH the screen by leaving it and coming back.
 - See: the badge is now amber and reads `● UP, NO ANSWER` - the interface is still up, and nothing is answering it.
 - Pass if: APP LOG says wgc1 is up but its server has not answered for over 5 minutes.
-- Do: ENABLE, or let the watchdog rebuild it.
+- Do: MANAGE, wgc1, DISABLE, then ENABLE. There is no watchdog yet at this point in the run, so this is what repairs it.
 - See: teal `● ACTIVE` again.
 - Note: this is what an expired PIA registration looks like, which is why it is worth knowing by sight.
 
 ---
 
 ## <a name='wd'></a>WD. Watchdog
+
+**Slots at the start of this group:** wgc1 and wgc5 configured and running, everything else empty. **At the end:** watchdogs active on wgc1 and wgc5 with both tunnels up, which is what every group after this one needs.
+
+Which slot each test uses, because they are not interchangeable:
+
+- **wgc1 and wgc5** are the pair the later groups depend on. Nothing here may leave either of them deleted - WD-12 deletes wgc5 and rebuilds it in the same test.
+- **wgc2** is the expendable one. WD-9 builds it and deploys a watchdog to it, WD-21 breaks and restores it, and MAN-14 deletes it at the end of the group.
+- **wgc3** is empty from MAN-12 onwards, which is what WD-20 and WD-23 need. WD-23 leaves it built; delete it afterwards or leave it, nothing depends on either.
 
 Use a 5 minute check interval throughout. PIA rate-limits token requests: test one slot at a time.
 
@@ -465,6 +460,7 @@ Use a 5 minute check interval throughout. PIA rate-limits token requests: test o
 - See: "Delete watchdog and VPN wgc5:...?". Afterwards wgc5 is empty.
 - See: APP LOG "Another watchdog is still configured; keeping the shared PIA credentials."
 - Pass if: `nvram get cfg_pia_wg_user` is still set.
+- Do: **rebuild wgc5 before moving on** - MANAGE CREATE it in its old region, ENABLE, then WATCHDOG CREATE/EDIT and SAVE & DEPLOY. WD-22, BRK-6, and the DEV and DEF groups all need it.
 
 **WD-13** Emails
 
@@ -512,11 +508,39 @@ Use a 5 minute check interval throughout. PIA rate-limits token requests: test o
 - Pass if: `nvram get wgc1_wd_check_interval` reads `10`, and `cru l` and the boot persistence file both show `*/10 * * * *` for `watchdog_wgc1`.
 - Do: set it back to `5`.
 
+**WD-20** PIA credentials are checked before the router is touched
+
+- Do: WATCHDOG, CREATE/EDIT on **wgc3**, which is empty. Note `nvram get wgc3_desc` and `nvram get wgc3_priv` first - both should be empty.
+- Do: enter a wrong PIA password, fill the rest, SAVE & DEPLOY.
+- See: "PIA rejected this username and password", and the form stays open.
+- Pass if: nothing was written - `nvram get wgc3_desc`, `wgc3_priv` and `wgc3_wd_check_interval` are all still empty, `cru l` has no new lines, and no alert email arrives.
+- Do: correct the password, SAVE & DEPLOY.
+- See: it deploys as usual.
+
+**WD-21** A deploy that fails puts the slot back
+
+- Do: on **wgc2**, which WD-9 built and which nothing later depends on, note `nvram get wgc2_ppub` and its region.
+- Do: unplug the router's WAN (or pull its internet), then WATCHDOG, CREATE/EDIT on wgc2, choose a DIFFERENT region, SAVE & DEPLOY.
+- See: it fails, and the message names the cause, says the slot was left as it was, and says the watchdog will try again in N minutes.
+- Pass if: `nvram get wgc2_ppub` and `wgc2_desc` are what they were before, and the router's web interface shows the slot exactly as it did.
+- Pass if: `cru l` still lists the watchdog - the schedule stays on purpose, because it is the retry.
+- Do: plug the WAN back in and wait one check interval.
+- See: the watchdog rebuilds the tunnel by itself.
+- Note: on an EMPTY slot the same failure leaves it empty rather than half-built. Worth doing both if there is time.
+**WD-22** A paused watchdog keeps the shared PIA credentials
+
+- Do: watchdogs on wgc1 and wgc5, both deployed.
+- Do: MANAGE, select wgc5, DISABLE - which pauses its watchdog (MAN-13).
+- Do: WATCHDOG, select wgc1, DELETE, confirm. That is the last SCHEDULED watchdog on the router.
+- Pass if: `nvram get cfg_pia_wg_user` and `nvram get cfg_pia_wg_password` are both still set.
+- Do: MANAGE, select wgc5, ENABLE.
+- Pass if: the watchdog runs its next check and rebuilds without "PIA username is not set" in its log.
+
 **WD-23** The watchdog form writes the slot's DNS
 
-- Do: WATCHDOG, CREATE/EDIT on an EMPTY slot. Note the DNS field - it should be filled in, not grey.
+- Do: WATCHDOG, CREATE/EDIT on **wgc3**. Note the DNS field - it should be filled in, not grey.
 - Do: SAVE & DEPLOY, and wait for it to finish.
-- Pass if: `nvram get wgcN_dns` returns what the field showed.
+- Pass if: `nvram get wgc3_dns` returns what the field showed.
 - Pass if: `ip rule show | grep "iif lo"` now lists two rules for that slot's DNS addresses.
 - Pass if: `iptables -t nat -S VPN_FUSION | grep <a pinned device's IP>` shows its port-53 lookups redirected to that slot's first DNS server.
 - Note: before this build a slot built here had no DNS at all, so a pinned device's lookups left over the WAN instead of through its tunnel. That is what these three checks are about.
@@ -541,34 +565,25 @@ Use a 5 minute check interval throughout. PIA rate-limits token requests: test o
 - Do: `cat /etc/hosts` and confirm it looks untouched otherwise.
 - Note: if the log says it could not resolve privately, the mailer looked the name up in the clear and the email still went. That is the designed fallback, not a failure.
 
-**WD-20** PIA credentials are checked before the router is touched
+The last two tests here are MANAGE ones. They live at the end of this group because they act on a watchdog, and there is none until this group has run.
 
-- Do: WATCHDOG, CREATE/EDIT on an EMPTY slot. Note `nvram get wgcN_desc` and `nvram get wgcN_priv` first - both should be empty.
-- Do: enter a wrong PIA password, fill the rest, SAVE & DEPLOY.
-- See: "PIA rejected this username and password", and the form stays open.
-- Pass if: nothing was written - `nvram get wgcN_desc`, `wgcN_priv` and `wgcN_wd_check_interval` are all still empty, `cru l` has no new lines, and no alert email arrives.
-- Do: correct the password, SAVE & DEPLOY.
-- See: it deploys as usual.
+**MAN-13** Disable pauses a watchdog rather than removing it
 
-**WD-22** A paused watchdog keeps the shared PIA credentials
+- Do: MANAGE, select **wgc2** - WD-9 gave it a watchdog and nothing later needs it - then DISABLE.
+- See: the prompt says the watchdog will be paused and that ENABLE brings both back.
+- Do: confirm.
+- See: the slot shows WATCHDOG PAUSED.
+- Pass if: `cru l` has no `watchdog_wgc2` lines, `nvram get wgc2_wd_check_interval` is still set, and `/jffs/cfg-pia-wg/watchdog_wgc2.sh` is still there.
+- Do: ENABLE, with check targets already stored.
+- See: the tunnel comes up and the slot shows WATCHDOG ACTIVE again.
+- Pass if: `cru l` lists both `watchdog_wgc2` lines again, at the interval it had before.
 
-- Do: watchdogs on wgc1 and wgc5, both deployed.
-- Do: MANAGE, select wgc5, DISABLE - which pauses its watchdog (MAN-13).
-- Do: WATCHDOG, select wgc1, DELETE, confirm. That is the last SCHEDULED watchdog on the router.
-- Pass if: `nvram get cfg_pia_wg_user` and `nvram get cfg_pia_wg_password` are both still set.
-- Do: MANAGE, select wgc5, ENABLE.
-- Pass if: the watchdog runs its next check and rebuilds without "PIA username is not set" in its log.
+**MAN-14** Delete takes a paused watchdog with it
 
-**WD-21** A deploy that fails puts the slot back
-
-- Do: on a slot that already HOLDS a working configuration, note `nvram get wgcN_ppub` and its region.
-- Do: unplug the router's WAN (or pull its internet), then WATCHDOG, CREATE/EDIT on that slot, choose a DIFFERENT region, SAVE & DEPLOY.
-- See: it fails, and the message names the cause, says the slot was left as it was, and says the watchdog will try again in N minutes.
-- Pass if: `nvram get wgcN_ppub` and `wgcN_desc` are what they were before, and the router's web interface shows the slot exactly as it did.
-- Pass if: `cru l` still lists the watchdog - the schedule stays on purpose, because it is the retry.
-- Do: plug the WAN back in and wait one check interval.
-- See: the watchdog rebuilds the tunnel by itself.
-- Note: on an EMPTY slot the same failure leaves it empty rather than half-built. Worth doing both if there is time.
+- Do: MANAGE, select **wgc2**, which MAN-13 left with a paused watchdog, then DELETE. Do this one on wgc2 and nothing else: wgc1 and wgc5 are needed by every group after this.
+- See: the prompt says the watchdog goes too - schedule, script and settings - and that nothing is left to ENABLE.
+- Do: confirm.
+- Pass if: `ls /jffs/cfg-pia-wg/watchdog_wgc2.sh` finds nothing, and `nvram show | grep wgc2_wd_` prints nothing - the SMTP password included.
 
 ---
 
@@ -577,6 +592,8 @@ Use a 5 minute check interval throughout. PIA rate-limits token requests: test o
 The most common real failure is PIA silently expiring a registration. There is no published schedule: it can be a day or a couple of weeks. The interface stays up, the server stops answering, and the handshake ages out. BRK-1 reproduces exactly that. Why the others are chosen, and why some obvious methods are not used, is in [R2](#r2).
 
 Anything pinned to the slot loses internet during these tests. That is the test working. Use a slot nothing important depends on, with a watchdog, email on, and a 5 minute interval.
+
+**Slots at the start of this group:** watchdogs active on wgc1 and wgc5, both tunnels up, and both slots carrying DNS servers - BRK-8 has nothing to probe otherwise. Each test repairs what it breaks.
 
 **BRK-1** Expired registration (the real one, slow)
 
@@ -625,8 +642,7 @@ wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
 
 **BRK-5** A rebuild that fails
 
-The app now asks PIA about the credentials before it writes them (WD-20), so a wrong password typed
-into the form never reaches the router. Break the stored ones instead.
+The app now asks PIA about the credentials before it writes them (WD-20), so a wrong password typed into the form never reaches the router. Break the stored ones instead.
 
 - Do: with a working watchdog on wgc1, on the router: `nvram set cfg_pia_wg_password=wrong && nvram commit`
 - Do: break the tunnel as in BRK-2.
@@ -637,39 +653,14 @@ into the form never reaches the router. Break the stored ones instead.
 - See: it recovers and emails SUCCESS.
 - Do not repeat this test straight away: PIA refuses repeated token requests for a while.
 
-**BRK-8** A tunnel that answers packets but not questions
+**BRK-6** Backoff ladder, with no PIA traffic
 
-This is the fault of CHANGELOG ID-006: devices pinned to a slot lost name resolution for two days
-while the watchdog logged a healthy handshake every five minutes. It needs a slot WITH DNS servers
-set, so use one built or edited since build 454.
-
-- Do: note the slot's first DNS server: `nvram get wgc1_dns`.
-- Do: on the router, block it through that tunnel only:
-
-```sh
-iptables -I OUTPUT -o wgc1 -d 9.9.9.9 -j DROP
-```
-
-- Do: run `/jffs/cfg-pia-wg/watchdog_wgc1.sh` and read the log.
-- See: `wgc1: no answer from 9.9.9.9; one more and it counts as broken` - and NOT a rebuild. One
-  failure is not enough on purpose.
-- Do: run it again.
-- See: `wgc1 is up and handshaking, but 9.9.9.9 has answered nothing twice in a row`, then
-  `Name resolution lost on wgc1; reconfiguring`, then a normal rebuild.
-- See: the SUCCESS email says it reconfigured "after its DNS server stopped answering".
-- Do: remove the block: `iptables -D OUTPUT -o wgc1 -d 9.9.9.9 -j DROP`
-- Pass if: `ip rule show | grep 1000:` finds nothing. The probe's temporary rule is removed every
-  time, and a leftover would quietly redirect the router's own lookups.
-
-**BRK-9** The probe skips what it cannot ask
-
-- Do: MANAGE, DISABLE wgc1, then run `/jffs/cfg-pia-wg/watchdog_wgc1.sh`.
-- See: it stands down because the slot is disabled - the name check never runs.
-- Do: ENABLE wgc1 again.
-- Do: on a slot with NO DNS set (an old one, or clear the field in MANAGE EDIT and save), run its script.
-- See: `No DNS server set on wgcN; skipping the name check`, and the check passes as it always did.
-- Pass if: neither case rebuilds anything.
-
+- Do: WATCHDOG DISABLE on wgc5 (it shows PAUSED).
+- Do: `wg set wgc5 peer "$(nvram get wgc5_ppub)" remove`
+- Do: copy `scripts/test-backoff.sh` to the router, run `./test-backoff.sh 5`.
+- See: waits of 120, 240, 480, 960, 1800, 3600, 5400, 5400 seconds, and the script exits 0.
+- Do: WATCHDOG ENABLE on wgc5.
+- Why it is safe, and the loop by hand: [R3](#r3).
 **BRK-7** A WAN outage does not climb the backoff ladder
 
 - Do: with a watchdog on wgc1, note `cat /tmp/watchdog_backoff_wgc1` (count and timestamp).
@@ -680,20 +671,41 @@ iptables -I OUTPUT -o wgc1 -d 9.9.9.9 -j DROP
 - Do: plug the internet back in, then run the script again.
 - See: it makes a real attempt straight away rather than waiting out a ladder it never earned.
 
-**BRK-6** Backoff ladder, with no PIA traffic
+**BRK-8** A tunnel that answers packets but not questions
 
-- Do: WATCHDOG DISABLE on wgc5 (it shows PAUSED).
-- Do: `wg set wgc5 peer "$(nvram get wgc5_ppub)" remove`
-- Do: copy `scripts/test-backoff.sh` to the router, run `./test-backoff.sh 5`.
-- See: waits of 120, 240, 480, 960, 1800, 3600, 5400, 5400 seconds, and the script exits 0.
-- Do: WATCHDOG ENABLE on wgc5.
-- Why it is safe, and the loop by hand: [R3](#r3).
+This is the fault of CHANGELOG ID-006: devices pinned to a slot lost name resolution for two days while the watchdog logged a healthy handshake every five minutes. It needs a slot WITH DNS servers set, so use one built or edited since build 454.
+
+- Do: note the slot's first DNS server: `nvram get wgc1_dns`.
+- Do: on the router, block it through that tunnel only:
+
+```sh
+iptables -I OUTPUT -o wgc1 -d 9.9.9.9 -j DROP
+```
+
+- Do: run `/jffs/cfg-pia-wg/watchdog_wgc1.sh` and read the log.
+- See: `wgc1: no answer from 9.9.9.9; one more and it counts as broken` - and NOT a rebuild. One failure is not enough on purpose.
+- Do: run it again.
+- See: `wgc1 is up and handshaking, but 9.9.9.9 has answered nothing twice in a row`, then `Name resolution lost on wgc1; reconfiguring`, then a normal rebuild.
+- See: the SUCCESS email says it reconfigured "after its DNS server stopped answering".
+- Do: remove the block: `iptables -D OUTPUT -o wgc1 -d 9.9.9.9 -j DROP`
+- Pass if: `ip rule show | grep 1000:` finds nothing. The probe's temporary rule is removed every time, and a leftover would quietly redirect the router's own lookups.
+
+**BRK-9** The probe skips what it cannot ask
+
+- Do: MANAGE, DISABLE wgc1, then run `/jffs/cfg-pia-wg/watchdog_wgc1.sh`.
+- See: it stands down because the slot is disabled - the name check never runs.
+- Do: ENABLE wgc1 again.
+- Do: on a slot with NO DNS set (an old one, or clear the field in MANAGE EDIT and save), run its script.
+- See: `No DNS server set on wgcN; skipping the name check`, and the check passes as it always did.
+- Pass if: neither case rebuilds anything.
 
 ---
 
 ## <a name='dev'></a>DEV. Device assignment
 
 Stock only. Assigning a device does not restart any tunnel; changing the default connection does, and has its own section, [DEF](#def). Set up: wgc1 and wgc5 up in different regions, default connection Internet.
+
+**Slots for this group:** wgc1 and wgc5 configured and running. DEV-15 deletes wgc5 and recreates it; everything else here changes device assignments rather than slots.
 
 **DEV-1** The list
 
@@ -812,6 +824,8 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 Changing the default stops every tunnel and starts them again, for about a minute. Anything using any tunnel drops. Do not run this on a router someone is relying on. Set up: wgc1 and wgc5 up in different regions, TABLET on "default", DESKTOP pinned to wgc5.
 
+**Slots for this group:** wgc1 and wgc5 configured and running. DEF-9 deletes wgc1 on purpose and ends by rebuilding it, because DEF-10 and the groups after it need it back.
+
 **DEF-1** Internet to a tunnel
 
 - Do: note `wg show interfaces`. Set the default to wgc1, APPLY.
@@ -864,6 +878,7 @@ Changing the default stops every tunnel and starts them again, for about a minut
 
 - Do: default to wgc1, APPLY. DESKTOP on wgc5. MANAGE DELETE wgc1.
 - Pass if: `nvram get vpnc_default_wan` reads `0`, every tunnel restarts, TABLET's exit IP is your own, and DESKTOP is still on wgc5.
+- Do: **rebuild wgc1 before moving on** - MANAGE CREATE it in its old region, ENABLE, and set the default connection back to wgc1. DEF-10 and everything after it expect it.
 
 **DEF-10** Survives a reboot
 
