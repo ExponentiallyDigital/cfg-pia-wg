@@ -123,6 +123,19 @@ class WatchdogConfig {
   final String smtpServer; // host:port
   final String smtpUsername, smtpPassword;
 
+  /// Where the watchdog's OWN name lookups go, encrypted (ID-076). The URL always carries a
+  /// hostname and [dohIp] is the address `--resolve` pins it to; empty means lookups stay in the
+  /// clear, which is what every watchdog deployed before build 454 does.
+  final String dohUrl, dohIp;
+
+  /// The slot's own DNS servers (`wgcN_dns`), asked for on the watchdog form since ID-126.
+  ///
+  /// Not a watchdog setting at all - it belongs to the slot - but the watchdog form is the only
+  /// place that builds a slot without going through MANAGE CREATE, and without it that slot gets
+  /// none. Empty means "leave whatever is there alone", so an existing slot's choice survives a
+  /// watchdog edit.
+  final String slotDns;
+
   const WatchdogConfig({
     required this.slotIndex,
     this.cronIntervalMinutes = 5,
@@ -137,6 +150,9 @@ class WatchdogConfig {
     this.smtpServer = '',
     this.smtpUsername = '',
     this.smtpPassword = '',
+    this.slotDns = '',
+    this.dohUrl = '',
+    this.dohIp = '',
   });
 
   // Human-readable validation errors; an empty list means the config is valid.
@@ -202,6 +218,10 @@ class WatchdogConfig {
         'wgc${slotIndex}_wd_smtp_server': smtpServer.trim(),
         'wgc${slotIndex}_wd_smtp_user': smtpUsername.trim(),
         'wgc${slotIndex}_wd_smtp_pass': smtpPassword,
+        // ID-076. Written even when empty, so clearing the resolver on the form clears it on the
+        // router rather than leaving the old one in place.
+        'wgc${slotIndex}_wd_doh_url': dohUrl.trim(),
+        'wgc${slotIndex}_wd_doh_ip': dohIp.trim(),
       };
 
   // Rebuilds a config from a map of nvram values (per-slot wgcN_wd_* + global PIA keys).
@@ -222,6 +242,9 @@ class WatchdogConfig {
       smtpServer: g('smtp_server'),
       smtpUsername: g('smtp_user'),
       smtpPassword: g('smtp_pass'),
+      slotDns: nv['wgc${slot}_dns'] ?? '',
+      dohUrl: g('doh_url'),
+      dohIp: g('doh_ip'),
     );
   }
 
@@ -239,6 +262,9 @@ class WatchdogConfig {
     String? smtpServer,
     String? smtpUsername,
     String? smtpPassword,
+    String? slotDns,
+    String? dohUrl,
+    String? dohIp,
   }) =>
       WatchdogConfig(
         slotIndex: slotIndex ?? this.slotIndex,
@@ -254,6 +280,9 @@ class WatchdogConfig {
         smtpServer: smtpServer ?? this.smtpServer,
         smtpUsername: smtpUsername ?? this.smtpUsername,
         smtpPassword: smtpPassword ?? this.smtpPassword,
+        slotDns: slotDns ?? this.slotDns,
+        dohUrl: dohUrl ?? this.dohUrl,
+        dohIp: dohIp ?? this.dohIp,
       );
 
   // Splits "host:port" on the LAST colon; defaults the port to 465 (implicit TLS).
@@ -303,6 +332,8 @@ String get kUninstallNvramCommand {
   ];
   const perSlot = [
     'wd_check_interval',
+    'wd_doh_ip',
+    'wd_doh_url',
     'wd_email_enabled',
     'wd_email_from',
     'wd_email_subject',
@@ -726,7 +757,7 @@ fi''';
 
 const String _kMailCmdMerlin = r'''  /usr/sbin/sendmail \
     -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt \
-    -verify_return_error -connect $SMTP_HOST:$SMTP_PORT" \
+    -verify_return_error $SMTPCONN" \
     -au"$SMTP_USER" \
     -ap"$SMTP_PASS" \
     -f"$EMAIL_FROM" \
@@ -780,6 +811,62 @@ else
   service restart_vpnrouting0
 fi''';
 
+/// The curl arguments that make a lookup encrypted, or an empty string when none is configured.
+///
+/// Both parts or neither: `--doh-url` alone would leave curl resolving the resolver's own name in
+/// the clear, which is most of what this is for.
+String dohCurlArguments(String url, String ip) {
+  final host = Uri.tryParse(url.trim())?.host ?? '';
+  if (host.isEmpty || ip.trim().isEmpty) return '';
+  return ' --doh-url ${url.trim()} --resolve $host:443:${ip.trim()}';
+}
+
+/// What the script logs once per run, so a reader can see which way lookups went.
+String dohDescription(String url, String ip) {
+  final host = Uri.tryParse(url.trim())?.host ?? '';
+  if (host.isEmpty || ip.trim().isEmpty) return '';
+  return '$host (${ip.trim()})';
+}
+
+/// Where the watchdog sends its own name lookups, encrypted (ID-076).
+///
+/// Each entry is a hostname URL and the address to reach it at. BOTH halves are load-bearing on
+/// stock: ASUS's `curl` refuses any URL whose host is an IP literal - silently, exit 0, with only
+/// `Invalid DL URL(<ip>)` in `/jffs/curllst` (ARCHITECTURE section 2) - so the URL must carry a
+/// name; and `--resolve` then supplies the address, so no name has to be looked up in the clear
+/// before the encrypted lookup can start. Measured on hardware 2026-09-19: the pair returns 200,
+/// the IP-literal URL returns nothing at all.
+///
+/// The addresses are chosen to be ones a PIA slot is unlikely to use, because an address a slot
+/// owns is routed INTO that slot's tunnel by the firmware - which would send the watchdog's
+/// lookups through the tunnel it exists to repair (ID-001).
+class DohResolver {
+  const DohResolver(this.label, this.url, this.ip);
+
+  /// What the form shows.
+  final String label;
+
+  /// The DoH endpoint, always a hostname.
+  final String url;
+
+  /// The address `--resolve` pins that hostname to.
+  final String ip;
+}
+
+/// The three offered, in the order the form lists them, plus whatever the user types.
+const List<DohResolver> kDohResolvers = [
+  DohResolver('Cloudflare (blocks malware)', 'https://security.cloudflare-dns.com/dns-query', '1.1.1.2'),
+  DohResolver('Google', 'https://dns.google/dns-query', '8.8.8.8'),
+  DohResolver('Quad9 (blocks malware)', 'https://dns.quad9.net/dns-query', '9.9.9.9'),
+];
+
+/// The default: Cloudflare's malware-filtering resolver. Chosen because it is the address the DNS
+/// advice recommends for the router's own DNS Server setting, so it is the one least likely to be
+/// sitting on a slot, and because it filters - the watchdog makes few lookups, and a filtering
+/// resolver is one more thing in the way of anything on the router misbehaving.
+const DohResolver kDefaultDohResolver =
+    DohResolver('Cloudflare (blocks malware)', 'https://security.cloudflare-dns.com/dns-query', '1.1.1.2');
+
 // Shell appending a fixed block of lines. Generated from the same constants [buildEmailBody] uses,
 // so the script's wording and the app's cannot drift apart.
 String _echoBlock(Iterable<String> lines) => lines.map((l) => '  echo ${shellSingleQuote(l)} >> "\$TMPMAIL"').join('\n');
@@ -797,6 +884,8 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       // stock creates keys nothing reads and DELETE does not clean up.
       .replaceAll('__MERLINONLY__', stock ? '' : _kMerlinOnlyNvsets)
       .replaceAll('__RESTART__', stock ? _kRestartStock : _kRestartMerlin)
+      .replaceAll('__DOH__', dohCurlArguments(c.dohUrl, c.dohIp))
+      .replaceAll('__DOHDESC__', dohDescription(c.dohUrl, c.dohIp))
       .replaceAll('__BACKOFF__', buildBackoffCase())
       .replaceAll('__APPVER__', appVersionLabel)
       .replaceAll('__KILLSW__', stock ? _kKillSwitchStock : _kKillSwitchMerlin)
@@ -1030,6 +1119,13 @@ class RouterWatchdog {
   Future<void> _writeWatchdogNvram(WatchdogConfig config, {String? desc}) async {
     for (final e in config.toNvram().entries) {
       await _run('nvram set ${e.key}=${shellSingleQuote(e.value)}');
+    }
+    // The slot's own DNS (ID-126). Written here because the watchdog form is the only path that
+    // builds a slot without MANAGE CREATE, and a slot with no DNS gets no VPN_FUSION redirect - so
+    // a device pinned to it sends its traffic through the tunnel and its lookups over the WAN.
+    // Empty leaves whatever is there alone, so a slot built in MANAGE keeps its own choice.
+    if (config.slotDns.trim().isNotEmpty) {
+      await _run('nvram set wgc${config.slotIndex}_dns=${shellSingleQuote(config.slotDns.trim())}');
     }
     await _run('nvram set cfg_pia_wg_user=${shellSingleQuote(config.piaUsername.trim())}');
     await _run('nvram set cfg_pia_wg_password=${shellSingleQuote(config.piaPassword)}');
@@ -1458,7 +1554,16 @@ class RouterWatchdog {
       if (other == slot) continue;
       if ((await _read('cru l | grep -qw watchdog_wgc$other && echo 1 || echo 0')) == '1') return true;
     }
-    return false;
+    // A PAUSED watchdog has no cron entry and still needs the shared PIA credentials: its settings
+    // are on the router and ENABLE is meant to put it straight back to work. Asking `cru` alone
+    // meant deleting the last SCHEDULED watchdog unset `cfg_pia_wg_user` and `_password` under a
+    // paused one, whose next reconfigure then aborted with "PIA username is not set" (ID-065).
+    // More likely since ID-095, where MANAGE DISABLE pauses instead of tearing down.
+    final probe = [
+      for (var other = 1; other <= 5; other++)
+        if (other != slot) '[ -n "\$(nvram get wgc${other}_wd_check_interval)" ] && echo 1',
+    ].join('; ');
+    return (await _read(probe)).contains('1');
   }
 
   // Full disable: unset NVRAM, remove cron jobs and service-start script
@@ -1652,6 +1757,8 @@ class RouterWatchdog {
       'smtp_server',
       'smtp_user',
       'smtp_pass',
+      'doh_url',
+      'doh_ip',
     ];
     final nv = <String, String>{};
     for (final k in keys) {
@@ -1659,6 +1766,8 @@ class RouterWatchdog {
     }
     nv['cfg_pia_wg_user'] = await _read('nvram get cfg_pia_wg_user');
     nv['cfg_pia_wg_password'] = await _read('nvram get cfg_pia_wg_password');
+    // The slot's own key, not a watchdog one, so the form can show what is really there (ID-126).
+    nv['wgc${slot}_dns'] = await _read('nvram get wgc${slot}_dns');
     return WatchdogConfig.fromNvram(slot, nv);
   }
 
@@ -1828,7 +1937,13 @@ UNSENTFILE="/tmp/watchdog_unsent_${IFACE}"
 CACERT="__CACERT__"
 JQ="__JQ__"
 # tlsv1.2 is a MINIMUM; requiring 1.3 failed addKey with curl 35 (handshake).
-CURLB="curl -s --max-time 15 --connect-timeout 8 --tlsv1.2"
+CURLPLAIN="curl -s --max-time 15 --connect-timeout 8 --tlsv1.2"
+# Encrypted name lookups (ID-076). __DOH__ is empty when none is configured, in which case this is
+# exactly what it always was. The hostname-plus---resolve shape is what ASUS's curl accepts; see
+# ARCHITECTURE section 2. CURLPLAIN stays for the one retry below: a watchdog that cannot rebuild a
+# tunnel is worse than one whose lookups are visible.
+CURLB="$CURLPLAIN__DOH__"
+DOHDESC="__DOHDESC__"
 CURL="$CURLB --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
 TMPSRV="/tmp/${IFACE}_servers.txt"
@@ -1999,9 +2114,19 @@ __WHATTODO__
 __SIGNOFF__
 
   TMPERR="/tmp/wd_smtp_err_$$"
+  # ID-077: the address first, then the mailer, then the entry goes straight back out.
+  resolve_smtp
+  if [ -n "$SMTP_IP" ]; then
+    SMTPCONN="-connect $SMTP_IP:$SMTP_PORT -servername $SMTP_HOST -verify_hostname $SMTP_HOST"
+    hosts_add
+    log "SMTP host resolved privately to $SMTP_IP"
+  else
+    SMTPCONN="-connect $SMTP_HOST:$SMTP_PORT"
+  fi
 __MAILCMD__
 
   MAIL_EXIT=$?
+  hosts_clean
   rm -f "$TMPMAIL"
 
   if [ "$MAIL_EXIT" -ne 0 ]; then
@@ -2037,6 +2162,46 @@ __MAILCMD__
   rm -f "$TMPERR"
 }
 
+# ── The SMTP host's address, resolved the encrypted way (ID-077) ───────────────────────────────
+#
+# This is the lookup worth hiding. The PIA names say the router talks to PIA, which its WireGuard
+# traffic already says; the SMTP hostname names the user's email provider, and nothing else on the
+# wire does. Neither mailer can be told "use this address but verify this name": the stock mailer takes a
+# hostname and verifies against it, and the Merlin one hands the whole thing to openssl. So the
+# address is learnt over DoH first, and then given to the mailer the only way each one accepts.
+#
+# Learnt by asking curl to connect and report what it connected to. curl resolves over DoH, the
+# connection then fails at the protocol level - it is speaking HTTP to an SMTP port - and
+# %{remote_ip} is written either way. Ugly, and it needs no extra binary.
+resolve_smtp() {
+  SMTP_IP=""
+  [ -n "$DOHDESC" ] || return 0
+  [ -n "$SMTP_HOST" ] || return 0
+  SMTP_IP="$($CURLB -o /dev/null -w '%{remote_ip}' "https://$SMTP_HOST:$SMTP_PORT" 2>/dev/null)"
+  # Anything that is not dotted digits is not an address. An empty answer is the ordinary failure.
+  case "$SMTP_IP" in
+    ''|*[!0-9.]*) SMTP_IP="" ;;
+  esac
+  [ -n "$SMTP_IP" ] || log "Could not resolve $SMTP_HOST over encrypted DNS; the mailer will look it up itself"
+}
+
+# /etc/hosts is how the stock mailer is given an address without losing certificate verification:
+# it still connects to the NAME, and still checks the certificate against it. The entry carries a
+# marker so a run that was killed mid-send can be cleaned up by the next one.
+HOSTSMARK="cfg-pia-wg-$IFACE"
+hosts_clean() {
+  grep -q "$HOSTSMARK" /etc/hosts 2>/dev/null || return 0
+  grep -v "$HOSTSMARK" /etc/hosts > "/tmp/hosts_$IFACE" 2>/dev/null || return 0
+  cat "/tmp/hosts_$IFACE" > /etc/hosts 2>/dev/null
+  rm -f "/tmp/hosts_$IFACE"
+}
+hosts_add() {
+  [ -n "$SMTP_IP" ] || return 0
+  hosts_clean
+  echo "$SMTP_IP $SMTP_HOST # $HOSTSMARK" >> /etc/hosts 2>/dev/null ||
+    log "Could not write /etc/hosts; $SMTP_HOST will be looked up in the clear"
+}
+
 abort() {
   log "ERROR: $1"
   # The token fetch passes -u user:password, and curl logs every command line to world-readable
@@ -2056,8 +2221,12 @@ abort() {
   fi
   send_alert FAILED "$1"
   rm -f "$TMPSRV"
+  hosts_clean
   exit 1
 }
+
+# Anything left in /etc/hosts by a run that was killed mid-send (ID-077).
+hosts_clean
 
 # Connectivity check
 FAIL=1
@@ -2108,6 +2277,18 @@ if [ "$FAIL" = "0" ]; then
   exit 0
 fi
 
+# The WAN first. This sits ABOVE the backoff ladder on purpose: while the internet is out there is
+# nothing to rebuild a tunnel FROM, so counting the check as a failed attempt charges the outage to
+# the tunnel. It used to sit below, and a two-hour outage could leave the ladder at 90 minutes - so
+# when the WAN came back, a tunnel that could not recover by itself waited that long for its first
+# real attempt - having logged a reconfigure it never started, every few minutes, throughout (ID-064).
+if ping -c 1 -W 2 "$PRIMARY_IP" >/dev/null 2>&1 || ping -c 1 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
+  log "WAN has internet connectivity"
+else
+  log "no Internet on WAN interface, exiting."
+  exit 0
+fi
+
 # Backoff handling. CNT counts attempts actually MADE, not checks that found a fault: a run the
 # backoff turns away leaves it alone, so how fast the wait grows does not depend on the check
 # interval. Reset to 0 by the success path above.
@@ -2142,14 +2323,6 @@ fi
 [ -x "$JQ" ] || command -v "$JQ" >/dev/null 2>&1 || abort "jq is not installed"
 [ -n "$PIA_USER" ] || abort "PIA username is not set"
 
-# Check connectivity
-if ping -c 1 -W 2 "$PRIMARY_IP" >/dev/null 2>&1 || ping -c 1 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
-  log "WAN has internet connectivity"
-else
-  log "no Internet on WAN interface, exiting."
-  exit 0
-fi
-
 # PIA re-negotiation
 if [ ! -f "$CACERT" ]; then
   log "CA cert not cached; downloading"
@@ -2165,6 +2338,7 @@ else
   log "Using cached CA cert"
 fi
 
+if [ -n "$DOHDESC" ]; then log "Name lookups encrypted via $DOHDESC"; else log "Name lookups are NOT encrypted (no DoH resolver configured)"; fi
 log "Requesting PIA token for user $PIA_USER"
 # Body to a file, status code to a second file, curl as the condition of an `if`. exit 0 with no
 # status, no body and no stderr is the caller-rejection signature (see the detach at the top); if
@@ -2181,9 +2355,12 @@ HTTP="$(echo "$WRITEOUT" | cut -d' ' -f1)"
 # One retry. "The network was still coming back up" is a real possibility for the first call after
 # an outage, and three seconds is nothing against a tunnel that otherwise stays down for hours.
 if [ -z "$HTTP" ] || [ "$HTTP" = "000" ]; then
-  log "token fetch produced [$WRITEOUT]; retrying once in 3s"
+  # The retry drops the encrypted lookup. If DoH is what failed - a resolver that is down, or a
+  # firmware that has started refusing the flag - this is what keeps the tunnel repairable, and the
+  # log says plainly that the lookup was in the clear.
+  if [ -n "$DOHDESC" ]; then log "token fetch produced [$WRITEOUT]; retrying once in 3s WITHOUT encrypted DNS"; else log "token fetch produced [$WRITEOUT]; retrying once in 3s"; fi
   sleep 3
-  if $CURLB -S -o "$TMPTOK" -w '%{http_code} exit=%{exitcode} connects=%{num_connects} err=%{errormsg}' \
+  if $CURLPLAIN -S -o "$TMPTOK" -w '%{http_code} exit=%{exitcode} connects=%{num_connects} err=%{errormsg}' \
      -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" >"$TMPHTTP" 2>"$TMPERR"; then
     RC=0
   else

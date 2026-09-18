@@ -75,10 +75,23 @@ SlotInfo _slot(
     );
 
 // [active] names every slot whose interface is up — more than one may be.
-RouterSlots _slots(Map<int, SlotInfo> override, {Set<int> active = const {}, bool merlin = true, int? maxActive}) {
+/// [answering] defaults to [active]: a tunnel that is up is normally being answered, and the tests
+/// that predate ID-123 are all about that case. Pass it explicitly for the one that is not.
+RouterSlots _slots(Map<int, SlotInfo> override,
+    {Set<int> active = const {},
+    Set<int>? answering,
+    Set<String> routerDot = const {},
+    bool merlin = true,
+    int? maxActive}) {
   final m = {for (var i = 1; i <= 5; i++) i: _slot(i)};
   override.forEach((k, v) => m[k] = v);
-  return RouterSlots(slots: m, activeSlots: active, isMerlin: merlin, maxActiveSlots: maxActive);
+  return RouterSlots(
+      slots: m,
+      activeSlots: active,
+      answeringSlots: answering ?? active,
+      routerDotServers: routerDot,
+      isMerlin: merlin,
+      maxActiveSlots: maxActive);
 }
 
 Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, SessionController c,
@@ -1189,6 +1202,112 @@ void main() {
     });
 
     // Slots run side by side now: enabling one must not disturb another.
+    // ID-005: sharing an address with the router's own encrypted DNS is a real choice with a real
+    // cost, and the app's only job is to say so. It says it on the address that caused it, as the
+    // field is typed into, and says nothing when there is no overlap.
+    testWidgets('CREATE says when the DNS entered is the router\'s own', (tester) async {
+      useStock();
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.manage,
+        _slots({1: _slot(1)}, routerDot: const {'9.9.9.9', '149.112.112.112'}),
+        c,
+      ));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+      // Past the region picker, into the credentials dialog where the DNS is entered.
+      await tester.tap(find.text('aus_melbourne').last);
+      await tester.pumpAndSettle();
+
+      // The session default is Quad9, which is what this router uses for itself.
+      expect(find.byKey(const Key('dns_matches_router_note')), findsOneWidget);
+      expect(find.textContaining('9.9.9.9 and 149.112.112.112'), findsOneWidget);
+
+      await tester.enterText(find.byType(DnsField), '1.1.1.1, 1.0.0.1');
+      await tester.pump();
+      expect(find.byKey(const Key('dns_matches_router_note')), findsNothing,
+          reason: 'different addresses share nothing');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-123: an expired PIA registration leaves an interface that exists, sends and is never
+    // answered. Badging that ACTIVE was the old lie; it now says what it is, in amber.
+    testWidgets('a tunnel that is up but unanswered is not badged ACTIVE', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.manage,
+        _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}, active: {1}, answering: const {}),
+        c,
+      ));
+      await _open(tester);
+
+      expect(find.text('● UP, NO ANSWER'), findsOneWidget);
+      expect(find.text('● ACTIVE'), findsNothing);
+      final badge = tester.widget<SlotBadge>(find.byType(SlotBadge).first);
+      expect(badge.text, kWarn, reason: 'amber: neither healthy nor stopped');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('a tunnel answered inside the window keeps ACTIVE', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.manage,
+        _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}, active: {1}, answering: {1}),
+        c,
+      ));
+      await _open(tester);
+
+      expect(find.text('● ACTIVE'), findsOneWidget);
+      expect(find.text('● UP, NO ANSWER'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-124: the app already waited for the interface to go and wrote a line in the app log when
+    // it did not. The screen behind that still badges the slot as up, so it has to say so too.
+    testWidgets('a disable that leaves the interface up says so on screen', (tester) async {
+      final c = _controller();
+      // The interface never leaves `ip -o link show up`, which is the case being tested.
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd == 'ip -o link show up' ? 'wgc1' : '');
+      await tester.pumpWidget(_host(
+        ssh,
+        SlotModalMode.manage,
+        _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}, active: {1}),
+        c,
+      ));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+      await tester.tap(_inDialog('DISABLE'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('still up on the router'), findsOneWidget);
+      expect(c.log.any((e) => e.message.contains('is still up after the stop')), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
     testWidgets('ENABLE leaves a slot whose interface is up alone', (tester) async {
       final c = _controller();
       final ssh = RecordingSSHClient(

@@ -309,13 +309,27 @@ class _SlotModalState extends State<SlotModal> {
       confirmLabel: 'DISABLE',
     );
     if (!ok) return;
+    var wentDown = true;
     await _runSlot((svc) async {
       // PAUSE, not remove (ID-095). `stopWatchdog` tears down the schedule, the script and the
       // settings, which is DELETE's job - and on the last watchdog it takes the PIA credentials
       // with it, leaving nothing for an ENABLE to restore.
       if (wdActive) await _wdSvc(svc.client).disableWatchdog(slot);
-      await svc.disableSlot(slot);
+      wentDown = await svc.disableSlot(slot);
     });
+    // The router took the setting and the interface stayed up, so the refresh behind this dialog
+    // badges the slot as still running. Saying nothing would leave that reading as a tap that did
+    // not work, rather than as what it is (ID-124).
+    if (!wentDown && mounted) {
+      await AppErrors.system(
+        context,
+        _c,
+        'wgc$slot was disabled, but its tunnel is still up on the router.',
+        detail: "The router accepted the change - its own web interface will show the profile "
+            'disconnected - but the interface has not gone. Reboot the router if it stays this way; '
+            'the app log has every command that was run.',
+      );
+    }
   }
 
   Future<void> _editManage() async {
@@ -340,6 +354,7 @@ class _SlotModalState extends State<SlotModal> {
         slot: slot,
         initial: params!,
         desc: _slots.slots[slot]?.desc ?? '',
+        routerDotServers: _slots.routerDotServers,
         onSave: (editable) => _runSlot((svc) => svc.writeSlotParams(slot, editable)),
       ),
     );
@@ -413,6 +428,7 @@ class _SlotModalState extends State<SlotModal> {
         connect: widget.connect,
         piaService: widget.piaService,
         serviceFactory: widget.watchdogServiceFactory,
+        routerDotServers: _slots.routerDotServers,
       ),
     ));
     await _refresh();
@@ -518,6 +534,7 @@ class _SlotModalState extends State<SlotModal> {
         initialUsername: _c.piaUsername,
         initialPassword: _c.piaPassword,
         initialDns: _c.dns,
+        routerDotServers: _slots.routerDotServers,
       ),
     );
     if (result != null) {
@@ -594,8 +611,16 @@ class _SlotModalState extends State<SlotModal> {
           final slotNum = entry.key;
           final info = entry.value;
           final desc = info.isEmpty ? '<empty slot>' : info.desc;
+          // Up AND answered recently is ACTIVE; up with nothing coming back gets said out loud
+          // rather than badged the same way (ID-123). An expired PIA registration looks exactly
+          // like a healthy tunnel from the link flag alone.
           final isActive = _slots.activeSlots.contains(slotNum);
-          final badgeLabel = isActive ? '● ACTIVE' : null;
+          final isAnswering = _slots.answeringSlots.contains(slotNum);
+          final badgeLabel = !isActive
+              ? null
+              : isAnswering
+                  ? '● ACTIVE'
+                  : '● UP, NO ANSWER';
           return InkWell(
             key: Key('slot_row_$slotNum'),
             onTap: _processing ? null : () => setState(() => _selected = slotNum),
@@ -629,7 +654,14 @@ class _SlotModalState extends State<SlotModal> {
                           const SizedBox(height: 5),
                           Wrap(spacing: 6, runSpacing: 4, children: [
                             if (badgeLabel != null)
-                              const SlotBadge(label: '● ACTIVE', text: kHighlight, border: kHighlight, bg: Color(0xFF0F3D2E)),
+                              // Amber for "up, no answer": it is not a healthy tunnel and it is not
+                              // a stopped one either, and calling it ACTIVE was the old lie (ID-123).
+                              SlotBadge(
+                                label: badgeLabel,
+                                text: isAnswering ? kHighlight : kWarn,
+                                border: isAnswering ? kHighlight : kWarn,
+                                bg: isAnswering ? const Color(0xFF0F3D2E) : const Color(0xFF2A1F0E),
+                              ),
                             if (info.killSwitch)
                               const SlotBadge(label: '⚑ KILL SWITCH', text: kWarn, border: kWarn, bg: Color(0xFF2A1F0E)),
                             if (info.watchdogActive)
@@ -731,10 +763,14 @@ class _PiaCredsDialog extends StatefulWidget {
   final String initialPassword;
   final String initialDns;
 
+  /// The router's own encrypted-DNS servers, so the DNS field can say when the two overlap (ID-005).
+  final Set<String> routerDotServers;
+
   const _PiaCredsDialog({
     required this.initialUsername,
     required this.initialPassword,
     required this.initialDns,
+    this.routerDotServers = const {},
   });
 
   @override
@@ -789,7 +825,10 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
         ),
         const SizedBox(height: 10),
         // These servers become the slot's, and stock sends an assigned device to the first one only.
-        DnsField(controller: _dnsCtrl, firstServerNote: isStockFirmware),
+        DnsField(
+            controller: _dnsCtrl,
+            firstServerNote: isStockFirmware,
+            routerDotServers: widget.routerDotServers),
         if (_error != null) ...[
           const SizedBox(height: 14),
           Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),

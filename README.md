@@ -33,6 +33,7 @@
   - [5.1. STANDALONE - Generate a PIA WireGuard configuration](#51-standalone---generate-a-pia-wireguard-configuration)
   - [5.2. MANAGE - Manage router PIA WireGuard configuration](#52-manage---manage-router-pia-wireguard-configuration)
     - [5.2.1. Which slot should carry your main VPN?](#521-which-slot-should-carry-your-main-vpn)
+    - [5.2.2. DNS: where your lookups go](#522-dns-where-your-lookups-go)
   - [5.3. WATCHDOG  - Watchdog WireGuard management](#53-watchdog----watchdog-wireguard-management)
     - [5.3.1. Email alerts](#531-email-alerts)
   - [5.4. VPN device assignment](#54-vpn-device-assignment)
@@ -339,6 +340,41 @@ Two things follow, and both are worth knowing before you pick:
 
 If your VPN DNS and your router DNS are different addresses, none of the second reason applies and
 the choice really is yours.
+
+#### 5.2.2. DNS: where your lookups go
+
+> [!IMPORTANT]
+> **Your default connection decides where a device's traffic goes. It does not decide where that
+> device's DNS goes.**
+
+That one difference explains most of the surprises people hit. The short version:
+
+- **Pin a device to a slot** and its DNS follows that slot, through that slot's tunnel.
+- **A device that is not pinned** sends its lookups to the router, and the router answers them using
+  its own DNS settings - whatever your default connection is.
+- **Keep your router's DNS addresses away from your slots' DNS addresses**, unless you are choosing
+  to share one deliberately. When a slot uses the same address as the router, the router's own
+  lookups travel through that slot's tunnel, and if that tunnel stops answering while still looking
+  connected, every unpinned device loses name resolution until it is rebuilt.
+
+**So pin the devices you care about.** A pinned device's traffic and its lookups leave from the same
+place, and nothing else on the router can move them. Following the default connection is fine for
+everything else, but it is the arrangement where the DNS surprise above can bite.
+
+On stock firmware the app tells you when a slot's DNS matches the addresses your router uses for its
+own encrypted lookups - a note under the DNS field, naming the shared addresses, as you type them.
+It is information rather than a warning: sharing is a reasonable thing to choose on purpose, and the
+app never changes your router's DNS settings.
+
+Two things it cannot do anything about. The **watchdog's own lookups** happen on the router: since
+build 454 it resolves PIA and your mail server over encrypted DNS, to an address you choose on the
+watchdog form, which keeps your VPN provider and your email provider off the wire in the clear.
+And **this app's lookups on your phone** go through Android's resolver like every other app's -
+turn on Private DNS in Android's settings if that matters to you.
+
+**[ROUTER-DNS.md](ROUTER-DNS.md) is the full version**: why the router answers for unpinned devices,
+two worked setups with diagrams, how to use a slot for parental controls, a table of common DNS
+services, and the routing rules underneath it all for the technically inquisitive.
 
 ### 5.3. WATCHDOG  - Watchdog WireGuard management
 

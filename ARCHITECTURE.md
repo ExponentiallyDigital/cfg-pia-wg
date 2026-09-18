@@ -123,10 +123,11 @@ Everything below was measured on hardware, not read in documentation - ASUS publ
 | 4 | Per-device routing is `ip rule` at priority 100, the default connection is a pair at priority 10000, and stock NEVER removes a stale rule | [Stock leaves the old routing rule behind](#stock-leaves-the-old-routing-rule-behind-measure) | Assignments are written correctly and have no effect, because an older rule at equal priority matches first |
 | 5 | `notify_rc` records the running action in `rc_service` and clears it when done; a caller finding it set waits 15s then DISCARDS its own event | [The router's service queue](#the-routers-service-queue-and-how-it-wedges) | A hung service makes the router silently ignore everything, including `reboot`. Only a power cycle recovers it |
 | 6 | `/usr/sbin/curl` walks its process ancestry and refuses to run with `crond` in the chain | [`curl` refuses to run from cron](#curl-refuses-to-run-from-cron) | The watchdog can never fetch a PIA token from cron, so it can never recover a tunnel. Exits 0 with no output at all |
-| 7 | Stock drives WireGuard through VPN Fusion (`restart_vpnc` / `stop_vpnc`), Merlin through `start_wgc` / `stop_wgc` | [Stock](#stock) and [Merlin](#merlin) | Enable and disable stop working on one firmware while continuing to look correct |
-| 8 | `/opt/etc/init.d/S50downloadmaster` and `S50asuslighttpd` are run at boot, and are the only user-writable boot hook on stock | [Cron entries](#cron-entries) | Watchdog schedules do not survive a reboot. Nothing reports this - it simply stops running |
-| 9 | The device inventory is split across `nmp_cl_json.js`, `nmp_cache.js`, `custom_clientlist`, `dhcp_staticlist` and `cfg_device_list`, none of which is complete on its own | [Device assignment (stock)](#device-assignment-stock) | Devices vanish from the assignment list, or appear without an address and cannot be assigned |
-| 10 | 17 `wgcN_*` keys exist on Merlin; stock has 12 of them and no kill switch at all | [Field reference](#field-reference) | Slot editing writes keys nothing reads, or omits keys the firmware now requires |
+| 7 | `/usr/sbin/curl` refuses any URL whose host is an IP literal, silently, logging `Invalid DL URL(<ip>)` | [`curl` polices who calls it and what it fetches](#curl-refuses-to-run-from-cron) | The watchdog's encrypted DNS and its `addKey` call both stop working, with no error anywhere except `/jffs/curllst`. Both use a hostname URL with `--resolve`, which is what satisfies the check today |
+| 8 | Stock drives WireGuard through VPN Fusion (`restart_vpnc` / `stop_vpnc`), Merlin through `start_wgc` / `stop_wgc` | [Stock](#stock) and [Merlin](#merlin) | Enable and disable stop working on one firmware while continuing to look correct |
+| 9 | `/opt/etc/init.d/S50downloadmaster` and `S50asuslighttpd` are run at boot, and are the only user-writable boot hook on stock | [Cron entries](#cron-entries) | Watchdog schedules do not survive a reboot. Nothing reports this - it simply stops running |
+| 10 | The device inventory is split across `nmp_cl_json.js`, `nmp_cache.js`, `custom_clientlist`, `dhcp_staticlist` and `cfg_device_list`, none of which is complete on its own | [Device assignment (stock)](#device-assignment-stock) | Devices vanish from the assignment list, or appear without an address and cannot be assigned |
+| 11 | 17 `wgcN_*` keys exist on Merlin; stock has 12 of them and no kill switch at all | [Field reference](#field-reference) | Slot editing writes keys nothing reads, or omits keys the firmware now requires |
 
 **How to use this after a firmware update.** Work down the table. For each row, run the check named in the linked section and confirm the assumption still holds. A row that fails tells you which part of the app is now broken, and the linked section tells you what the app does about it today.
 
@@ -1423,7 +1424,38 @@ PersistentKeepalive = 25
 AllowedIPs          = 0.0.0.0/0
 ```
 
-### 7.8. <a name='curl-refuses-to-run-from-cron'></a>`curl` refuses to run from cron
+### 7.8. <a name='curl-refuses-to-run-from-cron'></a>`curl` polices who calls it and what it fetches
+
+Two separate checks, both silent, both in the same binary. The caller check came first; the URL
+check was measured on 2026-09-19 while testing encrypted DNS for the watchdog.
+
+#### The URL check
+
+`/usr/sbin/curl` **refuses any URL whose host is an IP literal**, and the refusal is as quiet as the
+caller one: exit status 0, no output at all, nothing on stderr, with the only trace a line in
+`/jffs/curllst` reading `Invalid DL URL(<address>)`. It applies to `--doh-url` as well as to the
+request URL, which is how it was found.
+
+Measured 2026-09-19, stock firmware, curl 7.84.0:
+
+| Command | Result | `/jffs/curllst` |
+| --- | --- | --- |
+| `curl https://serverlist.piaservers.net/...` | `http=200` | nothing |
+| `curl --doh-url https://1.1.1.2/dns-query https://example.com` | *(no output)* | `Invalid DL URL(1.1.1.2)` |
+| `curl https://1.1.1.2/` | *(no output)* | `Invalid DL URL(1.1.1.2)` |
+| `curl --doh-url https://dns.quad9.net/dns-query https://example.com` | `http=200` | nothing |
+| `curl --doh-url https://security.cloudflare-dns.com/dns-query --resolve security.cloudflare-dns.com:443:1.1.1.2 https://example.com` | `http=200` | nothing |
+
+The last row is the one that matters, and it is the pattern the watchdog already uses for `addKey`:
+**a hostname in the URL, with `--resolve` supplying the address.** That satisfies the check while
+still sending the request to an address of the app's choosing, and it means no name has to be
+resolved in the clear first. Encrypted DNS for the watchdog (ID-076) is built on exactly this.
+
+If ASUS ever extend the check to `--resolve`, or to hostnames the firmware does not recognise, the
+escape hatch is to install our own `curl` beside `jq` and `mailsend-go` - recorded as a BACKLOG FTR,
+not built, because it means shipping and maintaining a TLS stack.
+
+#### The caller check
 
 `/usr/sbin/curl` on stock ASUS firmware inspects its own process ancestry at startup and **refuses to run if `crond` appears anywhere in the chain**. The rejection is silent in every way that matters: exit status 0, no HTTP status, no response body, and nothing on stderr. The only trace is a line in `/jffs/curllst`.
 
