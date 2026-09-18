@@ -132,6 +132,15 @@ jobs:
         with:
           distribution: "zulu"
           java-version: "21"
+          # ID-074: reuse Gradle's wrapper download and dependencies between runs. Build 451 failed when
+          # GitHub returned HTTP 500 for gradle-9.1.0-all.zip mid-release. The key includes the lockfiles,
+          # which the default key misses; a restored cache still resolves under STRICT locking.
+          cache: gradle
+          cache-dependency-path: |
+            android/**/*.gradle*
+            android/**/gradle.properties
+            android/gradle/wrapper/gradle-wrapper.properties
+            android/**/*.lockfile
 
       - name: Set up Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
