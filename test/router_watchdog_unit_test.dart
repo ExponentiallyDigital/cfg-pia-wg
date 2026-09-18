@@ -726,8 +726,9 @@ void main() {
     // (Crossing it as one command is what closed the connection mid-deploy in 402.) Raised
     // 8700 -> 9000 in 400, then 9500 and 10000 in 402, and 24576 in 404 when the alert emails grew
     // a body worth reading (which took the script from ~9 KB to ~15 KB), 26624 in 420, 28160 in 447, 29696 in 453 when the
-    // rebuild gained a handshake gate (ID-063) and stock its own restart path (ID-070), and 34816 in
-    // 454 for encrypted lookups (ID-076) and the private SMTP lookup (ID-077)
+    // rebuild gained a handshake gate (ID-063) and stock its own restart path (ID-070), 34816 in
+    // 454 for encrypted lookups (ID-076) and the private SMTP lookup (ID-077), and 38912 in 455 for
+    // the name-resolution probe (ID-078)
     // for the failed-send DNS diagnostics - growth agreed 2026-09-14, since the script is written in
     // chunks. Prune the script's comments before raising it again.
     //
@@ -803,11 +804,68 @@ void main() {
       }
     });
 
+    // ID-078 / ID-006: a tunnel that handshakes and resolves nothing used to pass every check.
+    // Each assertion here is a measurement from runsheet AN-2026-09-19_001 turned into a rule.
+    group('the name-resolution probe', () {
+      String script() => buildWatchdogScript(_valid());
+
+      test('asks the slot its own first DNS server', () {
+        final s = script();
+        expect(s, contains('nvram get \${K}dns'), reason: 'the slot own first DNS server');
+        expect(s, contains('nslookup example.com "\$DNS1"'),
+            reason: 'a neutral name that always resolves, and is not a PIA one');
+      });
+
+      test('verifies the aim before believing any answer', () {
+        final s = script();
+        // The stopped-slot case: with a temporary rule pointing at a slot that is down, the route
+        // falls through to the WAN and the lookup succeeds. Measured 2026-09-19 (B8).
+        final add = s.indexOf('ip rule add to "\$DNS1" iif lo lookup "\$DNSTABLE" priority 1000');
+        final verify = s.indexOf('Could not aim a lookup at');
+        expect(add, greaterThan(0));
+        expect(verify, greaterThan(add), reason: 'the second check comes after the rule is added');
+        expect(s, contains('skipping the name check'));
+      });
+
+      test('bounds a lookup by hand, because this BusyBox has no timeout', () {
+        final s = script();
+        expect(s, contains(r'while [ "$NSW" -lt 6 ] && kill -0 "$NSPID"'));
+        expect(s, isNot(contains('timeout 5')), reason: '`which timeout` finds nothing on the router');
+      });
+
+      test('needs two consecutive failures before it acts', () {
+        final s = script();
+        expect(s, contains(r'[ "$DNSFAILS" -ge 2 ]'));
+        expect(s, contains('one more and it counts as broken'));
+        // A success clears the count, or one failure a week would eventually add up to two.
+        expect(s, contains(r'rm -f "$DNSFAILFILE"'));
+      });
+
+      test('says which fault it was, in the log and in the email', () {
+        final s = script();
+        expect(s, contains('Name resolution lost on \$IFACE; reconfiguring'));
+        expect(s, contains('after its DNS server stopped answering'));
+      });
+
+      test('removes its rule on every path', () {
+        final s = script();
+        // After the probe, on abort, and swept at the start of the next run.
+        expect('dns_rule_clean'.allMatches(s).length, greaterThanOrEqualTo(3));
+        expect(s, contains('dns_rule_sweep'));
+        expect(s, contains('1000:'), reason: 'the sweep finds rules by their priority marker');
+      });
+
+      test('a slot with no DNS is skipped, not failed', () {
+        // The normal state for anything built by the watchdog shortcut before ID-126.
+        expect(script(), contains('No DNS server set on \$IFACE; skipping the name check'));
+      });
+    });
+
     test('neither variant grows the deploy payload', () {
       final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
       final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
-      expect(merlin, lessThan(34816));
-      expect(stock, lessThan(34816));
+      expect(merlin, lessThan(38912));
+      expect(stock, lessThan(38912));
     });
   });
 
