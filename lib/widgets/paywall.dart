@@ -67,7 +67,17 @@ abstract class Paywall {
 /// question, so they give the same answers - and share them, so the two cannot drift apart.
 abstract class RestoreMessages {
   static const restored = 'Purchase restored. Everything is unlocked.';
+
+  /// The answer when the app was ALREADY unlocked. It used to say "Purchase restored" here too,
+  /// which reported a change that never happened and left the user wondering what had just been
+  /// done to their account (ID-091).
+  static const alreadyUnlocked = 'This app is already unlocked on this Google account. Nothing changed.';
   static const noneFound = 'No purchase found on this Google account.';
+
+  /// On screen. The store's own words are rarely English and never actionable, so they go to the
+  /// app log instead - [failed] is that line.
+  static const failedPlain = 'Could not check your purchase with Google Play. Check this device is online '
+      'and try again; the app log has what the store reported.';
   static String failed(Object e) => 'Could not reach the store: ${Entitlement.describeStoreError(e)}';
 }
 

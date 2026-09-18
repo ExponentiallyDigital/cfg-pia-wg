@@ -193,6 +193,19 @@ void main() {
     expect(find.textContaining('profile 0'), findsNothing);
   });
 
+  // ID-090: the pair is a row at every width. It used to reflow to a stack, and did so exactly in
+  // the idle state, because APPLY 0 CHANGES is the widest label the screen ever shows.
+  testWidgets('DISCARD and APPLY sit side by side with nothing staged', (tester) async {
+    await _pumpConnected(tester);
+
+    final discard = tester.getRect(find.byKey(const Key('device_discard')));
+    final apply = tester.getRect(find.byKey(const Key('device_apply')));
+    expect(find.text('APPLY 0 CHANGES'), findsOneWidget, reason: 'the idle label, the widest one');
+    expect(apply.top, moreOrLessEquals(discard.top, epsilon: 0.5), reason: 'one row, not a stack');
+    expect(apply.left, greaterThan(discard.right), reason: 'APPLY sits to the right of DISCARD');
+    expect(apply.width, moreOrLessEquals(discard.width, epsilon: 0.5), reason: 'equal halves');
+  });
+
   testWidgets('staged changes can be discarded in one go', (tester) async {
     await _pumpConnected(tester);
     expect(tester.widget<OutlinedButton>(find.byKey(const Key('device_discard'))).onPressed, isNull,

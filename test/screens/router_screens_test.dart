@@ -371,8 +371,9 @@ void main() {
       await tester.tap(find.byKey(const Key('connect_router')));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Router SSH connection error'), findsOneWidget);
-      expect(find.textContaining('timed out'), findsOneWidget);
+      // ID-108: a router that cannot be reached says so plainly; the raw text goes to the app log.
+      expect(find.textContaining('Could not connect to the router at 192.168.1.1'), findsOneWidget);
+      expect(c.log.any((e) => e.message.contains('timed out')), isTrue, reason: 'the detail is kept');
       expect(find.textContaining('firmware type'), findsNothing, reason: 'the address was wrong, not the firmware');
       expect(firmwareDetected, isFalse);
 
@@ -461,6 +462,31 @@ void main() {
       expect(find.byKey(const Key('firmware_notice_install')), findsOneWidget);
       expect(find.byKey(const Key('firmware_notice_link')), findsOneWidget);
       expect(find.text('WATCHDOG CONFIGURATION'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-097: a failed install says so, once. It used to say so and then show the manual-install
+    // notice on top, so one failure read as two, and the log ended on a red line about a file the
+    // user had just been told could not be downloaded.
+    testWidgets('a failed install is reported once, not twice', (tester) async {
+      final c = _controller();
+      await tester.pumpWidget(_manage(_stockSsh(jq: false), c));
+      await tester.pumpAndSettle();
+
+      await _fillCreds(tester);
+      await tester.tap(find.byKey(const Key('connect_router')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('install_binaries')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('install_binaries_confirm')));
+      await tester.pumpAndSettle();
+
+      // The stand-in router answers nothing useful, so the install cannot complete.
+      expect(find.textContaining('Could not install'), findsOneWidget);
+      expect(find.byKey(const Key('firmware_notice')), findsNothing, reason: 'one failure, one message');
+      expect(c.log.any((e) => e.message.contains('Unable to locate:')), isFalse);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

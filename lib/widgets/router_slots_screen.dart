@@ -30,6 +30,7 @@ import '../pia_service.dart';
 import '../router_slot_service.dart';
 import '../router_watchdog.dart';
 import '../binary_installer.dart';
+import '../router_session.dart' show routerConnectMessage;
 import '../session_controller.dart';
 import 'install_binaries_dialog.dart';
 import 'app_scaffold.dart';
@@ -211,7 +212,10 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     return missing.isEmpty ? const _FirmwareGate.ok() : _FirmwareGate.missingBinaries(missing);
   }
 
-  Future<void> _onConnect() async {
+  /// [justInstalled] carries the binary paths an install has just written, so a gate that now
+  /// passes can say so. Without it the app log ended a successful install with the red "Unable to
+  /// locate" notice from before it and nothing afterwards (ID-097).
+  Future<void> _onConnect({List<String>? justInstalled}) async {
     // Nothing here is typed into, and a dialog closing restores focus to whatever had it last -
     // so without this the keyboard reopens over the connect spinner on a field the user has
     // finished with.
@@ -220,7 +224,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     _c.logEntry('Connecting to router at ${_ipCtrl.text.trim()} via SSH...');
     RouterSlots? slots;
     _FirmwareGate? gate;
-    String? connectError;
+    String? connectError, connectErrorDetail;
     try {
       final client = await _connect();
       // Force the connection HERE, so a bad address or a refused login is reported as what it is.
@@ -234,6 +238,10 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       // Detection has to precede fetchSlots: on stock the slot list comes from vpnc_clientlist.
       gate = await _checkFirmware(svc);
       if (gate.passed) {
+        if (justInstalled != null && justInstalled.isNotEmpty) {
+          _c.logEntry('${justInstalled.join(' and ')} installed; the router has everything this screen needs.',
+              isSuccess: true);
+        }
         slots = await svc.fetchSlots();
         _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
         // Only now, with the connect proven: a wrong address must never be stored.
@@ -242,7 +250,10 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
         TextInput.finishAutofillContext();
       }
     } catch (e) {
-      connectError = 'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}';
+      // Plain English on screen, the raw exception in the log (ID-108).
+      connectErrorDetail = routerConnectMessage(e, _ipCtrl.text) == null ? null : e.toString();
+      connectError = routerConnectMessage(e, _ipCtrl.text) ??
+          'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}';
     } finally {
       // Both flags together: on the failure paths below the user needs the form, and this is the
       // point at which it stops being a lie to show it.
@@ -256,18 +267,24 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     if (!mounted) return;
 
     // Spinner is off, so it is safe to await a modal (see .claude/CONTEXT.md, "Async + UI").
-    if (connectError != null) return AppErrors.system(context, _c, connectError);
+    if (connectError != null) return AppErrors.system(context, _c, connectError, logDetail: connectErrorDetail);
     if (gate != null && !gate.passed) {
       // Missing binaries are the one gate failure the app can do something about, so offer
       // rather than just explaining. Everything else still just explains.
       if (gate.missingBinaries.isNotEmpty) {
-        final outcome = await _offerInstall(gate.missingBinaries);
+        final missing = gate.missingBinaries;
+        final outcome = await _offerInstall(missing);
         if (!mounted) return;
-        if (outcome == _InstallOutcome.installed) return _onConnect(); // retry the gate, do not assume
+        // Retry the gate, do not assume.
+        if (outcome == _InstallOutcome.installed) return _onConnect(justInstalled: missing);
         // Declining is an informed choice - the dialog said what happens and where to read more -
         // so following it with the same information again is nagging. The notice still appears on
         // the NEXT visit, which is where it stops being a repeat and starts being a reminder.
         if (outcome == _InstallOutcome.justDeclined) return;
+        // A failed install has already said so, in its own words and naming the cause. Following
+        // that with "Unable to locate" tells the user something they were just told, in red, in a
+        // way that reads as a second, separate fault (ID-097).
+        if (outcome == _InstallOutcome.failed) return;
       }
       if (!mounted) return;
       // INSTALL on the notice leads straight into the install the user just declined, rather than

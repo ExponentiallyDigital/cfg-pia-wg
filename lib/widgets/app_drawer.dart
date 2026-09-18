@@ -160,12 +160,15 @@ class AppDrawer extends StatelessWidget {
             for (final d in destinations)
               ListTile(
                 key: Key('drawer_${d.routeName}'),
-                // Grey icon and white label normally; selectedColor turns both green on the current screen.
+                // Icon and label take the destination's own colour, from the same map the main menu
+                // reads (ID-112) - no outline here, the drawer is a list. The current screen is
+                // marked by the tile's fill instead, since its colour is already spoken for.
                 leading: Icon(destinationIcon(d), size: 20),
                 title: Text(d.title, style: const TextStyle(fontSize: 13)),
-                textColor: kText,
-                iconColor: kMuted,
-                selectedColor: kHighlight,
+                textColor: destinationColour(d),
+                iconColor: destinationColour(d),
+                selectedColor: destinationColour(d),
+                selectedTileColor: kField,
                 selected: controller.currentDestination == d,
                 onTap: () {
                   onCloseDrawer();

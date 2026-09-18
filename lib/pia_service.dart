@@ -57,6 +57,23 @@ class RegResponse {
       );
 }
 
+/// What the app says when PIA turns down a username and password (ID-120).
+///
+/// PIA answers 401 or 403 for a wrong account, and its body is a JSON blob nobody should have to
+/// read: the watchdog's own alert for this was `exit 0, HTTP 403, body 66B: {`. The cause is
+/// nearly always that something other than the PIA account went into the field - the router login,
+/// or the email address the PIA account was bought with.
+const String kPiaCredentialsRejected =
+    'PIA rejected this username and password. The PIA username is the one PIA issued for the VPN '
+    '(it is not your email address, and not your router login).';
+
+/// True for a token request PIA REFUSED, as opposed to one that never arrived. Only a refusal says
+/// anything about the credentials: a phone with no internet proves nothing about them.
+bool isPiaAuthRejection(Object error) {
+  final text = error.toString();
+  return text.contains('HTTP 401') || text.contains('HTTP 403');
+}
+
 class PiaService {
   // ─── PIA negotiation endpoints (mirrored from router_watchdog.dart) ─────────────────
   static const _serverListUrl = 'https://serverlist.piaservers.net/vpninfo/servers/v6';

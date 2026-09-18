@@ -52,6 +52,7 @@ class AppButton extends StatelessWidget {
     this.fullWidth = false,
     this.busy = false,
     this.fontSize,
+    this.colour,
   });
 
   final String label;
@@ -73,6 +74,11 @@ class AppButton extends StatelessWidget {
 
   final double? fontSize;
 
+  /// Overrides [role]'s colour for a button whose VERB carries a colour of its own (ID-118); the
+  /// slot actions are the only users. A disabled button ignores it and greys out as usual, so a
+  /// dead button never reads as live.
+  final Color? colour;
+
   /// The colour for [role]. Disabled is DARKER than the dismiss grey, so a greyed-out action never
   /// reads as a live CANCEL.
   static Color tint(ButtonRole role, {required bool enabled}) {
@@ -86,11 +92,12 @@ class AppButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colour = tint(role, enabled: onPressed != null);
+    final enabled = onPressed != null;
+    final tone = enabled ? (colour ?? tint(role, enabled: true)) : kHint;
     final style = OutlinedButton.styleFrom(
-      foregroundColor: colour,
+      foregroundColor: tone,
       disabledForegroundColor: kHint,
-      side: BorderSide(color: colour),
+      side: BorderSide(color: tone),
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
       textStyle: fontSize == null ? null : TextStyle(fontSize: fontSize),
     );

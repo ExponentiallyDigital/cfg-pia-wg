@@ -20,7 +20,15 @@ import 'package:dartssh2/dartssh2.dart';
 import 'router_command.dart';
 import 'router_service_queue.dart';
 import 'firmware.dart';
-import 'router_slot_service.dart' show RouterSlotService, fetchSlotLabel, kUpInterfacesCommand, slotDescFor;
+import 'router_slot_service.dart'
+    show
+        RouterSlotService,
+        fetchSlotLabel,
+        kMaxActiveVpnsPreviousKey,
+        kUpInterfacesCommand,
+        parseVpncClientlist,
+        slotDescFor,
+        slotKeysFor;
 import 's50_template.dart';
 import 'watchdog_email.dart';
 
@@ -115,6 +123,19 @@ class WatchdogConfig {
   final String smtpServer; // host:port
   final String smtpUsername, smtpPassword;
 
+  /// Where the watchdog's OWN name lookups go, encrypted (ID-076). The URL always carries a
+  /// hostname and [dohIp] is the address `--resolve` pins it to; empty means lookups stay in the
+  /// clear, which is what every watchdog deployed before build 454 does.
+  final String dohUrl, dohIp;
+
+  /// The slot's own DNS servers (`wgcN_dns`), asked for on the watchdog form since ID-126.
+  ///
+  /// Not a watchdog setting at all - it belongs to the slot - but the watchdog form is the only
+  /// place that builds a slot without going through MANAGE CREATE, and without it that slot gets
+  /// none. Empty means "leave whatever is there alone", so an existing slot's choice survives a
+  /// watchdog edit.
+  final String slotDns;
+
   const WatchdogConfig({
     required this.slotIndex,
     this.cronIntervalMinutes = 5,
@@ -129,6 +150,9 @@ class WatchdogConfig {
     this.smtpServer = '',
     this.smtpUsername = '',
     this.smtpPassword = '',
+    this.slotDns = '',
+    this.dohUrl = '',
+    this.dohIp = '',
   });
 
   // Human-readable validation errors; an empty list means the config is valid.
@@ -194,6 +218,10 @@ class WatchdogConfig {
         'wgc${slotIndex}_wd_smtp_server': smtpServer.trim(),
         'wgc${slotIndex}_wd_smtp_user': smtpUsername.trim(),
         'wgc${slotIndex}_wd_smtp_pass': smtpPassword,
+        // ID-076. Written even when empty, so clearing the resolver on the form clears it on the
+        // router rather than leaving the old one in place.
+        'wgc${slotIndex}_wd_doh_url': dohUrl.trim(),
+        'wgc${slotIndex}_wd_doh_ip': dohIp.trim(),
       };
 
   // Rebuilds a config from a map of nvram values (per-slot wgcN_wd_* + global PIA keys).
@@ -214,6 +242,9 @@ class WatchdogConfig {
       smtpServer: g('smtp_server'),
       smtpUsername: g('smtp_user'),
       smtpPassword: g('smtp_pass'),
+      slotDns: nv['wgc${slot}_dns'] ?? '',
+      dohUrl: g('doh_url'),
+      dohIp: g('doh_ip'),
     );
   }
 
@@ -231,6 +262,9 @@ class WatchdogConfig {
     String? smtpServer,
     String? smtpUsername,
     String? smtpPassword,
+    String? slotDns,
+    String? dohUrl,
+    String? dohIp,
   }) =>
       WatchdogConfig(
         slotIndex: slotIndex ?? this.slotIndex,
@@ -246,6 +280,9 @@ class WatchdogConfig {
         smtpServer: smtpServer ?? this.smtpServer,
         smtpUsername: smtpUsername ?? this.smtpUsername,
         smtpPassword: smtpPassword ?? this.smtpPassword,
+        slotDns: slotDns ?? this.slotDns,
+        dohUrl: dohUrl ?? this.dohUrl,
+        dohIp: dohIp ?? this.dohIp,
       );
 
   // Splits "host:port" on the LAST colon; defaults the port to 465 (implicit TLS).
@@ -286,6 +323,7 @@ class WatchdogStatus {
 /// the user's VPNs, and those stay manageable from the web interface.
 String get kUninstallNvramCommand {
   const globals = [
+    'cfg_pia_wg_max_conn_prev',
     'cfg_pia_wg_password',
     'cfg_pia_wg_reconfig_fail',
     'cfg_pia_wg_reconfig_ok',
@@ -294,6 +332,8 @@ String get kUninstallNvramCommand {
   ];
   const perSlot = [
     'wd_check_interval',
+    'wd_doh_ip',
+    'wd_doh_url',
     'wd_email_enabled',
     'wd_email_from',
     'wd_email_subject',
@@ -717,7 +757,7 @@ fi''';
 
 const String _kMailCmdMerlin = r'''  /usr/sbin/sendmail \
     -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt \
-    -verify_return_error -connect $SMTP_HOST:$SMTP_PORT" \
+    -verify_return_error $SMTPCONN" \
     -au"$SMTP_USER" \
     -ap"$SMTP_PASS" \
     -f"$EMAIL_FROM" \
@@ -730,6 +770,102 @@ const String _kMailCmdStock = '''  $kStockMailsendPath -ssl -verifyCert \\
     -f "\$EMAIL_FROM" -t "\$EMAIL_TO" \\
     auth -user "\$SMTP_USER" -pass "\$SMTP_PASS" \\
     body -file "\$TMPMAIL" 2>"\$TMPERR"''';
+
+/// How the script restarts a rewritten tunnel on MERLIN: the commands it has always used.
+const String _kRestartMerlin = r'''
+# Increase sleeps on slow routers
+log "Stopping $IFACE"
+service "stop_wgc $SLOT"
+sleep 2
+log "Starting $IFACE"
+service "start_wgc $SLOT"
+log "Restarting VPN routing"
+service restart_vpnrouting0''';
+
+/// How the script restarts a rewritten tunnel on STOCK: the app's own path (ID-070).
+///
+/// Stock drives WireGuard through VPN Fusion, where a tunnel is started by naming its profile in
+/// `vpnc_unit` and calling `restart_vpnc`; there is no `start_vpnc`. The script used the Merlin
+/// commands on both firmwares, which CONTEXT described as inert on stock - a claim taken from one
+/// log of a rebuild on a router whose service queue was stuck, so it proved nothing either way.
+///
+/// `vpnc_unit` is the 0-BASED ROW INDEX of the slot's record in `vpnc_clientlist`, not the slot
+/// number and not `5 - slot`: the same rule [vpncUnitForSlot] implements in the app, measured
+/// against the router's own web interface. Records are separated by `<` and fields by `>`, with
+/// the slot number in field 3.
+///
+/// A slot with no row of its own falls back to the interface commands rather than poking a unit
+/// that does not exist - which is what produced the mystifying "did not come up" failures before
+/// the app learnt this rule.
+const String _kRestartStock = r'''
+UNIT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" 'length($0) == 0 { next } { if ($3 + 0 == s + 0) { print n + 0; exit } n++ }')"
+if [ -n "$UNIT" ]; then
+  log "Restarting $IFACE through VPN Fusion (vpnc_unit=$UNIT)"
+  nvram set vpnc_unit="$UNIT"
+  service restart_vpnc
+else
+  log "No vpnc_clientlist row for $IFACE; restarting the interface directly"
+  service "stop_wgc $SLOT"
+  sleep 2
+  service "start_wgc $SLOT"
+  service restart_vpnrouting0
+fi''';
+
+/// The curl arguments that make a lookup encrypted, or an empty string when none is configured.
+///
+/// Both parts or neither: `--doh-url` alone would leave curl resolving the resolver's own name in
+/// the clear, which is most of what this is for.
+String dohCurlArguments(String url, String ip) {
+  final host = Uri.tryParse(url.trim())?.host ?? '';
+  if (host.isEmpty || ip.trim().isEmpty) return '';
+  return ' --doh-url ${url.trim()} --resolve $host:443:${ip.trim()}';
+}
+
+/// What the script logs once per run, so a reader can see which way lookups went.
+String dohDescription(String url, String ip) {
+  final host = Uri.tryParse(url.trim())?.host ?? '';
+  if (host.isEmpty || ip.trim().isEmpty) return '';
+  return '$host (${ip.trim()})';
+}
+
+/// Where the watchdog sends its own name lookups, encrypted (ID-076).
+///
+/// Each entry is a hostname URL and the address to reach it at. BOTH halves are load-bearing on
+/// stock: ASUS's `curl` refuses any URL whose host is an IP literal - silently, exit 0, with only
+/// `Invalid DL URL(<ip>)` in `/jffs/curllst` (ARCHITECTURE section 2) - so the URL must carry a
+/// name; and `--resolve` then supplies the address, so no name has to be looked up in the clear
+/// before the encrypted lookup can start. Measured on hardware 2026-09-19: the pair returns 200,
+/// the IP-literal URL returns nothing at all.
+///
+/// The addresses are chosen to be ones a PIA slot is unlikely to use, because an address a slot
+/// owns is routed INTO that slot's tunnel by the firmware - which would send the watchdog's
+/// lookups through the tunnel it exists to repair (ID-001).
+class DohResolver {
+  const DohResolver(this.label, this.url, this.ip);
+
+  /// What the form shows.
+  final String label;
+
+  /// The DoH endpoint, always a hostname.
+  final String url;
+
+  /// The address `--resolve` pins that hostname to.
+  final String ip;
+}
+
+/// The three offered, in the order the form lists them, plus whatever the user types.
+const List<DohResolver> kDohResolvers = [
+  DohResolver('Cloudflare (blocks malware)', 'https://security.cloudflare-dns.com/dns-query', '1.1.1.2'),
+  DohResolver('Google', 'https://dns.google/dns-query', '8.8.8.8'),
+  DohResolver('Quad9 (blocks malware)', 'https://dns.quad9.net/dns-query', '9.9.9.9'),
+];
+
+/// The default: Cloudflare's malware-filtering resolver. Chosen because it is the address the DNS
+/// advice recommends for the router's own DNS Server setting, so it is the one least likely to be
+/// sitting on a slot, and because it filters - the watchdog makes few lookups, and a filtering
+/// resolver is one more thing in the way of anything on the router misbehaving.
+const DohResolver kDefaultDohResolver =
+    DohResolver('Cloudflare (blocks malware)', 'https://security.cloudflare-dns.com/dns-query', '1.1.1.2');
 
 // Shell appending a fixed block of lines. Generated from the same constants [buildEmailBody] uses,
 // so the script's wording and the app's cannot drift apart.
@@ -747,6 +883,9 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       // enforce / fw / rip / ep_addr_r are Merlin-only (kMerlinOnlySlotKeys). Writing them on
       // stock creates keys nothing reads and DELETE does not clean up.
       .replaceAll('__MERLINONLY__', stock ? '' : _kMerlinOnlyNvsets)
+      .replaceAll('__RESTART__', stock ? _kRestartStock : _kRestartMerlin)
+      .replaceAll('__DOH__', dohCurlArguments(c.dohUrl, c.dohIp))
+      .replaceAll('__DOHDESC__', dohDescription(c.dohUrl, c.dohIp))
       .replaceAll('__BACKOFF__', buildBackoffCase())
       .replaceAll('__APPVER__', appVersionLabel)
       .replaceAll('__KILLSW__', stock ? _kKillSwitchStock : _kKillSwitchMerlin)
@@ -981,6 +1120,13 @@ class RouterWatchdog {
     for (final e in config.toNvram().entries) {
       await _run('nvram set ${e.key}=${shellSingleQuote(e.value)}');
     }
+    // The slot's own DNS (ID-126). Written here because the watchdog form is the only path that
+    // builds a slot without MANAGE CREATE, and a slot with no DNS gets no VPN_FUSION redirect - so
+    // a device pinned to it sends its traffic through the tunnel and its lookups over the WAN.
+    // Empty leaves whatever is there alone, so a slot built in MANAGE keeps its own choice.
+    if (config.slotDns.trim().isNotEmpty) {
+      await _run('nvram set wgc${config.slotIndex}_dns=${shellSingleQuote(config.slotDns.trim())}');
+    }
     await _run('nvram set cfg_pia_wg_user=${shellSingleQuote(config.piaUsername.trim())}');
     await _run('nvram set cfg_pia_wg_password=${shellSingleQuote(config.piaPassword)}');
     if (desc != null && desc.isNotEmpty) {
@@ -1000,6 +1146,17 @@ class RouterWatchdog {
   // Concurrent watchdogs are allowed, so this no longer tears down the other slots. How many may
   // run at once is a firmware limit (vpnc_max_conn on stock), enforced by the caller before it
   // gets here - the same gate the MANAGE ENABLE path applies.
+  /// Deploys [config], and puts the slot back as it was if any of it fails (ID-121).
+  ///
+  /// MANAGE CREATE has always been transactional; this was not. It writes the slot's keys, adds the
+  /// profile row, sets the slot enabled and schedules the checks BEFORE running the script, and a
+  /// region change blanks the old server's keys first - so an abort left a slot the app read as
+  /// configured while the router's own web interface showed nothing at all (ID-096). The two views
+  /// now agree, because on a failure there is nothing half-written left to disagree about.
+  ///
+  /// What is deliberately NOT rolled back is the SCHEDULE. On 2026-09-17 it was the scheduled check
+  /// that finished the build after a reboot; taking it away would remove the retry that rescued the
+  /// deploy. The watchdog settings stay for the same reason - the retry needs them.
   Future<void> deployWatchdog(WatchdogConfig config, {String? desc}) => _guard('deploy', () async {
         await enableJffsScripts();
         // Both read before the NVRAM write replaces the description. A slot that is already up and
@@ -1008,24 +1165,85 @@ class RouterWatchdog {
         final slot = config.slotIndex;
         final regionChanged = desc != null && desc.isNotEmpty && slotDescFor(desc) != await _read('nvram get wgc${slot}_desc');
         final up = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
-        if (regionChanged) await _clearForRebuild(slot, running: up, region: desc);
-        await _writeWatchdogNvram(config, desc: desc);
-        await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
-        await _writeScript(config.slotIndex, buildWatchdogScript(config));
-        await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
-        await _run(buildCronRotateLine(config.slotIndex));
-        await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
-        onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
-        await _run(kSeedCountersCommand);
-        await _logRouter('Running ${watchdogScriptPath(config.slotIndex)} deploy');
-        // `deploy` makes this run report itself as a deployment rather than a re-configuration,
-        // and makes it email even when it finds the tunnel already healthy.
-        await _run('${watchdogScriptPath(config.slotIndex)} deploy');
+        // Taken before anything is written, and after the two reads above, which need the slot as
+        // it is now.
+        final before = await _snapshotSlot(slot);
+        try {
+          if (regionChanged) await _clearForRebuild(slot, running: up, region: desc);
+          await _writeWatchdogNvram(config, desc: desc);
+          await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
+          await _writeScript(config.slotIndex, buildWatchdogScript(config));
+          await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
+          await _run(buildCronRotateLine(config.slotIndex));
+          await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
+          onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
+          await _run(kSeedCountersCommand);
+          await _logRouter('Running ${watchdogScriptPath(config.slotIndex)} deploy');
+          // `deploy` makes this run report itself as a deployment rather than a re-configuration,
+          // and makes it email even when it finds the tunnel already healthy.
+          await _run('${watchdogScriptPath(config.slotIndex)} deploy');
+        } catch (e) {
+          final undone = await _restoreSlot(slot, before);
+          final cause = e.toString().replaceAll('Exception: ', '').trim();
+          // Names the cause AND what was done about it: a failure that silently leaves a router in
+          // an unknown state is the thing this whole item is about.
+          throw Exception('$cause $undone Its watchdog stays scheduled and will try again in '
+              '${config.cronIntervalMinutes} minutes.');
+        }
         onLog?.call('Ran ${watchdogScriptPath(config.slotIndex)}', isSuccess: true);
         await _logRouter(
             'Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
         onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
       });
+
+  /// The slot's tunnel configuration as it stands, for [_restoreSlot] to put back (ID-121).
+  ///
+  /// Null keys mean the slot was EMPTY, which is a state worth restoring exactly: a deploy onto an
+  /// empty slot that fails has to leave an empty slot, not a shell of one.
+  Future<({Map<String, String>? keys, String? vpnc})> _snapshotSlot(int slot) async {
+    final keys = <String, String>{};
+    for (final key in slotKeysFor(routerFirmware)) {
+      keys['wgc${slot}_$key'] = await _read('nvram get wgc${slot}_$key');
+    }
+    final vpnc = isStockFirmware ? await _read('nvram get vpnc_clientlist') : null;
+    // On stock a slot built in the router's own web interface has no `desc` mirror, so the
+    // clientlist row is what says it exists.
+    final occupied = (keys['wgc${slot}_desc'] ?? '').isNotEmpty ||
+        (vpnc != null && parseVpncClientlist(vpnc).any((r) => r.slot == slot));
+    return (keys: occupied ? keys : null, vpnc: vpnc);
+  }
+
+  /// Puts [slot] back to [before], and returns the sentence describing what it did.
+  ///
+  /// Best effort by design: the caller is already reporting a failure, and a restore that itself
+  /// fails must say so rather than replace the original cause.
+  Future<String> _restoreSlot(int slot, ({Map<String, String>? keys, String? vpnc}) before) async {
+    final label = await _label(slot);
+    try {
+      if (before.keys != null) {
+        onLog?.call('Deploy failed; putting $label back as it was.', isError: true);
+        for (final entry in before.keys!.entries) {
+          await _run('nvram set ${entry.key}=${shellSingleQuote(entry.value)}');
+        }
+        if (before.vpnc != null) await _run('nvram set vpnc_clientlist=${shellSingleQuote(before.vpnc!)}');
+        await _run('nvram commit');
+        await _logRouter('Deploy failed; $label restored to its previous configuration');
+        return 'wgc$slot was left as it was.';
+      }
+      onLog?.call('Deploy failed; clearing the half-built wgc$slot.', isError: true);
+      for (final key in slotKeysFor(routerFirmware)) {
+        await _run('nvram unset wgc${slot}_$key', allowFailure: true);
+      }
+      if (before.vpnc != null) await _run('nvram set vpnc_clientlist=${shellSingleQuote(before.vpnc!)}');
+      await _run('nvram commit');
+      _labelCache.remove(slot);
+      await _logRouter('Deploy failed; wgc$slot cleared back to empty');
+      return 'wgc$slot was cleared back to empty, which is what the router shows.';
+    } catch (_) {
+      onLog?.call('CRITICAL: could not put wgc$slot back. Check the router.', isError: true);
+      return 'wgc$slot could NOT be put back - check it on the router.';
+    }
+  }
 
   /// Leaves [slot] as the empty-slot watchdog shortcut finds it, so the deploy run builds it on [region].
   ///
@@ -1229,6 +1447,17 @@ class RouterWatchdog {
         }
         done.add(removed == 0 ? 'No watchdog schedules to remove' : 'Removed $removed watchdog schedule(s)');
 
+        // The VPN cap, if the app is what raised it (ID-098). The key records what the router had
+        // before, so a user who set 3 themselves keeps 3 - this puts back a change the app made, it
+        // does not impose a default.
+        final previousCap = int.tryParse((await _read('nvram get $kMaxActiveVpnsPreviousKey')).trim());
+        if (previousCap != null && previousCap >= 1 && previousCap <= 5) {
+          await _read('nvram set vpnc_max_conn=$previousCap');
+          done.add('Put the maximum active VPNs back to $previousCap');
+        } else {
+          done.add('Left the maximum active VPNs alone - the app never changed it');
+        }
+
         // Every key the app ever writes, so an uninstalled router carries none of our settings.
         // The wgcN_* TUNNEL configuration is deliberately NOT touched: the tunnels keep working and
         // the user manages them from the web interface.
@@ -1325,7 +1554,16 @@ class RouterWatchdog {
       if (other == slot) continue;
       if ((await _read('cru l | grep -qw watchdog_wgc$other && echo 1 || echo 0')) == '1') return true;
     }
-    return false;
+    // A PAUSED watchdog has no cron entry and still needs the shared PIA credentials: its settings
+    // are on the router and ENABLE is meant to put it straight back to work. Asking `cru` alone
+    // meant deleting the last SCHEDULED watchdog unset `cfg_pia_wg_user` and `_password` under a
+    // paused one, whose next reconfigure then aborted with "PIA username is not set" (ID-065).
+    // More likely since ID-095, where MANAGE DISABLE pauses instead of tearing down.
+    final probe = [
+      for (var other = 1; other <= 5; other++)
+        if (other != slot) '[ -n "\$(nvram get wgc${other}_wd_check_interval)" ] && echo 1',
+    ].join('; ');
+    return (await _read(probe)).contains('1');
   }
 
   // Full disable: unset NVRAM, remove cron jobs and service-start script
@@ -1519,6 +1757,8 @@ class RouterWatchdog {
       'smtp_server',
       'smtp_user',
       'smtp_pass',
+      'doh_url',
+      'doh_ip',
     ];
     final nv = <String, String>{};
     for (final k in keys) {
@@ -1526,6 +1766,8 @@ class RouterWatchdog {
     }
     nv['cfg_pia_wg_user'] = await _read('nvram get cfg_pia_wg_user');
     nv['cfg_pia_wg_password'] = await _read('nvram get cfg_pia_wg_password');
+    // The slot's own key, not a watchdog one, so the form can show what is really there (ID-126).
+    nv['wgc${slot}_dns'] = await _read('nvram get wgc${slot}_dns');
     return WatchdogConfig.fromNvram(slot, nv);
   }
 
@@ -1695,7 +1937,13 @@ UNSENTFILE="/tmp/watchdog_unsent_${IFACE}"
 CACERT="__CACERT__"
 JQ="__JQ__"
 # tlsv1.2 is a MINIMUM; requiring 1.3 failed addKey with curl 35 (handshake).
-CURLB="curl -s --max-time 15 --connect-timeout 8 --tlsv1.2"
+CURLPLAIN="curl -s --max-time 15 --connect-timeout 8 --tlsv1.2"
+# Encrypted name lookups (ID-076). __DOH__ is empty when none is configured, in which case this is
+# exactly what it always was. The hostname-plus---resolve shape is what ASUS's curl accepts; see
+# ARCHITECTURE section 2. CURLPLAIN stays for the one retry below: a watchdog that cannot rebuild a
+# tunnel is worse than one whose lookups are visible.
+CURLB="$CURLPLAIN__DOH__"
+DOHDESC="__DOHDESC__"
 CURL="$CURLB --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
 TMPSRV="/tmp/${IFACE}_servers.txt"
@@ -1866,9 +2114,19 @@ __WHATTODO__
 __SIGNOFF__
 
   TMPERR="/tmp/wd_smtp_err_$$"
+  # ID-077: the address first, then the mailer, then the entry goes straight back out.
+  resolve_smtp
+  if [ -n "$SMTP_IP" ]; then
+    SMTPCONN="-connect $SMTP_IP:$SMTP_PORT -servername $SMTP_HOST -verify_hostname $SMTP_HOST"
+    hosts_add
+    log "SMTP host resolved privately to $SMTP_IP"
+  else
+    SMTPCONN="-connect $SMTP_HOST:$SMTP_PORT"
+  fi
 __MAILCMD__
 
   MAIL_EXIT=$?
+  hosts_clean
   rm -f "$TMPMAIL"
 
   if [ "$MAIL_EXIT" -ne 0 ]; then
@@ -1904,6 +2162,110 @@ __MAILCMD__
   rm -f "$TMPERR"
 }
 
+# ── Does this tunnel resolve names? (ID-078 / ID-006) ──────────────────────────────────────────
+#
+# A handshake proves the peer answers the tunnel. It proves nothing about whether anything behind
+# the peer answers: devices pinned to wgc4 went two days without name resolution while the watchdog
+# logged a healthy handshake every five minutes.
+#
+# The probe asks the SLOT's own first DNS server - the one the firmware redirects a pinned device
+# to - and the answer only means something if the question went through this tunnel. Measured
+# 2026-09-19: a stopped slot falls through to the WAN and the lookup succeeds anyway, so the aim is
+# verified before any answer is believed.
+DNS1="$(nvram get ${K}dns | tr ',' ' ' | awk '{print $1}')"
+DNSTABLE=$((10 - SLOT))
+DNSFAILFILE="/tmp/watchdog_dnsfail_${IFACE}"
+DNSRULE=0
+DNSDEAD=0
+
+# A rule this script added, removed. Priority 1000 is the marker: nothing else on the router uses it.
+dns_rule_clean() {
+  [ "$DNSRULE" = "1" ] || return 0
+  ip rule del to "$DNS1" iif lo lookup "$DNSTABLE" priority 1000 2>/dev/null
+  DNSRULE=0
+}
+
+# Anything left behind by a run that was killed mid-probe.
+dns_rule_sweep() {
+  ip rule show 2>/dev/null | awk '$1 == "1000:" {print $5, $9}' | while read -r A T; do
+    [ -n "$A" ] && [ -n "$T" ] && ip rule del to "$A" iif lo lookup "$T" priority 1000 2>/dev/null
+  done
+}
+
+# 0 the server answered, 1 it did not, 2 the question could not be asked through this tunnel.
+dns_probe() {
+  [ -n "$DNS1" ] || { log "No DNS server set on $IFACE; skipping the name check"; return 2; }
+  if ! ip route get "$DNS1" 2>/dev/null | grep -q " dev $IFACE"; then
+    ip rule add to "$DNS1" iif lo lookup "$DNSTABLE" priority 1000 2>/dev/null
+    DNSRULE=1
+    if ! ip route get "$DNS1" 2>/dev/null | grep -q " dev $IFACE"; then
+      # The stopped-slot case. Asking anyway would send the lookup out of the WAN and pass.
+      log "Could not aim a lookup at $DNS1 through $IFACE; skipping the name check"
+      dns_rule_clean
+      return 2
+    fi
+  fi
+  # Bounded by hand: this BusyBox has no `timeout`, and its nslookup waits 20 seconds. A healthy
+  # lookup through a tunnel measured 0.5s, a cold one 2.1s.
+  nslookup example.com "$DNS1" >/dev/null 2>&1 &
+  NSPID=$!
+  NSW=0
+  while [ "$NSW" -lt 6 ] && kill -0 "$NSPID" 2>/dev/null; do
+    sleep 1
+    NSW=$((NSW + 1))
+  done
+  if kill -0 "$NSPID" 2>/dev/null; then
+    kill -9 "$NSPID" 2>/dev/null
+    wait "$NSPID" 2>/dev/null
+    DNSRC=1
+  else
+    wait "$NSPID"
+    DNSRC=$?
+  fi
+  dns_rule_clean
+  return "$DNSRC"
+}
+
+# ── The SMTP host's address, resolved the encrypted way (ID-077) ───────────────────────────────
+#
+# This is the lookup worth hiding. The PIA names say the router talks to PIA, which its WireGuard
+# traffic already says; the SMTP hostname names the user's email provider, and nothing else on the
+# wire does. Neither mailer can be told "use this address but verify this name": the stock mailer takes a
+# hostname and verifies against it, and the Merlin one hands the whole thing to openssl. So the
+# address is learnt over DoH first, and then given to the mailer the only way each one accepts.
+#
+# Learnt by asking curl to connect and report what it connected to. curl resolves over DoH, the
+# connection then fails at the protocol level - it is speaking HTTP to an SMTP port - and
+# %{remote_ip} is written either way. Ugly, and it needs no extra binary.
+resolve_smtp() {
+  SMTP_IP=""
+  [ -n "$DOHDESC" ] || return 0
+  [ -n "$SMTP_HOST" ] || return 0
+  SMTP_IP="$($CURLB -o /dev/null -w '%{remote_ip}' "https://$SMTP_HOST:$SMTP_PORT" 2>/dev/null)"
+  # Anything that is not dotted digits is not an address. An empty answer is the ordinary failure.
+  case "$SMTP_IP" in
+    ''|*[!0-9.]*) SMTP_IP="" ;;
+  esac
+  [ -n "$SMTP_IP" ] || log "Could not resolve $SMTP_HOST over encrypted DNS; the mailer will look it up itself"
+}
+
+# /etc/hosts is how the stock mailer is given an address without losing certificate verification:
+# it still connects to the NAME, and still checks the certificate against it. The entry carries a
+# marker so a run that was killed mid-send can be cleaned up by the next one.
+HOSTSMARK="cfg-pia-wg-$IFACE"
+hosts_clean() {
+  grep -q "$HOSTSMARK" /etc/hosts 2>/dev/null || return 0
+  grep -v "$HOSTSMARK" /etc/hosts > "/tmp/hosts_$IFACE" 2>/dev/null || return 0
+  cat "/tmp/hosts_$IFACE" > /etc/hosts 2>/dev/null
+  rm -f "/tmp/hosts_$IFACE"
+}
+hosts_add() {
+  [ -n "$SMTP_IP" ] || return 0
+  hosts_clean
+  echo "$SMTP_IP $SMTP_HOST # $HOSTSMARK" >> /etc/hosts 2>/dev/null ||
+    log "Could not write /etc/hosts; $SMTP_HOST will be looked up in the clear"
+}
+
 abort() {
   log "ERROR: $1"
   # The token fetch passes -u user:password, and curl logs every command line to world-readable
@@ -1923,8 +2285,14 @@ abort() {
   fi
   send_alert FAILED "$1"
   rm -f "$TMPSRV"
+  hosts_clean
+  dns_rule_clean
   exit 1
 }
+
+# Anything left behind by a run that was killed: a hosts entry (ID-077) or a routing rule (ID-078).
+hosts_clean
+dns_rule_sweep
 
 # Connectivity check
 FAIL=1
@@ -1959,10 +2327,36 @@ else
   fi
 fi
 
+# Names, not just packets (ID-078 / ID-006). Only when everything cheaper has passed: this exists
+# to catch what those miss, and a tunnel that is already down is not a DNS problem.
+if [ "$FAIL" = "0" ]; then
+  if dns_probe; then
+    rm -f "$DNSFAILFILE"
+  else
+    DNSPRC=$?
+    if [ "$DNSPRC" != "2" ]; then
+      DNSFAILS=0
+      [ -f "$DNSFAILFILE" ] && read -r DNSFAILS < "$DNSFAILFILE"
+      case "$DNSFAILS" in ''|*[!0-9]*) DNSFAILS=0 ;; esac
+      DNSFAILS=$((DNSFAILS + 1))
+      echo "$DNSFAILS" > "$DNSFAILFILE"
+      # Two in a row before acting: one lost packet must not bounce a working tunnel.
+      if [ "$DNSFAILS" -ge 2 ]; then
+        log "$IFACE is up and handshaking, but $DNS1 has answered nothing twice in a row"
+        DNSDEAD=1
+        FAIL=1
+      else
+        log "$IFACE: no answer from $DNS1; one more and it counts as broken"
+      fi
+    fi
+  fi
+fi
+
 # Success: update status
 if [ "$FAIL" = "0" ]; then
   date '+%s %Y-%m-%d %H:%M:%S' > "$STATUSFILE"
   printf '0\n0\n' > "$BACKOFFFILE"
+  rm -f "$DNSFAILFILE"
   # A deploy run always emails, even with nothing to fix: it is the user's proof that alerting
   # works. No addKey happened on this path, so the endpoint comes from NVRAM and there is no
   # server name or latency to report.
@@ -1972,6 +2366,18 @@ if [ "$FAIL" = "0" ]; then
     INTERVALV="$INTERVAL minutes"
     send_alert SUCCESS "watchdog deployed"
   fi
+  exit 0
+fi
+
+# The WAN first. This sits ABOVE the backoff ladder on purpose: while the internet is out there is
+# nothing to rebuild a tunnel FROM, so counting the check as a failed attempt charges the outage to
+# the tunnel. It used to sit below, and a two-hour outage could leave the ladder at 90 minutes - so
+# when the WAN came back, a tunnel that could not recover by itself waited that long for its first
+# real attempt - having logged a reconfigure it never started, every few minutes, throughout (ID-064).
+if ping -c 1 -W 2 "$PRIMARY_IP" >/dev/null 2>&1 || ping -c 1 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
+  log "WAN has internet connectivity"
+else
+  log "no Internet on WAN interface, exiting."
   exit 0
 fi
 
@@ -2001,21 +2407,17 @@ if [ "$RUNMODE" = "deploy" ]; then
   # fault in the router log.
   log "Deploying: bringing $IFACE up for the first time${APPVER:+ [script $APPVER]}"
 else
-  log "Connectivity lost; reconfiguring (attempt #$CNT)${APPVER:+ [script $APPVER]}"
+  if [ "$DNSDEAD" = "1" ]; then
+    log "Name resolution lost on $IFACE; reconfiguring (attempt #$CNT)${APPVER:+ [script $APPVER]}"
+  else
+    log "Connectivity lost; reconfiguring (attempt #$CNT)${APPVER:+ [script $APPVER]}"
+  fi
 fi
 
 # Preflight checks
 [ -n "$DESC" ] || abort "${K}desc is empty"
 [ -x "$JQ" ] || command -v "$JQ" >/dev/null 2>&1 || abort "jq is not installed"
 [ -n "$PIA_USER" ] || abort "PIA username is not set"
-
-# Check connectivity
-if ping -c 1 -W 2 "$PRIMARY_IP" >/dev/null 2>&1 || ping -c 1 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
-  log "WAN has internet connectivity"
-else
-  log "no Internet on WAN interface, exiting."
-  exit 0
-fi
 
 # PIA re-negotiation
 if [ ! -f "$CACERT" ]; then
@@ -2032,6 +2434,7 @@ else
   log "Using cached CA cert"
 fi
 
+if [ -n "$DOHDESC" ]; then log "Name lookups encrypted via $DOHDESC"; else log "Name lookups are NOT encrypted (no DoH resolver configured)"; fi
 log "Requesting PIA token for user $PIA_USER"
 # Body to a file, status code to a second file, curl as the condition of an `if`. exit 0 with no
 # status, no body and no stderr is the caller-rejection signature (see the detach at the top); if
@@ -2048,9 +2451,12 @@ HTTP="$(echo "$WRITEOUT" | cut -d' ' -f1)"
 # One retry. "The network was still coming back up" is a real possibility for the first call after
 # an outage, and three seconds is nothing against a tunnel that otherwise stays down for hours.
 if [ -z "$HTTP" ] || [ "$HTTP" = "000" ]; then
-  log "token fetch produced [$WRITEOUT]; retrying once in 3s"
+  # The retry drops the encrypted lookup. If DoH is what failed - a resolver that is down, or a
+  # firmware that has started refusing the flag - this is what keeps the tunnel repairable, and the
+  # log says plainly that the lookup was in the clear.
+  if [ -n "$DOHDESC" ]; then log "token fetch produced [$WRITEOUT]; retrying once in 3s WITHOUT encrypted DNS"; else log "token fetch produced [$WRITEOUT]; retrying once in 3s"; fi
   sleep 3
-  if $CURLB -S -o "$TMPTOK" -w '%{http_code} exit=%{exitcode} connects=%{num_connects} err=%{errormsg}' \
+  if $CURLPLAIN -S -o "$TMPTOK" -w '%{http_code} exit=%{exitcode} connects=%{num_connects} err=%{errormsg}' \
      -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" >"$TMPHTTP" 2>"$TMPERR"; then
     RC=0
   else
@@ -2079,6 +2485,11 @@ if [ -z "$TOKEN" ]; then
   ERRLINE="$(head -n 1 "$TMPERR" 2>/dev/null | cut -c1-80)"
   if [ "$RC" = "0" ] && [ -z "$HTTP" ] && [ -z "$ERRLINE" ]; then
     abort "failed to obtain PIA token: curl reported success but returned nothing at all (no status, no body, no error). Usually means the network was still coming back up."
+  fi
+  # A refusal is not a network fault, and saying "exit 0, HTTP 403, body 66B: {" sent the reader
+  # looking for one. PIA answers 401 or 403 when the account is wrong (ID-120).
+  if [ "$HTTP" = "401" ] || [ "$HTTP" = "403" ]; then
+    abort "PIA rejected the username and password stored on this router (HTTP $HTTP). The PIA username is the one PIA issued for the VPN, not an email address and not the router login. Fix it in the app: WATCHDOG, CREATE/EDIT, SAVE & DEPLOY."
   fi
   abort "failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}, body ${BSZ:-0}B: ${BODY:-empty}) $ERRLINE"
 fi
@@ -2170,14 +2581,7 @@ nvram commit
 log "NVRAM write complete"
 
 # Restart interface
-# Increase sleeps on slow routers
-log "Stopping $IFACE"
-service "stop_wgc $SLOT"
-sleep 2
-log "Starting $IFACE"
-service "start_wgc $SLOT"
-log "Restarting VPN routing"
-service restart_vpnrouting0
+__RESTART__
 
 log "Waiting for $IFACE to initialise"
 sleep 3
@@ -2185,6 +2589,28 @@ if ! ip -o link show up 2>/dev/null | grep -q " $IFACE:"; then
   abort "$IFACE did not come up after reconfiguration (configured: $(wg show interfaces 2>/dev/null | tr -s ' ' | cut -c1-60))"
 fi
 log "Interface $IFACE is up"
+
+# The interface being up says the device exists, not that PIA answered it. A registration that has
+# expired still produces a wgcN that sends and never receives, and until this gate existed the
+# script called that a rebuild that worked: it logged, counted and emailed one while nothing was
+# flowing. Measured 2026-09-19 over four days of router syslog: of nine rebuilds, four
+# had a completed handshake about 4 seconds after the restart, so 20 seconds is generous. It is
+# double what the app's own ENABLE allows, because nobody is watching this one.
+log "Waiting for a handshake on $IFACE"
+HSOK=0
+HSTRY=0
+while [ "$HSTRY" -lt 10 ]; do
+  HSNEW="$(wg show "$IFACE" latest-handshakes 2>/dev/null | awk '{if ($2 > m) m = $2} END {print m + 0}')"
+  if [ "$HSNEW" -gt 0 ]; then
+    HSAGE=$(( $(date +%s) - HSNEW ))
+    log "Handshake ${HSAGE}s ago after $(( HSTRY * 2 ))s"
+    HSOK=1
+    break
+  fi
+  HSTRY=$((HSTRY + 1))
+  sleep 2
+done
+[ "$HSOK" = "1" ] || abort "$IFACE came up but the PIA server never answered it (no handshake in 20s)"
 
 if [ "$RUNMODE" = "deploy" ]; then
   log "Deploy SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
@@ -2199,7 +2625,11 @@ if [ "$RUNMODE" = "deploy" ]; then
   DETAILV="watchdog deployed"
   CONNLABEL="Connected to"
 else
-  DETAILV="reconfigured successfully on attempt $CNT"
+  if [ "$DNSDEAD" = "1" ]; then
+    DETAILV="reconfigured successfully on attempt $CNT, after its DNS server stopped answering"
+  else
+    DETAILV="reconfigured successfully on attempt $CNT"
+  fi
   CONNLABEL="Reconnected to"
   DOWNLABEL="Tunnel was down for"
   # Measure the outage before stamping the status file, or it always reads zero.
