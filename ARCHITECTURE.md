@@ -95,6 +95,7 @@ update breaks something: the failure almost never looks like its cause.
 - [11. Appendix: readings that were superseded](#appendix-readings-that-were-superseded)
   - [11.1. The two-cost model for applying an assignment](#the-two-cost-model-for-applying-an-assignment)
   - [11.2. Placeholder records in the policy list](#placeholder-records-in-the-policy-list)
+- [12. House style: what the app looks like](#house-style)
 
 ## 1. <a name='how-it-works'></a>How it works
 
@@ -1427,15 +1428,11 @@ AllowedIPs          = 0.0.0.0/0
 
 ### 7.8. <a name='curl-refuses-to-run-from-cron'></a>`curl` polices who calls it and what it fetches
 
-Two separate checks, both silent, both in the same binary. The caller check came first; the URL
-check was measured on 2026-09-19 while testing encrypted DNS for the watchdog.
+Two separate checks, both silent, both in the same binary. The caller check came first; the URL check was measured on 2026-09-19 while testing encrypted DNS for the watchdog.
 
 #### The URL check
 
-`/usr/sbin/curl` **refuses any URL whose host is an IP literal**, and the refusal is as quiet as the
-caller one: exit status 0, no output at all, nothing on stderr, with the only trace a line in
-`/jffs/curllst` reading `Invalid DL URL(<address>)`. It applies to `--doh-url` as well as to the
-request URL, which is how it was found.
+`/usr/sbin/curl` **refuses any URL whose host is an IP literal**, and the refusal is as quiet as the caller one: exit status 0, no output at all, nothing on stderr, with the only trace a line in `/jffs/curllst` reading `Invalid DL URL(<address>)`. It applies to `--doh-url` as well as to the request URL, which is how it was found.
 
 Measured 2026-09-19, stock firmware, curl 7.84.0:
 
@@ -1447,14 +1444,9 @@ Measured 2026-09-19, stock firmware, curl 7.84.0:
 | `curl --doh-url https://dns.quad9.net/dns-query https://example.com` | `http=200` | nothing |
 | `curl --doh-url https://security.cloudflare-dns.com/dns-query --resolve security.cloudflare-dns.com:443:1.1.1.2 https://example.com` | `http=200` | nothing |
 
-The last row is the one that matters, and it is the pattern the watchdog already uses for `addKey`:
-**a hostname in the URL, with `--resolve` supplying the address.** That satisfies the check while
-still sending the request to an address of the app's choosing, and it means no name has to be
-resolved in the clear first. Encrypted DNS for the watchdog (ID-076) is built on exactly this.
+The last row is the one that matters, and it is the pattern the watchdog already uses for `addKey`: **a hostname in the URL, with `--resolve` supplying the address.** That satisfies the check while still sending the request to an address of the app's choosing, and it means no name has to be resolved in the clear first. Encrypted DNS for the watchdog (ID-076) is built on exactly this.
 
-If ASUS ever extend the check to `--resolve`, or to hostnames the firmware does not recognise, the
-escape hatch is to install our own `curl` beside `jq` and `mailsend-go` - recorded as a BACKLOG FTR,
-not built, because it means shipping and maintaining a TLS stack.
+If ASUS ever extend the check to `--resolve`, or to hostnames the firmware does not recognise, the escape hatch is to install our own `curl` beside `jq` and `mailsend-go` - recorded as a BACKLOG FTR, not built, because it means shipping and maintaining a TLS stack.
 
 #### The caller check
 
@@ -1601,3 +1593,146 @@ router has **no records at all**, so the screen has to render "every device is o
 connection" from an empty string rather than from a list of zeros.
 
 ---
+
+---
+
+## 12. <a name='house-style'></a>House style: what the app looks like
+
+Every value here was read out of `lib/`, not designed on paper. It exists for two jobs: writing UI code that matches what is already there, and editing a screenshot - covering an address or a username - without the patch looking like a patch. The cross-reference at the end says which file to change when one of these needs to move.
+
+**The whole app is monospace.** `buildAppTheme()` sets `fontFamily: 'monospace'` at the theme, so every label, heading, log line and button inherits it unless something overrides it, and nothing does. On Android that resolves to Roboto Mono. A screenshot patch in a proportional face will read as wrong immediately.
+
+**The app is unconditionally dark.** There is no light theme and no system-theme switch.
+
+### 12.1. The palette
+
+All of it is `lib/app_colors.dart`. Nothing in a screen may inline a hex value (CONTEXT, "Colours").
+
+| Constant | Hex | Where it is seen |
+| --- | --- | --- |
+| `kBg` | `#12141A` | The screen behind everything |
+| `kSurface` | `#1A1D23` | The header bar, the drawer, every dialog |
+| `kField` | `#1E2128` | Input fill, the slot list panel, a selected drawer row |
+| `kBorder` | `#2E3240` | Input borders at rest, dividers |
+| `kText` | `#E8EAF0` | Body text, input text, dialog titles |
+| `kMuted` | `#8892A4` | Secondary text, helper text, input labels, CANCEL buttons |
+| `kHint` | `#4A5268` | Placeholder text, and every disabled button - deliberately darker than `kMuted`, so a dead control never reads as a live CANCEL |
+| `kHighlight` | `#00D4AA` | The house teal: the accent dot, focus rings, most actions, app-log lines |
+| `kSecondary` | `#00A882` | The theme's secondary; rarely seen directly |
+| `kError` | `#FF5C5C` | Destructive actions, error dialogs, error log lines, EXIT |
+| `kWarn` | `#EF9F27` | Kill-switch badge, staged-change notes, the amber half of the watchdog log |
+| `kOnPrimary` | `#12141A` | Text on a filled teal button |
+| `kConfigBg` | `#0E1016` | Generated-config and log viewports - darker than the screen, so a panel reads as inset |
+| `kWatchdogText` | `#B69CFF` | The watchdog's own lines in the router log |
+| `kLinkIconColour` | `#BFB27C` | The two footer icons on HOME |
+
+**Per-destination colours** (`kDestinationColours`), used by the main menu, the drawer and each screen's heading:
+
+| Destination | Constant | Hex |
+| --- | --- | --- |
+| STANDALONE | `kHighlight` | `#00D4AA` |
+| MANAGE | `kManageColour` | `#29B6F6` |
+| WATCHDOG | `kWatchdogColour` | `#8BC34A` |
+| DEVICE ASSIGNMENT | `kAssignColour` | `#FFB300` |
+| ROUTER LOG | `kRouterLogColour` | `#8E5499` |
+| APP LOG | `kAppLogColour` | `#6052FF` |
+| SETTINGS and ABOUT | `kUtilityColour` | `#8A97A0` |
+| EXIT | `kError` | `#FF5C5C` |
+
+**Slot-action verb colours** (`kSlotActionColours`), keyed by the button's label: CREATE and CREATE/EDIT green, ENABLE teal, EDIT blue, DISABLE amber, DELETE red, VIEW ROUTER WATCHDOG LOG grey. A verb keeps the colour of the thing it acts on.
+
+### 12.2. The type scale
+
+Sizes are in logical pixels. Nothing uses Flutter's text theme; every style is written where it is used.
+
+| Size | Weight | Used for |
+| --- | --- | --- |
+| 28 | normal | One thing only: the reboot progress percentage |
+| 16 | w600 | The app name in the header; the device-assignment empty state |
+| 15 | w700 | Filled buttons (theme), with `letterSpacing: 0.5` |
+| 15 | normal | Dialog titles; the paywall's opening sentence (`height: 1.45`) |
+| 14 | w700 | Main menu row labels |
+| 14 | normal | Dialog titles that carry an icon |
+| 13 | normal | Body text: dialog content, input text, list rows, most notes |
+| 12 | w700 | Screen headings, with `letterSpacing: 1.5` (`ScreenHeading.style`) |
+| 12 | normal | Helper text under inputs, secondary notes, small buttons |
+| 11 | normal | Log lines, helper and caution text, version in the header |
+| 10 | w600 | Slot badges, monospace |
+| 10 | normal | The "by Exponentially Digital" line; licence text (`height: 1.4`) |
+| 9 | normal | One thing only: the SHA-256 under a binary in the install dialog |
+
+### 12.3. Controls
+
+**Buttons are bordered and unfilled** (`widgets/app_button.dart`). One shape, three roles, and the colour is the role:
+
+- `ButtonRole.action` - teal. Does something.
+- `ButtonRole.destructive` - red. Destroys, removes, reboots or exits.
+- `ButtonRole.dismiss` - `kMuted` grey. A way out that changes nothing: CANCEL, CLOSE, NOT NOW.
+- Disabled - `kHint`, darker than the dismiss grey, on purpose.
+- `colour:` overrides the role for the slot actions only, and a disabled button ignores it.
+
+Padding is 14 vertical, 16 horizontal; the border is 1px in the role colour; `busy: true` replaces the label with a 20px teal spinner. `fullWidth` stretches it; dialog actions keep their label's width.
+
+**The one filled button style** is the theme's `elevatedButtonTheme`: teal fill, `kOnPrimary` text, 8px radius, 16 vertical padding. The paywall's buy button is where it is seen.
+
+**Inputs** (theme, `app_shell.dart`): filled `kField`, 8px radius, `kBorder` at rest, `kHighlight` at 1.5px when focused, label `kMuted`, placeholder `kHint`, text `kText` at 13 monospace. Helper text sits under the field at 11, `kMuted`, and turns `kWarn` for a caution.
+
+**Dialogs** are `AlertDialog` on `kSurface` with a 12px radius. Title 15 `kText`, or 14 `kError` beside an error icon. Content 13, `kMuted` for explanation and `kText` for a list of consequences. Actions are `AppButton`s, dismiss first and the real action second.
+
+**Badges** (`SlotBadge`): 10px monospace w600, 7x2 padding, 0.5px border, tinted background. ACTIVE teal on `#0F3D2E`, UP-NO-ANSWER amber on `#2A1F0E`, KILL SWITCH amber, WATCHDOG ACTIVE teal on `#0F2E3D`, WATCHDOG PAUSED `kMuted` on `#1F242D`.
+
+### 12.4. Menus, headings and logs
+
+**The main menu** is nine bordered rows plus EXIT. Icon and label take the destination's colour; the outline stays teal on every row so they read as one control set; the chevron stays teal because it means the same thing everywhere. EXIT is red, has no chevron, and keeps the chevron's width so every label starts in the same column. Rows cap at `kMenuMaxWidth` 520 and centre; the two footer links indent by `kMenuIconIndent` 20 so their 16px icons line up with the rows' 20px ones.
+
+**The drawer** takes the same colours on its icons and labels, adds no outline, and marks the current screen with a `kField` fill rather than a colour change.
+
+**Every screen names itself** with a `ScreenHeading`: 12px, w700, `letterSpacing: 1.5`, in that destination's colour.
+
+**The app log** colours by outcome: success white, error `kError`, warning `kWarn`, everything else `kHighlight`, each with its own icon. **The router log** colours by author: the app's lines teal, the watchdog's `kWatchdogText`, errors red, the firmware's own lines plain. **The watchdog log** colours by outcome: errors red, the three SUCCESS lines teal, rebuild steps amber, routine checks plain.
+
+### 12.5. Layout constants
+
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| `kFormMaxWidth` | 480 | Forms and lists stop widening here and centre |
+| `kMenuMaxWidth` | 520 | The main menu's cap |
+| `kMenuIconIndent` | 20 | Aligns HOME's footer icons with the menu icons |
+| body padding | 20 all round | `AppScaffold`'s content inset |
+| HOME button | 20/0/20/20 | Pinned below the scroll view, full width |
+| header | 8 horizontal, 8 vertical | Inside the safe area |
+
+### 12.6. Which file does what
+
+| Element | Defined in | Used or modified by |
+| --- | --- | --- |
+| Every colour constant, destination and verb maps | `app_colors.dart` | Everything below |
+| Theme: font family, inputs, filled buttons, colour scheme | `app_shell.dart` (`buildAppTheme`) | The whole app |
+| Header bar, drawer button, version link | `widgets/app_scaffold.dart` (`AppHeaderBar`) | Rendered above the navigator |
+| Screen body wrapper, HOME button, `kFormMaxWidth` | `widgets/app_scaffold.dart` (`AppScaffold`) | Every screen |
+| `ScreenHeading`, `destinationHeading` | `widgets/app_scaffold.dart` | Every screen's title |
+| Buttons and roles | `widgets/app_button.dart` | Every screen and dialog |
+| Inputs, `DnsField`, `SlotBadge`, `LogPanel` | `widgets/common_fields.dart` | Forms, slot rows, the app log |
+| Main menu rows, footer links | `screens/main_menu_screen.dart` | HOME |
+| Drawer rows, destination icons | `widgets/app_drawer.dart` | The hamburger |
+| Slot list, badges, action buttons, watchdog log viewer | `widgets/slot_modal.dart` | MANAGE and WATCHDOG |
+| Slot parameter fields | `screens/slot_params_editor.dart` | MANAGE EDIT |
+| Watchdog form, DoH picker | `watchdog_dialog.dart` | WATCHDOG CREATE/EDIT |
+| Device rows, pickers, panels | `widgets/device_assignment_screen.dart` | DEVICE ASSIGNMENT |
+| Router log colouring | `screens/router_log_screen.dart` (`routerLogLineColour`) | ROUTER LOG |
+| Watchdog log colouring | `widgets/slot_modal.dart` (`watchdogLogLineColour`) | The watchdog log viewer |
+| App log colouring and icons | `widgets/common_fields.dart` (`LogPanel`) | APP LOG |
+| Error and input dialogs | `widgets/error_presenter.dart` | Everywhere an error is shown |
+| Paywall, pitches | `widgets/paywall.dart` | Every gated action |
+| Build info rows, links | `screens/about_screen.dart` | ABOUT |
+| Action rows | `screens/settings_screen.dart` | SETTINGS |
+
+### 12.7. Editing a screenshot
+
+What to know when covering an address, a username or a MAC:
+
+- The face is monospace, so a replacement of the same character count occupies the same width. Android renders it as Roboto Mono; **DroidSansMono.ttf is a very close match** for patching a screenshot in an image editor, which is what Andrew uses - Roboto Mono descends from Droid Sans Mono, so the metrics agree.
+- Body text is `kText` `#E8EAF0` at 13; device names on the assignment screen are `kHighlight` `#00D4AA` at 13; addresses and MACs under them are `kMuted` `#8892A4` at 12.
+- Log lines are 11px and take their colour from the table above.
+- The panel behind a log or a generated config is `kConfigBg` `#0E1016`, not the screen's `kBg` `#12141A`.
+- Invented values that are already used throughout the documentation: `192.168.1.20`, `my-router.asuscomm.com`, `AA:BB:CC:DD:EE:FF`. Reusing them keeps a screenshot consistent with the text around it.
