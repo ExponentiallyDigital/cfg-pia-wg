@@ -54,6 +54,17 @@ void main() {
     expect(tracked, isEmpty, reason: 'these files are verbatim hardware logs and must not be tracked:\n$tracked');
   });
 
+  // ID-119: the voice guide is covered by the rule above, and named on its own because tracking it
+  // would do something worse than leak an address.
+  test('the voice guide is not tracked by git', () {
+    const guide = '.claude/testing/voice-guide.md';
+    final tracked = Process.runSync('git', ['ls-files', guide]).stdout.toString().trim();
+    expect(tracked, isEmpty,
+        reason: '$guide is the one document that connects Andrew to a pseudonymous site. Committing it publishes '
+            'that link, and deleting it later does not take it out of git history. Take it out of the index with '
+            '`git rm --cached $guide`, leaving the file on disk: .claude/testing/ is already in .gitignore.');
+  });
+
   test('every MAC address written down is a visibly invented one', () {
     final offenders = <String>[];
     for (final file in _repoFiles()) {

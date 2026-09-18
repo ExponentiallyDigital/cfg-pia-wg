@@ -371,6 +371,17 @@ void main() {
       expect(spanFor('v0.8.49 build 419')?.style?.color, kWarn);
       expect(find.byKey(const Key('about_redeploy_scripts')), findsOneWidget);
 
+      // ID-085: it says what it does, wears the amber of the row it fixes, and sits with the other
+      // actions - centred, on its own line above them - rather than wedged into the build details.
+      expect(find.text('UPDATE WATCHDOG VERSION'), findsOneWidget);
+      final update = tester.widget<OutlinedButton>(find.byKey(const Key('about_redeploy_scripts')));
+      expect(update.style!.side!.resolve(<WidgetState>{})!.color, kWarn);
+      final updateRect = tester.getRect(find.byKey(const Key('about_redeploy_scripts')));
+      final copyRect = tester.getRect(find.byKey(const Key('about_copy_build_info')));
+      expect(updateRect.bottom, lessThanOrEqualTo(copyRect.top), reason: 'above the other two');
+      final screen = tester.getRect(find.byType(AboutScreen));
+      expect(updateRect.center.dx, moreOrLessEquals(screen.center.dx, epsilon: 1), reason: 'centred');
+
       await tester.pumpWidget(const SizedBox());
       await pumpWith('v0.8.76 build 446');
       expect(spanFor('v0.8.76 build 446')?.style?.color, isNot(kWarn));
@@ -692,6 +703,25 @@ void main() {
       final prev = positions[i - 1], here = positions[i];
       final after = here.dy > prev.dy + 1 || (here.dy < prev.dy + 1 && here.dx > prev.dx);
       expect(after, isTrue, reason: '${keys[i]} must read after ${keys[i - 1]}');
+    }
+  });
+
+  // ID-089 and ID-110: the links are a centred set of destinations, and nothing there is underlined.
+  testWidgets('the links line is centred and carries no underline', (tester) async {
+    _mockChannel(tester, (call) async => _hostReply);
+    await _pumpAbout(tester);
+
+    final row = tester.widget<Wrap>(find.ancestor(
+      of: find.byKey(const Key('about_link_0')),
+      matching: find.byType(Wrap),
+    ));
+    expect(row.alignment, WrapAlignment.center);
+
+    for (final key in ['about_link_0', 'about_link_1', 'about_link_2', 'about_link_3', 'about_licenses_link']) {
+      final span = tester.widget<Text>(find.byKey(Key(key))).textSpan! as TextSpan;
+      expect(span.style?.decoration, isNot(TextDecoration.underline), reason: key);
+      expect(span.style?.color, kHighlight, reason: '$key still reads as a link');
+      expect(span.recognizer, isNotNull, reason: '$key is still tappable');
     }
   });
 

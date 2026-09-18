@@ -2,6 +2,7 @@
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
+import 'package:cfg_pia_wg/router_slot_service.dart' show kMaxActiveVpnsPreviousKey;
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/s50_template.dart';
 
@@ -331,6 +332,24 @@ void main() {
       }
     });
 
+    // ID-098: raising the VPN cap is a change the app makes to a router-wide setting, so an
+    // uninstall puts it back - and only when the app is what moved it.
+    test('uninstall puts the VPN cap back to what the app found', () async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains(kMaxActiveVpnsPreviousKey) ? '2' : 'ABSENT');
+      final done = await _wd(c).uninstallFromRouter();
+
+      expect(c.ran('nvram set vpnc_max_conn=2'), isTrue);
+      expect(done, contains('Put the maximum active VPNs back to 2'));
+    });
+
+    test('uninstall leaves a cap the app never raised alone', () async {
+      final c = RecordingSSHClient(responder: (_) => '');
+      final done = await _wd(c).uninstallFromRouter();
+
+      expect(c.commands.any((x) => x.contains('nvram set vpnc_max_conn')), isFalse);
+      expect(done, contains('Left the maximum active VPNs alone - the app never changed it'));
+    });
+
     // Reported 2026-09-10: run twice, the second run deleted the ROUTER'S OWN scripts. The first
     // restored them, and the second found a file it did not recognise and removed it.
     test('a script that is not ours is left alone', () async {
@@ -450,6 +469,47 @@ void main() {
 
     // Measured 2026-09-13: creating a watchdog on a wgc4 that was already up ran `restart_vpnc`,
     // which on stock rebuilds VPN routing for every tunnel.
+    // ID-121 / ID-096: a deploy that fails part way used to leave a slot the app read as configured
+    // while the router's web interface showed nothing - keys written, profile row added, slot
+    // enabled, and then an abort. It now puts the slot back and says which.
+    test('a failed deploy clears a slot that started empty, and says so', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
+      // The script's own run is the step that fails, exactly as an aborted deploy does.
+      c.failWith['watchdog_wgc1.sh deploy'] = 'ERROR: PIA rejected the username and password';
+
+      await expectLater(
+        _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne'),
+        throwsA(predicate((e) =>
+            e.toString().contains('cleared back to empty') &&
+            e.toString().contains('try again in 5 minutes'))),
+      );
+
+      expect(c.commands.any((x) => x.startsWith('nvram unset wgc1_priv')), isTrue, reason: 'the keys go');
+      expect(c.commands.any((x) => x.contains('cru d watchdog_wgc1')), isFalse,
+          reason: 'the schedule STAYS - it is the retry that rescued this on 2026-09-17');
+    });
+
+    test('a failed deploy restores a slot that already held a configuration', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-us_east';
+        if (cmd.contains('nvram get wgc1_priv')) return 'OLDKEY';
+        if (cmd.contains('nvram get vpnc_clientlist')) return 'pia-us_east>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      c.failWith['watchdog_wgc1.sh deploy'] = 'ERROR: the PIA server never answered';
+
+      await expectLater(
+        _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne'),
+        throwsA(predicate((e) => e.toString().contains('was left as it was'))),
+      );
+
+      expect(c.commands.any((x) => x.contains("nvram set wgc1_priv='OLDKEY'")), isTrue,
+          reason: 'the old configuration is put back');
+      expect(c.commands.any((x) => x.contains('nvram set vpnc_clientlist=')), isTrue);
+    });
+
     test('a slot that is already up, keeping its region, is not restarted', () async {
       useStock();
       final c = RecordingSSHClient(responder: (cmd) {
@@ -460,7 +520,10 @@ void main() {
       });
       await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne');
 
-      expect(c.ran('restart_vpnc'), isFalse);
+      // Exact commands, as the Merlin case below: since ID-070 the uploaded script mentions
+      // restart_vpnc itself, so a substring match now finds the file rather than the action.
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram set vpnc_unit')), isFalse);
+      expect(c.commands.contains('service restart_vpnc'), isFalse);
       expect(c.ran('nvram set wgc1_enable=1'), isTrue, reason: 'the flags are still written');
       expect(c.commands.any((cmd) => cmd.endsWith('watchdog_wgc1.sh deploy')), isTrue);
       expect(c.commands.where((cmd) => cmd.contains('logger')).join('\n'), contains('already up'));

@@ -36,6 +36,7 @@ import '../firmware.dart';
 import '../router_slot_service.dart' show RouterSlotService, kDefaultStockMaxActiveSlots, openSshClient, splitHostPort;
 import '../review_service.dart';
 import '../router_watchdog.dart';
+import '../router_session.dart' show routerConnectMessage;
 import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/paywall.dart';
@@ -139,18 +140,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() => _busy = true);
     List<String>? done;
-    String? error;
+    String? error, errorDetail;
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       done = await RouterWatchdog(client, onLog: _c.onLog).uninstallFromRouter();
       await _connected(ip);
     } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+      // Plain English on screen, the raw exception in the log (ID-108).
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
     if (error != null) {
-      await AppErrors.system(context, _c, 'Could not remove the app from the router: $error');
+      await AppErrors.system(context, _c, errorDetail == null ? 'Could not remove the app from the router: $error' : error,
+          logDetail: errorDetail);
       return;
     }
     // What happened, itemised. "Restored yours" and "removed ours" are different outcomes and the
@@ -272,18 +277,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() => _busy = true);
     var deleted = false;
-    String? error;
+    String? error, errorDetail;
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       deleted = await RouterWatchdog(client, onLog: _c.onLog).deleteCachedPiaCert();
       await _connected(ip);
     } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+      // Plain English on screen, the raw exception in the log (ID-108).
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
     if (error != null) {
-      await AppErrors.system(context, _c, 'Could not delete the cached certificate: $error');
+      await AppErrors.system(context, _c, errorDetail == null ? 'Could not delete the cached certificate: $error' : error,
+          logDetail: errorDetail);
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -325,18 +334,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!confirmed || !mounted) return;
 
     setState(() => _busy = true);
-    String? error;
+    String? error, errorDetail;
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       await RouterWatchdog(client, onLog: _c.onLog).rebootRouter();
       await _connected(ip);
     } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+      // Plain English on screen, the raw exception in the log (ID-108).
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
     if (error != null) {
-      await AppErrors.system(context, _c, 'Could not reboot the router: $error');
+      await AppErrors.system(context, _c, errorDetail == null ? 'Could not reboot the router: $error' : error,
+          logDetail: errorDetail);
       return;
     }
     // The shared connection went down with the router; the next action opens a fresh one.
@@ -376,18 +389,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Logged the way the paywall's restore is, with the same messages; this one wrote nothing (ID-047).
     _c.logEntry('Restore started.');
     setState(() => _busy = true);
+    // What the entitlement was BEFORE the store was asked, so "restored" is said only when
+    // something actually changed (ID-091).
+    final wasUnlocked = _c.isUnlocked;
     String message;
-    var failed = false;
+    String? storeError;
     try {
-      message = await (widget.testRestore ?? Entitlement.restore)() ? RestoreMessages.restored : RestoreMessages.noneFound;
+      final found = await (widget.testRestore ?? Entitlement.restore)();
+      message = !found
+          ? RestoreMessages.noneFound
+          : wasUnlocked
+              ? RestoreMessages.alreadyUnlocked
+              : RestoreMessages.restored;
     } catch (e) {
-      message = RestoreMessages.failed(e);
-      failed = true;
+      message = RestoreMessages.failedPlain;
+      storeError = RestoreMessages.failed(e);
     }
-    _c.logEntry(message, isSuccess: message == RestoreMessages.restored, isError: failed);
+    if (storeError == null) _c.logEntry(message, isSuccess: message == RestoreMessages.restored);
     if (!mounted) return;
     setState(() => _busy = false);
     _c.setUnlocked(Entitlement.isUnlocked);
+    // A failure is a popup, because it is the one outcome that needs an answer; the store's own
+    // wording goes to the app log behind it.
+    if (storeError != null) {
+      await AppErrors.system(context, _c, message, logDetail: storeError);
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
@@ -406,7 +433,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     RouterSlotService? svc;
     RouterFirmware? firmware;
     var current = kDefaultStockMaxActiveSlots;
-    String? error;
+    String? error, errorDetail;
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       svc = RouterSlotService(client, onLog: _c.onLog);
@@ -414,12 +441,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (firmware == RouterFirmware.stock) current = await svc.readMaxActiveVpns();
       await _connected(ip);
     } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+      // Plain English on screen, the raw exception in the log (ID-108).
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
     if (error != null) {
-      await AppErrors.system(context, _c, 'Could not read the router: $error');
+      await AppErrors.system(context, _c, errorDetail == null ? 'Could not read the router: $error' : error,
+          logDetail: errorDetail);
       return;
     }
     if (firmware != RouterFirmware.stock || svc == null) {
@@ -443,12 +474,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await svc.setMaxActiveVpns(chosen);
     } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+      // Plain English on screen, the raw exception in the log (ID-108).
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
     if (error != null) {
-      await AppErrors.system(context, _c, 'Could not change the limit: $error');
+      await AppErrors.system(context, _c, errorDetail == null ? 'Could not change the limit: $error' : error,
+          logDetail: errorDetail);
       return;
     }
     final message = 'Maximum active VPNs set to $chosen.';
@@ -498,6 +533,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return AppScaffold(
       maxContentWidth: kFormMaxWidth,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // Named after the menu item that opened it, in that item's colour (ID-112).
+        destinationHeading(AppDestination.settings, key: const Key('settings_heading')),
+        const SizedBox(height: 16),
         // The order agreed on 2026-09-13.
         _Action(
           keyValue: 'settings_reboot_router',

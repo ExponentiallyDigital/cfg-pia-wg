@@ -122,7 +122,26 @@ void main() {
 
       await session.run('x');
 
-      expect(lines, ['Router SSH connection dropped; reconnecting.']);
+      // Both halves: that it went, and that it came back (ID-084).
+      expect(lines, ['Router SSH connection dropped; reconnecting.', 'Router SSH connection re-established.']);
+    });
+
+    // ID-084: the app closes the session itself once it has been in the background long enough,
+    // and the next action opened a new connection without a word - so the router's own log showed
+    // a password auth the app log could not account for.
+    test('a session the app closed says so when it opens again', () async {
+      final opener = _Opener();
+      final lines = <String>[];
+      final session = RouterSession(connect: opener.call, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => lines.add(m));
+
+      await session.run('x');
+      expect(lines, isEmpty, reason: 'the first connection is the one the user asked for');
+
+      await session.close();
+      await session.run('x');
+
+      expect(lines, ['Router SSH connection re-established.']);
+      expect(opener.opened, hasLength(2));
     });
 
     // Retrying forever would turn a dead router into a hang.

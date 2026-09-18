@@ -130,6 +130,35 @@ void main() {
     // Android places its Copy/Share toolbar relative to the SELECTION, so on a full-height
     // selection it lands on these buttons - which is how a tap meant for Copy cleared the watchdog
     // log on 2026-09-10. An in-app copy removes the need for it.
+    // ID-099: an older page is inserted ABOVE what is on screen, so the reader has to stay where
+    // they were relative to the newest line. Scrolling back many screens quickly used to throw the
+    // view down by several screens instead - two loads ran at once, each correcting the offset for
+    // its own insertion.
+    testWidgets('an older page holds the reader where they were', (tester) async {
+      // A log far bigger than one page, so there is always something older to fetch.
+      final ssh = _router(body: List.filled(400, 'Sep 10 09:00:01 router: a line of syslog').join('\n'), liveSize: 400000);
+      await _pump(tester, ssh: ssh);
+      final before = ssh.commands.where((c) => c.startsWith('tail -c')).length;
+
+      // Two scrolls to the top with no settle between them, which is what a fast flick produces:
+      // the second arrives while the first load is still waiting on the router.
+      final scroller = tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView).last).controller!;
+      scroller.jumpTo(0);
+      scroller.jumpTo(1);
+      await tester.pumpAndSettle();
+
+      final after = ssh.commands.where((c) => c.startsWith('tail -c')).length;
+      expect(after - before, 1, reason: 'one page per load, however fast the scrolling');
+      // Held: the offset moved down by what was added above, rather than staying at the top of the
+      // newly-inserted page or jumping to an unrelated part of the log.
+      // The reader was at the top of what had been loaded; the page arrives ABOVE that, so the
+      // offset moves down by the height of the new page rather than staying at zero - which is
+      // what "held" means here. It also has not been thrown to the bottom.
+      expect(scroller.offset, greaterThan(0));
+      expect(scroller.position.maxScrollExtent - scroller.offset, greaterThan(100),
+          reason: 'still the same distance from the newest line');
+    });
+
     testWidgets('COPY takes everything loaded, without arming the clipboard countdown', (tester) async {
       final copied = <String>[];
       final c = SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (t) async => copied.add(t))

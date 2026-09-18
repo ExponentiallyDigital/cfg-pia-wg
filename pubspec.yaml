@@ -1,6 +1,6 @@
 name: cfg_pia_wg
 description: cfg-pia-wg
-version: 0.8.82+452
+version: 0.8.83+453
 environment:
   sdk: ">=3.0.0 <4.0.0"
   flutter: ">=3.10.0"
@@ -22,10 +22,23 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.0
   mocktail: ^1.0.4
   dart_pubspec_licenses: ^3.2.0
+  flutter_native_splash: ^2.4.0
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/
 flutter_launcher_icons:
   android: true
-  image_path: assets/icon/icon.png
-  adaptive_icon_background: "#12141A"
-  adaptive_icon_foreground: assets/icon/icon_foreground.png
+  image_path: assets/icon/app_icon_legacy.png
+  adaptive_icon_background: "#001620"
+  adaptive_icon_foreground: assets/icon/app_icon_foreground.png
+# The window the system draws while the app starts. Without one, Android shows a blank white
+# rectangle before the first frame, which on a dark app reads as a flash (ID-111).
+flutter_native_splash:
+  color: "#001620"
+  image: assets/icon/splash_detail.png
+  android: true
+  ios: true
+  android_12:
+    image: assets/icon/app_icon_foreground.png
+    icon_background_color: "#001620"

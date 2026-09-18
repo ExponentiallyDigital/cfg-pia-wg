@@ -33,6 +33,7 @@ import '../device_assignment.dart';
 import '../device_assignment_service.dart';
 import '../firmware.dart';
 import '../router_slot_service.dart';
+import '../router_session.dart' show routerConnectMessage;
 import '../session_controller.dart';
 import 'paywall.dart';
 import 'app_scaffold.dart';
@@ -201,11 +202,13 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       return null;
     }
 
-    String? failure;
+    String? failure, failureDetail;
     try {
       failure = await attempt();
     } catch (e) {
-      failure = 'Could not read the device list: $e';
+      // Plain English on screen, the raw exception in the log (ID-108).
+      failure = routerConnectMessage(e, _ipCtrl.text) ?? 'Could not read the device list: $e';
+      failureDetail = routerConnectMessage(e, _ipCtrl.text) == null ? null : e.toString();
     } finally {
       // Both flags together: past this point a failure leaves the user needing the form, so it
       // stops being a lie to show it.
@@ -216,7 +219,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         });
       }
     }
-    if (failure != null && mounted) await AppErrors.system(context, _c, failure);
+    if (failure != null && mounted) await AppErrors.system(context, _c, failure, logDetail: failureDetail);
   }
 
   // ── Staging ──────────────────────────────────────────────────────────────────────
@@ -237,13 +240,16 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
   ///
   /// The list came back in `vpnc_clientlist` order, which is creation order - so a user who built
   /// wgc1 then wgc5 then wgc2 saw wgc4 above wgc3 and had to read every line to find one. Slot
-  /// number is the only order anyone thinks in.
+  /// number is the only order anyone thinks in, highest first: wgc5 down to wgc1, the order the
+  /// router's own web interface creates them in and the order MANAGE and WATCHDOG list them
+  /// (ID-101). A running tunnel still sorts above a stopped one - that is what someone picking a
+  /// connection needs to see first.
   List<VpncRecord> get _wireguardProfiles {
     final out = _state!.profiles.where((p) => p.protocol == 'WireGuard' && p.vpncStateIndex != null).toList();
     out.sort((a, b) {
       final aUp = _slotActive(a) ?? false, bUp = _slotActive(b) ?? false;
       if (aUp != bUp) return aUp ? -1 : 1;
-      return (a.slot ?? 99).compareTo(b.slot ?? 99);
+      return (b.slot ?? 0).compareTo(a.slot ?? 0);
     });
     return out;
   }
@@ -631,7 +637,16 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       return const AppScaffold(fillViewport: true, child: ReconnectingBody());
     }
     return AppScaffold(
-      child: _state == null ? _buildConnect() : _buildList(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Named after the menu item that opened it, in that item's colour (ID-112). Above both
+          // the login form and the device list, so the screen is named before it is connected.
+          destinationHeading(AppDestination.deviceAssignment, key: const Key('device_assignment_heading')),
+          const SizedBox(height: 16),
+          _state == null ? _buildConnect() : _buildList(),
+        ],
+      ),
     );
   }
 
@@ -722,24 +737,35 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       const Text("Names come from your router's client list.",
           textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 11)),
       const SizedBox(height: 8),
-      // One centred row, both buttons at HOME's height so the three read as one set rather than
-      // three sizes stacked up the screen. Their widths are left to their labels.
+      // One row, two equal halves, both buttons at HOME's height so the three read as one set
+      // rather than three sizes stacked up the screen.
       //
       // Both are always shown and follow the pending state: with changes staged, DISCARD is red and
-      // APPLY teal; with none, both are grey and disabled. A Wrap rather than a Row, because the two
-      // labels side by side are wider than a small phone.
-      Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 8, children: [
-        AppButton(
-          keyValue: 'device_discard',
-          label: 'DISCARD CHANGES',
-          role: ButtonRole.destructive,
-          onPressed: _busy || _pendingCount == 0 ? null : () => setState(_c.clearStagedAssignments),
+      // APPLY teal; with none, both are grey and disabled. It was a Wrap, which put them side by
+      // side once a change was staged and stacked them before that - the widest label the screen
+      // ever shows is the idle APPLY 0 CHANGES, so the pair reflowed exactly when nothing was
+      // happening (ID-090). Expanded halves at the smaller label size hold the row at every width.
+      Row(children: [
+        Expanded(
+          child: AppButton(
+            keyValue: 'device_discard',
+            label: 'DISCARD CHANGES',
+            role: ButtonRole.destructive,
+            fullWidth: true,
+            fontSize: 12,
+            onPressed: _busy || _pendingCount == 0 ? null : () => setState(_c.clearStagedAssignments),
+          ),
         ),
-        AppButton(
-          keyValue: 'device_apply',
-          // 'APPLY 1' read as a step number rather than a count (B3 feedback).
-          label: _pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES',
-          onPressed: _busy || _pendingCount == 0 ? null : _apply,
+        const SizedBox(width: 12),
+        Expanded(
+          child: AppButton(
+            keyValue: 'device_apply',
+            // 'APPLY 1' read as a step number rather than a count (B3 feedback).
+            label: _pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES',
+            fullWidth: true,
+            fontSize: 12,
+            onPressed: _busy || _pendingCount == 0 ? null : _apply,
+          ),
         ),
       ]),
       // AppScaffold pins HOME to the bottom over the scroll view, which clipped APPLY when the

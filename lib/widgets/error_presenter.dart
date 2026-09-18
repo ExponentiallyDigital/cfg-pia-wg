@@ -34,18 +34,33 @@ class AppErrors {
   /// [detail] is shown in the dialog but NOT logged: an explanation that helps at the moment of
   /// failure is noise in a log the user scrolls through later, and the log already carries the
   /// error itself.
-  static Future<void> system(BuildContext context, SessionController controller, String message, {String? detail}) =>
-      _present(context, controller, [message], detail: detail);
+  ///
+  /// [logDetail] is the opposite, and the pair is the point: the dialog says the plain thing while
+  /// the log keeps the raw text that says which thing it was (ID-108).
+  static Future<void> system(BuildContext context, SessionController controller, String message,
+          {String? detail, String? logDetail}) =>
+      _present(context, controller, [message], detail: detail, logDetail: logDetail);
+
+  /// An error that has something the app can DO about it, beside OK.
+  ///
+  /// Returns true when the user chose [actionLabel]. Used where the fix is one the app can carry
+  /// out itself - a stale configuration that needs rebuilding (ID-094) - so the dialog offers it
+  /// rather than describing it and leaving the user to find the button.
+  static Future<bool> systemWithAction(BuildContext context, SessionController controller, String message,
+          {required String actionLabel, String? detail, String? logDetail}) async =>
+      await _present(context, controller, [message], detail: detail, logDetail: logDetail, actionLabel: actionLabel) ??
+      false;
 
   /// All input-validation errors batched into a single dialog. No-op for an empty list.
   static Future<void> inputs(BuildContext context, SessionController controller, List<String> errors) =>
       errors.isEmpty ? Future<void>.value() : _present(context, controller, errors);
 
-  static Future<void> _present(BuildContext context, SessionController controller, List<String> messages,
-      {String? detail}) async {
+  static Future<bool?> _present(BuildContext context, SessionController controller, List<String> messages,
+      {String? detail, String? logDetail, String? actionLabel}) async {
     for (final m in messages) {
       controller.logEntry(m, isError: true);
     }
+    if (logDetail != null) controller.logEntry(logDetail, isError: true);
     final shown = detail == null ? messages : [...messages, detail];
 
     // Dismiss any error dialog already on screen (spec §3: one at a time).
@@ -54,23 +69,29 @@ class AppErrors {
     final myToken = ++_token;
     _openErrorNav = Navigator.of(context, rootNavigator: true);
     controller.enterModal();
-    await showDialog<void>(
+    final chose = await showDialog<bool>(
       context: context,
       useRootNavigator: true,
       builder: (ctx) => _ErrorDialog(
         title: messages.length > 1 ? 'Please correct the following' : 'Error',
         messages: shown,
+        actionLabel: actionLabel,
       ),
     );
     if (_token == myToken) _openErrorNav = null;
     controller.exitModal();
+    return chose;
   }
 }
 
 class _ErrorDialog extends StatelessWidget {
   final String title;
   final List<String> messages;
-  const _ErrorDialog({required this.title, required this.messages});
+
+  /// An action the app can take about this error, shown beside OK. Null for the usual case, where
+  /// there is nothing to offer.
+  final String? actionLabel;
+  const _ErrorDialog({required this.title, required this.messages, this.actionLabel});
 
   @override
   Widget build(BuildContext context) {
@@ -101,7 +122,18 @@ class _ErrorDialog extends StatelessWidget {
             .toList(),
       ),
       actions: [
-        AppButton(label: 'OK', onPressed: () => Navigator.of(context).pop()),
+        AppButton(
+          keyValue: 'error_ok',
+          label: actionLabel == null ? 'OK' : 'NOT NOW',
+          role: actionLabel == null ? ButtonRole.action : ButtonRole.dismiss,
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        if (actionLabel != null)
+          AppButton(
+            keyValue: 'error_action',
+            label: actionLabel!,
+            onPressed: () => Navigator.of(context).pop(true),
+          ),
       ],
     );
   }

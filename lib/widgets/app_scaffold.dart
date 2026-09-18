@@ -172,7 +172,8 @@ class AppHeaderBar extends StatelessWidget {
                               padding: EdgeInsets.symmetric(vertical: 2),
                               child: Text(
                                 'Exponentially Digital',
-                                style: TextStyle(color: kMuted, fontSize: 10, decoration: TextDecoration.underline),
+                                // Tappable, not underlined (ID-110).
+                                style: TextStyle(color: kMuted, fontSize: 10),
                               ),
                             ),
                           ),
@@ -191,7 +192,8 @@ class AppHeaderBar extends StatelessWidget {
                     future: PackageInfo.fromPlatform(),
                     builder: (context, snap) => Text(
                       snap.hasData ? 'v${snap.data!.version}' : 'v...',
-                      style: const TextStyle(color: kMuted, fontSize: 11, decoration: TextDecoration.underline),
+                      // Tappable, not underlined (ID-110).
+                      style: const TextStyle(color: kMuted, fontSize: 11),
                     ),
                   ),
                 ),
@@ -227,6 +229,25 @@ class ReconnectingBody extends StatelessWidget {
         ],
       );
 }
+
+/// A screen's heading: the name of the menu item that opened it, in that destination's colour
+/// (ID-112). One style for every screen - the two the app had, 12pt spaced caps on the modals and
+/// plain 13pt on the logs, made two screens opened from the same menu look like different apps.
+class ScreenHeading extends StatelessWidget {
+  const ScreenHeading(this.text, {super.key, required this.colour});
+
+  final String text;
+  final Color colour;
+
+  static const TextStyle style = TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5);
+
+  @override
+  Widget build(BuildContext context) => Text(text, style: style.copyWith(color: colour));
+}
+
+/// The heading for [dest], named and coloured from the same map the menu and the drawer read.
+ScreenHeading destinationHeading(AppDestination dest, {Key? key}) =>
+    ScreenHeading(dest.title, colour: destinationColour(dest), key: key);
 
 /// The width a form or a list reads well at. It is what the pre-418 dialogs used as their
 /// `maxWidth`, kept so those screens look the same on a tablet now that they are pages.

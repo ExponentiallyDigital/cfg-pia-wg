@@ -22,6 +22,7 @@ import 'package:flutter/material.dart';
 import '../app_colors.dart';
 import '../session_controller.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/common_fields.dart';
 import '../widgets/log_buttons.dart';
 
@@ -76,12 +77,9 @@ class _LogScreenState extends State<LogScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                // Named like the watchdog log's heading, in the same place and style (ID-033).
-                Text(
-                  AppDestination.log.title,
-                  key: const Key('app_log_heading'),
-                  style: const TextStyle(color: kHighlight, fontSize: 13),
-                ),
+                // Named like the watchdog log's heading, in the same place and style (ID-033),
+                // and coloured from the one destination map (ID-112).
+                destinationHeading(AppDestination.log, key: const Key('app_log_heading')),
                 const SizedBox(height: 8),
                 Expanded(
                   child: SingleChildScrollView(

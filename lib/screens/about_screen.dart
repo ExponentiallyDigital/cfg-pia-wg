@@ -31,6 +31,7 @@ import '../firmware.dart';
 import '../license_text.dart';
 import '../router_slot_service.dart';
 import '../router_watchdog.dart';
+import '../router_session.dart' show routerConnectMessage;
 import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/paywall.dart';
@@ -150,7 +151,7 @@ class _AboutScreenState extends State<AboutScreen> {
     setState(() => _scriptLoading = true);
     String? version;
     String? history;
-    String? error;
+    String? error, errorDetail;
     var model = '', firmware = '', type = '';
     try {
       final client =
@@ -165,7 +166,10 @@ class _AboutScreenState extends State<AboutScreen> {
       type = facts.type;
       await controller.rememberRouterIp(ip);
     } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+      // Plain English on screen, the raw exception in the log (ID-108).
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
     }
     if (!mounted) return;
     setState(() {
@@ -181,7 +185,8 @@ class _AboutScreenState extends State<AboutScreen> {
       _routerType = type;
     });
     if (error != null && mounted) {
-      await AppErrors.system(context, controller, 'Could not read the deployed watchdog script: $error');
+      await AppErrors.system(context, controller, errorDetail == null ? 'Could not read the deployed watchdog script: $error' : error,
+          logDetail: errorDetail);
     }
   }
 
@@ -214,7 +219,7 @@ class _AboutScreenState extends State<AboutScreen> {
     }
     setState(() => _redeploying = true);
     final ip = controller.routerIp.trim(), user = controller.sshUsername.trim(), pass = controller.sshPassword;
-    String? error, version;
+    String? error, errorDetail, version;
     var slots = <int>[];
     try {
       final client =
@@ -223,7 +228,10 @@ class _AboutScreenState extends State<AboutScreen> {
       slots = await watchdog.redeployScripts();
       version = (await watchdog.aboutRouterFacts()).version;
     } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+      // Plain English on screen, the raw exception in the log (ID-108).
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
     }
     if (!mounted) return;
     setState(() {
@@ -231,7 +239,8 @@ class _AboutScreenState extends State<AboutScreen> {
       if (error == null) _scriptVersion = version;
     });
     if (error != null) {
-      await AppErrors.system(context, controller, 'Could not update the watchdog script: $error');
+      await AppErrors.system(context, controller, errorDetail == null ? 'Could not update the watchdog script: $error' : error,
+          logDetail: errorDetail);
       return;
     }
     final message = slots.isEmpty
@@ -285,6 +294,9 @@ class _AboutScreenState extends State<AboutScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Named after the menu item that opened it, in that item's colour (ID-112).
+            destinationHeading(AppDestination.about, key: const Key('about_heading')),
+            const SizedBox(height: 16),
             FutureBuilder<BuildInfo>(
               future: _buildInfo,
               builder: (context, snap) => Column(
@@ -298,22 +310,6 @@ class _AboutScreenState extends State<AboutScreen> {
                     licence: _licence(context),
                     scriptLoginRecogniser: _scriptChecked || _scriptLoading ? null : _scriptLoginRecogniser,
                   ),
-                  // The amber value above, and the way to fix it right under it. Only once the router has
-                  // been read and its script turns out to be from another app version.
-                  if (_scriptStale) ...[
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppButton(
-                        keyValue: 'about_redeploy_scripts',
-                        label: 'REDEPLOY TO UPDATE VERSION',
-                        icon: Icons.system_update_alt,
-                        fontSize: 12,
-                        busy: _redeploying,
-                        onPressed: _redeploying ? null : _redeployScripts,
-                      ),
-                    ),
-                  ],
                   // The watchdog's own history, set apart from the build info because it describes
                   // the ROUTER rather than this app. Absent entirely when the router has no
                   // counters, so an untouched router shows no empty gap where it would have been.
@@ -329,6 +325,24 @@ class _AboutScreenState extends State<AboutScreen> {
                                 TextSpan(text: kScriptLoginPrompt, style: _linkStyle, recognizer: _historyLoginRecogniser),
                               ],
                             ),
+                    ),
+                  ],
+                  // ID-085: the way to fix the amber `Watchdog script` row above, in the amber that
+                  // row uses, sitting with the other two actions rather than wedged into the build
+                  // information. Centred on its own line above them, per Andrew's mock-up. Only
+                  // once the router has been read and its script turns out to be another version.
+                  if (_scriptStale) ...[
+                    const SizedBox(height: 20),
+                    Center(
+                      child: AppButton(
+                        keyValue: 'about_redeploy_scripts',
+                        label: 'UPDATE WATCHDOG VERSION',
+                        icon: Icons.system_update_alt,
+                        fontSize: 12,
+                        colour: kWarn,
+                        busy: _redeploying,
+                        onPressed: _redeploying ? null : _redeployScripts,
+                      ),
                     ),
                   ],
                   // ID-051: clear of the watchdog history line above, and centred under it.
@@ -382,13 +396,16 @@ class _AboutScreenState extends State<AboutScreen> {
             // and two rows of tap targets 12px apart is a mis-tap waiting to happen. runSpacing is
             // what buys the gap.
             Wrap(
+              // Centred (ID-089): the row is a set of destinations, not a paragraph, and left-
+              // aligned it read as the start of a sentence that never arrived.
+              alignment: WrapAlignment.center,
               spacing: 10,
               runSpacing: 14,
               children: [
                 for (var i = 0; i < _kLinks.length; i++) ...[
                   Text.rich(
                     key: Key('about_link_$i'),
-                    TextSpan(text: _kLinks[i].$1, style: _linkStyle, recognizer: _recognisers[i]),
+                    TextSpan(text: _kLinks[i].$1, style: _navLinkStyle, recognizer: _recognisers[i]),
                   ),
                   const Text('|', style: TextStyle(color: kMuted, fontSize: 12)),
                 ],
@@ -396,7 +413,7 @@ class _AboutScreenState extends State<AboutScreen> {
                 // of place as the four before it, so it reads as one set of destinations.
                 Text.rich(
                   key: const Key('about_licenses_link'),
-                  TextSpan(text: 'Open source licenses', style: _linkStyle, recognizer: _licencesRecognizer),
+                  TextSpan(text: 'Open source licenses', style: _navLinkStyle, recognizer: _licencesRecognizer),
                 ),
               ],
             ),
@@ -431,6 +448,12 @@ class _SectionRule extends StatelessWidget {
 const TextStyle _labelStyle = TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600);
 
 /// Every tappable line on this screen. One style, so they read as a set.
+/// The link row at the foot of the screen (ID-110). No underline: the row is five labels on their
+/// own, teal against grey, and nothing else there is tappable - the underline only added noise.
+/// The prompts INSIDE a sentence keep theirs, below, because there the underline is what separates
+/// the link from the words around it.
+const TextStyle _navLinkStyle = TextStyle(color: kHighlight, fontSize: 12);
+
 const TextStyle _linkStyle = TextStyle(
   color: kHighlight,
   fontSize: 12,
