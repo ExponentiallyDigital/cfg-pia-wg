@@ -135,7 +135,9 @@ class RecordingSSHClient implements SSHClient {
   String? _sizeOf(String command) {
     final m = RegExp(r"wc -c < '([^']+)'").firstMatch(command);
     if (m == null) return null;
-    return (files[m.group(1)]?.length ?? 0).toString();
+    // UTF-8 bytes, as `wc -c` counts them. This used `.length`, the same character count as the code
+    // under test, so the fake agreed with the bug and no test could see it (ID-136).
+    return utf8.encode(files[m.group(1)]?.toString() ?? '').length.toString();
   }
 
   /// True if any recorded command contains [needle].

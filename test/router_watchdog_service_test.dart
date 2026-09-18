@@ -180,11 +180,26 @@ void main() {
       );
       await expectLater(
         _wd(c).deployWatchdog(cfg(slot: 1)),
-        throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('12 bytes'))),
+        throwsA(isA<Exception>().having((e) => e.toString(), 'message',
+            allOf(contains('has 12 of the'), contains('cut short')))),
       );
       // And it stops there rather than scheduling a script that is not there.
       expect(c.ran('cru a watchdog_wgc1'), isFalse);
     });
+
+    // ID-136, as it happened on hardware 2026-09-20: the router reported MORE bytes than were sent,
+    // and the message blamed free space on a router with 55 MB spare. A long file is a different
+    // fault from a short one and must not be described as one.
+    test('a file that comes back LONGER says so, and does not blame free space', () async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('wc -c') ? '999999' : '');
+      await expectLater(
+        _wd(c).deployWatchdog(cfg(slot: 1)),
+        throwsA(isA<Exception>().having((e) => e.toString(), 'message',
+            allOf(contains('arrived twice'), isNot(contains('free space'))))),
+      );
+    });
+
+
 
     test('a good write is confirmed and the deploy carries on', () async {
       final c = RecordingSSHClient();
