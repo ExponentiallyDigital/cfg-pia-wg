@@ -120,6 +120,27 @@ void main() {
     expect(offenders, isEmpty, reason: 'use 192.168.1.x for examples:\n${offenders.join('\n')}');
   });
 
+  // A PIA username is half a credential: it names the account the watchdog asks for tokens with,
+  // and it reaches the repo the way the LAN addresses did - inside a router log pasted into a work
+  // item. Guarded from 2026-09-21, after one turned up twice in BACKLOG.md.
+  test('no PIA username is written down', () {
+    // Shape, not values, for the same reason no MAC is named here. A PIA username is a letter and
+    // a run of digits; `p123456789` is this repo's invented one. A `$user` in a log template has no
+    // digits of its own, so it does not match.
+    final pattern = RegExp(r'\bfor user ([A-Za-z]\d{4,})\b');
+    final offenders = <String>[];
+    for (final file in _repoFiles()) {
+      final lines = file.readAsStringSync().split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        for (final m in pattern.allMatches(lines[i])) {
+          if (m.group(1) == 'p123456789') continue;
+          offenders.add('${file.path}:${i + 1}  ${m.group(1)}');
+        }
+      }
+    }
+    expect(offenders, isEmpty, reason: 'use the invented username p123456789:\n${offenders.join('\n')}');
+  });
+
   // A router MODEL is not an identifier the way a MAC or a hostname is, but it is usable intel:
   // it names the exact hardware, its firmware family and its published vulnerabilities. Guarded
   // from 2026-09-11, after a sweep found the maintainer's model in the README, TESTING, three

@@ -203,7 +203,7 @@ ROUTER LOG (last 10 lines)
 2026-09-05 14:32:44 Connectivity lost; reconfiguring (attempt #8)
 2026-09-05 14:32:44 WAN has internet connectivity
 2026-09-05 14:32:44 Using cached CA cert
-2026-09-05 14:32:45 Requesting PIA token for user p1234567
+2026-09-05 14:32:45 Requesting PIA token for user p123456789
 2026-09-05 14:32:46 ERROR: failed to obtain PIA token (exit 0, HTTP 403)
 
 ...review and sign-off as above...

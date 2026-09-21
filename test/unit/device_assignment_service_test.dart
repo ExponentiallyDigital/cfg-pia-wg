@@ -360,6 +360,44 @@ void main() {
       ]);
     });
 
+    // ID-172, found on hardware 2026-09-21. `vpnc_unit` is a pointer the firmware keeps between
+    // calls, and a switch to Internet used to set it for neither service while running both. A
+    // MANAGE DISABLE had left it on wgc1's row, so `restart_vpnc` here started the tunnel the user
+    // had just switched off: interface up, routes and DNS rules installed, `vpnc_clientlist` still
+    // reading disabled, and nothing on screen saying so.
+    test('switching to Internet starts no tunnel, whatever vpnc_unit was left pointing at', () async {
+      final c = _client();
+      final s = await _state(c);
+      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 0);
+
+      // Exact match: 'restart_vpnc' is a substring of 'restart_vpnc_dev_policy'.
+      expect(c.commands.contains('service restart_vpnc'), isFalse,
+          reason: 'Internet is not a profile - starting one is what caused ID-172');
+      expect(c.commands.contains('service restart_default_wan'), isTrue, reason: 'the teardown still runs');
+      // The default in the fixture is index 9, which is clientlist row 0. Naming it is what makes
+      // the teardown act on the tunnel being replaced rather than on a stale pointer.
+      expect(c.commands.contains('nvram set vpnc_unit=0'), isTrue);
+      final unit = c.commands.indexOf('nvram set vpnc_unit=0');
+      final stop = c.commands.indexOf('service stop_vpnc');
+      expect(unit, isNot(-1));
+      expect(unit, lessThan(stop), reason: 'the pointer is set before the service that follows it');
+      // Internet writes no index, so nothing may be written back over restart_default_wan's reset.
+      expect(c.ran('nvram set vpnc_default_wan='), isFalse);
+    });
+
+    test('a switch between tunnels still aims both services at the target row', () async {
+      // The no-regression half: the sequence ID-172 changed must be untouched when there IS a target.
+      final c = _client();
+      final s = await _state(c);
+      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
+      final unit = c.commands.indexOf('nvram set vpnc_unit=1'); // pia-aus_perth is row 1
+      final stop = c.commands.indexOf('service stop_vpnc');
+      final start = c.commands.indexOf('service restart_vpnc');
+      expect([unit, stop, start], isNot(contains(-1)));
+      expect(unit, lessThan(stop));
+      expect(stop, lessThan(start));
+    });
+
     test('the key is written AFTER restart_default_wan, never before', () async {
       // The single fact that took the longest to find: writing it first always ended with 0.
       final c = _client();

@@ -60,7 +60,7 @@ class WatchdogDialog extends StatefulWidget {
     this.piaPassword = '',
     this.piaService,
     this.serviceFactory,
-      this.routerDotServers = const {},
+    this.routerDotServers = const {},
   });
 
   @override
@@ -74,6 +74,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   final _intervalCtrl = TextEditingController(text: '5');
   final _primaryCtrl = TextEditingController(text: '8.8.8.8');
   final _secondaryCtrl = TextEditingController(text: '1.1.1.1');
+
   /// Where the watchdog's own lookups go (ID-076). Prefilled with the default and overridable,
   /// because the right answer depends on what the rest of the router is doing: the one thing that
   /// must not happen is picking an address a slot uses, which would route the watchdog's lookups
@@ -287,8 +288,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         style: const TextStyle(color: kText, fontSize: 13),
         decoration: const InputDecoration(isDense: true),
         items: [
-          for (final r in kDohResolvers)
-            DropdownMenuItem(value: r.url, child: Text(r.label, overflow: TextOverflow.ellipsis)),
+          for (final r in kDohResolvers) DropdownMenuItem(value: r.url, child: Text(r.label, overflow: TextOverflow.ellipsis)),
           const DropdownMenuItem(value: '', child: Text('Something else')),
         ],
         onChanged: (value) => setState(() {
@@ -304,8 +304,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         clash
             ? 'This address is also used for DNS on this router, so the watchdog\'s own lookups would '
                 'travel through this tunnel - the one it exists to repair. Choose an address nothing else uses.'
-            : 'The watchdog looks up PIA over an encrypted connection to this address. The URL must carry a '
-                'name and the address is how it is reached, which is what stock firmware accepts. Leave both '
+            : 'The watchdog resolves PIA over an encrypted connection to this address. The DoH URL must be a '
+                'name, not an IP address. The DoH server address is how that name is reached. Leave both '
                 'empty to look names up in the clear.',
         key: const Key('wd_doh_note'),
         style: TextStyle(color: clash ? kWarn : kMuted, fontSize: 11),
@@ -381,7 +381,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       return null;
     } catch (e) {
       if (isPiaAuthRejection(e)) return kPiaCredentialsRejected;
-      _c.logEntry('Could not check the PIA credentials before deploying: '
+      _c.logEntry(
+          'Could not check the PIA credentials before deploying: '
           '${e.toString().replaceAll('Exception: ', '')} Saving anyway; the router will try for itself.',
           isWarning: true);
       return null;
@@ -499,7 +500,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     // user to go and read the ROUTER log. Every diagnostic now lands in the app log, and this
     // says so - a phone is a poor place from which to go SSH into a router.
     if (sent == false) {
-      await AppErrors.system(context, _c, 'The test email could not be sent. Open View app log for what the router reported.');
+      await AppErrors.system(context, _c, 'The test email could not be sent. See APP LOG for what the router reported.');
     }
   }
 
@@ -536,8 +537,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                   // slotLabel, so the heading reads "wgc5:pia-aus_perth" - the same shape the
                   // EDIT modal and every log line use.
                   Expanded(
-                    child: ScreenHeading('WATCHDOG · ${slotLabel(widget.slotIndex, widget.regionDesc)}',
-                        colour: kWatchdogColour),
+                    child: ScreenHeading('WATCHDOG · ${slotLabel(widget.slotIndex, widget.regionDesc)}', colour: kWatchdogColour),
                   ),
                 ],
               ),
@@ -589,10 +589,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
               _field(_secondaryCtrl, 'Secondary ping IP', const Key('wd_secondary')),
               // The slot's own DNS, not a watchdog setting - but this form builds slots, and one
               // built without it leaves its pinned devices resolving over the WAN (ID-126).
-              DnsField(
-                  controller: _dnsCtrl,
-                  firstServerNote: isStockFirmware,
-                  routerDotServers: widget.routerDotServers),
+              DnsField(controller: _dnsCtrl, firstServerNote: isStockFirmware, routerDotServers: widget.routerDotServers),
               const SizedBox(height: 12),
               _dohPicker(),
               const SizedBox(height: 12),

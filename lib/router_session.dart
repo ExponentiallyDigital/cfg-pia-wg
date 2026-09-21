@@ -70,7 +70,7 @@ String? routerConnectMessage(Object error, String address) {
   ];
   if (error is TimeoutException || unreachable.any(s.contains)) {
     return 'Could not connect to $where. Check that this device is on the same network as the router '
-        'and that the address is right.';
+        'and that the address is correct.';
   }
   return null;
 }
