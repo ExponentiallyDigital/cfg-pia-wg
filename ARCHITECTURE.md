@@ -926,6 +926,9 @@ nvram commit
 service restart_vpnc              # starts the target, and THIS installs the routing
 ```
 
+> [!IMPORTANT]
+> **`vpnc_unit` is a pointer the firmware keeps between calls, and both services act on it.** Switching the default to the plain internet has no target profile, so there is no row to write - and until 458 the app wrote none and ran `restart_vpnc` anyway, which started whatever profile the pointer was last aimed at. Measured 2026-09-21: a MANAGE DISABLE had left it on wgc1's row, so returning the default to Internet started wgc1 - interface, routes and DNS rules up, `vpnc_clientlist` still reading disabled, and the WebUI still showing Disconnected. The teardown now names the OUTGOING default, and `restart_vpnc` runs only when there is a target to start (ID-172).
+
 Three different numbers name the same profile here. For wgc5 in a two-profile list they are row `1`, index 6 `5`, slot `5`; for wgc1 they are `0`, `9`, `1`. Getting `vpnc_unit` wrong is the quiet failure - the wrong tunnel is stopped and restarted, nothing else complains, and the default is silently not applied.
 
 What the default connection actually IS, once applied - a pair of rules at priority 10000, one per bridge:

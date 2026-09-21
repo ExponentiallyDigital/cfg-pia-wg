@@ -822,15 +822,22 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 ## <a name='def'></a>DEF. Default connection
 
-Changing the default stops every tunnel and starts them again, for about a minute. Anything using any tunnel drops. Do not run this on a router someone is relying on. Set up: wgc1 and wgc5 up in different regions, TABLET on "default", DESKTOP pinned to wgc5.
+Changing the default tears the WireGuard clients down and brings the enabled ones back, which can take a minute. Anything using a tunnel can drop, so do not run this on a router someone is relying on - though on run 1 nothing visibly dropped, so write down what actually happens. Set up: wgc1 and wgc5 up in different regions, TABLET on "default", DESKTOP pinned to wgc5.
 
 **Slots for this group:** wgc1 and wgc5 configured and running. DEF-9 deletes wgc1 on purpose and ends by rebuilding it, because DEF-10 and the groups after it need it back.
 
+**The watchdog on wgc1** goes off at DEF-6 and stays off until DEF-9 rebuilds the slot and deploys a fresh one. DEF-6 and DEF-7 both work by leaving wgc1 stopped, which a watchdog would undo.
+
 **DEF-1** Internet to a tunnel
 
-- Do: note `wg show interfaces`. Set the default to wgc1, APPLY.
+- Do: write down all three first - `wg show interfaces`, `ip rule show`, and `nvram get vpnc_clientlist | tr '<' '
+'`. Everything below is compared against them.
+- Do: DEVICE ASSIGNMENT, default to wgc1, APPLY.
 - See: the confirmation warns tunnels stop and restart.
-- Pass if: `nvram get vpnc_default_wan` reads wgc1's index 6 (see [R5](#r5)), `ip rule show` has two rules at priority 10000, TABLET's exit IP is wgc1's region, and DESKTOP stays on wgc5.
+- Pass if: `nvram get vpnc_default_wan` reads wgc1's index 6 - field 7 of its clientlist row, which is index 6 counting from zero (see [R5](#r5)). On a five-slot router wgc1's is normally `9`.
+- Pass if: `ip rule show` has two new rules at priority 10000, both `lookup <that index 6>`.
+- Pass if: TABLET's exit IP is wgc1's region.
+- Pass if: DESKTOP stays on wgc5.
 
 **DEF-2** Every tunnel comes back
 
@@ -848,42 +855,61 @@ Changing the default stops every tunnel and starts them again, for about a minut
 - Pass if: DESKTOP's exit IP is your own while TABLET's is wgc5's region.
 - Do: DESKTOP back to wgc5.
 
-**DEF-5** A watchdog during the change
+**DEF-5** A watchdog sees a default change
 
-- Do: watchdog active on wgc1, 5 minute interval. Change the default, APPLY.
-- See: watchdog log over the next 10 minutes.
-- Pass if: the tunnels are back within about a minute. Write down whether the watchdog logged an outage or rebuilt.
+- Do: WATCHDOG, wgc1, 5 minute interval, deployed. Default is wgc5, from DEF-3.
+- Do: default to wgc1, APPLY.
+- See: wgc1's watchdog log over the next 10 minutes.
+- Pass if: tunnels are back within about a minute, and the watchdog either logged nothing or rebuilt and reported SUCCESS.
+- Write down which. A rebuild costs a PIA token and an email.
+- Ends with: default wgc1.
 
 **DEF-6** Default tunnel down, unassigned device (fail open or closed)
 
-- Do: default to wgc1, no watchdog on wgc1. MANAGE DISABLE wgc1.
-- See: the default panel notes wgc1 is not running and unassigned devices use Internet.
-- Do: exit IP on TABLET.
-- Write down: your own address means it fails OPEN (what the app expects). No internet means it fails CLOSED, and the panel note is wrong.
-- Do: ENABLE wgc1.
+- Do: WATCHDOG, wgc1, DISABLE. It stays off until DEF-9.
+- Do: MANAGE, wgc1, DISABLE.
+- Do: DEVICE ASSIGNMENT, read the default connection panel.
+- See: wgc1 is not running, and unassigned devices use the Internet.
+- Do: TABLET's exit IP. TABLET is on "default".
+- Write down: your own address is fail OPEN (what the app expects). No internet is fail CLOSED, and the panel note is wrong.
+- Do: MANAGE, wgc1, ENABLE.
 
-**DEF-7** Default tunnel down, device pinned to that same tunnel (fail open or closed)
+**DEF-7** Default tunnel down, device pinned to it (fail open or closed)
 
-- Do: default to wgc1, DESKTOP pinned to wgc1. MANAGE DISABLE wgc1.
-- Do: exit IP and `ping google.com` on DESKTOP.
-- Write down: your own address means it fails OPEN, and two documents are wrong: ARCHITECTURE, which predicts "no internet, no leak", and README 5.4, which tells users this setup gives fail-closed behaviour. No internet means it fails CLOSED, and the app's note under DESKTOP's row is wrong.
-- Do: ENABLE wgc1, DESKTOP back to wgc5.
+- Do: DEVICE ASSIGNMENT, DESKTOP to wgc1, APPLY. Default is still wgc1, watchdog still off.
+- Do: MANAGE, wgc1, DISABLE.
+- Do: on DESKTOP, exit IP and `ping google.com`.
+- Write down: your own address is fail OPEN. No internet is fail CLOSED.
+- Note: fail OPEN means ARCHITECTURE ("no internet, no leak") and README 5.4 are both wrong. Fail CLOSED means the app's note under DESKTOP's row is wrong.
+- Do: MANAGE, wgc1, ENABLE. DEVICE ASSIGNMENT, DESKTOP back to wgc5, APPLY.
 
 **DEF-8** Back to Internet
 
-- Do: default to Internet, APPLY.
-- Pass if: `nvram get vpnc_default_wan` reads `0`, the priority 10000 rules are gone, and TABLET's exit IP is your own.
+- Do: `wg show interfaces` first, and write it down.
+- Do: DEVICE ASSIGNMENT, default to Internet, APPLY.
+- Pass if: `nvram get vpnc_default_wan` reads `0`.
+- Pass if: `ip rule show` has nothing left at priority 10000.
+- Pass if: TABLET's exit IP is your own.
+- Pass if: `wg show interfaces` is the same list as before, no more and no less. A tunnel that was DISABLED must not be running - ID-172 started one here, and the WebUI still read it as Disconnected.
+- Pass if: the WebUI's VPN Fusion page agrees with the app about which tunnels are connected.
 
 **DEF-9** Delete the VPN that is the default
 
-- Do: default to wgc1, APPLY. DESKTOP on wgc5. MANAGE DELETE wgc1.
-- Pass if: `nvram get vpnc_default_wan` reads `0`, every tunnel restarts, TABLET's exit IP is your own, and DESKTOP is still on wgc5.
-- Do: **rebuild wgc1 before moving on** - MANAGE CREATE it in its old region, ENABLE, and set the default connection back to wgc1. DEF-10 and everything after it expect it.
+- Do: write down wgc1's region first - MANAGE shows it on the row as `wgc1:pia-<region>`. You are about to delete the slot and you need the same region back.
+- Do: DEVICE ASSIGNMENT, default to wgc1, APPLY, and check DESKTOP is still pinned to wgc5.
+- Do: MANAGE, select wgc1, DELETE.
+- Pass if: `nvram get vpnc_default_wan` reads `0` - deleting the default falls back to the Internet rather than leaving a dangling index - every tunnel restarts, TABLET's exit IP is your own, and DESKTOP is still on wgc5.
+- Do: **rebuild wgc1 before moving on**, in this order, because DEF-10 and every group after it expect it:
+  - MANAGE CREATE wgc1 in the region you wrote down, then ENABLE it.
+  - WATCHDOG, wgc1, CREATE/EDIT, 5 minute interval, SAVE & DEPLOY - ABT reads the deployed script, so one has to be there.
+  - DEVICE ASSIGNMENT, default connection back to wgc1, APPLY.
 
 **DEF-10** Survives a reboot
 
-- Do: default to wgc5, reboot.
-- Pass if: the default and every assignment survive, and each exit IP matches.
+- Do: DEVICE ASSIGNMENT, default to wgc5, APPLY. Write down what every device is assigned to before you go on.
+- Do: SETTINGS, REBOOT ROUTER, REBOOT, and wait for "The router answered again after N seconds."
+- Pass if: the default connection is still wgc5 and every device is on the tunnel it was on before, both in the app and in `nvram get vpnc_default_wan` and `nvram get vpnc_dev_policy_list`.
+- Pass if: each device's exit IP is the region of the tunnel it is assigned to - TABLET follows the default, DESKTOP is pinned to wgc5.
 
 ---
 
@@ -892,18 +918,20 @@ Changing the default stops every tunnel and starts them again, for about a minut
 **LOG-1** App log
 
 - See: headed APP LOG in teal capitals.
-- Do: COPY, paste somewhere.
-- See: "App log copied.", no countdown, and the paste keeps its line breaks.
+- Do: COPY, then paste into any text field - a notes app, or the SSH terminal's input line.
+- See: "App log copied.", no countdown, and the paste keeps its line breaks rather than arriving as one run-on line.
 - Do: CLEAR.
 - See: "Ready."
 
 **LOG-2** One connection per session
 
-- Pass if: the router's syslog has one `dropbear ... Password auth succeeded` per app session, not one per button press.
+- Do: note the time, then use the app for a few minutes - open MANAGE, press something, open WATCHDOG, press something.
+- Do: on the router, `logread | grep "Password auth succeeded" | tail -20`.
+- Pass if: counting only the lines since the time you noted, there is one per app session, not one per button press.
 
 **LOG-3** Connection drops mid-session
 
-- Do: with MANAGE open, reboot the router. When it is back, press ENABLE or DISABLE.
+- Do: with MANAGE open on the app, reboot the router from the SSH session - `reboot`. Use SSH rather than SETTINGS, because MANAGE has to stay open. When the router is back, press ENABLE or DISABLE.
 - See: APP LOG "Router SSH connection dropped; reconnecting.", then "Router SSH connection re-established.", and the action completes.
 - Pass if: every `Password auth succeeded` in the router's syslog has a line in APP LOG to account for it.
 
@@ -949,7 +977,7 @@ Changing the default stops every tunnel and starts them again, for about a minut
 - Do: with no router session, REMOVE CACHED PIA CERT.
 - See: a login prompt with the remembered address filled in, the username blank, and the keyboard not covering it.
 - Do: log in.
-- Do: MAX ACTIVE VPNS, then leave SETTINGS and come back and use REBOOT ROUTER's prompt.
+- Do: open MAX ACTIVE VPNS and CANCEL, go to MANAGE and back to SETTINGS, then open REBOOT ROUTER and CANCEL at its confirmation. Nothing here reboots anything; what is being tested is that the one login covers all of it.
 - Pass if: no second login.
 
 **SET-3** A failed login is not kept
@@ -963,30 +991,36 @@ Changing the default stops every tunnel and starts them again, for about a minut
 - See: "Cached PIA certificate deleted."
 - Do: again.
 - See: "No cached PIA certificate on the router."
-- See: the next watchdog reconfigure logs that it is downloading the certificate.
+- See: the next watchdog rebuild - the next one that runs, from BRK or from a check that fails - logs that it is downloading the certificate rather than reusing a cached one. If nothing rebuilds while you are on this screen, mark this line SKIP and look for it the next time one does.
 
 **SET-5** Max active VPNs
 
 - Do: MAX ACTIVE VPNS, enter `6`.
 - See: "Enter a number from 2 to 5."
-- Do: enter `3`, SAVE.
+- Do: you need a third slot to enable. wgc1 and wgc5 are both up; in MANAGE, if wgc3 reads `wgc3 <empty slot>`, CREATE it in any region.
+- Do: MANAGE, select wgc3, ENABLE, with the limit still at 2.
+- See: "VPN limit reached", saying 2 may run at once and 2 already are. `wg show interfaces` still lists two.
+- Do: SETTINGS, MAX ACTIVE VPNS, enter `3`, SAVE.
 - See: "Maximum active VPNs set to 3."
-- Pass if: a third tunnel now enables.
+- Do: MANAGE, ENABLE wgc3 again.
+- Pass if: it comes up, and `wg show interfaces` lists three.
 - Pass if: `nvram get cfg_pia_wg_max_conn_prev` reads `2` - what the router had before the app raised it, which END-1 puts back.
-- Do: set it back to `2`.
+- Do: MANAGE DISABLE wgc3 first - the limit counts tunnels that are running - then SETTINGS, MAX ACTIVE VPNS, enter `2`, SAVE.
 - Pass if: `nvram get cfg_pia_wg_max_conn_prev` is now empty - there is nothing left to undo.
+- Do: if you created wgc3 here, MANAGE DELETE it. Nothing later needs it.
 
 **SET-6** Reboot
 
-- Do: REBOOT ROUTER, REBOOT.
+- Do: REBOOT ROUTER, REBOOT. Your SSH session drops with the router; reconnect once it is back.
 - See: "Rebooting the router" with a percentage.
 - See: it closes with "The router answered again after N seconds."
+- Pass if: `wg show interfaces` lists the same tunnels as before, brought back by the router itself.
 
 **SET-7** Forget router IP
 
 - Do: FORGET ROUTER IP, FORGET.
 - See: "Remembered router address deleted." and the row greys out.
-- Pass if: the next connect form opens with the default address.
+- Pass if: the next connect form opens with `192.168.50.1:22`, the address the app falls back to, rather than yours. Type your own router address back in to carry on.
 
 **SET-8** Every action leaves a trail
 
@@ -1013,11 +1047,20 @@ UNINSTALL is at the very end of the run: [END](#end).
 
 **ABT-3** Script from another version
 
-- Do: install a build with a different version over the top, open ABOUT.
-- See: the script version in amber, and UPDATE WATCHDOG VERSION centred on its own line directly above COPY BUILD INFO, in the same amber.
+- Do: make the router's copy look as though an older build wrote it. On the router:
+
+```bash
+sed -n '2p' /jffs/cfg-pia-wg/watchdog_wgc1.sh                                  # the real version, write it down
+sed -i '2s/cfg-pia-wg v[^;]*;/cfg-pia-wg v0.0.1 build 1;/' /jffs/cfg-pia-wg/watchdog_wgc*.sh
+```
+
+- Note: installing an APK of a different version over the top is the real-world case and does the same thing; editing the header line is the quick way to provoke it.
+- Do: note `wg show wgc1 latest-handshakes` now, so you can tell afterwards whether the tunnel was restarted.
+- Do: ABOUT, logging in if it asks.
+- See: the script version in amber, reading `v0.0.1 build 1`, and UPDATE WATCHDOG VERSION centred on its own line directly above COPY BUILD INFO, in the same amber.
 - Do: UPDATE WATCHDOG VERSION.
-- See: "Watchdog script updated on wgc1, ..." and the row goes plain.
-- Pass if: no tunnel restarted (`wg show wgcN latest-handshakes` keeps counting).
+- See: "Watchdog script updated on wgc1, ..." and the row goes plain, showing this build's version.
+- Pass if: `wg show wgc1 latest-handshakes` has carried on counting from the number you noted rather than resetting - no tunnel was restarted.
 
 **ABT-4** Buttons and links
 
@@ -1025,8 +1068,8 @@ UNINSTALL is at the very end of the run: [END](#end).
 - See: "Build info copied.", no countdown.
 - Do: CREATE GITHUB ISSUE.
 - See: a prefilled issue carrying the firmware type and version.
-- Do: Open source licenses.
-- See: it opens and does not bleed through the header.
+- Do: tap the Open source licences link.
+- See: it opens on its own screen and does not bleed through the header.
 - See: the link row is centred, and none of the five links is underlined; all five still open.
 
 ---
@@ -1035,15 +1078,15 @@ UNINSTALL is at the very end of the run: [END](#end).
 
 **EXT-1** Password managers
 
-- Do: clear each login field, then tap it.
-- See: the password manager offers PIA, SSH and SMTP logins.
+- Do: on each of the three forms that ask for credentials - the router login, PIA details in MANAGE CREATE, and the SMTP login in WATCHDOG CREATE/EDIT - clear the field, then tap it.
+- See: the password manager offers the matching saved login each time: SSH for the router, PIA, SMTP.
 
 **EXT-2** Exit wipes
 
 - Do: EXIT from the menu, and separately the back key on the home screen.
 - See: both ask "Exit cfg-pia-wg?" first.
 - Do: EXIT.
-- Pass if: on reopening, credentials are blank, staged device changes are gone, and the clipboard is empty.
+- Pass if: on reopening, every credential field is blank, staged device changes are gone, and pasting into a text field brings back nothing the app had copied.
 
 **EXT-3** Router address survives exit
 
@@ -1052,18 +1095,20 @@ UNINSTALL is at the very end of the run: [END](#end).
 
 **EXT-4** Background under 5 minutes
 
+- Do: on the router, `logread | grep -c "Password auth succeeded"`, and write the count down.
 - Do: in MANAGE, switch to another app for 1 minute, come back, press an action.
-- Pass if: no new `Password auth succeeded` in the router's syslog.
+- Pass if: that count has not moved - the app used the session it already had.
 
 **EXT-5** Background over 5 minutes
 
-- Do: switch away for 6 minutes, come back, press an action.
-- Pass if: it reconnects by itself, with one new `Password auth succeeded`.
+- Do: with the count from EXT-4 in hand, switch away for 6 minutes, come back, press an action.
+- Pass if: it reconnects by itself, and `logread | grep -c "Password auth succeeded"` has gone up by exactly one.
 - Pass if: APP LOG says "Router SSH connection re-established." - the session the app closed on its own used to reopen in silence.
 
 **EXT-6** Release build privacy
 
-- See: screenshots blocked, and the app obscured in the task switcher.
+- Do: on a **release** build, try to take a screenshot, then open the task switcher. A debug build allows both on purpose, so mark this SKIP if that is what you are running.
+- See: the screenshot is refused, and the task switcher shows a blank or masked thumbnail rather than the screen.
 
 **EXT-7** Rotate mid-action
 
@@ -1072,7 +1117,7 @@ UNINSTALL is at the very end of the run: [END](#end).
 
 **EXT-8** Leave mid-action
 
-- Do: start an APPLY, open the drawer and go to APP LOG.
+- Do: stage a device change in DEVICE ASSIGNMENT, press APPLY, and while it is still running open the drawer and go to APP LOG.
 - Pass if: the apply completes (APP LOG shows it) and nothing is left half done.
 
 **EXT-9** New icon and splash screen
@@ -1094,8 +1139,9 @@ Needs a store build, installed from a testing track, on an account that has not 
 
 **LCK-2** No install offer when locked
 
-- Do: stock, with `jq` missing, connect.
-- Pass if: no install dialog and no missing-program warning.
+- Do: on the router, `mv /jffs/cfg-pia-wg/jq /jffs/cfg-pia-wg/jq.bak`, then connect from the app.
+- Pass if: no install dialog and no missing-program warning - a locked app does not offer to put things on the router.
+- Do: `mv /jffs/cfg-pia-wg/jq.bak /jffs/cfg-pia-wg/jq`.
 
 **LCK-3** Paid controls open the paywall
 
@@ -1117,8 +1163,9 @@ Needs a store build, installed from a testing track, on an account that has not 
 
 **LCK-7** No store
 
-- Do: aeroplane mode, fresh install.
+- Do: install from the track, then turn on aeroplane mode, force-stop the app and start it cold.
 - See: locked; the buy button reads "Not available right now" and is disabled.
+- Do: turn aeroplane mode off again before BUY.
 
 ---
 
@@ -1141,8 +1188,8 @@ Before starting, read [R8](#r8): the tester must be on BOTH Play Console lists, 
 
 **BUY-3** Refund relocks
 
-- Do: refund and revoke in Play Console. Wait for RevenueCat.
-- Pass if: the app relocks without a reinstall.
+- Do: refund and revoke the order in Play Console, then wait for RevenueCat to catch up - a few minutes - and reopen the app.
+- Pass if: it relocks without a reinstall, and a paid control shows the paywall again.
 
 **BUY-4** Restore on reinstall
 
@@ -1187,11 +1234,11 @@ Repeat on Merlin: CON-1 to CON-3 and CON-6, HOM, MAN (not MAN-5 or MAN-7), WD (n
 
 **MRL-4** Nothing installed
 
-- Pass if: no install offer at connect, and no `jq` or `mailsend-go` under `/jffs/cfg-pia-wg`.
+- Pass if: no install offer at connect, and `ls /jffs/cfg-pia-wg` lists no `jq` and no `mailsend-go` - Merlin ships its own.
 
 **MRL-5** Boot persistence
 
-- Pass if: the two `cru` lines for each watched slot are in `/jffs/scripts/services-start`.
+- Pass if: `grep cfg-pia-wg /jffs/scripts/services-start` shows the two `cru` lines for each watched slot - the check and the log rotate.
 
 ---
 

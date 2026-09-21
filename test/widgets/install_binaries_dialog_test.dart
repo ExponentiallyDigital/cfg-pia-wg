@@ -93,7 +93,7 @@ void main() {
     // The whole point of saying this before the choice rather than after it.
     await open(tester, [kStockJqPath]);
     await tester.pumpAndSettle();
-    expect(find.textContaining('stays unavailable'), findsOneWidget);
+    expect(find.textContaining('remain unavailable'), findsOneWidget);
     await tester.tap(find.byKey(const Key('install_binaries_decline')));
     await tester.pumpAndSettle();
     await pending;

@@ -43,8 +43,7 @@ import 'region_picker_sheet.dart';
 /// Shown in the DIALOG when an ENABLE fails, and deliberately not written to the app log: an
 /// explanation that helps at the moment of failure is noise in a log read later, and the log
 /// already carries the error itself. Nearly every failed enable is this.
-const String kStaleConfigHint =
-    "PIA configurations expire on PIA's own rotation interval, so one that was created and then left "
+const String kStaleConfigHint = "PIA configurations expire on PIA's own rotation interval, so one that was created and then left "
     'unused can go stale.';
 
 /// True for the enable failures that mean "this configuration is no longer registered with PIA",
@@ -55,9 +54,7 @@ const String kStaleConfigHint =
 /// rather than on a type, so a rewording has to come here too. A write that failed, a missing
 /// binary or a refused service call is a different kind of problem and keeps the plain dialog.
 bool looksLikeStaleConfig(String message) =>
-    message.contains('did not come up') ||
-    message.contains('never answered it') ||
-    message.contains('Connectivity check failed');
+    message.contains('did not come up') || message.contains('never answered it') || message.contains('Connectivity check failed');
 
 enum SlotModalMode { manage, watchdog }
 
@@ -169,8 +166,7 @@ class _SlotModalState extends State<SlotModal> {
     try {
       final regions = await widget.piaService.fetchRegions(onProgress: _c.onLog);
       if (!mounted) return null;
-      await RegionPickerSheet.show(context,
-          regions: regions, onSelected: (id) => chosen = regions.firstWhere((r) => r.id == id));
+      await RegionPickerSheet.show(context, regions: regions, onSelected: (id) => chosen = regions.firstWhere((r) => r.id == id));
     } catch (e) {
       if (mounted) await AppErrors.system(context, _c, 'Failed to load regions: ${e.toString().replaceAll('Exception: ', '')}');
     }
@@ -187,7 +183,7 @@ class _SlotModalState extends State<SlotModal> {
       // The title names what is being overwritten - wgcN:region - so the body does not have to
       // say it a second time (ID-113). The same shape the watchdog and the delete prompts use.
       final ok = await _confirm('Overwrite ${slotLabel(slot, info.desc)}?',
-          message: 'Creating a new configuration will overwrite it.'
+          message: 'Creating a new configuration will overwrite this slot.'
               '${running ? '\n\nIts tunnel is running, so it will be stopped first. The new configuration stays disabled '
                   'until you ENABLE it.' : ''}'
               // The profile survives an overwrite, so its index 6 does too, and so does every pin
@@ -284,8 +280,7 @@ class _SlotModalState extends State<SlotModal> {
       // always a PIA registration that has gone stale - and rebuilding it is the fix. Offer it here
       // rather than describing it and leaving the user to work out which button that is (ID-094).
       if (looksLikeStaleConfig(message)) {
-        final rebuild = await AppErrors.systemWithAction(context, _c, message,
-            actionLabel: 'RECREATE', detail: kStaleConfigHint);
+        final rebuild = await AppErrors.systemWithAction(context, _c, message, actionLabel: 'RECREATE', detail: kStaleConfigHint);
         if (rebuild && mounted) await _create();
         return;
       }
@@ -825,10 +820,7 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
         ),
         const SizedBox(height: 10),
         // These servers become the slot's, and stock sends an assigned device to the first one only.
-        DnsField(
-            controller: _dnsCtrl,
-            firstServerNote: isStockFirmware,
-            routerDotServers: widget.routerDotServers),
+        DnsField(controller: _dnsCtrl, firstServerNote: isStockFirmware, routerDotServers: widget.routerDotServers),
         if (_error != null) ...[
           const SizedBox(height: 14),
           Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),

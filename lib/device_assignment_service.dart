@@ -183,13 +183,20 @@ class DeviceAssignmentService {
   ///   3. Only then are `vpnc_default_wan` (index 6) and `wgc_unit` (slot number) written. Three
   ///      different numbers name the same profile here; see ARCHITECTURE.md "Stock".
   ///   4. `restart_vpnc` starts the target, and THAT is what installs the pair of `ip rule`s at
-  ///      priority 10000 - `from all iif br0 lookup <index 6>` and the same for br1.
+  ///      priority 10000 - `from all iif br0 lookup <index 6>` and the same for br1. It runs only
+  ///      when there IS a target: switching to Internet starts nothing, because the service would
+  ///      otherwise start whatever profile `vpnc_unit` was last pointed at (ID-172).
   ///
   /// This is expensive: it stops and restarts tunnels, and takes about a minute. The caller must
   /// warn before calling it. Assigning a device costs nothing like this.
   Future<void> _setDefaultConnection(AssignmentState base, int index, {String from = '', String to = ''}) async {
     final row = base.profiles.indexWhere((p) => p.vpncStateIndex == index);
     final slot = row < 0 ? null : base.profiles[row].slot;
+    // Internet is not a profile, so there is no target row to aim the teardown at. The tunnel
+    // being replaced is, so that is what gets named instead - see the unit comment below.
+    final outgoing =
+        base.defaultIndex == null ? -1 : base.profiles.indexWhere((p) => p.vpncStateIndex == base.defaultIndex);
+    final unit = row >= 0 ? row : outgoing;
 
     // Named in both logs. The default connection decides where every unassigned device goes AND
     // where an assigned one falls back to when its tunnel drops, so a change to it explains an
@@ -198,11 +205,18 @@ class DeviceAssignmentService {
     final change = from.isEmpty || to.isEmpty ? '' : ' from $from to $to';
     onLog?.call('Changing the default connection$change - tunnels will restart...');
     await _read(buildLoggerCommand('default WAN connection set$change'));
-    // Internet has no profile to restart, so only the teardown half applies.
-    if (row >= 0) await _run('nvram set vpnc_unit=$row');
-
-    await _run('service stop_vpnc');
-    if (slot != null) await _awaitInterface('wgc$slot', up: false);
+    // `vpnc_unit` holds whatever the last action left in it, and BOTH `stop_vpnc` and
+    // `restart_vpnc` act on the profile it names. A switch to Internet used to write neither and
+    // run both, so both acted on a stale pointer. Measured 2026-09-21: a MANAGE DISABLE had left
+    // it on wgc1's row, and the restart at the end of this sequence started the tunnel the user
+    // had just switched off - interface, routes and DNS rules all up, while `vpnc_clientlist` still
+    // read disabled and the router's own WebUI still said Disconnected (ID-172).
+    if (unit >= 0) {
+      await _run('nvram set vpnc_unit=$unit');
+      await _run('service stop_vpnc');
+      final stopping = base.profiles[unit].slot;
+      if (stopping != null) await _awaitInterface('wgc$stopping', up: false);
+    }
 
     // Waiting for this one is not optional. `restart_default_wan` resets the key to 0 as it runs,
     // so writing the values before it has finished means writing them into the path of the thing
@@ -216,8 +230,12 @@ class DeviceAssignmentService {
       await _run('nvram commit');
     }
 
-    await _run('service restart_vpnc');
-    if (slot != null) await _awaitInterface('wgc$slot', up: true);
+    // Only a tunnel needs starting, and `restart_vpnc` starts whichever profile `vpnc_unit` names.
+    // Internet has none, so the call is skipped rather than left to act on the pointer.
+    if (slot != null) {
+      await _run('service restart_vpnc');
+      await _awaitInterface('wgc$slot', up: true);
+    }
     onLog?.call('Default connection set$change.', isSuccess: true);
   }
 
