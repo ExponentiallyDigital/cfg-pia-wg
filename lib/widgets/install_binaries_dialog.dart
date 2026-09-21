@@ -116,8 +116,8 @@ class _InstallBinariesDialogState extends State<_InstallBinariesDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Your router is missing ${plural ? 'these programs' : 'this program'}, which this screen '
-              'cannot work without. I can download ${plural ? 'them' : 'it'} for you.',
+              'Your router is missing ${plural ? 'these programs' : 'this program'}, which are required '
+              'for this function. I can download ${plural ? 'them' : 'it'} for you.',
               style: const TextStyle(color: kText, fontSize: 13),
             ),
             const SizedBox(height: 12),
@@ -135,9 +135,9 @@ class _InstallBinariesDialogState extends State<_InstallBinariesDialog> {
               const SizedBox(height: 8),
             ],
             const Text(
-              'Each download must match the checksum above before it is installed, and is discarded '
-              'if it does not. You can compare these against the checksums the projects publish with '
-              'their releases.',
+              'Each downloaded file is checksum verified before installation, and discarded '
+              'if the value differs. You are welcome to compare the above checksums match what the projects '
+              'publish with their releases.',
               style: TextStyle(color: kMuted, fontSize: 11),
             ),
             const SizedBox(height: 12),
@@ -159,7 +159,7 @@ class _InstallBinariesDialogState extends State<_InstallBinariesDialog> {
                   recognizer: _recogniser,
                 ),
                 const TextSpan(
-                  text: ' - but this screen stays unavailable until they are on the router.',
+                  text: ' - this function will remain unavailable until they are installed.',
                   style: TextStyle(color: kMuted, fontSize: 11),
                 ),
               ]),
