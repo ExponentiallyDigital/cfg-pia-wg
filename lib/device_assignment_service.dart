@@ -274,11 +274,15 @@ class DeviceAssignmentService {
   /// Runs AFTER `restart_vpnc_dev_policy`, so it sweeps up whatever that call left in place, and
   /// repeats while it still finds something: the service is queued by `notify_rc`, so the first
   /// read can land before it has finished installing the new rule.
-  Future<void> _clearStaleRules(Map<String, int?> changes) async {
+  ///
+  /// [expected] is every device the policy list knows about and the one rule each should have -
+  /// see [expectedRuleTargets]. An address the list does not mention is left alone: a rule this app
+  /// cannot explain is not a rule it should delete.
+  Future<void> _clearStaleRules(Map<String, int?> expected) async {
     for (var pass = 0; pass < 3; pass++) {
       final rules = await _read(kIpRuleCommand);
       final deletions = <String>[];
-      changes.forEach((ip, index) {
+      expected.forEach((ip, index) {
         for (final table in staleRuleTables(rules, ip: ip, keepIndex: index)) {
           deletions.add('ip rule del from $ip lookup $table');
         }
@@ -360,7 +364,10 @@ class DeviceAssignmentService {
       }
       await _run('service restart_dnsmasq');
       await _run('service restart_vpnc_dev_policy');
-      await _clearStaleRules(changes);
+      // Sweep against the WHOLE policy list, not just what moved: the service re-installs a rule
+      // for every record it holds, so anything left out of the sweep gains a duplicate per apply
+      // (ID-183).
+      await _clearStaleRules(expectedRuleTargets(policies));
     }
     if (newDefaultIndex != null) {
       await _setDefaultConnection(base, newDefaultIndex, from: defaultFrom, to: defaultTo);

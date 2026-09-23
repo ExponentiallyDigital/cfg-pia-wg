@@ -1246,7 +1246,7 @@ Stock has no user-script hook of its own, so the app **replaces** `S50downloadma
 > [!IMPORTANT]
 > **Every other way of doing this on stock was tried first, over several weeks, and none of them held.** Stock offers no user-script hook, no `services-start` equivalent, and nothing else in `/opt/etc/init.d` that the firmware guarantees to run. Replacing this means repeating that search, so it is not a tidy-up job.
 >
-> **It does replace a working Download Master installation.** A real `S50downloadmaster` is 52,525 bytes and the app template is around 700, measured either side of an install 2026-09-07. Harmless for the documented setup, where Download Master is installed and then left alone; not harmless for someone who actually downloads with it. [README.md, Enabling prequisites](README.md#41-enabling-prequisites) says so, without going into how.
+> **It does replace a working Download Master installation.** A real `S50downloadmaster` is 52,525 bytes and the app template is around 700, measured either side of an install 2026-09-07. Harmless for the documented setup, where Download Master is installed and then left alone; not harmless for someone who actually downloads with it. [README.md, Enabling prequisites](README.md#41-enabling-prerequisites) says so, without going into how.
 >
 > Reinstalling or updating Download Master restores the original and removes the app boot persistence with it, so the two overwrite each other in both directions. Anything that re-runs the installer needs the watchdog re-deployed afterwards.
 >
