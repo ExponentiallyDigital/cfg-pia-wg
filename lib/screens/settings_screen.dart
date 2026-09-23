@@ -780,8 +780,10 @@ class _RebootProgressDialogState extends State<_RebootProgressDialog> {
     if (_done || !mounted) return;
     setState(() => _elapsed++);
     if (_elapsed >= _RebootProgressDialog.seconds) {
-      _finish('The router has not answered after ${_RebootProgressDialog.seconds} seconds. It may still be starting; '
-          'try again in a minute.', isWarning: true);
+      _finish(
+          'The router has not answered after ${_RebootProgressDialog.seconds} seconds. It may still be starting; '
+          'try again in a minute.',
+          isWarning: true);
       return;
     }
     if (_checking || _elapsed % _RebootProgressDialog.checkEverySeconds != 0) return;
@@ -813,7 +815,7 @@ class _RebootProgressDialogState extends State<_RebootProgressDialog> {
           LinearProgressIndicator(value: _elapsed / _RebootProgressDialog.seconds, color: kHighlight),
           const SizedBox(height: 12),
           const Text(
-            'Closes when the router answers again. Back leaves this screen; the reboot carries on.',
+            'Closes when the router answers again. Back leaves this screen; the reboot will continue.',
             style: TextStyle(color: kMuted, fontSize: 12),
           ),
         ]),

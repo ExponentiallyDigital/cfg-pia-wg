@@ -81,6 +81,23 @@ List<DevicePolicy> parseDevicePolicyList(String raw) => [
 
 String serialiseDevicePolicyList(List<DevicePolicy> records) => records.map((r) => r.serialise()).join('<');
 
+/// The one priority-100 rule each device in [records] should have, keyed by address.
+///
+/// A pinned device gets its profile's index 6, a device pinned to the plain internet gets `0`
+/// (which reads as `lookup main`), and a device that follows the default connection gets `null` -
+/// it should carry no rule at all. Feed the result to a sweep and the rules match the list.
+///
+/// Every device in the list is included, not only the ones an apply just changed. Measured
+/// 2026-09-22: `restart_vpnc_dev_policy` re-installs a rule for EVERY record each time it runs, so
+/// sweeping only the changed ones left one extra copy per untouched device per apply - four copies
+/// of one device's rule after a morning's work, cleared only by a reboot. Duplicates that agree are
+/// harmless; the moment one does not, the first match wins and the device leaves by the wrong
+/// tunnel, which is the fault the sweep exists to prevent (ID-183).
+Map<String, int?> expectedRuleTargets(List<DevicePolicy> records) => {
+      for (final r in records)
+        if (r.ip.isNotEmpty) r.ip: r.isAssigned ? (r.vpncIndex ?? 0) : null,
+    };
+
 /// Points [ip] at [vpncIndex], or back at the default when [vpncIndex] is null.
 ///
 /// Unassigning writes `0>IP>>0>` rather than deleting the record, which is what the web interface

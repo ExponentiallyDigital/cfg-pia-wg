@@ -398,6 +398,55 @@ void main() {
       expect(stop, lessThan(start));
     });
 
+    // ID-183, hardware 2026-09-22. `restart_vpnc_dev_policy` reinstalls a rule for every record it
+    // holds, so a sweep scoped to the devices that moved leaves one extra copy per untouched device
+    // per apply - four copies of one rule after a morning, cleared only by a reboot.
+    test('the sweep covers devices this apply never touched', () async {
+      // 192.168.1.50 is pinned to profile 3 in the fixture and is NOT in the change set. The router
+      // reports two copies of its rule, the way it does after a few applies.
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('cfg_device_list')) return _blob();
+        if (cmd == 'nvram get vpnc_dev_policy_list') return _policyList;
+        if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
+        if (cmd == 'nvram get vpnc_default_wan') return '0';
+        if (cmd == 'ip -o link show up') return 'wgc1 wgc5';
+        if (cmd == 'ip rule show') {
+          return '0:\tfrom all lookup local\n'
+              '100:\tfrom 192.168.1.20 lookup 5\n'
+              '100:\tfrom 192.168.1.50 lookup 3\n'
+              '100:\tfrom 192.168.1.50 lookup 3\n'
+              '32766:\tfrom all lookup main\n';
+        }
+        return '';
+      });
+      final s = await _state(c);
+      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+
+      expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 3'),
+          reason: 'the duplicate belongs to a device the apply never mentioned');
+      expect(c.commands.where((cmd) => cmd == 'ip rule del from 192.168.1.20 lookup 5').length, 0,
+          reason: 'the one correct rule for the moved device is kept, not deleted and re-added');
+    });
+
+    test('a device following the default has its leftover rule removed', () async {
+      // `0>IP>>0>` means "follows the default", which is no rule at all. A rule left from an earlier
+      // pin sends it somewhere nobody chose.
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('cfg_device_list')) return _blob(policy: '1>192.168.1.20>>9><0>192.168.1.50>>0>');
+        if (cmd == 'nvram get vpnc_dev_policy_list') return '1>192.168.1.20>>9><0>192.168.1.50>>0>';
+        if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
+        if (cmd == 'nvram get vpnc_default_wan') return '0';
+        if (cmd == 'ip -o link show up') return 'wgc1 wgc5';
+        if (cmd == 'ip rule show') {
+          return '100:\tfrom 192.168.1.20 lookup 9\n100:\tfrom 192.168.1.50 lookup 5\n';
+        }
+        return '';
+      });
+      final s = await _state(c);
+      await _svc(c).apply(base: s, changes: {'192.168.1.20': 9}, reservationsToCreate: {});
+      expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 5'));
+    });
+
     test('the key is written AFTER restart_default_wan, never before', () async {
       // The single fact that took the longest to find: writing it first always ended with 0.
       final c = _client();
