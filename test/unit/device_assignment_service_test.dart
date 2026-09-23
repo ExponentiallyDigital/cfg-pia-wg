@@ -6,6 +6,7 @@
 //
 // MACs are invented - see test/unit/no_lan_identifiers_test.dart.
 import 'package:cfg_pia_wg/device_assignment_service.dart';
+import 'package:cfg_pia_wg/fail_closed_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../watchdog_test_utils.dart';
@@ -241,7 +242,7 @@ void main() {
         final s = await _state(c);
         await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
 
-        expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9'));
+        expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9 priority 100'));
         expect(c.commands.any((x) => x.contains('lookup 5')), isFalse, reason: 'the new rule stays');
         expect(c.ran('restart_net_and_phy'), isFalse, reason: 'deleting the rule is the light fix');
       });
@@ -262,7 +263,7 @@ void main() {
         final s = await _state(c);
         await _svc(c).apply(base: s, changes: {'192.168.1.20': null}, reservationsToCreate: {});
 
-        expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9'));
+        expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9 priority 100'));
         expect(c.commands.any((x) => x.contains('from all')), isFalse);
       });
 
@@ -271,6 +272,27 @@ void main() {
         final s = await _state(c);
         await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
         expect(c.commands.any((x) => x.startsWith('ip rule del')), isFalse);
+      });
+
+      test("the guard's own rules for the device survive the sweep", () async {
+        // Same address, same table, priority 90: an unqualified sweep took it for a duplicate.
+        final c = ruleClient([
+          '90:\tfrom 192.168.1.20 lookup 5 suppress_prefixlength 0',
+          '91:\tfrom 192.168.1.20 blackhole',
+          '100:\tfrom 192.168.1.20 lookup 5',
+        ]);
+        final s = await _state(c);
+        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        expect(c.commands.any((x) => x.startsWith('ip rule del')), isFalse);
+      });
+
+      test('every delete names priority 100, so it can never reach the guard at 90', () async {
+        final c = ruleClient(['100:\tfrom 192.168.1.20 lookup 9', '100:\tfrom 192.168.1.20 lookup 5']);
+        final s = await _state(c);
+        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        final deletes = c.commands.where((x) => x.startsWith('ip rule del'));
+        expect(deletes, isNotEmpty);
+        expect(deletes.every((x) => x.endsWith(' priority 100')), isTrue);
       });
 
       test('a default-connection change on its own touches no per-device rule', () async {
@@ -422,9 +444,9 @@ void main() {
       final s = await _state(c);
       await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
 
-      expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 3'),
+      expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 3 priority 100'),
           reason: 'the duplicate belongs to a device the apply never mentioned');
-      expect(c.commands.where((cmd) => cmd == 'ip rule del from 192.168.1.20 lookup 5').length, 0,
+      expect(c.commands.where((cmd) => cmd == 'ip rule del from 192.168.1.20 lookup 5 priority 100').length, 0,
           reason: 'the one correct rule for the moved device is kept, not deleted and re-added');
     });
 
@@ -444,7 +466,7 @@ void main() {
       });
       final s = await _state(c);
       await _svc(c).apply(base: s, changes: {'192.168.1.20': 9}, reservationsToCreate: {});
-      expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 5'));
+      expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 5 priority 100'));
     });
 
     test('the key is written AFTER restart_default_wan, never before', () async {
@@ -503,6 +525,43 @@ void main() {
       expect(h[1]!.handshakeAgeSeconds, 50);
       expect(h[5]!.up, isFalse);
       expect(h[5]!.handshakeAgeSeconds, isNull);
+    });
+  });
+
+  // ID-213: an APPLY leaves the fail-closed guard matching the list it has just written.
+  group('the fail-closed guard', () {
+    RecordingSSHClient guardClient({required bool installed}) => RecordingSSHClient(responder: (cmd) {
+          if (cmd.contains('cfg_device_list')) return _blob();
+          if (cmd == 'nvram get vpnc_dev_policy_list') return _policyList;
+          if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
+          if (cmd == "cat '$kGuardScriptPath' 2>/dev/null") return installed ? kGuardScript : '';
+          if (cmd == "'$kGuardScriptPath'") return 'guarded 1';
+          return '';
+        });
+
+    test('runs after the assignments are written', () async {
+      final c = guardClient(installed: true);
+      await _svc(c).apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      final ran = c.commands.indexOf("'$kGuardScriptPath'");
+      expect(ran, greaterThan(c.commands.indexOf('service restart_vpnc_dev_policy')));
+    });
+
+    test('an unchanged script is run, not rewritten', () async {
+      final c = guardClient(installed: true);
+      await _svc(c).apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      expect(c.commands.any((x) => x.contains('guard.sh') && x.contains('WATCHDOG_EOF')), isFalse);
+    });
+
+    test('a guard that cannot be put in place is reported, and the APPLY still finishes', () async {
+      final c = guardClient(installed: false)..failWith["guard.sh' <<"] = 'cat: write error: No space left on device';
+      final logs = <String>[];
+      final svc = DeviceAssignmentService(c,
+          pollInterval: Duration.zero,
+          onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m));
+      await svc.apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      expect(logs.any((m) => m.startsWith('The fail-closed guard could not be put in place')), isTrue,
+          reason: logs.join(' | '));
+      expect(logs.last, 'Device assignments applied.');
     });
   });
 }

@@ -16,6 +16,17 @@ for slot in 1 2 3 4 5; do
 done
 cru l
 
+echo "== fail-closed guard =="
+# Priorities 90 and 91 are the guard's alone. Its rules go before its script does, or every pinned
+# device stays off the internet whenever its tunnel is down, with nothing left to say why.
+for prio in 90 91; do
+    n=0
+    while [ "$n" -lt 64 ] && ip rule del priority "$prio" 2>/dev/null; do n=$((n + 1)); done
+done
+rm -f /jffs/cfg-pia-wg/guard.sh
+rmdir /tmp/cfg-pia-wg-guard.lock 2>/dev/null
+ip rule show | grep -E '^9[01]:' || echo "no guard rules left"
+
 echo "== deployed files =="
 for slot in 1 2 3 4 5; do
     rm -f "/jffs/cfg-pia-wg/watchdog_wgc${slot}.sh"
@@ -23,7 +34,8 @@ done
 rm -f /jffs/cfg-pia-wg/pia_ca.rsa.4096.crt
 # Volatile state: the log, the last-good stamp and the backoff counter.
 rm -f /tmp/watchdog_wgc[1-9].log /tmp/watchdog_wgc[1-9].log.old \
-      /tmp/watchdog_last_ping_success_wgc[1-9] /tmp/watchdog_backoff_wgc[1-9] \n      /tmp/watchdog_unsent_wgc[1-9] \
+      /tmp/watchdog_last_ping_success_wgc[1-9] /tmp/watchdog_backoff_wgc[1-9] \
+      /tmp/watchdog_unsent_wgc[1-9] /tmp/watchdog_dnsfail_wgc[1-9] \
       /tmp/mail.txt /tmp/mail_wgc[1-9].txt /tmp/wd_smtp_err*
 
 echo "== boot persistence =="
@@ -39,11 +51,12 @@ done
 
 echo "== wgcN_ slot + watchdog settings =="
 # All 17 slot keys (enforce/fw/rip are Merlin-only but unsetting them on stock is harmless) plus
-# the 10 wgcN_wd_ watchdog keys, for every slot rather than the two that used to be listed.
+# the 12 wgcN_wd_ watchdog keys, for every slot rather than the two that used to be listed.
 for slot in 1 2 3 4 5; do
     for field in addr aips alive desc dns enable enforce ep_addr ep_addr_r ep_port \
                  fw mtu nat ppub priv psk rip \
-                 wd_check_interval wd_email_enabled wd_email_from wd_email_subject \
+                 wd_check_interval wd_doh_ip wd_doh_url \
+                 wd_email_enabled wd_email_from wd_email_subject \
                  wd_email_to wd_primary_ip wd_secondary_ip \
                  wd_smtp_pass wd_smtp_server wd_smtp_user; do
         nvram unset "wgc${slot}_${field}"
@@ -64,11 +77,13 @@ done
 nvram set vpnc_clientlist=
 nvram set vpnc_unit=
 nvram set vpnc_default_wan=0
+# What a factory-fresh stock router holds; SETTINGS, MAX ACTIVE VPNS may have raised it.
+nvram set vpnc_max_conn=2
 nvram commit
 
 echo "== cfg-pia-wg globals =="
 # PIA credentials, and the lifetime counters reported in watchdog alert emails.
-for v in cfg_pia_wg_user cfg_pia_wg_password \
+for v in cfg_pia_wg_user cfg_pia_wg_password cfg_pia_wg_max_conn_prev \
          cfg_pia_wg_sdate cfg_pia_wg_reconfig_ok cfg_pia_wg_reconfig_fail; do
     nvram unset "$v"
 done

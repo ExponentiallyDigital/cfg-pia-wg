@@ -25,6 +25,7 @@ import 'router_command.dart';
 import 'router_service_queue.dart';
 import 'firmware.dart';
 import 'device_assignment.dart';
+import 'fail_closed_guard.dart';
 import 'router_watchdog.dart' show buildLoggerCommand, shellSingleQuote;
 
 // The per-slot WireGuard NVRAM keys (without the `wgcN_` prefix), in the order router_push.dart
@@ -534,23 +535,21 @@ class RouterSlotService {
   }
 
   // Read/modify/write of vpnc_clientlist. The caller commits.
-  /// Sends every device pinned to [vpncIndex] back to the default connection, and removes the
-  /// routing rules that pointed at it.
+  /// Sends every device pinned to [vpncIndex] to the plain internet, and removes the routing rules
+  /// that pointed at it.
   ///
-  /// Names each device it moves. The policy list is keyed by IP, so the names come from
-  /// `dhcp_staticlist` (address to MAC) and `custom_clientlist` (MAC to the user's own name) -
-  /// two reads, and every pinned device has a reservation because assigning one creates it.
+  /// Names each device it moves, the way DEVICE ASSIGNMENT does. It used to take names from
+  /// `custom_clientlist` alone, so any device the user had not renamed in the web interface showed
+  /// up in the log as a bare address while the screen named it (ID-154).
   Future<void> _releasePinnedDevices(int vpncIndex) async {
     final policies = parseDevicePolicyList(await _read('nvram get vpnc_dev_policy_list'));
     final pinned = devicesPinnedTo(policies, vpncIndex);
     if (pinned.isEmpty) return;
 
-    final byIp = <String, String>{};
-    parseDhcpStaticlist(await _read('nvram get dhcp_staticlist')).forEach((mac, ip) => byIp[ip] = mac);
-    final names = parseCustomClientlistNames(await _read('nvram get custom_clientlist'));
+    final names = deviceNamesByIp(parseDeviceSources(await _read(kDeviceSourcesCommand)));
     String label(String ip) {
-      final name = names[byIp[ip]?.toUpperCase()];
-      return name == null || name.isEmpty ? ip : '$name ($ip)';
+      final name = names[ip];
+      return name == null ? ip : '$name ($ip)';
     }
 
     onLog?.call('Moving ${pinned.length} device${pinned.length == 1 ? '' : 's'} to Internet:');
@@ -570,8 +569,29 @@ class RouterSlotService {
     final rules = await _read(kIpRuleCommand);
     for (final ip in pinned) {
       for (final table in staleRuleTables(rules, ip: ip, keepIndex: 0)) {
-        await _run('ip rule del from $ip lookup $table', allowFailure: true);
+        await _run('ip rule del from $ip lookup $table priority $kFirmwareRulePriority', allowFailure: true);
       }
+    }
+    // The guard held these devices while the tunnel was stopping. They are on the internet now, by
+    // design, so their guard goes too - or they would be blocked from where they were just sent.
+    await _guard.ensure();
+  }
+
+  FailClosedGuard get _guard => FailClosedGuard(read: _read, run: (cmd) => _run(cmd), onLog: onLog);
+
+  /// The names of the devices pinned to [slot], for the DISABLE warning. Empty when there are none
+  /// or on Merlin, and null when they could not be read - the caller then warns without names rather
+  /// than saying nothing.
+  Future<List<String>?> pinnedDeviceNames(int slot) async {
+    if (!isStockFirmware) return const [];
+    try {
+      final index = vpncStateIndexForSlot(parseVpncClientlist(await _read('nvram get vpnc_clientlist')), slot);
+      final pinned = devicesPinnedTo(parseDevicePolicyList(await _read('nvram get vpnc_dev_policy_list')), index);
+      if (pinned.isEmpty) return const [];
+      final names = deviceNamesByIp(parseDeviceSources(await _read(kDeviceSourcesCommand)));
+      return [for (final ip in pinned) names[ip] ?? ip];
+    } catch (_) {
+      return null;
     }
   }
 
@@ -1018,6 +1038,10 @@ class RouterSlotService {
   /// rather than leave the ACTIVE badge to imply it (ID-124).
   Future<bool> disableSlot(int slot) async {
     onLog?.call('Disabling ${await _label(slot)}...');
+    // Before the tunnel stops, not after: a reboot clears the guard's rules, and a DISABLE is when
+    // they matter. Without them the devices pinned here would fall through to the default
+    // connection - in the clear when that is Internet (ID-213).
+    if (isStockFirmware) await _guard.ensure();
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
     await _run('nvram commit');
