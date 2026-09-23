@@ -227,6 +227,65 @@ void main() {
     });
   });
 
+  // ID-183, found on hardware 2026-09-22. `restart_vpnc_dev_policy` re-installs a rule for EVERY
+  // record in the policy list, and the sweep only ever looked at the devices an apply had changed,
+  // so every untouched device gained one more copy of its rule per apply. A morning's work left
+  // four copies of one rule and three of the others; a reboot rebuilt the list and left one each.
+  group('expectedRuleTargets', () {
+    List<DevicePolicy> parse(String raw) => parseDevicePolicyList(raw);
+
+    test('a pinned device keeps its profile index, whatever the apply touched', () {
+      expect(expectedRuleTargets(parse('1>192.168.1.20>>9>')), {'192.168.1.20': 9});
+    });
+
+    test('pinned to Internet is index 0, which reads as lookup main', () {
+      expect(expectedRuleTargets(parse('1>192.168.1.20>>0>')), {'192.168.1.20': 0});
+    });
+
+    test('following the default means NO rule, not a rule to main', () {
+      // `0>IP>>0>` and `1>IP>>0>` differ by one flag and mean opposite things; null is what makes
+      // the sweep remove a leftover rather than keep one.
+      expect(expectedRuleTargets(parse('0>192.168.1.20>>0>')), {'192.168.1.20': null});
+    });
+
+    test('every device in the list is covered, not only the ones that moved', () {
+      // The shape of the hardware dump: one device pinned to a tunnel, several pinned to Internet,
+      // one following the default.
+      final targets = expectedRuleTargets(parse('1>192.168.1.20>>9>'
+          '<1>192.168.1.21>>0>'
+          '<1>192.168.1.22>>0>'
+          '<0>192.168.1.23>>0>'));
+      expect(targets, {
+        '192.168.1.20': 9,
+        '192.168.1.21': 0,
+        '192.168.1.22': 0,
+        '192.168.1.23': null,
+      });
+    });
+
+    test('a record with no address is skipped rather than keyed on an empty string', () {
+      expect(expectedRuleTargets(parse('1>>>9>')), isEmpty);
+    });
+
+    test('an unparseable index is treated as Internet, not as a tunnel', () {
+      // `vpncIndex` is null for anything unparseable; guessing a tunnel would aim a sweep at a
+      // table that may not be this device's.
+      expect(expectedRuleTargets(parse('1>192.168.1.20>>x>')), {'192.168.1.20': 0});
+    });
+
+    test('duplicates in the rule list all come back as stale but one', () {
+      // What the fix is FOR: four copies of the same rule, three of them removable.
+      const dupes = '0:\tfrom all lookup local\n'
+          '100:\tfrom 192.168.1.20 lookup 9\n'
+          '100:\tfrom 192.168.1.20 lookup 9\n'
+          '100:\tfrom 192.168.1.20 lookup 9\n'
+          '100:\tfrom 192.168.1.20 lookup 9\n';
+      final targets = expectedRuleTargets(parse('1>192.168.1.20>>9>'));
+      expect(staleRuleTables(dupes, ip: '192.168.1.20', keepIndex: targets['192.168.1.20']),
+          ['9', '9', '9']);
+    });
+  });
+
   // Stock never removes a device's old `ip rule` when its assignment changes, and both rules land
   // at priority 100, so the older one wins on insertion order. Measured on hardware 2026-09-10:
   // every list said wgc5 while the traffic left through wgc1.
