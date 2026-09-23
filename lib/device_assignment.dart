@@ -152,6 +152,10 @@ int? assignedIndexFor(List<DevicePolicy> records, String ip) {
 /// Lists the policy routing rules. Each assigned device gets one, `from <ip> lookup <index 6>`.
 const String kIpRuleCommand = 'ip rule show';
 
+/// The priority the firmware gives every per-device rule. The only one the stale-rule sweep may
+/// touch, and so the one every `ip rule del` it issues has to name.
+const int kFirmwareRulePriority = 100;
+
 /// The routing tables [ip] is still being sent to that it should not be, given that it now belongs
 /// to [keepIndex] (or to the default connection when that is null).
 ///
@@ -183,6 +187,10 @@ const String kIpRuleCommand = 'ip rule show';
 /// so once a device had been on Internet it stayed there until the router was rebooted. The `from`
 /// address is what makes this safe: the global `32766: from all lookup main` and the priority-10000
 /// `from all iif br0` rules name `all`, never a device, so they can never match.
+///
+/// **Priority 100 only.** The fail-closed guard (fail_closed_guard.dart) keeps its own rules for
+/// the same device at 90 and 91, and the one at 90 also reads `from <ip> lookup <table>`. Matching
+/// at any priority would take it for a duplicate and delete it, leaving the device unguarded.
 List<String> staleRuleTables(String ipRuleOutput, {required String ip, int? keepIndex}) {
   // What this device SHOULD be routed by: its profile's table, `main` when it is pinned to the
   // plain internet, and nothing at all when it follows the default connection.
@@ -194,6 +202,7 @@ List<String> staleRuleTables(String ipRuleOutput, {required String ip, int? keep
   final stale = <String>[];
   var kept = false;
   for (final line in ipRuleOutput.split('\n')) {
+    if (!line.trimLeft().startsWith('$kFirmwareRulePriority:')) continue;
     final m = RegExp(r'from (\S+) lookup (\S+)').firstMatch(line);
     if (m == null || m.group(1) != ip) continue;
     final table = m.group(2)!;
@@ -285,11 +294,13 @@ String describeSilence(int seconds) {
 /// What APPLY's confirmation says about [tunnel] before moving [who] onto it, or null when it looks
 /// healthy.
 ///
-/// [fallback] is where [who] goes while the tunnel is not running: a device pinned to a stopped
-/// tunnel falls through to the default connection (measured 2026-09-13). Leave it null for the
-/// default connection itself.
-String? tunnelWarning(TunnelHealth health, {required String tunnel, required String who, String? fallback}) {
+/// [blocked] is for devices PINNED to the tunnel: the fail-closed guard keeps them off the internet
+/// until it runs again (ID-213). Before the guard they fell through to the default connection.
+/// [fallback] names where anyone else goes; leave both unset for the default connection itself.
+String? tunnelWarning(TunnelHealth health,
+    {required String tunnel, required String who, String? fallback, bool blocked = false}) {
   if (!health.up) {
+    if (blocked) return '$tunnel is not running. Until it is enabled, $who will have no internet.';
     return fallback == null
         ? '$tunnel is not running. Until it is, $who are not on that VPN.'
         : '$tunnel is not running. Until it is enabled, $who will use $fallback.';
@@ -301,24 +312,26 @@ String? tunnelWarning(TunnelHealth health, {required String tunnel, required Str
   return '$tunnel is up, but its server $silence. $subject may have no internet.';
 }
 
+/// [actualExitIndex]'s answer for a device that has no way out at all.
+const int kExitBlocked = -1;
+
 /// Where a device's traffic actually leaves while its tunnel is not running, as a profile index 6 (0
-/// is the plain internet), or null when it leaves where its assignment says or that cannot be told.
+/// is the plain internet), [kExitBlocked] when it cannot leave, or null when it leaves where its
+/// assignment says or that cannot be told.
 ///
-/// Two hops at most. A device pinned to a stopped tunnel falls through to the default connection
-/// (measured 2026-09-13: the pin stays, the `ip rule` goes), and a default that is not running either
-/// leaves the plain internet. [pinned] is the device's own assignment, null when it follows the
-/// default. [isUp] answers for a tunnel index, or null when that is not known - a VPN this app does
-/// not manage, or a slot read that failed - and an unknown anywhere on the path answers nothing.
+/// A device PINNED to a stopped tunnel is blocked: the fail-closed guard drops its traffic until the
+/// tunnel runs again (ID-213). Without the guard it fell through to the default connection -
+/// measured 2026-09-13 and again 2026-09-24 - which is the leak the guard exists to close. A device
+/// that FOLLOWS a default that is not running leaves by the plain internet; the guard covers pins
+/// only. [isUp] answers for a tunnel index, or null when that is not known - a VPN this app does not
+/// manage, or a slot read that failed - and an unknown answers nothing.
 int? actualExitIndex({required int? pinned, required int? defaultIndex, required bool? Function(int index) isUp}) {
   final def = defaultIndex ?? 0;
   final target = pinned ?? def;
   if (target == 0) return null;
   final up = isUp(target);
   if (up == null || up) return null;
-  if (pinned == null || def == 0 || def == target) return 0;
-  final defaultUp = isUp(def);
-  if (defaultUp == null) return null;
-  return defaultUp ? def : 0;
+  return pinned == null ? 0 : kExitBlocked;
 }
 
 // ─── Devices ────────────────────────────────────────────────────────────────────────
@@ -472,6 +485,41 @@ Set<String> parseCfgDeviceListMacs(String raw) {
   }
   return out;
 }
+
+/// Separates the outputs of several reads sent as one command.
+const String kSourceSeparator = '@@CFGPIAWG@@';
+
+/// The five reads [buildDeviceList] joins, sent as one command. Anything that names a device - the
+/// screen, a log line, a warning - reads through this, so a device has the same name everywhere. The
+/// DELETE log named devices from `custom_clientlist` alone, and showed a bare address for any device
+/// the user had not renamed there (ID-154).
+const String kDeviceSourcesCommand = 'echo "$kSourceSeparator"; nvram get dhcp_staticlist; '
+    'echo "$kSourceSeparator"; nvram get custom_clientlist; '
+    'echo "$kSourceSeparator"; nvram get cfg_device_list; '
+    'echo "$kSourceSeparator"; cat /jffs/nmp_cl_json.js 2>/dev/null; '
+    'echo "$kSourceSeparator"; cat /tmp/nmp_cache.js 2>/dev/null; '
+    'echo "$kSourceSeparator"';
+
+/// The device list from the output of [kDeviceSourcesCommand].
+List<LanDevice> parseDeviceSources(String output) {
+  final parts = output.split(kSourceSeparator);
+  String at(int i) => i + 1 < parts.length ? parts[i + 1].trim() : '';
+  return buildDeviceList(
+    dhcpStaticlist: at(0),
+    customClientlist: at(1),
+    cfgDeviceList: at(2),
+    nmpClJson: at(3),
+    nmpCache: at(4),
+  );
+}
+
+/// Address to the name the screen shows, for every device with a known address. A device whose
+/// only name is its MAC is left out, so the caller falls back to the address, which is what a
+/// person can match against their router.
+Map<String, String> deviceNamesByIp(List<LanDevice> devices) => {
+      for (final d in devices)
+        if (d.assignable && !d.isNameless) d.ip!: d.displayName,
+    };
 
 /// Joins the four sources into the list the screen shows, sorted and with the router and any mesh
 /// node removed.

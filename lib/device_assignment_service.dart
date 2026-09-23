@@ -20,6 +20,7 @@
 import 'package:dartssh2/dartssh2.dart';
 
 import 'device_assignment.dart';
+import 'fail_closed_guard.dart';
 import 'router_command.dart';
 import 'router_slot_service.dart';
 import 'router_watchdog.dart' show buildLoggerCommand, shellSingleQuote;
@@ -104,7 +105,7 @@ class DeviceAssignmentService {
 
   // One marker-delimited round trip rather than seven. A phone on wifi pays for every round trip,
   // and none of these reads depends on another.
-  static const String _sep = '@@CFGPIAWG@@';
+  static const String _sep = kSourceSeparator;
 
   Future<AssignmentState> read() async {
     onLog?.call('Reading device list...');
@@ -284,7 +285,9 @@ class DeviceAssignmentService {
       final deletions = <String>[];
       expected.forEach((ip, index) {
         for (final table in staleRuleTables(rules, ip: ip, keepIndex: index)) {
-          deletions.add('ip rule del from $ip lookup $table');
+          // The priority is named because the guard holds a rule of the same shape at 90, and an
+          // unqualified delete removes whichever matching rule comes first - the guard's.
+          deletions.add('ip rule del from $ip lookup $table priority $kFirmwareRulePriority');
         }
       });
       if (deletions.isEmpty) return;
@@ -372,6 +375,10 @@ class DeviceAssignmentService {
     if (newDefaultIndex != null) {
       await _setDefaultConnection(base, newDefaultIndex, from: defaultFrom, to: defaultTo);
     }
+    // After everything else, so it sees the final list. A device just pinned is guarded from here
+    // on; one just unpinned loses its guard, or it would be blocked from the connection it was
+    // moved to (ID-213).
+    await FailClosedGuard(read: _read, run: _run, onLog: onLog).ensure();
     onLog?.call('Device assignments applied.', isSuccess: true);
   }
 }

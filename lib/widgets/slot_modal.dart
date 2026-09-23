@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'app_button.dart';
 
 import '../app_colors.dart';
+import '../device_assignment.dart' show joinNames;
 import '../firmware.dart';
 import '../pia_service.dart';
 import '../router_slot_service.dart';
@@ -57,6 +58,17 @@ bool looksLikeStaleConfig(String message) =>
     message.contains('did not come up') || message.contains('never answered it') || message.contains('Connectivity check failed');
 
 enum SlotModalMode { manage, watchdog }
+
+/// What DISABLE's confirmation says about the devices pinned to the slot: [names] when they could be
+/// read, null when they could not, and nothing at all when there are none.
+String? pinnedDeviceWarning(List<String>? names) {
+  const until = 'will have no internet until you ENABLE this VPN again or move';
+  if (names == null) return 'Any device pinned to this VPN $until it to another VPN in DEVICE ASSIGNMENT.';
+  if (names.isEmpty) return null;
+  final one = names.length == 1;
+  return '${joinNames(names)} ${one ? 'is' : 'are'} pinned to this VPN, and $until ${one ? 'it' : 'them'} '
+      'to another VPN in DEVICE ASSIGNMENT.';
+}
 
 class SlotModal extends StatefulWidget {
   final SlotModalMode mode;
@@ -126,14 +138,27 @@ class _SlotModalState extends State<SlotModal> {
   }
 
   // ── Generic dialog helpers ────────────────────────────────────────────────────────
-  Future<bool> _confirm(String title, {String? message, String confirmLabel = 'CONFIRM', bool destructive = false}) async {
+  Future<bool> _confirm(String title,
+      {String? message, String? warning, String confirmLabel = 'CONFIRM', bool destructive = false}) async {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
         title: Text(title, style: const TextStyle(color: kText, fontSize: 15)),
-        // A question that already names the slot and its region needs no explanatory body.
-        content: message == null ? null : Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
+        // A question that already names the slot and its region needs no explanatory body. A
+        // [warning] is what the action does to something other than the slot, so it stands apart.
+        content: message == null && warning == null
+            ? null
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (message != null) Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
+                  if (message != null && warning != null) const SizedBox(height: 10),
+                  if (warning != null)
+                    Text(warning, key: const Key('confirm_warning'), style: const TextStyle(color: kWarn, fontSize: 13)),
+                ],
+              ),
         actions: [
           AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
           AppButton(
@@ -294,6 +319,16 @@ class _SlotModalState extends State<SlotModal> {
     final slot = _selected;
     final info = _selectedInfo;
     final wdActive = info?.watchdogActive ?? false;
+    // Named before asking, because this is the one effect of a DISABLE on something other than the
+    // slot: a device pinned here keeps no internet at all while it is off (ID-213).
+    List<String>? pinned = const [];
+    if (isStockFirmware) {
+      try {
+        pinned = await _slotSvc(await widget.connect()).pinnedDeviceNames(slot);
+      } catch (_) {
+        pinned = null;
+      }
+    }
     final ok = await _confirm(
       'Disable VPN ${slotLabel(slot, info?.desc ?? '')}?',
       message: wdActive
@@ -301,6 +336,7 @@ class _SlotModalState extends State<SlotModal> {
               'tunnel you just stopped. The script and both sets of settings stay on the router, so ENABLE '
               'brings the tunnel and the watchdog back together.'
           : 'Takes the tunnel down. The settings stay on the router, so ENABLE brings it back.',
+      warning: pinnedDeviceWarning(pinned),
       confirmLabel: 'DISABLE',
     );
     if (!ok) return;

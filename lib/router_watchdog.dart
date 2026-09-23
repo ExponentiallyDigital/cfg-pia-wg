@@ -18,6 +18,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
+import 'fail_closed_guard.dart';
 import 'router_command.dart';
 import 'router_service_queue.dart';
 import 'firmware.dart';
@@ -322,6 +323,24 @@ class WatchdogStatus {
 ///
 /// `wgcN_*` TUNNEL keys are deliberately absent: an uninstall removes the app from the router, not
 /// the user's VPNs, and those stay manageable from the web interface.
+/// Every per-slot watchdog key, as `wgcN_<field>`. One list for a watchdog DELETE and for UNINSTALL:
+/// the DELETE kept its own copy, and when 454 added the two DoH keys only the uninstall's was updated,
+/// so deleting a slot left them behind (ID-150).
+const List<String> kWatchdogSlotNvramFields = [
+  'wd_check_interval',
+  'wd_doh_ip',
+  'wd_doh_url',
+  'wd_email_enabled',
+  'wd_email_from',
+  'wd_email_subject',
+  'wd_email_to',
+  'wd_primary_ip',
+  'wd_secondary_ip',
+  'wd_smtp_pass',
+  'wd_smtp_server',
+  'wd_smtp_user',
+];
+
 String get kUninstallNvramCommand {
   const globals = [
     'cfg_pia_wg_max_conn_prev',
@@ -331,24 +350,10 @@ String get kUninstallNvramCommand {
     'cfg_pia_wg_sdate',
     'cfg_pia_wg_user',
   ];
-  const perSlot = [
-    'wd_check_interval',
-    'wd_doh_ip',
-    'wd_doh_url',
-    'wd_email_enabled',
-    'wd_email_from',
-    'wd_email_subject',
-    'wd_email_to',
-    'wd_primary_ip',
-    'wd_secondary_ip',
-    'wd_smtp_pass',
-    'wd_smtp_server',
-    'wd_smtp_user',
-  ];
   final keys = [
     ...globals,
     for (var slot = 1; slot <= 5; slot++)
-      for (final k in perSlot) 'wgc${slot}_$k',
+      for (final k in kWatchdogSlotNvramFields) 'wgc${slot}_$k',
   ];
   return '${keys.map((k) => 'nvram unset $k').join('; ')}; nvram commit';
 }
@@ -713,51 +718,43 @@ const String _kMailHdrMerlin = r'''  {
 // Each also needs three tenses, because the same fact reads wrong in the wrong one: UP for a deploy
 // run where the tunnel is fine, FIXED for a recovery that is over, DOWN for a failure that is not.
 //
-// Stock used to assert a leak in all three - "traffic is reaching the internet without the VPN".
-// That is wrong about two thirds of the time. A device pinned to a dropped tunnel falls through to
-// the DEFAULT CONNECTION (ARCHITECTURE.md "vpnc_dev_policy_list - the assignment", confirmed
-// twice on hardware), and the default is one of three things: this same slot, in which case those
-// devices have no internet at all and the outage is fail-closed; another tunnel, in which case
-// they are still on a VPN and the old sentence was a false alarm; or the plain internet, which is
-// the only case the old sentence described. A warning that cries wolf twice for every time it is
-// right is one people learn to ignore, so the script reads `vpnc_default_wan` and says which of
-// the three actually happened.
+// Stock has no kill switch of its own, so what the line reports is the app's fail-closed guard
+// (fail_closed_guard.dart, ID-213): two rules per pinned device that keep it off the internet while
+// its tunnel is down. It is counted from the rules the router actually holds, never assumed, so a
+// guard that a reboot cleared and nothing has put back yet is reported as missing rather than as on.
 //
-// Refined 2026-09-13, so that no branch claims what it has not checked. A tunnel nothing is assigned to,
-// and which is not the default, does not talk about "its devices". "Still on a VPN" is said only when
-// the default is a WireGuard tunnel whose interface is up; one that is down, or that is not WireGuard
-// and so cannot be checked here, is reported as not confirmed. Its awk counts the enabled policy
-// records naming this tunnel's state index (device_assignment.dart, `enabled>IP>?>vpnc_idx>`). The
-// branch shares one sentence across the tenses, as Merlin's OFF case does, to keep the script inside
-// its size guard.
+// Before the guard this line said the pinned devices "fell through to the default connection, so
+// they stayed on a VPN". Measured 2026-09-20 and 2026-09-24, that was wrong for the failure the
+// watchdog exists to catch: a tunnel whose server stops answering blocks its devices outright. And
+// where they did fall through - a rebuild, a DISABLE - it was a leak, not a reassurance (ID-198).
+//
+// The guard covers PINNED devices only. When this tunnel is also the default connection, the ones
+// that merely follow the default are not covered, and the line says so rather than implying they are.
 const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
 [ -n "$DEFIDX" ] || DEFIDX=0
-# Index 2 of a vpnc_clientlist record is the slot, index 6 the state index the default is named by.
+# Index 2 of a vpnc_clientlist record is the slot, index 6 the table its devices are routed by.
 MYIDX="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" '$3==s {print $7; exit}')"
-DEFNAME="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v d="$DEFIDX" '$7==d {print $1; exit}')"
-# Slot of a WireGuard default, and how many devices are pinned to this tunnel.
-DEFSLOT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v d="$DEFIDX" '$7==d && $2=="WireGuard" {print $3; exit}')"
 PINNED="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {n++} END {print n+0}')"
-if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then
-  KILLSW_UP="none on this firmware, but this tunnel is the default connection - if it drops, its devices lose internet rather than leaking"
-  KILLSW_FIXED="none on this firmware; this tunnel is the default connection, so its devices had no internet rather than an unprotected one"
-  KILLSW_DOWN="none on this firmware; this tunnel is the default connection, so its devices have no internet rather than an unprotected one"
-elif [ "$PINNED" = "0" ]; then
-  KILLSW_UP="none on this firmware, but no devices are assigned to this tunnel and it is not the default connection"
+GUARDED="$(ip rule show | awk -v i="$MYIDX" '$1=="90:" {for (k=2; k<NF; k++) if ($k=="lookup" && $(k+1)==i) n++} END {print n+0}')"
+DEVS="devices"
+[ "$PINNED" = "1" ] && DEVS="device"
+if [ "$PINNED" = "0" ]; then
+  KILLSW_UP="none on this firmware, and no devices are pinned to this tunnel"
   KILLSW_FIXED="$KILLSW_UP"
   KILLSW_DOWN="$KILLSW_UP"
-elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ] && { [ -z "$DEFSLOT" ] || ! ip -o link show up 2>/dev/null | grep -q " wgc$DEFSLOT:"; }; then
-  KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection, $DEFNAME, which is not confirmed up, so they may have no VPN"
-  KILLSW_FIXED="none on this firmware; while it was down, its devices fell through to the default connection, $DEFNAME, which was not confirmed up, so they may have had no VPN"
-  KILLSW_DOWN="none on this firmware; its devices are falling through to the default connection, $DEFNAME, which is not confirmed up, so they may have no VPN"
-elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ]; then
-  KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection, $DEFNAME, so they stay on a VPN"
-  KILLSW_FIXED="none on this firmware; while it was down, its devices fell through to the default connection, $DEFNAME, so they stayed on a VPN"
-  KILLSW_DOWN="none on this firmware; its devices are falling through to the default connection, $DEFNAME, so they are still on a VPN"
+elif [ "$GUARDED" -ge "$PINNED" ]; then
+  KILLSW_UP="the app's guard - if this tunnel drops, the $PINNED $DEVS pinned to it have no internet until it is back"
+  KILLSW_FIXED="the app's guard kept the $PINNED $DEVS pinned to this tunnel off the internet while it was down"
+  KILLSW_DOWN="the app's guard is keeping the $PINNED $DEVS pinned to this tunnel off the internet until it is back"
 else
-  KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection - the plain internet, with no VPN"
-  KILLSW_FIXED="none on this firmware; while it was down, its devices reached the internet with no VPN"
-  KILLSW_DOWN="none on this firmware; its devices are reaching the internet with no VPN"
+  KILLSW_UP="not fully in place - the app's guard covers $GUARDED of the $PINNED $DEVS pinned to this tunnel, so the others can reach the internet with no VPN while it is down. Opening DEVICE ASSIGNMENT in the app and applying any change puts it back"
+  KILLSW_FIXED="$KILLSW_UP"
+  KILLSW_DOWN="$KILLSW_UP"
+fi
+if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then
+  KILLSW_UP="$KILLSW_UP. This tunnel is also the default connection, and devices that only follow the default are not covered by the guard"
+  KILLSW_FIXED="$KILLSW_FIXED. This tunnel is also the default connection, and devices that only follow the default are not covered by the guard"
+  KILLSW_DOWN="$KILLSW_DOWN. This tunnel is also the default connection, and devices that only follow the default are not covered by the guard"
 fi''';
 
 const String _kKillSwitchMerlin = r'''if [ "$ENFORCE" = "1" ]; then
@@ -1043,7 +1040,25 @@ class RouterWatchdog {
       await _logRouter('Watchdog script updated to ${appVersionLabel.isEmpty ? 'this app version' : appVersionLabel} '
           'for ${await _label(slot)}');
     }
+    // The guard and the boot hook that restores it came with 460. A router updated from an older
+    // build has neither until something writes them, and this is the update the user is prompted for.
+    if (firmware == RouterFirmware.stock && deployed.isNotEmpty) {
+      await _guardService.ensure();
+      await _refreshS50();
+    }
     return deployed;
+  }
+
+  FailClosedGuard get _guardService => FailClosedGuard(read: _read, run: (cmd) => _run(cmd), onLog: onLog);
+
+  /// Rewrites S50downloadmaster from this build's template, keeping the cru lines it already holds.
+  /// Only a copy the app wrote is touched; the router's own script, or none at all, is left alone.
+  Future<void> _refreshS50() async {
+    final existing = await _read("cat '$kS50Path' 2>/dev/null");
+    if (!existing.contains(_kOurScriptSignature)) return;
+    final rebuilt = buildS50Script(extractS50CruLines(existing));
+    if (rebuilt.trim() == existing.trim()) return;
+    await _writeFile(kS50Path, rebuilt, what: 'Boot persistence script', mode: '700');
   }
 
   Future<String> _runHeredoc(String cmd, String path) async {
@@ -1195,6 +1210,7 @@ class RouterWatchdog {
           await _writeWatchdogNvram(config, desc: desc);
           await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
           await _writeScript(config.slotIndex, buildWatchdogScript(config));
+          if (isStockFirmware) await _guardService.ensure();
           await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
           await _run(buildCronRotateLine(config.slotIndex));
           await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
@@ -1437,6 +1453,10 @@ class RouterWatchdog {
   /// would be a much bigger action than the button says.
   Future<List<String>> uninstallFromRouter() => _guard('uninstall from router', () async {
         final done = <String>[];
+        // First, while the script is still there to do it. Left behind, the rules would keep every
+        // pinned device off the internet whenever its tunnel is down, with no app left to explain why.
+        await _guardService.clear();
+        done.add('Removed the fail-closed guard rules');
         for (final path in [kS50Path, kS50LighttpdPath]) {
           final name = path.split('/').last;
           final backup = originalScriptBackupPath(path);
@@ -1605,16 +1625,9 @@ class RouterWatchdog {
           '/tmp/watchdog_last_ping_success_wgc$slot /tmp/watchdog_backoff_wgc$slot',
         );
         // nvram command doesn't allow multiple values in one command
-        await _run('nvram unset wgc${slot}_wd_check_interval', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_email_enabled', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_email_from', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_email_subject', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_email_to', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_primary_ip', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_secondary_ip', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_smtp_pass', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_smtp_server', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_smtp_user', allowFailure: true);
+        for (final field in kWatchdogSlotNvramFields) {
+          await _run('nvram unset wgc${slot}_$field', allowFailure: true);
+        }
         // GLOBAL keys, shared by every watchdog script. With concurrent watchdogs allowed, only
         // the last one out may clear them - otherwise the survivor cannot authenticate with PIA
         // at its next renegotiation. The cru entries for this slot are already gone above, so
@@ -2009,6 +2022,11 @@ PIA_PASS="$(nvram get cfg_pia_wg_password)"
 __BACKOFF__
 
 log "Watchdog started for $IFACE${APPVER:+ [script $APPVER]}"
+
+# Keeps devices pinned to any tunnel off the internet while it is down (ID-213), and follows pins
+# changed in the web interface. Before the stand-down below: a disabled slot is when it matters. A
+# no-op when nothing has changed; absent on Merlin, which has a kill switch of its own.
+[ -x /jffs/cfg-pia-wg/guard.sh ] && /jffs/cfg-pia-wg/guard.sh >/dev/null 2>&1
 
 # A tunnel turned off in the WebUI looks like one that dropped; reviving it would undo the user,
 # and changing a device assignment requires exactly that. Only an explicit "0" stands down - empty

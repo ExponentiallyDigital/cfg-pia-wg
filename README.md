@@ -483,7 +483,7 @@ Connectivity was lost and the tunnel could NOT be rebuilt.
 WHAT HAPPENED
 Event: failed to obtain PIA token (exit 0, HTTP 403, body 34B: {"error":"rate limit exceeded"})
 Tunnel has been down for: 41m 09s (last seen good 2026-09-05 13:58:12 AEST)
-Kill switch: none on this firmware; while it was down, its devices fell through to the default connection, pia-other_region, so they stayed on a VPN
+Kill switch: the app's guard is keeping the 2 devices pinned to this tunnel off the internet until it is back
 Attempt: 8 since the last success, retrying per schedule, 5 minutes
 
 WHAT TO DO
@@ -517,8 +517,7 @@ How to interpret these emails:
 
 - **Kill switch** answers the question that most often matters when a tunnel drops: did anything leave the router unprotected, in the raw, so to speak? The line reports the state your router was actually in, not a generic warning.
   - On **Merlin**, which has a kill switch: on, or available but not enabled.
-  - On **stock**, which has none, it says where the affected devices went instead. If the dropped tunnel was itself the default connection, its devices had no internet and thus no leak. If no devices are assigned to it and it is not the default, it says so, because nothing depended on it. If another WireGuard tunnel is the default and that tunnel is up, they fell through to it and stayed on a VPN. If the default is down too, or is not a WireGuard tunnel the watchdog can check, it says the default was not confirmed up and they may have had no VPN. Only if the default is the plain internet did they certainly travel unprotected.
-  - This is why the default connection is worth setting deliberately: on stock it is the difference between a leak and an outage. See [VPN device assignment](#54-vpn-device-assignment).
+  - On **stock**, which has none, it reports the app's own guard: how many devices pinned to that tunnel it kept off the internet, or that nothing is pinned there. If part of the guard is missing, say after a reboot before the app or a watchdog has put it back, it says so and tells you how to fix it.
 - **Interval** is read from the router, so it can never claim a schedule that is not actually running.
 - **Since `date`** counts every re-configuration this router has made, across all slots, from the day the app first configured itself.
 - The router log excerpt includes your **PIA username** (never the password, and never the token). The email travels through your own mail provider, but bear that in mind before forwarding it on.
@@ -539,6 +538,8 @@ Normally every device on your network follows the router's default connection. T
 One simple, easy to use interface and your laptop can be globetrotting to anywhere in the world. Practical considerations do apply though as many organisations are actively enforcing geo-blocking via registered IP address blocks. That's never been the purpose of this app. It exists to do one thing extremely well. And that's stopping nominated devices from going out to the Internet in the clear, unprotected and naked, swinging in the breeze so to speak.
 
 DEVICE ASSIGNMENT gives you one list of all your devices and lets you decide which tunnel they should be "pinned" to. It also allows you, as we read earlier (you did read that bit didn't you :)?), to set the default connection simply, quickly, easily and have confidence that devices pinned to that will go where they're intended.
+
+**What does it change on my router?** Only its routing rules, the short list your router reads to decide which way each device's traffic goes. Your router already writes one rule per pinned device, and the app doesn't replace it. It does two things on top. It deletes the stale rules your router leaves behind when you move a device, because the old one wins and your device would quietly keep using the tunnel you moved it off. And it adds two rules of its own for every pinned device, which are what keep that device offline, rather than out in the open, while its tunnel is down. Nothing else is touched: not your default connection's rules, not your router's own DNS, not your other devices. For the technically inquisitive, [ARCHITECTURE](ARCHITECTURE.md#every-routing-rule-the-app-touches) lists every rule, what the app does with each, and the hardware tests behind them.
 
 <br>
 <p align="center">
@@ -576,19 +577,18 @@ Assignment is as simple as tapping on a device in the previous menu, then decidi
   Default connection
 </p><br>
 
-Three things you should know about the `default connection`:
+Two things you should know about the `default connection`:
 
 > [!IMPORTANT]
-> - Changing the default connection restarts **every** tunnel on the router, so anything using a VPN loses its connection for up to a minute. Assigning _individual_ devices causes no tunnel restarts.
-> - **Assigning a device is not a kill switch.** If the slot it is pinned to drops, that device does not lose its connection - it falls through to whatever the default connection is. If the default is **Internet**, it carries on unprotected until the tunnel comes back.
-> - To get **fail-closed** behaviour instead, point the **default connection** at the same tunnel you assigned the device(s) to. Then a drop means those devices have no internet rather than an unprotected one, and a watchdog on that tunnel is what decides how long that lasts.
+> - Changing it restarts **every** tunnel on the router, so anything using a VPN drops for up to a minute. Assigning _individual_ devices restarts nothing.
+> - **Pinned means pinned.** A pinned device uses its tunnel or nothing. If that tunnel's config expires, the watchdog is rebuilding it, or you switch it off, the device waits with no internet rather than wandering out through the default connection. Devices that only _follow_ the default get no such promise, so pin the ones you care about.
 
 And six things that can catch you out:
 
 1. **A device the router has never seen can't be assigned.** Connect it to your network and get it to exchange some traffic through your router, it'll then show up in the device list. There is a time delay, and it depends on things outside our control. But it will show up. Hopefully expeditiously, but sometimes in its own sweet time. Prodding it by talking through your router usually goads it into submission.
 2. **Assigning a device pins its address permanently.** And that's the big one. It stops an assignment drifting onto a different device later on. A pinned device stays behind when you unassign - the router never removes it, and neither does this app.
 3. **A randomised MAC address breaks assignment silently.** Those devices are tagged in the list with `random MAC`. Many phones randomise their MAC addresses per network by default, and the assignment stops working the next time the address rotates, with nothing to tell you. [5.4.3](#543-phones-and-random-mac-addresses) gives you the settings to change, per phone architecture.
-4. **A device assigned to a tunnel that you then turn OFF keeps its assignment**, and falls through to the default connection while that tunnel is down. It reconnects to your chosen tunnel when you power it back on. The main DEVICE ASSIGNMENT screen tells you where that will be. Deleting a slot is different: the app moves its devices to the Internet, tells you which ones it moved, and puts the default connection back to Internet if that tunnel was it.
+4. **Switching a tunnel OFF takes its pinned devices offline.** They keep their assignment and have no internet until you switch it back ON or move them, and the app names them before you confirm. Deleting a slot is different: the app moves its devices to the Internet, tells you which ones, and puts the default connection back to Internet if that tunnel was it.
 5. **Guest network devices never appear.** Typically they can't reach your LAN, so putting one on a VPN is a different proposition.
 6. **A device assigned to a VPN uses only that VPN's first DNS server.** The router sends every lookup from it to the first DNS server address listed in your slot config and never tries the second. For real. That's by design. If the first stops answering through that tunnel, then devices typically reach IP addresses but not names. You can change the first server with MANAGE, then EDIT.
 

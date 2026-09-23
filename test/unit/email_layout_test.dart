@@ -251,53 +251,47 @@ void main() {
       expect(stock, isNot(contains('OFF - the kill switch is available')));
     });
 
-    // Stock used to assert a leak in every case. A device pinned to a dropped tunnel falls through
-    // to the DEFAULT CONNECTION, which is one of three things - and only one of them is a leak. A
-    // warning that cries wolf twice for every time it is right is one people learn to ignore.
-    group('stock says where the traffic actually went', () {
+    // ID-198. The line used to say a pinned device "fell through to the default connection, so it
+    // stayed on a VPN". Measured 2026-09-20 and 2026-09-24, that was wrong for the failure the
+    // watchdog exists for, and where it was true it was a leak. Stock now has the app's fail-closed
+    // guard (ID-213), and the line reports that - counted from the router's rules, never assumed.
+    group('stock reports the fail-closed guard, as the router actually holds it', () {
       final stock = script(RouterFirmware.stock);
 
-      test('it reads the default connection rather than assuming', () {
-        expect(stock, contains(r'DEFIDX="$(nvram get vpnc_default_wan)"'));
-        // Index 2 of a clientlist record is the slot, index 6 the number the default is named by.
-        expect(stock, contains(r'-v s="$SLOT"'));
-        expect(stock, contains(r'-v d="$DEFIDX"'));
-      });
-
-      test('this tunnel being the default is reported as fail-closed, not as a leak', () {
-        expect(stock, contains(r'if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then'));
-        expect(stock, contains('have no internet rather than an unprotected one'));
-      });
-
-      test('another tunnel as the default is reported as still protected, and named', () {
-        expect(stock, contains(r'elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ]; then'));
-        expect(stock, contains(r'the default connection, $DEFNAME, so they are still on a VPN'));
-      });
-
-      test('only the plain-internet default claims traffic is leaving without a VPN', () {
-        expect(stock, contains('its devices are reaching the internet with no VPN'));
-        // The old blanket claim, made whatever the default was, must not survive anywhere.
-        expect(stock, isNot(contains('traffic is reaching the internet without the VPN')));
-      });
-
-      // 2026-09-13: "its devices" was said even when nothing was assigned to the tunnel.
-      test('a tunnel nothing is assigned to, which is not the default, says nothing depends on it', () {
+      test('it counts the pinned devices and the guard rules actually in place', () {
         expect(stock, contains(r'''$1=="1" && $4==i {n++} END {print n+0}'''));
-        expect(stock, contains('no devices are assigned to this tunnel and it is not the default connection'));
-        expect(stock, isNot(contains('so nothing depends on it')));
+        expect(stock, contains(r'''$1=="90:" {for (k=2; k<NF; k++) if ($k=="lookup" && $(k+1)==i) n++}'''));
       });
 
-      // 2026-09-13: "so they stay on a VPN" was claimed without looking at whether the default was up.
-      test('"still on a VPN" is said only for a WireGuard default whose interface is up', () {
-        expect(stock, contains(r'''{ [ -z "$DEFSLOT" ] || ! ip -o link show up 2>/dev/null | grep -q " wgc$DEFSLOT:"; }; then'''));
-        expect(stock, contains('which is not confirmed up, so they may have no VPN'));
-        expect(stock.indexOf('which is not confirmed up'), lessThan(stock.indexOf('so they are still on a VPN')),
-            reason: 'the unconfirmed branch has to be tested first');
+      test('a guarded tunnel says its pinned devices had no internet while it was down', () {
+        expect(stock, contains(r'elif [ "$GUARDED" -ge "$PINNED" ]; then'));
+        expect(stock, contains(r"the app's guard kept the $PINNED $DEVS pinned to this tunnel off the internet while it was down"));
+        expect(stock, contains(r"the app's guard is keeping the $PINNED $DEVS pinned to this tunnel off the internet until it is back"));
       });
 
-      test('each of the five cases still carries all three tenses', () {
+      test('a guard with rules missing says so, and how to put it back', () {
+        expect(stock, contains(r"not fully in place - the app's guard covers $GUARDED of the $PINNED $DEVS"));
+        expect(stock, contains('Opening DEVICE ASSIGNMENT in the app and applying any change puts it back'));
+      });
+
+      test('a tunnel nothing is pinned to says so', () {
+        expect(stock, contains('none on this firmware, and no devices are pinned to this tunnel'));
+      });
+
+      test('the old fall-through claims are gone', () {
+        expect(stock, isNot(contains('fell through to the default connection')));
+        expect(stock, isNot(contains('so they stayed on a VPN')));
+        expect(stock, isNot(contains('have no internet rather than an unprotected one')));
+      });
+
+      test('being the default connection is not passed off as protecting the devices that follow it', () {
+        expect(stock, contains(r'if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then'));
+        expect(stock, contains('devices that only follow the default are not covered by the guard'));
+      });
+
+      test('each of the three cases still carries all three tenses, and the default note adds to each', () {
         for (final v in ['KILLSW_UP=', 'KILLSW_FIXED=', 'KILLSW_DOWN=']) {
-          expect(RegExp(RegExp.escape(v)).allMatches(stock).length, 5, reason: '$v needs one per case');
+          expect(RegExp(RegExp.escape(v)).allMatches(stock).length, 4, reason: '$v: three cases and the default note');
         }
       });
     });
@@ -312,7 +306,7 @@ void main() {
         }
       }
       expect(script(RouterFirmware.merlin), contains('ON - traffic is blocked while the tunnel is down'));
-      expect(script(RouterFirmware.stock), contains('its devices are reaching the internet with no VPN'));
+      expect(script(RouterFirmware.stock), contains("the app's guard is keeping the"));
       // A failure picks the still-down wording whether or not this run was a deploy.
       expect(script(RouterFirmware.merlin), contains('''if [ "\$STATUS" != "SUCCESS" ]; then
     KILLSW="\$KILLSW_DOWN"'''));

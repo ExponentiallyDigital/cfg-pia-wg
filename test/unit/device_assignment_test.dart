@@ -326,6 +326,16 @@ void main() {
       expect(staleRuleTables(others, ip: '192.168.1.51', keepIndex: null), ['9']);
     });
 
+    test("the fail-closed guard's rules for the same device are never swept", () {
+      // The guard's rule at 90 reads `from <ip> lookup <table>` too. Taken for a duplicate, it would
+      // be deleted on the next APPLY and the device left unguarded (ID-213).
+      const guarded = '90:\tfrom 192.168.1.51 lookup 9 suppress_prefixlength 0\n'
+          '91:\tfrom 192.168.1.51 blackhole\n'
+          '100:\tfrom 192.168.1.51 lookup 9\n';
+      expect(staleRuleTables(guarded, ip: '192.168.1.51', keepIndex: 9), isEmpty);
+      expect(staleRuleTables(guarded, ip: '192.168.1.51', keepIndex: null), ['9'], reason: 'only the one at 100');
+    });
+
     test('nothing to do when the device already has only its own rule', () {
       expect(staleRuleTables(twoRules, ip: '192.168.1.51', keepIndex: 9), ['5']);
       expect(staleRuleTables('100:\tfrom 192.168.1.51 lookup 5\n', ip: '192.168.1.51', keepIndex: 5), isEmpty);
@@ -400,6 +410,13 @@ void main() {
       );
     });
 
+    test('a device pinned to a tunnel that is not running is told it will have no internet', () {
+      expect(
+        tunnelWarning(const TunnelHealth(up: false), tunnel: 'wgc5:pia-aus_perth', who: 'Box and Laptop', blocked: true),
+        'wgc5:pia-aus_perth is not running. Until it is enabled, Box and Laptop will have no internet.',
+      );
+    });
+
     test('the default connection has nothing further to fall back to', () {
       expect(
         tunnelWarning(const TunnelHealth(up: false), tunnel: 'wgc5:pia-aus_perth', who: 'devices on the default connection'),
@@ -445,14 +462,14 @@ void main() {
       expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: upOnly({5, 9})), isNull);
     });
 
-    test('pinned to a tunnel that is not running falls through to a running default', () {
-      expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: upOnly({9})), 9);
-    });
-
-    test('and to the plain internet when the default is not running either - two hops, no more', () {
-      expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: upOnly({})), 0);
-      expect(actualExitIndex(pinned: 5, defaultIndex: 0, isUp: upOnly({})), 0);
-      expect(actualExitIndex(pinned: 5, defaultIndex: 5, isUp: upOnly({})), 0, reason: 'the default IS the stopped tunnel');
+    // ID-213. Before the fail-closed guard a pinned device fell through to the default connection
+    // here - measured 2026-09-13, and again 2026-09-24, when a DISABLE let it out in the clear.
+    test('pinned to a tunnel that is not running is blocked, whatever the default is doing', () {
+      expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: upOnly({9})), kExitBlocked);
+      expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: upOnly({})), kExitBlocked);
+      expect(actualExitIndex(pinned: 5, defaultIndex: 0, isUp: upOnly({})), kExitBlocked);
+      expect(actualExitIndex(pinned: 5, defaultIndex: 5, isUp: upOnly({})), kExitBlocked,
+          reason: 'the default IS the stopped tunnel');
     });
 
     test('following a default that is not running means the plain internet', () {
@@ -467,7 +484,49 @@ void main() {
 
     test('an unknown state anywhere on the path answers nothing rather than guessing', () {
       expect(actualExitIndex(pinned: 3, defaultIndex: 9, isUp: (_) => null), isNull, reason: 'a VPN this app does not manage');
-      expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: (i) => i == 5 ? false : null), isNull);
+      expect(actualExitIndex(pinned: null, defaultIndex: 9, isUp: (_) => null), isNull, reason: 'a default that cannot be read');
+    });
+
+    test('a pinned device needs only its own tunnel to be known down', () {
+      // The default no longer decides anything for a pinned device, so not knowing it is no reason
+      // to say nothing.
+      expect(actualExitIndex(pinned: 5, defaultIndex: 9, isUp: (i) => i == 5 ? false : null), kExitBlocked);
+    });
+  });
+
+  // ID-154: every log line and warning names a device the way DEVICE ASSIGNMENT does.
+  group('device names from the router sources', () {
+    const sep = kSourceSeparator;
+    String output({String cache = '', String custom = ''}) => [
+          '',
+          '<AA:BB:CC:00:00:01>192.168.1.20>>',
+          custom,
+          '',
+          '{"AA:BB:CC:00:00:01":{"name":"desktop-7h2k","online":1},"AA:BB:CC:00:00:02":{"name":"","online":1}}',
+          cache,
+          '',
+        ].join('\n$sep\n');
+
+    test('a device the user never renamed is named the way the screen names it', () {
+      // The DELETE log used custom_clientlist alone, so this device came out as a bare address.
+      expect(deviceNamesByIp(parseDeviceSources(output())), {'192.168.1.20': 'desktop-7h2k'});
+    });
+
+    test("the user's own name wins", () {
+      expect(deviceNamesByIp(parseDeviceSources(output(custom: 'Study PC>AA:BB:CC:00:00:01>0>0>>>'))),
+          {'192.168.1.20': 'Study PC'});
+    });
+
+    test('a device known only by its MAC is left out, so the caller shows its address', () {
+      final named = deviceNamesByIp(parseDeviceSources(
+          output(cache: '{"AA:BB:CC:00:00:02":{"ip":"192.168.1.30"}}')));
+      expect(named.containsKey('192.168.1.30'), isFalse);
+    });
+
+    test('one command fetches every source', () {
+      for (final source in ['dhcp_staticlist', 'custom_clientlist', 'cfg_device_list', 'nmp_cl_json.js', 'nmp_cache.js']) {
+        expect(kDeviceSourcesCommand, contains(source));
+      }
     });
   });
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart' show kMerlinOnlySlotKeys;
+import 'package:cfg_pia_wg/fail_closed_guard.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 
 WatchdogConfig _valid({int slot = 1, int interval = 5, bool email = false}) => WatchdogConfig(
@@ -931,6 +932,24 @@ void main() {
     test('an empty subject field falls back to the default rather than shipping ": SUCCESS"', () {
       expect(buildMailSubject(_valid(email: true).copyWith(emailSubject: '  '), status: 'SUCCESS'),
           'cfg-pia-wg alert: SUCCESS - wgc1');
+    });
+  });
+
+  // ID-213: every check puts the fail-closed guard back, which is how a reboot and a pin changed in
+  // the web interface are both caught up within one interval.
+  group('the watchdog keeps the fail-closed guard in place', () {
+    final script = buildWatchdogScript(_valid(slot: 1));
+
+    test('runs the guard on every check, before a disabled slot stands down', () {
+      final lines = script.split('\n');
+      final guard = lines.indexWhere((l) => l.contains(kGuardScriptPath) && !l.trimLeft().startsWith('#'));
+      expect(guard, greaterThan(-1));
+      expect(guard, lessThan(lines.indexWhere((l) => l.contains('standing down until'))),
+          reason: 'a disabled slot is exactly when its pinned devices need the guard');
+    });
+
+    test('only when the guard is there, and silently', () {
+      expect(script, contains('[ -x $kGuardScriptPath ] && $kGuardScriptPath >/dev/null 2>&1'));
     });
   });
 }

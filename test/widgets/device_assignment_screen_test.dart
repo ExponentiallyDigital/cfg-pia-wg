@@ -568,6 +568,10 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('device_apply')));
     await tester.tap(find.byKey(const Key('device_apply')));
     await tester.pumpAndSettle();
+    // ID-191: the cost is the restart. It used to add that a watchdog "will report the outage",
+    // which a restart of seconds almost never gives it the chance to.
+    expect(find.textContaining('stops and restarts your VPN tunnels'), findsOneWidget);
+    expect(find.textContaining('report the outage'), findsNothing);
     await tester.tap(find.byKey(const Key('apply_confirm')));
     await tester.pumpAndSettle();
 
@@ -664,14 +668,15 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('a tunnel that is not running is named, with where the device goes meanwhile - and still applies',
+    testWidgets('a tunnel that is not running is named, with the device held off the internet - and still applies',
         (tester) async {
       final ssh = await _pumpConnected(tester);
       await stage(tester, 'row_11:22:33:44:55:66', 'pick_5');
 
       expect(
-          find.text('wgc5:pia-aus_perth is not running. Until it is enabled, Box will use the default connection, '
-              'wgc1:pia-aus_melbourne.'),
+          // ID-213: it used to say Box would use the default connection meanwhile - the fall-through
+          // the fail-closed guard now prevents.
+          find.text('wgc5:pia-aus_perth is not running. Until it is enabled, Box will have no internet.'),
           findsOneWidget);
       await tester.tap(find.byKey(const Key('apply_confirm')));
       await tester.pumpAndSettle();
@@ -718,12 +723,13 @@ void main() {
   // Measured on hardware 2026-09-13: a device pinned to a disabled slot keeps its pin and falls
   // through to the default connection, while the screen went on naming the slot.
   group('where a device actually exits when its tunnel is not running', () {
-    testWidgets('a device pinned to a stopped tunnel shows the default it falls through to', (tester) async {
+    testWidgets('a device pinned to a stopped tunnel is shown as having no internet, not as falling through',
+        (tester) async {
       await _pumpConnected(tester, router: _router(policy: '1>192.168.1.20>>5>'));
 
       expect(
           tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
-          'wgc5:pia-aus_perth is not running - traffic uses wgc1:pia-aus_melbourne');
+          'wgc5:pia-aus_perth is not running - no internet until it is enabled');
       // The picker still names the assignment: the pin is intact, and enabling wgc5 restores it.
       expect(
           find.descendant(of: find.byKey(const Key('row_11:22:33:44:55:66')), matching: find.text('wgc5:pia-aus_perth')),

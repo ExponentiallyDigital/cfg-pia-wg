@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
+import 'package:cfg_pia_wg/device_assignment.dart' show kDeviceSourcesCommand, kSourceSeparator;
 import 'package:cfg_pia_wg/entitlement.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
@@ -1890,6 +1891,54 @@ void main() {
       for (final key in ['slot_create', 'slot_enable', 'slot_edit', 'slot_disable', 'slot_delete']) {
         expect(_btn(tester, key).onPressed, isNull, reason: key);
       }
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
+  // ID-213: a DISABLE leaves the devices pinned to the slot with no internet, and says so first.
+  group('DISABLE names the devices it will cut off', () {
+    test('one device, several, none, and a list that could not be read', () {
+      expect(pinnedDeviceWarning(['Study PC']),
+          'Study PC is pinned to this VPN, and will have no internet until you ENABLE this VPN again or move it '
+          'to another VPN in DEVICE ASSIGNMENT.');
+      expect(pinnedDeviceWarning(['Study PC', 'TV-Lounge']), startsWith('Study PC and TV-Lounge are pinned to this VPN'));
+      expect(pinnedDeviceWarning(['Study PC', 'TV-Lounge']), contains('or move them to another VPN'));
+      expect(pinnedDeviceWarning(const []), isNull);
+      expect(pinnedDeviceWarning(null), startsWith('Any device pinned to this VPN will have no internet'));
+    });
+
+    testWidgets('on stock the confirmation names them, before anything is sent', (tester) async {
+      useStock();
+      addTearDown(useMerlin);
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd == kDeviceSourcesCommand) {
+          return [
+            '',
+            '<AA:BB:CC:DD:EE:01>192.168.1.30>>',
+            '<Study PC>AA:BB:CC:DD:EE:01>0>0>>',
+            '',
+            '{"AA:BB:CC:DD:EE:01":{"name":"","online":1}}',
+            '',
+            '',
+          ].join('\n$kSourceSeparator\n');
+        }
+        if (cmd == 'nvram get vpnc_clientlist') return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        if (cmd == 'nvram get vpnc_dev_policy_list') return '1>192.168.1.30>>9>';
+        return '';
+      });
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}), c));
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<Text>(find.byKey(const Key('confirm_warning'))).data, startsWith('Study PC is pinned to this VPN'));
+      expect(ssh.ran('nvram set wgc1_enable=0'), isFalse);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

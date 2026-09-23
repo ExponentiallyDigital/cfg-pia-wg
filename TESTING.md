@@ -14,6 +14,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [BRK. Break a tunnel](#brk)
 - [DEV. Device assignment](#dev)
 - [DEF. Default connection](#def)
+- [GRD. Fail-closed guard](#grd)
 - [LOG. App log and router log](#log)
 - [SET. Settings](#set)
 - [ABT. About](#abt)
@@ -428,7 +429,7 @@ Use a 5 minute check interval throughout. PIA rate-limits token requests: test o
 - See: the prompt says the tunnel is rebuilt on the new region.
 - See: ROUTER LOG "Cleared ... rebuilds it", "Deploying: bringing wgc1 up", `Deploy SUCCESS: region pia-<new region>`.
 - Pass if: a NEW peer key in `wg show wgc1 latest-handshakes`, and exit IP on a device pinned to wgc1 is the new region.
-- See: that pinned device uses the default connection during the rebuild, and is back on wgc1 after.
+- See: that pinned device has no internet during the rebuild - the fail-closed guard holds it - and is back on wgc1 after.
 - See: the WebUI shows wgc1 connected.
 
 **WD-9** Deploy on an empty slot
@@ -469,7 +470,11 @@ Use a 5 minute check interval throughout. PIA rate-limits token requests: test o
 - See: HISTORY counters in every email; `nvram get cfg_pia_wg_sdate` never changes.
 - See, after BRK-1: the rebuild email has the outage duration, the kill-switch line, the new server and its latency.
 - See, after BRK-5: the failure email has WHAT TO DO, the attempt count and the last 10 router log lines.
-- See, on stock, the kill-switch line: a tunnel with no devices assigned that is not the default says so; "still on a VPN" appears only when the default is a WireGuard tunnel that is up; a default that is down, or not WireGuard, says devices may have had no VPN.
+- See, on stock, the kill-switch line, one of three:
+  - no devices pinned to the tunnel: it says so;
+  - devices pinned and guarded: "the app's guard kept the N devices pinned to this tunnel off the internet while it was down";
+  - guard rules missing: it says how many are covered, and that opening DEVICE ASSIGNMENT and applying puts it back.
+- See, when the tunnel is also the default connection: the line adds that devices only following the default are not covered by the guard.
 
 **WD-14** A failed email explains itself
 
@@ -610,6 +615,7 @@ rm -f /tmp/breakit
 - See: watchdog log "No handshake and both pings failed", "Connectivity lost; reconfiguring (attempt #1)", then `Reconfig SUCCESS: region pia-<region> via ...`.
 - See: a SUCCESS email with the outage duration and the new server.
 - See: between "Interface wgc1 is up" and the SUCCESS line, "Waiting for a handshake on wgc1" then "Handshake Ns ago after Ns" - the rebuild no longer calls itself a success on the interface alone.
+- Pass if: TABLET has no internet from the break until the SUCCESS line, and its exit IP never shows your own address - the fail-closed guard.
 - Pass if: `wg show wgc1` lists the NEW key from `nvram get wgc1_ppub`, the next check logs `Handshake Ns ago`, and TABLET's exit IP is back in the region.
 - Pass if, on stock: the log shows "Restarting wgc1 through VPN Fusion (vpnc_unit=N)" rather than the stop/start pair, and N matches the row wgc1 occupies in `nvram get vpnc_clientlist`, counting from 0.
 
@@ -772,9 +778,9 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 **DEV-11** To a disabled slot
 
 - Do: MANAGE DISABLE wgc5. DEVICE ASSIGNMENT, TABLET to wgc5.
-- See: the confirmation warns wgc5 is not running and TABLET will use the default connection.
+- See: the confirmation warns wgc5 is not running and TABLET will have no internet until it is enabled.
 - Do: APPLY.
-- See: TABLET's row notes where its traffic goes. Exit IP is your own.
+- See: TABLET's row reads "wgc5:pia-<region> is not running - no internet until it is enabled". TABLET has no internet.
 - Do: MANAGE ENABLE wgc5.
 - Pass if: TABLET's exit IP moves to wgc5's region without reassigning, and the note goes.
 
@@ -802,8 +808,9 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 **DEV-15** Delete a VPN with devices on it
 
 - Do: TABLET to wgc5, APPLY. MANAGE DELETE wgc5.
-- See: APP LOG names TABLET, moved to Internet.
+- See: APP LOG names TABLET, moved to Internet - by the name DEVICE ASSIGNMENT shows, not a bare address.
 - Pass if: CHK shows a `lookup main` rule; exit IP is your own.
+- Pass if: `ip rule show | grep -E '^9[01]:'` shows nothing for TABLET: the guard is lifted once a device is on the internet by design.
 - Do: CREATE wgc5 again, ENABLE.
 - Pass if: TABLET is NOT on wgc5.
 
@@ -871,16 +878,16 @@ Changing the default tears the WireGuard clients down and brings the enabled one
 - Do: DEVICE ASSIGNMENT, read the default connection panel.
 - See: wgc1 is not running, and unassigned devices use the Internet.
 - Do: TABLET's exit IP. TABLET is on "default".
-- Write down: your own address is fail OPEN (what the app expects). No internet is fail CLOSED, and the panel note is wrong.
+- Pass if: your own address. The guard covers pinned devices only, and the panel says so: a device that follows the default goes out through the Internet while the default is off.
 - Do: MANAGE, wgc1, ENABLE.
 
-**DEF-7** Default tunnel down, device pinned to it (fail open or closed)
+**DEF-7** Default tunnel down, device pinned to it: fails closed
 
 - Do: DEVICE ASSIGNMENT, DESKTOP to wgc1, APPLY. Default is still wgc1, watchdog still off.
 - Do: MANAGE, wgc1, DISABLE.
-- Do: on DESKTOP, exit IP and `ping google.com`.
-- Write down: your own address is fail OPEN. No internet is fail CLOSED.
-- Note: fail OPEN means ARCHITECTURE ("no internet, no leak") and README 5.4 are both wrong. Fail CLOSED means the app's note under DESKTOP's row is wrong.
+- See: the confirmation names DESKTOP, in amber, and says it will have no internet until wgc1 is enabled or DESKTOP is moved.
+- Do: DISABLE. Then on DESKTOP, exit IP and `ping google.com`.
+- Pass if: no internet at all - the fail-closed guard. Run 1 on 2026-09-21, before the guard, found DESKTOP out through the Internet here.
 - Do: MANAGE, wgc1, ENABLE. DEVICE ASSIGNMENT, DESKTOP back to wgc5, APPLY.
 
 **DEF-8** Back to Internet
@@ -910,6 +917,96 @@ Changing the default tears the WireGuard clients down and brings the enabled one
 - Do: SETTINGS, REBOOT ROUTER, REBOOT, and wait for "The router answered again after N seconds."
 - Pass if: the default connection is still wgc5 and every device is on the tunnel it was on before, both in the app and in `nvram get vpnc_default_wan` and `nvram get vpnc_dev_policy_list`.
 - Pass if: each device's exit IP is the region of the tunnel it is assigned to - TABLET follows the default, DESKTOP is pinned to wgc5.
+
+---
+
+## <a name='grd'></a>GRD. Fail-closed guard
+
+A device pinned to a tunnel gets that tunnel or nothing: no internet while the tunnel's server is silent, while the watchdog rebuilds it, or while it is switched off (ID-213, ARCHITECTURE 6.8.10). These tests prove that on a real router, where a unit test cannot.
+
+**Set up:** wgc1 and wgc5 up in different regions, a watchdog on wgc1 at 5 minutes, default connection wgc5, DESKTOP pinned to wgc1. Only DESKTOP loses its internet in this group.
+
+**Every router block below starts from one line you fill in once per SSH session: DESKTOP's address.**
+
+```bash
+D=192.168.x.y    # DESKTOP's address, from DEVICE ASSIGNMENT
+```
+
+How to read DESKTOP's `ping -t 1.1.1.1`: wgc1's usual time is a pass; "Destination host unreachable" or "Request timed out" is a pass while wgc1 is down; any other reply while wgc1 is down is a leak. The TTL tells a leak's path apart when the times are close: a reply through PIA and one through your ISP usually differ by a hop or two.
+
+**GRD-1** An APPLY puts the guard in place
+
+- Do: DEVICE ASSIGNMENT, DESKTOP to wgc1, APPLY.
+- See: APP LOG "Fail-closed guard in place for N pinned device(s)."
+- Do: on the router:
+
+```bash
+logger "**TEST GRD-1 STARTED**"
+ip rule show | grep -w "$D"
+```
+
+- Pass if: three lines - `90: from <D> lookup 9 suppress_prefixlength 0`, `91: from <D> blackhole`, and the firmware's own `100: from <D> lookup 9`. One of each, never two.
+
+**GRD-2** A broken tunnel and its rebuild leak nothing
+
+- Do: on DESKTOP, start `ping -t 1.1.1.1` and leave it running.
+- Do: on the router, then wait 30 seconds:
+
+```bash
+logger "**TEST GRD-2 STARTED**"
+wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
+sleep 10
+/jffs/cfg-pia-wg/watchdog_wgc1.sh
+```
+
+- See: the ping goes from wgc1's usual time to unreachable or timed out, then back to wgc1's usual time.
+- Pass if: not one reply in between.
+- Do: on the router:
+
+```bash
+logger "**TEST GRD-2 ENDED**"
+ip rule show | grep -w "$D"
+tail -3 /tmp/watchdog_wgc1.log
+```
+
+- Pass if: the 90 and 91 lines are still there, and the log ends `Reconfig SUCCESS`. If it ends "never answered", the router skipped the restart (ID-214): wait five minutes and run the watchdog line again.
+
+**GRD-3** DISABLE warns, names DESKTOP, and blocks it
+
+- Do: MANAGE, wgc1, DISABLE.
+- See: the confirmation names DESKTOP, in amber: no internet until wgc1 is enabled again or DESKTOP is moved.
+- Do: DISABLE. Watch the ping for 30 seconds.
+- Pass if: nothing but unreachable or timed out.
+- Do: MANAGE, wgc1, ENABLE.
+- Pass if: the ping comes back at wgc1's usual time. Stop it with Ctrl+C.
+
+**GRD-4** The guard comes back after a reboot
+
+- Do: note the time, then SETTINGS, REBOOT ROUTER, REBOOT. Reconnect SSH when it is back, and set `D` again.
+- Do: on the router:
+
+```bash
+logger "**TEST GRD-4 STARTED**"
+ip rule show | grep -w "$D"
+logread | grep "Fail-closed guard on for $D" | tail -1
+```
+
+- Pass if: the 90 and 91 lines are back.
+- Write down: the time on the `Fail-closed guard on` line, against the time you rebooted. That gap is the boot window the guard does not cover yet (ID-213).
+
+**GRD-5** A change made in the web interface is followed
+
+- Do: in the router's web interface, VPN Fusion, move DESKTOP from wgc1 to wgc5, and apply.
+- Do: on the router:
+
+```bash
+logger "**TEST GRD-5 STARTED**"
+/jffs/cfg-pia-wg/watchdog_wgc1.sh
+ip rule show | grep -w "$D"
+```
+
+- Pass if: the 90 line now reads `lookup 5`, and there is still exactly one 91 line.
+- Do: DEVICE ASSIGNMENT, DESKTOP back to wgc1, APPLY.
 
 ---
 
@@ -1256,7 +1353,8 @@ ls -l /opt/etc/init.d/S50downloadmaster /opt/etc/init.d/S50asuslighttpd   # rest
 cru l                                    # no watchdog entries
 nvram show | grep cfg_pia_wg             # nothing
 nvram show | grep -E 'wgc[1-9]_wd_'      # nothing
-ls /jffs/cfg-pia-wg                      # gone
+ls /jffs/cfg-pia-wg                      # gone, guard.sh with it
+ip rule show | grep -E '^9[01]:'         # nothing: the guard's rules went first
 wg show interfaces                       # UNCHANGED: the tunnels are not the app's to remove
 nvram get vpnc_max_conn                  # back to 2, if the app raised it (SET-5); untouched if you set it yourself
 ```
