@@ -2,7 +2,6 @@
 .github/pin-cache.json
 
 # Miscellaneous
-0*
 *.class
 *.log
 *.pyc
