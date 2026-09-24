@@ -369,6 +369,8 @@ class StockRouterModel {
             'wgc${p.slot} is switched on but not running'
           else if (!p.active && tunnels[p.slot] != Tunnel.down)
             'wgc${p.slot} is switched off but running',
+        for (final e in tunnels.entries)
+          if (e.value != Tunnel.down && !profiles.any((p) => p.slot == e.key)) 'wgc${e.key} is running with no profile',
       ];
 
   String describe() => 'rules:\n${rules.join('\n')}\ntunnels: $tunnels\n'

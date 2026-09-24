@@ -365,6 +365,15 @@ void main() {
         expect(c.ran('nvram set wgc1_enable=0'), isTrue, reason: 'the slot must not be left half-up');
       });
 
+      // ID-174: the revert's own stop can fail, and the message must not claim it worked.
+      test('a revert that leaves the tunnel up says so', () async {
+        final c = router(handshake: '0'); // the interface never goes down in this fake
+        await expectLater(
+          svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
+          throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('its tunnel is still up on the router'))),
+        );
+      });
+
       test('a fresh handshake is accepted', () async {
         final c = router(handshake: '${kFakeNow - 5}');
         await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
@@ -472,8 +481,63 @@ void main() {
     test('a failed enable reverts and waits too', () async {
       // Interface never comes up -> _revertEnable, whose stop must also settle.
       final c = RecordingSSHClient(responder: (_) => '');
-      await expectLater(svc(c).enableSlot(2, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
+      await expectLater(
+        svc(c).enableSlot(2, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
+        throwsA(isA<Exception>().having((e) => e.toString(), 'message', isNot(contains('still up')))),
+      );
       expect(c.ran('nvram set wgc2_enable=0'), isTrue);
+    });
+  });
+
+  // ID-203: EDIT on a running slot restarts it, and checks it as ENABLE does.
+  group('restartSlot', () {
+    /// A stock router with wgc1 in clientlist row 0. The peer and handshake are read per call, so a
+    /// test can have the first restart skipped.
+    RecordingSSHClient router({List<String> peers = const ['NEWKEY'], String handshake = '${kFakeNow + 3}'}) {
+      var restarts = 0;
+      return RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'nvram get vpnc_clientlist') return 'pia-nz>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg';
+        if (cmd == 'nvram get wgc1_ppub') return 'NEWKEY';
+        if (cmd == 'service restart_vpnc') restarts++;
+        if (cmd.contains('ip -o link show up')) return '3: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP>';
+        if (cmd.startsWith('wg show wgc1 peers')) return restarts == 0 ? 'OLDKEY' : peers[(restarts - 1).clamp(0, peers.length - 1)];
+        if (cmd.contains('latest-handshakes')) return handshake;
+        if (cmd.contains('date +%s')) return '$kFakeNow';
+        return '';
+      });
+    }
+
+    setUp(useStock);
+
+    test('restarts through VPN Fusion and passes on a fresh handshake from the new peer', () async {
+      final c = router();
+      await svc(c).restartSlot(1);
+      expect(c.ran('nvram set vpnc_unit=0'), isTrue);
+      expect(c.commands.where((cmd) => cmd == 'service restart_vpnc'), hasLength(1));
+      expect(c.ran('nvram set wgc1_enable=0'), isFalse, reason: 'nothing is reverted');
+    });
+
+    test('a restart the router skipped is sent once more (ID-214)', () async {
+      final c = router(peers: ['OLDKEY', 'NEWKEY']);
+      await svc(c).restartSlot(1);
+      expect(c.commands.where((cmd) => cmd == 'service restart_vpnc'), hasLength(2));
+    });
+
+    test('skipped twice, it says the old settings are still running', () async {
+      final c = router(peers: ['OLDKEY']);
+      await expectLater(
+        svc(c).restartSlot(1),
+        throwsA(isA<Exception>().having((e) => '$e', 'message', contains('still running the old ones'))),
+      );
+    });
+
+    test('a handshake from before the restart does not count', () async {
+      final c = router(handshake: '${kFakeNow - 60}');
+      await expectLater(
+        svc(c).restartSlot(1),
+        throwsA(isA<Exception>().having((e) => '$e', 'message', contains('its server has not answered'))),
+      );
+      expect(c.ran('nvram set wgc1_enable=0'), isFalse, reason: 'the user chose these settings; they stay');
     });
   });
 
@@ -627,7 +691,8 @@ void main() {
       );
       await svc(c).deleteSlot(1);
       expect(c.ran('service restart_default_wan'), isTrue);
-      expect(c.ran('service restart_vpnc'), isTrue);
+      // ID-209: restart_vpnc would start the profile vpnc_unit names - the one being deleted.
+      expect(c.commands.contains('service restart_vpnc'), isFalse);
     });
 
     test('a default connection naming ANOTHER profile is left alone', () async {

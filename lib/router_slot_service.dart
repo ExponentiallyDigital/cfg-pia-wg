@@ -560,7 +560,7 @@ class RouterSlotService {
     final updated = serialiseDevicePolicyList(releaseDevicesFrom(policies, vpncIndex));
     await _run('nvram set vpnc_dev_policy_list=${shellSingleQuote(updated)}');
     await _run('nvram commit');
-    await _run('service restart_vpnc_dev_policy', allowFailure: true);
+    await _queuedService('restart_vpnc_dev_policy');
 
     // Stock leaves the old rule behind on a reassignment and does the same here, so the device
     // would keep using the deleted profile's routing table until something else cleared it.
@@ -610,12 +610,15 @@ class RouterSlotService {
 
     onLog?.call('This VPN was the default connection; setting the default back to Internet...');
     await _logRouter('default WAN connection reset to Internet - wgc$slot was deleted');
-    await _run('service restart_default_wan');
+    await _queuedService('restart_default_wan');
     for (var i = 0; i < verifyMaxAttempts; i++) {
       if ((await _read('nvram get vpnc_default_wan')).trim() == '0') break;
       await Future<void>.delayed(verifyPollInterval);
     }
-    await _run('service restart_vpnc');
+    // No `restart_vpnc` after it. Internet is not a profile, and the service starts whatever
+    // `vpnc_unit` names - which here is the row of the slot being deleted, set by the stop above.
+    // It restarted the tunnel this DELETE had just stopped, and left it running with no profile
+    // once the row went (ID-209; the same fault as ID-172, found by the ID-206 model).
     onLog?.call('Default connection is now Internet.', isSuccess: true);
   }
 
@@ -668,6 +671,15 @@ class RouterSlotService {
         pollInterval: verifyPollInterval,
         maxPolls: verifyMaxAttempts,
       );
+
+  /// A service call that names no profile, through the router's queue as [runVpncService]'s are:
+  /// a ghost marker cleared first, and the call finished before the next (ID-214).
+  Future<void> _queuedService(String name) async {
+    final queue = serviceQueue;
+    await queue.clearIfStale();
+    await _run('service $name');
+    await queue.awaitIdle();
+  }
 
   Future<bool> runVpncService(int slot, String serviceCmd, {bool required = false}) async {
     final unit = vpncUnitForSlot(parseVpncClientlist(await _read('nvram get vpnc_clientlist')), slot);
@@ -970,8 +982,9 @@ class RouterSlotService {
       onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: $label not yet active');
     }
     if (!up) {
-      await _revertEnable(slot);
-      throw Exception('$label did not come up - the configuration may have expired. Recreate it with CREATE, then ENABLE.');
+      final stopped = await _revertEnable(slot);
+      throw Exception('$label did not come up - the configuration may have expired. Recreate it with CREATE, then ENABLE.'
+          '${_revertNote(label, stopped)}');
     }
 
     // The interface existing proves nothing: a PIA registration that has expired still produces a
@@ -992,9 +1005,10 @@ class RouterSlotService {
     }
     if (!handshake) {
       await _logRouter('$label came up but the peer never answered (no handshake)');
-      await _revertEnable(slot);
+      final stopped = await _revertEnable(slot);
       throw Exception('$label came up but the PIA server never answered it (no WireGuard handshake). '
-          'The configuration has most likely expired - DELETE the slot and CREATE it again.');
+          'The configuration has most likely expired - DELETE the slot and CREATE it again.'
+          '${_revertNote(label, stopped)}');
     }
 
     final primaryOk = await pingViaSlot(primaryIp, slot);
@@ -1006,10 +1020,10 @@ class RouterSlotService {
     // over the WAN, so it reported OK for a tunnel the peer had never answered. There the
     // handshake above is the gate and this is only logged.
     if (!isStockFirmware && (!primaryOk || !secondaryOk)) {
-      await _revertEnable(slot);
+      final stopped = await _revertEnable(slot);
       throw Exception('Connectivity check failed via $label '
           '(primary $primaryIp ${primaryOk ? 'OK' : 'FAIL'}, secondary $secondaryIp ${secondaryOk ? 'OK' : 'FAIL'}). '
-          'Slot left disabled.');
+          'Slot left disabled.${_revertNote(label, stopped)}');
     }
     if (isStockFirmware && !primaryOk && !secondaryOk) {
       onLog?.call('Neither ping target answered via $label, but the tunnel has a handshake.', isError: true);
@@ -1018,7 +1032,15 @@ class RouterSlotService {
     onLog?.call('$label enabled and verified.', isSuccess: true);
   }
 
-  Future<void> _revertEnable(int slot) async {
+  /// What to add to a failed ENABLE's message when the revert could not stop the tunnel: without
+  /// it the user is told the slot was left disabled while it is still running (ID-174).
+  static String _revertNote(String label, bool stopped) => stopped
+      ? ''
+      : ' $label was switched off again, but its tunnel is still up on the router. Reboot the router if it stays '
+          'that way.';
+
+  /// Returns false when the interface was still up after the stop, as [disableSlot] does.
+  Future<bool> _revertEnable(int slot) async {
     onLog?.call('Reverting ${await _label(slot)} to disabled...', isError: true);
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
@@ -1030,7 +1052,74 @@ class RouterSlotService {
       await _run('service "stop_wgc $slot"; service start_vpnrouting0');
     }
     // Same reason as disableSlot: the caller refreshes as soon as this returns.
-    await _awaitInterfaceDown(slot);
+    return _awaitInterfaceDown(slot);
+  }
+
+  // ── Restart ─────────────────────────────────────────────────────────────────────────
+  /// Restarts a running slot so the values EDIT has just saved take effect (ID-203), and checks it
+  /// the way ENABLE does: the interface back up, talking to the peer now in NVRAM, and a handshake
+  /// from that peer since the restart.
+  ///
+  /// The peer check is ID-214's: a restart the router throws away leaves the old peer running, and
+  /// the old peer's handshakes would pass everything else. One retry, then it says so.
+  ///
+  /// Throws with a message for the user when a check fails. Nothing is reverted: the new values
+  /// stay saved and the slot stays switched on, because the user chose them, and the message says
+  /// what that means for anything pinned to it.
+  Future<void> restartSlot(int slot) async {
+    final label = await _label(slot);
+    onLog?.call('Restarting $label with the new settings...');
+    await _logRouter('Restarting $label with the new settings');
+    final start = int.tryParse((await _read('date +%s')).trim()) ?? 0;
+    final peer = (await _read('nvram get wgc${slot}_ppub')).trim();
+
+    Future<bool> restartTook() async {
+      for (var retry = 0; retry < verifyMaxAttempts; retry++) {
+        await Future.delayed(verifyPollInterval);
+        if (!(await _read(kUpInterfacesCommand)).contains('wgc$slot')) continue;
+        if (peer.isEmpty || (await _read('wg show wgc$slot peers 2>/dev/null')).split(RegExp(r'\s+')).contains(peer)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    Future<void> restart() async {
+      if (isStockFirmware) {
+        await runVpncService(slot, 'restart_vpnc', required: true);
+      } else {
+        await _run('service "stop_wgc $slot"; sleep 2; service "start_wgc $slot"; service restart_vpnrouting0');
+      }
+    }
+
+    await restart();
+    if (!await restartTook()) {
+      onLog?.call('  The router did not restart $label; trying once more.', isWarning: true);
+      await _logRouter('$label restart was skipped; trying once more');
+      await restart();
+      if (!await restartTook()) {
+        throw Exception('The new settings for $label are saved, but the router did not restart it, so it is '
+            'still running the old ones. Try SAVE again in a minute, or DISABLE and ENABLE it.');
+      }
+    }
+
+    onLog?.call('Waiting for a WireGuard handshake on $label...');
+    for (var retry = 0; retry < verifyMaxAttempts; retry++) {
+      final age = await handshakeAge(slot);
+      final now = int.tryParse((await _read('date +%s')).trim()) ?? 0;
+      if (age != null && now - age >= start) {
+        onLog?.call('  Handshake ${age}s ago.', isSuccess: true);
+        await _logRouter('Restarted $label with the new settings; handshake ${age}s ago');
+        onLog?.call('$label restarted with the new settings.', isSuccess: true);
+        return;
+      }
+      onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: no handshake yet');
+      await Future.delayed(verifyPollInterval);
+    }
+    await _logRouter('$label restarted with the new settings but the peer never answered (no handshake)');
+    throw Exception('$label restarted with the new settings, but its server has not answered (no WireGuard '
+        'handshake). Anything pinned to it has no internet until it does. Check what you changed in EDIT, or '
+        'DISABLE it and assign its devices elsewhere.');
   }
 
   // ── Disable ─────────────────────────────────────────────────────────────────────────

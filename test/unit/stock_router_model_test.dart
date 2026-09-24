@@ -39,6 +39,7 @@ class _App {
   }
 
   Future<void> disable(int slot) => _manage.disableSlot(slot);
+  Future<void> delete(int slot) => _manage.deleteSlot(slot);
   Future<void> enable(int slot) => _manage.enableSlot(slot, primaryIp: '192.0.2.1', secondaryIp: '192.0.2.2');
 }
 
@@ -180,6 +181,28 @@ void main() {
       expect(router.actualExit(_a), 'wgc1');
       expect(router.actualExit(_b), kWan);
       expect(router.actualExit(_c), 'wgc5');
+    });
+  });
+
+  // ID-209: DELETE moves the slot's pinned devices to Internet, as the web interface does, and hands
+  // the default connection back to Internet if it was this slot.
+  group('DELETE', () {
+    test('a pinned device goes to Internet, and the slot stays stopped', () async {
+      await app.assign(_a, 5);
+      await app.delete(5);
+      expectSound();
+      expect(router.actualExit(_a), kWan);
+      expect(router.tunnels[5], Tunnel.down);
+      expect(router.tunnels[1], Tunnel.up);
+    });
+
+    test('deleting the default connection hands it back to Internet, and starts nothing', () async {
+      await app.setDefault(5);
+      await app.delete(5);
+      expectSound();
+      expect(router.nvram['vpnc_default_wan'], '0');
+      expect(router.tunnels[5], Tunnel.down, reason: 'restart_vpnc would start whatever vpnc_unit names');
+      expect(router.actualExit(_b), kWan);
     });
   });
 

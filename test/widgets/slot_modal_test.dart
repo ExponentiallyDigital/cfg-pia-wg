@@ -687,6 +687,63 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(ssh.ran("nvram set wgc1_addr='10.0.0.2/32'"), isTrue);
+      expect(find.textContaining('Saving restarts'), findsNothing, reason: 'a stopped slot has nothing to restart');
+      expect(ssh.ran('service "stop_wgc 1"'), isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-203: MAN-11 on 2026-09-19 changed an endpoint on a running slot and nothing happened until
+    // DISABLE and ENABLE. SAVE now restarts it, and says so first.
+    Future<void> saveEditOnRunningSlot(WidgetTester tester, RecordingSSHClient ssh, SessionController c) async {
+      await tester.pumpWidget(_host(
+          ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}, active: {1}), c));
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_edit')));
+      await tester.tap(find.byKey(const Key('slot_edit')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('slot_addr')), '10.0.0.2/32');
+      await tester.enterText(find.byKey(const Key('slot_desc')), 'aus_melbourne');
+      await tester.enterText(find.byKey(const Key('slot_ep_addr')), '203.0.113.5');
+      await tester.enterText(find.byKey(const Key('slot_ppub')), 'pub==');
+      await tester.enterText(find.byKey(const Key('slot_priv')), 'priv==');
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_params_save')));
+      await tester.tap(find.byKey(const Key('slot_params_save')));
+      // Not pumpAndSettle: SAVE's spinner turns for as long as the restart question is open.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    testWidgets('SAVE on a running slot says it restarts it, then does', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('ip -o link show up') ? 'wgc1' : '');
+      await saveEditOnRunningSlot(tester, ssh, c);
+
+      expect(find.text('Saving restarts wgc1. Anything using it drops for a few seconds.'), findsOneWidget);
+      expect(ssh.ran("nvram set wgc1_addr='10.0.0.2/32'"), isFalse, reason: 'nothing is written before SAVE is confirmed');
+      await tester.tap(_inDialog('SAVE'));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran("nvram set wgc1_addr='10.0.0.2/32'"), isTrue);
+      expect(ssh.ran('service "stop_wgc 1"'), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('CANCEL at the restart question saves nothing and keeps the edits open', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('ip -o link show up') ? 'wgc1' : '');
+      await saveEditOnRunningSlot(tester, ssh, c);
+
+      await tester.tap(_inDialog('CANCEL').last); // the question's, on top of the editor's
+      await tester.pumpAndSettle();
+      expect(ssh.ran("nvram set wgc1_addr='10.0.0.2/32'"), isFalse);
+      expect(find.text('EDIT wgc1:aus_melbourne'), findsOneWidget, reason: 'the edits are still there to save');
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
