@@ -1608,8 +1608,10 @@ void main() {
 
   // Slots run concurrently now. Stock caps how many via vpnc_max_conn; Merlin has no cap.
   group('concurrency gate', () {
-    RecordingSSHClient enableReady() => RecordingSSHClient(
+    /// [maxConn] is what the router says NOW, which is what the gate reads (ID-147).
+    RecordingSSHClient enableReady({String maxConn = ''}) => RecordingSSHClient(
           responder: (cmd) {
+            if (cmd == 'nvram get vpnc_max_conn') return maxConn;
             if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
             if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
             if (cmd.contains('ip -o link show up')) return 'wgc3';
@@ -1673,7 +1675,7 @@ void main() {
 
     testWidgets('the cap follows the router, not a hardcoded 2', (tester) async {
       final c = _controller();
-      final ssh = enableReady();
+      final ssh = enableReady(maxConn: '1');
       await tester.pumpWidget(
         _host(ssh, SlotModalMode.manage,
             _slots({1: _slot(1, desc: 'a', enabled: true), 3: _slot(3, desc: 'b')}, active: {1}, maxActive: 1), c),
@@ -1683,6 +1685,25 @@ void main() {
 
       expect(find.textContaining('at most 1 WireGuard VPNs'), findsOneWidget);
       expect(ssh.ran('nvram set wgc3_enable=1'), isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-147: raised in SETTINGS, the limit here stayed at its old value until the screen was
+    // left and entered again.
+    testWidgets('the cap is read when it is checked, not when the list was loaded', (tester) async {
+      final c = _controller();
+      final ssh = enableReady(maxConn: '3');
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.manage,
+            _slots({1: _slot(1, desc: 'a', enabled: true), 3: _slot(3, desc: 'b')}, active: {1}, maxActive: 1), c),
+      );
+      await _open(tester);
+      await tapEnable(tester, 3);
+
+      expect(find.text('VPN limit reached'), findsNothing);
+      expect(ssh.ran('nvram set wgc3_enable=1'), isTrue);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

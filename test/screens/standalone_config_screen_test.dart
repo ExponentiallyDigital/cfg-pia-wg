@@ -62,7 +62,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('dns_first_server_note')), findsNothing);
-    expect(find.textContaining('use only the first server'), findsNothing);
+    expect(find.textContaining('first server only'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();

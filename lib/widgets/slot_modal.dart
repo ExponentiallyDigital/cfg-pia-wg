@@ -29,6 +29,7 @@ import '../app_colors.dart';
 import '../device_assignment.dart' show joinNames;
 import '../firmware.dart';
 import '../pia_service.dart';
+import '../router_log_paging.dart' show readsAsError;
 import '../router_slot_service.dart';
 import '../router_watchdog.dart';
 import '../screens/slot_params_editor.dart';
@@ -438,7 +439,16 @@ class _SlotModalState extends State<SlotModal> {
   // Counted from interfaces that are actually up, since that is what the router's cap applies to.
   // Shared by MANAGE ENABLE and by the watchdog paths, which bring a tunnel up as a side effect.
   Future<bool> _withinVpnLimit(int slot) async {
-    final maxActive = _slots.maxActiveSlots;
+    var maxActive = _slots.maxActiveSlots;
+    // Read again now, not taken from when the list was loaded: SETTINGS changes it, and coming back
+    // from there kept the old limit until the screen was left and entered again (ID-147).
+    if (maxActive != null) {
+      try {
+        maxActive = await _slotSvc(await widget.connect()).readMaxActiveVpns();
+      } catch (_) {
+        // keep the value from the last read
+      }
+    }
     final othersUp = _slots.activeSlots.where((i) => i != slot).length;
     if (maxActive == null || othersUp < maxActive) return true;
     await _info(
@@ -984,38 +994,23 @@ class _FormDialog extends StatelessWidget {
   }
 }
 
-/// The colour of one line of the watchdog's own log, or null for the plain text colour (ID-117).
+/// The colour of one line of the watchdog's own log (ID-117, ID-158).
 ///
-/// The log is mostly routine: a handshake age every few minutes, for months. Colour is spent on
-/// the three things someone opens this screen to find - a fault, a rebuild that worked, and the
-/// steps of a rebuild in progress - and everything else is left alone, because a log where most
-/// lines are coloured says nothing.
+/// The same scheme as ROUTER LOG, where these lines also appear: lavender for the watchdog, and red
+/// for a fault by ROUTER LOG's own rule, so a line is red on both screens or on neither. One
+/// addition, teal for a rebuild that worked, because that is what someone opens this screen to find.
 ///
-/// Matched on the wording the script itself writes (the `log "..."` calls in router_watchdog.dart)
-/// rather than on a marker, so a router still running an older script colours correctly too.
-Color? watchdogLogLineColour(String line) {
-  if (_wdErrorPattern.hasMatch(line)) return kError;
+/// It used to have a scheme of its own: amber for the steps of a rebuild, which everywhere else in
+/// this app means a warning, and red for "Not connected yet", which is what a first deploy says
+/// before its tunnel has come up.
+Color watchdogLogLineColour(String line) {
+  if (readsAsError(line)) return kError;
   if (_wdSuccessPattern.hasMatch(line)) return kHighlight;
-  if (_wdDeployPattern.hasMatch(line)) return kWarn;
-  return null;
+  return kWatchdogText;
 }
 
-/// Red. `ERROR:` is what `abort()` writes; the rest is the wording of the checks that fail.
-final RegExp _wdErrorPattern = RegExp(
-  r'\berror\b|\bfailed\b|connectivity lost|not connected yet|no internet|down or absent|never answered',
-  caseSensitive: false,
-);
-
-/// Teal: the tunnel is up and, for the email, the alert got out. Checked BEFORE the deployment
-/// pattern, which would otherwise claim `Alert email sent (SUCCESS)`.
+/// Teal: the tunnel is up and, for the email, the alert got out.
 final RegExp _wdSuccessPattern = RegExp(r'Deploy SUCCESS|Reconfig SUCCESS|Alert email sent \(SUCCESS\)');
-
-/// Amber: a rebuild is under way. These are the steps between "something is wrong" and an outcome.
-final RegExp _wdDeployPattern = RegExp(
-  r'deploying|reconfigur|ca cert|pia token|servers:|latency to|backing off|token fetch|'
-  r'wan has internet|alert email|email diag|standing down',
-  caseSensitive: false,
-);
 
 /// The watchdog log, full screen.
 ///
@@ -1125,7 +1120,7 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
                         for (final (i, line) in text.split('\n').indexed)
                           TextSpan(
                             text: i == 0 ? line : '\n$line',
-                            style: TextStyle(color: watchdogLogLineColour(line) ?? kText),
+                            style: TextStyle(color: watchdogLogLineColour(line)),
                           ),
                       ]),
                       key: const Key('watchdog_log_text'),
