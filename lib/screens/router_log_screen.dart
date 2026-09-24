@@ -88,8 +88,17 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     // Fetch on entry rather than making the user press REFRESH to see anything at all. Prompts for
     // credentials when the session has none, because this screen has no other purpose - unlike
     // ABOUT, where arriving is not a statement of intent to touch the router.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _refresh(prompt: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final hadLogin = _c.canReuseRouterSession;
+      await _refresh(prompt: true);
+      // CANCEL at the first login means "not now", not "show me an empty log": go back to where the
+      // user came from, or HOME (ID-155).
+      if (!hadLogin && mounted && !_c.canReuseRouterSession) {
+        if (!await Navigator.of(context).maybePop() && mounted) {
+          navigateToDestination(context, _c, AppDestination.menu);
+        }
+      }
     });
   }
 
@@ -118,6 +127,7 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
         initialIp: _c.routerIpPrefill,
         initialUser: _c.sshUsername.trim(),
         initialPass: _c.sshPassword,
+        verify: (ip, user, pass) => verifyRouterLogin(_c, ip, user, pass, testClientFactory: widget.testClientFactory),
       ),
     );
     if (entered == null || !mounted) return null;

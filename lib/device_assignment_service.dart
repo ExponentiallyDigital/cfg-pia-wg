@@ -20,7 +20,9 @@
 import 'package:dartssh2/dartssh2.dart';
 
 import 'device_assignment.dart';
+import 'fail_closed_guard.dart';
 import 'router_command.dart';
+import 'router_service_queue.dart';
 import 'router_slot_service.dart';
 import 'router_watchdog.dart' show buildLoggerCommand, shellSingleQuote;
 
@@ -102,9 +104,26 @@ class DeviceAssignmentService {
 
   Future<String> _run(String cmd) async => (await runRouterCommand(client, cmd, onLog: onLog)).stdout;
 
+  /// A `service` call through the router's one-at-a-time queue, the way MANAGE makes them: a ghost
+  /// marker cleared first, so the call is not silently dropped after 15 seconds, and the call
+  /// finished before the next one is made (ID-214).
+  Future<void> _service(String name) async {
+    final queue = RouterServiceQueue(
+      read: _read,
+      run: _run,
+      onLog: onLog,
+      logRouter: (m) async => _read(buildLoggerCommand(m)),
+      pollInterval: pollInterval,
+      maxPolls: maxPolls,
+    );
+    await queue.clearIfStale();
+    await _run('service $name');
+    await queue.awaitIdle();
+  }
+
   // One marker-delimited round trip rather than seven. A phone on wifi pays for every round trip,
   // and none of these reads depends on another.
-  static const String _sep = '@@CFGPIAWG@@';
+  static const String _sep = kSourceSeparator;
 
   Future<AssignmentState> read() async {
     onLog?.call('Reading device list...');
@@ -213,7 +232,7 @@ class DeviceAssignmentService {
     // read disabled and the router's own WebUI still said Disconnected (ID-172).
     if (unit >= 0) {
       await _run('nvram set vpnc_unit=$unit');
-      await _run('service stop_vpnc');
+      await _service('stop_vpnc');
       final stopping = base.profiles[unit].slot;
       if (stopping != null) await _awaitInterface('wgc$stopping', up: false);
     }
@@ -221,7 +240,7 @@ class DeviceAssignmentService {
     // Waiting for this one is not optional. `restart_default_wan` resets the key to 0 as it runs,
     // so writing the values before it has finished means writing them into the path of the thing
     // that clears them.
-    await _run('service restart_default_wan');
+    await _service('restart_default_wan');
     await _awaitKeyCleared();
 
     if (index != 0 && slot != null) {
@@ -233,8 +252,22 @@ class DeviceAssignmentService {
     // Only a tunnel needs starting, and `restart_vpnc` starts whichever profile `vpnc_unit` names.
     // Internet has none, so the call is skipped rather than left to act on the pointer.
     if (slot != null) {
-      await _run('service restart_vpnc');
+      await _service('restart_vpnc');
       await _awaitInterface('wgc$slot', up: true);
+    }
+    // The tunnel that WAS the default has to be running again at the end, if it is still switched
+    // on. Switching to Internet stopped it above and nothing started it: its watchdog found it down
+    // two minutes later and rebuilt it, and without one it stayed down with its pinned devices
+    // offline (ID-220). Switching to another tunnel, `restart_default_wan` stops the default's own
+    // tunnel, so there it is checked rather than assumed - that case has not been measured.
+    // A switched-off one stays off (ID-172).
+    if (outgoing >= 0 && outgoing != row && base.profiles[outgoing].active && base.profiles[outgoing].slot != null) {
+      final restarting = base.profiles[outgoing].slot!;
+      if (row < 0 || !(await _read(kUpInterfacesCommand)).contains('wgc$restarting')) {
+        await _run('nvram set vpnc_unit=$outgoing');
+        await _service('restart_vpnc');
+        await _awaitInterface('wgc$restarting', up: true);
+      }
     }
     onLog?.call('Default connection set$change.', isSuccess: true);
   }
@@ -284,7 +317,9 @@ class DeviceAssignmentService {
       final deletions = <String>[];
       expected.forEach((ip, index) {
         for (final table in staleRuleTables(rules, ip: ip, keepIndex: index)) {
-          deletions.add('ip rule del from $ip lookup $table');
+          // The priority is named because the guard holds a rule of the same shape at 90, and an
+          // unqualified delete removes whichever matching rule comes first - the guard's.
+          deletions.add('ip rule del from $ip lookup $table priority $kFirmwareRulePriority');
         }
       });
       if (deletions.isEmpty) return;
@@ -362,8 +397,8 @@ class DeviceAssignmentService {
         // that explains a device's traffic weeks later has to be somewhere that survives.
         await _read(buildLoggerCommand('$d reassigned'));
       }
-      await _run('service restart_dnsmasq');
-      await _run('service restart_vpnc_dev_policy');
+      await _service('restart_dnsmasq');
+      await _service('restart_vpnc_dev_policy');
       // Sweep against the WHOLE policy list, not just what moved: the service re-installs a rule
       // for every record it holds, so anything left out of the sweep gains a duplicate per apply
       // (ID-183).
@@ -372,6 +407,10 @@ class DeviceAssignmentService {
     if (newDefaultIndex != null) {
       await _setDefaultConnection(base, newDefaultIndex, from: defaultFrom, to: defaultTo);
     }
+    // After everything else, so it sees the final list. A device just pinned is guarded from here
+    // on; one just unpinned loses its guard, or it would be blocked from the connection it was
+    // moved to (ID-213).
+    await FailClosedGuard(read: _read, run: _run, onLog: onLog).ensure();
     onLog?.call('Device assignments applied.', isSuccess: true);
   }
 }

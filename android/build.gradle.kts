@@ -52,6 +52,14 @@ subprojects {
     configurations.matching { it.name.startsWith("_internal-unified-test-platform") }.configureEach {
         resolutionStrategy.deactivateDependencyLocking()
     }
+    // ID-217: a plugin module that still compiles its Java at source and target 8 made javac print three "value 8 is
+    // obsolete" warnings on every build. The app itself is on 17 (app/build.gradle.kts). Silenced for the plugins
+    // only, with the switch javac's own warning names, so the app's compile keeps every warning it has.
+    if (project.name != "app") {
+        tasks.withType<JavaCompile>().configureEach {
+            options.compilerArgs.add("-Xlint:-options")
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {

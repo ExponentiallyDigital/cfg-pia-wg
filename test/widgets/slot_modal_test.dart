@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
+import 'package:cfg_pia_wg/device_assignment.dart' show kDeviceSourcesCommand, kSourceSeparator;
 import 'package:cfg_pia_wg/entitlement.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
@@ -686,6 +687,63 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(ssh.ran("nvram set wgc1_addr='10.0.0.2/32'"), isTrue);
+      expect(find.textContaining('Saving restarts'), findsNothing, reason: 'a stopped slot has nothing to restart');
+      expect(ssh.ran('service "stop_wgc 1"'), isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-203: MAN-11 on 2026-09-19 changed an endpoint on a running slot and nothing happened until
+    // DISABLE and ENABLE. SAVE now restarts it, and says so first.
+    Future<void> saveEditOnRunningSlot(WidgetTester tester, RecordingSSHClient ssh, SessionController c) async {
+      await tester.pumpWidget(_host(
+          ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}, active: {1}), c));
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_edit')));
+      await tester.tap(find.byKey(const Key('slot_edit')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('slot_addr')), '10.0.0.2/32');
+      await tester.enterText(find.byKey(const Key('slot_desc')), 'aus_melbourne');
+      await tester.enterText(find.byKey(const Key('slot_ep_addr')), '203.0.113.5');
+      await tester.enterText(find.byKey(const Key('slot_ppub')), 'pub==');
+      await tester.enterText(find.byKey(const Key('slot_priv')), 'priv==');
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_params_save')));
+      await tester.tap(find.byKey(const Key('slot_params_save')));
+      // Not pumpAndSettle: SAVE's spinner turns for as long as the restart question is open.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    testWidgets('SAVE on a running slot says it restarts it, then does', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('ip -o link show up') ? 'wgc1' : '');
+      await saveEditOnRunningSlot(tester, ssh, c);
+
+      expect(find.text('Saving restarts wgc1. Anything using it drops for a few seconds.'), findsOneWidget);
+      expect(ssh.ran("nvram set wgc1_addr='10.0.0.2/32'"), isFalse, reason: 'nothing is written before SAVE is confirmed');
+      await tester.tap(_inDialog('SAVE'));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran("nvram set wgc1_addr='10.0.0.2/32'"), isTrue);
+      expect(ssh.ran('service "stop_wgc 1"'), isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('CANCEL at the restart question saves nothing and keeps the edits open', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('ip -o link show up') ? 'wgc1' : '');
+      await saveEditOnRunningSlot(tester, ssh, c);
+
+      await tester.tap(_inDialog('CANCEL').last); // the question's, on top of the editor's
+      await tester.pumpAndSettle();
+      expect(ssh.ran("nvram set wgc1_addr='10.0.0.2/32'"), isFalse);
+      expect(find.text('EDIT wgc1:aus_melbourne'), findsOneWidget, reason: 'the edits are still there to save');
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -1550,8 +1608,10 @@ void main() {
 
   // Slots run concurrently now. Stock caps how many via vpnc_max_conn; Merlin has no cap.
   group('concurrency gate', () {
-    RecordingSSHClient enableReady() => RecordingSSHClient(
+    /// [maxConn] is what the router says NOW, which is what the gate reads (ID-147).
+    RecordingSSHClient enableReady({String maxConn = ''}) => RecordingSSHClient(
           responder: (cmd) {
+            if (cmd == 'nvram get vpnc_max_conn') return maxConn;
             if (cmd.contains('wd_primary_ip')) return '8.8.8.8';
             if (cmd.contains('wd_secondary_ip')) return '1.1.1.1';
             if (cmd.contains('ip -o link show up')) return 'wgc3';
@@ -1615,7 +1675,7 @@ void main() {
 
     testWidgets('the cap follows the router, not a hardcoded 2', (tester) async {
       final c = _controller();
-      final ssh = enableReady();
+      final ssh = enableReady(maxConn: '1');
       await tester.pumpWidget(
         _host(ssh, SlotModalMode.manage,
             _slots({1: _slot(1, desc: 'a', enabled: true), 3: _slot(3, desc: 'b')}, active: {1}, maxActive: 1), c),
@@ -1625,6 +1685,25 @@ void main() {
 
       expect(find.textContaining('at most 1 WireGuard VPNs'), findsOneWidget);
       expect(ssh.ran('nvram set wgc3_enable=1'), isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-147: raised in SETTINGS, the limit here stayed at its old value until the screen was
+    // left and entered again.
+    testWidgets('the cap is read when it is checked, not when the list was loaded', (tester) async {
+      final c = _controller();
+      final ssh = enableReady(maxConn: '3');
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.manage,
+            _slots({1: _slot(1, desc: 'a', enabled: true), 3: _slot(3, desc: 'b')}, active: {1}, maxActive: 1), c),
+      );
+      await _open(tester);
+      await tapEnable(tester, 3);
+
+      expect(find.text('VPN limit reached'), findsNothing);
+      expect(ssh.ran('nvram set wgc3_enable=1'), isTrue);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -1890,6 +1969,54 @@ void main() {
       for (final key in ['slot_create', 'slot_enable', 'slot_edit', 'slot_disable', 'slot_delete']) {
         expect(_btn(tester, key).onPressed, isNull, reason: key);
       }
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
+  // ID-213: a DISABLE leaves the devices pinned to the slot with no internet, and says so first.
+  group('DISABLE names the devices it will cut off', () {
+    test('one device, several, none, and a list that could not be read', () {
+      expect(pinnedDeviceWarning(['Study PC']),
+          'Study PC is pinned to this VPN, and will have no internet until you ENABLE this VPN again or move it '
+          'to another VPN in DEVICE ASSIGNMENT.');
+      expect(pinnedDeviceWarning(['Study PC', 'TV-Lounge']), startsWith('Study PC and TV-Lounge are pinned to this VPN'));
+      expect(pinnedDeviceWarning(['Study PC', 'TV-Lounge']), contains('or move them to another VPN'));
+      expect(pinnedDeviceWarning(const []), isNull);
+      expect(pinnedDeviceWarning(null), startsWith('Any device pinned to this VPN will have no internet'));
+    });
+
+    testWidgets('on stock the confirmation names them, before anything is sent', (tester) async {
+      useStock();
+      addTearDown(useMerlin);
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd == kDeviceSourcesCommand) {
+          return [
+            '',
+            '<AA:BB:CC:DD:EE:01>192.168.1.30>>',
+            '<Study PC>AA:BB:CC:DD:EE:01>0>0>>',
+            '',
+            '{"AA:BB:CC:DD:EE:01":{"name":"","online":1}}',
+            '',
+            '',
+          ].join('\n$kSourceSeparator\n');
+        }
+        if (cmd == 'nvram get vpnc_clientlist') return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        if (cmd == 'nvram get vpnc_dev_policy_list') return '1>192.168.1.30>>9>';
+        return '';
+      });
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}), c));
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<Text>(find.byKey(const Key('confirm_warning'))).data, startsWith('Study PC is pinned to this VPN'));
+      expect(ssh.ran('nvram set wgc1_enable=0'), isFalse);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();

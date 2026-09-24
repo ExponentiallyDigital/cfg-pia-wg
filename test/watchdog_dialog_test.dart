@@ -155,6 +155,49 @@ void main() {
     expect(find.text('VIEW LOG'), findsNothing);
   });
 
+  // ID-144: the note blamed "DNS on this router" when the address was this tunnel's own DNS.
+  testWidgets("the DoH note names the tunnel's own DNS as the clash, and says nothing without one", (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c));
+    await tester.pumpAndSettle();
+    String note() => tester.widget<Text>(find.byKey(const Key('wd_doh_note'))).data!;
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'DNS servers'), '9.9.9.9, 149.112.112.112');
+    await tester.enterText(find.byKey(const Key('wd_doh_ip')), '9.9.9.9');
+    await tester.pump();
+    expect(note(), startsWith("This address is also this tunnel's DNS server"));
+    expect(note(), isNot(contains('on this router')));
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'DNS servers'), '8.8.8.8');
+    await tester.pump();
+    expect(note(), startsWith('The watchdog resolves PIA'));
+  });
+
+  // ID-170: "Something else" left the last resolver's URL and address in the fields.
+  testWidgets('choosing Something else for the DoH resolver empties both fields', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('wd_doh_url')), 'https://dns.quad9.net/dns-query');
+    await tester.enterText(find.byKey(const Key('wd_doh_ip')), '9.9.9.9');
+    await tester.pump();
+
+    await tester.ensureVisible(find.byKey(const Key('wd_doh_choice')));
+    await tester.tap(find.byKey(const Key('wd_doh_choice')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Something else').last);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<EditableText>(find.descendant(of: find.byKey(const Key('wd_doh_url')), matching: find.byType(EditableText))).controller.text,
+        isEmpty);
+    expect(tester.widget<EditableText>(find.descendant(of: find.byKey(const Key('wd_doh_ip')), matching: find.byType(EditableText))).controller.text,
+        isEmpty);
+  });
+
   testWidgets('PIA fields pre-fill from the session login', (tester) async {
     final c = _controller();
     addTearDown(c.dispose);
@@ -462,6 +505,27 @@ void main() {
 
     expect(find.textContaining('"nowhere_at_all" is not a PIA WireGuard region'), findsOneWidget);
     expect(ssh.ran('nvram set wgc1_desc'), isFalse);
+  });
+
+  // ID-202: a made-up region was reported only once every field below it was right.
+  testWidgets('a bad region and a bad field below it are reported together, region first', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c, slotIsEmpty: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.descendant(of: find.byType(RegionRow), matching: find.byType(TextFormField)), 'nowhere_at_all');
+    await tester.enterText(find.byKey(const Key('wd_primary')), '');
+    await tester.ensureVisible(find.byKey(const Key('wd_save')));
+    await tester.tap(find.byKey(const Key('wd_save')));
+    await tester.pumpAndSettle();
+
+    final region = find.textContaining('"nowhere_at_all" is not a PIA WireGuard region');
+    final ip = find.textContaining('Primary ping IP is required');
+    expect(region, findsOneWidget);
+    expect(ip, findsOneWidget);
+    expect(tester.getTopLeft(region).dy, lessThan(tester.getTopLeft(ip).dy), reason: 'in the order of the form');
   });
 
   testWidgets('an empty region asks for one', (tester) async {

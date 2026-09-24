@@ -46,7 +46,11 @@ class DeviceAssignmentScreen extends StatefulWidget {
     this.testClientFactory,
     this.serviceFactory,
     this.slotServiceFactory,
+    this.quietCheckInterval = const Duration(seconds: 15),
   });
+
+  /// How often, while the screen is on top, it checks quietly which tunnels are running (ID-218).
+  final Duration quietCheckInterval;
 
   final Future<SSHClient> Function(String ip, String user, String pass)? testClientFactory;
   final DeviceAssignmentService Function(SSHClient)? serviceFactory;
@@ -112,8 +116,83 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     }
   }
 
+  // ── Keeping "which tunnels are running" current (ID-218) ──────────────────────────
+  //
+  // Read once at connect, the notes under the pickers went stale: straight after a reboot every
+  // device read "not running - no internet" while MANAGE showed every tunnel up, and going to MANAGE
+  // and back changed nothing, because back returns to this same State. So the state is re-read
+  // when the screen comes back into view, and every [quietCheckInterval] while it stays there -
+  // one round trip, `tunnelHealth`, which writes nothing to the app log. A local one-second tick
+  // decides when; it costs nothing until it asks the router.
+  Timer? _ticker;
+  bool _wasVisible = true;
+  bool _checking = false;
+  int _sinceCheck = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+  }
+
+  bool get _visible {
+    final life = WidgetsBinding.instance.lifecycleState;
+    return (ModalRoute.of(context)?.isCurrent ?? true) && (life == null || life == AppLifecycleState.resumed);
+  }
+
+  void _tick() {
+    if (!mounted) return;
+    final visible = _visible;
+    final cameBack = visible && !_wasVisible;
+    _wasVisible = visible;
+    _sinceCheck++;
+    if (!visible || _state == null || _service == null || _busy || _checking) return;
+    if (cameBack || _sinceCheck >= widget.quietCheckInterval.inSeconds) unawaited(_checkRunning());
+  }
+
+  /// Which WireGuard tunnels are up, into the notes and the sort order. A failure changes nothing:
+  /// the next tick tries again, and the list must not flicker or complain on a dropped read.
+  Future<void> _checkRunning() async {
+    final svc = _service;
+    if (svc == null || _state == null) return;
+    final slots = {for (final p in _wireguardProfiles) if (p.slot != null) p.slot!};
+    if (slots.isEmpty) return;
+    _checking = true;
+    _sinceCheck = 0;
+    try {
+      final health = await svc.tunnelHealth(slots);
+      if (!mounted) return;
+      final up = {for (final e in health.entries) if (e.value.up) e.key};
+      final changed = !(_activeSlots != null &&
+          _activeSlots!.where(slots.contains).toSet().length == up.length &&
+          up.every(_activeSlots!.contains));
+      if (changed) {
+        setState(() => _activeSlots = {...?_activeSlots?.where((s) => !slots.contains(s)), ...up});
+      }
+    } catch (_) {
+      // left as it was on purpose
+    } finally {
+      _checking = false;
+    }
+  }
+
+  /// Pull-to-refresh: the device list and the tunnels, read again. Staged changes are kept.
+  Future<void> _pullRefresh() async {
+    final svc = _service;
+    if (svc == null || _busy) return;
+    try {
+      final fresh = await svc.read();
+      if (mounted) setState(() => _state = fresh);
+    } catch (e) {
+      if (mounted) await AppErrors.system(context, _c, 'Could not read the device list: $e');
+      return;
+    }
+    await _checkRunning();
+  }
+
   @override
   void dispose() {
+    _ticker?.cancel();
     _ipCtrl.dispose();
     _userCtrl.dispose();
     _passCtrl.dispose();
@@ -192,6 +271,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         _state = state;
         _slotInfo = slots;
         _activeSlots = active;
+        _sinceCheck = 0;
         // Staged changes survive leaving the screen and coming back - they live on the session,
         // not on this State, which is rebuilt from scratch on every entry. Losing a dozen staged
         // assignments to a glance at the log was the reported bug.
@@ -372,8 +452,12 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     final def = _stagedDefault ?? _state!.defaultIndex;
     final exit = actualExitIndex(pinned: pinned, defaultIndex: def, isUp: _isUpIndex);
     if (exit == null) return null;
+    final tunnel = _labelForIndex(pinned ?? def ?? 0);
+    // Pinned: the fail-closed guard holds it (ID-213). It used to read "traffic uses Internet, with
+    // no VPN", which was true before the guard and is exactly the leak the guard closes.
+    if (exit == kExitBlocked) return '$tunnel is not running - no internet until it is enabled';
     final where = exit == 0 ? 'Internet, with no VPN' : _labelForIndex(exit);
-    return '${_labelForIndex(pinned ?? def ?? 0)} is not running - ${forDefault ? 'unassigned devices use' : 'traffic uses'} $where';
+    return '$tunnel is not running - ${forDefault ? 'unassigned devices use' : 'traffic uses'} $where';
   }
 
   Widget _pickerTile(BuildContext ctx,
@@ -565,8 +649,9 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   /// What APPLY's confirmation says about the tunnels this apply moves devices onto.
   ///
-  /// Warnings, never a block: assigning a device to a disabled slot is legitimate, and the device
-  /// uses the default connection until the slot is enabled. The same read refreshes the row notes.
+  /// Warnings, never a block: assigning a device to a disabled slot is legitimate. The device has no
+  /// internet until the slot is enabled - the fail-closed guard holds it (ID-213). The same read
+  /// refreshes the row notes.
   Future<List<String>> _tunnelWarnings(AssignmentState state) async {
     String nameOf(String ip) =>
         state.devices.firstWhere((d) => d.ip == ip, orElse: () => LanDevice(mac: ip)).displayName;
@@ -600,15 +685,8 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       for (final e in onto.entries) {
         final h = health[slotOf[e.key]];
         if (h == null) continue;
-        // Where these devices go meanwhile, resolved as the row notes are, with this tunnel down.
-        final exit = actualExitIndex(
-            pinned: e.key, defaultIndex: defaultAfter, isUp: (i) => i == e.key ? false : _isUpIndex(i));
-        final fallback = exit == 0
-            ? 'the plain internet, with no VPN'
-            : exit == null
-                ? 'the default connection'
-                : 'the default connection, ${_labelForIndex(exit)}';
-        final w = tunnelWarning(h, tunnel: _labelForIndex(e.key), who: joinNames(e.value), fallback: fallback);
+        // Pinned devices wait for their own tunnel; they no longer fall through to the default.
+        final w = tunnelWarning(h, tunnel: _labelForIndex(e.key), who: joinNames(e.value), blocked: true);
         if (w != null) warnings.add(w);
       }
       if (checkDefault) {
@@ -637,6 +715,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       return const AppScaffold(fillViewport: true, child: ReconnectingBody());
     }
     return AppScaffold(
+      onRefresh: _state == null ? null : _pullRefresh,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -943,9 +1022,9 @@ class _ApplyDialog extends StatelessWidget {
             if (restartsTunnels) ...[
               const SizedBox(height: 8),
               const Text(
-                'Changing the default connection stops and restarts your VPN tunnels. Anything '
-                'using them loses its connection for about a minute, and a watchdog on an affected '
-                'slot will report the outage. Assigning a device on its own does not do this.',
+                'Changing the default connection stops and restarts your VPN tunnels, so anything '
+                'using them loses its connection for about a minute. Assigning a device on its own '
+                'does not do this.',
                 style: TextStyle(color: kWarn, fontSize: 12),
               ),
             ],

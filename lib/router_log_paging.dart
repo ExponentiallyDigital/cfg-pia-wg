@@ -89,8 +89,11 @@ RouterLogSource classifyLogLine(String line) {
 /// Matched on the wording the app and the script actually use - "ERROR", "failed", "Connectivity
 /// lost", "down or absent", "never answered", "no Internet" - rather than on a new tag, which would
 /// only reach a router on its next watchdog deploy.
-bool isRouterLogError(String line) =>
-    classifyLogLine(line) != RouterLogSource.other && _errorPattern.hasMatch(line);
+bool isRouterLogError(String line) => classifyLogLine(line) != RouterLogSource.other && readsAsError(line);
+
+/// Whether [text] is worded as a fault. Shared with the watchdog log, so a line is red on both screens
+/// or on neither (ID-158).
+bool readsAsError(String text) => _errorPattern.hasMatch(text);
 
 final RegExp _errorPattern = RegExp(
   r'\berror\b|\bfailed\b|connectivity lost|down or absent|never answered|no internet',

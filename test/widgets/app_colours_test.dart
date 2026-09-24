@@ -36,6 +36,8 @@ void main() {
     expect(slotActionColour('EDIT'), destinationColour(AppDestination.manageRouter));
     expect(slotActionColour('CREATE/EDIT'), destinationColour(AppDestination.watchdog));
     expect(slotActionColour('DISABLE'), destinationColour(AppDestination.deviceAssignment));
+    // ID-168: it was grey and looked disabled. It opens part of the router log, so it wears that colour.
+    expect(slotActionColour('VIEW ROUTER WATCHDOG LOG'), destinationColour(AppDestination.routerLog));
     expect(slotActionColour('SOMETHING NEW'), kHighlight, reason: 'an unnamed verb is never invisible');
   });
 
