@@ -534,7 +534,7 @@ void main() {
           if (cmd.contains('cfg_device_list')) return _blob();
           if (cmd == 'nvram get vpnc_dev_policy_list') return _policyList;
           if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
-          if (cmd == "cat '$kGuardScriptPath' 2>/dev/null") return installed ? kGuardScript : '';
+          if (cmd == "cat '$kGuardScriptPath' 2>/dev/null || true") return installed ? kGuardScript : '';
           if (cmd == "'$kGuardScriptPath'") return 'guarded 1';
           return '';
         });

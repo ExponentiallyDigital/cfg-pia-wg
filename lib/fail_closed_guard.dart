@@ -159,7 +159,9 @@ class FailClosedGuard {
   /// Writes the script only when what is on the router differs, so an unchanged guard costs one
   /// read and no flash write. Verified by size afterwards, as every other file the app writes is.
   Future<void> install() async {
-    final current = await read("cat '$kGuardScriptPath' 2>/dev/null");
+    // `|| true`: on a router that has never had the guard there is no file, and a read that exits
+    // non-zero is logged as a failed command - which is how a normal first install used to read.
+    final current = await read("cat '$kGuardScriptPath' 2>/dev/null || true");
     if (current.trim() == kGuardScript.trim()) return;
     await run("mkdir -p '$kRouterAppDir'");
     for (final cmd in heredocWriteCommands(kGuardScriptPath, kGuardScript)) {

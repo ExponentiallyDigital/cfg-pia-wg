@@ -82,9 +82,16 @@ void main() {
 
   tearDown(() => dir.deleteSync(recursive: true));
 
+  // The stand-ins first, then the shell's own Unix tools, then everything else. Without the middle
+  // step, a test run from PowerShell or cmd found C:\Windows\System32\sort.exe before Git's `sort`:
+  // it rejects `-u` and `-k`, prints nothing, and every rule the script had added read back as
+  // missing (2026-09-24). The first PATH entry is the stand-ins' directory, already converted to
+  // the shell's own form; `/usr/bin` is Git's tools on Windows and where they are anyway on Linux.
+  const unixToolsFirst = r'PATH="${PATH%%:*}:/usr/bin:/bin:$PATH"; export PATH; exec sh "$@"';
+
   Future<ProcessResult> run([List<String> args = const []]) {
     final sep = Platform.isWindows ? ';' : ':';
-    return Process.run(shell!, [script.path, ...args], environment: {
+    return Process.run(shell!, ['-c', unixToolsFirst, 'sh', script.path, ...args], environment: {
       'PATH': '${dir.path}/bin$sep${Platform.environment['PATH']}',
       'STATE': state.path,
       'GUARD_LOCK': '${state.path}/lock',

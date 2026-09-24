@@ -173,7 +173,7 @@ jobs:
           path: build/app/outputs/flutter-apk/
 
       - name: Run mobsfscan
-        uses: MobSF/mobsfscan@a43635d92434e78b079ed7d860f022cf6c886b43 # 1.0.0
+        uses: MobSF/mobsfscan@4645ea70bc093268502fe9f6df93e41bb482254a # 1.0.1
         with:
           args: "build/app/outputs/flutter-apk/app-debug.apk --sarif --output mobsfscan.sarif || true"
 
