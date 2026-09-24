@@ -1265,25 +1265,28 @@ flowchart TD
     D["ping every candidate,<br/>take the lowest latency"] --> E
     E["generate a fresh WireGuard keypair"] --> F
     F["register the public key<br/><i>addKey on the chosen server, port 1337</i>"] --> G
-    G["write 16 wgcN_* values to NVRAM"] --> H
-    H["stop the interface"] --> I
-    I["start the interface"] --> J
-    J["restart VPN routing"] --> K
-    K{"is wgcN up<br/>after 3 seconds?"}
-    K -->|yes| OK["Reconfig SUCCESS<br/>bump the success counter,<br/>send the recovery alert"]
-    K -->|no| FAIL["abort - bump the failure counter,<br/>send the failure alert"]
+    G["write the wgcN_* values<br/>to NVRAM"] --> W
+    W["wait for the router's<br/>service queue to be free"] --> H
+    H["restart the tunnel<br/><i>stock: restart_vpnc</i><br/><i>Merlin: stop, start,</i><br/><i>restart routing</i>"] --> T
+    T{"is the tunnel on<br/>the new server's key?"}
+    T -->|"no, the first time"| W
+    T -->|yes| K
+    K{"wgcN up, and<br/>a handshake<br/>within 20s?"}
+    K -->|yes| OK["Reconfig SUCCESS<br/>count it,<br/>send the<br/>recovery alert"]
+    K -->|no| FAIL["abort<br/>count it,<br/>send the<br/>failure alert"]
+    T -->|"no, twice"| FAIL
 
     classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
     classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
     classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
     class OK go
     class FAIL bad
-    class A,B,C,D,E,F,G,H,I,J step
+    class A,B,C,D,E,F,G,W,H step
 ```
 
 **A fresh keypair every time is deliberate.** PIA's `addKey` binds a public key to a session; reusing an old one after a server change gives a tunnel that comes up and carries nothing.
 
-**The three service calls at the end are the fragile part.** They go through `notify_rc`, so they are queued rather than executed, and a wedged queue discards them silently - the config is written perfectly and nothing acts on it. See [The router's service queue](#the-routers-service-queue-and-how-it-wedges).
+**The restart is the fragile part.** It goes through `notify_rc`, so it is queued rather than run, and a router busy with something else throws it away after 15 seconds without a word - the config is written perfectly and nothing acts on it. So the script waits for the queue first, clears a marker left by a process that has gone, and afterwards checks the tunnel is on the new server's key. If not, it tries once more; skipped twice, it fails and says the router skipped the restart (ID-214). See [The router's service queue](#the-routers-service-queue-and-how-it-wedges).
 
 **Emails are a branch of this flow, not a separate one.** `send_alert` is called from exactly two places: the success at the bottom, and `abort` anywhere above it. Both carry the same facts - what happened, what to do, the router, the history, and the last ten log lines - so a failure and its recovery read as two halves of one story. Detail in [Email alerting](#email-alerting).
 
