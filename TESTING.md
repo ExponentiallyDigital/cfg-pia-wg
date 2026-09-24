@@ -956,7 +956,7 @@ ip rule show | grep -w "$D"
 logger "**TEST GRD-2 STARTED**"
 wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
 sleep 10
-/jffs/cfg-pia-wg/watchdog_wgc1.sh
+/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
 ```
 
 - See: the ping goes from wgc1's usual time to unreachable or timed out, then back to wgc1's usual time.
@@ -969,7 +969,7 @@ ip rule show | grep -w "$D"
 tail -3 /tmp/watchdog_wgc1.log
 ```
 
-- Pass if: the 90 and 91 lines are still there, and the log ends `Reconfig SUCCESS`. If it ends "never answered", the router skipped the restart (ID-214): wait five minutes and run the watchdog line again.
+- Pass if: the 90 and 91 lines are still there, and the log ends `Reconfig SUCCESS`. A line "The router skipped the restart of wgc1; trying once more" before it is fine: that is ID-214 working. If it ends "the router skipped the restart of wgc1 twice", the router was busy: wait five minutes and run the watchdog line again.
 
 **GRD-3** DISABLE warns, names DESKTOP, and blocks it
 
@@ -1001,7 +1001,7 @@ grep "Fail-closed guard on for $D" /tmp/syslog.log | tail -1
 
 ```bash
 logger "**TEST GRD-5 STARTED**"
-/jffs/cfg-pia-wg/watchdog_wgc1.sh
+/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
 ip rule show | grep -w "$D"
 ```
 
@@ -1490,8 +1490,7 @@ A check that arrives inside the wait is turned away and says so:
 ```bash
 for n in 1 2 3 4 5 6 7 12; do
     printf '%s\n%s\n' "$n" "$(date +%s)" > /tmp/watchdog_backoff_wgc5
-    /jffs/cfg-pia-wg/watchdog_wgc5.sh >/dev/null 2>&1
-    sleep 12
+    /jffs/cfg-pia-wg/watchdog_wgc5.sh foreground >/dev/null 2>&1
     echo "CNT=$n -> $(grep 'Backing off' /tmp/watchdog_wgc5.log | tail -1)"
 done
 ```

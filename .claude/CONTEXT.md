@@ -536,6 +536,8 @@ The chrome's header takes ~104 logical px off the top, so with a keyboard up a d
 
 **Tests.** The detection flag is a library global, so any suite touching router code must reset it — use `useMerlin()` / `useStock()` / `resetRouterFirmware()` from `test/watchdog_test_utils.dart`. A leaked flag produces confusing cross-file failures under parallel workers.
 
+**Behaviour, not just commands.** Two test doubles keep state rather than canned answers. `test/watchdog_harness.dart` runs the generated watchdog script under a real POSIX shell against stand-in router commands (`test/unit/watchdog_behaviour_test.dart`). `test/stock_router_model.dart` is a stock router that changes NVRAM, `ip rule` and the running tunnels the way ARCHITECTURE 6.8 measured, and answers where each device's traffic leaves (`test/unit/stock_router_model_test.dart`). A change to the watchdog's logic, DEVICE ASSIGNMENT or the default-connection sequence gets a test in one of these. A firmware behaviour goes into the model only once it has been measured on hardware. The harness, like every test that runs a shell script, skips where no shell is on the PATH and puts the shell's own `/usr/bin` first, ahead of Windows' `sort.exe` (ID-216).
+
 Note: ignore all .claude\plan_*.md files, they are historical and not part of the current codebase. This .claude\CONTEXT.md file is the authoritative source for doc-vs-code discrepancies.
 
 ### 4.14 Device assignment (stock only)

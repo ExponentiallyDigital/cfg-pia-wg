@@ -1938,6 +1938,8 @@ const String _kWatchdogScriptTemplate = r'''#!/bin/sh
 # Re-negotiates PIA WireGuard on ping failure.
 
 # `deploy` only when the app runs the script by hand just after writing it; cron passes nothing.
+# `foreground` is a cron run that stays attached, for tests and for running it by hand over SSH: run
+# without it, the script hands itself to the background and returns at once (ID-199).
 # Read at the top, because send_alert() shadows $1 with its own argument.
 RUNMODE="${1:-cron}"
 # ASUS's curl refuses to run with crond in its LIVE process ancestry: exit 0, no status, no body,
@@ -1957,6 +1959,7 @@ if [ "$RUNMODE" = "detached" ]; then
   done
   RUNMODE="cron"
 fi
+[ "$RUNMODE" = "foreground" ] && RUNMODE="cron"
 APPVER="__APPVER__"
 SLOT=__SLOT__
 IFACE="wgc__SLOT__"
@@ -2204,14 +2207,9 @@ __MAILCMD__
 
 # -- Does this tunnel resolve names? (ID-078 / ID-006) ------------------------------------------
 #
-# A handshake proves the peer answers the tunnel. It proves nothing about whether anything behind
-# the peer answers: devices pinned to wgc4 went two days without name resolution while the watchdog
-# logged a healthy handshake every five minutes.
-#
-# The probe asks the SLOT's own first DNS server - the one the firmware redirects a pinned device
-# to - and the answer only means something if the question went through this tunnel. Measured
-# 2026-09-19: a stopped slot falls through to the WAN and the lookup succeeds anyway, so the aim is
-# verified before any answer is believed.
+# A handshake proves the peer answers, not that anything behind it does. The probe asks the slot's
+# first DNS server, and checks first that the question goes through this tunnel: a stopped slot
+# falls through to the WAN and would pass (measured 2026-09-19).
 DNS1="$(nvram get ${K}dns | tr ',' ' ' | awk '{print $1}')"
 DNSTABLE=$((10 - SLOT))
 DNSFAILFILE="/tmp/watchdog_dnsfail_${IFACE}"
@@ -2225,16 +2223,40 @@ dns_rule_clean() {
   DNSRULE=0
 }
 
-# Anything left behind by a run that was killed mid-probe.
+# Anything left behind by a run of THIS slot that was killed mid-probe. Only this slot's table:
+# sweeping them all deleted the rule another slot's watchdog was using that second, and its
+# lookup went out the wrong way (ID-193).
 dns_rule_sweep() {
-  ip rule show 2>/dev/null | awk '$1 == "1000:" {print $5, $9}' | while read -r A T; do
-    [ -n "$A" ] && [ -n "$T" ] && ip rule del to "$A" iif lo lookup "$T" priority 1000 2>/dev/null
+  ip rule show 2>/dev/null | awk -v t="$DNSTABLE" '$1 == "1000:" && $NF == t {print $5}' | while read -r A; do
+    [ -n "$A" ] && ip rule del to "$A" iif lo lookup "$DNSTABLE" priority 1000 2>/dev/null
   done
+}
+
+# One probe at a time across every slot. The firmware's own DNS rules send the router's lookups
+# out of the highest-numbered tunnel, so two watchdogs probing the same server in the same second
+# share one route, and one of them asks through the other's tunnel (ID-193).
+DNSLOCK="/tmp/cfg-pia-wg-dnsprobe.lock"
+DNSLOCKED=0
+dns_lock() {
+  DLW=0
+  until mkdir "$DNSLOCK" 2>/dev/null; do
+    DLW=$((DLW + 1))
+    # A probe takes at most eight seconds, so a lock this old was left by a killed run.
+    if [ "$DLW" -ge 20 ]; then rm -rf "$DNSLOCK"; mkdir "$DNSLOCK" 2>/dev/null; break; fi
+    sleep 1
+  done
+  DNSLOCKED=1
+}
+dns_unlock() {
+  [ "$DNSLOCKED" = "1" ] || return 0
+  rmdir "$DNSLOCK" 2>/dev/null
+  DNSLOCKED=0
 }
 
 # 0 the server answered, 1 it did not, 2 the question could not be asked through this tunnel.
 dns_probe() {
   [ -n "$DNS1" ] || { log "No DNS server set on $IFACE; skipping the name check"; return 2; }
+  dns_lock
   if ! ip route get "$DNS1" 2>/dev/null | grep -q " dev $IFACE"; then
     ip rule add to "$DNS1" iif lo lookup "$DNSTABLE" priority 1000 2>/dev/null
     DNSRULE=1
@@ -2242,6 +2264,7 @@ dns_probe() {
       # The stopped-slot case. Asking anyway would send the lookup out of the WAN and pass.
       log "Could not aim a lookup at $DNS1 through $IFACE; skipping the name check"
       dns_rule_clean
+      dns_unlock
       return 2
     fi
   fi
@@ -2263,20 +2286,14 @@ dns_probe() {
     DNSRC=$?
   fi
   dns_rule_clean
+  dns_unlock
   return "$DNSRC"
 }
 
 # -- The SMTP host's address, resolved the encrypted way (ID-077) -------------------------------
 #
-# This is the lookup worth hiding. The PIA names say the router talks to PIA, which its WireGuard
-# traffic already says; the SMTP hostname names the user's email provider, and nothing else on the
-# wire does. Neither mailer can be told "use this address but verify this name": the stock mailer takes a
-# hostname and verifies against it, and the Merlin one hands the whole thing to openssl. So the
-# address is learnt over DoH first, and then given to the mailer the only way each one accepts.
-#
-# Learnt by asking curl to connect and report what it connected to. curl resolves over DoH, the
-# connection then fails at the protocol level - it is speaking HTTP to an SMTP port - and
-# %{remote_ip} is written either way. Ugly, and it needs no extra binary.
+# The SMTP hostname names the user's email provider, so it is the lookup worth hiding. curl
+# resolves it over DoH and reports %{remote_ip}, even though HTTP to an SMTP port then fails.
 resolve_smtp() {
   SMTP_IP=""
   [ -n "$DOHDESC" ] || return 0
@@ -2327,6 +2344,7 @@ abort() {
   rm -f "$TMPSRV"
   hosts_clean
   dns_rule_clean
+  dns_unlock
   exit 1
 }
 
@@ -2338,10 +2356,8 @@ dns_rule_sweep
 FAIL=1
 log "Checking $IFACE $DESC connectivity"
 
-# `ifconfig $IFACE` succeeds for a device that EXISTS, up or down, so it answered the wrong
-# question - an interface taken down with `ifconfig $IFACE down` still passed it. `ip -o link
-# show up` lists only interfaces carrying the UP flag; the `state` word is no use because a
-# WireGuard device reads `state UNKNOWN` while up. Measured 2026-09-09.
+# Only the UP flag counts: `ifconfig` passes a device that is down, and WireGuard reads
+# `state UNKNOWN` while up. Measured 2026-09-09.
 if ! ip -o link show up 2>/dev/null | grep -q " $IFACE:"; then
   # A deploy run starts before the tunnel exists: there that is the expected state, not a fault (ID-048).
   if [ "$RUNMODE" = "deploy" ]; then log "Interface $IFACE is not up yet"; else log "Interface $IFACE is down or absent"; fi
@@ -2386,7 +2402,7 @@ if [ "$FAIL" = "0" ]; then
         DNSDEAD=1
         FAIL=1
       else
-        log "$IFACE: no answer from $DNS1; one more and it counts as broken"
+        log "no answer from $DNS1; one more and it counts as broken"
       fi
     fi
   fi
@@ -2396,7 +2412,8 @@ fi
 if [ "$FAIL" = "0" ]; then
   date '+%s %Y-%m-%d %H:%M:%S' > "$STATUSFILE"
   printf '0\n0\n' > "$BACKOFFFILE"
-  rm -f "$DNSFAILFILE"
+  # Not the DNS strike file: the check above cleared it on an answer, and deleting it here as well
+  # threw away every first strike, so the second never came (ID-192).
   # A deploy run always emails, even with nothing to fix: it is the user's proof that alerting
   # works. No addKey happened on this path, so the endpoint comes from NVRAM and there is no
   # server name or latency to report.
@@ -2409,11 +2426,8 @@ if [ "$FAIL" = "0" ]; then
   exit 0
 fi
 
-# The WAN first. This sits ABOVE the backoff ladder on purpose: while the internet is out there is
-# nothing to rebuild a tunnel FROM, so counting the check as a failed attempt charges the outage to
-# the tunnel. It used to sit below, and a two-hour outage could leave the ladder at 90 minutes - so
-# when the WAN came back, a tunnel that could not recover by itself waited that long for its first
-# real attempt - having logged a reconfigure it never started, every few minutes, throughout (ID-064).
+# The WAN first, above the backoff ladder: a WAN outage is not the tunnel's fault and must not
+# climb the ladder (ID-064).
 if ping -c 1 -W 2 "$PRIMARY_IP" >/dev/null 2>&1 || ping -c 1 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
   log "WAN has internet connectivity"
 else
@@ -2621,10 +2635,50 @@ nvram commit
 log "NVRAM write complete"
 
 # Restart interface
+restart_tunnel() {
 __RESTART__
+}
+
+# A service call made while another is running waits 15s and is then dropped without a word. Wait
+# for the queue, and clear a marker unchanged for 10s with its pid gone: a ghost (ID-214).
+rc_idle() {
+  RCW=0
+  RCSAME=0
+  RCLAST=""
+  while [ "$RCW" -lt 30 ]; do
+    RCS="$(nvram get rc_service)"
+    [ -z "$RCS" ] && return 0
+    RCP="$(nvram get rc_service_pid)"
+    if [ "$RCS@$RCP" = "$RCLAST" ]; then RCSAME=$((RCSAME + 1)); else RCSAME=0; fi
+    RCLAST="$RCS@$RCP"
+    if [ "$RCSAME" -ge 5 ] && ! kill -0 "$RCP" 2>/dev/null; then
+      log "Cleared a stale rc_service marker ($RCS, pid $RCP) that would have swallowed the restart"
+      nvram set rc_service=""
+      return 0
+    fi
+    RCW=$((RCW + 1))
+    sleep 2
+  done
+  log "The router is still busy with $RCS after 60s; restarting anyway"
+}
+
+# A skipped restart leaves the old peer, whose old handshake passes every later check (ID-214).
+restart_took() {
+  wg show "$IFACE" peers 2>/dev/null | grep -qxF "$SERVER_KEY"
+}
+
+rc_idle
+restart_tunnel
 
 log "Waiting for $IFACE to initialise"
 sleep 3
+if ! restart_took; then
+  log "The router skipped the restart of $IFACE; trying once more"
+  rc_idle
+  restart_tunnel
+  sleep 3
+  restart_took || abort "the router skipped the restart of $IFACE twice, so the new server was never applied. The router may be busy; the next check tries again"
+fi
 if ! ip -o link show up 2>/dev/null | grep -q " $IFACE:"; then
   abort "$IFACE did not come up after reconfiguration (configured: $(wg show interfaces 2>/dev/null | tr -s ' ' | cut -c1-60))"
 fi
@@ -2658,6 +2712,7 @@ else
   log "Reconfig SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
 fi
 bump cfg_pia_wg_reconfig_ok
+rm -f "$DNSFAILFILE"
 CONNVALUE="$BEST_CN ($BEST_IP:$SERVER_PORT), ${BEST_RTT} ms"
 if [ "$RUNMODE" = "deploy" ]; then
   # No outage to report: the tunnel was simply not up yet when the watchdog was saved. The server

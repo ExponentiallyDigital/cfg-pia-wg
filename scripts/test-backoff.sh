@@ -83,7 +83,7 @@ for pair in $LADDER; do
     printf '%s\n%s\n' "$n" "$(date +%s)" > "$BACKOFFFILE"
 
     seen_before="$(count_in_log 'Backing off')"
-    "$SCRIPT" >/dev/null 2>&1
+    "$SCRIPT" foreground >/dev/null 2>&1
     seen_after="$(count_in_log 'Backing off')"
 
     if [ "$seen_after" -le "$seen_before" ]; then
