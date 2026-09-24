@@ -13,7 +13,7 @@ Widget _editor({String desc = ''}) => MaterialApp(
           builder: (ctx) => ElevatedButton(
             onPressed: () => showDialog<bool>(
               context: ctx,
-              builder: (_) => SlotParamsEditor(slot: 1, initial: _initial(), desc: desc, onSave: (_) async {}),
+              builder: (_) => SlotParamsEditor(slot: 1, initial: _initial(), desc: desc, onSave: (_) async => true),
             ),
             child: const Text('open'),
           ),
@@ -89,7 +89,7 @@ void main() {
             builder: (ctx) => ElevatedButton(
               onPressed: () => showDialog<bool>(
                 context: ctx,
-                builder: (_) => SlotParamsEditor(slot: 1, initial: _initial(), onSave: (_) async {}),
+                builder: (_) => SlotParamsEditor(slot: 1, initial: _initial(), onSave: (_) async => true),
               ),
               child: const Text('open'),
             ),
@@ -166,7 +166,7 @@ void main() {
             builder: (ctx) => ElevatedButton(
               onPressed: () => showDialog<bool>(
                 context: ctx,
-                builder: (_) => SlotParamsEditor(slot: 1, initial: _initial(), onSave: (_) async {}),
+                builder: (_) => SlotParamsEditor(slot: 1, initial: _initial(), onSave: (_) async => true),
               ),
               child: const Text('open'),
             ),
@@ -210,7 +210,7 @@ void main() {
             builder: (ctx) => ElevatedButton(
               onPressed: () => showDialog<bool>(
                 context: ctx,
-                builder: (_) => SlotParamsEditor(slot: 1, initial: _initial(), onSave: (_) async {}),
+                builder: (_) => SlotParamsEditor(slot: 1, initial: _initial(), onSave: (_) async => true),
               ),
               child: const Text('open'),
             ),

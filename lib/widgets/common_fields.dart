@@ -77,8 +77,8 @@ class PiaUsernameField extends StatelessWidget {
 /// second, so a first server that stops answering through that tunnel leaves the device reaching IP
 /// addresses but not names.
 const String kDnsFirstServerNote =
-    'Devices assigned to this VPN use only the first server. If they reach IP addresses but not names, '
-    'try a different first server.';
+    'Devices assigned to this VPN send their lookups to the first server only. The router itself can use '
+    'both. If those devices reach IP addresses but not names, try a different first server.';
 
 const String _kDnsExamples = 'Quad9: 9.9.9.9, 149.112.112.112 | Cloudflare: 1.1.1.1, 1.0.0.1';
 

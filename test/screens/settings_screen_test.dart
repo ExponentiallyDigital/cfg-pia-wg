@@ -793,7 +793,7 @@ void main() {
       return c;
     }
 
-    Future<void> logInAndDeleteCert(WidgetTester tester) async {
+    Future<void> logIn(WidgetTester tester) async {
       await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
       await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
       await tester.pumpAndSettle();
@@ -802,6 +802,10 @@ void main() {
       await tester.enterText(find.widgetWithText(TextFormField, 'SSH Password'), 'pw');
       await tester.tap(find.byKey(const Key('about_ssh_continue')));
       await tester.pumpAndSettle();
+    }
+
+    Future<void> logInAndDeleteCert(WidgetTester tester) async {
+      await logIn(tester);
       await tester.tap(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.pumpAndSettle();
     }
@@ -823,7 +827,9 @@ void main() {
 
     testWidgets('a login that never reached the router is not kept as connected', (tester) async {
       final c = await pumpFresh(tester, RecordingSSHClient(), unreachable: true);
-      await logInAndDeleteCert(tester);
+      await logIn(tester);
+      // ID-155: the login is checked before the dialog closes, so it stays open with the reason.
+      expect(find.byType(SshCredsDialog), findsOneWidget);
 
       // ID-108: the screen says the plain thing, the log keeps the raw exception.
       expect(find.textContaining('Could not connect to the router at 192.168.1.1'), findsOneWidget);

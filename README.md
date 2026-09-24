@@ -103,6 +103,7 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
 - **Watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log. Works on stock and Merlin; on stock it additionally needs `jq`, `mailsend-go` and DownloadMaster (see [4. Prerequisites](#4-prerequisites--requirements)).
 - **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
 - **Per-device VPN assignment:** pick, per device, whether it leaves through a VPN tunnel or straight out to the internet, from a list of everything on your network and what each one is using right now. One tap per device, nothing to stop first, and the list says where a device's traffic really goes when its tunnel is down. Stock firmware only: Merlin does the same job through VPN Director, which this app does not drive.
+- **A kill switch on stock firmware:** Merlin has one. Stock doesn't. So the app builds its own, out of your router's routing rules. A device pinned to a tunnel uses that tunnel or nothing: if the tunnel's config expires, the watchdog is rebuilding it, or you switch it off, the device goes offline rather than out in the clear. Pinned devices only; [5.4](#54-vpn-device-assignment) has the detail and the limits.
 - **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
 - **Secure clipboard handling:** when copying a generated config, a visible 60-second countdown starts, then clears the clipboard automatically at expiry.
 - **Share/save support:** share a generated `.conf` via the Android share function and save it to a file location of your choice.
@@ -113,6 +114,9 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
 - **Automated lowest-latency server selection:** measures live latency across all available servers in your selected region, ensuring that you provision with the fastest node.
 - **Native task-switcher protection:** `(FLAG_SECURE)` enforces native OS-level window flags to block third-party screenshot capturing and automatically obscures the app layout view inside the Android Recent Apps / Task Switcher interface. Debug builds skip the flag to enable screenshotting while testing; every release build sets it.
 - **Password manager support:** every credential field accepts autofill from your device's password manager (KeePass, Bitwarden, Google Password Manager - whatever is registered as the autofill service). PIA, router SSH and SMTP logins are kept in separate autofill groups, so your manager can hold a different entry for each and you pick between them. A "save password?" prompt is offered only after credentials have actually worked, never when you back out of a form.
+- **Type it once:** log in to your router on any screen and every other screen uses that login for the rest of the session. PIA credentials and email settings you've entered for one watchdog are offered for the next.
+- **Encrypted lookups for the watchdog:** it looks up PIA's servers, and your mail provider's, over encrypted DNS (DoH), so whoever can see your router's DNS can't see who you use. If DoH itself fails, the watchdog retries once in the clear, says so in its log, and repairs your tunnel anyway: a tunnel that stays down is worse.
+- **Logs you can read at a glance:** in ROUTER LOG the app's lines are teal, the watchdog's lavender, and faults red. The watchdog's own log uses the same colours, plus teal for a rebuild that worked.
 - **Input field hardening:** user credential entry text boxes disable predictive text caching, auto-correction, and keyboard learning behaviours.
 - **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials and the system clipboard.
 - **Professional-grade build chain:** all releases undergo automated security and quality checks with
@@ -120,7 +124,8 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
   - [OSV](https://github.com/google/osv-scanner) - open-source dependency scanning against Google's vulnerability database flagging out-of-date third-party packages;
   - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
-  - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks; and
+  - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
+  - Testing: as at build 466, 1353 automated tests run on every build against a line-coverage target of 80% (the Coverage badge above has today's figure), and 136 manual end-to-end tests run on a real router - 17 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 20 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
   - Pinned GitHub Action hashes across [release.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/release.yml), [promote.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/promote.yml), and [quality_and_security.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/quality_and_security.yml) ensure automated builds execute with specific, verified tool versions.
 
 ---
@@ -168,7 +173,7 @@ Advanced Settings\Administration\System\Basic Config -> "Enable JFFS custom scri
 On stock firmware, scheduled tasks do not survive a reboot on their own. Download Master provides the `/opt` structure the app uses to keep a watchdog running across reboots and power cycles. It is a prerequisite, not something you will use.
 
 > [!IMPORTANT]
-> **Install Download Master, then leave it alone.** The app takes over part of its installation, so Download Master itself will not operate afterwards: this app's watchdog is not compatible with it on stock firmware. Reinstalling or updating DM will stop any deployed watchdogs from surviving reboots until you redeploy them from the app.
+> **Install Download Master, then leave it alone.** The app takes over part of its installation, so Download Master itself will not operate afterwards: this app's watchdog is not compatible with it on stock firmware. Reinstalling or updating DM will stop any deployed watchdogs from surviving reboots until you redeploy them from the app. It may also drop off your router's **USB Application** page. That's expected, nothing's broken: the app has replaced its start-up script with its own, and UNINSTALL in SETTINGS puts the original back.
 
 #### 4.1.2. Preparing the USB stick
 
@@ -401,7 +406,7 @@ This manages a self-healing watchdog. When your WG configurations inevitably exp
 
 3. Select a slot and use the watchdog actions:
    <br>
-   - **CREATE/EDIT:** pick a region and a check interval, defaulting to five minutes, then tap **SAVE & DEPLOY** to deploy router-side watchdog scripts and cron jobs for the selected slot. The region starts as the slot's own, so saving an active watchdog without changing it leaves its tunnel alone. Choosing a region for a slot that already holds a configuration asks before overwriting it. Changing the region rebuilds the tunnel on the new one: it is down while that happens, and devices assigned to it use the default connection until it is up.
+   - **CREATE/EDIT:** pick a region and a check interval, defaulting to five minutes, then tap **SAVE & DEPLOY** to deploy router-side watchdog scripts and cron jobs for the selected slot. The region starts as the slot's own, so saving an active watchdog without changing it leaves its tunnel alone. Choosing a region for a slot that already holds a configuration asks before overwriting it. Changing the region rebuilds the tunnel on the new one: it is down while that happens, and devices pinned to it have no internet until it is up.
 <br>
 <p align="center">
   <img src="./images/03.01-watchdog-editing.png" alt="Configuring a watchdog" width="300">
@@ -435,6 +440,9 @@ To set up email alerting, you'll need an **`app password`**, _not_ your "normal"
 
 - **Gmail:** <https://myaccount.google.com/apppasswords>
 - **Outlook / Microsoft:** <https://account.live.com/proofs/AppPassword>
+
+> [!NOTE]
+> **Sending alerts to yourself?** Gmail files a message you send from your own address to that same address under **Sent**, not your inbox, so an alert from and to one Gmail address looks like it never arrived. Look in **All Mail**, or send to a different address.
 
 > [!TIP]
 > Having email alerting issues? See [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md) for a step-by-step walkthrough together with email troubleshooting approaches.
@@ -483,7 +491,7 @@ Connectivity was lost and the tunnel could NOT be rebuilt.
 WHAT HAPPENED
 Event: failed to obtain PIA token (exit 0, HTTP 403, body 34B: {"error":"rate limit exceeded"})
 Tunnel has been down for: 41m 09s (last seen good 2026-09-05 13:58:12 AEST)
-Kill switch: none on this firmware; while it was down, its devices fell through to the default connection, pia-other_region, so they stayed on a VPN
+Kill switch: the app's guard is keeping the 2 devices pinned to this tunnel off the internet until it is back
 Attempt: 8 since the last success, retrying per schedule, 5 minutes
 
 WHAT TO DO
@@ -517,8 +525,7 @@ How to interpret these emails:
 
 - **Kill switch** answers the question that most often matters when a tunnel drops: did anything leave the router unprotected, in the raw, so to speak? The line reports the state your router was actually in, not a generic warning.
   - On **Merlin**, which has a kill switch: on, or available but not enabled.
-  - On **stock**, which has none, it says where the affected devices went instead. If the dropped tunnel was itself the default connection, its devices had no internet and thus no leak. If no devices are assigned to it and it is not the default, it says so, because nothing depended on it. If another WireGuard tunnel is the default and that tunnel is up, they fell through to it and stayed on a VPN. If the default is down too, or is not a WireGuard tunnel the watchdog can check, it says the default was not confirmed up and they may have had no VPN. Only if the default is the plain internet did they certainly travel unprotected.
-  - This is why the default connection is worth setting deliberately: on stock it is the difference between a leak and an outage. See [VPN device assignment](#54-vpn-device-assignment).
+  - On **stock**, which has none, it reports the app's own guard: how many devices pinned to that tunnel it kept off the internet, or that nothing is pinned there. If part of the guard is missing, say after a reboot before the app or a watchdog has put it back, it says so and tells you how to fix it.
 - **Interval** is read from the router, so it can never claim a schedule that is not actually running.
 - **Since `date`** counts every re-configuration this router has made, across all slots, from the day the app first configured itself.
 - The router log excerpt includes your **PIA username** (never the password, and never the token). The email travels through your own mail provider, but bear that in mind before forwarding it on.
@@ -539,6 +546,10 @@ Normally every device on your network follows the router's default connection. T
 One simple, easy to use interface and your laptop can be globetrotting to anywhere in the world. Practical considerations do apply though as many organisations are actively enforcing geo-blocking via registered IP address blocks. That's never been the purpose of this app. It exists to do one thing extremely well. And that's stopping nominated devices from going out to the Internet in the clear, unprotected and naked, swinging in the breeze so to speak.
 
 DEVICE ASSIGNMENT gives you one list of all your devices and lets you decide which tunnel they should be "pinned" to. It also allows you, as we read earlier (you did read that bit didn't you :)?), to set the default connection simply, quickly, easily and have confidence that devices pinned to that will go where they're intended.
+
+**What does it change on my router?** Only its routing rules, the short list your router reads to decide which way each device's traffic goes. Your router already writes one rule per pinned device, and the app doesn't replace it. It does two things on top. It deletes the stale rules your router leaves behind when you move a device, because the old one wins and your device would quietly keep using the tunnel you moved it off. And it adds two rules of its own for every pinned device, which are what keep that device offline, rather than out in the open, while its tunnel is down. Nothing else is touched: not your default connection's rules, not your router's own DNS, not your other devices. For the technically inquisitive, [ARCHITECTURE](ARCHITECTURE.md#every-routing-rule-the-app-touches) lists every rule, what the app does with each, and the hardware tests behind them.
+
+**What it doesn't cover.** Devices that follow the default connection rather than being pinned: pin the ones you care about. A few addresses your router always sends straight out, whatever the tunnel is doing: its own DNS servers, the PIA server itself, and your ISP's own network. And IPv6, which hasn't been tested.
 
 <br>
 <p align="center">
@@ -576,21 +587,20 @@ Assignment is as simple as tapping on a device in the previous menu, then decidi
   Default connection
 </p><br>
 
-Three things you should know about the `default connection`:
+Two things you should know about the `default connection`:
 
 > [!IMPORTANT]
-> - Changing the default connection restarts **every** tunnel on the router, so anything using a VPN loses its connection for up to a minute. Assigning _individual_ devices causes no tunnel restarts.
-> - **Assigning a device is not a kill switch.** If the slot it is pinned to drops, that device does not lose its connection - it falls through to whatever the default connection is. If the default is **Internet**, it carries on unprotected until the tunnel comes back.
-> - To get **fail-closed** behaviour instead, point the **default connection** at the same tunnel you assigned the device(s) to. Then a drop means those devices have no internet rather than an unprotected one, and a watchdog on that tunnel is what decides how long that lasts.
+> - Changing it restarts **every** tunnel on the router, so anything using a VPN drops for up to a minute. Assigning _individual_ devices restarts nothing.
+> - **Pinned means pinned.** A pinned device uses its tunnel or nothing. If that tunnel's config expires, the watchdog is rebuilding it, or you switch it off, the device waits with no internet rather than wandering out through the default connection. Devices that only _follow_ the default get no such promise, so pin the ones you care about.
 
 And six things that can catch you out:
 
 1. **A device the router has never seen can't be assigned.** Connect it to your network and get it to exchange some traffic through your router, it'll then show up in the device list. There is a time delay, and it depends on things outside our control. But it will show up. Hopefully expeditiously, but sometimes in its own sweet time. Prodding it by talking through your router usually goads it into submission.
 2. **Assigning a device pins its address permanently.** And that's the big one. It stops an assignment drifting onto a different device later on. A pinned device stays behind when you unassign - the router never removes it, and neither does this app.
 3. **A randomised MAC address breaks assignment silently.** Those devices are tagged in the list with `random MAC`. Many phones randomise their MAC addresses per network by default, and the assignment stops working the next time the address rotates, with nothing to tell you. [5.4.3](#543-phones-and-random-mac-addresses) gives you the settings to change, per phone architecture.
-4. **A device assigned to a tunnel that you then turn OFF keeps its assignment**, and falls through to the default connection while that tunnel is down. It reconnects to your chosen tunnel when you power it back on. The main DEVICE ASSIGNMENT screen tells you where that will be. Deleting a slot is different: the app moves its devices to the Internet, tells you which ones it moved, and puts the default connection back to Internet if that tunnel was it.
+4. **Switching a tunnel OFF takes its pinned devices offline.** They keep their assignment and have no internet until you switch it back ON or move them, and the app names them before you confirm. Deleting a slot is different: the app moves its devices to the Internet, tells you which ones, and puts the default connection back to Internet if that tunnel was it.
 5. **Guest network devices never appear.** Typically they can't reach your LAN, so putting one on a VPN is a different proposition.
-6. **A device assigned to a VPN uses only that VPN's first DNS server.** The router sends every lookup from it to the first DNS server address listed in your slot config and never tries the second. For real. That's by design. If the first stops answering through that tunnel, then devices typically reach IP addresses but not names. You can change the first server with MANAGE, then EDIT.
+6. **A device assigned to a VPN uses only that VPN's first DNS server.** The router sends every lookup from it to the first DNS server address listed in your slot config and never tries the second. The router's own lookups can use both. For real. That's by design. If the first stops answering through that tunnel, then devices typically reach IP addresses but not names. You can change the first server with MANAGE, then EDIT.
 
 #### 5.4.3. Phones and random MAC addresses
 

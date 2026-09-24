@@ -6,6 +6,7 @@
 //
 // MACs are invented - see test/unit/no_lan_identifiers_test.dart.
 import 'package:cfg_pia_wg/device_assignment_service.dart';
+import 'package:cfg_pia_wg/fail_closed_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../watchdog_test_utils.dart';
@@ -33,9 +34,9 @@ const _cache = '{'
 const _sep = '@@CFGPIAWG@@';
 
 /// Builds the marker-delimited blob the batched read expects.
-String _blob({String cache = _cache, String policy = _policyList}) => [
+String _blob({String cache = _cache, String policy = _policyList, String clientlist = _clientlist}) => [
       '',
-      _clientlist,
+      clientlist,
       policy,
       '9',
       _staticlist,
@@ -46,11 +47,12 @@ String _blob({String cache = _cache, String policy = _policyList}) => [
       '',
     ].join('\n$_sep\n');
 
-RecordingSSHClient _client({String cache = _cache, String policy = _policyList, String? policyOnReRead}) {
+RecordingSSHClient _client(
+    {String cache = _cache, String policy = _policyList, String? policyOnReRead, String clientlist = _clientlist}) {
   return RecordingSSHClient(responder: (cmd) {
-    if (cmd.contains('cfg_device_list')) return _blob(cache: cache, policy: policy);
+    if (cmd.contains('cfg_device_list')) return _blob(cache: cache, policy: policy, clientlist: clientlist);
     if (cmd == 'nvram get vpnc_dev_policy_list') return policyOnReRead ?? policy;
-    if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
+    if (cmd == 'nvram get vpnc_clientlist') return clientlist;
     if (cmd == 'nvram get dhcp_staticlist') return _staticlist;
     // The default-connection sequence polls these two. `restart_default_wan` resetting the key to
     // 0 is what the service waits for, and the target interface coming back is the other.
@@ -62,8 +64,7 @@ RecordingSSHClient _client({String cache = _cache, String policy = _policyList, 
 
 /// No real waiting: `notify_rc` queueing is what the poll interval exists for, and the fake has no
 /// queue.
-DeviceAssignmentService _svc(RecordingSSHClient c) =>
-    DeviceAssignmentService(c, pollInterval: Duration.zero);
+DeviceAssignmentService _svc(RecordingSSHClient c) => DeviceAssignmentService(c, pollInterval: Duration.zero);
 
 Future<AssignmentState> _state(RecordingSSHClient c) => DeviceAssignmentService(c).read();
 
@@ -127,8 +128,7 @@ void main() {
       final s = await _state(c);
       c.commands.clear();
       await expectLater(
-        _svc(c)
-            .apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {}),
+        _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {}),
         throwsA(isA<AssignmentConflictException>()),
       );
       expect(c.commands.any((cmd) => cmd.contains('nvram set')), isFalse, reason: 'nothing written');
@@ -143,8 +143,7 @@ void main() {
       });
       final s = await _state(c);
       await expectLater(
-        _svc(c)
-            .apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {}),
+        _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {}),
         throwsA(isA<AssignmentConflictException>()),
       );
     });
@@ -154,8 +153,7 @@ void main() {
       // reorder or drop it - that would silently destroy an assignment made in the web interface.
       final c = _client();
       final s = await _state(c);
-      await _svc(c)
-          .apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
       final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list'));
       expect(write, contains('1>192.168.1.50>>3>'));
       expect(write, contains('1>192.168.1.20>>5>'));
@@ -164,8 +162,7 @@ void main() {
     test('unassigning disables the record rather than deleting it', () async {
       final c = _client();
       final s = await _state(c);
-      await _svc(c)
-          .apply(base: s, changes: {'192.168.1.20': null}, reservationsToCreate: {});
+      await _svc(c).apply(base: s, changes: {'192.168.1.20': null}, reservationsToCreate: {});
       final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list'));
       expect(write, contains('0>192.168.1.20>>0>'));
     });
@@ -202,9 +199,8 @@ void main() {
     test('commits, then calls the light pair in order', () async {
       final c = _client();
       final s = await _state(c);
-      await _svc(c)
-          .apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
-      final order = c.commands.where((cmd) => cmd.contains('commit') || cmd.contains('service')).toList();
+      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      final order = c.commands.where((cmd) => cmd.contains('commit') || cmd.startsWith('service ')).toList();
       expect(order, ['nvram commit', 'service restart_dnsmasq', 'service restart_vpnc_dev_policy']);
     });
 
@@ -241,7 +237,7 @@ void main() {
         final s = await _state(c);
         await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
 
-        expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9'));
+        expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9 priority 100'));
         expect(c.commands.any((x) => x.contains('lookup 5')), isFalse, reason: 'the new rule stays');
         expect(c.ran('restart_net_and_phy'), isFalse, reason: 'deleting the rule is the light fix');
       });
@@ -262,7 +258,7 @@ void main() {
         final s = await _state(c);
         await _svc(c).apply(base: s, changes: {'192.168.1.20': null}, reservationsToCreate: {});
 
-        expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9'));
+        expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9 priority 100'));
         expect(c.commands.any((x) => x.contains('from all')), isFalse);
       });
 
@@ -271,6 +267,27 @@ void main() {
         final s = await _state(c);
         await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
         expect(c.commands.any((x) => x.startsWith('ip rule del')), isFalse);
+      });
+
+      test("the guard's own rules for the device survive the sweep", () async {
+        // Same address, same table, priority 90: an unqualified sweep took it for a duplicate.
+        final c = ruleClient([
+          '90:\tfrom 192.168.1.20 lookup 5 suppress_prefixlength 0',
+          '91:\tfrom 192.168.1.20 blackhole',
+          '100:\tfrom 192.168.1.20 lookup 5',
+        ]);
+        final s = await _state(c);
+        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        expect(c.commands.any((x) => x.startsWith('ip rule del')), isFalse);
+      });
+
+      test('every delete names priority 100, so it can never reach the guard at 90', () async {
+        final c = ruleClient(['100:\tfrom 192.168.1.20 lookup 9', '100:\tfrom 192.168.1.20 lookup 5']);
+        final s = await _state(c);
+        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        final deletes = c.commands.where((x) => x.startsWith('ip rule del'));
+        expect(deletes, isNotEmpty);
+        expect(deletes.every((x) => x.endsWith(' priority 100')), isTrue);
       });
 
       test('a default-connection change on its own touches no per-device rule', () async {
@@ -289,7 +306,8 @@ void main() {
         final c = _client();
         final s = await _state(c);
         final logged = <String>[];
-        final svc = DeviceAssignmentService(c, pollInterval: Duration.zero,
+        final svc = DeviceAssignmentService(c,
+            pollInterval: Duration.zero,
             onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logged.add(m));
 
         await svc.apply(
@@ -311,7 +329,8 @@ void main() {
         final c = _client();
         final s = await _state(c);
         final logged = <String>[];
-        final svc = DeviceAssignmentService(c, pollInterval: Duration.zero,
+        final svc = DeviceAssignmentService(c,
+            pollInterval: Duration.zero,
             onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logged.add(m));
 
         await svc.apply(
@@ -336,8 +355,7 @@ void main() {
       // for the profile vpnc_unit names, which is why the row is set first.
       final c = _client();
       final s = await _state(c);
-      await _svc(c)
-          .apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
+      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
 
       final steps = c.commands
           .where((cmd) =>
@@ -365,8 +383,9 @@ void main() {
     // MANAGE DISABLE had left it on wgc1's row, so `restart_vpnc` here started the tunnel the user
     // had just switched off: interface up, routes and DNS rules installed, `vpnc_clientlist` still
     // reading disabled, and nothing on screen saying so.
-    test('switching to Internet starts no tunnel, whatever vpnc_unit was left pointing at', () async {
-      final c = _client();
+    test('switching to Internet starts a switched-off tunnel, whatever vpnc_unit was left pointing at', () async {
+      // Row 0, the outgoing default, is switched off in the router.
+      final c = _client(clientlist: _clientlist.replaceFirst('>password>1>9>', '>password>0>9>'));
       final s = await _state(c);
       await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 0);
 
@@ -383,6 +402,33 @@ void main() {
       expect(unit, lessThan(stop), reason: 'the pointer is set before the service that follows it');
       // Internet writes no index, so nothing may be written back over restart_default_wan's reset.
       expect(c.ran('nvram set vpnc_default_wan='), isFalse);
+    });
+
+    // ID-220: stopping the outgoing tunnel and not starting it again left it down until its
+    // watchdog rebuilt it, and with no watchdog, down for good.
+    test('switching to Internet restarts the outgoing tunnel when it is switched on', () async {
+      final c = _client();
+      final s = await _state(c);
+      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 0);
+      final stop = c.commands.indexOf('service stop_vpnc');
+      final wan = c.commands.indexOf('service restart_default_wan');
+      final start = c.commands.indexOf('service restart_vpnc');
+      expect([stop, wan, start], isNot(contains(-1)));
+      expect(stop, lessThan(wan));
+      expect(wan, lessThan(start), reason: 'restart_default_wan tears the clients down, so it goes first');
+      expect(c.commands.lastIndexOf('nvram set vpnc_unit=0'), lessThan(start), reason: 'aimed at its own row');
+      expect(c.ran('nvram set vpnc_default_wan='), isFalse);
+    });
+
+    test('every service call waits for the router to be free first (ID-214)', () async {
+      final c = _client();
+      final s = await _state(c);
+      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {}, newDefaultIndex: 5);
+      for (var i = 0; i < c.commands.length; i++) {
+        if (!c.commands[i].startsWith('service ')) continue;
+        expect(c.commands[i - 1], contains('nvram get rc_service'),
+            reason: '${c.commands[i]} was not preceded by a queue check');
+      }
     });
 
     test('a switch between tunnels still aims both services at the target row', () async {
@@ -422,9 +468,9 @@ void main() {
       final s = await _state(c);
       await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
 
-      expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 3'),
+      expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 3 priority 100'),
           reason: 'the duplicate belongs to a device the apply never mentioned');
-      expect(c.commands.where((cmd) => cmd == 'ip rule del from 192.168.1.20 lookup 5').length, 0,
+      expect(c.commands.where((cmd) => cmd == 'ip rule del from 192.168.1.20 lookup 5 priority 100').length, 0,
           reason: 'the one correct rule for the moved device is kept, not deleted and re-added');
     });
 
@@ -444,15 +490,14 @@ void main() {
       });
       final s = await _state(c);
       await _svc(c).apply(base: s, changes: {'192.168.1.20': 9}, reservationsToCreate: {});
-      expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 5'));
+      expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 5 priority 100'));
     });
 
     test('the key is written AFTER restart_default_wan, never before', () async {
       // The single fact that took the longest to find: writing it first always ended with 0.
       final c = _client();
       final s = await _state(c);
-      await _svc(c)
-          .apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
+      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
       final wan = c.commands.indexWhere((cmd) => cmd == 'service restart_default_wan');
       final key = c.commands.indexWhere((cmd) => cmd.startsWith('nvram set vpnc_default_wan='));
       expect(wan, lessThan(key), reason: 'restart_default_wan resets the key, so it must run first');
@@ -462,8 +507,7 @@ void main() {
       // The whole point of keeping the two apart: assigning a device is instant and invisible.
       final c = _client();
       final s = await _state(c);
-      await _svc(c)
-          .apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
       // Exact matches: 'restart_vpnc' is a substring of 'restart_vpnc_dev_policy', which a
       // device-only apply DOES call.
       expect(c.commands.contains('service stop_vpnc'), isFalse);
@@ -475,8 +519,7 @@ void main() {
     test('no default change means no default_wan write at all', () async {
       final c = _client();
       final s = await _state(c);
-      await _svc(c)
-          .apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
       // The batched read mentions the key, so this must look for the WRITE specifically.
       expect(c.ran('nvram set vpnc_default_wan'), isFalse);
       expect(c.ran('restart_default_wan'), isFalse);
@@ -503,6 +546,43 @@ void main() {
       expect(h[1]!.handshakeAgeSeconds, 50);
       expect(h[5]!.up, isFalse);
       expect(h[5]!.handshakeAgeSeconds, isNull);
+    });
+  });
+
+  // ID-213: an APPLY leaves the fail-closed guard matching the list it has just written.
+  group('the fail-closed guard', () {
+    RecordingSSHClient guardClient({required bool installed}) => RecordingSSHClient(responder: (cmd) {
+          if (cmd.contains('cfg_device_list')) return _blob();
+          if (cmd == 'nvram get vpnc_dev_policy_list') return _policyList;
+          if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
+          if (cmd == "cat '$kGuardScriptPath' 2>/dev/null || true") return installed ? kGuardScript : '';
+          if (cmd == "'$kGuardScriptPath'") return 'guarded 1';
+          return '';
+        });
+
+    test('runs after the assignments are written', () async {
+      final c = guardClient(installed: true);
+      await _svc(c).apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      final ran = c.commands.indexOf("'$kGuardScriptPath'");
+      expect(ran, greaterThan(c.commands.indexOf('service restart_vpnc_dev_policy')));
+    });
+
+    test('an unchanged script is run, not rewritten', () async {
+      final c = guardClient(installed: true);
+      await _svc(c).apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      expect(c.commands.any((x) => x.contains('guard.sh') && x.contains('WATCHDOG_EOF')), isFalse);
+    });
+
+    test('a guard that cannot be put in place is reported, and the APPLY still finishes', () async {
+      final c = guardClient(installed: false)..failWith["guard.sh' <<"] = 'cat: write error: No space left on device';
+      final logs = <String>[];
+      final svc = DeviceAssignmentService(c,
+          pollInterval: Duration.zero,
+          onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m));
+      await svc.apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      expect(logs.any((m) => m.startsWith('The fail-closed guard could not be put in place')), isTrue,
+          reason: logs.join(' | '));
+      expect(logs.last, 'Device assignments applied.');
     });
   });
 }

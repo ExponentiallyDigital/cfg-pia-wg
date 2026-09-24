@@ -5,6 +5,8 @@
 // this app does not manage is named rather than shown as unassigned.
 //
 // MACs are invented - see test/unit/no_lan_identifiers_test.dart.
+import 'dart:async';
+
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/device_assignment_service.dart';
 import 'package:cfg_pia_wg/entitlement.dart';
@@ -568,6 +570,10 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('device_apply')));
     await tester.tap(find.byKey(const Key('device_apply')));
     await tester.pumpAndSettle();
+    // ID-191: the cost is the restart. It used to add that a watchdog "will report the outage",
+    // which a restart of seconds almost never gives it the chance to.
+    expect(find.textContaining('stops and restarts your VPN tunnels'), findsOneWidget);
+    expect(find.textContaining('report the outage'), findsNothing);
     await tester.tap(find.byKey(const Key('apply_confirm')));
     await tester.pumpAndSettle();
 
@@ -664,14 +670,15 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('a tunnel that is not running is named, with where the device goes meanwhile - and still applies',
+    testWidgets('a tunnel that is not running is named, with the device held off the internet - and still applies',
         (tester) async {
       final ssh = await _pumpConnected(tester);
       await stage(tester, 'row_11:22:33:44:55:66', 'pick_5');
 
       expect(
-          find.text('wgc5:pia-aus_perth is not running. Until it is enabled, Box will use the default connection, '
-              'wgc1:pia-aus_melbourne.'),
+          // ID-213: it used to say Box would use the default connection meanwhile - the fall-through
+          // the fail-closed guard now prevents.
+          find.text('wgc5:pia-aus_perth is not running. Until it is enabled, Box will have no internet.'),
           findsOneWidget);
       await tester.tap(find.byKey(const Key('apply_confirm')));
       await tester.pumpAndSettle();
@@ -718,12 +725,13 @@ void main() {
   // Measured on hardware 2026-09-13: a device pinned to a disabled slot keeps its pin and falls
   // through to the default connection, while the screen went on naming the slot.
   group('where a device actually exits when its tunnel is not running', () {
-    testWidgets('a device pinned to a stopped tunnel shows the default it falls through to', (tester) async {
+    testWidgets('a device pinned to a stopped tunnel is shown as having no internet, not as falling through',
+        (tester) async {
       await _pumpConnected(tester, router: _router(policy: '1>192.168.1.20>>5>'));
 
       expect(
           tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
-          'wgc5:pia-aus_perth is not running - traffic uses wgc1:pia-aus_melbourne');
+          'wgc5:pia-aus_perth is not running - no internet until it is enabled');
       // The picker still names the assignment: the pin is intact, and enabling wgc5 restores it.
       expect(
           find.descendant(of: find.byKey(const Key('row_11:22:33:44:55:66')), matching: find.text('wgc5:pia-aus_perth')),
@@ -743,6 +751,80 @@ void main() {
       await _pumpConnected(tester);
       expect(find.byKey(const Key('default_exit')), findsNothing);
       expect(find.textContaining('is not running'), findsNothing, reason: 'the OpenVPN profile state is unknown, not down');
+    });
+  });
+
+  // ID-218: read once at connect, the notes went stale - straight after a reboot every device read
+  // "not running" while every tunnel was up, and going to MANAGE and back changed nothing.
+  group('keeping which tunnels are running current (ID-218)', () {
+    const exitKey = Key('exit_11:22:33:44:55:66');
+
+    /// Box pinned to wgc5. [up] is read on every command, so a test can bring a tunnel up mid-way.
+    RecordingSSHClient liveRouter(List<String> up) => RecordingSSHClient(responder: (cmd) {
+          final ifaces = up.map((i) => '3: $i: <POINTOPOINT,NOARP,UP,LOWER_UP>').join('\n');
+          if (cmd.contains('cfg_device_list')) return _blob(policy: '1>192.168.1.20>>5>');
+          if (cmd.contains('latest-handshakes')) {
+            return [
+              '',
+              ifaces,
+              '10000',
+              for (final _ in RegExp(r'wg show wgc\d latest-handshakes').allMatches(cmd)) 'peerkey=\t9950',
+              '',
+            ].join('\n$_sep\n');
+          }
+          if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
+          if (cmd.contains('ip -o link show up')) return ifaces;
+          return '';
+        });
+
+    int checks(RecordingSSHClient c) => c.commands.where((cmd) => cmd.contains('latest-handshakes')).length;
+
+    testWidgets('a tunnel that comes up clears its note within 15 seconds, and nothing is logged', (tester) async {
+      final up = ['wgc1'];
+      final c = await _pumpConnected(tester, router: liveRouter(up));
+      expect(find.byKey(exitKey), findsOneWidget);
+      final session = SessionScope.of(tester.element(find.byType(DeviceAssignmentScreen)));
+      final logged = session.log.length;
+      final before = checks(c);
+
+      up.add('wgc5');
+      await tester.pump(const Duration(seconds: 10));
+      expect(checks(c), before, reason: 'not before the interval');
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump();
+      expect(checks(c), before + 1);
+      expect(find.byKey(exitKey), findsNothing);
+      expect(session.log.length, logged, reason: 'a quiet check writes nothing to the app log');
+    });
+
+    testWidgets('coming back to the screen checks at once, and nothing is checked while away', (tester) async {
+      final up = ['wgc1'];
+      final c = await _pumpConnected(tester, router: liveRouter(up));
+      final before = checks(c);
+      final nav = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(nav.push(MaterialPageRoute<void>(builder: (_) => const Text('MANAGE'))));
+      await tester.pumpAndSettle();
+      up.add('wgc5');
+      await tester.pump(const Duration(seconds: 20));
+      expect(checks(c), before, reason: 'the screen is covered');
+
+      nav.pop();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      expect(checks(c), before + 1);
+      expect(find.byKey(exitKey), findsNothing);
+    });
+
+    testWidgets('pull to refresh reads the devices and the tunnels again', (tester) async {
+      final up = ['wgc1'];
+      final c = await _pumpConnected(tester, router: liveRouter(up));
+      final reads = c.commands.where((cmd) => cmd.contains('cfg_device_list')).length;
+      up.add('wgc5');
+      await tester.fling(find.byType(SingleChildScrollView), const Offset(0, 400), 1000);
+      await tester.pumpAndSettle();
+      expect(c.commands.where((cmd) => cmd.contains('cfg_device_list')).length, reads + 1);
+      expect(find.byKey(exitKey), findsNothing);
     });
   });
 

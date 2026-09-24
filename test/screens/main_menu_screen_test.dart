@@ -164,6 +164,24 @@ void main() {
     await _teardown(tester, c);
   });
 
+  // ID-156: on HOME, HOME had no fill, so nothing in the drawer looked current.
+  testWidgets('on HOME the drawer marks HOME the way it marks every other screen', (tester) async {
+    final c = _quietController();
+    await tester.pumpWidget(PiaWgApp(controller: c));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('app_hamburger')));
+    await tester.pumpAndSettle();
+
+    final home = tester.widget<ListTile>(find.byKey(const Key('drawer_menu')));
+    expect(home.selected, isTrue);
+    expect(home.selectedTileColor, kBorder);
+    final log = tester.widget<ListTile>(find.byKey(Key('drawer_${AppDestination.log.routeName}')));
+    expect(log.selected, isFalse);
+    expect(log.selectedTileColor, kBorder, reason: 'one fill for the current screen, whichever it is');
+
+    await _teardown(tester, c);
+  });
+
   testWidgets('the Android back key prompts to confirm exit', (tester) async {
     final c = _quietController();
     await tester.pumpWidget(PiaWgApp(controller: c));

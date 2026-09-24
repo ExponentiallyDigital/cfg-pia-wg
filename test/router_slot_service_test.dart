@@ -2,6 +2,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_service_queue.dart';
+import 'package:cfg_pia_wg/device_assignment.dart' show kDeviceSourcesCommand, kSourceSeparator;
+import 'package:cfg_pia_wg/fail_closed_guard.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
 
 import 'watchdog_test_utils.dart';
@@ -363,6 +365,15 @@ void main() {
         expect(c.ran('nvram set wgc1_enable=0'), isTrue, reason: 'the slot must not be left half-up');
       });
 
+      // ID-174: the revert's own stop can fail, and the message must not claim it worked.
+      test('a revert that leaves the tunnel up says so', () async {
+        final c = router(handshake: '0'); // the interface never goes down in this fake
+        await expectLater(
+          svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
+          throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('its tunnel is still up on the router'))),
+        );
+      });
+
       test('a fresh handshake is accepted', () async {
         final c = router(handshake: '${kFakeNow - 5}');
         await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
@@ -470,8 +481,63 @@ void main() {
     test('a failed enable reverts and waits too', () async {
       // Interface never comes up -> _revertEnable, whose stop must also settle.
       final c = RecordingSSHClient(responder: (_) => '');
-      await expectLater(svc(c).enableSlot(2, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
+      await expectLater(
+        svc(c).enableSlot(2, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
+        throwsA(isA<Exception>().having((e) => e.toString(), 'message', isNot(contains('still up')))),
+      );
       expect(c.ran('nvram set wgc2_enable=0'), isTrue);
+    });
+  });
+
+  // ID-203: EDIT on a running slot restarts it, and checks it as ENABLE does.
+  group('restartSlot', () {
+    /// A stock router with wgc1 in clientlist row 0. The peer and handshake are read per call, so a
+    /// test can have the first restart skipped.
+    RecordingSSHClient router({List<String> peers = const ['NEWKEY'], String handshake = '${kFakeNow + 3}'}) {
+      var restarts = 0;
+      return RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'nvram get vpnc_clientlist') return 'pia-nz>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg';
+        if (cmd == 'nvram get wgc1_ppub') return 'NEWKEY';
+        if (cmd == 'service restart_vpnc') restarts++;
+        if (cmd.contains('ip -o link show up')) return '3: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP>';
+        if (cmd.startsWith('wg show wgc1 peers')) return restarts == 0 ? 'OLDKEY' : peers[(restarts - 1).clamp(0, peers.length - 1)];
+        if (cmd.contains('latest-handshakes')) return handshake;
+        if (cmd.contains('date +%s')) return '$kFakeNow';
+        return '';
+      });
+    }
+
+    setUp(useStock);
+
+    test('restarts through VPN Fusion and passes on a fresh handshake from the new peer', () async {
+      final c = router();
+      await svc(c).restartSlot(1);
+      expect(c.ran('nvram set vpnc_unit=0'), isTrue);
+      expect(c.commands.where((cmd) => cmd == 'service restart_vpnc'), hasLength(1));
+      expect(c.ran('nvram set wgc1_enable=0'), isFalse, reason: 'nothing is reverted');
+    });
+
+    test('a restart the router skipped is sent once more (ID-214)', () async {
+      final c = router(peers: ['OLDKEY', 'NEWKEY']);
+      await svc(c).restartSlot(1);
+      expect(c.commands.where((cmd) => cmd == 'service restart_vpnc'), hasLength(2));
+    });
+
+    test('skipped twice, it says the old settings are still running', () async {
+      final c = router(peers: ['OLDKEY']);
+      await expectLater(
+        svc(c).restartSlot(1),
+        throwsA(isA<Exception>().having((e) => '$e', 'message', contains('still running the old ones'))),
+      );
+    });
+
+    test('a handshake from before the restart does not count', () async {
+      final c = router(handshake: '${kFakeNow - 60}');
+      await expectLater(
+        svc(c).restartSlot(1),
+        throwsA(isA<Exception>().having((e) => '$e', 'message', contains('its server has not answered'))),
+      );
+      expect(c.ran('nvram set wgc1_enable=0'), isFalse, reason: 'the user chose these settings; they stay');
     });
   });
 
@@ -534,10 +600,21 @@ void main() {
       final logs = <String>[];
       final c = RecordingSSHClient(
         responder: (cmd) {
+          // The one batched read every device name comes from (ID-154), before the single reads
+          // below can claim it.
+          if (cmd == kDeviceSourcesCommand) {
+            return [
+              '',
+              '<AA:BB:CC:DD:EE:FF>192.168.1.20>>',
+              '<Tablet>AA:BB:CC:DD:EE:FF>0>0>>',
+              '',
+              '{"AA:BB:CC:DD:EE:FF":{"name":"android-7f3a","online":1}}',
+              '',
+              '',
+            ].join('\n$kSourceSeparator\n');
+          }
           if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>5>>pw>1>5>>>0>0>cfg-pia-wg';
           if (cmd.contains('vpnc_dev_policy_list')) return '1>192.168.1.20>>5><1>192.168.1.21>>9><0>192.168.1.22>>0>';
-          if (cmd.contains('dhcp_staticlist')) return '<AA:BB:CC:DD:EE:FF>192.168.1.20>>';
-          if (cmd.contains('custom_clientlist')) return '<Tablet>AA:BB:CC:DD:EE:FF>0>0>>';
           if (cmd.contains('ip rule show')) return '100:\tfrom 192.168.1.20 lookup 5\n32766:\tfrom all lookup main';
           return '';
         },
@@ -553,7 +630,35 @@ void main() {
       // Named, not just counted - the user has to know which device moved.
       expect(logs.any((m) => m.contains('Tablet (192.168.1.20)')), isTrue);
       // Stock leaves the routing rule behind too, so it goes by hand.
-      expect(c.ran('ip rule del from 192.168.1.20 lookup 5'), isTrue);
+      // With the priority, or it could take the fail-closed guard's rule of the same shape.
+      expect(c.ran('ip rule del from 192.168.1.20 lookup 5 priority 100'), isTrue);
+    });
+
+    test('a device named only by the router is named in the log too, not left as an address', () async {
+      // ID-154. The screen named this device and the DELETE log printed its bare address, because
+      // the log read custom_clientlist alone.
+      useStock();
+      final logs = <String>[];
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd == kDeviceSourcesCommand) {
+            return [
+              '',
+              '<AA:BB:CC:DD:EE:01>192.168.1.30>>',
+              '',
+              '',
+              '{"AA:BB:CC:DD:EE:01":{"name":"study-desktop","online":1}}',
+              '',
+              '',
+            ].join('\n$kSourceSeparator\n');
+          }
+          if (cmd.contains('vpnc_clientlist')) return 'pia-aus_perth>WireGuard>5>>pw>1>5>>>0>0>cfg-pia-wg';
+          if (cmd.contains('vpnc_dev_policy_list')) return '1>192.168.1.30>>5>';
+          return '';
+        },
+      );
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).deleteSlot(5);
+      expect(logs, contains('  study-desktop (192.168.1.30)'));
     });
 
     // Reported 2026-09-11: deleting wgc1 left `vpnc_default_wan` still naming its index 6, so every
@@ -586,7 +691,8 @@ void main() {
       );
       await svc(c).deleteSlot(1);
       expect(c.ran('service restart_default_wan'), isTrue);
-      expect(c.ran('service restart_vpnc'), isTrue);
+      // ID-209: restart_vpnc would start the profile vpnc_unit names - the one being deleted.
+      expect(c.commands.contains('service restart_vpnc'), isFalse);
     });
 
     test('a default connection naming ANOTHER profile is left alone', () async {
@@ -965,7 +1071,9 @@ void main() {
       await svc(c).disableSlot(2);
       // disableSlot logs 3 lines naming the slot; _setVpncActive and _runVpncService read the
       // clientlist for their own reasons, so only assert the label did not add a read per line.
-      expect(c.count('nvram get vpnc_clientlist'), lessThanOrEqualTo(3));
+      // Exact commands: the fail-closed guard's script also reads the clientlist, as text inside
+      // the one command that writes it, and that is not a label lookup.
+      expect(c.commands.where((x) => x == 'nvram get vpnc_clientlist').length, lessThanOrEqualTo(3));
     });
   });
 
@@ -1385,6 +1493,53 @@ void main() {
       await svc(c).disableSlot(1);
       await svc(c).deleteSlot(1);
       expect(c.ran('vpnc_clientlist'), isFalse);
+    });
+  });
+
+  // ID-213: the names DISABLE's warning shows, and the guard it puts in place before stopping.
+  group('pinned devices and the fail-closed guard', () {
+    RecordingSSHClient pinnedClient() => RecordingSSHClient(responder: (cmd) {
+          if (cmd == kDeviceSourcesCommand) {
+            return [
+              '',
+              '<AA:BB:CC:DD:EE:01>192.168.1.30>><AA:BB:CC:DD:EE:02>192.168.1.31>>',
+              '<Study PC>AA:BB:CC:DD:EE:01>0>0>>',
+              '',
+              '{"AA:BB:CC:DD:EE:01":{"name":"","online":1},"AA:BB:CC:DD:EE:02":{"name":"","online":1}}',
+              '',
+              '',
+            ].join('\n$kSourceSeparator\n');
+          }
+          if (cmd == 'nvram get vpnc_clientlist') return 'pia-aus_perth>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+          if (cmd == 'nvram get vpnc_dev_policy_list') return '1>192.168.1.30>>9><1>192.168.1.31>>9><1>192.168.1.32>>5>';
+          return '';
+        });
+
+    test('names every device pinned to the slot, and only those', () async {
+      useStock();
+      expect(await svc(pinnedClient()).pinnedDeviceNames(1), ['Study PC', '192.168.1.31']);
+    });
+
+    test('none on Merlin, which has its own kill switch', () async {
+      useMerlin();
+      expect(await svc(pinnedClient()).pinnedDeviceNames(1), isEmpty);
+    });
+
+    test('DISABLE puts the guard in place before it stops the tunnel', () async {
+      useStock();
+      final c = pinnedClient();
+      await svc(c).disableSlot(1);
+      final guard = c.commands.indexWhere((x) => x.contains('guard.sh'));
+      expect(guard, isNonNegative);
+      expect(guard, lessThan(c.commands.indexWhere((x) => x.contains('service stop_vpnc'))));
+    });
+
+    test('DELETE runs the guard after the devices are moved to Internet, so their rules go too', () async {
+      useStock();
+      final c = pinnedClient();
+      await svc(c).deleteSlot(1);
+      final moved = c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list='));
+      expect(c.commands.lastIndexWhere((x) => x == "'$kGuardScriptPath'"), greaterThan(moved));
     });
   });
 }

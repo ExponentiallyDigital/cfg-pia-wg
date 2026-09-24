@@ -3,6 +3,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart' show kMaxActiveVpnsPreviousKey;
+import 'package:cfg_pia_wg/fail_closed_guard.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/s50_template.dart';
 
@@ -331,6 +332,17 @@ void main() {
           reason: "yesterday's rotated copy goes too, because the viewer shows it");
       expect(c.commands.any((x) => x.contains('> /tmp/watchdog_wgc1.log')), isTrue);
       expect(c.commands.any((x) => x.contains('logger')), isTrue, reason: 'the router log records it');
+    });
+
+    // ID-213. Left behind, the rules would keep every pinned device off the internet whenever its
+    // tunnel is down, with no app left to say why - so they go first, while the script is there.
+    test('uninstall removes the fail-closed guard first', () async {
+      final c = RecordingSSHClient(responder: (_) => '');
+      final done = await _wd(c).uninstallFromRouter();
+      final clear = c.commands.indexWhere((x) => x.contains("'$kGuardScriptPath' clear"));
+      expect(clear, isNonNegative);
+      expect(clear, lessThan(c.commands.indexWhere((x) => x.contains('rm -rf'))));
+      expect(done, contains('Removed the fail-closed guard rules'));
     });
 
     test('uninstall restores what it can and reports what it did', () async {
@@ -820,6 +832,16 @@ void main() {
       expect(c.ran('nvram unset wgc1_wd_check_interval'), isTrue, reason: 'its own settings still go');
     });
 
+    // ID-150: DELETE kept its own list of keys, and missed the two DoH ones 454 added.
+    test('removes every per-slot watchdog key, the DoH pair included', () async {
+      final c = RecordingSSHClient(responder: (_) => '');
+      await _wd(c).stopWatchdog(1);
+      for (final field in kWatchdogSlotNvramFields) {
+        expect(c.ran('nvram unset wgc1_$field'), isTrue, reason: 'wgc1_$field was left behind');
+      }
+      expect(kWatchdogSlotNvramFields, containsAll(['wd_doh_ip', 'wd_doh_url']));
+    });
+
     test('clears the shared PIA credentials when it is the last watchdog', () async {
       final c = RecordingSSHClient(responder: (_) => '');
       await _wd(c).stopWatchdog(1);
@@ -970,6 +992,17 @@ void main() {
       return c;
     }
 
+    // ID-190: the app log gave a path and a size, the router log the version.
+    test('the app log and the router log say the same thing, version included', () async {
+      appVersionLabel = 'v0.8.94 build 464';
+      addTearDown(() => appVersionLabel = '');
+      final logs = <String>[];
+      final c = router(deployed: '5');
+      await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).redeployScripts();
+      expect(logs, contains('Watchdog script updated to v0.8.94 build 464 for wgc5.'));
+      expect(c.commands.any((x) => x.startsWith('logger') && x.contains('Watchdog script updated to v0.8.94 build 464 for wgc5')), isTrue);
+    });
+
     test('rewrites only the scripts already on the router, and touches nothing else', () async {
       final c = router(deployed: '5');
       expect(await _wd(c).redeployScripts(), [5]);
@@ -985,6 +1018,47 @@ void main() {
 
     test('finds nothing to do when no script is deployed', () async {
       expect(await _wd(router(deployed: '')).redeployScripts(), isEmpty);
+    });
+
+    // A router updated from before 460 has no guard and a boot hook that does not call one. This is
+    // the update the user is prompted for, so it brings both.
+    test('on stock it also puts the fail-closed guard in place', () async {
+      useStock();
+      final c = router(deployed: '5');
+      await _wd(c).redeployScripts();
+      expect(c.commands, contains("'$kGuardScriptPath'"));
+    });
+
+    test('and rewrites a boot hook the app wrote, keeping its schedule', () async {
+      useStock();
+      late final RecordingSSHClient c;
+      final old = buildS50Script(['cru a watchdog_wgc5 "*/5 * * * *" /jffs/cfg-pia-wg/watchdog_wgc5.sh'])
+          .replaceAll(RegExp(r'\n  # Put the fail-closed guard back.*\n.*guard\.sh.*'), '');
+      c = RecordingSSHClient(responder: (cmd) {
+        final size = RegExp(r"wc -c < '([^']+)'").firstMatch(cmd);
+        if (size != null) return '${c.files[size.group(1)]?.length ?? 0}';
+        if (cmd.contains('] && echo')) return '5';
+        if (cmd == "cat '$kS50Path' 2>/dev/null") return old;
+        return '';
+      });
+      await _wd(c).redeployScripts();
+      final written = c.files[kS50Path]?.toString() ?? '';
+      expect(written, contains(kGuardScriptPath));
+      expect(extractS50CruLines(written), ['cru a watchdog_wgc5 "*/5 * * * *" /jffs/cfg-pia-wg/watchdog_wgc5.sh']);
+    });
+
+    test("leaves a boot script that is not the app's alone", () async {
+      useStock();
+      late final RecordingSSHClient c;
+      c = RecordingSSHClient(responder: (cmd) {
+        final size = RegExp(r"wc -c < '([^']+)'").firstMatch(cmd);
+        if (size != null) return '${c.files[size.group(1)]?.length ?? 0}';
+        if (cmd.contains('] && echo')) return '5';
+        if (cmd == "cat '$kS50Path' 2>/dev/null") return '#!/bin/sh\n# the real Download Master\n';
+        return '';
+      });
+      await _wd(c).redeployScripts();
+      expect(c.files.containsKey(kS50Path), isFalse);
     });
   });
 

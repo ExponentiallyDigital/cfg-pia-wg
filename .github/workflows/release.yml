@@ -3,7 +3,9 @@
 # Triggers on git tag pushes matching "v*" (e.g. v0.7.06)
 # =================================================================
 name: "Build and release"
-run-name: "Release - ${{ github.event_name }} - ${{ github.ref_name }}"
+# The tagged commit's message, which starts "vX build N", so the Actions list says which build was
+# pushed (ID-142). A tag on a merge commit shows GitHub's merge message with the PR title after it.
+run-name: "Release ${{ github.ref_name }} - ${{ github.event.head_commit.message || inputs.tag_name || github.event_name }}"
 
 on:
   push:

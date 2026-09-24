@@ -28,74 +28,84 @@ rather than a measurement.
 It lists the firmware behaviours the app leans on, and it is the right first stop when a firmware
 update breaks something: the failure almost never looks like its cause.
 
-- [1. How it works](#how-it-works)
-- [2. What this app depends on ASUS not changing](#what-this-app-depends-on-asus-not-changing)
-- [3. App processing flow](#app-processing-flow)
-  - [3.1. Overview](#overview)
-  - [3.2. Detail](#detail)
-- [4. Wireguard SSH commands](#wireguard-ssh-commands)
-  - [4.1. Merlin](#merlin)
-    - [4.1.1. Enable](#enable)
-    - [4.1.2. Disable](#disable)
-    - [4.1.3. Delete](#delete)
-    - [4.1.4. What only Merlin has](#what-only-merlin-has)
-    - [4.1.5. Firmware detection](#firmware-detection)
-  - [4.2. Stock](#stock)
-    - [4.2.1. Create and enable a slot](#create-and-enable-a-slot)
-    - [4.2.2. Enable existing slot](#enable-existing-slot)
-    - [4.2.3. Stop/Disable](#stopdisable)
-    - [4.2.4. Delete](#stock-delete)
-    - [4.2.5. VPN Fusion](#vpn-fusion)
-- [5. Router WireGuard NVRAM fields](#router-wireguard-nvram-fields)
-  - [5.1. Field reference](#field-reference)
-  - [5.2. Stock `vpnc_clientlist`](#stock-vpnc-clientlist)
-  - [5.3. The three numbers that name one profile](#the-three-numbers-that-name-one-profile)
-- [6. Device assignment (stock)](#device-assignment-stock)
-  - [6.1. `vpnc_default_wan`](#vpnc-default-wan)
-  - [6.2. Shared format](#shared-format)
-  - [6.3. `dhcp_staticlist`](#dhcp-staticlist)
-    - [6.3.1. Telling a reserved address from a leased one](#reserved-or-not-the-distinction-the-screen-needs)
-  - [6.4. `custom_clientlist`](#custom-clientlist)
-  - [6.5. Practical notes](#practical-notes)
-  - [6.6. Reading the two device JSON files](#reading-the-two-device-json-files)
-  - [6.7. `cfg_device_list` - the router and its mesh nodes](#cfg-device-list-the-router-and-its-mesh-nodes)
-  - [6.8. `vpnc_dev_policy_list` - the assignment](#vpnc-dev-policy-list-the-assignment)
-    - [6.8.1. How a change is written](#how-a-change-is-written)
-    - [6.8.2. The starting state, before any VPN exists](#the-starting-state-before-any-vpn-exists)
-    - [6.8.3. Reservations are created by ANY assignment, and never removed - MEASURED 2026-09-08](#reservations-are-created-by-any-assignment-and-n)
-    - [6.8.4. `vpnc_dev_policy_list_tmp`](#vpnc-dev-policy-list-tmp)
-    - [6.8.5. Service calls](#service-calls)
-    - [6.8.6. `vpnc_default_wan` uses the same identifier](#vpnc-default-wan-uses-the-same-identifier)
-    - [6.8.7. `enabled` is what separates "on the internet" from "follows the default" - CONFIRMED 2026-09-08](#enabled-is-what-separates-on-the-internet-from-f)
-    - [6.8.8. Changing the default connection - the exact sequence, MEASURED 2026-09-08](#changing-the-default-connection-the-exact-sequen)
-    - [6.8.9. Assigning a device with no DHCP reservation creates one](#assigning-a-device-with-no-dhcp-reservation-crea)
-    - [6.8.10. What happens when the tunnel drops](#what-happens-when-the-tunnel-drops)
-    - [6.8.11. Stock leaves the old routing rule behind - MEASURED 2026-09-10](#stock-leaves-the-old-routing-rule-behind-measure)
-- [7. Watchdog details](#watchdog-details)
-  - [7.1. Shell script](#shell-script)
-    - [7.1.1. Backoff](#backoff)
-    - [7.1.2. Email alerting](#email-alerting)
-  - [7.2. When the script runs, and when it does nothing](#when-the-script-runs-and-when-it-does-nothing)
-  - [7.3. What a reconfigure does](#what-a-reconfigure-does)
-  - [7.4. Cron entries](#cron-entries)
-    - [7.4.1. The router's service queue, and how it wedges](#the-routers-service-queue-and-how-it-wedges)
-    - [7.4.2. The second init script, and how both are made recoverable](#the-second-init-script-and-how-both-are-made-rec)
-    - [7.4.3. What an uninstall leaves behind](#what-an-uninstall-leaves-behind)
-  - [7.5. USB storage for Download Master](#usb-storage-for-download-master)
-  - [7.6. Watchdog NVRAM fields](#watchdog-nvram-fields)
-  - [7.7. Sample `cfg-pia-wg` output](#sample-cfg-pia-wg-output)
-  - [7.8. `curl` refuses to run from cron](#curl-refuses-to-run-from-cron)
-- [8. Network traffic](#network-traffic)
-- [9. Output & session destruction](#output-session-destruction)
-- [10. Build provenance (the About screen)](#build-provenance-the-about-screen)
-  - [10.1. The channel](#the-channel)
-  - [10.2. Where each field comes from](#where-each-field-comes-from)
-  - [10.3. Gradle-side notes](#gradle-side-notes)
-  - [10.4. GNU licence text](#gnu-licence-text)
-- [11. Appendix: readings that were superseded](#appendix-readings-that-were-superseded)
-  - [11.1. The two-cost model for applying an assignment](#the-two-cost-model-for-applying-an-assignment)
-  - [11.2. Placeholder records in the policy list](#placeholder-records-in-the-policy-list)
-- [12. House style: what the app looks like](#house-style)
+- [1. How it works](#1-how-it-works)
+- [2. What this app depends on ASUS not changing](#2-what-this-app-depends-on-asus-not-changing)
+- [3. App processing flow](#3-app-processing-flow)
+  - [3.1. Overview](#31-overview)
+  - [3.2. Detail](#32-detail)
+- [4. Wireguard SSH commands](#4-wireguard-ssh-commands)
+  - [4.1. Merlin](#41-merlin)
+    - [4.1.1. Enable](#411-enable)
+    - [4.1.2. Disable](#412-disable)
+    - [4.1.3. Delete](#413-delete)
+    - [4.1.4. What only Merlin has](#414-what-only-merlin-has)
+    - [4.1.5. Firmware detection](#415-firmware-detection)
+  - [4.2. Stock](#42-stock)
+    - [4.2.1. Create and enable a slot](#421-create-and-enable-a-slot)
+    - [4.2.2. Enable existing slot](#422-enable-existing-slot)
+    - [4.2.3. Stop/Disable](#423-stopdisable)
+    - [4.2.4. Delete](#424-delete)
+    - [4.2.5. VPN Fusion](#425-vpn-fusion)
+- [5. Router WireGuard NVRAM fields](#5-router-wireguard-nvram-fields)
+  - [5.1. Field reference](#51-field-reference)
+  - [5.2. Stock `vpnc_clientlist`](#52-stock-vpnc_clientlist)
+  - [5.3. The three numbers that name one profile](#53-the-three-numbers-that-name-one-profile)
+- [6. Device assignment (stock)](#6-device-assignment-stock)
+  - [6.1. `vpnc_default_wan`](#61-vpnc_default_wan)
+  - [6.2. Shared format](#62-shared-format)
+  - [6.3. `dhcp_staticlist`](#63-dhcp_staticlist)
+    - [6.3.1. Telling a reserved address from a leased one](#631-telling-a-reserved-address-from-a-leased-one)
+  - [6.4. `custom_clientlist`](#64-custom_clientlist)
+  - [6.5. Practical notes](#65-practical-notes)
+  - [6.6. Reading the two device JSON files](#66-reading-the-two-device-json-files)
+  - [6.7. `cfg_device_list` - the router and its mesh nodes](#67-cfg_device_list---the-router-and-its-mesh-nodes)
+  - [6.8. `vpnc_dev_policy_list` - the assignment](#68-vpnc_dev_policy_list---the-assignment)
+    - [6.8.1. How a change is written](#681-how-a-change-is-written)
+    - [6.8.2. The starting state, before any VPN exists](#682-the-starting-state-before-any-vpn-exists)
+    - [6.8.3. Reservations are created by ANY assignment, and never removed - MEASURED 2026-09-08](#683-reservations-are-created-by-any-assignment-and-never-removed---measured-2026-09-08)
+    - [6.8.4. `vpnc_dev_policy_list_tmp`](#684-vpnc_dev_policy_list_tmp)
+    - [6.8.5. Service calls](#685-service-calls)
+    - [6.8.6. `vpnc_default_wan` uses the same identifier](#686-vpnc_default_wan-uses-the-same-identifier)
+    - [6.8.7. `enabled` is what separates "on the internet" from "follows the default" - CONFIRMED 2026-09-08](#687-enabled-is-what-separates-on-the-internet-from-follows-the-default---confirmed-2026-09-08)
+    - [6.8.8. Changing the default connection - the exact sequence, MEASURED 2026-09-08](#688-changing-the-default-connection---the-exact-sequence-measured-2026-09-08)
+    - [6.8.9. Assigning a device with no DHCP reservation creates one](#689-assigning-a-device-with-no-dhcp-reservation-creates-one)
+    - [6.8.10. What happens when the tunnel drops](#6810-what-happens-when-the-tunnel-drops)
+    - [6.8.11. Stock leaves the old routing rule behind - MEASURED 2026-09-10](#6811-stock-leaves-the-old-routing-rule-behind---measured-2026-09-10)
+    - [6.8.12. Every routing rule the app touches](#6812-every-routing-rule-the-app-touches)
+- [7. Watchdog details](#7-watchdog-details)
+  - [7.1. Shell script](#71-shell-script)
+    - [7.1.1. Backoff](#711-backoff)
+    - [7.1.2. Email alerting](#712-email-alerting)
+  - [7.2. When the script runs, and when it does nothing](#72-when-the-script-runs-and-when-it-does-nothing)
+  - [7.3. What a reconfigure does](#73-what-a-reconfigure-does)
+  - [7.4. Cron entries](#74-cron-entries)
+    - [7.4.1. The router's service queue, and how it wedges](#741-the-routers-service-queue-and-how-it-wedges)
+    - [7.4.2. The second init script, and how both are made recoverable](#742-the-second-init-script-and-how-both-are-made-recoverable)
+    - [7.4.3. What an uninstall leaves behind](#743-what-an-uninstall-leaves-behind)
+  - [7.5. USB storage for Download Master](#75-usb-storage-for-download-master)
+  - [7.6. Watchdog NVRAM fields](#76-watchdog-nvram-fields)
+  - [7.7. Sample `cfg-pia-wg` output](#77-sample-cfg-pia-wg-output)
+  - [7.8. `curl` polices who calls it and what it fetches](#78-curl-polices-who-calls-it-and-what-it-fetches)
+    - [The URL check](#the-url-check)
+    - [The caller check](#the-caller-check)
+- [8. Network traffic](#8-network-traffic)
+- [9. Output \& session destruction](#9-output--session-destruction)
+- [10. Build provenance (the About screen)](#10-build-provenance-the-about-screen)
+  - [10.1. The channel](#101-the-channel)
+  - [10.2. Where each field comes from](#102-where-each-field-comes-from)
+  - [10.3. Gradle-side notes](#103-gradle-side-notes)
+  - [10.4. GNU licence text](#104-gnu-licence-text)
+- [11. Appendix: readings that were superseded](#11-appendix-readings-that-were-superseded)
+  - [11.1. The two-cost model for applying an assignment](#111-the-two-cost-model-for-applying-an-assignment)
+  - [11.2. Placeholder records in the policy list](#112-placeholder-records-in-the-policy-list)
+- [12. House style: what the app looks like](#12-house-style-what-the-app-looks-like)
+  - [12.1. The palette](#121-the-palette)
+  - [12.2. The type scale](#122-the-type-scale)
+  - [12.3. Controls](#123-controls)
+  - [12.4. Menus, headings and logs](#124-menus-headings-and-logs)
+  - [12.5. Layout constants](#125-layout-constants)
+  - [12.6. Which file does what](#126-which-file-does-what)
+  - [12.7. Editing a screenshot](#127-editing-a-screenshot)
 
 ## 1. <a name='how-it-works'></a>How it works
 
@@ -954,7 +964,7 @@ Things that do NOT work, all measured rather than assumed:
 - writing the key before `restart_default_wan`, in any combination, stopped or running
 - a `vpnc_clientlist` field - the list is byte-for-byte identical either side of a web-interface change
 
-The cost is real and the app warns before doing it: the tunnels stop and restart, anything using them loses its connection for the duration, and a watchdog on an affected slot reports the outage. Assigning a device does none of that.
+The cost is real and the app warns before doing it: the tunnels stop and restart, and anything using them loses its connection for the duration. A watchdog reports it only if its check happens to land inside the few seconds it takes (ID-191). Assigning a device does none of that.
 
 #### 6.8.9. <a name='assigning-a-device-with-no-dhcp-reservation-crea'></a>Assigning a device with no DHCP reservation creates one
 
@@ -977,36 +987,54 @@ MAC, IP, empty DNS, **empty hostname**. That follows from the binding being by I
 
 #### 6.8.10. <a name='what-happens-when-the-tunnel-drops'></a>What happens when the tunnel drops
 
-**A per-device assignment falls through to the DEFAULT CONNECTION when its tunnel drops.**
-CONFIRMED 2026-09-08 by running the same test twice with different defaults.
+**On its own, stock does not quite fail closed. With the app's fail-closed guard, a pinned device gets its tunnel or nothing** (ID-213, build 460).
+
+Measured with one device pinned to wgc1 and a ping running on it throughout (`.claude/testing/runsheet_2026-09-24_fail-closed*.md`), then confirmed end to end with the built guard on a freshly reset router (`runsheet_2026-09-24_guard-check.md`, run 3): 537 replies across a rebuild, a DISABLE, both tunnels stopped in the web interface and moves between tunnels, every one from a tunnel and none from the ISP.
+
+| What happened to the tunnel | Without the guard | With the guard | Measured |
+| --- | --- | --- | --- |
+| Its server stopped answering: a PIA registration ageing out, interface still up | blocked - the router answers "Destination host unreachable" | blocked | 2026-09-20 (BRK-1), 2026-09-24 |
+| The watchdog rebuilt it with `restart_vpnc` | about one second out through the default connection | blocked | 2026-09-24 |
+| DISABLE in the app, or turned off in the web interface | out through the default connection for as long as it stays off: another tunnel, or the WAN in the clear when the default is Internet | blocked | 2026-09-08, 2026-09-21 (DEF-7), 2026-09-24 |
+| A reboot | out through the WAN until the tunnels start | blocked from the moment the WAN is up: the boot hook restored the guard one second after "WAN was restored", on two boots | 2026-09-24 |
+
+Why it leaks. The firmware's rule for a pinned device is `100: from <ip> lookup <table>`, and the table is not a small one: it carries a copy of the router's own routes, including `default via <ISP gateway> dev <WAN>`. While the tunnel is up its two `/1` routes are more specific and win. When the tunnel goes, those routes go with the interface, and what is left in the table sends the device straight out of the WAN. When the firmware removes the rule as well - DISABLE does - the device falls to the default connection's rules at 10000 instead. On 2026-09-24 the two paths could be told apart by a ping's TTL, because they answered in the same 11 ms: 58 through the Melbourne tunnel, 56 through the ISP. TTL only distinguishes paths against a reference like that - a UK server answered with 56 through its tunnel - so a runsheet that needs to tell paths apart puts the tunnels in regions with clearly different times.
+
+What does NOT close it, both measured on 2026-09-24:
+
+- **A blackhole route in the slot's table.** The firmware rebuilds that table on every restart, so the route is gone after the first rebuild - and while it lasted, the copied WAN default at metric 0 beat it at metric 1000 anyway. Worse, the rule that pointed a device at that table outlived the tunnel, so DISABLE then sent the device out through the ISP in the clear rather than through the default connection's tunnel.
+- **Anything in the firewall.** `restart_vpnc` rebuilds the FORWARD chain, so counting or dropping rules added there were gone at the exact moment they were needed.
+
+What does: **rules, because the firmware only ever removes the rules it made itself.** Per pinned device, two:
 
 ```text
-default = Internet          default = wgc1 (another tunnel)
-unassigned  : dev eth0      unassigned  : dev wgc1
-assigned,up : dev wgc5      assigned,up : dev wgc5
-assigned,DN : dev eth0      assigned,DN : dev wgc1        <- the discriminator
+90:  from <ip> lookup <table> suppress_prefixlength 0    the tunnel's own routes, never a default
+91:  from <ip> blackhole                                 anything else is dropped
 ```
 
-The second run is decisive: with the tunnel down the device went to **wgc1, not the WAN**. So the
-rule is not "falls back to the internet" but "the `ip rule` is torn down with its interface and
-traffic falls through to the default connection". The first run only looked like a leak because
-the default happened to be the internet.
+`suppress_prefixlength 0` refuses a matched route whose prefix is `/0`, so while the tunnel is up its `/1` routes win and nothing changes; when they are gone, the only thing left is the copied default, which is refused, and the device reaches rule 91. That covers the rebuild window and DISABLE by construction, whatever the timing. Both rules survived a rebuild and a DISABLE on hardware, and with them in place DISABLE let not one reply out.
 
-| Default connection | Tunnel drops | Result | Evidence |
-| --- | --- | --- | --- |
-| Internet | falls to WAN | traffic **leaks** | measured 2026-09-08 14:10 |
-| a different, working tunnel | falls to that tunnel | still encrypted, different exit | measured 2026-09-08 14:40 |
-| the same tunnel | default is dead too | **no internet, no leak** | predicted by the rule; matches the maintainer's years of running exactly this, and is the fault this app was written to fix. Not measured in this harness |
+**One script owns them**, `/jffs/cfg-pia-wg/guard.sh` (`lib/fail_closed_guard.dart`). It works out the wanted set afresh from `vpnc_dev_policy_list` every time - an enabled record whose index names a WireGuard profile - and adds or removes rules until the router matches, so a pin made or removed in the web interface is followed too. It takes a `mkdir` lock, because two watchdogs start in the same second and would otherwise both add the same rule, and it adds the drop rule first, so a half-added guard fails closed rather than open. Priorities 90 and 91 are the guard's alone; the stale-rule sweep is confined to 100 and names it in every delete, because the rule at 90 has the same `from <ip> lookup <table>` shape and an unqualified delete removes whichever comes first.
 
-It also retires the "two mechanisms" reading: `vpnc_default_wan` appeared to fail closed on
-2026-09-05 only because the default WAS the tunnel. One rule, three outcomes, chosen by a setting.
+Who calls it:
 
-**What this gives the app.** Assignment alone is not a kill switch, and must never be described as
-one. But fail-closed behaviour is *reachable*, and now on evidence rather than hope: pin the
-devices to a tunnel AND make that tunnel the default connection. That is a recommendation the app
-can make. The watchdog then bounds how long the outage lasts - which is the whole origin of this
-project, where a stale PIA config took a network off the internet until a config was rebuilt by
-hand. Assignment, default connection and watchdog are one story, not three features.
+| When | Caller | Why there |
+| --- | --- | --- |
+| After every APPLY | `DeviceAssignmentService.apply` | the list it has just written is the list to guard |
+| Before DISABLE stops the tunnel | `RouterSlotService.disableSlot` | a reboot clears the rules, and a DISABLE is when they matter |
+| After DELETE moves devices to Internet | `_releasePinnedDevices` | the guard held them while the tunnel stopped; on the internet by design, they must not stay blocked |
+| Every watchdog check, before a disabled slot stands down | the watchdog script | catches a reboot, and a pin changed in the web interface, within one interval |
+| At boot | `S50downloadmaster`, after its 10-second delay | a reboot clears every rule |
+| UPDATE WATCHDOG VERSION | `RouterWatchdog.redeployScripts` | installs the guard and rewrites the boot hook on a router updated from before 460 |
+| UNINSTALL | `uninstallFromRouter`, first | left behind, the rules would block pinned devices with no app left to explain it |
+
+What it does not cover:
+
+- **Devices that follow the default connection.** By design: pinning is how a device is protected. When the default is itself a tunnel, the devices following it still fall through while it is off, and the alert email says so.
+- **Addresses the slot's table routes to the WAN directly** - the router's own DNS servers, the PIA endpoint, the ISP's subnet. A pinned device talking to one of those addresses leaves outside its tunnel even while the tunnel is healthy. Firmware behaviour, measured 2026-09-24.
+- **IPv6.** Not measured on a router with IPv6 enabled.
+
+Before the guard this section said the fail-closed arrangement was to point the default connection at the same tunnel the devices were pinned to. DEF-7 (2026-09-21) measured that arrangement failing open on DISABLE, and it no longer matters: the guard gives the same result whatever the default is.
 
 #### 6.8.11. <a name='stock-leaves-the-old-routing-rule-behind-measure'></a>Stock leaves the old routing rule behind - MEASURED 2026-09-10
 
@@ -1070,6 +1098,40 @@ Three points of care, all covered by `staleRuleTables` in `lib/device_assignment
 > internet rather than onto the default, which is what the web interface does. Sending an
 > explicitly pinned device to the default would put it on whatever tunnel the default happens to
 > name, which nobody chose.
+>
+> And nothing is started after it. Until build 463 DELETE followed the teardown with
+> `restart_vpnc`, which starts whatever `vpnc_unit` names: the row of the slot being deleted. It
+> restarted the tunnel DELETE had just stopped, and left it running with no profile (ID-209, the
+> same fault as ID-172).
+
+#### 6.8.12. <a name='every-routing-rule-the-app-touches'></a>Every routing rule the app touches
+
+The app adds no routes and leaves no firewall rules behind. What it touches is `ip rule`, the list the kernel reads top down, lowest priority number first, to decide which routing table a packet uses. This is the whole list, read from `ip rule show` on the maintainer's stock router, with what the app does to each and the hardware test behind it. README 5.4 links here.
+
+| Priority | Rule | Made by | What the app does | Why |
+| --- | --- | --- | --- | --- |
+| 0 | `from all lookup local` | kernel | never touches | the router's own addresses |
+| 90 | `from <ip> lookup <table> suppress_prefixlength 0` | the app's fail-closed guard | adds one per pinned device; removes it when the device is unpinned, moved or its slot deleted; UNINSTALL removes all | a pinned device uses its tunnel's own routes and never the WAN default copied into that table (6.8.10) |
+| 91 | `from <ip> blackhole` | the app's fail-closed guard | the same as 90, added first | whatever rule 90 refuses is dropped, so a pinned device fails closed |
+| 100 | `from <ip> lookup <table>`, or `lookup main` when pinned to Internet | the firmware, on `restart_vpnc_dev_policy` | never adds; deletes stale copies after every APPLY and after DELETE moves devices to Internet, naming priority 100 in every delete | the firmware never removes an old rule and re-adds one per record on every call, so without the sweep a moved device keeps using the tunnel it left (6.8.11) |
+| 1000 | `to <dns> iif lo lookup <table>` | the watchdog's DNS probe | adds one for the length of one lookup and removes it, one probe at a time across all slots; each run first sweeps its own slot's, left by a run that was killed | aims the probe through the tunnel it is testing (ID-078); one at a time, because two probes in the same second shared a route and one asked through the other's tunnel (ID-193) |
+| 1016-1029 | `from all to <dns> iif lo lookup <table>` | the firmware, per DNS address of each running slot | never touches | the router's own lookups ([ROUTER-DNS.md](ROUTER-DNS.md#the-router-rules)) |
+| 10000 | `from all iif br0 lookup <table>`, and `br1` | the firmware, when the default connection is a tunnel | never edits; replaced only through the default-connection sequence (6.8.8) | where unassigned devices go |
+| 32766, 32767 | `from all lookup main`, `lookup default` | kernel | never touches | the router's fallback |
+
+Two safety rules hold the list together. Every per-device rule names a device address, never `all`, so no sweep of per-device rules can reach the default connection or the router's own. And the app's two priorities, 90 and 91, are used by nothing else, while the sweep of the firmware's rules is confined to 100: the guard's rule at 90 has the same `from <ip> lookup <table>` shape, and an unqualified `ip rule del` removes whichever matching rule comes first.
+
+The hardware tests behind the table, all on stock with devices moved between wgc1 (table 9) and wgc5 (table 5):
+
+| Date | Test | What it showed |
+| --- | --- | --- |
+| 2026-09-08 | the device-assignment runsheet, eleven probes | a policy record becomes a rule at 100; the default connection is the pair at 10000, installed only by `restart_vpnc` at the end of an exact sequence; a stopped tunnel's rule goes with it |
+| 2026-09-10 | a device moved from wgc1 to wgc5 | the old rule stays beside the new one at 100 and wins on insertion order, while every list says wgc5; no service call clears it, only `restart_net_and_phy` |
+| 2026-09-11 | a device moved from Internet to wgc5 | the `lookup main` rule left behind wins the same way, so the sweep matches the table by name, not number |
+| 2026-09-19 | runsheet AN-2026-09-19_001 | the firmware's rules at 1016-1029 aim the router's lookups by the highest-numbered slot sharing an address, so the probe needs its own rule at 1000 |
+| 2026-09-21 | DEV-17 and two `ip rule show` dumps around a reboot | four copies of one device's rule after a morning of applies, one after the reboot: `restart_vpnc_dev_policy` re-adds a rule for every record each time, so the sweep covers the whole list (ID-183) |
+| 2026-09-24 | runsheets FC, FG and FR | a rebuild and a DISABLE let a pinned device out; a route in the slot's table and anything in the firewall are wiped by the firmware; rules at 90 and 91 survive both and block every reply (6.8.10, ID-213) |
+
 ## 7. <a name='watchdog-details'></a>Watchdog details
 
 Deploying a watchdog writes three things to the router, plus the settings in [Watchdog NVRAM fields](#watchdog-nvram-fields):
@@ -1203,25 +1265,28 @@ flowchart TD
     D["ping every candidate,<br/>take the lowest latency"] --> E
     E["generate a fresh WireGuard keypair"] --> F
     F["register the public key<br/><i>addKey on the chosen server, port 1337</i>"] --> G
-    G["write 16 wgcN_* values to NVRAM"] --> H
-    H["stop the interface"] --> I
-    I["start the interface"] --> J
-    J["restart VPN routing"] --> K
-    K{"is wgcN up<br/>after 3 seconds?"}
-    K -->|yes| OK["Reconfig SUCCESS<br/>bump the success counter,<br/>send the recovery alert"]
-    K -->|no| FAIL["abort - bump the failure counter,<br/>send the failure alert"]
+    G["write the wgcN_* values<br/>to NVRAM"] --> W
+    W["wait for the router's<br/>service queue to be free"] --> H
+    H["restart the tunnel<br/><i>stock: restart_vpnc</i><br/><i>Merlin: stop, start,</i><br/><i>restart routing</i>"] --> T
+    T{"is the tunnel on<br/>the new server's key?"}
+    T -->|"no, the first time"| W
+    T -->|yes| K
+    K{"wgcN up, and<br/>a handshake<br/>within 20s?"}
+    K -->|yes| OK["Reconfig SUCCESS<br/>count it,<br/>send the<br/>recovery alert"]
+    K -->|no| FAIL["abort<br/>count it,<br/>send the<br/>failure alert"]
+    T -->|"no, twice"| FAIL
 
     classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
     classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
     classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
     class OK go
     class FAIL bad
-    class A,B,C,D,E,F,G,H,I,J step
+    class A,B,C,D,E,F,G,W,H step
 ```
 
 **A fresh keypair every time is deliberate.** PIA's `addKey` binds a public key to a session; reusing an old one after a server change gives a tunnel that comes up and carries nothing.
 
-**The three service calls at the end are the fragile part.** They go through `notify_rc`, so they are queued rather than executed, and a wedged queue discards them silently - the config is written perfectly and nothing acts on it. See [The router's service queue](#the-routers-service-queue-and-how-it-wedges).
+**The restart is the fragile part.** It goes through `notify_rc`, so it is queued rather than run, and a router busy with something else throws it away after 15 seconds without a word - the config is written perfectly and nothing acts on it. So the script waits for the queue first, clears a marker left by a process that has gone, and afterwards checks the tunnel is on the new server's key. If not, it tries once more; skipped twice, it fails and says the router skipped the restart (ID-214). See [The router's service queue](#the-routers-service-queue-and-how-it-wedges).
 
 **Emails are a branch of this flow, not a separate one.** `send_alert` is called from exactly two places: the success at the bottom, and `abort` anywhere above it. Both carry the same facts - what happened, what to do, the router, the history, and the last ten log lines - so a failure and its recovery read as two halves of one story. Detail in [Email alerting](#email-alerting).
 
@@ -1246,7 +1311,7 @@ Stock has no user-script hook of its own, so the app **replaces** `S50downloadma
 > [!IMPORTANT]
 > **Every other way of doing this on stock was tried first, over several weeks, and none of them held.** Stock offers no user-script hook, no `services-start` equivalent, and nothing else in `/opt/etc/init.d` that the firmware guarantees to run. Replacing this means repeating that search, so it is not a tidy-up job.
 >
-> **It does replace a working Download Master installation.** A real `S50downloadmaster` is 52,525 bytes and the app template is around 700, measured either side of an install 2026-09-07. Harmless for the documented setup, where Download Master is installed and then left alone; not harmless for someone who actually downloads with it. [README.md, Enabling prequisites](README.md#41-enabling-prerequisites) says so, without going into how.
+> **It does replace a working Download Master installation.** A real `S50downloadmaster` is 52,525 bytes and the app template is around 700, measured either side of an install 2026-09-07. Harmless for the documented setup, where Download Master is installed and then left alone; not harmless for someone who actually downloads with it. [README.md, Enabling prerequisites](README.md#41-enabling-prerequisites) says so, without going into how.
 >
 > Reinstalling or updating Download Master restores the original and removes the app boot persistence with it, so the two overwrite each other in both directions. Anything that re-runs the installer needs the watchdog re-deployed afterwards.
 >
@@ -1465,7 +1530,7 @@ Measured 2026-09-09, stock firmware, curl 7.84.0. Identical command, one minute 
 
 The consequence is that **a watchdog invoked directly by cron can never fetch a PIA token**, and therefore can never reconfigure a tunnel by itself. Every successful reconfigure observed before this was found came from the app running the script over SSH, where the parent is `dropbear`.
 
-The fix is at the top of `watchdog_wgcN.sh`. A run with no argument, which is how cron invokes it, re-execs itself with the argument `detached`, backgrounds that copy and exits immediately. The child waits for its `PPid` to become 1 - the parent exiting is what reparents it to init - and then continues with `RUNMODE` set back to `cron`, so nothing downstream knows the difference. A `deploy` run, which is the app running the script over SSH, is not detached: its ancestry is fine, and detaching it would throw away the output the app shows the user.
+The fix is at the top of `watchdog_wgcN.sh`. A run with no argument, which is how cron invokes it, re-execs itself with the argument `detached`, backgrounds that copy and exits immediately. The child waits for its `PPid` to become 1 - the parent exiting is what reparents it to init - and then continues with `RUNMODE` set back to `cron`, so nothing downstream knows the difference. A `deploy` run, which is the app running the script over SSH, is not detached: its ancestry is fine, and detaching it would throw away the output the app shows the user. Nor is a `foreground` run, which is a cron check that stays attached, for tests and for running it by hand over SSH: without it the script returns at once and the log is read before anything is in it, which is what failed every rung of BRK-6 on 2026-09-20 (ID-199).
 
 `exit 0` with no status, no body and no stderr is this failure and nothing else, and the watchdog's token-fetch error message reports all three. Seeing that combination again means the detach has stopped working.
 
@@ -1594,8 +1659,6 @@ move: index `0` says unassigned-from-a-VPN whichever story is true, so the app r
 never mere presence in the list. What did change is the expectation of the empty case. An untouched
 router has **no records at all**, so the screen has to render "every device is on the default
 connection" from an empty string rather than from a list of zeros.
-
----
 
 ---
 

@@ -90,7 +90,8 @@ void main() {
       for (final line in [
         '#!/bin/sh',
         '# Minimal replacement for the stock Download Master init script.',
-        '# Sole purpose: install our cron job once at boot.',
+        '# Sole purpose: install our cron jobs, and the fail-closed guard, once at boot.',
+        '[ -x /jffs/cfg-pia-wg/guard.sh ] && /jffs/cfg-pia-wg/guard.sh >/dev/null 2>&1',
         'BOOT_FLAG=/tmp/.dm_boot_delay_done',
         r'[ "$1" = "start" ] || exit 0',
         'sleep 10',

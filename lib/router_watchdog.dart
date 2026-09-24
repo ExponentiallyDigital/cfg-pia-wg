@@ -18,6 +18,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
+import 'fail_closed_guard.dart';
 import 'router_command.dart';
 import 'router_service_queue.dart';
 import 'firmware.dart';
@@ -322,6 +323,24 @@ class WatchdogStatus {
 ///
 /// `wgcN_*` TUNNEL keys are deliberately absent: an uninstall removes the app from the router, not
 /// the user's VPNs, and those stay manageable from the web interface.
+/// Every per-slot watchdog key, as `wgcN_<field>`. One list for a watchdog DELETE and for UNINSTALL:
+/// the DELETE kept its own copy, and when 454 added the two DoH keys only the uninstall's was updated,
+/// so deleting a slot left them behind (ID-150).
+const List<String> kWatchdogSlotNvramFields = [
+  'wd_check_interval',
+  'wd_doh_ip',
+  'wd_doh_url',
+  'wd_email_enabled',
+  'wd_email_from',
+  'wd_email_subject',
+  'wd_email_to',
+  'wd_primary_ip',
+  'wd_secondary_ip',
+  'wd_smtp_pass',
+  'wd_smtp_server',
+  'wd_smtp_user',
+];
+
 String get kUninstallNvramCommand {
   const globals = [
     'cfg_pia_wg_max_conn_prev',
@@ -331,24 +350,10 @@ String get kUninstallNvramCommand {
     'cfg_pia_wg_sdate',
     'cfg_pia_wg_user',
   ];
-  const perSlot = [
-    'wd_check_interval',
-    'wd_doh_ip',
-    'wd_doh_url',
-    'wd_email_enabled',
-    'wd_email_from',
-    'wd_email_subject',
-    'wd_email_to',
-    'wd_primary_ip',
-    'wd_secondary_ip',
-    'wd_smtp_pass',
-    'wd_smtp_server',
-    'wd_smtp_user',
-  ];
   final keys = [
     ...globals,
     for (var slot = 1; slot <= 5; slot++)
-      for (final k in perSlot) 'wgc${slot}_$k',
+      for (final k in kWatchdogSlotNvramFields) 'wgc${slot}_$k',
   ];
   return '${keys.map((k) => 'nvram unset $k').join('; ')}; nvram commit';
 }
@@ -713,51 +718,43 @@ const String _kMailHdrMerlin = r'''  {
 // Each also needs three tenses, because the same fact reads wrong in the wrong one: UP for a deploy
 // run where the tunnel is fine, FIXED for a recovery that is over, DOWN for a failure that is not.
 //
-// Stock used to assert a leak in all three - "traffic is reaching the internet without the VPN".
-// That is wrong about two thirds of the time. A device pinned to a dropped tunnel falls through to
-// the DEFAULT CONNECTION (ARCHITECTURE.md "vpnc_dev_policy_list - the assignment", confirmed
-// twice on hardware), and the default is one of three things: this same slot, in which case those
-// devices have no internet at all and the outage is fail-closed; another tunnel, in which case
-// they are still on a VPN and the old sentence was a false alarm; or the plain internet, which is
-// the only case the old sentence described. A warning that cries wolf twice for every time it is
-// right is one people learn to ignore, so the script reads `vpnc_default_wan` and says which of
-// the three actually happened.
+// Stock has no kill switch of its own, so what the line reports is the app's fail-closed guard
+// (fail_closed_guard.dart, ID-213): two rules per pinned device that keep it off the internet while
+// its tunnel is down. It is counted from the rules the router actually holds, never assumed, so a
+// guard that a reboot cleared and nothing has put back yet is reported as missing rather than as on.
 //
-// Refined 2026-09-13, so that no branch claims what it has not checked. A tunnel nothing is assigned to,
-// and which is not the default, does not talk about "its devices". "Still on a VPN" is said only when
-// the default is a WireGuard tunnel whose interface is up; one that is down, or that is not WireGuard
-// and so cannot be checked here, is reported as not confirmed. Its awk counts the enabled policy
-// records naming this tunnel's state index (device_assignment.dart, `enabled>IP>?>vpnc_idx>`). The
-// branch shares one sentence across the tenses, as Merlin's OFF case does, to keep the script inside
-// its size guard.
+// Before the guard this line said the pinned devices "fell through to the default connection, so
+// they stayed on a VPN". Measured 2026-09-20 and 2026-09-24, that was wrong for the failure the
+// watchdog exists to catch: a tunnel whose server stops answering blocks its devices outright. And
+// where they did fall through - a rebuild, a DISABLE - it was a leak, not a reassurance (ID-198).
+//
+// The guard covers PINNED devices only. When this tunnel is also the default connection, the ones
+// that merely follow the default are not covered, and the line says so rather than implying they are.
 const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
 [ -n "$DEFIDX" ] || DEFIDX=0
-# Index 2 of a vpnc_clientlist record is the slot, index 6 the state index the default is named by.
+# Index 2 of a vpnc_clientlist record is the slot, index 6 the table its devices are routed by.
 MYIDX="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" '$3==s {print $7; exit}')"
-DEFNAME="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v d="$DEFIDX" '$7==d {print $1; exit}')"
-# Slot of a WireGuard default, and how many devices are pinned to this tunnel.
-DEFSLOT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v d="$DEFIDX" '$7==d && $2=="WireGuard" {print $3; exit}')"
 PINNED="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {n++} END {print n+0}')"
-if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then
-  KILLSW_UP="none on this firmware, but this tunnel is the default connection - if it drops, its devices lose internet rather than leaking"
-  KILLSW_FIXED="none on this firmware; this tunnel is the default connection, so its devices had no internet rather than an unprotected one"
-  KILLSW_DOWN="none on this firmware; this tunnel is the default connection, so its devices have no internet rather than an unprotected one"
-elif [ "$PINNED" = "0" ]; then
-  KILLSW_UP="none on this firmware, but no devices are assigned to this tunnel and it is not the default connection"
+GUARDED="$(ip rule show | awk -v i="$MYIDX" '$1=="90:" {for (k=2; k<NF; k++) if ($k=="lookup" && $(k+1)==i) n++} END {print n+0}')"
+DEVS="devices"
+[ "$PINNED" = "1" ] && DEVS="device"
+if [ "$PINNED" = "0" ]; then
+  KILLSW_UP="none on this firmware, and no devices are pinned to this tunnel"
   KILLSW_FIXED="$KILLSW_UP"
   KILLSW_DOWN="$KILLSW_UP"
-elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ] && { [ -z "$DEFSLOT" ] || ! ip -o link show up 2>/dev/null | grep -q " wgc$DEFSLOT:"; }; then
-  KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection, $DEFNAME, which is not confirmed up, so they may have no VPN"
-  KILLSW_FIXED="none on this firmware; while it was down, its devices fell through to the default connection, $DEFNAME, which was not confirmed up, so they may have had no VPN"
-  KILLSW_DOWN="none on this firmware; its devices are falling through to the default connection, $DEFNAME, which is not confirmed up, so they may have no VPN"
-elif [ "$DEFIDX" != "0" ] && [ -n "$DEFNAME" ]; then
-  KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection, $DEFNAME, so they stay on a VPN"
-  KILLSW_FIXED="none on this firmware; while it was down, its devices fell through to the default connection, $DEFNAME, so they stayed on a VPN"
-  KILLSW_DOWN="none on this firmware; its devices are falling through to the default connection, $DEFNAME, so they are still on a VPN"
+elif [ "$GUARDED" -ge "$PINNED" ]; then
+  KILLSW_UP="the app's guard - if this tunnel drops, the $PINNED $DEVS pinned to it have no internet until it is back"
+  KILLSW_FIXED="the app's guard kept the $PINNED $DEVS pinned to this tunnel off the internet while it was down"
+  KILLSW_DOWN="the app's guard is keeping the $PINNED $DEVS pinned to this tunnel off the internet until it is back"
 else
-  KILLSW_UP="none on this firmware; if this tunnel drops, its devices fall through to the default connection - the plain internet, with no VPN"
-  KILLSW_FIXED="none on this firmware; while it was down, its devices reached the internet with no VPN"
-  KILLSW_DOWN="none on this firmware; its devices are reaching the internet with no VPN"
+  KILLSW_UP="not fully in place - the app's guard covers $GUARDED of the $PINNED $DEVS pinned to this tunnel, so the others can reach the internet with no VPN while it is down. Opening DEVICE ASSIGNMENT in the app and applying any change puts it back"
+  KILLSW_FIXED="$KILLSW_UP"
+  KILLSW_DOWN="$KILLSW_UP"
+fi
+if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then
+  KILLSW_UP="$KILLSW_UP. This tunnel is also the default connection, and devices that only follow the default are not covered by the guard"
+  KILLSW_FIXED="$KILLSW_FIXED. This tunnel is also the default connection, and devices that only follow the default are not covered by the guard"
+  KILLSW_DOWN="$KILLSW_DOWN. This tunnel is also the default connection, and devices that only follow the default are not covered by the guard"
 fi''';
 
 const String _kKillSwitchMerlin = r'''if [ "$ENFORCE" = "1" ]; then
@@ -1040,10 +1037,32 @@ class RouterWatchdog {
     final deployed = RegExp(r'\d+').allMatches(await _read('$probes; true')).map((m) => int.parse(m.group(0)!)).toList();
     for (final slot in deployed) {
       await _writeScript(slot, buildWatchdogScript(await loadConfig(slot), firmware: firmware));
-      await _logRouter('Watchdog script updated to ${appVersionLabel.isEmpty ? 'this app version' : appVersionLabel} '
-          'for ${await _label(slot)}');
+      // One sentence for both logs. The app log said only the path and its size, the router log the
+      // version, so the two did not read as the same event (ID-190).
+      final updated = 'Watchdog script updated to ${appVersionLabel.isEmpty ? 'this app version' : appVersionLabel} '
+          'for ${await _label(slot)}';
+      onLog?.call('$updated.', isSuccess: true);
+      await _logRouter(updated);
+    }
+    // The guard and the boot hook that restores it came with 460. A router updated from an older
+    // build has neither until something writes them, and this is the update the user is prompted for.
+    if (firmware == RouterFirmware.stock && deployed.isNotEmpty) {
+      await _guardService.ensure();
+      await _refreshS50();
     }
     return deployed;
+  }
+
+  FailClosedGuard get _guardService => FailClosedGuard(read: _read, run: (cmd) => _run(cmd), onLog: onLog);
+
+  /// Rewrites S50downloadmaster from this build's template, keeping the cru lines it already holds.
+  /// Only a copy the app wrote is touched; the router's own script, or none at all, is left alone.
+  Future<void> _refreshS50() async {
+    final existing = await _read("cat '$kS50Path' 2>/dev/null");
+    if (!existing.contains(_kOurScriptSignature)) return;
+    final rebuilt = buildS50Script(extractS50CruLines(existing));
+    if (rebuilt.trim() == existing.trim()) return;
+    await _writeFile(kS50Path, rebuilt, what: 'Boot persistence script', mode: '700');
   }
 
   Future<String> _runHeredoc(String cmd, String path) async {
@@ -1195,6 +1214,7 @@ class RouterWatchdog {
           await _writeWatchdogNvram(config, desc: desc);
           await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
           await _writeScript(config.slotIndex, buildWatchdogScript(config));
+          if (isStockFirmware) await _guardService.ensure();
           await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
           await _run(buildCronRotateLine(config.slotIndex));
           await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
@@ -1437,6 +1457,10 @@ class RouterWatchdog {
   /// would be a much bigger action than the button says.
   Future<List<String>> uninstallFromRouter() => _guard('uninstall from router', () async {
         final done = <String>[];
+        // First, while the script is still there to do it. Left behind, the rules would keep every
+        // pinned device off the internet whenever its tunnel is down, with no app left to explain why.
+        await _guardService.clear();
+        done.add('Removed the fail-closed guard rules');
         for (final path in [kS50Path, kS50LighttpdPath]) {
           final name = path.split('/').last;
           final backup = originalScriptBackupPath(path);
@@ -1605,16 +1629,9 @@ class RouterWatchdog {
           '/tmp/watchdog_last_ping_success_wgc$slot /tmp/watchdog_backoff_wgc$slot',
         );
         // nvram command doesn't allow multiple values in one command
-        await _run('nvram unset wgc${slot}_wd_check_interval', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_email_enabled', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_email_from', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_email_subject', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_email_to', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_primary_ip', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_secondary_ip', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_smtp_pass', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_smtp_server', allowFailure: true);
-        await _run('nvram unset wgc${slot}_wd_smtp_user', allowFailure: true);
+        for (final field in kWatchdogSlotNvramFields) {
+          await _run('nvram unset wgc${slot}_$field', allowFailure: true);
+        }
         // GLOBAL keys, shared by every watchdog script. With concurrent watchdogs allowed, only
         // the last one out may clear them - otherwise the survivor cannot authenticate with PIA
         // at its next renegotiation. The cru entries for this slot are already gone above, so
@@ -1925,6 +1942,8 @@ const String _kWatchdogScriptTemplate = r'''#!/bin/sh
 # Re-negotiates PIA WireGuard on ping failure.
 
 # `deploy` only when the app runs the script by hand just after writing it; cron passes nothing.
+# `foreground` is a cron run that stays attached, for tests and for running it by hand over SSH: run
+# without it, the script hands itself to the background and returns at once (ID-199).
 # Read at the top, because send_alert() shadows $1 with its own argument.
 RUNMODE="${1:-cron}"
 # ASUS's curl refuses to run with crond in its LIVE process ancestry: exit 0, no status, no body,
@@ -1944,6 +1963,7 @@ if [ "$RUNMODE" = "detached" ]; then
   done
   RUNMODE="cron"
 fi
+[ "$RUNMODE" = "foreground" ] && RUNMODE="cron"
 APPVER="__APPVER__"
 SLOT=__SLOT__
 IFACE="wgc__SLOT__"
@@ -2009,6 +2029,11 @@ PIA_PASS="$(nvram get cfg_pia_wg_password)"
 __BACKOFF__
 
 log "Watchdog started for $IFACE${APPVER:+ [script $APPVER]}"
+
+# Keeps devices pinned to any tunnel off the internet while it is down (ID-213), and follows pins
+# changed in the web interface. Before the stand-down below: a disabled slot is when it matters. A
+# no-op when nothing has changed; absent on Merlin, which has a kill switch of its own.
+[ -x /jffs/cfg-pia-wg/guard.sh ] && /jffs/cfg-pia-wg/guard.sh >/dev/null 2>&1
 
 # A tunnel turned off in the WebUI looks like one that dropped; reviving it would undo the user,
 # and changing a device assignment requires exactly that. Only an explicit "0" stands down - empty
@@ -2186,14 +2211,9 @@ __MAILCMD__
 
 # -- Does this tunnel resolve names? (ID-078 / ID-006) ------------------------------------------
 #
-# A handshake proves the peer answers the tunnel. It proves nothing about whether anything behind
-# the peer answers: devices pinned to wgc4 went two days without name resolution while the watchdog
-# logged a healthy handshake every five minutes.
-#
-# The probe asks the SLOT's own first DNS server - the one the firmware redirects a pinned device
-# to - and the answer only means something if the question went through this tunnel. Measured
-# 2026-09-19: a stopped slot falls through to the WAN and the lookup succeeds anyway, so the aim is
-# verified before any answer is believed.
+# A handshake proves the peer answers, not that anything behind it does. The probe asks the slot's
+# first DNS server, and checks first that the question goes through this tunnel: a stopped slot
+# falls through to the WAN and would pass (measured 2026-09-19).
 DNS1="$(nvram get ${K}dns | tr ',' ' ' | awk '{print $1}')"
 DNSTABLE=$((10 - SLOT))
 DNSFAILFILE="/tmp/watchdog_dnsfail_${IFACE}"
@@ -2207,16 +2227,40 @@ dns_rule_clean() {
   DNSRULE=0
 }
 
-# Anything left behind by a run that was killed mid-probe.
+# Anything left behind by a run of THIS slot that was killed mid-probe. Only this slot's table:
+# sweeping them all deleted the rule another slot's watchdog was using that second, and its
+# lookup went out the wrong way (ID-193).
 dns_rule_sweep() {
-  ip rule show 2>/dev/null | awk '$1 == "1000:" {print $5, $9}' | while read -r A T; do
-    [ -n "$A" ] && [ -n "$T" ] && ip rule del to "$A" iif lo lookup "$T" priority 1000 2>/dev/null
+  ip rule show 2>/dev/null | awk -v t="$DNSTABLE" '$1 == "1000:" && $NF == t {print $5}' | while read -r A; do
+    [ -n "$A" ] && ip rule del to "$A" iif lo lookup "$DNSTABLE" priority 1000 2>/dev/null
   done
+}
+
+# One probe at a time across every slot. The firmware's own DNS rules send the router's lookups
+# out of the highest-numbered tunnel, so two watchdogs probing the same server in the same second
+# share one route, and one of them asks through the other's tunnel (ID-193).
+DNSLOCK="/tmp/cfg-pia-wg-dnsprobe.lock"
+DNSLOCKED=0
+dns_lock() {
+  DLW=0
+  until mkdir "$DNSLOCK" 2>/dev/null; do
+    DLW=$((DLW + 1))
+    # A probe takes at most eight seconds, so a lock this old was left by a killed run.
+    if [ "$DLW" -ge 20 ]; then rm -rf "$DNSLOCK"; mkdir "$DNSLOCK" 2>/dev/null; break; fi
+    sleep 1
+  done
+  DNSLOCKED=1
+}
+dns_unlock() {
+  [ "$DNSLOCKED" = "1" ] || return 0
+  rmdir "$DNSLOCK" 2>/dev/null
+  DNSLOCKED=0
 }
 
 # 0 the server answered, 1 it did not, 2 the question could not be asked through this tunnel.
 dns_probe() {
   [ -n "$DNS1" ] || { log "No DNS server set on $IFACE; skipping the name check"; return 2; }
+  dns_lock
   if ! ip route get "$DNS1" 2>/dev/null | grep -q " dev $IFACE"; then
     ip rule add to "$DNS1" iif lo lookup "$DNSTABLE" priority 1000 2>/dev/null
     DNSRULE=1
@@ -2224,6 +2268,7 @@ dns_probe() {
       # The stopped-slot case. Asking anyway would send the lookup out of the WAN and pass.
       log "Could not aim a lookup at $DNS1 through $IFACE; skipping the name check"
       dns_rule_clean
+      dns_unlock
       return 2
     fi
   fi
@@ -2245,20 +2290,14 @@ dns_probe() {
     DNSRC=$?
   fi
   dns_rule_clean
+  dns_unlock
   return "$DNSRC"
 }
 
 # -- The SMTP host's address, resolved the encrypted way (ID-077) -------------------------------
 #
-# This is the lookup worth hiding. The PIA names say the router talks to PIA, which its WireGuard
-# traffic already says; the SMTP hostname names the user's email provider, and nothing else on the
-# wire does. Neither mailer can be told "use this address but verify this name": the stock mailer takes a
-# hostname and verifies against it, and the Merlin one hands the whole thing to openssl. So the
-# address is learnt over DoH first, and then given to the mailer the only way each one accepts.
-#
-# Learnt by asking curl to connect and report what it connected to. curl resolves over DoH, the
-# connection then fails at the protocol level - it is speaking HTTP to an SMTP port - and
-# %{remote_ip} is written either way. Ugly, and it needs no extra binary.
+# The SMTP hostname names the user's email provider, so it is the lookup worth hiding. curl
+# resolves it over DoH and reports %{remote_ip}, even though HTTP to an SMTP port then fails.
 resolve_smtp() {
   SMTP_IP=""
   [ -n "$DOHDESC" ] || return 0
@@ -2309,6 +2348,7 @@ abort() {
   rm -f "$TMPSRV"
   hosts_clean
   dns_rule_clean
+  dns_unlock
   exit 1
 }
 
@@ -2320,10 +2360,8 @@ dns_rule_sweep
 FAIL=1
 log "Checking $IFACE $DESC connectivity"
 
-# `ifconfig $IFACE` succeeds for a device that EXISTS, up or down, so it answered the wrong
-# question - an interface taken down with `ifconfig $IFACE down` still passed it. `ip -o link
-# show up` lists only interfaces carrying the UP flag; the `state` word is no use because a
-# WireGuard device reads `state UNKNOWN` while up. Measured 2026-09-09.
+# Only the UP flag counts: `ifconfig` passes a device that is down, and WireGuard reads
+# `state UNKNOWN` while up. Measured 2026-09-09.
 if ! ip -o link show up 2>/dev/null | grep -q " $IFACE:"; then
   # A deploy run starts before the tunnel exists: there that is the expected state, not a fault (ID-048).
   if [ "$RUNMODE" = "deploy" ]; then log "Interface $IFACE is not up yet"; else log "Interface $IFACE is down or absent"; fi
@@ -2368,7 +2406,7 @@ if [ "$FAIL" = "0" ]; then
         DNSDEAD=1
         FAIL=1
       else
-        log "$IFACE: no answer from $DNS1; one more and it counts as broken"
+        log "no answer from $DNS1; one more and it counts as broken"
       fi
     fi
   fi
@@ -2378,7 +2416,8 @@ fi
 if [ "$FAIL" = "0" ]; then
   date '+%s %Y-%m-%d %H:%M:%S' > "$STATUSFILE"
   printf '0\n0\n' > "$BACKOFFFILE"
-  rm -f "$DNSFAILFILE"
+  # Not the DNS strike file: the check above cleared it on an answer, and deleting it here as well
+  # threw away every first strike, so the second never came (ID-192).
   # A deploy run always emails, even with nothing to fix: it is the user's proof that alerting
   # works. No addKey happened on this path, so the endpoint comes from NVRAM and there is no
   # server name or latency to report.
@@ -2391,11 +2430,8 @@ if [ "$FAIL" = "0" ]; then
   exit 0
 fi
 
-# The WAN first. This sits ABOVE the backoff ladder on purpose: while the internet is out there is
-# nothing to rebuild a tunnel FROM, so counting the check as a failed attempt charges the outage to
-# the tunnel. It used to sit below, and a two-hour outage could leave the ladder at 90 minutes - so
-# when the WAN came back, a tunnel that could not recover by itself waited that long for its first
-# real attempt - having logged a reconfigure it never started, every few minutes, throughout (ID-064).
+# The WAN first, above the backoff ladder: a WAN outage is not the tunnel's fault and must not
+# climb the ladder (ID-064).
 if ping -c 1 -W 2 "$PRIMARY_IP" >/dev/null 2>&1 || ping -c 1 -W 2 "$SECONDARY_IP" >/dev/null 2>&1; then
   log "WAN has internet connectivity"
 else
@@ -2603,10 +2639,50 @@ nvram commit
 log "NVRAM write complete"
 
 # Restart interface
+restart_tunnel() {
 __RESTART__
+}
+
+# A service call made while another is running waits 15s and is then dropped without a word. Wait
+# for the queue, and clear a marker unchanged for 10s with its pid gone: a ghost (ID-214).
+rc_idle() {
+  RCW=0
+  RCSAME=0
+  RCLAST=""
+  while [ "$RCW" -lt 30 ]; do
+    RCS="$(nvram get rc_service)"
+    [ -z "$RCS" ] && return 0
+    RCP="$(nvram get rc_service_pid)"
+    if [ "$RCS@$RCP" = "$RCLAST" ]; then RCSAME=$((RCSAME + 1)); else RCSAME=0; fi
+    RCLAST="$RCS@$RCP"
+    if [ "$RCSAME" -ge 5 ] && ! kill -0 "$RCP" 2>/dev/null; then
+      log "Cleared a stale rc_service marker ($RCS, pid $RCP) that would have swallowed the restart"
+      nvram set rc_service=""
+      return 0
+    fi
+    RCW=$((RCW + 1))
+    sleep 2
+  done
+  log "The router is still busy with $RCS after 60s; restarting anyway"
+}
+
+# A skipped restart leaves the old peer, whose old handshake passes every later check (ID-214).
+restart_took() {
+  wg show "$IFACE" peers 2>/dev/null | grep -qxF "$SERVER_KEY"
+}
+
+rc_idle
+restart_tunnel
 
 log "Waiting for $IFACE to initialise"
 sleep 3
+if ! restart_took; then
+  log "The router skipped the restart of $IFACE; trying once more"
+  rc_idle
+  restart_tunnel
+  sleep 3
+  restart_took || abort "the router skipped the restart of $IFACE twice, so the new server was never applied. The router may be busy; the next check tries again"
+fi
 if ! ip -o link show up 2>/dev/null | grep -q " $IFACE:"; then
   abort "$IFACE did not come up after reconfiguration (configured: $(wg show interfaces 2>/dev/null | tr -s ' ' | cut -c1-60))"
 fi
@@ -2640,6 +2716,7 @@ else
   log "Reconfig SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"
 fi
 bump cfg_pia_wg_reconfig_ok
+rm -f "$DNSFAILFILE"
 CONNVALUE="$BEST_CN ($BEST_IP:$SERVER_PORT), ${BEST_RTT} ms"
 if [ "$RUNMODE" = "deploy" ]; then
   # No outage to report: the tunnel was simply not up yet when the watchdog was saved. The server

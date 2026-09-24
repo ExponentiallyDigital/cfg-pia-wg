@@ -26,8 +26,10 @@ import 'package:flutter/material.dart';
 import 'app_button.dart';
 
 import '../app_colors.dart';
+import '../device_assignment.dart' show joinNames;
 import '../firmware.dart';
 import '../pia_service.dart';
+import '../router_log_paging.dart' show readsAsError;
 import '../router_slot_service.dart';
 import '../router_watchdog.dart';
 import '../screens/slot_params_editor.dart';
@@ -57,6 +59,17 @@ bool looksLikeStaleConfig(String message) =>
     message.contains('did not come up') || message.contains('never answered it') || message.contains('Connectivity check failed');
 
 enum SlotModalMode { manage, watchdog }
+
+/// What DISABLE's confirmation says about the devices pinned to the slot: [names] when they could be
+/// read, null when they could not, and nothing at all when there are none.
+String? pinnedDeviceWarning(List<String>? names) {
+  const until = 'will have no internet until you ENABLE this VPN again or move';
+  if (names == null) return 'Any device pinned to this VPN $until it to another VPN in DEVICE ASSIGNMENT.';
+  if (names.isEmpty) return null;
+  final one = names.length == 1;
+  return '${joinNames(names)} ${one ? 'is' : 'are'} pinned to this VPN, and $until ${one ? 'it' : 'them'} '
+      'to another VPN in DEVICE ASSIGNMENT.';
+}
 
 class SlotModal extends StatefulWidget {
   final SlotModalMode mode;
@@ -126,14 +139,27 @@ class _SlotModalState extends State<SlotModal> {
   }
 
   // ── Generic dialog helpers ────────────────────────────────────────────────────────
-  Future<bool> _confirm(String title, {String? message, String confirmLabel = 'CONFIRM', bool destructive = false}) async {
+  Future<bool> _confirm(String title,
+      {String? message, String? warning, String confirmLabel = 'CONFIRM', bool destructive = false}) async {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
         title: Text(title, style: const TextStyle(color: kText, fontSize: 15)),
-        // A question that already names the slot and its region needs no explanatory body.
-        content: message == null ? null : Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
+        // A question that already names the slot and its region needs no explanatory body. A
+        // [warning] is what the action does to something other than the slot, so it stands apart.
+        content: message == null && warning == null
+            ? null
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (message != null) Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
+                  if (message != null && warning != null) const SizedBox(height: 10),
+                  if (warning != null)
+                    Text(warning, key: const Key('confirm_warning'), style: const TextStyle(color: kWarn, fontSize: 13)),
+                ],
+              ),
         actions: [
           AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
           AppButton(
@@ -294,6 +320,16 @@ class _SlotModalState extends State<SlotModal> {
     final slot = _selected;
     final info = _selectedInfo;
     final wdActive = info?.watchdogActive ?? false;
+    // Named before asking, because this is the one effect of a DISABLE on something other than the
+    // slot: a device pinned here keeps no internet at all while it is off (ID-213).
+    List<String>? pinned = const [];
+    if (isStockFirmware) {
+      try {
+        pinned = await _slotSvc(await widget.connect()).pinnedDeviceNames(slot);
+      } catch (_) {
+        pinned = null;
+      }
+    }
     final ok = await _confirm(
       'Disable VPN ${slotLabel(slot, info?.desc ?? '')}?',
       message: wdActive
@@ -301,6 +337,7 @@ class _SlotModalState extends State<SlotModal> {
               'tunnel you just stopped. The script and both sets of settings stay on the router, so ENABLE '
               'brings the tunnel and the watchdog back together.'
           : 'Takes the tunnel down. The settings stay on the router, so ENABLE brings it back.',
+      warning: pinnedDeviceWarning(pinned),
       confirmLabel: 'DISABLE',
     );
     if (!ok) return;
@@ -350,7 +387,23 @@ class _SlotModalState extends State<SlotModal> {
         initial: params!,
         desc: _slots.slots[slot]?.desc ?? '',
         routerDotServers: _slots.routerDotServers,
-        onSave: (editable) => _runSlot((svc) => svc.writeSlotParams(slot, editable)),
+        onSave: (editable) async {
+          // A running tunnel keeps its old settings until it is restarted, which MAN-11 found the hard
+          // way on 2026-09-19. So SAVE restarts it, and says so first (ID-203).
+          final running = _slots.activeSlots.contains(slot);
+          if (running &&
+              !await _confirm(
+                'Save and restart ${slotLabel(slot, _slots.slots[slot]?.desc ?? '')}?',
+                message: 'Saving restarts wgc$slot. Anything using it drops for a few seconds.',
+                confirmLabel: 'SAVE',
+              )) {
+            return false;
+          }
+          if (!await _runSlot((svc) => svc.writeSlotParams(slot, editable))) return false;
+          // Saved either way from here: a restart that fails is reported, and the editor closes.
+          if (running) await _runSlot((svc) => svc.restartSlot(slot));
+          return true;
+        },
       ),
     );
     if (saved == true) await _refresh();
@@ -386,7 +439,16 @@ class _SlotModalState extends State<SlotModal> {
   // Counted from interfaces that are actually up, since that is what the router's cap applies to.
   // Shared by MANAGE ENABLE and by the watchdog paths, which bring a tunnel up as a side effect.
   Future<bool> _withinVpnLimit(int slot) async {
-    final maxActive = _slots.maxActiveSlots;
+    var maxActive = _slots.maxActiveSlots;
+    // Read again now, not taken from when the list was loaded: SETTINGS changes it, and coming back
+    // from there kept the old limit until the screen was left and entered again (ID-147).
+    if (maxActive != null) {
+      try {
+        maxActive = await _slotSvc(await widget.connect()).readMaxActiveVpns();
+      } catch (_) {
+        // keep the value from the last read
+      }
+    }
     final othersUp = _slots.activeSlots.where((i) => i != slot).length;
     if (maxActive == null || othersUp < maxActive) return true;
     await _info(
@@ -932,38 +994,23 @@ class _FormDialog extends StatelessWidget {
   }
 }
 
-/// The colour of one line of the watchdog's own log, or null for the plain text colour (ID-117).
+/// The colour of one line of the watchdog's own log (ID-117, ID-158).
 ///
-/// The log is mostly routine: a handshake age every few minutes, for months. Colour is spent on
-/// the three things someone opens this screen to find - a fault, a rebuild that worked, and the
-/// steps of a rebuild in progress - and everything else is left alone, because a log where most
-/// lines are coloured says nothing.
+/// The same scheme as ROUTER LOG, where these lines also appear: lavender for the watchdog, and red
+/// for a fault by ROUTER LOG's own rule, so a line is red on both screens or on neither. One
+/// addition, teal for a rebuild that worked, because that is what someone opens this screen to find.
 ///
-/// Matched on the wording the script itself writes (the `log "..."` calls in router_watchdog.dart)
-/// rather than on a marker, so a router still running an older script colours correctly too.
-Color? watchdogLogLineColour(String line) {
-  if (_wdErrorPattern.hasMatch(line)) return kError;
+/// It used to have a scheme of its own: amber for the steps of a rebuild, which everywhere else in
+/// this app means a warning, and red for "Not connected yet", which is what a first deploy says
+/// before its tunnel has come up.
+Color watchdogLogLineColour(String line) {
+  if (readsAsError(line)) return kError;
   if (_wdSuccessPattern.hasMatch(line)) return kHighlight;
-  if (_wdDeployPattern.hasMatch(line)) return kWarn;
-  return null;
+  return kWatchdogText;
 }
 
-/// Red. `ERROR:` is what `abort()` writes; the rest is the wording of the checks that fail.
-final RegExp _wdErrorPattern = RegExp(
-  r'\berror\b|\bfailed\b|connectivity lost|not connected yet|no internet|down or absent|never answered',
-  caseSensitive: false,
-);
-
-/// Teal: the tunnel is up and, for the email, the alert got out. Checked BEFORE the deployment
-/// pattern, which would otherwise claim `Alert email sent (SUCCESS)`.
+/// Teal: the tunnel is up and, for the email, the alert got out.
 final RegExp _wdSuccessPattern = RegExp(r'Deploy SUCCESS|Reconfig SUCCESS|Alert email sent \(SUCCESS\)');
-
-/// Amber: a rebuild is under way. These are the steps between "something is wrong" and an outcome.
-final RegExp _wdDeployPattern = RegExp(
-  r'deploying|reconfigur|ca cert|pia token|servers:|latency to|backing off|token fetch|'
-  r'wan has internet|alert email|email diag|standing down',
-  caseSensitive: false,
-);
 
 /// The watchdog log, full screen.
 ///
@@ -1073,7 +1120,7 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
                         for (final (i, line) in text.split('\n').indexed)
                           TextSpan(
                             text: i == 0 ? line : '\n$line',
-                            style: TextStyle(color: watchdogLogLineColour(line) ?? kText),
+                            style: TextStyle(color: watchdogLogLineColour(line)),
                           ),
                       ]),
                       key: const Key('watchdog_log_text'),
