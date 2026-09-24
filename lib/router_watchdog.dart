@@ -1037,8 +1037,12 @@ class RouterWatchdog {
     final deployed = RegExp(r'\d+').allMatches(await _read('$probes; true')).map((m) => int.parse(m.group(0)!)).toList();
     for (final slot in deployed) {
       await _writeScript(slot, buildWatchdogScript(await loadConfig(slot), firmware: firmware));
-      await _logRouter('Watchdog script updated to ${appVersionLabel.isEmpty ? 'this app version' : appVersionLabel} '
-          'for ${await _label(slot)}');
+      // One sentence for both logs. The app log said only the path and its size, the router log the
+      // version, so the two did not read as the same event (ID-190).
+      final updated = 'Watchdog script updated to ${appVersionLabel.isEmpty ? 'this app version' : appVersionLabel} '
+          'for ${await _label(slot)}';
+      onLog?.call('$updated.', isSuccess: true);
+      await _logRouter(updated);
     }
     // The guard and the boot hook that restores it came with 460. A router updated from an older
     // build has neither until something writes them, and this is the update the user is prompted for.

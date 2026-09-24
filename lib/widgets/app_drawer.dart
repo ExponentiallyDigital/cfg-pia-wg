@@ -149,6 +149,8 @@ class AppDrawer extends StatelessWidget {
               textColor: kMuted,
               iconColor: kMuted,
               selectedColor: kHighlight,
+              // The same fill as every other entry. HOME had none, so on HOME nothing looked current (ID-156).
+              selectedTileColor: kBorder,
               selected: controller.currentDestination == AppDestination.menu,
               onTap: () {
                 onCloseDrawer();
@@ -168,7 +170,8 @@ class AppDrawer extends StatelessWidget {
                 textColor: destinationColour(d),
                 iconColor: destinationColour(d),
                 selectedColor: destinationColour(d),
-                selectedTileColor: kField,
+                // kBorder, not kField: kField is four shades off the drawer and did not read as a fill (ID-156).
+                selectedTileColor: kBorder,
                 selected: controller.currentDestination == d,
                 onTap: () {
                   onCloseDrawer();

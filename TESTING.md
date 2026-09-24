@@ -312,7 +312,7 @@ MAN-13 and MAN-14 are in the [WD](#wd) group: they need a watchdog to pause, and
 
 **MAN-7** Stock DNS note
 
-- See: CREATE's credentials dialog and EDIT's DNS field both say assigned devices use only the first server. STANDALONE does not.
+- See: CREATE's credentials dialog and EDIT's DNS field both say assigned devices send their lookups to the first server only, and that the router itself can use both. STANDALONE does not.
 
 **MAN-8** Disable
 

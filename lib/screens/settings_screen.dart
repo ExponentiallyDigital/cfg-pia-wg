@@ -77,7 +77,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (_c.canReuseRouterSession) return (ip, user, pass);
     final entered = await showDialog<(String, String, String)?>(
       context: context,
-      builder: (_) => SshCredsDialog(initialIp: _c.routerIpPrefill, initialUser: user, initialPass: pass),
+      builder: (_) => SshCredsDialog(
+        initialIp: _c.routerIpPrefill,
+        initialUser: user,
+        initialPass: pass,
+        verify: (ip, user, pass) => verifyRouterLogin(_c, ip, user, pass, testClientFactory: widget.testClientFactory),
+      ),
     );
     if (entered == null || !mounted) return null;
     _c

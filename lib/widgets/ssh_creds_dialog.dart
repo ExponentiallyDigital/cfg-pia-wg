@@ -18,16 +18,51 @@
 // that ask, shared so the three cannot drift apart. Returns (ip, user, password), or null if
 // dismissed; the caller writes them back to the session before connecting.
 
+import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_button.dart';
 
 import '../app_colors.dart';
+import '../router_session.dart' show routerConnectMessage;
+import '../router_slot_service.dart' show openSshClient;
+import '../session_controller.dart';
 import 'common_fields.dart';
+
+/// Logs in to the router with these credentials over the session's shared connection, and on
+/// success records them the way the router screens do: the session counts as connected, so every
+/// other screen reuses the login, and the address is remembered. Returns null on success, else
+/// the reason in plain English. The [SshCredsDialog.verify] every caller passes (ID-155).
+Future<String?> verifyRouterLogin(SessionController c, String ip, String user, String pass,
+    {Future<SSHClient> Function(String ip, String user, String pass)? testClientFactory}) async {
+  c
+    ..routerIp = ip
+    ..sshUsername = user
+    ..sshPassword = pass;
+  try {
+    await c.routerSession(() => testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass)).authenticated;
+  } catch (e) {
+    // Plain English in the dialog, the raw exception in the log (ID-108).
+    c.logEntry('Router login failed: $e', isError: true);
+    return routerConnectMessage(e, ip) ?? 'Could not log in to the router: ${e.toString().replaceAll('Exception: ', '')}';
+  }
+  c.routerConnected = true;
+  await c.rememberRouterIp(ip);
+  return null;
+}
 
 class SshCredsDialog extends StatefulWidget {
   final String initialIp, initialUser, initialPass;
-  const SshCredsDialog({super.key, required this.initialIp, required this.initialUser, required this.initialPass});
+
+  /// Proves the login before the dialog closes, returning null when the router accepted it or the
+  /// reason when it did not. Only then is the password manager told to save: the fields have to
+  /// still be on screen for that, and a login that failed must not be offered for saving. Without
+  /// it, closing the dialog cancelled the save, which is why ABOUT's login was never offered (ID-155).
+  final Future<String?> Function(String ip, String user, String pass)? verify;
+
+  const SshCredsDialog(
+      {super.key, required this.initialIp, required this.initialUser, required this.initialPass, this.verify});
 
   @override
   State<SshCredsDialog> createState() => SshCredsDialogState();
@@ -43,6 +78,7 @@ class SshCredsDialogState extends State<SshCredsDialog> {
   late final TextEditingController _userCtrl = TextEditingController(text: widget.initialUser);
   late final TextEditingController _passCtrl = TextEditingController(text: widget.initialPass);
   bool _visible = false;
+  bool _checking = false;
   String? _error;
 
   @override
@@ -53,11 +89,29 @@ class SshCredsDialogState extends State<SshCredsDialog> {
     super.dispose();
   }
 
-  void _onContinue() {
+  Future<void> _onContinue() async {
     final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
     if (ip.isEmpty || user.isEmpty || pass.isEmpty) {
       setState(() => _error = 'Router IP, SSH username and SSH password are all required.');
       return;
+    }
+    final verify = widget.verify;
+    if (verify != null) {
+      setState(() {
+        _checking = true;
+        _error = null;
+      });
+      final failure = await verify(ip, user, pass);
+      if (!mounted) return;
+      if (failure != null) {
+        setState(() {
+          _checking = false;
+          _error = failure;
+        });
+        return;
+      }
+      // The router accepted these credentials: offer to save them, and only here.
+      TextInput.finishAutofillContext();
     }
     Navigator.of(context).pop((ip, user, pass));
   }
@@ -114,10 +168,14 @@ class SshCredsDialogState extends State<SshCredsDialog> {
                       keyValue: 'about_ssh_cancel',
                       label: 'CANCEL',
                       role: ButtonRole.dismiss,
-                      onPressed: () => Navigator.pop(context, null),
+                      onPressed: _checking ? null : () => Navigator.pop(context, null),
                     ),
                     const SizedBox(width: 8),
-                    AppButton(keyValue: 'about_ssh_continue', label: 'CONTINUE', onPressed: _onContinue),
+                    AppButton(
+                        keyValue: 'about_ssh_continue',
+                        label: 'CONTINUE',
+                        busy: _checking,
+                        onPressed: _checking ? null : _onContinue),
                   ],
                 ),
               ],

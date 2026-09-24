@@ -117,7 +117,14 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     super.initState();
     _piaUserCtrl.text = widget.piaUsername;
     _piaPassCtrl.text = widget.piaPassword;
+    // The DoH note depends on both fields, and it only changed on some unrelated rebuild (ID-144).
+    _dnsCtrl.addListener(_onDnsChanged);
+    _dohIpCtrl.addListener(_onDnsChanged);
     _load();
+  }
+
+  void _onDnsChanged() {
+    if (mounted) setState(() {});
   }
 
   // Mirrors the PIA credentials back into the session so every other screen and dialog that needs
@@ -274,8 +281,10 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     );
     // The clash that matters: an address this slot also uses for its DNS is routed into this
     // slot's tunnel, so a broken tunnel would take the watchdog's own lookups with it.
-    final clash = dnsAddressesIn(_dnsCtrl.text).contains(_dohIpCtrl.text.trim()) ||
-        widget.routerDotServers.contains(_dohIpCtrl.text.trim());
+    final dohIp = _dohIpCtrl.text.trim();
+    final clashSlot = dohIp.isNotEmpty && dnsAddressesIn(_dnsCtrl.text).contains(dohIp);
+    final clashRouter = dohIp.isNotEmpty && widget.routerDotServers.contains(dohIp);
+    final clash = clashSlot || clashRouter;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const Text("The watchdog's own encrypted DNS", style: TextStyle(color: kHighlight, fontSize: 12)),
       const SizedBox(height: 4),
@@ -293,7 +302,13 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         ],
         onChanged: (value) => setState(() {
           final chosen = kDohResolvers.where((r) => r.url == value);
-          if (chosen.isEmpty) return; // "Something else": leave the fields for the user to fill in
+          if (chosen.isEmpty) {
+            // "Something else": empty, for the user to fill in. Left holding the last resolver, the
+            // fields read as that resolver still being chosen (ID-170).
+            _dohUrlCtrl.clear();
+            _dohIpCtrl.clear();
+            return;
+          }
           _dohUrlCtrl.text = chosen.first.url;
           _dohIpCtrl.text = chosen.first.ip;
         }),
@@ -301,10 +316,17 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       _field(_dohUrlCtrl, 'DoH URL', const Key('wd_doh_url')),
       _field(_dohIpCtrl, 'DoH server address', const Key('wd_doh_ip')),
       Text(
-        clash
-            ? 'This address is also used for DNS on this router, so the watchdog\'s own lookups would '
-                'travel through this tunnel - the one it exists to repair. Choose an address nothing else uses.'
-            : 'The watchdog resolves PIA over an encrypted connection to this address. The DoH URL must be a '
+        // Two causes, named apart. The note said "used for DNS on this router" for both, and the
+        // common one is neither the router nor another tunnel: it is this tunnel's own DNS (ID-144).
+        clashSlot
+            ? "This address is also this tunnel's DNS server, so the router sends its own lookups to it "
+                "through this tunnel - the watchdog's included. If the tunnel breaks, the watchdog cannot look "
+                'up PIA to repair it. Choose an address this tunnel does not use for DNS.'
+            : clashRouter
+                ? "The router already uses this address for its own encrypted DNS. If a tunnel uses it for DNS "
+                    "too, the router's lookups to it go through that tunnel, and the watchdog's go with them. "
+                    'Choose an address nothing else uses.'
+                : 'The watchdog resolves PIA over an encrypted connection to this address. The DoH URL must be a '
                 'name, not an IP address. The DoH server address is how that name is reached. Leave both '
                 'empty to look names up in the clear.',
         key: const Key('wd_doh_note'),
@@ -431,29 +453,30 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     // view, so where the keyboard leaves the viewport cannot matter.
     FocusScope.of(context).unfocus();
     final cfg = _currentConfig();
-    final errors = cfg.validate();
-    if (errors.isNotEmpty) {
-      await AppErrors.inputs(context, _c, errors);
-      return;
-    }
 
     // The region comes from the form. It is written - and a configured slot overwritten, only after the
     // warning - when the watchdog is not yet active or the region has been changed. An active watchdog
     // saved with its region untouched keeps the tunnel it has.
     final region = _regionCtrl.text.trim();
-    if (region.isEmpty) {
-      await AppErrors.inputs(context, _c, ['Choose a region first.']);
+    final enabled = _status?.isEnabled == true;
+    final regionChanges = !enabled || region != _regionIdOf(widget.regionDesc);
+    // Every problem at once, in the order the fields appear: the region is at the top of the form, so
+    // it comes first. A made-up region used to be reported only once the SMTP fields below it were
+    // right, one dialog at a time (ID-202).
+    final regionProblem = region.isEmpty
+        ? 'Choose a region first.'
+        : regionChanges
+            ? await _regionProblem(region)
+            : null;
+    if (!mounted) return;
+    final errors = [if (regionProblem != null) regionProblem, ...cfg.validate()];
+    if (errors.isNotEmpty) {
+      await AppErrors.inputs(context, _c, errors);
       return;
     }
+
     String? newDesc;
-    final enabled = _status?.isEnabled == true;
-    if (!enabled || region != _regionIdOf(widget.regionDesc)) {
-      final problem = await _regionProblem(region);
-      if (!mounted) return;
-      if (problem != null) {
-        await AppErrors.inputs(context, _c, [problem]);
-        return;
-      }
+    if (regionChanges) {
       if (!widget.slotIsEmpty && !await _confirmOverwrite(region)) return;
       newDesc = region;
     }

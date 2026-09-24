@@ -992,6 +992,17 @@ void main() {
       return c;
     }
 
+    // ID-190: the app log gave a path and a size, the router log the version.
+    test('the app log and the router log say the same thing, version included', () async {
+      appVersionLabel = 'v0.8.94 build 464';
+      addTearDown(() => appVersionLabel = '');
+      final logs = <String>[];
+      final c = router(deployed: '5');
+      await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).redeployScripts();
+      expect(logs, contains('Watchdog script updated to v0.8.94 build 464 for wgc5.'));
+      expect(c.commands.any((x) => x.startsWith('logger') && x.contains('Watchdog script updated to v0.8.94 build 464 for wgc5')), isTrue);
+    });
+
     test('rewrites only the scripts already on the router, and touches nothing else', () async {
       final c = router(deployed: '5');
       expect(await _wd(c).redeployScripts(), [5]);

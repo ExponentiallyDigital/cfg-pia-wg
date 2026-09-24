@@ -1,25 +1,39 @@
-// test/widgets/watchdog_log_colour_test.dart - the watchdog log is coloured by outcome (ID-117).
+// test/widgets/watchdog_log_colour_test.dart - the watchdog log is coloured like ROUTER LOG (ID-117, ID-158).
 //
 // The wording here is copied from the `log "..."` calls in router_watchdog.dart. If a message is
 // reworded there and not here, the line quietly loses its colour - which is what these cases catch.
 import 'package:cfg_pia_wg/app_colors.dart';
+import 'package:cfg_pia_wg/router_log_paging.dart';
+import 'package:cfg_pia_wg/screens/router_log_screen.dart';
 import 'package:cfg_pia_wg/widgets/slot_modal.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   const stamp = '2026-09-19 06:12:01 ';
 
+  const faults = [
+    'ERROR: PIA username is not set',
+    'Connectivity lost; reconfiguring (attempt #3)',
+    'No handshake and both pings failed (10.0.0.1, 10.0.0.2)',
+    'no Internet on WAN interface, exiting.',
+    'Email FAILED (mailer exit=1) stderr=[none]',
+    'Alert email sent (FAILED)',
+    'Backing off after 3 failed attempts: 120s of 240s elapsed',
+  ];
+
   test('a fault is red', () {
-    for (final line in [
-      'ERROR: PIA username is not set',
-      'Connectivity lost; reconfiguring (attempt #3)',
-      'No handshake and both pings failed (10.0.0.1, 10.0.0.2)',
-      'Not connected yet: no handshake, and no answer from 10.0.0.1 or 10.0.0.2',
-      'no Internet on WAN interface, exiting.',
-      'Email FAILED (mailer exit=1) stderr=[none]',
-      'Alert email sent (FAILED)',
-    ]) {
+    for (final line in faults) {
       expect(watchdogLogLineColour('$stamp$line'), kError, reason: line);
+    }
+  });
+
+  // The same line in ROUTER LOG carries the syslog prefix. Red on one screen and not the other was
+  // the inconsistency ID-158 reported.
+  test('a line is red here exactly when it is red in ROUTER LOG', () {
+    for (final line in [...faults, 'Handshake 25s ago', 'Not connected yet: no handshake, and no answer from 8.8.8.8 or 1.1.1.1']) {
+      final inRouterLog = 'Sep 19 06:12:01 cfg-pia-wg: wgc5: $line';
+      expect(watchdogLogLineColour('$stamp$line') == kError, routerLogLineColour(inRouterLog) == kError, reason: line);
+      expect(readsAsError(line), isRouterLogError(inRouterLog), reason: line);
     }
   });
 
@@ -33,33 +47,18 @@ void main() {
     }
   });
 
-  test('the steps of a rebuild are amber', () {
-    for (final line in [
-      'Deploying: bringing wgc5 up for the first time [script 0.8.83]',
-      'CA cert not cached; downloading',
-      'Using cached CA cert',
-      'PIA token obtained (len=256)',
-      'Servers: 14 candidates',
-      'Latency to 203.0.113.9 (perth401): 31ms',
-      'CA cert cached at /jffs/cfg-pia-wg/ca.rsa.4096.crt',
-      'WAN has internet connectivity',
-    ]) {
-      expect(watchdogLogLineColour('$stamp$line'), kWarn, reason: line);
-    }
-    // "Backing off after N failed attempts" carries the word failed, so red wins there - correct,
-    // because the tunnel is still down and the run is doing nothing about it yet.
-    expect(watchdogLogLineColour('${stamp}Backing off after 3 failed attempts: 120s of 240s elapsed'), kError);
-  });
-
-  test('the routine check keeps the plain text colour', () {
+  test('everything else is the watchdog lavender, as in ROUTER LOG', () {
     for (final line in [
       'Checking wgc5 aus_perth connectivity',
       'Handshake 25s ago',
-      'Primary ping OK (10.0.0.1)',
-      'Secondary ping OK (10.0.0.2)',
+      'Deploying: bringing wgc5 up for the first time [script 0.8.83]',
+      'PIA token obtained (len=256)',
+      'Latency to 203.0.113.9 (perth401): 31ms',
       'wgc5 is disabled in the router; standing down until it is enabled again',
+      // What a first deploy says before its tunnel has come up. Not a fault (ID-158).
+      'Not connected yet: no handshake, and no answer from 8.8.8.8 or 1.1.1.1',
     ]) {
-      expect(watchdogLogLineColour('$stamp$line'), line.contains('standing down') ? kWarn : isNull, reason: line);
+      expect(watchdogLogLineColour('$stamp$line'), kWatchdogText, reason: line);
     }
   });
 }

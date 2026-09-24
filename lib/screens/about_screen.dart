@@ -138,7 +138,13 @@ class _AboutScreenState extends State<AboutScreen> {
       if (!prompt) return;
       final entered = await showDialog<(String, String, String)?>(
         context: context,
-        builder: (_) => SshCredsDialog(initialIp: controller.routerIpPrefill, initialUser: user, initialPass: pass),
+        builder: (_) => SshCredsDialog(
+          initialIp: controller.routerIpPrefill,
+          initialUser: user,
+          initialPass: pass,
+          verify: (ip, user, pass) =>
+              verifyRouterLogin(controller, ip, user, pass, testClientFactory: widget.testClientFactory),
+        ),
       );
       if (entered == null || !mounted) return;
       (ip, user, pass) = entered;
@@ -201,6 +207,15 @@ class _AboutScreenState extends State<AboutScreen> {
   /// updates from the store and the script only on a deploy, so the two drift apart silently.
   bool get _scriptStale =>
       _scriptChecked && _scriptVersion != null && appVersionLabel.isNotEmpty && _scriptVersion != appVersionLabel;
+
+  /// True when the router's script is NEWER than this app - an older build installed from Play over a
+  /// newer sideloaded one does this. Then it is the app that is behind, so its own version is the one
+  /// drawn in red (ID-157).
+  bool get _appOlderThanScript {
+    if (!_scriptStale) return false;
+    final app = buildNumberOf(appVersionLabel), script = buildNumberOf(_scriptVersion!);
+    return app != null && script != null && script > app;
+  }
 
   /// The Router firmware row's value, or empty until something has told us.
   String get _firmwareStatus =>
@@ -306,6 +321,7 @@ class _AboutScreenState extends State<AboutScreen> {
                     info: snap.data,
                     scriptStatus: _scriptStatus,
                     scriptStale: _scriptStale,
+                    appOlder: _appOlderThanScript,
                     firmware: _firmwareStatus,
                     licence: _licence(context),
                     scriptLoginRecogniser: _scriptChecked || _scriptLoading ? null : _scriptLoginRecogniser,
@@ -470,6 +486,9 @@ const TextStyle _valueStyle = TextStyle(color: kText, fontSize: 12);
 /// What the `Watchdog script` row offers when the app has no router session to answer with.
 const String kScriptLoginPrompt = 'login to router to retrieve';
 
+/// The build number in a version label such as "v0.8.88 build 458", or null when there is none.
+int? buildNumberOf(String label) => int.tryParse(RegExp(r'build (\d+)').firstMatch(label)?.group(1) ?? '');
+
 class _BuildInfoBlock extends StatelessWidget {
   final BuildInfo? info;
 
@@ -483,6 +502,9 @@ class _BuildInfoBlock extends StatelessWidget {
   /// True when the deployed script is from another app version, which draws its value in amber.
   final bool scriptStale;
 
+  /// True when that script is newer than this app, which draws the app's own version in red.
+  final bool appOlder;
+
   /// The Router firmware row: type and version, or empty until the router has been read.
   final String firmware;
 
@@ -491,6 +513,7 @@ class _BuildInfoBlock extends StatelessWidget {
 
   const _BuildInfoBlock({
     required this.info,
+    this.appOlder = false,
     this.scriptStatus = '',
     this.scriptLoginRecogniser,
     this.scriptStale = false,
@@ -539,7 +562,13 @@ class _BuildInfoBlock extends StatelessWidget {
       TextSpan(children: [
         // Same size and weight as the rows below it, and no blank line: it is the first line of
         // the table, not a heading over it. Set apart, it read as a title for a block it belongs to.
-        TextSpan(text: headline(info), style: _labelStyle),
+        if (appOlder) ...[
+          const TextSpan(text: 'cfg-pia-wg: ', style: _labelStyle),
+          TextSpan(
+              text: headline(info).substring('cfg-pia-wg: '.length),
+              style: _labelStyle.copyWith(color: kError)),
+        ] else
+          TextSpan(text: headline(info), style: _labelStyle),
         const TextSpan(text: '\n'),
         for (var n = 0; n < data.length; n++) ...[
           TextSpan(text: '${data[n].$1}: ', style: _labelStyle),

@@ -234,6 +234,11 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       // the firmware is cached and the probe is skipped - which is why the same mistake reported
       // two different errors depending on what had happened earlier.
       await client.authenticated;
+      // The login is proven here, whatever the firmware and helper checks below decide: remember the
+      // address and offer to save the credentials now. After the checks, a NOT NOW at the helper
+      // install prompt stored neither (ID-201). A wrong address still never gets this far.
+      await _c.rememberRouterIp(_ipCtrl.text.trim());
+      TextInput.finishAutofillContext();
       final svc = _slotSvc(client);
       // Detection has to precede fetchSlots: on stock the slot list comes from vpnc_clientlist.
       gate = await _checkFirmware(svc);
@@ -244,10 +249,6 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
         }
         slots = await svc.fetchSlots();
         _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
-        // Only now, with the connect proven: a wrong address must never be stored.
-        await _c.rememberRouterIp(_ipCtrl.text.trim());
-        // The router accepted these credentials: offer to save them, and only here.
-        TextInput.finishAutofillContext();
       }
     } catch (e) {
       // Plain English on screen, the raw exception in the log (ID-108).
