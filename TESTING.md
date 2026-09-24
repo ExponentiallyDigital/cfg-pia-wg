@@ -988,11 +988,11 @@ tail -3 /tmp/watchdog_wgc1.log
 ```bash
 logger "**TEST GRD-4 STARTED**"
 ip rule show | grep -w "$D"
-logread | grep "Fail-closed guard on for $D" | tail -1
+grep "Fail-closed guard on for $D" /tmp/syslog.log | tail -1
 ```
 
 - Pass if: the 90 and 91 lines are back.
-- Write down: the time on the `Fail-closed guard on` line, against the time you rebooted. That gap is the boot window the guard does not cover yet (ID-213).
+- Pass if: the `Fail-closed guard on` line is within a second or two of the `WAN was restored` line before it (`grep "WAN was restored" /tmp/syslog.log | tail -1`). Measured 2026-09-24: one second, on two boots.
 
 **GRD-5** A change made in the web interface is followed
 
@@ -1023,7 +1023,7 @@ ip rule show | grep -w "$D"
 **LOG-2** One connection per session
 
 - Do: note the time, then use the app for a few minutes - open MANAGE, press something, open WATCHDOG, press something.
-- Do: on the router, `logread | grep "Password auth succeeded" | tail -20`.
+- Do: on the router, `grep "Password auth succeeded" /tmp/syslog.log | tail -20`.
 - Pass if: counting only the lines since the time you noted, there is one per app session, not one per button press.
 
 **LOG-3** Connection drops mid-session
@@ -1192,14 +1192,14 @@ sed -i '2s/cfg-pia-wg v[^;]*;/cfg-pia-wg v0.0.1 build 1;/' /jffs/cfg-pia-wg/watc
 
 **EXT-4** Background under 5 minutes
 
-- Do: on the router, `logread | grep -c "Password auth succeeded"`, and write the count down.
+- Do: on the router, `grep -c "Password auth succeeded" /tmp/syslog.log`, and write the count down.
 - Do: in MANAGE, switch to another app for 1 minute, come back, press an action.
 - Pass if: that count has not moved - the app used the session it already had.
 
 **EXT-5** Background over 5 minutes
 
 - Do: with the count from EXT-4 in hand, switch away for 6 minutes, come back, press an action.
-- Pass if: it reconnects by itself, and `logread | grep -c "Password auth succeeded"` has gone up by exactly one.
+- Pass if: it reconnects by itself, and `grep -c "Password auth succeeded" /tmp/syslog.log` has gone up by exactly one.
 - Pass if: APP LOG says "Router SSH connection re-established." - the session the app closed on its own used to reopen in silence.
 
 **EXT-6** Release build privacy

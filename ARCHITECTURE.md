@@ -989,15 +989,16 @@ MAC, IP, empty DNS, **empty hostname**. That follows from the binding being by I
 
 **On its own, stock does not quite fail closed. With the app's fail-closed guard, a pinned device gets its tunnel or nothing** (ID-213, build 460).
 
-Measured with one device pinned to wgc1 and a ping running on it throughout (`.claude/testing/runsheet_2026-09-24_fail-closed*.md`):
+Measured with one device pinned to wgc1 and a ping running on it throughout (`.claude/testing/runsheet_2026-09-24_fail-closed*.md`), then confirmed end to end with the built guard on a freshly reset router (`runsheet_2026-09-24_guard-check.md`, run 3): 537 replies across a rebuild, a DISABLE, both tunnels stopped in the web interface and moves between tunnels, every one from a tunnel and none from the ISP.
 
 | What happened to the tunnel | Without the guard | With the guard | Measured |
 | --- | --- | --- | --- |
 | Its server stopped answering: a PIA registration ageing out, interface still up | blocked - the router answers "Destination host unreachable" | blocked | 2026-09-20 (BRK-1), 2026-09-24 |
 | The watchdog rebuilt it with `restart_vpnc` | about one second out through the default connection | blocked | 2026-09-24 |
 | DISABLE in the app, or turned off in the web interface | out through the default connection for as long as it stays off: another tunnel, or the WAN in the clear when the default is Internet | blocked | 2026-09-08, 2026-09-21 (DEF-7), 2026-09-24 |
+| A reboot | out through the WAN until the tunnels start | blocked from the moment the WAN is up: the boot hook restored the guard one second after "WAN was restored", on two boots | 2026-09-24 |
 
-Why it leaks. The firmware's rule for a pinned device is `100: from <ip> lookup <table>`, and the table is not a small one: it carries a copy of the router's own routes, including `default via <ISP gateway> dev <WAN>`. While the tunnel is up its two `/1` routes are more specific and win. When the tunnel goes, those routes go with the interface, and what is left in the table sends the device straight out of the WAN. When the firmware removes the rule as well - DISABLE does - the device falls to the default connection's rules at 10000 instead. Which of the two happened is readable in a ping's TTL: 58 through PIA, 56 through the ISP on the maintainer's line.
+Why it leaks. The firmware's rule for a pinned device is `100: from <ip> lookup <table>`, and the table is not a small one: it carries a copy of the router's own routes, including `default via <ISP gateway> dev <WAN>`. While the tunnel is up its two `/1` routes are more specific and win. When the tunnel goes, those routes go with the interface, and what is left in the table sends the device straight out of the WAN. When the firmware removes the rule as well - DISABLE does - the device falls to the default connection's rules at 10000 instead. On 2026-09-24 the two paths could be told apart by a ping's TTL, because they answered in the same 11 ms: 58 through the Melbourne tunnel, 56 through the ISP. TTL only distinguishes paths against a reference like that - a UK server answered with 56 through its tunnel - so a runsheet that needs to tell paths apart puts the tunnels in regions with clearly different times.
 
 What does NOT close it, both measured on 2026-09-24:
 
@@ -1030,7 +1031,6 @@ Who calls it:
 What it does not cover:
 
 - **Devices that follow the default connection.** By design: pinning is how a device is protected. When the default is itself a tunnel, the devices following it still fall through while it is off, and the alert email says so.
-- **The moments after a boot**, before the boot hook runs. Not measured yet (ID-213 item 4).
 - **Addresses the slot's table routes to the WAN directly** - the router's own DNS servers, the PIA endpoint, the ISP's subnet. A pinned device talking to one of those addresses leaves outside its tunnel even while the tunnel is healthy. Firmware behaviour, measured 2026-09-24.
 - **IPv6.** Not measured on a router with IPv6 enabled.
 
