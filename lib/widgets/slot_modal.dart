@@ -386,7 +386,23 @@ class _SlotModalState extends State<SlotModal> {
         initial: params!,
         desc: _slots.slots[slot]?.desc ?? '',
         routerDotServers: _slots.routerDotServers,
-        onSave: (editable) => _runSlot((svc) => svc.writeSlotParams(slot, editable)),
+        onSave: (editable) async {
+          // A running tunnel keeps its old settings until it is restarted, which MAN-11 found the hard
+          // way on 2026-09-19. So SAVE restarts it, and says so first (ID-203).
+          final running = _slots.activeSlots.contains(slot);
+          if (running &&
+              !await _confirm(
+                'Save and restart ${slotLabel(slot, _slots.slots[slot]?.desc ?? '')}?',
+                message: 'Saving restarts wgc$slot. Anything using it drops for a few seconds.',
+                confirmLabel: 'SAVE',
+              )) {
+            return false;
+          }
+          if (!await _runSlot((svc) => svc.writeSlotParams(slot, editable))) return false;
+          // Saved either way from here: a restart that fails is reported, and the editor closes.
+          if (running) await _runSlot((svc) => svc.restartSlot(slot));
+          return true;
+        },
       ),
     );
     if (saved == true) await _refresh();

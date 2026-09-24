@@ -1098,6 +1098,11 @@ Three points of care, all covered by `staleRuleTables` in `lib/device_assignment
 > internet rather than onto the default, which is what the web interface does. Sending an
 > explicitly pinned device to the default would put it on whatever tunnel the default happens to
 > name, which nobody chose.
+>
+> And nothing is started after it. Until build 463 DELETE followed the teardown with
+> `restart_vpnc`, which starts whatever `vpnc_unit` names: the row of the slot being deleted. It
+> restarted the tunnel DELETE had just stopped, and left it running with no profile (ID-209, the
+> same fault as ID-172).
 
 #### 6.8.12. <a name='every-routing-rule-the-app-touches'></a>Every routing rule the app touches
 

@@ -336,7 +336,7 @@ MAN-13 and MAN-14 are in the [WD](#wd) group: they need a watchdog to pause, and
 
 **MAN-11** Enable that fails turns the slot back off (optional, slow)
 
-- Do: EDIT wgc5, change `ep_addr` to `192.0.2.1`, SAVE, ENABLE.
+- Do: DISABLE wgc5 if it is running. Then EDIT wgc5, change `ep_addr` to `192.0.2.1`, SAVE, ENABLE.
 - See: after a minute or two, an error that the tunnel came up but the PIA server never answered.
 - See: the error offers RECREATE beside NOT NOW.
 - Do: NOT NOW.
@@ -589,6 +589,17 @@ The last two tests here are MANAGE ones. They live at the end of this group beca
 - See: the prompt says the watchdog goes too - schedule, script and settings - and that nothing is left to ENABLE.
 - Do: confirm.
 - Pass if: `ls /jffs/cfg-pia-wg/watchdog_wgc2.sh` finds nothing, and `nvram show | grep wgc2_wd_` prints nothing - the SMTP password included.
+
+**MAN-15** SAVE on a running slot restarts it
+
+- Do: MANAGE, select **wgc1**, running. Note `nvram get wgc1_mtu`.
+- Do: EDIT, change MTU to `1400`, SAVE.
+- See: "Saving restarts wgc1. Anything using it drops for a few seconds." Do: CANCEL.
+- Pass if: the editor is still open with `1400` in it, and `nvram get wgc1_mtu` is unchanged.
+- Do: SAVE, then SAVE on the question.
+- See: the app log shows "Restarting wgc1 with the new settings", a handshake, then "wgc1 restarted with the new settings."
+- Pass if: `ip link show wgc1` says `mtu 1400`.
+- Do: EDIT, MTU back to what you noted, SAVE, SAVE.
 
 ---
 

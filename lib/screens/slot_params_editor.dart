@@ -43,7 +43,9 @@ class SlotParamsEditor extends StatefulWidget {
   // stock the authoritative copy is vpnc_clientlist index 0 - a slot created in the router WebUI
   // has no wgcN_desc mirror for readSlotParams to find.
   final String desc;
-  final Future<void> Function(Map<String, String> editableParams) onSave;
+  /// Saves [editableParams]. Returning `false` keeps the editor open - the user backed out of a
+  /// confirmation, or the save failed and their edits should not be thrown away.
+  final Future<Object?> Function(Map<String, String> editableParams) onSave;
 
   /// The router's own encrypted-DNS servers, so the DNS field can say when the two overlap (ID-005).
   final Set<String> routerDotServers;
@@ -102,8 +104,8 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
     };
     setState(() => _saving = true);
     try {
-      await widget.onSave(params);
-      if (mounted) Navigator.of(context).pop(true);
+      final result = await widget.onSave(params);
+      if (result != false && mounted) Navigator.of(context).pop(true);
     } finally {
       if (mounted) setState(() => _saving = false);
     }

@@ -271,7 +271,11 @@ class AppScaffold extends StatelessWidget {
     this.showClose = true,
     this.fillViewport = false,
     this.maxContentWidth,
+    this.onRefresh,
   });
+
+  /// Pull-to-refresh, for a screen whose content can go stale while it is open. Null for none.
+  final Future<void> Function()? onRefresh;
 
   /// Centres [inner] within [maxContentWidth], or returns it untouched when there is no cap.
   Widget _capped(Widget inner) => maxContentWidth == null
@@ -297,8 +301,10 @@ class AppScaffold extends StatelessWidget {
                 final minHeight =
                     constraints.maxHeight > bodyPadding.vertical ? constraints.maxHeight - bodyPadding.vertical : 0.0;
 
-                return SingleChildScrollView(
+                final scroll = SingleChildScrollView(
                   padding: bodyPadding,
+                  // A pull has to scroll even when the content fits, or there is nothing to pull.
+                  physics: onRefresh == null ? null : const AlwaysScrollableScrollPhysics(),
                   child: _capped(fillViewport
                       ? ConstrainedBox(
                           constraints: BoxConstraints(minHeight: minHeight),
@@ -306,6 +312,9 @@ class AppScaffold extends StatelessWidget {
                         )
                       : child),
                 );
+                return onRefresh == null
+                    ? scroll
+                    : RefreshIndicator(color: kHighlight, backgroundColor: kSurface, onRefresh: onRefresh!, child: scroll);
               },
             ),
           ),

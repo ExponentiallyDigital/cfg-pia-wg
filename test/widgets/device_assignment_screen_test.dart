@@ -5,6 +5,8 @@
 // this app does not manage is named rather than shown as unassigned.
 //
 // MACs are invented - see test/unit/no_lan_identifiers_test.dart.
+import 'dart:async';
+
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/device_assignment_service.dart';
 import 'package:cfg_pia_wg/entitlement.dart';
@@ -749,6 +751,80 @@ void main() {
       await _pumpConnected(tester);
       expect(find.byKey(const Key('default_exit')), findsNothing);
       expect(find.textContaining('is not running'), findsNothing, reason: 'the OpenVPN profile state is unknown, not down');
+    });
+  });
+
+  // ID-218: read once at connect, the notes went stale - straight after a reboot every device read
+  // "not running" while every tunnel was up, and going to MANAGE and back changed nothing.
+  group('keeping which tunnels are running current (ID-218)', () {
+    const exitKey = Key('exit_11:22:33:44:55:66');
+
+    /// Box pinned to wgc5. [up] is read on every command, so a test can bring a tunnel up mid-way.
+    RecordingSSHClient liveRouter(List<String> up) => RecordingSSHClient(responder: (cmd) {
+          final ifaces = up.map((i) => '3: $i: <POINTOPOINT,NOARP,UP,LOWER_UP>').join('\n');
+          if (cmd.contains('cfg_device_list')) return _blob(policy: '1>192.168.1.20>>5>');
+          if (cmd.contains('latest-handshakes')) {
+            return [
+              '',
+              ifaces,
+              '10000',
+              for (final _ in RegExp(r'wg show wgc\d latest-handshakes').allMatches(cmd)) 'peerkey=\t9950',
+              '',
+            ].join('\n$_sep\n');
+          }
+          if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
+          if (cmd.contains('ip -o link show up')) return ifaces;
+          return '';
+        });
+
+    int checks(RecordingSSHClient c) => c.commands.where((cmd) => cmd.contains('latest-handshakes')).length;
+
+    testWidgets('a tunnel that comes up clears its note within 15 seconds, and nothing is logged', (tester) async {
+      final up = ['wgc1'];
+      final c = await _pumpConnected(tester, router: liveRouter(up));
+      expect(find.byKey(exitKey), findsOneWidget);
+      final session = SessionScope.of(tester.element(find.byType(DeviceAssignmentScreen)));
+      final logged = session.log.length;
+      final before = checks(c);
+
+      up.add('wgc5');
+      await tester.pump(const Duration(seconds: 10));
+      expect(checks(c), before, reason: 'not before the interval');
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump();
+      expect(checks(c), before + 1);
+      expect(find.byKey(exitKey), findsNothing);
+      expect(session.log.length, logged, reason: 'a quiet check writes nothing to the app log');
+    });
+
+    testWidgets('coming back to the screen checks at once, and nothing is checked while away', (tester) async {
+      final up = ['wgc1'];
+      final c = await _pumpConnected(tester, router: liveRouter(up));
+      final before = checks(c);
+      final nav = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(nav.push(MaterialPageRoute<void>(builder: (_) => const Text('MANAGE'))));
+      await tester.pumpAndSettle();
+      up.add('wgc5');
+      await tester.pump(const Duration(seconds: 20));
+      expect(checks(c), before, reason: 'the screen is covered');
+
+      nav.pop();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      expect(checks(c), before + 1);
+      expect(find.byKey(exitKey), findsNothing);
+    });
+
+    testWidgets('pull to refresh reads the devices and the tunnels again', (tester) async {
+      final up = ['wgc1'];
+      final c = await _pumpConnected(tester, router: liveRouter(up));
+      final reads = c.commands.where((cmd) => cmd.contains('cfg_device_list')).length;
+      up.add('wgc5');
+      await tester.fling(find.byType(SingleChildScrollView), const Offset(0, 400), 1000);
+      await tester.pumpAndSettle();
+      expect(c.commands.where((cmd) => cmd.contains('cfg_device_list')).length, reads + 1);
+      expect(find.byKey(exitKey), findsNothing);
     });
   });
 
