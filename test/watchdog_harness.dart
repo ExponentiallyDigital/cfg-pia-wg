@@ -52,9 +52,13 @@ shift 2
 echo "$*" >> "$STATE/syslog"
 ''';
 
+// A twentieth of a second, not nothing. The DNS probe waits for its background nslookup with up to
+// six `sleep 1`s, and a sleep that returned at once gave the lookup no time at all: on a Linux runner,
+// where starting a process is quick, the six "seconds" passed before it had run, and the probe killed
+// it. Windows was slow enough to hide that. Every wait in the script is short in these tests anyway.
 const String _sleep = r'''#!/bin/sh
 [ -f "$STATE/realsleep" ] && exec "$REALSLEEP" "$@"
-exit 0
+exec "$REALSLEEP" 0.05
 ''';
 
 const String _cru = r'''#!/bin/sh
