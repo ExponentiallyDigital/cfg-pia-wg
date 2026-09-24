@@ -103,6 +103,7 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
 - **Watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log. Works on stock and Merlin; on stock it additionally needs `jq`, `mailsend-go` and DownloadMaster (see [4. Prerequisites](#4-prerequisites--requirements)).
 - **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
 - **Per-device VPN assignment:** pick, per device, whether it leaves through a VPN tunnel or straight out to the internet, from a list of everything on your network and what each one is using right now. One tap per device, nothing to stop first, and the list says where a device's traffic really goes when its tunnel is down. Stock firmware only: Merlin does the same job through VPN Director, which this app does not drive.
+- **A kill switch on stock firmware:** Merlin has one. Stock doesn't. So the app builds its own, out of your router's routing rules. A device pinned to a tunnel uses that tunnel or nothing: if the tunnel's config expires, the watchdog is rebuilding it, or you switch it off, the device goes offline rather than out in the clear. Pinned devices only; [5.4](#54-vpn-device-assignment) has the detail and the limits.
 - **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
 - **Secure clipboard handling:** when copying a generated config, a visible 60-second countdown starts, then clears the clipboard automatically at expiry.
 - **Share/save support:** share a generated `.conf` via the Android share function and save it to a file location of your choice.
@@ -113,6 +114,9 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
 - **Automated lowest-latency server selection:** measures live latency across all available servers in your selected region, ensuring that you provision with the fastest node.
 - **Native task-switcher protection:** `(FLAG_SECURE)` enforces native OS-level window flags to block third-party screenshot capturing and automatically obscures the app layout view inside the Android Recent Apps / Task Switcher interface. Debug builds skip the flag to enable screenshotting while testing; every release build sets it.
 - **Password manager support:** every credential field accepts autofill from your device's password manager (KeePass, Bitwarden, Google Password Manager - whatever is registered as the autofill service). PIA, router SSH and SMTP logins are kept in separate autofill groups, so your manager can hold a different entry for each and you pick between them. A "save password?" prompt is offered only after credentials have actually worked, never when you back out of a form.
+- **Type it once:** log in to your router on any screen and every other screen uses that login for the rest of the session. PIA credentials and email settings you've entered for one watchdog are offered for the next.
+- **Encrypted lookups for the watchdog:** it looks up PIA's servers, and your mail provider's, over encrypted DNS (DoH), so whoever can see your router's DNS can't see who you use. If DoH itself fails, the watchdog retries once in the clear, says so in its log, and repairs your tunnel anyway: a tunnel that stays down is worse.
+- **Logs you can read at a glance:** in ROUTER LOG the app's lines are teal, the watchdog's lavender, and faults red. The watchdog's own log uses the same colours, plus teal for a rebuild that worked.
 - **Input field hardening:** user credential entry text boxes disable predictive text caching, auto-correction, and keyboard learning behaviours.
 - **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials and the system clipboard.
 - **Professional-grade build chain:** all releases undergo automated security and quality checks with
@@ -120,7 +124,8 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
   - [OSV](https://github.com/google/osv-scanner) - open-source dependency scanning against Google's vulnerability database flagging out-of-date third-party packages;
   - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
-  - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks; and
+  - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
+  - Testing: as at build 466, 1353 automated tests run on every build against a line-coverage target of 80% (the Coverage badge above has today's figure), and 158 manual end-to-end tests run on a real router, 13 of which need a build distributed by Play. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
   - Pinned GitHub Action hashes across [release.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/release.yml), [promote.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/promote.yml), and [quality_and_security.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/quality_and_security.yml) ensure automated builds execute with specific, verified tool versions.
 
 ---
@@ -168,7 +173,7 @@ Advanced Settings\Administration\System\Basic Config -> "Enable JFFS custom scri
 On stock firmware, scheduled tasks do not survive a reboot on their own. Download Master provides the `/opt` structure the app uses to keep a watchdog running across reboots and power cycles. It is a prerequisite, not something you will use.
 
 > [!IMPORTANT]
-> **Install Download Master, then leave it alone.** The app takes over part of its installation, so Download Master itself will not operate afterwards: this app's watchdog is not compatible with it on stock firmware. Reinstalling or updating DM will stop any deployed watchdogs from surviving reboots until you redeploy them from the app.
+> **Install Download Master, then leave it alone.** The app takes over part of its installation, so Download Master itself will not operate afterwards: this app's watchdog is not compatible with it on stock firmware. Reinstalling or updating DM will stop any deployed watchdogs from surviving reboots until you redeploy them from the app. It may also drop off your router's **USB Application** page. That's expected, nothing's broken: the app has replaced its start-up script with its own, and UNINSTALL in SETTINGS puts the original back.
 
 #### 4.1.2. Preparing the USB stick
 
@@ -401,7 +406,7 @@ This manages a self-healing watchdog. When your WG configurations inevitably exp
 
 3. Select a slot and use the watchdog actions:
    <br>
-   - **CREATE/EDIT:** pick a region and a check interval, defaulting to five minutes, then tap **SAVE & DEPLOY** to deploy router-side watchdog scripts and cron jobs for the selected slot. The region starts as the slot's own, so saving an active watchdog without changing it leaves its tunnel alone. Choosing a region for a slot that already holds a configuration asks before overwriting it. Changing the region rebuilds the tunnel on the new one: it is down while that happens, and devices assigned to it use the default connection until it is up.
+   - **CREATE/EDIT:** pick a region and a check interval, defaulting to five minutes, then tap **SAVE & DEPLOY** to deploy router-side watchdog scripts and cron jobs for the selected slot. The region starts as the slot's own, so saving an active watchdog without changing it leaves its tunnel alone. Choosing a region for a slot that already holds a configuration asks before overwriting it. Changing the region rebuilds the tunnel on the new one: it is down while that happens, and devices pinned to it have no internet until it is up.
 <br>
 <p align="center">
   <img src="./images/03.01-watchdog-editing.png" alt="Configuring a watchdog" width="300">
@@ -435,6 +440,9 @@ To set up email alerting, you'll need an **`app password`**, _not_ your "normal"
 
 - **Gmail:** <https://myaccount.google.com/apppasswords>
 - **Outlook / Microsoft:** <https://account.live.com/proofs/AppPassword>
+
+> [!NOTE]
+> **Sending alerts to yourself?** Gmail files a message you send from your own address to that same address under **Sent**, not your inbox, so an alert from and to one Gmail address looks like it never arrived. Look in **All Mail**, or send to a different address.
 
 > [!TIP]
 > Having email alerting issues? See [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md) for a step-by-step walkthrough together with email troubleshooting approaches.
@@ -540,6 +548,8 @@ One simple, easy to use interface and your laptop can be globetrotting to anywhe
 DEVICE ASSIGNMENT gives you one list of all your devices and lets you decide which tunnel they should be "pinned" to. It also allows you, as we read earlier (you did read that bit didn't you :)?), to set the default connection simply, quickly, easily and have confidence that devices pinned to that will go where they're intended.
 
 **What does it change on my router?** Only its routing rules, the short list your router reads to decide which way each device's traffic goes. Your router already writes one rule per pinned device, and the app doesn't replace it. It does two things on top. It deletes the stale rules your router leaves behind when you move a device, because the old one wins and your device would quietly keep using the tunnel you moved it off. And it adds two rules of its own for every pinned device, which are what keep that device offline, rather than out in the open, while its tunnel is down. Nothing else is touched: not your default connection's rules, not your router's own DNS, not your other devices. For the technically inquisitive, [ARCHITECTURE](ARCHITECTURE.md#every-routing-rule-the-app-touches) lists every rule, what the app does with each, and the hardware tests behind them.
+
+**What it doesn't cover.** Devices that follow the default connection rather than being pinned: pin the ones you care about. A few addresses your router always sends straight out, whatever the tunnel is doing: its own DNS servers, the PIA server itself, and your ISP's own network. And IPv6, which hasn't been tested.
 
 <br>
 <p align="center">
