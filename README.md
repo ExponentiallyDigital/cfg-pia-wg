@@ -22,6 +22,20 @@
 
 ---
 
+A native Android app for Private Internet Access (PIA) WireGuard VPNs on ASUS routers, stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/).
+
+**Device assignment.** Which device is on which VPN? On stock firmware, your router can't easily tell you. It thinks in slots: five numbered WireGuard clients, and finding out which devices use one generally requires stopping it and seeing what breaks, or what goes out in the clear. `cfg-pia-wg` thinks in devices. One screen lists everything on your network and the VPN each device is using right now. Moving a device to a different VPN - or off VPN entirely - is taps away. No slot numbers, nothing to stop first, and no deciphering a multi-click WebUI apparently designed by a sadist.
+
+**Tunnels that stay up on their own.** PIA WireGuard configurations expire without warning, anywhere from a day to a couple of weeks or anywhere in between; often in the small hours of the morning. A dead tunnel looks much like a working one until something you care about stops loading or silently traverses the Internet in the raw. The app can install a **self-healing** watchdog on the router itself. It checks tunnels on your chosen schedule, builds fresh configurations when the old ones inevitably stop working, and emails you what happened and how long a tunnel was down for. Meanwhile, fail-closed routing blocks traffic from the affected devices rather than letting it out unprotected: a kill switch that fixes itself. Batteries not included.
+
+Underneath both is the plumbing: the app authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and either writes the result into one of the router's five slots or hands you the complete `.conf` to copy, share, or save. Generating a `.conf` needs no router at all.
+
+You'll need SSH enabled on the router, a PIA subscription, and firmware with WireGuard in VPN Fusion: stock 3.0.0.4.388 or later, or Asuswrt-Merlin (tested on 388.11 & 12). See [Prerequisites](#4-prerequisites--requirements).
+
+`cfg-pia-wg` is the evolution of my command-line Windows/Linux app [cfg-pia-wg-cmd](https://github.com/ExponentiallyDigital/cfg-pia-wg-cmd), in a functional, modern, and streamlined UI.
+
+---
+
 - [1. Why use this?](#1-why-use-this)
   - [1.1. Why use WireGuard?](#11-why-use-wireguard)
 - [2. Features](#2-features)
@@ -32,6 +46,7 @@
     - [4.1.2. Preparing the USB stick](#412-preparing-the-usb-stick)
     - [4.1.3. Installing Download Master](#413-installing-download-master)
     - [4.1.4. Installing the helper binaries](#414-installing-the-helper-binaries)
+  - [4.2. Router DNS settings](#42-router-dns-settings)
 - [5. Using the app](#5-using-the-app)
   - [5.1. STANDALONE - Generate a PIA WireGuard configuration](#51-standalone---generate-a-pia-wireguard-configuration)
   - [5.2. MANAGE - Manage router PIA WireGuard configuration](#52-manage---manage-router-pia-wireguard-configuration)
@@ -68,27 +83,17 @@
 - [14. Trademark and affiliation notice](#14-trademark-and-affiliation-notice)
 - [15. License](#15-license)
 
-A native Android app for Private Internet Access (PIA) WireGuard (WG) on ASUS routers, stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/).
-
-**Tunnels that stay up on their own.** A PIA WG configuration expires without warning, and a dead tunnel looks much like a working one until something you care about stops loading. The app deploys a **self-healing** watchdog to the router itself: it checks the tunnel on a schedule, builds a fresh configuration when the old one stops answering, and emails you what happened and how long the tunnel was down. That is what makes "set and forget" true rather than hopeful.
-
-**The part people do not expect is the device view.** Your router thinks in SLOTS: five numbered VPN profiles, and to find out which of your devices is using one you generally have to stop it and see what breaks. **cfg-pia-wg thinks in DEVICES.** One screen lists everything on your network and what each one is using right now, and moving a device to a different VPN - or off VPN entirely - is one tap on that device. No slot numbers, nothing to stop first, and nothing to work out afterwards.
-
-Underneath both is the plumbing: the app authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WG keypair, and either writes the result into one of the router's five WG slots or hands you the complete `.conf` to copy, share or save. That last part needs no router at all.
-
-This app is based on my command line Windows/Linux app [cfg-pia-wg-cmd](https://github.com/ExponentiallyDigital/cfg-pia-wg-cmd).
-
 ## 1. Why use this?
 
-Creating a valid PIA WG config by hand requires expertise in API authentication, WG key generation and correctly assembling connection metadata. **cfg-pia-wg** automates that work and adds router-side **slot management** (organising WG configs across the router's five WG VPN client configuration slots), **self-healing** watchdog support, and **per-device VPN assignment** - sending one device out through a VPN while another goes straight to the internet - for ASUS routers running either stock or Merlin firmware.
+Creating a valid PIA WireGuard config by hand requires expertise in API authentication, WireGuard key generation and correctly assembling connection metadata. **cfg-pia-wg** automates that work and adds router-side **slot management** (organising WireGuard configs across the router's five WireGuard VPN client configuration slots), **self-healing** watchdog support, and **per-device VPN assignment** - sending one device out through a VPN while another goes straight to the internet - for ASUS routers running either stock or Merlin firmware.
 
-Per-device assignment is the one that changes how the router feels day to day. Instead of deciding which slot is the default and living with it, you decide per device: the work laptop through Melbourne, the games console straight out for the lowest latency it can get, the TV through the region its catalogue expects, everything else wherever the default sends it. Each change is one tap on the device itself, nothing has to be stopped first, and the list tells you afterwards where each device is actually going.
+Per-device assignment changes how the router feels day to day. Instead of deciding which slot is the default and living with it, you decide per device: a work laptop through the closest region, the games console straight to the Internet for the lowest latency it can get, TVs through non geo-blocked regions, everything else wherever you choose. A change is one tap on the device itself, nothing has to be stopped first, and you can easily and simply see afterwards where each device is actually headed to.
 
 ### 1.1. Why use WireGuard?
 
-PIA's WG configs are ephemeral and expire without warning. While OpenVPN offers long-lived configs, the protocol is CPU-intensive, which on many routers becomes a bottleneck limiting throughput.
+PIA's WireGuard configs are ephemeral and expire without warning. While OpenVPN offers long-lived configs, the protocol is CPU-intensive, which on many routers becomes a bottleneck limiting throughput.
 
-Switching to WG reduces overhead, allowing your hardware to operate closer to your actual ISP's provisioned speed. In a real-world test with a 500/50 Mbps plan (546 Mbps measured baseline), speeds jumped from a peak of 136 Mbps on OpenVPN to 499 Mbps with WG on the same hardware, a 75–81% throughput sacrifice under OpenVPN:
+Switching to WireGuard reduces overhead, allowing your hardware to operate closer to your actual ISP's provisioned speed. In a real-world test with a 500/50 Mbps plan (546 Mbps measured baseline), speeds jumped from a peak of 136 Mbps on OpenVPN to 499 Mbps with WireGuard on the same hardware, a 75–81% throughput sacrifice under OpenVPN:
 
 <p align="center">
   <img src="./images/vpn-protocol-comparison.png" alt="VPN protocol comparison" width="100%">
@@ -96,18 +101,18 @@ Switching to WG reduces overhead, allowing your hardware to operate closer to yo
   VPN protocol comparison
 </p>
 
-**cfg-pia-wg** makes the switch to high-performance WG effortless, no separate PC/CLI app required.
+**cfg-pia-wg** makes the switch to high-performance WireGuard effortless, no separate PC/CLI app required.
 
 ## 2. Features
 
-- **Watchdog management:** deploy a router-side watchdog that monitors and self-heals your WG VPN connection, with configurable checks, optional email alerts and access to the watchdog's log. Works on stock and Merlin; on stock it additionally needs `jq`, `mailsend-go` and DownloadMaster (see [4. Prerequisites](#4-prerequisites--requirements)).
+- **Watchdog management:** deploy a router-side watchdog that monitors and self-heals your WireGuard VPN connection, with configurable checks, optional email alerts and access to the watchdog's log. Works on stock and Merlin; on stock it additionally needs `jq`, `mailsend-go` and DownloadMaster (see [4. Prerequisites](#4-prerequisites--requirements)).
 - **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
 - **Per-device VPN assignment:** pick, per device, whether it leaves through a VPN tunnel or straight out to the internet, from a list of everything on your network and what each one is using right now. One tap per device, nothing to stop first, and the list says where a device's traffic really goes when its tunnel is down. Stock firmware only: Merlin does the same job through VPN Director, which this app does not drive.
 - **A kill switch on stock firmware:** Merlin has one. Stock doesn't. So the app builds its own, out of your router's routing rules. A device pinned to a tunnel uses that tunnel or nothing: if the tunnel's config expires, the watchdog is rebuilding it, or you switch it off, the device goes offline rather than out in the clear. Pinned devices only; [5.4](#54-vpn-device-assignment) has the detail and the limits.
 - **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
 - **Secure clipboard handling:** when copying a generated config, a visible 60-second countdown starts, then clears the clipboard automatically at expiry.
 - **Share/save support:** share a generated `.conf` via the Android share function and save it to a file location of your choice.
-- **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WG slot configurations directly.
+- **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WireGuard slot configurations directly.
 - **One remembered setting:** a successful router connect stores the router LAN address - and nothing else - in the app private storage, so you do not retype it every session. Clear it with **FORGET ROUTER IP** in the SETTINGS screen. See [SECURITY.md](SECURITY.md).
 - **No persistent credential storage (app):** PIA credentials, router SSH credentials and generated configs are stored only in volatile application memory and are never written to your device's storage.
 - **Watchdog credential storage (router):** deploying the watchdog stores the necessary PIA credentials in router NVRAM so it can monitor and self-heal independently of the app. This is a deliberate trade-off for "set and forget" operation, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
@@ -227,7 +232,6 @@ Full compatibility table and the reasons behind each of those constraints: [ARCH
 
 **On stock firmware the app does this for you.** Open **MANAGE** or **WATCHDOG** and, if either helper is missing, the app offers to install it. It shows what it is about to download, where it goes, and the SHA-256 checksum it will verify before anything is put in place. `mailsend-go` is only needed if you want email alerts.
 
-
 <br>
 <p align="center">
   <img src="./images/install-helper-programs.png" alt="Install helper programs" width="300">
@@ -235,31 +239,47 @@ Full compatibility table and the reasons behind each of those constraints: [ARCH
   Install helper programs
 </p><br>
 
-
 If your router uses an architecture there is no published build for, the app says so and you can fall back to installing them by hand over SSH with [`scripts/get-bins.sh`](scripts/get-bins.sh). That script is for stock only; Merlin needs neither binary.
 > [!NOTE]
-> Firmware flashing (upgrading your router's software) [_may_ require redeployment](https://github-wiki-see.page/m/RMerl/asuswrt-merlin.ng/wiki/JFFS) of PIA WG configs. Always test your VPN is active after applying a new firmware version
+> Firmware flashing (upgrading your router's software) [_may_ require redeployment](https://github-wiki-see.page/m/RMerl/asuswrt-merlin.ng/wiki/JFFS) of PIA WireGuard configs. Always test your VPN is active after applying a new firmware version
 
-- Watchdog and tunnel verification use ICMP ping from the router's WAN and WG interfaces. You shouldn't need to do anything here, but it is required.
+- Watchdog and tunnel verification use ICMP ping from the router's WAN and WireGuard interfaces. You shouldn't need to do anything here, but it is required.
+
+### 4.2. Router DNS settings
+
+It's suggested that you set up your DNS something like the below. Why? This configuration sends every DNS query from your network to Cloudflare's malware-blocking resolvers over an encrypted, authenticated channel, and hardens the router against common DNS attacks. However, chose your own adventure - pick a configuration and DNS provider that works for you, see [ROUTER-DNS.md](ROUTER-DNS.md) for alternative suggestions.
+
+A common `foot bomb` (an AI once gave me that in a reply, I guess they 'meant to say _"land mine"_) is using your ISP's DNS. That typically defeats the whole purpose of running a VPN, maintaining your privacy and not feeding the data guzzling machine. It's not highly obvious, but click on the ASSSIGN button highlighted below in RED to set your router DNS. And then select "Preset servers" toward the bottom of the screen.
+<br>
+<p align="center">
+  <img src="./images/WAN-DNS-settings.png" alt="Router DNS Settings" width="700">
+  <br>
+  Router DNS Settings
+</p><br>
+
+Suggested settings:
+
+- **Filter mode:** 1.1.1.2 and 1.0.0.2 are Cloudflare's malware-blocking resolvers. Known malware, phishing and command-and-control domains are refused at the DNS layer, so every device on the network is protected, including smart TVs, IoT gear and guests that can't run their own security software.
+- **Two servers:** the primary and secondary addresses sit on separate Cloudflare ranges. If one is unreachable, lookups fail over to the other.
+- **DNS-over-TLS (DoT) on port 853:** plain DNS travels unencrypted on port 53, so your ISP or anyone on the path can read it and tamper with it. DoT encrypts every query between the router and Cloudflare. Your browsing destinations stay private and your answers can't be altered in transit.
+- **TLS hostname `security.cloudflare-dns.com`:** the router checks the server's certificate against this name. This proves it's talking to Cloudflare's security resolver and not an impostor that has hijacked the IP address.
+- **Strict DoT profile:** if the encrypted connection can't be established or verified, the router refuses to fall back to plain DNS. Opportunistic mode would quietly downgrade to unencrypted lookups, which defeats its purpose. The trade-off is that DNS stops working if port 853 is blocked, something you'd uncover rather quickly.
+- **Manual server list matches the assigned service:** in the screenshot above, use the `PURPLE` row to add, `BLUE` are configured - the DoT list repeats the same IPs and hostname chosen through the `Assign` button. The GUI selection and the underlying DoT config then match, so the router doesn't end up using unmatched resolvers.
+- **Forward local domain queries to upstream DNS: No:** lookups for local hostnames (for example `nas.lan`) stay inside your network. Internal device names never leak to Cloudflare, and there are no pointless failed external lookups.
+- **DNS rebind protection: Yes:** this blocks public DNS answers that resolve to private IP ranges. It stops a malicious website from using DNS rebinding to reach your router's admin page or other devices on your LAN through your browser.
+- **DNSSEC support: Yes:** DNSSEC signatures on responses are checked cryptographically, so a forged or poisoned record is rejected even if it somehow reaches the router.
+- **Validate unsigned DNSSEC replies: Yes:** this goes further by checking that a response claiming to be unsigned really comes from an unsigned zone. It closes the downgrade attack where an attacker strips signatures. It's the strictest option: a few badly configured domains may occasionally fail to resolve, but that's a reasonable price for integrity.
+- **Prevent client auto DoH: Auto:** browsers like as Firefox and Chrome can turn on their own DNS-over-HTTPS and bypass the router completely. With Auto, the router answers the browsers' "canary" checks (lookups browsers use to decide whether to switch DoH on), so they keep using the router. That means the Cloudflare filtering and DNSSEC checks still apply to them.
+- **UPnP disabled:** this isn't a DNS setting, but it complements the rest. Devices and malware can't silently open inbound ports on the router, which keeps the security posture consistent.
+- **Check the IPv6 page too:** if you use IPv6 (to be encouraged, but seldom used), set its DNS to Cloudflare's matching addresses (`2606:4700:4700::1112` and `2606:4700:4700::1002`). Otherwise IPv6 lookups can go to your ISP's resolver unfiltered, bypassing everything above.
 
 ## 5. Using the app
 
-> [!TIP]
-> Before using the `MANAGE` or `WATCHDOG` functions for the first time, it's recommended that you make a backup of your router configuration via the WebUI -> Advanced Settings -> Administration -> Restore/Save/Upload Setting -> Save setting.
+> [!NOTE]
+> - Before using `MANAGE`, `WATCHDOG` or `DEVICE ASSIGNMENT` for the first time, it's recommended that you make a backup of your router configuration via the WebUI -> Advanced Settings -> Administration -> Restore/Save/Upload Setting -> Save setting.
+> - This app has an unusually strict testing regime, but it's always worth having a backup at hand. Just in case.
 
-The app opens with nine options:
-
-- STANDALONE
-- MANAGE
-- WATCHDOG
-- DEVICE ASSIGNMENT
-- ROUTER LOG
-- APP LOG
-- SETTINGS
-- ABOUT
-- EXIT
-
-Below that are two links: **how to use this app**, which opens this section of the README, and **add a Play Store app review**, which opens the app's Play Store listing.
+The app opens with thematic function groups:
 
 <p align="center">
   <img src="./images/00.0-main-menu.png" alt="Main menu" width="300">
@@ -267,13 +287,15 @@ Below that are two links: **how to use this app**, which opens this section of t
   Main menu
 </p>
 
+With two handy links: **how to use this app** which opens this section of the README, and **add a Play Store app review**, which opens the app's Play Store listing - reviews are most welcome, all feedback is good feedback!
+
 ### 5.1. STANDALONE - Generate a PIA WireGuard configuration
 
 1. Tap **STANDALONE**.
 2. Choose a region from the filterable region list.
 3. Enter your PIA username, password, and DNS values.
 4. Tap **GENERATE CONFIG** once all required fields are filled.
-5. The generated WG configuration is displayed in a selectable but read-only text area.
+5. The generated WireGuard configuration is displayed in a selectable but read-only text area.
 
 <p align="center">
   <img src="./images/01.0-standalone-config.png" alt="Standalone config generation" width="300">
@@ -285,7 +307,7 @@ Below that are two links: **how to use this app**, which opens this section of t
 
 ### 5.2. MANAGE - Manage router PIA WireGuard configuration
 
-This enables full management of WG slots.
+This enables full management of WireGuard slots.
 
 1. Tap **MANAGE**.
 2. If prompted, enter router IP:port, SSH username, and SSH password. The **address** is filled in for you if you've successfully connected previously. Your username and password are _never_ stored. Tap **CONNECT TO ROUTER**.
@@ -336,7 +358,7 @@ This enables full management of WG slots.
   Ping targets
 </p><br>
 
-- **EDIT:** allows updating WG slot parameters and saves them back to router NVRAM.
+- **EDIT:** allows updating WireGuard slot parameters and saves them back to router NVRAM.
 <p align="center">
   <img src="./images/02.05-slot-edit.png" alt="Editing a slot" width="300">
   <br>
@@ -387,13 +409,13 @@ On stock, `cfg-pia-wg` also highlights if a slot's DNS matches the addresses you
 
 Since build 454 (19 September 2026),`cfg-pia-wg`'s watchdog resolves **both** PIA and your mail server over encrypted DNS, to an address of your choice. This keeps your VPN provider and your email provider off the wire in the clear. On your phone/tablet, `cfg-pia-wg's` lookups go through your device's resolver like any other on-device app - turn on Private DNS in your device's settings if that's important to you.
 
-See **[ROUTER-DNS.md](ROUTER-DNS.md)** for all the gory details: why the router answers for unpinned devices, two worked setups with juicy flow charts, how to use a slot for parental controls, a table of common DNS services, and the routing rules underneath it all for the technically inquisitive.
+See [ROUTER-DNS.md](ROUTER-DNS.md) for all the gory details: why the router answers for unpinned devices, two worked setups with juicy flow charts, how to use a slot for parental controls, a table of common DNS services, and the routing rules underneath it all for the technically inquisitive.
 
 Right, with all that out the way, let's get you set up with watchdogging ;).
 
 ### 5.3. WATCHDOG - Watchdog WireGuard configuration
 
-This manages a self-healing watchdog. When your WG configurations inevitably expire, they are automatically renewed and an optional email alert sent when connectivity has been restored.
+This manages a self-healing watchdog. When your WireGuard configurations inevitably expire, they are automatically renewed and an optional email alert sent when connectivity has been restored.
 
 1. Tap **WATCHDOG**.
 2. If prompted, enter router IP, SSH username, and SSH password and tap **CONNECT TO ROUTER**.
@@ -722,8 +744,8 @@ This is particularly useful for looking through the application's log during ope
 
 ## 6. Notes
 
-- **Pre-shared keys** - PIA WG does not use pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
-- **Time-to-live constraints** - PIA WG configs expire without warning per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
+- **Pre-shared keys** - PIA WireGuard does not use pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
+- **Time-to-live constraints** - PIA WireGuard configs expire without warning per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
 - **Turn OFF battery optimisation** - for `cfg-pia-wg` otherwise Android may freeze the moment you switch away, and any work it was doing on your router will likely stop mid-action - an SSH session dropped during a watchdog deployment, an alert email abandoned halfway through. Nothing is damaged, but it fails for a reason you cannot see. On most phones: **Settings -> Apps -> cfg-pia-wg -> Battery -> Unrestricted**. Worth doing before you deploy your first watchdog.
 - **Extra logins in the router's log are normal** - the router aggressively expires idle SSH sessions - well inside a session spent reading a screen and deciding what to do - so the app reconnects when it finds the connection's expired, and its next action carries on as though nothing happened. What you see afterwards is several `dropbear` logins from your phone for one sitting. That is the app picking the phone back up, not someone else picking the lock.
 - **Key safety** - generated configs contain private encryption keys. Treat them like passwords and manage them securely.
@@ -790,7 +812,7 @@ Required to:
 
 - authenticate with Private Internet Access (PIA)
 - retrieve VPN server information
-- generate WG configuration profiles
+- generate WireGuard configuration profiles
 - perform latency and connectivity tests
 
 No user traffic is routed through this application. The app communicates only with PIA provisioning and API endpoints required to generate configuration files.
@@ -805,7 +827,7 @@ Required to:
 
 ### 8.3. Storage access
 
-The application can export generated WG configuration files to the device.
+The application can export generated WireGuard configuration files to the device.
 
 #### 8.3.1. Write external storage (android.permission.WRITE_EXTERNAL_STORAGE)
 
@@ -893,7 +915,7 @@ Kindly consider a [PayPal](https://www.paypal.com/donate/?hosted_button_id=QJYPG
 
 ## 13. Support
 
-This app is unsupported and may cause objects in mirrors to be closer than they appear. Batteries not included.
+This app is unsupported and may cause objects in mirrors to be closer than they appear.
 
 ---
 

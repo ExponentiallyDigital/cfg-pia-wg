@@ -85,7 +85,7 @@ void main() {
     (help.recognizer! as TapGestureRecognizer).onTap!();
     await tester.pumpAndSettle();
 
-    expect(launched, ['https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#5-using-the-app']);
+    expect(launched, ['https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#4-prerequisites--requirements']);
     expect(launched.single, kHelpUrl);
 
     await _teardown(tester, c);
@@ -472,8 +472,7 @@ void main() {
       await tester.pumpWidget(PiaWgApp(controller: c));
       await tester.pumpAndSettle();
 
-      double iconCentre(Finder of) =>
-          tester.getRect(find.descendant(of: of, matching: find.byType(Icon)).first).center.dx;
+      double iconCentre(Finder of) => tester.getRect(find.descendant(of: of, matching: find.byType(Icon)).first).center.dx;
 
       final rowIcon = iconCentre(find.byKey(const Key('menu_standalone')));
       expect(iconCentre(find.byKey(const Key('menu_help'))), moreOrLessEquals(rowIcon, epsilon: 1),
