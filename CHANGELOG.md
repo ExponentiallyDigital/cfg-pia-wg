@@ -101,6 +101,15 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
+2026-09-24 v0.8.99 build 469 - README sets out the router DNS settings, and an ios folder
+
+- DOC: added section on "Router DNS settings" to README.md.
+- GUI: updated home screen "how to" link to open `https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#4-prerequisites--requirements`.
+- DOC: upadated GitHub short description.
+- DOC: reworked and resequenced README intro.
+- ADD: the `ios` folder, created by `flutter create` ahead of building on a Mac through Xcode, and `.metadata` recording it. The generated files that carry local paths stay out, by `ios/.gitignore`.
+- TST: DEV-13 runs `scripts/presence-probe.sh` while TABLET is switched off, and records when each presence source changes against the router's web interface, so the release-candidate run settles ID-165.
+
 2026-09-24 v0.8.98 build 468 - the watchdog tests pass on Linux too
 
 - TST: **the watchdog harness no longer races on a Linux runner.** CI failed on build 467 in "a probe waits for the one before it": no lookup was recorded. The DNS probe waits for its background `nslookup` with up to six `sleep 1`s, and the harness's stand-in for `sleep` returned at once. On Windows, starting a process is slow enough that the lookup always finished first; on the Linux runner the six "seconds" were over in milliseconds and the probe killed the lookup before it had run. The stand-in now sleeps a twentieth of a second. The script on the router is unaffected: there `sleep 1` is a second. Found by the first CI run of the harness, which is part of why it exists.

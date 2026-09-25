@@ -24,7 +24,7 @@ import '../widgets/app_drawer.dart';
 import '../widgets/app_scaffold.dart';
 
 /// Deep link to the README section that walks through each screen.
-const kHelpUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#5-using-the-app';
+const kHelpUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#4-prerequisites--requirements';
 
 /// How wide the menu grows before it stops and centres (ID-031). A phone is narrower than this, so there the rows
 /// use the full width; on a tablet they would otherwise stretch into bars with a long gap between label and chevron.
@@ -159,9 +159,7 @@ class _MenuRow extends StatelessWidget {
           // EXIT keeps the chevron's width, so every label starts at the same place. The chevron
           // stays teal whatever colour the row's icon and label take: it means "this opens a
           // screen", which is the same statement on every row (ID-128).
-          opensScreen
-              ? const Icon(Icons.chevron_right, size: 18, color: kHighlight)
-              : const SizedBox(width: 18),
+          opensScreen ? const Icon(Icons.chevron_right, size: 18, color: kHighlight) : const SizedBox(width: 18),
         ],
       ),
     );
