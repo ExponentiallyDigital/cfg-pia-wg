@@ -843,7 +843,9 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 **DEV-13** Offline device [hand]
 
-- Do: switch TABLET off. Refresh the screen.
+- Do: in a second SSH session, start `sh /jffs/presence-probe.sh <TABLET's MAC>` - the MAC is on TABLET's second line in DEVICE ASSIGNMENT. It prints every place the router records whether TABLET is online, every 30 seconds (ID-165).
+- Do: switch TABLET off, and note the time. Keep the router's web interface client list open on DESKTOP.
+- Write down: the time the web interface shows TABLET offline, the time DEVICE ASSIGNMENT does (leave and come back to refresh it), and the first probe line where each source changes. Then Ctrl+C the probe. The source that changed with the web interface is the one the app should read.
 - See: TABLET dimmed with `offline`, still with a picker.
 - Do: TABLET to wgc1, APPLY.
 - Pass if: CHK shows the record. Switch TABLET on: exit IP is wgc1's region.
