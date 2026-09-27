@@ -36,6 +36,7 @@ Widget _host(
   String piaUser = 'p1234567',
   String piaPass = 'secret',
   Future<SSHClient> Function()? connect,
+  Map<int, String> otherSlotDns = const {},
 }) {
   return SessionScope(
     controller: c,
@@ -51,6 +52,7 @@ Widget _host(
           connect: connect ?? () async => client,
           piaService: _FakePia(),
           serviceFactory: (cl) => RouterWatchdog(cl, onLog: c.onLog),
+          otherSlotDns: otherSlotDns,
         ),
       ),
     ),
@@ -171,6 +173,34 @@ void main() {
     expect(note(), isNot(contains('on this router')));
 
     await tester.enterText(find.widgetWithText(TextFormField, 'DNS servers'), '8.8.8.8');
+    await tester.pump();
+    expect(note(), startsWith('The watchdog resolves PIA'));
+  });
+
+  // ID-221: two addresses in the field were compared as one string, so neither was ever flagged; and
+  // only this slot's DNS was checked, when another tunnel's DNS carries the lookups just the same.
+  testWidgets("the DoH note checks each address against this slot's and every other slot's DNS", (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c, otherSlotDns: {2: '76.76.10.1', 5: '9.9.9.9'}));
+    await tester.pumpAndSettle();
+    String note() => tester.widget<Text>(find.byKey(const Key('wd_doh_note'))).data!;
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'DNS servers'), '1.1.1.1, 76.76.2.1');
+    await tester.enterText(find.byKey(const Key('wd_doh_ip')), '76.76.10.1, 76.76.2.1');
+    await tester.pump();
+    expect(note(), startsWith("This address is also this tunnel's DNS server"), reason: 'the second address matches');
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'DNS servers'), '1.1.1.1');
+    await tester.pump();
+    expect(note(), startsWith('wgc2 uses this address for DNS'));
+
+    await tester.enterText(find.byKey(const Key('wd_doh_ip')), '76.76.10.1,9.9.9.9');
+    await tester.pump();
+    expect(note(), startsWith('wgc2 and wgc5 use this address for DNS'));
+
+    await tester.enterText(find.byKey(const Key('wd_doh_ip')), '76.76.2.1');
     await tester.pump();
     expect(note(), startsWith('The watchdog resolves PIA'));
   });
@@ -629,6 +659,40 @@ void main() {
       expect(ssh.ran(kStockMailsendPath), isTrue);
       expect(ssh.ran('/usr/sbin/sendmail'), isFalse);
     });
+
+    // ID-225, decided 2026-09-26: a delivered test email proves the SMTP login, so the password
+    // manager is offered it then, as it is after a deploy. One that fails offers nothing.
+    for (final delivered in [true, false]) {
+      testWidgets('a ${delivered ? 'delivered' : 'failed'} test email ${delivered ? 'offers' : 'does not offer'} the login for saving',
+          (tester) async {
+        useStock();
+        final c = _controller();
+        addTearDown(c.dispose);
+        final ssh = RecordingSSHClient(
+            responder: (cmd) => cmd.contains('EXITCODE') ? 'EXITCODE:${delivered ? 0 : 1}' : _stockReady(cmd));
+        await tester.pumpWidget(_host(ssh, c));
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(find.byKey(const Key('wd_email_switch')));
+        await tester.tap(find.byKey(const Key('wd_email_switch')));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byKey(const Key('wd_from')), 'f@x.com');
+        await tester.enterText(find.byKey(const Key('wd_to')), 't@x.com');
+        await tester.enterText(find.byKey(const Key('wd_subject')), 'Subj');
+        await tester.enterText(find.byKey(const Key('wd_smtp_server')), 'smtp.x.com:465');
+        await tester.enterText(find.byKey(const Key('wd_smtp_user')), 'su');
+        await tester.enterText(find.byKey(const Key('wd_smtp_pass')), 'sp');
+        await tester.pumpAndSettle();
+        tester.testTextInput.log.clear();
+
+        await tester.ensureVisible(find.byKey(const Key('wd_test_email')));
+        await tester.tap(find.byKey(const Key('wd_test_email')));
+        await tester.pumpAndSettle();
+
+        final saves = tester.testTextInput.log.where((m) => m.method == 'TextInput.finishAutofillContext' && m.arguments == true);
+        expect(saves, delivered ? isNotEmpty : isEmpty);
+      });
+    }
   });
 
   group('PIA credential retention', () {

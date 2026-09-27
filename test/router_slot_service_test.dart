@@ -218,12 +218,12 @@ void main() {
       await svc(c).createConfigToSlot(slot: 1, config: _sampleConfig, regionId: 'aus_melbourne');
 
       expect(c.ran('nvram set wgc1_enable=0'), isTrue);
-      expect(c.ran('nvram set wgc1_desc="pia-aus_melbourne"'), isTrue); // stored with the app prefix
-      expect(c.ran('nvram set wgc1_addr="10.0.0.2/32"'), isTrue);
-      expect(c.ran('nvram set wgc1_ep_addr="203.0.113.5"'), isTrue);
-      expect(c.ran('nvram set wgc1_ep_port="1337"'), isTrue);
-      expect(c.ran('nvram set wgc1_ppub="pubkey=="'), isTrue);
-      expect(c.ran('nvram set wgc1_priv="privkey=="'), isTrue);
+      expect(c.ran('nvram set wgc1_desc=\'pia-aus_melbourne\''), isTrue); // stored with the app prefix
+      expect(c.ran('nvram set wgc1_addr=\'10.0.0.2/32\''), isTrue);
+      expect(c.ran('nvram set wgc1_ep_addr=\'203.0.113.5\''), isTrue);
+      expect(c.ran('nvram set wgc1_ep_port=\'1337\''), isTrue);
+      expect(c.ran('nvram set wgc1_ppub=\'pubkey==\''), isTrue);
+      expect(c.ran('nvram set wgc1_priv=\'privkey==\''), isTrue);
       expect(c.ran('nvram commit'), isTrue);
       expect(c.count('nvram set wgc1_'), 17);
       // Must NOT activate the slot.
@@ -1190,7 +1190,7 @@ void main() {
       expect(c.count('nvram set wgc1_'), slotKeysFor(RouterFirmware.stock).length);
       expect(c.count('nvram set wgc1_'), 14);
       // The region mirror the router-side watchdog reads with a bare `nvram get`.
-      expect(c.ran('nvram set wgc1_desc="pia-aus_melbourne"'), isTrue); // stored with the app prefix
+      expect(c.ran('nvram set wgc1_desc=\'pia-aus_melbourne\''), isTrue); // stored with the app prefix
       // Fields stock does not have are never written.
       for (final key in kMerlinOnlySlotKeys) {
         expect(c.ran('nvram set wgc1_$key='), isFalse, reason: '$key is Merlin-only');

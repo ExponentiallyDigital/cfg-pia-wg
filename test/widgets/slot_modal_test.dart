@@ -378,7 +378,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(ssh.ran('nvram set wgc2_enable=0'), isTrue);
-      expect(ssh.ran('nvram set wgc2_desc="pia-aus_melbourne"'), isTrue); // stored with the app prefix
+      expect(ssh.ran('nvram set wgc2_desc=\'pia-aus_melbourne\''), isTrue); // stored with the app prefix
       // Created but not started.
       expect(ssh.ran('start_wgc'), isFalse);
 
@@ -679,8 +679,8 @@ void main() {
       await tester.enterText(find.byKey(const Key('slot_addr')), '10.0.0.2/32');
       await tester.enterText(find.byKey(const Key('slot_desc')), 'aus_melbourne');
       await tester.enterText(find.byKey(const Key('slot_ep_addr')), '203.0.113.5');
-      await tester.enterText(find.byKey(const Key('slot_ppub')), 'pub==');
-      await tester.enterText(find.byKey(const Key('slot_priv')), 'priv==');
+      await tester.enterText(find.byKey(const Key('slot_ppub')), 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBQ=');
+      await tester.enterText(find.byKey(const Key('slot_priv')), 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCg=');
       await tester.pump();
       await tester.ensureVisible(find.byKey(const Key('slot_params_save')));
       await tester.tap(find.byKey(const Key('slot_params_save')));
@@ -708,8 +708,8 @@ void main() {
       await tester.enterText(find.byKey(const Key('slot_addr')), '10.0.0.2/32');
       await tester.enterText(find.byKey(const Key('slot_desc')), 'aus_melbourne');
       await tester.enterText(find.byKey(const Key('slot_ep_addr')), '203.0.113.5');
-      await tester.enterText(find.byKey(const Key('slot_ppub')), 'pub==');
-      await tester.enterText(find.byKey(const Key('slot_priv')), 'priv==');
+      await tester.enterText(find.byKey(const Key('slot_ppub')), 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBQ=');
+      await tester.enterText(find.byKey(const Key('slot_priv')), 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCg=');
       await tester.pump();
       await tester.ensureVisible(find.byKey(const Key('slot_params_save')));
       await tester.tap(find.byKey(const Key('slot_params_save')));

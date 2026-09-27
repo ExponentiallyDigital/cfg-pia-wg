@@ -28,6 +28,7 @@ import 'app_button.dart';
 import '../app_colors.dart';
 import '../device_assignment.dart' show joinNames;
 import '../firmware.dart';
+import '../input_checks.dart';
 import '../pia_service.dart';
 import '../router_log_paging.dart' show readsAsError;
 import '../router_slot_service.dart';
@@ -486,6 +487,10 @@ class _SlotModalState extends State<SlotModal> {
         piaService: widget.piaService,
         serviceFactory: widget.watchdogServiceFactory,
         routerDotServers: _slots.routerDotServers,
+        otherSlotDns: {
+          for (final s in _slots.slots.values)
+            if (s.index != slot && !s.isEmpty) s.index: s.dns,
+        },
       ),
     ));
     await _refresh();
@@ -857,6 +862,11 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
       setState(() => _error = 'PIA username and password are required.');
       return;
     }
+    // Blank takes the default servers; anything typed has to be one or two addresses (ID-237).
+    if (checkIpv4List(dns, field: 'DNS servers', required: false) case final e?) {
+      setState(() => _error = e);
+      return;
+    }
     Navigator.of(context).pop((username, password, dns));
   }
 
@@ -907,6 +917,7 @@ class _PingTargetsDialog extends StatefulWidget {
 class _PingTargetsDialogState extends State<_PingTargetsDialog> {
   late final TextEditingController _primaryCtrl = TextEditingController(text: widget.primary);
   late final TextEditingController _secondaryCtrl = TextEditingController(text: widget.secondary);
+  String? _error;
 
   @override
   void dispose() {
@@ -916,6 +927,16 @@ class _PingTargetsDialogState extends State<_PingTargetsDialog> {
   }
 
   void _onEnable() {
+    // The watchdog reads these same two values, and one it cannot ping made it decide the WAN was
+    // down and never repair anything (ID-237).
+    final errors = [
+      if (checkIpv4(_primaryCtrl.text, field: 'Primary ping IP') case final e?) e,
+      if (checkIpv4(_secondaryCtrl.text, field: 'Secondary ping IP') case final e?) e,
+    ];
+    if (errors.isNotEmpty) {
+      setState(() => _error = errors.join('\n'));
+      return;
+    }
     Navigator.of(context).pop((_primaryCtrl.text.trim(), _secondaryCtrl.text.trim()));
   }
 
@@ -935,6 +956,10 @@ class _PingTargetsDialogState extends State<_PingTargetsDialog> {
             controller: _secondaryCtrl,
             style: const TextStyle(color: kText, fontFamily: 'monospace'),
             decoration: const InputDecoration(labelText: 'Secondary ping IP')),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, key: const Key('enable_targets_error'), style: const TextStyle(color: kError, fontSize: 12)),
+        ],
       ],
       confirmLabel: 'ENABLE',
       onConfirm: _onEnable,
@@ -1072,7 +1097,7 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
             title: Text('Clear the watchdog log for $label?', style: const TextStyle(color: kText, fontSize: 15)),
             content: Text(
               "Empties /tmp/watchdog_wgc$slot.log on the router and deletes yesterday's rotated copy. The "
-              'watchdog keeps writing to it from its next run. Nothing else changes.',
+              'watchdog keeps writing to it from its next run.',
               style: const TextStyle(color: kMuted, fontSize: 13),
             ),
             actions: [

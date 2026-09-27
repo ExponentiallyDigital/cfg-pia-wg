@@ -1,0 +1,199 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1018" width="100%" preserveAspectRatio="xMidYMid meet" style="max-width:1200px;height:auto;font-family:'Segoe UI',Arial,sans-serif;background:#0D1117" role="img" aria-labelledby="t d">
+  <title id="t">Representative network traffic flow (dark theme)</title>
+  <desc id="d">Where each connection travels. SSH stays on the home network. The WireGuard tunnel runs from the router to a PIA server over the internet connection, encrypted, and PIA decrypts it and sends it on from its public IP pool. The phone's own connections follow the phone's route: through a slot's tunnel if the phone is pinned to it or the default connection is a slot, otherwise straight out. The router's own connections - the watchdog's calls to PIA, its encrypted DNS, alert email, check-target pings and helper downloads - go straight out the internet connection, except the watchdog's DNS name check, which goes through the tunnel on purpose. All IP addresses illustrative.</desc>
+  <defs>
+    <style>
+      .zt{font:700 13px 'Segoe UI',Arial,sans-serif}
+      .nt{font:700 13px 'Segoe UI',Arial,sans-serif;fill:#E6EDF3}
+      .ns{font:12px 'Segoe UI',Arial,sans-serif;fill:#C9D1D9}
+      .nss{font:10.5px 'Segoe UI',Arial,sans-serif;fill:#8FA3AD}
+      .lb{font:12px 'Segoe UI',Arial,sans-serif;fill:#C9D1D9}
+      .bn{font:700 11px 'Segoe UI',Arial,sans-serif;fill:#FEFEFE}
+      .lbg{fill:#161B22;fill-opacity:.85}
+      .flow{fill:none;stroke-width:2.6}
+    </style>
+    <marker id="asl" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9FB0BA"/></marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#66BB6A"/></marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#F44336"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1E88E5"/></marker>
+  </defs>
+  <text x="620" y="30" class="" text-anchor="middle" style="font:700 21px 'Segoe UI',Arial,sans-serif;fill:#E6EDF3">Representative network traffic flow</text>
+  <text x="620" y="53" class="" text-anchor="middle" style="font:12px 'Segoe UI',Arial,sans-serif;fill:#9DB0BA">Where each connection travels: only on your home network, inside a WireGuard tunnel, or straight out your internet connection.</text>
+  <text x="620" y="72" class="" text-anchor="middle" style="font:12px 'Segoe UI',Arial,sans-serif;fill:#9FB0BA"><tspan font-weight="700">Note:</tspan> all IP addresses shown are for illustration only. The numbers match the logical diagram.</text>
+  <rect x="300" y="100" width="755" height="80" rx="40" fill="#4CAF50" fill-opacity="0.10" stroke="#66BB6A" stroke-width="2" stroke-dasharray="9 5"/>
+  <rect x="400" y="118" width="23" height="17" rx="8" fill="#4CAF50"/>
+  <text x="412" y="131" text-anchor="middle" class="bn">7</text>
+  <text x="690" y="130" class="" text-anchor="middle" style="font:700 13px 'Segoe UI',Arial,sans-serif;fill:#81C784">WireGuard tunnel: router to a PIA server, encrypted, on the port PIA returns (1337)</text>
+  <text x="677" y="150" class="ns" text-anchor="middle" style="fill:#66BB6A">carries the phone's traffic when the phone uses this slot, and the watchdog's name check</text>
+  <rect x="933" y="138" width="23" height="17" rx="8" fill="#9E9E9E"/>
+  <text x="944" y="151" text-anchor="middle" class="bn">9</text>
+  <text x="677" y="167" class="ns" text-anchor="middle" style="fill:#66BB6A">does not carry the router's own traffic: the watchdog's calls to PIA, DoH, email and downloads</text>
+  <path class="flow" stroke="#66BB6A" marker-start="url(#ag)" marker-end="url(#ag)" d="M345,180 L345,318"/>
+  <g><rect class="lbg" x="350" y="238" width="70" height="17" rx="4"/><text x="354" y="251" class="lb" fill="#66BB6A">encrypt ⇕</text></g>
+  <path class="flow" stroke="#66BB6A" marker-start="url(#ag)" marker-end="url(#ag)" d="M1000,180 L1000,298"/>
+  <g><rect class="lbg" x="1006" y="235" width="70" height="17" rx="4"/><text x="1010" y="248" class="lb" fill="#66BB6A">decrypt ⇕</text></g>
+  <rect x="25" y="288" width="405" height="178" rx="12" fill="#0F2438" fill-opacity="0.35" stroke="#90CAF9" stroke-dasharray="6 5"/>
+  <text x="38" y="307" class="zt" fill="#64B5F6">Your home network (192.168.1.0/24)</text>
+  <rect x="40" y="322" width="150" height="130" rx="11" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
+  <rect x="54" y="336" width="26" height="44" rx="5" fill="#0F2438" stroke="#1E88E5" stroke-width="1.4"/>
+  <rect x="58" y="343" width="18" height="30" fill="#1A3A5C"/>
+  <text x="92" y="350" class="nt" style="font-size:12px">Phone</text>
+  <text x="92" y="368" class="nss">this app</text>
+  <text x="50" y="402" class="nss">192.168.1.100</text>
+  <text x="50" y="416" class="nss">follows the phone's route:</text>
+  <rect x="50" y="426" width="37" height="17" rx="8" fill="#1E88E5"/>
+  <text x="68" y="439" text-anchor="middle" class="bn">2-6</text>
+  <rect x="91" y="426" width="30" height="17" rx="8" fill="#1E88E5"/>
+  <text x="106" y="439" text-anchor="middle" class="bn">13</text>
+  <rect x="125" y="426" width="30" height="17" rx="8" fill="#1E88E5"/>
+  <text x="140" y="439" text-anchor="middle" class="bn">14</text>
+  <rect x="159" y="426" width="30" height="17" rx="8" fill="#9E9E9E"/>
+  <text x="174" y="439" text-anchor="middle" class="bn">15</text>
+  <path d="M255,338 L255,452 L415,452 L415,338 L403,328 L391,338 L379,328 L367,338 L355,328 L343,338 L331,328 L319,338 L307,328 L295,338 L283,328 L271,338 L259,328 Z" fill="#161B22" stroke="#F44336" stroke-width="2"/>
+  <text x="266" y="360" class="nt" style="font-size:12px">ASUS router</text>
+  <text x="266" y="377" class="nss">stock or Merlin · 192.168.1.1</text>
+  <text x="266" y="393" class="nss">SSH :22 · slots wgc1-wgc5</text>
+  <text x="266" y="409" class="nss">watchdog: rebuilds, emails</text>
+  <text x="266" y="425" class="nss">encrypts the tunnel</text>
+  <text x="266" y="441" class="nss">sends its own traffic direct</text>
+  <path class="flow" stroke="#9FB0BA" marker-start="url(#asl)" marker-end="url(#asl)" d="M190,374 L255,374"/>
+  <path class="flow" stroke="#F44336" stroke-width="2.2" marker-start="url(#ar)" marker-end="url(#ar)" d="M190,396 L255,396"/>
+  <g><rect class="lbg" x="196" y="350" width="34" height="16" rx="3"/><text x="200" y="362" class="lb" fill="#C9D1D9" style="font-size:11px">LAN</text></g>
+  <g><rect class="lbg" x="196" y="404" width="30" height="16" rx="3"/><text x="198" y="416" class="lb" fill="#EF7A7A" style="font-size:11px">SSH</text></g>
+  <rect x="228" y="405" width="23" height="17" rx="8" fill="#F44336"/>
+  <text x="240" y="418" text-anchor="middle" class="bn">1</text>
+  <rect x="485" y="337" width="115" height="92" rx="10" fill="#161B22" stroke="#90A4AE" stroke-width="2"/>
+  <path d="M542,352 L535,372 L549,372 Z" fill="#3A4652" stroke="#90A4AE" stroke-width="1.2"/>
+  <path d="M531,366 A9 9 0 0 1 553 366" fill="none" stroke="#90A4AE" stroke-width="1.2"/>
+  <text x="542" y="392" class="nt" text-anchor="middle" style="font-size:12px">ISP</text>
+  <text x="542" y="409" class="nss" text-anchor="middle">your internet</text>
+  <text x="542" y="423" class="nss" text-anchor="middle">connection</text>
+  <g transform="translate(610,300) scale(1.18)"><path d="M 50 100 C 20 100 10 80 28 66 C 18 44 44 28 64 40 C 72 18 110 18 120 40 C 150 30 172 54 156 74 C 178 84 168 100 146 100 Z" fill="#161B22" stroke="#9FB0BA" stroke-width="1.6"/></g>
+  <text x="721" y="376" class="nt" text-anchor="middle" style="font-size:12px">Internet</text>
+  <text x="721" y="394" class="nss" text-anchor="middle">(public)</text>
+  <rect x="885" y="300" width="235" height="165" rx="11" fill="#161B22" stroke="#AB47BC" stroke-width="2"/>
+  <rect x="885" y="300" width="7" height="165" rx="3" fill="#AB47BC"/>
+  <text x="1002" y="324" class="nt" text-anchor="middle" style="font-size:12.5px">PIA WireGuard server</text>
+  <text x="1002" y="343" class="nss" text-anchor="middle">tunnel endpoint, e.g. 143.244.50.40</text>
+  <text x="1002" y="360" class="nss" text-anchor="middle">:1337 UDP tunnel (7)</text>
+  <text x="1002" y="376" class="nss" text-anchor="middle">:1337 probe and addKey (5, 6)</text>
+  <text x="1002" y="396" class="nss" text-anchor="middle">serverlist.piaservers.net :443 (2)</text>
+  <text x="1002" y="412" class="nss" text-anchor="middle">privateinternetaccess.com :443 (3)</text>
+  <text x="1002" y="440" class="nss" text-anchor="middle" style="fill:#66BB6A">↳ the tunnel ends here: decrypt</text>
+  <path class="flow" stroke="#66BB6A" marker-start="url(#ag)" marker-end="url(#ag)" d="M415,382 L485,382"/>
+  <path class="flow" stroke="#66BB6A" marker-start="url(#ag)" marker-end="url(#ag)" d="M600,382 L632,380"/>
+  <path class="flow" stroke="#66BB6A" marker-start="url(#ag)" marker-end="url(#ag)" d="M812,380 L885,382"/>
+  <path class="flow" stroke="#1E88E5" marker-start="url(#ab)" marker-end="url(#ab)" d="M415,412 L485,412"/>
+  <path class="flow" stroke="#1E88E5" marker-start="url(#ab)" marker-end="url(#ab)" d="M600,412 L640,410"/>
+  <text x="640" y="478" class="nss" text-anchor="middle" style="fill:#66BB6A">green: the tunnel, encrypted, over your internet connection</text>
+  <text x="640" y="494" class="nss" text-anchor="middle" style="fill:#64B5F6">blue: the router's own traffic, straight out (2-6, 8, 10-12)</text>
+  <path class="flow" stroke="#66BB6A" marker-start="url(#ag)" marker-end="url(#ag)" d="M1002,465 L1002,525"/>
+  <g><rect class="lbg" x="1010" y="487" width="112" height="16" rx="3"/><text x="1014" y="499" class="lb" fill="#66BB6A" style="font-size:11px">decrypt → 172.16.x</text></g>
+  <rect x="885" y="525" width="235" height="130" rx="11" fill="#161B22" stroke="#43A047" stroke-width="2"/>
+  <rect x="885" y="525" width="7" height="130" rx="3" fill="#43A047"/>
+  <text x="1002" y="550" class="nt" text-anchor="middle" style="font-size:12.5px">PIA VPN exit</text>
+  <text x="1002" y="569" class="ns" text-anchor="middle" style="font-size:11.5px">internal net 172.16.0.0/16</text>
+  <text x="1002" y="586" class="nss" text-anchor="middle">peer interface 172.16.1.50</text>
+  <text x="1002" y="608" class="ns" text-anchor="middle" style="font-size:11.5px;fill:#81C784">public IP pool (source NAT)</text>
+  <text x="1002" y="625" class="nss" text-anchor="middle">185.230.125.10 - .50</text>
+  <text x="1002" y="645" class="nss" text-anchor="middle" style="fill:#9FB0BA">↳ out to the public internet</text>
+  <path class="flow" stroke="#9FB0BA" marker-start="url(#asl)" marker-end="url(#asl)" d="M885,580 Q838,500 806,418"/>
+  <path class="flow" stroke="#9FB0BA" marker-start="url(#asl)" marker-end="url(#asl)" d="M790,425 Q790,640 884,720"/>
+  <rect x="885" y="690" width="235" height="250" rx="11" fill="#161B22" stroke="#90A4AE" stroke-width="2"/>
+  <text x="1002" y="714" class="nt" text-anchor="middle" style="font-size:12.5px">Internet services</text>
+  <rect x="900" y="724" width="23" height="17" rx="8" fill="#1E88E5"/>
+  <text x="912" y="737" text-anchor="middle" class="bn">4</text>
+  <text x="936" y="736" class="nss">PIA CA cert, GitHub</text>
+  <rect x="900" y="745" width="23" height="17" rx="8" fill="#1E88E5"/>
+  <text x="912" y="758" text-anchor="middle" class="bn">8</text>
+  <text x="936" y="757" class="nss">DoH resolver, e.g. 1.1.1.2</text>
+  <rect x="900" y="766" width="30" height="17" rx="8" fill="#795548"/>
+  <text x="915" y="779" text-anchor="middle" class="bn">11</text>
+  <text x="936" y="778" class="nss">your mail server</text>
+  <rect x="900" y="787" width="30" height="17" rx="8" fill="#FFC107"/>
+  <text x="915" y="800" text-anchor="middle" class="bn">10</text>
+  <text x="936" y="799" class="nss">check targets, e.g. 8.8.8.8</text>
+  <rect x="900" y="808" width="30" height="17" rx="8" fill="#1E88E5"/>
+  <text x="915" y="821" text-anchor="middle" class="bn">12</text>
+  <text x="936" y="820" class="nss">github.com releases</text>
+  <rect x="900" y="829" width="30" height="17" rx="8" fill="#1E88E5"/>
+  <text x="915" y="842" text-anchor="middle" class="bn">13</text>
+  <text x="936" y="841" class="nss">RevenueCat, Google Play</text>
+  <rect x="900" y="850" width="30" height="17" rx="8" fill="#1E88E5"/>
+  <text x="915" y="863" text-anchor="middle" class="bn">14</text>
+  <text x="936" y="862" class="nss">README, Play Store listing</text>
+  <rect x="900" y="871" width="23" height="17" rx="8" fill="#9E9E9E"/>
+  <text x="912" y="884" text-anchor="middle" class="bn">9</text>
+  <text x="936" y="883" class="nss">a slot&#x27;s DNS server</text>
+  <rect x="900" y="892" width="30" height="17" rx="8" fill="#9E9E9E"/>
+  <text x="915" y="905" text-anchor="middle" class="bn">15</text>
+  <text x="936" y="904" class="nss">DNS servers</text>
+  <text x="1002" y="928" class="nss" text-anchor="middle" style="fill:#9DB0BA">see your home address, or PIA's pool</text>
+  <rect x="30" y="520" width="770" height="478" rx="12" fill="#11161D" stroke="#3A4652"/>
+  <text x="46" y="544" class="zt" fill="#C9D1D9">Which path each connection takes</text>
+  <text x="46" y="562" class="nss" style="fill:#90A4AE">The numbers are the badges in the picture above, and the rows of the logical diagram.</text>
+  <rect x="46" y="578" width="23" height="17" rx="8" fill="#F44336"/>
+  <text x="58" y="591" text-anchor="middle" class="bn">1</text>
+  <text x="96" y="590" class="lb"><tspan font-weight="700">SSH 22</tspan>  the app&#x27;s router commands</text>
+  <rect x="718" y="578" width="67" height="18" rx="9" fill="#161B22" stroke="#EF7A7A" stroke-width="1.4"/>
+  <text x="752" y="591" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#EF7A7A">LAN only</text>
+  <rect x="46" y="605" width="37" height="17" rx="8" fill="#1E88E5"/>
+  <text x="64" y="618" text-anchor="middle" class="bn">2-6</text>
+  <text x="96" y="617" class="lb"><tspan font-weight="700">PIA, from the phone</tspan>  STANDALONE and CREATE: list, token, CA, probes, addKey</text>
+  <rect x="659" y="605" width="126" height="18" rx="9" fill="#161B22" stroke="#CE93D8" stroke-width="1.4"/>
+  <text x="722" y="618" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#CE93D8">the phone&#x27;s route</text>
+  <rect x="46" y="632" width="37" height="17" rx="8" fill="#9C27B0"/>
+  <text x="64" y="645" text-anchor="middle" class="bn">2-6</text>
+  <text x="96" y="644" class="lb"><tspan font-weight="700">PIA, from the watchdog</tspan>  a rebuild: list, token, CA, pings, addKey</text>
+  <rect x="692" y="632" width="93" height="18" rx="9" fill="#161B22" stroke="#64B5F6" stroke-width="1.4"/>
+  <text x="738" y="645" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#64B5F6">straight out</text>
+  <rect x="46" y="659" width="23" height="17" rx="8" fill="#4CAF50"/>
+  <text x="58" y="672" text-anchor="middle" class="bn">7</text>
+  <text x="96" y="671" class="lb"><tspan font-weight="700">WireGuard</tspan>  the tunnel itself, router to PIA</text>
+  <rect x="685" y="659" width="100" height="18" rx="9" fill="#161B22" stroke="#66BB6A" stroke-width="1.4"/>
+  <text x="735" y="672" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#66BB6A">in the tunnel</text>
+  <rect x="46" y="686" width="23" height="17" rx="8" fill="#1E88E5"/>
+  <text x="58" y="699" text-anchor="middle" class="bn">8</text>
+  <text x="96" y="698" class="lb"><tspan font-weight="700">DoH 443</tspan>  the watchdog&#x27;s own lookups, encrypted</text>
+  <rect x="679" y="686" width="106" height="18" rx="9" fill="#161B22" stroke="#64B5F6" stroke-width="1.4"/>
+  <text x="732" y="699" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#64B5F6">straight out *</text>
+  <rect x="46" y="713" width="23" height="17" rx="8" fill="#9E9E9E"/>
+  <text x="58" y="726" text-anchor="middle" class="bn">9</text>
+  <text x="96" y="725" class="lb"><tspan font-weight="700">DNS 53</tspan>  the watchdog&#x27;s name check, through the slot</text>
+  <rect x="685" y="713" width="100" height="18" rx="9" fill="#161B22" stroke="#66BB6A" stroke-width="1.4"/>
+  <text x="735" y="726" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#66BB6A">in the tunnel</text>
+  <rect x="46" y="740" width="30" height="17" rx="8" fill="#FFC107"/>
+  <text x="61" y="753" text-anchor="middle" class="bn">10</text>
+  <text x="96" y="752" class="lb"><tspan font-weight="700">ICMP</tspan>  check targets (Merlin also pings through the tunnel)</text>
+  <rect x="692" y="740" width="93" height="18" rx="9" fill="#161B22" stroke="#64B5F6" stroke-width="1.4"/>
+  <text x="738" y="753" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#64B5F6">straight out</text>
+  <rect x="46" y="767" width="30" height="17" rx="8" fill="#795548"/>
+  <text x="61" y="780" text-anchor="middle" class="bn">11</text>
+  <text x="96" y="779" class="lb"><tspan font-weight="700">SMTP, TLS</tspan>  alert emails and TEST EMAIL</text>
+  <rect x="679" y="767" width="106" height="18" rx="9" fill="#161B22" stroke="#64B5F6" stroke-width="1.4"/>
+  <text x="732" y="780" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#64B5F6">straight out *</text>
+  <rect x="46" y="794" width="30" height="17" rx="8" fill="#1E88E5"/>
+  <text x="61" y="807" text-anchor="middle" class="bn">12</text>
+  <text x="96" y="806" class="lb"><tspan font-weight="700">HTTPS 443</tspan>  jq and mailsend-go downloads (stock)</text>
+  <rect x="692" y="794" width="93" height="18" rx="9" fill="#161B22" stroke="#64B5F6" stroke-width="1.4"/>
+  <text x="738" y="807" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#64B5F6">straight out</text>
+  <rect x="46" y="821" width="30" height="17" rx="8" fill="#1E88E5"/>
+  <text x="61" y="834" text-anchor="middle" class="bn">13</text>
+  <text x="96" y="833" class="lb"><tspan font-weight="700">HTTPS 443</tspan>  RevenueCat and Google Play Billing</text>
+  <rect x="659" y="821" width="126" height="18" rx="9" fill="#161B22" stroke="#CE93D8" stroke-width="1.4"/>
+  <text x="722" y="834" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#CE93D8">the phone&#x27;s route</text>
+  <rect x="46" y="848" width="30" height="17" rx="8" fill="#1E88E5"/>
+  <text x="61" y="861" text-anchor="middle" class="bn">14</text>
+  <text x="96" y="860" class="lb"><tspan font-weight="700">HTTPS 443</tspan>  links opened in the browser</text>
+  <rect x="659" y="848" width="126" height="18" rx="9" fill="#161B22" stroke="#CE93D8" stroke-width="1.4"/>
+  <text x="722" y="861" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#CE93D8">the phone&#x27;s route</text>
+  <rect x="46" y="875" width="30" height="17" rx="8" fill="#9E9E9E"/>
+  <text x="61" y="888" text-anchor="middle" class="bn">15</text>
+  <text x="96" y="887" class="lb"><tspan font-weight="700">DNS 53</tspan>  the phone&#x27;s resolver / the router&#x27;s DNS Server</text>
+  <rect x="573" y="875" width="212" height="18" rx="9" fill="#161B22" stroke="#9FB0BA" stroke-width="1.4"/>
+  <text x="679" y="888" text-anchor="middle" class="lb" style="font-size:11.5px;font-weight:700;fill:#9FB0BA">phone&#x27;s route / straight out *</text>
+  <text x="48" y="922" class="nss" style="fill:#9DB0BA">The phone&#x27;s route: through a slot&#x27;s tunnel if the phone is pinned to that slot, or if the default connection is a slot;</text>
+  <text x="48" y="939" class="nss" style="fill:#9DB0BA">otherwise straight out. SSH never leaves the home network.</text>
+  <text x="48" y="956" class="nss" style="fill:#9DB0BA">* The router&#x27;s own rule: an address that is also a slot&#x27;s DNS server goes through that slot instead. The WATCHDOG</text>
+  <text x="48" y="973" class="nss" style="fill:#9DB0BA">form warns when its DoH address is one of them; ROUTER-DNS.md explains why it matters.</text>
+</svg>

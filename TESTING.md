@@ -4,25 +4,33 @@ The automated tests prove the code does what it says. They cannot prove what a r
 
 **Part 1. Run sheet**
 
-- [How to use the run sheet](#how-to-use)
-- [PRE. Before you start](#pre)
-- [CON. Connecting to the router](#con)
-- [HOM. Home screen and drawer](#hom)
-- [STD. Standalone](#std)
-- [MAN. Manage](#man)
-- [WD. Watchdog](#wd)
-- [BRK. Break a tunnel](#brk)
-- [DEV. Device assignment](#dev)
-- [DEF. Default connection](#def)
-- [GRD. Fail-closed guard](#grd)
-- [LOG. App log and router log](#log)
-- [SET. Settings](#set)
-- [ABT. About](#abt)
-- [EXT. Exit, background and session](#ext)
-- [LCK. Locked, with no purchase (store build)](#lck)
-- [BUY. Buying and restoring (store build)](#buy)
-- [MRL. Merlin (a separate day)](#mrl)
-- [END. Last, because it removes things](#end)
+- [How to use the run sheet](#how-to-use-the-run-sheet)
+- [PRE. Before you start](#pre-before-you-start)
+- [CON. Connecting to the router](#con-connecting-to-the-router)
+- [HOM. Home screen and drawer](#hom-home-screen-and-drawer)
+- [STD. Standalone](#std-standalone)
+- [MAN. Manage](#man-manage)
+- [WD. Watchdog](#wd-watchdog)
+- [BRK. Break a tunnel](#brk-break-a-tunnel)
+- [DEV. Device assignment](#dev-device-assignment)
+- [DEF. Default connection](#def-default-connection)
+- [GRD. Fail-closed guard](#grd-fail-closed-guard)
+- [LOG. App log and router log](#log-app-log-and-router-log)
+- [SET. Settings](#set-settings)
+- [ABT. About](#abt-about)
+- [EXT. Exit, background and session](#ext-exit-background-and-session)
+- [LCK. Locked, with no purchase (store build)](#lck-locked-with-no-purchase-store-build)
+- [BUY. Buying and restoring (store build)](#buy-buying-and-restoring-store-build)
+- [MRL. Merlin (a separate day)](#mrl-merlin-a-separate-day)
+- [END. Last, because it removes things](#end-last-because-it-removes-things)
+- [R1. When something looks broken, check these first](#r1-when-something-looks-broken-check-these-first)
+- [R2. How the watchdog decides a tunnel is broken](#r2-how-the-watchdog-decides-a-tunnel-is-broken)
+- [R3. The backoff ladder](#r3-the-backoff-ladder)
+- [R4. What the watchdog leaves on the router](#r4-what-the-watchdog-leaves-on-the-router)
+- [R5. Device assignment and default connection notes](#r5-device-assignment-and-default-connection-notes)
+- [R6. Sending email by hand](#r6-sending-email-by-hand)
+- [R7. Examining NVRAM](#r7-examining-nvram)
+- [R8. Store testing notes](#r8-store-testing-notes)
 
 **Part 2. Reference**
 
@@ -123,7 +131,7 @@ I5=5             # wgc5's
 
 **PRE-4** Have to hand [hand]
 
-- Do: copy the three check scripts to the router, from the repo on DESKTOP: `scp scripts/e2e.sh scripts/test-backoff.sh scripts/presence-probe.sh <user>@<router>:/jffs/`
+- Do: copy the three check scripts, `scripts/e2e.sh`, `scripts/test-backoff.sh` and `scripts/presence-probe.sh`, to `/jffs/` on the router. The router has no `scp`, so `scp` fails in both directions. Either open each file in `vi` on the router and paste it in, or from Git Bash on DESKTOP: `ssh <user>@<router> "cat > /jffs/e2e.sh" < scripts/e2e.sh`, and the same for the other two. Check with `ls -l /jffs/*.sh`.
 - PIA username and password.
 - An SMTP account with an app password, for example Gmail.
 - The router WebUI open on DESKTOP.
@@ -421,7 +429,8 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 **WD-4** Test email follows the form's region [hand]
 
 - Do: change the region on the form, TEST EMAIL.
-- Pass if: the subject and the body's Watchdog row name the new region.
+- Pass if: the subject and the body's Watchdog row name the new region, and the password manager offers to save the SMTP login.
+- Do: set the region back. Left changed, the next SAVE & DEPLOY is a region change and a rebuild.
 
 **WD-5** Test email failure [hand]
 
@@ -843,9 +852,11 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 **DEV-13** Offline device [hand]
 
-- Do: in a second SSH session, start `sh /jffs/presence-probe.sh <TABLET's MAC>` - the MAC is on TABLET's second line in DEVICE ASSIGNMENT. It prints every place the router records whether TABLET is online, every 30 seconds (ID-165).
-- Do: switch TABLET off, and note the time. Keep the router's web interface client list open on DESKTOP.
-- Write down: the time the web interface shows TABLET offline, the time DEVICE ASSIGNMENT does (leave and come back to refresh it), and the first probe line where each source changes. Then Ctrl+C the probe. The source that changed with the web interface is the one the app should read.
+- Do: copy `scripts/presence-probe.sh` to `/jffs/` again, since it changed in build 470 (no `scp`: `vi` and paste, or `ssh <user>@<router> "cat > /jffs/presence-probe.sh" < scripts/presence-probe.sh` from Git Bash), then on the router start `nohup sh /jffs/presence-probe.sh <TABLET's MAC> > /tmp/presence.log 2>&1 &` - the MAC is on TABLET's second line in DEVICE ASSIGNMENT. It logs, with the time, each change in every place the router records whether TABLET is online, and when each file was last written (ID-165). Its `cl_json` line is what DEVICE ASSIGNMENT shows.
+- Do: on DESKTOP, `pwsh scripts/webui-presence.ps1 -Router <web interface address> -Mac <TABLET's MAC>`, with the router's web login. It logs each change in what the web interface shows for TABLET.
+- Do: switch TABLET off. Leave both running until the web interface and `cl_json` both say offline, about 15 minutes. Switch TABLET on, and leave them another 5 minutes.
+- Write down: `cat /tmp/presence.log` on the router, and the DESKTOP log (the script prints where it is). Then stop both: Ctrl+C on DESKTOP, and `kill $(cat /tmp/presence-probe.pid)` on the router. The source that changed with the web interface is the one the app should read.
+- Do: run the same measurement again with a WIRED device, such as the NAS or the TV, switched off at the wall and back on: its MAC in both scripts. Pass if: its `cache` line changes with the web interface, as TABLET's did. If it stays `"isOnline":"1"` while the web interface says offline, note it: wired devices need a guard (ID-165).
 - See: TABLET dimmed with `offline`, still with a picker.
 - Do: TABLET to wgc1, APPLY.
 - Pass if: CHK shows the record. Switch TABLET on: exit IP is wgc1's region.
@@ -1041,6 +1052,22 @@ sh /jffs/e2e.sh GRD-5 after "guard $D $I5" "exit $D wgc5"
 
 - Pass if: PASS: the watchdog's run moved the guard to wgc5's table, with still exactly one 91 line. The web interface made the move a few seconds before `before`, so the changes list shows the guard's lines, not the firmware's.
 - Do: DEVICE ASSIGNMENT, DESKTOP back to wgc1, APPLY.
+
+**GRD-6** A firewall restart leaves the guard alone [script]
+
+The firmware restarts its firewall whenever `asd` crashes, which on 2026-09-27 was every few minutes (ID-227). The guard is routing rules, not firewall rules, so it should be untouched; this measures that.
+
+- Do: on the router, with DESKTOP pinned to wgc1 and its `ping -t 1.1.1.1` running:
+
+```bash
+sh /jffs/e2e.sh GRD-6 before
+service restart_firewall
+sleep 20
+sh /jffs/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
+```
+
+- Pass if: PASS, and the changes list shows no `ip rule` lines added or removed.
+- See: the ping carries on at wgc1's usual time, with at most a reply or two lost while the firewall rebuilds.
 
 ---
 
@@ -1816,3 +1843,5 @@ nvram show | grep -E "vpnc_" | sort
 - **If a refund does not relock the app**, real-time developer notifications are not wired up, and the refund window cannot be used as a trial.
 - **`android:allowBackup="false"`** means nothing local survives a reinstall. A restored unlock comes from Play, through `syncPurchases` at launch.
 - **No sign-in prompt may appear at launch.** One appearing means something is calling restore programmatically, which RevenueCat's guidance forbids.
+
+---

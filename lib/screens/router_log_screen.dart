@@ -66,6 +66,10 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
   /// Loaded pages, OLDEST first, so the column renders in reading order top to bottom.
   final List<String> _pages = [];
 
+  /// The start of the oldest loaded page, up to its first line break: the end of a line whose
+  /// beginning is in the page above it, not loaded yet. Joined onto that page when it arrives.
+  String _heldFragment = '';
+
   /// Bytes already read from each file in [kRouterLogFiles], and how big each of those is.
   List<int> _consumed = [0, 0];
   List<int> _sizes = [0, 0];
@@ -157,7 +161,7 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
       sizes = parseLogSizes((await runRouterCommand(client, buildLogSizesCommand(), allowFailure: true)).stdout);
       page = nextLogPage(sizes: sizes, consumed: [0, 0]);
       if (page != null) {
-        first = (await runRouterCommand(client, page.command, allowFailure: true)).stdout;
+        first = unwrapPage((await runRouterCommand(client, page.command, allowFailure: true)).stdout);
       }
       _c.routerConnected = true;
       await _c.rememberRouterIp(ip);
@@ -175,9 +179,12 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
       _sizes = sizes ?? [0, 0];
       _consumed = [0, 0];
       _pages.clear();
+      _heldFragment = '';
       _exhausted = loaded == null;
       if (loaded != null && first != null) {
-        _pages.add(trimPartialFirstLine(first, reachesStart: loaded.reachesStart));
+        final split = splitPage(first, reachesStart: loaded.reachesStart);
+        _pages.add(split.lines);
+        _heldFragment = split.fragment;
         _consumed[kRouterLogFiles.indexOf(loaded.file)] = loaded.length;
         _exhausted = nextLogPage(sizes: _sizes, consumed: _consumed) == null;
       }
@@ -222,7 +229,7 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     String? text;
     String? error;
     try {
-      text = (await runRouterCommand(_client(ip, user, pass), page.command, allowFailure: true)).stdout;
+      text = unwrapPage((await runRouterCommand(_client(ip, user, pass), page.command, allowFailure: true)).stdout);
     } catch (e) {
       error = e.toString().replaceAll('Exception: ', '');
     }
@@ -230,7 +237,11 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     setState(() {
       _loading = false;
       if (error != null || text == null) return;
-      _pages.insert(0, trimPartialFirstLine(text, reachesStart: page.reachesStart));
+      // The older page ends exactly where the held fragment begins, byte for byte, so the two
+      // together are the line the cut went through. A page that starts a new file holds nothing.
+      final split = splitPage(text + _heldFragment, reachesStart: page.reachesStart);
+      _pages.insert(0, split.lines);
+      _heldFragment = split.fragment;
       _consumed[kRouterLogFiles.indexOf(page.file)] += page.length;
       _exhausted = nextLogPage(sizes: _sizes, consumed: _consumed) == null;
     });

@@ -31,6 +31,19 @@ WatchdogConfig cfg({int slot = 1, int interval = 5, bool email = false}) => Watc
 /// router `notify_rc` queues the service call, so the interface is not up when it returns. The
 /// fakes here mostly never bring one up, so the production 2s x 5 would add half a minute to this
 /// file alone.
+/// An empty stock slot whose VPN profile row appears once the deploy writes it, so a deploy gets
+/// past ENABLE and fails where the test says it does. Without the row it failed at ENABLE, before
+/// the schedule, and a test asserted a "will try again" that was not true (ID-196).
+String Function(String) _emptySlotGainingRow() {
+  var written = false;
+  return (cmd) {
+    if (cmd.startsWith('nvram set vpnc_clientlist=')) written = true;
+    if (cmd == 'nvram get vpnc_clientlist' && written) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+    if (cmd == 'ip -o link show up' && written) return 'wgc1';
+    return cmd.contains('jffs2') ? '0' : '';
+  };
+}
+
 RouterWatchdog _wd(SSHClient c, {void Function(String, {bool isError, bool isSuccess, bool isWarning})? onLog}) =>
     RouterWatchdog(c, onLog: onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: 3);
 
@@ -566,7 +579,7 @@ void main() {
     // enabled, and then an abort. It now puts the slot back and says which.
     test('a failed deploy clears a slot that started empty, and says so', () async {
       useStock();
-      final c = RecordingSSHClient(responder: (cmd) => cmd.contains('jffs2') ? '0' : '');
+      final c = RecordingSSHClient(responder: _emptySlotGainingRow());
       // The script's own run is the step that fails, exactly as an aborted deploy does.
       c.failWith['watchdog_wgc1.sh deploy'] = 'ERROR: PIA rejected the username and password';
 
@@ -580,6 +593,42 @@ void main() {
       expect(c.commands.any((x) => x.startsWith('nvram unset wgc1_priv')), isTrue, reason: 'the keys go');
       expect(c.commands.any((x) => x.contains('cru d watchdog_wgc1')), isFalse,
           reason: 'the schedule STAYS - it is the retry that rescued this on 2026-09-17');
+    });
+
+    // ID-196: a save that failed before its schedule was written left the new watchdog settings on
+    // the router with no cron entry - which is PAUSED - under an error saying it "stays scheduled".
+    test('a first save that fails before it is scheduled leaves no watchdog, and says so', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: _emptySlotGainingRow());
+      c.failWith["cat > '${watchdogScriptPath(1)}'"] = 'cat: write error: No space left on device';
+
+      await expectLater(
+        _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne'),
+        throwsA(predicate((e) =>
+            e.toString().contains('No space left') &&
+            e.toString().contains('No watchdog was set up') &&
+            !e.toString().contains('stays scheduled'))),
+      );
+      expect(c.ran('nvram unset wgc1_wd_check_interval'), isTrue, reason: 'no settings without a schedule: that reads as PAUSED');
+      expect(c.commands.any((x) => x.contains('cru a watchdog_wgc1')), isFalse);
+    });
+
+    test('an edit that fails before it is scheduled puts the previous watchdog settings back', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'nvram get wgc1_wd_check_interval') return '10';
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_melbourne';
+        if (cmd.contains('nvram get vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      c.failWith["cat > '${watchdogScriptPath(1)}'"] = 'cat: write error: No space left on device';
+
+      await expectLater(
+        _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne'),
+        throwsA(predicate((e) => e.toString().contains('No space left') && e.toString().contains('previous settings were put back'))),
+      );
+      final restored = c.commands.lastIndexWhere((x) => x.startsWith('nvram set wgc1_wd_check_interval='));
+      expect(c.commands[restored], "nvram set wgc1_wd_check_interval='10'", reason: 'the old interval, not the new 5');
     });
 
     test('a failed deploy restores a slot that already held a configuration', () async {
@@ -693,6 +742,34 @@ void main() {
       expect(stop, isNot(-1));
       expect(blank, greaterThan(stop));
       expect(restart, greaterThan(blank));
+    });
+
+    // ID-224: WD-6 on 2026-09-26 logged "wgc1:pia-aus_perth is vpnc_clientlist row 1; ... restart_vpnc"
+    // and then "wgc1:pia-nz enabled" in the same region change: a name remembered from before it.
+    test('a region change names the slot by its new region once the new name is written', () async {
+      useStock();
+      var stopped = false;
+      var renamed = false;
+      final timeline = <String>[];
+      final c = RecordingSSHClient(responder: (cmd) {
+        timeline.add('CMD $cmd');
+        if (cmd == 'service stop_vpnc') stopped = true;
+        if (cmd.startsWith("nvram set wgc1_desc='pia-aus_perth'")) renamed = true;
+        if (cmd == 'ip -o link show up') return stopped ? '' : 'wgc1';
+        if (cmd.contains('nvram get wgc1_desc')) return renamed ? 'pia-aus_perth' : 'pia-us_alabama';
+        if (cmd.contains('nvram get vpnc_clientlist')) {
+          return '${renamed ? 'pia-aus_perth' : 'pia-us_alabama'}>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        }
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => timeline.add('LOG $m'))
+          .deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_perth');
+
+      final named = timeline.indexWhere((e) => e.startsWith("CMD nvram set wgc1_desc='pia-aus_perth'"));
+      expect(named, isNot(-1));
+      final after = timeline.skip(named).where((e) => e.startsWith('LOG ') && e.contains('wgc1')).toList();
+      expect(after, isNotEmpty);
+      expect(after.where((e) => e.contains('pia-us_alabama')), isEmpty, reason: 'no line after the rename uses the old name');
     });
 
     test('an unchanged region clears nothing', () async {

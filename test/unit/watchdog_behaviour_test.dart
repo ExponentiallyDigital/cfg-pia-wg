@@ -4,6 +4,7 @@
 // back unnoticed. Skipped where no POSIX shell is on the PATH.
 import 'dart:io';
 
+import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../watchdog_harness.dart';
@@ -164,7 +165,53 @@ void main() {
         expect(h.services, isEmpty, reason: 'nothing is written or restarted without a token');
       });
 
-      test('clears the DNS strike count', () async {
+      // ID-222: the certificate download had no fallback, so a resolver problem stopped the rebuild
+    // at its first step, and said "not valid PEM" when nothing had been downloaded at all.
+    WatchdogConfig withDoh() => WatchdogConfig(
+          slotIndex: 1,
+          cronIntervalMinutes: 5,
+          primaryIp: '8.8.8.8',
+          secondaryIp: '1.1.1.1',
+          piaUsername: 'p123456789',
+          piaPassword: 'secret',
+          dohUrl: 'https://freedns.controld.com/p1',
+          dohIp: '76.76.2.1',
+        );
+
+    test('downloads the certificate when it has none', () async {
+      h.tunnelUp(handshakeAgo: null);
+      h.noCachedCert();
+      await h.run(config: withDoh());
+      expect(h.log, contains(startsWith('CA cert cached at')));
+      expect(h.log.last, startsWith('Reconfig SUCCESS'));
+    });
+
+    test('a certificate download that fails through encrypted DNS is retried without it', () async {
+      h.tunnelUp(handshakeAgo: null);
+      h.noCachedCert();
+      h.dohBroken();
+      await h.run(config: withDoh());
+      expect(h.log, contains('CA cert download failed through encrypted DNS; retrying once WITHOUT encrypted DNS'));
+      expect(h.log.last, startsWith('Reconfig SUCCESS'));
+    });
+
+    test('a DoH pair stored the wrong way round is named in the log, not passed off as none (ID-221)', () async {
+      h.tunnelUp(handshakeAgo: null);
+      await h.run(
+          config: WatchdogConfig(
+        slotIndex: 1,
+        cronIntervalMinutes: 5,
+        primaryIp: '8.8.8.8',
+        secondaryIp: '1.1.1.1',
+        piaUsername: 'p123456789',
+        piaPassword: 'secret',
+        dohUrl: '76.76.2.1',
+        dohIp: 'https://freedns.controld.com/p1',
+      ));
+      expect(h.log, contains(startsWith('Name lookups are NOT encrypted: encrypted DNS is set')));
+    });
+
+    test('clears the DNS strike count', () async {
         h.tunnelUp(handshakeAgo: null);
         File('${h.root.path}/tmp/watchdog_dnsfail_wgc1').writeAsStringSync('1');
         await h.run();
@@ -204,7 +251,33 @@ void main() {
       });
     });
 
-    // ID-193. Two watchdogs start in the same second, and each used to sweep away the other's
+    // ID-227, measured 2026-09-27: watchdog runs packed into a few seconds crash the firmware's asd,
+  // and every crash restarts the firewall. Spaced 15 s apart they did not.
+  group('spacing the watchdogs out (ID-227)', () {
+    Future<List<String>> sleepsFor(int slot, String mode) async {
+      final w = WatchdogHarness.create(slot: slot, shell: shell)!;
+      addTearDown(w.dispose);
+      await w.run(mode: mode);
+      return w.sleeps;
+    }
+
+    test('a cron start waits 15 s for every slot below it', () async {
+      expect(await sleepsFor(5, 'detached'), contains('60'));
+      expect(await sleepsFor(3, 'detached'), contains('30'));
+    });
+
+    test('wgc1 starts at once', () async {
+      expect((await sleepsFor(1, 'detached')).where((s) => s != '1'), isEmpty,
+          reason: 'only the one-second waits for the hand-over to init');
+    });
+
+    test('a deploy and a run by hand are never delayed', () async {
+      expect(await sleepsFor(5, 'deploy'), isNot(contains('60')));
+      expect(await sleepsFor(5, 'foreground'), isNot(contains('60')));
+    });
+  });
+
+  // ID-193. Two watchdogs start in the same second, and each used to sweep away the other's
     // temporary DNS rule at the start of its run.
     group('two watchdogs at once (ID-193)', () {
       test("a run leaves another slot's probe rule alone", () async {

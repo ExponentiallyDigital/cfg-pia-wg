@@ -106,8 +106,8 @@ void main() {
     await tester.enterText(find.byKey(const Key('slot_addr')), '10.0.0.2/32');
     await tester.enterText(find.byKey(const Key('slot_desc')), 'aus_melbourne');
     await tester.enterText(find.byKey(const Key('slot_ep_addr')), '203.0.113.5');
-    await tester.enterText(find.byKey(const Key('slot_ppub')), 'pub==');
-    await tester.enterText(find.byKey(const Key('slot_priv')), 'priv==');
+    await tester.enterText(find.byKey(const Key('slot_ppub')), 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBQ=');
+    await tester.enterText(find.byKey(const Key('slot_priv')), 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCg=');
     await tester.pump();
     expect(save().onPressed, isNotNull);
   });
@@ -135,8 +135,8 @@ void main() {
     await tester.enterText(find.byKey(const Key('slot_addr')), '10.0.0.2/32');
     await tester.enterText(find.byKey(const Key('slot_desc')), 'aus_melbourne');
     await tester.enterText(find.byKey(const Key('slot_ep_addr')), '203.0.113.5');
-    await tester.enterText(find.byKey(const Key('slot_ppub')), 'pub==');
-    await tester.enterText(find.byKey(const Key('slot_priv')), 'priv==');
+    await tester.enterText(find.byKey(const Key('slot_ppub')), 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBQ=');
+    await tester.enterText(find.byKey(const Key('slot_priv')), 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCg=');
     await tester.pump();
 
     await tester.ensureVisible(find.byKey(const Key('slot_fw')));
@@ -149,7 +149,7 @@ void main() {
     expect(saved, isNotNull);
     expect(saved!['addr'], '10.0.0.2/32');
     expect(saved!['desc'], 'aus_melbourne');
-    expect(saved!['priv'], 'priv==');
+    expect(saved!['priv'], 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCg=');
     expect(saved!['enforce'], '1');
     expect(saved!['fw'], '1');
     expect(saved!['nat'], '1');

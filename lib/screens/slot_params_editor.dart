@@ -19,6 +19,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../input_checks.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_scaffold.dart';
 
@@ -73,6 +74,9 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
   bool _privVisible = false;
   bool _saving = false;
 
+  /// What is wrong with the values, shown above SAVE. Nothing is sent while there is any (ID-237).
+  List<String> _errors = const [];
+
   @override
   void initState() {
     super.initState();
@@ -102,6 +106,9 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
       'fw': _fw ? '1' : '0',
       'nat': _nat ? '1' : '0',
     };
+    final errors = slotParamErrors(params);
+    setState(() => _errors = errors);
+    if (errors.isNotEmpty) return;
     setState(() => _saving = true);
     try {
       final result = await widget.onSave(params);
@@ -168,6 +175,11 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 _readOnly('Preshared key (psk, unused by PIA)', widget.initial['psk'] ?? ''),
                 if (!isStockFirmware) _readOnly('Router public IP (rip)', widget.initial['rip'] ?? ''),
                 const SizedBox(height: 16),
+                if (_errors.isNotEmpty) ...[
+                  Text(_errors.join('\n'),
+                      key: const Key('slot_params_errors'), style: const TextStyle(color: kError, fontSize: 12)),
+                  const SizedBox(height: 12),
+                ],
                 AppButton(
                   keyValue: 'slot_params_save',
                   label: 'SAVE',
