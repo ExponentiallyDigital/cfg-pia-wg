@@ -4,6 +4,7 @@
 // an IP-literal URL is refused silently by ASUS's curl (`Invalid DL URL`), a hostname URL works,
 // and a hostname URL with `--resolve` works while looking nothing up in the clear. Anything that
 // changes these strings changes whether the watchdog can resolve at all.
+import 'package:cfg_pia_wg/input_checks.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -44,7 +45,11 @@ void main() {
       expect(RegExp(r'^[0-9.]+$').hasMatch(host), isFalse, reason: '${r.label} must not be an IP literal');
       expect(RegExp(r'^[0-9.]+$').hasMatch(r.ip), isTrue, reason: '${r.label} needs a literal address');
       expect(dohCurlArguments(r.url, r.ip), contains('--resolve $host:443:${r.ip}'), reason: r.label);
+      expect(checkDohPair(r.url, r.ip), isEmpty, reason: '${r.label} passes the form check');
     }
+    // ID-226: Control D, AdGuard and Mullvad, and each URL once, since the menu is keyed on it.
+    expect(kDohResolvers.map((r) => r.label).join(' '), allOf(contains('Control D'), contains('AdGuard'), contains('Mullvad')));
+    expect(kDohResolvers.map((r) => r.url).toSet(), hasLength(kDohResolvers.length));
   });
 
   test('the default is one of the offered ones', () {

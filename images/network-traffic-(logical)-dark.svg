@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 1475" width="100%" preserveAspectRatio="xMidYMid meet" style="max-width:1200px;height:auto;font-family:'Segoe UI',Arial,sans-serif;background:#ffffff" role="img" aria-labelledby="t d">
-  <title id="t">Logical network traffic flow</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 1475" width="100%" preserveAspectRatio="xMidYMid meet" style="max-width:1200px;height:auto;font-family:'Segoe UI',Arial,sans-serif;background:#0D1117" role="img" aria-labelledby="t d">
+  <title id="t">Logical network traffic flow (dark theme)</title>
   <desc id="d">Every connection the app and its router-side watchdog make. From the phone: SSH 22 to the router; HTTPS 443 to PIA for the server list, a token and the CA certificate; TCP 1337 latency probes and CA-pinned HTTPS 1337 key registration to PIA WireGuard servers; HTTPS to RevenueCat and Google Play for purchases; links opened in the browser; DNS through the phone's own resolver. From the router: the WireGuard tunnel on the port PIA returns; the watchdog's own HTTPS calls to PIA, ICMP latency pings and key registration; its encrypted DNS lookups (DoH) to the chosen resolver; a DNS name check through the tunnel; ICMP pings to the check targets; alert email over SMTP with TLS; helper downloads from github.com; and ordinary DNS through the router's DNS Server setting. Egress through PIA's internal network and public IP pool. All IP addresses illustrative.</desc>
   <defs>
     <style>
       .zt{font:700 14px 'Segoe UI',Arial,sans-serif}
-      .nt{font:700 14px 'Segoe UI',Arial,sans-serif;fill:#102027}
-      .ns{font:12px 'Segoe UI',Arial,sans-serif;fill:#455A64}
-      .lb{font:12px 'Segoe UI',Arial,sans-serif;fill:#37474F}
+      .nt{font:700 14px 'Segoe UI',Arial,sans-serif;fill:#E6EDF3}
+      .ns{font:12px 'Segoe UI',Arial,sans-serif;fill:#9FB0BA}
+      .lb{font:12px 'Segoe UI',Arial,sans-serif;fill:#C9D1D9}
       .bn{font:700 11px 'Segoe UI',Arial,sans-serif;fill:#FEFEFE}
       .flow{fill:none;stroke-width:2.4}
       .ret{fill:none;stroke-width:2;stroke-dasharray:7 5}
@@ -20,20 +20,20 @@
     <marker id="micmp" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#FFC107"/></marker>
     <marker id="msmtp" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#795548"/></marker>
   </defs>
-  <text x="650" y="34" class="" text-anchor="middle" style="font:700 24px 'Segoe UI',Arial,sans-serif;fill:#102027">Logical network traffic flow</text>
-  <text x="650" y="58" class="" text-anchor="middle" style="font:13px 'Segoe UI',Arial,sans-serif;fill:#607D8B">Every connection the app and its watchdog make. Each number is a row in the table below. Solid = request, dashed = the tunnel or an optional link.</text>
+  <text x="650" y="34" class="" text-anchor="middle" style="font:700 24px 'Segoe UI',Arial,sans-serif;fill:#E6EDF3">Logical network traffic flow</text>
+  <text x="650" y="58" class="" text-anchor="middle" style="font:13px 'Segoe UI',Arial,sans-serif;fill:#9DB0BA">Every connection the app and its watchdog make. Each number is a row in the table below. Solid = request, dashed = the tunnel or an optional link.</text>
   <text x="650" y="76" class="" text-anchor="middle" style="font:11px 'Segoe UI',Arial,sans-serif;fill:#9E9E9E"><tspan font-weight="bold">Note:</tspan> all IP addresses shown are for illustration only.</text>
-  <rect x="30" y="92" width="330" height="800" rx="14" fill="#E3F2FD" fill-opacity="0.35" stroke="#90CAF9" stroke-dasharray="6 5"/>
-  <text x="46" y="114" class="zt" fill="#1565C0">Your home network (192.168.1.0/24)</text>
-  <rect x="470" y="92" width="400" height="330" rx="14" fill="#F3E5F5" fill-opacity="0.30" stroke="#CE93D8" stroke-dasharray="6 5"/>
-  <text x="486" y="114" class="zt" fill="#6A1B9A">PIA infrastructure</text>
-  <rect x="470" y="440" width="400" height="452" rx="14" fill="#ECEFF1" fill-opacity="0.55" stroke="#B0BEC5" stroke-dasharray="6 5"/>
-  <text x="486" y="462" class="zt" fill="#455A64">Internet services</text>
-  <rect x="910" y="92" width="360" height="800" rx="14" fill="#E8F5E9" fill-opacity="0.35" stroke="#A5D6A7" stroke-dasharray="6 5"/>
-  <text x="926" y="114" class="zt" fill="#2E7D32">PIA VPN exit and the internet</text>
-  <rect x="60" y="135" width="270" height="175" rx="12" fill="#ffffff" stroke="#1E88E5" stroke-width="2"/>
-  <rect x="76" y="147" width="30" height="52" rx="6" fill="#E3F2FD" stroke="#1E88E5" stroke-width="1.5"/>
-  <rect x="80" y="154" width="22" height="37" fill="#BBDEFB"/>
+  <rect x="30" y="92" width="330" height="800" rx="14" fill="#0F2438" fill-opacity="0.35" stroke="#90CAF9" stroke-dasharray="6 5"/>
+  <text x="46" y="114" class="zt" fill="#64B5F6">Your home network (192.168.1.0/24)</text>
+  <rect x="470" y="92" width="400" height="330" rx="14" fill="#2A1830" fill-opacity="0.30" stroke="#CE93D8" stroke-dasharray="6 5"/>
+  <text x="486" y="114" class="zt" fill="#CE93D8">PIA infrastructure</text>
+  <rect x="470" y="440" width="400" height="452" rx="14" fill="#1B2128" fill-opacity="0.55" stroke="#B0BEC5" stroke-dasharray="6 5"/>
+  <text x="486" y="462" class="zt" fill="#9FB0BA">Internet services</text>
+  <rect x="910" y="92" width="360" height="800" rx="14" fill="#11261A" fill-opacity="0.35" stroke="#A5D6A7" stroke-dasharray="6 5"/>
+  <text x="926" y="114" class="zt" fill="#66BB6A">PIA VPN exit and the internet</text>
+  <rect x="60" y="135" width="270" height="175" rx="12" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
+  <rect x="76" y="147" width="30" height="52" rx="6" fill="#0F2438" stroke="#1E88E5" stroke-width="1.5"/>
+  <rect x="80" y="154" width="22" height="37" fill="#1A3A5C"/>
   <text x="118" y="165" class="nt">Phone (this app)</text>
   <text x="118" y="183" class="ns">Android, on your Wi-Fi</text>
   <text x="76" y="222" class="ns">192.168.1.100</text>
@@ -41,7 +41,7 @@
   <text x="76" y="256" class="ns">RevenueCat SDK, url_launcher</text>
   <text x="76" y="274" class="ns">STANDALONE builds a config here;</text>
   <text x="76" y="290" class="ns">everything else runs on the router</text>
-  <path d="M60,470 L60,720 L330,720 L330,470 L315,460 L300,470 L285,460 L270,470 L255,460 L240,470 L225,460 L210,470 L195,460 L180,470 L165,460 L150,470 L135,460 L120,470 L105,460 L90,470 L75,460 Z" fill="#ffffff" stroke="#F44336" stroke-width="2"/>
+  <path d="M60,470 L60,720 L330,720 L330,470 L315,460 L300,470 L285,460 L270,470 L255,460 L240,470 L225,460 L210,470 L195,460 L180,470 L165,460 L150,470 L135,460 L120,470 L105,460 L90,470 L75,460 Z" fill="#161B22" stroke="#F44336" stroke-width="2"/>
   <text x="76" y="494" class="nt">ASUS router, stock or Merlin</text>
   <text x="76" y="514" class="ns">192.168.1.1 · SSH server :22</text>
   <text x="76" y="532" class="ns">WireGuard client slots wgc1-wgc5</text>
@@ -54,59 +54,59 @@
   <text x="76" y="670" class="ns">Stock: jq and mailsend-go,</text>
   <text x="76" y="686" class="ns">installed by the app</text>
   <path class="flow" stroke="#F44336" marker-start="url(#mssh)" marker-end="url(#mssh)" d="M190,310 C190,310 190,458 190,458"/>
-  <path d="M500,140 A170.0,11 0 0 1 840,140 L840,184 A170.0,11 0 0 1 500,184 Z" fill="#ffffff" stroke="#1E88E5" stroke-width="2"/>
-  <ellipse cx="670.0" cy="140" rx="170.0" ry="11" fill="#E3F2FD" stroke="#1E88E5" stroke-width="2"/>
+  <path d="M500,140 A170.0,11 0 0 1 840,140 L840,184 A170.0,11 0 0 1 500,184 Z" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
+  <ellipse cx="670.0" cy="140" rx="170.0" ry="11" fill="#0F2438" stroke="#1E88E5" stroke-width="2"/>
   <text x="670.0" y="160" class="nt" text-anchor="middle" style="font-size:13px">serverlist.piaservers.net</text>
   <text x="670.0" y="177" class="ns" text-anchor="middle">e.g. 160.79.104.10 : 443 · GET /vpninfo/servers/v6</text>
-  <path d="M500,215 A170.0,11 0 0 1 840,215 L840,259 A170.0,11 0 0 1 500,259 Z" fill="#ffffff" stroke="#1E88E5" stroke-width="2"/>
-  <ellipse cx="670.0" cy="215" rx="170.0" ry="11" fill="#E3F2FD" stroke="#1E88E5" stroke-width="2"/>
+  <path d="M500,215 A170.0,11 0 0 1 840,215 L840,259 A170.0,11 0 0 1 500,259 Z" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
+  <ellipse cx="670.0" cy="215" rx="170.0" ry="11" fill="#0F2438" stroke="#1E88E5" stroke-width="2"/>
   <text x="670.0" y="235" class="nt" text-anchor="middle" style="font-size:13px">www.privateinternetaccess.com</text>
   <text x="670.0" y="252" class="ns" text-anchor="middle">e.g. 104.18.30.10 : 443 · POST /gtoken/generateToken</text>
-  <path d="M500,292 A170.0,11 0 0 1 840,292 L840,402 A170.0,11 0 0 1 500,402 Z" fill="#ffffff" stroke="#7B1FA2" stroke-width="2"/>
-  <ellipse cx="670.0" cy="292" rx="170.0" ry="11" fill="#F3E5F5" stroke="#7B1FA2" stroke-width="2"/>
+  <path d="M500,292 A170.0,11 0 0 1 840,292 L840,402 A170.0,11 0 0 1 500,402 Z" fill="#161B22" stroke="#AB47BC" stroke-width="2"/>
+  <ellipse cx="670.0" cy="292" rx="170.0" ry="11" fill="#2A1830" stroke="#AB47BC" stroke-width="2"/>
   <text x="670.0" y="312" class="nt" text-anchor="middle" style="font-size:13px">PIA WireGuard servers</text>
   <text x="670.0" y="329" class="ns" text-anchor="middle">e.g. 143.244.50.40, certificate name pinned</text>
   <text x="670.0" y="344" class="ns" text-anchor="middle">: 1337 TCP latency probe (phone)</text>
   <text x="670.0" y="359" class="ns" text-anchor="middle">: 1337 HTTPS /addKey, CA-pinned</text>
   <text x="670.0" y="374" class="ns" text-anchor="middle">: server_port UDP, the tunnel (1337 on PIA)</text>
   <text x="670.0" y="389" class="ns" text-anchor="middle">ICMP latency ping (watchdog)</text>
-  <path d="M500,490 A170.0,11 0 0 1 840,490 L840,520 A170.0,11 0 0 1 500,520 Z" fill="#ffffff" stroke="#1E88E5" stroke-width="2"/>
-  <ellipse cx="670.0" cy="490" rx="170.0" ry="11" fill="#E3F2FD" stroke="#1E88E5" stroke-width="2"/>
+  <path d="M500,490 A170.0,11 0 0 1 840,490 L840,520 A170.0,11 0 0 1 500,520 Z" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
+  <ellipse cx="670.0" cy="490" rx="170.0" ry="11" fill="#0F2438" stroke="#1E88E5" stroke-width="2"/>
   <text x="670.0" y="510" class="nt" text-anchor="middle" style="font-size:13px">raw.githubusercontent.com</text>
   <text x="670.0" y="527" class="ns" text-anchor="middle">PIA's CA certificate, ca.rsa.4096.crt</text>
-  <rect x="500" y="540" width="340" height="40" rx="10" fill="#ffffff" stroke="#1E88E5" stroke-width="2"/>
+  <rect x="500" y="540" width="340" height="40" rx="10" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
   <text x="670.0" y="559" class="nt" text-anchor="middle" style="font-size:13px">github.com releases</text>
   <text x="670.0" y="576" class="ns" text-anchor="middle">jq and mailsend-go (stock), fetched with wget</text>
-  <rect x="500" y="592" width="340" height="40" rx="10" fill="#ffffff" stroke="#1E88E5" stroke-width="2"/>
+  <rect x="500" y="592" width="340" height="40" rx="10" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
   <text x="670.0" y="611" class="nt" text-anchor="middle" style="font-size:13px">DoH resolver, e.g. security.cloudflare-dns.com</text>
   <text x="670.0" y="628" class="ns" text-anchor="middle">HTTPS 443 to 1.1.1.2, pinned with --resolve</text>
-  <rect x="500" y="644" width="340" height="40" rx="10" fill="#ffffff" stroke="#795548" stroke-width="2"/>
+  <rect x="500" y="644" width="340" height="40" rx="10" fill="#161B22" stroke="#795548" stroke-width="2"/>
   <text x="670.0" y="663" class="nt" text-anchor="middle" style="font-size:13px">Your mail server</text>
   <text x="670.0" y="680" class="ns" text-anchor="middle">SMTP over TLS, the host:port you give</text>
-  <rect x="500" y="696" width="340" height="40" rx="10" fill="#ffffff" stroke="#FFC107" stroke-width="2"/>
+  <rect x="500" y="696" width="340" height="40" rx="10" fill="#161B22" stroke="#FFC107" stroke-width="2"/>
   <text x="670.0" y="715" class="nt" text-anchor="middle" style="font-size:13px">Check targets, e.g. 8.8.8.8 and 1.1.1.1</text>
   <text x="670.0" y="732" class="ns" text-anchor="middle">ICMP ping, to tell a dead WAN from a dead tunnel</text>
-  <rect x="500" y="748" width="340" height="40" rx="10" fill="#ffffff" stroke="#1E88E5" stroke-width="2"/>
+  <rect x="500" y="748" width="340" height="40" rx="10" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
   <text x="670.0" y="767" class="nt" text-anchor="middle" style="font-size:13px">RevenueCat and Google Play</text>
   <text x="670.0" y="784" class="ns" text-anchor="middle">api.revenuecat.com · Play Billing: purchases, unlock</text>
-  <rect x="500" y="800" width="340" height="40" rx="10" fill="#ffffff" stroke="#1E88E5" stroke-width="2"/>
+  <rect x="500" y="800" width="340" height="40" rx="10" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
   <text x="670.0" y="819" class="nt" text-anchor="middle" style="font-size:13px">Links opened in the browser</text>
   <text x="670.0" y="836" class="ns" text-anchor="middle">README on github.com · the Play Store listing</text>
-  <rect x="500" y="852" width="340" height="30" rx="10" fill="#ffffff" stroke="#9E9E9E" stroke-width="2"/>
+  <rect x="500" y="852" width="340" height="30" rx="10" fill="#161B22" stroke="#9E9E9E" stroke-width="2"/>
   <text x="670.0" y="871" class="nt" text-anchor="middle" style="font-size:13px">DNS resolvers (UDP/TCP 53)</text>
-  <rect x="935" y="140" width="310" height="120" rx="10" fill="#ffffff" stroke="#43A047" stroke-width="2"/>
+  <rect x="935" y="140" width="310" height="120" rx="10" fill="#161B22" stroke="#43A047" stroke-width="2"/>
   <text x="1090" y="163" class="nt" text-anchor="middle" style="font-size:13px">PIA internal network</text>
   <text x="1090" y="182" class="ns" text-anchor="middle">172.16.0.0/16</text>
-  <rect x="970" y="196" width="240" height="50" rx="8" fill="#E8F5E9" stroke="#43A047" stroke-width="1.5"/>
+  <rect x="970" y="196" width="240" height="50" rx="8" fill="#11261A" stroke="#43A047" stroke-width="1.5"/>
   <text x="1090" y="216" class="ns" text-anchor="middle">server tunnel interface (peer)</text>
-  <text x="1090" y="235" class="nt" text-anchor="middle" style="font-size:13px;fill:#2E7D32">172.16.1.50</text>
-  <text x="1090" y="318" class="zt" text-anchor="middle" fill="#2E7D32">PIA public IP pool</text>
-  <rect x="995" y="332" width="210" height="62" rx="8" fill="#C8E6C9" stroke="#43A047" stroke-width="1.5"/>
-  <rect x="982" y="346" width="210" height="62" rx="8" fill="#A5D6A7" stroke="#43A047" stroke-width="1.5"/>
-  <rect x="969" y="360" width="210" height="62" rx="8" fill="#81C784" stroke="#2E7D32" stroke-width="1.8"/>
+  <text x="1090" y="235" class="nt" text-anchor="middle" style="font-size:13px;fill:#66BB6A">172.16.1.50</text>
+  <text x="1090" y="318" class="zt" text-anchor="middle" fill="#66BB6A">PIA public IP pool</text>
+  <rect x="995" y="332" width="210" height="62" rx="8" fill="#1B3A24" stroke="#43A047" stroke-width="1.5"/>
+  <rect x="982" y="346" width="210" height="62" rx="8" fill="#245A30" stroke="#43A047" stroke-width="1.5"/>
+  <rect x="969" y="360" width="210" height="62" rx="8" fill="#2E6B3A" stroke="#66BB6A" stroke-width="1.8"/>
   <text x="1074" y="386" class="nt" text-anchor="middle" style="font-size:13px">source NAT</text>
-  <text x="1074" y="405" class="ns" text-anchor="middle" style="fill:#1B5E20">185.230.125.10 - .50</text>
-  <g transform="translate(950,520) scale(1.4)"><path d="M 50 100 C 20 100 10 80 28 66 C 18 44 44 28 64 40 C 72 18 110 18 120 40 C 150 30 172 54 156 74 C 178 84 168 100 146 100 Z" fill="#ffffff" stroke="#2E7D32" stroke-width="1.6"/></g>
+  <text x="1074" y="405" class="ns" text-anchor="middle" style="fill:#81C784">185.230.125.10 - .50</text>
+  <g transform="translate(950,520) scale(1.4)"><path d="M 50 100 C 20 100 10 80 28 66 C 18 44 44 28 64 40 C 72 18 110 18 120 40 C 150 30 172 54 156 74 C 178 84 168 100 146 100 Z" fill="#161B22" stroke="#66BB6A" stroke-width="1.6"/></g>
   <text x="1085" y="603" class="nt" text-anchor="middle">Internet</text>
   <text x="1085" y="622" class="ns" text-anchor="middle">any destination, and the</text>
   <text x="1085" y="638" class="ns" text-anchor="middle">slot's DNS server (9)</text>
@@ -140,127 +140,127 @@
   <path class="flow" stroke="#795548" marker-end="url(#msmtp)" d="M330,640 C406,640 424,664 500,664"/>
   <path class="flow" stroke="#FFC107" marker-end="url(#micmp)" d="M330,665 C406,665 424,716 500,716"/>
   <path class="flow" stroke="#9E9E9E" marker-end="url(#mdns)" d="M330,700 C406,700 424,874 500,874"/>
-  <circle cx="190" cy="384" r="10" fill="#F44336" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="190" cy="384" r="10" fill="#F44336" stroke="#161B22" stroke-width="1.5"/>
   <text x="190" y="388" text-anchor="middle" class="bn">1</text>
-  <circle cx="373" cy="160" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="373" cy="160" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="373" y="164" text-anchor="middle" class="bn">2</text>
-  <circle cx="373" cy="183" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="373" cy="183" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="373" y="187" text-anchor="middle" class="bn">3</text>
-  <circle cx="401" cy="301" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="401" cy="301" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="401" y="305" text-anchor="middle" class="bn">4</text>
-  <circle cx="373" cy="219" r="10" fill="#FF9800" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="373" cy="219" r="10" fill="#FF9800" stroke="#161B22" stroke-width="1.5"/>
   <text x="373" y="223" text-anchor="middle" class="bn">5</text>
-  <circle cx="373" cy="234" r="10" fill="#9C27B0" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="373" cy="234" r="10" fill="#9C27B0" stroke="#161B22" stroke-width="1.5"/>
   <text x="373" y="238" text-anchor="middle" class="bn">6</text>
-  <circle cx="373" cy="314" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="373" cy="314" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="373" y="318" text-anchor="middle" class="bn">13</text>
-  <circle cx="373" cy="336" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="373" cy="336" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="373" y="340" text-anchor="middle" class="bn">14</text>
-  <circle cx="373" cy="361" r="10" fill="#9E9E9E" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="373" cy="361" r="10" fill="#9E9E9E" stroke="#161B22" stroke-width="1.5"/>
   <text x="373" y="365" text-anchor="middle" class="bn">15</text>
-  <circle cx="471" cy="189" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="471" cy="189" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="471" y="193" text-anchor="middle" class="bn">2</text>
-  <circle cx="471" cy="260" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="471" cy="260" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="471" y="264" text-anchor="middle" class="bn">3</text>
-  <circle cx="471" cy="514" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="471" cy="514" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="471" y="518" text-anchor="middle" class="bn">4</text>
-  <circle cx="479" cy="355" r="10" fill="#FFC107" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="479" cy="355" r="10" fill="#FFC107" stroke="#161B22" stroke-width="1.5"/>
   <text x="479" y="359" text-anchor="middle" class="bn">5</text>
-  <circle cx="479" cy="371" r="10" fill="#9C27B0" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="479" cy="371" r="10" fill="#9C27B0" stroke="#161B22" stroke-width="1.5"/>
   <text x="479" y="375" text-anchor="middle" class="bn">6</text>
-  <circle cx="479" cy="389" r="10" fill="#4CAF50" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="479" cy="389" r="10" fill="#4CAF50" stroke="#161B22" stroke-width="1.5"/>
   <text x="479" y="393" text-anchor="middle" class="bn">7</text>
-  <circle cx="471" cy="562" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="471" cy="562" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="471" y="566" text-anchor="middle" class="bn">12</text>
-  <circle cx="471" cy="612" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="471" cy="612" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="471" y="616" text-anchor="middle" class="bn">8</text>
-  <circle cx="471" cy="663" r="10" fill="#795548" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="471" cy="663" r="10" fill="#795548" stroke="#161B22" stroke-width="1.5"/>
   <text x="471" y="667" text-anchor="middle" class="bn">11</text>
-  <circle cx="471" cy="713" r="10" fill="#FFC107" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="471" cy="713" r="10" fill="#FFC107" stroke="#161B22" stroke-width="1.5"/>
   <text x="471" y="717" text-anchor="middle" class="bn">10</text>
-  <circle cx="471" cy="865" r="10" fill="#9E9E9E" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="471" cy="865" r="10" fill="#9E9E9E" stroke="#161B22" stroke-width="1.5"/>
   <text x="471" y="869" text-anchor="middle" class="bn">15</text>
-  <circle cx="872" cy="330" r="10" fill="#9E9E9E" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="872" cy="330" r="10" fill="#9E9E9E" stroke="#161B22" stroke-width="1.5"/>
   <text x="872" y="334" text-anchor="middle" class="bn">9</text>
-  <rect x="30" y="915" width="1240" height="540" rx="12" fill="#FAFAFA" stroke="#CFD8DC"/>
-  <text x="46" y="941" class="zt" fill="#37474F">The flows, by number</text>
+  <rect x="30" y="915" width="1240" height="540" rx="12" fill="#11161D" stroke="#3A4652"/>
+  <text x="46" y="941" class="zt" fill="#C9D1D9">The flows, by number</text>
   <text x="52" y="965" class="lb" style="font-weight:700">#</text>
   <text x="92" y="965" class="lb" style="font-weight:700">Protocol, port</text>
   <text x="262" y="965" class="lb" style="font-weight:700">Between</text>
   <text x="412" y="965" class="lb" style="font-weight:700">What for</text>
-  <circle cx="60" cy="983" r="10" fill="#F44336" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="983" r="10" fill="#F44336" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="987" text-anchor="middle" class="bn">1</text>
-  <text x="92" y="987" class="lb" style="font-weight:700;fill:#C62828">SSH 22 (TCP)</text>
+  <text x="92" y="987" class="lb" style="font-weight:700;fill:#EF7A7A">SSH 22 (TCP)</text>
   <text x="262" y="987" class="lb">Phone to router</text>
   <text x="412" y="987" class="lb">Every router screen: reads, writes and service calls, as the router login</text>
-  <circle cx="60" cy="1009" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1009" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1013" text-anchor="middle" class="bn">2</text>
-  <text x="92" y="1013" class="lb" style="font-weight:700;fill:#1565C0">HTTPS 443</text>
+  <text x="92" y="1013" class="lb" style="font-weight:700;fill:#64B5F6">HTTPS 443</text>
   <text x="262" y="1013" class="lb">Phone and router</text>
   <text x="412" y="1013" class="lb">PIA&#x27;s server list</text>
-  <circle cx="60" cy="1035" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1035" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1039" text-anchor="middle" class="bn">3</text>
-  <text x="92" y="1039" class="lb" style="font-weight:700;fill:#1565C0">HTTPS 443</text>
+  <text x="92" y="1039" class="lb" style="font-weight:700;fill:#64B5F6">HTTPS 443</text>
   <text x="262" y="1039" class="lb">Phone and router</text>
   <text x="412" y="1039" class="lb">A PIA token, from your PIA username and password</text>
-  <circle cx="60" cy="1061" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1061" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1065" text-anchor="middle" class="bn">4</text>
-  <text x="92" y="1065" class="lb" style="font-weight:700;fill:#1565C0">HTTPS 443</text>
+  <text x="92" y="1065" class="lb" style="font-weight:700;fill:#64B5F6">HTTPS 443</text>
   <text x="262" y="1065" class="lb">Phone and router</text>
   <text x="412" y="1065" class="lb">PIA&#x27;s CA certificate; the router keeps its copy</text>
-  <circle cx="60" cy="1087" r="10" fill="#FF9800" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1087" r="10" fill="#FF9800" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1091" text-anchor="middle" class="bn">5</text>
-  <text x="92" y="1091" class="lb" style="font-weight:700;fill:#E65100">TCP 1337 / ICMP</text>
+  <text x="92" y="1091" class="lb" style="font-weight:700;fill:#FFB74D">TCP 1337 / ICMP</text>
   <text x="262" y="1091" class="lb">Phone / router</text>
   <text x="412" y="1091" class="lb">Latency to each candidate server: the phone times a TCP connect, the watchdog pings</text>
-  <circle cx="60" cy="1113" r="10" fill="#9C27B0" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1113" r="10" fill="#9C27B0" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1117" text-anchor="middle" class="bn">6</text>
-  <text x="92" y="1117" class="lb" style="font-weight:700;fill:#6A1B9A">HTTPS 1337</text>
+  <text x="92" y="1117" class="lb" style="font-weight:700;fill:#CE93D8">HTTPS 1337</text>
   <text x="262" y="1117" class="lb">Phone and router</text>
   <text x="412" y="1117" class="lb">Registers the new public key (addKey), pinned to PIA&#x27;s CA; returns the peer IP, server key and port</text>
-  <circle cx="60" cy="1139" r="10" fill="#4CAF50" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1139" r="10" fill="#4CAF50" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1143" text-anchor="middle" class="bn">7</text>
-  <text x="92" y="1143" class="lb" style="font-weight:700;fill:#2E7D32">UDP server_port</text>
+  <text x="92" y="1143" class="lb" style="font-weight:700;fill:#66BB6A">UDP server_port</text>
   <text x="262" y="1143" class="lb">Router and PIA</text>
   <text x="412" y="1143" class="lb">The WireGuard tunnel itself, on the port PIA returns (1337)</text>
-  <circle cx="60" cy="1165" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1165" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1169" text-anchor="middle" class="bn">8</text>
-  <text x="92" y="1169" class="lb" style="font-weight:700;fill:#1565C0">HTTPS 443 (DoH)</text>
+  <text x="92" y="1169" class="lb" style="font-weight:700;fill:#64B5F6">HTTPS 443 (DoH)</text>
   <text x="262" y="1169" class="lb">Router</text>
   <text x="412" y="1169" class="lb">The watchdog&#x27;s own lookups, encrypted, to the resolver chosen on the WATCHDOG form</text>
-  <circle cx="60" cy="1191" r="10" fill="#9E9E9E" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1191" r="10" fill="#9E9E9E" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1195" text-anchor="middle" class="bn">9</text>
-  <text x="92" y="1195" class="lb" style="font-weight:700;fill:#616161">DNS 53, in the tunnel</text>
+  <text x="92" y="1195" class="lb" style="font-weight:700;fill:#B0B0B0">DNS 53, in the tunnel</text>
   <text x="262" y="1195" class="lb">Router</text>
   <text x="412" y="1195" class="lb">The watchdog&#x27;s name check: the slot&#x27;s DNS server, asked through the slot&#x27;s own tunnel</text>
-  <circle cx="60" cy="1217" r="10" fill="#FFC107" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1217" r="10" fill="#FFC107" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1221" text-anchor="middle" class="bn">10</text>
-  <text x="92" y="1221" class="lb" style="font-weight:700;fill:#8D6E00">ICMP</text>
+  <text x="92" y="1221" class="lb" style="font-weight:700;fill:#FFD54F">ICMP</text>
   <text x="262" y="1221" class="lb">Router</text>
   <text x="412" y="1221" class="lb">Pings to the check targets: the WAN check, and ENABLE&#x27;s check (Merlin also pings through the tunnel)</text>
-  <circle cx="60" cy="1243" r="10" fill="#795548" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1243" r="10" fill="#795548" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1247" text-anchor="middle" class="bn">11</text>
-  <text x="92" y="1247" class="lb" style="font-weight:700;fill:#5D4037">SMTP over TLS</text>
+  <text x="92" y="1247" class="lb" style="font-weight:700;fill:#BCAAA4">SMTP over TLS</text>
   <text x="262" y="1247" class="lb">Router</text>
   <text x="412" y="1247" class="lb">Alert emails and TEST EMAIL, to the server and port you give</text>
-  <circle cx="60" cy="1269" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1269" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1273" text-anchor="middle" class="bn">12</text>
-  <text x="92" y="1273" class="lb" style="font-weight:700;fill:#1565C0">HTTPS 443</text>
+  <text x="92" y="1273" class="lb" style="font-weight:700;fill:#64B5F6">HTTPS 443</text>
   <text x="262" y="1273" class="lb">Router</text>
   <text x="412" y="1273" class="lb">Stock only: jq and mailsend-go from github.com releases, when the app installs them</text>
-  <circle cx="60" cy="1295" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1295" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1299" text-anchor="middle" class="bn">13</text>
-  <text x="92" y="1299" class="lb" style="font-weight:700;fill:#1565C0">HTTPS 443</text>
+  <text x="92" y="1299" class="lb" style="font-weight:700;fill:#64B5F6">HTTPS 443</text>
   <text x="262" y="1299" class="lb">Phone</text>
   <text x="412" y="1299" class="lb">RevenueCat and Google Play Billing: buying, restoring and checking the unlock</text>
-  <circle cx="60" cy="1321" r="10" fill="#1E88E5" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1321" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1325" text-anchor="middle" class="bn">14</text>
-  <text x="92" y="1325" class="lb" style="font-weight:700;fill:#1565C0">HTTPS 443</text>
+  <text x="92" y="1325" class="lb" style="font-weight:700;fill:#64B5F6">HTTPS 443</text>
   <text x="262" y="1325" class="lb">Phone browser</text>
   <text x="412" y="1325" class="lb">Links you tap: the README on github.com, the Play Store listing</text>
-  <circle cx="60" cy="1347" r="10" fill="#9E9E9E" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="60" cy="1347" r="10" fill="#9E9E9E" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1351" text-anchor="middle" class="bn">15</text>
-  <text x="92" y="1351" class="lb" style="font-weight:700;fill:#616161">DNS 53</text>
+  <text x="92" y="1351" class="lb" style="font-weight:700;fill:#B0B0B0">DNS 53</text>
   <text x="262" y="1351" class="lb">Phone / router</text>
   <text x="412" y="1351" class="lb">Ordinary lookups: the phone&#x27;s own resolver; the router&#x27;s DNS Server setting (wget, and the watchdog with DoH off)</text>
   <line x1="52" y1="1389" x2="86" y2="1389" stroke="#1E88E5" stroke-width="2.6" marker-end="url(#mhttps)"/>
@@ -279,5 +279,5 @@
   <text x="929" y="1393" class="lb">ICMP</text>
   <line x1="997" y1="1389" x2="1031" y2="1389" stroke="#795548" stroke-width="2.6" marker-end="url(#msmtp)"/>
   <text x="1039" y="1393" class="lb">SMTP</text>
-  <text x="52" y="1419" class="lb" style="fill:#607D8B">Solid = a request and its reply. Dashed = the tunnel (7), or a link the phone opens in the browser (14). The phone's own flows follow whatever route the phone has; the router's go straight out its internet connection.</text>
+  <text x="52" y="1419" class="lb" style="fill:#9DB0BA">Solid = a request and its reply. Dashed = the tunnel (7), or a link the phone opens in the browser (14). The phone's own flows follow whatever route the phone has; the router's go straight out its internet connection.</text>
 </svg>

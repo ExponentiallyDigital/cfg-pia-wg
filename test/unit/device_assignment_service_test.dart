@@ -28,7 +28,7 @@ const _cache = '{'
     '"maclist":["11:22:33:44:55:66"],'
     '"ClientAPILevel":"5",'
     '"11:22:33:44:55:66":{"nickName":"Box","ip":"192.168.1.20","isOnline":"1"},'
-    '"22:33:44:55:66:77":{"nickName":"Laptop","ip":"192.168.1.50","isOnline":"1"},'
+    '"22:33:44:55:66:77":{"nickName":"Laptop","ip":"192.168.1.50","isOnline":"0"},'
     '"33:44:55:66:77:88":{"nickName":"Node","ip":"192.168.1.90","isOnline":"1"}}';
 
 const _sep = '@@CFGPIAWG@@';
@@ -85,7 +85,7 @@ void main() {
       expect(s.devices.length, 2);
     });
 
-    test('online comes from nmp_cl_json, not the stale isOnline', () async {
+    test('online comes through from the cache (ID-165)', () async {
       final s = await _state(_client());
       expect(s.devices.firstWhere((d) => d.mac == '22:33:44:55:66:77').online, isFalse);
     });
