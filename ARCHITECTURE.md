@@ -78,6 +78,7 @@ update breaks something: the failure almost never looks like its cause.
     - [7.1.2. Email alerting](#712-email-alerting)
   - [7.2. When the script runs, and when it does nothing](#72-when-the-script-runs-and-when-it-does-nothing)
   - [7.3. What a reconfigure does](#73-what-a-reconfigure-does)
+    - [7.3.1. What reaches the script](#731-what-reaches-the-script)
   - [7.4. Cron entries](#74-cron-entries)
     - [7.4.1. The router's service queue, and how it wedges](#741-the-routers-service-queue-and-how-it-wedges)
     - [7.4.2. The second init script, and how both are made recoverable](#742-the-second-init-script-and-how-both-are-made-recoverable)
@@ -106,6 +107,7 @@ update breaks something: the failure almost never looks like its cause.
   - [12.5. Layout constants](#125-layout-constants)
   - [12.6. Which file does what](#126-which-file-does-what)
   - [12.7. Editing a screenshot](#127-editing-a-screenshot)
+- [Appendix. Process - BACKLOG and CHANGELOG management](#appendix-process---backlog-and-changelog-management)
 
 ## 1. <a name='how-it-works'></a>How it works
 
@@ -147,91 +149,116 @@ Everything below was measured on hardware, not read in documentation - ASUS publ
 
 ## 3. <a name='app-processing-flow'></a>App processing flow
 
-The whole app on one page: the entry points from the main menu, what each asks for, and where the
-work happens. The two sections after the diagram describe the push operation again in plain
-language and then in detail, because that is the part most worth being able to check.
+The whole app, in four diagrams: the main menu, then the three screens that do the work. Each reads top to bottom. The two sections after them describe the push operation again in plain language and then in detail, because that is the part most worth being able to check.
 
 ```mermaid
-graph TD
-%%{init: {
-  'theme': 'base',
-  'themeVariables': {
-    'fontSize': '24px'
-  },
-  'flowchart': {
-    'subGraphTitleMargin': { 'top': 1,
-    'bottom': 15}
-  }
-}}%%
+flowchart LR
     A["Start app"] --> B["Main menu"]
-    B --> C["STANDALONE: generate a PIA WireGuard configuration"]
-    B --> D["MANAGE: router PIA WireGuard configuration"]
-    B --> E["WATCHDOG: WireGuard management"]
-    B --> MDA["DEVICE ASSIGNMENT"]
-    B --> MRL["ROUTER LOG"]
-    B --> F["APP LOG"]
-    B --> MSET["SETTINGS"]
-    B --> MABOUT["ABOUT"]
-    B --> G["EXIT"]
+    B --> C["STANDALONE<br/>a PIA WireGuard config<br/>for any device"]
+    B --> D["MANAGE<br/>the router's WireGuard slots"]
+    B --> E["WATCHDOG<br/>keeps a slot's tunnel alive"]
+    B --> DA["DEVICE ASSIGNMENT<br/>which device uses which tunnel"]
+    B --> RL["ROUTER LOG"]
+    B --> AL["APP LOG"]
+    B --> ST["SETTINGS"]
+    B --> AB["ABOUT"]
+    B --> X["EXIT<br/>wipes credentials, config<br/>and clipboard"]
 
-    C --> H["Enter region, PIA username/password, DNS"]
-    H --> I{"Tap GENERATE CONFIG"}
-    I -->|"required field empty"| H
-    I -->|"valid input"| J["PiaService.generateConfig"]
-
-    subgraph GEN["Config generation: lib/pia_service.dart"]
-        J --> J1["fetchRegions: pull PIA server list"]
-        J1 --> J2["probeLatency: TCP port 1337, pick fastest server"]
-        J2 --> J3["getToken: HTTP Basic Auth provisioning token"]
-        J3 --> J4["generateWgKeypair: X25519 with RFC 7748 clamping"]
-        J4 --> J5["registerKey: HTTPS register pubkey, CA-pinned"]
-        J5 --> J6["buildConfig: assemble .conf"]
-    end
-
-    J6 --> K["Display GENERATED CONFIG"]
-    K --> L["COPY to clipboard (auto-clear 60s)"]
-    K --> M["SHARE / SAVE via Android share sheet"]
-
-    D --> D1["Enter router IP, SSH user/password"]
-    D1 --> D2["CONNECT TO ROUTER"]
-    D2 --> D3["fetchSlots: read wgc1–5 metadata, active slot, Merlin detection"]
-    D3 --> D4["Open SlotModal (manage mode)"]
-
-    subgraph MGR["Manage router flow"]
-      D4 --> D5["Select slot + action"]
-      D5 --> D5a["CREATE: pick region, enter PIA creds, generateConfig, createConfigToSlot (stop the tunnel if running, write NVRAM disabled)"]
-      D5 --> D5b["ENABLE: read watchdog targets, disable other active slot, enableSlot with connectivity check, revert on failure"]
-      D5 --> D5c["EDIT: readSlotParams, edit parameters, writeSlotParams"]
-      D5 --> D5d["DISABLE: stop watchdog if present, disableSlot"]
-      D5 --> D5e["DELETE: stop watchdog if present, deleteSlot"]
-      D5a --> D5f["Refresh slots after action"]
-      D5b --> D5f
-      D5c --> D5f
-      D5d --> D5f
-      D5e --> D5f
-    end
-
-    E --> E1["Enter router IP, SSH user/password"]
-    E1 --> E2["CONNECT TO ROUTER"]
-    E2 --> E3["Detect firmware (stock or Merlin), then fetchSlots: read wgc1–5 metadata, active slots"]
-    E3 --> E4["Open SlotModal (watchdog mode)"]
-
-    subgraph WD["Watchdog flow"]
-      E4 --> E5["Select slot + action"]
-      E5 --> E5a["CREATE/EDIT: WatchdogDialog, validate, deployWatchdog (script, both cru jobs, boot persistence), run once as deploy"]
-      E5 --> E5b["ENABLE: restore the cru jobs at the interval stored on the router"]
-      E5 --> E5c["DISABLE: remove the cru jobs, leave the settings in NVRAM (PAUSED)"]
-      E5 --> E5d["DELETE: stopWatchdog, deleteSlot"]
-      E5 --> E5e["VIEW WATCHDOG LOG: getWatchdogLog"]
-      E5a --> E5f["Refresh slots after action"]
-      E5b --> E5f
-      E5c --> E5f
-      E5d --> E5f
-      E5e --> E5f
-    end
-
-    G --> R["Confirm exit and wipe credentials + config + clipboard"]
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class A,B go
+    class C,D,E,DA work
+    class RL,AL,ST,AB step
+    class X bad
 ```
+
+<p align="center"><em>The main menu. STANDALONE works on the phone alone; the rest reach the router over SSH, with one login for the session.</em></p>
+
+```mermaid
+flowchart TB
+    H["Enter region, PIA username and password, DNS"] --> I{"GENERATE CONFIG"}
+    I -->|"a required field is empty"| H
+    I -->|"valid"| J1
+
+    subgraph GEN["PiaService.generateConfig: lib/pia_service.dart"]
+        J1["fetchRegions<br/>PIA's server list"] --> J2["probeLatency<br/>TCP 1337, pick the fastest"]
+        J2 --> J3["getToken<br/>HTTP Basic Auth"]
+        J3 --> J4["generateWgKeypair<br/>X25519, RFC 7748 clamping"]
+        J4 --> J5["registerKey<br/>HTTPS, CA-pinned"]
+        J5 --> J6["buildConfig<br/>assemble the .conf"]
+    end
+
+    J6 --> K["GENERATED CONFIG on screen"]
+    K --> L["COPY<br/>clipboard clears after 60s"]
+    K --> M["SHARE / SAVE<br/>Android share sheet"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class K,L,M go
+    class J1,J2,J3,J4,J5,J6 work
+    class H,I step
+```
+
+<p align="center"><em>STANDALONE: a WireGuard config built on the phone, for any device. Nothing touches the router.</em></p>
+
+```mermaid
+flowchart TB
+    D1["Router login<br/>asked once per session"] --> D3["fetchSlots<br/>wgc1-5, which are up, firmware"]
+    D3 --> D5["Pick a slot, then an action"]
+    D5 --> A1["CREATE<br/>region and PIA login,<br/>generateConfig,<br/>createConfigToSlot"]
+    D5 --> A2["ENABLE<br/>stock's tunnel limit,<br/>check targets,<br/>enableSlot, revert on failure"]
+    D5 --> A3["EDIT<br/>readSlotParams, check each field,<br/>writeSlotParams,<br/>restartSlot if running"]
+    D5 --> A4["DISABLE<br/>names pinned devices,<br/>pauses the watchdog,<br/>disableSlot"]
+    D5 --> A5["DELETE<br/>stopWatchdog if any,<br/>deleteSlot"]
+    A1 --> R["Read the slots again"]
+    A2 --> R
+    A3 --> R
+    A4 --> R
+    A5 --> R
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class A1,A2,A3 work
+    class A4,A5 bad
+    class R go
+    class D1,D3,D5 step
+```
+
+<p align="center"><em>MANAGE: each action on a slot, and the slot list read again afterwards.</em></p>
+
+```mermaid
+flowchart TB
+    E1["Router login<br/>asked once per session"] --> E3["Firmware check, then fetchSlots"]
+    E3 --> E5["Pick a slot, then an action"]
+    E5 --> W1["CREATE / EDIT<br/>WatchdogDialog, check every field,<br/>deployWatchdog: script, schedule,<br/>start at boot, run once"]
+    E5 --> W2["ENABLE<br/>put the schedule back,<br/>at the stored interval"]
+    E5 --> W3["DISABLE<br/>remove the schedule,<br/>keep the settings: PAUSED"]
+    E5 --> W4["DELETE<br/>stopWatchdog, deleteSlot"]
+    E5 --> W5["VIEW WATCHDOG LOG<br/>getWatchdogLog"]
+    W1 --> R["Read the slots again"]
+    W2 --> R
+    W3 --> R
+    W4 --> R
+    W5 --> R
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class W1,W2 work
+    class W3,W4 bad
+    class W5 step
+    class R go
+    class E1,E3,E5 step
+```
+
+<p align="center"><em>WATCHDOG: setting up, pausing and removing the script that keeps a slot's tunnel alive.</em></p>
 
 > [!NOTE]
 > WireGuard configuration is backed up before any destructive/configuration activity, and restored if any issue is detected.
@@ -577,19 +604,22 @@ graph TD
     X --> X3["ip rule ... lookup IDX<br/>the routing table number"]
     X --> X4["vpncIDX_* runtime keys"]
 
-    classDef n fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
-    classDef a fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
-    class P n
-    class S,R,X n
-    class S1,S2,S3,R1,X1,X2,X3,X4 a
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class P,S,R,X go
+    class S1,S2,S3,R1,X1,X2,X3,X4 step
 ```
+
+<p align="center"><em>One stock profile, the three numbers that name it, and where each one is used.</em></p>
 
 **Worked example.** Two profiles, created by this app in the order wgc5 then wgc1:
 
 ```text
 vpnc_clientlist=pia-aus_perth>WireGuard>5>>password>1>5>>>0>0>cfg-pia-wg<pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg
-                              ^slot 5                   ^idx 5                            ^slot 1                   ^idx 9
-                 |------------------ row 0 -------------------|            |------------------ row 1 -------------------|
+                                        ^slot 5       ^idx 5                                         ^slot 1       ^idx 9
+                |----------------------- row 0 ------------------------| |------------------------- row 1 --------------------------|
 ```
 
 So `pia-aus_melbourne` is **slot 1**, **row 1**, **index 9**. To stop it you write `vpnc_unit=1`; to make it the default connection you write `vpnc_default_wan=9`; to pin a device to it you write `9` into the policy record; its private key is in `wgc1_priv`; and its traffic goes to routing table `9`.
@@ -757,7 +787,7 @@ Other traps in the same pair of files:
 - `type` is an INTEGER in `nmp_cl_json.js` and a STRING in `nmp_cache.js`. The `nmp_cache` value is the user-set icon type and matches `custom_clientlist` index 3; the `nmp_cl_json` one is the raw detection.
 - `name` is the auto-detected name; `nickName` is the user's and is already merged from `custom_clientlist`. So `nmp_cache.js` alone supplies the whole name chain when it is present.
 - **`conn_ts` is not a last-seen time.** It reads `0` for every wired device, and the wireless ones share a value to within three seconds - the last reboot. It is a wireless association timestamp, not a last-seen time.
-- **Liveness comes from `nmp_cl_json.js`, never from `nmp_cache.js`.** Measured 2026-09-08 on a device powered off for ten minutes: `nmp_cl_json.js` had updated to `"online": 0`, while `nmp_cache.js` still read `"isOnline": "1"`. Sourcing liveness from `nmp_cache.js` - the obvious choice, since every other field comes from there - would show every device as permanently online.
+- **Liveness comes from `isOnline` in `/tmp/nmp_cache.js`, the web interface's own source, and from `nmp_cl_json.js` only for a device the cache does not list (ID-165).** Measured 2026-09-27 with a Wi-Fi tablet switched off, on for a moment, off, and on again, every 5 seconds: the cache changed within a second of the web interface each time, including the moment it was on. `/jffs/nmp_cl_json.js` is rewritten only every few minutes, to spare the flash, and was 8.5 minutes late going offline, 3 minutes late coming back, and never saw the moment at all. That reverses a 2026-09-08 rule, drawn from one snapshot of a games console ten minutes after it was switched off, when the cache still said online. A console can keep its network up in standby, so that reading may have been right; a wired device is checked in DEV-13 to settle it. `scripts/presence-probe.sh` and `scripts/webui-presence.ps1` measure it on any router.
 - **An offline device KEEPS its `ip` in `nmp_cache.js`**, so it stays assignable. The address is only genuinely unavailable when a device is unreserved, powered off, AND has not connected since the last reboot, because `/tmp` is rebuilt at boot.
 - The router itself does not appear in `nmp_cache.js` at all. A mesh node does, indistinguishable from a client - see [`cfg_device_list` - the router and its mesh nodes](#cfg-device-list-the-router-and-its-mesh-nodes).
 
@@ -1210,7 +1240,8 @@ flowchart TD
 
     DETACH{"started by cron?"}
     DETACH -->|yes| REEXEC["re-exec detached,<br/>wait for PPid = 1"]
-    REEXEC --> LOAD
+    REEXEC --> STAGGER["wait 15 s x (N - 1)<br/><i>wgc1 at once, wgc5 at 60 s</i>"]
+    STAGGER --> LOAD
     DETACH -->|no| LOAD
 
     LOAD["read settings from NVRAM"] --> ENABLED{"wgcN_enable = 0<br/>and not a deploy?"}
@@ -1232,16 +1263,21 @@ flowchart TD
     WAN -->|yes| RECONF["RECONFIGURE<br/><i>see the next section</i>"]
 
     classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
-    classDef stop fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
     classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
     class CRON,DEPLOY,OK go
-    class STOP1,STOP2,STOP3 stop
+    class STOP1,STOP2,STOP3,DETACH,REEXEC,STAGGER,LOAD,ENABLED,IFACE,HS,PING,BACKOFF,WAN step
     class RECONF work
 ```
+
+<p align="center"><em>One watchdog run: the checks that let most runs end without doing anything.</em></p>
 
 **Why each gate is there.**
 
 The **detach** exists because ASUS's curl refuses to run with `crond` in its process ancestry - see [`curl` refuses to run from cron](#curl-refuses-to-run-from-cron). Without it the watchdog can never fetch a token, and therefore can never recover a tunnel.
+
+The **stagger** keeps the watchdogs from starting together. Every slot's cron entry fires on the same minute, and several runs packed into a few seconds crash the firmware's `asd` security daemon, whose restart restarts the firewall. Measured 2026-09-27: four at once gave 13 crashes in 20 rounds, and four spaced 15 s apart gave none in 48 runs. One slot on its own never crashed it, whether run in the foreground or detached as cron does. So a cron run waits 15 s for each slot below it. A deploy and a run by hand are never delayed. A rebuild takes about a minute, so it can still overlap the next slot's check; that only happens when a tunnel is actually broken. The guard is routing rules and the app writes no firewall rules, so a firewall restart leaves both alone (GRD-6 measures it).
 
 The **enable check** stops the watchdog undoing a decision the user just made. A tunnel switched off in the web interface looks exactly like a tunnel that dropped.
 
@@ -1259,7 +1295,7 @@ Reached only when everything above has failed. Every step can abort, and an abor
 
 ```mermaid
 flowchart TD
-    A["fetch the PIA CA cert<br/><i>cached after the first run</i>"] --> B
+    A["fetch the PIA CA cert<br/><i>cached after the first run;</i><br/><i>one retry without encrypted DNS</i>"] --> B
     B["POST for a session token<br/><i>with the PIA credentials from NVRAM</i>"] --> C
     C["fetch the region's server list"] --> D
     D["ping every candidate,<br/>take the lowest latency"] --> E
@@ -1278,17 +1314,30 @@ flowchart TD
 
     classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
     classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
     classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
     class OK go
     class FAIL bad
-    class A,B,C,D,E,F,G,W,H step
+    class A,B,C,D,E,F,G,W,H,T,K step
 ```
+
+<p align="center"><em>A rebuild, from the PIA certificate to a handshake on the new server, and the two ways it ends.</em></p>
 
 **A fresh keypair every time is deliberate.** PIA's `addKey` binds a public key to a session; reusing an old one after a server change gives a tunnel that comes up and carries nothing.
 
 **The restart is the fragile part.** It goes through `notify_rc`, so it is queued rather than run, and a router busy with something else throws it away after 15 seconds without a word - the config is written perfectly and nothing acts on it. So the script waits for the queue first, clears a marker left by a process that has gone, and afterwards checks the tunnel is on the new server's key. If not, it tries once more; skipped twice, it fails and says the router skipped the restart (ID-214). See [The router's service queue](#the-routers-service-queue-and-how-it-wedges).
 
 **Emails are a branch of this flow, not a separate one.** `send_alert` is called from exactly two places: the success at the bottom, and `abort` anywhere above it. Both carry the same facts - what happened, what to do, the router, the history, and the last ten log lines - so a failure and its recovery read as two halves of one story. Detail in [Email alerting](#email-alerting).
+
+#### 7.3.1. <a name='what-reaches-the-script'></a>What reaches the script
+
+Every value typed into the app reaches the router one of three ways, and each is closed off differently:
+
+- **Into NVRAM.** Written with `nvram set key='value'`, the value in single quotes (`shellSingleQuote`), so nothing in it is read as shell. The script reads it back with `"$(nvram get ...)"` and uses it as a quoted variable, which the shell never parses again.
+- **Into the script itself.** Only the DoH URL and address are built into the script's text, inside double quotes, where `$` and backticks would run. So the URL is limited to the characters a URL needs, and the script is built only from a pair that passes the form's own check (`checkDohPair`). A pair that fails is left out, and the run logs that encrypted DNS is set but cannot be used.
+- **Into a shell again, on the router.** On Merlin, BusyBox `sendmail -H` hands its helper command to a shell, and the SMTP host is part of it. The form checks it, the test email checks it again, and the script sends nothing from a stored server that is not a plain host and port.
+
+Each field is also checked for its own shape before it goes (`lib/input_checks.dart`), because a wrong but harmless-looking value can do real damage: a `<` or `>` in a description splits the router's VPN list and corrupts every profile, and a slot DNS or check target that is a real address but the wrong one makes the watchdog rebuild a healthy tunnel, or decide the WAN is down and repair nothing.
 
 ### 7.4. <a name='cron-entries'></a>Cron entries
 
@@ -1541,11 +1590,19 @@ The fix is at the top of `watchdog_wgcN.sh`. A run with no argument, which is ho
 
 ## 8. <a name='network-traffic'></a>Network traffic
 
-Below are detailed representations of the app's network calls, with illustrative, not real, IP addresses.
+Every connection the app and its router-side watchdog make, with illustrative, not real, IP addresses. The first says which path each takes: only on your home network, inside a WireGuard tunnel, or straight out your internet connection. The second lists every connection by number, with what it is for. Each has a dark version, which GitHub shows in its dark theme.
 
-![cfg-pia-wg Network Traffic Flow](<./images/network-traffic-(representative).svg>)
+Both are generated: to change one, edit `scripts/network-traffic-representative.py` or `scripts/network-traffic-logical.py`, run it, then run `scripts/svg-dark-variant.py` on the result so the dark version follows.
 
-![cfg-pia-wg Network Traffic Flow](<./images/network-traffic-(logical).svg>)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./images/network-traffic-(representative)-dark.svg">
+  <img src="./images/network-traffic-(representative).svg" alt="Representative network traffic flow: which connections stay on the home network, which go inside the WireGuard tunnel, and which go straight out the internet connection">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./images/network-traffic-(logical)-dark.svg">
+  <img src="./images/network-traffic-(logical).svg" alt="Logical network traffic flow: every connection the app and its watchdog make, numbered, with a table of what each is for">
+</picture>
 
 ---
 
@@ -1802,3 +1859,59 @@ What to know when covering an address, a username or a MAC:
 - Log lines are 11px and take their colour from the table above.
 - The panel behind a log or a generated config is `kConfigBg` `#0E1016`, not the screen's `kBg` `#12141A`.
 - Invented values that are already used throughout the documentation: `192.168.1.20`, `my-router.asuscomm.com`, `AA:BB:CC:DD:EE:FF`. Reusing them keeps a screenshot consistent with the text around it.
+
+---
+
+## Appendix. <a name='appendix-process---backlog-and-changelog-management'></a>Process - BACKLOG and CHANGELOG management
+
+How a work item travels from wherever it was noticed to a release. The rules themselves live in the headers of [BACKLOG.md](BACKLOG.md) and [CHANGELOG.md](CHANGELOG.md); this is the map of them.
+
+```mermaid
+flowchart TB
+    subgraph IN["Where work items come from"]
+        S1["Andrew's notes and ideas"]
+        S2["A test run<br/>findings on the run sheet"]
+        S3["CI failures and scans<br/>CodeQL, SonarCloud"]
+        S4["Analyses and audits<br/>syslogs, code reviews"]
+    end
+
+    IN --> TRI{"Triage:<br/>what is it, and when?"}
+    TRI -->|"not sorted yet"| NEW["BACKLOG 2.<br/>New work items<br/>no ID needed"]
+    TRI -->|"a bug nobody<br/>has reproduced"| UB["BACKLOG 1.1.3<br/>Unconfirmed BUGs"]
+    TRI -->|"longer term"| BL["BACKLOG 1.1 - 1.3<br/>DOC, FTR, cleanup, iOS"]
+    TRI -->|"the next release"| PEND["CHANGELOG 1.1<br/>Pending to do"]
+    TRI -->|"this release"| ID
+    TRI -->|"found and fixed<br/>in the same pass"| BLOCK
+
+    NEW -->|"sorted later"| TRI
+    UB -->|"reproduced"| BL
+    BL -->|"prioritised"| PEND
+    PEND -->|"sequence agreed<br/>with Andrew"| ID
+
+    ID["Give it an ID<br/>search BACKLOG and CHANGELOG<br/>just before, write the item<br/>before using the number"] --> WIP
+    WIP["CHANGELOG 1.2 WIP<br/>the current release,<br/>most important first"]
+    WIP --- AUD["Every item added to or removed<br/>from WIP gets an audit line:<br/>what moved, bullets before and after"]
+    WIP --> IMPL["Implement it, with tests"]
+    IMPL --> DONE{"Finished?"}
+    DONE -->|"not this release"| PEND
+    DONE -->|"yes, or closed as<br/>working as intended"| BLOCK
+
+    BLOCK["CHANGELOG 1.3<br/>bottom of the current release block<br/>keeping its ID"]
+    BLOCK --> COMMIT["Commit<br/>the block's in progress becomes its summary;<br/>the subject is vN.N.NN build NNN - summary"]
+    COMMIT --> NEXT["Open the next block, in progress,<br/>and bump the version in pubspec.yaml"]
+    NEXT -->|"the next item"| WIP
+    COMMIT --> MAIN["Merge dev to main;<br/>a release, when wanted,<br/>runs in GitHub Actions"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class S1,S2,S3,S4,TRI,NEW,BL,PEND,ID,AUD,DONE,NEXT step
+    class UB bad
+    class WIP,IMPL work
+    class BLOCK,COMMIT,MAIN go
+```
+
+<p align="center"><em>A work item's route from where it was noticed, through BACKLOG and CHANGELOG, to a commit and a release.</em></p>
+
+---

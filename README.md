@@ -943,3 +943,5 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 Copyright (C) 2026 Andrew Newbury.
+
+---

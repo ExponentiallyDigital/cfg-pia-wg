@@ -24,7 +24,7 @@ RecordingSSHClient _router({String body = _log, int? liveSize, int rotatedSize =
   final size = liveSize ?? body.length;
   return RecordingSSHClient(responder: (cmd) {
     if (cmd.contains('wc -c')) return '$size\n$rotatedSize';
-    if (cmd.startsWith('tail -c')) return body;
+    if (cmd.contains('tail -c')) return body;
     return '';
   });
 }
@@ -97,6 +97,16 @@ void main() {
 
     // Every page but the oldest starts mid-line, because the cut is a byte offset. Showing that
     // fragment puts half a timestamp at the top of the screen.
+    // 2026-09-27: dropping the fragment lost the rest of the cut line, and the older page's
+    // unfinished last line ran into the next one.
+    test('a page is split into the fragment that ends the line above, and its complete lines', () {
+      final s = splitPage('tchdog started for wgc1\nSep 27 03:00:00 cfg-pia-wg: wgc3: ok\n', reachesStart: false);
+      expect(s.fragment, 'tchdog started for wgc1\n');
+      expect(s.lines, 'Sep 27 03:00:00 cfg-pia-wg: wgc3: ok\n');
+      expect(splitPage('whole file\n', reachesStart: true), (fragment: '', lines: 'whole file\n'));
+      expect(splitPage('no newline here', reachesStart: false), (fragment: 'no newline here', lines: ''));
+    });
+
     test('the leading partial line is dropped, except at the start of a file', () {
       const page = 'g started for wgc1\nSep 10 09:00:03 kernel: last line';
       expect(trimPartialFirstLine(page, reachesStart: false), 'Sep 10 09:00:03 kernel: last line');
@@ -113,18 +123,18 @@ void main() {
       final ssh = await _pump(tester);
 
       expect(ssh.commands.any((c) => c.contains('wc -c')), isTrue);
-      expect(ssh.commands.any((c) => c.startsWith('tail -c')), isTrue);
+      expect(ssh.commands.any((c) => c.contains('tail -c')), isTrue);
       expect(find.textContaining('Watchdog started for wgc1'), findsOneWidget);
     });
 
     testWidgets('REFRESH starts again from the newest page', (tester) async {
       final ssh = await _pump(tester);
-      final before = ssh.commands.where((c) => c.startsWith('tail -c')).length;
+      final before = ssh.commands.where((c) => c.contains('tail -c')).length;
 
       await tester.tap(find.byKey(const Key('router_log_refresh')));
       await tester.pumpAndSettle();
 
-      expect(ssh.commands.where((c) => c.startsWith('tail -c')).length, greaterThan(before));
+      expect(ssh.commands.where((c) => c.contains('tail -c')).length, greaterThan(before));
     });
 
     // Android places its Copy/Share toolbar relative to the SELECTION, so on a full-height
@@ -138,7 +148,7 @@ void main() {
       // A log far bigger than one page, so there is always something older to fetch.
       final ssh = _router(body: List.filled(400, 'Sep 10 09:00:01 router: a line of syslog').join('\n'), liveSize: 400000);
       await _pump(tester, ssh: ssh);
-      final before = ssh.commands.where((c) => c.startsWith('tail -c')).length;
+      final before = ssh.commands.where((c) => c.contains('tail -c')).length;
 
       // Two scrolls to the top with no settle between them, which is what a fast flick produces:
       // the second arrives while the first load is still waiting on the router.
@@ -147,7 +157,7 @@ void main() {
       scroller.jumpTo(1);
       await tester.pumpAndSettle();
 
-      final after = ssh.commands.where((c) => c.startsWith('tail -c')).length;
+      final after = ssh.commands.where((c) => c.contains('tail -c')).length;
       expect(after - before, 1, reason: 'one page per load, however fast the scrolling');
       // Held: the offset moved down by what was added above, rather than staying at the top of the
       // newly-inserted page or jumping to an unrelated part of the log.
@@ -157,6 +167,44 @@ void main() {
       expect(scroller.offset, greaterThan(0));
       expect(scroller.position.maxScrollExtent - scroller.offset, greaterThan(100),
           reason: 'still the same distance from the newest line');
+    });
+
+    // The real bytes, cut the way the router cuts them, so a line really is split across two pages.
+    testWidgets('a line cut between two pages comes back whole, on screen and in COPY', (tester) async {
+      final lines = [
+        for (var i = 0; i < 1200; i++) 'Sep 27 03:${(i ~/ 60 % 60).toString().padLeft(2, '0')}:00 cfg-pia-wg: wgc${i % 4 + 1}: Watchdog started, line $i',
+      ];
+      final body = '${lines.join('\n')}\n';
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('wc -c')) return '${body.length}\n0';
+        final m = RegExp(r"tail -c (\d+) '[^']+' 2>/dev/null \| head -c (\d+)").firstMatch(cmd);
+        if (m == null) return '';
+        final end = body.length - (int.parse(m.group(1)!) - int.parse(m.group(2)!));
+        return '[${body.substring(end - int.parse(m.group(2)!), end)}]';
+      });
+      final copied = <String>[];
+      final c = SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (t) async => copied.add(t))
+        ..routerIp = '192.168.1.1'
+        ..sshUsername = 'admin'
+        ..sshPassword = 'pw'
+        ..routerConnected = true;
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(controller: c, child: Scaffold(body: RouterLogScreen(testClientFactory: (_, __, ___) async => ssh))),
+      ));
+      await tester.pumpAndSettle();
+      // Load every older page.
+      final scroller = tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView).last).controller!;
+      for (var i = 0; i < 5; i++) {
+        scroller.jumpTo(0);
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byKey(const Key('router_log_copy')));
+      await tester.pumpAndSettle();
+
+      final got = copied.single.split('\n').where((l) => l.isNotEmpty).toList();
+      expect(got.every(lines.contains), isTrue, reason: 'no line is cut short or joined to another');
+      expect(got.length, lines.length, reason: 'every line, once');
     });
 
     testWidgets('COPY takes everything loaded, without arming the clipboard countdown', (tester) async {

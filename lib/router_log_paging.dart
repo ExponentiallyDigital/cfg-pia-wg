@@ -122,8 +122,17 @@ class LogPage {
   /// `tail -c N | head -c M` rather than `dd` or `tail -c +N`: BusyBox has both of these and they
   /// need no arithmetic on the router. Asking for more bytes than a file holds is not an error -
   /// tail simply returns the whole file - which is what makes the last page of a file safe.
-  String get command => "tail -c ${fromEnd + length} '$file' 2>/dev/null | head -c $length";
+  ///
+  /// Wrapped in `[` and `]`, which [unwrapPage] takes off again. Every command's output is trimmed of
+  /// whitespace at both ends before the app sees it, and a page cut at a byte offset can start or
+  /// end on a space or a line break - which was then lost, joining two words or two lines at every
+  /// page boundary. Nothing trims through a bracket.
+  String get command => "printf '['; tail -c ${fromEnd + length} '$file' 2>/dev/null | head -c $length; printf ']'";
 }
+
+/// A page's text with [LogPage.command]'s brackets taken off. Text without them is returned as it is.
+String unwrapPage(String out) =>
+    out.length >= 2 && out.startsWith('[') && out.endsWith(']') ? out.substring(1, out.length - 1) : out;
 
 /// The next page to fetch, or null when there is nothing older to read.
 ///
@@ -145,13 +154,24 @@ LogPage? nextLogPage({required List<int> sizes, required List<int> consumed, Lis
   return null;
 }
 
-/// Drops the leading partial line from a page.
+/// A page split into the fragment it starts with and the complete lines after it.
 ///
 /// Every page except the one that reaches the start of its file begins mid-line, because the cut is
-/// made at a byte offset rather than a line boundary. Showing that fragment would put half a
-/// timestamp at the top of the screen and make the page above it look corrupt.
-String trimPartialFirstLine(String page, {required bool reachesStart}) {
-  if (reachesStart) return page;
+/// made at a byte offset rather than a line boundary. That fragment is the END of the line the next
+/// older page finishes with, so it is held back rather than shown - half a line at the top of the
+/// screen reads as corruption - and joined onto that older page when it loads.
+///
+/// It used to be dropped. The older page then ended on half a line with no line break, which ran
+/// into the next page's first line, and the rest of the cut line was lost:
+/// `cfg-pia-wg: wgc1: WaSep 27 03:00:00 cfg-pia-wg: wgc3: ...`. Seen on screen and in COPY on
+/// 2026-09-27, and first mistaken for watchdogs writing over each other.
+({String fragment, String lines}) splitPage(String page, {required bool reachesStart}) {
+  if (reachesStart) return (fragment: '', lines: page);
   final nl = page.indexOf('\n');
-  return nl < 0 ? '' : page.substring(nl + 1);
+  if (nl < 0) return (fragment: page, lines: '');
+  return (fragment: page.substring(0, nl + 1), lines: page.substring(nl + 1));
 }
+
+/// [splitPage]'s complete lines alone, for a page shown without the one below it.
+String trimPartialFirstLine(String page, {required bool reachesStart}) =>
+    splitPage(page, reachesStart: reachesStart).lines;
