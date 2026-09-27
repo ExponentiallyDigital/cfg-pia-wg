@@ -31,13 +31,13 @@ A device pinned to a slot is different. The router catches its ordinary lookups 
 
 ```mermaid
 flowchart TB
-  U["Device not pinned"] -- "web and app traffic" --> DC["Your default connection"]
+  U["Device not pinned"] -- "web and app traffic" --> DC["Your default<br/>connection"]
   U -- "DNS lookups" --> R["The router looks it up<br/>using its own settings"]
-  RP["The router's own programs"] --> R
-  R --> Q{"Does the router's DNS address<br/>match any slot's DNS?"}
-  Q -- "yes" --> HS["Through the highest-numbered<br/>matching slot's tunnel"]
-  Q -- "no" --> NET["Through your internet connection"]
-  P["Device pinned to a slot"] -- "all traffic, including DNS" --> PS["That slot's tunnel,<br/>to that slot's DNS servers"]
+  RP["The router's<br/>own programs"] --> R
+  R --> Q{"Does the router's<br/>DNS address<br/>match any slot's DNS?"}
+  Q -- "yes" --> HS["Through the<br/>highest-numbered<br/>matching slot's tunnel"]
+  Q -- "no" --> NET["Through your<br/>internet connection"]
+  P["Device pinned<br/>to a slot"] -- "all traffic,<br/>including DNS" --> PS["That slot's tunnel,<br/>to that slot's<br/>DNS servers"]
 
   classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
   classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
@@ -92,9 +92,9 @@ For example, suppose `wgc4:pia-aus_melbourne` breaks because PIA has rotated tha
 ```mermaid
 flowchart TB
   U["Devices not pinned"] -- "DNS lookups" --> R["Router"]
-  W["Watchdog and the router's<br/>other programs"] --> R
-  R -- "9.9.9.9 is used by<br>wgc1, wgc3 and wgc4.<br/>wgc4 is the highest number,<br>so it wins." --> T4["wgc4: pia-aus_melbourne<br/>looks connected,<br>answers nothing"]
-  T4 -. "no reply" .-> X["Websites don't load<br/>Watchdog can't reach PIA<br/>No alert email"]
+  W["Watchdog and<br/>the router's<br/>other programs"] --> R
+  R -- "9.9.9.9 is used by<br>wgc1, wgc3 and wgc4.<br/>wgc4 is the<br/>highest number,<br>so it wins." --> T4["wgc4:<br/>pia-aus_melbourne<br/>looks connected,<br>answers nothing"]
+  T4 -. "no reply" .-> X["Websites don't load<br/>Watchdog can't<br/>reach PIA<br/>No alert email"]
 
   classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
   classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
@@ -151,12 +151,12 @@ For the **DoT Server List**, there are two sensible setups. Both work. Each cost
 
 ```mermaid
 flowchart TB
-  T["Tablet, pinned to wgc2"] -- "DNS, redirected to<br>1.1.1.3" --> W2["wgc2 tunnel, New Zealand"] --> CFF["Cloudflare family filter"]
+  T["Tablet, pinned to wgc2"] -- "DNS, redirected to<br>1.1.1.3" --> W2["wgc2 tunnel,<br/>New Zealand"] --> CFF["Cloudflare<br/>family filter"]
   TV["TV, not pinned"] -- "web and app traffic" --> W1["wgc1 tunnel, Melbourne<br/>(default connection)"]
-  TV -- "DNS lookups" --> SB["Router: encrypted lookup to<br>1.1.1.2"]
-  RP["The router's own programs"] -- "ordinary lookup to<br>1.1.1.2" --> NET["Your internet connection"]
+  TV -- "DNS lookups" --> SB["Router: encrypted<br/>lookup to<br>1.1.1.2"]
+  RP["The router's<br/>own programs"] -- "ordinary lookup to<br>1.1.1.2" --> NET["Your internet<br/>connection"]
   SB --> NET
-  NET --> CFS["Cloudflare, nearest server"]
+  NET --> CFS["Cloudflare,<br/>nearest server"]
 
   classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
   classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
@@ -186,11 +186,11 @@ The DoT Server List uses the same addresses as `wgc1`, and every other slot uses
 
 ```mermaid
 flowchart TB
-  L["Laptop, pinned to wgc3"] -- "DNS, redirected to<br>9.9.9.11" --> W3["wgc3 tunnel, Italy"] --> QE["Quad9, server near Italy"]
+  L["Laptop, pinned to wgc3"] -- "DNS, redirected to<br>9.9.9.11" --> W3["wgc3 tunnel, Italy"] --> QE["Quad9, server<br/>near Italy"]
   TV["TV, not pinned"] -- "web and app traffic" --> W1T["wgc1 tunnel, Melbourne<br/>(default connection)"]
-  TV -- "DNS lookups" --> SB["Router: encrypted lookup to<br>9.9.9.9"]
-  SB -- "9.9.9.9<br>is used only by wgc1" --> W1D["wgc1 tunnel, Melbourne"] --> QM["Quad9, server near Melbourne"]
-  RP["The router's own programs"] -- "ordinary lookup to<br>1.1.1.2" --> NET["Your internet connection"] --> CFS["Cloudflare, nearest server"]
+  TV -- "DNS lookups" --> SB["Router: encrypted<br/>lookup to<br>9.9.9.9"]
+  SB -- "9.9.9.9<br>is used only by wgc1" --> W1D["wgc1 tunnel, Melbourne"] --> QM["Quad9, server<br/>near Melbourne"]
+  RP["The router's<br/>own programs"] -- "ordinary lookup to<br>1.1.1.2" --> NET["Your internet<br/>connection"] --> CFS["Cloudflare,<br/>nearest server"]
 
   classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
   classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
@@ -242,9 +242,9 @@ flowchart TB
     N3["Each slot's DNS<br/>wgcN_dns"]
     N4["Device pinning"]
   end
-  N1 --> F1["/tmp/resolv.conf<br/>/etc/resolv.conf links here"]
+  N1 --> F1["/tmp/resolv.conf<br/>/etc/resolv.conf<br/>links here"]
   F1 --> RP["Router programs<br/>curl, time sync, email"]
-  D["Devices that aren't pinned"] --> DM["dnsmasq<br/>/etc/dnsmasq.conf"]
+  D["Devices that<br/>aren't pinned"] --> DM["dnsmasq<br/>/etc/dnsmasq.conf"]
   F2["/tmp/resolv.dnsmasq<br/>server=127.0.1.1"] --> DM
   DM --> SB["stubby at 127.0.1.1"]
   N2 --> F3["/etc/stubby/stubby.yml"]
@@ -252,7 +252,7 @@ flowchart TB
   N3 --> RU["Router rules<br/>to address, iif lo"]
   RP --> RU
   SB --> RU
-  RU --> OUT["A wgcN tunnel, or<br/>your internet connection"]
+  RU --> OUT["A wgcN tunnel, or<br/>your internet<br/>connection"]
   N3 --> VF["VPN_FUSION redirect<br/>pinned devices, UDP 53"]
   N4 --> VF
   N4 --> DR["Device rules<br/>from device"]
