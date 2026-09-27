@@ -42,6 +42,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/paywall.dart';
 import '../widgets/error_presenter.dart';
 import '../widgets/ssh_creds_dialog.dart';
+import 'router_dns_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   /// Injected by tests so the router actions can run without a router.
@@ -425,6 +426,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// Changes stock's cap on simultaneous VPNs. See [RouterSlotService.setMaxActiveVpns] for why this is a
   /// user decision behind a warning rather than something the app recommends.
+  /// Opens ROUTER RESOLVER STATUS or ROUTER DNS ROUTING on the shared router session.
+  ///
+  /// The window reads the router itself, and shows its own error if it cannot; the session counts
+  /// as connected once a read has reached the router.
+  Future<void> _openDnsReport(
+      DnsReportScreen Function({Key? key, required SSHClient client, VoidCallback? onLoaded}) screen) async {
+    final creds = await _credentials();
+    if (creds == null || !mounted) return;
+    final (ip, user, pass) = creds;
+    final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+    await Navigator.of(context).push<void>(MaterialPageRoute(
+      settings: RouteSettings(name: AppDestination.settings.routeName),
+      builder: (_) => screen(client: client, onLoaded: () => _connected(ip)),
+    ));
+  }
+
   Future<void> _maxActiveVpns() async {
     // Paid first, so a locked user is not asked for router credentials only to meet the paywall after.
     if (!_c.isUnlocked) {
@@ -599,6 +616,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: Icons.warning_amber_outlined,
           destructive: true,
           onTap: _busy ? null : _maxActiveVpns,
+        ),
+        // Two read-only windows on the router's name lookups (ID-194), each with an icon used nowhere
+        // else in the app. Neither changes anything, so neither is behind the paywall.
+        _Action(
+          keyValue: 'settings_resolver_status',
+          label: 'ROUTER RESOLVER STATUS',
+          note: 'Checks the router is answering name lookups, and shows the files and settings behind them. '
+              'Changes nothing.',
+          icon: Icons.troubleshoot_outlined,
+          onTap: _busy ? null : () => _openDnsReport(DnsReportScreen.resolver),
+        ),
+        _Action(
+          keyValue: 'settings_dns_routing',
+          label: 'ROUTER DNS ROUTING',
+          note: "Shows where each device's, the router's and the watchdogs' lookups go: through a tunnel, or to the "
+              'Internet. Changes nothing.',
+          icon: Icons.alt_route_outlined,
+          onTap: _busy ? null : () => _openDnsReport(DnsReportScreen.routing),
         ),
         if (_busy) ...[
           const SizedBox(height: 24),

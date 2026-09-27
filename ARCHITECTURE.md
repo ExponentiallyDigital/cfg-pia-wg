@@ -155,14 +155,14 @@ The whole app, in four diagrams: the main menu, then the three screens that do t
 flowchart LR
     A["Start app"] --> B["Main menu"]
     B --> C["STANDALONE<br/>a PIA WireGuard config<br/>for any device"]
-    B --> D["MANAGE<br/>the router's WireGuard slots"]
-    B --> E["WATCHDOG<br/>keeps a slot's tunnel alive"]
-    B --> DA["DEVICE ASSIGNMENT<br/>which device uses which tunnel"]
+    B --> D["MANAGE<br/>the router's<br/>WireGuard slots"]
+    B --> E["WATCHDOG<br/>keeps a slot's<br/>tunnel alive"]
+    B --> DA["DEVICE ASSIGNMENT<br/>which device uses<br/>which tunnel"]
     B --> RL["ROUTER LOG"]
     B --> AL["APP LOG"]
     B --> ST["SETTINGS"]
     B --> AB["ABOUT"]
-    B --> X["EXIT<br/>wipes credentials, config<br/>and clipboard"]
+    B --> X["EXIT<br/>wipes credentials,<br/>config<br/>and clipboard"]
 
     classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
     classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
@@ -178,20 +178,20 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    H["Enter region, PIA username and password, DNS"] --> I{"GENERATE CONFIG"}
-    I -->|"a required field is empty"| H
+    H["Enter region, PIA<br/>username and password,<br/>DNS"] --> I{"GENERATE CONFIG"}
+    I -->|"a required<br/>field is empty"| H
     I -->|"valid"| J1
 
     subgraph GEN["PiaService.generateConfig: lib/pia_service.dart"]
-        J1["fetchRegions<br/>PIA's server list"] --> J2["probeLatency<br/>TCP 1337, pick the fastest"]
+        J1["fetchRegions<br/>PIA's server list"] --> J2["probeLatency<br/>TCP 1337, pick<br/>the fastest"]
         J2 --> J3["getToken<br/>HTTP Basic Auth"]
-        J3 --> J4["generateWgKeypair<br/>X25519, RFC 7748 clamping"]
+        J3 --> J4["generateWgKeypair<br/>X25519, RFC<br/>7748 clamping"]
         J4 --> J5["registerKey<br/>HTTPS, CA-pinned"]
         J5 --> J6["buildConfig<br/>assemble the .conf"]
     end
 
-    J6 --> K["GENERATED CONFIG on screen"]
-    K --> L["COPY<br/>clipboard clears after 60s"]
+    J6 --> K["GENERATED CONFIG<br/>on screen"]
+    K --> L["COPY<br/>clipboard clears<br/>after 60s"]
     K --> M["SHARE / SAVE<br/>Android share sheet"]
 
     classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
@@ -207,11 +207,11 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    D1["Router login<br/>asked once per session"] --> D3["fetchSlots<br/>wgc1-5, which are up, firmware"]
-    D3 --> D5["Pick a slot, then an action"]
+    D1["Router login<br/>asked once per session"] --> D3["fetchSlots<br/>wgc1-5, which<br/>are up, firmware"]
+    D3 --> D5["Pick a slot,<br/>then an action"]
     D5 --> A1["CREATE<br/>region and PIA login,<br/>generateConfig,<br/>createConfigToSlot"]
-    D5 --> A2["ENABLE<br/>stock's tunnel limit,<br/>check targets,<br/>enableSlot, revert on failure"]
-    D5 --> A3["EDIT<br/>readSlotParams, check each field,<br/>writeSlotParams,<br/>restartSlot if running"]
+    D5 --> A2["ENABLE<br/>stock's tunnel limit,<br/>check targets,<br/>enableSlot,<br/>revert on failure"]
+    D5 --> A3["EDIT<br/>readSlotParams,<br/>check each field,<br/>writeSlotParams,<br/>restartSlot if running"]
     D5 --> A4["DISABLE<br/>names pinned devices,<br/>pauses the watchdog,<br/>disableSlot"]
     D5 --> A5["DELETE<br/>stopWatchdog if any,<br/>deleteSlot"]
     A1 --> R["Read the slots again"]
@@ -234,12 +234,12 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    E1["Router login<br/>asked once per session"] --> E3["Firmware check, then fetchSlots"]
-    E3 --> E5["Pick a slot, then an action"]
-    E5 --> W1["CREATE / EDIT<br/>WatchdogDialog, check every field,<br/>deployWatchdog: script, schedule,<br/>start at boot, run once"]
+    E1["Router login<br/>asked once per session"] --> E3["Firmware check,<br/>then fetchSlots"]
+    E3 --> E5["Pick a slot,<br/>then an action"]
+    E5 --> W1["CREATE / EDIT<br/>WatchdogDialog,<br/>check every field,<br/>deployWatchdog:<br/>script, schedule,<br/>start at boot,<br/>run once"]
     E5 --> W2["ENABLE<br/>put the schedule back,<br/>at the stored interval"]
-    E5 --> W3["DISABLE<br/>remove the schedule,<br/>keep the settings: PAUSED"]
-    E5 --> W4["DELETE<br/>stopWatchdog, deleteSlot"]
+    E5 --> W3["DISABLE<br/>remove the schedule,<br/>keep the<br/>settings: PAUSED"]
+    E5 --> W4["DELETE<br/>stopWatchdog,<br/>deleteSlot"]
     E5 --> W5["VIEW WATCHDOG LOG<br/>getWatchdogLog"]
     W1 --> R["Read the slots again"]
     W2 --> R
@@ -644,7 +644,7 @@ An integer naming the VPN that unassigned devices use. It is **index 6 (0-based)
 ```text
 vpnc_default_wan=9
 vpnc_clientlist=pia-aus_melbourne>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg
-                                                            ^ index 6 = 9
+                                                          ^ index 6 = 9
 ```
 
 So `vpnc_default_wan=9` means slot 1, `pia-aus_melbourne`. `0` means the plain internet - no VPN.
@@ -787,7 +787,7 @@ Other traps in the same pair of files:
 - `type` is an INTEGER in `nmp_cl_json.js` and a STRING in `nmp_cache.js`. The `nmp_cache` value is the user-set icon type and matches `custom_clientlist` index 3; the `nmp_cl_json` one is the raw detection.
 - `name` is the auto-detected name; `nickName` is the user's and is already merged from `custom_clientlist`. So `nmp_cache.js` alone supplies the whole name chain when it is present.
 - **`conn_ts` is not a last-seen time.** It reads `0` for every wired device, and the wireless ones share a value to within three seconds - the last reboot. It is a wireless association timestamp, not a last-seen time.
-- **Liveness comes from `isOnline` in `/tmp/nmp_cache.js`, the web interface's own source, and from `nmp_cl_json.js` only for a device the cache does not list (ID-165).** Measured 2026-09-27 with a Wi-Fi tablet switched off, on for a moment, off, and on again, every 5 seconds: the cache changed within a second of the web interface each time, including the moment it was on. `/jffs/nmp_cl_json.js` is rewritten only every few minutes, to spare the flash, and was 8.5 minutes late going offline, 3 minutes late coming back, and never saw the moment at all. That reverses a 2026-09-08 rule, drawn from one snapshot of a games console ten minutes after it was switched off, when the cache still said online. A console can keep its network up in standby, so that reading may have been right; a wired device is checked in DEV-13 to settle it. `scripts/presence-probe.sh` and `scripts/webui-presence.ps1` measure it on any router.
+- **Liveness comes from `isOnline` in `/tmp/nmp_cache.js`, the web interface's own source, and from `nmp_cl_json.js` only for a device the cache does not list (ID-165).** Measured 2026-09-27 with a Wi-Fi tablet switched off, on for a moment, off, and on again, every 5 seconds: the cache changed within a second of the web interface each time, including the moment it was on. `/jffs/nmp_cl_json.js` is rewritten only every few minutes, to spare the flash, and was 8.5 minutes late going offline, 3 minutes late coming back, and never saw the moment at all. That reverses a 2026-09-08 rule, drawn from one snapshot of a games console ten minutes after it was switched off, when the cache still said online. A console can keep its network up in standby, so that reading may have been right, and on 2026-09-27 Andrew saw exactly that: a powered-off console, wired to a mesh node, stayed online in the web interface itself for almost an hour. The cache was matching what the router records. DEV-13 still checks a wired device that really leaves the network. `scripts/presence-probe.sh` and `scripts/webui-presence.ps1` measure it on any router.
 - **An offline device KEEPS its `ip` in `nmp_cache.js`**, so it stays assignable. The address is only genuinely unavailable when a device is unreserved, powered off, AND has not connected since the last reboot, because `/tmp` is rebuilt at boot.
 - The router itself does not appear in `nmp_cache.js` at all. A mesh node does, indistinguishable from a client - see [`cfg_device_list` - the router and its mesh nodes](#cfg-device-list-the-router-and-its-mesh-nodes).
 
@@ -888,9 +888,9 @@ nothing assigned (2026-09-07):
 Assigning devices in the WebUI and then unassigning them again produced this, with the policy list left empty:
 
 ```text
-dhcp_staticlist=<AA:BB:CC:DD:EE:FF>192.168.1.20>>hostname1<...> 4 named, typed by hand
-                <0A:0B:0C:0D:0E:0F>192.168.1.21>>              6 new, hostname EMPTY
-vpnc_dev_policy_list=                                          nothing assigned
+dhcp_staticlist=<AA:BB:CC:DD:EE:FF>192.168.1.20>>hostname1<...>   # 4 named, typed by hand
+                <0A:0B:0C:0D:0E:0F>192.168.1.21>>                 # 6 new, hostname EMPTY
+vpnc_dev_policy_list=                                             # nothing assigned
 ```
 
 Three things follow:
@@ -1278,6 +1278,8 @@ flowchart TD
 The **detach** exists because ASUS's curl refuses to run with `crond` in its process ancestry - see [`curl` refuses to run from cron](#curl-refuses-to-run-from-cron). Without it the watchdog can never fetch a token, and therefore can never recover a tunnel.
 
 The **stagger** keeps the watchdogs from starting together. Every slot's cron entry fires on the same minute, and several runs packed into a few seconds crash the firmware's `asd` security daemon, whose restart restarts the firewall. Measured 2026-09-27: four at once gave 13 crashes in 20 rounds, and four spaced 15 s apart gave none in 48 runs. One slot on its own never crashed it, whether run in the foreground or detached as cron does. So a cron run waits 15 s for each slot below it. A deploy and a run by hand are never delayed. A rebuild takes about a minute, so it can still overlap the next slot's check; that only happens when a tunnel is actually broken. The guard is routing rules and the app writes no firewall rules, so a firewall restart leaves both alone (GRD-6 measures it).
+
+The **router resolver line** comes after the checks, on every run: one lookup through the router's own resolver at `127.0.0.1`, logged as "Router resolver OK" or "Router resolver FAILED" (ID-194). It is never a gate. A dead dnsmasq or stubby takes names away from every unpinned device, but it is not the tunnel's fault, and rebuilding the tunnel would not bring it back.
 
 The **enable check** stops the watchdog undoing a decision the user just made. A tunnel switched off in the web interface looks exactly like a tunnel that dropped.
 
@@ -1849,6 +1851,8 @@ Padding is 14 vertical, 16 horizontal; the border is 1px in the role colour; `bu
 | Paywall, pitches | `widgets/paywall.dart` | Every gated action |
 | Build info rows, links | `screens/about_screen.dart` | ABOUT |
 | Action rows | `screens/settings_screen.dart` | SETTINGS |
+| ROUTER RESOLVER STATUS and ROUTER DNS ROUTING: reading, parsing and analysis | `router_dns.dart` | The two windows below |
+| Those two windows, tags and check rows | `screens/router_dns_screen.dart` | SETTINGS |
 
 ### 12.7. Editing a screenshot
 
@@ -1869,38 +1873,37 @@ How a work item travels from wherever it was noticed to a release. The rules the
 ```mermaid
 flowchart TB
     subgraph IN["Where work items come from"]
-        S1["Andrew's notes and ideas"]
-        S2["A test run<br/>findings on the run sheet"]
+        S1["Andrew's notes<br/>and ideas"]
+        S2["A test run<br/>findings on<br/>the run sheet"]
         S3["CI failures and scans<br/>CodeQL, SonarCloud"]
         S4["Analyses and audits<br/>syslogs, code reviews"]
     end
 
     IN --> TRI{"Triage:<br/>what is it, and when?"}
-    TRI -->|"not sorted yet"| NEW["BACKLOG 2.<br/>New work items<br/>no ID needed"]
+    TRI -->|"not sorted yet"| NEW["BACKLOG 2.<br/>New work items<br/>no ID needed;<br/>triaged again later"]
     TRI -->|"a bug nobody<br/>has reproduced"| UB["BACKLOG 1.1.3<br/>Unconfirmed BUGs"]
     TRI -->|"longer term"| BL["BACKLOG 1.1 - 1.3<br/>DOC, FTR, cleanup, iOS"]
     TRI -->|"the next release"| PEND["CHANGELOG 1.1<br/>Pending to do"]
     TRI -->|"this release"| ID
     TRI -->|"found and fixed<br/>in the same pass"| BLOCK
 
-    NEW -->|"sorted later"| TRI
     UB -->|"reproduced"| BL
     BL -->|"prioritised"| PEND
     PEND -->|"sequence agreed<br/>with Andrew"| ID
 
-    ID["Give it an ID<br/>search BACKLOG and CHANGELOG<br/>just before, write the item<br/>before using the number"] --> WIP
+    ID["Give it an ID<br/>search both files<br/>just before, and<br/>write the item before<br/>using the number"] --> WIP
     WIP["CHANGELOG 1.2 WIP<br/>the current release,<br/>most important first"]
-    WIP --- AUD["Every item added to or removed<br/>from WIP gets an audit line:<br/>what moved, bullets before and after"]
-    WIP --> IMPL["Implement it, with tests"]
+    WIP --- AUD["Every item added<br/>to or removed<br/>from WIP gets<br/>an audit line:<br/>what moved, bullets<br/>before and after"]
+    WIP --> IMPL["Implement it,<br/>with tests"]
     IMPL --> DONE{"Finished?"}
     DONE -->|"not this release"| PEND
     DONE -->|"yes, or closed as<br/>working as intended"| BLOCK
 
-    BLOCK["CHANGELOG 1.3<br/>bottom of the current release block<br/>keeping its ID"]
-    BLOCK --> COMMIT["Commit<br/>the block's in progress becomes its summary;<br/>the subject is vN.N.NN build NNN - summary"]
-    COMMIT --> NEXT["Open the next block, in progress,<br/>and bump the version in pubspec.yaml"]
+    BLOCK["CHANGELOG 1.3<br/>bottom of the current<br/>release block<br/>keeping its ID"]
+    BLOCK --> COMMIT["Commit<br/>in progress becomes<br/>the block's summary,<br/>and the subject is<br/>vN.N.NN build NNN<br/>- summary"]
+    COMMIT --> NEXT["Open the next<br/>block, in progress,<br/>and bump the version<br/>in pubspec.yaml"]
     NEXT -->|"the next item"| WIP
-    COMMIT --> MAIN["Merge dev to main;<br/>a release, when wanted,<br/>runs in GitHub Actions"]
+    COMMIT --> MAIN["Merge dev to main;<br/>a release,<br/>when wanted,<br/>runs in GitHub Actions"]
 
     classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
     classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8

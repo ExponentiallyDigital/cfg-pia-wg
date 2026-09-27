@@ -33,6 +33,23 @@ void main() {
         expect(h.curls, isEmpty, reason: 'a healthy check asks PIA for nothing');
       });
 
+      // ID-194: the router's own resolver, which every unpinned device depends on, gets a line of its
+      // own on every run - and is never a reason to touch this tunnel.
+      test("logs the router's own resolver as OK", () async {
+        final r = await h.run();
+        expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+        expect(h.log, contains('Router resolver OK'));
+      });
+
+      test("a dead router resolver is logged, and the healthy tunnel is left alone", () async {
+        h.routerResolverDown();
+        final r = await h.run();
+        expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+        expect(h.log.any((l) => l.startsWith('Router resolver FAILED')), isTrue);
+        expect(h.curls, isEmpty, reason: "no rebuild: it is not the tunnel's fault");
+        expect(h.backoffFile, '0\n0\n');
+      });
+
       test('a disabled slot stands down before any probe', () async {
         h.set('wgc1_enable', '0');
         await h.run();
@@ -74,7 +91,9 @@ void main() {
       test('one miss is a warning, not a rebuild', () async {
         h.dns('fail');
         await h.run();
-        expect(h.log.last, 'no answer from 9.9.9.9; one more and it counts as broken');
+        expect(h.log, contains('no answer from 9.9.9.9; one more and it counts as broken'));
+        // The router's own resolver is logged after every run's checks, this one included (ID-194).
+        expect(h.log.last, 'Router resolver OK');
         expect(h.dnsFailFile, '1');
         expect(h.curls, isEmpty);
       });
@@ -95,7 +114,9 @@ void main() {
         expect(h.dnsFailFile, isEmpty);
         h.dns('fail');
         await h.run();
-        expect(h.log.last, 'no answer from 9.9.9.9; one more and it counts as broken');
+        // The count started again: this miss is a first strike, a warning, not the second of a pair.
+        expect(h.dnsFailFile, '1');
+        expect(h.log.where((l) => l.contains('twice in a row')), isEmpty);
       });
 
       // BRK-9.
@@ -274,6 +295,37 @@ void main() {
     test('a deploy and a run by hand are never delayed', () async {
       expect(await sleepsFor(5, 'deploy'), isNot(contains('60')));
       expect(await sleepsFor(5, 'foreground'), isNot(contains('60')));
+    });
+  });
+
+  // ID-240: found 2026-09-27. MANAGE DELETE removed wgc2's watchdog while its cron run was waiting
+  // its 15 s, and the run woke and carried on: the shell already had the script open.
+  group('a watchdog paused or removed while its run waits', () {
+    test('a cron run whose schedule has gone stands down, having done nothing', () async {
+      h.unschedule();
+      final r = await h.run(mode: 'detached');
+      expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      expect(h.log.last, "wgc1's watchdog was paused or removed while this run waited; standing down");
+      expect(h.lookups, isEmpty);
+      expect(h.curls, isEmpty);
+    });
+
+    test('a cron run that is still scheduled carries on', () async {
+      await h.run(mode: 'detached');
+      expect(h.log, contains('Checking wgc1 pia-nz connectivity'));
+    });
+
+    test('a run whose settings have gone stands down, rather than pinging nothing', () async {
+      h.set('wgc1_wd_check_interval', '');
+      await h.run();
+      expect(h.log.last, 'wgc1 has no watchdog settings; standing down');
+      expect(h.log.where((l) => l.contains('no Internet on WAN')), isEmpty);
+    });
+
+    test('a deploy runs whatever the schedule says: it is what writes the schedule', () async {
+      h.unschedule();
+      await h.run(mode: 'deploy');
+      expect(h.log.where((l) => l.contains('standing down')), isEmpty);
     });
   });
 

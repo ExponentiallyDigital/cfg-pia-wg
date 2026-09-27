@@ -53,7 +53,6 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 #### 1.1.2. FTR - future implementation
 
 - ID-229 FTR: add pinch to zoom when displaying log files (router, app, watchdogs).
-- ID-143 FTR: add a feature to display the contents of /etc/resolv.conf and  Put this in the OPTIONS menu.
 - ID-135 FTR: add a feature to enable clearing offline devices from DEVICE ASSIGNMENT
 - ID-025 FTR: edit a device's display name from the assignment screen, writing `custom_clientlist`. Two sharp edges make it more than a text field: `<` and `>` are the record and field delimiters, so an unvalidated name corrupts every device name on the router; and appending a record for a device that has none writes index 3, so a naive `0` downgrades that device's icon to generic in both the WebUI and the ASUS app - the detected type has to be carried over from `nmp_cl_json.js` first. Also needs the service call that makes it take effect, which is unknown.
 - ID-153 ADD: feature to remove static DHCP entries
@@ -128,4 +127,4 @@ When asked to triage BACKLOG new work, work through it in this order:
 
 ---
 
-- ID-194 CHG: the watchdog cannot see a dead router resolver, which is the outage a household notices first. Its name check asks the slot's DNS server directly through the tunnel and its WAN check pings by address; neither touches dnsmasq or stubby, which is what every LAN device depends on for names. The app has no such check either. Add a probe through the router's own resolver, `nslookup example.com 127.0.0.1`, logged as its own line ("Router resolver OK" / "Router resolver FAILED") and never a reason to rebuild a tunnel, because it is not the tunnel's fault. Consider showing it on HOME as well, add this to SETTINGS as a menu option?
+- ID-241 DOC: add screenshots of new router DNS menus to README - replace contents with synthetic entries.
