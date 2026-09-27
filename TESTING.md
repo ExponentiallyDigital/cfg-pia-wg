@@ -599,6 +599,14 @@ grep -c cfg-pia-wg /etc/hosts
 - Pass if: `SMTP host resolved privately to <address>` before `Alert email sent (SUCCESS)`, and a count of `0`: the hosts entry is removed after every send.
 - Pass if: the email arrives, which proves certificate verification still passed.
 
+**WD-26** The router's own resolver gets a line of its own [hand]
+
+- Do: `/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground`, then `grep 'Router resolver' /tmp/watchdog_wgc1.log | tail -1`.
+- Pass if: `Router resolver OK` (ID-194).
+- Do: `kill $(pidof stubby)`, run the watchdog again, and look at the same line.
+- Pass if: `Router resolver FAILED`, and the run still ends healthy: no rebuild, no alert. If it reads OK, the router restarted stubby first: kill it and run again at once.
+- Do: `pidof stubby`; if it prints nothing, `service restart_dnsmasq`, or reboot if that does not bring it back.
+
 The last two tests here are MANAGE ones. They live at the end of this group because they act on a watchdog, and there is none until this group has run.
 
 **MAN-13** Disable pauses a watchdog rather than removing it [hand]
@@ -1128,7 +1136,7 @@ sh /jffs/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
 
 **SET-1** Rows [hand]
 
-- See: REBOOT ROUTER, FORGET ROUTER IP, REMOVE CACHED PIA CERT, UNINSTALL FEATURES DEPLOYED TO ROUTER, RESTORE PURCHASE (store build only), MAX ACTIVE VPNS.
+- See: REBOOT ROUTER, FORGET ROUTER IP, REMOVE CACHED PIA CERT, UNINSTALL FEATURES DEPLOYED TO ROUTER, RESTORE PURCHASE (store build only), MAX ACTIVE VPNS, ROUTER RESOLVER STATUS, ROUTER DNS ROUTING. The last two are teal, with icons used nowhere else in the app.
 
 **SET-2** One login covers the screen [hand]
 
@@ -1184,6 +1192,29 @@ sh /jffs/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
 **SET-8** Every action leaves a trail [hand]
 
 - Pass if: each action above wrote a line to APP LOG, and those that touched the router wrote one to ROUTER LOG too.
+
+**SET-9** Router resolver status [hand]
+
+- Do: ROUTER RESOLVER STATUS.
+- See: the heading in teal, then the live check: dnsmasq and stubby each OK, `running`, a time in ms, and every address example.com returned. With DNS-over-TLS off, stubby reads NOT USED.
+- See: `/etc/dnsmasq.conf`, `/etc/hosts`, `/tmp/resolv.dnsmasq`, `/etc/stubby/stubby.yml` and `/etc/resolv.conf`, each with when it was written, then Active DNS settings (nvram). dnsmasq.conf carries the amber "review before sharing" line.
+- Pass if: the files match `cat` on the router, and a long press selects text anywhere in the window.
+- Do: COPY, and paste it somewhere.
+- Pass if: the whole window comes out as text, in the same order.
+- Do: in SSH, `kill $(pidof stubby)`, then REFRESH straight away, before the router's own watchdog can restart it.
+- See: stubby FAILED, `not running`, and the amber advice naming stubby. If it already reads `running`, the router restarted it first: note that, which is worth knowing too.
+- Do: `pidof stubby`; if it prints nothing, `service restart_dnsmasq`, or reboot if that does not bring it back. REFRESH shows both OK again.
+
+**SET-10** Router DNS routing [hand]
+
+- Do: ROUTER DNS ROUTING, with TABLET pinned to wgc1.
+- See: the top line, "Only pinned devices' lookups go through a tunnel." on the recommended setup.
+- See: YOUR DEVICES' LOOKUPS names TABLET under `wgc1:<region>`, tagged `tunnel` and `encrypted to PIA`; "Everything else" goes through stubby, tagged `Internet` and `encrypted (DoT)`.
+- See: THE ROUTER'S OWN LOOKUPS lists each `/etc/resolv.conf` server: the DNS Server addresses tagged `not encrypted`, stubby tagged `encrypted (DoT)`, "only if both of the above fail".
+- See: THE WATCHDOGS' LOOKUPS, one line per slot with its region, and `encrypted (DoH)` for each watchdog; an empty slot reads `not configured`.
+- Pass if: EVIDENCE matches `ip rule show | grep 'iif lo'` and `iptables -t nat -S VPN_FUSION` on the router.
+- Do: unpin TABLET, APPLY, back to SETTINGS, ROUTER DNS ROUTING.
+- See: "No lookups go through a tunnel.", and the redirects section says no device is pinned.
 
 UNINSTALL is at the very end of the run: [END](#end).
 

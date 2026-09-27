@@ -62,7 +62,9 @@ echo "$*" >> "$STATE/sleeps"
 exec "$REALSLEEP" 0.05
 ''';
 
+// `cru l` lists the schedule kept in $STATE/cru, so a run can see whether its entry is still there.
 const String _cru = r'''#!/bin/sh
+[ "$1" = "l" ] && cat "$STATE/cru" 2>/dev/null
 exit 0
 ''';
 
@@ -165,6 +167,11 @@ exit 0
 
 // Records which way the lookup would leave, then answers according to the test.
 const String _nslookup = r'''#!/bin/sh
+# The router's own resolver (ID-194) answers apart from the slot's DNS, and is not counted with it.
+if [ "$2" = "127.0.0.1" ]; then
+  [ -f "$STATE/resolver_down" ] && exit 1
+  echo "Name: $1"; echo "Address 1: 192.0.2.81"; exit 0
+fi
 echo "$(ip route get "$2")" >> "$STATE/lookups"
 case "$(cat "$STATE/dns" 2>/dev/null)" in
   fail) exit 1 ;;
@@ -283,6 +290,9 @@ class WatchdogHarness {
       ..tunnelUp(handshakeAgo: 30)
       ..wan(true)
       ..dns('ok');
+    // Scheduled, as a deployed watchdog is (ID-240).
+    File('${h.state.path}/cru')
+        .writeAsStringSync('*/5 * * * * /jffs/cfg-pia-wg/watchdog_${h.iface}.sh #watchdog_${h.iface}#\n');
     return h;
   }
 
@@ -315,6 +325,12 @@ class WatchdogHarness {
 
   /// PIA answers the token request with HTTP 403, as it does for a wrong username or password.
   void piaRejects() => _flag('pia_rejects', true);
+
+  /// The watchdog's cron entry is gone, as DISABLE and DELETE leave it (ID-240).
+  void unschedule() => File('${state.path}/cru').writeAsStringSync('');
+
+  /// The router's own resolver, dnsmasq at 127.0.0.1, answers nothing (ID-194).
+  void routerResolverDown() => _flag('resolver_down', true);
 
   /// No certificate on the router yet, so a rebuild has to download it first.
   void noCachedCert() => File('${root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt').deleteSync();

@@ -88,3 +88,15 @@ const Map<String, Color> kSlotActionColours = {
 
 /// [label]'s colour, falling back to the house teal for a verb the map does not name.
 Color slotActionColour(String label) => kSlotActionColours[label] ?? kHighlight;
+
+// ── The DNS screens' tags (ID-194) ───────────────────────────────────────────────────────────
+//
+// ROUTER DNS ROUTING tags each lookup with where it goes and whether it is encrypted. Blue for the
+// open internet sets it apart from the teal of a tunnel; amber for "not encrypted" is the app's
+// caution colour. Each background is the tint the slot badges use for the same colour.
+const kTagTunnelBg = Color(0xFF0F3D2E); // teal on this: tunnel, encrypted, OK
+const kTagInternet = Color(0xFF64B5F6);
+const kTagInternetBg = Color(0xFF0F2438);
+const kTagPlainBg = Color(0xFF2A1F0E); // amber on this: not encrypted
+const kTagNeutralBg = Color(0xFF1F242D); // muted on this: not configured, shared by N
+const kTagFailedBg = Color(0xFF3D1A1A); // red on this: FAILED
