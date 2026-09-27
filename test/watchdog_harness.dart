@@ -57,6 +57,7 @@ echo "$*" >> "$STATE/syslog"
 // where starting a process is quick, the six "seconds" passed before it had run, and the probe killed
 // it. Windows was slow enough to hide that. Every wait in the script is short in these tests anyway.
 const String _sleep = r'''#!/bin/sh
+echo "$*" >> "$STATE/sleeps"
 [ -f "$STATE/realsleep" ] && exec "$REALSLEEP" "$@"
 exec "$REALSLEEP" 0.05
 ''';
@@ -173,10 +174,11 @@ exit 0
 ''';
 
 const String _curl = r'''#!/bin/sh
-out=""; fmt=""; url=""
+out=""; fmt=""; url=""; doh=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift ;; -w) fmt="$2"; shift ;;
+    --doh-url) doh=1; shift ;;
     -u|--cacert|--resolve|--data-urlencode|--max-time|--connect-timeout) shift ;;
     https://*) url="$1" ;;
   esac
@@ -191,8 +193,18 @@ case "$url" in
     [ -n "$out" ] && echo '{"token":"tok123"}' > "$out"; [ -n "$fmt" ] && printf '200 exit=0 connects=1 err='; exit 0 ;;
   *serverlist*) [ -n "$out" ] && echo '{"regions":[]}' > "$out"; exit 0 ;;
   *addKey*) echo '{"status":"OK"}'; exit 0 ;;
+  *ca.rsa.4096.crt*)
+    if [ "$doh" = 1 ] && [ -f "$STATE/doh_broken" ]; then echo "curl: (6) Could not resolve host" >&2; exit 6; fi
+    [ -n "$out" ] && printf -- '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n' > "$out"; exit 0 ;;
 esac
 exit 0
+''';
+
+// Only `openssl x509 -in FILE`, the certificate check: a file holding a certificate passes.
+const String _openssl = r'''#!/bin/sh
+f=""
+while [ $# -gt 0 ]; do [ "$1" = "-in" ] && f="$2"; shift; done
+[ -n "$f" ] && grep -q 'BEGIN CERTIFICATE' "$f" 2>/dev/null
 ''';
 
 // Canned answers, chosen by the filter, for the four things the rebuild asks of jq.
@@ -240,6 +252,7 @@ class WatchdogHarness {
       'ping': _ping,
       'nslookup': _nslookup,
       'curl': _curl,
+      'openssl': _openssl,
     };
     for (final e in stubs.entries) {
       File('${root.path}/bin/${e.key}').writeAsStringSync(e.value);
@@ -303,6 +316,12 @@ class WatchdogHarness {
   /// PIA answers the token request with HTTP 403, as it does for a wrong username or password.
   void piaRejects() => _flag('pia_rejects', true);
 
+  /// No certificate on the router yet, so a rebuild has to download it first.
+  void noCachedCert() => File('${root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt').deleteSync();
+
+  /// The encrypted lookup fails: a download that uses it cannot find its server.
+  void dohBroken() => _flag('doh_broken', true);
+
   /// A restart brings the interface up on the new key, and the server never answers it.
   void neverHandshakes() => _flag('no_handshake', true);
 
@@ -342,6 +361,7 @@ class WatchdogHarness {
   }
 
   List<String> get services => _lines('services');
+  List<String> get sleeps => _lines('sleeps');
   List<String> get curls => _lines('curls');
   List<String> get lookups => _lines('lookups');
   List<String> get rules => [for (final l in _lines('rules')) l.replaceAll('\t', ' ')];

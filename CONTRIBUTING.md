@@ -247,5 +247,6 @@ By contributing, you agree that your contributions will be licensed under the **
 
 ## 10. Thank you
 
-We deeply appreciate security researchers and contributors who help keep this project safe.
-Your efforts directly protect users’ privacy, routers, and VPN credentials. If you have questions about this policy, please [open an issue](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues) and/or see **SECURITY.md**.
+We deeply appreciate security researchers and contributors who help keep this project safe. Your efforts directly protect users’ privacy, routers, and VPN credentials. If you have questions about this policy, please [open an issue](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues) and/or see **SECURITY.md**.
+
+---

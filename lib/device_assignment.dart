@@ -338,8 +338,8 @@ int? actualExitIndex({required int? pinned, required int? defaultIndex, required
 
 /// A LAN device as the assignment screen sees it, joined from up to four router sources.
 ///
-/// The join is by uppercase MAC throughout: `nmp_cl_json.js` for the device set and its online
-/// state, `custom_clientlist` for the user's own name, `nmp_cache.js` or `dhcp_staticlist` for the
+/// The join is by uppercase MAC throughout: `nmp_cl_json.js` for the device set, `nmp_cache.js` for
+/// its online state, `custom_clientlist` for the user's own name, `nmp_cache.js` or `dhcp_staticlist` for the
 /// address, and `dhcp_staticlist` membership for whether it holds a reservation.
 class LanDevice {
   const LanDevice({
@@ -355,10 +355,11 @@ class LanDevice {
   final String? ip; // null when no source knows it - see [assignable]
   final String? customName; // custom_clientlist, the name the user chose
   final String? detectedName; // nmp_cl_json.js, a vendor string or DHCP hostname
-  /// Read from `nmp_cl_json.js`, NEVER from `nmp_cache.js`. Measured 2026-09-08 on a device
-  /// powered off for ten minutes: the first had updated to `online: 0` while the second still said
-  /// `isOnline: "1"`. Taking it from the file that supplies every other field would show every
-  /// device as permanently online.
+  /// `isOnline` from `nmp_cache.js`, the web interface's own source, else `online` from
+  /// `nmp_cl_json.js` (ID-165). Measured 2026-09-27 through a full off, on and off again: the cache
+  /// changed within a second of the web interface every time, and the /jffs file, rewritten only
+  /// every few minutes, was 8.5 minutes late going offline and 3 late coming back. A 2026-09-08
+  /// snapshot had pointed the other way, on a games console that may keep its network in standby.
   final bool online;
 
   final bool reserved; // present in dhcp_staticlist
@@ -527,8 +528,8 @@ Map<String, String> deviceNamesByIp(List<LanDevice> devices) => {
 /// Which source wins for what, all of it measured rather than assumed:
 ///
 ///   - **device set** - `nmp_cl_json.js`, because it is in `/jffs` and lists devices that are off.
-///   - **online** - `nmp_cl_json.js` ONLY. `nmp_cache.js`'s `isOnline` was still `"1"` ten minutes
-///     after a device was powered off.
+///   - **online** - `nmp_cache.js`'s `isOnline`, which the web interface follows to the second; else
+///     `nmp_cl_json.js`, whose /jffs copy is written only every few minutes (ID-165).
 ///   - **address** - `nmp_cache.js` first, then `dhcp_staticlist`. An offline device keeps its `ip`
 ///     in the cache, so the reservation is a second source rather than the main one.
 ///   - **the user's name** - `nickName` from `nmp_cache.js`, else `custom_clientlist`.
@@ -566,9 +567,10 @@ List<LanDevice> buildDeviceList({
       ip: str(cac, 'ip') ?? reservations[mac],
       customName: str(cac, 'nickName') ?? customNames[mac],
       detectedName: str(inv, 'name') ?? str(cac, 'name'),
-      // `online` is an integer here and absent from a device the inventory has never seen; treat
-      // unknown as online, since claiming a device is off is worse than not saying.
-      online: inv == null || '${inv['online']}' != '0',
+      // The cache first: it is what the web interface shows, and the /jffs inventory lags it by
+      // minutes (ID-165). Then the inventory, where `online` is an integer. Unknown to both reads as
+      // online, since claiming a device is off is worse than not saying.
+      online: str(cac, 'isOnline') != null ? str(cac, 'isOnline') != '0' : inv == null || '${inv['online']}' != '0',
       reserved: reservations.containsKey(mac),
     ));
   }

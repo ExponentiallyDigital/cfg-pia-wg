@@ -23,7 +23,7 @@ DNS is the internet's phone book. It turns a name like `example.com` into the ad
 
 Because a device that isn't pinned doesn't send its lookups out to the internet. It sends them **to the router**, and the router makes the lookup for it.
 
-Think of an office receptionist. You ask them to look up a number, and they ring the directory on the office line, not on your phone. Your phone plan has no say in which line they use.
+Think of a hotel. Your default connection is the taxi you've booked: it takes you, your web and app traffic, wherever you're going. But when you ask the concierge for a restaurant's address, you don't get in the taxi. The concierge looks it up on the hotel's own phone, and your taxi booking has no say in how they do it.
 
 The router works the same way. Your device's lookup arrives at the router and stops there. The router then makes a new lookup of its own, and the router's own rules decide which way that goes. Your default connection only applies to traffic that passes **through** the router to somewhere else, so it never sees the lookup.
 
@@ -38,7 +38,17 @@ flowchart TB
   Q -- "yes" --> HS["Through the highest-numbered<br/>matching slot's tunnel"]
   Q -- "no" --> NET["Through your internet connection"]
   P["Device pinned to a slot"] -- "all traffic, including DNS" --> PS["That slot's tunnel,<br/>to that slot's DNS servers"]
+
+  classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+  classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+  classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+  classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+  class U,P,RP step
+  class R,Q work
+  class DC,HS,NET,PS go
 ```
+
+<p align="center"><em>Where a device's lookups go: to the router if it isn't pinned, through its slot's tunnel if it is.</em></p>
 
 ### Who looks things up on the router?
 
@@ -55,7 +65,7 @@ Two groups, and they use different settings.
 - the watchdog sending you an alert email; and
 - downloading the helper programs cfg-pia-wg installs.
 
-Is the router's own lookup encrypted? That's up to the program making it, not the router. Most programs on the router, including the watchdog, look names up using ordinary DNS, which isn't encrypted. Everything the watchdog then sends and receives is encrypted (HTTPS). So your internet provider could see that the router looked up a PIA server name, but nothing more.
+Is the router's own lookup encrypted? That's up to the program making it, not the router. Most programs on the router look names up using ordinary DNS, which isn't encrypted. The watchdog doesn't: it looks up PIA's servers and your mail server over encrypted DNS (DoH), using the resolver chosen on the WATCHDOG form, Cloudflare unless you pick another. Leave both of its DoH fields empty and it uses ordinary DNS like everything else, so your internet provider could see that the router looked up a PIA server name, but nothing more. Either way, everything the watchdog then sends and receives is encrypted (HTTPS).
 
 ### How can one tunnel take away DNS for everything?
 
@@ -83,9 +93,19 @@ For example, suppose `wgc4:pia-aus_melbourne` breaks because PIA has rotated tha
 flowchart TB
   U["Devices not pinned"] -- "DNS lookups" --> R["Router"]
   W["Watchdog and the router's<br/>other programs"] --> R
-  R -- "9.9.9.9 is used by wgc1, wgc3 and wgc4.<br/>wgc4 is the highest number, so it wins." --> T4["wgc4: pia-aus_melbourne<br/>looks connected, answers nothing"]
+  R -- "9.9.9.9 is used by<br>wgc1, wgc3 and wgc4.<br/>wgc4 is the highest number,<br>so it wins." --> T4["wgc4: pia-aus_melbourne<br/>looks connected,<br>answers nothing"]
   T4 -. "no reply" .-> X["Websites don't load<br/>Watchdog can't reach PIA<br/>No alert email"]
+
+  classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+  classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+  classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+  classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+  class U,W step
+  class R work
+  class T4,X bad
 ```
+
+<p align="center"><em>One broken slot that shares the router's DNS address takes every unpinned device's lookups with it.</em></p>
 
 - **Devices that aren't pinned can't find any website.**
 - **The watchdog can't rebuild a tunnel.** It can't reach `serverlist.piaservers.net` (PIA's server list), `www.privateinternetaccess.com` (your login token) or `raw.githubusercontent.com` (PIA's security certificate).
@@ -100,11 +120,11 @@ What if the slot is stopped rather than broken? Then the router drops that slot'
 
 Start with the devices you care most about.
 
-**Pin them.** A pinned device's DNS goes to its slot's DNS servers, through its slot's tunnel. Its lookups leave from the same place as its traffic, and nothing else on the router can move them. cfg-pia-wg makes pinning quick, and you can set your default connection to the internet or to any slot in the same way.
+**Pin them.** A pinned device's DNS goes to its slot's DNS servers, through its slot's tunnel. Its lookups leave from the same place as its traffic, and nothing else on the router can move them. `cfg-pia-wg` makes pinning painless and easily visible in DEVICE ASSIGNMENT, and you can set your default connection to the Internet or to any slot you choose.
 
-Then set the router. Both settings are under **Advanced Settings > WAN > Internet Connection > WAN DNS Setting**:
+Then set the router. Both settings are under **Advanced Settings > WAN > Internet Connection > WAN DNS Setting** (see the [screenshot in `README`](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#42-router-dns-settings)):
 
-- **DNS Server** (click **Assign**). This is for the router's own lookups, including the watchdog's.
+- **DNS Server** (click **Assign**). This is for the router's own lookups, and the watchdog's too if you turn its encrypted DNS off.
 - **DNS-over-TLS (DoT) Server List.** This is for every device that isn't pinned. It appears when **DNS Privacy Protocol** is set to **DNS-over-TLS (DoT)**.
 
 For the **DNS Server**, whichever setup you choose below, use addresses that no slot uses, from a service that blocks malware. The router makes few lookups of its own, but if anything on it ever misbehaves, a filtering service is one more thing in its way. Example: Cloudflare's malware filter, `1.1.1.2` and `1.0.0.2`.
@@ -131,13 +151,23 @@ For the **DoT Server List**, there are two sensible setups. Both work. Each cost
 
 ```mermaid
 flowchart TB
-  T["Tablet, pinned to wgc2"] -- "DNS, redirected to 1.1.1.3" --> W2["wgc2 tunnel, New Zealand"] --> CFF["Cloudflare family filter"]
+  T["Tablet, pinned to wgc2"] -- "DNS, redirected to<br>1.1.1.3" --> W2["wgc2 tunnel, New Zealand"] --> CFF["Cloudflare family filter"]
   TV["TV, not pinned"] -- "web and app traffic" --> W1["wgc1 tunnel, Melbourne<br/>(default connection)"]
-  TV -- "DNS lookups" --> SB["Router: encrypted lookup to 1.1.1.2"]
-  RP["The router's own programs"] -- "ordinary lookup to 1.1.1.2" --> NET["Your internet connection"]
+  TV -- "DNS lookups" --> SB["Router: encrypted lookup to<br>1.1.1.2"]
+  RP["The router's own programs"] -- "ordinary lookup to<br>1.1.1.2" --> NET["Your internet connection"]
   SB --> NET
   NET --> CFS["Cloudflare, nearest server"]
+
+  classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+  classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+  classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+  classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+  class T,TV,RP,NET step
+  class W1,W2,SB work
+  class CFF,CFS go
 ```
+
+<p align="center"><em>Setup A: unpinned devices' lookups leave over your internet connection, encrypted, and no tunnel can take them down.</em></p>
 
 Notice the TV. Its traffic leaves through `wgc1`, but its lookups leave through your internet connection, even though your default connection is a tunnel. They're encrypted, so your internet provider can't read them, but Cloudflare sees your home address.
 
@@ -156,12 +186,22 @@ The DoT Server List uses the same addresses as `wgc1`, and every other slot uses
 
 ```mermaid
 flowchart TB
-  L["Laptop, pinned to wgc3"] -- "DNS, redirected to 9.9.9.11" --> W3["wgc3 tunnel, Italy"] --> QE["Quad9, server near Italy"]
+  L["Laptop, pinned to wgc3"] -- "DNS, redirected to<br>9.9.9.11" --> W3["wgc3 tunnel, Italy"] --> QE["Quad9, server near Italy"]
   TV["TV, not pinned"] -- "web and app traffic" --> W1T["wgc1 tunnel, Melbourne<br/>(default connection)"]
-  TV -- "DNS lookups" --> SB["Router: encrypted lookup to 9.9.9.9"]
-  SB -- "9.9.9.9 is used only by wgc1" --> W1D["wgc1 tunnel, Melbourne"] --> QM["Quad9, server near Melbourne"]
-  RP["The router's own programs"] -- "ordinary lookup to 1.1.1.2" --> NET["Your internet connection"] --> CFS["Cloudflare, nearest server"]
+  TV -- "DNS lookups" --> SB["Router: encrypted lookup to<br>9.9.9.9"]
+  SB -- "9.9.9.9<br>is used only by wgc1" --> W1D["wgc1 tunnel, Melbourne"] --> QM["Quad9, server near Melbourne"]
+  RP["The router's own programs"] -- "ordinary lookup to<br>1.1.1.2" --> NET["Your internet connection"] --> CFS["Cloudflare, nearest server"]
+
+  classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+  classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+  classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+  classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+  class L,TV,RP,NET step
+  class W3,W1T,W1D,SB work
+  class QE,QM,CFS go
 ```
+
+<p align="center"><em>Setup B: unpinned devices' lookups go through wgc1's tunnel, so the DNS provider sees PIA's address, not yours.</em></p>
 
 There's a bonus in using `9.9.9.11` on overseas slots. It passes part of the sender's address on to the website's own DNS servers, and for a device on `wgc3`, the sender is PIA's server in Italy. Websites then send that device to their servers near Italy, not near you. Your home address isn't passed on.
 
@@ -176,6 +216,9 @@ A filtering DNS service on a child's slot only works when the child's device ask
 - **Browsers:** turn off **Use secure DNS** in Chrome and Edge, and **DNS over HTTPS** in Firefox.
 - **Apps:** avoid ad blockers, VPN apps and other apps that set their own DNS.
 
+>[!TIP]
+> For an _**extensive**_ list of DNS providers, see [Adguard's KB](https://adguard-dns.io/kb/general/dns-providers).
+> 
 ### For the technically inquisitive
 
 What follows is a representation of what a stock ASUS router can look like. Everything in it was measured on one stock ASUS router in September 2026, not read in documentation - ASUS publish none of it. Other models and firmware versions may differ.
@@ -216,25 +259,32 @@ flowchart TB
   PD["Pinned devices"] --> VF
   VF --> DR
   DR --> OUT
+
+  classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+  classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+  classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+  classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+  class N1,N2,N3,N4,F1,F2,F3,D,PD step
+  class RP,DM,SB,RU,VF,DR work
+  class OUT go
 ```
+
+<p align="center"><em>How the settings you choose become the files, programs and routing rules that carry a lookup.</em></p>
 
 #### The router rules
 
 For each address in a slot's DNS, the firmware adds a routing rule. On the example router above, `ip rule show` includes:
 
 ```text
-1016: from all to 1.1.1.1 iif lo lookup 5   # wgc5
-1017: from all to 1.0.0.1 iif lo lookup 5   # wgc5
-1019: from all to 9.9.9.9 iif lo lookup 6   # wgc4 WINS
-1020: from all to 149.112.112.112 iif lo lookup 6
-                                            # wgc4 WINS
-1022: from all to 9.9.9.9 iif lo lookup 7   # wgc3
-1023: from all to 149.112.112.112 iif lo lookup 7
-                                            # wgc3
-1025: from all to 1.1.1.3 iif lo lookup 8   # wgc2
-1028: from all to 9.9.9.9 iif lo lookup 9   # wgc1
-1029: from all to 149.112.112.112 iif lo lookup 9
-                                            # wgc1
+1016: from all to 1.1.1.1 iif lo lookup 5          # wgc5
+1017: from all to 1.0.0.1 iif lo lookup 5          # wgc5
+1019: from all to 9.9.9.9 iif lo lookup 6          # wgc4 WINS
+1020: from all to 149.112.112.112 iif lo lookup 6  # wgc4 WINS
+1022: from all to 9.9.9.9 iif lo lookup 7          # wgc3
+1023: from all to 149.112.112.112 iif lo lookup 7  # wgc3
+1025: from all to 1.1.1.3 iif lo lookup 8          # wgc2
+1028: from all to 9.9.9.9 iif lo lookup 9          # wgc1
+1029: from all to 149.112.112.112 iif lo lookup 9  # wgc1
 ```
 
 Reading one rule, `1019: from all to 9.9.9.9 iif lo lookup 6`:
@@ -308,18 +358,19 @@ Notes:
 All of these commands only read. They change nothing.
 
 ```sh
-ls -l /etc/resolv.conf           # a link to /tmp/resolv.conf
-cat /etc/resolv.conf             # router programs' DNS servers
-cat /tmp/resolv.dnsmasq          # where dnsmasq sends lookups
-cat /etc/stubby/stubby.yml       # stubby's DoT servers
-nvram get dnspriv_rulelist       # the DoT Server List
-nvram show 2>/dev/null | grep -E '^wgc[0-9]_dns'
-                                 # each slot's DNS servers
-ip rule show                     # all routing rules
-ip route get 9.9.9.9             # the route for one address
-iptables -t nat -S VPN_FUSION    # pinned devices' redirects
+ls -l /etc/resolv.conf                           # a link to /tmp/resolv.conf
+cat /etc/resolv.conf                             # router programs' DNS servers
+cat /tmp/resolv.dnsmasq                          # where dnsmasq sends lookups
+cat /etc/stubby/stubby.yml                       # stubby's DoT servers
+nvram get dnspriv_rulelist                       # the DoT Server List
+nvram show 2>/dev/null | grep -E '^wgc[0-9]_dns' # each slot's DNS servers
+ip rule show                                     # all routing rules
+ip route get 9.9.9.9                             # the route for one address
+iptables -t nat -S VPN_FUSION                    # pinned devices' redirects
 for t in 5 6 7 8 9; do echo "table $t:"; ip route show table $t; done
-                                 # each slot's routing table
+                                                 # each slot's routing table
 ```
 
 If `ip route get` names a `wgc` interface for an address in your router's DNS Server or DoT Server List, that address is shared with a slot.
+
+---

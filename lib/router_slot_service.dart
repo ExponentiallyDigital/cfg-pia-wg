@@ -26,7 +26,7 @@ import 'router_service_queue.dart';
 import 'firmware.dart';
 import 'device_assignment.dart';
 import 'fail_closed_guard.dart';
-import 'router_watchdog.dart' show buildLoggerCommand, shellSingleQuote;
+import 'router_watchdog.dart' show buildLoggerCommand, isValidIpv4, shellSingleQuote;
 
 // The per-slot WireGuard NVRAM keys (without the `wgcN_` prefix), in the order router_push.dart
 // wrote them. Used for backup/restore, delete, and the parameter editor.
@@ -380,6 +380,9 @@ class SlotInfo {
   // entry is not. That is what DISABLE leaves behind, and what ENABLE needs to put it back.
   final bool watchdogConfigured;
   final bool emailAlerting; // wgcN_wd_email_enabled == 1 (only meaningful while watchdogActive)
+  // wgcN_dns, read for a configured slot only: the watchdog form warns when its encrypted DNS
+  // shares an address with any slot's DNS, not just its own (ID-221).
+  final String dns;
   const SlotInfo({
     required this.index,
     required this.desc,
@@ -388,6 +391,7 @@ class SlotInfo {
     required this.watchdogActive,
     this.watchdogConfigured = false,
     this.emailAlerting = false,
+    this.dns = '',
   });
 
   bool get isEmpty => desc.trim().isEmpty;
@@ -567,7 +571,9 @@ class RouterSlotService {
     // keepIndex 0 because these devices are now pinned to the internet, and THAT rule - the
     // `lookup main` the firmware writes for index 0 - is the one they are supposed to keep.
     final rules = await _read(kIpRuleCommand);
-    for (final ip in pinned) {
+    // The addresses come from the router's own list, but they go into a command line: only a real
+    // address does (ID-237).
+    for (final ip in pinned.where(isValidIpv4)) {
       for (final table in staleRuleTables(rules, ip: ip, keepIndex: 0)) {
         await _run('ip rule del from $ip lookup $table priority $kFirmwareRulePriority', allowFailure: true);
       }
@@ -734,6 +740,7 @@ class RouterSlotService {
       final watchdogConfigured = (await _read('nvram get wgc${i}_wd_check_interval')).isNotEmpty;
       // Email alerting is a watchdog feature; only read it for an active watchdog.
       final emailAlerting = watchdog && (await _read('nvram get wgc${i}_wd_email_enabled')) == '1';
+      final dns = desc.trim().isEmpty ? '' : await _read('nvram get wgc${i}_dns');
       slots[i] = SlotInfo(
         index: i,
         desc: desc,
@@ -742,6 +749,7 @@ class RouterSlotService {
         watchdogActive: watchdog,
         watchdogConfigured: watchdogConfigured,
         emailAlerting: emailAlerting,
+        dns: dns,
       );
     }
 
@@ -834,24 +842,27 @@ class RouterSlotService {
     final epPort = epParts.length > 1 ? epParts[1] : '1337';
 
     // Written in kSlotNvramKeys order; stock skips the four keys its firmware does not have.
+    // Single-quoted like every other write: DNS is typed by the user, and the rest comes from PIA's
+    // answer, and in double quotes a `$`, backtick or quote in either ran as shell (ID-237).
+    final q = shellSingleQuote;
     final values = <String, String>{
-      'addr': '"${wgMap['Address'] ?? ''}"',
+      'addr': q(wgMap['Address'] ?? ''),
       'alive': '25',
-      'desc': '"$desc"',
-      'dns': '"${wgMap['DNS'] ?? ''}"',
+      'desc': q(desc),
+      'dns': q(wgMap['DNS'] ?? ''),
       'enable': '0', // created but not active (spec 2.1.2)
       'enforce': '0', // kill switch off on create (round-2)
-      'ep_addr': '"$epIp"',
-      'ep_addr_r': '""',
-      'ep_port': '"$epPort"',
+      'ep_addr': q(epIp),
+      'ep_addr_r': "''",
+      'ep_port': q(epPort),
       'fw': '1',
-      'mtu': '"${wgMap['MTU'] ?? '1420'}"',
+      'mtu': q(wgMap['MTU'] ?? '1420'),
       'nat': '1',
-      'ppub': '"${wgMap['PublicKey'] ?? ''}"',
-      'priv': '"${wgMap['PrivateKey'] ?? ''}"',
-      'psk': '""',
-      'rip': '""',
-      'aips': '"${wgMap['AllowedIPs'] ?? '0.0.0.0/0'}"',
+      'ppub': q(wgMap['PublicKey'] ?? ''),
+      'priv': q(wgMap['PrivateKey'] ?? ''),
+      'psk': "''",
+      'rip': "''",
+      'aips': q(wgMap['AllowedIPs'] ?? '0.0.0.0/0'),
     };
     final stock = isStockFirmware;
     final keys = slotKeysFor(routerFirmware);

@@ -21,12 +21,14 @@
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'widgets/app_button.dart';
 
 import 'app_colors.dart';
 import 'firmware.dart';
 import 'pia_service.dart';
+import 'input_checks.dart' show addressesIn;
 import 'router_slot_service.dart' show dnsAddressesIn, kSlotDescPrefix, slotDescFor, slotLabel;
 import 'router_watchdog.dart';
 import 'session_controller.dart';
@@ -47,6 +49,10 @@ class WatchdogDialog extends StatefulWidget {
 
   /// The router's own encrypted-DNS servers, so the DNS field can say when the two overlap (ID-005).
   final Set<String> routerDotServers;
+
+  /// Every OTHER configured slot's DNS, by slot. A watchdog lookup sent to one of these addresses
+  /// goes through that slot's tunnel, and breaks when it does (ID-221).
+  final Map<int, String> otherSlotDns;
   final RouterWatchdog Function(SSHClient)? serviceFactory; // test seam
 
   const WatchdogDialog({
@@ -61,6 +67,7 @@ class WatchdogDialog extends StatefulWidget {
     this.piaService,
     this.serviceFactory,
     this.routerDotServers = const {},
+    this.otherSlotDns = const {},
   });
 
   @override
@@ -281,10 +288,16 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     );
     // The clash that matters: an address this slot also uses for its DNS is routed into this
     // slot's tunnel, so a broken tunnel would take the watchdog's own lookups with it.
-    final dohIp = _dohIpCtrl.text.trim();
-    final clashSlot = dohIp.isNotEmpty && dnsAddressesIn(_dnsCtrl.text).contains(dohIp);
-    final clashRouter = dohIp.isNotEmpty && widget.routerDotServers.contains(dohIp);
-    final clash = clashSlot || clashRouter;
+    // Every address in the field, against every place it could collide: one field can hold two
+    // addresses, and compared as one string they never matched anything (ID-221).
+    final dohIps = addressesIn(_dohIpCtrl.text);
+    final clashSlot = dohIps.any(dnsAddressesIn(_dnsCtrl.text).contains);
+    final clashRouter = dohIps.any(widget.routerDotServers.contains);
+    final clashOthers = [
+      for (final e in widget.otherSlotDns.entries)
+        if (e.key != widget.slotIndex && dohIps.any(dnsAddressesIn(e.value).contains)) e.key,
+    ]..sort();
+    final clash = clashSlot || clashRouter || clashOthers.isNotEmpty;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const Text("The watchdog's own encrypted DNS", style: TextStyle(color: kHighlight, fontSize: 12)),
       const SizedBox(height: 4),
@@ -326,7 +339,12 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                 ? "The router already uses this address for its own encrypted DNS. If a tunnel uses it for DNS "
                     "too, the router's lookups to it go through that tunnel, and the watchdog's go with them. "
                     'Choose an address nothing else uses.'
-                : 'The watchdog resolves PIA over an encrypted connection to this address. The DoH URL must be a '
+                : clashOthers.isNotEmpty
+                    ? '${clashOthers.map((s) => 'wgc$s').join(' and ')} ${clashOthers.length == 1 ? 'uses' : 'use'} '
+                        "this address for DNS, so the router sends the watchdog's lookups to it through "
+                        '${clashOthers.length == 1 ? 'that tunnel' : 'those tunnels'}. If one breaks, this watchdog '
+                        'cannot look up PIA. Choose an address no tunnel uses for DNS.'
+                    : 'The watchdog resolves PIA over an encrypted connection to this address. The DoH URL must be a '
                 'name, not an IP address. The DoH server address is how that name is reached. Leave both '
                 'empty to look names up in the clear.',
         key: const Key('wd_doh_note'),
@@ -503,6 +521,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       return true;
     });
     if (saved != true || !mounted) return;
+    // The deploy worked, so the logins on the form are proven: offer them to the password manager.
+    // Closing the form without this cancelled the offer (ID-225).
+    TextInput.finishAutofillContext();
     // No enable here: deployWatchdog brings the slot up itself. This used to call enableVpnSlot
     // again for a slot that started empty, which bounced the tunnel the deploy's immediate script
     // run had just established - two `service restart_vpnc` calls on stock for one deploy.
@@ -524,6 +545,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     // says so - a phone is a poor place from which to go SSH into a router.
     if (sent == false) {
       await AppErrors.system(context, _c, 'The test email could not be sent. See APP LOG for what the router reported.');
+    } else if (sent == true) {
+      // Delivered, so the SMTP login works: offer it for saving now, as a deploy does (ID-225).
+      TextInput.finishAutofillContext();
     }
   }
 

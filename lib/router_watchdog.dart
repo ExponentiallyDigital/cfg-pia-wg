@@ -14,6 +14,7 @@
 // Copyright (C) 2026 Andrew Newbury.
 //
 
+import 'input_checks.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
@@ -30,7 +31,8 @@ import 'router_slot_service.dart'
         kUpInterfacesCommand,
         parseVpncClientlist,
         slotDescFor,
-        slotKeysFor;
+        slotKeysFor,
+        slotLabel;
 import 's50_template.dart';
 import 'watchdog_email.dart';
 
@@ -97,7 +99,12 @@ bool isValidIpv4(String ip) {
 }
 
 // Loose RFC-5322 email check for UI validation.
-bool isValidEmail(String email) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email.trim());
+// The local part without `$`, backtick, quote, backslash or space, and a real hostname after the @:
+// the address is handed to the mail command, and no address in use needs those (ID-237).
+bool isValidEmail(String email) {
+  final m = RegExp(r"^([A-Za-z0-9.!#%&'*+/=?^_{|}~-]+)@([^@]+)$").firstMatch(email.trim());
+  return m != null && isHostname(m.group(2)!) && m.group(2)!.contains('.');
+}
 
 // Parses the router status file timestamp ("YYYY-MM-DD HH:MM:SS") to a DateTime.
 DateTime? parseLastPing(String raw) {
@@ -160,8 +167,9 @@ class WatchdogConfig {
   // Human-readable validation errors; an empty list means the config is valid.
   List<String> validate() {
     final errors = <String>[];
-    if (cronIntervalMinutes <= 0) {
-      errors.add('Check interval must be a positive number of minutes.');
+    // Above 59, `*/N` in the cron line no longer means every N minutes (ID-237).
+    if (cronIntervalMinutes < 1 || cronIntervalMinutes > 59) {
+      errors.add('Check interval must be a whole number of minutes from 1 to 59.');
     }
     if (primaryIp.trim().isEmpty) {
       errors.add('Primary ping IP is required.');
@@ -173,11 +181,29 @@ class WatchdogConfig {
     } else if (!isValidIpv4(secondaryIp)) {
       errors.add('Secondary ping IP is not a valid IPv4 address.');
     }
+    // The slot's DNS, when the form has one: a mistyped address makes the watchdog rebuild a healthy
+    // tunnel on every check, because nothing ever answers it (ID-237).
+    if (slotDns.trim().isNotEmpty) {
+      if (checkIpv4List(slotDns, field: 'DNS servers') case final e?) errors.add(e);
+    }
+    // Both or neither, each the right shape: swapped, the script built no encrypted lookup and said
+    // nothing (ID-221, 2026-09-27).
+    errors.addAll(checkDohPair(dohUrl, dohIp));
     if (piaUsername.trim().isEmpty) {
       errors.add('PIA username is required.');
     }
     if (piaPassword.isEmpty) {
       errors.add('PIA password is required.');
+    }
+    // A line break in any of these becomes a new line in an email header or the log (ID-237).
+    for (final (name, value) in [
+      ('PIA username', piaUsername),
+      ('PIA password', piaPassword),
+      ('Email subject', emailSubject),
+      ('SMTP username', smtpUsername),
+      ('SMTP password', smtpPassword),
+    ]) {
+      if (hasControlCharacter(value)) errors.add('$name cannot contain a line break or other control character.');
     }
     if (emailAlertsEnabled) {
       if (emailFrom.trim().isEmpty) {
@@ -195,8 +221,10 @@ class WatchdogConfig {
       }
       if (smtpServer.trim().isEmpty) {
         errors.add('SMTP server (host:port) is required when email alerts are enabled.');
-      } else if (!smtpServer.contains(':')) {
-        errors.add('SMTP server must be in host:port format.');
+      } else if (checkHostPort(smtpServer, field: 'SMTP server') case final e?) {
+        // The port has to be real: the test email fell back to 465, the script used the text as typed,
+        // so a test could pass while every real alert failed (ID-237).
+        errors.add(e);
       }
       if (smtpUsername.trim().isEmpty) {
         errors.add('SMTP username is required when email alerts are enabled.');
@@ -223,7 +251,7 @@ class WatchdogConfig {
         // ID-076. Written even when empty, so clearing the resolver on the form clears it on the
         // router rather than leaving the old one in place.
         'wgc${slotIndex}_wd_doh_url': dohUrl.trim(),
-        'wgc${slotIndex}_wd_doh_ip': dohIp.trim(),
+        'wgc${slotIndex}_wd_doh_ip': normaliseAddressList(dohIp),
       };
 
   // Rebuilds a config from a map of nvram values (per-slot wgcN_wd_* + global PIA keys).
@@ -410,6 +438,8 @@ List<String> heredocWriteCommands(String path, String body, {int maxBytes = 4000
     bufBytes = 0;
   }
 
+  // A line that is the delimiter would end the heredoc early and run the rest as commands.
+  if (lines.contains('WATCHDOG_EOF')) throw ArgumentError('the text holds a line the upload cannot carry');
   for (final line in lines) {
     // Bytes, as dropbear measures its limit. Counting characters under-counted anything non-ASCII
     // (ID-136) - harmless at this margin, but the same mistake as the size check it sat beside.
@@ -828,16 +858,34 @@ fi''';
 /// Both parts or neither: `--doh-url` alone would leave curl resolving the resolver's own name in
 /// the clear, which is most of what this is for.
 String dohCurlArguments(String url, String ip) {
+  // Checked again here, not only on the form: this goes into the script, and a router can hold a
+  // value saved before the check existed (ID-237).
+  if (checkDohPair(url, ip).isNotEmpty) return '';
   final host = Uri.tryParse(url.trim())?.host ?? '';
-  if (host.isEmpty || ip.trim().isEmpty) return '';
-  return ' --doh-url ${url.trim()} --resolve $host:443:${ip.trim()}';
+  final addresses = normaliseAddressList(ip);
+  if (host.isEmpty || addresses.isEmpty) return '';
+  // One or two addresses, comma-separated with no spaces: curl tries them in order (ID-221). A space,
+  // as a router saved before the check held, split the option in two and broke every download.
+  return ' --doh-url ${url.trim()} --resolve $host:443:$addresses';
 }
 
 /// What the script logs once per run, so a reader can see which way lookups went.
 String dohDescription(String url, String ip) {
+  if (checkDohPair(url, ip).isNotEmpty) return '';
   final host = Uri.tryParse(url.trim())?.host ?? '';
-  if (host.isEmpty || ip.trim().isEmpty) return '';
-  return '$host (${ip.trim()})';
+  final addresses = addressesIn(ip);
+  if (host.isEmpty || addresses.isEmpty) return '';
+  return '$host (${addresses.join(', ')})';
+}
+
+/// What the script logs when encrypted DNS is set but cannot be used, or '' when it is fine or unset.
+/// The fields were once stored the wrong way round, and the run said "no DoH resolver configured" and
+/// looked names up in the clear (ID-221). The values are not quoted back: a bad one may hold anything.
+String dohUnusableNote(String url, String ip) {
+  if (url.trim().isEmpty && ip.trim().isEmpty) return '';
+  if (dohDescription(url, ip).isNotEmpty) return '';
+  return 'encrypted DNS is set on the WATCHDOG form but cannot be used (the URL needs https:// and a '
+      'hostname, the address one or two IPv4 addresses). Fix it there and SAVE & DEPLOY';
 }
 
 /// Where the watchdog sends its own name lookups, encrypted (ID-076).
@@ -865,11 +913,18 @@ class DohResolver {
   final String ip;
 }
 
-/// The three offered, in the order the form lists them, plus whatever the user types.
+/// The ones offered, in the order the form lists them, plus whatever the user types. The addresses
+/// are those in ROUTER-DNS.md's table. One address each: a second can be typed in (ID-221), and a
+/// router already holding one of these keeps showing it by name.
 const List<DohResolver> kDohResolvers = [
   DohResolver('Cloudflare (blocks malware)', 'https://security.cloudflare-dns.com/dns-query', '1.1.1.2'),
   DohResolver('Google', 'https://dns.google/dns-query', '8.8.8.8'),
   DohResolver('Quad9 (blocks malware)', 'https://dns.quad9.net/dns-query', '9.9.9.9'),
+  // Added in build 470 (ID-226). Mullvad answers only encrypted lookups, so no slot can be using
+  // it for DNS: the one choice here that can never clash.
+  DohResolver('Control D (blocks malware)', 'https://freedns.controld.com/p1', '76.76.2.1'),
+  DohResolver('AdGuard (blocks ads and trackers)', 'https://dns.adguard-dns.com/dns-query', '94.140.14.14'),
+  DohResolver('Mullvad (blocks ads, trackers and malware)', 'https://base.dns.mullvad.net/dns-query', '194.242.2.4'),
 ];
 
 /// The default: Cloudflare's malware-filtering resolver. Chosen because it is the address the DNS
@@ -898,6 +953,7 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       .replaceAll('__RESTART__', stock ? _kRestartStock : _kRestartMerlin)
       .replaceAll('__DOH__', dohCurlArguments(c.dohUrl, c.dohIp))
       .replaceAll('__DOHDESC__', dohDescription(c.dohUrl, c.dohIp))
+      .replaceAll('__DOHBAD__', dohUnusableNote(c.dohUrl, c.dohIp))
       .replaceAll('__BACKOFF__', buildBackoffCase())
       .replaceAll('__APPVER__', appVersionLabel)
       .replaceAll('__KILLSW__', stock ? _kKillSwitchStock : _kKillSwitchMerlin)
@@ -1176,6 +1232,9 @@ class RouterWatchdog {
       // watchdog-created slot reads as unconfigured, and the slot modal greys out everything
       // except CREATE - including VIEW ROUTER WATCHDOG LOG.
       await RouterSlotService(client).writeVpncProfile(config.slotIndex, desc: slotDescFor(desc));
+      // Named by the new region from here on. The name was remembered from before, so a region change
+      // logged "pia-aus_perth" from the router and "pia-nz" from this cache in the same run (ID-224).
+      _labelCache[config.slotIndex] = slotLabel(config.slotIndex, slotDescFor(desc));
     }
     await _run('nvram commit');
   }
@@ -1209,6 +1268,13 @@ class RouterWatchdog {
         // Taken before anything is written, and after the two reads above, which need the slot as
         // it is now.
         final before = await _snapshotSlot(slot);
+        // The watchdog's own settings, for a save that fails before its schedule is written. They
+        // went in first and stayed, and settings with no schedule is what the app shows as PAUSED,
+        // under an error saying the watchdog "stays scheduled" (ID-196).
+        final settingsBefore = {
+          for (final f in kWatchdogSlotNvramFields) 'wgc${slot}_$f': await _read('nvram get wgc${slot}_$f'),
+        };
+        var scheduled = false;
         try {
           if (regionChanged) await _clearForRebuild(slot, running: up, region: desc);
           await _writeWatchdogNvram(config, desc: desc);
@@ -1217,6 +1283,7 @@ class RouterWatchdog {
           if (isStockFirmware) await _guardService.ensure();
           await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
           await _run(buildCronRotateLine(config.slotIndex));
+          scheduled = true;
           await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
           onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
           await _run(kSeedCountersCommand);
@@ -1225,18 +1292,37 @@ class RouterWatchdog {
           // and makes it email even when it finds the tunnel already healthy.
           await _run('${watchdogScriptPath(config.slotIndex)} deploy');
         } catch (e) {
+          final hadWatchdog = (settingsBefore['wgc${slot}_wd_check_interval'] ?? '').isNotEmpty;
+          if (!scheduled) await _restoreWatchdogSettings(settingsBefore);
           final undone = await _restoreSlot(slot, before);
           final cause = e.toString().replaceAll('Exception: ', '').trim();
           // Names the cause AND what was done about it: a failure that silently leaves a router in
           // an unknown state is the thing this whole item is about.
-          throw Exception('$cause $undone Its watchdog stays scheduled and will try again in '
-              '${config.cronIntervalMinutes} minutes.');
+          final watchdog = scheduled
+              ? 'Its watchdog stays scheduled and will try again in ${config.cronIntervalMinutes} minutes.'
+              : hadWatchdog
+                  ? "Its watchdog's previous settings were put back."
+                  : 'No watchdog was set up.';
+          throw Exception('$cause $undone $watchdog');
         }
         onLog?.call('Ran ${watchdogScriptPath(config.slotIndex)}', isSuccess: true);
         await _logRouter(
             'Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
         onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
       });
+
+  /// Puts the watchdog's settings back as [before] held them, unsetting any that were empty (ID-196).
+  /// Best effort, as [_restoreSlot] is: the caller is already reporting the failure.
+  Future<void> _restoreWatchdogSettings(Map<String, String> before) async {
+    try {
+      for (final e in before.entries) {
+        await _run(e.value.isEmpty ? 'nvram unset ${e.key}' : 'nvram set ${e.key}=${shellSingleQuote(e.value)}',
+            allowFailure: true);
+      }
+    } catch (_) {
+      onLog?.call('Could not put the watchdog settings back; the slot may show as PAUSED.', isError: true);
+    }
+  }
 
   /// The slot's tunnel configuration as it stands, for [_restoreSlot] to put back (ID-121).
   ///
@@ -1260,7 +1346,10 @@ class RouterWatchdog {
   /// Best effort by design: the caller is already reporting a failure, and a restore that itself
   /// fails must say so rather than replace the original cause.
   Future<String> _restoreSlot(int slot, ({Map<String, String>? keys, String? vpnc}) before) async {
-    final label = await _label(slot);
+    // Named as it was, since that is what it is being put back to (ID-224).
+    final previous = before.keys?['wgc${slot}_desc'] ?? '';
+    final label = previous.isEmpty ? await _label(slot) : slotLabel(slot, previous);
+    if (previous.isNotEmpty) _labelCache[slot] = label;
     try {
       if (before.keys != null) {
         onLog?.call('Deploy failed; putting $label back as it was.', isError: true);
@@ -1827,6 +1916,9 @@ class RouterWatchdog {
   /// or after the region is changed on the form, the router's own `wgcN_desc` is empty or the old region, so
   /// the subject and the Watchdog row take the form's instead, as the deployed email will (ID-049).
   Future<bool> testEmail(WatchdogConfig config, {String desc = ''}) => _guard('test email', () async {
+        // The host goes into a command line, and on Merlin into a helper a shell runs: checked here
+        // as well as on the form (ID-237).
+        if (checkHostPort(config.smtpServer, field: 'SMTP server') case final e?) throw ArgumentError(e);
         final (host, port) = config.smtpHostPort;
         final stock = isStockFirmware;
         final facts = await emailFacts(config.slotIndex);
@@ -1961,6 +2053,10 @@ if [ "$RUNMODE" = "detached" ]; then
     sleep 1
     DN=$((DN + 1))
   done
+  # 15 s apart by slot, wgc1 first. Every watchdog fires on the same minute, and runs packed into a
+  # few seconds crash the firmware's asd, which restarts the firewall each time; spaced 15 s apart
+  # they did not, in 48 runs (ID-227). Only here: a deploy and a run by hand are not delayed.
+  [ __SLOT__ -gt 1 ] && sleep $(( (__SLOT__ - 1) * 15 ))
   RUNMODE="cron"
 fi
 [ "$RUNMODE" = "foreground" ] && RUNMODE="cron"
@@ -1986,6 +2082,7 @@ CURLPLAIN="curl -s --max-time 15 --connect-timeout 8 --tlsv1.2"
 # tunnel is worse than one whose lookups are visible.
 CURLB="$CURLPLAIN__DOH__"
 DOHDESC="__DOHDESC__"
+DOHBAD="__DOHBAD__"
 CURL="$CURLB --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
 TMPSRV="/tmp/${IFACE}_servers.txt"
@@ -2015,6 +2112,11 @@ SMTP_USER="$(nvram get ${K}wd_smtp_user)"
 SMTP_PASS="$(nvram get ${K}wd_smtp_pass)"
 SMTP_HOST="${SMTP_SERVER%:*}"
 SMTP_PORT="${SMTP_SERVER##*:}"
+# The host reaches sendmail's -H helper, which a shell runs, so only a plain name and port go
+# through, whatever NVRAM holds (ID-237).
+SMTP_BAD=0
+case "$SMTP_HOST" in ''|*[!A-Za-z0-9.-]*) SMTP_BAD=1 ;; esac
+case "$SMTP_PORT" in ''|*[!0-9]*) SMTP_BAD=1 ;; esac
 DESC="$(nvram get ${K}desc)"
 # PIA region ids carry no prefix; strip the app's for the lookup (tolerates older names).
 REGION="${DESC#pia-}"
@@ -2079,6 +2181,10 @@ send_alert() {
   STATUS="$1"
   DETAIL="$2"
   [ "$EMAIL_ON" = "1" ] || return 0
+  if [ "$SMTP_BAD" = 1 ]; then
+    log "Email not sent: the SMTP server setting is not a plain host:port. Fix it on the WATCHDOG form and SAVE & DEPLOY"
+    return 0
+  fi
   [ -n "$SMTP_HOST" ] || { log "Email enabled but SMTP server is not configured"; return 0; }
 
   if [ "$STATUS" != "SUCCESS" ]; then
@@ -2481,18 +2587,26 @@ fi
 if [ ! -f "$CACERT" ]; then
   log "CA cert not cached; downloading"
   mkdir -p "${CACERT%/*}" || abort "failed to create ${CACERT%/*}"
-  if ! $CURLB -S --fail "$CACERT_URL" -o "$CACERT" 2>"$TMPERR"; then
-    CRC=$?
-    abort "failed to download the PIA CA certificate (curl exit $CRC: $(head -n 1 "$TMPERR" | cut -c1-120)). The router needs internet access to $CACERT_URL."
+  # One retry in the clear, as the token request has: a resolver that is down must not stop the
+  # rebuild at its first step (ID-222).
+  if ! $CURLB -S --fail "$CACERT_URL" -o "$CACERT" 2>"$TMPERR" || ! openssl x509 -noout -in "$CACERT" >/dev/null 2>&1; then
+    rm -f "$CACERT"
+    if [ -n "$DOHDESC" ]; then
+      log "CA cert download failed through encrypted DNS; retrying once WITHOUT encrypted DNS"
+      $CURLPLAIN -S --fail "$CACERT_URL" -o "$CACERT" 2>"$TMPERR"
+    fi
   fi
   echo -n > /jffs/curllst
-  openssl x509 -noout -in "$CACERT" >/dev/null 2>&1 || abort "CA cert is not valid PEM"
+  if ! openssl x509 -noout -in "$CACERT" >/dev/null 2>&1; then
+    rm -f "$CACERT"
+    abort "could not download the PIA CA certificate ($(head -n 1 "$TMPERR" | cut -c1-120)). The router needs internet access to $CACERT_URL."
+  fi
   log "CA cert cached at $CACERT"
 else
   log "Using cached CA cert"
 fi
 
-if [ -n "$DOHDESC" ]; then log "Name lookups encrypted via $DOHDESC"; else log "Name lookups are NOT encrypted (no DoH resolver configured)"; fi
+if [ -n "$DOHDESC" ]; then log "Name lookups encrypted via $DOHDESC"; elif [ -n "$DOHBAD" ]; then log "Name lookups are NOT encrypted: $DOHBAD"; else log "Name lookups are NOT encrypted (no DoH resolver configured)"; fi
 log "Requesting PIA token for user $PIA_USER"
 # Body to a file, status code to a second file, curl as the condition of an `if`. exit 0 with no
 # status, no body and no stderr is the caller-rejection signature (see the detach at the top); if

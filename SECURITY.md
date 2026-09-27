@@ -71,8 +71,7 @@ We enforce a strict **zero-hardcoded-secrets policy** across this entire infrast
 
 ## Build attestation
 
-Build provenance attestations are available for release APK, debug APK, and Google Play Store AAB.
-View them at: https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations
+Build provenance attestations are available for release APK, debug APK, and Google Play Store AAB. View them at: https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations
 
 ---
 
@@ -87,3 +86,5 @@ View them at: https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations
 - **Automated clipboard overwrite:** to neutralise background memory/clipboard scraping malwares operating on the host device, successful clipboard transfers trigger a 60-second real-time countdown timer. Once expired, the app automatically overwrites the system clipboard with a blank string.
 - **Native task-switcher protection** `(FLAG_SECURE)`: enforces native OS-level window flags to block third-party screenshot capturing and automatically obfuscates/blanks the app layout view inside the Android Recent Apps / Task Switcher interface.
 - **Native screen capture protection:** the implementation forces native Android system window attributes (`FLAG_SECURE`). This explicitly instructs the host OS kernel to block third-party screenshot captures and automatically obfuscates or blanks the active UI presentation when viewing screens inside the system's Recent Apps / Task Switcher interface.
+
+---

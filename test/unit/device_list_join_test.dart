@@ -2,7 +2,7 @@
 //
 // The fixtures are shaped exactly like the router's, including the two things that were found only
 // by running it: the non-device keys `nmp_cache.js` mixes in among the MAC-keyed ones, and the
-// `isOnline` that still said "1" ten minutes after the device was powered off.
+// /jffs inventory's `online` lagging the web interface by minutes (ID-165).
 //
 // MACs here are invented - see test/unit/no_lan_identifiers_test.dart.
 import 'package:cfg_pia_wg/device_assignment.dart';
@@ -15,12 +15,12 @@ const _nmpClJson = '''
   "33:44:55:66:77:88": {"mac":"33:44:55:66:77:88","name":"meshnode","vendor":"Asus","type":24,"online":1,"conn_ts":0}
 }''';
 
-// Note isOnline "1" for the device the inventory says is offline - the real staleness, reproduced.
+// The console is off in both. The cache is the web interface's source, and wins where they differ.
 const _nmpCache = '''
 {
   "maclist": ["11:22:33:44:55:66","22:33:44:55:66:77","33:44:55:66:77:88"],
   "ClientAPILevel": "5",
-  "11:22:33:44:55:66": {"name":"console","nickName":"Console","ip":"192.168.1.87","isOnline":"1","type":"76"},
+  "11:22:33:44:55:66": {"name":"console","nickName":"Console","ip":"192.168.1.87","isOnline":"0","type":"76"},
   "22:33:44:55:66:77": {"name":"laptop","nickName":"","ip":"192.168.1.20","isOnline":"1","type":"9"},
   "33:44:55:66:77:88": {"name":"meshnode","nickName":"","ip":"192.168.1.90","isOnline":"1","type":"24"}
 }''';
@@ -97,11 +97,29 @@ void main() {
       expect(macs.length, 2);
     });
 
-    test('ONLINE COMES FROM nmp_cl_json, NOT the stale isOnline', () {
-      // The bug this would otherwise have shipped: nmp_cache.js still said isOnline "1" ten
-      // minutes after the device was powered off, so nothing would ever have read as offline.
-      final box = _join().firstWhere((d) => d.mac == '11:22:33:44:55:66');
-      expect(box.online, isFalse, reason: 'nmp_cl_json says online 0; nmp_cache still says 1');
+    // ID-165, measured 2026-09-27: the web interface and the cache changed within a second of each
+    // other; the /jffs inventory was 8.5 minutes late going offline and 3 late coming back.
+    test("online comes from the cache, the web interface's source, where the two disagree", () {
+      LanDevice join(String inv, String cache) => buildDeviceList(
+            nmpClJson: '{"AA:BB:CC:00:00:01":{"name":"tablet","online":$inv}}',
+            nmpCache: '{"AA:BB:CC:00:00:01":{"name":"tablet","ip":"192.168.1.30","isOnline":"$cache"}}',
+            customClientlist: '',
+            dhcpStaticlist: '',
+            cfgDeviceList: '',
+          ).single;
+      expect(join('1', '0').online, isFalse, reason: 'switched off: the inventory has not caught up');
+      expect(join('0', '1').online, isTrue, reason: 'switched back on: the same lag the other way');
+    });
+
+    test('a device the cache does not list takes its state from the inventory', () {
+      final d = buildDeviceList(
+        nmpClJson: '{"AA:BB:CC:00:00:01":{"name":"ghost","online":0}}',
+        nmpCache: '{"maclist":[],"ClientAPILevel":"5"}',
+        customClientlist: '',
+        dhcpStaticlist: '<AA:BB:CC:00:00:01>192.168.1.31>>Ghost',
+        cfgDeviceList: '',
+      ).single;
+      expect(d.online, isFalse);
     });
 
     test('an OFFLINE device keeps its address and stays assignable', () {

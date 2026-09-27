@@ -140,7 +140,7 @@ void main() {
       final errors = c.validate();
       expect(errors.any((e) => e.contains('"From" is not a valid')), isTrue);
       expect(errors.any((e) => e.contains('"To" is not a valid')), isTrue);
-      expect(errors.any((e) => e.contains('host:port format')), isTrue);
+      expect(errors.any((e) => e.contains('must be host:port')), isTrue);
     });
   });
 
