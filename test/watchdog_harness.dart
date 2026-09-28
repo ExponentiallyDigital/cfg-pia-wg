@@ -194,6 +194,9 @@ done
 echo "$url" >> "$STATE/curls"
 case "$url" in
   *generateToken*)
+    if [ -f "$STATE/pia_down" ]; then
+      [ -n "$out" ] && echo 'error code: 504' > "$out"; [ -n "$fmt" ] && printf '504 exit=0 connects=1 err='; exit 0
+    fi
     if [ -f "$STATE/pia_rejects" ]; then
       [ -n "$out" ] && echo '{"message":"authentication failed"}' > "$out"; [ -n "$fmt" ] && printf '403 exit=0 connects=1 err='; exit 0
     fi
@@ -326,6 +329,9 @@ class WatchdogHarness {
   /// PIA answers the token request with HTTP 403, as it does for a wrong username or password.
   void piaRejects() => _flag('pia_rejects', true);
 
+  /// PIA's login service is down: Cloudflare's 504 page, as on 2026-09-28 (ID-245).
+  void piaDown() => _flag('pia_down', true);
+
   /// The watchdog's cron entry is gone, as DISABLE and DELETE leave it (ID-240).
   void unschedule() => File('${state.path}/cru').writeAsStringSync('');
 
@@ -414,6 +420,14 @@ class WatchdogHarness {
     final path = '${root.path}/watchdog_$iface.sh';
     File(path).writeAsStringSync(script(config));
     return Process.run(shell, ['-c', _unixToolsFirst, 'sh', path, mode], environment: _env);
+  }
+
+  /// Runs [body], a piece of the script, against this fake router, for a test of one part alone.
+  Future<ProcessResult> runSnippet(String body) async {
+    final r = root.path.replaceAll('\\', '/');
+    final path = '${root.path}/snippet.sh';
+    File(path).writeAsStringSync(body.replaceAll('/tmp/', '$r/tmp/').replaceAll('/jffs/', '$r/jffs/'));
+    return Process.run(shell, ['-c', _unixToolsFirst, 'sh', path], environment: _env);
   }
 
   /// Starts a run without waiting, for tests about two watchdogs at once.

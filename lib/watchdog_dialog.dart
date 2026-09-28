@@ -24,6 +24,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'widgets/app_button.dart';
+import 'widgets/applying_panel.dart';
 
 import 'app_colors.dart';
 import 'firmware.dart';
@@ -104,6 +105,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
 
   bool _emailEnabled = false;
   bool _loading = false;
+
+  /// Set with [_loading] while SAVE & DEPLOY changes the router: the overlay then says so (ID-246).
+  bool _applying = false;
   bool _loadingRegions = false;
 
   /// The SAVE button, so a save can scroll its own spinner into view. The dialog scrolls, and with
@@ -200,8 +204,11 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
 
   // Runs the operation on the session's shared SSH connection. Nothing is closed here: the
   // connection outlives this dialog, and closing it would break the next action.
-  Future<T?> _withService<T>(Future<T> Function(RouterWatchdog) op) async {
-    setState(() => _loading = true);
+  Future<T?> _withService<T>(Future<T> Function(RouterWatchdog) op, {bool applying = false}) async {
+    setState(() {
+      _loading = true;
+      _applying = applying;
+    });
     try {
       final client = await widget.connect();
       final svc = (widget.serviceFactory ?? (c) => RouterWatchdog(c, onLog: _c.onLog))(client);
@@ -210,7 +217,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       if (mounted) await AppErrors.system(context, _c, 'Watchdog error: ${e.toString().replaceAll('Exception: ', '')}');
       return null;
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _loading = _applying = false);
     }
   }
 
@@ -421,9 +428,14 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       return null;
     } catch (e) {
       if (isPiaAuthRejection(e)) return kPiaCredentialsRejected;
+      final msg = e.toString().replaceAll('Exception: ', '');
+      // PIA being down gets its own sentence: "try again later" followed by "saving anyway" read as
+      // two instructions that disagree (ID-245).
       _c.logEntry(
-          'Could not check the PIA credentials before deploying: '
-          '${e.toString().replaceAll('Exception: ', '')} Saving anyway; the router will try for itself.',
+          msg.startsWith("PIA's login service isn't answering")
+              ? 'Could not check the PIA credentials: ${msg.split('. ').first}. Saving anyway; the router '
+                  'asks PIA for itself when it next needs a login.'
+              : 'Could not check the PIA credentials before deploying: $msg Saving anyway; the router will try for itself.',
           isWarning: true);
       return null;
     }
@@ -514,12 +526,17 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       final warnings = <String>[];
       if (!p) warnings.add('Primary IP ${cfg.primaryIp.trim()} is not reachable from the router.');
       if (!s) warnings.add('Secondary IP ${cfg.secondaryIp.trim()} is not reachable from the router.');
+      // In ROUTER LOG too, beside the deploy it belongs to: it only reached the app log (ID-255).
+      for (final w in warnings) {
+        await svc.logToRouter('Watchdog for ${slotLabel(widget.slotIndex, newDesc ?? widget.regionDesc)}: $w '
+            'Saving anyway.');
+      }
       if (warnings.isNotEmpty && mounted) {
         await AppErrors.inputs(context, _c, [...warnings, 'The settings will still be saved.']);
       }
       await svc.deployWatchdog(cfg, desc: newDesc);
       return true;
-    });
+    }, applying: true);
     if (saved != true || !mounted) return;
     // The deploy worked, so the logins on the form are proven: offer them to the password manager.
     // Closing the form without this cancelled the offer (ID-225).
@@ -569,7 +586,10 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     // frame early is indistinguishable from no fix at all. A spinner that is not in the scroll
     // view has no fold to be below, so there is nothing left to race. Same pattern as the slot
     // list and the device assignment screen.
-    return Stack(
+    // Back is blocked while the router is being changed, as on DEVICE ASSIGNMENT (ID-246).
+    return PopScope(
+      canPop: !_applying,
+      child: Stack(
       children: [
         AppScaffold(
           showClose: false, // this screen has its own SAVE/CLOSE pair
@@ -716,15 +736,17 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
           ),
         ),
         if (_loading)
-          const Positioned.fill(
-            key: Key('wd_saving_overlay'),
+          Positioned.fill(
+            key: const Key('wd_saving_overlay'),
             child: ColoredBox(
-              color: Color(0x99000000),
-              child: Center(child: CircularProgressIndicator(color: kHighlight)),
+              color: const Color(0x99000000),
+              // A deploy can take a minute: say what is happening, as DEVICE ASSIGNMENT does (ID-246).
+              child: Center(
+                  child: _applying ? const ApplyingPanel() : const CircularProgressIndicator(color: kHighlight)),
             ),
           ),
       ],
-    );
+    ));
   }
 
   Widget _field(

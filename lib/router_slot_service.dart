@@ -762,9 +762,15 @@ class RouterSlotService {
     // (ID-123). Best-effort: a router that cannot answer it leaves every up slot reading as
     // answering, which is the behaviour this had before the distinction existed.
     Set<int> answering = activeSlots;
+    var ages = <int, int>{};
     try {
-      final ages = parseHandshakeAges(await _read(kHandshakeAgesCommand));
-      if (ages.isNotEmpty || activeSlots.isEmpty) {
+      final raw = await _read(kHandshakeAgesCommand);
+      ages = parseHandshakeAges(raw);
+      // The command worked if it listed any tunnel, even one whose handshake time is 0, "never".
+      // Judging by the ages alone read a lone tunnel that had never answered as a router that could
+      // not be asked, and badged it as answering (ID-254).
+      final listed = RegExp(r'^wgc\d\s', multiLine: true).hasMatch(raw);
+      if (listed || ages.isNotEmpty || activeSlots.isEmpty) {
         answering = {
           for (final slot in activeSlots)
             if ((ages[slot] ?? kAnsweringWithinSeconds + 1) <= kAnsweringWithinSeconds) slot,
@@ -773,9 +779,14 @@ class RouterSlotService {
     } catch (_) {
       answering = activeSlots;
     }
+    // Say what is known. A slot with no age has never had an answer, which "for over 5 minutes"
+    // misdescribed for a tunnel that had come up a minute before (ID-254).
     for (final slot in activeSlots.difference(answering)) {
-      onLog?.call('wgc$slot is up but its server has not answered for over '
-          '${kAnsweringWithinSeconds ~/ 60} minutes.', isWarning: true);
+      onLog?.call(
+          ages.containsKey(slot)
+              ? 'wgc$slot is up but its server has not answered for over ${kAnsweringWithinSeconds ~/ 60} minutes.'
+              : 'wgc$slot is up but its server has not answered since the tunnel came up.',
+          isWarning: true);
     }
 
     // The router's own encrypted-DNS servers, for the overlap note on CREATE and EDIT (ID-005).

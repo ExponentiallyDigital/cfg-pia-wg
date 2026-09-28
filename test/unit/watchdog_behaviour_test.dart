@@ -172,6 +172,20 @@ void main() {
       });
 
       // BRK-5.
+      // ID-245: the email said "failed to obtain PIA token (exit 0, HTTP 504, body 16B: error code:
+      // 504)", which reads as the router's fault.
+      test("PIA's login service being down is named as PIA's, not the login's", () async {
+        h.tunnelUp(handshakeAgo: null);
+        h.piaDown();
+        final r = await h.run();
+        expect(r.exitCode, 1);
+        expect(
+            h.log,
+            contains("ERROR: PIA's login service isn't answering (HTTP 504). This is at PIA's end; "
+                'the watchdog will try again.'));
+        expect(h.log.where((l) => l.contains('rejected the username')), isEmpty);
+      });
+
       test('a rejected PIA login says so, and counts one attempt', () async {
         h.tunnelUp(handshakeAgo: null);
         h.piaRejects();
@@ -350,6 +364,35 @@ void main() {
         expect(r.exitCode, 0, reason: h.log.join('\n'));
         expect(h.lookups, hasLength(1), reason: 'a lock that old was left by a killed run, and is broken');
         expect(lock.existsSync(), isFalse);
+      });
+    });
+    // ID-242: the alert email counted the pinned devices - "the 1 device pinned to this tunnel" - where
+    // DEVICE ASSIGNMENT names them. The names come from the same places the screen reads.
+    group('the kill-switch line names the pinned devices', () {
+      Future<String> names() async {
+        final s = h.script();
+        final start = s.indexOf('pinned_names() {');
+        final fn = s.substring(start, s.indexOf('\n}\n', start) + 3);
+        final r = await h.runSnippet('JQ=/jffs/cfg-pia-wg/jq\nMYIDX=9\n${fn}pinned_names\n');
+        expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+        return '${r.stdout}'.trim();
+      }
+
+      test("by the user's name, else the address, in list order, and only this tunnel's", () async {
+        h
+          ..set('vpnc_dev_policy_list',
+              '<1>192.168.1.20>>9><1>192.168.1.21>>5><0>192.168.1.22>>9><1>192.168.1.23>>9>')
+          ..set('dhcp_staticlist', '<aa:bb:cc:00:00:20>192.168.1.20>><AA:BB:CC:00:00:21>192.168.1.21>>')
+          ..set('custom_clientlist', '<TABLET>AA:BB:CC:00:00:20>0>0>>><PHONE>AA:BB:CC:00:00:21>0>0>>>');
+        expect(await names(), 'TABLET, 192.168.1.23');
+      });
+
+      test('a device with no name anywhere is named by its address', () async {
+        h
+          ..set('vpnc_dev_policy_list', '<1>192.168.1.30>>9>')
+          ..set('dhcp_staticlist', '<AA:BB:CC:00:00:30>192.168.1.30>>')
+          ..set('custom_clientlist', '');
+        expect(await names(), '192.168.1.30');
       });
     });
   }, skip: skip);

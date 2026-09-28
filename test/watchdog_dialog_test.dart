@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/widgets/applying_panel.dart';
 
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/pia_service.dart';
@@ -124,6 +125,32 @@ void main() {
       );
       expect(tester.getRect(overlay), const Rect.fromLTWH(0, 0, 360, 560));
       expect(find.descendant(of: overlay, matching: find.byType(CircularProgressIndicator)), findsOneWidget);
+      expect(find.text(ApplyingPanel.message), findsNothing, reason: 'reading the router is not applying (ID-246)');
+    });
+
+    // ID-246: a deploy can take a minute, and a bare spinner gave no hint that leaving would matter.
+    testWidgets('SAVE & DEPLOY says "do not leave this screen", and back is blocked until it ends', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+      // The load on entry connects at once; the deploy's connect is held, to look at the screen mid-save.
+      final held = Completer<SSHClient>();
+      addTearDown(() => held.complete(ssh));
+      var connects = 0;
+      await tester.pumpWidget(_host(ssh, c, connect: () => ++connects == 1 ? Future.value(ssh) : held.future));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.byKey(const Key('wd_save')));
+      await tester.tap(find.byKey(const Key('wd_save')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('CONTINUE'));
+      await tester.pump();
+      await tester.pump();
+
+      final panel = find.text(ApplyingPanel.message);
+      expect(panel, findsOneWidget);
+      final scope = tester.widget<PopScope>(find.ancestor(of: panel, matching: find.byType(PopScope)).first);
+      expect(scope.canPop, isFalse, reason: 'back must not leave mid-deploy');
     });
     testWidgets('is a page, so it does not carry a Dialog of its own', (tester) async {
       final c = _controller();
@@ -350,6 +377,40 @@ void main() {
     expect(ssh.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
     expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
     expect(ssh.ran('cru a watchdog_wgc1'), isTrue);
+  });
+
+  // ID-255: the warning reached only the app, not ROUTER LOG where the rest of the deploy is recorded.
+  testWidgets('an unreachable check target is written to ROUTER LOG, and the save goes on', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains('which jq')) return '/opt/bin/jq';
+        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+        if (cmd.contains('nvram get wgc1_enable')) return '1';
+        if (cmd.contains('ip -o link show up')) return 'wgc1';
+        if (cmd.contains('ping')) return cmd.contains('1.1.1.1') ? 'OK' : 'FAIL';
+        return '';
+      },
+    );
+    await tester.pumpWidget(_host(ssh, c));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('wd_save')));
+    await tester.tap(find.byKey(const Key('wd_save')));
+    // The Applying panel's spinner runs behind the warning, so the screen never settles.
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.textContaining('The settings will still be saved.'), findsOneWidget);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+
+    final logged = ssh.commands.where((cmd) => cmd.startsWith('logger') && cmd.contains('Primary IP 8.8.8.8 is not reachable'));
+    expect(logged, hasLength(1));
+    expect(logged.single, contains('Saving anyway.'));
+    expect(ssh.commands.where((cmd) => cmd.startsWith('logger') && cmd.contains('Secondary IP')), isEmpty);
+    expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
   });
 
   testWidgets('save on a disabled empty slot deploys the region chosen on the form', (tester) async {

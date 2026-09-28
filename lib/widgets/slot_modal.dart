@@ -20,6 +20,8 @@
 // closed here; that would pull it out from under the next action. The slot list is refreshed after
 // every action, and a processing overlay covers the modal while busy.
 
+import 'dart:async';
+
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
@@ -37,6 +39,7 @@ import '../screens/slot_params_editor.dart';
 import '../session_controller.dart';
 import '../watchdog_dialog.dart';
 import 'app_scaffold.dart';
+import 'applying_panel.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
 import 'log_buttons.dart';
@@ -65,11 +68,11 @@ enum SlotModalMode { manage, watchdog }
 /// read, null when they could not, and nothing at all when there are none.
 String? pinnedDeviceWarning(List<String>? names) {
   const until = 'will have no internet until you ENABLE this VPN again or move';
-  if (names == null) return 'Any device pinned to this VPN $until it to another VPN in DEVICE ASSIGNMENT.';
+  if (names == null) return 'Any device pinned to this VPN $until it to another VPN in DEVICES.';
   if (names.isEmpty) return null;
   final one = names.length == 1;
   return '${joinNames(names)} ${one ? 'is' : 'are'} pinned to this VPN, and $until ${one ? 'it' : 'them'} '
-      'to another VPN in DEVICE ASSIGNMENT.';
+      'to another VPN in DEVICES.';
 }
 
 class SlotModal extends StatefulWidget {
@@ -91,7 +94,13 @@ class SlotModal extends StatefulWidget {
     required this.piaService,
     this.slotServiceFactory,
     this.watchdogServiceFactory,
+    this.quietRefreshInterval = const Duration(seconds: 30),
   });
+
+  /// How often, while the screen is on top, the slot list is read again without a word in the app
+  /// log, so a tunnel that drops while the screen is open loses its badge (ID-122). Null: never,
+  /// for tests whose fake router answers nothing like the slots they start with.
+  final Duration? quietRefreshInterval;
 
   @override
   State<SlotModal> createState() => _SlotModalState();
@@ -102,14 +111,80 @@ class _SlotModalState extends State<SlotModal> {
   int _selected = -1;
   bool _processing = false;
 
+  /// Set with [_processing] while only reading, so the plain spinner shows instead of "Applying"
+  /// (ID-246). Every other use of [_processing] is an action that changes the router.
+  bool _reading = false;
+  bool get _applying => _processing && !_reading;
+
   SessionController get _c => widget.controller;
   SlotInfo? get _selectedInfo => _selected == -1 ? null : _slots.slots[_selected];
+
+  // ── Keeping the badges current (ID-122) ──────────────────────────────────────────
+  //
+  // The list was read on entry and after each action, so a tunnel that dropped a moment later kept
+  // its ACTIVE badge while the screen stayed open. Now it is read again when the screen comes back
+  // into view (back from another screen, or the app back from the background) and every
+  // [SlotModal.quietRefreshInterval] while it stays there. Never while an action runs, and never
+  // into the app log: a service with no onLog, so no "Reading router configuration..." every 30 s.
+  // The same shape as DEVICE ASSIGNMENT's (ID-218): a local one-second tick decides when.
+  Timer? _ticker;
+  bool _wasVisible = true;
+  bool _quietReading = false;
+  int _sinceRead = 0;
+  int _reads = 0; // bumped by every read an action makes, so an older quiet read cannot land after it
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.quietRefreshInterval != null) _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  bool get _visible {
+    final life = WidgetsBinding.instance.lifecycleState;
+    return (ModalRoute.of(context)?.isCurrent ?? true) && (life == null || life == AppLifecycleState.resumed);
+  }
+
+  void _tick() {
+    if (!mounted) return;
+    final visible = _visible;
+    final cameBack = visible && !_wasVisible;
+    _wasVisible = visible;
+    _sinceRead++;
+    if (!visible || _processing || _quietReading) return;
+    if (cameBack || _sinceRead >= widget.quietRefreshInterval!.inSeconds) unawaited(_quietRefresh());
+  }
+
+  /// [_refresh] without the app log. A failure changes nothing: the next tick tries again.
+  Future<void> _quietRefresh() async {
+    _quietReading = true;
+    _sinceRead = 0;
+    final started = _reads;
+    try {
+      final client = await widget.connect();
+      // Its own service, never the factory's: one with no onLog is what keeps this out of the app log.
+      final s = await RouterSlotService(client).fetchSlots();
+      // An action that started meanwhile reads the list itself when it finishes; this one is stale.
+      if (mounted && !_processing && started == _reads) setState(() => _slots = s);
+    } catch (_) {
+      // left as it was on purpose
+    } finally {
+      _quietReading = false;
+    }
+  }
 
   RouterSlotService _slotSvc(SSHClient c) => widget.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
   RouterWatchdog _wdSvc(SSHClient c) => widget.watchdogServiceFactory?.call(c) ?? RouterWatchdog(c, onLog: _c.onLog);
 
   // ── Connection helpers ──────────────────────────────────────────────────────────
   Future<void> _refresh() async {
+    _sinceRead = 0;
+    _reads++;
     try {
       final client = await widget.connect();
       final s = await _slotSvc(client).fetchSlots();
@@ -537,6 +612,7 @@ class _SlotModalState extends State<SlotModal> {
   }
 
   Future<void> _viewWatchdogLog() async {
+    _reading = true;
     final slot = _selected;
     String? log;
     setState(() => _processing = true);
@@ -547,7 +623,7 @@ class _SlotModalState extends State<SlotModal> {
     } catch (e) {
       error = e;
     } finally {
-      if (mounted) setState(() => _processing = false);
+      if (mounted) setState(() => _processing = _reading = false);
     }
     if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
     if (log == null || !mounted) return;
@@ -564,8 +640,14 @@ class _SlotModalState extends State<SlotModal> {
         text: logText,
         // Not a secret: copying a log must not arm the 60s auto-clear, which would count down on
         // the config screen and then wipe the log the user has just copied.
-        onCopy: () => _c.copyToClipboard(logText, armAutoClear: false),
+        onCopy: (text) => _c.copyToClipboard(text, armAutoClear: false),
         onClear: () => _clearWatchdogLog(slot),
+        // The log is read once on entry; REFRESH reads it again without leaving the screen (ID-211).
+        onRefresh: () async {
+          final fresh = await _wdSvc(await widget.connect()).getWatchdogLog(slot);
+          return fresh.isEmpty ? '(watchdog log is empty)' : fresh;
+        },
+        controller: _c,
       ),
     ));
   }
@@ -627,7 +709,10 @@ class _SlotModalState extends State<SlotModal> {
     // AppScaffold is what every other destination uses, which is also the fix for the HOME button
     // being inconsistent here - it now sits pinned at the bottom, full width, outside the scroll
     // view, exactly as it does on the device assignment screen.
-    return Stack(
+    // Back is blocked while the router is being changed, as on DEVICE ASSIGNMENT (ID-246).
+    return PopScope(
+      canPop: !_applying,
+      child: Stack(
       children: [
         AppScaffold(
           // 480 is the width the card had. Full width leaves a slot row stranded at the far left of
@@ -649,16 +734,18 @@ class _SlotModalState extends State<SlotModal> {
             ],
           ),
         ),
-        // Covers the HOME button too, which the old overlay did not - it was inside the card.
+        // Covers the HOME button too, which the old overlay did not - it was inside the card. While
+        // the router is being changed it says so, as DEVICE ASSIGNMENT does (ID-246).
         if (_processing)
-          const Positioned.fill(
+          Positioned.fill(
             child: ColoredBox(
-              color: Color(0x99000000),
-              child: Center(child: CircularProgressIndicator(color: kHighlight)),
+              color: const Color(0x99000000),
+              child: Center(
+                  child: _applying ? const ApplyingPanel() : const CircularProgressIndicator(color: kHighlight)),
             ),
           ),
       ],
-    );
+    ));
   }
 
   Widget _slotList() {
@@ -1050,6 +1137,8 @@ class _WatchdogLogScreen extends StatefulWidget {
     required this.text,
     required this.onCopy,
     required this.onClear,
+    required this.onRefresh,
+    required this.controller,
   });
 
   final int slot;
@@ -1057,8 +1146,12 @@ class _WatchdogLogScreen extends StatefulWidget {
   /// The slot's region, so the heading reads wgc1:aus_melbourne rather than a bare wgc1.
   final String desc;
   final String text;
-  final Future<void> Function() onCopy;
+  final Future<void> Function(String text) onCopy;
   final Future<void> Function() onClear;
+
+  /// Reads the log again; the text to show. Throws when the router cannot be read.
+  final Future<String> Function() onRefresh;
+  final SessionController controller;
 
   @override
   State<_WatchdogLogScreen> createState() => _WatchdogLogScreenState();
@@ -1067,20 +1160,42 @@ class _WatchdogLogScreen extends StatefulWidget {
 class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
   final _scroll = ScrollController();
 
+  late String text = widget.text;
+  bool _refreshing = false;
+
   int get slot => widget.slot;
   String get label => slotLabel(widget.slot, widget.desc);
-  String get text => widget.text;
-  Future<void> Function() get onCopy => widget.onCopy;
   Future<void> Function() get onClear => widget.onClear;
 
   @override
   void initState() {
     super.initState();
-    // The newest entry is the reason this screen was opened. After the first layout, so the extent
-    // is real; the log is a single text block, so one jump is enough.
+    _toNewest();
+  }
+
+  /// The newest entry is the reason this screen was opened, or refreshed. After the layout, so the
+  /// extent is real; the log is a single text block, so one jump is enough.
+  void _toNewest() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _refreshing = true);
+    try {
+      final fresh = await widget.onRefresh();
+      if (!mounted) return;
+      setState(() => text = fresh);
+      _toNewest();
+    } catch (e) {
+      if (mounted) {
+        await AppErrors.system(context, widget.controller, 'Could not read the watchdog log: '
+            '${e.toString().replaceAll('Exception: ', '')}');
+      }
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
   }
 
   @override
@@ -1160,7 +1275,13 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
           child: LogButtonRow(children: [
-            LogButton(keyValue: 'watchdog_log_copy', label: 'COPY', onPressed: onCopy),
+            LogButton(keyValue: 'watchdog_log_copy', label: 'COPY', onPressed: () => widget.onCopy(text)),
+            LogButton(
+              keyValue: 'watchdog_log_refresh',
+              label: 'REFRESH',
+              busy: _refreshing,
+              onPressed: _refreshing ? null : _refresh,
+            ),
             LogButton(
               keyValue: 'watchdog_log_clear',
               label: 'CLEAR',

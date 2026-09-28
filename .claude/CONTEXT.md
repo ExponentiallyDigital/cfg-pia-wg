@@ -160,7 +160,7 @@ SettingsScreen   ──> RouterWatchdog.uninstallFromRouter() / deleteCachedPiaC
 | `standalone` | `standalone` | STANDALONE | yes | yes |
 | `manageRouter` | `manage_router` | MANAGE | yes | yes |
 | `watchdog` | `watchdog` | WATCHDOG | yes | yes |
-| `deviceAssignment` | `device_assignment` | DEVICE ASSIGNMENT | yes | yes |
+| `deviceAssignment` | `device_assignment` | DEVICES | yes | yes |
 | `routerLog` | `router_log` | ROUTER LOG | yes | yes |
 | `log` | `log` | APP LOG | yes | yes |
 | `settings` | `settings` | SETTINGS | yes | yes |
@@ -311,8 +311,7 @@ All mutating router actions also emit `logger -t cfg-pia-wg '<msg>'` to the rout
 
 **`getWatchdogStatus`:** enabled ⇔ cron entry **and** `wgcN_enable==1` **and** `wgcN` in `wg show interfaces`. `lastSuccessfulPing` parsed from `/tmp/watchdog_last_ping_success_wgcN`.
 
-**BusyBox has no `comm`, no `diff` and no `seq`** - both confirmed 2026-09-08, `-sh: comm: not found`. To compare two sorted lists use `grep -vxF -f b.txt a.txt` in both directions; to count, use `i=0; while [ $i -lt N ]; do ...; i=$((i+1)); done` rather than a `seq` loop; for an NVRAM list, split records with `tr '<' '
-'` first so the comparison is per record rather than per line. Add it to the list of things that are simply absent on this shell alongside `command -v` and `find -type f`. **BusyBox syslogd truncates a long `logger` message.** `_logRouter` goes through `buildLoggerCommand`, which splits at `kSyslogChunkChars` (200) into `(n/total)`-prefixed parts joined with `;` - one SSH call, nothing lost. Never hand `logger` an unbounded diagnostic. **BusyBox `nc` on stock takes no options** - it is `nc IPADDR PORT` and nothing else, so `nc -w 5 host port` exits on a usage error. Never use it as a reachability probe; `openssl s_client -connect` is the portable answer and reports why it failed. **`testEmail`:** returns `Future<bool>` (true = the mailer exited 0) and sends every diagnostic to the app log as well as the router syslog, marked `isError`. The dialog raises a dismissible warning on false. Never tell the user to go and read the router log - they are holding a phone. Writes `/tmp/mail.txt`, runs BusyBox `sendmail -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error -connect host:port"` on Merlin and `mailsend-go` on stock. On non-zero exit it reports two diagnostic layers - the mailer's stderr (`tail -20`, the error is the *last* thing said) and an `openssl s_client` probe - to **both** logs. SMTP port defaults to **465** when unparseable.
+**BusyBox has no `comm`, no `diff` and no `seq`** - both confirmed 2026-09-08, `-sh: comm: not found`. To compare two sorted lists use `grep -vxF -f b.txt a.txt` in both directions; to count, use `i=0; while [ $i -lt N ]; do ...; i=$((i+1)); done` rather than a `seq` loop; for an NVRAM list, split records with `tr '<' '\n'` first so the comparison is per record rather than per line. Add it to the list of things that are simply absent on this shell alongside `command -v` and `find -type f`. **BusyBox syslogd truncates a long `logger` message.** `_logRouter` goes through `buildLoggerCommand`, which splits at `kSyslogChunkChars` (200) into `(n/total)`-prefixed parts joined with `;` - one SSH call, nothing lost. Never hand `logger` an unbounded diagnostic. **BusyBox `nc` on stock takes no options** - it is `nc IPADDR PORT` and nothing else, so `nc -w 5 host port` exits on a usage error. Never use it as a reachability probe; `openssl s_client -connect` is the portable answer and reports why it failed. **`testEmail`:** returns `Future<bool>` (true = the mailer exited 0) and sends every diagnostic to the app log as well as the router syslog, marked `isError`. The dialog raises a dismissible warning on false. Never tell the user to go and read the router log - they are holding a phone. Writes `/tmp/mail.txt`, runs BusyBox `sendmail -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error -connect host:port"` on Merlin and `mailsend-go` on stock. On non-zero exit it reports two diagnostic layers - the mailer's stderr (`tail -20`, the error is the *last* thing said) and an `openssl s_client` probe - to **both** logs. SMTP port defaults to **465** when unparseable.
 
 ### 4.8 Router-side script `_kWatchdogScriptTemplate` (POSIX sh, `__SLOT__` is the only placeholder)
 
@@ -400,9 +399,7 @@ addr  alive  desc  dns  enable  enforce  ep_addr  ep_addr_r  ep_port
 fw  mtu  nat  ppub  priv  psk  rip  aips
 ```
 
-What each one means to the firmware is in
-[ARCHITECTURE.md, Field reference](../ARCHITECTURE.md#field-reference), which is the authority and
-the version a user reads. Only what the APP does with them belongs here:
+What each one means to the firmware is in [ARCHITECTURE.md, Field reference](../ARCHITECTURE.md#field-reference), which is the authority and the version a user reads. Only what the APP does with them belongs here:
 
 - **Four are read-only** in `SlotParamsEditor`: `enable` (ENABLE and DISABLE own it), `ep_addr_r` and `rip` (the firmware fills them in) and `psk` (PIA does not use one). Ten text fields and three switches are editable, and SAVE stays disabled until all ten text fields are non-empty.
 - **`desc` is `pia-` + the PIA region id** (`pia-aus_melbourne`). The prefix is what marks a VPN as this app's among any others on the router, and the watchdog re-reads the region from it on every reconfigure - so a slot renamed by hand can no longer be rebuilt.
@@ -414,15 +411,7 @@ the version a user reads. Only what the APP does with them belongs here:
 
 **Global (not slot-scoped):** `cfg_pia_wg_user`, `cfg_pia_wg_password` — plaintext PIA credentials shared by every slot's watchdog. `cfg_pia_wg_sdate` (`yyyy-mm-dd` the app first configured this router), `cfg_pia_wg_reconfig_ok` and `cfg_pia_wg_reconfig_fail` — lifetime re-configuration counters across all slots, reported in the HISTORY section of every alert email. The three are seeded together by whichever of a watchdog deploy or a test email happens first (`kSeedCountersCommand`) and incremented by the router script's `bump()`, which commits once per alert — never per check, because `nvram commit` writes flash. Also read: `3rd-party` (firmware detection), `jffs2_scripts`, `jffs2_on` (Merlin only), `vpnc_clientlist` (stock only), and for email bodies `ddns_hostname_x`, `lan_hostname`, `lan_ipaddr`, `productid`, `buildno`, `extendno`.
 
-**Stock `vpnc_clientlist`.** The schema, the field numbering and the three different numbers that
-name one profile are in
-[ARCHITECTURE.md, Stock `vpnc_clientlist`](../ARCHITECTURE.md#stock-vpnc-clientlist). What the app
-writes into a record it creates: the region id at field 1, `WireGuard` at field 2, the slot number
-at field 3, the active state at field 6 (ENABLE / DISABLE / CREATE all write it), `10 - slot` at
-field 7 and `Web` at field 12. **Fields 4, 5 and 8-11 are left empty when creating and preserved
-byte-for-byte when updating** - the app must never assume it knows what a field it does not
-understand is for. Field 7 is the number the `vpncN_*` runtime keys are indexed by, so wgc1 leaves
-`vpnc9_*` behind.
+**Stock `vpnc_clientlist`.** The schema, the field numbering and the three different numbers that name one profile are in [ARCHITECTURE.md, Stock `vpnc_clientlist`](../ARCHITECTURE.md#stock-vpnc-clientlist). What the app writes into a record it creates: the region id at field 1, `WireGuard` at field 2, the slot number at field 3, the active state at field 6 (ENABLE / DISABLE / CREATE all write it), `10 - slot` at field 7 and `Web` at field 12. **Fields 4, 5 and 8-11 are left empty when creating and preserved byte-for-byte when updating** - the app must never assume it knows what a field it does not understand is for. Field 7 is the number the `vpncN_*` runtime keys are indexed by, so wgc1 leaves `vpnc9_*` behind.
 
 Modelled by `VpncRecord` + `parseVpncClientlist` / `serialiseVpncClientlist` / `buildVpncRecord` / `upsertVpncRecord` / `removeVpncRecord` in `router_slot_service.dart` (all pure).
 
@@ -448,15 +437,7 @@ Links, in order: ReadMe, Change log, Security policy, Privacy policy, plus an `O
 
 **A LONG form belongs on a page, not in a dialog.** `WatchdogDialog` shipped the same bug twice - 409 and again in 412 - with SAVE and its spinner below a fold that would not scroll, because a shrink-wrapping `SingleChildScrollView` inside an unbounded card has no overflow to scroll and no arithmetic makes it. It is now an `AppScaffold` page, where the scroll view sits in an `Expanded` and therefore has a bounded viewport by construction. Reach for a page whenever the form is longer than a few fields.
 
-**A PROGRESS SPINNER never goes inside the scroll view.** Same bug, four separate fixes - 409,
-412, 425, 435 - and every one of them dismissed the keyboard, waited for something, then scrolled
-the SAVE button into view. Each was a race against two animations, and a scroll arriving one frame
-early is indistinguishable from no fix at all. The spinner now lives in a `Positioned.fill` overlay
-in a `Stack` ABOVE the `AppScaffold`, so there is no fold for it to be below and nothing left to
-race. The button keeps its label rather than becoming a spinner. `SlotModal` and
-`DeviceAssignmentScreen` already did this; `WatchdogDialog` was the last one that did not.
-`watchdog_dialog_test.dart` asserts the structural property - the overlay has no `Scrollable`
-ancestor - because that is the only form of it a later change cannot quietly undo.
+**A PROGRESS SPINNER never goes inside the scroll view.** Same bug, four separate fixes - 409, 412, 425, 435 - and every one of them dismissed the keyboard, waited for something, then scrolled the SAVE button into view. Each was a race against two animations, and a scroll arriving one frame early is indistinguishable from no fix at all. The spinner now lives in a `Positioned.fill` overlay in a `Stack` ABOVE the `AppScaffold`, so there is no fold for it to be below and nothing left to race. The button keeps its label rather than becoming a spinner. `SlotModal` and `DeviceAssignmentScreen` already did this; `WatchdogDialog` was the last one that did not. `watchdog_dialog_test.dart` asserts the structural property - the overlay has no `Scrollable` ancestor - because that is the only form of it a later change cannot quietly undo.
 
 For a SHORT form that is genuinely a detour, use `_FormDialog` (`slot_modal.dart`) or the same structure by hand - `Dialog` > `ConstrainedBox(maxWidth: 480)` > `SingleChildScrollView` > `Padding` > `Column`, with the buttons as the last row of the scrolling column. **Width only**: the height must come from the incoming constraints, since inside the chrome the Scaffold has already taken the keyboard off the body and any cap computed from the screen height is too big. `SlotParamsEditor` still does this.
 
@@ -536,63 +517,30 @@ The chrome's header takes ~104 logical px off the top, so with a keyboard up a d
 
 **Tests.** The detection flag is a library global, so any suite touching router code must reset it — use `useMerlin()` / `useStock()` / `resetRouterFirmware()` from `test/watchdog_test_utils.dart`. A leaked flag produces confusing cross-file failures under parallel workers.
 
-**Behaviour, not just commands.** Two test doubles keep state rather than canned answers. `test/watchdog_harness.dart` runs the generated watchdog script under a real POSIX shell against stand-in router commands (`test/unit/watchdog_behaviour_test.dart`). `test/stock_router_model.dart` is a stock router that changes NVRAM, `ip rule` and the running tunnels the way ARCHITECTURE 6.8 measured, and answers where each device's traffic leaves (`test/unit/stock_router_model_test.dart`). A change to the watchdog's logic, DEVICE ASSIGNMENT or the default-connection sequence gets a test in one of these. A firmware behaviour goes into the model only once it has been measured on hardware. The harness, like every test that runs a shell script, skips where no shell is on the PATH and puts the shell's own `/usr/bin` first, ahead of Windows' `sort.exe` (ID-216).
+**Behaviour, not just commands.** Two test doubles keep state rather than canned answers. `test/watchdog_harness.dart` runs the generated watchdog script under a real POSIX shell against stand-in router commands (`test/unit/watchdog_behaviour_test.dart`). `test/stock_router_model.dart` is a stock router that changes NVRAM, `ip rule` and the running tunnels the way ARCHITECTURE 6.8 measured, and answers where each device's traffic leaves (`test/unit/stock_router_model_test.dart`). A change to the watchdog's logic, DEVICES or the default-connection sequence gets a test in one of these. A firmware behaviour goes into the model only once it has been measured on hardware. The harness, like every test that runs a shell script, skips where no shell is on the PATH and puts the shell's own `/usr/bin` first, ahead of Windows' `sort.exe` (ID-216).
 
 Note: ignore all .claude\plan_*.md files, they are historical and not part of the current codebase. This .claude\CONTEXT.md file is the authoritative source for doc-vs-code discrepancies.
 
 ### 4.14 Device assignment (stock only)
 
-Three files, split the way the rest of the app is: `device_assignment.dart` is pure and has no SSH in
-it, `device_assignment_service.dart` does the I/O, `widgets/device_assignment_screen.dart` is the
-screen. It is the fourth button on the main menu and is in the drawer as well. It needs SSH and stock firmware, which the menu no longer marks. **Merlin routes per device through VPN Director, which this app does not drive**, so the
-screen detects the firmware itself on entry and refuses with an explanation. It detects rather than
-trusts: `routerFirmware` defaults to Merlin until something probes it, and reaching this screen
-first told a stock user their router was Merlin.
+Three files, split the way the rest of the app is: `device_assignment.dart` is pure and has no SSH in it, `device_assignment_service.dart` does the I/O, `widgets/device_assignment_screen.dart` is the screen. It is the fourth button on the main menu and is in the drawer as well. It needs SSH and stock firmware, which the menu no longer marks. **Merlin routes per device through VPN Director, which this app does not drive**, so the screen detects the firmware itself on entry and refuses with an explanation. It detects rather than trusts: `routerFirmware` defaults to Merlin until something probes it, and reaching this screen first told a stock user their router was Merlin.
 
-**One read, eight sources.** `DeviceAssignmentService.read()` sends a single marker-separated command
-and splits the reply: `vpnc_clientlist`, `vpnc_dev_policy_list`, `vpnc_default_wan`,
-`dhcp_staticlist`, `custom_clientlist`, `cfg_device_list`, `/jffs/nmp_cl_json.js`,
-`/tmp/nmp_cache.js`. No source is complete on its own - liveness comes only from `nmp_cl_json.js`,
-addresses only from `nmp_cache.js` or `dhcp_staticlist`, the user's own name for a device only from
-`custom_clientlist`, and the router and its mesh nodes are identified only by `cfg_device_list`.
-`buildDeviceList` is the join. Written out as eight named commands rather than a loop, because a
-lower-case shell variable in a Dart string is indistinguishable from the escaped-constant mistake
-`no_escaped_constants_test.dart` exists to catch.
+**One read, eight sources.** `DeviceAssignmentService.read()` sends a single marker-separated command and splits the reply: `vpnc_clientlist`, `vpnc_dev_policy_list`, `vpnc_default_wan`, `dhcp_staticlist`, `custom_clientlist`, `cfg_device_list`, `/jffs/nmp_cl_json.js`, `/tmp/nmp_cache.js`. No source is complete on its own - liveness comes only from `nmp_cl_json.js`, addresses only from `nmp_cache.js` or `dhcp_staticlist`, the user's own name for a device only from `custom_clientlist`, and the router and its mesh nodes are identified only by `cfg_device_list`. `buildDeviceList` is the join. Written out as eight named commands rather than a loop, because a lower-case shell variable in a Dart string is indistinguishable from the escaped-constant mistake `no_escaped_constants_test.dart` exists to catch.
 
-**A record is keyed by IP, so a device with no known address cannot be assigned at all.**
-`LanDevice.assignable` is false for it and the row says so instead of offering a picker.
+**A record is keyed by IP, so a device with no known address cannot be assigned at all.** `LanDevice.assignable` is false for it and the row says so instead of offering a picker.
 
-**Read the index, never mere presence.** `assignedIndexFor` returns null for a record whose index is
-`0` - that device is on the default connection, not on a VPN. `AssignmentState.profiles` holds every
-`vpnc_clientlist` profile, WireGuard or not, so a device pinned to an OpenVPN profile can be shown
-honestly rather than reported as unassigned and silently reassigned on the next write.
+**Read the index, never mere presence.** `assignedIndexFor` returns null for a record whose index is `0` - that device is on the default connection, not on a VPN. `AssignmentState.profiles` holds every `vpnc_clientlist` profile, WireGuard or not, so a device pinned to an OpenVPN profile can be shown honestly rather than reported as unassigned and silently reassigned on the next write.
 
-**Changes are STAGED on the session, not in the State.** `stagedAssignments` / `stagedDefaultIndex`
-live on `SessionController` because the screen's `State` is rebuilt on every entry - a glance at the
-log used to discard everything the user had picked. `clearStagedAssignments` runs after a successful
-apply.
+**Changes are STAGED on the session, not in the State.** `stagedAssignments` / `stagedDefaultIndex` live on `SessionController` because the screen's `State` is rebuilt on every entry - a glance at the log used to discard everything the user had picked. `clearStagedAssignments` runs after a successful apply.
 
-**`apply()` re-reads and refuses on conflict.** The router's own web interface rewrites the WHOLE of
-a list from the copy its page loaded, so `AssignmentState.rawPolicyList` / `rawClientlist` are kept
-verbatim and compared before anything is written; a mismatch throws `AssignmentConflictException`
-rather than overwriting a change made elsewhere.
+**`apply()` re-reads and refuses on conflict.** The router's own web interface rewrites the WHOLE of a list from the copy its page loaded, so `AssignmentState.rawPolicyList` / `rawClientlist` are kept verbatim and compared before anything is written; a mismatch throws `AssignmentConflictException` rather than overwriting a change made elsewhere.
 
-**The write order matters, and so does the cleanup.** Reservations first (an assignment is keyed on
-an address, so the address has to be pinned), then the policy list, then `nvram commit`, then the
-LIGHT pair - `restart_dnsmasq` and `restart_vpnc_dev_policy`. The web interface uses
-`restart_net_and_phy` for the same job, which bounces every switch port and re-leases the WAN; the
-app never needs it. Then `_clearStaleRules`: **stock never removes a device's previous `ip rule`**,
-both sit at priority 100 and the older one wins, so an assignment that was written perfectly has no
-effect. `staleRuleTables` finds them and the service deletes them by hand.
+**The write order matters, and so does the cleanup.** Reservations first (an assignment is keyed on an address, so the address has to be pinned), then the policy list, then `nvram commit`, then the LIGHT pair - `restart_dnsmasq` and `restart_vpnc_dev_policy`. The web interface uses `restart_net_and_phy` for the same job, which bounces every switch port and re-leases the WAN; the app never needs it. Then `_clearStaleRules`: **stock never removes a device's previous `ip rule`**, both sit at priority 100 and the older one wins, so an assignment that was written perfectly has no effect. `staleRuleTables` finds them and the service deletes them by hand.
 
-**Changing the default connection is the expensive one**, and it is a separate step at the end.
-`_setDefaultConnection` runs the measured sequence, waits on the interface and on the NVRAM key
-rather than sleeping, and the screen warns first: every tunnel on the router stops and restarts.
+**Changing the default connection is the expensive one**, and it is a separate step at the end. `_setDefaultConnection` runs the measured sequence, waits on the interface and on the NVRAM key rather than sleeping, and the screen warns first: every tunnel on the router stops and restarts.
 
 **APPLY checks the tunnels it moves devices onto, and the list says where traffic really goes.** Before the confirmation, `_tunnelWarnings` collects every WireGuard tunnel a staged change pins devices onto, plus the default connection's tunnel when the default changes or a device is sent to it, and `tunnelHealth` reads them in one round trip: `ip -o link show up`, the router's `date +%s`, and `wg show wgcN latest-handshakes` for each. `tunnelWarning` turns that into amber lines in the confirmation - not running, with where the devices go meanwhile, or up with a handshake older than `kStaleHandshake` (three minutes) - and never blocks, because assigning to a disabled slot is legitimate. A handshake is not proof of a working path, so this catches "not running" and "not answering" only. Separately, `actualExitIndex` resolves where a device's traffic leaves when its tunnel is not running, two hops at most - the default connection, then the plain internet - and the row and the default panel show it as a note under the picker, whose value never changes. The second hop, a stopped default meaning the plain internet, is inferred; TESTING 7.2 confirms it on hardware. Tunnel state is re-read after APPLY.
 
-Each reassignment is also written to the router's own syslog with `buildLoggerCommand`. The app log
-dies with the app; a line explaining a device's traffic weeks later has to survive somewhere.
+Each reassignment is also written to the router's own syslog with `buildLoggerCommand`. The app log dies with the app; a line explaining a device's traffic weeks later has to survive somewhere.
 
-Full firmware detail, including the schema of both lists and the three numbers that name one profile:
-[ARCHITECTURE.md, Device assignment (stock)](../ARCHITECTURE.md#device-assignment-stock).
+Full firmware detail, including the schema of both lists and the three numbers that name one profile: [ARCHITECTURE.md, Device assignment (stock)](../ARCHITECTURE.md#device-assignment-stock).

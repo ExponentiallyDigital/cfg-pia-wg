@@ -69,6 +69,17 @@ const String kPiaCredentialsRejected =
 
 /// True for a token request PIA REFUSED, as opposed to one that never arrived. Only a refusal says
 /// anything about the credentials: a phone with no internet proves nothing about them.
+/// How long PIA's login gets to answer. It answers in about a second; during PIA's outage of
+/// 2026-09-28 it answered HTTP 504 after 61 s, Cloudflare's own limit, and every login in the app
+/// sat silent for that minute (ID-245).
+const Duration kPiaTokenTimeout = Duration(seconds: 20);
+
+/// What to show when PIA's login service is down, rather than the login being wrong (ID-245).
+/// "Auth error: HTTP 504 - error code: 504" read as the app failing.
+String piaLoginUnavailable(String what) =>
+    "PIA's login service isn't answering ($what). This is at PIA's end, not the app or your router; "
+    'try again later.';
+
 bool isPiaAuthRejection(Object error) {
   final text = error.toString();
   return text.contains('HTTP 401') || text.contains('HTTP 403');
@@ -89,7 +100,10 @@ class PiaService {
   // back in, so no two workers ever contend.
   final int probePort;
 
-  PiaService({this.probePort = defaultProbePort});
+  /// How long [getToken] waits for PIA's answer. Injectable so a test need not wait 20 seconds.
+  final Duration tokenTimeout;
+
+  PiaService({this.probePort = defaultProbePort, this.tokenTimeout = kPiaTokenTimeout});
 
   final HttpClient _client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
 
@@ -172,11 +186,25 @@ class PiaService {
       final request = await _client.postUrl(Uri.parse(_tokenUrl));
       final credentials = base64Encode(utf8.encode('$username:$password'));
       request.headers.set(HttpHeaders.authorizationHeader, 'Basic $credentials');
-      final response = await request.close();
-      // 1. Read the response body payload regardless of the status code
-      final body = await response.transform(utf8.decoder).join();
-      // 2. Handle non-200 status codes with the response body included
-      if (response.statusCode != 200) {
+      // The connection timeout covers connecting only. The wait for an answer had no limit, so a
+      // PIA that accepted the connection and never answered held every login for a minute (ID-245).
+      final (status, body) = await () async {
+        final response = await request.close();
+        return (response.statusCode, await response.transform(utf8.decoder).join());
+      }()
+          .timeout(tokenTimeout, onTimeout: () => throw _PiaUnavailable('no answer in ${tokenTimeout.inSeconds} s'));
+      // A server error is PIA's service failing, not the login: say so, and keep what it sent in
+      // the log for anyone who wants it.
+      if (status >= 500) {
+        onProgress?.call('PIA login answered HTTP $status: ${body.trim()}');
+        throw _PiaUnavailable('HTTP $status');
+      }
+      // A refused login says so in plain words, on every screen that asks: STANDALONE and MANAGE's
+      // CREATE showed "Auth error: HTTP 403 - authentication failed." (ID-253). The code stays in
+      // brackets, which is what isPiaAuthRejection recognises.
+      if (status == 401 || status == 403) throw _PiaRejected(status);
+      // Handle other non-200 status codes with the response body included
+      if (status != 200) {
         String detailedError = body;
         try {
           // Attempt to extract cleaner text if the server responds with a JSON message
@@ -189,7 +217,7 @@ class PiaService {
         } catch (_) {
           // If body is not JSON (plain text or HTML), keep it as-is
         }
-        throw Exception('HTTP ${response.statusCode} - $detailedError');
+        throw Exception('HTTP $status - $detailedError');
       }
 
       final token = (jsonDecode(body) as Map<String, dynamic>)['token'] as String? ?? '';
@@ -199,6 +227,10 @@ class PiaService {
 
       onProgress?.call('Authentication successful.');
       return token;
+    } on _PiaUnavailable catch (e) {
+      throw piaLoginUnavailable(e.what);
+    } on _PiaRejected catch (e) {
+      throw '$kPiaCredentialsRejected (HTTP ${e.status})';
     } catch (e) {
       // Clean up any internal "Exception:" text if it exists
       final cleanMsg = e.toString().replaceAll('Exception: ', '');
@@ -321,4 +353,16 @@ class PiaService {
       serverPort: reg.serverPort,
     );
   }
+}
+
+/// PIA refusing the login: the wrong username or password (ID-253).
+class _PiaRejected implements Exception {
+  const _PiaRejected(this.status);
+  final int status;
+}
+
+/// PIA's login service failing, as opposed to refusing the login (ID-245).
+class _PiaUnavailable implements Exception {
+  const _PiaUnavailable(this.what);
+  final String what;
 }

@@ -1,32 +1,19 @@
 # ARCHITECTURE.md
 
-This app provisions Private Internet Access WireGuard configurations onto an ASUS router, and keeps
-them working. It does four separate jobs, and most of this document is about the last three:
+This app provisions Private Internet Access WireGuard configurations onto an ASUS router, and keeps them working. It does four separate jobs, and most of this document is about the last three:
 
 1. **Generate a configuration** from PIA and hand it to you. No router is involved, and nothing is stored.
 2. **Write one into a router slot** over SSH, start the tunnel, and prove that traffic is really flowing through it.
 3. **Deploy a watchdog** onto the router, which checks the tunnel on a schedule and rebuilds it unattended when it fails.
 4. **Pin individual LAN devices to a tunnel**, so one device uses a VPN and another does not. Stock firmware only - Merlin does this through VPN Director, which the app does not drive.
 
-**"Slot" means one of the five WireGuard client profiles the router hardware provides**, numbered 1
-to 5 and named `wgc1` to `wgc5`. They are fixed: the router has five, the app can fill any of them,
-and a slot holds one PIA server at a time. Nearly everything the app does to a router is scoped to a
-single slot, and almost every NVRAM key below is prefixed `wgcN_` for that reason.
+**"Slot" means one of the five WireGuard client profiles the router hardware provides**, numbered 1 to 5 and named `wgc1` to `wgc5`. They are fixed: the router has five, the app can fill any of them, and a slot holds one PIA server at a time. Nearly everything the app does to a router is scoped to a single slot, and almost every NVRAM key below is prefixed `wgcN_` for that reason.
 
-**One idea is needed before the detail makes sense.** The two firmwares drive WireGuard in completely
-different ways. Asuswrt-Merlin exposes each of the five client slots directly through VPN Director;
-stock Asuswrt hides them behind VPN Fusion, where a single profile is named by three different
-numbers depending on which key is being written. Nearly every awkward thing below is a consequence of
-that split, and the app carries both paths.
+**One idea is needed before the detail makes sense.** The two firmwares drive WireGuard in completely different ways. Asuswrt-Merlin exposes each of the five client slots directly through VPN Director; stock Asuswrt hides them behind VPN Fusion, where a single profile is named by three different numbers depending on which key is being written. Nearly every awkward thing below is a consequence of that split, and the app carries both paths.
 
-**None of this comes from vendor documentation, because there is none.** Every claim about the
-firmware was measured on hardware, usually by changing one thing in the web interface and diffing
-NVRAM either side. Entries carry the date they were measured, and say when a reading is an inference
-rather than a measurement.
+**None of this comes from vendor documentation, because there is none.** Every claim about the firmware was measured on hardware, usually by changing one thing in the web interface and diffing NVRAM either side. Entries carry the date they were measured, and say when a reading is an inference rather than a measurement.
 
-**Start with [What this app depends on ASUS not changing](#what-this-app-depends-on-asus-not-changing).**
-It lists the firmware behaviours the app leans on, and it is the right first stop when a firmware
-update breaks something: the failure almost never looks like its cause.
+**Start with [What this app depends on ASUS not changing](#what-this-app-depends-on-asus-not-changing).** It lists the firmware behaviours the app leans on, and it is the right first stop when a firmware update breaks something: the failure almost never looks like its cause.
 
 - [1. How it works](#1-how-it-works)
 - [2. What this app depends on ASUS not changing](#2-what-this-app-depends-on-asus-not-changing)
@@ -72,6 +59,7 @@ update breaks something: the failure almost never looks like its cause.
     - [6.8.10. What happens when the tunnel drops](#6810-what-happens-when-the-tunnel-drops)
     - [6.8.11. Stock leaves the old routing rule behind - MEASURED 2026-09-10](#6811-stock-leaves-the-old-routing-rule-behind---measured-2026-09-10)
     - [6.8.12. Every routing rule the app touches](#6812-every-routing-rule-the-app-touches)
+  - [6.9. Time Scheduling (`MULTIFILTER_*`) - disabling a device](#69-time-scheduling-multifilter_---disabling-a-device)
 - [7. Watchdog details](#7-watchdog-details)
   - [7.1. Shell script](#71-shell-script)
     - [7.1.1. Backoff](#711-backoff)
@@ -157,7 +145,7 @@ flowchart LR
     B --> C["STANDALONE<br/>a PIA WireGuard config<br/>for any device"]
     B --> D["MANAGE<br/>the router's<br/>WireGuard slots"]
     B --> E["WATCHDOG<br/>keeps a slot's<br/>tunnel alive"]
-    B --> DA["DEVICE ASSIGNMENT<br/>which device uses<br/>which tunnel"]
+    B --> DA["DEVICES<br/>which device uses<br/>which tunnel"]
     B --> RL["ROUTER LOG"]
     B --> AL["APP LOG"]
     B --> ST["SETTINGS"]
@@ -265,22 +253,30 @@ flowchart TB
 
 ### 3.1. <a name='overview'></a>Overview
 
-When you select a PIA region and push it to your router, the app connects directly to your router over your home network and switches your VPN tunnel to the new location.
+Putting a PIA region on the router takes two steps, CREATE and then ENABLE, and a failure at either leaves the router as it was.
 
-It first checks whether a VPN tunnel is already running, stops it cleanly, writes the new VPN server details into the router's permanent memory, and then starts the new tunnel. The app watches the router until it confirms the tunnel is active, then checks that internet traffic is actually flowing through it by verifying the public IP address your router is using. If anything goes wrong at any point, the app restores the router to the state it was in before you started.
+CREATE writes a slot. It stops the slot's tunnel if it is running, backs up whatever the slot held, and writes the new server's settings into the router's permanent memory, leaving the slot disabled. If the write fails, the backup goes back, or a slot that was empty is cleared again.
+
+ENABLE brings the slot up, and does not call it working until the PIA server has answered. It waits for the interface, then for a WireGuard handshake, then pings the two check targets through it. If any step fails, the slot is switched off again and the message says why.
 
 ### 3.2. <a name='detail'></a>Detail
 
-The commands here are the **Merlin** ones. Stock reaches the same result through VPN Fusion, and both are set out in [Wireguard SSH commands](#wireguard-ssh-commands).
+The commands here are the **Merlin** ones. Stock reaches the same result through VPN Fusion, and both are set out in [Wireguard SSH commands](#wireguard-ssh-commands). The code is `RouterSlotService` in `lib/router_slot_service.dart`.
 
-The push operation establishes an SSH session to the router and uses `wg show interfaces` to detect any currently active WireGuard client slot.
+**CREATE:**
 
-- If an existing slot config is present in NVRAM, the current `wgcN_*` keys are backed up before any changes are made.
-- The active tunnel is stopped by disabling its `enforce` and `enable` NVRAM flags, committing, then issuing `service "stop_wgc N"; service start_vpnrouting0` targeted at that slot.
-- The new NVRAM configuration is written for the target slot. `ep_addr_r` and `rip` are explicitly cleared since these are populated dynamically by the firmware after tunnel establishment.
-- After a nvram commit, the new tunnel is started via `service "restart_wgc N"; service start_vpnrouting0`.
-- The app then polls `wg show interfaces` to confirm the interface is active, followed by pinging the user supplied ping targets (defaults to 8.8.8.8 & 1.1.1.1) through the tunnel to confirm routed connectivity.
-- If the ping fails, a recovery block restores and re-enables the previously active slot.
+- `ip -o link show up` says whether `wgcN` is running. If it is, the slot is disabled first, by DISABLE's own path. New settings written to a running interface never reach it: measured 2026-09-14, a slot overwritten from one region to another kept the old peer key and tunnel address while the app, the web interface and DEVICES all showed the new region.
+- If the slot is occupied, its `wgcN_*` keys are backed up, and on stock `vpnc_clientlist` as well.
+- The new keys are written and committed. The slot is left disabled: CREATE never starts a tunnel.
+- If anything fails, the backup is written back and committed. A slot that was empty has every key written so far unset instead, so a failed CREATE cannot leave a half-written slot that neither the app nor the web interface shows.
+
+**ENABLE:**
+
+- `wgcN_enable=1`, `nvram commit`, then `service "start_wgc N"; service restart_vpnrouting0`. The commit comes first, so the service never reads a half-written slot.
+- `ip -o link show up` is polled until `wgcN` is up. Not `wg show interfaces`, which still listed a slot taken down with `ifconfig wgcN down` (measured 2026-09-09).
+- The app then waits for a WireGuard handshake. An expired PIA registration still produces an interface that sends and never receives, so an interface that is up proves nothing; a handshake is the server answering.
+- The two check targets (8.8.8.8 and 1.1.1.1 by default) are pinged through the tunnel. On Merlin a failure blocks the enable. On stock the ping goes out over the WAN whatever the tunnel is doing, so there the handshake is the test and the ping is only logged.
+- If any step fails, the slot is switched off again: `wgcN_enable=0`, `nvram commit`, `service "stop_wgc N"; service start_vpnrouting0`. The slot is left disabled, not put back to whichever slot ran before (ID-174), and the message says so if the tunnel was still up after the stop.
 
 ## 4. <a name='wireguard-ssh-commands'></a>Wireguard SSH commands
 
@@ -353,12 +349,7 @@ Disable as above, wait for the interface to go, then `nvram unset` all 17 `wgcN_
 VPN Fusion abstracts the underlying per slot calls to manipulate WG VPNs. Find the profile's **row** in `vpnc_clientlist`, set `vpnc_unit` to that row's 0-based index, then exec the `service` command:
 
 > [!IMPORTANT]
-> **`vpnc_unit` must be set before every `service` call in this section, and it is what the call
-> acts on.** `stop_vpnc` and `restart_vpnc` take no argument: the only thing telling VPN Fusion
-> which profile is meant is the value sitting in `vpnc_unit` when the call is made. It keeps its
-> last value, so a call made without setting it first acts on whatever was targeted previously -
-> silently, and with no error. This applies to **all** of the operations below, not just the one
-> that happens to mention it.
+> **`vpnc_unit` must be set before every `service` call in this section, and it is what the call acts on.** `stop_vpnc` and `restart_vpnc` take no argument: the only thing telling VPN Fusion which profile is meant is the value sitting in `vpnc_unit` when the call is made. It keeps its last value, so a call made without setting it first acts on whatever was targeted previously - silently, and with no error. This applies to **all** of the operations below, not just the one that happens to mention it.
 
 ```text
         vpnc_clientlist
@@ -635,7 +626,7 @@ How stock binds a LAN device to a VPN profile, and the NVRAM lists involved. Mea
 > [!NOTE]
 > Every IP address, hostname and MAC address in this section is invented, including in the sample records. Real values are never recorded in this repository.
 
-The app writes two of these keys - `vpnc_dev_policy_list` and `vpnc_default_wan` - from the DEVICE ASSIGNMENT screen, and reads the rest. `scripts/clearall.sh` touches the same two.
+The app writes two of these keys - `vpnc_dev_policy_list` and `vpnc_default_wan` - from the DEVICES screen, and reads the rest. `scripts/clearall.sh` touches the same two.
 
 ### 6.1. <a name='vpnc-default-wan'></a>`vpnc_default_wan`
 
@@ -651,7 +642,7 @@ So `vpnc_default_wan=9` means slot 1, `pia-aus_melbourne`. `0` means the plain i
 
 ### 6.2. <a name='shared-format'></a>Shared format
 
-`dhcp_staticlist` and `custom_clientlist` are both single NVRAM strings using `<` as the record separator and `>` as the field separator. Values are stored **percent-encoded** - the WebUI runs `decodeURIComponent()` on read - so names containing `<`, `>` or spaces come back escaped.
+`dhcp_staticlist` and `custom_clientlist` are both single NVRAM strings using `<` as the record separator and `>` as the field separator. Names are stored **as typed**: measured 2026-09-28, the web interface wrote `DN-Test Name` with its space, and a name containing `'` and `&`, with no escaping into `custom_clientlist`. It refuses `<` and `>`, the two delimiters, and keeps at most 32 characters. (An earlier note here said the values were percent-encoded; the measurement says otherwise.)
 
 ### 6.3. <a name='dhcp-staticlist'></a>`dhcp_staticlist`
 
@@ -769,6 +760,8 @@ device1>AA:BB:CC:DD:EE:FF>0>60>>>>><device4>0A:0B:0C:0D:0E:0F>0>4>>>><RT-EFGH>05
 
 Split on `<`, then on `>`, and treat any index past the end as empty. Group type `0` means unknown and gives a generic icon.
 
+**A rename writes this key and nothing else (ID-261).** Measured 2026-09-28, three runs against the web interface: renaming a device changed `custom_clientlist` alone and called no `rc_service` at all, and the new name showed in the web interface and in DEVICES straight away. The device's record kept its other fields - `>0>20>>>>`, with type 20 its icon - and in one run moved to the end of the list; the list as the web interface wrote it then started with a `<`, so the leading-`<` rule above is not universal, and splitting and discarding empty chunks handles both. The app does the same (`setCustomName`, `lib/device_assignment.dart`): it renames a record in place, keeps every other field and record byte for byte, and gives a device with no record one shaped like the web interface's, `Name>MAC>0>type>>>>`, with the type from the device files so its icon stays. An emptied name removes the record, so the router shows its detected name again. Because the device files' `nickName` lags a rename until the router rewrites them, the app reads the name from `custom_clientlist` first.
+
 ### 6.5. <a name='practical-notes'></a>Practical notes
 
 - **The two lists are independent.** A MAC can appear in one and not the other, and renaming in `custom_clientlist` does not change the DHCP hostname. The sample data above shows it both ways: `hostname4` is only in `custom_clientlist`, `hostname5` and `hostname6` only in `dhcp_staticlist`.
@@ -871,13 +864,9 @@ vpnc_dev_policy_list=1>192.168.1.20>>9><1>192.168.1.22>>5>
 
 #### 6.8.2. <a name='the-starting-state-before-any-vpn-exists'></a>The starting state, before any VPN exists
 
-An **untouched router has an empty `vpnc_dev_policy_list`** - no records at all, not a list of
-zeros. The screen therefore has to render "every device is on the default connection" from an
-empty string. Records that look like placeholders are leftovers from assignments made and undone;
-two earlier readings of them are retracted in [Placeholder records in the policy list](#placeholder-records-in-the-policy-list).
+An **untouched router has an empty `vpnc_dev_policy_list`** - no records at all, not a list of zeros. The screen therefore has to render "every device is on the default connection" from an empty string. Records that look like placeholders are leftovers from assignments made and undone; two earlier readings of them are retracted in [Placeholder records in the policy list](#placeholder-records-in-the-policy-list).
 
-What the WebUI shows in that state, observed on a rebuilt router with `wgc1` freshly created and
-nothing assigned (2026-09-07):
+What the WebUI shows in that state, observed on a rebuilt router with `wgc1` freshly created and nothing assigned (2026-09-07):
 
 - **"Internet Connection" is itself an entry in the server list**, marked *Default Connection*, with **"Apply to all devices" ON**.
 - The device picker offers **all** known devices, reserved or not.
@@ -1101,38 +1090,20 @@ Three points of care, all covered by `staleRuleTables` in `lib/device_assignment
 ---
 
 > [!IMPORTANT]
-> **The table is not always a number.** A device pinned to the plain internet - `vpnc_dev_policy_list`
-> index 6 of `0` - gets `from <ip> lookup main`, not a numeric table. Measured 2026-09-11: a device
-> moved to Internet and then to wgc5 held both rules, with `main` listed first and winning.
+> **The table is not always a number.** A device pinned to the plain internet - `vpnc_dev_policy_list` index 6 of `0` - gets `from <ip> lookup main`, not a numeric table. Measured 2026-09-11: a device moved to Internet and then to wgc5 held both rules, with `main` listed first and winning.
 >
 > ```text
-> 100:    from 192.168.1.51 lookup main  <- Internet, stale, matched first
-> 100:    from 192.168.1.51 lookup 5     <- wgc5, correct, never reached
+> 100:    from 192.168.1.51 lookup main  <- Internet, stale, matched first 100:    from 192.168.1.51 lookup 5     <- wgc5, correct, never reached
 > ```
 >
-> So a device that had ever been pinned to Internet stayed on the WAN through every later
-> reassignment until the router was rebooted. Any sweep of these rules has to match the table by
-> NAME rather than by number. The `from` address is what keeps that safe: the global
-> `32766: from all lookup main` and the priority-10000 `from all iif br0` rules name `all`, never a
-> device, so a per-device sweep can never reach them.
+> So a device that had ever been pinned to Internet stayed on the WAN through every later reassignment until the router was rebooted. Any sweep of these rules has to match the table by NAME rather than by number. The `from` address is what keeps that safe: the global `32766: from all lookup main` and the priority-10000 `from all iif br0` rules name `all`, never a device, so a per-device sweep can never reach them.
 
 > [!IMPORTANT]
-> **`vpnc_default_wan` is a key, not a policy record, so nothing that rewrites the policy list
-> touches it.** Deleting the profile the default connection names leaves the key pointing at an
-> index no record carries. Measured 2026-09-11: every device following the default then reported
-> as `profile 9`, and unassigned traffic was being aimed at a profile that no longer existed.
+> **`vpnc_default_wan` is a key, not a policy record, so nothing that rewrites the policy list touches it.** Deleting the profile the default connection names leaves the key pointing at an index no record carries. Measured 2026-09-11: every device following the default then reported as `profile 9`, and unassigned traffic was being aimed at a profile that no longer existed.
 >
-> `restart_default_wan` resets the key to `0` as it runs, so returning the default to the plain
-> internet needs no write at all - the teardown half of the sequence is the whole of it. The app
-> does this as part of DELETE, and moves the devices that were pinned to that profile onto the
-> internet rather than onto the default, which is what the web interface does. Sending an
-> explicitly pinned device to the default would put it on whatever tunnel the default happens to
-> name, which nobody chose.
+> `restart_default_wan` resets the key to `0` as it runs, so returning the default to the plain internet needs no write at all - the teardown half of the sequence is the whole of it. The app does this as part of DELETE, and moves the devices that were pinned to that profile onto the internet rather than onto the default, which is what the web interface does. Sending an explicitly pinned device to the default would put it on whatever tunnel the default happens to name, which nobody chose.
 >
-> And nothing is started after it. Until build 463 DELETE followed the teardown with
-> `restart_vpnc`, which starts whatever `vpnc_unit` names: the row of the slot being deleted. It
-> restarted the tunnel DELETE had just stopped, and left it running with no profile (ID-209, the
-> same fault as ID-172).
+> And nothing is started after it. Until build 463 DELETE followed the teardown with `restart_vpnc`, which starts whatever `vpnc_unit` names: the row of the slot being deleted. It restarted the tunnel DELETE had just stopped, and left it running with no profile (ID-209, the same fault as ID-172).
 
 #### 6.8.12. <a name='every-routing-rule-the-app-touches'></a>Every routing rule the app touches
 
@@ -1161,6 +1132,41 @@ The hardware tests behind the table, all on stock with devices moved between wgc
 | 2026-09-19 | runsheet AN-2026-09-19_001 | the firmware's rules at 1016-1029 aim the router's lookups by the highest-numbered slot sharing an address, so the probe needs its own rule at 1000 |
 | 2026-09-21 | DEV-17 and two `ip rule show` dumps around a reboot | four copies of one device's rule after a morning of applies, one after the reboot: `restart_vpnc_dev_policy` re-adds a rule for every record each time, so the sweep covers the whole list (ID-183) |
 | 2026-09-24 | runsheets FC, FG and FR | a rebuild and a DISABLE let a pinned device out; a route in the slot's table and anything in the firewall are wiped by the firmware; rules at 90 and 91 survive both and block every reply (6.8.10, ID-213) |
+
+### 6.9. <a name='time-scheduling-disabling-a-device'></a>Time Scheduling (`MULTIFILTER_*`) - disabling a device
+
+**DEVICES disables a device's internet with the router's own Parental Controls, not a rule of its own** (ID-261, Andrew's decision), so a disabled device shows in the web interface and can be enabled there too. It is Parental Controls, Time Scheduling, with a client's pull-down set to **block**. Measured 2026-09-28 over four runs (`.claude/testing/runsheet_2026-09-28_devices-rename-block.md` and its `.bak-run1`, `.bak-run2`).
+
+Five keys, four of them parallel lists with one entry per device in the order the devices were added, separated by `>`:
+
+| Key | Holds | Measured |
+| --- | --- | --- |
+| `MULTIFILTER_ALL` | **Enable Time Scheduling**, the one switch for every entry: `1` on, `0` off. Off, nothing is blocked whatever the entries say | turning it on alone wrote only this key and called `restart_firewall` |
+| `MULTIFILTER_MAC` | each device's MAC | `AA:..>BB:..` with two devices |
+| `MULTIFILTER_DEVICENAME` | each device's name, as typed | `Tablet>Console` |
+| `MULTIFILTER_ENABLE` | each device's pull-down: `0` disable, `1` time, `2` block | `2>0` for block, then disable |
+| `MULTIFILTER_MACFILTER_DAYTIME_V2` | each device's schedule, `>` between devices, `<` within one | a new entry gets `W03E21000700<W04122000800` |
+
+`MULTIFILTER_BLOCK_ALL` is **Enable block all devices**, and blocks every device on the network, not only the listed ones. The app never touches it.
+
+What `restart_firewall` does with a device at block, for its MAC:
+
+```text
+-A FORWARD -i br0 -m mac --mac-source <mac> -j PControls
+-A PControls -i br0 -m mac --mac-source <mac> -j DROP
+-A WGNPControls -i br1 -m mac --mac-source <mac> -j DROP
+```
+
+So the device loses the internet and every tunnel, and keeps its LAN: a blocked tablet could not load a web page and could still open the NAS. An SSH session on another device was not disturbed by the restart. An entry at `0` gets no rule. No `ip rule` changes, so a disabled device pinned to a tunnel keeps its pin and its fail-closed guard (rules 90, 91 and 100 were all in place throughout). A block survives a reboot: the three rules were back afterwards. Undoing it in the web interface put every key and rule back.
+
+What the app does (`applyBlocks`, `lib/device_assignment.dart`; `DeviceAssignmentService.apply`):
+
+- **Disabling** sets a device's existing entry to block, keeping its schedule, or adds an entry at the end with the web interface's default schedule. Every other entry is left as it was.
+- **Enabling again** removes an entry whose schedule is that default - one the app, or a plain block in the web interface, put there - and sets any other back to `0`, so a schedule someone set up by hand is kept.
+- **The switch.** Time Scheduling goes on when anything is disabled and off when no entry is left. Turning it on also brings any schedules that were set up and left off into force, so when there are some, APPLY names them and asks first (Andrew's decision). `schedulesSwitchedOn` finds them.
+- **Writing:** the five keys, `nvram commit`, then `restart_firewall` through the service queue. The same stale-write check as the other lists: the five keys are re-read before anything is written, and a change made elsewhere since the read refuses the apply.
+- **The VPN assignment is kept** while a device is disabled (Andrew's decision); choosing a connection again enables it.
+- **A random MAC escapes it**, as it escapes a pin, and APPLY says so for a device whose address looks randomised.
 
 ## 7. <a name='watchdog-details'></a>Watchdog details
 
@@ -1244,9 +1250,14 @@ flowchart TD
     STAGGER --> LOAD
     DETACH -->|no| LOAD
 
-    LOAD["read settings from NVRAM"] --> ENABLED{"wgcN_enable = 0<br/>and not a deploy?"}
+    LOAD["read settings from NVRAM"] --> GUARD["run guard.sh<br/><i>stock, if installed</i>"]
+    GUARD --> ENABLED{"wgcN_enable = 0<br/>and not a deploy?"}
     ENABLED -->|yes| STOP1["exit 0 - the user turned<br/>this tunnel off"]
-    ENABLED -->|no| IFACE
+    ENABLED -->|no| WAITED{"waited, and its<br/>schedule is gone?"}
+    WAITED -->|yes| STOP4["exit 0 - paused or<br/>removed meanwhile"]
+    WAITED -->|no| SETS{"no watchdog<br/>settings, and not<br/>a deploy?"}
+    SETS -->|yes| STOP5["exit 0 - nothing<br/>left to watch"]
+    SETS -->|no| IFACE
 
     IFACE{"is wgcN up?<br/><i>ip -o link show up</i>"}
     IFACE -->|no| BACKOFF
@@ -1267,7 +1278,7 @@ flowchart TD
     classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
     classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
     class CRON,DEPLOY,OK go
-    class STOP1,STOP2,STOP3,DETACH,REEXEC,STAGGER,LOAD,ENABLED,IFACE,HS,PING,BACKOFF,WAN step
+    class STOP1,STOP2,STOP3,STOP4,STOP5,DETACH,REEXEC,STAGGER,LOAD,GUARD,ENABLED,WAITED,SETS,IFACE,HS,PING,BACKOFF,WAN step
     class RECONF work
 ```
 
@@ -1281,7 +1292,11 @@ The **stagger** keeps the watchdogs from starting together. Every slot's cron en
 
 The **router resolver line** comes after the checks, on every run: one lookup through the router's own resolver at `127.0.0.1`, logged as "Router resolver OK" or "Router resolver FAILED" (ID-194). It is never a gate. A dead dnsmasq or stubby takes names away from every unpinned device, but it is not the tunnel's fault, and rebuilding the tunnel would not bring it back.
 
+The **guard** runs first, before anything can stand down. `guard.sh` keeps the fail-closed rules for every pinned device in place (ID-213, [What happens when the tunnel drops](#what-happens-when-the-tunnel-drops)), and a disabled slot is exactly when those rules matter, so it runs on every check whatever happens next. It is on stock only, and does nothing when nothing has changed.
+
 The **enable check** stops the watchdog undoing a decision the user just made. A tunnel switched off in the web interface looks exactly like a tunnel that dropped.
+
+The **two stand-downs after it** (ID-240) catch a watchdog that stopped being wanted while this run was already going. A cron run waits out its stagger, up to 60 seconds, and the script is already open while it waits, so a DISABLE or DELETE in that minute took effect on the router while the waiting run carried on, checked the tunnel just switched off, and could have rebuilt it. Found in a router log on 2026-09-27: wgc2's watchdog running after wgc2 had been deleted. So a run that waited checks that its schedule is still in `cru l`, and any run other than a deploy checks that the slot still has watchdog settings. The enable check alone could not catch either: a deleted slot's `wgcN_enable` is empty, not `0`.
 
 The **handshake** is the primary liveness test and the only firmware-independent one. `ping -I wgcN` is a Merlin fallback: on stock the router's own traffic is not routed into the tunnel, so a failed ping there says nothing at all. Ping alone used to be the whole test, and it reconfigured healthy tunnels often enough to get the PIA account temporarily refused.
 
@@ -1326,6 +1341,8 @@ flowchart TD
 <p align="center"><em>A rebuild, from the PIA certificate to a handshake on the new server, and the two ways it ends.</em></p>
 
 **A fresh keypair every time is deliberate.** PIA's `addKey` binds a public key to a session; reusing an old one after a server change gives a tunnel that comes up and carries nothing.
+
+**PIA's login service can be down while the rest of PIA is up.** Measured 2026-09-28: the token endpoint answered every request, even a deliberately wrong login, with HTTP 504 after about 61 s - Cloudflare's page for PIA's server behind it not answering - while the server list answered in half a second and PIA's own Android app logged in. So a failed token request is not always the user's credentials. The script aborts on a 5xx, and on curl's own 15 s timeout (exit 28), with "PIA's login service isn't answering ... This is at PIA's end; the watchdog will try again.", which is the line the failure email carries, and the backoff retries it on schedule. The app gives the same request 20 seconds and says the same thing (`kPiaTokenTimeout`, `lib/pia_service.dart`). A 401 or 403 is still a refused login (ID-245, ID-253).
 
 **The restart is the fragile part.** It goes through `notify_rc`, so it is queued rather than run, and a router busy with something else throws it away after 15 seconds without a word - the config is written perfectly and nothing acts on it. So the script waits for the queue first, clears a marker left by a process that has gone, and afterwards checks the tunnel is on the new server's key. If not, it tries once more; skipped twice, it fails and says the router skipped the restart (ID-214). See [The router's service queue](#the-routers-service-queue-and-how-it-wedges).
 
@@ -1374,36 +1391,21 @@ The deployed copy is LF-terminated: the repo template `scripts/S50downloadmaster
 
 #### 7.4.1. <a name='the-routers-service-queue-and-how-it-wedges'></a>The router's service queue, and how it wedges
 
-**In one paragraph.** The app changes nothing on a router by itself. Everything it does - enabling a
-tunnel, applying a device assignment, changing the default connection - is a request for the
-firmware to restart one of its own services, and the firmware takes those requests through a queue.
-That queue can jam. When it does, the router stops acting on anything it is told while still
-reporting success, so the app appears to work perfectly and changes nothing at all. This section is
-how that happens, how to recognise it, and what `lib/router_service_queue.dart` does about it.
+**In one paragraph.** The app changes nothing on a router by itself. Everything it does - enabling a tunnel, applying a device assignment, changing the default connection - is a request for the firmware to restart one of its own services, and the firmware takes those requests through a queue. That queue can jam. When it does, the router stops acting on anything it is told while still reporting success, so the app appears to work perfectly and changes nothing at all. This section is how that happens, how to recognise it, and what `lib/router_service_queue.dart` does about it.
 
-**Why it is worth a section of its own.** A jammed queue is the most misleading failure this project
-has met. Nothing errors. The app says the tunnel is up, the logs read normally, and every command
-appears to succeed - while the router quietly discards all of it, including a request to reboot. The
-first time it happened it took ninety minutes and a power cycle, and the cause was invisible until
-someone thought to read one NVRAM key.
+**Why it is worth a section of its own.** A jammed queue is the most misleading failure this project has met. Nothing errors. The app says the tunnel is up, the logs read normally, and every command appears to succeed - while the router quietly discards all of it, including a request to reboot. The first time it happened it took ninety minutes and a power cycle, and the cause was invisible until someone thought to read one NVRAM key.
 
 The mechanism, then the trap, then what the app does.
 
-The router runs one service action at a time, and it uses a single NVRAM key as the whole of its
-bookkeeping.
+The router runs one service action at a time, and it uses a single NVRAM key as the whole of its bookkeeping.
 
-Every `service <name>` call goes through `notify_rc`. It writes what it is doing into `rc_service`,
-writes a pid into `rc_service_pid`, and clears both when the action finishes. A later call that finds
-`rc_service` already set waits for it - `rc_service: waitting "<name>" via ...` - and after 15
-seconds gives up and **throws itself away**: `rc_service: skip the event: <name>`.
+Every `service <name>` call goes through `notify_rc`. It writes what it is doing into `rc_service`, writes a pid into `rc_service_pid`, and clears both when the action finishes. A later call that finds `rc_service` already set waits for it - `rc_service: waitting "<name>" via ...` - and after 15 seconds gives up and **throws itself away**: `rc_service: skip the event: <name>`.
 
 A short wait is ordinary. The key is doing its job, and the second call runs a moment later.
 
-**A service that never finishes is the problem.** It never clears the key, so every event sent to the
-router from then on is discarded, silently, for as long as the router stays up.
+**A service that never finishes is the problem.** It never clears the key, so every event sent to the router from then on is discarded, silently, for as long as the router stays up.
 
-Measured 2026-09-10. `service restart_vpnc` hung at 17:40:25 and the router spent ninety minutes
-discarding everything sent to it:
+Measured 2026-09-10. `service restart_vpnc` hung at 17:40:25 and the router spent ninety minutes discarding everything sent to it:
 
 - Four watchdog reconfigures fetched a PIA token, registered a key and wrote a complete tunnel config that nothing acted on. Each ended `wgc1 did not come up after reconfiguration`.
 - The app reported `router command failed (exit 1)` with no hint as to why.
@@ -1412,23 +1414,13 @@ discarding everything sent to it:
 
 **Telling a wedge from ordinary work is the hard part.**
 
-Clearing the key by hand fixes it. The difficulty is knowing when to: clearing a key that a running
-service still needs is the same mistake in the other direction.
+Clearing the key by hand fixes it. The difficulty is knowing when to: clearing a key that a running service still needs is the same mistake in the other direction.
 
-**The obvious test does not work.** `rc_service_pid` looks like it answers "is it still working?" and
-it does not. It names `notify_rc`, the process that puts the job in the queue and then exits
-immediately. The job itself runs somewhere else. So within about a second of **every** call, finished
-or not, the pid names a process that is gone.
+**The obvious test does not work.** `rc_service_pid` looks like it answers "is it still working?" and it does not. It names `notify_rc`, the process that puts the job in the queue and then exits immediately. The job itself runs somewhere else. So within about a second of **every** call, finished or not, the pid names a process that is gone.
 
-Measured 2026-09-12: an eighteen-step hardware run logged `cleared stale rc_service marker` after
-every single service call, because the app was reading the key its own call had just set, finding the
-pid gone, and calling it a ghost. Two things followed from that. The step meant to wait for a call to
-finish returned in about a second without waiting for anything. And the warning fired so often that
-it stopped meaning anything, which is the surest way to miss the one time it is real.
+Measured 2026-09-12: an eighteen-step hardware run logged `cleared stale rc_service marker` after every single service call, because the app was reading the key its own call had just set, finding the pid gone, and calling it a ghost. Two things followed from that. The step meant to wait for a call to finish returned in about a second without waiting for anything. And the warning fired so often that it stopped meaning anything, which is the surest way to miss the one time it is real.
 
-**So the app asks a different question: has anything changed?** A service that is genuinely working
-clears its own key when it finishes. One that has hung never will. Time is the only honest signal
-left.
+**So the app asks a different question: has anything changed?** A service that is genuinely working clears its own key when it finishes. One that has hung never will. Time is the only honest signal left.
 
 **What the app does**, in `lib/router_service_queue.dart`:
 
@@ -1440,15 +1432,11 @@ left.
 | The same key sits unchanged for 10 seconds, pid gone | A ghost. Clear it, warn in the app log, and write the detail to the router's syslog. |
 | The key is set and its pid really is alive, past the timeout | `RouterServiceWedgedException`. The app cannot fix this one, so it names the service and says to power cycle. Rare, because of the pid behaviour above. |
 
-Ten seconds is longer than any service this app issues takes, and the wedge it guards against lasted
-ninety minutes - so waiting costs nothing and guessing costs everything.
+Ten seconds is longer than any service this app issues takes, and the wedge it guards against lasted ninety minutes - so waiting costs nothing and guessing costs everything.
 
-The check runs **before** each service call as well as after, because a wedge clears for one call
-only: that call sets the key again, and the next one waits on whatever it left behind.
+The check runs **before** each service call as well as after, because a wedge clears for one call only: that call sets the key again, and the next one waits on whatever it left behind.
 
-Related, and the same kind of mistake: an interface seen up ONCE is not up. The app reported
-"wgc1 enabled" a second after `restart_vpnc` because it caught the interface mid-restart, then ran
-the deploy script against a tunnel on its way back down. Two consecutive sightings are required.
+Related, and the same kind of mistake: an interface seen up ONCE is not up. The app reported "wgc1 enabled" a second after `restart_vpnc` because it caught the interface mid-restart, then ran the deploy script against a tunnel on its way back down. Two consecutive sightings are required.
 
 Full evidence in `.claude/testing/2026-09-10_rc-service-stuck-runsheet.md`.
 
@@ -1659,65 +1647,35 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 
 ## 11. <a name='appendix-readings-that-were-superseded'></a>Appendix: readings that were superseded
 
-Each entry below was believed, written down, and then measured to be wrong. They are kept together
-here because a wrong idea that fits the evidence is a reasonable one to have twice: the one-line
-retraction where the idea would occur stops it being re-adopted, and this is the working behind it.
-**Nothing in this appendix describes how the app behaves.**
+Each entry below was believed, written down, and then measured to be wrong. They are kept together here because a wrong idea that fits the evidence is a reasonable one to have twice: the one-line retraction where the idea would occur stops it being re-adopted, and this is the working behind it. **Nothing in this appendix describes how the app behaves.**
 
 ### 11.1. <a name='the-two-cost-model-for-applying-an-assignment'></a>The two-cost model for applying an assignment
 
 Retracted in [Assigning a device with no DHCP reservation creates one](#assigning-a-device-with-no-dhcp-reservation-crea).
 
-The belief, from watching the WebUI apply assignments in 2026-09-06 and -07: applying an assignment
-cost one of two very different amounts, and which one depended on the device.
+The belief, from watching the WebUI apply assignments in 2026-09-06 and -07: applying an assignment cost one of two very different amounts, and which one depended on the device.
 
 - **Device already has a DHCP reservation:** `stop_vpnc` / `restart_vpnc_dev_policy` / `restart_vpnc`. VPN routing bounces for assigned devices, everything else untouched. Cheap.
 - **Device has no reservation:** the firmware creates one, which drags in `restart_net_and_phy` - every switch port bounces, downstream routers and APs drop with everything behind them, and the WAN re-leases. Expensive, and it hits devices that have nothing to do with the assignment.
 
-The design that followed was to offer reserved devices as the ordinary case and treat "create a
-reservation for this device" as a separate, explicitly confirmed action that warned the whole
-network would drop for a minute. `restart_default_wan`, used by "apply to all devices", was
-measured as harmless alongside it - it dropped nothing during that run, which later measurement
-of the default-connection change contradicts.
+The design that followed was to offer reserved devices as the ordinary case and treat "create a reservation for this device" as a separate, explicitly confirmed action that warned the whole network would drop for a minute. `restart_default_wan`, used by "apply to all devices", was measured as harmless alongside it - it dropped nothing during that run, which later measurement of the default-connection change contradicts.
 
-**What killed it, 2026-09-08.** Writing the reservation and the policy record and then calling only
-`restart_dnsmasq` and `restart_vpnc_dev_policy` applied the assignment with **nothing bouncing** -
-the WAN address unchanged, no `restart_net_and_phy` in the syslog, and a wired SSH session that did
-not drop. The expensive branch was never a property of creating a reservation. It was a property of
-how the WebUI chooses to apply one, and the app is not obliged to copy it.
+**What killed it, 2026-09-08.** Writing the reservation and the policy record and then calling only `restart_dnsmasq` and `restart_vpnc_dev_policy` applied the assignment with **nothing bouncing** - the WAN address unchanged, no `restart_net_and_phy` in the syslog, and a wired SSH session that did not drop. The expensive branch was never a property of creating a reservation. It was a property of how the WebUI chooses to apply one, and the app is not obliged to copy it.
 
-**A second, independent signal said the same thing.** A day of syslog was searched for the Broadcom
-multicast-snooping error `bcm_mcast_netlink_process_snoop_cfg,884: interface N could not be found`.
-It appears in three bursts of around 120 lines each, and every burst follows a `restart_net_and_phy`
-within ten seconds. Nothing else provokes it: `restart_vpnc`, `stop_vpnc`, `restart_vpnc_dev_policy`
-alone, `restart_default_wan`, `restart_wgs` and `restart_firewall` all ran repeatedly in the same log
-and produced none. The heavy call tears down every network device at once, so `mcpd` retries its
-snooping config against interface indexes that no longer exist until the rebuild settles. This is an
-ASUS defect and not one the app can repair, but the app never triggers it, because the light pair
-does not rebuild the network stack. The number in the message is a kernel `ifindex`, never reused
-within a boot and reset on reboot; it identifies nothing the app owns and needs no handling.
+**A second, independent signal said the same thing.** A day of syslog was searched for the Broadcom multicast-snooping error `bcm_mcast_netlink_process_snoop_cfg,884: interface N could not be found`. It appears in three bursts of around 120 lines each, and every burst follows a `restart_net_and_phy` within ten seconds. Nothing else provokes it: `restart_vpnc`, `stop_vpnc`, `restart_vpnc_dev_policy` alone, `restart_default_wan`, `restart_wgs` and `restart_firewall` all ran repeatedly in the same log and produced none. The heavy call tears down every network device at once, so `mcpd` retries its snooping config against interface indexes that no longer exist until the rebuild settles. This is an ASUS defect and not one the app can repair, but the app never triggers it, because the light pair does not rebuild the network stack. The number in the message is a kernel `ifindex`, never reused within a boot and reset on reboot; it identifies nothing the app owns and needs no handling.
 
 ### 11.2. <a name='placeholder-records-in-the-policy-list'></a>Placeholder records in the policy list
 
 Retracted in [A record being present does not mean the device is assigned](#how-a-change-is-written) and in [The starting state, before any VPN exists](#the-starting-state-before-any-vpn-exists).
 
-A freshly rebuilt router that had never had a `wgc` slot configured was found on 2026-09-06 with a
-`vpnc_dev_policy_list` already holding one `0>IP>>0>` record per **reserved** device, and none for
-any unreserved one. Two readings were offered for that, a week apart:
+A freshly rebuilt router that had never had a `wgc` slot configured was found on 2026-09-06 with a `vpnc_dev_policy_list` already holding one `0>IP>>0>` record per **reserved** device, and none for any unreserved one. Two readings were offered for that, a week apart:
 
 1. The firmware seeds a disabled placeholder for every device holding a DHCP reservation.
 2. The records are not placeholders at all but **devices bound to the Internet connection**, index `0` being the WAN. That fits the WebUI, where "Internet Connection" is itself an entry in the server list, and its device list held exactly those four reserved devices, ticked.
 
-**Both are wrong, 2026-09-08.** A router with **nine DHCP reservations and a completely empty
-`vpnc_dev_policy_list`** was captured. The firmware seeds nothing. Those records were left behind by
-assignments that had been made and undone, and the correlation with reservations was a coincidence
-of which devices had been experimented on.
+**Both are wrong, 2026-09-08.** A router with **nine DHCP reservations and a completely empty `vpnc_dev_policy_list`** was captured. The firmware seeds nothing. Those records were left behind by assignments that had been made and undone, and the correlation with reservations was a coincidence of which devices had been experimented on.
 
-The rule the app depends on survived both readings unchanged, which is why nothing downstream had to
-move: index `0` says unassigned-from-a-VPN whichever story is true, so the app reads the index and
-never mere presence in the list. What did change is the expectation of the empty case. An untouched
-router has **no records at all**, so the screen has to render "every device is on the default
-connection" from an empty string rather than from a list of zeros.
+The rule the app depends on survived both readings unchanged, which is why nothing downstream had to move: index `0` says unassigned-from-a-VPN whichever story is true, so the app reads the index and never mere presence in the list. What did change is the expectation of the empty case. An untouched router has **no records at all**, so the screen has to render "every device is on the default connection" from an empty string rather than from a list of zeros.
 
 ---
 
@@ -1758,7 +1716,7 @@ All of it is `lib/app_colors.dart`. Nothing in a screen may inline a hex value (
 | STANDALONE | `kHighlight` | `#00D4AA` |
 | MANAGE | `kManageColour` | `#29B6F6` |
 | WATCHDOG | `kWatchdogColour` | `#8BC34A` |
-| DEVICE ASSIGNMENT | `kAssignColour` | `#FFB300` |
+| DEVICES | `kAssignColour` | `#FFB300` |
 | ROUTER LOG | `kRouterLogColour` | `#8E5499` |
 | APP LOG | `kAppLogColour` | `#6052FF` |
 | SETTINGS and ABOUT | `kUtilityColour` | `#8A97A0` |
@@ -1843,7 +1801,8 @@ Padding is 14 vertical, 16 horizontal; the border is 1px in the role colour; `bu
 | Slot list, badges, action buttons, watchdog log viewer | `widgets/slot_modal.dart` | MANAGE and WATCHDOG |
 | Slot parameter fields | `screens/slot_params_editor.dart` | MANAGE EDIT |
 | Watchdog form, DoH picker | `watchdog_dialog.dart` | WATCHDOG CREATE/EDIT |
-| Device rows, pickers, panels | `widgets/device_assignment_screen.dart` | DEVICE ASSIGNMENT |
+| Device rows, pickers, panels | `widgets/device_assignment_screen.dart` | DEVICES |
+| "Applying - do not leave this screen." panel, shown while the router is being changed; back is blocked meanwhile | `widgets/applying_panel.dart` (`ApplyingPanel`) | MANAGE, WATCHDOG and DEVICES (ID-246) |
 | Router log colouring | `screens/router_log_screen.dart` (`routerLogLineColour`) | ROUTER LOG |
 | Watchdog log colouring | `widgets/slot_modal.dart` (`watchdogLogLineColour`) | The watchdog log viewer |
 | App log colouring and icons | `widgets/common_fields.dart` (`LogPanel`) | APP LOG |

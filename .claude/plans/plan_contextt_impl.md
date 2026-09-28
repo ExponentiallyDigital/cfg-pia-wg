@@ -2,29 +2,20 @@
 
 ## Context
 
-`.claude/CONTEXT.md` is loaded at the start of every session and is used as the ground truth before
-code changes. It has drifted: it omits the About screen, `app_colors.dart`, `build_info_service.dart`
-and `license_text.dart` entirely, and it describes a watchdog button set (ENABLE / DISABLE / EDIT
-"saved but not deployed") that does not exist in `lib/widgets/slot_modal.dart`. Acting on it today
-would produce wrong changes.
+`.claude/CONTEXT.md` is loaded at the start of every session and is used as the ground truth before code changes. It has drifted: it omits the About screen, `app_colors.dart`, `build_info_service.dart` and `license_text.dart` entirely, and it describes a watchdog button set (ENABLE / DISABLE / EDIT "saved but not deployed") that does not exist in `lib/widgets/slot_modal.dart`. Acting on it today would produce wrong changes.
 
-This plan replaces it with a reference-style document derived only from the 24 Dart files under
-[lib/](lib/), `pubspec.yaml`, `analysis_options.yaml`, `.vscode/settings.json`, and the `test/` file
-listing (test contents not read, per instruction).
+This plan replaces it with a reference-style document derived only from the 24 Dart files under [lib/](lib/), `pubspec.yaml`, `analysis_options.yaml`, `.vscode/settings.json`, and the `test/` file listing (test contents not read, per instruction).
 
-**Target path:** overwrite the existing `.claude/CONTEXT.md` (keeping its current uppercase name —
-there is no lowercase `context.md`). Single file write; no code changes.
+**Target path:** overwrite the existing `.claude/CONTEXT.md` (keeping its current uppercase name — there is no lowercase `context.md`). Single file write; no code changes.
 
-**Note on scope:** the request said 26 Dart files in `./lib`; there are **24**. There are 26
-`*_test.dart` files under `test/`. All 24 lib files were read in full.
+**Note on scope:** the request said 26 Dart files in `./lib`; there are **24**. There are 26 `*_test.dart` files under `test/`. All 24 lib files were read in full.
 
 ---
 
 ## Verification
 
 1. `flutter analyze` — unchanged (doc-only change; sanity check the tree is clean).
-2. Cross-check every file/line citation in the new doc resolves:
-   `grep -n` the cited symbol at each `file:line` referenced in §5 and §3.
+2. Cross-check every file/line citation in the new doc resolves: `grep -n` the cited symbol at each `file:line` referenced in §5 and §3.
 3. Confirm no code/test files were modified: `git status --porcelain` shows only `.claude/CONTEXT.md`.
 
 ---
@@ -122,15 +113,7 @@ plaintext when a watchdog is deployed.
 ### Call graph (routers)
 
 ```
-RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fetchSlots()
-        └─> SlotModal(mode)
-              ├─ manage:   _create → PiaService.generateConfig → createConfigToSlot
-              │            _enableManage → [stopWatchdog/disableSlot others] → enableSlot
-              │            _editManage  → readSlotParams → SlotParamsEditor → writeSlotParams
-              │            _disableManage / _deleteManage (both stopWatchdog first)
-              └─ watchdog: _editWatchdog → WatchdogDialog → RouterWatchdog.deployWatchdog
-                           _deleteWatchdog → stopWatchdog + deleteSlot
-                           _viewWatchdogLog → getWatchdogLog
+RouterSlotsScreen ──connect()──> SSHClient ──> RouterSlotService.fetchSlots() └─> SlotModal(mode) ├─ manage:   _create → PiaService.generateConfig → createConfigToSlot │            _enableManage → [stopWatchdog/disableSlot others] → enableSlot │            _editManage  → readSlotParams → SlotParamsEditor → writeSlotParams │            _disableManage / _deleteManage (both stopWatchdog first) └─ watchdog: _editWatchdog → WatchdogDialog → RouterWatchdog.deployWatchdog _deleteWatchdog → stopWatchdog + deleteSlot _viewWatchdogLog → getWatchdogLog
 ```
 
 ## 4. Feature reference
