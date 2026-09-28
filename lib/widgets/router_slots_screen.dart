@@ -33,6 +33,7 @@ import '../binary_installer.dart';
 import '../router_session.dart' show routerConnectMessage;
 import '../session_controller.dart';
 import 'install_binaries_dialog.dart';
+import 'app_drawer.dart' show navigateToDestination;
 import 'app_scaffold.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
@@ -281,7 +282,9 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
         // Declining is an informed choice - the dialog said what happens and where to read more -
         // so following it with the same information again is nagging. The notice still appears on
         // the NEXT visit, which is where it stops being a repeat and starts being a reminder.
-        if (outcome == _InstallOutcome.justDeclined) return;
+        // Declining ends at the main menu: left here, the screen showed the login form again,
+        // which read as being asked to log in a second time (ID-252).
+        if (outcome == _InstallOutcome.justDeclined) return _leaveForMenu();
         // A failed install has already said so, in its own words and naming the cause. Following
         // that with "Unable to locate" tells the user something they were just told, in red, in a
         // way that reads as a second, separate fault (ID-097).
@@ -294,6 +297,8 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
         _c.declinedBinaryInstalls.remove(gate.missingBinaries.join(','));
         return _onConnect();
       }
+      // Closing a reminder about missing helpers without installing is declining again (ID-252).
+      if (gate.missingBinaries.isNotEmpty && mounted) _leaveForMenu();
       return;
     }
     if (slots == null) return;
@@ -307,6 +312,11 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     // enterModal/exitModal are deliberately not called: modalDepth says something is stacked OVER
     // a screen, and this is the screen.
     setState(() => _slots = slots);
+  }
+
+  /// Back to the main menu, after the user has declined what this screen needs to go on.
+  void _leaveForMenu() {
+    if (mounted) navigateToDestination(context, _c, AppDestination.menu);
   }
 
   /// Offers to install [missing], and does it if the user agrees.

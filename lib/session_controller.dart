@@ -72,7 +72,9 @@ enum AppDestination {
   standalone('standalone', 'STANDALONE'),
   manageRouter('manage_router', 'MANAGE'),
   watchdog('watchdog', 'WATCHDOG'),
-  deviceAssignment('device_assignment', 'DEVICE ASSIGNMENT'),
+  // DEVICES since ID-261: a device can be renamed and disabled there too, not only assigned. The route
+  // name stays, so nothing keyed on it moves.
+  deviceAssignment('device_assignment', 'DEVICES'),
   routerLog('router_log', 'ROUTER LOG'),
   log('log', 'APP LOG'),
   settings('settings', 'SETTINGS'),
@@ -251,9 +253,17 @@ class SessionController extends ChangeNotifier {
   final Map<String, int?> stagedAssignments = {};
   int? stagedDefaultIndex;
 
+  /// MAC -> the device's new name, empty to clear it and show the detected one (ID-261).
+  final Map<String, String> stagedNames = {};
+
+  /// MAC -> true to disable the device's internet, false to enable it again (ID-261).
+  final Map<String, bool> stagedBlocks = {};
+
   void clearStagedAssignments() {
     stagedAssignments.clear();
     stagedDefaultIndex = null;
+    stagedNames.clear();
+    stagedBlocks.clear();
   }
 
   // ── Router SSH session ─────────────────────────────────────────────────────────

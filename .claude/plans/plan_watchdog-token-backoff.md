@@ -58,8 +58,7 @@ The failure email's `Attempt:` row names whichever of the backoff and the next c
 - `buildBackoffCase()` emits exactly the expected POSIX `case`, and every rung in the shell matches the Dart function.
 - The generated script no longer contains `COOLDOWN=120` or `$COOLDOWN`, and does contain the ladder.
 - The increment sits **after** the early exit — the property that keeps the growth rate independent of the check interval.
-- A success resets the count (the existing `0
-0` write; asserted).
+- A success resets the count (the existing `0 0` write; asserted).
 - A non-numeric backoff file reads as zero rather than crashing the arithmetic.
 - The alert names `max(backoff, next tick)`, and a junk interval defaults to 300 s.
 

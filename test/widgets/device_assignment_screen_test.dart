@@ -857,4 +857,129 @@ void main() {
       expect(find.text('APPLY 1 CHANGE'), findsOneWidget);
     });
   });
+
+  // ID-261: rename a device, and disable its internet, from the same screen and the same APPLY.
+  group('names and disabling', () {
+    const box = '11:22:33:44:55:66';
+
+    Future<void> applyAll(WidgetTester tester) async {
+      await tester.ensureVisible(find.byKey(const Key('device_apply')));
+      await tester.tap(find.byKey(const Key('device_apply')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apply_confirm')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('tap a name, type, Enter: staged in amber, and written only by APPLY', (tester) async {
+      final ssh = await _pumpConnected(tester);
+      await tester.tap(find.byKey(const Key('name_$box')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('name_field_$box')), 'Kids tablet');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      final name = tester.widget<Text>(find.descendant(of: find.byKey(const Key('name_$box')), matching: find.byType(Text)));
+      expect(name.data, startsWith('Kids tablet'));
+      expect(name.style?.color, kWarn, reason: 'amber until APPLY, as a staged picker is');
+      expect(find.text('APPLY 1 CHANGE'), findsOneWidget);
+      expect(ssh.commands.any((c) => c.contains('custom_clientlist=')), isFalse, reason: 'nothing before APPLY');
+
+      await applyAll(tester);
+      expect(ssh.ran("nvram set custom_clientlist='<Kids tablet>$box>0>0>>>>'"), isTrue);
+    });
+
+    testWidgets('a name the router would refuse is not staged, and says why', (tester) async {
+      await _pumpConnected(tester);
+      await tester.tap(find.byKey(const Key('name_$box')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('name_field_$box')), 'a<b');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('name_error_$box')), findsOneWidget);
+      expect(find.text('APPLY 0 CHANGES'), findsOneWidget);
+    });
+
+    testWidgets('tapping away leaves the name as it was', (tester) async {
+      await _pumpConnected(tester);
+      await tester.tap(find.byKey(const Key('name_$box')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('name_field_$box')), 'Something else');
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('name_field_$box')), findsNothing);
+      expect(find.text('APPLY 0 CHANGES'), findsOneWidget);
+    });
+
+    testWidgets('Disabled is the last choice, in red, and shows on the row; APPLY writes Time Scheduling', (tester) async {
+      final ssh = await _pumpConnected(tester);
+      await tester.tap(find.byKey(const Key('row_$box')));
+      await tester.pumpAndSettle();
+      final tile = find.byKey(const Key('pick_disabled'));
+      expect(tile, findsOneWidget);
+      expect(tester.widget<Text>(find.descendant(of: tile, matching: find.text('Disabled'))).style?.color, kError);
+      expect(find.text('no Internet or VPN access'), findsOneWidget);
+
+      await tester.tap(tile);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('row_${box}_disabled')), findsOneWidget);
+
+      await applyAll(tester);
+      expect(ssh.ran("nvram set MULTIFILTER_MAC='$box'"), isTrue);
+      expect(ssh.ran("nvram set MULTIFILTER_ENABLE='2'"), isTrue);
+      expect(ssh.ran('service restart_firewall'), isTrue);
+      // The VPN assignment is kept underneath (Andrew's decision): the policy list is not rewritten.
+      expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isFalse);
+    });
+
+    testWidgets('choosing a connection for a disabled device enables it again, where it was', (tester) async {
+      final blocked = RecordingSSHClient(responder: (cmd) {
+        const ts = 'MULTIFILTER_ALL=1\nMULTIFILTER_MAC=$box\nMULTIFILTER_DEVICENAME=Box\nMULTIFILTER_ENABLE=2\n'
+            'MULTIFILTER_MACFILTER_DAYTIME_V2=W03E21000700<W04122000800';
+        if (cmd.contains('cfg_device_list')) {
+          return ['', _clientlist, _policyList, '9', _staticlist, '', _cfgDeviceList, _clJson, _cache, ts, '']
+              .join('\n$_sep\n');
+        }
+        if (cmd.startsWith('echo "MULTIFILTER_ALL=')) return ts;
+        if (cmd == 'nvram get vpnc_dev_policy_list') return _policyList;
+        if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
+        return '';
+      });
+      final ssh = await _pumpConnected(tester, router: blocked);
+      expect(find.byKey(const Key('row_${box}_disabled')), findsOneWidget, reason: "the router's own state");
+
+      await tester.tap(find.byKey(const Key('row_$box')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('pick_default')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('row_${box}_disabled')), findsNothing);
+
+      await applyAll(tester);
+      expect(ssh.ran("nvram set MULTIFILTER_MAC=''"), isTrue, reason: 'the entry it would have made is removed');
+      expect(ssh.ran("nvram set MULTIFILTER_ALL='0'"), isTrue, reason: 'with nothing left, Time Scheduling goes off');
+    });
+
+    testWidgets('APPLY names the schedules that disabling a device would switch on', (tester) async {
+      final scheduled = RecordingSSHClient(responder: (cmd) {
+        const ts = 'MULTIFILTER_ALL=0\nMULTIFILTER_MAC=44:55:66:77:88:99\nMULTIFILTER_DEVICENAME=Laptop\n'
+            'MULTIFILTER_ENABLE=1\nMULTIFILTER_MACFILTER_DAYTIME_V2=W01E08001700';
+        if (cmd.contains('cfg_device_list')) {
+          return ['', _clientlist, _policyList, '9', _staticlist, '', _cfgDeviceList, _clJson, _cache, ts, '']
+              .join('\n$_sep\n');
+        }
+        if (cmd.startsWith('echo "MULTIFILTER_ALL=')) return ts;
+        return '';
+      });
+      await _pumpConnected(tester, router: scheduled);
+      await tester.tap(find.byKey(const Key('row_$box')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('pick_disabled')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('device_apply')));
+      await tester.tap(find.byKey(const Key('device_apply')));
+      await tester.pumpAndSettle();
+      final warning = tester.widget<Text>(find.byKey(const Key('apply_schedule_warning'))).data!;
+      expect(warning, contains('Time Scheduling is off'));
+      expect(warning, contains('Laptop'));
+    });
+  });
 }

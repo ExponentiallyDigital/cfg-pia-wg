@@ -35,6 +35,9 @@ class AssignmentState {
     required this.defaultIndex,
     required this.rawPolicyList,
     required this.rawClientlist,
+    this.parental = ParentalControls.empty,
+    this.rawCustomClientlist = '',
+    this.rawParental = '',
   });
 
   final List<LanDevice> devices;
@@ -50,6 +53,16 @@ class AssignmentState {
 
   /// Kept verbatim for the stale-write check at apply time. See [DeviceAssignmentService.apply].
   final String rawPolicyList, rawClientlist;
+
+  /// The router's Time Scheduling, which is where a device is disabled (ID-261).
+  final ParentalControls parental;
+
+  /// Kept verbatim for the stale-write check, as the two above: `custom_clientlist` for a rename,
+  /// and the five Time Scheduling keys, joined, for a device disabled or enabled.
+  final String rawCustomClientlist, rawParental;
+
+  /// Whether [device] has no internet now, disabled in the router's Time Scheduling.
+  bool isBlocked(LanDevice device) => parental.isBlocked(device.mac);
 
   /// The profile a device is currently on, or null when it is on the default connection.
   VpncRecord? profileFor(LanDevice device) {
@@ -139,6 +152,7 @@ class DeviceAssignmentService {
             'echo "$_sep"; nvram get cfg_device_list; '
             'echo "$_sep"; cat /jffs/nmp_cl_json.js 2>/dev/null; '
             'echo "$_sep"; cat /tmp/nmp_cache.js 2>/dev/null; '
+            'echo "$_sep"; $_parentalRead'
             'echo "$_sep"'))
         .split(_sep);
 
@@ -155,6 +169,7 @@ class DeviceAssignmentService {
     );
     onLog?.call('Found ${devices.length} devices.');
 
+    final parental = _parseParental(at(8));
     return AssignmentState(
       devices: devices,
       policies: parseDevicePolicyList(policyList),
@@ -162,8 +177,28 @@ class DeviceAssignmentService {
       defaultIndex: int.tryParse(at(2)),
       rawPolicyList: policyList,
       rawClientlist: clientlist,
+      parental: parseParentalControls(parental),
+      rawCustomClientlist: at(4),
+      rawParental: _joinParental(parental),
     );
   }
+
+  // The five Time Scheduling keys as `KEY=value` lines, one read. `nvram get` prints nothing for an
+  // unset key, so the name is echoed with it and a missing key still has its line.
+  static final String _parentalRead = [for (final k in kParentalKeys) 'echo "$k=\$(nvram get $k)"; '].join();
+
+  static Map<String, String> _parseParental(String block) {
+    final out = <String, String>{};
+    for (final line in block.split('\n')) {
+      final eq = line.indexOf('=');
+      if (eq > 0 && kParentalKeys.contains(line.substring(0, eq).trim())) {
+        out[line.substring(0, eq).trim()] = line.substring(eq + 1).trim();
+      }
+    }
+    return out;
+  }
+
+  static String _joinParental(Map<String, String> keys) => [for (final k in kParentalKeys) '$k=${keys[k] ?? ''}'].join('\n');
 
   /// Whether each of [slots] is up, and how long since its server last answered, in one round trip.
   ///
@@ -353,8 +388,14 @@ class DeviceAssignmentService {
     List<String> changeDescriptions = const [],
     String defaultFrom = '',
     String defaultTo = '',
+    Map<String, String> renames = const {},
+    Map<String, String> deviceTypes = const {},
+    List<String> renameDescriptions = const [],
+    Map<String, bool> blocks = const {},
+    Map<String, String> blockNames = const {},
+    List<String> blockDescriptions = const [],
   }) async {
-    if (changes.isEmpty && newDefaultIndex == null) return;
+    if (changes.isEmpty && newDefaultIndex == null && renames.isEmpty && blocks.isEmpty) return;
 
     // The stale-write check. Re-read and compare BEFORE touching anything, so a conflict costs
     // nothing and the user is told rather than quietly overwritten.
@@ -364,6 +405,13 @@ class DeviceAssignmentService {
     }
     if ((await _read('nvram get vpnc_clientlist')).trim() != base.rawClientlist) {
       throw const AssignmentConflictException('the VPN profile list was changed elsewhere');
+    }
+    // The same for the two lists a rename and a disable rewrite whole (ID-261).
+    if (renames.isNotEmpty && (await _read('nvram get custom_clientlist')).trim() != base.rawCustomClientlist) {
+      throw const AssignmentConflictException('device names were changed elsewhere');
+    }
+    if (blocks.isNotEmpty && _joinParental(_parseParental(await _read(_parentalRead))) != base.rawParental) {
+      throw const AssignmentConflictException("the router's Time Scheduling was changed elsewhere");
     }
 
     if (reservationsToCreate.isNotEmpty) {
@@ -375,6 +423,34 @@ class DeviceAssignmentService {
       }
       onLog?.call('Creating ${reservationsToCreate.length} DHCP reservation(s)...');
       await _run('nvram set dhcp_staticlist=${shellSingleQuote(list)}');
+    }
+
+    // Names first: one key, and no service call - the web interface makes none either, and the new
+    // name shows straight away (measured 2026-09-28). Logged in both logs, as a reassignment is.
+    if (renames.isNotEmpty) {
+      var list = base.rawCustomClientlist;
+      renames.forEach((mac, name) => list = setCustomName(list, mac: mac, name: name, type: deviceTypes[mac]));
+      await _run('nvram set custom_clientlist=${shellSingleQuote(list)}');
+      await _run('nvram commit');
+      for (final d in renameDescriptions) {
+        onLog?.call(d);
+        await _read(buildLoggerCommand(d));
+      }
+    }
+
+    // Disabling and enabling a device: the router's own Time Scheduling, then `restart_firewall`,
+    // which is what turns an entry into the MAC rules that drop its traffic (measured 2026-09-28).
+    if (blocks.isNotEmpty) {
+      final after = applyBlocks(base.parental, blocks, names: blockNames);
+      for (final e in after.toNvram().entries) {
+        await _run('nvram set ${e.key}=${shellSingleQuote(e.value)}');
+      }
+      await _run('nvram commit');
+      for (final d in blockDescriptions) {
+        onLog?.call(d);
+        await _read(buildLoggerCommand(d));
+      }
+      await _service('restart_firewall');
     }
 
     // Only when something actually moved. A default-connection change on its own has no business

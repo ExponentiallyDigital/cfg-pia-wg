@@ -1,6 +1,9 @@
 // test/widgets/slot_modal_test.dart - the parameterised slot modal (manage + watchdog modes).
+import 'package:dartssh2/dartssh2.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/widgets/applying_panel.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/device_assignment.dart' show kDeviceSourcesCommand, kSourceSeparator;
 import 'package:cfg_pia_wg/entitlement.dart';
@@ -96,7 +99,7 @@ RouterSlots _slots(Map<int, SlotInfo> override,
 }
 
 Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, SessionController c,
-    {int verifyMaxAttempts = 1, PiaService? pia}) {
+    {int verifyMaxAttempts = 1, PiaService? pia, Future<SSHClient> Function()? connect, Duration? quietRefresh}) {
   return SessionScope(
     controller: c,
     child: MaterialApp(
@@ -109,9 +112,10 @@ Widget _host(RecordingSSHClient ssh, SlotModalMode mode, RouterSlots initial, Se
               builder: (_) => SlotModal(
                 mode: mode,
                 controller: c,
-                connect: () async => ssh,
+                connect: connect ?? () async => ssh,
                 initialSlots: initial,
                 piaService: pia ?? _FakePia(),
+                quietRefreshInterval: quietRefresh,
                 slotServiceFactory: (cl) => RouterSlotService(cl,
                     onLog: c.onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts),
               ),
@@ -137,6 +141,57 @@ Finder _inDialog(String label) =>
     find.descendant(of: find.byType(Dialog), matching: find.widgetWithText(OutlinedButton, label));
 
 void main() {
+  // ID-122: the list was read on entry and after each action, so a tunnel that dropped while the
+  // screen stayed open kept its ACTIVE badge until the next action or visit.
+  group('the badges keep themselves current', () {
+    Future<(SessionController, RecordingSSHClient, void Function())> openWithTunnelUp(WidgetTester tester) async {
+      final c = _controller();
+      var up = true;
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('ip -o link show up')) return up ? '5: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1420' : '';
+        if (cmd.contains('nvram get wgc1_desc')) return 'aus_melbourne';
+        if (cmd.contains('nvram get wgc1_enable')) return '1';
+        return '';
+      });
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage,
+          _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}, active: {1}), c,
+          quietRefresh: const Duration(seconds: 30)));
+      await _open(tester);
+      return (c, ssh, () => up = false);
+    }
+
+    testWidgets('a tunnel that drops while the screen is open loses its badge, without a word in the app log',
+        (tester) async {
+      final (c, ssh, drop) = await openWithTunnelUp(tester);
+      expect(find.text('● ACTIVE'), findsOneWidget);
+      final logged = c.log.length;
+
+      drop();
+      await tester.pump(const Duration(seconds: 31));
+      await tester.pump();
+      expect(find.text('● ACTIVE'), findsNothing);
+      expect(c.log.length, logged, reason: 'a quiet read writes nothing to the app log');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    testWidgets('nothing is read while another screen is on top', (tester) async {
+      final (c, ssh, _) = await openWithTunnelUp(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pump();
+      expect(find.byType(Dialog), findsOneWidget, reason: "DISABLE's confirmation is on top");
+      final reads = ssh.commands.length;
+      await tester.pump(const Duration(seconds: 61));
+      expect(ssh.commands.length, reads, reason: 'no quiet read under a dialog');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  });
+
   group('manage mode', () {
     testWidgets('button enablement follows slot selection and description', (tester) async {
       final c = _controller();
@@ -162,6 +217,36 @@ void main() {
       expect(_btn(tester, 'slot_edit').onPressed, isNotNull);
       expect(_btn(tester, 'slot_disable').onPressed, isNull);
       expect(_btn(tester, 'slot_delete').onPressed, isNotNull);
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
+    // ID-246: a bare spinner, where DEVICE ASSIGNMENT says "do not leave this screen" and blocks back.
+    testWidgets('an action that changes the router says "do not leave this screen", and blocks back', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      final held = Completer<SSHClient>();
+      addTearDown(() => held.complete(ssh));
+      var hold = false;
+      await tester.pumpWidget(_host(
+          ssh, SlotModalMode.manage, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}), c,
+          connect: () => hold ? held.future : Future.value(ssh)));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_disable')));
+      await tester.tap(find.byKey(const Key('slot_disable')));
+      await tester.pumpAndSettle();
+      hold = true;
+      await tester.tap(_inDialog('DISABLE'));
+      await tester.pump();
+      await tester.pump();
+
+      final panel = find.text(ApplyingPanel.message);
+      expect(panel, findsOneWidget);
+      expect(tester.widget<PopScope>(find.ancestor(of: panel, matching: find.byType(PopScope)).first).canPop, isFalse);
 
       await tester.pumpWidget(const SizedBox());
       c.dispose();
@@ -956,13 +1041,15 @@ void main() {
       await tester.pumpAndSettle();
 
       final copy = tester.getCenter(find.byKey(const Key('watchdog_log_copy'))).dx;
+      final refresh = tester.getCenter(find.byKey(const Key('watchdog_log_refresh'))).dx;
       final clear = tester.getCenter(find.byKey(const Key('watchdog_log_clear'))).dx;
       final close = tester.getCenter(find.byKey(const Key('watchdog_log_close'))).dx;
-      expect(copy, lessThan(clear));
+      expect(copy, lessThan(refresh));
+      expect(refresh, lessThan(clear));
       expect(clear, lessThan(close));
       // Bordered and equal width, the same row the router log carries - they were bare TextButtons
       // and read as three unrelated links rather than as a set of controls.
-      for (final key in ['watchdog_log_copy', 'watchdog_log_clear', 'watchdog_log_close']) {
+      for (final key in ['watchdog_log_copy', 'watchdog_log_refresh', 'watchdog_log_clear', 'watchdog_log_close']) {
         expect(tester.widget<OutlinedButton>(find.byKey(Key(key))).style?.side, isNotNull, reason: key);
       }
       expect(tester.getSize(find.byKey(const Key('watchdog_log_copy'))).width,
@@ -983,6 +1070,44 @@ void main() {
       expect(ssh.commands.any((x) => RegExp(r'rm [^;]*watchdog_wgc1\.log($|[\s;])').hasMatch(x)), isFalse,
           reason: 'the live log is truncated, never removed');
       expect(ssh.ran('rm -f /tmp/watchdog_wgc1.log.old'), isTrue, reason: 'the rotated copy the viewer shows goes too');
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    // ID-211: the log was read once, on entry; seeing a new check meant leaving and coming back.
+    testWidgets('REFRESH reads the watchdog log again, and the row fits a phone', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 3; // 360 x 780, a small phone
+      addTearDown(tester.view.reset);
+      String? copied;
+      final c = SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (text) async => copied = text);
+      addTearDown(c.dispose);
+      var reads = 0;
+      final ssh = RecordingSSHClient(responder: (cmd) {
+        if (!cmd.contains('watchdog_wgc1.log')) return '';
+        reads++;
+        return reads == 1 ? 'FIRST-READ' : 'FIRST-READ\nSECOND-READ';
+      });
+      await tester.pumpWidget(
+        _host(ssh, SlotModalMode.watchdog, _slots({1: _slot(1, desc: 'aus', watchdog: true)}), c),
+      );
+      await _open(tester);
+      await tester.tap(find.byKey(const Key('slot_row_1')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('slot_view_log')));
+      await tester.tap(find.byKey(const Key('slot_view_log')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('SECOND-READ', findRichText: true), findsNothing);
+
+      await tester.tap(find.byKey(const Key('watchdog_log_refresh')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('SECOND-READ', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: 'four buttons, no overflow at 360 wide');
+
+      // COPY takes what is on the screen now, not what was read on entry.
+      await tester.tap(find.byKey(const Key('watchdog_log_copy')));
+      await tester.pumpAndSettle();
+      expect(copied, contains('SECOND-READ'));
 
       await tester.pumpWidget(const SizedBox());
     });
@@ -1980,7 +2105,7 @@ void main() {
     test('one device, several, none, and a list that could not be read', () {
       expect(pinnedDeviceWarning(['Study PC']),
           'Study PC is pinned to this VPN, and will have no internet until you ENABLE this VPN again or move it '
-          'to another VPN in DEVICE ASSIGNMENT.');
+          'to another VPN in DEVICES.');
       expect(pinnedDeviceWarning(['Study PC', 'TV-Lounge']), startsWith('Study PC and TV-Lounge are pinned to this VPN'));
       expect(pinnedDeviceWarning(['Study PC', 'TV-Lounge']), contains('or move them to another VPN'));
       expect(pinnedDeviceWarning(const []), isNull);

@@ -506,9 +506,11 @@ const String kSectionRouter = 'ROUTER';
 const String kSectionHistory = 'HISTORY';
 const String kSectionRouterLog = 'ROUTER LOG (last 10 lines)';
 
+/// Each button named here is one the WATCHDOG screen shows, word for word: the email named
+/// "CONFIGURE" and "VIEW WATCHDOG LOG" long after both were renamed (ID-263).
 const List<String> kEmailWhatToDo = [
-  '1. Check your PIA username and password in the app, under WATCHDOG then CONFIGURE.',
-  '2. Open VIEW WATCHDOG LOG in the app for the full history.',
+  '1. Check your PIA username and password in the app, under WATCHDOG, CREATE/EDIT.',
+  '2. Open VIEW ROUTER WATCHDOG LOG in the app for the full history.',
   '3. PIA rate-limits repeated token requests; if the code above is 403, wait 30 minutes before intervening.',
   '4. Review your router log.',
   '5. Is your PIA user account active?',
@@ -768,16 +770,29 @@ PINNED="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX"
 GUARDED="$(ip rule show | awk -v i="$MYIDX" '$1=="90:" {for (k=2; k<NF; k++) if ($k=="lookup" && $(k+1)==i) n++} END {print n+0}')"
 DEVS="devices"
 [ "$PINNED" = "1" ] && DEVS="device"
+# Named as DEVICES names them (ID-242).
+pinned_names() {
+  SL="$(nvram get dhcp_staticlist | tr '<' '\n')"
+  CL="$(nvram get custom_clientlist | tr '<' '\n')"
+  for IP in $(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {print $2}'); do
+    MAC="$(echo "$SL" | awk -F'>' -v a="$IP" '$2==a {print toupper($1); exit}')"
+    D=""
+    [ -n "$MAC" ] && D="$(echo "$CL" | awk -F'>' -v m="$MAC" 'toupper($2)==m && $1!="" {print $1; exit}')"
+    [ -z "$D" ] && [ -n "$MAC" ] && D="$("$JQ" -r --arg m "$MAC" 'to_entries[] | select((.key|ascii_upcase)==$m) | .value.name // empty' 2>/dev/null < /jffs/nmp_cl_json.js | head -1)"
+    printf '%s, ' "${D:-$IP}"
+  done | sed 's/, $//'
+}
+[ "$PINNED" = "0" ] || NAMES="$(pinned_names)"
 if [ "$PINNED" = "0" ]; then
   KILLSW_UP="none on this firmware, and no devices are pinned to this tunnel"
   KILLSW_FIXED="$KILLSW_UP"
   KILLSW_DOWN="$KILLSW_UP"
 elif [ "$GUARDED" -ge "$PINNED" ]; then
-  KILLSW_UP="the app's guard - if this tunnel drops, the $PINNED $DEVS pinned to it have no internet until it is back"
-  KILLSW_FIXED="the app's guard kept the $PINNED $DEVS pinned to this tunnel off the internet while it was down"
-  KILLSW_DOWN="the app's guard is keeping the $PINNED $DEVS pinned to this tunnel off the internet until it is back"
+  KILLSW_UP="the app's guard - if this tunnel drops, $NAMES, pinned to it, have no internet until it is back"
+  KILLSW_FIXED="the app's guard kept $NAMES pinned to this tunnel, and off the internet while this tunnel was down"
+  KILLSW_DOWN="the app's guard is keeping $NAMES pinned to this tunnel, and off the internet until it is back"
 else
-  KILLSW_UP="not fully in place - the app's guard covers $GUARDED of the $PINNED $DEVS pinned to this tunnel, so the others can reach the internet with no VPN while it is down. Opening DEVICE ASSIGNMENT in the app and applying any change puts it back"
+  KILLSW_UP="not fully in place - the app's guard covers $GUARDED of the $PINNED $DEVS pinned to this tunnel ($NAMES), so the others can reach the internet with no VPN while it is down. Opening DEVICES in the app and applying any change puts it back"
   KILLSW_FIXED="$KILLSW_UP"
   KILLSW_DOWN="$KILLSW_UP"
 fi
@@ -1694,9 +1709,12 @@ class RouterWatchdog {
     // meant deleting the last SCHEDULED watchdog unset `cfg_pia_wg_user` and `_password` under a
     // paused one, whose next reconfigure then aborted with "PIA username is not set" (ID-065).
     // More likely since ID-095, where MANAGE DISABLE pauses instead of tearing down.
+    // Ends with `true`: the last test is the answer, not a failure. Without it, a last slot with no
+    // watchdog made the command exit 1, logged as "router command failed" (ID-247).
     final probe = [
       for (var other = 1; other <= 5; other++)
         if (other != slot) '[ -n "\$(nvram get wgc${other}_wd_check_interval)" ] && echo 1',
+      'true',
     ].join('; ');
     return (await _read(probe)).contains('1');
   }
@@ -1991,6 +2009,9 @@ class RouterWatchdog {
   }
 
   // Reachability probe over the WAN (no interface binding) — used during pre-save validation.
+  /// One line to ROUTER LOG, where the rest of a deploy is recorded (ID-255).
+  Future<void> logToRouter(String msg) => _logRouter(msg);
+
   Future<bool> pingHostViaWan(String ip) async {
     try {
       final out = await _read('ping -c 1 -W 2 ${shellSingleQuote(ip)} >/dev/null 2>&1 && echo OK || echo FAIL');
@@ -2064,9 +2085,7 @@ LOGTAG="cfg-pia-wg"
 LOGFILE="/tmp/watchdog_${IFACE}.log"
 STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"
 BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
-# Count + time of alerts the mailer could not deliver. An alert about lost connectivity can be
-# undeliverable for the reason it fired, so the next email that DOES get through says how many
-# were missed. /tmp: losing it on a reboot is fine.
+# Alerts not delivered, so the next email that gets through says how many were missed.
 UNSENTFILE="/tmp/watchdog_unsent_${IFACE}"
 CACERT="__CACERT__"
 JQ="__JQ__"
@@ -2126,14 +2145,10 @@ __BACKOFF__
 
 log "Watchdog started for $IFACE${APPVER:+ [script $APPVER]}"
 
-# Keeps devices pinned to any tunnel off the internet while it is down (ID-213), and follows pins
-# changed in the web interface. Before the stand-down below: a disabled slot is when it matters. A
-# no-op when nothing has changed; absent on Merlin, which has a kill switch of its own.
+# The fail-closed guard (ID-213), before the stand-down: a disabled slot is when it matters.
 [ -x /jffs/cfg-pia-wg/guard.sh ] && /jffs/cfg-pia-wg/guard.sh >/dev/null 2>&1
 
-# A tunnel turned off in the WebUI looks like one that dropped; reviving it would undo the user,
-# and changing a device assignment requires exactly that. Only an explicit "0" stands down - empty
-# means the firmware keeps no key. A deploy is explicit user intent and runs regardless.
+# A tunnel the user turned off stays off. Only an explicit "0" stands down; a deploy runs anyway.
 ENABLED="$(nvram get ${K}enable)"
 if [ "$RUNMODE" != "deploy" ] && [ "$ENABLED" = "0" ]; then
   log "$IFACE is disabled in the router; standing down until it is enabled again"
@@ -2437,9 +2452,7 @@ resolve_smtp() {
   [ -n "$SMTP_IP" ] || log "Could not resolve $SMTP_HOST over encrypted DNS; the mailer will look it up itself"
 }
 
-# /etc/hosts is how the stock mailer is given an address without losing certificate verification:
-# it still connects to the NAME, and still checks the certificate against it. The entry carries a
-# marker so a run that was killed mid-send can be cleaned up by the next one.
+# /etc/hosts gives the mailer an address and keeps certificate checks on the name; marked for cleanup.
 HOSTSMARK="cfg-pia-wg-$IFACE"
 hosts_clean() {
   grep -q "$HOSTSMARK" /etc/hosts 2>/dev/null || return 0
@@ -2565,9 +2578,7 @@ else
   exit 0
 fi
 
-# Backoff handling. CNT counts attempts actually MADE, not checks that found a fault: a run the
-# backoff turns away leaves it alone, so how fast the wait grows does not depend on the check
-# interval. Reset to 0 by the success path above.
+# Backoff. CNT counts attempts made, so the wait grows the same at any check interval.
 CNT=0
 LAST=0
 if [ -f "$BACKOFFFILE" ]; then
@@ -2586,9 +2597,7 @@ fi
 CNT=$((CNT + 1))
 printf '%s\n%s\n' "$CNT" "$NOW" > "$BACKOFFFILE"
 if [ "$RUNMODE" = "deploy" ]; then
-  # First run after SAVE. The tunnel not being up yet is the expected starting state, not an
-  # outage - calling it "connectivity lost" and "reconfiguring" made a normal deploy read like a
-  # fault in the router log.
+  # First run after SAVE: the tunnel not being up yet is expected, not an outage.
   log "Deploying: bringing $IFACE up for the first time${APPVER:+ [script $APPVER]}"
 else
   if [ "$DNSDEAD" = "1" ]; then
@@ -2683,6 +2692,9 @@ if [ -z "$TOKEN" ]; then
   if [ "$HTTP" = "401" ] || [ "$HTTP" = "403" ]; then
     abort "PIA rejected the username and password stored on this router (HTTP $HTTP). The PIA username is the one PIA issued for the VPN, not an email address and not the router login. Fix it in the app: WATCHDOG, CREATE/EDIT, SAVE & DEPLOY."
   fi
+  # PIA's login service down, not the login wrong (ID-245): a 5xx, or curl's own timeout, 28.
+  case "$HTTP" in 5??) abort "PIA's login service isn't answering (HTTP $HTTP). This is at PIA's end; the watchdog will try again." ;; esac
+  [ "$RC" = "28" ] && abort "PIA's login service isn't answering (no answer in 15 s). This is usually at PIA's end; the watchdog will try again."
   abort "failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}, body ${BSZ:-0}B: ${BODY:-empty}) $ERRLINE"
 fi
 rm -f "$TMPTOK"

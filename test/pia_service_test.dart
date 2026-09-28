@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -201,24 +202,61 @@ void main() {
       expect(progress, ['Authenticating with PIA...', 'Authentication successful.']);
     });
 
-    test('getToken throws clean auth error when server rejects credentials', () async {
+    // ID-253: STANDALONE showed "Auth error: HTTP 403 - authentication failed." for a wrong password.
+    test('getToken says a refused login plainly, the same words on every screen', () async {
       await expectLater(
         withFakeHttpClient(() {
           final service = PiaService();
           return service.getToken('p123', 'wrong');
         }, (url, method) => FakeHttpClientResponse(401, jsonEncode({'message': 'Bad credentials'}))),
-        throwsA(predicate((e) => e is String && e.contains('Auth error: HTTP 401 - Bad credentials'))),
+        throwsA(predicate((e) => e == '$kPiaCredentialsRejected (HTTP 401)' && isPiaAuthRejection(e!))),
       );
     });
 
-    test('getToken uses error field from rejected JSON response', () async {
+    test('a 403 refusal reads the same as a 401', () async {
       await expectLater(
         withFakeHttpClient(() {
           final service = PiaService();
           return service.getToken('p123', 'wrong');
         }, (url, method) => FakeHttpClientResponse(403, jsonEncode({'error': 'Forbidden'}))),
-        throwsA(predicate((e) => e is String && e.contains('Auth error: HTTP 403 - Forbidden'))),
+        throwsA(predicate((e) => e == '$kPiaCredentialsRejected (HTTP 403)' && isPiaAuthRejection(e!))),
       );
+    });
+
+    // ID-245, 2026-09-28: PIA's login service was down. Every login waited 60 s for Cloudflare's 504
+    // and then showed "Auth error: HTTP 504 - error code: 504", which read as the app failing.
+    test('getToken says plainly when PIA answers with a server error, and logs what it sent', () async {
+      final progress = <String>[];
+      Object? error;
+      try {
+        await withFakeHttpClient(() => PiaService().getToken('p123', 'pw', onProgress: progress.add),
+            (url, method) => FakeHttpClientResponse(504, 'error code: 504'));
+      } catch (e) {
+        error = e;
+      }
+      expect(error, piaLoginUnavailable('HTTP 504'));
+      expect('$error', contains("This is at PIA's end"));
+      expect(isPiaAuthRejection(error!), isFalse, reason: 'not a wrong password');
+      expect(progress, contains('PIA login answered HTTP 504: error code: 504'));
+    });
+
+    test('getToken gives up on a PIA that never answers, rather than waiting a minute', () async {
+      final started = DateTime.now();
+      Object? error;
+      try {
+        await withFakeHttpClient(
+            () => PiaService(tokenTimeout: const Duration(milliseconds: 50)).getToken('p123', 'pw'),
+            (url, method) => _SilentResponse());
+      } catch (e) {
+        error = e;
+      }
+      expect(error, piaLoginUnavailable('no answer in 0 s'));
+      expect(DateTime.now().difference(started), lessThan(const Duration(seconds: 5)));
+    });
+
+    test('the default wait is well short of the 60 s PIA took to fail', () {
+      expect(kPiaTokenTimeout, const Duration(seconds: 20));
+      expect(PiaService().tokenTimeout, kPiaTokenTimeout);
     });
 
     test('getToken keeps plain text body when rejected response is not JSON', () async {
@@ -643,4 +681,18 @@ void main() {
       expect(progress, contains('Authentication successful.'));
     });
   });
+}
+
+/// A response that never sends anything: a server that accepted the connection and went quiet.
+class _SilentResponse extends Stream<List<int>> implements HttpClientResponse {
+  @override
+  int get statusCode => 200;
+
+  @override
+  StreamSubscription<List<int>> listen(void Function(List<int> event)? onData,
+          {Function? onError, void Function()? onDone, bool? cancelOnError}) =>
+      StreamController<List<int>>().stream.listen(onData, onError: onError, onDone: onDone);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

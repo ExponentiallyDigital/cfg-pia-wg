@@ -13,6 +13,8 @@
 
 ---
 
+See [Process - BACKLOG and CHANGELOG management](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md#appendix-process---backlog-and-changelog-management)
+
 ## Prefix codes
 
 Work items use the same prefixes as CHANGELOG.md, plus these backlog-only ones:
@@ -46,22 +48,16 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.1. DOC - documentation updates
 
-- ID-021 DOC: Update Play Store description. The text in `play-store/description.md` and `description_short.md` is done (2026-09-15); this closes when ID-045 first publishes it.
-- ID-057 REL: **Andrew: publish the Play Store listing text with the Update Play listing workflow (ID-045), when the new text should be the public description.** A store listing belongs to the app, not to a track - there is no separate Internal Testing description - so a real run replaces the app's main `en-AU` short and full descriptions for everyone, production and every testing track, once Google's review approves the change. Run it with check only first. To choose when an approved change goes live, turn on Managed publishing in Play Console before the real run. The workflow can be started only from `main`, since GitHub runs a manually triggered workflow only from the default branch. Closes ID-021.
-- ID-130 DOC: **unwrap the Markdown that predates the no-wrap rule.** CONTEXT line 44 says `.md` files carry one logical unit per line and no hard wrap at any column, because a reworded sentence in a wrapped paragraph re-flows every line after it and a one-word change reads as a ten-line diff. Counted 2026-09-20 with a fence-aware check: ARCHITECTURE about 78 wrapped paragraph lines (the intro, device assignment, the service queue, the retractions), CONTEXT 47, README 34 in sections older than build 454, CHANGELOG 1 in a closed release block. All of it predates the rule; everything written since is clean. Wanted: one commit that touches nothing but line endings, on a quiet day - doing it alongside real work would bury that work in the diff.
+ `<none>`
 
 #### 1.1.2. FTR - future implementation
 
-- ID-229 FTR: add pinch to zoom when displaying log files (router, app, watchdogs).
 - ID-135 FTR: add a feature to enable clearing offline devices from DEVICE ASSIGNMENT
-- ID-025 FTR: edit a device's display name from the assignment screen, writing `custom_clientlist`. Two sharp edges make it more than a text field: `<` and `>` are the record and field delimiters, so an unvalidated name corrupts every device name on the router; and appending a record for a device that has none writes index 3, so a naive `0` downgrades that device's icon to generic in both the WebUI and the ASUS app - the detected type has to be carried over from `nmp_cl_json.js` first. Also needs the service call that makes it take effect, which is unknown.
-- ID-153 ADD: feature to remove static DHCP entries
-- ID-211 ADD: to the WATCHDOG LOG screen, a "REFRESH" command that refreshes the screen.
-- ID-212 ADD: a feature to disable a device's Internet access in DEVICE ASSIGNMENT (parental feature). This will consist of an ENABLE/DISABLE function against that device, by matching against MAC address and device name. Need to consider how to manage MAC address randomisation (Android/IPHONE etc) and/or how to manage devices which have "cryptic" or no device name. When disabled, that device loses all Internet connectivity (but retains LAN connectivity) until toggled to ENABLE.
-- ID-122 FTR: **refresh the ACTIVE badge without being asked.** `fetchSlots` reads the interface list once, when a screen is entered or after an action, so a tunnel that drops a moment later keeps its badge until the next action or the next visit. Deferred 2026-09-19 as the largest of the ID-092 findings and the least valuable in practice: every action already refreshes, so the stale window only matters on a screen left open. Wanted when it is built: a re-read when the app returns to the foreground, and a modest timer while MANAGE or WATCHDOG is open, paused while an action runs and stopped on dispose. ID-124 belongs with it - the app now reports a stop that left the interface up, and a self-refreshing badge is what keeps the two in step afterwards.
-  - Checked and NOT faults, so nobody re-investigates them: a WireGuard server interface is `wgs1` and `fetchSlots` matches `wgc(\d)` only, so a running server cannot badge a client slot; and a tunnel someone enables in the router's own web interface badges here too, which is the badge doing its job - it reports the router, not what this app did.
+  - Merged in 2026-09-28, from ID-153 ("feature to remove static DHCP entries"): pinning a device reserves its address in `dhcp_staticlist`, and unpinning leaves the reservation behind; neither the router nor the app removes it (ARCHITECTURE 6.8.3). **Andrew's decision: the app does not delete reservations.** People can use the web interface if they want to. Removing one there restarts the whole network (it dropped a 5 GHz laptop's remote-desktop session), and a device keeps its address until a later renewal, so a removal can break a pin silently days later (ARCHITECTURE 6.3). Whatever this item becomes, it stays clear of reservations.
+- ID-229 FTR: add pinch to zoom when displaying log files (router, app, watchdogs).
 - ID-127 FTR: **install our own `curl` beside `jq` and `mailsend-go`, if ASUS ever tighten their wrapper further.** `/usr/sbin/curl` polices both its caller and its URLs: it refuses to run with `crond` in its process ancestry, and refuses any URL whose host is an IP literal, in both cases silently with exit 0 and a line in `/jffs/curllst` (ARCHITECTURE section 2, rows 6 and 7). Both are worked around today - the script detaches itself from cron, and every request uses a hostname URL with `--resolve` - so this is an escape hatch, not a plan. Andrew raised it 2026-09-19 and the mechanism already exists: `BinaryInstaller` installs checksummed per-architecture binaries into `/jffs/cfg-pia-wg` and `mailsend-go` is already several megabytes. What it costs is why it is parked: shipping our own TLS stack makes CVE tracking this project's job, puts a binary outside the dependency scanning that covers everything else, and asks a user to trust a great deal more than a JSON parser. Revisit if a firmware update breaks row 6 or row 7.
 - ID-024 FTR: Add localisation strings: French, Spanish, Spanish (latin), after that decide which ones next. (Google auto transations break character limits of PS Description)
+- ID-257 FTR: **pilot: hand tests run as Flutter integration tests.** The real app, on the emulator, against the real router: the test taps through a flow, checks the screen, and checks the router over its own SSH connection. Pilot on groups that need no PIA login: SET, ROUTER LOG, ROUTER RESOLVER STATUS and ROUTER DNS ROUTING. Judge it before going further. Needs a router the test can put in a known state, and credentials kept out of the repo. What stays by hand: anything physical, emails arriving, the password manager, Play installs and purchases. **Parked 2026-09-28 (Andrew's decision), before it was run:** the pilot is written and kept in `.claude/plans/plan_integration-test-pilot.md`, outside the build. The `integration_test` package puts `androidx.test`, `junit` and `guava` into the debug build, so the strict Gradle lockfile broke `flutter run` and CI's debug build; locking them also moved RevenueCat in the debug build and brought `junit` and `guava` findings into the OSV scan (ID-058). Revisit after the release: lock the new libraries or exempt the debug configurations from locking, then follow the plan's steps.
 
 #### 1.1.3. Unconfirmed BUGs
 
@@ -106,6 +102,7 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
 - Non-code costs: a Mac or hosted runner for signing, a materially stricter App Store review, and a release pipeline (`release.yml`, SBOM, Gradle lockfiles) that is Android-shaped throughout.
 - Extend RevenueCat to use Apple Store.
 - ID-029 DOC: phrase the hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
+- ID-260 BLD: `flutter_launcher_icons` makes no iOS icons: none could be found after a build (release-candidate run, PRE-5). Set its iOS options, or make them another way, when the iOS port starts.
 
 ---
 
@@ -126,5 +123,3 @@ When asked to triage BACKLOG new work, work through it in this order:
 7. **Reference work items in conversation.** When discussing work items, include the ID number and a very brief sentence that describes that item at the beginning of conversation.
 
 ---
-
-- ID-241 DOC: add screenshots of new router DNS menus to README - replace contents with synthetic entries.

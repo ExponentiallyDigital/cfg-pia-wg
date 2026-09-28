@@ -2,21 +2,11 @@
 
 ## Context
 
-Today the app assumes Asus-Merlin everywhere it touches the router. `router_slots_screen.dart:132`
-hard-gates the watchdog screen on `nvram get 3rd-party == 'merlin'`, and every NVRAM read/write
-assumes Merlin's 17-field `wgcN_*` layout, Merlin's `jq` on `$PATH`, BusyBox `sendmail`, and
-`/jffs/scripts/services-start` for cron persistence.
+Today the app assumes Asus-Merlin everywhere it touches the router. `router_slots_screen.dart:132` hard-gates the watchdog screen on `nvram get 3rd-party == 'merlin'`, and every NVRAM read/write assumes Merlin's 17-field `wgcN_*` layout, Merlin's `jq` on `$PATH`, BusyBox `sendmail`, and `/jffs/scripts/services-start` for cron persistence.
 
-Stock ASUS firmware differs in five ways that matter: it exposes only 12 of the 17 `wgcN_*` fields
-and keeps region + active-state in a single delimited `vpnc_clientlist` string; it has no `jq` or
-mail binary on `$PATH` (the user installs them under `/jffs/cfg-pia-wg/`); it has no `sendmail`
-worth using (hence `mailsend-go`); and it has no `services-start` equivalent, so `cru` entries do
-not survive a reboot unless an already-executed init script is hijacked.
+Stock ASUS firmware differs in five ways that matter: it exposes only 12 of the 17 `wgcN_*` fields and keeps region + active-state in a single delimited `vpnc_clientlist` string; it has no `jq` or mail binary on `$PATH` (the user installs them under `/jffs/cfg-pia-wg/`); it has no `sendmail` worth using (hence `mailsend-go`); and it has no `services-start` equivalent, so `cru` entries do not survive a reboot unless an already-executed init script is hijacked.
 
-Outcome: both firmwares work from the same screens, chosen by a once-per-session detection on entry
-to either router screen. This is deliberately an **interim step** — `if (isStock) … else …` inside
-the existing classes. No `FirmwareService` / `RouterCommandStrategy` abstraction; that is a later
-release.
+Outcome: both firmwares work from the same screens, chosen by a once-per-session detection on entry to either router screen. This is deliberately an **interim step** — `if (isStock) … else …` inside the existing classes. No `FirmwareService` / `RouterCommandStrategy` abstraction; that is a later release.
 
 ## Decisions taken (from clarification)
 
@@ -32,18 +22,10 @@ release.
 
 ## Conflicts to flag (do not silently resolve)
 
-1. **`scripts/get-bins.sh` installs to `/jffs/bin`**, but the brief and this plan probe
-   `/jffs/cfg-pia-wg/jq` and `/jffs/cfg-pia-wg/mailsend-go`. One of the two must change.
-   `get-bins.sh` is out of scope here — raise it, don't edit it.
-2. **`README.md` §4.1 step 3 is `<************** PLACEHOLDER **************>`.** The new dialogs
-   link to `#4-prerequisites--requirements`, which exists, but the section does not yet tell the
-   user where to install the binaries.
-3. **The two files named in the brief are 47-line wrappers.** `manage_router_screen.dart` and
-   `watchdog_management_screen.dart` both just render `RouterSlotsScreen(mode: …)`. The branching
-   lands in the shared [router_slots_screen.dart](lib/widgets/router_slots_screen.dart); the two
-   wrappers are untouched.
-4. **Pre-existing doc bug:** `ARCHITECTURE.md` §3.3 lists the global keys as `cfg-pia-wg_user` /
-   `cfg-pia-wg_password`; the code uses `cfg_pia_wg_user` / `cfg_pia_wg_password`. Flag only.
+1. **`scripts/get-bins.sh` installs to `/jffs/bin`**, but the brief and this plan probe `/jffs/cfg-pia-wg/jq` and `/jffs/cfg-pia-wg/mailsend-go`. One of the two must change. `get-bins.sh` is out of scope here — raise it, don't edit it.
+2. **`README.md` §4.1 step 3 is `<************** PLACEHOLDER **************>`.** The new dialogs link to `#4-prerequisites--requirements`, which exists, but the section does not yet tell the user where to install the binaries.
+3. **The two files named in the brief are 47-line wrappers.** `manage_router_screen.dart` and `watchdog_management_screen.dart` both just render `RouterSlotsScreen(mode: …)`. The branching lands in the shared [router_slots_screen.dart](lib/widgets/router_slots_screen.dart); the two wrappers are untouched.
+4. **Pre-existing doc bug:** `ARCHITECTURE.md` §3.3 lists the global keys as `cfg-pia-wg_user` / `cfg-pia-wg_password`; the code uses `cfg_pia_wg_user` / `cfg_pia_wg_password`. Flag only.
 
 ---
 
@@ -51,10 +33,7 @@ release.
 
 ### 1. New: `lib/firmware.dart`
 
-The session-scoped flag plus every stock path constant. A library-level cache (not a
-`SessionController` field) so services with no controller — `RouterSlotService`, `RouterWatchdog` —
-reach it without threading a parameter through four factories. Trivially deleted when the real
-abstraction lands.
+The session-scoped flag plus every stock path constant. A library-level cache (not a `SessionController` field) so services with no controller — `RouterSlotService`, `RouterWatchdog` — reach it without threading a parameter through four factories. Trivially deleted when the real abstraction lands.
 
 ```dart
 enum RouterFirmware { merlin, stock }
@@ -87,13 +66,9 @@ Licence header on the new file, per the standing convention.
 
 ### 2. New: `lib/s50_template.dart`
 
-`const String kS50DownloadmasterTemplate = r'''…'''` — a **verbatim** copy of
-[scripts/S50downloadmaster-TEMPLATE.sh](scripts/S50downloadmaster-TEMPLATE.sh), same pattern as
-`license_text.dart` mirroring `LICENSE`. A test asserts the two match byte-for-byte so drift fails
-CI rather than a router.
+`const String kS50DownloadmasterTemplate = r'''…'''` — a **verbatim** copy of [scripts/S50downloadmaster-TEMPLATE.sh](scripts/S50downloadmaster-TEMPLATE.sh), same pattern as `license_text.dart` mirroring `LICENSE`. A test asserts the two match byte-for-byte so drift fails CI rather than a router.
 
-Two pure helpers live here (or in `router_watchdog.dart` beside the other builders — prefer here to
-keep the template and its parser together):
+Two pure helpers live here (or in `router_watchdog.dart` beside the other builders — prefer here to keep the template and its parser together):
 
 ```dart
 /// Pulls the cru lines currently sitting between the REPLACEMENT markers. '' => [].
@@ -104,16 +79,11 @@ List<String> extractS50CruLines(String existingScript);
 String buildS50Script(List<String> cruLines);
 ```
 
-Marker literals: `# ********** REPLACEMENT START **********` /
-`# ********** REPLACEMENT END **********`.
+Marker literals: `# ********** REPLACEMENT START **********` / `# ********** REPLACEMENT END **********`.
 
 ### 3. New: `lib/widgets/firmware_notice.dart`
 
-One dismissible dialog with a tappable link, serving both new warnings. Reuses the existing
-guard-then-launch pattern at [about_screen.dart:95-100](lib/screens/about_screen.dart#L95-L100)
-(`canLaunchUrl` → `launchUrl(mode: platformDefault)`, silent no-op on failure) and the
-`Text.rich` + `TapGestureRecognizer` link styling from
-[about_screen.dart:117-132](lib/screens/about_screen.dart#L117-L132).
+One dismissible dialog with a tappable link, serving both new warnings. Reuses the existing guard-then-launch pattern at [about_screen.dart:95-100](lib/screens/about_screen.dart#L95-L100) (`canLaunchUrl` → `launchUrl(mode: platformDefault)`, silent no-op on failure) and the `Text.rich` + `TapGestureRecognizer` link styling from [about_screen.dart:117-132](lib/screens/about_screen.dart#L117-L132).
 
 ```dart
 Future<void> showFirmwareNotice(BuildContext, SessionController, {
@@ -123,9 +93,7 @@ Future<void> showFirmwareNotice(BuildContext, SessionController, {
 });
 ```
 
-Keys (`snake_case`, per convention): `firmware_notice`, `firmware_notice_link`,
-`firmware_notice_ok`. Logs the message with `isError: true` and brackets with
-`enterModal`/`exitModal`, matching `AppErrors._present`.
+Keys (`snake_case`, per convention): `firmware_notice`, `firmware_notice_link`, `firmware_notice_ok`. Logs the message with `isError: true` and brackets with `enterModal`/`exitModal`, matching `AppErrors._present`.
 
 Two call sites:
 
@@ -135,8 +103,7 @@ Two call sites:
 
 ### 4. `lib/widgets/router_slots_screen.dart` — the branch point
 
-Rework `_onConnect` (currently lines 112-151). Detection must run **before** `fetchSlots()`, because
-`fetchSlots` now reads different NVRAM depending on firmware.
+Rework `_onConnect` (currently lines 112-151). Detection must run **before** `fetchSlots()`, because `fetchSlots` now reads different NVRAM depending on firmware.
 
 ```
 client = await _connect()
@@ -155,9 +122,7 @@ slots = await svc.fetchSlots()
 … existing SlotModal open, unchanged
 ```
 
-Delete the `// DISABLED MERLIN` block at lines 131-135 — the unsupported-firmware branch supersedes
-it. Every early return leaves the user on the router-credentials screen, which *is* the previous
-menu.
+Delete the `// DISABLED MERLIN` block at lines 131-135 — the unsupported-firmware branch supersedes it. Every early return leaves the user on the router-credentials screen, which *is* the previous menu.
 
 ### 5. `lib/router_slot_service.dart`
 
@@ -177,9 +142,7 @@ List<VpncRecord> upsertVpncRecord(List<VpncRecord>, {required int slot, String? 
 List<VpncRecord> removeVpncRecord(List<VpncRecord>, int slot);
 ```
 
-`upsert` matches on field 3 (slot number) and **preserves every field it does not own** on an
-existing record — only fields 1 and 6 are ever rewritten. `buildVpncRecord` is used only when no
-record exists, and applies the layout in the decisions table (field 7 = `10 - slot`).
+`upsert` matches on field 3 (slot number) and **preserves every field it does not own** on an existing record — only fields 1 and 6 are ever rewritten. `buildVpncRecord` is used only when no record exists, and applies the layout in the decisions table (field 7 = `10 - slot`).
 
 **Branched methods** — Merlin path byte-identical to today in every case:
 
@@ -192,14 +155,11 @@ record exists, and applies the layout in the decisions table (field 7 = `10 - sl
 | `readSlotParams` | Read the 12 + the `desc` mirror; the four Merlin-only keys resolve to `''`. |
 | `writeSlotParams` | Skip `enforce`, `fw`, `ep_addr_r`, `rip`. When `desc` is present, write **both** `wgcN_desc` and `vpnc_clientlist` field 1. |
 
-`RouterSlots.isMerlin` and the `nvram get 3rd-party` read inside `fetchSlots` stay as-is — one extra
-round trip, zero churn in the existing suite. Note it as cleanup for the later refactor.
+`RouterSlots.isMerlin` and the `nvram get 3rd-party` read inside `fetchSlots` stay as-is — one extra round trip, zero churn in the existing suite. Note it as cleanup for the later refactor.
 
 ### 6. `lib/screens/slot_params_editor.dart`
 
-On stock, hide the controls for fields that do not exist: the `enforce` and `fw` switches
-(lines 123-124) and the `ep_addr_r` / `rip` read-only rows (lines 128, 130). All ten editable text
-fields are valid on stock, so `_canSave` is unchanged.
+On stock, hide the controls for fields that do not exist: the `enforce` and `fw` switches (lines 123-124) and the `ep_addr_r` / `rip` read-only rows (lines 128, 130). All ten editable text fields are valid on stock, so `_canSave` is unchanged.
 
 ### 7. `lib/router_watchdog.dart`
 
@@ -215,20 +175,13 @@ fields are valid on stock, so `_canSave` is unchanged.
 | `stopWatchdog(slot)` | Stock: strip this slot's two cru lines from `/opt/etc/init.d/S50downloadmaster` via the same extract/rebuild helpers (not the Merlin `grep -v` one-liner, which would shred the template scaffolding), rewrite, `chmod 700`. If no cru lines remain, leave the file in place with an empty replacement block — it is a hijacked stock file, deleting it is worse. Everything else unchanged. |
 | `deployWatchdog` | Order at lines 364-383 unchanged; only step 1 and step 7 branch internally. |
 
-**Template substitution.** `_kWatchdogScriptTemplate` gains three placeholders alongside `__SLOT__`,
-all resolved at build time so no conditional logic enters the script (heredoc ceiling ≈ 7 KB):
+**Template substitution.** `_kWatchdogScriptTemplate` gains three placeholders alongside `__SLOT__`, all resolved at build time so no conditional logic enters the script (heredoc ceiling ≈ 7 KB):
 
-- `__JQ__` — the five `jq` call sites and the `which jq` preflight (line 767) become
-  `[ -x __JQ__ ]` on stock.
-- `__MAILBODY__` — the `{ echo … } > "$TMPMAIL"` block (lines 661-673). Merlin keeps the RFC-822
-  headers; stock emits body lines only.
-- `__MAILCMD__` — the `/usr/sbin/sendmail … < "$TMPMAIL"` invocation (lines 676-682). Stock
-  substitutes the `mailsend-go` form.
+- `__JQ__` — the five `jq` call sites and the `which jq` preflight (line 767) become `[ -x __JQ__ ]` on stock.
+- `__MAILBODY__` — the `{ echo … } > "$TMPMAIL"` block (lines 661-673). Merlin keeps the RFC-822 headers; stock emits body lines only.
+- `__MAILCMD__` — the `/usr/sbin/sendmail … < "$TMPMAIL"` invocation (lines 676-682). Stock substitutes the `mailsend-go` form.
 
-The `nvset "enforce="` / `"fw="` / `"rip="` / `"ep_addr_r="` lines are left in place on stock: they
-write app-owned keys the firmware ignores, exactly as `wgcN_wd_*` already does, and removing them
-would cost template surgery for no behavioural gain. `nvset "desc="` is now correct on both
-firmwares thanks to the mirror.
+The `nvset "enforce="` / `"fw="` / `"rip="` / `"ep_addr_r="` lines are left in place on stock: they write app-owned keys the firmware ignores, exactly as `wgcN_wd_*` already does, and removing them would cost template surgery for no behavioural gain. `nvset "desc="` is now correct on both firmwares thanks to the mirror.
 
 **Stock `_ensureServicesStart`:**
 
@@ -242,23 +195,17 @@ chmod +x kS50Path
 '/opt/etc/init.d/S50downloadmaster start'       // installs the cru entries immediately
 ```
 
-The accumulate-then-rebuild shape is what makes multiple concurrent watchdogs work later; only one
-is supported now. Reuses the existing `buildCronCheckLine` / `buildCronRotateLine` unchanged.
+The accumulate-then-rebuild shape is what makes multiple concurrent watchdogs work later; only one is supported now. Reuses the existing `buildCronCheckLine` / `buildCronRotateLine` unchanged.
 
 ### 8. `lib/watchdog_dialog.dart`
 
-`_load()`'s jq gate and the two user-facing strings (lines 151, 221, 332) become firmware-aware so
-the message names `/jffs/cfg-pia-wg/jq` on stock. Flow, `_jqMissing` state, and SAVE gating are
-unchanged.
+`_load()`'s jq gate and the two user-facing strings (lines 151, 221, 332) become firmware-aware so the message names `/jffs/cfg-pia-wg/jq` on stock. Flow, `_jqMissing` state, and SAVE gating are unchanged.
 
 ---
 
 ## Tests
 
-**Global-state hygiene is the main risk.** The firmware flag is a library global, so every suite
-that touches router code must `resetRouterFirmware()` in `setUp`. Add a shared helper to
-[test/watchdog_test_utils.dart](test/watchdog_test_utils.dart) and use it everywhere; a leaked
-`stock` flag will produce confusing cross-file failures under parallel workers.
+**Global-state hygiene is the main risk.** The firmware flag is a library global, so every suite that touches router code must `resetRouterFirmware()` in `setUp`. Add a shared helper to [test/watchdog_test_utils.dart](test/watchdog_test_utils.dart) and use it everywhere; a leaked `stock` flag will produce confusing cross-file failures under parallel workers.
 
 **Existing files to update**
 
@@ -283,8 +230,7 @@ Coverage bar stays 80% (`coverage/lcov.info`).
 
 ## Docs
 
-Update [.claude/CONTEXT.md](.claude/CONTEXT.md) — note the brief says `./claude/CONTEXT.md`; the
-file is at `.claude/CONTEXT.md`. Brief and high-level, per the ask:
+Update [.claude/CONTEXT.md](.claude/CONTEXT.md) — note the brief says `./claude/CONTEXT.md`; the file is at `.claude/CONTEXT.md`. Brief and high-level, per the ask:
 
 - §2 Snapshot — drop "(Merlin firmware only)" from the watchdog description.
 - §3 — three new `lib/` files in the tables.

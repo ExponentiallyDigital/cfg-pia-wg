@@ -121,6 +121,25 @@ void main() {
       expect(log(), ['Fail-closed guard on for 192.0.2.50 (wgc1)']);
     });
 
+    // ID-262: ROUTER LOG gave the address alone, where DEVICE ASSIGNMENT shows a name.
+    test('the log names the device, as DEVICE ASSIGNMENT does, before its address', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>9>');
+      _set(state, 'dhcp_staticlist', '<aa:bb:cc:00:00:50>192.0.2.50>>');
+      _set(state, 'custom_clientlist', '<TABLET>AA:BB:CC:00:00:50>0>0>>>');
+      await run();
+      expect(log(), ['Fail-closed guard on for TABLET 192.0.2.50 (wgc1)']);
+      _set(state, 'vpnc_dev_policy_list', '0>192.0.2.50>>0>');
+      await run();
+      expect(log().last, 'Fail-closed guard removed for TABLET 192.0.2.50');
+    });
+
+    test('a device with a reservation but no name of its own is named by its address', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>9>');
+      _set(state, 'dhcp_staticlist', '<AA:BB:CC:00:00:50>192.0.2.50>>');
+      await run();
+      expect(log(), ['Fail-closed guard on for 192.0.2.50 (wgc1)']);
+    });
+
     test('a second run changes nothing and logs nothing', () async {
       _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>9>');
       await run();

@@ -46,7 +46,7 @@ const kWatchdogText = Color(0xFFB69CFF); // watchdog lines in the router log: ap
 
 const kManageColour = Color(0xFF29B6F6); // MANAGE, and the EDIT verb that belongs to it
 const kWatchdogColour = Color(0xFF8BC34A); // WATCHDOG, and its CREATE/EDIT and LOG headings
-const kAssignColour = Color(0xFFFFB300); // DEVICE ASSIGNMENT, and the DISABLE verb
+const kAssignColour = Color(0xFFFFB300); // DEVICES, and the DISABLE verb
 const kRouterLogColour = Color(0xFF8E5499); // ROUTER LOG, and VIEW ROUTER WATCHDOG LOG
 const kAppLogColour = Color(0xFF6052FF);
 const kUtilityColour = Color(0xFF8A97A0); // SETTINGS and ABOUT

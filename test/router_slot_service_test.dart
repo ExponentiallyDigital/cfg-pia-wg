@@ -27,6 +27,31 @@ RouterSlotService svc(
     RouterSlotService(c, onLog: onLog, verifyPollInterval: Duration.zero, verifyMaxAttempts: verifyMaxAttempts);
 
 void main() {
+  // ID-254: MAN-16 in the release-candidate run. The log said "not answered for over 5 minutes" about a
+  // tunnel that had come up a minute before and never answered at all.
+  group('an up slot whose server is not answering', () {
+    Future<List<String>> logFor(String stamp) async {
+      useMerlin();
+      final log = <String>[];
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == kUpInterfacesCommand) return 'wgc1';
+        if (cmd == kHandshakeAgesCommand) return 'wgc1\tPEERKEY\t$stamp\n---\n100000';
+        return '';
+      });
+      await RouterSlotService(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => log.add(m))
+          .fetchSlots();
+      return log;
+    }
+
+    test('one that has never answered says so', () async {
+      expect(await logFor('0'), contains('wgc1 is up but its server has not answered since the tunnel came up.'));
+    });
+
+    test('one that stopped answering says how long ago, which is then true', () async {
+      expect(await logFor('${100000 - 600}'), contains('wgc1 is up but its server has not answered for over 5 minutes.'));
+    });
+  });
+
   group('fetchSlots', () {
     test('parses desc, kill switch, enabled, watchdog, email alerting, active slot and Merlin', () async {
       final c = RecordingSSHClient(

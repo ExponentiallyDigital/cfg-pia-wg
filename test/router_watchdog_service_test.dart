@@ -1,4 +1,5 @@
 // test/router_watchdog_service_test.dart - RouterWatchdog service tests over a fake SSH client.
+import 'dart:io';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
@@ -7,6 +8,7 @@ import 'package:cfg_pia_wg/fail_closed_guard.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/s50_template.dart';
 
+import 'watchdog_harness.dart' show findShell;
 import 'watchdog_test_utils.dart';
 
 WatchdogConfig cfg({int slot = 1, int interval = 5, bool email = false}) => WatchdogConfig(
@@ -917,6 +919,22 @@ void main() {
         expect(c.ran('nvram unset wgc1_$field'), isTrue, reason: 'wgc1_$field was left behind');
       }
       expect(kWatchdogSlotNvramFields, containsAll(['wd_doh_ip', 'wd_doh_url']));
+    });
+
+    // ID-247: the command asking whether another watchdog is configured exited 1 whenever the last
+    // slot it tested had none - the answer, not a failure - and was logged as "router command failed".
+    test('asking whether another watchdog is configured exits 0 whatever the answer', () async {
+      final shell = findShell();
+      if (shell == null) return markTestSkipped('no POSIX shell to run the command in');
+      final c = RecordingSSHClient(responder: (_) => '');
+      await _wd(c).stopWatchdog(1);
+      final probe = c.commands.firstWhere((cmd) => cmd.contains('_wd_check_interval)" ] && echo 1'));
+
+      // wgc2 has a watchdog and wgc5, the last slot tested, has none: the case that failed.
+      final r = await Process.run(
+          shell, ['-c', 'nvram() { [ "\$2" = wgc2_wd_check_interval ] && echo 5; }; $probe']);
+      expect(r.exitCode, 0, reason: probe);
+      expect('${r.stdout}'.trim(), '1');
     });
 
     test('clears the shared PIA credentials when it is the last watchdog', () async {
