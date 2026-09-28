@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 // test/router_watchdog_unit_test.dart - pure-function unit tests for the watchdog module.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
@@ -417,6 +418,19 @@ void main() {
       expect(s, contains('logger -t "\$LOGTAG"'));
     });
 
+    // ID-263: the failure email sent people to "CONFIGURE" and "VIEW WATCHDOG LOG", buttons renamed
+    // long before. The steps name the buttons as the WATCHDOG screen labels them.
+    test('the steps name buttons the WATCHDOG screen actually has', () {
+      final screen = File('lib/widgets/slot_modal.dart').readAsStringSync();
+      final steps = kEmailWhatToDo.join('\n');
+      for (final label in ['CREATE/EDIT', 'VIEW ROUTER WATCHDOG LOG']) {
+        expect(steps, contains(label));
+        expect(screen, contains("'$label'"), reason: 'the WATCHDOG screen has a $label button');
+      }
+      expect(steps, isNot(contains('CONFIGURE')));
+      expect(steps, isNot(contains('VIEW WATCHDOG LOG')));
+    });
+
     // The router-side script builds its own body, so the two can drift. They must not: a user who
     // reads one and then the other is reading the same app.
     test('the deployed script carries the same footer and the same numbered steps', () {
@@ -672,7 +686,8 @@ void main() {
       final s = buildWatchdogScript(_valid(), firmware: RouterFirmware.stock);
       // 5 since 413: the server-list failure path re-reads the payload to tell 'the list did not
       // parse' from 'your region is not in it', which were previously one misleading message.
-      expect(RegExp(r'"\$JQ" -r').allMatches(s).length, 5);
+      // 6 since 472: the kill-switch line looks up a pinned device's detected name (ID-242).
+      expect(RegExp(r'"\$JQ" -r').allMatches(s).length, 6);
       expect(s, isNot(contains('| jq ')));
       expect(s, isNot(contains('which jq')));
     });
@@ -796,7 +811,7 @@ void main() {
       for (final fw in RouterFirmware.values) {
         final script = buildWatchdogScript(_valid(), firmware: fw);
         final wan = script.indexOf('no Internet on WAN interface, exiting.');
-        final ladder = script.indexOf('# Backoff handling.');
+        final ladder = script.indexOf('# Backoff. CNT counts');
         final counter = script.indexOf(r'CNT=$((CNT + 1))');
         final attempt = script.indexOf('Connectivity lost; reconfiguring (attempt');
         expect(wan, greaterThan(0), reason: fw.name);

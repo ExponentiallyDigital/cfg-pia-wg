@@ -12,7 +12,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [MAN. Manage](#man-manage)
 - [WD. Watchdog](#wd-watchdog)
 - [BRK. Break a tunnel](#brk-break-a-tunnel)
-- [DEV. Device assignment](#dev-device-assignment)
+- [DEV. DEVICES: assignment, names and disabling](#dev-devices-assignment-names-and-disabling)
 - [DEF. Default connection](#def-default-connection)
 - [GRD. Fail-closed guard](#grd-fail-closed-guard)
 - [LOG. App log and router log](#log-app-log-and-router-log)
@@ -87,10 +87,12 @@ nvram get vpnc_default_wan
 
 - **e2e.sh** does the router-side checking for a step: `sh /jffs/e2e.sh <label> before`, press the button in the app, then `sh /jffs/e2e.sh <label> after <checks>`. It writes the STARTED and ENDED lines to the router log, prints what changed, and answers PASS or FAIL. The checks are `exit <ip> wgcN|WAN|BLOCKED`, `rule <ip> <table|main>`, `norule <ip>`, `guard <ip> <table>`, `noguard <ip>`, `default <index>`, `up wgcN` and `down wgcN`. The script's header says more.
 
+
 - **Router shell variables** the tests use. Set them in every new SSH session to the router:
 
 ```bash
 T=192.168.1.20   # TABLET's address
+TMAC=AA:BB:CC:00:00:20   # TABLET's MAC, upper case, as DEVICES shows it
 D=192.168.1.30   # DESKTOP's address
 P=192.168.1.40   # PHONE's address
 I1=9             # wgc1's routing table: field 7 of its row in vpnc_clientlist
@@ -159,7 +161,8 @@ I5=5             # wgc5's
 
 - Do: MANAGE, right details, CONNECT TO ROUTER.
 - See: "Install helper programs?", because PRE removed `jq`. Do: NOT NOW.
-- See: APP LOG has "Router firmware detected: stock." and "Router address remembered." - kept although the install was put off (ID-201).
+- See: the main menu, not the router login again (ID-252).
+- See: APP LOG has "Router firmware detected: stock.", and "Router address remembered." if the address is new or has changed since the last login - kept although the install was put off (ID-201). The same address as before writes no line.
 - See: your password manager offers to save the login.
 
 **CON-4** Helper programs missing, declined [ci]
@@ -170,8 +173,8 @@ I5=5             # wgc5's
 
 - Do: WATCHDOG, connect.
 - See: "Install helper programs?", or, if it was declined earlier this session, a warning starting "Unable to locate:" with INSTALL.
-- Do: INSTALL, and INSTALL again in the dialog if there is one.
-- See: it installs and connects.
+- Do: INSTALL.
+- See: `jq` and `mailsend-go` install together, and it connects.
 - Pass if: `ls -l /jffs/cfg-pia-wg` lists `jq` and `mailsend-go`.
 - Pass if: APP LOG ends this sequence with "jq and mailsend-go installed; the router has everything this screen needs." and shows no "Unable to locate" after it.
 
@@ -195,7 +198,7 @@ I5=5             # wgc5's
 - See: each row has its icon at the left, its label, and a chevron at the right.
 - See: icons in one straight column, labels starting in line.
 - See: EXIT is red with a power icon and no chevron.
-- See: every outline is teal, while each row's icon and label carry that screen's own colour - STANDALONE teal, MANAGE blue, WATCHDOG green, DEVICE ASSIGNMENT amber, ROUTER LOG purple, APP LOG indigo, SETTINGS and ABOUT grey.
+- See: every outline is teal, while each row's icon and label carry that screen's own colour - STANDALONE teal, MANAGE blue, WATCHDOG green, DEVICES amber, ROUTER LOG purple, APP LOG indigo, SETTINGS and ABOUT grey.
 
 **HOM-3** Drawer matches [hand]
 
@@ -228,7 +231,7 @@ I5=5             # wgc5's
 **HOM-7** Every screen says what it is [hand]
 
 - Do: open each of the nine destinations in turn.
-- See: each one is headed with the name of the menu item you tapped, in that item's colour - including STANDALONE, DEVICE ASSIGNMENT, SETTINGS and ABOUT, which had no heading before.
+- See: each one is headed with the name of the menu item you tapped, in that item's colour.
 - See: the headings are all one size and style, spaced capitals.
 - See: the header's "Exponentially Digital" and the version number are not underlined, and both still open their pages.
 
@@ -255,7 +258,7 @@ I5=5             # wgc5's
 **STD-4** Wrong PIA password [hand]
 
 - Do: a real region, wrong password, GENERATE CONFIG.
-- See: an error starting "Auth error:".
+- See: "PIA rejected this username and password. The PIA username is the one PIA issued for the VPN ...", the same words MANAGE and WATCHDOG use, with the HTTP code in brackets at the end (ID-253).
 
 **STD-5** Bad DNS [hand]
 
@@ -351,6 +354,7 @@ Every test starts on MANAGE, connected. MAN-13 and MAN-14 are in the [WD](#wd) g
 
 - Do: CREATE on a configured slot, same region.
 - See: the overwrite prompt, then "Slot created".
+- Do: ENABLE the slot, so the tests after this find it running.
 
 **MAN-11** Enable that fails turns the slot back off (optional, slow) [hand]
 
@@ -370,8 +374,9 @@ Every test starts on MANAGE, connected. MAN-13 and MAN-14 are in the [WD](#wd) g
 **MAN-15** Slots read wgc5 first, and the buttons are colour-coded [hand]
 
 - See: on MANAGE and on WATCHDOG, the list runs wgc5 at the top down to wgc1.
-- See: DEVICE ASSIGNMENT's picker lists them the same way, except that a RUNNING tunnel sorts above a stopped one.
-- See: CREATE green, ENABLE teal, EDIT blue, DISABLE amber, DELETE red, VIEW ROUTER WATCHDOG LOG in ROUTER LOG's plum.
+- See: DEVICES's picker lists them the same way, except that a RUNNING tunnel sorts above a stopped one.
+- See: CREATE green, ENABLE teal, EDIT blue, DISABLE amber, DELETE red.
+- See, later, once WD-7 has deployed a watchdog: VIEW ROUTER WATCHDOG LOG in ROUTER LOG's plum. There is no watchdog yet at this point in the run, so it is greyed out here.
 - See: a greyed-out button is grey whatever its verb colour would be.
 
 **MAN-16** ACTIVE means answered, not merely up [hand]
@@ -422,7 +427,7 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 
 **WD-3** Test email, before any deploy [hand]
 
-- Do: WATCHDOG, select wgc1, CREATE/EDIT. Choose a real region from the list, then fill in email with `smtp.gmail.com:465` and a good app password, TEST EMAIL.
+- Do: WATCHDOG, select wgc1, CREATE/EDIT. Choose a real region from the list, turn on "Enable email alerts", then fill in email with `smtp.gmail.com:465` and a good app password, TEST EMAIL. Leave email alerts on for every watchdog in this run: WD-13 and the BRK group check the emails.
 - See: APP LOG "Test email sent to ...".
 - Pass if: the subject ends `TEST email - wgc1:pia-<region on the form>`.
 
@@ -442,6 +447,7 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 
 - Do: in the form's "Primary ping IP" field, `192.0.2.1`, SAVE & DEPLOY.
 - See: "Primary IP 192.0.2.1 is not reachable from the router." and "The settings will still be saved."
+- See: ROUTER LOG has the same warning, "Watchdog for wgc1:pia-<region>: Primary IP 192.0.2.1 is not reachable from the router. Saving anyway." (ID-255).
 - Do: set it back to `8.8.8.8` and SAVE & DEPLOY.
 
 **WD-7** Deploy on a running slot, same region [hand]
@@ -477,8 +483,9 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 
 **WD-12** Two watchdogs, delete one [hand]
 
-- Do: watchdogs on wgc1 and wgc5. WATCHDOG, select wgc5, DELETE.
-- See: "Delete watchdog and VPN wgc5:...?". Afterwards wgc5 is empty.
+- Do: WD-7 to WD-9 put watchdogs on wgc1 and wgc2, not wgc5. Give wgc5 one first: WATCHDOG, select wgc5, CREATE/EDIT, keep its region, email alerts on, SAVE & DEPLOY.
+- Do: WATCHDOG, select wgc5, DELETE.
+- See: "Delete watchdog and VPN wgc5:...?". Afterwards wgc5 is empty, and if wgc5 was the default connection, the default is now Internet.
 - See: APP LOG "Another watchdog is still configured; keeping the shared PIA credentials."
 - Pass if: `nvram get cfg_pia_wg_user` is still set.
 - Do: **rebuild wgc5 before moving on** - MANAGE CREATE it in its old region, ENABLE, then WATCHDOG CREATE/EDIT and SAVE & DEPLOY. WD-22, BRK-6, and the DEV and DEF groups all need it.
@@ -508,6 +515,8 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 - Do: VIEW ROUTER WATCHDOG LOG.
 - See: the heading names the slot and region, in green; newest lines at the bottom; on a tablet the text fills the width.
 - See: the same colours as ROUTER LOG: watchdog lines lavender, errors and lost connectivity red, and `Deploy SUCCESS`, `Reconfig SUCCESS` and `Alert email sent (SUCCESS)` teal. A first deploy's "Not connected yet" is lavender, not red.
+- Do: on the router, `/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground`, then REFRESH without leaving the screen.
+- See: the new run's lines at the bottom, scrolled to (ID-211). COPY takes them too.
 - Do: CLEAR, confirm.
 - See: "Watchdog log cleared for wgc1." and an empty log.
 
@@ -518,7 +527,8 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 
 **WD-18** Keyboard [hand]
 
-- See: on the form, the keyboard never covers the field you are typing in.
+- Do: WATCHDOG, select wgc1, CREATE/EDIT, and tap into each field in turn, down to the SMTP password.
+- See: the keyboard never covers the field you are typing in.
 
 **WD-19** Change the check interval [hand]
 
@@ -528,10 +538,25 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 
 **WD-20** PIA credentials are checked before the router is touched [hand]
 
-- Do: WATCHDOG, CREATE/EDIT on **wgc3**, which is empty. Note `nvram get wgc3_desc` and `nvram get wgc3_priv` first - both should be empty.
-- Do: enter a wrong PIA password, fill the rest, SAVE & DEPLOY.
+- Do: on the router, check wgc3 is empty. All three lines are blank, and `cru l` has no `watchdog_wgc3`:
+
+```bash
+logger "**WD-20 START** PIA credentials are checked before the router is touched"
+nvram get wgc3_desc; nvram get wgc3_priv; nvram get wgc3_wd_check_interval
+cru l
+```
+
+- Do: WATCHDOG, CREATE/EDIT on **wgc3**. Enter a wrong PIA password, fill the rest with email alerts on, SAVE & DEPLOY.
 - See: "PIA rejected this username and password", and the form stays open.
-- Pass if: nothing was written - `nvram get wgc3_desc`, `wgc3_priv` and `wgc3_wd_check_interval` are all still empty, `cru l` has no new lines, and no alert email arrives.
+- Do: run the same commands again:
+
+```bash
+nvram get wgc3_desc; nvram get wgc3_priv; nvram get wgc3_wd_check_interval
+cru l
+logger "**WD-20 END** PIA credentials are checked before the router is touched"
+```
+
+- Pass if: nothing was written - the three lines are still blank, `cru l` has no new lines, and no alert email arrives.
 - Do: correct the password, SAVE & DEPLOY.
 - See: it deploys as usual.
 
@@ -577,10 +602,12 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 - Do: break wgc3 and run its watchdog:
 
 ```bash
+logger "**WD-24 START** The watchdog's own lookups are encrypted"
 wg set wgc3 peer "$(nvram get wgc3_ppub)" remove
 /jffs/cfg-pia-wg/watchdog_wgc3.sh foreground
 grep -E 'Name lookups|WITHOUT encrypted|Reconfig' /tmp/watchdog_wgc3.log | tail -3
 grep -c 'Invalid DL URL' /jffs/curllst
+logger "**WD-24 END** The watchdog's own lookups are encrypted"
 ```
 
 - Pass if: `Name lookups encrypted via security.cloudflare-dns.com (1.1.1.2)`, then `Reconfig SUCCESS`, no "WITHOUT encrypted DNS" line, and a count of `0`.
@@ -590,10 +617,12 @@ grep -c 'Invalid DL URL' /jffs/curllst
 - Do: with email alerting on for **wgc3**, break it and run its watchdog:
 
 ```bash
+logger "**WD-25 START** The mail server's name is resolved privately too"
 wg set wgc3 peer "$(nvram get wgc3_ppub)" remove
 /jffs/cfg-pia-wg/watchdog_wgc3.sh foreground
 grep -E 'SMTP host resolved|Alert email sent' /tmp/watchdog_wgc3.log | tail -2
 grep -c cfg-pia-wg /etc/hosts
+logger "**WD-25 END** The mail server's name is resolved privately too"
 ```
 
 - Pass if: `SMTP host resolved privately to <address>` before `Alert email sent (SUCCESS)`, and a count of `0`: the hosts entry is removed after every send.
@@ -601,11 +630,41 @@ grep -c cfg-pia-wg /etc/hosts
 
 **WD-26** The router's own resolver gets a line of its own [hand]
 
-- Do: `/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground`, then `grep 'Router resolver' /tmp/watchdog_wgc1.log | tail -1`.
-- Pass if: `Router resolver OK` (ID-194).
-- Do: `kill $(pidof stubby)`, run the watchdog again, and look at the same line.
-- Pass if: `Router resolver FAILED`, and the run still ends healthy: no rebuild, no alert. If it reads OK, the router restarted stubby first: kill it and run again at once.
+- Do: run wgc1's watchdog by hand, then stop stubby and run it again:
+
+```bash
+logger "**WD-26 START** The router's own resolver gets a line of its own"
+/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
+grep 'Router resolver' /tmp/watchdog_wgc1.log | tail -1
+kill $(pidof stubby)
+/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
+grep 'Router resolver' /tmp/watchdog_wgc1.log | tail -1
+logger "**WD-26 END** The router's own resolver gets a line of its own"
+```
+
+- Pass if: `Router resolver OK` the first time (ID-194).
+- Pass if: `Router resolver FAILED` the second time, and that run still ends healthy: no rebuild, no alert. If it reads OK, the router restarted stubby first: kill it and run again at once.
 - Do: `pidof stubby`; if it prints nothing, `service restart_dnsmasq`, or reboot if that does not bring it back.
+
+**WD-27** A watchdog paused while its run waits stands down [hand]
+
+- Do: pick the highest-numbered slot with an active watchdog; the example uses wgc5. A run started the way cron starts it waits 15 s for each slot below it before it does anything, 60 s for wgc5. Start one, and keep the SSH session open:
+
+```bash
+logger "**WD-27 START** A watchdog paused while its run waits stands down"
+/jffs/cfg-pia-wg/watchdog_wgc5.sh detached &
+```
+
+- Do: within that minute, WATCHDOG, select wgc5, DISABLE.
+- Do: when a minute and a half has passed:
+
+```bash
+tail -2 /tmp/watchdog_wgc5.log
+logger "**WD-27 END** A watchdog paused while its run waits stands down"
+```
+
+- Pass if: the last line is `wgc5's watchdog was paused or removed while this run waited; standing down`, with no check, rebuild or alert after it (ID-240).
+- Do: WATCHDOG, select wgc5, ENABLE.
 
 The last two tests here are MANAGE ones. They live at the end of this group because they act on a watchdog, and there is none until this group has run.
 
@@ -641,14 +700,16 @@ Anything pinned to the slot loses internet during these tests. That is the test 
 
 **BRK-1** Expired registration (the real one, slow) [hand]
 
-- Do: DEVICE ASSIGNMENT, TABLET to wgc1, APPLY.
+- Do: DEVICES, TABLET to wgc1, APPLY.
 - Do: on the router:
 
 ```bash
+logger "**BRK-1 START** Expired registration (the real one, slow)"
 nvram get wgc1_ppub
 wg genkey > /tmp/breakit
 wg set wgc1 private-key /tmp/breakit
 rm -f /tmp/breakit
+logger "**BRK-1 END** Expired registration (the real one, slow)"
 ```
 
 - Do: wait. It takes 5 minutes after the last handshake, plus up to one check interval.
@@ -660,8 +721,8 @@ rm -f /tmp/breakit
 - Pass if, on stock: the log shows "Restarting wgc1 through VPN Fusion (vpnc_unit=N)" rather than the stop/start pair, and N matches the row wgc1 occupies in `nvram get vpnc_clientlist`, counting from 0.
 - See, in the SUCCESS email: the outage duration, the new server and its latency, and the kill-switch line, which on stock is one of:
   - nothing pinned to the tunnel: it says so;
-  - devices pinned and guarded: "the app's guard kept the 1 device pinned to this tunnel off the internet while it was down";
-  - guard rules missing: how many are covered, and that opening DEVICE ASSIGNMENT and applying puts it back.
+  - devices pinned and guarded: "the app's guard kept TABLET pinned to this tunnel, and off the internet while this tunnel was down", naming each pinned device as DEVICES does, comma-separated;
+  - guard rules missing: how many are covered, and that opening DEVICES and applying puts it back.
 - See, when wgc1 is also the default connection: the line adds that devices only following the default are not covered.
 
 **BRK-2** Expired registration (the quick one) [hand]
@@ -669,10 +730,12 @@ rm -f /tmp/breakit
 - Do: on the router:
 
 ```bash
+logger "**BRK-2 START** Expired registration (the quick one)"
 wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
 /jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
 tail -12 /tmp/watchdog_wgc1.log
 wg show wgc1 peers; nvram get wgc1_ppub
+logger "**BRK-2 END** Expired registration (the quick one)"
 ```
 
 - See: "Connectivity lost; reconfiguring (attempt #1)", then "Waiting for a handshake on wgc1", "Handshake Ns ago", and `Reconfig SUCCESS`, with no 5 minute wait.
@@ -700,12 +763,14 @@ The app now asks PIA about the credentials before it writes them (WD-20), so a w
 - Do: with a working watchdog on wgc1, on the router:
 
 ```bash
+logger "**BRK-5 START** A rebuild that fails"
 cat /tmp/watchdog_backoff_wgc1
 nvram set cfg_pia_wg_password=wrong && nvram commit
 wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
 /jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
 tail -3 /tmp/watchdog_wgc1.log
 cat /tmp/watchdog_backoff_wgc1
+logger "**BRK-5 END** A rebuild that fails"
 ```
 
 - See: "PIA rejected the username and password stored on this router (HTTP 403)", naming where to fix it - not `exit 0, HTTP 403, body 66B: {`.
@@ -723,8 +788,10 @@ Proves that after each failed rebuild the watchdog waits longer before the next 
 - Do: on the router:
 
 ```bash
+logger "**BRK-6 START** Backoff ladder, with no PIA traffic"
 wg set wgc5 peer "$(nvram get wgc5_ppub)" remove
 sh /jffs/test-backoff.sh 5
+logger "**BRK-6 END** Backoff ladder, with no PIA traffic"
 ```
 
 - See: waits of 120, 240, 480, 960, 1800, 3600, 5400, 5400 seconds, and the script exits 0.
@@ -735,8 +802,10 @@ sh /jffs/test-backoff.sh 5
 - Do: break wgc1, so the watchdog has something to repair, and note the backoff file:
 
 ```bash
+logger "**BRK-7 START** A WAN outage does not climb the backoff ladder"
 wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
 cat /tmp/watchdog_backoff_wgc1
+logger "**BRK-7 END** A WAN outage does not climb the backoff ladder"
 ```
 
 - Do: unplug the router's internet, then run `/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground` three times.
@@ -771,7 +840,7 @@ iptables -I OUTPUT -o wgc1 -d 9.9.9.9 -j DROP
 
 ---
 
-## <a name='dev'></a>DEV. Device assignment
+## <a name='dev'></a>DEV. DEVICES: assignment, names and disabling
 
 Stock only. Assigning a device does not restart any tunnel; changing the default connection does, and has its own section, [DEF](#def). Set up: wgc1 and wgc5 up in different regions, default connection Internet.
 
@@ -801,7 +870,7 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 - Do: in the WebUI, LAN, DHCP Server, remove TABLET's manual assignment if it has one, and apply.
 - Do: `sh /jffs/e2e.sh DEV-4 before`
-- Do: DEVICE ASSIGNMENT, TABLET to wgc1, APPLY 1 CHANGE.
+- Do: DEVICES, TABLET to wgc1, APPLY 1 CHANGE.
 - See: the confirmation lists `from -> to` and says TABLET will also be given a fixed address. Do: APPLY.
 - Do: `sh /jffs/e2e.sh DEV-4 after "rule $T $I1" "guard $T $I1" "exit $T wgc1"`
 - Pass if: PASS, the changes include a new `dhcp_staticlist` line for TABLET, nothing else on the LAN dropped, and TABLET's exit IP is wgc1's region.
@@ -847,7 +916,7 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 **DEV-11** To a disabled slot [script]
 
-- Do: MANAGE DISABLE wgc5. `sh /jffs/e2e.sh DEV-11 before`, then DEVICE ASSIGNMENT, TABLET to wgc5.
+- Do: MANAGE DISABLE wgc5. `sh /jffs/e2e.sh DEV-11 before`, then DEVICES, TABLET to wgc5.
 - See: the confirmation warns wgc5 is not running and TABLET will have no internet until it is enabled.
 - Do: APPLY, then `sh /jffs/e2e.sh DEV-11 after "rule $T $I5" "guard $T $I5" "down wgc5" "exit $T BLOCKED"`
 - See: PASS, and TABLET's row reads "wgc5:pia-<region> is not running - no internet until it is enabled". TABLET has no internet.
@@ -860,7 +929,7 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 **DEV-13** Offline device [hand]
 
-- Do: copy `scripts/presence-probe.sh` to `/jffs/` again, since it changed in build 470 (no `scp`: `vi` and paste, or `ssh <user>@<router> "cat > /jffs/presence-probe.sh" < scripts/presence-probe.sh` from Git Bash), then on the router start `nohup sh /jffs/presence-probe.sh <TABLET's MAC> > /tmp/presence.log 2>&1 &` - the MAC is on TABLET's second line in DEVICE ASSIGNMENT. It logs, with the time, each change in every place the router records whether TABLET is online, and when each file was last written (ID-165). Its `cl_json` line is what DEVICE ASSIGNMENT shows.
+- Do: copy `scripts/presence-probe.sh` to `/jffs/` again, since it changed in build 470 (no `scp`: `vi` and paste, or `ssh <user>@<router> "cat > /jffs/presence-probe.sh" < scripts/presence-probe.sh` from Git Bash), then on the router start `nohup sh /jffs/presence-probe.sh <TABLET's MAC> > /tmp/presence.log 2>&1 &` - the MAC is on TABLET's second line in DEVICES. It logs, with the time, each change in every place the router records whether TABLET is online, and when each file was last written (ID-165). Its `cl_json` line is what DEVICES shows.
 - Do: on DESKTOP, `pwsh scripts/webui-presence.ps1 -Router <web interface address> -Mac <TABLET's MAC>`, with the router's web login. It logs each change in what the web interface shows for TABLET.
 - Do: switch TABLET off. Leave both running until the web interface and `cl_json` both say offline, about 15 minutes. Switch TABLET on, and leave them another 5 minutes.
 - Write down: `cat /tmp/presence.log` on the router, and the DESKTOP log (the script prints where it is). Then stop both: Ctrl+C on DESKTOP, and `kill $(cat /tmp/presence-probe.pid)` on the router. The source that changed with the web interface is the one the app should read.
@@ -876,7 +945,7 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 **DEV-15** Delete a VPN with devices on it [hand]
 
 - Do: TABLET to wgc5, APPLY. MANAGE DELETE wgc5.
-- See: APP LOG names TABLET, moved to Internet - by the name DEVICE ASSIGNMENT shows, not a bare address.
+- See: APP LOG names TABLET, moved to Internet - by the name DEVICES shows, not a bare address.
 - Pass if: CHK shows a `lookup main` rule; exit IP is your own.
 - Pass if: `ip rule show | grep -E '^9[01]:'` shows nothing for TABLET: the guard is lifted once a device is on the internet by design.
 - Do: CREATE wgc5 again, ENABLE.
@@ -894,11 +963,81 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 - Do: `sh /jffs/e2e.sh DEV-17 after "rule $T main" "noguard $T" "rule $D $I5" "guard $D $I5" "exit $D wgc5" "rule $P $I1" "guard $P $I1" "exit $P wgc1"`
 - Pass if: PASS - one rule per device, the same as before the reboot: TABLET on Internet since DEV-15, DESKTOP on wgc5 since DEV-8, PHONE on wgc1 since DEV-16 - and each exit IP matches. If PHONE came back on a new address in DEV-16, leave its three checks out.
 
+**DEV-18** Rename a device [hand]
+
+- Do: DEVICES, tap TABLET's name, type `DN-Test Name`, press Enter.
+- See: the name in amber, and APPLY 1 CHANGE. Nothing has reached the router yet.
+- Do: tap PHONE's name, type `a<b`, press Enter.
+- See: "A name cannot contain < or >." under the field, and nothing staged for PHONE. Tap anywhere else: PHONE's name is back as it was.
+- Do: APPLY. The confirmation shows `name <old> -> name DN-Test Name`. Confirm.
+- Then on the router:
+
+```bash
+logger "**DEV-18 START** Rename a device"
+nvram get custom_clientlist | tr '<' '\n' | grep -i "$TMAC"
+grep -E "rc_service|notify_rc" /tmp/syslog.log | tail -2
+logger "**DEV-18 END** Rename a device"
+```
+
+- Pass if: TABLET's record reads `DN-Test Name>$TMAC>...` with its other fields as they were, and no service call at the time of the APPLY.
+- See: the new name in the router's web interface (Network Map, Clients) and in the ASUS Router app.
+- Do: tap TABLET's name, clear it, Enter, APPLY.
+- Pass if: TABLET shows the name the router detected, and `custom_clientlist` has no record for it. Then give TABLET its usual name back the same way.
+
+**DEV-19** Disable a device, and enable it again [hand]
+
+- Do: in the router's web interface, Parental Controls, Time Scheduling: check it is OFF and its list is empty.
+- Do: DEVICES, TABLET's picker. See: **Disabled** last, in red, with "no Internet or VPN access" under it. Pick it.
+- See: TABLET's row reads `disabled - no Internet or VPN access`, "disabled" in red. APPLY, confirm.
+- Then on the router:
+
+```bash
+logger "**DEV-19 START** Disable a device, and enable it again"
+nvram show 2>/dev/null | grep -E "^MULTIFILTER_(ALL|BLOCK_ALL|ENABLE|MAC|DEVICENAME)="
+iptables -S | grep -i "$TMAC"
+```
+
+- Pass if: `MULTIFILTER_ALL=1`, `MULTIFILTER_BLOCK_ALL=0`, `MULTIFILTER_MAC` is TABLET's MAC with `MULTIFILTER_ENABLE=2`, and three DROP rules for it (FORWARD, PControls, WGNPControls).
+- See: on TABLET, no web page loads, and the NAS or another device on your network still opens. The web interface's Time Scheduling lists TABLET, set to block.
+- Do: DEVICES, TABLET's picker, pick what it was on before. APPLY.
+
+```bash
+nvram show 2>/dev/null | grep -E "^MULTIFILTER_(ALL|MAC)="
+iptables -S | grep -i "$TMAC"
+logger "**DEV-19 END** Disable a device, and enable it again"
+```
+
+- Pass if: `MULTIFILTER_ALL=0`, `MULTIFILTER_MAC` empty, no rules for TABLET, and its internet is back on the connection you picked.
+
+**DEV-20** A disabled device pinned to a tunnel [hand]
+
+- Do: TABLET pinned to wgc1, APPLY. Then TABLET, Disabled, APPLY.
+- See: TABLET has no internet, through the tunnel or otherwise.
+
+```bash
+logger "**DEV-20 START** A disabled device pinned to a tunnel"
+ip rule show | grep "$T "
+nvram get vpnc_dev_policy_list | tr '<' '\n' | grep "$T>"
+```
+
+- Pass if: rules at 90, 91 and 100 for TABLET, and its policy record still pins it to wgc1: disabling keeps the assignment.
+- Do: TABLET, pick wgc1 again, APPLY.
+
+```bash
+logger "**DEV-20 END** A disabled device pinned to a tunnel"
+```
+
+- Pass if: TABLET is back on wgc1: `curl -s ifconfig.me` from it, or a what-is-my-IP page, shows wgc1's region.
+
+**DEV-21** Time Scheduling schedules are named before they switch on [ci]
+
+- In CI: disabling a device while Time Scheduling is off and holds a schedule set up by hand names that schedule in APPLY's confirmation before switching it on (Andrew's decision); names, disabling and enabling write exactly what the web interface writes. `test/unit/device_names_and_blocks_test.dart`, `test/unit/device_assignment_service_test.dart`, `test/widgets/device_assignment_screen_test.dart`.
+
 ---
 
 ## <a name='def'></a>DEF. Default connection
 
-Changing the default tears the WireGuard clients down and brings the enabled ones back, which can take a minute. Anything using a tunnel can drop, so do not run this on a router someone is relying on - though on run 1 nothing visibly dropped, so write down what actually happens. Set up: wgc1 and wgc5 up in different regions, TABLET on "default", DESKTOP pinned to wgc5. DEV leaves TABLET pinned to Internet, so first: DEVICE ASSIGNMENT, TABLET to default, APPLY.
+Changing the default tears the WireGuard clients down and brings the enabled ones back, which can take a minute. Anything using a tunnel can drop, so do not run this on a router someone is relying on - though on run 1 nothing visibly dropped, so write down what actually happens. Set up: wgc1 and wgc5 up in different regions, TABLET on "default", DESKTOP pinned to wgc5. DEV leaves TABLET pinned to Internet, so first: DEVICES, TABLET to default, APPLY.
 
 **Slots for this group:** wgc1 and wgc5 configured and running. DEF-9 deletes wgc1 on purpose and ends by rebuilding it, because DEF-10 and the groups after it need it back.
 
@@ -906,7 +1045,7 @@ Changing the default tears the WireGuard clients down and brings the enabled one
 
 **DEF-1** Internet to a tunnel [script]
 
-- Do: `sh /jffs/e2e.sh DEF-1 before`, then DEVICE ASSIGNMENT, default to wgc1, APPLY.
+- Do: `sh /jffs/e2e.sh DEF-1 before`, then DEVICES, default to wgc1, APPLY.
 - See: the confirmation warns tunnels stop and restart.
 - Do: after "Device assignments applied.", `sh /jffs/e2e.sh DEF-1 after "default $I1" "up wgc1" "up wgc5" "exit $T wgc1" "exit $D wgc5"`
 - Pass if: PASS, and the changes show two new rules at priority 10000, both `lookup $I1`. `$I1` is field 7 of wgc1's clientlist row, which is index 6 counting from 0.
@@ -942,7 +1081,7 @@ Changing the default tears the WireGuard clients down and brings the enabled one
 
 - Do: WATCHDOG, wgc1, DISABLE. It stays off until DEF-9.
 - Do: `sh /jffs/e2e.sh DEF-6 before`, then MANAGE, wgc1, DISABLE.
-- Do: DEVICE ASSIGNMENT, read the default connection panel.
+- Do: DEVICES, read the default connection panel.
 - See: wgc1 is not running, and unassigned devices use the Internet.
 - Do: `sh /jffs/e2e.sh DEF-6 after "down wgc1" "noguard $T" "exit $T WAN"`, and TABLET's exit IP. TABLET is on "default".
 - Pass if: PASS, and your own address. The guard covers pinned devices only, and the panel says so: a device that follows the default goes out through the Internet while the default is off.
@@ -950,16 +1089,16 @@ Changing the default tears the WireGuard clients down and brings the enabled one
 
 **DEF-7** Default tunnel down, device pinned to it: fails closed [script]
 
-- Do: DEVICE ASSIGNMENT, DESKTOP to wgc1, APPLY. Default is still wgc1, watchdog still off.
+- Do: DEVICES, DESKTOP to wgc1, APPLY. Default is still wgc1, watchdog still off.
 - Do: `sh /jffs/e2e.sh DEF-7 before`, then MANAGE, wgc1, DISABLE.
 - See: the confirmation names DESKTOP, in amber, and says it will have no internet until wgc1 is enabled or DESKTOP is moved.
 - Do: DISABLE. Then `sh /jffs/e2e.sh DEF-7 after "guard $D $I1" "exit $D BLOCKED"`, and on DESKTOP, exit IP and `ping google.com`.
 - Pass if: PASS, and no internet at all - the fail-closed guard. Run 1 on 2026-09-21, before the guard, found DESKTOP out through the Internet here.
-- Do: MANAGE, wgc1, ENABLE. DEVICE ASSIGNMENT, DESKTOP back to wgc5, APPLY.
+- Do: MANAGE, wgc1, ENABLE. DEVICES, DESKTOP back to wgc5, APPLY.
 
 **DEF-8** Back to Internet, and every tunnel keeps running [script]
 
-- Do: `sh /jffs/e2e.sh DEF-8 before`, then DEVICE ASSIGNMENT, default to Internet, APPLY.
+- Do: `sh /jffs/e2e.sh DEF-8 before`, then DEVICES, default to Internet, APPLY.
 - Do: after "Device assignments applied.", `sh /jffs/e2e.sh DEF-8 after "default 0" "up wgc1" "up wgc5" "exit $T WAN"`
 - Pass if: PASS, the changes show both priority-10000 rules gone, and TABLET's exit IP is your own.
 - Pass if: the "tunnels running" part of the changes is empty: no tunnel stopped (ID-220) and none started - a DISABLED one must not come up (ID-172).
@@ -968,17 +1107,17 @@ Changing the default tears the WireGuard clients down and brings the enabled one
 **DEF-9** Delete the VPN that is the default [hand]
 
 - Do: write down wgc1's region first - MANAGE shows it on the row as `wgc1:pia-<region>`. You are about to delete the slot and you need the same region back.
-- Do: DEVICE ASSIGNMENT, default to wgc1, APPLY, and check DESKTOP is still pinned to wgc5.
+- Do: DEVICES, default to wgc1, APPLY, and check DESKTOP is still pinned to wgc5.
 - Do: MANAGE, select wgc1, DELETE.
 - Pass if: `nvram get vpnc_default_wan` reads `0` - deleting the default falls back to the Internet rather than leaving a dangling index - every tunnel restarts, TABLET's exit IP is your own, and DESKTOP is still on wgc5.
 - Do: **rebuild wgc1 before moving on**, in this order, because DEF-10 and every group after it expect it:
   - MANAGE CREATE wgc1 in the region you wrote down, then ENABLE it.
   - WATCHDOG, wgc1, CREATE/EDIT, 5 minute interval, SAVE & DEPLOY - ABT reads the deployed script, so one has to be there.
-  - DEVICE ASSIGNMENT, default connection back to wgc1, APPLY.
+  - DEVICES, default connection back to wgc1, APPLY.
 
 **DEF-10** Survives a reboot [hand]
 
-- Do: DEVICE ASSIGNMENT, default to wgc5, APPLY. Write down what every device is assigned to before you go on.
+- Do: DEVICES, default to wgc5, APPLY. Write down what every device is assigned to before you go on.
 - Do: SETTINGS, REBOOT ROUTER, REBOOT, and wait for "The router answered again after N seconds."
 - Pass if: the default connection is still wgc5 and every device is on the tunnel it was on before, both in the app and in `nvram get vpnc_default_wan` and `nvram get vpnc_dev_policy_list`.
 - Pass if: each device's exit IP is the region of the tunnel it is assigned to - TABLET follows the default, DESKTOP is pinned to wgc5.
@@ -997,7 +1136,7 @@ How to read DESKTOP's `ping -t 1.1.1.1`: wgc1's usual time is a pass; "Destinati
 
 **GRD-1** An APPLY puts the guard in place [script]
 
-- Do: `sh /jffs/e2e.sh GRD-1 before`, then DEVICE ASSIGNMENT, DESKTOP to wgc1, APPLY.
+- Do: `sh /jffs/e2e.sh GRD-1 before`, then DEVICES, DESKTOP to wgc1, APPLY.
 - See: APP LOG "Fail-closed guard in place for N pinned device(s)."
 - Do: `sh /jffs/e2e.sh GRD-1 after "rule $D $I1" "guard $D $I1" "exit $D wgc1"`
 - Pass if: PASS. The changes show three new lines for DESKTOP - `90: from <D> lookup <I1> suppress_prefixlength 0`, `91: from <D> blackhole`, and the firmware's own `100: from <D> lookup <I1>` - one of each, never two.
@@ -1041,7 +1180,7 @@ tail -3 /tmp/watchdog_wgc1.log
 
 ```bash
 sh /jffs/e2e.sh GRD-4 after "guard $D $I1" "exit $D wgc1"
-grep "Fail-closed guard on for $D" /tmp/syslog.log | tail -1
+grep "Fail-closed guard on for .*$D (" /tmp/syslog.log | tail -1
 ```
 
 - Pass if: PASS: the 90 and 91 lines are back.
@@ -1059,7 +1198,7 @@ sh /jffs/e2e.sh GRD-5 after "guard $D $I5" "exit $D wgc5"
 ```
 
 - Pass if: PASS: the watchdog's run moved the guard to wgc5's table, with still exactly one 91 line. The web interface made the move a few seconds before `before`, so the changes list shows the guard's lines, not the firmware's.
-- Do: DEVICE ASSIGNMENT, DESKTOP back to wgc1, APPLY.
+- Do: DEVICES, DESKTOP back to wgc1, APPLY.
 
 **GRD-6** A firewall restart leaves the guard alone [script]
 
@@ -1243,8 +1382,10 @@ UNINSTALL is at the very end of the run: [END](#end).
 - Do: make the router's copy look as though an older build wrote it. On the router:
 
 ```bash
+logger "**ABT-3 START** Script from another version"
 sed -n '2p' /jffs/cfg-pia-wg/watchdog_wgc1.sh                                  # the real version, write it down
 sed -i '2s/cfg-pia-wg v[^;]*;/cfg-pia-wg v0.0.1 build 1;/' /jffs/cfg-pia-wg/watchdog_wgc*.sh
+logger "**ABT-3 END** Script from another version"
 ```
 
 - Note: installing an APK of a different version over the top is the real-world case and does the same thing; editing the header line is the quick way to provoke it.
@@ -1313,7 +1454,7 @@ sed -i '2s/cfg-pia-wg v[^;]*;/cfg-pia-wg v0.0.1 build 1;/' /jffs/cfg-pia-wg/watc
 
 **EXT-8** Leave mid-action [hand]
 
-- Do: stage a device change in DEVICE ASSIGNMENT, press APPLY, and while it is still running open the drawer and go to APP LOG.
+- Do: stage a device change in DEVICES, press APPLY, and while it is still running open the drawer and go to APP LOG.
 - Pass if: the apply completes (APP LOG shows it) and nothing is left half done.
 
 **EXT-9** New icon and splash screen [hand]
@@ -1331,7 +1472,7 @@ Needs a store build, installed from a testing track, on an account that has not 
 
 **LCK-1** Free things work [hand]
 
-- Pass if: STANDALONE generates end to end; MANAGE, WATCHDOG and DEVICE ASSIGNMENT open and show the real router.
+- Pass if: STANDALONE generates end to end; MANAGE, WATCHDOG and DEVICES open and show the real router.
 
 **LCK-2** No install offer when locked [hand]
 
@@ -1341,7 +1482,7 @@ Needs a store build, installed from a testing track, on an account that has not 
 
 **LCK-3** Paid controls open the paywall [hand]
 
-- Do: tap each: MANAGE CREATE, ENABLE, EDIT; WATCHDOG CREATE/EDIT, ENABLE; DEVICE ASSIGNMENT APPLY; ABOUT REDEPLOY TO UPDATE VERSION; SETTINGS MAX ACTIVE VPNS.
+- Do: tap each: MANAGE CREATE, ENABLE, EDIT; WATCHDOG CREATE/EDIT, ENABLE; DEVICES APPLY; ABOUT REDEPLOY TO UPDATE VERSION; SETTINGS MAX ACTIVE VPNS.
 - See: the paywall each time, and nothing reaches the router.
 
 **LCK-4** Removing is free [hand]
@@ -1446,6 +1587,7 @@ Repeat on Merlin: CON-1 to CON-3 and CON-6, HOM, MAN (not MAN-5 or MAN-7), WD (n
 - Pass if, on the router:
 
 ```bash
+logger "**END-1 START** Uninstall"
 ls -l /opt/etc/init.d/S50downloadmaster /opt/etc/init.d/S50asuslighttpd   # restored, or gone
 cru l                                    # no watchdog entries
 nvram show | grep cfg_pia_wg             # nothing
@@ -1454,6 +1596,7 @@ ls /jffs/cfg-pia-wg                      # gone, guard.sh with it
 ip rule show | grep -E '^9[01]:'         # nothing: the guard's rules went first
 wg show interfaces                       # UNCHANGED: the tunnels are not the app's to remove
 nvram get vpnc_max_conn                  # back to 2, if the app raised it (SET-5); untouched if you set it yourself
+logger "**END-1 END** Uninstall"
 ```
 
 - See: the list of what it did includes either "Put the maximum active VPNs back to 2" or "Left the maximum active VPNs alone - the app never changed it", whichever is true of this run.

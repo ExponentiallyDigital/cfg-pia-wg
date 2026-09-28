@@ -37,6 +37,7 @@ import '../router_session.dart' show routerConnectMessage;
 import '../session_controller.dart';
 import 'paywall.dart';
 import 'app_scaffold.dart';
+import 'applying_panel.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
 
@@ -82,6 +83,16 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
   Map<String, int?> get _staged => _c.stagedAssignments;
   int? get _stagedDefault => _c.stagedDefaultIndex;
   set _stagedDefault(int? v) => _c.stagedDefaultIndex = v;
+
+  // ID-261: a device's own name, and its internet disabled, staged with the rest and written by the
+  // same APPLY. Keyed by MAC: neither needs an address.
+  Map<String, String> get _stagedNames => _c.stagedNames;
+  Map<String, bool> get _stagedBlocks => _c.stagedBlocks;
+
+  /// The device whose name is being edited, and the field it is edited in.
+  String? _editingMac;
+  final _nameCtrl = TextEditingController();
+  String? _nameError;
 
   @override
   void didChangeDependencies() {
@@ -193,6 +204,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _nameCtrl.dispose();
     _ipCtrl.dispose();
     _userCtrl.dispose();
     _passCtrl.dispose();
@@ -245,7 +257,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       }
 
       if (!isStockFirmware) {
-        return 'Device assignment is a stock-firmware feature. This router runs Asuswrt-Merlin, '
+        return 'DEVICES is a stock-firmware feature. This router runs Asuswrt-Merlin, '
             'which has no VPN Fusion device policy to write.';
       }
 
@@ -312,7 +324,60 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     return assignedIndexFor(_state!.policies, ip);
   }
 
-  int get _pendingCount => _staged.length + (_stagedDefault != null ? 1 : 0);
+  int get _pendingCount =>
+      _staged.length + (_stagedDefault != null ? 1 : 0) + _stagedNames.length + _stagedBlocks.length;
+
+  /// Whether [d] will have no internet once APPLY runs: a staged change, else the router's own state.
+  bool _blocked(LanDevice d) => _stagedBlocks[d.mac] ?? _state!.isBlocked(d);
+
+  /// The name [d] will have once APPLY runs. An emptied name shows the detected one, as the router will.
+  String _nameOf(LanDevice d) {
+    final staged = _stagedNames[d.mac];
+    if (staged == null) return d.displayName;
+    if (staged.isNotEmpty) return staged;
+    final detected = d.detectedName?.trim() ?? '';
+    return detected.isEmpty ? d.mac : detected;
+  }
+
+  // ── Renaming (ID-261) ─────────────────────────────────────────────────────────────
+  //
+  // Tap the name, edit it in place, Enter to keep it. Nothing reaches the router before APPLY, and
+  // DISCARD CHANGES puts the old name back. Tapping away leaves the name as it was.
+
+  void _startRename(LanDevice d) {
+    setState(() {
+      _editingMac = d.mac;
+      _nameError = null;
+      _nameCtrl.text = _stagedNames[d.mac] ?? d.customName?.trim() ?? '';
+      _nameCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _nameCtrl.text.length);
+    });
+  }
+
+  void _submitRename(LanDevice d) {
+    final error = checkDeviceName(_nameCtrl.text);
+    if (error != null) {
+      setState(() => _nameError = error);
+      return;
+    }
+    final name = _nameCtrl.text.trim();
+    setState(() {
+      // Back to the name the router already has: not a change any more.
+      if (name == (d.customName?.trim() ?? '')) {
+        _stagedNames.remove(d.mac);
+      } else {
+        _stagedNames[d.mac] = name;
+      }
+      _editingMac = null;
+    });
+  }
+
+  void _cancelRename() {
+    if (_editingMac == null) return;
+    setState(() {
+      _editingMac = null;
+      _nameError = null;
+    });
+  }
 
   /// WireGuard slots only. A record naming an OpenVPN or PPTP profile is never offered - the app
   /// manages WireGuard, and writing to another VPN's profile is not ours to do.
@@ -406,11 +471,34 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
                 note: _watchdogNote(p),
                 active: _slotActive(p),
                 value: p.vpncStateIndex),
+          // Last, and in red: the one choice that takes a device off the internet altogether. Its
+          // VPN assignment is kept (Andrew's decision), so choosing a connection again brings it back
+          // to where it was, or to wherever that choice says (ID-261).
+          _pickerTile(ctx,
+              key: 'pick_disabled',
+              label: 'Disabled',
+              labelColour: kError,
+              note: 'no Internet or VPN access',
+              value: 'disabled'),
         ],
       ),
     );
     if (chosen == null || !mounted) return;
     setState(() {
+      final blockedNow = _state!.isBlocked(d);
+      void stageBlock(bool block) {
+        if (block == blockedNow) {
+          _stagedBlocks.remove(d.mac); // back to where it started
+        } else {
+          _stagedBlocks[d.mac] = block;
+        }
+      }
+
+      if (chosen == 'disabled') {
+        stageBlock(true);
+        return;
+      }
+      stageBlock(false);
       final ip = d.ip!;
       final next = chosen == 'default' ? null : chosen as int;
       if (next == assignedIndexFor(_state!.policies, ip)) {
@@ -461,7 +549,12 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
   }
 
   Widget _pickerTile(BuildContext ctx,
-          {required String key, required String label, required String note, required Object? value, bool? active}) =>
+          {required String key,
+          required String label,
+          required String note,
+          required Object? value,
+          bool? active,
+          Color labelColour = kText}) =>
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         // A bordered, filled tile rather than a bare ListTile. Three plain rows of text read as a
@@ -479,7 +572,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
           child: Row(children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                Text(label, style: const TextStyle(color: kText, fontSize: 14)),
+                Text(label, style: TextStyle(color: labelColour, fontSize: 14)),
                 // Teal ACTIVE / amber DISABLED, the colours the slot modal uses for the same
                 // facts - amber being the app's "configured but not doing anything" colour, as on
                 // a paused watchdog and on a staged-but-unapplied change.
@@ -542,11 +635,33 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     final tunnelWarnings = await _tunnelWarnings(state);
     if (!mounted) return;
 
+    LanDevice byMac(String mac) => state.devices.firstWhere((d) => d.mac == mac, orElse: () => LanDevice(mac: mac));
+    // Disabling turns the router's Time Scheduling on. Andrew's decision: when that also brings
+    // schedules someone set up and left switched off into force, APPLY names them first (ID-261).
+    final parentalAfter = applyBlocks(state.parental, Map.of(_stagedBlocks));
+    final switchedOn = schedulesSwitchedOn(state.parental, parentalAfter, _stagedBlocks.keys.toSet());
+    final disabling = [for (final e in _stagedBlocks.entries) if (e.value) byMac(e.key)];
+    String pinLabel(LanDevice d) => _labelForDevice(d.ip == null ? null : _effectiveIndex(d));
+    const blockedLabel = 'disabled - no Internet or VPN access';
+    if (!mounted) return;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => _ApplyDialog(
         tunnelWarnings: tunnelWarnings,
         lines: [
+          for (final e in _stagedNames.entries)
+            _ChangeLine(
+              name: byMac(e.key).displayName,
+              from: 'name ${byMac(e.key).displayName}',
+              to: e.value.isEmpty ? 'name ${_nameOf(byMac(e.key))}, detected by the router' : 'name ${e.value}',
+            ),
+          for (final e in _stagedBlocks.entries)
+            _ChangeLine(
+              name: _nameOf(byMac(e.key)),
+              from: e.value ? pinLabel(byMac(e.key)) : blockedLabel,
+              to: e.value ? blockedLabel : pinLabel(byMac(e.key)),
+            ),
           for (final entry in _staged.entries)
             _ChangeLine(
               name: state.devices.firstWhere((d) => d.ip == entry.key, orElse: () => LanDevice(mac: entry.key)).displayName,
@@ -565,6 +680,12 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             state.devices.firstWhere((d) => d.mac == mac, orElse: () => LanDevice(mac: mac)).displayName
         ],
         restartsTunnels: _stagedDefault != null,
+        scheduleWarning: switchedOn.isEmpty
+            ? null
+            : "Time Scheduling is off in your router. Disabling ${joinNames([for (final d in disabling) _nameOf(d)])} "
+                'turns it on, which also puts the schedules already set there for '
+                '${joinNames([for (final e in switchedOn) e.name.isEmpty ? e.mac : e.name])} into force.',
+        randomMacNames: [for (final d in disabling) if (d.hasRandomisedMac) _nameOf(d)],
         foreignNames: [
           for (final entry in _staged.entries)
             if (_isForeignIndex(assignedIndexFor(state.policies, entry.key)))
@@ -607,6 +728,23 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         ],
         defaultFrom: _labelForIndex(state.defaultIndex ?? 0),
         defaultTo: _labelForIndex(_stagedDefault ?? 0),
+        renames: Map.of(_stagedNames),
+        deviceTypes: {
+          for (final mac in _stagedNames.keys)
+            if (byMac(mac).type != null) mac: byMac(mac).type!,
+        },
+        renameDescriptions: [
+          for (final e in _stagedNames.entries)
+            e.value.isEmpty
+                ? '${byMac(e.key).displayName}: its name cleared, so the router shows ${_nameOf(byMac(e.key))}'
+                : '${byMac(e.key).displayName} renamed to ${e.value}',
+        ],
+        blocks: Map.of(_stagedBlocks),
+        blockNames: {for (final mac in _stagedBlocks.keys) mac: _nameOf(byMac(mac))},
+        blockDescriptions: [
+          for (final e in _stagedBlocks.entries)
+            '${_nameOf(byMac(e.key))}: internet access ${e.value ? 'disabled' : 'enabled again'}',
+        ],
       );
     } on AssignmentConflictException catch (e) {
       failure = e.toString();
@@ -803,17 +941,27 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             if (d != state.devices.first) const Divider(color: kBorder, height: 20),
             _DeviceRow(
               device: d,
+              name: _nameOf(d),
+              nameChanged: _stagedNames.containsKey(d.mac),
               label: _labelForDevice(_effectiveIndex(d)),
-              changed: _staged.containsKey(d.ip),
+              changed: _staged.containsKey(d.ip) || _stagedBlocks.containsKey(d.mac),
+              blocked: _blocked(d),
               foreign: _isForeign(d),
-              note: d.assignable ? _exitNote(_effectiveIndex(d)) : null,
+              // Where a stopped tunnel sends the traffic says nothing about a device with none.
+              note: d.assignable && !_blocked(d) ? _exitNote(_effectiveIndex(d)) : null,
               onTap: _busy || !d.assignable ? null : () => _pick(d),
+              editing: _editingMac == d.mac,
+              nameController: _nameCtrl,
+              nameError: _editingMac == d.mac ? _nameError : null,
+              onNameTap: _busy ? null : () => _startRename(d),
+              onNameSubmitted: () => _submitRename(d),
+              onNameCancel: _cancelRename,
             ),
           ],
         ]),
       ),
       const SizedBox(height: 8),
-      const Text("Names come from your router's client list.",
+      const Text("Names come from your router's client list. Tap a name to change it.",
           textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 11)),
       const SizedBox(height: 8),
       // One row, two equal halves, both buttons at HOME's height so the three read as one set
@@ -883,17 +1031,34 @@ const String kWatchdogActiveNote = 'watchdog active';
 class _DeviceRow extends StatelessWidget {
   const _DeviceRow({
     required this.device,
+    required this.name,
     required this.label,
     required this.changed,
     required this.foreign,
     required this.onTap,
+    required this.nameController,
+    required this.onNameSubmitted,
+    required this.onNameCancel,
     this.note,
+    this.nameChanged = false,
+    this.blocked = false,
+    this.editing = false,
+    this.nameError,
+    this.onNameTap,
   });
 
   final LanDevice device;
+
+  /// The name shown: a staged rename when there is one (ID-261).
+  final String name;
   final String label;
-  final bool changed, foreign;
+  final bool changed, foreign, nameChanged, blocked, editing;
   final VoidCallback? onTap;
+
+  final TextEditingController nameController;
+  final String? nameError;
+  final VoidCallback? onNameTap;
+  final VoidCallback onNameSubmitted, onNameCancel;
 
   /// Where the traffic really goes when the tunnel is not running; null when it goes where the picker
   /// says.
@@ -908,14 +1073,42 @@ class _DeviceRow extends StatelessWidget {
     ];
     // The name and its exceptions on the first line, the address and MAC on the second (ID-032). The MAC is what
     // tells apart two devices the router gives the same name, and what matches the router's own client list.
-    final head = tags.isEmpty ? device.displayName : '${device.displayName} - ${tags.join(' | ')}';
+    final head = tags.isEmpty ? name : '$name - ${tags.join(' | ')}';
     final address = [if (device.ip != null) device.ip!, device.mac].join(' ');
     return Opacity(
       opacity: device.online ? 1 : 0.55,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         // Teal, not the body grey: on a phone the whole screen read as one undifferentiated block
         // and the device names are what the eye needs to land on first (B1 feedback 2026-09-08).
-        Text(head, style: const TextStyle(color: kHighlight, fontSize: 13)),
+        if (editing)
+          // Edited in place (ID-261). Enter keeps the name; tapping anywhere else leaves it as it was.
+          TapRegion(
+            onTapOutside: (_) => onNameCancel(),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              TextField(
+                key: Key('name_field_${device.mac}'),
+                controller: nameController,
+                autofocus: true,
+                textInputAction: TextInputAction.done,
+                style: const TextStyle(color: kText, fontSize: 13),
+                decoration: const InputDecoration(isDense: true, hintText: 'empty shows the name the router detected'),
+                onSubmitted: (_) => onNameSubmitted(),
+              ),
+              if (nameError != null)
+                Text(nameError!, key: Key('name_error_${device.mac}'), style: const TextStyle(color: kError, fontSize: 12))
+              else
+                const Text('Enter to keep it, up to $kMaxDeviceNameLength characters.',
+                    style: TextStyle(color: kMuted, fontSize: 11)),
+            ]),
+          )
+        else
+          GestureDetector(
+            key: Key('name_${device.mac}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onNameTap,
+            // Amber for a staged rename, as a staged picker is: not yet written.
+            child: Text(head, style: TextStyle(color: nameChanged ? kWarn : kHighlight, fontSize: 13)),
+          ),
         Text(
           address,
           key: Key('addr_${device.mac}'),
@@ -923,7 +1116,13 @@ class _DeviceRow extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         if (device.assignable)
-          _PickerButton(keyValue: 'row_${device.mac}', label: label, changed: changed, muted: note != null, onTap: onTap)
+          _PickerButton(
+              keyValue: 'row_${device.mac}',
+              label: label,
+              changed: changed,
+              muted: note != null,
+              blocked: blocked,
+              onTap: onTap)
         else
           const Text('connect this device once to assign it', style: TextStyle(color: kHint, fontSize: 12)),
         // Where the traffic really goes. The picker keeps naming the assignment - the pin is intact, and
@@ -939,12 +1138,18 @@ class _DeviceRow extends StatelessWidget {
 
 class _PickerButton extends StatelessWidget {
   const _PickerButton(
-      {required this.keyValue, required this.label, required this.changed, required this.onTap, this.muted = false});
+      {required this.keyValue,
+      required this.label,
+      required this.changed,
+      required this.onTap,
+      this.muted = false,
+      this.blocked = false});
 
   final String keyValue, label;
 
   /// [muted] greys a label whose tunnel is not running, so the note beneath it reads first.
-  final bool changed, muted;
+  /// [blocked] shows "disabled" in red, whatever the assignment, which is kept underneath (ID-261).
+  final bool changed, muted, blocked;
   final VoidCallback? onTap;
 
   @override
@@ -962,7 +1167,17 @@ class _PickerButton extends StatelessWidget {
         ),
         onPressed: onTap,
         child: Row(children: [
-          Expanded(child: Text(label, overflow: TextOverflow.ellipsis)),
+          Expanded(
+            child: blocked
+                ? Text.rich(
+                    const TextSpan(children: [
+                      TextSpan(text: 'disabled', style: TextStyle(color: kError)),
+                      TextSpan(text: ' - no Internet or VPN access', style: TextStyle(color: kMuted)),
+                    ]),
+                    key: Key('${keyValue}_disabled'),
+                    overflow: TextOverflow.ellipsis)
+                : Text(label, overflow: TextOverflow.ellipsis),
+          ),
           const Icon(Icons.arrow_drop_down, size: 18),
         ]),
       );
@@ -982,7 +1197,15 @@ class _ApplyDialog extends StatelessWidget {
     required this.foreignNames,
     required this.restartsTunnels,
     this.tunnelWarnings = const [],
+    this.scheduleWarning,
+    this.randomMacNames = const [],
   });
+
+  /// Schedules in the router's Time Scheduling that disabling a device would switch on (ID-261).
+  final String? scheduleWarning;
+
+  /// Devices being disabled whose MAC looks randomised: a new one gets their internet back.
+  final List<String> randomMacNames;
 
   final List<_ChangeLine> lines;
   final List<String> reservationNames, foreignNames;
@@ -1026,6 +1249,18 @@ class _ApplyDialog extends StatelessWidget {
                 'using them loses its connection for about a minute. Assigning a device on its own '
                 'does not do this.',
                 style: TextStyle(color: kWarn, fontSize: 12),
+              ),
+            ],
+            if (scheduleWarning != null) ...[
+              const SizedBox(height: 8),
+              Text(scheduleWarning!, key: const Key('apply_schedule_warning'), style: const TextStyle(color: kWarn, fontSize: 12)),
+            ],
+            if (randomMacNames.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${joinNames(randomMacNames)} ${randomMacNames.length == 1 ? 'uses' : 'use'} a random MAC address. '
+                'Disabling follows the address, so when it changes, the internet comes back.',
+                style: const TextStyle(color: kWarn, fontSize: 12),
               ),
             ],
             if (foreignNames.isNotEmpty) ...[
@@ -1093,17 +1328,5 @@ class _ProgressDialog extends StatelessWidget {
   const _ProgressDialog();
 
   @override
-  Widget build(BuildContext context) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          backgroundColor: kSurface,
-          content: Row(mainAxisSize: MainAxisSize.min, children: const [
-            SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight)),
-            SizedBox(width: 16),
-            Flexible(
-              child: Text('Applying - do not leave this screen.', style: TextStyle(color: kText, fontSize: 14)),
-            ),
-          ]),
-        ),
-      );
+  Widget build(BuildContext context) => const PopScope(canPop: false, child: ApplyingPanel());
 }

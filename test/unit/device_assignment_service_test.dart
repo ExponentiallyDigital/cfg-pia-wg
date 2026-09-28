@@ -585,4 +585,92 @@ void main() {
       expect(logs.last, 'Device assignments applied.');
     });
   });
+
+  // ID-261: a device's name, and its internet disabled through the router's own Time Scheduling.
+  group('names and Time Scheduling', () {
+    const custom = '<Box>11:22:33:44:55:66>0>20>>>>';
+    String parental({String all = '0', String macs = '', String names = '', String modes = '', String days = ''}) =>
+        'MULTIFILTER_ALL=$all\nMULTIFILTER_MAC=$macs\nMULTIFILTER_DEVICENAME=$names\n'
+        'MULTIFILTER_ENABLE=$modes\nMULTIFILTER_MACFILTER_DAYTIME_V2=$days';
+
+    RecordingSSHClient router({String timeScheduling = '', String? timeSchedulingOnReRead, String? customOnReRead}) {
+      final ts = timeScheduling.isEmpty ? parental() : timeScheduling;
+      return RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('cfg_device_list')) {
+          return ['', _clientlist, _policyList, '9', _staticlist, custom, _cfgDeviceList, _clJson, _cache, ts, '']
+              .join('\n$_sep\n');
+        }
+        if (cmd.startsWith('echo "MULTIFILTER_ALL=')) return timeSchedulingOnReRead ?? ts;
+        if (cmd == 'nvram get custom_clientlist') return customOnReRead ?? custom;
+        if (cmd == 'nvram get vpnc_dev_policy_list') return _policyList;
+        if (cmd == 'nvram get vpnc_clientlist') return _clientlist;
+        return '';
+      });
+    }
+
+    test('the read carries Time Scheduling, in the same one round trip', () async {
+      final c = router(timeScheduling: parental(all: '1', macs: '11:22:33:44:55:66', names: 'Box', modes: '2', days: 'x'));
+      final s = await _state(c);
+      expect(c.commands.where((cmd) => cmd.contains('nvram get')).length, 1);
+      expect(s.isBlocked(s.devices.firstWhere((d) => d.mac == '11:22:33:44:55:66')), isTrue);
+      expect(s.rawCustomClientlist, custom);
+    });
+
+    test('a rename writes custom_clientlist, commits, and calls no service', () async {
+      final c = router();
+      final s = await _state(c);
+      await _svc(c).apply(
+        base: s,
+        changes: const {},
+        reservationsToCreate: const {},
+        renames: const {'11:22:33:44:55:66': 'Kids tablet'},
+        renameDescriptions: const ['Box renamed to Kids tablet'],
+      );
+      expect(c.ran("nvram set custom_clientlist='<Kids tablet>11:22:33:44:55:66>0>20>>>>'"), isTrue);
+      expect(c.ran('nvram commit'), isTrue);
+      expect(c.commands.where((cmd) => cmd.startsWith('service ')), isEmpty, reason: 'the web interface calls none');
+      expect(c.ran('Box renamed to Kids tablet'), isTrue, reason: 'in the router log too');
+    });
+
+    test('disabling a device writes the five keys as the web interface does, then restarts the firewall', () async {
+      final c = router();
+      final s = await _state(c);
+      await _svc(c).apply(
+        base: s,
+        changes: const {},
+        reservationsToCreate: const {},
+        blocks: const {'11:22:33:44:55:66': true},
+        blockNames: const {'11:22:33:44:55:66': 'Box'},
+      );
+      expect(c.ran("nvram set MULTIFILTER_ALL='1'"), isTrue);
+      expect(c.ran("nvram set MULTIFILTER_MAC='11:22:33:44:55:66'"), isTrue);
+      expect(c.ran("nvram set MULTIFILTER_DEVICENAME='Box'"), isTrue);
+      expect(c.ran("nvram set MULTIFILTER_ENABLE='2'"), isTrue);
+      expect(c.ran("nvram set MULTIFILTER_MACFILTER_DAYTIME_V2='W03E21000700<W04122000800'"), isTrue);
+      final commit = c.commands.indexOf('nvram commit');
+      final restart = c.commands.indexOf('service restart_firewall');
+      expect(restart, greaterThan(commit), reason: 'the firewall reads the committed keys');
+      expect(c.commands.any((cmd) => cmd.contains('MULTIFILTER_BLOCK_ALL')), isFalse, reason: 'that blocks every device');
+    });
+
+    test('REFUSES when Time Scheduling changed under it, and writes nothing', () async {
+      final c = router(timeSchedulingOnReRead: parental(all: '1', macs: '22:33:44:55:66:77', names: 'X', modes: '1', days: 'y'));
+      final s = await _state(c);
+      await expectLater(
+        _svc(c).apply(base: s, changes: const {}, reservationsToCreate: const {}, blocks: const {'11:22:33:44:55:66': true}),
+        throwsA(isA<AssignmentConflictException>()),
+      );
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram set')), isFalse);
+    });
+
+    test('REFUSES when a name was changed elsewhere, and writes nothing', () async {
+      final c = router(customOnReRead: '<Renamed>11:22:33:44:55:66>0>20>>>>');
+      final s = await _state(c);
+      await expectLater(
+        _svc(c).apply(base: s, changes: const {}, reservationsToCreate: const {}, renames: const {'11:22:33:44:55:66': 'Y'}),
+        throwsA(isA<AssignmentConflictException>()),
+      );
+      expect(c.commands.any((cmd) => cmd.startsWith('nvram set')), isFalse);
+    });
+  });
 }

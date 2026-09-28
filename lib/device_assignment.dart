@@ -349,6 +349,7 @@ class LanDevice {
     this.detectedName,
     this.online = true,
     this.reserved = false,
+    this.type,
   });
 
   final String mac; // uppercase
@@ -363,6 +364,10 @@ class LanDevice {
   final bool online;
 
   final bool reserved; // present in dhcp_staticlist
+
+  /// The router's device type, the number behind its icon (`type` in the two device files). Carried
+  /// into a `custom_clientlist` record the app creates, or the icon turns generic (ID-025).
+  final String? type;
 
   /// The user's own name wins, then whatever the router auto-detected, then the MAC.
   ///
@@ -532,7 +537,7 @@ Map<String, String> deviceNamesByIp(List<LanDevice> devices) => {
 ///     `nmp_cl_json.js`, whose /jffs copy is written only every few minutes (ID-165).
 ///   - **address** - `nmp_cache.js` first, then `dhcp_staticlist`. An offline device keeps its `ip`
 ///     in the cache, so the reservation is a second source rather than the main one.
-///   - **the user's name** - `nickName` from `nmp_cache.js`, else `custom_clientlist`.
+///   - **the user's name** - `custom_clientlist`, else `nickName` from `nmp_cache.js`.
 ///   - **the detected name** - `name` from `nmp_cl_json.js`, else `nmp_cache.js`.
 List<LanDevice> buildDeviceList({
   required String nmpClJson,
@@ -565,14 +570,205 @@ List<LanDevice> buildDeviceList({
     devices.add(LanDevice(
       mac: mac,
       ip: str(cac, 'ip') ?? reservations[mac],
-      customName: str(cac, 'nickName') ?? customNames[mac],
+      // `custom_clientlist` first: it is what a rename writes, and the cache's `nickName` catches up
+      // with it only when the router next rewrites the cache, so a list re-read straight after a
+      // rename showed the old name (ID-261).
+      customName: customNames[mac] ?? str(cac, 'nickName'),
       detectedName: str(inv, 'name') ?? str(cac, 'name'),
       // The cache first: it is what the web interface shows, and the /jffs inventory lags it by
       // minutes (ID-165). Then the inventory, where `online` is an integer. Unknown to both reads as
       // online, since claiming a device is off is worse than not saying.
       online: str(cac, 'isOnline') != null ? str(cac, 'isOnline') != '0' : inv == null || '${inv['online']}' != '0',
       reserved: reservations.containsKey(mac),
+      type: str(cac, 'type') ?? str(inv, 'type'),
     ));
   }
   return sortDevicesForDisplay(devices);
+}
+
+// ─── A device's own name (ID-261) ─────────────────────────────────────────────────────
+//
+// Measured 2026-09-28 against the web interface: renaming a device writes ONE key,
+// `custom_clientlist`, and calls no service at all - the new name shows straight away. A record is
+// `Name>MAC>group>type>...`, and the name is stored exactly as typed: a space, `'` or `&` needs no
+// escaping. The web interface refuses `<` and `>`, the list's own delimiters, and keeps at most 32
+// characters.
+
+/// The longest name the router's web interface keeps.
+const int kMaxDeviceNameLength = 32;
+
+/// Why [name] cannot be a device name, or null when it can. An empty name is allowed: it clears the
+/// user's name, and the device shows its detected one again.
+String? checkDeviceName(String name) {
+  final n = name.trim();
+  if (n.contains('<') || n.contains('>')) return 'A name cannot contain < or >.';
+  if (n.length > kMaxDeviceNameLength) return 'A name can be at most $kMaxDeviceNameLength characters.';
+  return null;
+}
+
+/// [raw] `custom_clientlist` with [mac]'s name set to [name], or its record removed when [name] is
+/// empty, so the router shows the detected name again.
+///
+/// An existing record keeps every other field, including its type, which is the device's icon in the
+/// web interface and the ASUS app. A device with no record gets one shaped like the web interface's,
+/// `Name>MAC>0>type>>>>`, carrying [type] from the device files: a naive `0` would turn its icon
+/// generic (ID-025). Every other record passes through byte for byte.
+String setCustomName(String raw, {required String mac, required String name, String? type}) {
+  final records = [for (final c in raw.trim().split('<')) if (c.isNotEmpty) c.split('>')];
+  final n = name.trim();
+  final i = records.indexWhere((f) => f.length >= 2 && f[1].toUpperCase() == mac.toUpperCase());
+  if (i >= 0) {
+    if (n.isEmpty) {
+      records.removeAt(i);
+    } else {
+      records[i] = [n, ...records[i].skip(1)];
+    }
+  } else if (n.isNotEmpty) {
+    records.add([n, mac.toUpperCase(), '0', (type ?? '').isEmpty ? '0' : type!, '', '', '', '']);
+  }
+  return records.isEmpty ? '' : '<${records.map((f) => f.join('>')).join('<')}';
+}
+
+// ─── Disabling a device's internet: the router's own Parental Controls (ID-261) ───────
+//
+// Andrew's decision: the app uses the router's own "Block Internet access" rather than a rule of its
+// own, so a disabled device shows in the web interface and can be enabled there too. It is Parental
+// Controls, Time Scheduling. Measured 2026-09-28, four runs:
+//
+//   - Five parallel lists, one entry per device in the order devices were added, separated by `>`:
+//     `MULTIFILTER_MAC`, `MULTIFILTER_DEVICENAME`, `MULTIFILTER_ENABLE` (0 disable, 1 time, 2 block)
+//     and `MULTIFILTER_MACFILTER_DAYTIME_V2`, one schedule per device with `<` inside it.
+//   - `MULTIFILTER_ALL` is the Enable Time Scheduling switch for ALL of them. With it off nothing is
+//     blocked, whatever the entries say.
+//   - `restart_firewall` turns a block into three MAC rules (FORWARD to PControls, DROP in PControls,
+//     DROP in WGNPControls for the guest bridge). The device loses the internet and every tunnel, and
+//     keeps its LAN. An entry at 0 gets no rule. A block survives a reboot.
+//   - `MULTIFILTER_BLOCK_ALL` is "Enable block all devices" and blocks the whole network. Never touched.
+
+/// The value the web interface writes for a device set to block.
+const String kParentalBlock = '2';
+
+/// The schedule the web interface gives a new entry. Kept on a block, where it does nothing.
+const String kParentalDefaultSchedule = 'W03E21000700<W04122000800';
+
+/// One device in Time Scheduling.
+class ParentalEntry {
+  const ParentalEntry({required this.mac, required this.name, required this.mode, required this.schedule});
+
+  final String mac, name, mode, schedule;
+
+  ParentalEntry copyWith({String? mode}) => ParentalEntry(mac: mac, name: name, mode: mode ?? this.mode, schedule: schedule);
+}
+
+/// Time Scheduling as the router holds it.
+class ParentalControls {
+  const ParentalControls({required this.on, required this.entries});
+
+  /// `MULTIFILTER_ALL`: Enable Time Scheduling.
+  final bool on;
+  final List<ParentalEntry> entries;
+
+  static const empty = ParentalControls(on: false, entries: []);
+
+  ParentalEntry? entryFor(String mac) {
+    for (final e in entries) {
+      if (e.mac.toUpperCase() == mac.toUpperCase()) return e;
+    }
+    return null;
+  }
+
+  /// Whether [mac] has no internet now: an entry at block, with Time Scheduling on.
+  bool isBlocked(String mac) => on && entryFor(mac)?.mode == kParentalBlock;
+
+  /// The five key values to write, in the router's own format.
+  Map<String, String> toNvram() => {
+        'MULTIFILTER_ALL': on ? '1' : '0',
+        'MULTIFILTER_MAC': entries.map((e) => e.mac).join('>'),
+        'MULTIFILTER_DEVICENAME': entries.map((e) => e.name).join('>'),
+        'MULTIFILTER_ENABLE': entries.map((e) => e.mode).join('>'),
+        'MULTIFILTER_MACFILTER_DAYTIME_V2': entries.map((e) => e.schedule).join('>'),
+      };
+}
+
+/// The five Time Scheduling keys, in the order the service reads them.
+const List<String> kParentalKeys = [
+  'MULTIFILTER_ALL',
+  'MULTIFILTER_MAC',
+  'MULTIFILTER_DEVICENAME',
+  'MULTIFILTER_ENABLE',
+  'MULTIFILTER_MACFILTER_DAYTIME_V2',
+];
+
+/// Time Scheduling from the five keys. The lists are parallel; a short one is padded rather than
+/// trusted to line up, and an entry with no MAC is dropped, since nothing could be written for it.
+ParentalControls parseParentalControls(Map<String, String> keys) {
+  List<String> list(String k) {
+    final v = (keys[k] ?? '').trim();
+    return v.isEmpty ? <String>[] : v.split('>');
+  }
+
+  final macs = list('MULTIFILTER_MAC');
+  final names = list('MULTIFILTER_DEVICENAME');
+  final modes = list('MULTIFILTER_ENABLE');
+  final schedules = list('MULTIFILTER_MACFILTER_DAYTIME_V2');
+  String at(List<String> l, int i) => i < l.length ? l[i] : '';
+  return ParentalControls(
+    on: (keys['MULTIFILTER_ALL'] ?? '').trim() == '1',
+    entries: [
+      for (var i = 0; i < macs.length; i++)
+        if (macs[i].trim().isNotEmpty)
+          ParentalEntry(
+            mac: macs[i].trim().toUpperCase(),
+            name: at(names, i),
+            mode: at(modes, i).isEmpty ? '0' : at(modes, i),
+            schedule: at(schedules, i),
+          ),
+    ],
+  );
+}
+
+/// [pc] with each device in [blocks] disabled (true) or not (false). [names] gives the name written
+/// for a device that has no entry yet.
+///
+/// Disabling keeps a device's existing entry and its schedule, and sets it to block; a device with no
+/// entry is added at the end, as the web interface does. Enabling again removes an entry whose
+/// schedule is the web interface's default - one the app, or a plain block in the web interface, put
+/// there - and sets any other back to 0, disable, so a schedule someone set up by hand is kept.
+///
+/// Time Scheduling is switched on when anything is disabled, and off when no entry is left. Every
+/// other entry passes through as it was.
+ParentalControls applyBlocks(ParentalControls pc, Map<String, bool> blocks, {Map<String, String> names = const {}}) {
+  final entries = List.of(pc.entries);
+  blocks.forEach((mac, block) {
+    final m = mac.toUpperCase();
+    final i = entries.indexWhere((e) => e.mac.toUpperCase() == m);
+    if (block) {
+      if (i >= 0) {
+        entries[i] = entries[i].copyWith(mode: kParentalBlock);
+      } else {
+        final name = (names[mac] ?? names[m] ?? m).replaceAll(RegExp('[<>]'), '');
+        entries.add(ParentalEntry(mac: m, name: name, mode: kParentalBlock, schedule: kParentalDefaultSchedule));
+      }
+    } else if (i >= 0) {
+      if (entries[i].schedule == kParentalDefaultSchedule || entries[i].schedule.isEmpty) {
+        entries.removeAt(i);
+      } else {
+        entries[i] = entries[i].copyWith(mode: '0');
+      }
+    }
+  });
+  final on = entries.isEmpty ? false : (pc.on || blocks.values.any((b) => b));
+  return ParentalControls(on: on, entries: entries);
+}
+
+/// The entries, other than [changed], that switching Time Scheduling on would bring into force: the
+/// ones set to time or block while it was off. Andrew's decision: the app turns Time Scheduling on
+/// without asking only when this is empty; otherwise APPLY's confirmation names them first.
+List<ParentalEntry> schedulesSwitchedOn(ParentalControls before, ParentalControls after, Set<String> changed) {
+  if (before.on || !after.on) return const [];
+  final c = {for (final m in changed) m.toUpperCase()};
+  return [
+    for (final e in after.entries)
+      if (!c.contains(e.mac.toUpperCase()) && e.mode != '0') e,
+  ];
 }

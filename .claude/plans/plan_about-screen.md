@@ -19,23 +19,9 @@ Add an "About" screen to the app, accessible from the hamburger menu.
 Format the screen using the exact layout below (with vertical spacing/padding between sections):
 
 ---
-cfg-pia-wg v<versionNumber> build <buildNumber>
-Built by: <installer source> at <build timestamp/compilation date and time>
-Build type: <debug, release, or specific build flavor>
-Commit hash: <Git commit SHA>
-Git branch/tag: <branch or tag used to trigger build>
-Build runner ID: <CI Runner ID>
-CPU Architecture (ABI): <active architecture running on device e.g. arm64-v8a, x86_64>
-Target Android version: <OS version currently running on device e.g. Android 15 (API 35)>
-Compile SDK: <compileSdk>
-Kotlin: <kotlin_version>
+cfg-pia-wg v<versionNumber> build <buildNumber> Built by: <installer source> at <build timestamp/compilation date and time> Build type: <debug, release, or specific build flavor> Commit hash: <Git commit SHA> Git branch/tag: <branch or tag used to trigger build> Build runner ID: <CI Runner ID> CPU Architecture (ABI): <active architecture running on device e.g. arm64-v8a, x86_64> Target Android version: <OS version currently running on device e.g. Android 15 (API 35)> Compile SDK: <compileSdk> Kotlin: <kotlin_version>
 
-GitHub source code repository: https://github.com/ExponentiallyDigital/cfg-pia-wg
-ReadMe: https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md
-Change log: https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
-Architecture: https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md
-Security policy: https://github.com/ExponentiallyDigital/cfg-pia-wg/SECURITY.md
-Privacy policy: https://www.exponentiallydigital.com/cfg-pia-wg/privacy.html
+GitHub source code repository: https://github.com/ExponentiallyDigital/cfg-pia-wg ReadMe: https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md Change log: https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md Architecture: https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md Security policy: https://github.com/ExponentiallyDigital/cfg-pia-wg/SECURITY.md Privacy policy: https://www.exponentiallydigital.com/cfg-pia-wg/privacy.html
 
 <Full content of LICENSE file>
 ---

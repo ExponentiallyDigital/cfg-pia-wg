@@ -8,6 +8,7 @@
 import 'package:cfg_pia_wg/entitlement.dart';
 import 'package:cfg_pia_wg/router_prefs.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
+import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/router_slots_screen.dart';
 import 'package:cfg_pia_wg/widgets/slot_modal.dart';
@@ -83,6 +84,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(c.rememberedRouterIp, '192.168.1.1');
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // ID-252: CON-3 and WD-15 in the release-candidate run. NOT NOW left this screen on its login form,
+  // which read as being asked to log in again. Declining ends at the main menu.
+  testWidgets('declining the helper install goes to the main menu, not back to the login', (tester) async {
+    Entitlement.debugSetUnlocked(true);
+    final c = SessionController(tickInterval: const Duration(hours: 1), routerPrefs: _MemoryRouterPrefs())
+      // What the app's route observer records on entering WATCHDOG; this test has no observer.
+      ..currentDestination = AppDestination.watchdog;
+    addTearDown(c.dispose);
+
+    await tester.pumpWidget(_wrap(_bareRouter(), c));
+    await _connect(tester);
+    await tester.tap(find.text('NOT NOW'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MainMenuScreen), findsOneWidget);
+    expect(find.byKey(const Key('connect_router')).hitTestable(), findsNothing, reason: 'the login form is not what shows');
 
     await tester.pumpWidget(const SizedBox());
   });
