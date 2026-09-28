@@ -34,7 +34,7 @@ void main() {
       'menu_standalone': 'STANDALONE',
       'menu_manage_router': 'MANAGE',
       'menu_watchdog': 'WATCHDOG',
-      'menu_device_assignment': 'DEVICE ASSIGNMENT',
+      'menu_device_assignment': 'DEVICES',
       'menu_router_log': 'ROUTER LOG',
       'menu_log': 'APP LOG',
       'menu_settings': 'SETTINGS',

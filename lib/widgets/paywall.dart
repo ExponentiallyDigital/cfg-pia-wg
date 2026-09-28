@@ -98,7 +98,8 @@ abstract class Pitch {
       'a week of wondering why the VPN was off, or worse, not knowing you were unprotected.';
   static const watchdogEnable = "Enabling puts the watchdog's schedule back on the router.";
   static const assign = 'Assigning sends this device out through a VPN while everything else on your '
-      'network carries on as it was. One tap per device, no slot numbers to work out.';
+      'network carries on as it was. One tap per device, no slot numbers to work out. Renaming a device, '
+      'or disabling its internet altogether, is written to your router by the same APPLY.';
   static const redeploy = "Redeploying writes this app version's watchdog script to your router, so the fixes "
       'in your update reach the watchdog too. Tunnels, schedules and settings are left exactly as they are.';
   static const maxVpns = 'Raising the limit lets more VPNs run on your router at the same time, beyond the '
@@ -111,7 +112,7 @@ abstract class Pitch {
         Pitch.edit => 'EDIT',
         Pitch.watchdog => 'watchdog CREATE/EDIT',
         Pitch.watchdogEnable => 'watchdog ENABLE',
-        Pitch.assign => 'device assignment APPLY',
+        Pitch.assign => 'DEVICES APPLY',
         Pitch.redeploy => 'watchdog REDEPLOY',
         Pitch.maxVpns => 'settings MAX ACTIVE VPNS',
         _ => 'a paid feature',

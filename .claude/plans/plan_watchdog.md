@@ -245,8 +245,7 @@ The script must set them exactly as the app does, including any additional varia
 
 ### 4.4.1 Watchdog NVRAM Variable names
 
-Watchdog Namespace: all watchdog-specific configuration parameters must be saved using a uniform slot prefix to maintain an organized NVRAM environment
-e.g., wgcN_wd_check_interval, wgcN_wd_primary_ip, wgcN_wd_secondary_ip, wgcN_wd_smtp_server, wgcN_wd_smtp_user, wgcN_wd_smtp_pass etc.
+Watchdog Namespace: all watchdog-specific configuration parameters must be saved using a uniform slot prefix to maintain an organized NVRAM environment e.g., wgcN_wd_check_interval, wgcN_wd_primary_ip, wgcN_wd_secondary_ip, wgcN_wd_smtp_server, wgcN_wd_smtp_user, wgcN_wd_smtp_pass etc.
 
 ### 4.5 Retry Mechanism
 

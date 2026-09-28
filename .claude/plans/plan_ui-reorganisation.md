@@ -191,14 +191,6 @@ Read .claude/context.md to understand the app, then read `.claude/ui_reorganisat
 
 Clarifications needed:
 
-1. **Watchdog screen — EDIT saves, ENABLE deploys.** EDIT writes watchdog params + region (`wgcN_desc`)
-   to NVRAM and runs the pre-save WAN ping warning, but does **not** deploy. The slot-modal ENABLE
-   button deploys the script + cron (`startWatchdog`) from saved NVRAM config + in-memory PIA creds.
-   DISABLE removes (`stopWatchdog`). A **new region picker inside the EDIT dialog** is added (spec 2.1.3).
-2. **Manage-router ENABLE — revert on failed check.** Set `enable=1` + start interface, wait until it
-   appears in `wg show interfaces`, ping both `wgcN_wd_*_ip` via the slot interface (5s). On any
-   failure: `enable=0` (revert), stop interface, alert — persisted flag left unchanged.
-3. **"Close app" (hamburger entry) wipes clipboard + all in-memory credentials/config, then exits.**
-   Confirmed. The separate per-screen **CLOSE** button "returns to the main menu" — implemented as
-   pushing a fresh `MainMenuScreen` (consistent with the "stack growth is intentional" rule).
-   _(Flagged for review — change to pop-to-menu if that was the intent.)_
+1. **Watchdog screen — EDIT saves, ENABLE deploys.** EDIT writes watchdog params + region (`wgcN_desc`) to NVRAM and runs the pre-save WAN ping warning, but does **not** deploy. The slot-modal ENABLE button deploys the script + cron (`startWatchdog`) from saved NVRAM config + in-memory PIA creds. DISABLE removes (`stopWatchdog`). A **new region picker inside the EDIT dialog** is added (spec 2.1.3).
+2. **Manage-router ENABLE — revert on failed check.** Set `enable=1` + start interface, wait until it appears in `wg show interfaces`, ping both `wgcN_wd_*_ip` via the slot interface (5s). On any failure: `enable=0` (revert), stop interface, alert — persisted flag left unchanged.
+3. **"Close app" (hamburger entry) wipes clipboard + all in-memory credentials/config, then exits.** Confirmed. The separate per-screen **CLOSE** button "returns to the main menu" — implemented as pushing a fresh `MainMenuScreen` (consistent with the "stack growth is intentional" rule). _(Flagged for review — change to pop-to-menu if that was the intent.)_

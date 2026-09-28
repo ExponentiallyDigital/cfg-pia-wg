@@ -30,22 +30,6 @@ Note: router log timestamps are not correct until the boot process sucessfully e
 
 Stopping then starting a VPN produces these router log entries:
 
-Aug 31 06:52:21 rc_service: httpds 1324:notify_rc stop_vpnc
-Aug 31 06:52:22 *****LH-STOCK*****: START S50asuslighttpd, trigger: firewall-start
-Aug 31 06:52:22 *****LH-STOCK*****: END S50asuslighttpd, trigger: firewall-start
-Aug 31 06:52:22 *****DM-STOCK*****: START S50downloadmaster, trigger: firewall-start
-Aug 31 06:52:22 *****DM-STOCK*****: END S50downloadmaster, trigger: firewall-start
+Aug 31 06:52:21 rc_service: httpds 1324:notify_rc stop_vpnc Aug 31 06:52:22 *****LH-STOCK*****: START S50asuslighttpd, trigger: firewall-start Aug 31 06:52:22 *****LH-STOCK*****: END S50asuslighttpd, trigger: firewall-start Aug 31 06:52:22 *****DM-STOCK*****: START S50downloadmaster, trigger: firewall-start Aug 31 06:52:22 *****DM-STOCK*****: END S50downloadmaster, trigger: firewall-start
 
-Aug 31 06:52:50 rc_service: httpds 1324:notify_rc restart_vpnc
-Aug 31 06:52:51 *****LH-STOCK*****: START S50asuslighttpd, trigger: firewall-start
-Aug 31 06:52:51 *****LH-STOCK*****: END S50asuslighttpd, trigger: firewall-start
-Aug 31 06:52:51 *****DM-STOCK*****: START S50downloadmaster, trigger: firewall-start
-Aug 31 06:52:51 *****DM-STOCK*****: END S50downloadmaster, trigger: firewall-start
-Aug 31 06:52:52 *****LH-STOCK*****: START S50asuslighttpd, trigger: firewall-start
-Aug 31 06:52:52 *****LH-STOCK*****: END S50asuslighttpd, trigger: firewall-start
-Aug 31 06:52:52 *****DM-STOCK*****: START S50downloadmaster, trigger: firewall-start
-Aug 31 06:52:52 *****DM-STOCK*****: END S50downloadmaster, trigger: firewall-start
-Aug 31 06:52:53 *****LH-STOCK*****: START S50asuslighttpd, trigger: firewall-start
-Aug 31 06:52:53 *****LH-STOCK*****: END S50asuslighttpd, trigger: firewall-start
-Aug 31 06:52:53 *****DM-STOCK*****: START S50downloadmaster, trigger: firewall-start
-Aug 31 06:52:53 *****DM-STOCK*****: END S50downloadmaster, trigger: firewall-start
+Aug 31 06:52:50 rc_service: httpds 1324:notify_rc restart_vpnc Aug 31 06:52:51 *****LH-STOCK*****: START S50asuslighttpd, trigger: firewall-start Aug 31 06:52:51 *****LH-STOCK*****: END S50asuslighttpd, trigger: firewall-start Aug 31 06:52:51 *****DM-STOCK*****: START S50downloadmaster, trigger: firewall-start Aug 31 06:52:51 *****DM-STOCK*****: END S50downloadmaster, trigger: firewall-start Aug 31 06:52:52 *****LH-STOCK*****: START S50asuslighttpd, trigger: firewall-start Aug 31 06:52:52 *****LH-STOCK*****: END S50asuslighttpd, trigger: firewall-start Aug 31 06:52:52 *****DM-STOCK*****: START S50downloadmaster, trigger: firewall-start Aug 31 06:52:52 *****DM-STOCK*****: END S50downloadmaster, trigger: firewall-start Aug 31 06:52:53 *****LH-STOCK*****: START S50asuslighttpd, trigger: firewall-start Aug 31 06:52:53 *****LH-STOCK*****: END S50asuslighttpd, trigger: firewall-start Aug 31 06:52:53 *****DM-STOCK*****: START S50downloadmaster, trigger: firewall-start Aug 31 06:52:53 *****DM-STOCK*****: END S50downloadmaster, trigger: firewall-start

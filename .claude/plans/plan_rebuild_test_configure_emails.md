@@ -1,58 +1,14 @@
 - CHG: rebuild test/reconfigure email. Two changes:
 
-(1.) Create three new nvram settings:
-  `cfg_pia_wg_sdate=yyyy-mm-dd` - stores the date the app was first used to deploy a WATCHDOG or send a test email.
-  `cfg_pia_wg_reconfig_ok=N` - incremented every time a reconfigure event is sucessful, set this to 0 initially. (renamed from `cfg_pia_wg_wd-reconfig_ok`, see the second review below)
-  `cfg_pia_wg_reconfig_fail=N` - incremented every time a reconfigure event fails, set this to 0 initially.
-  Update the two utility scrips `scripts\showall.sh` & `scripts\clearall.sh` to show/delete these new nvram settings.
-  Update `ARCHITECTURE.md` section "3. Router WireGuard NVRAM fields" with details of the fields you have added.
-  Update CONTEXT.md to say that any nvram variables added to the app must be described in `ARCHITECTURE.md` section "3. Router WireGuard NVRAM fields".
+(1.) Create three new nvram settings: `cfg_pia_wg_sdate=yyyy-mm-dd` - stores the date the app was first used to deploy a WATCHDOG or send a test email. `cfg_pia_wg_reconfig_ok=N` - incremented every time a reconfigure event is sucessful, set this to 0 initially. (renamed from `cfg_pia_wg_wd-reconfig_ok`, see the second review below) `cfg_pia_wg_reconfig_fail=N` - incremented every time a reconfigure event fails, set this to 0 initially. Update the two utility scrips `scripts\showall.sh` & `scripts\clearall.sh` to show/delete these new nvram settings. Update `ARCHITECTURE.md` section "3. Router WireGuard NVRAM fields" with details of the fields you have added. Update CONTEXT.md to say that any nvram variables added to the app must be described in `ARCHITECTURE.md` section "3. Router WireGuard NVRAM fields".
 
-(2.) update the email contents from:
-(2.1)**ALERT/RECONFIGURE/SUCCESS/FAILED EMAIL**
-Subject: cfg-pia-wg alert - `<event detail eg "FAILED (curl addKey request failed)">`
-Watchdog wgcN reconfiguration: `<event detail eg "FAILED (curl addKey request failed)">`
-Region: pia-regaion_name
-Time: yyyy-mm-dd hh:mm:ss
+(2.) update the email contents from: (2.1)**ALERT/RECONFIGURE/SUCCESS/FAILED EMAIL** Subject: cfg-pia-wg alert - `<event detail eg "FAILED (curl addKey request failed)">` Watchdog wgcN reconfiguration: `<event detail eg "FAILED (curl addKey request failed)">` Region: pia-regaion_name Time: yyyy-mm-dd hh:mm:ss
 
-(2.2)**TEST EMAIL**
-Subject: watchdog config test
-This is a test email from the cfg-pia-wg watchdog (slot wgc1).
-WATCHDOG_EOF
+(2.2)**TEST EMAIL** Subject: watchdog config test This is a test email from the cfg-pia-wg watchdog (slot wgc1). WATCHDOG_EOF
 
-(3) change them to:
-(3.1)**ALERT/RECONFIGURE/SUCCESS/FAILED EMAIL**
-Subject: cfg-pia-wg alert: SUCCESS | FAILURE
-`<br>`
-Router: `<router-dns-name>`<- if no DNS name is set, use the router's private (local) IP address.
-Watchdog: wgcN:pia-region_name
-Reconfiguration event: `<reason for success or failure, include any codes returned by addkey, curl and all diagnostic information that we have available from any command that the watchdog script ran or failed to run>`
-Router timestamp: yyyy-mm-dd hh:mm:ss <-get the time from the router
-Uptime: 15:11:29 up 19:21,  load average: 2.55, 2.39, 2.36 <- run `uptime`
-`<br>`
-Since first deployed on `cfg_pia_wg_sdate=yyyy-mm-dd (if empty, use today's date)`, there have been `cfg_pia_wg_reconfig_ok=N` sucessful reconfigure events, and `cfg_pia_wg_reconfig_fail=N` failed events.
-`<br>`
-Please consider adding a review via [the Play Store](https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga&showAllReviews=true), or in app if this app is helpful to you.
-`<br>`
-Thank you,
-cfg-pia-wg by Exponentially Digital.
-`<br>`
+(3) change them to: (3.1)**ALERT/RECONFIGURE/SUCCESS/FAILED EMAIL** Subject: cfg-pia-wg alert: SUCCESS | FAILURE `<br>` Router: `<router-dns-name>`<- if no DNS name is set, use the router's private (local) IP address. Watchdog: wgcN:pia-region_name Reconfiguration event: `<reason for success or failure, include any codes returned by addkey, curl and all diagnostic information that we have available from any command that the watchdog script ran or failed to run>` Router timestamp: yyyy-mm-dd hh:mm:ss <-get the time from the router Uptime: 15:11:29 up 19:21,  load average: 2.55, 2.39, 2.36 <- run `uptime` `<br>` Since first deployed on `cfg_pia_wg_sdate=yyyy-mm-dd (if empty, use today's date)`, there have been `cfg_pia_wg_reconfig_ok=N` sucessful reconfigure events, and `cfg_pia_wg_reconfig_fail=N` failed events. `<br>` Please consider adding a review via [the Play Store](https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga&showAllReviews=true), or in app if this app is helpful to you. `<br>` Thank you, cfg-pia-wg by Exponentially Digital. `<br>`
 
-(3.2)**TEST EMAIL**
-Subject: cfg-pia-wg alert: TEST email
-`<br>`
-Router: `<router-dns-name>`<- if no DNS name is set, use the router's private (local) IP address.
-Watchdog: wgcN:pia-region_name <- if no watchdog has been saved set this to "region not yet set, configuration pending deployment"
-Event: test email manually sent via the watchdog dialogue box
-Router timestamp: yyyy-mm-dd hh:mm:ss `<- get the time from the router
-`<br>`
-Since first deployed on `cfg_pia_wg_sdate=yyyy-mm-dd`, there have been `cfg_pia_wg_reconfig_ok=N` sucessful reconfigure events, and `cfg_pia_wg_reconfig_fail=N` failed events.
-`<br>`
-Please consider adding a review via [the Play Store](https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga&showAllReviews=true)` or in app if this app is helpful to you.
-`<br>`
-Thank you,
-cfg-pia-wg by Exponentially Digital.
-`<br>`
+(3.2)**TEST EMAIL** Subject: cfg-pia-wg alert: TEST email `<br>` Router: `<router-dns-name>`<- if no DNS name is set, use the router's private (local) IP address. Watchdog: wgcN:pia-region_name <- if no watchdog has been saved set this to "region not yet set, configuration pending deployment" Event: test email manually sent via the watchdog dialogue box Router timestamp: yyyy-mm-dd hh:mm:ss `<- get the time from the router `<br>` Since first deployed on `cfg_pia_wg_sdate=yyyy-mm-dd`, there have been `cfg_pia_wg_reconfig_ok=N` sucessful reconfigure events, and `cfg_pia_wg_reconfig_fail=N` failed events. `<br>` Please consider adding a review via [the Play Store](https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga&showAllReviews=true)` or in app if this app is helpful to you. `<br>` Thank you, cfg-pia-wg by Exponentially Digital. `<br>`
 
 Note: something to consider, as the app execs the watchdog at deployment then the first run will send an email alert as RECONFIGURE event with status SUCCESS which isn't correct is it **configured** it rather than **re-configured** it. Is there any way we can make (3.1) display "Reconfiguration event: watchdog deployed" and set the subject to "cfg-pia-wg alert: SUCCESS"?
 ---
@@ -135,13 +91,9 @@ Thank you,
 cfg-pia-wg by Exponentially Digital
 ```
 
-The endpoint comes from `${K}ep_addr:${K}ep_port` and the age from `wg show latest-handshakes`,
-because a deploy run that finds the tunnel already up never calls addKey - so `$BEST_CN` and
-`$BEST_RTT` do not exist on that path. A deploy run that *did* have to reconfigure reports the
-server name and latency exactly as mock-up B does.
+The endpoint comes from `${K}ep_addr:${K}ep_port` and the age from `wg show latest-handshakes`, because a deploy run that finds the tunnel already up never calls addKey - so `$BEST_CN` and `$BEST_RTT` do not exist on that path. A deploy run that *did* have to reconfigure reports the server name and latency exactly as mock-up B does.
 
-A deploy where the tunnel could not be brought up sends the failure email, opening with
-`Watchdog deployed but the tunnel could NOT be brought up.` under subject `FAILED`.
+A deploy where the tunnel could not be brought up sends the failure email, opening with `Watchdog deployed but the tunnel could NOT be brought up.` under subject `FAILED`.
 
 #### B. Reconfigure SUCCESS
 
@@ -170,9 +122,7 @@ Since 2026-09-01 this router has recorded 4 successful and 1 failed reconfigurat
 
 #### C. Reconfigure FAILED
 
-The event detail carries every code the failing command returned - it is the existing `abort`
-string, unchanged, so nothing is lost. Two blocks appear **only** on failure: `WHAT TO DO` and
-`ROUTER LOG`.
+The event detail carries every code the failing command returned - it is the existing `abort` string, unchanged, so nothing is lost. Two blocks appear **only** on failure: `WHAT TO DO` and `ROUTER LOG`.
 
 ```
 Subject: cfg-pia-wg alert: FAILED - wgc1:pia-aus_melbourne
@@ -211,25 +161,16 @@ ROUTER LOG (last 10 lines)
 
 Three variants of those lines:
 
-- **Kill switch** has three states, not two: `ON`, `OFF - the kill switch is available but is not
-  enabled` (Merlin, where it exists and the user turned it off), and the stock line above, since
-  stock has no kill switch at all. Each also needs three **tenses**, because the same fact reads
-  wrong in the wrong one - implemented as `KILLSW_UP` / `KILLSW_FIXED` / `KILLSW_DOWN`:
+- **Kill switch** has three states, not two: `ON`, `OFF - the kill switch is available but is not enabled` (Merlin, where it exists and the user turned it off), and the stock line above, since stock has no kill switch at all. Each also needs three **tenses**, because the same fact reads wrong in the wrong one - implemented as `KILLSW_UP` / `KILLSW_FIXED` / `KILLSW_DOWN`:
   - up (a deploy run, nothing wrong): `ON - traffic is blocked if the tunnel drops`
   - recovered (the outage is over): `ON - no traffic left the router while it was down`
   - still down (a failure): `ON - traffic is blocked while the tunnel is down`
 
-  A failure takes the still-down wording whether or not the run was a deploy. Revisit the stock
-  wording once in-app device assignment lands - a device assigned to a downed wgcN simply loses
-  connectivity, which is a truer thing to tell the user than "traffic is reaching the internet".
-- **Last seen good** is read from `$STATUSFILE`, which lives in `/tmp` and does not survive a reboot.
-  With no file: `Tunnel has been down for: unknown (no successful check since the router last
-  rebooted)`.
+  A failure takes the still-down wording whether or not the run was a deploy. Revisit the stock wording once in-app device assignment lands - a device assigned to a downed wgcN simply loses connectivity, which is a truer thing to tell the user than "traffic is reaching the internet".
+- **Last seen good** is read from `$STATUSFILE`, which lives in `/tmp` and does not survive a reboot. With no file: `Tunnel has been down for: unknown (no successful check since the router last rebooted)`.
 - **Interval** is not repeated in a failure email - the `Attempt:` line already carries it.
 
-`ROUTER LOG` can contain the PIA username, as the excerpt above shows. It never contains the
-password or the token: the script logs the token's *length* only. Noted so it stays a deliberate
-choice.
+`ROUTER LOG` can contain the PIA username, as the excerpt above shows. It never contains the password or the token: the script logs the token's *length* only. Noted so it stays a deliberate choice.
 
 #### D. Test email
 
@@ -255,57 +196,28 @@ Since 2026-09-05 this router has recorded 0 successful and 0 failed reconfigurat
 ...review and sign-off as above...
 ```
 
-When no watchdog has been saved yet the `Watchdog:` line reads `region not yet set, configuration
-pending deployment` and the interval line reads `Interval: not set, watchdog has yet to be saved and
-deployed.` - the interval is read from NVRAM, never from the unsaved dialog, so the email can never
-state a schedule that is not actually running.
+When no watchdog has been saved yet the `Watchdog:` line reads `region not yet set, configuration pending deployment` and the interval line reads `Interval: not set, watchdog has yet to be saved and deployed.` - the interval is read from NVRAM, never from the unsaved dialog, so the email can never state a schedule that is not actually running.
 
 ### Decided alongside the layout - first review
 
-1. **The configurable subject field becomes dead.** `wgcN_wd_email_subject` is set in the watchdog
-   dialog and currently forms the subject as `<your subject> - SUCCESS`. A fixed `cfg-pia-wg alert:`
-   prefix discards it. Suggested: keep the field as the prefix and default it to `cfg-pia-wg alert`,
-   which gives `cfg-pia-wg alert: SUCCESS - wgc1:pia-aus_melbourne` out of the box while still
-   honouring a user who set something else. The alternative is to remove the field from the dialog.
-   AGREED.
-2. **`FAILED` vs `FAILURE`.** The plan above says `SUCCESS | FAILURE`; the script, the app log and
-   the router log all say `FAILED`. The mock-ups use `FAILED` for consistency - say if you prefer
-   `FAILURE` and it changes everywhere.
-   USE FAILED.
+1. **The configurable subject field becomes dead.** `wgcN_wd_email_subject` is set in the watchdog dialog and currently forms the subject as `<your subject> - SUCCESS`. A fixed `cfg-pia-wg alert:` prefix discards it. Suggested: keep the field as the prefix and default it to `cfg-pia-wg alert`, which gives `cfg-pia-wg alert: SUCCESS - wgc1:pia-aus_melbourne` out of the box while still honouring a user who set something else. The alternative is to remove the field from the dialog. AGREED.
+2. **`FAILED` vs `FAILURE`.** The plan above says `SUCCESS | FAILURE`; the script, the app log and the router log all say `FAILED`. The mock-ups use `FAILED` for consistency - say if you prefer `FAILURE` and it changes everywhere. USE FAILED.
 
 ### Implementation notes
 
-- **One layout, two languages.** Alert bodies are written by the shell script; the test email body
-  is written by Dart. To stop them drifting, the Dart builder emits the shell that goes into the
-  script template, and a test asserts both produce the same section headings in the same order.
-- **One SSH round trip for the test email.** The app needs hostname, LAN IP, model, firmware, date,
-  uptime and three counters - fetch them in a single command with a delimiter, not nine `_run` calls.
-- **Counters are written by the script** on a reconfigure outcome, and seeded (`sdate` plus both
-  counters at 0) by whichever of watchdog deploy or test email happens first.
+- **One layout, two languages.** Alert bodies are written by the shell script; the test email body is written by Dart. To stop them drifting, the Dart builder emits the shell that goes into the script template, and a test asserts both produce the same section headings in the same order.
+- **One SSH round trip for the test email.** The app needs hostname, LAN IP, model, firmware, date, uptime and three counters - fetch them in a single command with a delimiter, not nine `_run` calls.
+- **Counters are written by the script** on a reconfigure outcome, and seeded (`sdate` plus both counters at 0) by whichever of watchdog deploy or test email happens first.
 - Update README.md to include the email alerting function described in this plan and include example emails with made up information.
 
 ### Decided alongside the layout - second review
 
-1. **The home-screen review link does not exist yet.** The email text points at it, so it must.
-   Adding it is now the WIP item immediately after this one, landing in the same build - see
-   CHANGELOG `### 1.2. WIP`, "new button on the home screen invoking the in_app_review". The email
-   wording stands as written.
-2. **Counter names are `cfg_pia_wg_reconfig_ok` and `cfg_pia_wg_reconfig_fail`** - symmetric, no
-   hyphen. This supersedes `cfg_pia_wg_wd-reconfig_ok` in section (1.) above. `cfg_pia_wg_sdate` is
-   unchanged.
-3. **A deploy run always sends an email**, including when it finds the tunnel already healthy and
-   returns at the early `exit 0`. It doubles as proof that alerting works, which is most of the
-   point of sending it. No server name and no latency on that path - see mock-up A.
-4. **The alert flood during a sustained outage is left alone here.** Every `abort` emails and the
-   cooldown is 120 s, so a long outage sends many near-identical alerts. That is pre-existing, and
-   the next-but-one WIP item ("back off when PIA refuses a token request": 2, 4, 8, 16, cap 30 min)
-   is what fixes it. This branch is DEV and has one user.
-5. **Kill switch: three states**, and the stock wording gets revisited after in-app device
-   assignment - see the note under mock-up C.
+1. **The home-screen review link does not exist yet.** The email text points at it, so it must. Adding it is now the WIP item immediately after this one, landing in the same build - see CHANGELOG `### 1.2. WIP`, "new button on the home screen invoking the in_app_review". The email wording stands as written.
+2. **Counter names are `cfg_pia_wg_reconfig_ok` and `cfg_pia_wg_reconfig_fail`** - symmetric, no hyphen. This supersedes `cfg_pia_wg_wd-reconfig_ok` in section (1.) above. `cfg_pia_wg_sdate` is unchanged.
+3. **A deploy run always sends an email**, including when it finds the tunnel already healthy and returns at the early `exit 0`. It doubles as proof that alerting works, which is most of the point of sending it. No server name and no latency on that path - see mock-up A.
+4. **The alert flood during a sustained outage is left alone here.** Every `abort` emails and the cooldown is 120 s, so a long outage sends many near-identical alerts. That is pre-existing, and the next-but-one WIP item ("back off when PIA refuses a token request": 2, 4, 8, 16, cap 30 min) is what fixes it. This branch is DEV and has one user.
+5. **Kill switch: three states**, and the stock wording gets revisited after in-app device assignment - see the note under mock-up C.
 6. **`retrying per schedule, X minutes`**, X read from `${K}wd_check_interval`.
 7. **Missing `$STATUSFILE` reads "unknown (no successful check since the router last rebooted)".**
-8. **A failed deploy opens with `Watchdog deployed but the tunnel could NOT be brought up.`**
-   under subject `FAILED`.
-9. **The interval row is labelled `Interval:` in every email** rather than `Checks:`, so the
-   not-set sentence and the normal case share a label. On a failure email the row is dropped, since
-   the `Attempt:` line already states the schedule.
+8. **A failed deploy opens with `Watchdog deployed but the tunnel could NOT be brought up.`** under subject `FAILED`.
+9. **The interval row is labelled `Interval:` in every email** rather than `Checks:`, so the not-set sentence and the normal case share a label. On a failure email the row is dropped, since the `Attempt:` line already states the schedule.

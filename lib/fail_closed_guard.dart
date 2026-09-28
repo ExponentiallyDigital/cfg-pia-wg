@@ -81,13 +81,22 @@ held91() { ip rule show | awk '$1 == "91:" {for (i = 2; i < NF; i++) if ($i == "
 wanted_ip() { echo "$WANT" | awk -F'>' -v ip="$1" '$1 == ip {f = 1} END {exit !f}'; }
 drop() { N=0; while [ "$N" -lt 8 ] && ip rule del from "$1" priority "$2" 2>/dev/null; do N=$((N + 1)); done; }
 slot_of() { nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v t="$1" '$7 == t {print "wgc" $3; exit}'; }
+# The device as DEVICES names it, then its address: the user's name, else the detected
+# one, else the address alone (ID-262).
+name_of() {
+  M="$(nvram get dhcp_staticlist | tr '<' '\n' | awk -F'>' -v a="$1" '$2 == a {print toupper($1); exit}')"
+  D=""
+  [ -n "$M" ] && D="$(nvram get custom_clientlist | tr '<' '\n' | awk -F'>' -v m="$M" 'toupper($2) == m && $1 != "" {print $1; exit}')"
+  [ -z "$D" ] && [ -n "$M" ] && [ -x /jffs/cfg-pia-wg/jq ] && D="$(/jffs/cfg-pia-wg/jq -r --arg m "$M" 'to_entries[] | select((.key | ascii_upcase) == $m) | .value.name // empty' 2>/dev/null < /jffs/nmp_cl_json.js | head -1)"
+  echo "${D:+$D }$1"
+}
 
 # Take away what is no longer wanted, wanted differently, or held more than once.
 H90="$(held90)"
 for E in $(echo "$H90" | sort -u); do
   if ! echo "$WANT" | grep -qxF "$E" || [ "$(echo "$H90" | grep -cxF "$E")" -gt 1 ]; then
     drop "${E%>*}" 90
-    wanted_ip "${E%>*}" || say "Fail-closed guard removed for ${E%>*}"
+    wanted_ip "${E%>*}" || say "Fail-closed guard removed for $(name_of "${E%>*}")"
   fi
 done
 H91="$(held91)"
@@ -105,7 +114,7 @@ for E in $WANT; do
   echo "$H91" | grep -qxF "$IP" || ip rule add from "$IP" blackhole priority 91 || FAIL=$((FAIL + 1))
   if ! echo "$H90" | grep -qxF "$E"; then
     if ip rule add from "$IP" lookup "$T" suppress_prefixlength 0 priority 90; then
-      say "Fail-closed guard on for $IP ($(slot_of "$T"))"
+      say "Fail-closed guard on for $(name_of "$IP") ($(slot_of "$T"))"
     else
       FAIL=$((FAIL + 1))
     fi

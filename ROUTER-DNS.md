@@ -120,7 +120,7 @@ What if the slot is stopped rather than broken? Then the router drops that slot'
 
 Start with the devices you care most about.
 
-**Pin them.** A pinned device's DNS goes to its slot's DNS servers, through its slot's tunnel. Its lookups leave from the same place as its traffic, and nothing else on the router can move them. `cfg-pia-wg` makes pinning painless and easily visible in DEVICE ASSIGNMENT, and you can set your default connection to the Internet or to any slot you choose.
+**Pin them.** A pinned device's DNS goes to its slot's DNS servers, through its slot's tunnel. Its lookups leave from the same place as its traffic, and nothing else on the router can move them. `cfg-pia-wg` makes pinning painless and easily visible in DEVICES, and you can set your default connection to the Internet or to any slot you choose.
 
 Then set the router. Both settings are under **Advanced Settings > WAN > Internet Connection > WAN DNS Setting** (see the [screenshot in `README`](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#42-router-dns-settings)):
 

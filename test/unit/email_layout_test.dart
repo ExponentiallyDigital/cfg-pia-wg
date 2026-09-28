@@ -265,13 +265,14 @@ void main() {
 
       test('a guarded tunnel says its pinned devices had no internet while it was down', () {
         expect(stock, contains(r'elif [ "$GUARDED" -ge "$PINNED" ]; then'));
-        expect(stock, contains(r"the app's guard kept the $PINNED $DEVS pinned to this tunnel off the internet while it was down"));
-        expect(stock, contains(r"the app's guard is keeping the $PINNED $DEVS pinned to this tunnel off the internet until it is back"));
+        // ID-242: by name, as DEVICE ASSIGNMENT shows them, not by count.
+        expect(stock, contains(r"the app's guard kept $NAMES pinned to this tunnel, and off the internet while this tunnel was down"));
+        expect(stock, contains(r"the app's guard is keeping $NAMES pinned to this tunnel, and off the internet until it is back"));
       });
 
       test('a guard with rules missing says so, and how to put it back', () {
         expect(stock, contains(r"not fully in place - the app's guard covers $GUARDED of the $PINNED $DEVS"));
-        expect(stock, contains('Opening DEVICE ASSIGNMENT in the app and applying any change puts it back'));
+        expect(stock, contains('Opening DEVICES in the app and applying any change puts it back'));
       });
 
       test('a tunnel nothing is pinned to says so', () {
@@ -306,7 +307,7 @@ void main() {
         }
       }
       expect(script(RouterFirmware.merlin), contains('ON - traffic is blocked while the tunnel is down'));
-      expect(script(RouterFirmware.stock), contains("the app's guard is keeping the"));
+      expect(script(RouterFirmware.stock), contains(r"the app's guard is keeping $NAMES"));
       // A failure picks the still-down wording whether or not this run was a deploy.
       expect(script(RouterFirmware.merlin), contains('''if [ "\$STATUS" != "SUCCESS" ]; then
     KILLSW="\$KILLSW_DOWN"'''));
