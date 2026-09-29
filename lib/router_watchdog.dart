@@ -674,7 +674,7 @@ const String kSeedCountersCommand = '[ -n "\$(nvram get cfg_pia_wg_sdate)" ] || 
 /// one survives the trim that [RouterWatchdog._run] applies.
 String kEmailFactsCommand(int slot) => "printf '|%s\\n' "
     '"\$(nvram get ddns_hostname_x)" "\$(nvram get lan_hostname)" "\$(nvram get lan_ipaddr)" '
-    '"\$(nvram get productid)" "\$(nvram get buildno)_\$(nvram get extendno)" '
+    '"\$(nvram get productid)" "\$(nvram get firmver).\$(nvram get buildno)_\$(nvram get extendno)" '
     '"\$(date \'+%Y-%m-%d %H:%M:%S %z\')" "\$(uptime | sed \'s/^ *//\')" '
     '"\$(nvram get cfg_pia_wg_sdate)" "\$(nvram get cfg_pia_wg_reconfig_ok)" '
     '"\$(nvram get cfg_pia_wg_reconfig_fail)" '
@@ -980,6 +980,23 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
 
 // ─── Service ─────────────────────────────────────────────────────────────────────
 
+/// Why a watchdog run's alert email failed, from the log lines that run wrote, or null if none
+/// failed (ID-300). The mailer's own first line, which is the useful part: "535 5.7.8 Username and
+/// Password not accepted." rather than everything after it.
+String? deployEmailFailure(String runLog) {
+  final line = runLog.split('\n').lastWhere((l) => l.contains('Email FAILED'), orElse: () => '');
+  if (line.isEmpty) return null;
+  final m = RegExp(r'stderr=\[(.*)\]').firstMatch(line);
+  var reason = (m?.group(1) ?? '').split('|').map((p) => p.trim()).firstWhere((p) => p.isNotEmpty, orElse: () => '');
+  reason = reason.replaceFirst(RegExp(r'^ERROR:\s*'), '').replaceFirst(RegExp(r'\s*For more information.*$'), '');
+  return reason.isEmpty || reason == 'none' ? 'the mail server gave no reason' : reason;
+}
+
+/// Whether a line of the UNINSTALL report says nothing was done: nothing there to remove, or left
+/// alone because it is not the app's (ID-287). The report shows these apart, and a run where every
+/// line is one of them does not ask for a restart.
+bool uninstallStepDidNothing(String line) => line.startsWith('No ') || line.startsWith('Left ');
+
 class RouterWatchdog {
   final SSHClient client;
   final void Function(String, {bool isError, bool isSuccess, bool isWarning})? onLog;
@@ -1272,7 +1289,10 @@ class RouterWatchdog {
   /// What is deliberately NOT rolled back is the SCHEDULE. On 2026-09-17 it was the scheduled check
   /// that finished the build after a reboot; taking it away would remove the retry that rescued the
   /// deploy. The watchdog settings stay for the same reason - the retry needs them.
-  Future<void> deployWatchdog(WatchdogConfig config, {String? desc}) => _guard('deploy', () async {
+  ///
+  /// Returns why the deploy's alert email could not be sent, or null when it was sent or none was
+  /// due (ID-300): the deploy itself worked either way, and only the router's log said so.
+  Future<String?> deployWatchdog(WatchdogConfig config, {String? desc}) => _guard('deploy', () async {
         await enableJffsScripts();
         // Both read before the NVRAM write replaces the description. A slot that is already up and
         // keeps its region needs no restart. A changed region is a rebuild: the running tunnel belongs
@@ -1290,6 +1310,7 @@ class RouterWatchdog {
           for (final f in kWatchdogSlotNvramFields) 'wgc${slot}_$f': await _read('nvram get wgc${slot}_$f'),
         };
         var scheduled = false;
+        var emailProblem = '';
         try {
           if (regionChanged) await _clearForRebuild(slot, running: up, region: desc);
           await _writeWatchdogNvram(config, desc: desc);
@@ -1303,9 +1324,13 @@ class RouterWatchdog {
           onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
           await _run(kSeedCountersCommand);
           await _logRouter('Running ${watchdogScriptPath(config.slotIndex)} deploy');
+          // Where the log stands, so what this run writes can be read back on its own.
+          final logFile = '/tmp/watchdog_wgc$slot.log';
+          final linesBefore = int.tryParse((await _read("wc -l < $logFile 2>/dev/null || echo 0")).trim()) ?? 0;
           // `deploy` makes this run report itself as a deployment rather than a re-configuration,
           // and makes it email even when it finds the tunnel already healthy.
           await _run('${watchdogScriptPath(config.slotIndex)} deploy');
+          emailProblem = deployEmailFailure(await _read('tail -n +${linesBefore + 1} $logFile 2>/dev/null')) ?? '';
         } catch (e) {
           final hadWatchdog = (settingsBefore['wgc${slot}_wd_check_interval'] ?? '').isNotEmpty;
           if (!scheduled) await _restoreWatchdogSettings(settingsBefore);
@@ -1324,6 +1349,9 @@ class RouterWatchdog {
         await _logRouter(
             'Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
         onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
+        if (emailProblem.isEmpty) return null;
+        onLog?.call("The deploy's alert email could not be sent: $emailProblem", isError: true);
+        return emailProblem;
       });
 
   /// Puts the watchdog's settings back as [before] held them, unsetting any that were empty (ID-196).
@@ -1563,8 +1591,11 @@ class RouterWatchdog {
         final done = <String>[];
         // First, while the script is still there to do it. Left behind, the rules would keep every
         // pinned device off the internet whenever its tunnel is down, with no app left to explain why.
+        // Counted first, so a second uninstall does not claim to have removed rules that were not
+        // there (ID-287). A count that cannot be read is taken as some: say what was attempted.
+        final guardRules = int.tryParse((await _read("ip rule show | grep -cE '^9[01]:'")).trim());
         await _guardService.clear();
-        done.add('Removed the fail-closed guard rules');
+        done.add(guardRules == 0 ? 'No fail-closed guard rules to remove' : 'Removed the fail-closed guard rules');
         for (final path in [kS50Path, kS50LighttpdPath]) {
           final name = path.split('/').last;
           final backup = originalScriptBackupPath(path);
@@ -1597,6 +1628,25 @@ class RouterWatchdog {
         }
         done.add(removed == 0 ? 'No watchdog schedules to remove' : 'Removed $removed watchdog schedule(s)');
 
+        // Merlin keeps the schedule for the next boot in services-start, two `cru a` lines per
+        // slot. Left there, the next boot put the schedule back, pointing at scripts about to be
+        // deleted (ID-303). Stock keeps its in the S50 script, which is dealt with above.
+        if (!isStockFirmware) {
+          const path = kServicesStartPath;
+          final lines = int.tryParse((await _read(
+                  "grep -cE 'watchdog_(log_rotate_)?wgc[1-9] ' '$path' 2>/dev/null || true"))
+              .trim()
+              .split('\n')
+              .first);
+          if (lines != null && lines > 0) {
+            await _read("grep -vE 'watchdog_(log_rotate_)?wgc[1-9] ' '$path' > '$path.tmp'; "
+                "mv '$path.tmp' '$path' && chmod 700 '$path'");
+            done.add('Removed the watchdog lines from $path');
+          } else {
+            done.add('No watchdog lines in $path to remove');
+          }
+        }
+
         // The VPN cap, if the app is what raised it (ID-098). The key records what the router had
         // before, so a user who set 3 themselves keeps 3 - this puts back a change the app made, it
         // does not impose a default.
@@ -1611,8 +1661,11 @@ class RouterWatchdog {
         // Every key the app ever writes, so an uninstalled router carries none of our settings.
         // The wgcN_* TUNNEL configuration is deliberately NOT touched: the tunnels keep working and
         // the user manages them from the web interface.
+        final appKeys = int.tryParse((await _read(r"nvram show 2>/dev/null | grep -cE '^(cfg_pia_wg_|wgc[1-5]_wd_)'")).trim());
         await _read(kUninstallNvramCommand);
-        done.add("Removed the app's NVRAM settings, including the reconfigure history");
+        done.add(appKeys == 0
+            ? 'No app settings in NVRAM to remove'
+            : "Removed the app's NVRAM settings, including the reconfigure history");
 
         final dir = await _read("[ -d '$kRouterAppDir' ] && rm -rf '$kRouterAppDir' && echo REMOVED || echo ABSENT");
         done.add(dir.contains('REMOVED') ? 'Removed $kRouterAppDir' : 'No $kRouterAppDir to remove');
@@ -1814,7 +1867,7 @@ class RouterWatchdog {
     final raw = await _read('$kDeployedScriptHeaderCommand; echo "$_aboutSep"; '
         r'''printf '%s@@%s@@%s@@%s@@%s@@%s' "$(nvram get cfg_pia_wg_sdate)" "$(nvram get cfg_pia_wg_reconfig_ok)" '''
         r'''"$(nvram get cfg_pia_wg_reconfig_fail)" "$(nvram get productid)" '''
-        r'''"$(nvram get buildno)_$(nvram get extendno)" "$(nvram get 3rd-party)"''');
+        r'''"$(nvram get firmver).$(nvram get buildno)_$(nvram get extendno)" "$(nvram get 3rd-party)"''');
     final parts = raw.split(_aboutSep);
     final counters = (parts.length > 1 ? parts[1] : '').trim().split('@@');
     String at(int i) => i < counters.length ? counters[i].trim() : '';
@@ -2267,7 +2320,7 @@ __WHATTODO__
   echo "" >> "$TMPMAIL"
   echo "ROUTER" >> "$TMPMAIL"
   row "Name" "$RNAME ($LANIP)"
-  row "Model" "$(nvram get productid), firmware $(nvram get buildno)_$(nvram get extendno)"
+  row "Model" "$(nvram get productid), firmware $(nvram get firmver).$(nvram get buildno)_$(nvram get extendno)"
   row "Time" "$(date '+%Y-%m-%d %H:%M:%S %z')"
   row "Uptime" "$(uptime | sed 's/^ *//')"
   row "Watchdog" "$WDROW"

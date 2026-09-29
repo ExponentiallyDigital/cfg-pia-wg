@@ -21,7 +21,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [EXT. Exit, background and session](#ext-exit-background-and-session)
 - [LCK. Locked, with no purchase (store build)](#lck-locked-with-no-purchase-store-build)
 - [BUY. Buying and restoring (store build)](#buy-buying-and-restoring-store-build)
-- [MRL. Merlin (a separate day)](#mrl-merlin-a-separate-day)
+- [MRL. Merlin smoke test (under an hour)](#mrl-merlin-smoke-test-under-an-hour)
 - [END. Last, because it removes things](#end-last-because-it-removes-things)
 - [R1. When something looks broken, check these first](#r1-when-something-looks-broken-check-these-first)
 - [R2. How the watchdog decides a tunnel is broken](#r2-how-the-watchdog-decides-a-tunnel-is-broken)
@@ -57,7 +57,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 
 - **Do:** what you do. **See:** what you get back. **Pass if:** how you know, only where it is not obvious.
 
-- Stock firmware unless a test says otherwise. Merlin is a separate day: see [MRL](#mrl).
+- Stock firmware unless a test says otherwise. Merlin has its own short smoke test: see [MRL](#mrl).
 
 - **Which build you need.** Every group here runs on any build - your own debug or release APK included - except [LCK](#lck) and [BUY](#buy). Those two need the app installed **from Play**, on a testing track, with the account on the licence testers list: a build Play did not distribute is always unlocked and never shows a paywall, so there is nothing there to test. [R8](#r8) has the rest of the store setup.
 
@@ -85,7 +85,7 @@ nvram get vpnc_dev_policy_list | tr '<' '\n' | grep -w <ip>
 nvram get vpnc_default_wan
 ```
 
-- **e2e.sh** does the router-side checking for a step: `sh /jffs/e2e.sh <label> before`, press the button in the app, then `sh /jffs/e2e.sh <label> after <checks>`. It writes the STARTED and ENDED lines to the router log, prints what changed, and answers PASS or FAIL. The checks are `exit <ip> wgcN|WAN|BLOCKED`, `rule <ip> <table|main>`, `norule <ip>`, `guard <ip> <table>`, `noguard <ip>`, `default <index>`, `up wgcN` and `down wgcN`. The script's header says more.
+- **e2e.sh** does the router-side checking for a step: `sh /jffs/cfg-pia-wg/e2e.sh <label> before`, press the button in the app, then `sh /jffs/cfg-pia-wg/e2e.sh <label> after <checks>`. It writes the STARTED and ENDED lines to the router log, prints what changed, and answers PASS or FAIL. The checks are `exit <ip> wgcN|WAN|BLOCKED`, `rule <ip> <table|main>`, `norule <ip>`, `guard <ip> <table>`, `noguard <ip>`, `default <index>`, `up wgcN` and `down wgcN`. The script's header says more.
 
 
 - **Router shell variables** the tests use. Set them in every new SSH session to the router:
@@ -133,7 +133,12 @@ I5=5             # wgc5's
 
 **PRE-4** Have to hand [hand]
 
-- Do: copy the three check scripts, `scripts/e2e.sh`, `scripts/test-backoff.sh` and `scripts/presence-probe.sh`, to `/jffs/` on the router. The router has no `scp`, so `scp` fails in both directions. Either open each file in `vi` on the router and paste it in, or from Git Bash on DESKTOP: `ssh <user>@<router> "cat > /jffs/e2e.sh" < scripts/e2e.sh`, and the same for the other two. Check with `ls -l /jffs/*.sh`.
+- Do: copy the three check scripts to `/jffs/cfg-pia-wg/` on the router. The router has no `scp`, so `scp` fails in both directions: open each file in `vi` on the router and paste it in, or from Git Bash on DESKTOP, in the repo:
+
+```bash
+for F in e2e.sh test-backoff.sh presence-probe.sh; do ssh <user>@<router> "cat > /jffs/cfg-pia-wg/$F" < scripts/$F; done
+ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
+```
 - PIA username and password.
 - An SMTP account with an app password, for example Gmail.
 - The router WebUI open on DESKTOP.
@@ -562,14 +567,34 @@ logger "**WD-20 END** PIA credentials are checked before the router is touched"
 
 **WD-21** A deploy that fails puts the slot back [hand]
 
-- Do: on **wgc2**, which WD-9 built and which nothing later depends on, note `nvram get wgc2_ppub` and its region.
-- Do: WATCHDOG, CREATE/EDIT on wgc2, and choose a DIFFERENT region from the list while the internet is still there.
-- Do: unplug the router's WAN, then SAVE & DEPLOY.
-- See: it fails, and the message names the cause, says the slot was left as it was, and says the watchdog will try again in N minutes.
-- Pass if: `nvram get wgc2_ppub` and `wgc2_desc` are what they were before, and the router's web interface shows the slot exactly as it did.
-- Pass if: `cru l` still lists the watchdog - the schedule stays on purpose, because it is the retry.
-- Do: plug the WAN back in and wait one check interval.
+Unplugging the WAN no longer reaches this failure: the phone loses its internet too, so SAVE & DEPLOY stops at its own check with PIA before anything reaches the router (ID-279). So only the router's own web traffic is blocked here, and the phone keeps its internet.
+
+- Do: on **wgc2**, which WD-9 built and which nothing later depends on, note its server and region, and block the router's own HTTPS - its traffic, not your devices':
+
+```bash
+logger "**WD-21 START** A deploy that fails puts the slot back"
+nvram get wgc2_ppub; nvram get wgc2_desc
+iptables -I OUTPUT -p tcp --dport 443 -j DROP
+```
+
+- Do: WATCHDOG, CREATE/EDIT on wgc2, choose a DIFFERENT region, SAVE & DEPLOY, and confirm the overwrite.
+- See: the spinner while the app checks the region and the login with PIA (ID-279), then the deploy fails, and the message names the cause, says the slot was left as it was, and says the watchdog will try again in N minutes.
+- Then:
+
+```bash
+nvram get wgc2_ppub; nvram get wgc2_desc
+cru l | grep watchdog_wgc2
+iptables -D OUTPUT -p tcp --dport 443 -j DROP
+```
+
+- Pass if: `wgc2_ppub` and `wgc2_desc` are what they were before, the router's web interface shows the slot as it did, and `cru l` still lists the watchdog - the schedule stays on purpose, because it is the retry.
+- Do: wait one check interval, with the block removed.
 - See: the watchdog rebuilds the tunnel by itself.
+
+```bash
+logger "**WD-21 END** A deploy that fails puts the slot back"
+```
+
 - Note: on an EMPTY slot the same failure leaves it empty rather than half-built. Worth doing both if there is time.
 
 **WD-22** A paused watchdog keeps the shared PIA credentials [hand]
@@ -750,11 +775,20 @@ logger "**BRK-2 END** Expired registration (the quick one)"
 
 **BRK-4** A tunnel you turned off is left alone [hand]
 
-- Do: turn wgc1 off in the WebUI. Check `nvram get wgc1_enable` reads `0`.
-- Do: `/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground; tail -2 /tmp/watchdog_wgc1.log`
+- Do: in the router's web interface, VPN, VPN Fusion, switch wgc1's own profile OFF. Not the app: its DISABLE pauses the watchdog as well, and then there is nothing left to test. In the release-candidate run the watchdog was paused instead, and the test passed without testing anything (ID-297).
+- Do: on the router:
+
+```bash
+logger "**BRK-4 START** A tunnel you turned off is left alone"
+nvram get wgc1_enable
+/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground; tail -2 /tmp/watchdog_wgc1.log
+logger "**BRK-4 END** A tunnel you turned off is left alone"
+```
+
+- Pass if: the first line is `0`. If it is `1`, the tunnel is still on: switch it off in the web interface and run the block again.
 - See: watchdog log "wgc1 is disabled in the router; standing down until it is enabled again".
 - Pass if: the tunnel stays off and no email arrives.
-- Do: turn wgc1 back on in the WebUI.
+- Do: switch wgc1 back ON in the web interface.
 
 **BRK-5** A rebuild that fails [hand]
 
@@ -782,7 +816,9 @@ logger "**BRK-5 END** A rebuild that fails"
 
 **BRK-6** Backoff ladder, with no PIA traffic [hand]
 
-Proves that after each failed rebuild the watchdog waits longer before the next - 2 minutes up to 90 - so a tunnel that cannot be fixed does not get the PIA account refused. The script preloads the attempt count and runs the real watchdog, which turns itself away before asking PIA for anything.
+Proves that after each failed rebuild the watchdog waits longer before the next - 2 minutes up to 90 - so a tunnel that cannot be fixed does not get the PIA account refused. The script preloads the attempt count and runs the real watchdog, which turns itself away before asking PIA for anything. It runs it once every 15 seconds, as the watchdogs are spaced: run back to back, it crashed the firmware's `asd` (ID-296).
+
+The test breaks the slot for about two minutes, and everything pinned to it has no internet until the last step. Use the slot the fewest devices depend on; the example uses wgc5.
 
 - Do: WATCHDOG DISABLE on wgc5 (it shows PAUSED). A scheduled check during the test would make a real attempt.
 - Do: on the router:
@@ -790,12 +826,19 @@ Proves that after each failed rebuild the watchdog waits longer before the next 
 ```bash
 logger "**BRK-6 START** Backoff ladder, with no PIA traffic"
 wg set wgc5 peer "$(nvram get wgc5_ppub)" remove
-sh /jffs/test-backoff.sh 5
+sh /jffs/cfg-pia-wg/test-backoff.sh 5
+```
+
+- See: waits of 120, 240, 480, 960, 1800, 3600, 5400, 5400 seconds, and PASS.
+- Do: straight away, WATCHDOG ENABLE on wgc5, then rebuild it rather than waiting for the next check:
+
+```bash
+/jffs/cfg-pia-wg/watchdog_wgc5.sh foreground
+tail -2 /tmp/watchdog_wgc5.log
 logger "**BRK-6 END** Backoff ladder, with no PIA traffic"
 ```
 
-- See: waits of 120, 240, 480, 960, 1800, 3600, 5400, 5400 seconds, and the script exits 0.
-- Do: WATCHDOG ENABLE on wgc5.
+- Pass if: the log ends `Alert email sent (SUCCESS)` after `Reconfig SUCCESS`, and wgc5's devices have internet again.
 
 **BRK-7** A WAN outage does not climb the backoff ladder [hand]
 
@@ -813,7 +856,7 @@ logger "**BRK-7 END** A WAN outage does not climb the backoff ladder"
 - Pass if: no "Connectivity lost; reconfiguring (attempt #N)" lines, and no alert emails.
 - Pass if: `cat /tmp/watchdog_backoff_wgc1` is UNCHANGED - the outage added no rungs.
 - Do: plug the internet back in, then `/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground; tail -3 /tmp/watchdog_wgc1.log`
-- See: a real attempt straight away, ending `Reconfig SUCCESS`, rather than waiting out a ladder it never earned.
+- See: either a real attempt straight away, ending `Reconfig SUCCESS`, or `Handshake Ns ago` and no rebuild: the firmware restarts the tunnels itself when the WAN comes back, and in the release-candidate run it had already mended wgc1. Both pass. A "Backing off" line fails: that is waiting out a ladder it never earned.
 
 **BRK-8** A tunnel that answers packets but not questions [hand]
 
@@ -831,7 +874,7 @@ iptables -I OUTPUT -o wgc1 -d 9.9.9.9 -j DROP
 - Do: the same command again.
 - See: `wgc1 is up and handshaking, but 9.9.9.9 has answered nothing twice in a row`, then `Name resolution lost on wgc1; reconfiguring`, then a normal rebuild.
 - See: the SUCCESS email says it reconfigured "after its DNS server stopped answering".
-- Do: remove the block: `iptables -D OUTPUT -o wgc1 -d 9.9.9.9 -j DROP`
+- Do: remove the block: `iptables -D OUTPUT -o wgc1 -d 9.9.9.9 -j DROP`. It may say "Bad rule": the rebuild restarted wgc1, which took the rule with it. Either way, `iptables -S OUTPUT | grep 9.9.9.9` must print nothing.
 - Pass if: `ip rule show | grep 1000:` prints nothing. The probe's temporary rule is removed every time, and a leftover would quietly redirect the router's own lookups.
 
 **BRK-9** The probe skips what it cannot ask [ci]
@@ -843,6 +886,18 @@ iptables -I OUTPUT -o wgc1 -d 9.9.9.9 -j DROP
 ## <a name='dev'></a>DEV. DEVICES: assignment, names and disabling
 
 Stock only. Assigning a device does not restart any tunnel; changing the default connection does, and has its own section, [DEF](#def). Set up: wgc1 and wgc5 up in different regions, default connection Internet.
+
+**Before DEV-1, paste this into your SSH session to the router.** The `e2e.sh` checks need these values, and refuse to run when one is missing (ID-282). The last line must print six values. Paste it again in every new SSH session, including after DEV-17's reboot.
+
+```bash
+T=192.168.1.20   # TABLET's address
+TMAC=AA:BB:CC:00:00:20   # TABLET's MAC, upper case, as DEVICES shows it
+D=192.168.1.30   # DESKTOP's address
+P=192.168.1.40   # PHONE's address
+I1=9             # wgc1's routing table: field 7 of its row in vpnc_clientlist
+I5=5             # wgc5's
+echo "$T $TMAC $D $P $I1 $I5"
+```
 
 **Slots for this group:** wgc1 and wgc5 configured and running, default connection Internet, and no device pinned: `nvram get vpnc_dev_policy_list` shows no enabled record for TABLET, DESKTOP or PHONE. DEV-15 deletes wgc5 and recreates it; everything else here changes device assignments rather than slots.
 
@@ -869,40 +924,40 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 **DEV-4** Assign TABLET, which has no reservation [script]
 
 - Do: in the WebUI, LAN, DHCP Server, remove TABLET's manual assignment if it has one, and apply.
-- Do: `sh /jffs/e2e.sh DEV-4 before`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-4 before`
 - Do: DEVICES, TABLET to wgc1, APPLY 1 CHANGE.
 - See: the confirmation lists `from -> to` and says TABLET will also be given a fixed address. Do: APPLY.
-- Do: `sh /jffs/e2e.sh DEV-4 after "rule $T $I1" "guard $T $I1" "exit $T wgc1"`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-4 after "rule $T $I1" "guard $T $I1" "exit $T wgc1"`
 - Pass if: PASS, the changes include a new `dhcp_staticlist` line for TABLET, nothing else on the LAN dropped, and TABLET's exit IP is wgc1's region.
 - See: `grep reassigned /tmp/syslog.log | tail -1` names TABLET and where it moved.
 
 **DEV-5** Tunnel to tunnel [script]
 
-- Do: `sh /jffs/e2e.sh DEV-5 before`, then TABLET to wgc5, APPLY.
-- Do: `sh /jffs/e2e.sh DEV-5 after "rule $T $I5" "guard $T $I5" "exit $T wgc5"`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-5 before`, then TABLET to wgc5, APPLY.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-5 after "rule $T $I5" "guard $T $I5" "exit $T wgc5"`
 - Pass if: PASS, and TABLET's exit IP is wgc5's region.
 
 **DEV-6** To Internet, then straight to a tunnel [script]
 
-- Do: `sh /jffs/e2e.sh DEV-6a before`, then TABLET to Internet, APPLY.
-- Do: `sh /jffs/e2e.sh DEV-6a after "rule $T main" "noguard $T" "exit $T WAN"`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-6a before`, then TABLET to Internet, APPLY.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-6a after "rule $T main" "noguard $T" "exit $T WAN"`
 - Pass if: PASS, and TABLET's exit IP is your own.
-- Do: `sh /jffs/e2e.sh DEV-6b before`, then TABLET to wgc5, APPLY.
-- Do: `sh /jffs/e2e.sh DEV-6b after "rule $T $I5" "guard $T $I5" "exit $T wgc5"`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-6b before`, then TABLET to wgc5, APPLY.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-6b after "rule $T $I5" "guard $T $I5" "exit $T wgc5"`
 - Pass if: PASS - the `lookup main` rule is gone - and TABLET's exit IP is wgc5's region.
 
 **DEV-7** Back to the default [script]
 
-- Do: `sh /jffs/e2e.sh DEV-7 before`, then TABLET to "default - Internet", APPLY.
-- Do: `sh /jffs/e2e.sh DEV-7 after "norule $T" "noguard $T" "exit $T WAN"`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-7 before`, then TABLET to "default - Internet", APPLY.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-7 after "norule $T" "noguard $T" "exit $T WAN"`
 - Pass if: PASS, and TABLET's exit IP is your own.
 
 **DEV-8** Several devices in one APPLY [script]
 
-- Do: `sh /jffs/e2e.sh DEV-8 before`. TABLET follows the default since DEV-7, and DESKTOP has never been assigned.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-8 before`. TABLET follows the default since DEV-7, and DESKTOP has never been assigned.
 - Do: TABLET to wgc1 and DESKTOP to wgc5, APPLY 2 CHANGES.
 - See: one confirmation listing both.
-- Do: `sh /jffs/e2e.sh DEV-8 after "rule $T $I1" "guard $T $I1" "exit $T wgc1" "rule $D $I5" "guard $D $I5" "exit $D wgc5"`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-8 after "rule $T $I1" "guard $T $I1" "exit $T wgc1" "rule $D $I5" "guard $D $I5" "exit $D wgc5"`
 - Pass if: PASS, and each exit IP matches its tunnel.
 
 **DEV-9** Quick router-side check [retired]
@@ -916,9 +971,9 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 **DEV-11** To a disabled slot [script]
 
-- Do: MANAGE DISABLE wgc5. `sh /jffs/e2e.sh DEV-11 before`, then DEVICES, TABLET to wgc5.
+- Do: MANAGE DISABLE wgc5. `sh /jffs/cfg-pia-wg/e2e.sh DEV-11 before`, then DEVICES, TABLET to wgc5.
 - See: the confirmation warns wgc5 is not running and TABLET will have no internet until it is enabled.
-- Do: APPLY, then `sh /jffs/e2e.sh DEV-11 after "rule $T $I5" "guard $T $I5" "down wgc5" "exit $T BLOCKED"`
+- Do: APPLY, then `sh /jffs/cfg-pia-wg/e2e.sh DEV-11 after "rule $T $I5" "guard $T $I5" "down wgc5" "exit $T BLOCKED"`
 - See: PASS, and TABLET's row reads "wgc5:pia-<region> is not running - no internet until it is enabled". TABLET has no internet.
 - Do: MANAGE ENABLE wgc5.
 - Pass if: TABLET's exit IP moves to wgc5's region without reassigning, and the note goes.
@@ -929,14 +984,41 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 **DEV-13** Offline device [hand]
 
-- Do: copy `scripts/presence-probe.sh` to `/jffs/` again, since it changed in build 470 (no `scp`: `vi` and paste, or `ssh <user>@<router> "cat > /jffs/presence-probe.sh" < scripts/presence-probe.sh` from Git Bash), then on the router start `nohup sh /jffs/presence-probe.sh <TABLET's MAC> > /tmp/presence.log 2>&1 &` - the MAC is on TABLET's second line in DEVICES. It logs, with the time, each change in every place the router records whether TABLET is online, and when each file was last written (ID-165). Its `cl_json` line is what DEVICES shows.
-- Do: on DESKTOP, `pwsh scripts/webui-presence.ps1 -Router <web interface address> -Mac <TABLET's MAC>`, with the router's web login. It logs each change in what the web interface shows for TABLET.
-- Do: switch TABLET off. Leave both running until the web interface and `cl_json` both say offline, about 15 minutes. Switch TABLET on, and leave them another 5 minutes.
-- Write down: `cat /tmp/presence.log` on the router, and the DESKTOP log (the script prints where it is). Then stop both: Ctrl+C on DESKTOP, and `kill $(cat /tmp/presence-probe.pid)` on the router. The source that changed with the web interface is the one the app should read.
-- Do: run the same measurement again with a WIRED device, such as the NAS or the TV, switched off at the wall and back on: its MAC in both scripts. Pass if: its `cache` line changes with the web interface, as TABLET's did. If it stays `"isOnline":"1"` while the web interface says offline, note it: wired devices need a guard (ID-165).
+- Do: copy `scripts/presence-probe.sh` to the router again, since it changed in build 470. From Git Bash on DESKTOP, in the repo:
+
+```bash
+ssh <user>@<router> "cat > /jffs/cfg-pia-wg/presence-probe.sh" < scripts/presence-probe.sh
+```
+
+- Do: on the router, with the shell variables set (DEV's block above), start it on TABLET:
+
+```bash
+logger "**DEV-13 START** Offline device"
+nohup sh /jffs/cfg-pia-wg/presence-probe.sh "$TMAC" > /tmp/presence.log 2>&1 &
+```
+
+  It logs, with the time, each change in every place the router records whether TABLET is online, and when each file was last written (ID-165). Its `cache` line is what DEVICES shows.
+- Do: on DESKTOP, in PowerShell in the repo, with the router's web login when it asks. The address is the web interface's, as you open it in a browser; change it if yours differs. It logs each change in what the web interface shows for TABLET.
+
+```powershell
+pwsh scripts/webui-presence.ps1 -Router https://192.168.1.1:8443 -Mac AA:BB:CC:00:00:20
+```
+
+- Do: switch TABLET off. Leave both running until the web interface and `cache` both say offline (about 30 seconds on Wi-Fi). Switch TABLET on, and leave them another 5 minutes.
+- Write down: the router's log and the DESKTOP log (the script prints where it is). Then stop both: Ctrl+C on DESKTOP, and on the router:
+
+```bash
+cat /tmp/presence.log
+kill $(cat /tmp/presence-probe.pid)
+logger "**DEV-13 END** Offline device"
+```
+
+  The source that changed with the web interface is the one the app should read.
+- Do: run the same measurement again with a WIRED device: unplug its network cable for two minutes, then plug it back in, with its MAC in the router's script. Pulling the cable does the same job as switching it off, so the device can be the one you're working on: your SSH session drops meanwhile, but the probe keeps logging on the router (ID-299). Pass if: its `cache` line changes with the web interface, as TABLET's did. If it stays `"isOnline":"1"` while the web interface says offline, note it: wired devices need a guard (ID-165).
+- Do: switch TABLET off again and wait a minute. Leave DEVICES and open it again.
 - See: TABLET dimmed with `offline`, still with a picker.
-- Do: TABLET to wgc1, APPLY.
-- Pass if: CHK shows the record. Switch TABLET on: exit IP is wgc1's region.
+- Do: with TABLET still off, TABLET to wgc1, APPLY.
+- Pass if: CHK shows the record, with `90:` and `100:` rules and a `91:` blackhole. Switch TABLET on: exit IP is wgc1's region.
 
 **DEV-14** Someone else changed the router [ci]
 
@@ -944,12 +1026,15 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 **DEV-15** Delete a VPN with devices on it [hand]
 
+- Note: deleting wgc5 moves EVERY device pinned to it to Internet, not only TABLET; the last step puts them back.
 - Do: TABLET to wgc5, APPLY. MANAGE DELETE wgc5.
+- See: before you confirm, the prompt names TABLET and every other device pinned to wgc5, in amber, and says they will be moved to the Internet (ID-289).
 - See: APP LOG names TABLET, moved to Internet - by the name DEVICES shows, not a bare address.
 - Pass if: CHK shows a `lookup main` rule; exit IP is your own.
 - Pass if: `ip rule show | grep -E '^9[01]:'` shows nothing for TABLET: the guard is lifted once a device is on the internet by design.
-- Do: CREATE wgc5 again, ENABLE.
+- Do: CREATE wgc5 again, ENABLE. If it had a watchdog, WATCHDOG CREATE/EDIT and SAVE & DEPLOY it again.
 - Pass if: TABLET is NOT on wgc5.
+- Do: DEVICES, DESKTOP and any other device that was on wgc5 back to wgc5, leaving TABLET on Internet, APPLY. DEV-17 expects DESKTOP on wgc5.
 
 **DEV-16** The random MAC phone [hand]
 
@@ -959,8 +1044,8 @@ Stock only. Assigning a device does not restart any tunnel; changing the default
 
 **DEV-17** Survives a reboot [script]
 
-- Do: `sh /jffs/e2e.sh DEV-17 before`, then SETTINGS, REBOOT ROUTER, and wait for it. Set the shell variables again in the new session.
-- Do: `sh /jffs/e2e.sh DEV-17 after "rule $T main" "noguard $T" "rule $D $I5" "guard $D $I5" "exit $D wgc5" "rule $P $I1" "guard $P $I1" "exit $P wgc1"`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-17 before`, then SETTINGS, REBOOT ROUTER, and wait for it. Set the shell variables again in the new session.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEV-17 after "rule $T main" "noguard $T" "rule $D $I5" "guard $D $I5" "exit $D wgc5" "rule $P $I1" "guard $P $I1" "exit $P wgc1"`
 - Pass if: PASS - one rule per device, the same as before the reboot: TABLET on Internet since DEV-15, DESKTOP on wgc5 since DEV-8, PHONE on wgc1 since DEV-16 - and each exit IP matches. If PHONE came back on a new address in DEV-16, leave its three checks out.
 
 **DEV-18** Rename a device [hand]
@@ -1039,15 +1124,27 @@ logger "**DEV-20 END** A disabled device pinned to a tunnel"
 
 Changing the default tears the WireGuard clients down and brings the enabled ones back, which can take a minute. Anything using a tunnel can drop, so do not run this on a router someone is relying on - though on run 1 nothing visibly dropped, so write down what actually happens. Set up: wgc1 and wgc5 up in different regions, TABLET on "default", DESKTOP pinned to wgc5. DEV leaves TABLET pinned to Internet, so first: DEVICES, TABLET to default, APPLY.
 
+**Before DEF-1, paste this into your SSH session to the router.** The `e2e.sh` checks need these values, and refuse to run when one is missing (ID-282). The last line must print six values. Paste it again in every new SSH session, including after DEF-10's reboot.
+
+```bash
+T=192.168.1.20   # TABLET's address
+TMAC=AA:BB:CC:00:00:20   # TABLET's MAC, upper case, as DEVICES shows it
+D=192.168.1.30   # DESKTOP's address
+P=192.168.1.40   # PHONE's address
+I1=9             # wgc1's routing table: field 7 of its row in vpnc_clientlist
+I5=5             # wgc5's
+echo "$T $TMAC $D $P $I1 $I5"
+```
+
 **Slots for this group:** wgc1 and wgc5 configured and running. DEF-9 deletes wgc1 on purpose and ends by rebuilding it, because DEF-10 and the groups after it need it back.
 
-**The watchdog on wgc1** goes off at DEF-6 and stays off until DEF-9 rebuilds the slot and deploys a fresh one. DEF-6 and DEF-7 both work by leaving wgc1 stopped, which a watchdog would undo.
+**The watchdog on wgc1** needs no step here: MANAGE DISABLE pauses it, so it cannot undo DEF-6 and DEF-7 leaving wgc1 stopped, and MANAGE ENABLE resumes it.
 
 **DEF-1** Internet to a tunnel [script]
 
-- Do: `sh /jffs/e2e.sh DEF-1 before`, then DEVICES, default to wgc1, APPLY.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEF-1 before`, then DEVICES, default to wgc1, APPLY.
 - See: the confirmation warns tunnels stop and restart.
-- Do: after "Device assignments applied.", `sh /jffs/e2e.sh DEF-1 after "default $I1" "up wgc1" "up wgc5" "exit $T wgc1" "exit $D wgc5"`
+- Do: after "Device assignments applied.", `sh /jffs/cfg-pia-wg/e2e.sh DEF-1 after "default $I1" "up wgc1" "up wgc5" "exit $T wgc1" "exit $D wgc5"`
 - Pass if: PASS, and the changes show two new rules at priority 10000, both `lookup $I1`. `$I1` is field 7 of wgc1's clientlist row, which is index 6 counting from 0.
 - Pass if: TABLET's exit IP is wgc1's region, and DESKTOP stays on wgc5.
 
@@ -1057,8 +1154,8 @@ Changing the default tears the WireGuard clients down and brings the enabled one
 
 **DEF-3** Tunnel to a different tunnel, and both keep running [script]
 
-- Do: `sh /jffs/e2e.sh DEF-3 before`, then default to wgc5, APPLY.
-- Do: after "Device assignments applied.", `sh /jffs/e2e.sh DEF-3 after "default $I5" "up wgc1" "up wgc5" "exit $T wgc5"`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEF-3 before`, then default to wgc5, APPLY.
+- Do: after "Device assignments applied.", `sh /jffs/cfg-pia-wg/e2e.sh DEF-3 after "default $I5" "up wgc1" "up wgc5" "exit $T wgc5"`
 - Pass if: PASS, and TABLET's exit IP is wgc5's region.
 - Write down: `grep -c "notify_rc restart_vpnc$" /tmp/syslog.log` before and after. Two more restarts means the router stopped wgc1 as well and the app brought it back; one means it left wgc1 alone. Nobody has measured which yet (ID-220).
 
@@ -1072,34 +1169,33 @@ Changing the default tears the WireGuard clients down and brings the enabled one
 
 - Do: WATCHDOG, wgc1, 5 minute interval, deployed. Default is wgc5, from DEF-3.
 - Do: default to wgc1, APPLY.
-- See: wgc1's watchdog log over the next 10 minutes.
-- Pass if: tunnels are back within about a minute, and the watchdog either logged nothing or rebuilt and reported SUCCESS.
-- Write down which. A rebuild costs a PIA token and an email.
+- Do: for the next 10 minutes, WATCHDOG, wgc1, VIEW ROUTER WATCHDOG LOG, and REFRESH now and then.
+- Pass if: the tunnels are back within about a minute, and the log shows one of two things: only healthy checks (`Handshake Ns ago`), which is the usual, or one rebuild ending `Reconfig SUCCESS`.
+- Write down which of the two you saw. A rebuild costs a PIA token and an email, so healthy checks are the better answer.
 - Ends with: default wgc1.
 
 **DEF-6** Default tunnel down, unassigned device (fail open or closed) [script]
 
-- Do: WATCHDOG, wgc1, DISABLE. It stays off until DEF-9.
-- Do: `sh /jffs/e2e.sh DEF-6 before`, then MANAGE, wgc1, DISABLE.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEF-6 before`, then MANAGE, wgc1, DISABLE.
 - Do: DEVICES, read the default connection panel.
 - See: wgc1 is not running, and unassigned devices use the Internet.
-- Do: `sh /jffs/e2e.sh DEF-6 after "down wgc1" "noguard $T" "exit $T WAN"`, and TABLET's exit IP. TABLET is on "default".
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEF-6 after "down wgc1" "noguard $T" "exit $T WAN"`, and TABLET's exit IP. TABLET is on "default".
 - Pass if: PASS, and your own address. The guard covers pinned devices only, and the panel says so: a device that follows the default goes out through the Internet while the default is off.
 - Do: MANAGE, wgc1, ENABLE.
 
 **DEF-7** Default tunnel down, device pinned to it: fails closed [script]
 
-- Do: DEVICES, DESKTOP to wgc1, APPLY. Default is still wgc1, watchdog still off.
-- Do: `sh /jffs/e2e.sh DEF-7 before`, then MANAGE, wgc1, DISABLE.
+- Do: DEVICES, DESKTOP to wgc1, APPLY. Default is still wgc1.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEF-7 before`, then MANAGE, wgc1, DISABLE.
 - See: the confirmation names DESKTOP, in amber, and says it will have no internet until wgc1 is enabled or DESKTOP is moved.
-- Do: DISABLE. Then `sh /jffs/e2e.sh DEF-7 after "guard $D $I1" "exit $D BLOCKED"`, and on DESKTOP, exit IP and `ping google.com`.
+- Do: DISABLE. Then `sh /jffs/cfg-pia-wg/e2e.sh DEF-7 after "guard $D $I1" "exit $D BLOCKED"`, and on DESKTOP, exit IP and `ping google.com`.
 - Pass if: PASS, and no internet at all - the fail-closed guard. Run 1 on 2026-09-21, before the guard, found DESKTOP out through the Internet here.
 - Do: MANAGE, wgc1, ENABLE. DEVICES, DESKTOP back to wgc5, APPLY.
 
 **DEF-8** Back to Internet, and every tunnel keeps running [script]
 
-- Do: `sh /jffs/e2e.sh DEF-8 before`, then DEVICES, default to Internet, APPLY.
-- Do: after "Device assignments applied.", `sh /jffs/e2e.sh DEF-8 after "default 0" "up wgc1" "up wgc5" "exit $T WAN"`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh DEF-8 before`, then DEVICES, default to Internet, APPLY.
+- Do: after "Device assignments applied.", `sh /jffs/cfg-pia-wg/e2e.sh DEF-8 after "default 0" "up wgc1" "up wgc5" "exit $T WAN"`
 - Pass if: PASS, the changes show both priority-10000 rules gone, and TABLET's exit IP is your own.
 - Pass if: the "tunnels running" part of the changes is empty: no tunnel stopped (ID-220) and none started - a DISABLED one must not come up (ID-172).
 - Pass if: the WebUI's VPN Fusion page agrees with the app about which tunnels are connected.
@@ -1107,10 +1203,11 @@ Changing the default tears the WireGuard clients down and brings the enabled one
 **DEF-9** Delete the VPN that is the default [hand]
 
 - Do: write down wgc1's region first - MANAGE shows it on the row as `wgc1:pia-<region>`. You are about to delete the slot and you need the same region back.
+- Note: deleting wgc1 moves every device pinned to it to Internet, PHONE included (DEV-16).
 - Do: DEVICES, default to wgc1, APPLY, and check DESKTOP is still pinned to wgc5.
-- Do: MANAGE, select wgc1, DELETE.
+- Do: MANAGE, select wgc1, DELETE. See: the prompt names PHONE, in amber, before you confirm (ID-289).
 - Pass if: `nvram get vpnc_default_wan` reads `0` - deleting the default falls back to the Internet rather than leaving a dangling index - every tunnel restarts, TABLET's exit IP is your own, and DESKTOP is still on wgc5.
-- Do: **rebuild wgc1 before moving on**, in this order, because DEF-10 and every group after it expect it:
+- Do: **rebuild wgc1 before moving on**, in this order, because DEF-10 and every group after it expect it. These steps set up what comes next; there is nothing to check in them beyond each one working:
   - MANAGE CREATE wgc1 in the region you wrote down, then ENABLE it.
   - WATCHDOG, wgc1, CREATE/EDIT, 5 minute interval, SAVE & DEPLOY - ABT reads the deployed script, so one has to be there.
   - DEVICES, default connection back to wgc1, APPLY.
@@ -1134,11 +1231,23 @@ The router commands use the shell variables from [How to use the run sheet](#how
 
 How to read DESKTOP's `ping -t 1.1.1.1`: wgc1's usual time is a pass; "Destination host unreachable" or "Request timed out" is a pass while wgc1 is down; any other reply while wgc1 is down is a leak. The TTL tells a leak's path apart when the times are close: a reply through PIA and one through your ISP usually differ by a hop or two.
 
+**Before GRD-1, paste this into your SSH session to the router.** The `e2e.sh` checks need these values, and refuse to run when one is missing (ID-282). The last line must print six values. Paste it again in every new SSH session, including after GRD-4's reboot.
+
+```bash
+T=192.168.1.20   # TABLET's address
+TMAC=AA:BB:CC:00:00:20   # TABLET's MAC, upper case, as DEVICES shows it
+D=192.168.1.30   # DESKTOP's address
+P=192.168.1.40   # PHONE's address
+I1=9             # wgc1's routing table: field 7 of its row in vpnc_clientlist
+I5=5             # wgc5's
+echo "$T $TMAC $D $P $I1 $I5"
+```
+
 **GRD-1** An APPLY puts the guard in place [script]
 
-- Do: `sh /jffs/e2e.sh GRD-1 before`, then DEVICES, DESKTOP to wgc1, APPLY.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh GRD-1 before`, then DEVICES, DESKTOP to wgc1, APPLY.
 - See: APP LOG "Fail-closed guard in place for N pinned device(s)."
-- Do: `sh /jffs/e2e.sh GRD-1 after "rule $D $I1" "guard $D $I1" "exit $D wgc1"`
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh GRD-1 after "rule $D $I1" "guard $D $I1" "exit $D wgc1"`
 - Pass if: PASS. The changes show three new lines for DESKTOP - `90: from <D> lookup <I1> suppress_prefixlength 0`, `91: from <D> blackhole`, and the firmware's own `100: from <D> lookup <I1>` - one of each, never two.
 
 **GRD-2** A broken tunnel and its rebuild leak nothing [script]
@@ -1147,7 +1256,7 @@ How to read DESKTOP's `ping -t 1.1.1.1`: wgc1's usual time is a pass; "Destinati
 - Do: on the router, then wait 30 seconds:
 
 ```bash
-sh /jffs/e2e.sh GRD-2 before
+sh /jffs/cfg-pia-wg/e2e.sh GRD-2 before
 wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
 sleep 10
 /jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
@@ -1158,7 +1267,7 @@ sleep 10
 - Do: on the router:
 
 ```bash
-sh /jffs/e2e.sh GRD-2 after "guard $D $I1" "exit $D wgc1" "up wgc1"
+sh /jffs/cfg-pia-wg/e2e.sh GRD-2 after "guard $D $I1" "exit $D wgc1" "up wgc1"
 tail -3 /tmp/watchdog_wgc1.log
 ```
 
@@ -1166,51 +1275,52 @@ tail -3 /tmp/watchdog_wgc1.log
 
 **GRD-3** DISABLE warns, names DESKTOP, and blocks it [script]
 
-- Do: `sh /jffs/e2e.sh GRD-3 before`, then MANAGE, wgc1, DISABLE.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh GRD-3 before`, then MANAGE, wgc1, DISABLE.
 - See: the confirmation names DESKTOP, in amber: no internet until wgc1 is enabled again or DESKTOP is moved.
-- Do: DISABLE. Watch the ping for 30 seconds, then `sh /jffs/e2e.sh GRD-3 after "down wgc1" "guard $D $I1" "exit $D BLOCKED"`
+- Do: DISABLE. Watch the ping for 30 seconds, then `sh /jffs/cfg-pia-wg/e2e.sh GRD-3 after "down wgc1" "guard $D $I1" "exit $D BLOCKED"`
 - Pass if: PASS, and the ping showed nothing but unreachable or timed out.
 - Do: MANAGE, wgc1, ENABLE.
 - Pass if: the ping comes back at wgc1's usual time. Stop it with Ctrl+C.
 
 **GRD-4** The guard comes back after a reboot [script]
 
-- Do: `sh /jffs/e2e.sh GRD-4 before`, then SETTINGS, REBOOT ROUTER, REBOOT. Reconnect SSH when it is back, and set the shell variables again.
+- Do: `sh /jffs/cfg-pia-wg/e2e.sh GRD-4 before`, then SETTINGS, REBOOT ROUTER, REBOOT. Reconnect SSH when it is back, and set the shell variables again.
 - Do: on the router:
 
 ```bash
-sh /jffs/e2e.sh GRD-4 after "guard $D $I1" "exit $D wgc1"
+sh /jffs/cfg-pia-wg/e2e.sh GRD-4 after "guard $D $I1" "exit $D wgc1"
 grep "Fail-closed guard on for .*$D (" /tmp/syslog.log | tail -1
 ```
 
-- Pass if: PASS: the 90 and 91 lines are back.
-- Pass if: the `Fail-closed guard on` line is within a second or two of the `WAN was restored` line before it (`grep "WAN was restored" /tmp/syslog.log | tail -1`). Measured 2026-09-24: one second, on two boots.
+- Pass if: PASS: the 90 and 91 lines are back, and the grep prints a `Fail-closed guard on` line for DESKTOP from this boot.
+- Note: don't compare its time with "WAN was restored". At boot that line can carry the time from before the router set its clock: 5 May, in the release-candidate run.
 
 **GRD-5** A change made in the web interface is followed [script]
 
-- Do: in the router's web interface, VPN Fusion, move DESKTOP from wgc1 to wgc5, and apply.
-- Do: on the router:
+- Do: on the router, first: `sh /jffs/cfg-pia-wg/e2e.sh GRD-5 before`
+- Do: in the router's web interface, VPN Fusion, move DESKTOP from wgc1 to wgc5. It won't move a device while the tunnels run: stop them, move DESKTOP, apply, then start them again. While you do, DESKTOP is not guarded (README 5.4.1).
+- Do: once both tunnels are back, on the router:
 
 ```bash
-sh /jffs/e2e.sh GRD-5 before
 /jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
-sh /jffs/e2e.sh GRD-5 after "guard $D $I5" "exit $D wgc5"
+sh /jffs/cfg-pia-wg/e2e.sh GRD-5 after "guard $D $I5" "exit $D wgc5"
 ```
 
-- Pass if: PASS: the watchdog's run moved the guard to wgc5's table, with still exactly one 91 line. The web interface made the move a few seconds before `before`, so the changes list shows the guard's lines, not the firmware's.
-- Do: DEVICES, DESKTOP back to wgc1, APPLY.
+- Pass if: PASS: the guard is on wgc5's table, with exactly one 91 line. Whichever watchdog ran first after the move put it there - in the release-candidate run it was wgc5's own - so the one run here may find nothing left to do.
+- Do: DEVICES, DESKTOP back to wgc1, APPLY. GRD-6 needs it there.
 
 **GRD-6** A firewall restart leaves the guard alone [script]
 
 The firmware restarts its firewall whenever `asd` crashes, which on 2026-09-27 was every few minutes (ID-227). The guard is routing rules, not firewall rules, so it should be untouched; this measures that.
 
-- Do: on the router, with DESKTOP pinned to wgc1 and its `ping -t 1.1.1.1` running:
+- Starts with: DESKTOP pinned to wgc1, from GRD-5's last step. Check first: `ip rule show | grep -w "$D"` shows `lookup 9` (wgc1's table) at 90 and 100. If it shows `lookup 5`, do GRD-5's last step. In the release-candidate run it was missed, and GRD-6 failed for that reason alone.
+- Do: on the router, with DESKTOP's `ping -t 1.1.1.1` running:
 
 ```bash
-sh /jffs/e2e.sh GRD-6 before
+sh /jffs/cfg-pia-wg/e2e.sh GRD-6 before
 service restart_firewall
 sleep 20
-sh /jffs/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
+sh /jffs/cfg-pia-wg/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
 ```
 
 - Pass if: PASS, and the changes list shows no `ip rule` lines added or removed.
@@ -1330,7 +1440,7 @@ sh /jffs/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
 
 **SET-8** Every action leaves a trail [hand]
 
-- Pass if: each action above wrote a line to APP LOG, and those that touched the router wrote one to ROUTER LOG too.
+- Pass if: APP LOG has "Deleted cached PIA certificate" (SET-4), "Maximum active VPNs set to 3" (SET-5) and "Router reboot requested" (SET-6), and ROUTER LOG has "Cached PIA certificate deleted from the app", "Maximum active VPNs set to 3" and "reboot requested from the app".
 
 **SET-9** Router resolver status [hand]
 
@@ -1353,7 +1463,7 @@ sh /jffs/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
 - See: THE WATCHDOGS' LOOKUPS, one line per slot with its region, and `encrypted (DoH)` for each watchdog; an empty slot reads `not configured`.
 - Pass if: EVIDENCE matches `ip rule show | grep 'iif lo'` and `iptables -t nat -S VPN_FUSION` on the router.
 - Do: unpin TABLET, APPLY, back to SETTINGS, ROUTER DNS ROUTING.
-- See: "No lookups go through a tunnel.", and the redirects section says no device is pinned.
+- See: TABLET gone from YOUR DEVICES' LOOKUPS. With no device pinned anywhere, the top line reads "No lookups go through a tunnel." and the redirects section says no device is pinned; with others still pinned, it keeps "Only pinned devices' lookups go through a tunnel."
 
 UNINSTALL is at the very end of the run: [END](#end).
 
@@ -1455,11 +1565,11 @@ logger "**ABT-3 END** Script from another version"
 **EXT-8** Leave mid-action [hand]
 
 - Do: stage a device change in DEVICES, press APPLY, and while it is still running open the drawer and go to APP LOG.
-- Pass if: the apply completes (APP LOG shows it) and nothing is left half done.
+- Pass if: APP LOG stays open while the apply completes (it shows the lines arriving), and going back to DEVICES shows the result, not "Applying - do not leave this screen". In the release-candidate run APP LOG closed by itself and DEVICES stayed on the spinner (ID-285).
 
 **EXT-9** New icon and splash screen [hand]
 
-- See: the launcher icon is the new one, on the home screen and in the app drawer.
+- See: the launcher icon is the teal shield on dark navy, `assets/icon/app_icon_legacy.png`, not Flutter's default blue logo, on the home screen and in the app drawer (ID-111).
 - Do: cold start the app - swipe it away first.
 - See: a dark splash on the app's own background while it starts, not a white flash.
 - See: on Android 12 and later, the system's circular splash uses the same artwork on the same background.
@@ -1482,12 +1592,13 @@ Needs a store build, installed from a testing track, on an account that has not 
 
 **LCK-3** Paid controls open the paywall [hand]
 
-- Do: tap each: MANAGE CREATE, ENABLE, EDIT; WATCHDOG CREATE/EDIT, ENABLE; DEVICES APPLY; ABOUT REDEPLOY TO UPDATE VERSION; SETTINGS MAX ACTIVE VPNS.
+- Do: tap each: MANAGE CREATE, ENABLE, EDIT; WATCHDOG CREATE/EDIT, ENABLE; DEVICES APPLY; ABOUT UPDATE WATCHDOG VERSION; SETTINGS MAX ACTIVE VPNS.
+- To reach the two that need something on the router first: MANAGE ENABLE needs a configured slot that is off, so DISABLE one (free, LCK-4) and tap ENABLE. UPDATE WATCHDOG VERSION needs an out-of-date script, so run ABT-3's first `sed` line on the router, then open ABOUT.
 - See: the paywall each time, and nothing reaches the router.
 
 **LCK-4** Removing is free [hand]
 
-- Pass if: DISABLE, DELETE and VIEW LOG work on both MANAGE and WATCHDOG.
+- Pass if: DISABLE, DELETE and VIEW ROUTER WATCHDOG LOG work on both MANAGE and WATCHDOG.
 
 **LCK-5** Staging is free [hand]
 
@@ -1496,19 +1607,32 @@ Needs a store build, installed from a testing track, on an account that has not 
 
 **LCK-6** Paywall only on a tap [hand]
 
-- Pass if: never on launch, never on entering a screen. A button greyed for its own reasons stays greyed.
+- Pass if: never on launch, never on entering a screen.
+- Pass if: a button that is greyed out for another reason - SAVE with a field empty, APPLY with nothing staged - stays greyed and does nothing, rather than opening the paywall.
 
 **LCK-7** No store [hand]
 
-- Do: install from the track, then turn on aeroplane mode, force-stop the app and start it cold.
+Aeroplane mode cuts the phone off from the router as well, so nothing can be tested with it. Cut off only the internet: the phone stays on your Wi-Fi, and the router's WAN is unplugged. On a phone, turn mobile data off too, or it goes out that way instead.
+
+- Do: unplug the router's WAN cable. Force-stop the app and start it cold.
 - See: locked; the buy button reads "Not available right now" and is disabled.
-- Do: turn aeroplane mode off again before BUY.
+- Do: tap "Already purchased? Restore".
+- See: "Google Play can't be reached; this device looks to be offline." - not "No purchase found" (ID-288).
+- Do: plug the WAN back in, and wait for the internet before BUY.
 
 ---
 
 ## <a name='buy'></a>BUY. Buying and restoring (store build)
 
 Before starting, read [R8](#r8): the tester must be on BOTH Play Console lists, or the purchase charges real money.
+
+**Run these in the order written**, which is not the order of their numbers: the group starts locked, buys, tests what a purchase gives, and ends by refunding, which locks the app again. "Unplug the WAN" means as in LCK-7: the phone stays on Wi-Fi, mobile data off.
+
+**BUY-2** Not now [hand]
+
+- Starts with: locked, from LCK.
+- Do: a paid control, NOT NOW.
+- See: back exactly where you were, still locked.
 
 **BUY-1** Buy [hand]
 
@@ -1518,42 +1642,42 @@ Before starting, read [R8](#r8): the tester must be on BOTH Play Console lists, 
 - See: "Purchase complete. Router features unlocked." and the action you tapped carries on.
 - Pass if: every paid control is live straight away, with no restart, and APP LOG has no warning about the store.
 
-**BUY-2** Not now [hand]
+**BUY-6** Offline after buying [hand]
 
-- Do: a paid control, NOT NOW.
-- See: back exactly where you were.
+- Do: unplug the WAN. Force-stop the app and start it cold.
+- See: still unlocked, and a paid control works on the router.
+- Do: plug the WAN back in.
+
+**BUY-4** Restore on reinstall [hand]
+
+- Do: uninstall, reinstall from the track, open it.
+- Pass if: already unlocked, with nothing pressed, and no sign-in prompt at launch.
+
+**BUY-5** Restore by hand [hand]
+
+- Do: SETTINGS, RESTORE PURCHASE.
+- See: "This app is already unlocked on this Google account. Nothing changed." - not "Purchase restored".
+- Do: uninstall, and reinstall from the track, but don't open it yet. Unplug the WAN, then open it.
+- See: locked. It couldn't ask the store at launch, and a fresh install has nothing kept.
+- Do: SETTINGS, RESTORE PURCHASE.
+- See: a popup saying Google Play can't be reached, and "Google Play can't be reached; this device looks to be offline." in APP LOG (ID-288).
+- Do: plug the WAN back in, wait for the internet, RESTORE PURCHASE.
+- See: APP LOG "Restore started.", then "Purchase restored. Everything is unlocked."
+- Do: on a second Google account that never bought it, RESTORE PURCHASE.
+- See: "No purchase found on this Google account."
 
 **BUY-3** Refund relocks [hand]
 
 - Do: refund and revoke the order in Play Console, then wait for RevenueCat to catch up - a few minutes - and reopen the app.
 - Pass if: it relocks without a reinstall, and a paid control shows the paywall again.
 
-**BUY-4** Restore on reinstall [hand]
-
-- Do: uninstall, reinstall from the track.
-- Pass if: already unlocked, with nothing pressed, and no sign-in prompt at launch.
-
-**BUY-5** Restore by hand [hand]
-
-- Do: SETTINGS, RESTORE PURCHASE, on an account that bought it and a device that has just been reinstalled.
-- See: APP LOG "Restore started.", then "Purchase restored. Everything is unlocked."
-- Do: RESTORE PURCHASE again straight away, now that it is already unlocked.
-- See: "This app is already unlocked on this Google account. Nothing changed." - not "Purchase restored" a second time.
-- Do: the same on an account that never bought it.
-- See: "No purchase found on this Google account."
-- Do: aeroplane mode, then RESTORE PURCHASE.
-- See: a popup saying Google Play could not be reached, with the store's own words kept in APP LOG.
-
-**BUY-6** Offline after buying [hand]
-
-- Do: aeroplane mode on the device that bought it.
-- See: still unlocked.
-
 ---
 
-## <a name='mrl'></a>MRL. Merlin (a separate day)
+## <a name='mrl'></a>MRL. Merlin smoke test (under an hour)
 
-Repeat on Merlin: CON-1 to CON-3 and CON-6, HOM, MAN (not MAN-5 or MAN-7), WD (not WD-15), BRK, LOG, SET, ABT, EXT.
+Not a repeat of the whole run. The screens, DEVICES, the log windows and the paywall are the same code on both firmwares, and the automated tests build and run the watchdog script for both. This covers only what is different on Merlin: no helper programs, the kill switch, starting and stopping a tunnel, the mail command, boot persistence in `services-start`, and UNINSTALL (ID-301). Merlin is called beta in README and the Play description once it passes.
+
+Set up: a Merlin router with JFFS scripts enabled, SSH on, and no cfg-pia-wg on it. Run in the order written. Bracket the router commands with `logger` lines, as elsewhere.
 
 **MRL-1** Device assignment refuses [ci]
 
@@ -1563,17 +1687,65 @@ Repeat on Merlin: CON-1 to CON-3 and CON-6, HOM, MAN (not MAN-5 or MAN-7), WD (n
 
 - In CI: on Merlin, which has no limit, MAX ACTIVE VPNS says so and writes nothing. `test/screens/settings_screen_test.dart`.
 
-**MRL-3** Kill switch [hand]
-
-- See: the KILL SWITCH badge and the editor's kill switch control, which stock does not show.
-
 **MRL-4** Nothing installed [hand]
 
-- Pass if: no install offer at connect, and `ls /jffs/cfg-pia-wg` lists no `jq` and no `mailsend-go` - Merlin ships its own.
+- Do: MANAGE, connect.
+- Pass if: no install offer, APP LOG "Router firmware detected: merlin", and on the router `ls /jffs/cfg-pia-wg` lists no `jq` and no `mailsend-go` - Merlin ships its own.
+
+**MRL-6** Create, enable, disable [hand]
+
+- Do: MANAGE, wgc1, CREATE in any region, then ENABLE.
+- See: APP LOG "wgc1:pia-<region> enabled and verified." and the ACTIVE badge.
+- Do: DISABLE, then ENABLE again.
+- Pass if: after DISABLE, `wg show interfaces` no longer lists wgc1; after ENABLE, it does, and the badge is back.
+
+**MRL-3** Kill switch [hand]
+
+- See: the KILL SWITCH badge on wgc1's row when its kill switch is on, and the kill switch control in EDIT, which stock does not show.
+
+**MRL-7** Watchdog and email [hand]
+
+- Do: WATCHDOG, wgc1, CREATE/EDIT, email alerts on, TEST EMAIL.
+- See: "Test email sent to ..." and the email arrives. Merlin sends it with its own tools, not `mailsend-go`.
+- Do: SAVE & DEPLOY.
+- See: the slot shows WATCHDOG ACTIVE, and a SUCCESS email saying "watchdog deployed".
+
+**MRL-8** Break and rebuild [hand]
+
+- Do: on the router:
+
+```bash
+logger "**MRL-8 START** Break and rebuild"
+wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
+/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
+tail -4 /tmp/watchdog_wgc1.log
+logger "**MRL-8 END** Break and rebuild"
+```
+
+- Pass if: the log ends `Reconfig SUCCESS` then `Alert email sent (SUCCESS)`, and the SUCCESS email arrives with the kill switch line in Merlin's wording.
 
 **MRL-5** Boot persistence [hand]
 
-- Pass if: `grep cfg-pia-wg /jffs/scripts/services-start` shows the two `cru` lines for each watched slot - the check and the log rotate.
+- Do: on the router: `grep cfg-pia-wg /jffs/scripts/services-start; cru l | grep watchdog_`
+- See: two `cru a` lines for wgc1 in `services-start` - the check and the log rotate - and the same two in `cru l`.
+- Do: SETTINGS, REBOOT ROUTER, REBOOT. When it's back, wait 2 minutes, then `cru l | grep watchdog_` in a new SSH session.
+- Pass if: both entries are back, and the watchdog's next check logs `Handshake Ns ago`.
+
+**MRL-9** Uninstall [hand]
+
+- Do: SETTINGS, UNINSTALL FEATURES DEPLOYED TO ROUTER, both prompts.
+- See: "Removed the watchdog lines from /jffs/scripts/services-start" among the results (ID-303).
+- Do: on the router:
+
+```bash
+grep -c watchdog_ /jffs/scripts/services-start
+cru l | grep -c watchdog_
+ls /jffs/cfg-pia-wg
+wg show interfaces
+```
+
+- Pass if: `0`, `0`, no such folder, and wgc1 still listed: the tunnel stays, as on stock.
+- Do: reboot, and check `cru l | grep watchdog_` prints nothing: the next boot does not put the schedule back.
 
 ---
 

@@ -6,6 +6,7 @@
 //
 // MACs are invented - see test/unit/no_lan_identifiers_test.dart.
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/device_assignment_service.dart';
@@ -15,6 +16,7 @@ import 'package:cfg_pia_wg/router_session.dart';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
+import 'package:cfg_pia_wg/widgets/applying_panel.dart';
 import 'package:cfg_pia_wg/widgets/device_assignment_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -99,8 +101,56 @@ Future<RecordingSSHClient> _pumpConnected(WidgetTester tester, {RecordingSSHClie
   return ssh;
 }
 
+/// A router that holds one command until [release] is called, to look at the screen mid-APPLY.
+class _HeldRouter extends RecordingSSHClient {
+  _HeldRouter({required super.responder, required this.holdOn});
+  final String holdOn;
+  final _gate = Completer<void>();
+  void release() => _gate.complete();
+
+  @override
+  Future<Uint8List> run(String command,
+      {Map<String, String>? environment, bool runInPty = false, bool stderr = true, bool stdout = true}) async {
+    if (command.contains(holdOn)) await _gate.future;
+    return super.run(command, environment: environment, runInPty: runInPty, stderr: stderr, stdout: stdout);
+  }
+}
+
 void main() {
   setUp(useStock);
+
+  // ID-285, EXT-8: the drawer sits above the navigator, so a screen picked from it mid-APPLY went on
+  // top of the "Applying" dialog. The APPLY then ended with a plain pop, which closed THAT screen
+  // and left the dialog up for good over a DEVICES that had finished.
+  testWidgets('a screen opened over the Applying dialog stays, and the dialog still goes', (tester) async {
+    final ssh = _HeldRouter(responder: _router().responder, holdOn: 'nvram set vpnc_dev_policy_list');
+    await _pumpConnected(tester, router: ssh);
+    await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pick_internet')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('device_apply')));
+    await tester.tap(find.byKey(const Key('device_apply')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('apply_confirm')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(ApplyingPanel), findsOneWidget);
+
+    // What the drawer does: push the chosen screen on the app's navigator.
+    Navigator.of(tester.element(find.byType(DeviceAssignmentScreen))).push(MaterialPageRoute<void>(
+      builder: (_) => const Scaffold(body: Text('APP LOG', key: Key('other_screen'))),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    ssh.release();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('other_screen')), findsOneWidget, reason: 'the screen the user chose is not closed');
+    expect(find.byType(ApplyingPanel), findsNothing, reason: 'the dialog goes when the APPLY ends');
+    expect(ssh.ran('service restart_vpnc_dev_policy'), isTrue, reason: 'and the APPLY completed');
+  });
 
   // Reported from hardware: all three router screens flashed their login form while the session's
   // existing connection was being reused - a form asking for credentials the app already has, on a
@@ -156,6 +206,8 @@ void main() {
     // it but disabling the picker is honest; hiding it would be a silent hole in the list.
     await _pumpConnected(tester);
     expect(find.text('connect this device once to assign it'), findsOneWidget);
+    // ID-283: the address line's colour, not kHint, which was almost unreadable on a dimmed row.
+    expect(tester.widget<Text>(find.text('connect this device once to assign it')).style?.color, kMuted);
     expect(find.byKey(const Key('row_22:33:44:55:66:77')), findsNothing);
   });
 

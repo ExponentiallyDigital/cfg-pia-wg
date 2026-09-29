@@ -25,10 +25,12 @@ import 'package:cfg_pia_wg/session_controller.dart';
 class _FakeClient implements SSHClient {
   final List<String> commands = [];
   final Object? Function(int callIndex)? failWith;
+  /// How long call N takes to answer, so a test can make failures land after a reconnect.
+  final Duration Function(int callIndex)? delay;
   bool closed = false;
   int _calls = 0;
 
-  _FakeClient({this.failWith});
+  _FakeClient({this.failWith, this.delay});
 
   @override
   Future<Uint8List> run(
@@ -38,8 +40,11 @@ class _FakeClient implements SSHClient {
     bool stderr = true,
     bool stdout = true,
   }) async {
-    final failure = failWith?.call(_calls++);
+    final call = _calls++;
+    final failure = failWith?.call(call);
     commands.add(command);
+    final wait = delay?.call(call);
+    if (wait != null) await Future<void>.delayed(wait);
     if (failure != null) throw failure;
     return Uint8List.fromList(utf8.encode('ok:$command'));
   }
@@ -58,11 +63,12 @@ class _FakeClient implements SSHClient {
 class _Opener {
   final List<_FakeClient> opened = [];
   final Object? Function(int callIndex)? Function(int clientIndex)? failures;
+  final Duration Function(int callIndex)? Function(int clientIndex)? delays;
 
-  _Opener({this.failures});
+  _Opener({this.failures, this.delays});
 
   Future<SSHClient> call() async {
-    final c = _FakeClient(failWith: failures?.call(opened.length));
+    final c = _FakeClient(failWith: failures?.call(opened.length), delay: delays?.call(opened.length));
     opened.add(c);
     return c;
   }
@@ -151,6 +157,28 @@ void main() {
 
       await expectLater(session.run('x'), throwsA(isA<SSHStateError>()));
       expect(opener.opened, hasLength(2), reason: 'one reconnect, not a loop');
+    });
+
+    // ID-290: after a watchdog deploy the app log showed "dropped; reconnecting" and
+    // "re-established" about ten times in five seconds, each a login on the router. Reading the
+    // configuration sends several commands at once; when the connection died, each late failure
+    // dropped the connection the one before it had just opened.
+    test('several commands failing on one dead connection make one reconnect, not one each', () async {
+      final opener = _Opener(
+        // The first command works, so the session holds the connection; everything after fails.
+        failures: (client) => client == 0 ? (call) => call == 0 ? null : SSHStateError('closed') : null,
+        // Each failure lands after the one before it has already reconnected.
+        delays: (client) => client == 0 ? (call) => Duration(milliseconds: 20 * call) : null,
+      );
+      final lines = <String>[];
+      final session = RouterSession(connect: opener.call, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => lines.add(m));
+      await session.run('first');
+
+      final out = await Future.wait([for (var i = 0; i < 5; i++) session.run('read $i')]);
+
+      expect(out.map(utf8.decode), [for (var i = 0; i < 5; i++) 'ok:read $i'], reason: 'every command still ran');
+      expect(opener.opened, hasLength(2), reason: 'one replacement, shared by every command that failed');
+      expect(lines, ['Router SSH connection dropped; reconnecting.', 'Router SSH connection re-established.']);
     });
 
     test('the next action after a drop reuses the replacement, not a third connection', () async {
