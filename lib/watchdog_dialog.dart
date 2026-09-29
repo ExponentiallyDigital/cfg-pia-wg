@@ -202,6 +202,18 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     super.dispose();
   }
 
+  /// The spinner while SAVE & DEPLOY asks PIA about the region and the login, before anything is
+  /// written. Each can take up to 10 or 20 seconds when PIA is slow, and without it the form looked
+  /// hung (WD-21, 2026-09-29). Cleared before the caller shows anything, so no dialog opens over it.
+  Future<T> _whileChecking<T>(Future<T> Function() check) async {
+    setState(() => _loading = true);
+    try {
+      return await check();
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   // Runs the operation on the session's shared SSH connection. Nothing is closed here: the
   // connection outlives this dialog, and closing it would break the next action.
   Future<T?> _withService<T>(Future<T> Function(RouterWatchdog) op, {bool applying = false}) async {
@@ -496,7 +508,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     final regionProblem = region.isEmpty
         ? 'Choose a region first.'
         : regionChanges
-            ? await _regionProblem(region)
+            ? await _whileChecking(() => _regionProblem(region))
             : null;
     if (!mounted) return;
     final errors = [if (regionProblem != null) regionProblem, ...cfg.validate()];
@@ -512,7 +524,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     }
 
     // Before a single NVRAM key is written (ID-120).
-    final rejected = await _piaRejection(cfg);
+    final rejected = await _whileChecking(() => _piaRejection(cfg));
     if (!mounted) return;
     if (rejected != null) {
       await AppErrors.inputs(context, _c, [rejected]);
@@ -534,10 +546,21 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       if (warnings.isNotEmpty && mounted) {
         await AppErrors.inputs(context, _c, [...warnings, 'The settings will still be saved.']);
       }
-      await svc.deployWatchdog(cfg, desc: newDesc);
-      return true;
+      // '' when the alert email went, or was not due; otherwise why it did not.
+      return await svc.deployWatchdog(cfg, desc: newDesc) ?? '';
     }, applying: true);
-    if (saved != true || !mounted) return;
+    if (saved == null || !mounted) return;
+    // The deploy worked, but its email did not, and only the router's log said so (ID-300). Nobody
+    // looks there, so say it here, and keep the form open to fix the email settings. No offer to
+    // the password manager: the SMTP login may be the very thing that is wrong, as with TEST EMAIL.
+    if (saved.isNotEmpty) {
+      await AppErrors.system(
+          context,
+          _c,
+          'The watchdog is deployed, but its alert email could not be sent: ${saved.replaceFirst(RegExp(r'\.$'), '')}. '
+          'Check the email settings, then TEST EMAIL or SAVE & DEPLOY again.');
+      return;
+    }
     // The deploy worked, so the logins on the form are proven: offer them to the password manager.
     // Closing the form without this cancelled the offer (ID-225).
     TextInput.finishAutofillContext();

@@ -8,7 +8,7 @@
 # Reaching the 90-minute rung honestly means seven consecutive FAILED reconfigures, each of which
 # asks PIA for a token. That is exactly what got the account refused with HTTP 403 on 2026-09-04,
 # and it would take most of a day. This reaches every rung in about two minutes with no PIA traffic
-# at all.
+# at all, one run every 15 seconds.
 #
 # WHY IT IS SAFE
 #
@@ -76,6 +76,9 @@ LAST_N=0
 for pair in $LADDER; do
     n="${pair%%:*}"
     want="${pair##*:}"
+    # 15 s between runs, as the watchdogs themselves are spaced (ID-227). Run back to back, eight
+    # runs in 12 s crashed the firmware's asd on 2026-09-29, which restarts the firewall (ID-296).
+    [ "$LAST_N" -eq 0 ] || sleep 15
     LAST_N="$n"
 
     # A timestamp of NOW guarantees ~0 elapsed, so every rung is inside its window and every run
@@ -135,7 +138,8 @@ else
     echo "$FAILURES CHECK(S) FAILED - see above."
 fi
 echo
-echo "Cleaned up $BACKOFFFILE. Now re-enable the $IFACE watchdog in the app,"
-echo "and bring the tunnel back (the next check will reconfigure it)."
+echo "Cleaned up $BACKOFFFILE. $IFACE is still broken, and anything pinned to it is offline."
+echo "Now: WATCHDOG, $IFACE, ENABLE in the app, then rebuild it straight away:"
+echo "  $SCRIPT foreground"
 
 [ "$FAILURES" -eq 0 ]

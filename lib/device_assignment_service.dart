@@ -396,6 +396,7 @@ class DeviceAssignmentService {
     List<String> blockDescriptions = const [],
   }) async {
     if (changes.isEmpty && newDefaultIndex == null && renames.isEmpty && blocks.isEmpty) return;
+    final guard = FailClosedGuard(read: _read, run: _run, onLog: onLog);
 
     // The stale-write check. Re-read and compare BEFORE touching anything, so a conflict costs
     // nothing and the user is told rather than quietly overwritten.
@@ -473,6 +474,12 @@ class DeviceAssignmentService {
         // that explains a device's traffic weeks later has to be somewhere that survives.
         await _read(buildLoggerCommand('$d reassigned'));
       }
+      // The guard straight away, before the firmware is asked for its rules (ID-292). It reads the
+      // list just written, and its rules win over the firmware's, so a moved device is on its new
+      // tunnel - or blocked - from here. Run last, it came about five seconds after the firmware's
+      // rules (measured 2026-09-29), and meanwhile the old tunnel's guard still held the device, or
+      // a device newly pinned from Internet had no guard at all. Quiet: the run at the end reports.
+      await guard.ensure(quiet: true);
       await _service('restart_dnsmasq');
       await _service('restart_vpnc_dev_policy');
       // Sweep against the WHOLE policy list, not just what moved: the service re-installs a rule
@@ -483,10 +490,10 @@ class DeviceAssignmentService {
     if (newDefaultIndex != null) {
       await _setDefaultConnection(base, newDefaultIndex, from: defaultFrom, to: defaultTo);
     }
-    // After everything else, so it sees the final list. A device just pinned is guarded from here
-    // on; one just unpinned loses its guard, or it would be blocked from the connection it was
-    // moved to (ID-213).
-    await FailClosedGuard(read: _read, run: _run, onLog: onLog).ensure();
+    // Again after everything else, so it sees the final state: it changes nothing when the early
+    // run already did the work, and reports. A device just unpinned loses its guard, or it would be
+    // blocked from the connection it was moved to (ID-213).
+    await guard.ensure();
     onLog?.call('Device assignments applied.', isSuccess: true);
   }
 }
