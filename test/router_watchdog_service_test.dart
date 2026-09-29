@@ -464,6 +464,31 @@ void main() {
           lessThan(c.commands.indexWhere((x) => x.contains('rm -rf'))));
     });
 
+    // ID-303: on Merlin the next boot's schedule lives in services-start, and nothing took it out,
+    // so the boot after an uninstall scheduled scripts that were no longer there.
+    test('on Merlin it removes the watchdog lines from services-start', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.startsWith('grep -cE') ? '4' : '');
+      final done = await _wd(c).uninstallFromRouter();
+      expect(c.commands.any((x) => x.startsWith("grep -vE 'watchdog_(log_rotate_)?wgc[1-9] ' '$kServicesStartPath'")),
+          isTrue);
+      expect(done, contains('Removed the watchdog lines from $kServicesStartPath'));
+      // Every line the app ever writes there is caught by the pattern, and nothing else.
+      final pattern = RegExp(r'watchdog_(log_rotate_)?wgc[1-9] ');
+      for (final line in buildServicesStartBlock(3, 5).trim().split('\n')) {
+        expect(pattern.hasMatch(line), isTrue, reason: line);
+      }
+      expect(pattern.hasMatch('cru a my_own_job "0 3 * * *" /jffs/scripts/backup.sh'), isFalse);
+    });
+
+    test('on Merlin with nothing in services-start it says so', () async {
+      useMerlin();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.startsWith('grep -cE') ? '0' : '');
+      final done = await _wd(c).uninstallFromRouter();
+      expect(c.commands.any((x) => x.startsWith('grep -vE')), isFalse);
+      expect(done, contains('No watchdog lines in $kServicesStartPath to remove'));
+    });
+
     // It removes the app, not the user's VPNs. The tunnels keep working and stay manageable from
     // the web interface, which is why no service is restarted and no wgcN_* key is touched.
     test('it leaves the tunnels alone', () async {
@@ -1451,6 +1476,47 @@ void main() {
 
       expect(c.ran('openssl s_client'), isTrue);
       expect(logs.any((m) => m.contains('probe smtp.example.com:465')), isTrue);
+    });
+  });
+
+  // ID-300: a deploy whose alert email failed said so only in the router's log.
+  group("the deploy's alert email", () {
+    const failed = '2026-01-01 10:00:05 Email FAILED (mailer exit=1) stderr=[ERROR: 535 5.7.8 Username and Password '
+        'not accepted. For more information, go to|5.7.8  https://support.example.com/mail - gsmtp||]\n'
+        '2026-01-01 10:00:05 Email diag: resolv.conf [192.0.2.53 ] via eth0; smtp.example.com resolves to [...]';
+
+    test("the reason is the mailer's own first line, without its 'for more information'", () {
+      expect(deployEmailFailure(failed), '535 5.7.8 Username and Password not accepted.');
+      expect(deployEmailFailure('2026-01-01 10:00:05 Email FAILED (mailer exit=1) stderr=[none]'),
+          'the mail server gave no reason');
+      expect(deployEmailFailure('2026-01-01 10:00:05 Alert email sent (SUCCESS)'), isNull);
+      expect(deployEmailFailure(''), isNull);
+    });
+
+    RecordingSSHClient router(String runLog) {
+      final slot = _emptySlotGainingRow();
+      return RecordingSSHClient(responder: (cmd) {
+        if (cmd.startsWith('wc -l < /tmp/watchdog_wgc1.log')) return '12';
+        if (cmd.startsWith('tail -n +13 /tmp/watchdog_wgc1.log')) return runLog;
+        return slot(cmd);
+      });
+    }
+
+    test("a failed one is returned, and said in the app log, and only this run's lines are read", () async {
+      useStock();
+      final logs = <String>[];
+      final c = router(failed);
+      final problem = await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m))
+          .deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne');
+      expect(problem, '535 5.7.8 Username and Password not accepted.');
+      expect(logs.last, "The deploy's alert email could not be sent: 535 5.7.8 Username and Password not accepted.");
+      expect(c.ran('tail -n +13 /tmp/watchdog_wgc1.log'), isTrue, reason: "lines written before the run are not this deploy's");
+    });
+
+    test('a sent one returns nothing', () async {
+      useStock();
+      expect(await _wd(router('2026-01-01 10:00:05 Alert email sent (SUCCESS)')).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne'),
+          isNull);
     });
   });
 }

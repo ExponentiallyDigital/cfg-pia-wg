@@ -74,8 +74,31 @@ exit_of() {
   esac
 }
 
+is_ip() {
+  case "$1" in
+    '' | *[!0-9.]* | *..* | .* | *.) return 1 ;;
+  esac
+  [ "$(echo "$1" | awk -F. '{print NF}')" = 4 ]
+}
+
+# An expectation with a value missing is refused, never passed. With the shell variables unset in a
+# new SSH session, "rule $T $I1" arrives as `rule` alone, and `rule` and `noguard` compared nothing
+# with nothing and PASSED, while `exit` asked ip about an empty address (ID-282, DEV-4, 2026-09-29).
+missing() {
+  echo "FAIL  $*: a value is missing - are the shell variables (T, D, P, I1, I5) set in this session?"
+  return 1
+}
+
 check() {
   set -- $1
+  case "$1" in
+    exit | rule | guard | norule | noguard) is_ip "$2" || { missing "$@"; return 1; } ;;
+  esac
+  case "$1" in
+    exit | rule | guard) [ -n "$3" ] || { missing "$@"; return 1; } ;;
+    default) [ -n "$2" ] || { missing "$@"; return 1; } ;;
+    up | down) case "$2" in wgc[0-9]) ;; *) missing "$@"; return 1 ;; esac ;;
+  esac
   case "$1" in
     exit) GOT="$(exit_of "$2")"; WANT="$3" ;;
     rule)

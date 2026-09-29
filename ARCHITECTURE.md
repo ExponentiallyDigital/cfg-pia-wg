@@ -3,7 +3,7 @@
 This app provisions Private Internet Access WireGuard configurations onto an ASUS router, and keeps them working. It does four separate jobs, and most of this document is about the last three:
 
 1. **Generate a configuration** from PIA and hand it to you. No router is involved, and nothing is stored.
-2. **Write one into a router slot** over SSH, start the tunnel, and prove that traffic is really flowing through it.
+2. **Write a config into a router slot** over SSH, start the tunnel, and prove that traffic is really flowing through it.
 3. **Deploy a watchdog** onto the router, which checks the tunnel on a schedule and rebuilds it unattended when it fails.
 4. **Pin individual LAN devices to a tunnel**, so one device uses a VPN and another does not. Stock firmware only - Merlin does this through VPN Director, which the app does not drive.
 
@@ -1039,7 +1039,7 @@ Who calls it:
 
 | When | Caller | Why there |
 | --- | --- | --- |
-| After every APPLY | `DeviceAssignmentService.apply` | the list it has just written is the list to guard |
+| During and after every APPLY | `DeviceAssignmentService.apply` | the list it has just written is the list to guard: once straight after it is written, before the firmware installs its own rules, so a moved device is never on its old tunnel's guard or on none (ID-292), and again at the end |
 | Before DISABLE stops the tunnel | `RouterSlotService.disableSlot` | a reboot clears the rules, and a DISABLE is when they matter |
 | After DELETE moves devices to Internet | `_releasePinnedDevices` | the guard held them while the tunnel stopped; on the internet by design, they must not stay blocked |
 | Every watchdog check, before a disabled slot stands down | the watchdog script | catches a reboot, and a pin changed in the web interface, within one interval |

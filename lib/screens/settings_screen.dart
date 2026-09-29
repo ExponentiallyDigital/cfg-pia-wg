@@ -172,11 +172,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: kSurface,
         title: const Text('Removed from the router', style: TextStyle(color: kHighlight, fontSize: 14)),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(done!.join('\n'), style: const TextStyle(color: kText, fontSize: 12)),
+          // What was done in the body colour, what was not done - nothing there, or not the app's -
+          // in red, so a second uninstall reads as the no-op it is (ID-287, Andrew's request).
+          for (final line in done!)
+            Text(line,
+                style: TextStyle(color: uninstallStepDidNothing(line) ? kError : kText, fontSize: 12)),
           // Amber, and set apart. The cron entries are gone but a running watchdog process is
           // not, and the firmware keeps its own idea of what is configured until it restarts.
-          const SizedBox(height: 16),
-          const Text('Please restart your router.', style: TextStyle(color: kWarn, fontSize: 12)),
+          // Only when something was removed: a run that changed nothing has nothing to restart for.
+          if (!done.every(uninstallStepDidNothing)) ...[
+            const SizedBox(height: 16),
+            const Text('Please restart your router.', style: TextStyle(color: kWarn, fontSize: 12)),
+          ],
         ]),
         actions: [
           AppButton(keyValue: 'settings_uninstall_done', label: 'OK', onPressed: () => Navigator.pop(ctx)),

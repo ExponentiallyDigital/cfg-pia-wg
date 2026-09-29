@@ -4,6 +4,7 @@
 // ABOUT is a page people open to read; every button on this one destroys something.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/entitlement.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_prefs.dart';
@@ -98,11 +99,14 @@ void main() {
   // half-undone router: restore the boot scripts BEFORE removing the directory, so a failure at
   // the last step still leaves a router that boots the way it did originally.
   group('uninstall from router', () {
-    Future<RecordingSSHClient> pumpAndConfirm(WidgetTester tester, {required bool backupsExist}) async {
-      final ssh = RecordingSSHClient(responder: (cmd) {
-        if (!cmd.contains('.old')) return '';
-        return backupsExist ? 'RESTORED' : 'REMOVED';
-      });
+    Future<RecordingSSHClient> pumpAndConfirm(WidgetTester tester,
+        {bool backupsExist = true, String Function(String cmd)? responder}) async {
+      final ssh = RecordingSSHClient(
+          responder: responder ??
+              (cmd) {
+                if (!cmd.contains('.old')) return '';
+                return backupsExist ? 'RESTORED' : 'REMOVED';
+              });
       final c = SessionController(tickInterval: const Duration(hours: 1))
         ..routerIp = '192.168.1.1'
         ..sshUsername = 'admin'
@@ -153,6 +157,26 @@ void main() {
     testWidgets('says so when there was no original to put back', (tester) async {
       await pumpAndConfirm(tester, backupsExist: false);
       expect(find.textContaining('no original was saved to put back'), findsWidgets);
+    });
+
+    // ID-287, END-2: run on a router already uninstalled, it said it had removed the guard rules and
+    // the app's NVRAM settings, and asked for a restart, when there was nothing there at all.
+    testWidgets('a second uninstall says nothing was there, in red, and asks for no restart', (tester) async {
+      await pumpAndConfirm(tester, responder: (cmd) {
+        if (cmd.contains('.old')) return 'NOTOURS';
+        if (cmd.contains('grep -c')) return '0';
+        if (cmd.contains('rm -rf')) return 'ABSENT';
+        return '';
+      });
+
+      expect(find.text('No fail-closed guard rules to remove'), findsOneWidget);
+      expect(find.text('No app settings in NVRAM to remove'), findsOneWidget);
+      expect(find.textContaining('Removed'), findsOneWidget, reason: 'only the heading, "Removed from the router"');
+      for (final text in ['No fail-closed guard rules to remove', 'Left S50downloadmaster alone - it is not ours',
+        'No watchdog schedules to remove', 'No app settings in NVRAM to remove', 'No $kRouterAppDir to remove']) {
+        expect(tester.widget<Text>(find.text(text)).style?.color, kError, reason: text);
+      }
+      expect(find.text('Please restart your router.'), findsNothing);
     });
 
     testWidgets('CANCEL touches nothing', (tester) async {
