@@ -74,6 +74,25 @@ void main() {
   });
 
   group('scripts/e2e.sh', () {
+
+    // ID-282: with the shell variables unset, "rule $T $I1" arrived as `rule` alone and PASSED,
+    // comparing nothing with nothing (DEV-4 on the router, 2026-09-29).
+    test('an expectation with a value missing FAILS, and says why', () async {
+      await e2e(['DEV-4', 'before']);
+      final r = await e2e(['DEV-4', 'after', 'rule', 'noguard', 'guard', 'exit', 'rule main', 'up', 'default']);
+      final out = '${r.stdout}';
+      expect(r.exitCode, isNot(0));
+      expect(out, isNot(contains('PASS')), reason: out);
+      expect(RegExp('a value is missing').allMatches(out).length, 7, reason: out);
+      expect(out, contains('shell variables'));
+    });
+
+    test('an address that is not one is refused too', () async {
+      await e2e(['DEV-4', 'before']);
+      final r = await e2e(['DEV-4', 'after', 'norule 9', 'rule 192.168.1 9']);
+      expect('${r.stdout}', isNot(contains('PASS')));
+      expect(RegExp('a value is missing').allMatches('${r.stdout}').length, 2);
+    });
     test('before marks the log and takes a snapshot', () async {
       final r = await e2e(['DEV-3', 'before']);
       expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');

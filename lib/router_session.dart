@@ -157,6 +157,22 @@ class RouterSession implements SSHClient {
     }
   }
 
+  /// A client in place of [failed], which a command has just found dead.
+  ///
+  /// Only [failed] is dropped. Several commands often run at once on one connection - reading the
+  /// router configuration sends a handful - and when it dies they all fail. Each used to drop
+  /// whatever connection was current, which after the first reconnect was the NEW one, so every
+  /// late failure threw away the connection the one before it had just opened: ten reconnects, and
+  /// ten logins on the router, in five seconds after a watchdog deploy (ID-290). A failure on a
+  /// connection already replaced just uses the replacement.
+  Future<SSHClient> _replace(SSHClient failed) {
+    if (identical(_client, failed)) {
+      _drop();
+      onLog?.call('Router SSH connection dropped; reconnecting.', isWarning: true);
+    }
+    return client();
+  }
+
   @override
   Future<Uint8List> run(
     String command, {
@@ -177,9 +193,7 @@ class RouterSession implements SSHClient {
       // here is idempotent (`nvram set`, `cru a`, `nvram commit`) except a chunked heredoc append,
       // where a double write shows up as a byte-count mismatch in `_writeScript` and is reported
       // rather than silently accepted - and the next deploy truncates the file first anyway.
-      _drop();
-      onLog?.call('Router SSH connection dropped; reconnecting.', isWarning: true);
-      final fresh = await client();
+      final fresh = await _replace(c);
       return await fresh.run(command, environment: environment, runInPty: runInPty, stderr: stderr, stdout: stdout);
     }
   }
@@ -202,9 +216,7 @@ class RouterSession implements SSHClient {
       return await c.runWithResult(command, runInPty: runInPty, stdout: stdout, stderr: stderr, environment: environment);
     } catch (e) {
       if (_closed || !isConnectionLost(e)) rethrow;
-      _drop();
-      onLog?.call('Router SSH connection dropped; reconnecting.', isWarning: true);
-      final fresh = await client();
+      final fresh = await _replace(c);
       return await fresh.runWithResult(command, runInPty: runInPty, stdout: stdout, stderr: stderr, environment: environment);
     }
   }

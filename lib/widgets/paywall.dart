@@ -78,7 +78,8 @@ abstract class RestoreMessages {
   /// app log instead - [failed] is that line.
   static const failedPlain = 'Could not check your purchase with Google Play. Check this device is online '
       'and try again; the app log has what the store reported.';
-  static String failed(Object e) => 'Could not reach the store: ${Entitlement.describeStoreError(e)}';
+  static String failed(Object e) =>
+      e is StoreUnreachableException ? e.toString() : 'Could not reach the store: ${Entitlement.describeStoreError(e)}';
 }
 
 /// The sentence at the top of the paywall, one per gated action.

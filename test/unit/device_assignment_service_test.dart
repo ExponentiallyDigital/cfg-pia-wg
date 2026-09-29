@@ -560,11 +560,23 @@ void main() {
           return '';
         });
 
-    test('runs after the assignments are written', () async {
+    // ID-292: run last only, the guard came about five seconds after the firmware's rules, and in
+    // that time a moved device kept its old tunnel's guard, or had none if it came from Internet.
+    test('runs once the list is committed, before the firmware is asked for its rules, and again at the end', () async {
       final c = guardClient(installed: true);
-      await _svc(c).apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
-      final ran = c.commands.indexOf("'$kGuardScriptPath'");
-      expect(ran, greaterThan(c.commands.indexOf('service restart_vpnc_dev_policy')));
+      final logs = <String>[];
+      final svc = DeviceAssignmentService(c,
+          pollInterval: Duration.zero,
+          onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m));
+      await svc.apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      final written = c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list'));
+      final first = c.commands.indexOf("'$kGuardScriptPath'");
+      final last = c.commands.lastIndexOf("'$kGuardScriptPath'");
+      expect(first, greaterThan(written));
+      expect(first, lessThan(c.commands.indexOf('service restart_dnsmasq')));
+      expect(last, greaterThan(c.commands.indexOf('service restart_vpnc_dev_policy')));
+      expect(logs.where((m) => m.startsWith('Fail-closed guard in place')), hasLength(1),
+          reason: 'the early run is quiet; the one at the end reports');
     });
 
     test('an unchanged script is run, not rewritten', () async {

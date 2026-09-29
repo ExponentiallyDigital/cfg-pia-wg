@@ -252,7 +252,7 @@ If your router uses an architecture there is no published build for, the app say
 
 It's suggested that you set up your DNS something like the below. Why? This configuration sends every DNS query from your network to Cloudflare's malware-blocking resolvers over an encrypted, authenticated channel, and hardens the router against common DNS attacks. However, chose your own adventure - pick a configuration and DNS provider that works for you, see [ROUTER-DNS.md](ROUTER-DNS.md) for alternative suggestions.
 
-A common `foot bomb` (an AI once gave me that in a reply, I guess they 'meant to say _"land mine"_) is using your ISP's DNS. That typically defeats the whole purpose of running a VPN, maintaining your privacy and not feeding the data guzzling machine. It's not highly obvious, but click on the ASSSIGN button highlighted below in RED to set your router DNS. And then select "Preset servers" toward the bottom of the screen.
+A common `foot bomb` (an AI once gave me that in a reply, I guess they 'meant to say _"land mine"_) is using your ISP's DNS. That typically defeats the whole purpose of running a VPN, maintaining your privacy and not feeding the data guzzling machine. It's not highly obvious, but click on the ASSIGN button highlighted below in RED to set your router DNS. And then select "Preset servers" toward the bottom of the screen.
 <br>
 <p align="center">
   <img src="./images/WAN-DNS-settings.png" alt="Router DNS Settings" width="700">
@@ -369,7 +369,7 @@ This enables full management of WireGuard slots.
 </p><br>
 
 - **DISABLE:** takes the tunnel down, with confirmation. A watchdog on the slot is **paused**, not removed: left running, it would rebuild the tunnel you just stopped. Its script and settings stay on the router, so ENABLE brings the tunnel and the watchdog back together. Devices pinned to the slot have no internet until you ENABLE it again or move them, and the confirmation names them.
-- **DELETE:** removes the slot configuration and its watchdog entirely: the schedule, the script on the router and the watchdog settings, so there is nothing left to ENABLE. Devices pinned to the slot are moved to the Internet, and if the slot was the default connection, the default goes back to the Internet ([5.4.3](#543-the-default-connection)).
+- **DELETE:** removes the slot configuration and its watchdog entirely: the schedule, the script on the router and the watchdog settings, so there is nothing left to ENABLE. Devices pinned to the slot are moved to the Internet, and the prompt names them before you confirm; and if the slot was the default connection, the default goes back to the Internet ([5.4.3](#543-the-default-connection)).
 
 > [!TIP]
 > Merlin firmware also offers a kill switch and inbound firewall toggle.
@@ -431,7 +431,7 @@ This manages a self-healing watchdog. When your WireGuard configurations inevita
 
 3. Select a slot and use the watchdog actions:
    <br>
-   - **CREATE/EDIT:** pick a region and a check interval, defaulting to five minutes, then tap **SAVE & DEPLOY** to deploy router-side watchdog scripts and cron jobs for the selected slot. The region starts as the slot's own, so saving an active watchdog without changing it leaves its tunnel alone. Choosing a region for a slot that already holds a configuration asks before overwriting it. Changing the region rebuilds the tunnel on the new one: it is down while that happens, and devices pinned to it have no internet until it is up.
+   - **CREATE/EDIT:** pick a region and a check interval, defaulting to five minutes, then tap **SAVE & DEPLOY** to deploy router-side watchdog scripts and cron jobs for the selected slot. The region starts as the slot's own, so saving an active watchdog without changing it leaves its tunnel alone. Choosing a region for a slot that already holds a configuration asks before overwriting it. Changing the region rebuilds the tunnel on the new one: it is down while that happens, and devices pinned to it have no internet until it is up. Every deploy sends an alert email when email alerts are on; if that email can't be sent, a popup says so and gives the mail server's reason, and the form stays open so you can fix the email settings.
      The form also holds:
      - **Primary ping IP** and **Secondary ping IP**, the check targets, `8.8.8.8` and `1.1.1.1` by default. A target the router can't reach gets a warning, and saves anyway.
      - **DNS**, the slot's own DNS servers. It's here as well as in MANAGE because this form can build a slot from scratch.
@@ -577,7 +577,7 @@ How to interpret these emails:
 - The router log excerpt includes your **PIA username** (never the password, and never the token). The email travels through your own mail provider, but bear that in mind before forwarding it on.
 
 > [!NOTE]
-> **An alert can only be sent if the router can still reach your mail server.** If it cannot because its internet connection is down, or it cannot look up your mail server's name at that moment, then that alert never leaves the router. The attempt is always recorded in the router-side watchdog log, and the next email that does get through says how many were missed.
+> **An alert can only be sent if the router can still reach your chosen mail server.** If it cannot because its internet connection is down, or it cannot look up your mail server's name at that moment, then that alert never leaves the router. The attempt is always recorded in the router-side watchdog log, and the next email that does get through says how many were missed.
 
 The first email you receive will be the deployment itself - `Event: watchdog deployed` - sent even though there was nothing to fix. That is deliberate: it confirms the whole alerting path works, at the moment you set it up rather than months later during an outage.
 
@@ -595,7 +595,7 @@ DEVICES gives you one list of all your devices and lets you decide which tunnel 
 
 **What does it change on my router?** Only its routing rules, the short list your router reads to decide which way each device's traffic goes. Your router already writes one rule per pinned device, and the app doesn't replace it. It does two things on top. It deletes the stale rules your router leaves behind when you move a device, because the old one wins and your device would quietly keep using the tunnel you moved it off. And it adds two rules of its own for every pinned device, which are what keep that device offline, rather than out in the open, while its tunnel is down. Nothing else is touched: not your default connection's rules, not your router's own DNS, not your other devices. For the technically inquisitive, [ARCHITECTURE](ARCHITECTURE.md#every-routing-rule-the-app-touches) lists every rule, what the app does with each, and the hardware tests behind them.
 
-**What it doesn't cover.** Devices that follow the default connection rather than being pinned: pin the ones you care about. A few addresses your router always sends straight out, whatever the tunnel is doing: its own DNS servers, the PIA server itself, and your ISP's own network. And IPv6, which hasn't been tested.
+**What it doesn't cover.** Devices that follow the default connection rather than being pinned: pin the ones you care about. A few addresses your router always sends straight out, whatever the tunnel is doing: its own DNS servers, the PIA server itself, and your ISP's own network. And IPv6, which isn't supported by this app.
 
 <br>
 <p align="center">
@@ -612,13 +612,21 @@ If one thing sets this app apart, it's this.
 
 **What the app does about it.** For every device you pin to a tunnel, the app adds a guard on the router: two small routing rules that say "this device goes through its tunnel, or nowhere". While the tunnel is up, nothing changes. When it goes down, for whatever reason, the device has no internet until the tunnel is back or you move it. Not even a second of leak. That's what fail closed means: when something fails, the door shuts rather than swinging open.
 
-**Do I need to do anything?** No. Pin a device and the guard comes with it. The app keeps it in place for you: every time you APPLY an assignment, before a DISABLE, on every watchdog check, and when the router restarts. And if you pin a device, or move one to another tunnel, in the router's own web interface rather than in this app? The guard still catches it, as long as a watchdog is running: each watchdog check brings the guard up to date, so the device is covered within one check interval.
+**Do I need to do anything?** No. Pin a device and the guard comes with it. The app keeps it in place for you: every time you APPLY an assignment, before a DISABLE, on every watchdog check, and when the router restarts. And if you pin a device, or move one to another tunnel, in the router's own web interface rather than in this app? Once it's done, the guard catches it, as long as a watchdog is running: each watchdog check brings the guard up to date, so the device is covered within one check interval. **But while you're doing it, it isn't covered.** The web interface won't move a device while its tunnels are running, so you stop them, move it, apply, and start them again, and part way through that the router has the device pinned to nothing at all. Its traffic can go straight out to the Internet until the tunnels are back and the guard catches up. Move devices in DEVICES instead: the app moves them without stopping anything, and the guard goes with them.
 
 **How do I know it's working?**
 
 - DISABLE on a slot names every device pinned to it, in amber, and says they'll have no internet until you ENABLE it again or move them. Nothing happens until you confirm.
 - ROUTER LOG shows "Fail-closed guard on for" the device, by name and address, when the guard is added, and "Fail-closed guard removed for" it when the device no longer needs one.
 - A watchdog's alert email has a **Kill switch** line naming the devices the guard kept off the internet while the tunnel was down, for example "the app's guard kept TABLET pinned to this tunnel, and off the internet while this tunnel was down". If part of the guard is missing, the same line says so, and how to put it back.
+
+<br>
+<p align="center">
+  <img src="./images/04.03-assign-stopped-tunnel.png" alt="Choosing a stopped tunnel for a device" width="300">
+  <img src="./images/04.031-assign-stopped-tunnel.png" alt="APPLY warns that the device will have no internet" width="300">
+  <br>
+  Pinning TABLET to wgc3, which isn't running: APPLY says it will have no internet until wgc3 is enabled, rather than letting it out another way
+</p><br>
 
 <br>
 <p align="center">
@@ -663,9 +671,11 @@ cfg-pia-wg by Exponentially Digital
 
 - Devices that follow the default connection rather than being pinned. Pin the ones you care about.
 - A few addresses your router always sends straight out, whatever the tunnel is doing: its own DNS servers, the PIA server itself, and your ISP's own network.
-- IPv6 is not supported by this freature.
+- IPv6 is not supported by this feature.
+- A device while you move it in the router's web interface, as above. Use DEVICES.
+- A phone's mobile data. A phone whose Wi-Fi has no internet usually falls back to its mobile network, so a phone the guard is keeping off the internet isn't offline: it's out through your carrier, with no VPN. If that matters, turn off mobile data on the phone, or turn off the phone's own setting that switches to mobile data when Wi-Fi has no internet.
 
->[!TIP] The guard's promise is no internet rather than unprotected internet. A tunnel that stays down keeps its devices offline. Getting the tunnel back is the watchdog's job ([5.3](#53-watchdog---watchdog-wireguard-configuration)).
+> [!TIP] The guard's promise is no internet rather than unprotected internet. A tunnel that stays down keeps its devices offline. Getting the tunnel back is the watchdog's job ([5.3](#53-watchdog---watchdog-wireguard-configuration)).
 
 For the technically inquisitive, [ARCHITECTURE 6.8.10](ARCHITECTURE.md#what-happens-when-the-tunnel-drops) has the measurements, the two rules, and every point at which the app puts them in place.
 
@@ -712,7 +722,7 @@ And six things that can catch you out:
 2. **Assigning a device pins its address permanently.** And that's the big one. It stops an assignment drifting onto a different device later on. A pinned device stays behind when you unassign - the router never removes it, and neither does this app.
 3. **A randomised MAC address breaks assignment silently.** Those devices are tagged in the list with `random MAC`. Many phones randomise their MAC addresses per network by default, and the assignment stops working the next time the address rotates, with nothing to tell you. [5.4.4](#544-phones-and-random-mac-addresses) gives you the settings to change, per phone architecture.
 4. **Switching a tunnel OFF takes its pinned devices offline.** They keep their assignment and have no internet until you switch it back ON or move them, and the app names them before you confirm. Deleting a slot is different: the app moves its devices to the Internet, tells you which ones, and puts the default connection back to Internet if that tunnel was it.
-5. **Guest network devices never appear.** Typically they can't reach your LAN, so putting one on a VPN is a different proposition.
+5. **Guest network devices never appear.** Typically they can't reach your LAN, so putting one on a VPN is a different use case.
 6. **A device assigned to a VPN uses only that VPN's first DNS server.** The router sends every lookup from it to the first DNS server address listed in your slot config and never tries the second. The router's own lookups can use both. For real. That's by design. If the first stops answering through that tunnel, then devices typically reach IP addresses but not names. You can change the first server with MANAGE, then EDIT.
 
 #### 5.4.4. Phones and random MAC addresses
@@ -748,10 +758,11 @@ The list is the router's own view of your network, not a scan this app runs. Tha
 
 **What happens to its VPN?** Nothing. It keeps its assignment underneath, so picking **Internet**, a slot or `default` again brings it straight back to wherever you choose. The fail-closed guard isn't touched either.
 
-Two things to know:
+Three things to know:
 
 - **Time Scheduling has one on/off switch for every device in it.** If you've set up schedules there and left the switch off, disabling a device here turns it on, and your schedules with it. When that would happen, APPLY names them and asks first.
 - **Disabling follows the device's MAC address.** A phone that randomises its MAC ([5.4.4](#544-phones-and-random-mac-addresses)) gets its internet back when its address changes, just as it slips out of a pin. APPLY warns you when a device you're disabling looks like one.
+- **Disabling takes a device off your home internet, not off every internet.** A phone with mobile data falls back to it when its Wi-Fi has no internet, so a disabled phone carries on through your carrier. Turn its mobile data off too if you mean it.
 
 ### 5.5. ROUTER LOG
 
@@ -794,7 +805,7 @@ All those things that you won't need until you do need them, and all in one plac
   - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run. Why? Just in case. The "Irish" approach - to be sure, to be sure. Try doing an Irish accent via a keyboard. Not easy. But why? In case it ever expires/gets updated by PIA, you'll have a way to get a fresh one straight from their official GitHub repo when you run any operation that authenticates with PIA's servers.
   - **UNINSTALL FEATURES DEPLOYED TO ROUTER** - completely removes any watchdogs, their helper apps, and all app configuration deployed to your router; configured WireGuard VPNs are retained. See [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice. The "Irish" approach, alive and well. Everything really is removed, nothing's left behind, no stray filaments to clog up your device's storage. That's good software practice, I wish more folks did that.
   - **RESTORE PURCHASE** - resurrects your Google Play Store entitlement for your one-off, lifetime purchase of `pia-cfg-wg`, you did buy a copy didn't you? If nothing matches, based on your device's current Play Store logged in account, you'll be told too.
-  - **MAX ACTIVE VPNS** - allows you to run more than two concurrent VPN clients on your router. Absolutely unsupported. You did read the license agreement didn't you? If not that's in the last screen because we all love reading legal documents.
+  - **MAX ACTIVE VPNS** - allows you to run more than two concurrent VPN clients on your router. Absolutely unsupported. You did read the license agreement didn't you? If not that's in ABOUT, because we all love reading legal documents.
   - **ROUTER RESOLVER STATUS** - is your router answering name lookups? It asks, there and then, through both of the router's own resolvers: dnsmasq, and stubby when DNS-over-TLS is on. You see every address that came back and how long it took, and if something didn't answer, what that means for your network. Below that are the files that decide how a lookup travels, each with when the router last wrote that configuration, and the DNS settings they're built from. All on-screen text is selectable, and COPY takes a copy and stores it on the system clipboard. **REFRESH** asks the router again, for example after you have changed a DNS setting in the web interface. `dnsmasq.conf` lists every reserved device's MAC and address, so review it before you share a copy. Informational read-only, no changes are made, do that in the WebUI or SSH etc. A wealth of detailed information is provided, not for the faint of heart!
   - **ROUTER DNS ROUTING** - where does each lookup actually go? Your devices', the router's own and each watchdog's, one line each, with one tag saying whether it goes through a tunnel or straight out to the Internet, and another saying whether anyone along the way can read it. COPY and REFRESH work as they do in ROUTER RESOLVER STATUS. Raw routing rules are at the bottom, for the technically inquisitive, and [ROUTER-DNS.md](ROUTER-DNS.md) explains why any of this matters. Again, informational read-only, no changes are made, do that in the WebUI or SSH etc. There's a _lot_ of information shown in here; helpful for troubleshooting and knowing precisely what goes where, and why.
 
@@ -818,7 +829,7 @@ All the details of what version you have, the provenance of who built it, and a 
 </p><br>
 
 - **Router firmware** - whether the router runs stock or Merlin firmware, and its version.
-- **License status** - `licensed` when the one-off purchase is entitled per the currently logged in Google account (absolutely not something I have access to, track, or want to know),`unlicenced`, or `homegrown` for a self-build copy (go you, gratz!).
+- **License status** - `licensed` when the one-off purchase is entitled per the currently logged in Google account (absolutely not something I have access to, track, or want to know),`unlicenced`, or `homegrown` for a self-built copy (go you, gratz!).
 - **"Value"** history - counted across every slot since the first watchdog was deployed to this router.
 
 - **COPY BUILD INFO** - copies the build info block as plain text, for pasting into a bug report or framing.
@@ -833,7 +844,7 @@ All the details of what version you have, the provenance of who built it, and a 
 </p><br>
 
 - **Update watchdog version** - if your on-router watchdog version is older than the current release, simply upgrade by tapping here. Button only appears if a version mismatch is detected.
-<br>
+
 ### 5.9. EXIT - Close the app
 
 **EXIT** prompts for confirmation before closing the app, wipes _**all**_ volatile session data, and clears the system clipboard.
@@ -866,7 +877,7 @@ This is particularly useful for looking through the application's log during ope
 - **Turn OFF battery optimisation** - for `cfg-pia-wg` otherwise Android may freeze the moment you switch away, and any work it was doing on your router will likely stop mid-action - an SSH session dropped during a watchdog deployment, an alert email abandoned halfway through. Nothing is damaged, but it fails for a reason you cannot see. On most phones: **Settings -> Apps -> cfg-pia-wg -> Battery -> Unrestricted**. Worth doing before you deploy your first watchdog.
 - **Extra logins in the router's log are normal** - the router aggressively expires idle SSH sessions - well inside a session spent reading a screen and deciding what to do - so the app reconnects when it finds the connection's expired, and its next action carries on as though nothing happened. What you see afterwards is several `dropbear` logins from your phone for one sitting. That is the app picking the phone back up, not someone else picking the lock.
 - **Key safety** - generated configs contain private encryption keys. Treat them like passwords and manage them securely.
-- **When PIA's login service is down** - every new configuration starts with a login to PIA, and that service occasionally stops answering while PIA's own apps keep working. The app gives it 20 seconds, then says "PIA's login service isn't answering ... This is at PIA's end, not the app or your router; try again later.", and never mistakes it for a wrong password. A watchdog that needs to rebuild a tunnel during an outage can't, so its failure email says the same thing, and it keeps trying on its schedule until PIA is back. Tunnels that are already up keep working meanwhile. On 2026-09-28 it lasted many hours.
+- **When PIA's login service is down** - every new configuration starts with a login to PIA, and if that service stops answering while PIA's own apps keep working, the app gives it 20 seconds, then says "PIA's login service isn't answering ... This is at PIA's end, not the app or your router; try again later.". A watchdog that needs to rebuild a tunnel during an outage can't, so its failure email says the same thing, and it keeps trying on its schedule until the login service is available. Tunnels that are already up keep working meanwhile.
 - **PIA maintenance** - PIA occasionally take regions offline for maintenance so you might be expecting to have an exit node in say pia-region_one, but online tools may show you as exiting from pia-region_two.
 - **Check your VPN is working** - with services like [PIA what is my ip](https://www.privateinternetaccess.com/what-is-my-ip), [ipaddress.my](https://ipaddress.my/?lang=en_US), [2ip.io](https://2ip.io), and [showmyip.com](https://www.showmyip.com). However, these sites may cache your location in the browser and they sometimes return a stale exit region if used multiple times. To be absolutely sure, close your browser rather than just refreshing the page.
 - **Watchdog shortcut** - if you deploy a _watchdog_ on an empty slot, that will also create the config for that slot in one step.
@@ -974,7 +985,7 @@ We take credential safety and application hardening seriously. Please see the [S
 
 This app asks a lot of you: it writes a script that holds your PIA password and runs as root on your router, on a schedule, indefinitely. You should not have to take that on trust, and you do not have to - the script is there to be read.
 
-**Where it is.** `/jffs/cfg-pia-wg/watchdog_wgcN.sh`, one file per watched slot, where `N` is the slot number. SSH into the router and `cat` it.
+**Where it is.** `/jffs/cfg-pia-wg/watchdog_wgcN.sh`, one file per watched slot, where `N` is the slot number. SSH into the router and `less` it.
 
 **It is plain shell.** Never obfuscated, never minified, never compressed or encoded. What you read is exactly what runs. It is a few hundred lines of POSIX `sh` with comments left in.
 

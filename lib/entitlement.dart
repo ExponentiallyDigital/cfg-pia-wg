@@ -27,10 +27,20 @@
 // The corollary is that a release build MUST carry the key or it ships the paid features to
 // everyone. `.github/workflows/release.yml` fails the build when the secret is empty.
 
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 /// Whether the paid features are available to this user.
+/// Thrown before a purchase or restore when Google Play cannot be reached at all (ID-288).
+class StoreUnreachableException implements Exception {
+  const StoreUnreachableException();
+  @override
+  String toString() => "Google Play can't be reached; this device looks to be offline. Check it's online and try again.";
+}
+
 abstract class Entitlement {
   /// Supplied at build time; empty in a local or self-built copy. See the file header.
   static const androidKey = String.fromEnvironment('REVENUECAT_ANDROID_KEY');
@@ -99,8 +109,12 @@ abstract class Entitlement {
   ///
   /// A cancellation is a normal outcome, not an error, so it returns false rather than throwing.
   static Future<bool> purchase() async {
+    const nothing = 'nothing to buy - the store did not return an offering.';
+    // A build with no store has nothing to sell, and no reason to look for Google Play.
+    if (!purchasingAvailable) throw Exception(nothing);
+    await _ensureStoreReachable();
     final package = await _package();
-    if (package == null) throw Exception('nothing to buy - the store did not return an offering.');
+    if (package == null) throw Exception(nothing);
     try {
       final result = await Purchases.purchase(PurchaseParams.package(package));
       return _apply(result.customerInfo);
@@ -119,7 +133,34 @@ abstract class Entitlement {
   /// The app never calls `logIn`, so every customer is anonymous and their purchase is tied to
   /// their Google account rather than to anything this app stores. That is why restore works with
   /// no local state at all, and why `android:allowBackup="false"` costs nothing here.
-  static Future<bool> restore() async => _apply(await Purchases.restorePurchases());
+  ///
+  /// Offline, the store's answer is the copy it kept, which holds no purchase, so it read as "No
+  /// purchase found" for an account that had one (ID-288). It is asked only once the store answers.
+  static Future<bool> restore() async {
+    await _ensureStoreReachable();
+    return _apply(await Purchases.restorePurchases());
+  }
+
+  /// Whether Google Play's servers can be reached. Replaceable in tests.
+  static Future<bool> Function() storeReachable = _lookupStore;
+
+  static Future<bool> _lookupStore() async {
+    try {
+      final found = await InternetAddress.lookup('play.googleapis.com').timeout(const Duration(seconds: 5));
+      return found.isNotEmpty;
+    } on SocketException {
+      return false;
+    } on TimeoutException {
+      return false;
+    }
+  }
+
+  /// Checked before handing over to the store. In aeroplane mode a purchase waited about a minute,
+  /// then Google Play's own "No internet connection" sheet came up and would not go away, and a
+  /// restore reported no purchase (LCK-7). Now it says at once that the store can't be reached.
+  static Future<void> _ensureStoreReachable() async {
+    if (!await storeReachable()) throw const StoreUnreachableException();
+  }
 
   /// True when [e] is Google Play saying the payment has not cleared yet - a slow card, or a bank that
   /// needs approving. Not a failure: the unlock arrives when it clears.

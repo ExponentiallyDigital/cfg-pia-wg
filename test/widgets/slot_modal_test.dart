@@ -522,9 +522,12 @@ void main() {
       await tester.tap(_inDialog('CONTINUE'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('not found'), findsWidgets, reason: 'the failure must be reported');
-      // Dismiss the error dialog; nothing may follow it.
-      await tester.tap(_inDialog('OK').last);
+      // Reported in the credentials dialog, which stays open to correct them (ID-286).
+      expect(tester.widget<Text>(find.byKey(const Key('pia_creds_error'))).data, contains('not found'),
+          reason: 'the failure must be reported');
+      expect(tester.testTextInput.log.where((m) => m.method == 'TextInput.finishAutofillContext' && m.arguments == true),
+          isEmpty, reason: 'a login that did not work is not offered to the password manager');
+      await tester.tap(_inDialog('CANCEL').last);
       await tester.pumpAndSettle();
       expect(find.text('Slot created'), findsNothing);
       expect(ssh.ran('nvram set wgc2_desc'), isFalse);
@@ -624,6 +627,9 @@ void main() {
 
       expect(find.text('Slot created'), findsOneWidget);
       expect(find.textContaining('Its old tunnel was stopped'), findsOneWidget);
+      // ID-286: PIA accepted the login, so it is offered to the password manager, as STANDALONE does.
+      expect(tester.testTextInput.log.where((m) => m.method == 'TextInput.finishAutofillContext' && m.arguments == true),
+          hasLength(1));
       final stop = ssh.commands.indexWhere((cmd) => cmd.contains('stop_wgc 1'));
       final write = ssh.commands.indexWhere((cmd) => cmd.startsWith('nvram set wgc1_desc'));
       expect(stop, isNot(-1));
@@ -2146,5 +2152,55 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     });
+  });
+
+  // ID-289: DELETE moved the pinned devices to the Internet and listed them only in APP LOG, after.
+  group('DELETE names the devices it will move to the Internet', () {
+    test('one device, several, none, and a list that could not be read', () {
+      expect(movedDeviceWarning(['Study PC']),
+          'Study PC is pinned to this VPN, and will be moved to the Internet, with no VPN. You can pick another VPN '
+          'for it in DEVICES.');
+      expect(movedDeviceWarning(['Study PC', 'TV-Lounge']), startsWith('Study PC and TV-Lounge are pinned to this VPN'));
+      expect(movedDeviceWarning(const []), isNull);
+      expect(movedDeviceWarning(null), startsWith('Any device pinned to this VPN will be moved to the Internet'));
+    });
+
+    for (final mode in SlotModalMode.values) {
+      testWidgets('on stock the ${mode.name} confirmation names them, before anything is sent', (tester) async {
+        useStock();
+        addTearDown(useMerlin);
+        final c = _controller();
+        final ssh = RecordingSSHClient(responder: (cmd) {
+          if (cmd == kDeviceSourcesCommand) {
+            return [
+              '',
+              '<AA:BB:CC:DD:EE:01>192.168.1.30>>',
+              '<Study PC>AA:BB:CC:DD:EE:01>0>0>>',
+              '',
+              '{"AA:BB:CC:DD:EE:01":{"name":"","online":1}}',
+              '',
+              '',
+            ].join('\n$kSourceSeparator\n');
+          }
+          if (cmd == 'nvram get vpnc_clientlist') return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+          if (cmd == 'nvram get vpnc_dev_policy_list') return '1>192.168.1.30>>9>';
+          return '';
+        });
+        await tester.pumpWidget(_host(ssh, mode, _slots({1: _slot(1, desc: 'aus_melbourne', enabled: true)}), c));
+        await _open(tester);
+        await tester.tap(find.byKey(const Key('slot_row_1')));
+        await tester.pump();
+        await tester.ensureVisible(find.byKey(const Key('slot_delete')));
+        await tester.tap(find.byKey(const Key('slot_delete')));
+        await tester.pumpAndSettle();
+
+        expect(tester.widget<Text>(find.byKey(const Key('confirm_warning'))).data,
+            startsWith('Study PC is pinned to this VPN, and will be moved to the Internet'));
+        expect(ssh.commands.any((x) => x.contains('nvram unset') || x.contains('stop_vpnc')), isFalse);
+
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+    }
   });
 }

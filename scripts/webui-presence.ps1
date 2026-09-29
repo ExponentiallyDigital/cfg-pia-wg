@@ -19,7 +19,7 @@
     http://192.168.1.1.
 
 .PARAMETER Mac
-    The device's MAC address, as DEVICE ASSIGNMENT shows it.
+    The device's MAC address, as DEVICES shows it.
 
 .PARAMETER Every
     Seconds between checks. Default 5.

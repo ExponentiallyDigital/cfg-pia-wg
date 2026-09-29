@@ -4,6 +4,7 @@
 // every store error has to come out as a sentence they can act on. And a build with no store key -
 // every sideloaded and F-Droid-style build - must sell nothing and never reach the SDK.
 import 'package:cfg_pia_wg/entitlement.dart';
+import 'package:cfg_pia_wg/widgets/paywall.dart' show RestoreMessages;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
@@ -76,6 +77,23 @@ void main() {
       Entitlement.debugSetUnlocked(false);
       addTearDown(() => Entitlement.debugSetUnlocked(null));
       expect(Entitlement.isUnlocked, isFalse);
+    });
+  });
+
+  // ID-288, LCK-7: offline, a purchase waited a minute before Google Play's own error sheet, and a
+  // restore said "No purchase found", which it could not know. Neither now goes near the store.
+  group('Google Play out of reach', () {
+    setUp(() => Entitlement.storeReachable = () async => false);
+    tearDown(() => Entitlement.storeReachable = () async => true);
+
+    test('a restore says so, rather than finding no purchase', () async {
+      await expectLater(Entitlement.restore(), throwsA(isA<StoreUnreachableException>()));
+    });
+
+    test('says plainly that the device looks to be offline', () {
+      expect(const StoreUnreachableException().toString(), startsWith("Google Play can't be reached"));
+      // Once, not "Could not reach the store: Google Play can't be reached".
+      expect(RestoreMessages.failed(const StoreUnreachableException()), startsWith("Google Play can't be reached"));
     });
   });
 }

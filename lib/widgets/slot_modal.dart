@@ -24,6 +24,7 @@ import 'dart:async';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_button.dart';
 
@@ -73,6 +74,18 @@ String? pinnedDeviceWarning(List<String>? names) {
   final one = names.length == 1;
   return '${joinNames(names)} ${one ? 'is' : 'are'} pinned to this VPN, and $until ${one ? 'it' : 'them'} '
       'to another VPN in DEVICES.';
+}
+
+/// What DELETE's confirmation says about the devices pinned to the slot, which it moves to the
+/// Internet: [names] when they could be read, null when they could not, nothing when there are none.
+/// They were listed only in APP LOG, after the fact (ID-289).
+String? movedDeviceWarning(List<String>? names) {
+  const moved = 'will be moved to the Internet, with no VPN';
+  if (names == null) return 'Any device pinned to this VPN $moved. You can pick another VPN for it in DEVICES.';
+  if (names.isEmpty) return null;
+  final one = names.length == 1;
+  return '${joinNames(names)} ${one ? 'is' : 'are'} pinned to this VPN, and $moved. You can pick another VPN '
+      'for ${one ? 'it' : 'them'} in DEVICES.';
 }
 
 class SlotModal extends StatefulWidget {
@@ -297,15 +310,29 @@ class _SlotModalState extends State<SlotModal> {
     final region = await _pickRegion();
     if (region == null) return;
     final regionId = region.id;
-    final creds = await _piaCredsDialog();
-    if (creds == null) return;
+    // Generated while the credentials dialog is still open, so the PIA login is proven before it
+    // closes: a refusal is shown there, where it can be corrected, and a login that worked is
+    // offered to the password manager, as STANDALONE does (ID-286). The dialog's autofill context
+    // is cancelled when it closes, so the offer could never be made afterwards.
+    String? config;
+    final creds = await _piaCredsDialog(submit: (user, pass, dns) async {
+      _c.logEntry('Generating configuration for $regionId...');
+      try {
+        config = await widget.piaService
+            .generateConfig(region: regionId, selected: region, username: user, password: pass, dns: dns, onProgress: _c.onLog);
+        return null;
+      } catch (e) {
+        final msg = e.toString().replaceAll('Exception: ', '');
+        _c.logEntry(msg, isError: true);
+        return msg;
+      }
+    });
+    final generated = config;
+    if (creds == null || generated == null) return;
 
     var stopped = false;
     final created = await _runSlot((svc) async {
-      _c.logEntry('Generating configuration for $regionId...');
-      final config = await widget.piaService.generateConfig(
-          region: regionId, selected: region, username: creds.$1, password: creds.$2, dns: creds.$3, onProgress: _c.onLog);
-      stopped = await svc.createConfigToSlot(slot: slot, config: config, regionId: regionId);
+      stopped = await svc.createConfigToSlot(slot: slot, config: generated, regionId: regionId);
     });
     // Only on success. This used to fire whatever happened, so a failed generate was followed by
     // "wgc5 has been created" over the top of the error saying it had not been.
@@ -398,14 +425,7 @@ class _SlotModalState extends State<SlotModal> {
     final wdActive = info?.watchdogActive ?? false;
     // Named before asking, because this is the one effect of a DISABLE on something other than the
     // slot: a device pinned here keeps no internet at all while it is off (ID-213).
-    List<String>? pinned = const [];
-    if (isStockFirmware) {
-      try {
-        pinned = await _slotSvc(await widget.connect()).pinnedDeviceNames(slot);
-      } catch (_) {
-        pinned = null;
-      }
-    }
+    final pinned = await _pinnedNames(slot);
     final ok = await _confirm(
       'Disable VPN ${slotLabel(slot, info?.desc ?? '')}?',
       message: wdActive
@@ -485,6 +505,17 @@ class _SlotModalState extends State<SlotModal> {
     if (saved == true) await _refresh();
   }
 
+  /// The names of the devices pinned to [slot], for a confirmation to show: empty on Merlin, which
+  /// has no device assignment here, and null when they could not be read.
+  Future<List<String>?> _pinnedNames(int slot) async {
+    if (!isStockFirmware) return const [];
+    try {
+      return await _slotSvc(await widget.connect()).pinnedDeviceNames(slot);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _deleteManage() async {
     final slot = _selected;
     final info = _selectedInfo;
@@ -492,12 +523,14 @@ class _SlotModalState extends State<SlotModal> {
     // Names both, because it removes both: the watchdog's script, schedule and settings go with
     // the slot, and neither comes back from an ENABLE afterwards (ID-095).
     final hasWatchdog = wdActive || (info?.watchdogConfigured ?? false);
+    final pinned = await _pinnedNames(slot);
     final ok = await _confirm(
       'Delete VPN ${slotLabel(slot, info?.desc ?? '')}?',
       message: hasWatchdog
           ? 'Removes the VPN and its watchdog: the schedule, the script on the router and the watchdog '
               'settings. Nothing is left to ENABLE afterwards.'
           : 'Removes the VPN configuration from the router.',
+      warning: movedDeviceWarning(pinned),
       confirmLabel: 'DELETE',
       destructive: true,
     );
@@ -594,8 +627,9 @@ class _SlotModalState extends State<SlotModal> {
   Future<void> _deleteWatchdog() async {
     final slot = _selected;
     // "and VPN": DELETE here tears down the underlying slot too, which the old wording buried.
+    final pinned = await _pinnedNames(slot);
     final ok = await _confirm('Delete watchdog and VPN ${slotLabel(slot, _selectedInfo?.desc ?? '')}?',
-        confirmLabel: 'DELETE', destructive: true);
+        warning: movedDeviceWarning(pinned), confirmLabel: 'DELETE', destructive: true);
     if (!ok) return;
     setState(() => _processing = true);
     Object? error;
@@ -671,10 +705,16 @@ class _SlotModalState extends State<SlotModal> {
 
   // ── Sub-dialogs ─────────────────────────────────────────────────────────────────
   // PIA username/password/DNS form (prefilled from session) for CREATE.
-  Future<(String, String, String)?> _piaCredsDialog() async {
+  //
+  // [submit] runs on CONTINUE with the dialog still open, and returns an error to show in it, or
+  // null to close it.
+  Future<(String, String, String)?> _piaCredsDialog(
+      {required Future<String?> Function(String user, String pass, String dns) submit}) async {
     final result = await showDialog<(String, String, String)?>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => _PiaCredsDialog(
+        submit: submit,
         initialUsername: _c.piaUsername,
         initialPassword: _c.piaPassword,
         initialDns: _c.dns,
@@ -915,7 +955,10 @@ class _PiaCredsDialog extends StatefulWidget {
   /// The router's own encrypted-DNS servers, so the DNS field can say when the two overlap (ID-005).
   final Set<String> routerDotServers;
 
+  final Future<String?> Function(String user, String pass, String dns) submit;
+
   const _PiaCredsDialog({
+    required this.submit,
     required this.initialUsername,
     required this.initialPassword,
     required this.initialDns,
@@ -931,6 +974,7 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
   late final TextEditingController _passCtrl = TextEditingController(text: widget.initialPassword);
   late final TextEditingController _dnsCtrl = TextEditingController(text: widget.initialDns);
   bool _visible = false;
+  bool _busy = false;
   String? _error;
 
   @override
@@ -941,7 +985,7 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
     super.dispose();
   }
 
-  void _onContinue() {
+  Future<void> _onContinue() async {
     final username = _userCtrl.text.trim();
     final password = _passCtrl.text.trim();
     final dns = _dnsCtrl.text.trim();
@@ -954,6 +998,22 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
       setState(() => _error = e);
       return;
     }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final failure = await widget.submit(username, password, dns);
+    if (!mounted) return;
+    if (failure != null) {
+      setState(() {
+        _busy = false;
+        _error = failure;
+      });
+      return;
+    }
+    // PIA accepted the login: offer it to the password manager before the dialog, and with it the
+    // autofill context, goes (ID-286).
+    TextInput.finishAutofillContext();
     Navigator.of(context).pop((username, password, dns));
   }
 
@@ -980,13 +1040,20 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
         const SizedBox(height: 10),
         // These servers become the slot's, and stock sends an assigned device to the first one only.
         DnsField(controller: _dnsCtrl, firstServerNote: isStockFirmware, routerDotServers: widget.routerDotServers),
+        if (_busy) ...[
+          const SizedBox(height: 14),
+          const LinearProgressIndicator(key: Key('pia_creds_busy'), color: kHighlight, backgroundColor: kBorder),
+          const SizedBox(height: 6),
+          const Text('Checking with PIA and generating the configuration...', style: TextStyle(color: kMuted, fontSize: 12)),
+        ],
         if (_error != null) ...[
           const SizedBox(height: 14),
-          Text(_error!, style: const TextStyle(color: kError, fontSize: 12)),
+          Text(_error!, key: const Key('pia_creds_error'), style: const TextStyle(color: kError, fontSize: 12)),
         ],
       ],
       confirmLabel: 'CONTINUE',
-      onConfirm: _onContinue,
+      onConfirm: _busy ? null : _onContinue,
+      cancelEnabled: !_busy,
     );
   }
 }
@@ -1064,8 +1131,10 @@ class _FormDialog extends StatelessWidget {
   final String title;
   final List<Widget> fields;
   final String confirmLabel;
-  final VoidCallback onConfirm;
-  const _FormDialog({required this.title, required this.fields, required this.confirmLabel, required this.onConfirm});
+  final VoidCallback? onConfirm;
+  final bool cancelEnabled;
+  const _FormDialog(
+      {required this.title, required this.fields, required this.confirmLabel, required this.onConfirm, this.cancelEnabled = true});
 
   @override
   Widget build(BuildContext context) {
@@ -1092,7 +1161,10 @@ class _FormDialog extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(context, null)),
+                    AppButton(
+                        label: 'CANCEL',
+                        role: ButtonRole.dismiss,
+                        onPressed: cancelEnabled ? () => Navigator.pop(context, null) : null),
                     const SizedBox(width: 8),
                     AppButton(label: confirmLabel, onPressed: onConfirm),
                   ],

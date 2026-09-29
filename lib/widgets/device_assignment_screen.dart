@@ -700,16 +700,20 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     // at the bottom of the screen where the label had been, which read as the button having broken
     // rather than as work in progress (B8n feedback 2026-09-08). This also blocks input, which is
     // right: changing the default connection stops the tunnels and must not be interrupted.
-    unawaited(showDialog<void>(
+    //
+    // Closed by its own route, never by popping whatever is on top (ID-285). The drawer sits above
+    // the navigator, so it opens over this dialog, and a screen picked from it is pushed on top. A
+    // plain pop at the end then closed THAT screen and left this dialog up for good, over a DEVICES
+    // that had finished. Removing the route itself works whatever is above it, and whether or not
+    // this screen is still mounted.
+    final progress = DialogRoute<void>(
       context: context,
       barrierDismissible: false,
       builder: (_) => const _ProgressDialog(),
-    ));
-    var progressShown = true;
+    );
+    unawaited(Navigator.of(context, rootNavigator: true).push(progress));
     void dismissProgress() {
-      if (!progressShown || !mounted) return;
-      progressShown = false;
-      Navigator.of(context, rootNavigator: true).pop();
+      if (progress.isActive) progress.navigator?.removeRoute(progress);
     }
 
     String? failure;
@@ -1124,7 +1128,9 @@ class _DeviceRow extends StatelessWidget {
               blocked: blocked,
               onTap: onTap)
         else
-          const Text('connect this device once to assign it', style: TextStyle(color: kHint, fontSize: 12)),
+          // The address line's colour, dimmed with the rest of an offline row. kHint, on top of that
+          // dimming, was almost unreadable (ID-283).
+          const Text('connect this device once to assign it', style: TextStyle(color: kMuted, fontSize: 12)),
         // Where the traffic really goes. The picker keeps naming the assignment - the pin is intact, and
         // enabling the tunnel restores it - so this is a note, never a change of value.
         if (note != null) ...[

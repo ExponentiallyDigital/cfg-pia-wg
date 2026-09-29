@@ -17,6 +17,17 @@ import 'package:cfg_pia_wg/widgets/common_fields.dart';
 
 import 'watchdog_test_utils.dart';
 
+/// A PIA that answers the region list only when told to, like one taking its time (ID-279).
+class _SlowPia extends _FakePia {
+  final regions = Completer<void>();
+
+  @override
+  Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async {
+    await regions.future;
+    return super.fetchRegions(onProgress: onProgress);
+  }
+}
+
 class _FakePia extends PiaService {
   @override
   Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async => const [
@@ -38,6 +49,7 @@ Widget _host(
   String piaPass = 'secret',
   Future<SSHClient> Function()? connect,
   Map<int, String> otherSlotDns = const {},
+  PiaService? pia,
 }) {
   return SessionScope(
     controller: c,
@@ -51,7 +63,7 @@ Widget _host(
           piaUsername: piaUser,
           piaPassword: piaPass,
           connect: connect ?? () async => client,
-          piaService: _FakePia(),
+          piaService: pia ?? _FakePia(),
           serviceFactory: (cl) => RouterWatchdog(cl, onLog: c.onLog),
           otherSlotDns: otherSlotDns,
         ),
@@ -66,6 +78,26 @@ String _stockReady(String cmd) =>
     cmd.contains(kStockJqPath) || cmd.contains("-d '$kStockBootDir'") ? '1' : '';
 
 void main() {
+  // ID-279: SAVE & DEPLOY asked PIA about the region with nothing on screen, for up to ten seconds,
+  // and the form looked hung.
+  testWidgets('the spinner shows while SAVE & DEPLOY checks the region with PIA', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final pia = _SlowPia();
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c, slotIsEmpty: true, pia: pia));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('wd_save')));
+    await tester.tap(find.byKey(const Key('wd_save')));
+    await tester.pump();
+    expect(find.byKey(const Key('wd_saving_overlay')), findsOneWidget, reason: 'while PIA has not answered');
+
+    pia.regions.complete();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox());
+  });
+
   // The reason this screen is a page and not a Dialog (418). As a card its height was wrong twice
   // over - 409 and again in 412 - and each time SAVE and the spinner that replaces it sat below a
   // fold that would not scroll, so a save looked like nothing had happened. A shrink-wrapping
@@ -377,6 +409,41 @@ void main() {
     expect(ssh.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
     expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
     expect(ssh.ran('cru a watchdog_wgc1'), isTrue);
+  });
+
+  // ID-300: a wrong SMTP password was noticed only because it was wrong on purpose. The deploy
+  // finished normally, and "Email FAILED" was in the router's log alone.
+  testWidgets("a deploy whose alert email failed says so in a popup, and the form stays open", (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains('which jq')) return '/opt/bin/jq';
+        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+        if (cmd.contains('nvram get wgc1_enable')) return '1';
+        if (cmd.contains('ip -o link show up')) return 'wgc1';
+        if (cmd.contains('ping')) return 'OK';
+        if (cmd.startsWith('tail -n +') && cmd.contains('watchdog_wgc1.log')) {
+          return '2026-01-01 10:00:05 Email FAILED (mailer exit=1) stderr=[ERROR: 535 5.7.8 Username and Password not accepted.|]';
+        }
+        return '';
+      },
+    );
+    await tester.pumpWidget(_host(ssh, c));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('wd_save')));
+    await tester.tap(find.byKey(const Key('wd_save')));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.textContaining('could not be sent: 535 5.7.8 Username and Password not accepted. Check the email settings'),
+        findsOneWidget);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('wd_save')), findsOneWidget, reason: 'the form stays open to fix the email settings');
+    expect(tester.testTextInput.log.where((m) => m.method == 'TextInput.finishAutofillContext' && m.arguments == true),
+        isEmpty, reason: 'the SMTP login may be what is wrong: nothing is offered for saving');
   });
 
   // ID-255: the warning reached only the app, not ROUTER LOG where the rest of the deploy is recorded.

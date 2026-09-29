@@ -6,7 +6,7 @@
 # Checks every [seconds] (default 5) and prints a line only when a source changes its answer, with
 # the time, and for a file, when the firmware last wrote it. So it can be left running on its own:
 #
-#   nohup sh /jffs/presence-probe.sh AA:BB:CC:DD:EE:FF > /tmp/presence.log 2>&1 &
+#   nohup sh /jffs/cfg-pia-wg/presence-probe.sh AA:BB:CC:DD:EE:FF > /tmp/presence.log 2>&1 &
 #
 # then switch the device off, and later on, and read /tmp/presence.log. Stop it with
 # `kill $(cat /tmp/presence-probe.pid)`. Its PID looks as if it keeps changing in `ps`, because each
