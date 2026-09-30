@@ -165,10 +165,15 @@ class RouterSession implements SSHClient {
   /// late failure threw away the connection the one before it had just opened: ten reconnects, and
   /// ten logins on the router, in five seconds after a watchdog deploy (ID-290). A failure on a
   /// connection already replaced just uses the replacement.
-  Future<SSHClient> _replace(SSHClient failed) {
+  ///
+  /// The line carries the error. After the ID-290 fix a deploy still dropped three connections in
+  /// a row, each about a second old, with nothing in the router's log to say why.
+  Future<SSHClient> _replace(SSHClient failed, Object error) {
     if (identical(_client, failed)) {
       _drop();
-      onLog?.call('Router SSH connection dropped; reconnecting.', isWarning: true);
+      var why = error.toString().split('\n').first.trim();
+      if (why.length > 120) why = '${why.substring(0, 120)}...';
+      onLog?.call('Router SSH connection dropped ($why); reconnecting.', isWarning: true);
     }
     return client();
   }
@@ -193,7 +198,7 @@ class RouterSession implements SSHClient {
       // here is idempotent (`nvram set`, `cru a`, `nvram commit`) except a chunked heredoc append,
       // where a double write shows up as a byte-count mismatch in `_writeScript` and is reported
       // rather than silently accepted - and the next deploy truncates the file first anyway.
-      final fresh = await _replace(c);
+      final fresh = await _replace(c, e);
       return await fresh.run(command, environment: environment, runInPty: runInPty, stderr: stderr, stdout: stdout);
     }
   }
@@ -216,7 +221,7 @@ class RouterSession implements SSHClient {
       return await c.runWithResult(command, runInPty: runInPty, stdout: stdout, stderr: stderr, environment: environment);
     } catch (e) {
       if (_closed || !isConnectionLost(e)) rethrow;
-      final fresh = await _replace(c);
+      final fresh = await _replace(c, e);
       return await fresh.runWithResult(command, runInPty: runInPty, stdout: stdout, stderr: stderr, environment: environment);
     }
   }

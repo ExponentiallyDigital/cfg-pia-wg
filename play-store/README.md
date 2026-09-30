@@ -8,6 +8,8 @@ Everything the Google Play listing needs that is not the app itself.
 | `description_short.md` | The short store description for `en-AU`, at most 80 characters. | By hand, published with the full one |
 | `copy_reqs.md` | The character limits for both descriptions. | By hand |
 | `privacy.html` | The privacy policy, published at the URL the listing points to. | By hand |
+| `screenshots/phone/`, `tablet-7/`, `tablet-10/` | The eight listing screenshots for each device type, each a caption in large type over an app screenshot, 9:16. Upload them in number order: the first two or three show in search. | Built by `python scripts/play-screenshots.py`; captions and order are in that script |
+| `screenshots/tablet-source/` | The tablet screenshots the tablet sets are built from, with every name, address, MAC and credential already replaced by invented ones. | Replaced by hand when the tablet screens change |
 | `361 (0.7.01).txt` | A release note from before the pipeline wrote them. Kept as a sample of the house voice. | Nobody - historical |
 
 ---

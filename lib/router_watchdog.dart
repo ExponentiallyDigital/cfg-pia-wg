@@ -788,7 +788,7 @@ if [ "$PINNED" = "0" ]; then
   KILLSW_FIXED="$KILLSW_UP"
   KILLSW_DOWN="$KILLSW_UP"
 elif [ "$GUARDED" -ge "$PINNED" ]; then
-  KILLSW_UP="the app's guard - if this tunnel drops, $NAMES, pinned to it, have no internet until it is back"
+  KILLSW_UP="if this tunnel breaks, $NAMES will have no internet until it is rebuilt by the watchdog"
   KILLSW_FIXED="the app's guard kept $NAMES pinned to this tunnel, and off the internet while this tunnel was down"
   KILLSW_DOWN="the app's guard is keeping $NAMES pinned to this tunnel, and off the internet until it is back"
 else

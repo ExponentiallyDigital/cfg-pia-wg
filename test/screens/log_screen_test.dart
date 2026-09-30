@@ -37,6 +37,31 @@ void main() {
     c.dispose();
   });
 
+  // R5 in the build 473 retest: an APPLY running behind APP LOG looked stopped, because new lines
+  // went in below the bottom of the screen.
+  testWidgets('follows new lines at the bottom, and leaves a reader who scrolled up alone', (tester) async {
+    final c = _controller();
+    for (var i = 0; i < 200; i++) {
+      c.logEntry('entry number $i');
+    }
+    await tester.pumpWidget(_host(c));
+    await tester.pumpAndSettle();
+    final scroll = tester.widget<SingleChildScrollView>(find.byType(SingleChildScrollView)).controller!;
+
+    c.logEntry('Device assignments applied.');
+    await tester.pumpAndSettle();
+    expect(scroll.offset, scroll.position.maxScrollExtent, reason: 'at the bottom, so it follows');
+
+    scroll.jumpTo(0);
+    await tester.pump();
+    c.logEntry('Found 19 devices.');
+    await tester.pumpAndSettle();
+    expect(scroll.offset, 0, reason: 'scrolled up to read, so it stays put');
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
   testWidgets('carries COPY, CLEAR and HOME, and CLEAR empties the log', (tester) async {
     final c = _controller()..logEntry('something happened');
     await tester.pumpWidget(_host(c));

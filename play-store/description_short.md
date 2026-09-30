@@ -1,1 +1,1 @@
-PIA WireGuard for ASUS routers: tap a device, pick a VPN, never renew a config
+Privacy and security for ASUS routers: PIA WireGuard VPNs with a kill switch
