@@ -471,7 +471,8 @@ void main() {
       expect(c.ran('cru d watchdog_log_rotate_wgc1'), isTrue);
       expect(done, contains('Removed 2 watchdog schedule(s)'));
 
-      final unset = c.commands.firstWhere((x) => x.contains('nvram unset'), orElse: () => '');
+      // The Network Services Filter's own clean-up (ID-348) unsets its keys too; this is the list.
+      final unset = c.commands.firstWhere((x) => x.contains('nvram unset cfg_pia_wg_user'), orElse: () => '');
       for (final key in ['cfg_pia_wg_password', 'cfg_pia_wg_sdate', 'cfg_pia_wg_reconfig_ok', 'wgc1_wd_smtp_pass']) {
         expect(unset, contains('nvram unset $key'), reason: key);
       }
@@ -480,6 +481,19 @@ void main() {
       // The TUNNEL configuration is deliberately untouched - the user manages those in the WebUI.
       expect(unset, isNot(contains('nvram unset wgc1_priv')));
       expect(unset, isNot(contains('nvram unset wgc1_enable')));
+    });
+
+    // ID-348: the app's entries in the router's Network Services Filter go too, run directly in case
+    // guard.sh is missing, and BEFORE the app's keys that say which entries are its own are unset.
+    test('uninstall takes the app\'s entries out of the Network Services Filter before unsetting its keys', () async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd == 'nvram get cfg_pia_wg_lwlist' ? '192.0.2.20/TCP' : '');
+      final done = await _wd(c).uninstallFromRouter();
+      final clear = c.commands.indexOf(kFilterClearCommand);
+      expect(clear, greaterThan(-1));
+      expect(clear, lessThan(c.commands.indexWhere((x) => x.contains('nvram unset cfg_pia_wg_user'))));
+      expect(kFilterClearCommand.split('\n').where((l) => l.trimLeft().startsWith('#')), isEmpty,
+          reason: 'comments are not sent over SSH');
+      expect(done.any((l) => l.contains('Network Services Filter')), isTrue);
     });
 
     // Restoring first means that if the directory removal fails, the boot scripts are already

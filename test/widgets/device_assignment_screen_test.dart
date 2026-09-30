@@ -47,10 +47,11 @@ const _cache = '{'
 
 const _sep = '@@CFGPIAWG@@';
 
-String _blob({String policy = _policyList, String defaultKey = '9', String? rules, String? ipv6}) => [
+String _blob({String policy = _policyList, String defaultKey = '9', String? rules, String? ipv6, bool ping = false}) => [
       '', _clientlist, policy, defaultKey, _staticlist, '', _cfgDeviceList, _clJson, _cache, '',
-      // `ip rule show` since ID-319, and `ipv6_service` since ID-317, after the parental controls.
-      if (rules != null || ipv6 != null) ...[rules ?? '', ipv6 ?? '', ''],
+      // `ip rule show` since ID-319, `ipv6_service` since ID-317, and the ping block since ID-348,
+      // after the parental controls.
+      if (rules != null || ipv6 != null || ping) ...[rules ?? '', ipv6 ?? '', ping ? '1' : '', ''],
     ].join('\n$_sep\n');
 
 /// The tunnel check's one round trip: the up interfaces, the router clock (10000), then each slot the
@@ -544,8 +545,39 @@ void main() {
     expect(find.textContaining('stays on your router afterwards'), findsOneWidget);
   });
 
+  // ID-348: the router's filter holds pings only for the whole network, so that part is a switch.
+  group('the ping block', () {
+    testWidgets('is off by default, and turning it on writes the setting and runs the guard at once', (tester) async {
+      final ssh = await _pumpConnected(tester);
+      expect(tester.widget<Switch>(find.byKey(const Key('ping_block_switch'))).value, isFalse);
+      await tester.ensureVisible(find.byKey(const Key('ping_block_switch')));
+      await tester.tap(find.byKey(const Key('ping_block_switch')));
+      await tester.pumpAndSettle();
+      final set = ssh.commands.indexOf('nvram set cfg_pia_wg_lw_icmp=1');
+      expect(set, greaterThan(-1));
+      expect(ssh.commands.indexOf('nvram commit', set), greaterThan(set));
+      expect(ssh.commands.skip(set).any((x) => x == "'/jffs/cfg-pia-wg/guard.sh'"), isTrue,
+          reason: 'applied now, not at the next cron run');
+    });
+
+    testWidgets('shows what the router holds, and turning it off unsets the setting', (tester) async {
+      final ssh = await _pumpConnected(tester,
+          router: RecordingSSHClient(responder: (cmd) {
+            if (cmd.contains('cfg_device_list')) return _blob(ping: true);
+            if (cmd.contains('ip -o link show up')) return '3: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP>';
+            return '';
+          }));
+      expect(tester.widget<Switch>(find.byKey(const Key('ping_block_switch'))).value, isTrue);
+      await tester.ensureVisible(find.byKey(const Key('ping_block_switch')));
+      await tester.tap(find.byKey(const Key('ping_block_switch')));
+      await tester.pumpAndSettle();
+      expect(ssh.commands, contains('nvram unset cfg_pia_wg_lw_icmp'));
+    });
+  });
+
   testWidgets('the confirmation warns when a foreign assignment is being replaced', (tester) async {
     await _pumpConnected(tester);
+    await tester.ensureVisible(find.byKey(const Key('row_44:55:66:77:88:99')));
     await tester.tap(find.byKey(const Key('row_44:55:66:77:88:99')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pick_9')));

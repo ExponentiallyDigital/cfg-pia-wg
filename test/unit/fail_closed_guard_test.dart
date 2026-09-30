@@ -15,7 +15,37 @@ const String kClientlist = 'pia-nz>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg'
     '<Work>OpenVPN>1>>password>1>3>>>0>0>';
 
 const String kNvramStub = r'''#!/bin/sh
-[ "$1" = get ] && cat "$STATE/nv_$2" 2>/dev/null
+case "$1" in
+  get) cat "$STATE/nv_$2" 2>/dev/null ;;
+  set) k="${2%%=*}"; printf '%s' "${2#*=}" > "$STATE/nv_$k" ;;
+  unset) rm -f "$STATE/nv_$2" ;;
+  commit) echo x >> "$STATE/commits" ;;
+esac
+exit 0
+''';
+
+// The firmware's firewall restart, as measured on stock 2026-09-30: the Network Services Filter's
+// list, when the filter and the firewall are on and it is not an allow list, becomes one DROP rule
+// per entry, out of the WAN only; ICMP types become one rule each for the whole LAN. A `drop_service`
+// file makes the queue drop the call, as a busy notify_rc does.
+const String kServiceStub = r'''#!/bin/sh
+echo "$1" >> "$STATE/services"
+[ -f "$STATE/drop_service" ] && exit 0
+[ "$1" = restart_firewall ] || exit 0
+nv() { cat "$STATE/nv_$1" 2>/dev/null; }
+: > "$STATE/fw"
+if [ "$(nv fw_enable_x)" = 1 ] && [ "$(nv fw_lw_enable_x)" = 1 ] && [ "$(nv filter_lw_default_x)" != DROP ]; then
+  for E in $(nv filter_lwlist | tr '<' ' '); do
+    ip="${E%%>*}"; pr="${E##*>}"
+    echo "-A FORWARD -s $ip/32 -i br0 -o eth0 -p $(echo "$pr" | tr 'A-Z' 'a-z') -j DROP" >> "$STATE/fw"
+  done
+  for t in $(nv filter_lw_icmp_x); do echo "-A FORWARD -i br0 -o eth0 -p icmp -m icmp --icmp-type $t -j DROP" >> "$STATE/fw"; done
+fi
+exit 0
+''';
+
+const String kIptablesStub = r'''#!/bin/sh
+[ "$1" = -S ] && cat "$STATE/fw" 2>/dev/null
 exit 0
 ''';
 
@@ -93,12 +123,25 @@ void main() {
     dir = Directory.systemTemp.createTempSync('guard_test_');
     state = Directory('${dir.path}/state')..createSync();
     final bin = Directory('${dir.path}/bin')..createSync();
-    for (final e in {'nvram': kNvramStub, 'ip': kIpStub, 'logger': kLoggerStub}.entries) {
+    for (final e in {
+      'nvram': kNvramStub,
+      'ip': kIpStub,
+      'logger': kLoggerStub,
+      'service': kServiceStub,
+      'iptables': kIptablesStub,
+    }.entries) {
       File('${bin.path}/${e.key}').writeAsStringSync(e.value);
     }
     script = File('${dir.path}/guard.sh')..writeAsStringSync(kGuardScript);
     if (!Platform.isWindows) Process.runSync('chmod', ['+x', ...bin.listSync().map((f) => f.path)]);
     _set(state, 'vpnc_clientlist', kClientlist);
+    // The filter's settings as a stock router ships them (read 2026-09-30).
+    _set(state, 'fw_enable_x', '1');
+    _set(state, 'fw_lw_enable_x', '0');
+    _set(state, 'filter_lw_default_x', 'ACCEPT');
+    _set(state, 'filter_lw_date_x', '1111111');
+    _set(state, 'filter_lw_time_x', '00002359');
+    _set(state, 'filter_lw_time2_x', '00002359');
   });
 
   tearDown(() => dir.deleteSync(recursive: true));
@@ -116,7 +159,28 @@ void main() {
       'PATH': '${dir.path}/bin$sep${Platform.environment['PATH']}',
       'STATE': state.path,
       'GUARD_LOCK': '${state.path}/lock',
+      'LW_WAIT': '1',
     });
+  }
+
+  String nv(String key) {
+    final f = File('${state.path}/nv_$key');
+    return f.existsSync() ? f.readAsStringSync() : '';
+  }
+
+  List<String> fw() {
+    final f = File('${state.path}/fw');
+    return f.existsSync() ? [for (final l in f.readAsLinesSync()) if (l.trim().isNotEmpty) l] : [];
+  }
+
+  List<String> services() {
+    final f = File('${state.path}/services');
+    return f.existsSync() ? f.readAsLinesSync() : [];
+  }
+
+  int commits() {
+    final f = File('${state.path}/commits');
+    return f.existsSync() ? f.readAsLinesSync().length : 0;
   }
 
   List<String> rules() {
@@ -124,9 +188,16 @@ void main() {
     return f.existsSync() ? [for (final l in f.readAsLinesSync()) if (l.trim().isNotEmpty) l.replaceAll('\t', ' ')] : [];
   }
 
+  /// The guard's own syslog lines. The filter's (ID-348) are [filterLog]'s, so a test of one isn't
+  /// broken by the other.
   List<String> log() {
     final f = File('${state.path}/log');
-    return f.existsSync() ? f.readAsLinesSync() : [];
+    return f.existsSync() ? [for (final l in f.readAsLinesSync()) if (!l.startsWith('Network Services Filter')) l] : [];
+  }
+
+  List<String> filterLog() {
+    final f = File('${state.path}/log');
+    return f.existsSync() ? [for (final l in f.readAsLinesSync()) if (l.startsWith('Network Services Filter')) l] : [];
   }
 
   // wgc5's table as the firmware builds it, from a stock router 2026-09-30 with documentation
@@ -145,6 +216,147 @@ $endpoint via 198.51.100.1 dev eth0
 10.6.0.2 dev wgs1  scope link
 ''');
   void up(String iface) => File('${state.path}/up').writeAsStringSync('$iface\n');
+
+  // ID-348: the second layer, stock's Network Services Filter, which holds from boot.
+  group('guard.sh: the Network Services Filter', () {
+    const drop20Tcp = '-A FORWARD -s 192.0.2.20/32 -i br0 -o eth0 -p tcp -j DROP';
+    const drop20Udp = '-A FORWARD -s 192.0.2.20/32 -i br0 -o eth0 -p udp -j DROP';
+
+    test('a pinned device is listed for TCP and UDP, the filter turned on, and the firewall shows it', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      final r = await run();
+      expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      expect(nv('filter_lwlist'), '<192.0.2.20>>>>TCP<192.0.2.20>>>>UDP');
+      expect(nv('fw_lw_enable_x'), '1');
+      expect(nv('cfg_pia_wg_lw_on'), '1');
+      expect(nv('cfg_pia_wg_lwlist'), '192.0.2.20/TCP 192.0.2.20/UDP');
+      expect(fw(), [drop20Tcp, drop20Udp]);
+      expect(commits(), 1, reason: 'it has to survive a reboot');
+      expect('${r.stdout}', contains('filter held 1 of 1'));
+      expect(filterLog(), ['Network Services Filter: 1 pinned device(s) kept off the internet connection outside their tunnel']);
+    });
+
+    test('an unchanged list costs no NVRAM write and no firewall restart', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      await run();
+      final c = commits(), s = services().length;
+      final r = await run();
+      expect(commits(), c);
+      expect(services(), hasLength(s), reason: 'cron runs it every minute');
+      expect('${r.stdout}', contains('filter held 1 of 1'));
+    });
+
+    test('an unpinned device is taken out, and the filter turned off again if the app turned it on', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      await run();
+      _set(state, 'vpnc_dev_policy_list', '0>192.0.2.20>>0>');
+      final r = await run();
+      expect(nv('filter_lwlist'), '');
+      expect(nv('fw_lw_enable_x'), '0');
+      expect(nv('cfg_pia_wg_lw_on'), '');
+      expect(nv('cfg_pia_wg_lwlist'), '');
+      expect(fw(), isEmpty);
+      expect('${r.stdout}', isNot(contains('filter')), reason: 'nothing pinned, nothing to say');
+    });
+
+    test("the user's own entries are kept, and a filter they turned on stays on", () async {
+      _set(state, 'fw_lw_enable_x', '1');
+      _set(state, 'filter_lwlist', '<192.0.2.99>>>>TCP');
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      await run();
+      expect(nv('filter_lwlist'), '<192.0.2.99>>>>TCP<192.0.2.20>>>>TCP<192.0.2.20>>>>UDP');
+      expect(nv('cfg_pia_wg_lw_on'), '', reason: 'the app did not turn it on');
+      _set(state, 'vpnc_dev_policy_list', '0>192.0.2.20>>0>');
+      await run();
+      expect(nv('filter_lwlist'), '<192.0.2.99>>>>TCP');
+      expect(nv('fw_lw_enable_x'), '1');
+    });
+
+    test("an entry the user made for a pinned device stays theirs", () async {
+      _set(state, 'fw_lw_enable_x', '1');
+      _set(state, 'filter_lwlist', '<192.0.2.20>>>>TCP');
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      await run();
+      expect(nv('filter_lwlist'), '<192.0.2.20>>>>TCP<192.0.2.20>>>>UDP');
+      expect(nv('cfg_pia_wg_lwlist'), '192.0.2.20/UDP');
+      _set(state, 'vpnc_dev_policy_list', '0>192.0.2.20>>0>');
+      await run();
+      expect(nv('filter_lwlist'), '<192.0.2.20>>>>TCP');
+    });
+
+    test('an allow list is refused, and the app takes its own entries out of one', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      await run();
+      _set(state, 'filter_lw_default_x', 'DROP');
+      final r = await run();
+      expect('${r.stdout}', contains('filter refused: it is an allow list'));
+      expect(nv('filter_lwlist'), '', reason: 'in an allow list, its entries would let the device out');
+      expect(nv('cfg_pia_wg_lwlist'), '');
+    });
+
+    test("a filter that is off with the user's entries in it is not turned on", () async {
+      _set(state, 'filter_lwlist', '<192.0.2.99>>>>TCP');
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      final r = await run();
+      expect('${r.stdout}', contains('filter refused: it is off, and turning it on would also apply the entries you made'));
+      expect(nv('fw_lw_enable_x'), '0');
+      expect(nv('filter_lwlist'), '<192.0.2.99>>>>TCP');
+      expect(commits(), 0);
+    });
+
+    test('a firewall with no filter at all is refused', () async {
+      _set(state, 'fw_enable_x', '0');
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      final r = await run();
+      expect('${r.stdout}', contains("filter refused: the router's firewall is off"));
+      expect(nv('filter_lwlist'), '');
+    });
+
+    test('pings are held only when the user asks, and the setting is put back as it was', () async {
+      _set(state, 'filter_lw_icmp_x', '0');
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      await run();
+      expect(nv('filter_lw_icmp_x'), '0', reason: 'off by default');
+      _set(state, 'cfg_pia_wg_lw_icmp', '1');
+      await run();
+      expect(nv('filter_lw_icmp_x'), '0 8');
+      expect(fw(), contains('-A FORWARD -i br0 -o eth0 -p icmp -m icmp --icmp-type 8 -j DROP'));
+      _set(state, 'cfg_pia_wg_lw_icmp', '0');
+      await run();
+      expect(nv('filter_lw_icmp_x'), '0');
+      expect(nv('cfg_pia_wg_lw_icmp8'), '');
+    });
+
+    test('a restart the service queue dropped is asked for again', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      File('${state.path}/drop_service').writeAsStringSync('');
+      final r1 = await run();
+      expect('${r1.stdout}', contains('filter held 0 of 1'));
+      File('${state.path}/drop_service').deleteSync();
+      final r2 = await run();
+      expect('${r2.stdout}', contains('filter held 1 of 1'), reason: 'the settings were right; the firewall was asked again');
+      expect(services().where((s) => s == 'restart_firewall'), hasLength(2));
+    });
+
+    test('a timetable on the filter is reported', () async {
+      _set(state, 'filter_lw_date_x', '0111110');
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+      final r = await run();
+      expect('${r.stdout}', contains('filter scheduled'));
+    });
+
+    test('a pin to a deleted profile is listed too, and clear takes out only the app\'s entries', () async {
+      _set(state, 'fw_lw_enable_x', '1');
+      _set(state, 'filter_lwlist', '<192.0.2.99>>>>TCP');
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.20>>5><1>192.0.2.60>>7>');
+      final r = await run();
+      expect('${r.stdout}', contains('filter held 2 of 2'));
+      expect(nv('filter_lwlist'), contains('<192.0.2.60>>>>UDP'));
+      await run(['clear']);
+      expect(nv('filter_lwlist'), '<192.0.2.99>>>>TCP');
+      expect(nv('cfg_pia_wg_lwlist'), '');
+    });
+  }, skip: shell == null ? 'no POSIX shell on the PATH' : null);
 
   // Hostile review (ID-346): a profile deleted in the web interface leaves its pins behind, and the
   // guard used to drop those devices' rules, sending them to the default connection.
