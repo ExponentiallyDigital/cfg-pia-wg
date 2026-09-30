@@ -181,7 +181,11 @@ class SessionController extends ChangeNotifier {
     // ...and the auto-reconnect on re-entering a router screen must not fire against an address
     // the user has just asked the app to drop.
     routerConnected = false;
-    logEntry('Remembered router address and its SSH key deleted from device storage.');
+    // Read back before it is reported (ID-338): forget() never throws, so it cannot say it failed.
+    final left = (await _routerPrefs.load()).isNotEmpty;
+    logEntry(left
+        ? 'The remembered router address could not be deleted from device storage.'
+        : 'Remembered router address and its SSH key deleted from device storage.');
     notifyListeners();
   }
 

@@ -753,13 +753,17 @@ void main() {
 
   // A user decision behind a visible warning. Stock only: Merlin has no such limit.
   group('maximum active VPNs', () {
-    RecordingSSHClient router({String tag = '', String current = '2'}) => RecordingSSHClient(
-          responder: (cmd) => cmd.contains('3rd-party')
-              ? tag
-              : cmd.contains('nvram get vpnc_max_conn')
-                  ? current
-                  : '',
-        );
+    // Remembers a write, as the router does, so the read-back after it sees the new value (ID-338).
+    RecordingSSHClient router({String tag = '', String current = '2'}) {
+      var value = current;
+      return RecordingSSHClient(responder: (cmd) {
+        final set = RegExp(r'nvram set vpnc_max_conn=(\d+)').firstMatch(cmd);
+        if (set != null) value = set.group(1)!;
+        if (cmd.contains('3rd-party')) return tag;
+        if (cmd.contains('nvram get vpnc_max_conn')) return value;
+        return '';
+      });
+    }
 
     Future<void> open(WidgetTester tester, RecordingSSHClient ssh) async {
       final c = SessionController(tickInterval: const Duration(hours: 1), routerPrefs: _MemoryRouterPrefs())
@@ -937,13 +941,17 @@ void main() {
       expect(logged(c, 'Could not delete the cached certificate', error: true), isTrue);
     });
 
-    RecordingSSHClient router({String tag = '', String current = '2'}) => RecordingSSHClient(
-          responder: (cmd) => cmd.contains('3rd-party')
-              ? tag
-              : cmd.contains('nvram get vpnc_max_conn')
-                  ? current
-                  : '',
-        );
+    // Remembers a write, as the router does, so the read-back after it sees the new value (ID-338).
+    RecordingSSHClient router({String tag = '', String current = '2'}) {
+      var value = current;
+      return RecordingSSHClient(responder: (cmd) {
+        final set = RegExp(r'nvram set vpnc_max_conn=(\d+)').firstMatch(cmd);
+        if (set != null) value = set.group(1)!;
+        if (cmd.contains('3rd-party')) return tag;
+        if (cmd.contains('nvram get vpnc_max_conn')) return value;
+        return '';
+      });
+    }
 
     testWidgets('MAX ACTIVE VPNS: a new limit in both logs', (tester) async {
       final c = connected();
