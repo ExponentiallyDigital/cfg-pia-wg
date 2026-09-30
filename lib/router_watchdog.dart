@@ -770,7 +770,13 @@ const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
 # Index 2 of a vpnc_clientlist record is the slot, index 6 the table its devices are routed by.
 MYIDX="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" '$3==s {print $7; exit}')"
 PINNED="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {n++} END {print n+0}')"
-GUARDED="$(ip rule show | awk -v i="$MYIDX" '$1=="90:" {for (k=2; k<NF; k++) if ($k=="lookup" && $(k+1)==i) n++} END {print n+0}')"
+# Per pinned device, from the kernel (ID-320): its 90 rule WITH suppress_prefixlength 0 and its 91
+# blackhole. Counting 90 rules by table said "guarded" for a device whose blocking rule was gone.
+GUARDED=0
+for GIP in $(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {print $2}'); do
+  ip rule show | grep -q "^90:.*from $GIP lookup $MYIDX suppress_prefixlength 0" &&
+    ip rule show | grep -q "^91:.*from $GIP blackhole" && GUARDED=$((GUARDED + 1))
+done
 DEVS="devices"
 [ "$PINNED" = "1" ] && DEVS="device"
 # Named as DEVICES names them (ID-242).

@@ -594,7 +594,11 @@ void main() {
       await svc.apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
       expect(logs.any((m) => m.startsWith('The fail-closed guard could not be put in place')), isTrue,
           reason: logs.join(' | '));
-      expect(logs.last, 'Device assignments applied.');
+      // ID-332: this used to end "Device assignments applied." with the guard missing. The rules are
+      // read back now, and the device without a guard is named.
+      expect(logs.last, startsWith("Device assignments written, but the router's rules do not match yet"));
+      expect(logs.last, contains('192.168.1.20 has no fail-closed guard'));
+      expect(logs, isNot(contains('Device assignments applied.')));
     });
   });
 

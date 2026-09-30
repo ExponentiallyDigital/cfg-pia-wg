@@ -24,7 +24,13 @@ class _App {
   final StockRouterModel router;
   final RecordingSSHClient client;
 
-  DeviceAssignmentService get _assign => DeviceAssignmentService(client, pollInterval: Duration.zero, maxPolls: 3);
+  /// What the app logged, for the claims it makes (ID-332, ID-333).
+  final logs = <String>[];
+
+  DeviceAssignmentService get _assign => DeviceAssignmentService(client,
+      pollInterval: Duration.zero,
+      maxPolls: 3,
+      onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m));
   RouterSlotService get _manage => RouterSlotService(client, verifyPollInterval: Duration.zero, verifyMaxAttempts: 3);
 
   /// Pins [ip] to a table (0 is Internet), or back to the default with null.
@@ -106,6 +112,25 @@ void main() {
   });
 
   group('DEF: the default connection', () {
+    // ID-333: "Default connection set" was logged whatever the router did. It is read back now.
+    test('it is reported set only when the router shows it set', () async {
+      await app.setDefault(5);
+      expect(app.logs, contains('Default connection set.'));
+    });
+
+    test('a router that drops the service calls is reported, not called set', () async {
+      router.dropServices = 20;
+      await app.setDefault(5);
+      expect(app.logs, isNot(contains('Default connection set.')));
+      expect(app.logs.last, contains("the router doesn't show it yet"));
+    });
+
+    // ID-332: likewise "Device assignments applied".
+    test('an assignment is reported applied only when the router holds its rules', () async {
+      await app.assign(_a, 9);
+      expect(app.logs.last, 'Device assignments applied.');
+    });
+
     test('Internet to a tunnel sends unassigned devices through it', () async {
       await app.setDefault(5);
       expectSound();
