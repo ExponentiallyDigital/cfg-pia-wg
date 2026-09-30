@@ -100,9 +100,7 @@ A complete rewrite, with a new interface throughout.
 Work items for the **current** release:
 
 - ID-313 SEC: **the clipboard copy is marked sensitive, and its clearing is read back (audit #7).** Progress 2026-09-30: copies are marked sensitive (proved on an Android 17 emulator: the system preview showed dots, not the text), and a clear the app couldn't read back is logged as unconfirmed. Still to prove: the copy cleared at the next start after the app is killed inside the 60 seconds. An emulator can't show it, because it shares its clipboard with the PC and relabels every clip; it's on Andrew's list for his phone.
-- ID-342 TST: each shape test is paired with a router check of the behaviour it stands for (audit #36).
-- ID-343 TST: TESTING.md pass lines rest on an independent observation, not the app's own message (audit #37).
-- ID-344 TST: fail closed during a reboot is observed, not inferred from two syslog times (audit #38).
+- ID-348 SEC: **on stock, a pinned device leaks out of the WAN for a few seconds at boot, before the guard is back.** Stock runs no add-on code until `/opt` mounts, after the WAN is up. Candidate fix: list pinned devices in stock's Network Services Filter, which the firewall applies before the WAN is up and which drops WAN traffic only. Waiting on Andrew's decision: it would be the app's first change to the router's firewall settings.
 - ID-346 TST: **a hostile review by a second model** of every change here and both check scripts, with where, what and how to fix.
 
 ---
@@ -119,6 +117,14 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
+
+2026-09-30 v0.8.116 build 486 - a reboot watched from a pinned device leaks for seconds on stock, and every self-reported test gets an independent check
+
+- ID-344 TST: **fail closed during a reboot is now watched from a pinned device, and on stock it fails (audit #38).** `scripts/check-reboot.sh` runs on a pinned machine, reboots the router, and fetches Cloudflare's trace page by IP address once a second, recording which public address answered; a control first shows the router's own WAN traffic is seen as its WAN address. Five boots on 2026-09-30: four leaked, for 3 to 6 seconds each, about a minute after the reboot was sent. The old proof was two syslog times a second apart, and it was wrong: stock runs no add-on code until `/opt` mounts, after the WAN is up, and a pinned device's slot table sends it out of the WAN until the tunnel starts. The guard is back within about a second of stock's first call to the boot hook, so this isn't the guard being slow. The fix is ID-348. ARCHITECTURE's fail-closed table and its "What it does not cover" list say so now; TESTING.md has GRD-7 for it, and GRD-4 says it checks the guard after the boot, not the window.
+- ID-342 TST: each shape test is paired with the router check of what it stands for (audit #36). TESTING.md has a new reference section, R9: 16 tests that can only check how a command is written, what each stands for, and what proves it on a router, `check-claims.sh` mostly. Two new checks there fill gaps: `TLS-floor` (the watchdog's `--tlsv1.2` refuses a TLS 1.1 server) and `DNS-DoT` (with DNS-over-TLS on, fresh lookups send nothing to port 53 on the WAN, counted by a rule that is removed straight after, with a direct plain query as the control). Quick run on stock: 22 passed, 0 failed. Merlin's mail name check, the email's kill-switch words and the checksum refusal have no router check yet, and R9 says so.
+- ID-343 TST: **the 18 TESTING.md pass lines that rested on the app's own messages each have an independent one (audit #37).** WD-24 and WD-25 count the packets the router sends to the DoH server; MAN-3, MAN-16 and WD-9 read `wg show`; MAN-11 reads `wgc5_enable`; WD-27, BRK-5, BRK-7 and DEF-5 compare the tunnel's public key, which a rebuild changes; BRK-6 counts HTTPS leaving the WAN; WD-14 wants no email; SET-4, SET-8, MRL-3 and MRL-8 read the file or setting the message is about; SET-10 points at check-claims; EXT-5 names the syslog count as the deciding check. WD-24 also quoted log lines build 477 replaced, and they're current now. Each new router command was run on the router as written.
+- CHG: WIP 5 -> 3 bullets. Added ID-348. Moved to this block, done: ID-342, ID-343, ID-344. Nothing removed.
+- TST: 1578 automated tests, none new.
 
 2026-09-30 v0.8.115 build 485 - an unattended router check proves each protection claim across six DNS setups
 
