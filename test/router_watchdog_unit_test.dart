@@ -896,6 +896,30 @@ void main() {
 
   });
 
+  // ID-310: openssl s_client with -verify_return_error checks the chain but not the NAME, so any
+  // publicly trusted certificate for another host was accepted, and sent the SMTP login. Measured
+  // on a router 2026-09-30: www.cloudflare.com's certificate passed for an SMTP connection without
+  // -verify_hostname and was refused with it. These are shape tests; the behaviour is that
+  // measurement, repeated by scripts/probe-claims.sh.
+  group('Merlin mail checks the server name on every connection (ID-310)', () {
+    test('every -connect in the Merlin script is paired with -verify_hostname', () {
+      final s = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin);
+      final connects = s.split('\n').where((l) => l.contains('SMTPCONN="-connect'));
+      expect(connects, hasLength(2), reason: 'the private-lookup path and the plain one');
+      for (final l in connects) {
+        expect(l, contains(r'-verify_hostname $SMTP_HOST'), reason: l);
+        expect(l, contains(r'-servername $SMTP_HOST'), reason: l);
+      }
+    });
+
+    test('TEST EMAIL checks the name too', () {
+      final cmd = buildSendmailCommand('smtp.gmail.com', 465, _valid(email: true));
+      expect(cmd, contains('-verify_return_error'));
+      expect(cmd, contains('-verify_hostname smtp.gmail.com'));
+      expect(cmd, contains('-servername smtp.gmail.com'));
+    });
+  });
+
   group('mailsend-go builders (stock)', () {
     test('buildMailsendGoCommand matches the documented invocation', () {
       final cmd = buildMailsendGoCommand('smtp.x.com', 465, _valid(email: true), subject: 'watchdog config test');
