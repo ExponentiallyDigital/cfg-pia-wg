@@ -221,13 +221,26 @@ void main() {
       expect(h.log.last, startsWith('Reconfig SUCCESS'));
     });
 
-    test('a certificate download that fails through encrypted DNS is retried without it', () async {
+    // The CA pin, as measured on ASUS's curl 2026-09-30: --cacert is honoured, so a cached file that
+    // is not PIA's CA stops the rebuild at addKey rather than trusting whoever answered (ID-341).
+    test('addKey refuses a server when the cached CA is not PIA\'s', () async {
+      h.tunnelUp(handshakeAgo: null);
+      File('${h.root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt')
+          .writeAsStringSync('-----BEGIN CERTIFICATE-----\nSOMEONE-ELSE\n-----END CERTIFICATE-----\n');
+      await h.run();
+      expect(h.log, contains(startsWith('ERROR: curl addKey failed (exit 60')));
+      expect(h.log.where((l) => l.startsWith('Reconfig SUCCESS')), isEmpty);
+    });
+
+    // What MRL-8 found on 2026-09-30, pinned before the fix (ID-307): the router's own resolver is
+    // down, and because ASUS's curl ignores --doh-url, "encrypted DNS" was never a way round it.
+    test('with the router resolver down, curl finds nothing: --doh-url never took effect (ID-307)', () async {
       h.tunnelUp(handshakeAgo: null);
       h.noCachedCert();
-      h.dohBroken();
+      h.systemDnsDown();
       await h.run(config: withDoh());
-      expect(h.log, contains('CA cert download failed through encrypted DNS; retrying once WITHOUT encrypted DNS'));
-      expect(h.log.last, startsWith('Reconfig SUCCESS'));
+      expect(h.resolvedBySystem, contains('raw.githubusercontent.com'), reason: 'curl asked the ordinary resolver');
+      expect(h.log, contains(startsWith('ERROR: could not download the PIA CA certificate')));
     });
 
     test('a DoH pair stored the wrong way round is named in the log, not passed off as none (ID-221)', () async {

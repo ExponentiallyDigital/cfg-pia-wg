@@ -647,9 +647,19 @@ void main() {
 
     test('has abort gates for empty desc, missing jq and missing PIA user', () {
       final s = buildWatchdogScript(_valid(slot: 1));
-      expect(s, contains(r'[ -x "$JQ" ] || command -v "$JQ"'));
+      expect(s, contains(r'[ -x "$JQ" ] || abort "jq is not installed"'));
       expect(s, contains(r'[ -n "$DESC" ]'));
       expect(s, contains(r'[ -n "$PIA_USER" ]'));
+    });
+
+    // MRL-8, 2026-09-30: Merlin's BusyBox has no `command`, so `command -v jq` failed with jq in
+    // /usr/bin, and the rebuild stopped at "jq is not installed". A bare name goes through which.
+    test('a bare jq is found with which, never with command, which Merlin lacks', () {
+      for (final fw in RouterFirmware.values) {
+        final s = buildWatchdogScript(_valid(slot: 1), firmware: fw);
+        expect(s, contains(r'[ -x "$JQ" ] || JQ=$(which "$JQ" 2>/dev/null)'), reason: fw.name);
+        expect(s, isNot(contains('command -v')), reason: fw.name);
+      }
     });
   });
 
