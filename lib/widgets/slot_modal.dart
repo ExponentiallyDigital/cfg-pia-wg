@@ -79,8 +79,11 @@ String? pinnedDeviceWarning(List<String>? names) {
 /// What DELETE's confirmation says about the devices pinned to the slot, which it moves to the
 /// Internet: [names] when they could be read, null when they could not, nothing when there are none.
 /// They were listed only in APP LOG, after the fact (ID-289).
+/// The part of [movedDeviceWarning] drawn in red, so it stands out from the amber around it (R4).
+const String kMovedPhrase = 'will be moved to the Internet, with no VPN';
+
 String? movedDeviceWarning(List<String>? names) {
-  const moved = 'will be moved to the Internet, with no VPN';
+  const moved = kMovedPhrase;
   if (names == null) return 'Any device pinned to this VPN $moved. You can pick another VPN for it in DEVICES.';
   if (names.isEmpty) return null;
   final one = names.length == 1;
@@ -246,7 +249,17 @@ class _SlotModalState extends State<SlotModal> {
                   if (message != null) Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
                   if (message != null && warning != null) const SizedBox(height: 10),
                   if (warning != null)
-                    Text(warning, key: const Key('confirm_warning'), style: const TextStyle(color: kWarn, fontSize: 13)),
+                    // Amber, with DELETE's "moved to the Internet" in red: the one effect that can't be undone.
+                    Text.rich(
+                      TextSpan(children: [
+                        for (final (i, part) in warning.split(kMovedPhrase).indexed) ...[
+                          if (i > 0) const TextSpan(text: kMovedPhrase, style: TextStyle(color: kError)),
+                          TextSpan(text: part),
+                        ],
+                      ]),
+                      key: const Key('confirm_warning'),
+                      style: const TextStyle(color: kWarn, fontSize: 13),
+                    ),
                 ],
               ),
         actions: [

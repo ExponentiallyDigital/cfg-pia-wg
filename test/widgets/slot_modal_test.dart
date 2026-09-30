@@ -2146,7 +2146,7 @@ void main() {
       await tester.tap(find.byKey(const Key('slot_disable')));
       await tester.pumpAndSettle();
 
-      expect(tester.widget<Text>(find.byKey(const Key('confirm_warning'))).data, startsWith('Study PC is pinned to this VPN'));
+      expect(tester.widget<Text>(find.byKey(const Key('confirm_warning'))).textSpan!.toPlainText(), startsWith('Study PC is pinned to this VPN'));
       expect(ssh.ran('nvram set wgc1_enable=0'), isFalse);
 
       await tester.pumpWidget(const SizedBox());
@@ -2194,8 +2194,15 @@ void main() {
         await tester.tap(find.byKey(const Key('slot_delete')));
         await tester.pumpAndSettle();
 
-        expect(tester.widget<Text>(find.byKey(const Key('confirm_warning'))).data,
+        expect(tester.widget<Text>(find.byKey(const Key('confirm_warning'))).textSpan!.toPlainText(),
             startsWith('Study PC is pinned to this VPN, and will be moved to the Internet'));
+        // R4: the move itself in red, the rest in amber.
+        final spans = <TextSpan>[];
+        tester.widget<Text>(find.byKey(const Key('confirm_warning'))).textSpan!.visitChildren((s) {
+          if (s is TextSpan && s.text != null) spans.add(s);
+          return true;
+        });
+        expect(spans.firstWhere((s) => s.text == kMovedPhrase).style?.color, kError);
         expect(ssh.commands.any((x) => x.contains('nvram unset') || x.contains('stop_vpnc')), isFalse);
 
         await tester.pumpWidget(const SizedBox());

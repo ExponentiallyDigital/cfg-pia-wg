@@ -22,7 +22,7 @@
 
 ---
 
-A native Android app for Private Internet Access (PIA) WireGuard VPNs on ASUS routers, stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/).
+A native Android app for Private Internet Access (PIA) WireGuard VPNs on ASUS routers, stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) (beta).
 
 **Device assignment.** Which device is on which VPN? On stock firmware, your router can't easily tell you. It thinks in slots: five numbered WireGuard clients, and finding out which devices use one generally requires stopping it and seeing what breaks, or what goes out in the clear. `cfg-pia-wg` thinks in devices. One screen lists everything on your network and the VPN each device is using right now. Moving a device to a different VPN - or off VPN entirely - is taps away. No slot numbers, nothing to stop first, and no deciphering a multi-click WebUI apparently designed by a sadist.
 
@@ -30,7 +30,7 @@ A native Android app for Private Internet Access (PIA) WireGuard VPNs on ASUS ro
 
 Underneath both is the plumbing: the app authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and either writes the result into one of the router's five slots or hands you the complete `.conf` to copy, share, or save. Generating a `.conf` needs no router at all.
 
-You'll need SSH enabled on the router, a PIA subscription, and firmware with WireGuard in VPN Fusion: stock 3.0.0.4.388 or later, or Asuswrt-Merlin (tested on 388.11 & 12). See [Prerequisites](#4-prerequisites--requirements).
+You'll need SSH enabled on the router, a PIA subscription, and firmware with WireGuard in VPN Fusion: stock 3.0.0.4.388 or later, or Asuswrt-Merlin (beta, tested on 388.11 & 12). See [Prerequisites](#4-prerequisites--requirements).
 
 `cfg-pia-wg` is the evolution of my command-line Windows/Linux app [cfg-pia-wg-cmd](https://github.com/ExponentiallyDigital/cfg-pia-wg-cmd), in a functional, modern, and streamlined UI.
 
@@ -149,6 +149,9 @@ If you want to build your own, see [BUILDING.md](https://github.com/Exponentiall
 ## 4. Prerequisites & requirements
 
 Since build 403 (5 September 2026), this app extends support to stock ASUS firmware; [Merlin Firmware](https://www.asuswrt-merlin.net/) continues to be supported.
+
+> [!NOTE]
+> **Merlin support is in beta.** Everything since then has been built and tested on stock firmware, on a real router, end to end. Merlin shares nearly all of the code, and the automated tests cover the watchdog script on both, but the parts that differ on Merlin - its kill switch, starting and stopping a tunnel, boot persistence and uninstall - haven't had the same hand testing on a Merlin router for this release. If something doesn't behave on Merlin, please [raise an issue](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues).
 
 If you don't have an ASUS router, you can still use the `Generate PIA WireGuard configuration` function to create standalone PIA configuration files from your phone/tablet. If that's you, you can skip to [5. Using the app](#5-using-the-app).
 

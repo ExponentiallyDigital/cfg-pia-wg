@@ -136,7 +136,7 @@ I5=5             # wgc5's
 - Do: copy the three check scripts to `/jffs/cfg-pia-wg/` on the router. The router has no `scp`, so `scp` fails in both directions: open each file in `vi` on the router and paste it in, or from Git Bash on DESKTOP, in the repo:
 
 ```bash
-for F in e2e.sh test-backoff.sh presence-probe.sh; do ssh <user>@<router> "cat > /jffs/cfg-pia-wg/$F" < scripts/$F; done
+for F in e2e.sh test-backoff.sh presence-probe.sh; do ssh <user>@<router> "cat > /jffs/cfg-pia-wg/$F && chmod 700 /jffs/cfg-pia-wg/$F" < scripts/$F; done
 ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
 ```
 - PIA username and password.
@@ -987,7 +987,7 @@ echo "$T $TMAC $D $P $I1 $I5"
 - Do: copy `scripts/presence-probe.sh` to the router again, since it changed in build 470. From Git Bash on DESKTOP, in the repo:
 
 ```bash
-ssh <user>@<router> "cat > /jffs/cfg-pia-wg/presence-probe.sh" < scripts/presence-probe.sh
+ssh <user>@<router> "cat > /jffs/cfg-pia-wg/presence-probe.sh && chmod 700 /jffs/cfg-pia-wg/presence-probe.sh" < scripts/presence-probe.sh
 ```
 
 - Do: on the router, with the shell variables set (DEV's block above), start it on TABLET:
