@@ -830,6 +830,23 @@ void main() {
           startsWith('fail-closed guard missing - while wgc5:pia-aus_perth is down'));
     });
 
+    // Hostile review (ID-346): a profile deleted in the web interface leaves its pins behind.
+    testWidgets('a device pinned to a profile that no longer exists says so, from rule 91', (tester) async {
+      await _pumpConnected(tester,
+          router: _router(
+              policy: '1>192.168.1.20>>7>',
+              rules: '0:\tfrom all lookup local\n91:\tfrom 192.168.1.20 blackhole\n100:\tfrom 192.168.1.20 lookup 7'));
+      expect(tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
+          startsWith('pinned to a VPN profile that no longer exists, so it has no internet'));
+    });
+
+    testWidgets('and says it is unguarded when the router holds no rule 91 for it', (tester) async {
+      await _pumpConnected(tester,
+          router: _router(policy: '1>192.168.1.20>>7>', rules: '0:\tfrom all lookup local\n100:\tfrom 192.168.1.20 lookup 7'));
+      expect(tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
+          startsWith('pinned to a VPN profile that no longer exists, and not guarded'));
+    });
+
     testWidgets('a default that is not running sends unassigned devices to the internet', (tester) async {
       await _pumpConnected(tester, router: _router(defaultKey: '5'));
 

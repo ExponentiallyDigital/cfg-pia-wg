@@ -84,4 +84,11 @@ wgc5_desc=pia-aus_melbourne
 wgc5_dns=9.9.9.9, 149.112.112.112
 wgc5_wd_check_interval=5
 wgc5_wd_doh_url=https://freedns.controld.com/p1
-wgc5_wd_doh_ip=76.76.2.1''';
+wgc5_wd_doh_ip=76.76.2.1
+@@ROUTES
+@@PINNEDROUTES
+192.168.1.55 9.9.9.9 9.9.9.9 from 192.168.1.55 dev wgc1 table 9 uid 0
+@@UP
+wgc1
+br0
+eth0''';

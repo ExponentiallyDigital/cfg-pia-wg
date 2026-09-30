@@ -44,7 +44,14 @@ part_a() {
   s50=/opt/etc/init.d/S50downloadmaster
   if [ -f "$s50" ]; then say "boot_hook_calls_guard=$(grep -c guard.sh "$s50")"; else say "boot_hook_calls_guard=no_S50"; fi
   PW="$(nvram get cfg_pia_wg_password)"
-  if [ -n "$PW" ] && [ -f /jffs/curllst ]; then say "curllst_lines_with_pia_password=$(grep -cF -- "$PW" /jffs/curllst)"; else say "curllst_lines_with_pia_password=n/a"; fi
+  # From a file, not an argument, so the password isn't in `ps` meanwhile.
+  if [ -n "$PW" ] && [ -f /jffs/curllst ]; then
+    ( umask 077; printf '%s\n' "$PW" > /tmp/probe-claims.pw )
+    say "curllst_lines_with_pia_password=$(grep -cFf /tmp/probe-claims.pw /jffs/curllst)"
+    rm -f /tmp/probe-claims.pw
+  else
+    say "curllst_lines_with_pia_password=n/a"
+  fi
   for n in 1 2 3 4 5; do
     h="$(nvram get wgc${n}_wd_smtp_server)"; h="${h%%:*}"
     [ -n "$h" ] && [ -f /jffs/curllst ] && say "curllst_lines_with_smtp_host_wgc$n=$(grep -cF -- "$h" /jffs/curllst)"

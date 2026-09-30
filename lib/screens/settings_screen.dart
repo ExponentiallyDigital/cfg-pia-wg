@@ -116,6 +116,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 'binaries.\n\n'
                 'Your VPN tunnels are NOT touched. They keep working, and you can manage them '
                 "from your router's own web interface.\n\n"
+                'Devices pinned to a tunnel keep their pin but lose the fail-closed guard: '
+                'whenever their tunnel is down, they reach the internet through the default '
+                'connection, which may be your internet connection with no VPN.\n\n'
                 'The app itself keeps working. Deploying a watchdog again puts everything back.',
                 style: TextStyle(color: kText, fontSize: 12),
               ),

@@ -163,6 +163,24 @@ void main() {
         expect(h.log.last, 'Reconfig SUCCESS: region pia-nz via 192.0.2.51:1337');
       });
 
+      // Hostile review (ID-346): the login was on curl's command line, which ASUS's curl writes to
+      // /jffs/curllst on flash and ps shows. It goes on stdin now.
+      test('sends the PIA login on stdin, never on curl\'s command line', () async {
+        h.tunnelUp(handshakeAgo: null);
+        await h.run();
+        expect(h.log.last, startsWith('Reconfig SUCCESS'));
+        expect(h.tokenAuth, ['p123456789:secret'], reason: 'the login reached PIA');
+        expect(h.curlArgv.where((a) => a.contains('secret') || a.contains('p123456789')), isEmpty);
+      });
+
+      test('a password with a quote and a backslash reaches PIA intact', () async {
+        h
+          ..set('cfg_pia_wg_password', r'pa"ss\wd')
+          ..tunnelUp(handshakeAgo: null);
+        await h.run();
+        expect(h.tokenAuth.first, r'p123456789:pa"ss\wd');
+      });
+
       test('on stock, restarts through VPN Fusion on its own clientlist row', () async {
         h.tunnelUp(handshakeAgo: null);
         await h.run();

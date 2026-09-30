@@ -367,8 +367,9 @@ Map<int, int> parseHandshakeAges(String raw) {
 ///
 /// The first successful login records the key's fingerprint; after that a different key is refused
 /// during the key exchange, BEFORE the password is asked for, and [RouterHostKeyChanged] says what
-/// to do. [hostKeys] is a test seam.
-Future<SSHClient> openSshClient(String ip, String user, String pass, {RouterHostKeys? hostKeys}) async {
+/// to do. [hostKeys] and [onWarning] are test seams; [onWarning] defaults to [routerHostKeyWarning].
+Future<SSHClient> openSshClient(String ip, String user, String pass,
+    {RouterHostKeys? hostKeys, void Function(String message)? onWarning}) async {
   final target = splitHostPort(ip);
   final id = '${target.host}:${target.port}';
   final keys = hostKeys ?? routerHostKeys;
@@ -397,8 +398,19 @@ Future<SSHClient> openSshClient(String ip, String user, String pass, {RouterHost
   }
   // Only after the login worked, as the router address itself is remembered: a wrong address or
   // password must not leave a key recorded.
-  if (recorded == null && presented != null) await keys.record(id, presented!);
+  await recordFirstHostKey(keys, id, recorded: recorded, presented: presented, onWarning: onWarning);
   return client;
+}
+
+/// After a successful login, records the key [presented] for [id] when none was [recorded] yet, and
+/// says so when it could not be stored: a key that was not stored leaves the next connection
+/// unchecked, and SECURITY.md says the key is recorded.
+Future<void> recordFirstHostKey(RouterHostKeys keys, String id,
+    {required String? recorded, required String? presented, void Function(String message)? onWarning}) async {
+  if (recorded != null || presented == null) return;
+  if (await keys.record(id, presented)) return;
+  (onWarning ?? routerHostKeyWarning)?.call("The router's SSH key could not be recorded on this phone, so the "
+      'next connection will not be checked against it. Connecting again tries to record it again.');
 }
 
 // Per-slot summary shown in the slot modal.

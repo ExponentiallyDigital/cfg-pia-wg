@@ -537,7 +537,9 @@ class DnsRouting {
     final dev = RegExp(r' dev (\S+)').firstMatch(line)?.group(1);
     // stubby listens on 127.0.1.1: a lookup to it never leaves the router.
     if (dev == 'lo') return const DnsTag('this router', DnsTagKind.neutral);
-    final slot = dev == null ? null : int.tryParse(RegExp(r'^wgc(\d)$').firstMatch(dev)?.group(1) ?? '');
+    // A resolver on the LAN (a Pi-hole, say): it doesn't leave by the internet from here.
+    if (dev != null && RegExp(r'^br\d+$').hasMatch(dev)) return const DnsTag('your network', DnsTagKind.neutral);
+    final slot =dev == null ? null : int.tryParse(RegExp(r'^wgc(\d)$').firstMatch(dev)?.group(1) ?? '');
     if (slot == null) return _internet;
     return up.contains(dev) ? DnsTag(label(slot), DnsTagKind.tunnel) : DnsTag('${label(slot)}, which is down', DnsTagKind.neutral);
   }
@@ -652,7 +654,8 @@ List<DnsBlock> buildDnsRouting(DnsRouting r, {required String readAt}) {
   DnsTag pinnedWhere(String key) {
     final devices = devicesFor[key] ?? const <String>{};
     final tags = [for (final pr in r.pinnedRoutes) if (devices.contains(pr.$1)) r.tagForRoute(pr.$3)];
-    if (tags.isEmpty) return const DnsTag('tunnel', DnsTagKind.tunnel);
+    // Nothing was read for these devices: say so, rather than claim a tunnel.
+    if (tags.isEmpty) return const DnsTag('route not read', DnsTagKind.neutral);
     return tags.firstWhere((t) => t.kind == DnsTagKind.internet,
         orElse: () => tags.firstWhere((t) => t.kind == DnsTagKind.neutral, orElse: () => tags.first));
   }

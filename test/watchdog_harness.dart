@@ -194,7 +194,9 @@ exit 0
 // sent, and answers it in DNS wire format with 192.0.2.53 - or is down, or answers FORMERR, or
 // answers an HTML error page, as a test asks (ID-307).
 const String _curl = r'''#!/bin/sh
-out=""; fmt=""; url=""; res=""; ca=""; data=""
+out=""; fmt=""; url=""; res=""; ca=""; data=""; user=""; cfg=""
+# Every call's whole command line, which ASUS's curl writes to /jffs/curllst and ps shows.
+echo "$*" >> "$STATE/curl_argv"
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift ;; -w) fmt="$2"; shift ;;
@@ -202,7 +204,9 @@ while [ $# -gt 0 ]; do
     --cacert) ca="$2"; shift ;;
     --doh-url) shift ;;
     --data-binary) data="${2#@}"; shift ;;
-    -u|--data-urlencode|--max-time|--connect-timeout|-H) shift ;;
+    -u) user="$2"; shift ;;
+    -K) [ "$2" = - ] && cfg="$(cat)"; shift ;;
+    --data-urlencode|--max-time|--connect-timeout|-H) shift ;;
     https://*) url="$1" ;;
   esac
   shift
@@ -237,6 +241,14 @@ case "$url" in
     printf "\000\000\201\200\000\001\000\001\000\000\000\000${q}\300\014\000\001\000\001\000\000\000\074\000\004\300\000\002\065" > "$out"
     exit 0 ;;
   *generateToken*)
+    # The login as curl would send it: -u, or a `user = "u:p"` line of a -K config, unescaped as
+    # curl's config parser does. None at all is PIA's 401.
+    auth="$user"
+    [ -z "$auth" ] && auth="$(echo "$cfg" | sed -n 's/^user = "\(.*\)"$/\1/p' | sed 's/\\"/"/g; s/\\\\/\\/g')"
+    echo "$auth" >> "$STATE/token_auth"
+    if [ -z "$auth" ]; then
+      [ -n "$out" ] && echo '{"message":"unauthorized"}' > "$out"; [ -n "$fmt" ] && printf '401 exit=0 connects=1 err='; exit 0
+    fi
     if [ -f "$STATE/pia_down" ]; then
       [ -n "$out" ] && echo 'error code: 504' > "$out"; [ -n "$fmt" ] && printf '504 exit=0 connects=1 err='; exit 0
     fi
@@ -468,6 +480,12 @@ class WatchdogHarness {
   List<String> get services => _lines('services');
   List<String> get sleeps => _lines('sleeps');
   List<String> get curls => _lines('curls');
+
+  /// Every curl call's whole command line: what ASUS's curl writes to /jffs/curllst.
+  List<String> get curlArgv => _lines('curl_argv');
+
+  /// The login each token request carried, as curl would send it.
+  List<String> get tokenAuth => _lines('token_auth');
   List<String> get lookups => _lines('lookups');
   List<String> get rules => [for (final l in _lines('rules')) l.replaceAll('\t', ' ')];
   String get backoffFile {

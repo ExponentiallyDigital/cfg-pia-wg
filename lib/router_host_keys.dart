@@ -102,3 +102,7 @@ class RouterHostKeys {
 
 /// The store the app uses. A global because `openSshClient` is called from several screens.
 final RouterHostKeys routerHostKeys = RouterHostKeys();
+
+/// Where `openSshClient` says a key could not be recorded: the app log, once the session controller
+/// has set it. Global for the same reason as [routerHostKeys].
+void Function(String message)? routerHostKeyWarning;

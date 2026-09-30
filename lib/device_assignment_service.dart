@@ -107,6 +107,14 @@ bool guardHeld(String rules, String ip, int table) {
   return r90 == 1 && r91 == 1;
 }
 
+/// Whether `ip rule show` output [rules] holds exactly one rule 91 blackhole for [ip]: all the guard
+/// keeps for a device pinned to a profile that no longer exists.
+bool blackholeHeld(String rules, String ip) => rules
+    .split('\n')
+    .map((l) => l.replaceAll(RegExp(r'\s+'), ' ').trim())
+    .where((l) => l == '91: from $ip blackhole')
+    .length == 1;
+
 /// Thrown when the router's lists changed between the read and the apply.
 ///
 /// The web interface rewrites the WHOLE of a list from the copy its page loaded, so an apply that

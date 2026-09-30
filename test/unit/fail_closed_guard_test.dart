@@ -146,6 +146,47 @@ $endpoint via 198.51.100.1 dev eth0
 ''');
   void up(String iface) => File('${state.path}/up').writeAsStringSync('$iface\n');
 
+  // Hostile review (ID-346): a profile deleted in the web interface leaves its pins behind, and the
+  // guard used to drop those devices' rules, sending them to the default connection.
+  group('guard.sh: a pin to a profile that no longer exists', () {
+    test('is kept off the internet by rule 91 alone, counted, and logged once', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.60>>7>');
+      final r = await run();
+      expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      expect('${r.stdout}', contains('guarded 1 of 1'));
+      expect(rules(), ['91: from 192.0.2.60 blackhole']);
+      expect(log().where((l) => l.contains('no longer exists')), hasLength(1));
+      await run();
+      expect(rules(), ['91: from 192.0.2.60 blackhole'], reason: 'a second run adds nothing');
+      expect(log().where((l) => l.contains('no longer exists')), hasLength(1), reason: 'and logs nothing more');
+    });
+
+    test('keeps its rule 91 when it had a full guard before its profile went', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.60>>5>');
+      await run();
+      expect(rules(), contains('91: from 192.0.2.60 blackhole'));
+      _set(state, 'vpnc_clientlist', 'pia-nz>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg');
+      final r = await run();
+      expect('${r.stdout}', contains('guarded 1 of 1'));
+      expect(rules(), ['91: from 192.0.2.60 blackhole'], reason: 'rule 90 goes with the profile; 91 stays');
+    });
+
+    test('pins to an OpenVPN profile and to Internet are left alone', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.61>>3><1>192.0.2.62>>0>');
+      final r = await run();
+      expect('${r.stdout}', contains('guarded 0 of 0'));
+      expect(rules(), isEmpty);
+    });
+
+    test('its rule goes when the pin does', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.60>>7>');
+      await run();
+      _set(state, 'vpnc_dev_policy_list', '0>192.0.2.60>>0>');
+      await run();
+      expect(rules(), isEmpty);
+    });
+  }, skip: shell == null ? 'no POSIX shell on the PATH' : null);
+
   group('guard.sh: what the tunnel\'s table sends out the WAN (ID-347)', () {
     test('each such address is held to the tunnel, with a blackhole behind it', () async {
       _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>5>');

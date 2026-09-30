@@ -2883,8 +2883,21 @@ log "Requesting PIA token"
 # status, no body and no stderr is the caller-rejection signature (see the detach at the top); if
 # it is ever seen again, the detach is not working. %{exitcode}/%{errormsg} need curl 7.75+.
 TMPHTTP="/tmp/${IFACE}_http.txt"
+# The login goes to curl on stdin (-K -), never on its command line: ASUS's curl writes its whole
+# command line to /jffs/curllst, on flash, and ps shows it to anything on the router. Here-documents
+# only, because printf and echo are programs on stock, not shell builtins, and their arguments would
+# show the same way. Quotes and backslashes are escaped for curl's config parser. Measured on stock
+# 2026-10-01: the login arrived intact, and curllst held only "-K -".
+cfgesc() { sed 's/\\/\\\\/g; s/"/\\"/g' <<CFGEOF
+$1
+CFGEOF
+}
+PIA_AUTH="user = \"$(cfgesc "$PIA_USER"):$(cfgesc "$PIA_PASS")\""
 if $CURLB $RES -S -o "$TMPTOK" -w '%{http_code} exit=%{exitcode} connects=%{num_connects} err=%{errormsg}' \
-     -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" >"$TMPHTTP" 2>"$TMPERR"; then
+     -K - "$TOKEN_URL" >"$TMPHTTP" 2>"$TMPERR" <<CFGEOF
+$PIA_AUTH
+CFGEOF
+then
   RC=0
 else
   RC=$?
@@ -2899,7 +2912,10 @@ if [ -z "$HTTP" ] || [ "$HTTP" = "000" ]; then
   if [ -n "$RES" ]; then log "token fetch produced [$WRITEOUT]; retrying once in 3s with ordinary DNS"; else log "token fetch produced [$WRITEOUT]; retrying once in 3s"; fi
   sleep 3
   if $CURLPLAIN -S -o "$TMPTOK" -w '%{http_code} exit=%{exitcode} connects=%{num_connects} err=%{errormsg}' \
-     -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" >"$TMPHTTP" 2>"$TMPERR"; then
+     -K - "$TOKEN_URL" >"$TMPHTTP" 2>"$TMPERR" <<CFGEOF
+$PIA_AUTH
+CFGEOF
+  then
     RC=0
   else
     RC=$?
