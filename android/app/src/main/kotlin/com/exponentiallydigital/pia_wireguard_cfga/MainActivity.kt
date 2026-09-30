@@ -1,11 +1,14 @@
 package com.exponentiallydigital.pia_wireguard_cfga
 
+import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.PersistableBundle
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -48,6 +51,7 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     METHOD_CLEAR_CLIPBOARD -> clearClipboard(result)
+                    METHOD_COPY_SENSITIVE -> copySensitive(call.argument<String>("text") ?: "", result)
                     else -> result.notImplemented()
                 }
             }
@@ -85,7 +89,50 @@ class MainActivity : FlutterActivity() {
             return
         }
         clipboard.clearPrimaryClip()
+        // Read back (ID-313). Android 10+ hides the clipboard from an app without focus - hasPrimaryClip()
+        // then says false whatever is on it - so the check only counts while this app has focus.
+        result.success(hasWindowFocus() && !clipboard.hasPrimaryClip())
+    }
+
+    /**
+     * Copies [text] marked sensitive, so Android 13+ hides it in the clipboard preview and keyboard
+     * suggestions instead of showing a private key on screen (ID-313). Labelled, so a copy the app
+     * could not clear - because it was killed inside the 60 seconds - can be recognised and cleared
+     * at the next start without touching anything the user copied from elsewhere.
+     */
+    private fun copySensitive(text: String, result: MethodChannel.Result) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        if (clipboard == null) {
+            result.error(ERROR_UNAVAILABLE, "No ClipboardManager", null)
+            return
+        }
+        val clip = ClipData.newPlainText(CLIP_LABEL, text)
+        val sensitiveKey = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ClipDescription.EXTRA_IS_SENSITIVE
+        } else {
+            "android.content.extra.IS_SENSITIVE"
+        }
+        clip.description.extras = PersistableBundle().apply { putBoolean(sensitiveKey, true) }
+        clipboard.setPrimaryClip(clip)
         result.success(null)
+    }
+
+    /**
+     * A config copied just before the app was killed outlives the 60-second countdown, which died
+     * with the process. At the first moment this window has focus - the earliest Android 10+ lets
+     * an app see the clipboard - clear it if what is there is this app's own labelled copy, and
+     * leave anything copied from elsewhere alone (ID-313).
+     */
+    private var ownClipChecked = false
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || ownClipChecked) return
+        ownClipChecked = true
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        if (clipboard.primaryClipDescription?.label == CLIP_LABEL && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            clipboard.clearPrimaryClip()
+        }
     }
 
     /**
@@ -210,6 +257,8 @@ class MainActivity : FlutterActivity() {
         // Mirrored in lib/clipboard_service.dart; a test fails if the two drift apart.
         const val CLIPBOARD_CHANNEL = "com.exponentiallydigital.pia_wireguard_cfga/clipboard"
         const val METHOD_CLEAR_CLIPBOARD = "clearClipboard"
+        const val METHOD_COPY_SENSITIVE = "copySensitive"
+        const val CLIP_LABEL = "cfg-pia-wg"
         const val ERROR_UNSUPPORTED = "unsupported"
         const val ERROR_UNAVAILABLE = "unavailable"
         const val UNKNOWN = "unknown"

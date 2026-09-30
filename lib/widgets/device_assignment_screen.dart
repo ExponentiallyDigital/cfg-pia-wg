@@ -1090,6 +1090,7 @@ class _DeviceRow extends StatelessWidget {
             onTapOutside: (_) => onNameCancel(),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               TextField(
+                enableIMEPersonalizedLearning: false,
                 key: Key('name_field_${device.mac}'),
                 controller: nameController,
                 autofocus: true,

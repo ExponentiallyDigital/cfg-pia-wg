@@ -73,19 +73,44 @@ void main() {
     });
   });
 
-  test('SessionController.clearClipboard goes through the host, a copy does not', () async {
-    final calls = mockHost(reply: (_) async => null);
+  test('SessionController copies through the host, marked sensitive, and clears through it (ID-313)', () async {
+    final args = <Object?>[];
+    final calls = mockHost(reply: (call) async {
+      args.add(call.arguments);
+      return call.method == kClearClipboardMethod ? true : null;
+    });
     final writes = mockSystemClipboard();
     final c = SessionController(tickInterval: const Duration(hours: 1)); // real writer
 
     await c.copyToClipboard('secret');
-    expect(calls, isEmpty);
-    expect(writes, ['secret']);
+    expect(calls, [kCopySensitiveMethod]);
+    expect(args.single, {'text': 'secret'});
+    expect(writes, isEmpty, reason: 'the host copies it, so it can mark it sensitive');
 
     await c.clearClipboard();
-    expect(calls, [kClearClipboardMethod]);
-    expect(writes, ['secret'], reason: 'nothing was copied to clear it');
+    expect(calls, [kCopySensitiveMethod, kClearClipboardMethod]);
+    expect(c.log.last.message, endsWith('Clipboard auto cleared.'));
+    c.dispose();
+  });
 
+  // The host clears, but cannot read the clipboard back while the app is in the background. The
+  // log said "auto cleared" regardless until build 478; now it says what was observed (ID-313).
+  test('a clear the host could not read back is not reported as done', () async {
+    mockHost(reply: (call) async => call.method == kClearClipboardMethod ? false : null);
+    mockSystemClipboard();
+    final c = SessionController(tickInterval: const Duration(hours: 1));
+    await c.copyToClipboard('secret');
+    await c.clearClipboard();
+    expect(c.log.last.message, contains('not confirmed'));
+    c.dispose();
+  });
+
+  test('with no host, a copy still reaches the clipboard, unmarked', () async {
+    mockHost();
+    final writes = mockSystemClipboard();
+    final c = SessionController(tickInterval: const Duration(hours: 1));
+    await c.copyToClipboard('secret');
+    expect(writes, ['secret']);
     c.dispose();
   });
 
@@ -96,7 +121,11 @@ void main() {
 
     expect(kotlin, contains('"${clipboardChannel.name}"'));
     expect(kotlin, contains('"$kClearClipboardMethod"'));
+    expect(kotlin, contains('"$kCopySensitiveMethod"'));
     expect(kotlin, contains('clearPrimaryClip()'));
+    // The copy is marked sensitive on every API level that reads the flag (ID-313).
+    expect(kotlin, contains('ClipDescription.EXTRA_IS_SENSITIVE'));
+    expect(kotlin, contains('"android.content.extra.IS_SENSITIVE"'));
   });
 
   // Screen capture is blocked in a release build. A debug build skips FLAG_SECURE so the app can

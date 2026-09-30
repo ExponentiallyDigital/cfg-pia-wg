@@ -553,7 +553,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _c.forgetRouterIp();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Remembered router address deleted.')),
+      const SnackBar(content: Text('Remembered router address and its SSH key deleted.')),
     );
   }
 
@@ -751,6 +751,7 @@ class _MaxVpnsDialogState extends State<_MaxVpnsDialog> {
                 ),
                 const SizedBox(height: 16),
                 TextField(
+                  enableIMEPersonalizedLearning: false,
                   key: const Key('max_vpns_field'),
                   controller: _ctrl,
                   keyboardType: TextInputType.number,

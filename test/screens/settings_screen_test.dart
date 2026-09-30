@@ -535,7 +535,7 @@ void main() {
       await tester.tap(find.byKey(const Key('settings_forget_ip_confirm')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Remembered router address deleted.'), findsOneWidget);
+      expect(find.text('Remembered router address and its SSH key deleted.'), findsOneWidget);
       expect(c.rememberedRouterIp, '');
       expect(await prefs.load(), '');
       // The form goes back to the shipped default, not to a stale value.

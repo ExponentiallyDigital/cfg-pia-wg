@@ -22,11 +22,14 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'app_shell.dart';
 import 'firmware.dart';
+import 'share_cache.dart';
 export 'app_shell.dart' show PiaWgApp;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   unawaited(stampAppVersion());
+  // Whatever a previous run shared and did not get to clear, because it was killed (ID-312).
+  unawaited(clearShareCache());
   runApp(const PiaWgApp());
 }
 

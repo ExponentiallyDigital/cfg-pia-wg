@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/build_info_service.dart';
+import 'package:cfg_pia_wg/clipboard_service.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/screens/about_screen.dart';
 import 'package:cfg_pia_wg/router_prefs.dart';
@@ -539,11 +540,12 @@ void main() {
     testWidgets('COPY BUILD INFO puts the same newline-separated text on the clipboard', (tester) async {
       String? copied;
       final messenger = tester.binding.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-        if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+      // The copy goes to the host, which marks it sensitive (ID-313); that is the whole path now.
+      messenger.setMockMethodCallHandler(clipboardChannel, (call) async {
+        if (call.method == kCopySensitiveMethod) copied = (call.arguments as Map)['text'] as String;
         return null;
       });
-      addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      addTearDown(() => messenger.setMockMethodCallHandler(clipboardChannel, null));
 
       _mockChannel(tester, (call) async => _hostReply);
       // A controller with the real clipboard writer, so this exercises the whole path down to
