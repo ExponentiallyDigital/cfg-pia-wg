@@ -1128,7 +1128,12 @@ void main() {
       expect(await _wd(c).redeployScripts(), [5]);
       expect(c.ran("wc -c < '/jffs/cfg-pia-wg/watchdog_wgc5.sh'"), isTrue, reason: 'written, and the write proved');
       expect(c.ran("wc -c < '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isFalse, reason: 'no script there, so none put there');
-      expect(c.commands.any((x) => x.startsWith('cru ') || x.startsWith('service ') || x.startsWith('nvram set')), isFalse,
+      // The one schedule allowed is the guard's own every-minute entry, which it keeps whenever any
+      // device is pinned (ID-316) - not a watchdog's.
+      expect(
+          c.commands.any((x) =>
+              (x.startsWith('cru ') && !x.contains(kGuardCronTag)) || x.startsWith('service ') || x.startsWith('nvram set')),
+          isFalse,
           reason: 'no schedule, tunnel or setting changes');
     });
 

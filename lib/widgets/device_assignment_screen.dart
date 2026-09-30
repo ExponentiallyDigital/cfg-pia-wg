@@ -533,6 +533,24 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     return null;
   }
 
+  /// A device the router has pinned to a tunnel but whose fail-closed guard it does not hold (ID-319).
+  ///
+  /// The notes below say "no internet until it is enabled" for a pinned device whose tunnel is down.
+  /// That was worked out from the tunnel's state and the assumption that the guard was there; now the
+  /// guard's rules are read with the lists, and a device without them is said to be unguarded. Only
+  /// for the assignment already applied: a pin staged but not yet applied has no guard yet by design.
+  String? _guardNote(LanDevice d) {
+    final ip = d.ip;
+    final state = _state;
+    if (ip == null || state == null) return null;
+    final applied = assignedIndexFor(state.policies, ip);
+    if (applied == null || applied != _effectiveIndex(d)) return null;
+    if (!_wireguardProfiles.any((p) => p.vpncStateIndex == applied)) return null;
+    if (state.isGuarded(ip, applied) != false) return null;
+    return 'fail-closed guard missing - while ${_labelForIndex(applied)} is down, this device can reach the '
+        'internet outside it. APPLY puts it back';
+  }
+
   /// The note under a picker whose tunnel is not running: where the traffic really goes. Null when it
   /// goes where the picker says, or that cannot be told. [pinned] is the device's own assignment, null
   /// when it follows the default; the default connection panel passes null with [forDefault].
@@ -928,12 +946,26 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             Text(defaultNote, key: const Key('default_exit'), style: const TextStyle(color: kWarn, fontSize: 12)),
           ],
           const SizedBox(height: 6),
+          // Until build 480 this said assigned devices fall back to the default when their tunnel
+          // drops. With the fail-closed guard they do not: they have no internet (ID-340).
           const Text(
-            'Devices set to "default" use this. Assigned devices fall back to it if their tunnel drops.',
+            'Devices set to "default" use this. A device assigned to a tunnel never falls back to it: while '
+            'that tunnel is down, the device has no internet.',
             style: TextStyle(color: kMuted, fontSize: 12),
           ),
         ]),
       ),
+      if (state.ipv6On) ...[
+        const SizedBox(height: 12),
+        // ID-317: the app does not support IPv6. The guard and the firmware's pins are IPv4 only.
+        const Text(
+          'IPv6 is on in your router, and this app does not support IPv6: a device assigned to a tunnel can '
+          'still reach the internet over IPv6, outside the tunnel, whether the tunnel is up or down. To keep '
+          'assigned devices in their tunnels, turn IPv6 off in the router (IPv6, Connection type: Disable).',
+          key: Key('ipv6_warning'),
+          style: TextStyle(color: kWarn, fontSize: 12),
+        ),
+      ],
       const SizedBox(height: 12),
       _Panel(
         background: kConfigBg,
@@ -952,7 +984,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
               blocked: _blocked(d),
               foreign: _isForeign(d),
               // Where a stopped tunnel sends the traffic says nothing about a device with none.
-              note: d.assignable && !_blocked(d) ? _exitNote(_effectiveIndex(d)) : null,
+              note: d.assignable && !_blocked(d) ? _guardNote(d) ?? _exitNote(_effectiveIndex(d)) : null,
               onTap: _busy || !d.assignable ? null : () => _pick(d),
               editing: _editingMac == d.mac,
               nameController: _nameCtrl,

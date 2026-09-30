@@ -25,19 +25,39 @@ echo "$*" >> "$STATE/log"
 ''';
 
 // Keeps rules as `<prio>:<TAB>from <ip> ...` lines and prints them in priority order, as `ip rule
-// show` does. Only the forms the guard uses are understood.
+// show` does. Also the three route forms the guard uses since ID-347: `ip route show table T`
+// answers from $STATE/table_T, `ip route replace ... table T` appends there, and `ip -o link show
+// up` lists $STATE/up. Only the forms the guard uses are understood.
 const String kIpStub = r'''#!/bin/sh
 R="$STATE/rules"
+if [ "$1" = "-o" ] && [ "$2" = "link" ]; then
+  n=2; while read -r i; do [ -n "$i" ] && { n=$((n + 1)); echo "$n: $i: <POINTOPOINT,UP,LOWER_UP> mtu 1420"; }; done < "$STATE/up" 2>/dev/null
+  exit 0
+fi
+if [ "$1" = route ]; then
+  case "$2" in
+    show) [ "$3" = table ] && cat "$STATE/table_$4" 2>/dev/null; exit 0 ;;
+    replace)
+      dst="$3"; dev=""; t=""
+      shift 3
+      while [ $# -gt 0 ]; do case "$1" in dev) dev="$2"; shift ;; table) t="$2"; shift ;; esac; shift; done
+      grep -qxF "$dst dev $dev scope link" "$STATE/table_$t" 2>/dev/null || echo "$dst dev $dev scope link" >> "$STATE/table_$t"
+      exit 0 ;;
+    flush) [ "$3" = table ] && rm -f "$STATE/table_$4"; exit 0 ;;
+  esac
+  exit 1
+fi
 [ "$1" = rule ] || exit 1
 op="$2"
 shift 2
 case "$op" in
   show) [ -f "$R" ] && sort -s -t: -k1,1n "$R"; exit 0 ;;
 esac
-from=""; tbl=""; prio=""; bh=0; sup=""
+from=""; to=""; tbl=""; prio=""; bh=0; sup=""
 while [ $# -gt 0 ]; do
   case "$1" in
     from) from="$2"; shift ;;
+    to) to="$2"; shift ;;
     lookup) tbl="$2"; shift ;;
     priority) prio="$2"; shift ;;
     suppress_prefixlength) sup="$2"; shift ;;
@@ -48,14 +68,15 @@ done
 case "$op" in
   add)
     [ -f "$STATE/fail_add" ] && exit 2
+    [ -f "$STATE/fail_add_$prio" ] && exit 2
     if [ "$bh" = 1 ]; then
-      printf '%s:\tfrom %s blackhole\n' "$prio" "$from" >> "$R"
+      printf '%s:\tfrom %s%s blackhole\n' "$prio" "$from" "${to:+ to $to}" >> "$R"
     else
-      printf '%s:\tfrom %s lookup %s%s\n' "$prio" "$from" "$tbl" "${sup:+ suppress_prefixlength $sup}" >> "$R"
+      printf '%s:\tfrom %s%s lookup %s%s\n' "$prio" "$from" "${to:+ to $to}" "$tbl" "${sup:+ suppress_prefixlength $sup}" >> "$R"
     fi ;;
   del)
     [ -f "$R" ] || exit 2
-    awk -v p="$prio:" -v f="$from" '!d && $1 == p && $3 == f {d = 1; next} {print} END {exit !d}' "$R" > "$R.new"
+    awk -v p="$prio:" -v f="$from" -v to="$to" '!d && $1 == p && $3 == f && (to == "" || ($4 == "to" && $5 == to)) {d = 1; next} {print} END {exit !d}' "$R" > "$R.new"
     rc=$?
     mv "$R.new" "$R"
     exit $rc ;;
@@ -107,6 +128,102 @@ void main() {
     final f = File('${state.path}/log');
     return f.existsSync() ? f.readAsLinesSync() : [];
   }
+
+  // wgc5's table as the firmware builds it, from a stock router 2026-09-30 with documentation
+  // addresses: the tunnel's /1 routes and its DNS, and - via the WAN - the router's own DNS server,
+  // the tunnel's PIA server, the ISP subnet and the default.
+  void table5({String endpoint = '203.0.113.9'}) => File('${state.path}/table_5').writeAsStringSync('''
+0.0.0.0/1 dev wgc5  scope link
+default via 198.51.100.1 dev eth0
+1.1.1.2 via 198.51.100.1 dev eth0  metric 1
+$endpoint via 198.51.100.1 dev eth0
+127.0.0.0/8 dev lo  scope link
+128.0.0.0/1 dev wgc5  scope link
+9.9.9.9 dev wgc5  scope link
+198.51.100.0/24 dev eth0  proto kernel  scope link  src 198.51.100.36
+192.168.1.0/24 dev br0  proto kernel  scope link  src 192.168.1.1
+10.6.0.2 dev wgs1  scope link
+''');
+  void up(String iface) => File('${state.path}/up').writeAsStringSync('$iface\n');
+
+  group('guard.sh: what the tunnel\'s table sends out the WAN (ID-347)', () {
+    test('each such address is held to the tunnel, with a blackhole behind it', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>5>');
+      table5();
+      up('wgc5');
+      final r = await run();
+      expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      expect('${r.stdout}', contains('guarded 1 of 1'));
+      expect(rules(), unorderedEquals([
+        '90: from 192.0.2.50 lookup 5 suppress_prefixlength 0',
+        '91: from 192.0.2.50 blackhole',
+        for (final x in ['1.1.1.2', '203.0.113.9', '198.51.100.0/24']) ...[
+          '88: from 192.0.2.50 to $x lookup 205',
+          '89: from 192.0.2.50 to $x blackhole',
+        ],
+      ]));
+      expect(File('${state.path}/table_205').readAsLinesSync(),
+          unorderedEquals(['0.0.0.0/1 dev wgc5 scope link', '128.0.0.0/1 dev wgc5 scope link']));
+    });
+
+    test('a second run changes nothing', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>5>');
+      table5();
+      up('wgc5');
+      await run();
+      final before = rules();
+      await run();
+      expect(rules(), before);
+    });
+
+    test('with the tunnel down, its tunnel-only table stays empty, so the blackhole decides', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>5>');
+      table5();
+      await run();
+      expect(rules(), contains('89: from 192.0.2.50 to 1.1.1.2 blackhole'));
+      expect(File('${state.path}/table_205').existsSync(), isFalse);
+    });
+
+    test('a new PIA server replaces the old one\'s rules', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>5>');
+      table5();
+      up('wgc5');
+      await run();
+      table5(endpoint: '203.0.113.77');
+      await run();
+      expect(rules().where((r) => r.contains('203.0.113.9')), isEmpty);
+      expect(rules(), contains('89: from 192.0.2.50 to 203.0.113.77 blackhole'));
+    });
+
+    test('a blackhole that cannot be added is counted as not guarded, and reported', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>5>');
+      table5();
+      File('${state.path}/fail_add_89').writeAsStringSync('1');
+      final r = await run();
+      expect('${r.stdout}', contains('guarded 0 of 1'));
+      expect(r.exitCode, isNot(0));
+    });
+
+    test('clear removes them, and empties the tunnel-only table', () async {
+      _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>5>');
+      table5();
+      up('wgc5');
+      await run();
+      await run(['clear']);
+      expect(rules(), isEmpty);
+      expect(File('${state.path}/table_205').existsSync(), isFalse);
+    });
+  });
+
+  // ID-320: a 90 rule without suppress_prefixlength 0 counted as guarded, though it hands the device
+  // the WAN default the firmware copies into the tunnel's table.
+  test('guard.sh replaces a 90 rule that lacks suppress_prefixlength 0', () async {
+    _set(state, 'vpnc_dev_policy_list', '1>192.0.2.50>>9>');
+    File('${state.path}/rules').writeAsStringSync('90:\tfrom 192.0.2.50 lookup 9\n91:\tfrom 192.0.2.50 blackhole\n');
+    final r = await run();
+    expect('${r.stdout}', contains('guarded 1 of 1'));
+    expect(rules(), unorderedEquals(['90: from 192.0.2.50 lookup 9 suppress_prefixlength 0', '91: from 192.0.2.50 blackhole']));
+  });
 
   group('guard.sh', () {
     test('a device pinned to a WireGuard tunnel gets both rules', () async {
@@ -226,9 +343,11 @@ void main() {
   }, skip: shell == null ? 'no POSIX shell on the PATH' : null);
 
   group('the script text', () {
-    test('uses only priorities 90 and 91, which nothing else on the router uses', () {
+    // 88 and 89 since ID-347. Measured free on a stock router 2026-09-30: the firmware uses 0, 90-91
+    // (the guard's), 100, 1016-1029, 32766 and 32767.
+    test('uses only priorities 88 to 91, which nothing else on the router uses', () {
       final prios = RegExp(r'priority (\d+)').allMatches(kGuardScript).map((m) => m.group(1)).toSet();
-      expect(prios, {'90', '91'});
+      expect(prios, {'88', '89', '90', '91'});
     });
 
     test('adds the drop rule before the tunnel rule, so a half-added guard fails closed', () {

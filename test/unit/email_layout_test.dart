@@ -260,7 +260,9 @@ void main() {
 
       test('it counts the pinned devices and the guard rules actually in place', () {
         expect(stock, contains(r'''$1=="1" && $4==i {n++} END {print n+0}'''));
-        expect(stock, contains(r'''$1=="90:" {for (k=2; k<NF; k++) if ($k=="lookup" && $(k+1)==i) n++}'''));
+        // Per device, both rules (ID-320); watchdog_behaviour_test runs this against a fake router.
+        expect(stock, contains(r'grep -q "^90:.*from $GIP lookup $MYIDX suppress_prefixlength 0"'));
+        expect(stock, contains(r'grep -q "^91:.*from $GIP blackhole"'));
       });
 
       test('a guarded tunnel says its pinned devices had no internet while it was down', () {
