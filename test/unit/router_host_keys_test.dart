@@ -63,6 +63,14 @@ void main() {
     c.dispose();
   });
 
+  // ID-338: forget() never throws, so "deleted" was logged whether or not it was.
+  test('FORGET that could not delete the address says so', () async {
+    final c = SessionController(routerPrefs: _StuckPrefs(), hostKeys: keys);
+    await c.forgetRouterIp();
+    expect(c.log.last.message, contains('could not be deleted'));
+    c.dispose();
+  });
+
   test('a changed key is explained on screen, not reported as an unreachable router', () {
     final e = RouterHostKeyChanged('192.168.1.1:22', fpA, fpB);
     final m = routerConnectMessage(e, '192.168.1.1')!;
@@ -78,4 +86,13 @@ void main() {
     expect(await inert.record('192.168.1.1:22', fpA), isFalse);
     expect(await inert.recorded('192.168.1.1:22'), isNull);
   });
+}
+
+/// A store whose delete does nothing, as a read-only or failing storage would leave it.
+class _StuckPrefs extends RouterPrefs {
+  _StuckPrefs() : super(directory: () async => Directory.systemTemp);
+  @override
+  Future<String> load() async => '192.168.1.1';
+  @override
+  Future<void> forget() async {}
 }

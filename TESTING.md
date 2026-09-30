@@ -317,7 +317,7 @@ Every test starts on MANAGE, connected. MAN-13 and MAN-14 are in the [WD](#wd) g
 - Do: select wgc1, ENABLE.
 - See: "Connectivity check targets", filled in with 8.8.8.8 and 1.1.1.1.
 - Do: ENABLE.
-- See: APP LOG `wgc1:pia-<region> enabled and verified.` and the ACTIVE badge.
+- See: APP LOG `wgc1:pia-<region> enabled: up, and its server has answered.` and the ACTIVE badge.
 
 **MAN-4** Two tunnels up [hand]
 
@@ -1695,7 +1695,7 @@ Set up: a Merlin router with JFFS scripts enabled, SSH on, and no cfg-pia-wg on 
 **MRL-6** Create, enable, disable [hand]
 
 - Do: MANAGE, wgc1, CREATE in any region, then ENABLE.
-- See: APP LOG "wgc1:pia-<region> enabled and verified." and the ACTIVE badge.
+- See: APP LOG "wgc1:pia-<region> enabled: up, and both check addresses answered through it." and the ACTIVE badge.
 - Do: DISABLE, then ENABLE again.
 - Pass if: after DISABLE, `wg show interfaces` no longer lists wgc1; after ENABLE, it does, and the badge is back.
 

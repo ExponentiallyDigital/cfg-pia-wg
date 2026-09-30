@@ -567,6 +567,11 @@ class RouterSlotService {
     }
     await _run('nvram set vpnc_max_conn=$count');
     await _run('nvram commit');
+    // Read back before it is reported set (ID-338).
+    final now = int.tryParse((await _read('nvram get vpnc_max_conn')).trim());
+    if (now != count) {
+      throw Exception('The router still has its maximum active VPNs at ${now ?? 'an unreadable value'}, not $count. Try again.');
+    }
     await _logRouter('Maximum active VPNs set to $count');
   }
 
@@ -927,7 +932,12 @@ class RouterSlotService {
     final wasRunning = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
     if (wasRunning) {
       onLog?.call('$oldLabel is running; stopping it before its configuration is replaced.');
-      await disableSlot(slot);
+      // Used, not ignored (ID-336): a tunnel still up here keeps the old server running under the
+      // new name - the 2026-09-14 fault above - so nothing is written until it is down.
+      if (!await disableSlot(slot)) {
+        throw Exception('$oldLabel did not stop, so its configuration was not replaced: the old server would '
+            'have carried on under the new name. Nothing was changed. Try again in a minute.');
+      }
     }
 
     Map<String, String>? backup;
@@ -1088,7 +1098,13 @@ class RouterSlotService {
       onLog?.call('Neither ping target answered via $label, but the tunnel has a handshake.', isError: true);
     }
     await _logRouter('Enabled $label');
-    onLog?.call('$label enabled and verified.', isSuccess: true);
+    // What was checked, and no more (ID-339): on Merlin, pings through the tunnel; on stock, the
+    // interface and a handshake from its server, since a stock ping says nothing about the tunnel.
+    onLog?.call(
+        isStockFirmware
+            ? '$label enabled: up, and its server has answered.'
+            : '$label enabled: up, and both check addresses answered through it.',
+        isSuccess: true);
   }
 
   /// What to add to a failed ENABLE's message when the revert could not stop the tunnel: without
@@ -1206,7 +1222,13 @@ class RouterSlotService {
     // interface is still listed and leaves the ACTIVE badge on a slot it just disabled.
     final down = await _awaitInterfaceDown(slot);
     await _logRouter('Disabled ${await _label(slot)}${down ? '' : ' (its interface is still up)'}');
-    onLog?.call('${await _label(slot)} disabled.', isSuccess: true);
+    // Said as it was found (ID-336): "disabled" was logged as a success with the interface still up.
+    if (down) {
+      onLog?.call('${await _label(slot)} disabled.', isSuccess: true);
+    } else {
+      onLog?.call('${await _label(slot)} was switched off, but its interface is still up. Check MANAGE in a minute.',
+          isWarning: true);
+    }
     return down;
   }
 
@@ -1251,7 +1273,18 @@ class RouterSlotService {
     }
     await _run('nvram commit');
     await _logRouter('Deleted $label configuration');
-    onLog?.call('$label configuration cleared.', isSuccess: true);
+    // Read back before it is reported cleared (ID-338): the key that makes it a tunnel, and on stock
+    // the profile row the web interface lists.
+    final keyLeft = (await _read('nvram get wgc${slot}_priv')).trim().isNotEmpty;
+    final rowLeft = isStockFirmware && (await _readVpncBySlot()).containsKey(slot);
+    if (keyLeft || rowLeft) {
+      onLog?.call(
+          '$label was deleted, but the router still holds its ${keyLeft ? 'private key' : 'profile row'}. '
+          'Check it in the web interface, and DELETE again if it is still there.',
+          isWarning: true);
+    } else {
+      onLog?.call('$label configuration cleared.', isSuccess: true);
+    }
   }
 
   // Bounded wait for [slot]'s interface to leave `wg show interfaces`. Checks before sleeping, so
