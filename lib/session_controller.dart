@@ -119,7 +119,9 @@ class SessionController extends ChangeNotifier {
                 return null;
               }),
         _routerPrefs = routerPrefs ?? RouterPrefs(),
-        _hostKeys = hostKeys ?? routerHostKeys;
+        _hostKeys = hostKeys ?? routerHostKeys {
+    routerHostKeyWarning = (m) => onLog(m, isWarning: true);
+  }
 
   // An empty write means "clear", and clearing goes through the host so Android does not show
   // its clipboard popup for it - see clipboard_service.dart. A copy is marked sensitive, so

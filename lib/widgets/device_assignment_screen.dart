@@ -545,6 +545,16 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     if (ip == null || state == null) return null;
     final applied = assignedIndexFor(state.policies, ip);
     if (applied == null || applied != _effectiveIndex(d)) return null;
+    // Pinned to a profile deleted in the web interface, which leaves the pin behind. Index 0 is
+    // Internet, never a profile.
+    if (applied != 0 && !state.profiles.any((p) => p.vpncStateIndex == applied)) {
+      final held = state.guardRules == null ? null : blackholeHeld(state.guardRules!, ip);
+      if (held == null) return null;
+      return held
+          ? 'pinned to a VPN profile that no longer exists, so it has no internet. Pick a tunnel or Internet, and APPLY'
+          : 'pinned to a VPN profile that no longer exists, and not guarded: it can reach the internet through the '
+              'default connection. Pick a tunnel or Internet, and APPLY';
+    }
     if (!_wireguardProfiles.any((p) => p.vpncStateIndex == applied)) return null;
     if (state.isGuarded(ip, applied) != false) return null;
     return 'fail-closed guard missing - while ${_labelForIndex(applied)} is down, this device can reach the '

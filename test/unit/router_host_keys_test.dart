@@ -2,12 +2,13 @@
 //
 // These test the store and FORGET. The refusal itself - a changed key stopping the connection
 // before any password is sent - happens inside dartssh2's key exchange, which needs a real SSH
-// server; it was proved against the maintainer's router on 2026-09-30 (CHANGELOG ID-308), and
-// scripts/check-claims.sh's app half repeats it.
+// server; it was proved against the maintainer's router on 2026-09-30 (CHANGELOG ID-308). Nothing
+// automated repeats it.
 import 'dart:io';
 
 import 'package:cfg_pia_wg/router_host_keys.dart';
 import 'package:cfg_pia_wg/router_prefs.dart';
+import 'package:cfg_pia_wg/router_slot_service.dart' show recordFirstHostKey;
 import 'package:cfg_pia_wg/router_session.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +24,32 @@ void main() {
     keys = RouterHostKeys(directory: () async => dir);
   });
   tearDown(() => dir.deleteSync(recursive: true));
+
+  // Hostile review (ID-346): a key that could not be stored was accepted in silence, and every
+  // later connection went unchecked.
+  group('after a login', () {
+    test('the first key is recorded, with no warning', () async {
+      final warned = <String>[];
+      await recordFirstHostKey(keys, '192.168.1.1:22', recorded: null, presented: fpA, onWarning: warned.add);
+      expect(await keys.recorded('192.168.1.1:22'), fpA);
+      expect(warned, isEmpty);
+    });
+
+    test('a key that could not be stored is warned about', () async {
+      final broken = RouterHostKeys(directory: () async => throw const FileSystemException('read-only'));
+      final warned = <String>[];
+      await recordFirstHostKey(broken, '192.168.1.1:22', recorded: null, presented: fpA, onWarning: warned.add);
+      expect(warned.single, contains('could not be recorded'));
+    });
+
+    test('a key already recorded is left alone', () async {
+      await keys.record('192.168.1.1:22', fpA);
+      final warned = <String>[];
+      await recordFirstHostKey(keys, '192.168.1.1:22', recorded: fpA, presented: fpA, onWarning: warned.add);
+      expect(await keys.recorded('192.168.1.1:22'), fpA);
+      expect(warned, isEmpty);
+    });
+  });
 
   test('nothing is recorded until a key is', () async {
     expect(await keys.recorded('192.168.1.1:22'), isNull);

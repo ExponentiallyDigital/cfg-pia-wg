@@ -56,6 +56,31 @@ void main() {
     expect(line.encryption, isNull);
   });
 
+  // Hostile review (ID-346): a LAN resolver was tagged Internet, and a pinned group with no route
+  // read was tagged "tunnel" and "encrypted to PIA" on no evidence.
+  test('a resolver on the LAN is tagged as your network, not the internet', () {
+    final r = parseDnsRouting(_output(up: 'br0\neth0'), names: const {}, merlin: false);
+    expect(r.tagForRoute('192.168.1.5 dev br0 src 192.168.1.1').label, 'your network');
+    expect(r.tagForRoute('192.168.1.5 dev br0 src 192.168.1.1').kind, DnsTagKind.neutral);
+  });
+
+  test('a pinned device whose route was not read is not called a tunnel, nor encrypted', () {
+    final blocks = buildDnsRouting(
+        parseDnsRouting(
+            _output(
+              fusion: '-A VPN_FUSION -s 192.168.1.20/32 -d 192.168.1.1/32 -p udp -m udp --dport 53 -j DNAT --to-destination 9.9.9.9',
+              nvram: 'vpnc_clientlist=pia-nz>WireGuard>1>>password>1>9>>>0>0>cfg-pia-wg\n'
+                  'vpnc_dev_policy_list=1>192.168.1.20>>9>\nwgc1_desc=pia-nz\nwgc1_dns=9.9.9.9, 149.112.112.112',
+              up: 'wgc1',
+            ),
+            names: const {},
+            merlin: false),
+        readAt: '16:00:00');
+    final line = _lines(blocks, 0).first;
+    expect(line.where.label, 'route not read');
+    expect(line.encryption, isNull);
+  });
+
   group("a pinned device's lookups, routed from the device", () {
     const fusion = '-A VPN_FUSION -s 192.168.1.20/32 -d 192.168.1.1/32 -p udp -m udp --dport 53 -j DNAT --to-destination 9.9.9.9';
     const policy = '\nvpnc_dev_policy_list=1>192.168.1.20>>9>';

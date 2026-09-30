@@ -215,6 +215,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('are NOT touched'), findsOneWidget);
+      // Hostile review (ID-346): UNINSTALL removes the guard and leaves the pins.
+      expect(find.textContaining('lose the fail-closed guard'), findsOneWidget);
       expect(find.textContaining('reconfigure history'), findsOneWidget);
       expect(find.textContaining('web interface'), findsOneWidget);
     });

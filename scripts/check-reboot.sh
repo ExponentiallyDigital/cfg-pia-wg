@@ -10,7 +10,7 @@
 # router's WAN address is a leak; the tunnel's address, or no answer, is the claim holding.
 #
 # Run it on a machine the app has pinned to a tunnel, on bash (Linux, WSL or Git Bash):
-#   ROUTER_SSH='ssh admin@192.168.50.1' scripts/check-reboot.sh [dry]
+#   ROUTER_SSH='ssh -o ConnectTimeout=3 admin@192.168.50.1' scripts/check-reboot.sh [dry]
 # ROUTER_SSH is any command that runs its one argument on the router. The router reboots once;
 # `dry` runs the checks that come before the reboot, and stops.
 # Nothing is changed on the router beyond the reboot itself.
@@ -24,7 +24,7 @@ PROBE=https://1.1.1.1/cdn-cgi/trace
 LIMIT=480   # seconds to watch at most
 SETTLE=60   # seconds of tunnel answers, after the new boot, that end the watch
 r() { $ROUTER_SSH "$1" 2>/dev/null | tr -d '\r'; }
-probe() { curl -sk --connect-timeout 2 --max-time 3 "$PROBE" 2>/dev/null | sed -n 's/^ip=//p' | tr -d '\r'; }
+probe() { curl -sk --connect-timeout 1 --max-time 2 "$PROBE" 2>/dev/null | sed -n 's/^ip=//p' | tr -d '\r'; }
 
 WANIP="$(r 'nvram get wan0_ipaddr')"
 BOOT0="$(r 'cat /proc/sys/kernel/random/boot_id')"
@@ -40,22 +40,46 @@ echo "== check-reboot $(date '+%Y-%m-%d %H:%M:%S'): pinned (VPN Fusion profile $
 [ "${1:-}" = dry ] && { echo "dry: stopping before the reboot"; exit 0; }
 
 r 'reboot' >/dev/null &
-T0="$(date +%s)"; BLOCKED=0; TUNNEL=0; LEAKS=""; RUN=0; NEWBOOT=""; FIRST=""
-while :; do
-  NOW="$(date +%s)"; S=$((NOW - T0))
-  [ "$S" -ge "$LIMIT" ] && break
-  A="$(probe)"
-  if [ -z "$A" ]; then BLOCKED=$((BLOCKED + 1)); RUN=0
-  elif [ "$A" = "$WANIP" ]; then LEAKS="$LEAKS ${S}s"; RUN=0
-  else TUNNEL=$((TUNNEL + 1)); RUN=$((RUN + 1)); [ -n "$NEWBOOT" ] && [ -z "$FIRST" ] && FIRST="$S"
+# One probe starts every second, in the background, each writing its answer to its own file, so a
+# blocked probe (up to 2 s) or an SSH call to a router that is down can't stretch the gaps between
+# samples. The boot check runs the same way, every 10 s, with a time limit of its own.
+PD="$(mktemp -d)"; trap 'rm -rf "$PD"' EXIT
+sample() { A="$(probe)"; if [ -z "$A" ]; then echo blocked; elif [ "$A" = "$WANIP" ]; then echo wan; else echo tunnel; fi > "$PD/p.$1"; }
+bootcheck() { B="$(timeout 8 $ROUTER_SSH 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null | tr -d '\r')"; [ -n "$B" ] && [ "$B" != "$BOOT0" ] && echo "$1" > "$PD/newboot"; }
+T0="$(date +%s)"; S=0; NEWBOOT=""; RUN=0; LAST=-1
+while [ "$S" -lt "$LIMIT" ]; do
+  S=$(( $(date +%s) - T0 ))
+  if [ "$S" -gt "$LAST" ]; then
+    LAST="$S"
+    sample "$S" &
+    [ -z "$NEWBOOT" ] && [ "$S" -ge 30 ] && [ $((S % 10)) -eq 0 ] && bootcheck "$S" &
   fi
-  # Once the router is back on a new boot and the tunnel has carried traffic for SETTLE seconds.
-  if [ -z "$NEWBOOT" ] && [ "$S" -ge 30 ] && [ $((S % 10)) -eq 0 ]; then
-    B="$(r 'cat /proc/sys/kernel/random/boot_id')"; [ -n "$B" ] && [ "$B" != "$BOOT0" ] && NEWBOOT="$S"
+  [ -z "$NEWBOOT" ] && [ -f "$PD/newboot" ] && NEWBOOT="$(cat "$PD/newboot")"
+  # Settled once, after the new boot, the tunnel has answered SETTLE probes in a row. Read 4 s
+  # behind, so every probe counted has finished.
+  K=$((S - 4))
+  if [ -n "$NEWBOOT" ] && [ "$K" -ge "$NEWBOOT" ] && [ -f "$PD/p.$K" ] && [ ! -f "$PD/seen.$K" ]; then
+    : > "$PD/seen.$K"
+    [ "$(cat "$PD/p.$K")" = tunnel ] && RUN=$((RUN + 1)) || RUN=0
+    [ "$RUN" -ge "$SETTLE" ] && break
   fi
-  [ -n "$NEWBOOT" ] && [ "$RUN" -ge "$SETTLE" ] && break
-  W=$(( $(date +%s) - NOW )); [ "$W" -lt 1 ] && sleep 1
+  sleep 0.2
 done
+sleep 4; wait
+BLOCKED=0; TUNNEL=0; LEAKS=""; FIRST=""; N=0
+I=0
+while [ "$I" -le "$S" ]; do
+  if [ -f "$PD/p.$I" ]; then
+    N=$((N + 1))
+    case "$(cat "$PD/p.$I")" in
+      blocked) BLOCKED=$((BLOCKED + 1)) ;;
+      wan) LEAKS="$LEAKS ${I}s" ;;
+      tunnel) TUNNEL=$((TUNNEL + 1)); [ -n "$NEWBOOT" ] && [ "$I" -ge "$NEWBOOT" ] && [ -z "$FIRST" ] && FIRST="$I" ;;
+    esac
+  fi
+  I=$((I + 1))
+done
+echo "INFO $N probes in ${S}s, one a second"
 
 echo "INFO watched ${S}s: blocked ${BLOCKED} probes, through the tunnel ${TUNNEL}, through the WAN $(echo "$LEAKS" | wc -w)"
 echo "INFO router back on a new boot by ${NEWBOOT:-never}s; first tunnel answer after it at ${FIRST:-never}s"

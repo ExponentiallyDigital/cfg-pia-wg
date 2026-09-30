@@ -635,16 +635,17 @@ logger "**WD-21 END** A deploy that fails puts the slot back"
 ```bash
 logger "**WD-24 START** The watchdog's own lookups are encrypted"
 iptables -I OUTPUT -d 1.1.1.2 -p tcp --dport 443 -j RETURN
+( while sleep 1; do iptables -vxnL OUTPUT | awk '$3 == "RETURN" && $9 == "1.1.1.2" {print $1}'; done ) > /tmp/doh.count &
 wg set wgc3 peer "$(nvram get wgc3_ppub)" remove
 /jffs/cfg-pia-wg/watchdog_wgc3.sh foreground
 grep -E 'Looked up|Encrypted lookup|NOT encrypted|Reconfig' /tmp/watchdog_wgc3.log | tail -5
-iptables -vxnL OUTPUT | awk '$3 == "RETURN" && /1.1.1.2/ && /dpt:443/ {print $1 " packets to the DoH server"}'
-iptables -D OUTPUT -d 1.1.1.2 -p tcp --dport 443 -j RETURN
+kill $!; echo "$(sort -n /tmp/doh.count | tail -1) packets to the DoH server"; rm -f /tmp/doh.count
+iptables -D OUTPUT -d 1.1.1.2 -p tcp --dport 443 -j RETURN 2>/dev/null
 logger "**WD-24 END** The watchdog's own lookups are encrypted"
 ```
 
 - Pass if: `Looked up <name> over encrypted DNS via security.cloudflare-dns.com (1.1.1.2)` for each PIA name, then `Reconfig SUCCESS`, and no "Encrypted lookup ... failed" or "NOT encrypted" line.
-- Pass if: the packet count is above `0`. That's the router's own count, not the watchdog's word: the lookups really went to the DoH server. `scripts/check-claims.sh full` proves the rest, with the DoH server dead and missing as well.
+- Pass if: the packet count is above `0`. That's the router's own count, not the watchdog's word: the lookups really went to the DoH server. It's read once a second while the watchdog runs, because the rebuild's tunnel restart rebuilds the firewall and takes the counting rule with it. `scripts/check-claims.sh full` proves the rest, with the DoH server dead and missing as well.
 
 **WD-25** The mail server's name is resolved privately too [hand]
 
@@ -653,12 +654,13 @@ logger "**WD-24 END** The watchdog's own lookups are encrypted"
 ```bash
 logger "**WD-25 START** The mail server's name is resolved privately too"
 iptables -I OUTPUT -d 1.1.1.2 -p tcp --dport 443 -j RETURN
+( while sleep 1; do iptables -vxnL OUTPUT | awk '$3 == "RETURN" && $9 == "1.1.1.2" {print $1}'; done ) > /tmp/doh.count &
 wg set wgc3 peer "$(nvram get wgc3_ppub)" remove
 /jffs/cfg-pia-wg/watchdog_wgc3.sh foreground
 grep -E 'SMTP host resolved|Alert email sent' /tmp/watchdog_wgc3.log | tail -2
 grep -c cfg-pia-wg /etc/hosts
-iptables -vxnL OUTPUT | awk '$3 == "RETURN" && /1.1.1.2/ && /dpt:443/ {print $1 " packets to the DoH server"}'
-iptables -D OUTPUT -d 1.1.1.2 -p tcp --dport 443 -j RETURN
+kill $!; echo "$(sort -n /tmp/doh.count | tail -1) packets to the DoH server"; rm -f /tmp/doh.count
+iptables -D OUTPUT -d 1.1.1.2 -p tcp --dport 443 -j RETURN 2>/dev/null
 logger "**WD-25 END** The mail server's name is resolved privately too"
 ```
 
@@ -1359,7 +1361,7 @@ GRD-4 shows the guard is back after a boot. This watches the boot itself, from t
 - Do: on DESKTOP, from the repo, with your own login in place of `admin@192.168.1.1`:
 
 ```bash
-ROUTER_SSH='ssh admin@192.168.1.1' scripts/check-reboot.sh
+ROUTER_SSH='ssh -o ConnectTimeout=3 admin@192.168.1.1' scripts/check-reboot.sh
 ```
 
 - See: the router reboots, and about two minutes later a PASS or FAIL line. It fetches Cloudflare's trace page by IP address once a second and records which public address answered.
@@ -1837,7 +1839,7 @@ Each of these presents as a different fault from the one it is, and none of them
 **A token fetch that exits 0 with no HTTP status, no body and nothing on stderr.** Stock's `/usr/sbin/curl` refuses to run when `crond` is among its parent processes. It does not fail, it does nothing. Confirm it by looking for `Invalid caller(crond)` in `/jffs/curllst`. Detail in [ARCHITECTURE.md, `curl` refuses to run from cron](ARCHITECTURE.md#curl-refuses-to-run-from-cron).
 
 > [!CAUTION]
-> `/jffs/curllst` is world-readable, survives reboots, and records full command lines including `-u user:password`. Redact it before pasting it anywhere, a bug report included.
+> `/jffs/curllst` is world-readable, survives reboots, and records full command lines: the PIA login too, from a watchdog deployed before build 487. Redact it before pasting it anywhere, a bug report included.
 
 **A device assignment that is written correctly and has no effect.** Check `ip rule show` first. Stock never removes a device's previous rule when it is reassigned, so both rules sit at priority 100 and the older one wins. The record in `vpnc_dev_policy_list` looks perfect the whole time. Detail in [ARCHITECTURE.md, Stock leaves the old routing rule behind](ARCHITECTURE.md#stock-leaves-the-old-routing-rule-behind-measure).
 

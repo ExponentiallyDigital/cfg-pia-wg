@@ -59,6 +59,10 @@ if [ "$MODE" != dry ]; then
   cru l | grep -E '#(watchdog_|cfg_pia_wg_guard)' > "$CRUSAVE"
   while read -r L; do X="${L%#}"; printf 'cru a %s "%s"\n' "${X##*#}" "$(X2="${X%#*}"; echo "${X2% }")" >> "$RESTORE"; done < "$CRUSAVE"
 fi
+# The tunnels up at the start: the restore brings back these, and only these.
+UPSTART="$(ip -o link show up | awk -F': ' '$2 ~ /^wgc[0-9]$/ {print $2}' | tr '\n' ' ')"
+unit_of() { nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$1" 'length($0)==0 {next} {if ($3 == s) {print n + 0; exit} n++}'; }
+handshake() { [ -n "$(wg show "$1" latest-handshakes 2>/dev/null | awk '$2 > 0')" ]; }
 RESTORED=""
 restore() {
   [ -n "$RESTORED" ] || [ "$MODE" = dry ] && return 0
@@ -67,14 +71,21 @@ restore() {
   # The WAN restart only when the DNS settings were changed: quick mode leaves them alone.
   if [ -n "$DNSCHANGED" ]; then /bin/sh "$RESTORE" >/dev/null 2>&1; else grep -v restart_wan_if "$RESTORE" > "$RESTORE.q"; /bin/sh "$RESTORE.q" >/dev/null 2>&1; rm -f "$RESTORE.q"; fi
   i=0; while [ "$i" -lt 30 ] && ! nslookup example.com 127.0.0.1 >/dev/null 2>&1; do sleep 2; i=$((i + 1)); done
-  for IF in $(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' '$2 == "WireGuard" && $6 == "1" {print "wgc" $3}'); do
-    ip -o link show up | grep -q " $IF:" && [ -n "$(wg show "$IF" latest-handshakes | awk '$2 > 0')" ] && continue
-    U="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="${IF#wgc}" 'length($0)==0 {next} {if ($3 == s) {print n + 0; exit} n++}')"
-    nvram set vpnc_unit="$U"; service restart_vpnc; sleep 5
+  NOTBACK=""
+  for IF in $UPSTART; do
+    ip -o link show up | grep -q " $IF:" && handshake "$IF" && continue
+    # A service call can be dropped while another runs, so try twice and read the result.
+    for TRY in 1 2; do
+      nvram set vpnc_unit="$(unit_of "${IF#wgc}")"; service restart_vpnc
+      i=0; while [ "$i" -lt 45 ] && ! handshake "$IF"; do sleep 1; i=$((i + 1)); done
+      handshake "$IF" && break
+    done
+    handshake "$IF" || NOTBACK="$NOTBACK $IF"
   done
   "$D/guard.sh" >/dev/null 2>&1
   rm -f "$RESTORE" "$CRUSAVE" /tmp/check-claims-wd.sh
-  echo "== restored: $(cru l | grep -cE '#(watchdog_|cfg_pia_wg_guard)') schedules, guard $("$D/guard.sh" 2>/dev/null | grep -o 'guarded [0-9]* of [0-9]*')"
+  echo "== restored: $(cru l | grep -cE '#(watchdog_|cfg_pia_wg_guard)') schedules, guard $("$D/guard.sh" 2>/dev/null | grep -o 'guarded [0-9]* of [0-9]*'), tunnels up at the start:${UPSTART:+ $UPSTART}"
+  [ -z "$NOTBACK" ] || echo "== NOT RESTORED: no handshake on$NOTBACK. Enable it in MANAGE or the web interface."
 }
 trap restore EXIT INT TERM
 WAN="$(nvram get wan0_ifname)"
@@ -104,10 +115,11 @@ else
 fi
 # The watchdog's TLS floor: --tlsv1.2 refuses a server that offers only TLS 1.1.
 bounded curl -s -o /dev/null --max-time 15 --tlsv1.2 https://tls-v1-1.badssl.com:1011/
+# Only curl's TLS handshake failure (35) is the refusal; a name or connection failure is no answer.
 case "$RC" in
   0) fail TLS-floor "--tlsv1.2 refuses a TLS 1.1 server" "it connected" ;;
-  7|28) info TLS-floor "tls-v1-1.badssl.com did not answer (rc=$RC); not checked" ;;
-  *) pass TLS-floor "--tlsv1.2 refuses a TLS 1.1 server (rc=$RC)" ;;
+  35) pass TLS-floor "--tlsv1.2 refuses a TLS 1.1 server (rc=35, the handshake)" ;;
+  *) info TLS-floor "tls-v1-1.badssl.com did not answer the TLS question (rc=$RC); not checked" ;;
 esac
 # The platform fact the watchdog's own DoH exists for. INFO, not PASS: it is ASUS's behaviour.
 bounded curl -s -o /dev/null --max-time 15 --doh-url https://nothing.invalid/dns-query --resolve nothing.invalid:443:127.0.0.1 https://example.com/
@@ -182,7 +194,16 @@ rm -f /tmp/check-claims.dnat
 
 # ---- 4. Secrets on flash and in the log -------------------------------------------------------
 PW="$(nvram get cfg_pia_wg_password)"; U="$(nvram get cfg_pia_wg_user)"
-[ -n "$PW" ] && { [ "$(grep -cF -- "$PW" /jffs/curllst 2>/dev/null)" = 0 ] && pass SECRET-curllst "the PIA password is not in /jffs/curllst" || fail SECRET-curllst "the PIA password is in /jffs/curllst" "present"; }
+# The password is searched for from a file, never as an argument, so it isn't in `ps` meanwhile.
+if [ -n "$PW" ] && [ ! -f /jffs/curllst ]; then
+  pass SECRET-curllst "the PIA password is not in /jffs/curllst (there is no such file)"
+elif [ -n "$PW" ]; then
+  ( umask 077; printf '%s\n' "$PW" > /tmp/check-claims.pw )
+  N="$(grep -cFf /tmp/check-claims.pw /jffs/curllst)"
+  rm -f /tmp/check-claims.pw
+  [ "$N" = 0 ] && pass SECRET-curllst "the PIA password is not in /jffs/curllst" || fail SECRET-curllst "the PIA password is in /jffs/curllst" "${N:-unreadable} line(s)"
+fi
+PW=""
 [ -n "$U" ] && { [ "$(grep -cF -- "Requesting PIA token for user $U" /tmp/syslog.log 2>/dev/null)" = 0 ] && pass SECRET-syslog "the watchdog logs no PIA user" || info SECRET-syslog "an older watchdog run logged the PIA user"; }
 
 [ "$MODE" = dry ] && { info DRY "stopping before anything is changed: quick adds a rule wipe and a tunnel stop, full adds the DNS setups"; exit "$FAILN"; }
@@ -221,17 +242,18 @@ fi
 E="$(pins | head -1)"
 if [ -n "$E" ]; then
   IP="${E%>*}"
-  ip rule del from "$IP" priority 91 2>/dev/null
-  for R in $(ip rule show | awk -v ip="$IP" '$1 == "89:" && $3 == ip {print $5}'); do ip rule del from "$IP" to "$R" priority 89 2>/dev/null; done
+  # Broken towards closed: without 90 and the 88s, the 91 and 89 blackholes still drop everything,
+  # so the device is offline, not out of the WAN, while cron repairs it.
+  ip rule del from "$IP" priority 90 2>/dev/null
   for R in $(ip rule show | awk -v ip="$IP" '$1 == "88:" && $3 == ip {print $5}'); do ip rule del from "$IP" to "$R" priority 88 2>/dev/null; done
   guard_check broken expect-broken
   # The schedules are paused, so run what cron would: one minute's run.
   cru a cfg_pia_wg_guard "* * * * *" "$D/guard.sh"
-  i=0; while [ "$i" -lt 80 ] && [ "$(ip rule show | grep -c "^91:.*from $IP blackhole")" = 0 ]; do sleep 1; i=$((i + 1)); done
-  # Rule 91 goes back first; let that run finish its other rules before they are checked.
+  i=0; while [ "$i" -lt 80 ] && [ "$(ip rule show | grep -c "^90:.*from $IP lookup")" = 0 ]; do sleep 1; i=$((i + 1)); done
+  # Let that run finish its other rules before they are checked.
   j=0; while [ "$j" -lt 30 ] && [ -d /tmp/cfg-pia-wg-guard.lock ]; do sleep 1; j=$((j + 1)); done
   cru d cfg_pia_wg_guard
-  [ "$(ip rule show | grep -c "^91:.*from $IP blackhole")" = 1 ] && pass GUARD-repair "a wiped rule was put back by cron in ${i}s" || fail GUARD-repair "a wiped rule was put back" "not within 80s"
+  [ "$(ip rule show | grep -c "^90:.*from $IP lookup")" = 1 ] && pass GUARD-repair "a wiped rule was put back by cron in ${i}s" || fail GUARD-repair "a wiped rule was put back" "not within 80s"
   guard_check repaired
 fi
 
@@ -239,14 +261,27 @@ fi
 E="$(pins | head -1)"
 if [ -n "$E" ]; then
   TB="${E#*>}"; SL="$(slot_of "$TB")"
-  UNIT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SL" 'length($0)==0 {next} {if ($3 == s) {print n + 0; exit} n++}')"
+  UNIT="$(unit_of "$SL")"
+  # A service call can be dropped while another runs, so each is read back, and a check that
+  # would be about a tunnel in the wrong state is not made.
   nvram set vpnc_unit="$UNIT"; service stop_vpnc
   i=0; while [ "$i" -lt 30 ] && ip -o link show up | grep -q " wgc$SL:"; do sleep 1; i=$((i + 1)); done
-  guard_check "wgc$SL-stopped"
-  nvram set vpnc_unit="$UNIT"; service restart_vpnc
-  i=0; while [ "$i" -lt 60 ] && [ -z "$(wg show "wgc$SL" latest-handshakes 2>/dev/null | awk '$2 > 0')" ]; do sleep 1; i=$((i + 1)); done
-  sleep 3; "$D/guard.sh" >/dev/null 2>&1
-  guard_check "wgc$SL-restarted"
+  if ip -o link show up | grep -q " wgc$SL:"; then
+    info "GUARD-wgc$SL-stopped" "wgc$SL didn't stop within 30s (the call may have been dropped); not checked"
+  else
+    guard_check "wgc$SL-stopped"
+  fi
+  for TRY in 1 2; do
+    nvram set vpnc_unit="$UNIT"; service restart_vpnc
+    i=0; while [ "$i" -lt 45 ] && ! handshake "wgc$SL"; do sleep 1; i=$((i + 1)); done
+    handshake "wgc$SL" && break
+  done
+  if handshake "wgc$SL"; then
+    sleep 3; "$D/guard.sh" >/dev/null 2>&1
+    guard_check "wgc$SL-restarted"
+  else
+    fail "GUARD-wgc$SL-restarted" "wgc$SL came back" "no handshake after two restarts"
+  fi
 fi
 
 [ "$MODE" = quick ] && { echo "== $PASSN passed, $FAILN failed"; logger "**CHECK-CLAIMS END** $MODE: $PASSN passed, $FAILN failed"; exit "$FAILN"; }
@@ -280,17 +315,37 @@ rebuild() {  # $1 label, $2 expected: enc | plain | honest
   N0="$(wc -l < "/tmp/watchdog_$WS.log" 2>/dev/null || echo 0)"
   wg set "$WS" peer "$(nvram get "${WS}_ppub")" remove
   sleep 2
+  # The router's own count of packets to the DoH server, so "encrypted" rests on more than the
+  # watchdog's log. Counting rules only. The rebuild's tunnel restart rebuilds the firewall and
+  # wipes them, after the lookups, so the count is polled during the run and its highest kept.
+  VIPS="$(sed -n 's/^DOHIPS="\(.*\)"$/\1/p' /tmp/check-claims-wd.sh | tr ',' ' ')"
+  for V in $VIPS; do iptables -I OUTPUT -d "$V" -p tcp --dport 443 -j RETURN; done
+  dohcount() { iptables -vxnL OUTPUT | awk -v vs=" $VIPS " '$3 == "RETURN" && index(vs, " " $9 " ") && /dpt:443/ {s += $1} END {print s + 0}'; }
+  rm -f /tmp/check-claims.stop; echo 0 > /tmp/check-claims.doh
+  ( while [ ! -f /tmp/check-claims.stop ]; do
+      C="$(dohcount)"; [ "$C" -gt "$(cat /tmp/check-claims.doh)" ] && echo "$C" > /tmp/check-claims.doh
+      usleep 300000
+    done ) &
+  POLL=$!
   T=240; bounded /bin/sh /tmp/check-claims-wd.sh foreground
+  touch /tmp/check-claims.stop; wait "$POLL" 2>/dev/null
+  DC="$(cat /tmp/check-claims.doh)"; DC="${DC:-0}"
+  rm -f /tmp/check-claims.stop /tmp/check-claims.doh
+  for V in $VIPS; do iptables -D OUTPUT -d "$V" -p tcp --dport 443 -j RETURN 2>/dev/null; done
   NEW="$(tail -n +"$((N0 + 1))" "/tmp/watchdog_$WS.log" 2>/dev/null | cut -c21-)"
   OKRB="$(echo "$NEW" | grep -c 'Reconfig SUCCESS')"
   ENC="$(echo "$NEW" | grep -c 'Looked up .* over encrypted DNS')"
   PLAIN="$(echo "$NEW" | grep -c 'Encrypted lookup of .* failed\|Name lookups are NOT encrypted')"
   case "$2" in
-    enc) [ "$OKRB" = 1 ] && [ "$ENC" -ge 2 ] && [ "$PLAIN" = 0 ] && pass "SETUP-$1" "rebuilt, every PIA name looked up over DoH" || fail "SETUP-$1" "rebuild with DoH" "success=$OKRB encrypted=$ENC plain=$PLAIN; $(echo "$NEW" | grep -m1 ERROR | cut -c1-120)" ;;
+    enc) [ "$OKRB" = 1 ] && [ "$ENC" -ge 2 ] && [ "$PLAIN" = 0 ] && [ "$DC" -gt 0 ] && pass "SETUP-$1" "rebuilt, every PIA name looked up over DoH ($DC packets to the DoH server, counted by the router)" || fail "SETUP-$1" "rebuild with DoH" "success=$OKRB encrypted=$ENC plain=$PLAIN doh_packets=$DC; $(echo "$NEW" | grep -m1 ERROR | cut -c1-120)" ;;
     plain) [ "$ENC" = 0 ] && [ "$PLAIN" -ge 1 ] && pass "SETUP-$1" "no DoH claimed, and the log says the lookups were not encrypted (rebuilt=$OKRB)" || fail "SETUP-$1" "honest logging without DoH" "encrypted=$ENC plain=$PLAIN" ;;
   esac
-  # Put the tunnel back for the next setup, whatever happened.
-  if [ -z "$(wg show "$WS" latest-handshakes 2>/dev/null | awk '$2 > 0')" ]; then nvram set vpnc_unit="$WUNIT"; service restart_vpnc; sleep 8; fi
+  # Put the tunnel back for the next setup, whatever happened, and read it back.
+  for TRY in 1 2; do
+    handshake "$WS" && break
+    nvram set vpnc_unit="$WUNIT"; service restart_vpnc
+    i=0; while [ "$i" -lt 45 ] && ! handshake "$WS"; do sleep 1; i=$((i + 1)); done
+  done
   guard_check "after-$1"
   sleep 30
 }

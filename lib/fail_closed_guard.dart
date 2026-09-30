@@ -79,14 +79,22 @@ say() { logger -t cfg-pia-wg "$1"; }
 
 # Every "ip>table" that should be guarded: an enabled policy record naming a WireGuard profile.
 WANT=""
+# And every address pinned to a profile that no longer exists at all: deleted in the web interface,
+# which leaves the pin behind. The firmware's rule sends it to an empty table and on to the default
+# connection, so it gets rule 91 alone: no tunnel to use, so nothing. A pin to Internet is index 0,
+# and a pin to an OpenVPN profile names a profile that exists; neither is caught.
+ORPHAN=""
 if [ "$1" != "clear" ]; then
   TABLES=" $(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' '$2 == "WireGuard" && $7 != "" {printf "%s ", $7}')"
   WANT="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v t="$TABLES" '$1 == "1" && $2 != "" && index(t, " " $4 " ") {print $2 ">" $4}')"
+  ALLT=" $(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' '$7 != "" {printf "%s ", $7}')"
+  ORPHAN="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v t="$ALLT" '$1 == "1" && $2 != "" && $4 != "" && $4 != "0" && !index(t, " " $4 " ") {print $2}')"
 fi
 
 held90() { ip rule show | awk '$1 == "90:" {ip = ""; t = ""; for (i = 2; i < NF; i++) {if ($i == "from") ip = $(i + 1); if ($i == "lookup") t = $(i + 1)} if (ip != "") print ip ">" t}'; }
 held91() { ip rule show | awk '$1 == "91:" {for (i = 2; i < NF; i++) if ($i == "from") print $(i + 1)}'; }
 wanted_ip() { echo "$WANT" | awk -F'>' -v ip="$1" '$1 == ip {f = 1} END {exit !f}'; }
+orphan_ip() { echo "$ORPHAN" | grep -qxF "$1"; }
 drop() { N=0; while [ "$N" -lt 8 ] && ip rule del from "$1" priority "$2" 2>/dev/null; do N=$((N + 1)); done; }
 slot_of() { nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v t="$1" '$7 == t {print "wgc" $3; exit}'; }
 # The device as DEVICES names it, then its address: the user's name, else the detected
@@ -115,7 +123,7 @@ for E in $(echo "$H90" | sort -u); do
 done
 H91="$(held91)"
 for IP in $(echo "$H91" | sort -u); do
-  if ! wanted_ip "$IP" || [ "$(echo "$H91" | grep -cxF "$IP")" -gt 1 ]; then drop "$IP" 91; fi
+  if ! { wanted_ip "$IP" || orphan_ip "$IP"; } || [ "$(echo "$H91" | grep -cxF "$IP")" -gt 1 ]; then drop "$IP" 91; fi
 done
 
 # Add what is missing. The drop rule goes in first, so a half-added guard fails closed, not open.
@@ -132,6 +140,15 @@ for E in $WANT; do
     else
       FAIL=$((FAIL + 1))
     fi
+  fi
+done
+H91="$(held91)"
+for IP in $ORPHAN; do
+  echo "$H91" | grep -qxF "$IP" && continue
+  if ip rule add from "$IP" blackhole priority 91; then
+    say "Fail-closed guard: $(name_of "$IP") is pinned to a VPN profile that no longer exists, so it is kept off the internet"
+  else
+    FAIL=$((FAIL + 1))
   fi
 done
 
@@ -187,6 +204,10 @@ for E in $WANT; do
   for X in $(wan_routes "$T"); do ip rule show | grep -q "^89:.*from $IP to $X blackhole" || MISS=1; done
   [ "$MISS" = 0 ] && OK=$((OK + 1))
 done
+for IP in $ORPHAN; do
+  TOTAL=$((TOTAL + 1))
+  [ "$(ip rule show | grep -c "^91:.*from $IP blackhole")" = 1 ] && OK=$((OK + 1))
+done
 echo "guarded $OK of $TOTAL"
 [ "$FAIL" -eq 0 ] || { echo "failed $FAIL"; say "Fail-closed guard: $FAIL rule(s) could not be added"; exit 1; }
 exit 0
@@ -230,7 +251,10 @@ class FailClosedGuard {
       } else if (!quiet && count != null && count > 0) {
         onLog?.call('Fail-closed guard in place for $count pinned device${count == 1 ? '' : 's'}.');
       }
-      await _persist(total ?? 0);
+      // No count means the run's output was lost, not that nothing is pinned: leave the cron and
+      // boot hook as they are rather than remove them from under pinned devices.
+      if (total == null) return count;
+      await _persist(total);
       return count;
     } catch (e) {
       onLog?.call(
