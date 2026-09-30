@@ -77,18 +77,25 @@ Work items for the **next** release:
 
 **Work items in section 1.1 may not have been sequenced, review and agree sequencing before moving any items from here to section 1.2**
 
-- ID-210 TST: the release-candidate E2E run. Once the agreed batches have landed and TESTING.md is updated (ID-208), cut a fresh run copy for the release-candidate build and run it top to bottom, DEV and DEF first. Retire `.claude/testing/2026-09-19_e2e.md` as this cycle's findings log; the groups from LOG onward were never run in it. **2026-09-24:** the run sheet for build 467 is `.claude/testing/2026-09-24_e2e-rc.md`, written by `tool/runsheet.dart` with TABLET's and DESKTOP's addresses filled in; PHONE's is yours to add. Waiting on Andrew's run. **Sequenced 2026-09-28:** during the PIA outage, run the groups that need no PIA login - CON, HOM, SET, LOG, ABT, EXT, LCK and BUY - and the rest once it is back; ID-259 and ID-244 fit inside those.
-- ID-284 REL: upload new screenshots to GPS with upadetd version number in app header - use `images` folder screenshots.
-- ID-021 DOC: **Update Play Store description**. The text in `play-store/description.md` and `description_short.md` is done (2026-09-15); this closes when ID-045 first publishes it.
-- ID-057 REL: **Publish the Play Store listing text with the Update Play listing workflow (ID-045), when the new text should be the public description.** A store listing belongs to the app, not to a track - there is no separate Internal Testing description - so a real run replaces the app's main `en-AU` short and full descriptions for everyone, production and every testing track, once Google's review approves the change. Run it with check only first. To choose when an approved change goes live, turn on Managed publishing in Play Console before the real run. The workflow can be started only from `main`, since GitHub runs a manually triggered workflow only from the default branch. Closes ID-021.
+- ID-304 REL: **Play's "What's new" for the next production release.** Production is on v0.8.10 (build 380, promoted 2026-08-26), so these notes cover everything since. Move the fence into the release block of the build promoted to production. Play allows 500 characters; this is 494.
+
+```play
+A complete rewrite, with a new interface throughout.
+
+• Stock ASUS firmware is now supported.
+• DEVICES: put each device on a VPN or the internet, rename it, or turn its internet off.
+• A kill switch on stock: a pinned device uses its tunnel or nothing.
+• A sturdier watchdog: encrypted DNS, backs off from PIA, clearer emails.
+• Run more than two VPNs at once; see where your DNS goes.
+• Router features are now a one-time unlock. Standalone configs stay free.
+• Merlin support is now in beta.
+```
 
 ---
 
 ### 1.2. WIP
 
 Work items for the **current** release:
-
-- ID-299 TST: **measure a wired device going offline (ID-165).** The measurement DEV-13 was to repeat before release, since a wired device's cache could go stale and would then need a guard. Skipped in this run: no wired device could be powered down. Unplugging its network cable does the same job.
 
 ---
 
@@ -104,6 +111,28 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
+
+2026-09-30 v0.8.104 build 474 - the release-candidate run passes, a wired device goes offline on time, and the Play listing and screenshots
+
+- CHG: section 1.1 4 -> 5 bullets. Added: ID-304, Play's release notes for the next production release, parked until then. Nothing removed.
+- ID-021 DOC: **the Play listing leads with privacy and security, and says what the app now does.** The full description opens "A privacy and security tool for your ASUS router.", gains a section "Pinned means pinned" (stock has no kill switch, so the app builds one), adds renaming and disabling devices, and says Merlin support is in beta; 3,874 of 4,000 characters. The short description reads "Privacy and security for ASUS routers: PIA WireGuard VPNs with a kill switch" (76 of 80). Andrew's direction.
+- DOC: **README says Merlin support is in beta**: at the top, in the requirements line, and in a note in section 4 saying what wasn't hand-tested on Merlin this release. Andrew's decision: the Merlin smoke test means flashing his only router twice.
+- DOC: `.github/description.md` gains a build 474 entry for the GitHub repository's description, leading with privacy and security and the kill switch on stock (320 of GitHub's 350 characters). The repository itself still shows the build 469 text until it's set there.
+- DOC: **README 5.7's three DNS screenshots are retaken at the phone's default display size** (`images/06.03` to `06.05`); the ones from build 471 were drawn about 1.18 times larger than every other screenshot. Three things on them identified Andrew's network, and each is redrawn in the app's font, size and colour, placed by measuring the original text: the LAN domain in `dnsmasq.conf` is now `home.arpa`, the ISP's DNS servers in `wan0_dns_r` are documentation addresses, and the 16 devices pinned to wgc5 have invented names.
+- ADD: **Play Store screenshots with captions, for phones, 7-inch and 10-inch tablets.** `scripts/play-screenshots.py` builds three sets of eight, all 9:16 (1080×1920, and 1440×2560 for 10-inch): a caption in large type over each app screenshot, on the app's dark background and teal, in the order agreed with Andrew. It leads with DEVICES and the kill switch, and drops the main menu and the log screens that only make sense once you know the app. The phone set is built from the README screenshots. The tablet set is built from Andrew's tablet screenshots, kept in `play-store/screenshots/tablet-source/` with every device name, address, MAC, the PIA username and a generated private key replaced by invented ones, in the app's font; its ROUTER LOG is drawn afresh, showing the watchdog rebuilding a dead tunnel, as 05.02 does. The tablet's first four show the same household as the phone's: the same devices on the same VPNs in DEVICES, TV-Lounge's picker listing all five VPNs, TABLET moving to a stopped wgc3, and all five slots configured in WATCHDOG. Where the tablet screen had fewer VPNs, the list or dialog is rebuilt taller from its own rows and tiles. `images/04.02-assign-device.png` gains the Disabled choice after wgc1, copied from 04.03 at the same scale, so the phone's picker matches the tablet's; README 5.4.2 shows it too. Captions avoid what Play doesn't allow in listing graphics: rankings, prices and calls to action. `play-store/README.md` lists them.
+- CHG: section 1.1 5 -> 5 bullets, WIP 1 -> 1 bullet. Every item reworded to be brief and precise, ID-304 redrafted to cover everything since v0.8.10, ID-210 and ID-284 brought up to date. BACKLOG's items reworded the same way, 19,220 -> 14,322 characters, 14 items before and after. Nothing removed.
+- REL: updated GitHub short description.
+- REL: updated repo copy of wording for PlayStore long description.
+- ID-284 REL: **upload the listing screenshots to Play Console:** `play-store/screenshots/phone/`, `tablet-7/` and `tablet-10/`, eight each, in number order. They show v0.8.103.
+- ID-021 DOC: **the Play Store description.** `play-store/description.md` and `description_short.md` are final (2026-09-30): they lead with privacy and security, and add the fail-closed guard, renaming and disabling devices, and Merlin in beta. Closes when ID-057 publishes them.
+- ID-057 REL: **publish the listing text with the Update Play listing workflow (ID-045).** A listing belongs to the app, not a track, so a real run replaces the `en-AU` descriptions everywhere, production included, once Google approves. Run it with check only first. Want to choose when it goes live? Turn on Managed publishing in Play Console before the real run. Start it from `main`: GitHub runs a manual workflow only from the default branch. Closes ID-021.
+- CHG: **fixes from the build 473 retest.** The alert email's kill-switch line, while the tunnel is up, reads "if this tunnel breaks, TABLET will have no internet until it is rebuilt by the watchdog" (R3, Andrew's wording); routers get it at the next SAVE & DEPLOY or UPDATE WATCHDOG VERSION. DELETE's warning draws "will be moved to the Internet, with no VPN" in red, the rest in amber (R4). APP LOG follows new lines when you're at the bottom, so an APPLY running behind it no longer looks stopped; it opened at the end and then stayed put (R5). Every command in TESTING.md that copies a check script to the router also makes it executable (R10, R11). The app log's "Router SSH connection dropped" line now gives the error: a deploy still drops three connections in a row, each about a second old, with nothing in the router's log to say why (R2). A rerun with the new line dropped none, so the cause is still unknown; the next time it happens, the log will say what closed it.
+- TST: 1497 automated tests, 1 new; two DELETE tests also check the red phrase.
+- ID-299 TST: **a wired device goes offline in DEVICES when it does in the web interface.** LAPTOP on a USB Ethernet adapter, Wi-Fi off, unplugged: the router's `cache` went offline about a minute later and back within seconds of plugging in, and DEVICES and the web interface changed together both ways. No guard is needed for wired devices (ID-165). An earlier unplug, with LAPTOP idle, had the `cache` unchanged for two minutes; the web interface didn't change either, so DEVICES still matched it.
+- CHG: WIP 1 -> 0 bullets. Moved to this block, done: ID-299. Nothing removed.
+- ID-210 TST: **the release-candidate run passed.** Run 2026-09-24 to 29 on builds 467 to 472 (`.claude/testing/2026-09-24_e2e-rc.md`); its findings became ID-285 to ID-303. The build 473 retest (`.claude/testing/2026-09-29_retest-473.md`) passed on 2026-09-30, R1 to R12, with R10 and R2 rerun as R10b and R2b; its fixes are in this block.
+- CHG: section 1.1 2 -> 1 bullet. Moved to this block, done: ID-210. ID-304 stays until a build is promoted to production. Nothing removed.
+- CHG: BACKLOG 1.1.2 5 -> 6 bullets. Added: ID-305, `mailsend-go` v1.0.13 for certificate details on a failed send, after the release. Nothing removed.
 
 2026-09-28 v0.8.103 build 473 - the release-candidate run's findings fixed, the guard goes on first, and a Merlin smoke test
 
