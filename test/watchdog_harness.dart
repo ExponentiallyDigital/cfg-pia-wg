@@ -188,15 +188,20 @@ exit 0
 //   --resolve  honoured: a host listed there is never looked up.
 //   --cacert   honoured: addKey fails with 60 unless the file is the CA the download returns.
 // A hostname not in --resolve goes to the router's resolver, which a test can take down.
+//
+// It is also the DoH server the script's own lookup (doh_a) POSTs to: it keeps each query it is
+// sent, and answers it in DNS wire format with 192.0.2.53 - or is down, or answers FORMERR, or
+// answers an HTML error page, as a test asks (ID-307).
 const String _curl = r'''#!/bin/sh
-out=""; fmt=""; url=""; res=""; ca=""
+out=""; fmt=""; url=""; res=""; ca=""; data=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift ;; -w) fmt="$2"; shift ;;
     --resolve) res="$res $2"; shift ;;
     --cacert) ca="$2"; shift ;;
     --doh-url) shift ;;
-    -u|--data-urlencode|--max-time|--connect-timeout|-H|--data-binary) shift ;;
+    --data-binary) data="${2#@}"; shift ;;
+    -u|--data-urlencode|--max-time|--connect-timeout|-H) shift ;;
     https://*) url="$1" ;;
   esac
   shift
@@ -219,6 +224,17 @@ case "$host" in
     fi ;;
 esac
 case "$url" in
+  *dns-query*|*/p1)
+    [ -f "$STATE/doh_down" ] && { echo "curl: (7) Failed to connect" >&2; exit 7; }
+    [ -n "$data" ] && [ -f "$data" ] || exit 0
+    n="$(ls "$STATE"/doh_q_*.bin 2>/dev/null | wc -l | tr -d ' ')"
+    cp "$data" "$STATE/doh_q_$((n + 1)).bin"
+    od -An -v -tu1 "$data" | awk '{for (i = 1; i <= NF; i++) a[n++] = $i} END {p = 12; s = ""; while (p < n && a[p] != 0) {l = a[p]; w = ""; for (i = 1; i <= l; i++) w = w sprintf("%c", a[p + i]); s = s (s == "" ? "" : ".") w; p += l + 1} print s}' >> "$STATE/doh_names"
+    if [ -f "$STATE/doh_formerr" ]; then printf '\000\000\201\001\000\000\000\000\000\000\000\000' > "$out"; exit 0; fi
+    if [ -f "$STATE/doh_html" ]; then printf '<html>400 Bad Request</html>\r\n' > "$out"; exit 0; fi
+    q="$(od -An -v -tu1 "$data" | awk '{for (i = 1; i <= NF; i++) a[n++] = $i} END {for (i = 12; i < n; i++) printf "\\%03o", a[i]}')"
+    printf "\000\000\201\200\000\001\000\001\000\000\000\000${q}\300\014\000\001\000\001\000\000\000\074\000\004\300\000\002\065" > "$out"
+    exit 0 ;;
   *generateToken*)
     if [ -f "$STATE/pia_down" ]; then
       [ -n "$out" ] && echo 'error code: 504' > "$out"; [ -n "$fmt" ] && printf '504 exit=0 connects=1 err='; exit 0
@@ -239,11 +255,13 @@ esac
 exit 0
 ''';
 
-// Only `openssl x509 -in FILE`, the certificate check. Real openssl parses the certificate, so a file
-// that merely contains the BEGIN line fails; here only the stand-in CA passes (ID-341).
+// `openssl x509 -in FILE`, the certificate check: real openssl parses the certificate, so a file that
+// merely contains the BEGIN line fails, and here only the stand-in CA passes (ID-341). And
+// `openssl base64 -A -in FILE`, which the DoH lookup reads its binary answer with (ID-307).
 const String _openssl = r'''#!/bin/sh
-f=""
+mode="$1"; f=""
 while [ $# -gt 0 ]; do [ "$1" = "-in" ] && f="$2"; shift; done
+if [ "$mode" = "base64" ]; then [ -f "$f" ] && base64 -w0 "$f" && echo; exit $?; fi
 [ -n "$f" ] && grep -q 'BEGIN CERTIFICATE' "$f" 2>/dev/null && grep -q 'PIA-TEST-CA' "$f" 2>/dev/null
 ''';
 
@@ -375,6 +393,20 @@ class WatchdogHarness {
   /// The router's ordinary resolver answers nothing, as when its DNS servers are routed into the
   /// dead tunnel (MRL-8, 2026-09-30). curl ignores `--doh-url`, so only a `--resolve` gets through.
   void systemDnsDown() => _flag('sysdns_down', true);
+
+  /// The DoH server: down, answering FORMERR, or answering an HTML error page (ID-307).
+  void dohDown() => _flag('doh_down', true);
+  void dohFormErr() => _flag('doh_formerr', true);
+  void dohHtml() => _flag('doh_html', true);
+
+  /// The names the script asked the DoH server for, and the raw queries it sent, in order.
+  List<String> get dohNames => _lines('doh_names');
+  List<List<int>> get dohQueries {
+    int number(File f) => int.parse(RegExp(r'doh_q_(\d+)\.bin$').firstMatch(f.path)!.group(1)!);
+    final files = state.listSync().whereType<File>().where((f) => RegExp(r'doh_q_\d+\.bin$').hasMatch(f.path)).toList()
+      ..sort((a, b) => number(a).compareTo(number(b)));
+    return [for (final f in files) f.readAsBytesSync()];
+  }
 
   /// Hosts curl found through `--resolve`, and hosts it had to ask the router's resolver for.
   List<String> get resolvedByResolve => _lines('resolved_by_resolve');

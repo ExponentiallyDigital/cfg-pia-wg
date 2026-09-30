@@ -101,9 +101,6 @@ Work items for the **current** release:
 
 - ID-345 TST: **`scripts/check-claims.sh`, an unattended router check of every protection claim.** It breaks each protected path and expects failure, across DNS setups set through NVRAM, with snapshot and restore, a dry run, and PASS/FAIL lines in the `e2e.sh` format. It starts as `scripts/probe-claims.sh`, whose first run settles #5, #12 and #28 (ID-311, ID-318, ID-334).
 - ID-318 SEC: **a pinned device's DNS while its tunnel is down (audit #12).** Measure whether dnsmasq answers it over the WAN; if it does, the guard blocks it too.
-- ID-307 SEC: **the watchdog does its own encrypted lookups (audit #1).** ASUS's curl ignores `--doh-url` on both firmwares (measured 2026-09-30), so every lookup since ID-076 went out as ordinary DNS while the log said "encrypted". The script sends each DoH query itself, reads the answer with `openssl base64` and `awk`, and gives curl the address with `--resolve`; it logs "encrypted" only when that lookup produced the address.
-- ID-321 SEC: **`/jffs/curllst` is flushed after every curl, the SMTP lookup included, and a router check proves it (audit #15).**
-- ID-322 SEC: the watchdog's log no longer names the PIA user, so FAILED emails don't carry it (audit #16).
 - ID-308 SEC: **the app checks the router's SSH host key (audit #2).** It records the key at first connect and refuses a changed key, saying why, so an impostor on the LAN can't collect the router login.
 - ID-309 SEC: **addKey's certificate pin really pins (audit #3).** The fallback callback accepted any certificate whose subject named the server, self-signed included.
 - ID-312 SEC: **a shared config's private key doesn't stay in share_plus's cache (audit #6).**
@@ -154,6 +151,15 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
+2026-09-30 v0.8.107 build 477 - the watchdog does its own encrypted lookups, proved on the router with ordinary DNS blocked
+
+- ID-307 SEC: **the watchdog does its own encrypted lookups (audit #1).** ASUS's curl ignores `--doh-url` on both firmwares (measured 2026-09-30), so every lookup since ID-076 went out as ordinary DNS while the log said "encrypted". The script sends each DoH query itself, reads the answer with `openssl base64` and `awk`, and gives curl the address with `--resolve`; it logs "encrypted" only when that lookup produced the address. Proved on stock 2026-09-30, both ways round. With the DoH server pointed at nothing (192.0.2.1), every lookup was logged as failed and made with ordinary DNS, and the rebuild and alert email still went through. With all of the router's ordinary DNS blocked on the WAN (ports 53 and 853, so the router's own resolver failed), the watchdog still found all three PIA names and the SMTP host through its own lookups, rebuilt wgc1 and sent the email. The same run showed mailsend-go uses the `/etc/hosts` entry. Tests run the real awk program on real Cloudflare and Google answers, and the real script against a harness DoH server that can be down, answer FORMERR, or return an HTML page; each failure must be logged as not encrypted.
+- ID-321 SEC: **`/jffs/curllst` is flushed after every curl, the SMTP lookup included, and a router check proves it (audit #15).** `doh_a` puts no hostname on curl's command line and empties the file after each lookup; after both hardware runs, `/jffs/curllst` held the SMTP host on 0 lines, down from 2 per slot.
+- ID-322 SEC: the watchdog's log no longer names the PIA user, so FAILED emails don't carry it (audit #16).
+- FIX: "could not fetch the PIA server list" gave curl's exit code as 0 every time: `if ! curl; then SRC=$?` reads the status of `!`, not of curl.
+- TST: the deploy-size tripwire (38,912 bytes) is gone, with Andrew's agreement: the script is written in chunks, so its size no longer matters to SSH. The script is now about 42 KB.
+- CHG: WIP 40 -> 37 bullets. Moved to this block, done: ID-307, ID-321, ID-322. Nothing removed.
+- TST: 1515 automated tests, 16 new in `doh_lookup_test.dart`; the DoH shape tests now check the endpoint, not `--doh-url`.
 2026-09-30 v0.8.106 build 476 - a router probe settles the audit's open questions, and stock's mailer is proved to check certificates
 
 - CHG: WIP 39 -> 40 bullets. Added: ID-347, from the probe's part B. Nothing removed.
