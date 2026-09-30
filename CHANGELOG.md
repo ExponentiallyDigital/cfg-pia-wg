@@ -100,7 +100,6 @@ A complete rewrite, with a new interface throughout.
 Work items for the **current** release:
 
 - ID-345 TST: **`scripts/check-claims.sh`, an unattended router check of every protection claim.** It breaks each protected path and expects failure, across DNS setups set through NVRAM, with snapshot and restore, a dry run, and PASS/FAIL lines in the `e2e.sh` format. It starts as `scripts/probe-claims.sh`, whose first run settles #5, #12 and #28 (ID-311, ID-318, ID-334).
-- ID-311 TST: **measure `mailsend-go -verifyCert` failing** against a wrong-name and an expired certificate, on stock (audit #5).
 - ID-318 SEC: **a pinned device's DNS while its tunnel is down (audit #12).** Measure whether dnsmasq answers it over the WAN; if it does, the guard blocks it too.
 - ID-307 SEC: **the watchdog does its own encrypted lookups (audit #1).** ASUS's curl ignores `--doh-url` on both firmwares (measured 2026-09-30), so every lookup since ID-076 went out as ordinary DNS while the log said "encrypted". The script sends each DoH query itself, reads the answer with `openssl base64` and `awk`, and gives curl the address with `--resolve`; it logs "encrypted" only when that lookup produced the address.
 - ID-321 SEC: **`/jffs/curllst` is flushed after every curl, the SMTP lookup included, and a router check proves it (audit #15).**
@@ -116,6 +115,7 @@ Work items for the **current** release:
 - ID-310 SEC: **Merlin's email checks the mail server's name on every send, TEST EMAIL included (audit #4).**
 - ID-315 FIX: **the guard comes back after a reboot whenever a device is pinned, watchdog or not (audit #9).**
 - ID-316 FIX: **the guard puts itself back within a minute when the firmware wipes the rules (audit #10).**
+- ID-347 SEC: **a pinned device's traffic to the addresses its tunnel's table sends to the WAN goes through the tunnel or nowhere.** Measured 2026-09-30 (probe, part B): the firmware's table for each tunnel keeps host routes via the WAN for the router's own DNS servers, the tunnel's PIA server and the ISP's subnet, and rule 90's `suppress_prefixlength 0` suppresses only the default. So a pinned phone using Private DNS at 1.1.1.2 sent it from the real IP, tunnel up or down. The guard adds, per pinned device and per such address, a rule to a tunnel-only table and a blackhole behind it.
 - ID-319 GUI: **DEVICES shows a pinned device whose guard is missing (audit #13).**
 - ID-320 FIX: **the guard's count is read per device from `ip rule`, both rules and `suppress_prefixlength` included, in the app and the email (audit #14).**
 - ID-332 FIX: "Device assignments applied" only after each device's rules are read back (audit #26).
@@ -154,6 +154,12 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
+2026-09-30 v0.8.106 build 476 - a router probe settles the audit's open questions, and stock's mailer is proved to check certificates
+
+- CHG: WIP 39 -> 40 bullets. Added: ID-347, from the probe's part B. Nothing removed.
+- ADD: **`scripts/probe-claims.sh` settles the audit's open questions on the router** (the first part of ID-345). Part A reads the guard per device, the boot hook, secrets left in `/jffs/curllst` and syslog, and whether each mailer refuses a certificate with the wrong name, each with its control. Part B stops a pinned device's tunnel two ways and measures where its DNS goes. Part C times service calls. It runs as `/bin/sh`: over SSH, stock's `sh` is a Broadcom memory tool (`/usr/sbin/sh`).
+- ID-311 TST: **measure `mailsend-go -verifyCert` failing** against a wrong-name and an expired certificate, on stock (audit #5). Done 2026-09-30: against Gmail's server by address, `-verifyCert` refused with `x509: cannot validate certificate`, and the control without it got as far as the login (`535`). badssl.com resets mailsend-go's connection before the certificate is checked, so it can't serve as the test.
+- CHG: WIP 40 -> 39 bullets. Moved to this block, done: ID-311. Nothing removed.
 2026-09-30 v0.8.105 build 475 - Merlin's rebuild finds jq, the claims audit's 40 fixes are planned, and test fakes match the router
 
 - FIX: **on Merlin, the watchdog's rebuild no longer stops at "jq is not installed".** MRL-8, 2026-09-30: a broken wgc1 wasn't rebuilt, and with its DNS servers routed through the dead tunnel, the router couldn't resolve anything and the alert email failed. On Merlin the script names jq by its bare name and looked for it with `command -v`, but the router's BusyBox has no `command`; jq was in `/usr/bin`. It now uses `which`, as the app does. Stock names jq by its full path, so it never reached that check. A test keeps `command -v` out of the script.
