@@ -16,7 +16,8 @@
 //            NVRAM - or drops the call, as the router does when it is busy (ID-214)
 //   ping     per interface, and the WAN, on or off; server pings answer with a latency
 //   nslookup answers, fails, or records which tunnel the lookup would have left by
-//   curl, jq canned PIA answers: a token, a one-server list, an addKey reply
+//   curl     as MEASURED on ASUS: ignores --doh-url, honours --resolve and --cacert (see _curl)
+//   jq       canned PIA answers: a token, a one-server list, an addKey reply
 //   logger   appends to a syslog file; `sleep` returns at once unless a test asks for real time
 //
 // Skipped where no `sh` is on the PATH. The shell's own /usr/bin goes ahead of Windows' so that
@@ -180,18 +181,43 @@ echo "Name: $1"; echo "Address 1: 192.0.2.80"
 exit 0
 ''';
 
+// curl as ASUS's was MEASURED on 2026-09-30 (stock 7.84, Merlin 8.17), not as its manual says:
+//   --doh-url  IGNORED. A DoH server pointed at nothing still fetched the page; every lookup went to
+//              the router's ordinary resolver. Until then this stand-in honoured it, and every
+//              behaviour test inherited the bug it was meant to catch (ID-341).
+//   --resolve  honoured: a host listed there is never looked up.
+//   --cacert   honoured: addKey fails with 60 unless the file is the CA the download returns.
+// A hostname not in --resolve goes to the router's resolver, which a test can take down.
 const String _curl = r'''#!/bin/sh
-out=""; fmt=""; url=""; doh=0
+out=""; fmt=""; url=""; res=""; ca=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift ;; -w) fmt="$2"; shift ;;
-    --doh-url) doh=1; shift ;;
-    -u|--cacert|--resolve|--data-urlencode|--max-time|--connect-timeout) shift ;;
+    --resolve) res="$res $2"; shift ;;
+    --cacert) ca="$2"; shift ;;
+    --doh-url) shift ;;
+    -u|--data-urlencode|--max-time|--connect-timeout|-H|--data-binary) shift ;;
     https://*) url="$1" ;;
   esac
   shift
 done
 echo "$url" >> "$STATE/curls"
+host="${url#https://}"; host="${host%%/*}"; host="${host%%:*}"
+case "$host" in
+  *[!0-9.]*)
+    listed=0
+    for r in $res; do [ "${r%%:*}" = "$host" ] && listed=1; done
+    if [ "$listed" = 1 ]; then
+      echo "$host" >> "$STATE/resolved_by_resolve"
+    else
+      echo "$host" >> "$STATE/resolved_by_system"
+      if [ -f "$STATE/sysdns_down" ]; then
+        echo "curl: (6) Could not resolve host: $host" >&2
+        [ -n "$fmt" ] && printf '000 exit=6 connects=0 err='
+        exit 6
+      fi
+    fi ;;
+esac
 case "$url" in
   *generateToken*)
     if [ -f "$STATE/pia_down" ]; then
@@ -202,19 +228,23 @@ case "$url" in
     fi
     [ -n "$out" ] && echo '{"token":"tok123"}' > "$out"; [ -n "$fmt" ] && printf '200 exit=0 connects=1 err='; exit 0 ;;
   *serverlist*) [ -n "$out" ] && echo '{"regions":[]}' > "$out"; exit 0 ;;
-  *addKey*) echo '{"status":"OK"}'; exit 0 ;;
+  *addKey*)
+    if ! grep -q 'PIA-TEST-CA' "$ca" 2>/dev/null; then
+      echo "curl: (60) SSL certificate problem: unable to get local issuer certificate" >&2; exit 60
+    fi
+    echo '{"status":"OK"}'; exit 0 ;;
   *ca.rsa.4096.crt*)
-    if [ "$doh" = 1 ] && [ -f "$STATE/doh_broken" ]; then echo "curl: (6) Could not resolve host" >&2; exit 6; fi
-    [ -n "$out" ] && printf -- '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n' > "$out"; exit 0 ;;
+    [ -n "$out" ] && printf -- '-----BEGIN CERTIFICATE-----\nPIA-TEST-CA\n-----END CERTIFICATE-----\n' > "$out"; exit 0 ;;
 esac
 exit 0
 ''';
 
-// Only `openssl x509 -in FILE`, the certificate check: a file holding a certificate passes.
+// Only `openssl x509 -in FILE`, the certificate check. Real openssl parses the certificate, so a file
+// that merely contains the BEGIN line fails; here only the stand-in CA passes (ID-341).
 const String _openssl = r'''#!/bin/sh
 f=""
 while [ $# -gt 0 ]; do [ "$1" = "-in" ] && f="$2"; shift; done
-[ -n "$f" ] && grep -q 'BEGIN CERTIFICATE' "$f" 2>/dev/null
+[ -n "$f" ] && grep -q 'BEGIN CERTIFICATE' "$f" 2>/dev/null && grep -q 'PIA-TEST-CA' "$f" 2>/dev/null
 ''';
 
 // Canned answers, chosen by the filter, for the four things the rebuild asks of jq.
@@ -268,7 +298,8 @@ class WatchdogHarness {
       File('${root.path}/bin/${e.key}').writeAsStringSync(e.value);
     }
     File('${root.path}/jffs/cfg-pia-wg/jq').writeAsStringSync(_jq);
-    File('${root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt').writeAsStringSync('cert');
+    File('${root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt')
+        .writeAsStringSync('-----BEGIN CERTIFICATE-----\nPIA-TEST-CA\n-----END CERTIFICATE-----\n');
     File('${root.path}/etc/hosts').writeAsStringSync('127.0.0.1 localhost\n');
     if (!Platform.isWindows) {
       Process.runSync('chmod',
@@ -341,8 +372,13 @@ class WatchdogHarness {
   /// No certificate on the router yet, so a rebuild has to download it first.
   void noCachedCert() => File('${root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt').deleteSync();
 
-  /// The encrypted lookup fails: a download that uses it cannot find its server.
-  void dohBroken() => _flag('doh_broken', true);
+  /// The router's ordinary resolver answers nothing, as when its DNS servers are routed into the
+  /// dead tunnel (MRL-8, 2026-09-30). curl ignores `--doh-url`, so only a `--resolve` gets through.
+  void systemDnsDown() => _flag('sysdns_down', true);
+
+  /// Hosts curl found through `--resolve`, and hosts it had to ask the router's resolver for.
+  List<String> get resolvedByResolve => _lines('resolved_by_resolve');
+  List<String> get resolvedBySystem => _lines('resolved_by_system');
 
   /// A restart brings the interface up on the new key, and the server never answers it.
   void neverHandshakes() => _flag('no_handshake', true);

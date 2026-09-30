@@ -2662,7 +2662,9 @@ fi
 
 # Preflight checks
 [ -n "$DESC" ] || abort "${K}desc is empty"
-[ -x "$JQ" ] || command -v "$JQ" >/dev/null 2>&1 || abort "jq is not installed"
+# Merlin's BusyBox has no `command`, so a bare jq is found with which.
+[ -x "$JQ" ] || JQ=$(which "$JQ" 2>/dev/null)
+[ -x "$JQ" ] || abort "jq is not installed"
 [ -n "$PIA_USER" ] || abort "PIA username is not set"
 
 # PIA re-negotiation

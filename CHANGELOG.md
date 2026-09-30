@@ -39,6 +39,8 @@ Work items below use these three-letter prefixes.
 
 Bold the first sentence only on multi-sentence items, as a scannable headline. Single-sentence items stay plain.
 
+**A privacy or security item is not done until its check has been seen to fail.** Before a SEC item, or any item that makes or changes a claim about protection, moves out of WIP, a check that breaks the protected path must exist, and it must have been run and seen to fail with the protection broken and pass with it restored. The check goes in `scripts/check-claims.sh` wherever it can run on the router. A test that only checks command text doesn't count. This rule was added on 2026-09-30, after the watchdog's encrypted lookups (ID-076) turned out never to have worked.
+
 **Unique IDs**
 
 Every new work item gets an ID. This is the standard from the v0.8.78 build 448 release (and the current Pending/WIP items) onward. It was not applied retrospectively: v0.8.77 build 447 and every earlier release keep their original, ID-free form.
@@ -97,6 +99,46 @@ A complete rewrite, with a new interface throughout.
 
 Work items for the **current** release:
 
+- ID-345 TST: **`scripts/check-claims.sh`, an unattended router check of every protection claim.** It breaks each protected path and expects failure, across DNS setups set through NVRAM, with snapshot and restore, a dry run, and PASS/FAIL lines in the `e2e.sh` format. It starts as `scripts/probe-claims.sh`, whose first run settles #5, #12 and #28 (ID-311, ID-318, ID-334).
+- ID-311 TST: **measure `mailsend-go -verifyCert` failing** against a wrong-name and an expired certificate, on stock (audit #5).
+- ID-318 SEC: **a pinned device's DNS while its tunnel is down (audit #12).** Measure whether dnsmasq answers it over the WAN; if it does, the guard blocks it too.
+- ID-307 SEC: **the watchdog does its own encrypted lookups (audit #1).** ASUS's curl ignores `--doh-url` on both firmwares (measured 2026-09-30), so every lookup since ID-076 went out as ordinary DNS while the log said "encrypted". The script sends each DoH query itself, reads the answer with `openssl base64` and `awk`, and gives curl the address with `--resolve`; it logs "encrypted" only when that lookup produced the address.
+- ID-321 SEC: **`/jffs/curllst` is flushed after every curl, the SMTP lookup included, and a router check proves it (audit #15).**
+- ID-322 SEC: the watchdog's log no longer names the PIA user, so FAILED emails don't carry it (audit #16).
+- ID-308 SEC: **the app checks the router's SSH host key (audit #2).** It records the key at first connect and refuses a changed key, saying why, so an impostor on the LAN can't collect the router login.
+- ID-309 SEC: **addKey's certificate pin really pins (audit #3).** The fallback callback accepted any certificate whose subject named the server, self-signed included.
+- ID-312 SEC: **a shared config's private key doesn't stay in share_plus's cache (audit #6).**
+- ID-313 SEC: **the clipboard copy is marked sensitive, and its clearing is read back (audit #7).**
+- ID-314 SEC: keyboard learning is switched off on every sensitive field; `enableIMEPersonalizedLearning` was never set (audit #8).
+- ID-323 SEC: **stderr and error text are redacted before the app log (audit #17).**
+- ID-324 TST: prove the PIA token can't reach the app log through an HTTP error (audit #18).
+- ID-325 SEC: the PIA server list's signature is checked, in the app and the watchdog (audit #19).
+- ID-310 SEC: **Merlin's email checks the mail server's name on every send, TEST EMAIL included (audit #4).**
+- ID-315 FIX: **the guard comes back after a reboot whenever a device is pinned, watchdog or not (audit #9).**
+- ID-316 FIX: **the guard puts itself back within a minute when the firmware wipes the rules (audit #10).**
+- ID-319 GUI: **DEVICES shows a pinned device whose guard is missing (audit #13).**
+- ID-320 FIX: **the guard's count is read per device from `ip rule`, both rules and `suppress_prefixlength` included, in the app and the email (audit #14).**
+- ID-332 FIX: "Device assignments applied" only after each device's rules are read back (audit #26).
+- ID-333 FIX: the default connection is read back from its rules before it's reported (audit #27).
+- ID-317 DOC: **IPv6 isn't supported, and the listing says so where it promises "tunnel or nothing" (audit #11).** DEVICES warns when the router has IPv6 on.
+- ID-327 FIX: **"Watchdog deployed" says when the deploy run built nothing** (backing off, or no internet on the WAN) (audit #21).
+- ID-328 FIX: every reason an alert email wasn't sent is reported, not just "Email FAILED" (audit #22).
+- ID-329 FIX: a rebuild after a DNS failure probes DNS again before it claims success (audit #23).
+- ID-330 FIX: **UNINSTALL counts again after each step and says what's left (audit #24).**
+- ID-331 FIX: a watchdog rebuild already running can't bring back a slot that DELETE just removed (audit #25).
+- ID-334 FIX: **the service queue's ghost threshold comes from measured service times, and "skip the event" is a failure (audit #28).**
+- ID-335 FIX: REBOOT reports a reboot only when the router's boot id changed (audit #29).
+- ID-336 FIX: DISABLE and CREATE use whether the tunnel actually stopped (audit #30).
+- ID-338 FIX: MAX ACTIVE VPNS, DELETE and FORGET ROUTER IP read back what they changed (audit #32).
+- ID-339 UI: ENABLE on stock says "up and answering", which is what it checks (audit #33).
+- ID-337 FIX: **ROUTER DNS ROUTING tags come from `ip route get`, and a tunnel counts only while its link is up (audit #31).** Absorbs ID-306 (Merlin's main-table DNS routes).
+- ID-326 DOC: Merlin's kill-switch line says what the setting is, not that no traffic left (audit #20).
+- ID-340 DOC: **every published claim the audit found overstated is corrected or reworded (audit #34).** Play text, privacy.html, SECURITY, ROUTER-DNS and ARCHITECTURE; README changes are proposed to Andrew.
+- ID-342 TST: each shape test is paired with a router check of the behaviour it stands for (audit #36).
+- ID-343 TST: TESTING.md pass lines rest on an independent observation, not the app's own message (audit #37).
+- ID-344 TST: fail closed during a reboot is observed, not inferred from two syslog times (audit #38).
+- ID-346 TST: **a hostile review by a second model** of every change here and both check scripts, with where, what and how to fix.
+
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -112,6 +154,15 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
+2026-09-30 v0.8.105 build 475 - Merlin's rebuild finds jq, the claims audit's 40 fixes are planned, and test fakes match the router
+
+- FIX: **on Merlin, the watchdog's rebuild no longer stops at "jq is not installed".** MRL-8, 2026-09-30: a broken wgc1 wasn't rebuilt, and with its DNS servers routed through the dead tunnel, the router couldn't resolve anything and the alert email failed. On Merlin the script names jq by its bare name and looked for it with `command -v`, but the router's BusyBox has no `command`; jq was in `/usr/bin`. It now uses `which`, as the app does. Stock names jq by its full path, so it never reached that check. A test keeps `command -v` out of the script.
+- CHG: BACKLOG 1.1.3 5 -> 6 bullets. Added: ID-306, ROUTER DNS ROUTING on Merlin missing the router's own lookups going through a tunnel. Nothing removed.
+- CHG: WIP 0 -> 40 bullets. Added ID-307 to ID-346 from the claims audit of 2026-09-30 (`.claude/testing/2026-09-30_claims-audit.md`, items #1 to #38, plus the check script and the hostile review), in the sequence agreed with Andrew: fix all 38. BACKLOG 1.1.3 6 -> 5 bullets: ID-306 moved into ID-337, which absorbs it. Nothing removed.
+- DOC: CONTEXT.md §1 gains the rule that nothing is reported as done unless the real state was read back, with its three corollaries: a protection is only done when its check has been seen to fail, a text-only test is a shape test, and test fakes model measured behaviour. CHANGELOG's rules gain the matching line for SEC items.
+- ID-341 TST: **test fakes model measured router behaviour (audit #35).** `test/watchdog_harness.dart`'s curl honoured `--doh-url` and ignored `--cacert`, and its openssl passed any PEM, so every behaviour test inherited the DoH bug. They now do what ASUS's tools were measured doing on 2026-09-30. `--doh-url` is ignored and `--resolve` and `--cacert` honoured, so a test with the router's resolver down now shows the DoH bug instead of hiding it, and a cached CA that isn't PIA's stops addKey with curl's error 60.
+- CHG: WIP 40 -> 39 bullets. Moved to this block, done: ID-341. Nothing removed.
+- TST: 1499 automated tests, 2 new: the jq check, and addKey refusing a CA that isn't PIA's. The DoH retry test now expects what the router does: no lookup gets through.
 2026-09-30 v0.8.104 build 474 - the release-candidate run passes, a wired device goes offline on time, and the Play listing and screenshots
 
 - CHG: section 1.1 4 -> 5 bullets. Added: ID-304, Play's release notes for the next production release, parked until then. Nothing removed.
