@@ -72,3 +72,6 @@ key.properties
 
 # Written by release.yml's changelog parser at build time, and by any local test of it.
 github_release_notes.txt
+
+# Andrew's offline security report: kept locally, never committed (build 489).
+SECURITY-REPORT.md
