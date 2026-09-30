@@ -62,7 +62,8 @@ class RouterResult {
 
   /// The most useful one-line description of a failure: the code, then whatever the command said.
   String get failureDetail {
-    final err = stderr.trim().split('\n').first.trim();
+    // stderr can echo the command, secrets included, so it is redacted like the command (ID-323).
+    final err = redactCommand(stderr.trim().split('\n').first.trim(), maxLength: 1 << 20);
     final code = exitCode == null ? 'no exit code' : 'exit $exitCode';
     return err.isEmpty ? code : '$code: ${err.length > 160 ? '${err.substring(0, 160)}...' : err}';
   }
@@ -80,14 +81,21 @@ const List<String> kSecretKeyFragments = ['pass', 'password', 'priv', 'psk', 'to
 /// Deliberately conservative: it redacts the value of anything whose key contains a fragment
 /// above, including `cfg_pia_wg_user`, because a PIA username identifies an account.
 String redactCommand(String command, {int maxLength = 120}) {
-  final redacted = command.replaceAllMapped(
-    // key=value, where value is either quoted or runs to the next space.
-    RegExp(r"""([A-Za-z0-9_./-]+)=('[^']*'|"[^"]*"|\S*)"""),
-    (m) {
-      final key = m.group(1)!.toLowerCase();
-      return kSecretKeyFragments.any(key.contains) ? '${m.group(1)}=<redacted>' : m.group(0)!;
-    },
-  );
+  final redacted = command
+      .replaceAllMapped(
+        // key=value, where value is either quoted or runs to the next space.
+        RegExp(r"""([A-Za-z0-9_./-]+)=('[^']*'|"[^"]*"|\S*)"""),
+        (m) {
+          final key = m.group(1)!.toLowerCase();
+          return kSecretKeyFragments.any(key.contains) ? '${m.group(1)}=<redacted>' : m.group(0)!;
+        },
+      )
+      // Secrets passed as arguments, not assignments (ID-323): mailsend-go's `-user X -pass X`,
+      // BusyBox sendmail's `-auX -apX`, and curl's `-u user:pass`. A key=value scan misses all three.
+      .replaceAllMapped(
+        RegExp(r"""(^|\s)(-pass\s+|-user\s+|-u\s+|-a[up])('[^']*'|"[^"]*"|\S+)"""),
+        (m) => '${m.group(1)}${m.group(2)}<redacted>',
+      );
   return redacted.length <= maxLength ? redacted : '${redacted.substring(0, maxLength)}...';
 }
 

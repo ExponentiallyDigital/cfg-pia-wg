@@ -20,12 +20,14 @@
 // owned by the caller (mirroring RouterWatchdog), so RecordingSSHClient drives these in tests.
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 import 'router_command.dart';
 import 'router_service_queue.dart';
 import 'firmware.dart';
 import 'device_assignment.dart';
 import 'fail_closed_guard.dart';
+import 'router_host_keys.dart';
 import 'router_watchdog.dart' show buildLoggerCommand, isValidIpv4, shellSingleQuote;
 
 // The per-slot WireGuard NVRAM keys (without the `wgcN_` prefix), in the order router_push.dart
@@ -361,11 +363,41 @@ Map<int, int> parseHandshakeAges(String raw) {
   return (host: v.substring(0, colon), port: port);
 }
 
-Future<SSHClient> openSshClient(String ip, String user, String pass) async {
+/// Opens an authenticated SSH connection to the router, checking its host key (ID-308).
+///
+/// The first successful login records the key's fingerprint; after that a different key is refused
+/// during the key exchange, BEFORE the password is asked for, and [RouterHostKeyChanged] says what
+/// to do. [hostKeys] is a test seam.
+Future<SSHClient> openSshClient(String ip, String user, String pass, {RouterHostKeys? hostKeys}) async {
   final target = splitHostPort(ip);
+  final id = '${target.host}:${target.port}';
+  final keys = hostKeys ?? routerHostKeys;
+  final recorded = await keys.recorded(id);
+  String? presented;
+  var refused = false;
   final socket = await SSHSocket.connect(target.host, target.port, timeout: const Duration(seconds: 5));
-  final client = SSHClient(socket, username: user, onPasswordRequest: () => pass);
-  await client.authenticated;
+  final client = SSHClient(
+    socket,
+    username: user,
+    onPasswordRequest: () => pass,
+    onVerifyHostKey: (type, fingerprint) {
+      presented = utf8.decode(fingerprint, allowMalformed: true);
+      refused = recorded != null && recorded != presented;
+      return !refused;
+    },
+  );
+  try {
+    await client.authenticated;
+  } catch (_) {
+    // dartssh2 reports the refusal as "Connection closed before authentication" - an
+    // SSHAuthAbortError, which the connect screen would have called a wrong password (measured
+    // against a router 2026-09-30). The verifier's own verdict is what counts.
+    if (refused) throw RouterHostKeyChanged(id, recorded!, presented!);
+    rethrow;
+  }
+  // Only after the login worked, as the router address itself is remembered: a wrong address or
+  // password must not leave a key recorded.
+  if (recorded == null && presented != null) await keys.record(id, presented!);
   return client;
 }
 

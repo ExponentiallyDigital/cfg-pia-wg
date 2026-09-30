@@ -23,21 +23,40 @@ import 'package:flutter/services.dart';
 /// The channel MainActivity.kt registers in `configureFlutterEngine`.
 const MethodChannel clipboardChannel = MethodChannel('com.exponentiallydigital.pia_wireguard_cfga/clipboard');
 
-/// The method the channel answers.
+/// The methods the channel answers. Mirrored in MainActivity.kt; a test fails if they drift apart.
 const String kClearClipboardMethod = 'clearClipboard';
+const String kCopySensitiveMethod = 'copySensitive';
 
 /// Empties the system clipboard, silently where the host can.
+///
+/// Returns true when the host read the clipboard back and found it empty, false when it cleared it
+/// but could not check - Android 10+ hides the clipboard from an app without focus, as when the
+/// 60-second countdown ends with the app in the background - and null when it fell back to writing
+/// an empty string, which leaves nothing on the clipboard to leak (ID-313).
 ///
 /// Falls back to writing an empty string - the old behaviour, popup and all - whenever the host
 /// cannot answer: a platform without the handler, a widget test with no plugin registered, or
 /// API 24..27, where `clearPrimaryClip()` does not exist and MainActivity says so.
-Future<void> clearSystemClipboard() async {
+Future<bool?> clearSystemClipboard() async {
   try {
-    await clipboardChannel.invokeMethod<void>(kClearClipboardMethod);
+    return await clipboardChannel.invokeMethod<bool>(kClearClipboardMethod);
   } on MissingPluginException {
     await _writeEmpty();
   } on PlatformException {
     await _writeEmpty();
+  }
+  return null;
+}
+
+/// Copies [text] marked sensitive, so Android 13+ hides it in the clipboard preview (ID-313), and
+/// labelled as this app's, so MainActivity can clear it at the next start if the app was killed first. Falls back to a plain copy.
+Future<void> copySensitive(String text) async {
+  try {
+    await clipboardChannel.invokeMethod<void>(kCopySensitiveMethod, {'text': text});
+  } on MissingPluginException {
+    await Clipboard.setData(ClipboardData(text: text));
+  } on PlatformException {
+    await Clipboard.setData(ClipboardData(text: text));
   }
 }
 

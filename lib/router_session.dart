@@ -31,6 +31,8 @@ import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 
+import 'router_host_keys.dart';
+
 /// Errors that mean the connection is gone rather than the command being wrong.
 ///
 /// `client.run` does not throw for a non-zero exit status - it returns whatever the command wrote -
@@ -53,6 +55,8 @@ bool isConnectionLost(Object error) {
 /// Null rather than a catch-all so a caller's own, more specific message - a missing binary, a
 /// refused reconfigure - is never overwritten by a generic one.
 String? routerConnectMessage(Object error, String address) {
+  // Already written for the screen, and it must not be mistaken for an unreachable router (ID-308).
+  if (error is RouterHostKeyChanged) return error.toString();
   final where = address.trim().isEmpty ? 'the router' : 'the router at ${address.trim()}';
   if (error is SSHAuthFailError || error is SSHAuthAbortError) {
     return 'The router refused that username or password. Check the login you use for $where.';

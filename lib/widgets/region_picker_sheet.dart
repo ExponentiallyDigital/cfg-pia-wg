@@ -66,6 +66,7 @@ class _RegionPickerSheetState extends State<RegionPickerSheet> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
+              enableIMEPersonalizedLearning: false,
               autofocus: true,
               style: const TextStyle(color: kText, fontFamily: 'monospace'),
               decoration:

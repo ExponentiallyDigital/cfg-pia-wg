@@ -24,12 +24,13 @@
 import 'dart:async';
 
 import 'package:dartssh2/dartssh2.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'clipboard_service.dart';
 import 'entitlement.dart';
+import 'router_host_keys.dart';
 import 'router_prefs.dart';
+import 'share_cache.dart';
 import 'router_session.dart';
 import 'watchdog_email.dart';
 
@@ -104,17 +105,26 @@ class SessionController extends ChangeNotifier {
     Duration tickInterval = const Duration(seconds: 1),
     Future<void> Function(String text)? clipboardWriter,
     RouterPrefs? routerPrefs,
+    RouterHostKeys? hostKeys,
     int logCapChars = kLogCapChars,
   })  : _clipboardTimeout = clipboardTimeout,
         _logCapChars = logCapChars,
         _tickInterval = tickInterval,
         _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter,
-        _routerPrefs = routerPrefs ?? RouterPrefs();
+        // A test that injects a writer clears through it, as before; the app reads the clear back.
+        _clipboardClearer = clipboardWriter == null
+            ? clearSystemClipboard
+            : (() async {
+                await clipboardWriter('');
+                return null;
+              }),
+        _routerPrefs = routerPrefs ?? RouterPrefs(),
+        _hostKeys = hostKeys ?? routerHostKeys;
 
   // An empty write means "clear", and clearing goes through the host so Android does not show
-  // its clipboard popup for it - see clipboard_service.dart.
-  static Future<void> _defaultClipboardWriter(String text) =>
-      text.isEmpty ? clearSystemClipboard() : Clipboard.setData(ClipboardData(text: text));
+  // its clipboard popup for it - see clipboard_service.dart. A copy is marked sensitive, so
+  // Android 13+ hides it in the clipboard preview (ID-313).
+  static Future<void> _defaultClipboardWriter(String text) => text.isEmpty ? clearSystemClipboard() : copySensitive(text);
 
   // ── Credentials & config (volatile) ─────────────────────────────────────────
   String piaUsername = '';
@@ -132,6 +142,9 @@ class SessionController extends ChangeNotifier {
 
   // ── Remembered router address (the only persisted value) ─────────────────────
   final RouterPrefs _routerPrefs;
+
+  /// The router's recorded SSH host key (ID-308). FORGET ROUTER IP clears it with the address.
+  final RouterHostKeys _hostKeys;
 
   /// The address remembered from a previous session, or empty if there is none. Prefills the SSH
   /// form ahead of [kDefaultRouterIp], and is deliberately NOT cleared by [wipeAll] - it is not a
@@ -157,6 +170,9 @@ class SessionController extends ChangeNotifier {
   /// Deletes the stored address. Wired to FORGET ROUTER IP on the SETTINGS screen.
   Future<void> forgetRouterIp() async {
     await _routerPrefs.forget();
+    // A reset or reflashed router has a new SSH key, and FORGET is what the refusal tells the user
+    // to use, so the recorded key goes with the address (ID-308).
+    await _hostKeys.forgetAll();
     rememberedRouterIp = '';
     // The session value shadows the remembered one in [routerIpPrefill], and simply opening a
     // router screen copies the prefill into it - so clearing only the stored copy left the address
@@ -165,7 +181,7 @@ class SessionController extends ChangeNotifier {
     // ...and the auto-reconnect on re-entering a router screen must not fire against an address
     // the user has just asked the app to drop.
     routerConnected = false;
-    logEntry('Remembered router address deleted from device storage.');
+    logEntry('Remembered router address and its SSH key deleted from device storage.');
     notifyListeners();
   }
 
@@ -196,6 +212,10 @@ class SessionController extends ChangeNotifier {
   // ── Clipboard timer ──────────────────────────────────────────────────────────
   final Duration _clipboardTimeout, _tickInterval;
   final Future<void> Function(String text) _clipboardWriter;
+
+  /// Clears the clipboard and says whether it read it back empty: true yes, false it could not
+  /// check (Android hides the clipboard from a backgrounded app), null it wrote an empty string.
+  final Future<bool?> Function() _clipboardClearer;
 
   Timer? _tickTimer;
   DateTime? _clipboardDeadline;
@@ -297,6 +317,7 @@ class SessionController extends ChangeNotifier {
 
   // ── Logging ────────────────────────────────────────────────────────────────────
   void logEntry(String msg, {bool isError = false, bool isSuccess = false, bool isWarning = false}) {
+    msg = scrubSecrets(msg);
     final now = DateTime.now();
     final ts = '${now.hour.toString().padLeft(2, '0')}:'
         '${now.minute.toString().padLeft(2, '0')}:'
@@ -306,6 +327,25 @@ class SessionController extends ChangeNotifier {
     if (_logChars > _logCapChars) _trimLog();
     _logRevision.value++;
     notifyListeners();
+  }
+
+  /// [msg] with every secret this session holds taken out, whatever carried it in (ID-323).
+  ///
+  /// The app log is shown on screen and copied into bug reports. Redacting commands by key
+  /// (`redactCommand`) missed stderr, secrets passed as arguments, and exceptions that quote a URL
+  /// or a command, so every line is also checked here, at the one place the log is written, for the
+  /// session's actual secret values - and for the two secrets the session never holds: the PIA token
+  /// in a URL (`pt=`), and a WireGuard private key.
+  String scrubSecrets(String msg) {
+    var out = msg;
+    for (final v in [piaPassword, sshPassword, watchdogEmail?.smtpPass ?? '', piaUsername, sshUsername]) {
+      // Short values would redact ordinary words; the app refuses passwords this short anyway. Whole
+      // tokens only, so a router login of "admin" does not turn "administrator" into nonsense.
+      if (v.length >= 4) out = out.replaceAll(RegExp('(?<![A-Za-z0-9])${RegExp.escape(v)}(?![A-Za-z0-9])'), '<redacted>');
+    }
+    return out
+        .replaceAllMapped(RegExp(r'([?&]pt=)[^&\s]+'), (m) => '${m.group(1)}<redacted>')
+        .replaceAllMapped(RegExp(r'(PrivateKey\s*=\s*)\S+'), (m) => '${m.group(1)}<redacted>');
   }
 
   // Adapter matching the `void Function(String, {bool isError, bool isSuccess, bool isWarning})` callback
@@ -400,8 +440,13 @@ class SessionController extends ChangeNotifier {
     final wasArmed = _clipboardDeadline != null;
     _clipboardDeadline = null;
     clipboardSeconds = 0;
-    await _clipboardWriter('');
-    if (wasArmed) logEntry('Clipboard auto cleared.');
+    final confirmed = await _clipboardClearer();
+    // Said as it was observed (ID-313): a clear the app could not read back is not called done.
+    if (wasArmed) {
+      logEntry(confirmed == false
+          ? 'Clipboard cleared, but Android does not let an app in the background check it, so this is not confirmed.'
+          : 'Clipboard auto cleared.');
+    }
     notifyListeners();
   }
 
@@ -423,6 +468,8 @@ class SessionController extends ChangeNotifier {
     declinedBinaryInstalls.clear();
     await closeRouterSession();
     await clearClipboard();
+    // A config handed to another app by SHARE: share_plus keeps its own copy (ID-312).
+    await clearShareCache();
     logEntry(reason == null
         ? 'All credentials and WireGuard configuration wiped from memory.'
         : 'All credentials and WireGuard configuration wiped from memory ($reason).');

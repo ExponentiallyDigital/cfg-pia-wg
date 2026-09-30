@@ -796,6 +796,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         keyboardType: keyboard,
         autocorrect: false,
         enableSuggestions: false,
+        enableIMEPersonalizedLearning: false,
         style: const TextStyle(color: kText, fontFamily: 'monospace', fontSize: 13),
         decoration: InputDecoration(
           labelText: label,
