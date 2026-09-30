@@ -1031,6 +1031,15 @@ What does: **rules, because the firmware only ever removes the rules it made its
 91:  from <ip> blackhole                                 anything else is dropped
 ```
 
+And since build 480 (ID-347), for every address `X` the slot's table sends to the WAN - see "What it does not cover" below for what those are, and why rule 90 let them through:
+
+```text
+88:  from <ip> to X lookup <200 + slot>    a table the guard keeps: only the tunnel's two /1 routes
+89:  from <ip> to X blackhole              reached when the tunnel is down and that table is empty
+```
+
+The `/1` routes in table `200 + slot` vanish with the interface and are put back by the next guard run, which is at most a minute away: until then `X` is blocked, not let out.
+
 `suppress_prefixlength 0` refuses a matched route whose prefix is `/0`, so while the tunnel is up its `/1` routes win and nothing changes; when they are gone, the only thing left is the copied default, which is refused, and the device reaches rule 91. That covers the rebuild window and DISABLE by construction, whatever the timing. Both rules survived a rebuild and a DISABLE on hardware, and with them in place DISABLE let not one reply out.
 
 **One script owns them**, `/jffs/cfg-pia-wg/guard.sh` (`lib/fail_closed_guard.dart`). It works out the wanted set afresh from `vpnc_dev_policy_list` every time - an enabled record whose index names a WireGuard profile - and adds or removes rules until the router matches, so a pin made or removed in the web interface is followed too. It takes a `mkdir` lock, because two watchdogs start in the same second and would otherwise both add the same rule, and it adds the drop rule first, so a half-added guard fails closed rather than open. Priorities 90 and 91 are the guard's alone; the stale-rule sweep is confined to 100 and names it in every delete, because the rule at 90 has the same `from <ip> lookup <table>` shape and an unqualified delete removes whichever comes first.
@@ -1043,14 +1052,15 @@ Who calls it:
 | Before DISABLE stops the tunnel | `RouterSlotService.disableSlot` | a reboot clears the rules, and a DISABLE is when they matter |
 | After DELETE moves devices to Internet | `_releasePinnedDevices` | the guard held them while the tunnel stopped; on the internet by design, they must not stay blocked |
 | Every watchdog check, before a disabled slot stands down | the watchdog script | catches a reboot, and a pin changed in the web interface, within one interval |
-| At boot | `S50downloadmaster`, after its 10-second delay | a reboot clears every rule |
+| At boot | `S50downloadmaster`, after its 10-second delay | a reboot clears every rule. Since build 480 the guard writes this boot hook itself whenever any device is pinned; until then only a watchdog deploy did, so a router with pins and no watchdog had no guard after a reboot (ID-315) |
+| Every minute | the `cfg_pia_wg_guard` cron entry, kept by `FailClosedGuard.ensure` while any device is pinned | a firmware action that wipes rules - a web-interface VPN Fusion apply, `restart_net_and_phy` - no longer leaves the guard off until the next watchdog run, or indefinitely without one (ID-316) |
 | UPDATE WATCHDOG VERSION | `RouterWatchdog.redeployScripts` | installs the guard and rewrites the boot hook on a router updated from before 460 |
 | UNINSTALL | `uninstallFromRouter`, first | left behind, the rules would block pinned devices with no app left to explain it |
 
 What it does not cover:
 
 - **Devices that follow the default connection.** By design: pinning is how a device is protected. When the default is itself a tunnel, the devices following it still fall through while it is off, and the alert email says so.
-- **Addresses the slot's table routes to the WAN directly** - the router's own DNS servers, the PIA endpoint, the ISP's subnet. A pinned device talking to one of those addresses leaves outside its tunnel even while the tunnel is healthy. Firmware behaviour, measured 2026-09-24.
+- ~~**Addresses the slot's table routes to the WAN directly**~~ - covered since build 480 (ID-347). The router's own DNS servers, the PIA endpoint and the ISP's subnet are host and subnet routes via the WAN in the slot's table, and `suppress_prefixlength 0` only refuses the `/0` default, so rule 90 sent a pinned device to them outside its tunnel even while the tunnel was healthy. Recorded here as "not covered" on 2026-09-24; measured as a leak on 2026-09-30, when `ip route get 1.1.1.2 from <pinned device> iif br0` went out the WAN with the tunnel up and stopped. With rules 88 and 89 it goes through the tunnel, or is refused.
 - **IPv6.** Not measured on a router with IPv6 enabled.
 
 Before the guard this section said the fail-closed arrangement was to point the default connection at the same tunnel the devices were pinned to. DEF-7 (2026-09-21) measured that arrangement failing open on DISABLE, and it no longer matters: the guard gives the same result whatever the default is.
@@ -1112,6 +1122,8 @@ The app adds no routes and leaves no firewall rules behind. What it touches is `
 | Priority | Rule | Made by | What the app does | Why |
 | --- | --- | --- | --- | --- |
 | 0 | `from all lookup local` | kernel | never touches | the router's own addresses |
+| 88 | `from <ip> to <X> lookup <200 + slot>` | the app's fail-closed guard, since build 480 | one per pinned device per address the slot's table sends to the WAN; removed with the pin, or when the address leaves the table; UNINSTALL removes all | those addresses go through the tunnel, not the WAN (ID-347, 6.8.10) |
+| 89 | `from <ip> to <X> blackhole` | the app's fail-closed guard, since build 480 | the same as 88, added first | while the tunnel is down, those addresses are blocked |
 | 90 | `from <ip> lookup <table> suppress_prefixlength 0` | the app's fail-closed guard | adds one per pinned device; removes it when the device is unpinned, moved or its slot deleted; UNINSTALL removes all | a pinned device uses its tunnel's own routes and never the WAN default copied into that table (6.8.10) |
 | 91 | `from <ip> blackhole` | the app's fail-closed guard | the same as 90, added first | whatever rule 90 refuses is dropped, so a pinned device fails closed |
 | 100 | `from <ip> lookup <table>`, or `lookup main` when pinned to Internet | the firmware, on `restart_vpnc_dev_policy` | never adds; deletes stale copies after every APPLY and after DELETE moves devices to Internet, naming priority 100 in every delete | the firmware never removes an old rule and re-adds one per record on every call, so without the sweep a moved device keeps using the tunnel it left (6.8.11) |
@@ -1551,7 +1563,12 @@ Measured 2026-09-19, stock firmware, curl 7.84.0:
 | `curl --doh-url https://dns.quad9.net/dns-query https://example.com` | `http=200` | nothing |
 | `curl --doh-url https://security.cloudflare-dns.com/dns-query --resolve security.cloudflare-dns.com:443:1.1.1.2 https://example.com` | `http=200` | nothing |
 
-The last row is the one that matters, and it is the pattern the watchdog already uses for `addKey`: **a hostname in the URL, with `--resolve` supplying the address.** That satisfies the check while still sending the request to an address of the app's choosing, and it means no name has to be resolved in the clear first. Encrypted DNS for the watchdog (ID-076) is built on exactly this.
+The last row is the one that matters, and it is the pattern the watchdog already uses for `addKey`: **a hostname in the URL, with `--resolve` supplying the address.** That satisfies the check while still sending the request to an address of the app's choosing.
+
+> [!CAUTION]
+> **Retracted 2026-09-30: `--doh-url` does nothing at all on this `curl`.** The rows above were read as "the lookup went over DoH" because the downloads succeeded, and a download succeeds just as well over ordinary DNS. There was no negative control. MRL-8 supplied one: with the router's resolvers routed into a dead tunnel, the "encrypted" lookups failed exactly as ordinary ones did. Then, on stock (curl 7.84) and Merlin (curl 8.17) alike, `--doh-url https://nothing.invalid/dns-query --resolve nothing.invalid:443:127.0.0.1` - a DoH server that cannot answer - still fetched the page (`301`, exit 0). So from ID-076 (build 454) to build 476, every lookup the watchdog logged as encrypted was ordinary DNS.
+>
+> Since build 477 (ID-307) the watchdog does the lookup itself: an RFC 8484 DNS query POSTed with `curl --data-binary` to the DoH server's hostname, `--resolve` pinning it to the address on the form - this request shape was measured working on stock 2026-09-30 - and the binary answer read with `openssl base64 -A` and `awk`, because stock has no `hexdump`, `od` or `xxd`. The address found goes to the real request as `--resolve`. Proved on stock the same day both ways round: with the DoH server pointed at nothing, every lookup was logged as failed and done in the clear; with all of the router's ordinary DNS blocked on the WAN (ports 53 and 853), every PIA name and the SMTP host were still found.
 
 If ASUS ever extend the check to `--resolve`, or to hostnames the firmware does not recognise, the escape hatch is to install our own `curl` beside `jq` and `mailsend-go` - recorded as a BACKLOG FTR, not built, because it means shipping and maintaining a TLS stack.
 

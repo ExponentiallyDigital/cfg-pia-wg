@@ -812,9 +812,12 @@ if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then
 fi''';
 
 const String _kKillSwitchMerlin = r'''if [ "$ENFORCE" = "1" ]; then
-  KILLSW_UP="ON - traffic is blocked if the tunnel drops"
-  KILLSW_FIXED="ON - no traffic left the router while it was down"
-  KILLSW_DOWN="ON - traffic is blocked while the tunnel is down"
+  # The setting, not a traffic claim (ID-326): the script reads wgcN_enforce and nothing else, and
+  # the old wording promised that nothing at all left the router, more than a per-client kill
+  # switch covers.
+  KILLSW_UP="ON in the router's settings, so Merlin blocks the devices it routes through this tunnel if the tunnel drops"
+  KILLSW_FIXED="ON in the router's settings; what Merlin blocked while the tunnel was down was not checked"
+  KILLSW_DOWN="ON in the router's settings, so Merlin should be blocking the devices it routes through this tunnel"
 else
   KILLSW_UP="OFF - the kill switch is available but is not enabled"
   KILLSW_FIXED="$KILLSW_UP"
