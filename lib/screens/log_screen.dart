@@ -35,6 +35,25 @@ class LogScreen extends StatefulWidget {
 
 class _LogScreenState extends State<LogScreen> {
   final _scroll = ScrollController();
+  Listenable? _logChanges;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final changes = SessionScope.of(context).logChanges;
+    if (!identical(changes, _logChanges)) {
+      _logChanges?.removeListener(_onLogChanged);
+      _logChanges = changes..addListener(_onLogChanged);
+    }
+  }
+
+  // Lines that arrive while the screen is open follow on at the bottom, as long as the reader is
+  // there already. It used to scroll to the end only on opening, so an APPLY running behind it
+  // looked as if it had stopped (ID-285 retest, R5). Someone scrolled up to read is left alone.
+  void _onLogChanged() {
+    final atEnd = !_scroll.hasClients || _scroll.position.pixels >= _scroll.position.maxScrollExtent - 48;
+    if (atEnd) WidgetsBinding.instance.addPostFrameCallback((_) => _toEnd());
+  }
 
   @override
   void initState() {
@@ -46,6 +65,7 @@ class _LogScreenState extends State<LogScreen> {
 
   @override
   void dispose() {
+    _logChanges?.removeListener(_onLogChanged);
     _scroll.dispose();
     super.dispose();
   }

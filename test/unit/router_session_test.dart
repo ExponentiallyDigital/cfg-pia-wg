@@ -129,7 +129,7 @@ void main() {
       await session.run('x');
 
       // Both halves: that it went, and that it came back (ID-084).
-      expect(lines, ['Router SSH connection dropped; reconnecting.', 'Router SSH connection re-established.']);
+      expect(lines, ['Router SSH connection dropped (SSHStateError(closed)); reconnecting.', 'Router SSH connection re-established.']);
     });
 
     // ID-084: the app closes the session itself once it has been in the background long enough,
@@ -178,7 +178,7 @@ void main() {
 
       expect(out.map(utf8.decode), [for (var i = 0; i < 5; i++) 'ok:read $i'], reason: 'every command still ran');
       expect(opener.opened, hasLength(2), reason: 'one replacement, shared by every command that failed');
-      expect(lines, ['Router SSH connection dropped; reconnecting.', 'Router SSH connection re-established.']);
+      expect(lines, ['Router SSH connection dropped (SSHStateError(closed)); reconnecting.', 'Router SSH connection re-established.']);
     });
 
     test('the next action after a drop reuses the replacement, not a third connection', () async {
