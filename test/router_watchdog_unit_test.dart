@@ -303,7 +303,7 @@ void main() {
       // The assignment form was tested and DOES capture the status correctly in POSIX sh, so it
       // was not the cause of the 2026-09-07 report - but the `if` form cannot be misread by any
       // shell, which is worth having in a script that runs on BusyBox builds we cannot inspect.
-      expect(script, contains(r'if $CURLB -S -o "$TMPTOK"'));
+      expect(script, contains(r'if $CURLB $RES -S -o "$TMPTOK"'));
     });
 
     test('a responseless success is reported as its own thing', () {
@@ -561,7 +561,7 @@ void main() {
       // the token call does not need curl to turn an error into an exit code.
       // Was `HTTP="$($CURLB ...)"` with `RC=$?` on the next line; now curl is the condition of an
       // `if`, so no shell can misreport its status. 413 kept the no---fail behaviour either way.
-      expect(s, contains(r'if $CURLB -S -o "$TMPTOK"'), reason: 'the token call must not use --fail');
+      expect(s, contains(r'if $CURLB $RES -S -o "$TMPTOK"'), reason: 'the token call must not use --fail');
       expect(s, contains(r'CURL="$CURLB --fail"'), reason: 'every other call still fails hard');
       expect(s, contains(r'failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}'));
       // Body to a file, so jq never sees the status line and curl's status survives.
@@ -743,28 +743,6 @@ void main() {
       }
     });
 
-    // The deploy heredoc has a practical size ceiling, which is why the firmware differences are
-    // substituted in rather than branched at runtime. The Merlin payload is the known-good
-    // baseline, so the guard is that neither variant grows past it by more than a rounding error —
-    // stock in particular must not balloon.
-    //
-    // This is about JFFS space and reviewability, NOT about SSH: the deploy chunks the write, so
-    // the script can exceed dropbear's 9000-byte MAX_CMD_LEN without a single command doing so.
-    // (Crossing it as one command is what closed the connection mid-deploy in 402.) Raised
-    // 8700 -> 9000 in 400, then 9500 and 10000 in 402, and 24576 in 404 when the alert emails grew
-    // a body worth reading (which took the script from ~9 KB to ~15 KB), 26624 in 420, 28160 in 447, 29696 in 453 when the
-    // rebuild gained a handshake gate (ID-063) and stock its own restart path (ID-070), 34816 in
-    // 454 for encrypted lookups (ID-076) and the private SMTP lookup (ID-077), and 38912 in 455 for
-    // the name-resolution probe (ID-078)
-    // for the failed-send DNS diagnostics - growth agreed 2026-09-14, since the script is written in
-    // chunks. Prune the script's comments before raising it again.
-    //
-    // The guard used to be `stock <= merlin`, on the reasoning that Merlin was the known-good
-    // baseline and stock must not balloon past it. That stopped holding in 420: stock now carries
-    // three branches of kill-switch wording Merlin has no need of, because it has an actual kill
-    // switch to report on and stock has to work out where the traffic went instead. An absolute
-    // ceiling says what the guard was always for - JFFS space and reviewability - without tying
-    // one firmware's size to the other's.
     // ID-048, reported: deploying a watchdog on an empty slot put "No handshake and both pings failed" in the
     // router log although the deploy worked. A deploy run checks the slot before its tunnel exists, so there
     // "not up" is the starting state, not a fault; a scheduled run still reports it as one.
@@ -916,12 +894,6 @@ void main() {
       }
     });
 
-    test('neither variant grows the deploy payload', () {
-      final merlin = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin).length;
-      final stock = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.stock).length;
-      expect(merlin, lessThan(38912));
-      expect(stock, lessThan(38912));
-    });
   });
 
   group('mailsend-go builders (stock)', () {

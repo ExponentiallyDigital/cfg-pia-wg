@@ -232,15 +232,15 @@ void main() {
       expect(h.log.where((l) => l.startsWith('Reconfig SUCCESS')), isEmpty);
     });
 
-    // What MRL-8 found on 2026-09-30, pinned before the fix (ID-307): the router's own resolver is
-    // down, and because ASUS's curl ignores --doh-url, "encrypted DNS" was never a way round it.
-    test('with the router resolver down, curl finds nothing: --doh-url never took effect (ID-307)', () async {
+    // What MRL-8 found on 2026-09-30 (ID-307): the router's own resolver is down, and because ASUS's
+    // curl ignores --doh-url, "encrypted DNS" was never a way round it. The script's own lookup is.
+    test('with the router resolver down, the rebuild still finds PIA through its own DoH lookups (ID-307)', () async {
       h.tunnelUp(handshakeAgo: null);
       h.noCachedCert();
       h.systemDnsDown();
       await h.run(config: withDoh());
-      expect(h.resolvedBySystem, contains('raw.githubusercontent.com'), reason: 'curl asked the ordinary resolver');
-      expect(h.log, contains(startsWith('ERROR: could not download the PIA CA certificate')));
+      expect(h.resolvedBySystem, isEmpty, reason: 'nothing asked of the ordinary resolver');
+      expect(h.log.last, startsWith('Reconfig SUCCESS'));
     });
 
     test('a DoH pair stored the wrong way round is named in the log, not passed off as none (ID-221)', () async {
