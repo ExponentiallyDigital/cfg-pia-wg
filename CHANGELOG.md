@@ -99,7 +99,6 @@ A complete rewrite, with a new interface throughout.
 
 Work items for the **current** release:
 
-- ID-345 TST: **`scripts/check-claims.sh`, an unattended router check of every protection claim.** It breaks each protected path and expects failure, across DNS setups set through NVRAM, with snapshot and restore, a dry run, and PASS/FAIL lines in the `e2e.sh` format. It starts as `scripts/probe-claims.sh`, whose first run settles #5, #12 and #28 (ID-311, ID-318, ID-334).
 - ID-313 SEC: **the clipboard copy is marked sensitive, and its clearing is read back (audit #7).** Progress 2026-09-30: copies are marked sensitive (proved on an Android 17 emulator: the system preview showed dots, not the text), and a clear the app couldn't read back is logged as unconfirmed. Still to prove: the copy cleared at the next start after the app is killed inside the 60 seconds. An emulator can't show it, because it shares its clipboard with the PC and relabels every clip; it's on Andrew's list for his phone.
 - ID-342 TST: each shape test is paired with a router check of the behaviour it stands for (audit #36).
 - ID-343 TST: TESTING.md pass lines rest on an independent observation, not the app's own message (audit #37).
@@ -120,6 +119,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
+
+2026-09-30 v0.8.115 build 485 - an unattended router check proves each protection claim across six DNS setups
+
+- ID-345 TST: **`scripts/check-claims.sh` checks every protection claim on the router, unattended, and expects each broken path to fail.** Three modes: `dry` reads and changes nothing, `quick` adds the checks that break something and put it back, and `full` adds six DNS setups set through NVRAM (router DNS the same as the slot's or different, DoT on or off, ISP DNS, a dead DoH server, no DoH), each proved by a real rebuild. It checks TLS refusal (self-signed, expired, wrong name, and addKey held to PIA's CA), both mailers' name checks, the guard for every pinned device, the guard noticing a rule broken on purpose, cron putting a wiped rule back, a tunnel stopped and restarted, pinned DNS, and secrets in `/jffs/curllst` and syslog. It snapshots NVRAM and the schedules first, and a trap puts them back. First full run on stock, 2026-09-30: 32 passed, 0 failed, and the router restored with both tunnels up. The first attempt failed five of the setups, and rightly: stock's `service` takes the action and its unit as one argument, so `service restart_wan_if 0` only printed its usage and the DNS never changed. The script's own read-back caught it, rather than testing the old setup under the new one's name; it now quotes the argument.
+- TST: `test/busybox_tools_test.dart` fails if a deployed script, or any string in `lib/`, calls a tool stock lacks: `hexdump`, `od`, `xxd`, `base64` (openssl's is fine), `timeout`, `sha256sum`, `seq`, `command -v`, `logread`, `scp`, a piped `sh -s`, or `--doh-url`. The harness runs on a desktop shell that has all of them, which is how the ignored `--doh-url` passed every test. A tool tried only after a stock one fails is allowed.
+- CHG: WIP 6 -> 5 bullets. Moved to this block, done: ID-345. Nothing removed.
+- TST: 1578 automated tests, 3 new.
 
 2026-09-30 v0.8.114 build 484 - the published claims corrected, and Merlin's kill-switch line reports the setting
 
