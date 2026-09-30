@@ -29,12 +29,11 @@ void main() {
       final c = _cfg(dohUrl: 'https://freedns.controld.com/p1', dohIp: '76.76.2.1, 76.76.10.1');
       expect(c.validate(), isEmpty);
       expect(c.toNvram()['wgc1_wd_doh_ip'], '76.76.2.1,76.76.10.1');
-      expect(dohCurlArguments(c.dohUrl, c.dohIp), contains('--resolve freedns.controld.com:443:76.76.2.1,76.76.10.1'));
+      expect(dohEndpoint(c.dohUrl, c.dohIp)?.addresses, '76.76.2.1,76.76.10.1');
     });
 
     test('a router already holding a list with a space still builds one option', () {
-      expect(dohCurlArguments('https://freedns.controld.com/p1', '76.76.2.1, 76.76.10.1'),
-          ' --doh-url https://freedns.controld.com/p1 --resolve freedns.controld.com:443:76.76.2.1,76.76.10.1');
+      expect(dohEndpoint('https://freedns.controld.com/p1', '76.76.2.1, 76.76.10.1')?.addresses, '76.76.2.1,76.76.10.1');
     });
 
     test('three addresses, one field alone, http, and an address as the URL host are each refused', () {
@@ -123,7 +122,7 @@ void main() {
         'https://dns.example/a b',
       ]) {
         expect(checkDohUrl(url), isNotNull, reason: url);
-        expect(dohCurlArguments(url, '9.9.9.9'), isEmpty, reason: 'a value stored before the check: $url');
+        expect(dohEndpoint(url, '9.9.9.9'), isNull, reason: 'a value stored before the check: $url');
         expect(dohUnusableNote(url, '9.9.9.9'), isNotEmpty);
       }
       expect(checkDohUrl('https://freedns.controld.com/p1'), isNull);

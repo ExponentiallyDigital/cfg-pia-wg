@@ -13,6 +13,15 @@ class FakeHttpClient implements HttpClient {
 
   FakeHttpClient(this.responseFactory);
 
+  // registerKey pins PIA's CA through a connection factory (ID-309). This fake never opens a
+  // socket, so it cannot check a certificate: the pin itself is tested with real TLS on loopback in
+  // test/unit/pia_register_pin_test.dart, and flows that only pass through registerKey use this.
+  @override
+  set connectionFactory(Future<ConnectionTask<Socket>> Function(Uri url, String? proxyHost, int? proxyPort)? f) {}
+
+  @override
+  set findProxy(String Function(Uri uri)? f) {}
+
   @override
   Future<HttpClientRequest> getUrl(Uri url) async {
     if (url.scheme == 'https' && badCertificateCallback != null) {

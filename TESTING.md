@@ -31,6 +31,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [R6. Sending email by hand](#r6-sending-email-by-hand)
 - [R7. Examining NVRAM](#r7-examining-nvram)
 - [R8. Store testing notes](#r8-store-testing-notes)
+- [R9. What the shape tests stand for, and what proves it](#r9-what-the-shape-tests-stand-for-and-what-proves-it)
 
 **Part 2. Reference**
 
@@ -42,6 +43,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [R6. Sending email by hand](#r6)
 - [R7. Examining NVRAM](#r7)
 - [R8. Store testing notes](#r8)
+- [R9. What the shape tests stand for, and what proves it](#r9)
 
 ---
 
@@ -317,7 +319,8 @@ Every test starts on MANAGE, connected. MAN-13 and MAN-14 are in the [WD](#wd) g
 - Do: select wgc1, ENABLE.
 - See: "Connectivity check targets", filled in with 8.8.8.8 and 1.1.1.1.
 - Do: ENABLE.
-- See: APP LOG `wgc1:pia-<region> enabled and verified.` and the ACTIVE badge.
+- See: APP LOG `wgc1:pia-<region> enabled: up, and its server has answered.` and the ACTIVE badge.
+- Pass if, on the router, `ip -o link show up | grep -c wgc1:` prints `1` and `echo $(( $(date +%s) - $(wg show wgc1 latest-handshakes | awk '{print $2}') ))` is under 180: the router's own record of a handshake.
 
 **MAN-4** Two tunnels up [hand]
 
@@ -368,6 +371,7 @@ Every test starts on MANAGE, connected. MAN-13 and MAN-14 are in the [WD](#wd) g
 - See: the error offers RECREATE beside NOT NOW.
 - Do: NOT NOW.
 - See: the slot shows disabled and nothing else happened.
+- Pass if, on the router, `nvram get wgc5_enable` prints `0` and `wg show interfaces` doesn't list wgc5.
 - Do: ENABLE again, then RECREATE on the error.
 - See: the CREATE flow starts for that same slot - region, then PIA credentials and DNS.
 - Pass if: the slot is rebuilt and ENABLE brings it up.
@@ -390,7 +394,7 @@ Every test starts on MANAGE, connected. MAN-13 and MAN-14 are in the [WD](#wd) g
 - See: `● ACTIVE` in teal.
 - Do: on the router, `wg set wgc1 peer "$(nvram get wgc1_ppub)" remove`, then wait five minutes and REFRESH the screen by leaving it and coming back.
 - See: the badge is now amber and reads `● UP, NO ANSWER` - the interface is still up, and nothing is answering it.
-- Pass if: APP LOG says wgc1 is up but its server has not answered for over 5 minutes.
+- Pass if: APP LOG says wgc1 is up but its server has not answered for over 5 minutes, and the router agrees: `echo $(( $(date +%s) - $(wg show wgc1 latest-handshakes | awk '{print $2}') ))` is over 300, or the handshake reads `0`.
 - Do: MANAGE, wgc1, DISABLE, then ENABLE. There is no watchdog yet at this point in the run, so this is what repairs it.
 - See: teal `● ACTIVE` again.
 - Note: this is what an expired PIA registration looks like, which is why it is worth knowing by sight.
@@ -477,6 +481,7 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 - Do: select wgc2, CREATE/EDIT, choose a region, SAVE & DEPLOY.
 - See: the slot ends enabled with WATCHDOG ACTIVE.
 - See: ROUTER LOG's first check reads "Interface wgc2 is not up yet" or "Not connected yet: ...", in lavender, never the red "No handshake and both pings failed".
+- Pass if, on the router a minute later, `wg show wgc2 latest-handshakes` shows a handshake (not `0`) and `cru l | grep watchdog_wgc2` lists its schedule.
 
 **WD-10** Email settings fill in [ci]
 
@@ -507,6 +512,7 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 
 - Do: wrong SMTP password, SAVE & DEPLOY.
 - See: VIEW ROUTER WATCHDOG LOG has "Email FAILED", then `Email diag: resolv.conf [...] via <interface>; <smtp host> resolves to [...]`. An interface name only, no WAN address.
+- Pass if: no email arrives from that deploy. The log says it failed; the empty inbox is what shows it.
 - Do: right password, SAVE & DEPLOY.
 
 **WD-15** Cannot save without jq [hand]
@@ -628,14 +634,18 @@ logger "**WD-21 END** A deploy that fails puts the slot back"
 
 ```bash
 logger "**WD-24 START** The watchdog's own lookups are encrypted"
+iptables -I OUTPUT -d 1.1.1.2 -p tcp --dport 443 -j RETURN
+( while sleep 1; do iptables -vxnL OUTPUT | awk '$3 == "RETURN" && $9 == "1.1.1.2" {print $1}'; done ) > /tmp/doh.count &
 wg set wgc3 peer "$(nvram get wgc3_ppub)" remove
 /jffs/cfg-pia-wg/watchdog_wgc3.sh foreground
-grep -E 'Name lookups|WITHOUT encrypted|Reconfig' /tmp/watchdog_wgc3.log | tail -3
-grep -c 'Invalid DL URL' /jffs/curllst
+grep -E 'Looked up|Encrypted lookup|NOT encrypted|Reconfig' /tmp/watchdog_wgc3.log | tail -5
+kill $!; echo "$(sort -n /tmp/doh.count | tail -1) packets to the DoH server"; rm -f /tmp/doh.count
+iptables -D OUTPUT -d 1.1.1.2 -p tcp --dport 443 -j RETURN 2>/dev/null
 logger "**WD-24 END** The watchdog's own lookups are encrypted"
 ```
 
-- Pass if: `Name lookups encrypted via security.cloudflare-dns.com (1.1.1.2)`, then `Reconfig SUCCESS`, no "WITHOUT encrypted DNS" line, and a count of `0`.
+- Pass if: `Looked up <name> over encrypted DNS via security.cloudflare-dns.com (1.1.1.2)` for each PIA name, then `Reconfig SUCCESS`, and no "Encrypted lookup ... failed" or "NOT encrypted" line.
+- Pass if: the packet count is above `0`. That's the router's own count, not the watchdog's word: the lookups really went to the DoH server. It's read once a second while the watchdog runs, because the rebuild's tunnel restart rebuilds the firewall and takes the counting rule with it. `scripts/check-claims.sh full` proves the rest, with the DoH server dead and missing as well.
 
 **WD-25** The mail server's name is resolved privately too [hand]
 
@@ -643,15 +653,19 @@ logger "**WD-24 END** The watchdog's own lookups are encrypted"
 
 ```bash
 logger "**WD-25 START** The mail server's name is resolved privately too"
+iptables -I OUTPUT -d 1.1.1.2 -p tcp --dport 443 -j RETURN
+( while sleep 1; do iptables -vxnL OUTPUT | awk '$3 == "RETURN" && $9 == "1.1.1.2" {print $1}'; done ) > /tmp/doh.count &
 wg set wgc3 peer "$(nvram get wgc3_ppub)" remove
 /jffs/cfg-pia-wg/watchdog_wgc3.sh foreground
 grep -E 'SMTP host resolved|Alert email sent' /tmp/watchdog_wgc3.log | tail -2
 grep -c cfg-pia-wg /etc/hosts
+kill $!; echo "$(sort -n /tmp/doh.count | tail -1) packets to the DoH server"; rm -f /tmp/doh.count
+iptables -D OUTPUT -d 1.1.1.2 -p tcp --dport 443 -j RETURN 2>/dev/null
 logger "**WD-25 END** The mail server's name is resolved privately too"
 ```
 
 - Pass if: `SMTP host resolved privately to <address>` before `Alert email sent (SUCCESS)`, and a count of `0`: the hosts entry is removed after every send.
-- Pass if: the email arrives, which proves certificate verification still passed.
+- Pass if: the email arrives, which proves certificate verification still passed, and the packet count is above `0`: the router counted the lookups going to the DoH server.
 
 **WD-26** The router's own resolver gets a line of its own [hand]
 
@@ -677,6 +691,7 @@ logger "**WD-26 END** The router's own resolver gets a line of its own"
 
 ```bash
 logger "**WD-27 START** A watchdog paused while its run waits stands down"
+wg show wgc5 public-key
 /jffs/cfg-pia-wg/watchdog_wgc5.sh detached &
 ```
 
@@ -685,10 +700,13 @@ logger "**WD-27 START** A watchdog paused while its run waits stands down"
 
 ```bash
 tail -2 /tmp/watchdog_wgc5.log
+wg show wgc5 public-key
+ps | grep -c "[w]atchdog_wgc5"
 logger "**WD-27 END** A watchdog paused while its run waits stands down"
 ```
 
 - Pass if: the last line is `wgc5's watchdog was paused or removed while this run waited; standing down`, with no check, rebuild or alert after it (ID-240).
+- Pass if: the public key is the same both times, so nothing was rebuilt, and the count is `0`: no run is left.
 - Do: WATCHDOG, select wgc5, ENABLE.
 
 The last two tests here are MANAGE ones. They live at the end of this group because they act on a watchdog, and there is none until this group has run.
@@ -810,6 +828,7 @@ logger "**BRK-5 END** A rebuild that fails"
 - See: "PIA rejected the username and password stored on this router (HTTP 403)", naming where to fix it - not `exit 0, HTTP 403, body 66B: {`.
 - See: a FAILED email with WHAT TO DO, the attempt count and the last 10 router log lines.
 - Pass if: the backoff file went from a count of `0` to `1`, with a new timestamp.
+- Pass if: `wg show wgc1 peers` still prints nothing, so the router agrees nothing was rebuilt, and the email arrives.
 - Do: WATCHDOG CREATE/EDIT on wgc1, enter the right PIA password, SAVE & DEPLOY.
 - See: it recovers and emails SUCCESS.
 - Do not repeat this test straight away: PIA refuses repeated token requests for a while.
@@ -825,11 +844,15 @@ The test breaks the slot for about two minutes, and everything pinned to it has 
 
 ```bash
 logger "**BRK-6 START** Backoff ladder, with no PIA traffic"
+iptables -I OUTPUT -o "$(nvram get wan0_ifname)" -p tcp --dport 443 -j RETURN
 wg set wgc5 peer "$(nvram get wgc5_ppub)" remove
 sh /jffs/cfg-pia-wg/test-backoff.sh 5
+iptables -vxnL OUTPUT | awk '$3 == "RETURN" && /dpt:443/ {print $1 " HTTPS packets left the WAN"}'
+iptables -D OUTPUT -o "$(nvram get wan0_ifname)" -p tcp --dport 443 -j RETURN
 ```
 
 - See: waits of 120, 240, 480, 960, 1800, 3600, 5400, 5400 seconds, and PASS.
+- Pass if: the count is `0`, or close to it. The script reads the watchdog's own lines; this is the router counting every HTTPS packet it sent out of the WAN, and a request to PIA would be dozens. Anything else on the router that uses HTTPS in those two minutes counts too, so a handful is not a failure.
 - Do: straight away, WATCHDOG ENABLE on wgc5, then rebuild it rather than waiting for the next check:
 
 ```bash
@@ -848,13 +871,14 @@ logger "**BRK-6 END** Backoff ladder, with no PIA traffic"
 logger "**BRK-7 START** A WAN outage does not climb the backoff ladder"
 wg set wgc1 peer "$(nvram get wgc1_ppub)" remove
 cat /tmp/watchdog_backoff_wgc1
+wg show wgc1 public-key
 logger "**BRK-7 END** A WAN outage does not climb the backoff ladder"
 ```
 
 - Do: unplug the router's internet, then run `/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground` three times.
 - See: each run logs only "no Internet on WAN interface, exiting."
 - Pass if: no "Connectivity lost; reconfiguring (attempt #N)" lines, and no alert emails.
-- Pass if: `cat /tmp/watchdog_backoff_wgc1` is UNCHANGED - the outage added no rungs.
+- Pass if: `cat /tmp/watchdog_backoff_wgc1` is UNCHANGED - the outage added no rungs - and, before you plug the internet back in, `wg show wgc1 public-key` is the same as at the start: nothing was rebuilt.
 - Do: plug the internet back in, then `/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground; tail -3 /tmp/watchdog_wgc1.log`
 - See: either a real attempt straight away, ending `Reconfig SUCCESS`, or `Handshake Ns ago` and no rebuild: the firmware restarts the tunnels itself when the WAN comes back, and in the release-candidate run it had already mended wgc1. Both pass. A "Backing off" line fails: that is waiting out a ladder it never earned.
 
@@ -1168,9 +1192,11 @@ echo "$T $TMAC $D $P $I1 $I5"
 **DEF-5** A default change costs no watchdog rebuild [hand]
 
 - Do: WATCHDOG, wgc1, 5 minute interval, deployed. Default is wgc5, from DEF-3.
+- Do: on the router, `wg show wgc1 public-key`, and keep the answer.
 - Do: default to wgc1, APPLY.
 - Do: for the next 10 minutes, WATCHDOG, wgc1, VIEW ROUTER WATCHDOG LOG, and REFRESH now and then.
 - Pass if: the tunnels are back within about a minute, and the log shows one of two things: only healthy checks (`Handshake Ns ago`), which is the usual, or one rebuild ending `Reconfig SUCCESS`.
+- Pass if: `wg show wgc1 public-key` afterwards agrees with the log: the same key if it showed only healthy checks, a new one if it rebuilt. A rebuild makes a new key.
 - Write down which of the two you saw. A rebuild costs a PIA token and an email, so healthy checks are the better answer.
 - Ends with: default wgc1.
 
@@ -1294,6 +1320,7 @@ grep "Fail-closed guard on for .*$D (" /tmp/syslog.log | tail -1
 
 - Pass if: PASS: the 90 and 91 lines are back, and the grep prints a `Fail-closed guard on` line for DESKTOP from this boot.
 - Note: don't compare its time with "WAN was restored". At boot that line can carry the time from before the router set its clock: 5 May, in the release-candidate run.
+- Note: this proves the guard is back after the boot, not that nothing leaked before it was. GRD-7 watches that window.
 
 **GRD-5** A change made in the web interface is followed [script]
 
@@ -1325,6 +1352,43 @@ sh /jffs/cfg-pia-wg/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
 
 - Pass if: PASS, and the changes list shows no `ip rule` lines added or removed.
 - See: the ping carries on at wgc1's usual time, with at most a reply or two lost while the firewall rebuilds.
+
+**GRD-7** Nothing leaks while the router boots [script]
+
+GRD-4 shows the guard is back after a boot. This watches the boot itself, from the pinned device, because nothing on the router can: stock runs no add-on code until `/opt` mounts, after the WAN is up.
+
+- Starts with: DESKTOP pinned to wgc1, with bash (Linux, WSL or Git Bash) and SSH to the router.
+- Do: on DESKTOP, from the repo, with your own login in place of `admin@192.168.1.1`:
+
+```bash
+ROUTER_SSH='ssh -o ConnectTimeout=3 admin@192.168.1.1' scripts/check-reboot.sh
+```
+
+- See: the router reboots, and about two minutes later a PASS or FAIL line. It fetches Cloudflare's trace page by IP address once a second and records which public address answered.
+- Pass if: PASS: no answer came from the router's WAN address. Its INFO lines say how many probes were blocked and when the tunnel carried DESKTOP again.
+- Note: run it three times. It's a race: before build 488, 4 boots in 6 leaked for 3 to 6 seconds, and the other two passed. Since build 488 the router's Network Services Filter holds from boot (ID-348), and three in a row passed on 2026-10-01.
+
+**GRD-8** The router's filter holds pinned devices, and pings are the user's choice [script]
+
+The guard's second layer (ID-348): the router's own Network Services Filter, which it applies at boot before the internet connection is up.
+
+- Starts with: DESKTOP pinned to wgc1.
+- Do: on the router:
+
+```bash
+logger "**GRD-8 START** The router's filter holds pinned devices"
+/jffs/cfg-pia-wg/guard.sh
+iptables -S FORWARD | grep -- "-s $D/32 -i br0 -o"
+nvram get filter_lw_icmp_x
+```
+
+- Pass if: `filter held N of N`, and two DROP lines for DESKTOP, `-p tcp` and `-p udp`, both `-o` your WAN interface: never a tunnel. The ICMP setting doesn't include `8`.
+- Do: DEVICES, turn on **Block pings to the internet**.
+- See: APP LOG "Pings out of the internet connection are blocked for every device."
+- Pass if: `nvram get filter_lw_icmp_x` now includes `8`; DESKTOP still pings 1.1.1.1 (through wgc1); a device that isn't pinned can't, while the default connection is Internet.
+- Do: turn it off again.
+- Pass if: `8` is gone from `nvram get filter_lw_icmp_x`, and anything else that was there is still there.
+- Do: `logger "**GRD-8 END** The router's filter holds pinned devices"`
 
 ---
 
@@ -1408,6 +1472,7 @@ sh /jffs/cfg-pia-wg/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
 - See: "Cached PIA certificate deleted."
 - Do: again.
 - See: "No cached PIA certificate on the router."
+- Pass if, on the router, `ls /jffs/cfg-pia-wg/pia_ca.rsa.4096.crt` says there is no such file.
 - See: the next watchdog rebuild - the next one that runs, from BRK or from a check that fails - logs that it is downloading the certificate rather than reusing a cached one. If nothing rebuilds while you are on this screen, mark this line SKIP and look for it the next time one does.
 
 **SET-5** Max active VPNs [hand]
@@ -1441,6 +1506,7 @@ sh /jffs/cfg-pia-wg/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
 **SET-8** Every action leaves a trail [hand]
 
 - Pass if: APP LOG has "Deleted cached PIA certificate" (SET-4), "Maximum active VPNs set to 3" (SET-5) and "Router reboot requested" (SET-6), and ROUTER LOG has "Cached PIA certificate deleted from the app", "Maximum active VPNs set to 3" and "reboot requested from the app".
+- Pass if: each action really happened, so the trail isn't just words: SET-4's `ls` found no certificate, `nvram get vpnc_max_conn` prints `3`, and `cat /proc/sys/kernel/random/boot_id` changed across SET-6.
 
 **SET-9** Router resolver status [hand]
 
@@ -1462,6 +1528,7 @@ sh /jffs/cfg-pia-wg/e2e.sh GRD-6 after "guard $D $I1" "exit $D wgc1" "up wgc1"
 - See: THE ROUTER'S OWN LOOKUPS lists each `/etc/resolv.conf` server: the DNS Server addresses tagged `not encrypted`, stubby tagged `encrypted (DoT)`, "only if both of the above fail".
 - See: THE WATCHDOGS' LOOKUPS, one line per slot with its region, and `encrypted (DoH)` for each watchdog; an empty slot reads `not configured`.
 - Pass if: EVIDENCE matches `ip rule show | grep 'iif lo'` and `iptables -t nat -S VPN_FUSION` on the router.
+- Pass if: `/bin/sh /jffs/check-claims.sh quick` on the router shows PASS for `DNS-pinned` and `DNS-DoT`. The tags are the app's word; those two measure what they claim.
 - Do: unpin TABLET, APPLY, back to SETTINGS, ROUTER DNS ROUTING.
 - See: TABLET gone from YOUR DEVICES' LOOKUPS. With no device pinned anywhere, the top line reads "No lookups go through a tunnel." and the redirects section says no device is pinned; with others still pinned, it keeps "Only pinned devices' lookups go through a tunnel."
 
@@ -1551,6 +1618,7 @@ logger "**ABT-3 END** Script from another version"
 - Do: with the count from EXT-4 in hand, switch away for 6 minutes, come back, press an action.
 - Pass if: it reconnects by itself, and `grep -c "Password auth succeeded" /tmp/syslog.log` has gone up by exactly one.
 - Pass if: APP LOG says "Router SSH connection re-established." - the session the app closed on its own used to reopen in silence.
+- Note: the syslog count is what decides this test. It's the router's own record of the login; the APP LOG line is only what you see.
 
 **EXT-6** Release build privacy [hand]
 
@@ -1695,13 +1763,14 @@ Set up: a Merlin router with JFFS scripts enabled, SSH on, and no cfg-pia-wg on 
 **MRL-6** Create, enable, disable [hand]
 
 - Do: MANAGE, wgc1, CREATE in any region, then ENABLE.
-- See: APP LOG "wgc1:pia-<region> enabled and verified." and the ACTIVE badge.
+- See: APP LOG "wgc1:pia-<region> enabled: up, and both check addresses answered through it." and the ACTIVE badge.
 - Do: DISABLE, then ENABLE again.
 - Pass if: after DISABLE, `wg show interfaces` no longer lists wgc1; after ENABLE, it does, and the badge is back.
 
 **MRL-3** Kill switch [hand]
 
 - See: the KILL SWITCH badge on wgc1's row when its kill switch is on, and the kill switch control in EDIT, which stock does not show.
+- Pass if: `nvram get wgc1_enforce` prints `1` while the badge shows, and `0` after you turn the kill switch off in EDIT and the badge goes.
 
 **MRL-7** Watchdog and email [hand]
 
@@ -1723,6 +1792,7 @@ logger "**MRL-8 END** Break and rebuild"
 ```
 
 - Pass if: the log ends `Reconfig SUCCESS` then `Alert email sent (SUCCESS)`, and the SUCCESS email arrives with the kill switch line in Merlin's wording.
+- Pass if: that line agrees with `nvram get wgc1_enforce`: ON for `1`, OFF for `0`. The line reports the setting, so the setting is the check.
 
 **MRL-5** Boot persistence [hand]
 
@@ -1791,7 +1861,7 @@ Each of these presents as a different fault from the one it is, and none of them
 **A token fetch that exits 0 with no HTTP status, no body and nothing on stderr.** Stock's `/usr/sbin/curl` refuses to run when `crond` is among its parent processes. It does not fail, it does nothing. Confirm it by looking for `Invalid caller(crond)` in `/jffs/curllst`. Detail in [ARCHITECTURE.md, `curl` refuses to run from cron](ARCHITECTURE.md#curl-refuses-to-run-from-cron).
 
 > [!CAUTION]
-> `/jffs/curllst` is world-readable, survives reboots, and records full command lines including `-u user:password`. Redact it before pasting it anywhere, a bug report included.
+> `/jffs/curllst` is world-readable, survives reboots, and records full command lines: the PIA login too, from a watchdog deployed before build 487. Redact it before pasting it anywhere, a bug report included.
 
 **A device assignment that is written correctly and has no effect.** Check `ip rule show` first. Stock never removes a device's previous rule when it is reassigned, so both rules sit at priority 100 and the older one wins. The record in `vpnc_dev_policy_list` looks perfect the whole time. Detail in [ARCHITECTURE.md, Stock leaves the old routing rule behind](ARCHITECTURE.md#stock-leaves-the-old-routing-rule-behind-measure).
 
@@ -2191,3 +2261,27 @@ nvram show | grep -E "vpnc_" | sort
 - **No sign-in prompt may appear at launch.** One appearing means something is calling restore programmatically, which RevenueCat's guidance forbids.
 
 ---
+
+## <a name='r9'></a>R9. What the shape tests stand for, and what proves it
+
+Some automated tests can only check that a command is written a certain way: that the watchdog passes `-verifyCert`, say. That proves the text, not what the router does with it. Until build 475 one of them stood between the app and a claim that was false for weeks: every test passed `--doh-url` to curl, and ASUS's curl ignores it. So each of these keeps its shape test, and is paired here with the check that watches the behaviour on a real router. `check-claims` is `scripts/check-claims.sh`, run on the router as `/bin/sh check-claims.sh quick` or `full`; each of its checks breaks the thing on purpose, or has a control, so it can fail.
+
+| Shape test | Stands for | Proved on the router by |
+| --- | --- | --- |
+| `test/unit/doh_resolver_test.dart`, `test/unit/input_checks_test.dart`: the DoH server's address and `--resolve` | the watchdog looks up PIA's names and the SMTP host over encrypted DNS | `test/unit/doh_lookup_test.dart` runs a real RFC 8484 lookup against a fake DoH server; check-claims `SETUP-*` (full) rebuilds under six DNS setups, and a dead or missing DoH server must be logged as plain |
+| `test/watchdog_harness.dart`: the fake `curl` and `openssl` | ASUS curl's behaviour | the fakes copy what was measured (build 475): `--doh-url` ignored, `--cacert` and `--resolve` honoured. check-claims `DOH-0` says whether curl still ignores `--doh-url` |
+| `test/router_watchdog_unit_test.dart`: `-S --cacert` | addKey trusts only PIA's CA | check-claims `TLS-pin`: PIA's own website is refused under PIA's CA. In the app, `test/unit/pia_register_pin_test.dart` does real TLS against a server with the wrong CA |
+| `test/router_watchdog_unit_test.dart`: `--tlsv1.2` | the TLS floor | check-claims `TLS-floor`: a TLS 1.1 server is refused |
+| `test/router_watchdog_unit_test.dart`: `openssl s_client -verify_hostname` (Merlin) | Merlin's mail checks the server's name | none yet: needs a Merlin router (MRL-7 is the happy path) |
+| `test/router_watchdog_unit_test.dart`, `test/router_watchdog_service_test.dart`: `-ssl -verifyCert` | mailsend-go checks the certificate and its name | check-claims `MAIL-name`, with `MAIL-0` as its control, and `MAIL-script` for each deployed watchdog |
+| `test/router_watchdog_unit_test.dart`: `echo -n > /jffs/curllst` | the PIA password isn't left on flash | check-claims `SECRET-curllst` |
+| `test/router_watchdog_service_test.dart`: `nvram unset cfg_pia_wg_password` | the credentials go when the last watchdog is deleted | by hand, after deleting the last watchdog: `nvram get cfg_pia_wg_password` prints nothing. END-1 covers UNINSTALL |
+| `test/unit/router_dns_test.dart`, `test/screens/router_dns_screen_test.dart`: the "encrypted" tags | the router's own lookups really are encrypted | check-claims `DNS-DoT`: with DNS-over-TLS on, fresh lookups send nothing to port 53 on the WAN, and a direct plain query is counted, as the control |
+| `test/unit/email_layout_test.dart`: the kill-switch line counts rules | the email's "kept off the internet" line | BRK-1 checks TABLET is offline and its exit IP; nothing checks the line's own words |
+| `test/unit/s50_template_test.dart`: the boot hook runs `guard.sh` | nothing leaks during a boot | GRD-7 (`scripts/check-reboot.sh`), from a pinned device, three times |
+| `test/unit/fail_closed_guard_test.dart`: the Network Services Filter against a fake `nvram`, `service` and `iptables` | the router drops a pinned device's traffic out of the WAN from boot, and only the app's entries are touched | check-claims `FILTER-*`, read from the firewall itself; GRD-7 and GRD-8 |
+| `test/unit/fail_closed_guard_test.dart`: `guard.sh` against a fake `ip` | the kernel honours the guard's rules | check-claims `GUARD-*`: `ip route get` from every pinned device, with a rule broken on purpose, a wiped rule repaired by cron, and a tunnel stopped. GRD-2, GRD-3 and DEF-7 by hand |
+| `test/unit/device_assignment_service_test.dart`: the stale rule is deleted | a moved device really moves | DEV-5, DEV-6 and DEV-8: `e2e.sh` counts the rules and checks the exit IP |
+| `test/router_watchdog_service_test.dart`: `nvram set wgcN_dns` | pinned devices' DNS goes through their tunnel | check-claims `DNS-pinned`; WD-23 and DEV-10 by hand |
+| `test/unit/binary_installer_test.dart`: a fake `dgst` | a download is refused if its checksum is wrong | CON-5 is the happy path; the refusal is only tested in CI |
+| `test/busybox_tools_test.dart` | the scripts use only what stock's BusyBox has | it reads the scripts as deployed and every string in `lib/`; the check scripts above run them on the router |

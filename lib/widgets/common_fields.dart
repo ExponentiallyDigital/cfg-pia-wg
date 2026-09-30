@@ -38,6 +38,7 @@ class RegionRow extends StatelessWidget {
       children: [
         Expanded(
           child: TextFormField(
+            enableIMEPersonalizedLearning: false,
             controller: controller,
             style: _kMono,
             decoration: const InputDecoration(
@@ -69,6 +70,7 @@ class PiaUsernameField extends StatelessWidget {
         autofillHints: const [AutofillHints.username],
         autocorrect: false,
         enableSuggestions: false,
+        enableIMEPersonalizedLearning: false,
       );
 }
 
@@ -122,6 +124,7 @@ class DnsField extends StatelessWidget {
       );
 
   Widget _field(Set<String> shared) => TextFormField(
+        enableIMEPersonalizedLearning: false,
         controller: controller,
         style: const TextStyle(color: kText, fontFamily: 'monospace', fontSize: 13),
         decoration: InputDecoration(
@@ -194,6 +197,7 @@ class ObscuredField extends StatelessWidget {
         ),
         autocorrect: false,
         enableSuggestions: false,
+        enableIMEPersonalizedLearning: false,
       );
 }
 
@@ -223,6 +227,7 @@ class RouterIpField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => TextFormField(
+        enableIMEPersonalizedLearning: false,
         controller: controller,
         style: _kMono,
         decoration: const InputDecoration(
@@ -243,6 +248,7 @@ class SshUsernameField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => TextFormField(
+        enableIMEPersonalizedLearning: false,
         controller: controller,
         style: _kMono,
         decoration: const InputDecoration(labelText: 'SSH Username', prefixIcon: Icon(Icons.person, color: kMuted, size: 18)),

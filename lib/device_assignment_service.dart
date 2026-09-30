@@ -38,7 +38,14 @@ class AssignmentState {
     this.parental = ParentalControls.empty,
     this.rawCustomClientlist = '',
     this.rawParental = '',
+    this.guardRules,
+    this.ipv6Service = '',
+    this.pingBlock = false,
   });
+
+  /// Whether the user has asked for pings out of the internet connection to be blocked for the
+  /// whole network ([kPingBlockKey], ID-348).
+  final bool pingBlock;
 
   final List<LanDevice> devices;
   final List<DevicePolicy> policies;
@@ -61,6 +68,25 @@ class AssignmentState {
   /// and the five Time Scheduling keys, joined, for a device disabled or enabled.
   final String rawCustomClientlist, rawParental;
 
+  /// `ip rule show` as read with the lists, or null when it could not be read (ID-319). DEVICES
+  /// says a pinned device has no internet while its tunnel is down only if these rules say so.
+  final String? guardRules;
+
+  /// `ipv6_service` - `disabled` when the router has IPv6 off; empty when it was not read (ID-317).
+  final String ipv6Service;
+
+  /// IPv6 is on. The guard and the firmware's pins are IPv4 only, so a pinned device's IPv6 traffic
+  /// leaves outside its tunnel, up or down; the app does not support IPv6 and says so here.
+  bool get ipv6On => ipv6Service.isNotEmpty && ipv6Service != 'disabled';
+
+  /// Whether the fail-closed guard holds the device at [ip] to the table [table]: exactly one rule
+  /// 90 with `suppress_prefixlength 0` and one rule 91 blackhole, read from the kernel. Null when the
+  /// rules were not read (ID-319).
+  bool? isGuarded(String ip, int table) {
+    final rules = guardRules;
+    return rules == null ? null : guardHeld(rules, ip, table);
+  }
+
   /// Whether [device] has no internet now, disabled in the router's Time Scheduling.
   bool isBlocked(LanDevice device) => parental.isBlocked(device.mac);
 
@@ -76,6 +102,23 @@ class AssignmentState {
     return null;
   }
 }
+
+/// Whether `ip rule show` output [rules] holds the fail-closed guard for [ip] on [table]: exactly one
+/// rule 90 with `suppress_prefixlength 0` and one rule 91 blackhole (ID-319, ID-332).
+bool guardHeld(String rules, String ip, int table) {
+  final lines = rules.split('\n').map((l) => l.replaceAll(RegExp(r'\s+'), ' ').trim());
+  final r90 = lines.where((l) => l == '90: from $ip lookup $table suppress_prefixlength 0').length;
+  final r91 = lines.where((l) => l == '91: from $ip blackhole').length;
+  return r90 == 1 && r91 == 1;
+}
+
+/// Whether `ip rule show` output [rules] holds exactly one rule 91 blackhole for [ip]: all the guard
+/// keeps for a device pinned to a profile that no longer exists.
+bool blackholeHeld(String rules, String ip) => rules
+    .split('\n')
+    .map((l) => l.replaceAll(RegExp(r'\s+'), ' ').trim())
+    .where((l) => l == '91: from $ip blackhole')
+    .length == 1;
 
 /// Thrown when the router's lists changed between the read and the apply.
 ///
@@ -130,8 +173,10 @@ class DeviceAssignmentService {
       maxPolls: maxPolls,
     );
     await queue.clearIfStale();
+    final skips = await queue.skipCount();
     await _run('service $name');
     await queue.awaitIdle();
+    await queue.checkNotSkipped(skips, name);
   }
 
   // One marker-delimited round trip rather than seven. A phone on wifi pays for every round trip,
@@ -153,6 +198,9 @@ class DeviceAssignmentService {
             'echo "$_sep"; cat /jffs/nmp_cl_json.js 2>/dev/null; '
             'echo "$_sep"; cat /tmp/nmp_cache.js 2>/dev/null; '
             'echo "$_sep"; $_parentalRead'
+            'echo "$_sep"; ip rule show 2>/dev/null; '
+            'echo "$_sep"; nvram get ipv6_service; '
+            'echo "$_sep"; nvram get $kPingBlockKey; '
             'echo "$_sep"'))
         .split(_sep);
 
@@ -180,7 +228,28 @@ class DeviceAssignmentService {
       parental: parseParentalControls(parental),
       rawCustomClientlist: at(4),
       rawParental: _joinParental(parental),
+      // Empty means the read failed, not that there are no rules: a router always has rule 0.
+      guardRules: at(9).isEmpty ? null : at(9),
+      ipv6Service: at(10),
+      pingBlock: at(11) == '1',
     );
+  }
+
+  /// Turns the whole-network ping block on or off (ID-348), and has the guard apply it now.
+  ///
+  /// Returns what the router holds afterwards, read back: whether the filter's ICMP setting
+  /// includes echo requests (type 8). The guard applies it only while a device is pinned, so
+  /// "on" with nothing pinned reads back false.
+  Future<bool> setPingBlock(bool on) async {
+    await _run(on ? 'nvram set $kPingBlockKey=1' : 'nvram unset $kPingBlockKey');
+    await _run('nvram commit');
+    await FailClosedGuard(read: _read, run: _run, onLog: onLog).ensure(quiet: true);
+    final types = (await _read('nvram get filter_lw_icmp_x')).trim().split(RegExp(r'\s+'));
+    final held = types.contains('8');
+    await _read(buildLoggerCommand(on
+        ? 'Pings out of the internet connection ${held ? 'blocked' : 'to be blocked while a device is pinned'} (from the app)'
+        : 'Pings out of the internet connection no longer blocked by the app'));
+    return held;
   }
 
   // The five Time Scheduling keys as `KEY=value` lines, one read. `nvram get` prints nothing for an
@@ -304,7 +373,23 @@ class DeviceAssignmentService {
         await _awaitInterface('wgc$restarting', up: true);
       }
     }
-    onLog?.call('Default connection set$change.', isSuccess: true);
+    // Read back before saying so (ID-333). The waits above log and carry on, and a service call can
+    // be dropped, so "set" is claimed only when vpnc_default_wan names it and the priority-10000 rule
+    // sends the LAN to it - or, for Internet, when no such rule is left.
+    final key = int.tryParse((await _read('nvram get vpnc_default_wan')).trim()) ?? 0;
+    final rules = await _read(kIpRuleCommand);
+    final lanRule = RegExp(r'^10000:.*iif br0 lookup (\S+)', multiLine: true).firstMatch(rules)?.group(1);
+    final ok = index == 0 ? (key == 0 && lanRule == null) : (key == index && lanRule == '$index');
+    if (ok) {
+      onLog?.call('Default connection set$change.', isSuccess: true);
+    } else {
+      onLog?.call(
+        "The default connection was changed$change, but the router doesn't show it yet "
+        '(vpnc_default_wan is $key; the LAN rule ${lanRule == null ? 'is missing' : 'points at $lanRule'}). '
+        'Check the Default connection panel, and change it again if it is wrong.',
+        isWarning: true,
+      );
+    }
   }
 
   /// Waits for [iface] to appear in, or vanish from, `wg show interfaces`.
@@ -346,6 +431,20 @@ class DeviceAssignmentService {
   /// [expected] is every device the policy list knows about and the one rule each should have -
   /// see [expectedRuleTargets]. An address the list does not mention is left alone: a rule this app
   /// cannot explain is not a rule it should delete.
+  /// What the router's rules say after an APPLY, compared with what was written (ID-332).
+  Future<List<String>> _readBack(List<DevicePolicy> policies, List<VpncRecord> profiles) async {
+    final rules = await _read(kIpRuleCommand);
+    final wireguard = {for (final p in profiles) if (p.protocol == 'WireGuard') p.vpncStateIndex};
+    final problems = <String>[];
+    expectedRuleTargets(policies).forEach((ip, index) {
+      if (staleRuleTables(rules, ip: ip, keepIndex: index).isNotEmpty) problems.add('$ip still has an old routing rule');
+      if (index != null && wireguard.contains(index) && !guardHeld(rules, ip, index)) {
+        problems.add('$ip has no fail-closed guard');
+      }
+    });
+    return problems;
+  }
+
   Future<void> _clearStaleRules(Map<String, int?> expected) async {
     for (var pass = 0; pass < 3; pass++) {
       final rules = await _read(kIpRuleCommand);
@@ -457,9 +556,11 @@ class DeviceAssignmentService {
     // Only when something actually moved. A default-connection change on its own has no business
     // rewriting the policy list, and rewriting it would put our copy over anything that arrived
     // between the read and here.
+    List<DevicePolicy>? written;
     if (changes.isNotEmpty) {
       var policies = base.policies;
       changes.forEach((ip, index) => policies = setDevicePolicy(policies, ip: ip, vpncIndex: index));
+      written = policies;
       await _run('nvram set vpnc_dev_policy_list=${shellSingleQuote(serialiseDevicePolicyList(policies))}');
       await _run('nvram commit');
 
@@ -494,6 +595,21 @@ class DeviceAssignmentService {
     // run already did the work, and reports. A device just unpinned loses its guard, or it would be
     // blocked from the connection it was moved to (ID-213).
     await guard.ensure();
-    onLog?.call('Device assignments applied.', isSuccess: true);
+    // Said only when the router holds it (ID-332): the firmware's rules with no stale ones left, and
+    // the guard's for every device pinned to a tunnel. The sweep above gives up after three passes,
+    // and the guard can fail, and until now either still ended in "applied".
+    // Nothing to say when no device moved: the default connection's own line reports that change,
+    // and "applied" after it would claim what the read-back above may just have denied.
+    if (written == null) return;
+    final problems = await _readBack(written, base.profiles);
+    if (problems.isEmpty) {
+      onLog?.call('Device assignments applied.', isSuccess: true);
+    } else {
+      onLog?.call(
+        "Device assignments written, but the router's rules do not match yet: ${problems.join('; ')}. "
+        'APPLY again, or look at DEVICES.',
+        isWarning: true,
+      );
+    }
   }
 }

@@ -103,7 +103,18 @@ class PiaService {
   /// How long [getToken] waits for PIA's answer. Injectable so a test need not wait 20 seconds.
   final Duration tokenTimeout;
 
-  PiaService({this.probePort = defaultProbePort, this.tokenTimeout = kPiaTokenTimeout});
+  /// The port addKey is sent to: PIA's 1337. A test seam, as [probePort] is.
+  final int registerPort;
+
+  /// Where PIA's CA certificate comes from. A test seam: a test serves its own CA.
+  final Future<String> Function()? caCertLoader;
+
+  PiaService({
+    this.probePort = defaultProbePort,
+    this.tokenTimeout = kPiaTokenTimeout,
+    this.registerPort = defaultProbePort,
+    this.caCertLoader,
+  });
 
   final HttpClient _client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
 
@@ -247,26 +258,37 @@ class PiaService {
     return (base64Encode(priv), base64Encode(x25519.X25519(priv, x25519.basePoint)));
   }
 
-  // Registers WireGuard public key using custom SecurityContext pinning
+  /// Registers the WireGuard public key with [server], trusting only PIA's own CA (ID-309).
+  ///
+  /// The server is reached by address, but its certificate is checked against PIA's CA for its
+  /// NAME ([WgServer.cn]): the connection factory opens TCP to the address and runs TLS for the name,
+  /// so an address that is not the named server, or a certificate PIA's CA did not sign, is refused.
+  /// Until build 478 a `badCertificateCallback` did this job, and Dart calls that callback for ANY
+  /// certificate that fails - an untrusted chain included - so a self-signed certificate that merely
+  /// named the server was accepted (claims audit #3). There is no callback now, and no fallback.
   Future<RegResponse> registerKey(WgServer server, String token, String publicKeyB64, {void Function(String)? onProgress}) async {
-    final caCertPem = await _httpGet(_caCertUrl);
+    final caCertPem = await (caCertLoader ?? () => _httpGet(_caCertUrl))();
     onProgress?.call('Registering key with ${server.ip}...');
 
     final secCtx = SecurityContext(withTrustedRoots: false)..setTrustedCertificatesBytes(utf8.encode(caCertPem));
     final localClient = HttpClient(context: secCtx)
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) {
-        // The CA pin in SecurityContext validates the chain.
-        // This callback fires only due to IP-vs-hostname mismatch,
-        // so we verify the cert CN matches the expected server identity.
-        return cert.subject.contains('CN=${server.cn}');
+      ..connectionTimeout = const Duration(seconds: 10)
+      ..findProxy = ((_) => 'DIRECT')
+      ..connectionFactory = (uri, proxyHost, proxyPort) async {
+        final tcp = await Socket.startConnect(server.ip, registerPort);
+        return ConnectionTask.fromSocket(
+          tcp.socket.then((s) => SecureSocket.secure(s, host: server.cn, context: secCtx)),
+          tcp.cancel,
+        );
       };
 
     try {
+      // The name, not the address, so the Host header and the certificate check agree; the factory
+      // above decides where the connection actually goes.
       final uri = Uri.parse(
-        'https://${server.ip}:1337/addKey?pt=${Uri.encodeQueryComponent(token)}&pubkey=${Uri.encodeQueryComponent(publicKeyB64)}',
+        'https://${server.cn}:$registerPort/addKey?pt=${Uri.encodeQueryComponent(token)}&pubkey=${Uri.encodeQueryComponent(publicKeyB64)}',
       );
-      final request = await localClient.getUrl(uri)
-        ..headers.host = server.cn;
+      final request = await localClient.getUrl(uri);
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
 

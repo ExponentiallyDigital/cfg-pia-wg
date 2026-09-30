@@ -12,7 +12,7 @@ PIA rotates its WireGuard keys and your tunnel dies. You find out a week later. 
 
 Pinned means pinned
 
-Stock ASUS firmware has no VPN kill switch, so this app builds one. A device pinned to a tunnel uses that tunnel or nothing. If the tunnel drops, expires or is being rebuilt, the device waits offline instead of slipping out unprotected. No settings required; it just comes with the pin.
+Stock ASUS firmware has no VPN kill switch, so this app builds one. A device pinned to a tunnel uses that tunnel or nothing (over IPv4: the app doesn't support IPv6, so switch it off in the router). If the tunnel drops, expires or is being rebuilt, the device waits offline instead of slipping out unprotected. No settings required; it just comes with the pin.
 
 Faster than what you have now
 
@@ -39,7 +39,7 @@ The source is on GitHub and the build instructions are good enough to follow. Wh
 
 Built for people who read the privacy policy
 
-Credentials and private keys live in RAM only. Never written to storage, never logged. Screenshots blocked, app blanked in Recent Apps, keyboard learning off in every sensitive field. Router writes take a snapshot first and roll back if verification fails. Every file the app puts on your router is marked as its own, and uninstall refuses to delete anything it didn't create.
+Credentials and private keys stay in memory and are never logged; a config you share is deleted from the phone when you leave its screen. Screenshots blocked, app blanked in Recent Apps, keyboard learning off in every field. Router writes take a snapshot first and roll back if verification fails. Every file the app puts on your router is marked as its own, and uninstall refuses to delete anything it didn't create.
 
 Open source under GPL v3. Pinned dependencies, verifiable build provenance, automated security scanning on every release. Architecture and build steps are on GitHub. Audit it yourself.
 

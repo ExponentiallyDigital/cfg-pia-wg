@@ -187,6 +187,43 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     }
   }
 
+  /// The whole-network ping block (ID-348). Acts at once rather than waiting for APPLY: it is one
+  /// router setting, not an assignment, and says in the app log what the router now holds.
+  Future<void> _setPingBlock(bool on) async {
+    final svc = _service;
+    if (svc == null || _busy) return;
+    setState(() => _busy = true);
+    String? failure;
+    var held = false;
+    try {
+      held = await svc.setPingBlock(on);
+      final fresh = await svc.read();
+      if (mounted) setState(() => _state = fresh);
+    } catch (e) {
+      failure = 'Could not change the ping setting: $e';
+    }
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    if (failure != null) {
+      await AppErrors.system(context, _c, failure);
+      return;
+    }
+    final pinned = _state?.policies.any((p) => p.isAssigned && (p.vpncIndex ?? 0) != 0) ?? false;
+    if (on && held) {
+      _c.logEntry('Pings out of the internet connection are blocked for every device. Pinned devices still ping '
+          'through their tunnels.', isSuccess: true);
+    } else if (on && !pinned) {
+      _c.logEntry('Saved. Pings will be blocked once a device is pinned to a tunnel.');
+    } else if (on) {
+      _c.logEntry("The router hasn't taken the ping block yet. It is asked again every minute.", isWarning: true);
+    } else if (held) {
+      _c.logEntry('The app no longer blocks pings, but the router still does: something else set it, in '
+          'Firewall, Network Services Filter.', isWarning: true);
+    } else {
+      _c.logEntry('Pings out of the internet connection are allowed again.', isSuccess: true);
+    }
+  }
+
   /// Pull-to-refresh: the device list and the tunnels, read again. Staged changes are kept.
   Future<void> _pullRefresh() async {
     final svc = _service;
@@ -262,7 +299,9 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       }
 
       final svc = widget.serviceFactory?.call(client) ??
-          DeviceAssignmentService(client, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => _c.logEntry(m, isError: isError, isSuccess: isSuccess));
+          DeviceAssignmentService(client,
+              onLog: (m, {isError = false, isSuccess = false, isWarning = false}) =>
+                  _c.logEntry(m, isError: isError, isSuccess: isSuccess, isWarning: isWarning));
       final state = await svc.read();
       // Watchdog state for the picker. A tolerated failure: the notes go blank rather than the
       // whole screen failing, because assignment does not depend on knowing them.
@@ -531,6 +570,34 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       if (p.vpncStateIndex == index) return _slotActive(p);
     }
     return null;
+  }
+
+  /// A device the router has pinned to a tunnel but whose fail-closed guard it does not hold (ID-319).
+  ///
+  /// The notes below say "no internet until it is enabled" for a pinned device whose tunnel is down.
+  /// That was worked out from the tunnel's state and the assumption that the guard was there; now the
+  /// guard's rules are read with the lists, and a device without them is said to be unguarded. Only
+  /// for the assignment already applied: a pin staged but not yet applied has no guard yet by design.
+  String? _guardNote(LanDevice d) {
+    final ip = d.ip;
+    final state = _state;
+    if (ip == null || state == null) return null;
+    final applied = assignedIndexFor(state.policies, ip);
+    if (applied == null || applied != _effectiveIndex(d)) return null;
+    // Pinned to a profile deleted in the web interface, which leaves the pin behind. Index 0 is
+    // Internet, never a profile.
+    if (applied != 0 && !state.profiles.any((p) => p.vpncStateIndex == applied)) {
+      final held = state.guardRules == null ? null : blackholeHeld(state.guardRules!, ip);
+      if (held == null) return null;
+      return held
+          ? 'pinned to a VPN profile that no longer exists, so it has no internet. Pick a tunnel or Internet, and APPLY'
+          : 'pinned to a VPN profile that no longer exists, and not guarded: it can reach the internet through the '
+              'default connection. Pick a tunnel or Internet, and APPLY';
+    }
+    if (!_wireguardProfiles.any((p) => p.vpncStateIndex == applied)) return null;
+    if (state.isGuarded(ip, applied) != false) return null;
+    return 'fail-closed guard missing - while ${_labelForIndex(applied)} is down, this device can reach the '
+        'internet outside it. APPLY puts it back';
   }
 
   /// The note under a picker whose tunnel is not running: where the traffic really goes. Null when it
@@ -928,12 +995,51 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             Text(defaultNote, key: const Key('default_exit'), style: const TextStyle(color: kWarn, fontSize: 12)),
           ],
           const SizedBox(height: 6),
+          // Until build 480 this said assigned devices fall back to the default when their tunnel
+          // drops. With the fail-closed guard they do not: they have no internet (ID-340).
           const Text(
-            'Devices set to "default" use this. Assigned devices fall back to it if their tunnel drops.',
+            'Devices set to "default" use this. A device assigned to a tunnel never falls back to it: while '
+            'that tunnel is down, the device has no internet.',
             style: TextStyle(color: kMuted, fontSize: 12),
           ),
         ]),
       ),
+      if (state.ipv6On) ...[
+        const SizedBox(height: 12),
+        // ID-317: the app does not support IPv6. The guard and the firmware's pins are IPv4 only.
+        const Text(
+          'IPv6 is on in your router, and this app does not support IPv6: a device assigned to a tunnel can '
+          'still reach the internet over IPv6, outside the tunnel, whether the tunnel is up or down. To keep '
+          'assigned devices in their tunnels, turn IPv6 off in the router (IPv6, Connection type: Disable).',
+          key: Key('ipv6_warning'),
+          style: TextStyle(color: kWarn, fontSize: 12),
+        ),
+      ],
+      const SizedBox(height: 12),
+      // ID-348: the router's filter holds a pinned device's TCP and UDP out of the internet
+      // connection from boot, with the pin. Pings it can only hold for every device, so that part
+      // is a choice, off by default.
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(
+          child: Text.rich(
+            TextSpan(children: [
+              const TextSpan(text: 'Block pings to the internet\n', style: TextStyle(color: kText, fontSize: 13)),
+              TextSpan(
+                text: 'Pinned devices are kept off your internet connection outside their tunnel from the moment the '
+                    "router starts. Pings can't be held for one device, only for every device, so this blocks pings "
+                    'to the internet from every device that is not going through a tunnel. Pinned devices still ping '
+                    'through their tunnels.',
+                style: TextStyle(color: kMuted, fontSize: 12),
+              ),
+            ]),
+          ),
+        ),
+        Switch(
+          key: const Key('ping_block_switch'),
+          value: state.pingBlock,
+          onChanged: _busy ? null : _setPingBlock,
+        ),
+      ]),
       const SizedBox(height: 12),
       _Panel(
         background: kConfigBg,
@@ -952,7 +1058,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
               blocked: _blocked(d),
               foreign: _isForeign(d),
               // Where a stopped tunnel sends the traffic says nothing about a device with none.
-              note: d.assignable && !_blocked(d) ? _exitNote(_effectiveIndex(d)) : null,
+              note: d.assignable && !_blocked(d) ? _guardNote(d) ?? _exitNote(_effectiveIndex(d)) : null,
               onTap: _busy || !d.assignable ? null : () => _pick(d),
               editing: _editingMac == d.mac,
               nameController: _nameCtrl,
@@ -1090,6 +1196,7 @@ class _DeviceRow extends StatelessWidget {
             onTapOutside: (_) => onNameCancel(),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               TextField(
+                enableIMEPersonalizedLearning: false,
                 key: Key('name_field_${device.mac}'),
                 controller: nameController,
                 autofocus: true,
