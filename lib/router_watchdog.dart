@@ -718,6 +718,9 @@ String buildSendmailCommand(String host, int port, WatchdogConfig c) => '/usr/sb
     '-H "exec openssl s_client -quiet -tls1_3 '
     '-CAfile /etc/ssl/certs/ca-certificates.crt '
     '-verify_return_error '
+    // The chain alone is not enough: without these, any publicly trusted certificate for any other
+    // host is accepted, and it receives the SMTP login (ID-310, measured 2026-09-30).
+    '-servername $host -verify_hostname $host '
     '-connect $host:$port" '
     '-au${shellSingleQuote(c.smtpUsername)} '
     '-ap${shellSingleQuote(c.smtpPassword)} '
@@ -2393,7 +2396,10 @@ __SIGNOFF__
     hosts_add
     log "SMTP host resolved privately to $SMTP_IP"
   else
-    SMTPCONN="-connect $SMTP_HOST:$SMTP_PORT"
+    # The name is checked on this path too (ID-310). -verify_return_error alone checks the chain,
+    # not the name: measured 2026-09-30, openssl accepted www.cloudflare.com's certificate for an
+    # SMTP connection, and refused it with -verify_hostname ("Hostname mismatch").
+    SMTPCONN="-connect $SMTP_HOST:$SMTP_PORT -servername $SMTP_HOST -verify_hostname $SMTP_HOST"
   fi
 __MAILCMD__
 
