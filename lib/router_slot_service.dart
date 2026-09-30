@@ -715,8 +715,10 @@ class RouterSlotService {
   Future<void> _queuedService(String name) async {
     final queue = serviceQueue;
     await queue.clearIfStale();
+    final skips = await queue.skipCount();
     await _run('service $name');
     await queue.awaitIdle();
+    await queue.checkNotSkipped(skips, name);
   }
 
   Future<bool> runVpncService(int slot, String serviceCmd, {bool required = false}) async {
@@ -738,9 +740,12 @@ class RouterSlotService {
     // first costs one round trip; not clearing it costs the whole action.
     final queue = serviceQueue;
     await queue.clearIfStale();
+    final skips = await queue.skipCount();
     await _run('service $serviceCmd');
     // And wait for it to finish, rather than firing the next call into a queue that is still busy.
     await queue.awaitIdle();
+    // A dropped call ends idle too; the router's log is what says it never ran (ID-334).
+    await queue.checkNotSkipped(skips, serviceCmd);
     return true;
   }
 

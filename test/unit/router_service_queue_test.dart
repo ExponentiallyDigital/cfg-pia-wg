@@ -206,4 +206,37 @@ void main() {
       expect(r.commands, isNot(contains(kClearRcServiceCommand)));
     });
   });
+
+  // ID-334: a call the router dropped ("rc_service: skip the event: X") ended with an idle queue, so
+  // it read as done. The router's own log is what is checked.
+  group('a dropped call', () {
+    RouterServiceQueue queue(List<String> skips) => RouterServiceQueue(
+          read: (cmd) async {
+            if (cmd.startsWith("grep -c 'skip the event'")) return '${skips.length}';
+            if (cmd.startsWith("grep 'skip the event'")) {
+              final n = int.parse(RegExp(r'tail -n (\d+)').firstMatch(cmd)!.group(1)!);
+              return skips.sublist(skips.length - n).join('\n');
+            }
+            return '';
+          },
+          run: (_) async => '',
+        );
+
+    test('is an error when the router says it dropped this service', () async {
+      final skips = <String>['Sep 30 20:00:00 rc_service: skip the event: restart_firewall.'];
+      final q = queue(skips);
+      final before = await q.skipCount();
+      skips.add('Sep 30 20:01:00 rc_service: skip the event: restart_vpnc.');
+      await expectLater(q.checkNotSkipped(before, 'restart_vpnc'), throwsA(isA<RouterServiceSkippedException>()));
+    });
+
+    test('is not confused with an earlier drop of the same service, or a drop of another', () async {
+      final skips = <String>['Sep 30 20:00:00 rc_service: skip the event: restart_vpnc.'];
+      final q = queue(skips);
+      final before = await q.skipCount();
+      await q.checkNotSkipped(before, 'restart_vpnc');
+      skips.add('Sep 30 20:01:00 rc_service: skip the event: restart_firewall.');
+      await q.checkNotSkipped(before, 'restart_vpnc');
+    });
+  });
 }

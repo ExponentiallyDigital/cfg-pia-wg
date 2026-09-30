@@ -348,9 +348,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() => _busy = true);
     String? error, errorDetail;
+    var bootBefore = '';
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      await RouterWatchdog(client, onLog: _c.onLog).rebootRouter();
+      final wd = RouterWatchdog(client, onLog: _c.onLog);
+      // Read before asking, so "it restarted" can be checked rather than assumed (ID-335).
+      bootBefore = await wd.bootId();
+      await wd.rebootRouter();
       await _connected(ip);
     } catch (e) {
       // Plain English on screen, the raw exception in the log (ID-108).
@@ -377,11 +381,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
         port: target.port,
         answers: widget.testRouterAnswers ?? _routerAnswers,
         onFinished: (message, {bool isSuccess = false, bool isWarning = false}) {
+          if (isSuccess) {
+            unawaited(_confirmRestarted(ip, user, pass, bootBefore, message));
+            return;
+          }
           _c.logEntry(message, isSuccess: isSuccess, isWarning: isWarning);
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
         },
       ),
     );
+  }
+
+  /// "The router answered again" meant only that its SSH port took a connection after one failed
+  /// probe: a Wi-Fi blip and a dropped reboot request read the same (ID-335). The kernel's boot id
+  /// changes on every restart and nothing else, so it is compared, over a fresh connection.
+  Future<void> _confirmRestarted(String ip, String user, String pass, String bootBefore, String answered) async {
+    String after = '';
+    try {
+      await _c.closeRouterSession();
+      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      after = await RouterWatchdog(client, onLog: _c.onLog).bootId();
+    } catch (_) {}
+    final String message;
+    final bool ok;
+    if (bootBefore.isEmpty || after.isEmpty) {
+      ok = false;
+      message = '$answered Whether it restarted could not be checked.';
+    } else if (after != bootBefore) {
+      ok = true;
+      message = answered.replaceFirst('The router answered again', 'The router restarted and answered again');
+    } else {
+      ok = false;
+      message = 'The router answered, but it has not restarted: the reboot request was probably dropped. '
+          'Try REBOOT again, or switch it off and on.';
+    }
+    _c.logEntry(message, isSuccess: ok, isWarning: !ok);
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Whether the router accepts a connection on its SSH port again - up enough to log in to.

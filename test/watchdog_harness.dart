@@ -149,6 +149,7 @@ case "$1" in
     cat "$STATE/nv/${IF}_ppub" > "$STATE/peer_$IF" 2>/dev/null
     if [ -f "$STATE/no_handshake" ]; then echo 0 > "$STATE/hs_$IF"; else date +%s > "$STATE/hs_$IF"; fi
     grep -qx "$IF" "$STATE/up" 2>/dev/null || echo "$IF" >> "$STATE/up"
+    [ -f "$STATE/dns_fix_on_restart" ] && echo ok > "$STATE/dns"
     ;;
 esac
 exit 0
@@ -245,6 +246,8 @@ case "$url" in
     [ -n "$out" ] && echo '{"token":"tok123"}' > "$out"; [ -n "$fmt" ] && printf '200 exit=0 connects=1 err='; exit 0 ;;
   *serverlist*) [ -n "$out" ] && echo '{"regions":[]}' > "$out"; exit 0 ;;
   *addKey*)
+    # A DELETE made while the rebuild is under way (ID-331): the watchdog's settings go now.
+    [ -f "$STATE/delete_during_rebuild" ] && rm -f "$STATE"/nv/*_wd_check_interval
     if ! grep -q 'PIA-TEST-CA' "$ca" 2>/dev/null; then
       echo "curl: (60) SSL certificate problem: unable to get local issuer certificate" >&2; exit 60
     fi
@@ -373,6 +376,18 @@ class WatchdogHarness {
 
   void wan(bool on) => _flag('wan', on);
   void dns(String mode) => File('${state.path}/dns').writeAsStringSync(mode);
+  /// The watchdog is DELETEd while a rebuild is under way, at the moment it registers its key (ID-331).
+  void deletedDuringRebuild() => _flag('delete_during_rebuild', true);
+
+  /// NVRAM writes the run made, in order.
+  List<String> get nvramWrites => _lines('nvram_writes');
+
+  /// The slot's DNS server answers nothing until the tunnel is rebuilt, then answers (ID-329).
+  void dnsFailsUntilRebuild() {
+    dns('fail');
+    _flag('dns_fix_on_restart', true);
+  }
+
   void skipRestarts(int n) => File('${state.path}/skip_restarts').writeAsStringSync('$n');
 
   /// PIA answers the token request with HTTP 403, as it does for a wrong username or password.

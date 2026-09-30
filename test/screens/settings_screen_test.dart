@@ -681,7 +681,14 @@ void main() {
       final replies = [true, false, true];
       var calls = 0;
       Future<bool> answers(String host, int port) async => replies[calls < replies.length ? calls++ : replies.length - 1];
-      await pump(tester, c, RecordingSSHClient(responder: (_) => ''), answers: answers);
+      // A new boot id after the restart, as the kernel gives (ID-335).
+      var bootReads = 0;
+      await pump(
+          tester,
+          c,
+          RecordingSSHClient(
+              responder: (cmd) => cmd.contains('boot_id') ? (bootReads++ == 0 ? 'boot-before' : 'boot-after') : ''),
+          answers: answers);
       await confirmReboot(tester);
 
       await tester.pump(const Duration(seconds: 3));
@@ -692,8 +699,25 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Rebooting the router'), findsNothing);
-      expect(c.log.last.message, endsWith('] The router answered again after 9 seconds.'));
+      expect(c.log.last.message, endsWith('] The router restarted and answered again after 9 seconds.'));
       expect(c.log.last.isSuccess, isTrue);
+    });
+
+    // ID-335: one failed probe and one answer read as a reboot, whether or not the router restarted.
+    testWidgets('a router that answers with the same boot id has not restarted, and is not called rebooted',
+        (tester) async {
+      final c = connected();
+      final replies = [false, true];
+      var calls = 0;
+      Future<bool> answers(String host, int port) async => replies[calls < replies.length ? calls++ : replies.length - 1];
+      await pump(tester, c, RecordingSSHClient(responder: (cmd) => cmd.contains('boot_id') ? 'same-boot' : ''),
+          answers: answers);
+      await confirmReboot(tester);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(c.log.last.message, contains('it has not restarted'));
+      expect(c.log.last.isWarning, isTrue);
     });
 
     testWidgets('stops at 100 seconds and says the router has not answered', (tester) async {

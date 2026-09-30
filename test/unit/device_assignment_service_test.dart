@@ -426,8 +426,11 @@ void main() {
       await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {}, newDefaultIndex: 5);
       for (var i = 0; i < c.commands.length; i++) {
         if (!c.commands[i].startsWith('service ')) continue;
-        expect(c.commands[i - 1], contains('nvram get rc_service'),
+        // The queue check, then the count of calls the router has dropped so far (ID-334).
+        expect(c.commands[i - 2], contains('nvram get rc_service'),
             reason: '${c.commands[i]} was not preceded by a queue check');
+        expect(c.commands[i - 1], contains("grep -c 'skip the event'"),
+            reason: '${c.commands[i]} was not preceded by the dropped-call count');
       }
     });
 
