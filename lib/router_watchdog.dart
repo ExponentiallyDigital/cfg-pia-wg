@@ -718,6 +718,9 @@ String buildSendmailCommand(String host, int port, WatchdogConfig c) => '/usr/sb
     '-H "exec openssl s_client -quiet -tls1_3 '
     '-CAfile /etc/ssl/certs/ca-certificates.crt '
     '-verify_return_error '
+    // The chain alone is not enough: without these, any publicly trusted certificate for any other
+    // host is accepted, and it receives the SMTP login (ID-310, measured 2026-09-30).
+    '-servername $host -verify_hostname $host '
     '-connect $host:$port" '
     '-au${shellSingleQuote(c.smtpUsername)} '
     '-ap${shellSingleQuote(c.smtpPassword)} '
@@ -767,7 +770,13 @@ const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
 # Index 2 of a vpnc_clientlist record is the slot, index 6 the table its devices are routed by.
 MYIDX="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" '$3==s {print $7; exit}')"
 PINNED="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {n++} END {print n+0}')"
-GUARDED="$(ip rule show | awk -v i="$MYIDX" '$1=="90:" {for (k=2; k<NF; k++) if ($k=="lookup" && $(k+1)==i) n++} END {print n+0}')"
+# Per pinned device, from the kernel (ID-320): its 90 rule WITH suppress_prefixlength 0 and its 91
+# blackhole. Counting 90 rules by table said "guarded" for a device whose blocking rule was gone.
+GUARDED=0
+for GIP in $(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {print $2}'); do
+  ip rule show | grep -q "^90:.*from $GIP lookup $MYIDX suppress_prefixlength 0" &&
+    ip rule show | grep -q "^91:.*from $GIP blackhole" && GUARDED=$((GUARDED + 1))
+done
 DEVS="devices"
 [ "$PINNED" = "1" ] && DEVS="device"
 # Named as DEVICES names them (ID-242).
@@ -803,9 +812,12 @@ if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then
 fi''';
 
 const String _kKillSwitchMerlin = r'''if [ "$ENFORCE" = "1" ]; then
-  KILLSW_UP="ON - traffic is blocked if the tunnel drops"
-  KILLSW_FIXED="ON - no traffic left the router while it was down"
-  KILLSW_DOWN="ON - traffic is blocked while the tunnel is down"
+  # The setting, not a traffic claim (ID-326): the script reads wgcN_enforce and nothing else, and
+  # the old wording promised that nothing at all left the router, more than a per-client kill
+  # switch covers.
+  KILLSW_UP="ON in the router's settings, so Merlin blocks the devices it routes through this tunnel if the tunnel drops"
+  KILLSW_FIXED="ON in the router's settings; what Merlin blocked while the tunnel was down was not checked"
+  KILLSW_DOWN="ON in the router's settings, so Merlin should be blocking the devices it routes through this tunnel"
 else
   KILLSW_UP="OFF - the kill switch is available but is not enabled"
   KILLSW_FIXED="$KILLSW_UP"
@@ -868,20 +880,57 @@ else
   service restart_vpnrouting0
 fi''';
 
-/// The curl arguments that make a lookup encrypted, or an empty string when none is configured.
+/// The awk program that reads a DoH answer, given as base64 on stdin (`openssl base64 -A`), and
+/// prints the first IPv4 address in it, or nothing and exits 1 (ID-307).
 ///
-/// Both parts or neither: `--doh-url` alone would leave curl resolving the resolver's own name in
-/// the clear, which is most of what this is for.
-String dohCurlArguments(String url, String ip) {
+/// It checks the response bit and a zero RCODE, skips the question, and walks the answers, so a
+/// CNAME first and a name ending in a compression pointer are both handled; it never reads past the
+/// data it decoded. BusyBox awk, so no gawk extensions. It holds no single quote, because the script
+/// carries it in one: a test checks that.
+const String kDohAnswerAwk = r'''
+function skipname(p,   l) {
+  while (p < n) { l = b[p]; if (l == 0) return p + 1; if (l >= 192) return p + 2; if (l > 63) return -1; p += l + 1 }
+  return -1
+}
+{ s = s $0 }
+END {
+  k = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  for (i = 0; i < 64; i++) v[substr(k, i + 1, 1)] = i
+  n = 0; bits = 0; acc = 0
+  for (i = 1; i <= length(s); i++) {
+    c = substr(s, i, 1); if (c == "=") break; if (!(c in v)) continue
+    acc = acc * 64 + v[c]; bits += 6
+    if (bits >= 8) { bits -= 8; d = 2 ^ bits; b[n++] = int(acc / d); acc = acc % d }
+  }
+  if (n < 12 || b[2] < 128 || b[3] % 16 != 0) exit 1
+  qd = b[4] * 256 + b[5]; an = b[6] * 256 + b[7]; p = 12
+  for (q = 0; q < qd; q++) { p = skipname(p); if (p < 0) exit 1; p += 4 }
+  for (a = 0; a < an; a++) {
+    p = skipname(p); if (p < 0 || p + 10 > n) exit 1
+    t = b[p] * 256 + b[p + 1]; cl = b[p + 2] * 256 + b[p + 3]; len = b[p + 8] * 256 + b[p + 9]; p += 10
+    if (p + len > n) exit 1
+    if (t == 1 && cl == 1 && len == 4) { print b[p] "." b[p + 1] "." b[p + 2] "." b[p + 3]; exit 0 }
+    p += len
+  }
+  exit 1
+}''';
+
+/// Where the watchdog sends its own DNS queries: the DoH URL, its hostname, and the address(es)
+/// curl's `--resolve` pins that hostname to. Null when none is configured or the pair is unusable.
+///
+/// The script does the lookup itself (`doh_a`) because ASUS's curl ignores `--doh-url` on both
+/// firmwares - measured 2026-09-30, a DoH server pointed at nothing still fetched the page, so
+/// every lookup since ID-076 had gone out as ordinary DNS (ID-307).
+({String url, String host, String addresses})? dohEndpoint(String url, String ip) {
   // Checked again here, not only on the form: this goes into the script, and a router can hold a
   // value saved before the check existed (ID-237).
-  if (checkDohPair(url, ip).isNotEmpty) return '';
+  if (checkDohPair(url, ip).isNotEmpty) return null;
   final host = Uri.tryParse(url.trim())?.host ?? '';
   final addresses = normaliseAddressList(ip);
-  if (host.isEmpty || addresses.isEmpty) return '';
+  if (host.isEmpty || addresses.isEmpty) return null;
   // One or two addresses, comma-separated with no spaces: curl tries them in order (ID-221). A space,
   // as a router saved before the check held, split the option in two and broke every download.
-  return ' --doh-url ${url.trim()} --resolve $host:443:$addresses';
+  return (url: url.trim(), host: host, addresses: addresses);
 }
 
 /// What the script logs once per run, so a reader can see which way lookups went.
@@ -958,6 +1007,7 @@ String _echoBlock(Iterable<String> lines) => lines.map((l) => '  echo ${shellSin
 String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
   final fw = firmware ?? routerFirmware;
   final stock = fw == RouterFirmware.stock;
+  final doh = dohEndpoint(c.dohUrl, c.dohIp);
   return _kWatchdogScriptTemplate
       .replaceAll('__SLOT__', '${c.slotIndex}')
       .replaceAll('__JQ__', jqCommand(fw))
@@ -966,8 +1016,11 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       // stock creates keys nothing reads and DELETE does not clean up.
       .replaceAll('__MERLINONLY__', stock ? '' : _kMerlinOnlyNvsets)
       .replaceAll('__RESTART__', stock ? _kRestartStock : _kRestartMerlin)
-      .replaceAll('__DOH__', dohCurlArguments(c.dohUrl, c.dohIp))
-      .replaceAll('__DOHDESC__', dohDescription(c.dohUrl, c.dohIp))
+      .replaceAll('__DOHAWK__', kDohAnswerAwk)
+      .replaceAll('__DOHURL__', doh?.url ?? '')
+      .replaceAll('__DOHHOST__', doh?.host ?? '')
+      .replaceAll('__DOHIPS__', doh?.addresses ?? '')
+      .replaceAll('__DOHDESC__', doh == null ? '' : dohDescription(c.dohUrl, c.dohIp))
       .replaceAll('__DOHBAD__', dohUnusableNote(c.dohUrl, c.dohIp))
       .replaceAll('__BACKOFF__', buildBackoffCase())
       .replaceAll('__APPVER__', appVersionLabel)
@@ -984,12 +1037,34 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
 /// failed (ID-300). The mailer's own first line, which is the useful part: "535 5.7.8 Username and
 /// Password not accepted." rather than everything after it.
 String? deployEmailFailure(String runLog) {
-  final line = runLog.split('\n').lastWhere((l) => l.contains('Email FAILED'), orElse: () => '');
+  final lines = runLog.split('\n');
+  // The two ways a run decides not to send at all (ID-328). Until build 481 only "Email FAILED" was
+  // looked for, so a deploy with a malformed or missing SMTP server reported no email problem.
+  final notSent = lines.lastWhere((l) => l.contains('Email not sent: '), orElse: () => '');
+  if (notSent.isNotEmpty) return notSent.substring(notSent.indexOf('Email not sent: ') + 16).trim();
+  if (lines.any((l) => l.contains('Email enabled but SMTP server is not configured'))) {
+    return 'no SMTP server is set on the WATCHDOG form';
+  }
+  final line = lines.lastWhere((l) => l.contains('Email FAILED'), orElse: () => '');
   if (line.isEmpty) return null;
   final m = RegExp(r'stderr=\[(.*)\]').firstMatch(line);
   var reason = (m?.group(1) ?? '').split('|').map((p) => p.trim()).firstWhere((p) => p.isNotEmpty, orElse: () => '');
   reason = reason.replaceFirst(RegExp(r'^ERROR:\s*'), '').replaceFirst(RegExp(r'\s*For more information.*$'), '');
   return reason.isEmpty || reason == 'none' ? 'the mail server gave no reason' : reason;
+}
+
+/// Why a deploy run built and checked nothing, from the log lines it wrote, or null if it did its
+/// work (ID-327). Both of these runs exit 0 - "no internet on the WAN" and "backing off" - so until
+/// build 481 the app reported "Watchdog deployed" after either, with no tunnel checked, nothing
+/// rebuilt and no email sent.
+String? deployDidNothing(String runLog) {
+  if (runLog.contains('no Internet on WAN interface, exiting.')) {
+    return 'its first run found no internet on the WAN, so it checked nothing, built nothing and sent no email';
+  }
+  if (runLog.contains('Backing off after ')) {
+    return 'its first run was backing off after earlier failures, so it checked nothing and sent no email';
+  }
+  return null;
 }
 
 /// Whether a line of the UNINSTALL report says nothing was done: nothing there to remove, or left
@@ -998,6 +1073,10 @@ String? deployEmailFailure(String runLog) {
 bool uninstallStepDidNothing(String line) => line.startsWith('No ') || line.startsWith('Left ');
 
 class RouterWatchdog {
+  /// Why the last [deployWatchdog]'s run built and checked nothing, or null if it did its work - for
+  /// the WATCHDOG form's popup (ID-327).
+  String? lastDeployDidNothing;
+
   final SSHClient client;
   final void Function(String, {bool isError, bool isSuccess, bool isWarning})? onLog;
 
@@ -1311,6 +1390,7 @@ class RouterWatchdog {
         };
         var scheduled = false;
         var emailProblem = '';
+        String? didNothing;
         try {
           if (regionChanged) await _clearForRebuild(slot, running: up, region: desc);
           await _writeWatchdogNvram(config, desc: desc);
@@ -1327,10 +1407,15 @@ class RouterWatchdog {
           // Where the log stands, so what this run writes can be read back on its own.
           final logFile = '/tmp/watchdog_wgc$slot.log';
           final linesBefore = int.tryParse((await _read("wc -l < $logFile 2>/dev/null || echo 0")).trim()) ?? 0;
+          // A deploy is the user asking for a run now: a backoff left by earlier failures would make
+          // this one exit at once, having done nothing (ID-327).
+          await _read('rm -f /tmp/watchdog_backoff_wgc$slot');
           // `deploy` makes this run report itself as a deployment rather than a re-configuration,
           // and makes it email even when it finds the tunnel already healthy.
           await _run('${watchdogScriptPath(config.slotIndex)} deploy');
-          emailProblem = deployEmailFailure(await _read('tail -n +${linesBefore + 1} $logFile 2>/dev/null')) ?? '';
+          final runLog = await _read('tail -n +${linesBefore + 1} $logFile 2>/dev/null');
+          emailProblem = deployEmailFailure(runLog) ?? '';
+          didNothing = deployDidNothing(runLog);
         } catch (e) {
           final hadWatchdog = (settingsBefore['wgc${slot}_wd_check_interval'] ?? '').isNotEmpty;
           if (!scheduled) await _restoreWatchdogSettings(settingsBefore);
@@ -1346,6 +1431,16 @@ class RouterWatchdog {
           throw Exception('$cause $undone $watchdog');
         }
         onLog?.call('Ran ${watchdogScriptPath(config.slotIndex)}', isSuccess: true);
+        lastDeployDidNothing = didNothing;
+        if (didNothing != null) {
+          // Scheduled, but not proved: say so rather than "deployed" (ID-327).
+          await _logRouter('Watchdog scheduled for ${await _label(config.slotIndex)}, but $didNothing');
+          onLog?.call(
+              'The watchdog for ${await _label(config.slotIndex)} is scheduled, but $didNothing. '
+              'It runs again in ${config.cronIntervalMinutes} minutes; check ROUTER LOG then.',
+              isWarning: true);
+          return null;
+        }
         await _logRouter(
             'Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
         onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
@@ -1470,8 +1565,10 @@ class RouterWatchdog {
           await slots.runVpncService(slot, 'restart_vpnc', required: true);
         } else {
           await _serviceQueue.clearIfStale();
+          final skips = await _serviceQueue.skipCount();
           await _run('service "start_wgc $slot"; service restart_vpnrouting0');
           await _serviceQueue.awaitIdle();
+          await _serviceQueue.checkNotSkipped(skips, 'start_wgc');
         }
         if (rebuilding) {
           await _logRouter('Enabled ${await _label(slot)}; its watchdog builds the tunnel next');
@@ -1589,13 +1686,52 @@ class RouterWatchdog {
   /// would be a much bigger action than the button says.
   Future<List<String>> uninstallFromRouter() => _guard('uninstall from router', () async {
         final done = <String>[];
-        // First, while the script is still there to do it. Left behind, the rules would keep every
-        // pinned device off the internet whenever its tunnel is down, with no app left to explain why.
-        // Counted first, so a second uninstall does not claim to have removed rules that were not
-        // there (ID-287). A count that cannot be read is taken as some: say what was attempted.
-        final guardRules = int.tryParse((await _read("ip rule show | grep -cE '^9[01]:'")).trim());
+        // Every schedule FIRST, the guard's own every-minute entry included (ID-330): a watchdog or
+        // guard run that fires mid-uninstall puts back rules and settings the steps below have just
+        // removed. Then any run already going is stopped, for the same reason. Each step is counted
+        // again afterwards, and a step that left something behind says so (ID-330).
+        final crons = await _read('cru l');
+        final tags = [
+          for (final line in crons.split('\n'))
+            if (RegExp('#((watchdog_[a-z_0-9]+)|$kGuardCronTag)#').firstMatch(line) case final m?) m.group(1)!
+        ];
+        for (final tag in tags) {
+          await _read('cru d $tag');
+        }
+        await _read("for P in \$(ps | grep -E '[w]atchdog_wgc[1-9][.]sh|[g]uard[.]sh' | awk '{print \$1}'); do kill \$P 2>/dev/null; done");
+        final cronLeft = int.tryParse((await _read("cru l | grep -cE '#(watchdog_|$kGuardCronTag)'")).trim()) ?? 0;
+        final watchdogTags = tags.where((t) => t.startsWith('watchdog_')).length;
+        done.add(cronLeft > 0
+            ? '$cronLeft schedule(s) could not be removed: check `cru l` on the router'
+            : watchdogTags == 0
+                ? 'No watchdog schedules to remove'
+                : 'Removed $watchdogTags watchdog schedule(s)');
+
+        // The guard, while its script is still there to do it; then any rule it left, directly, in
+        // case the script was missing or failed. Left behind, the rules would keep every pinned
+        // device off the internet whenever its tunnel is down, with no app left to explain why.
+        final guardRules = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):'")).trim());
+        final filterHad = (await _read('nvram get cfg_pia_wg_lwlist')).trim().isNotEmpty;
         await _guardService.clear();
-        done.add(guardRules == 0 ? 'No fail-closed guard rules to remove' : 'Removed the fail-closed guard rules');
+        // The guard's second layer, the router's Network Services Filter (ID-348): the app's own
+        // entries out, and the filter and its ping setting put back as the app found them. Run
+        // directly as well, in case the script was missing; it touches nothing that isn't the app's.
+        await _read(kFilterClearCommand);
+        final filterLeft = (await _read('nvram get cfg_pia_wg_lwlist')).trim().isNotEmpty;
+        done.add(filterLeft
+            ? "The app's entries in the router's Network Services Filter could not all be removed: check Firewall, "
+                'Network Services Filter'
+            : filterHad
+                ? "Took the app's entries out of the router's Network Services Filter"
+                : 'No Network Services Filter entries to remove');
+        await _read('for PR in 88 89 90 91; do N=0; while [ \$N -lt 400 ] && ip rule del priority \$PR 2>/dev/null; '
+            'do N=\$((N + 1)); done; done; for T in 201 202 203 204 205; do ip route flush table \$T 2>/dev/null; done');
+        final guardLeft = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):'")).trim()) ?? 0;
+        done.add(guardLeft > 0
+            ? '$guardLeft fail-closed guard rule(s) could not be removed: check `ip rule show` on the router'
+            : guardRules == 0
+                ? 'No fail-closed guard rules to remove'
+                : 'Removed the fail-closed guard rules');
         for (final path in [kS50Path, kS50LighttpdPath]) {
           final name = path.split('/').last;
           final backup = originalScriptBackupPath(path);
@@ -1615,19 +1751,6 @@ class RouterWatchdog {
             done.add('No $name to remove');
           }
         }
-        // Cron FIRST. The scripts are about to be deleted with the directory, and a cru entry
-        // pointing at a script that is not there is what "uninstalled" must never leave behind -
-        // it fires every few minutes forever and does nothing but log a failure.
-        final crons = await _read('cru l');
-        var removed = 0;
-        for (final line in crons.split('\n')) {
-          final m = RegExp(r'#(watchdog_[a-z_0-9]+)#').firstMatch(line);
-          if (m == null) continue;
-          await _read('cru d ${m.group(1)}');
-          removed++;
-        }
-        done.add(removed == 0 ? 'No watchdog schedules to remove' : 'Removed $removed watchdog schedule(s)');
-
         // Merlin keeps the schedule for the next boot in services-start, two `cru a` lines per
         // slot. Left there, the next boot put the schedule back, pointing at scripts about to be
         // deleted (ID-303). Stock keeps its in the S50 script, which is dealt with above.
@@ -1661,14 +1784,26 @@ class RouterWatchdog {
         // Every key the app ever writes, so an uninstalled router carries none of our settings.
         // The wgcN_* TUNNEL configuration is deliberately NOT touched: the tunnels keep working and
         // the user manages them from the web interface.
-        final appKeys = int.tryParse((await _read(r"nvram show 2>/dev/null | grep -cE '^(cfg_pia_wg_|wgc[1-5]_wd_)'")).trim());
+        const countKeys = r"nvram show 2>/dev/null | grep -cE '^(cfg_pia_wg_|wgc[1-5]_wd_)'";
+        final appKeys = int.tryParse((await _read(countKeys)).trim());
         await _read(kUninstallNvramCommand);
-        done.add(appKeys == 0
-            ? 'No app settings in NVRAM to remove'
-            : "Removed the app's NVRAM settings, including the reconfigure history");
+        // And by pattern, for a key the list above does not name - a newer build's, say (ID-330).
+        await _read(r"for K in $(nvram show 2>/dev/null | grep -oE '^(cfg_pia_wg_|wgc[1-5]_wd_)[^=]*'); do nvram unset $K; done; "
+            'nvram commit');
+        final keysLeft = int.tryParse((await _read(countKeys)).trim()) ?? 0;
+        done.add(keysLeft > 0
+            ? '$keysLeft app setting(s) could not be removed from NVRAM'
+            : appKeys == 0
+                ? 'No app settings in NVRAM to remove'
+                : "Removed the app's NVRAM settings, including the reconfigure history");
 
         final dir = await _read("[ -d '$kRouterAppDir' ] && rm -rf '$kRouterAppDir' && echo REMOVED || echo ABSENT");
-        done.add(dir.contains('REMOVED') ? 'Removed $kRouterAppDir' : 'No $kRouterAppDir to remove');
+        final dirLeft = (await _read("[ -d '$kRouterAppDir' ] && echo LEFT || echo GONE")).contains('LEFT');
+        done.add(dirLeft
+            ? '$kRouterAppDir could not be removed'
+            : dir.contains('REMOVED')
+                ? 'Removed $kRouterAppDir'
+                : 'No $kRouterAppDir to remove');
         for (final line in done) {
           onLog?.call(line);
         }
@@ -1898,6 +2033,9 @@ class RouterWatchdog {
   ///
   /// The connection dies as the command runs, so a dropped session here IS the success case and
   /// nothing waits for a reply.
+  /// The kernel's id for this boot: it changes on every restart, and on nothing else (ID-335).
+  Future<String> bootId() async => (await _read('cat /proc/sys/kernel/random/boot_id 2>/dev/null')).trim();
+
   Future<void> rebootRouter() async {
     await _logRouter('reboot requested from the app');
     await _serviceQueue.clearIfStale();
@@ -2144,11 +2282,16 @@ CACERT="__CACERT__"
 JQ="__JQ__"
 # tlsv1.2 is a MINIMUM; requiring 1.3 failed addKey with curl 35 (handshake).
 CURLPLAIN="curl -s --max-time 15 --connect-timeout 8 --tlsv1.2"
-# Encrypted name lookups (ID-076); __DOH__ is empty when none is set. ASUS's curl needs a hostname
-# plus --resolve (ARCHITECTURE 2). CURLPLAIN is for the one retry: a stuck rebuild is worse.
-CURLB="$CURLPLAIN__DOH__"
+# Encrypted name lookups (ID-307). ASUS's curl IGNORES --doh-url on both firmwares - measured
+# 2026-09-30, a DoH server pointed at nothing still fetched the page - so the script asks the DoH
+# server itself (doh_a, below) and hands curl the answer with --resolve. DOHURL is empty when none
+# is set; DOHHOST:443 is pinned to DOHIPS, so finding the DoH server needs no lookup of its own.
+DOHURL="__DOHURL__"
+DOHHOST="__DOHHOST__"
+DOHIPS="__DOHIPS__"
 DOHDESC="__DOHDESC__"
 DOHBAD="__DOHBAD__"
+CURLB="$CURLPLAIN"
 CURL="$CURLB --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
 TMPSRV="/tmp/${IFACE}_servers.txt"
@@ -2347,7 +2490,10 @@ __SIGNOFF__
     hosts_add
     log "SMTP host resolved privately to $SMTP_IP"
   else
-    SMTPCONN="-connect $SMTP_HOST:$SMTP_PORT"
+    # The name is checked on this path too (ID-310). -verify_return_error alone checks the chain,
+    # not the name: measured 2026-09-30, openssl accepted www.cloudflare.com's certificate for an
+    # SMTP connection, and refused it with -verify_hostname ("Hostname mismatch").
+    SMTPCONN="-connect $SMTP_HOST:$SMTP_PORT -servername $SMTP_HOST -verify_hostname $SMTP_HOST"
   fi
 __MAILCMD__
 
@@ -2489,20 +2635,65 @@ router_resolver_check() {
   fi
 }
 
-# -- The SMTP host's address, resolved the encrypted way (ID-077) -------------------------------
+# -- Encrypted lookups, done here because curl will not (ID-307) --------------------------------
 #
-# The SMTP hostname names the user's email provider, so it is the lookup worth hiding. curl
-# resolves it over DoH and reports %{remote_ip}, even though HTTP to an SMTP port then fails.
+# One DNS query for an A record (RFC 1035), POSTed to the DoH server as RFC 8484 says every DoH
+# server must accept, at the address the form gave. The answer is binary, and stock has no
+# hexdump or od, so openssl turns it into base64 and awk reads that. Prints the first IPv4
+# address, or nothing: an empty answer is what every failure looks like, and the caller then
+# falls back to ordinary DNS and says so. Nothing here names the looked-up host on curl's
+# command line, so /jffs/curllst never records it.
+DOHQ="/tmp/${IFACE}_doh_q.bin"
+DOHA="/tmp/${IFACE}_doh_a.bin"
+# base64 to bytes, then: QR set and RCODE 0, skip the question, walk the answers (a CNAME may come
+# first; a name may end in a compression pointer) and print the first class IN, type A, 4-byte one.
+DOH_AWK='__DOHAWK__'
+doh_a() {
+  [ -n "$DOHURL" ] || return 1
+  # A hostname only: letters, digits, dots and hyphens, no empty or over-long label.
+  case "$1" in ''|*[!A-Za-z0-9.-]*|.*|*..*) return 1 ;; esac
+  {
+    printf '\000\000\001\000\000\001\000\000\000\000\000\000'
+    for L in $(echo "${1%.}" | tr '.' ' '); do
+      [ "${#L}" -le 63 ] || return 1
+      printf "\\$(printf '%03o' "${#L}")%s" "$L"
+    done
+    printf '\000\000\001\000\001'
+  } > "$DOHQ" || return 1
+  $CURLPLAIN --fail -H 'content-type: application/dns-message' -H 'accept: application/dns-message' \
+    --data-binary @"$DOHQ" --resolve "$DOHHOST:443:$DOHIPS" -o "$DOHA" "$DOHURL" 2>/dev/null
+  DOHRC=$?
+  echo -n > /jffs/curllst
+  DOHIP=""
+  [ "$DOHRC" -eq 0 ] && DOHIP="$(openssl base64 -A -in "$DOHA" 2>/dev/null | awk "$DOH_AWK")"
+  rm -f "$DOHQ" "$DOHA"
+  case "$DOHIP" in ''|*[!0-9.]*) return 1 ;; esac
+  echo "$DOHIP"
+}
+
+# Sets RES to curl's --resolve for host $1 on port $2, from an encrypted lookup, and logs how the
+# name was found. RES is empty when there is no DoH server or the lookup failed: curl then asks the
+# router's ordinary resolver, and the log says that too.
+lookup() {
+  RES=""
+  if [ -z "$DOHURL" ]; then return 1; fi
+  if LKA="$(doh_a "$1")"; then
+    RES="--resolve $1:$2:$LKA"
+    log "Looked up $1 over encrypted DNS via $DOHDESC"
+    return 0
+  fi
+  log "Encrypted lookup of $1 via $DOHDESC failed; it will be looked up with ordinary DNS"
+  return 1
+}
+
+# The SMTP host's address, resolved the encrypted way (ID-077): it names the user's email provider,
+# so it is the lookup worth hiding.
 resolve_smtp() {
   SMTP_IP=""
-  [ -n "$DOHDESC" ] || return 0
+  [ -n "$DOHURL" ] || return 0
   [ -n "$SMTP_HOST" ] || return 0
-  SMTP_IP="$($CURLB -o /dev/null -w '%{remote_ip}' "https://$SMTP_HOST:$SMTP_PORT" 2>/dev/null)"
-  # Anything that is not dotted digits is not an address. An empty answer is the ordinary failure.
-  case "$SMTP_IP" in
-    ''|*[!0-9.]*) SMTP_IP="" ;;
-  esac
-  [ -n "$SMTP_IP" ] || log "Could not resolve $SMTP_HOST over encrypted DNS; the mailer will look it up itself"
+  SMTP_IP="$(doh_a "$SMTP_HOST")" || SMTP_IP=""
+  [ -n "$SMTP_IP" ] || log "Could not resolve $SMTP_HOST over encrypted DNS via $DOHDESC; the mailer will look it up itself"
 }
 
 # /etc/hosts gives the mailer an address and keeps certificate checks on the name; marked for cleanup.
@@ -2662,19 +2853,23 @@ fi
 
 # Preflight checks
 [ -n "$DESC" ] || abort "${K}desc is empty"
-[ -x "$JQ" ] || command -v "$JQ" >/dev/null 2>&1 || abort "jq is not installed"
+# Merlin's BusyBox has no `command`, so a bare jq is found with which.
+[ -x "$JQ" ] || JQ=$(which "$JQ" 2>/dev/null)
+[ -x "$JQ" ] || abort "jq is not installed"
 [ -n "$PIA_USER" ] || abort "PIA username is not set"
 
 # PIA re-negotiation
 if [ ! -f "$CACERT" ]; then
   log "CA cert not cached; downloading"
   mkdir -p "${CACERT%/*}" || abort "failed to create ${CACERT%/*}"
-  # One retry in the clear, as the token request has: a resolver that is down must not stop the
-  # rebuild at its first step (ID-222).
-  if ! $CURLB -S --fail "$CACERT_URL" -o "$CACERT" 2>"$TMPERR" || ! openssl x509 -noout -in "$CACERT" >/dev/null 2>&1; then
+  # One retry with ordinary DNS, as the token request has: a resolver that is down must not stop
+  # the rebuild at its first step (ID-222).
+  CAHOST="${CACERT_URL#https://}"; CAHOST="${CAHOST%%/*}"
+  lookup "$CAHOST" 443
+  if ! $CURLB $RES -S --fail "$CACERT_URL" -o "$CACERT" 2>"$TMPERR" || ! openssl x509 -noout -in "$CACERT" >/dev/null 2>&1; then
     rm -f "$CACERT"
-    if [ -n "$DOHDESC" ]; then
-      log "CA cert download failed through encrypted DNS; retrying once WITHOUT encrypted DNS"
+    if [ -n "$RES" ]; then
+      log "CA cert download failed at the address found over encrypted DNS; retrying once with ordinary DNS"
       $CURLPLAIN -S --fail "$CACERT_URL" -o "$CACERT" 2>"$TMPERR"
     fi
   fi
@@ -2688,14 +2883,33 @@ else
   log "Using cached CA cert"
 fi
 
-if [ -n "$DOHDESC" ]; then log "Name lookups encrypted via $DOHDESC"; elif [ -n "$DOHBAD" ]; then log "Name lookups are NOT encrypted: $DOHBAD"; else log "Name lookups are NOT encrypted (no DoH resolver configured)"; fi
-log "Requesting PIA token for user $PIA_USER"
+# Said once, and only for the case where nothing is tried: each lookup logs its own outcome.
+if [ -z "$DOHURL" ]; then
+  if [ -n "$DOHBAD" ]; then log "Name lookups are NOT encrypted: $DOHBAD"; else log "Name lookups are NOT encrypted (no DoH resolver configured)"; fi
+fi
+TOKHOST="${TOKEN_URL#https://}"; TOKHOST="${TOKHOST%%/*}"
+lookup "$TOKHOST" 443
+# Not the username: this log goes into every FAILED email and syslog (ID-322).
+log "Requesting PIA token"
 # Body to a file, status code to a second file, curl as the condition of an `if`. exit 0 with no
 # status, no body and no stderr is the caller-rejection signature (see the detach at the top); if
 # it is ever seen again, the detach is not working. %{exitcode}/%{errormsg} need curl 7.75+.
 TMPHTTP="/tmp/${IFACE}_http.txt"
-if $CURLB -S -o "$TMPTOK" -w '%{http_code} exit=%{exitcode} connects=%{num_connects} err=%{errormsg}' \
-     -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" >"$TMPHTTP" 2>"$TMPERR"; then
+# The login goes to curl on stdin (-K -), never on its command line: ASUS's curl writes its whole
+# command line to /jffs/curllst, on flash, and ps shows it to anything on the router. Here-documents
+# only, because printf and echo are programs on stock, not shell builtins, and their arguments would
+# show the same way. Quotes and backslashes are escaped for curl's config parser. Measured on stock
+# 2026-10-01: the login arrived intact, and curllst held only "-K -".
+cfgesc() { sed 's/\\/\\\\/g; s/"/\\"/g' <<CFGEOF
+$1
+CFGEOF
+}
+PIA_AUTH="user = \"$(cfgesc "$PIA_USER"):$(cfgesc "$PIA_PASS")\""
+if $CURLB $RES -S -o "$TMPTOK" -w '%{http_code} exit=%{exitcode} connects=%{num_connects} err=%{errormsg}' \
+     -K - "$TOKEN_URL" >"$TMPHTTP" 2>"$TMPERR" <<CFGEOF
+$PIA_AUTH
+CFGEOF
+then
   RC=0
 else
   RC=$?
@@ -2705,13 +2919,15 @@ HTTP="$(echo "$WRITEOUT" | cut -d' ' -f1)"
 # One retry. "The network was still coming back up" is a real possibility for the first call after
 # an outage, and three seconds is nothing against a tunnel that otherwise stays down for hours.
 if [ -z "$HTTP" ] || [ "$HTTP" = "000" ]; then
-  # The retry drops the encrypted lookup. If DoH is what failed - a resolver that is down, or a
-  # firmware that has started refusing the flag - this is what keeps the tunnel repairable, and the
-  # log says plainly that the lookup was in the clear.
-  if [ -n "$DOHDESC" ]; then log "token fetch produced [$WRITEOUT]; retrying once in 3s WITHOUT encrypted DNS"; else log "token fetch produced [$WRITEOUT]; retrying once in 3s"; fi
+  # The retry drops the address the encrypted lookup found. If that address is what failed, this
+  # keeps the tunnel repairable, and the log says plainly that the lookup was in the clear.
+  if [ -n "$RES" ]; then log "token fetch produced [$WRITEOUT]; retrying once in 3s with ordinary DNS"; else log "token fetch produced [$WRITEOUT]; retrying once in 3s"; fi
   sleep 3
   if $CURLPLAIN -S -o "$TMPTOK" -w '%{http_code} exit=%{exitcode} connects=%{num_connects} err=%{errormsg}' \
-     -u "$PIA_USER:$PIA_PASS" "$TOKEN_URL" >"$TMPHTTP" 2>"$TMPERR"; then
+     -K - "$TOKEN_URL" >"$TMPHTTP" 2>"$TMPERR" <<CFGEOF
+$PIA_AUTH
+CFGEOF
+  then
     RC=0
   else
     RC=$?
@@ -2755,11 +2971,20 @@ echo -n > /jffs/curllst
 log "PIA token obtained (len=$(echo -n "$TOKEN" | wc -c))"
 
 log "Fetching server list for region $REGION"
+SLHOST="${SERVERLIST_URL#https://}"; SLHOST="${SLHOST%%/*}"
+lookup "$SLHOST" 443
 # Fetch and parse as separate steps. As one pipeline, `$?` was jq's and curl's failure was
 # invisible - so a router with no working DNS was told "no servers found for region X", which
 # blames the one thing that was fine. The three causes need three different messages.
-if ! $CURLB -S --fail "$SERVERLIST_URL" -o "$TMPSRVRAW" 2>"$TMPERR"; then
+# (Not `if ! curl; then SRC=$?`: after `!`, $? is always 0, and the message said "exit 0".)
+$CURLB $RES -S --fail "$SERVERLIST_URL" -o "$TMPSRVRAW" 2>"$TMPERR"
+SRC=$?
+if [ "$SRC" -ne 0 ] && [ -n "$RES" ]; then
+  log "Server list download failed at the address found over encrypted DNS; retrying once with ordinary DNS"
+  $CURLPLAIN -S --fail "$SERVERLIST_URL" -o "$TMPSRVRAW" 2>"$TMPERR"
   SRC=$?
+fi
+if [ "$SRC" -ne 0 ]; then
   abort "could not fetch the PIA server list (curl exit $SRC: $(head -n 1 "$TMPERR" | cut -c1-120)). This is a network problem, not a region problem."
 fi
 # The payload is one long JSON line followed by a signature block; jq only wants the first.
@@ -2820,6 +3045,13 @@ EOF
 [ -n "$PEER_IP" ] && [ -n "$SERVER_KEY" ] && [ -n "$SERVER_PORT" ] || abort "incomplete addKey response"
 
 # Write new config to NVRAM
+# Still wanted, now, just before anything is written (ID-331)? A rebuild takes a minute or more,
+# and a DELETE or a DISABLE made meanwhile was undone by it: this run wrote enable=1 and restarted
+# the tunnel after the user had removed it. The checks at the top only see what was true then.
+if [ "$RUNMODE" != "deploy" ]; then
+  [ -n "$(nvram get ${K}wd_check_interval)" ] || { log "$IFACE's watchdog was deleted while this run was rebuilding; stopping before writing anything"; exit 0; }
+  [ "$(nvram get ${K}enable)" = "0" ] && { log "$IFACE was disabled while this run was rebuilding; stopping before writing anything"; exit 0; }
+fi
 log "Writing config to NVRAM"
 nvset "addr=$PEER_IP/32"
 nvset "alive=25"
@@ -2920,7 +3152,15 @@ if [ "$RUNMODE" = "deploy" ]; then
   CONNLABEL="Connected to"
 else
   if [ "$DNSDEAD" = "1" ]; then
-    DETAILV="reconfigured successfully on attempt $CNT, after its DNS server stopped answering"
+    # Rebuilt because its DNS server stopped answering: ask it again before saying that is fixed
+    # (ID-329). A new key and a handshake prove the tunnel, not that its DNS server answers.
+    dns_probe
+    case $? in
+      0) DETAILV="reconfigured successfully on attempt $CNT, after its DNS server stopped answering; it answers again" ;;
+      1) DETAILV="rebuilt on attempt $CNT, but its DNS server $DNS1 still does not answer through it, so devices pinned to it cannot look names up"
+         log "Rebuilt $IFACE, but $DNS1 still does not answer through it" ;;
+      *) DETAILV="rebuilt on attempt $CNT after its DNS server stopped answering; whether it answers now could not be checked" ;;
+    esac
   else
     DETAILV="reconfigured successfully on attempt $CNT"
   fi

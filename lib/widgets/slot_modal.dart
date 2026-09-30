@@ -1113,12 +1113,14 @@ class _PingTargetsDialogState extends State<_PingTargetsDialog> {
       title: 'Connectivity check targets',
       fields: [
         TextField(
+            enableIMEPersonalizedLearning: false,
             key: const Key('enable_primary_ip'),
             controller: _primaryCtrl,
             style: const TextStyle(color: kText, fontFamily: 'monospace'),
             decoration: const InputDecoration(labelText: 'Primary ping IP')),
         const SizedBox(height: 10),
         TextField(
+            enableIMEPersonalizedLearning: false,
             key: const Key('enable_secondary_ip'),
             controller: _secondaryCtrl,
             style: const TextStyle(color: kText, fontFamily: 'monospace'),

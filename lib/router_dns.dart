@@ -219,7 +219,18 @@ const String kDnsRoutingCommand = 'echo "@@RESOLV"; cat /etc/resolv.conf 2>/dev/
     'echo "@@FUSION"; iptables -t nat -S VPN_FUSION 2>/dev/null; '
     'echo "@@NVRAM"; nvram show 2>/dev/null | grep -E '
     '\'^(vpnc_clientlist|vpnc_dev_policy_list|dnspriv_enable|dnspriv_rulelist|wan0_dnsenable_x|'
-    'wgc[1-5]_(desc|dns|wd_doh_url|wd_doh_ip|wd_check_interval))=\'';
+    'wgc[1-5]_(desc|dns|wd_doh_url|wd_doh_ip|wd_check_interval))=\'; '
+    '$kDnsRouteGetCommand';
+
+/// Where each address this screen names ACTUALLY goes, asked of the kernel (ID-337).
+///
+/// Until build 483 the tags were worked out from the `iif lo` rules alone. That missed Merlin's
+/// main-table route for a slot's DNS server through its tunnel (ID-306: the screen said "No lookups
+/// go through a tunnel" while the router's own lookups did), called a tunnel "encrypted to PIA"
+/// while it was down, and stamped "tunnel" on every pinned device's redirect without routing its
+/// target. Now: `ip route get` for every resolver, DoT, DoH and slot DNS address, each pinned
+/// device's redirect target routed FROM that device, and which interfaces are up.
+const String kDnsRouteGetCommand = r'''echo "@@ROUTES"; for A in $( (awk '/^nameserver/ {print $2}' /etc/resolv.conf; sed -n 's/^server=//p' /tmp/resolv.dnsmasq; nvram get dnspriv_rulelist | tr '<>' '\n\n'; for N in 1 2 3 4 5; do nvram get wgc${N}_dns | tr ', ' '\n\n'; nvram get wgc${N}_wd_doh_ip | tr ', ' '\n\n'; done) 2>/dev/null | grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | sort -u); do echo "$A $(ip route get "$A" 2>&1 | head -1)"; done; echo "@@PINNEDROUTES"; iptables -t nat -S VPN_FUSION 2>/dev/null | awk '{s = ""; d = ""; for (i = 1; i < NF; i++) {if ($i == "-s") s = $(i + 1); if ($i == "--to-destination") d = $(i + 1)} sub("/32", "", s); if (s != "" && d != "") print s, d}' | while read -r S D; do echo "$S $D $(ip route get "$D" from "$S" iif br0 2>&1 | head -1)"; done; echo "@@UP"; ip -o link show up | awk -F': ' '{print $2}' ''';
 
 // ── Parsing ───────────────────────────────────────────────────────────────────────────
 
@@ -489,6 +500,9 @@ class DnsRouting {
     required this.nvram,
     required this.names,
     required this.merlin,
+    this.routes = const {},
+    this.pinnedRoutes = const [],
+    this.up = const {},
   }) {
     records = parseVpncClientlist(nvram['vpnc_clientlist'] ?? '');
     policies = parseDevicePolicyList(nvram['vpnc_dev_policy_list'] ?? '');
@@ -503,6 +517,32 @@ class DnsRouting {
   /// Device address to the name DEVICE ASSIGNMENT shows.
   final Map<String, String> names;
   final bool merlin;
+
+  /// Each address to the first line of `ip route get` for it, as the router's own traffic (ID-337).
+  final Map<String, String> routes;
+
+  /// Each pinned device's redirect: (device, target, the first line of `ip route get` for the target
+  /// from that device) (ID-337).
+  final List<(String, String, String)> pinnedRoutes;
+
+  /// Interfaces that are up.
+  final Set<String> up;
+
+  /// Where a route actually goes, read from `ip route get`'s answer: a tunnel only while it is up;
+  /// the internet; or nowhere, when the kernel refuses the route.
+  DnsTag tagForRoute(String line) {
+    if (RegExp(r'RTNETLINK|unreachable|prohibit|blackhole|Invalid argument').hasMatch(line)) {
+      return const DnsTag('nowhere: blocked', DnsTagKind.neutral);
+    }
+    final dev = RegExp(r' dev (\S+)').firstMatch(line)?.group(1);
+    // stubby listens on 127.0.1.1: a lookup to it never leaves the router.
+    if (dev == 'lo') return const DnsTag('this router', DnsTagKind.neutral);
+    // A resolver on the LAN (a Pi-hole, say): it doesn't leave by the internet from here.
+    if (dev != null && RegExp(r'^br\d+$').hasMatch(dev)) return const DnsTag('your network', DnsTagKind.neutral);
+    final slot =dev == null ? null : int.tryParse(RegExp(r'^wgc(\d)$').firstMatch(dev)?.group(1) ?? '');
+    if (slot == null) return _internet;
+    return up.contains(dev) ? DnsTag(label(slot), DnsTagKind.tunnel) : DnsTag('${label(slot)}, which is down', DnsTagKind.neutral);
+  }
   late final List<VpncRecord> records;
   late final List<DevicePolicy> policies;
 
@@ -539,6 +579,9 @@ class DnsRouting {
   }
 
   DnsTag whereFor(String address) {
+    // What the kernel says, when it was asked (ID-337); the rules alone missed Merlin's main-table
+    // routes and could not tell an up tunnel from a down one.
+    if (routes[address] case final line?) return tagForRoute(line);
     final rule = ruleFor(address);
     return rule == null ? _internet : DnsTag(tableLabel(rule.table), DnsTagKind.tunnel);
   }
@@ -565,6 +608,16 @@ DnsRouting parseDnsRouting(String output, {required Map<String, String> names, r
     nvram: parseNvramLines(m['NVRAM'] ?? ''),
     names: names,
     merlin: merlin,
+    routes: {
+      for (final l in (m['ROUTES'] ?? '').split('\n'))
+        if (l.trim().split(' ').length > 1) l.trim().split(' ').first: l.trim().substring(l.trim().indexOf(' ') + 1),
+    },
+    pinnedRoutes: [
+      for (final l in (m['PINNEDROUTES'] ?? '').split('\n'))
+        if (l.trim().split(' ').length > 2)
+          (l.trim().split(' ')[0], l.trim().split(' ')[1], l.trim().split(' ').skip(2).join(' ')),
+    ],
+    up: {for (final l in (m['UP'] ?? '').split('\n')) if (l.trim().isNotEmpty) l.trim()},
   );
 }
 
@@ -574,7 +627,11 @@ String _join(List<String> xs) => xs.length <= 1
         ? '${xs[0]} and ${xs[1]}'
         : '${xs.sublist(0, xs.length - 1).join(', ')} and ${xs.last}';
 
-DnsTag _encryptionOver(DnsTag where) => where.kind == DnsTagKind.tunnel ? _pia : _plain;
+DnsTag? _encryptionOver(DnsTag where) => switch (where.kind) {
+      DnsTagKind.tunnel => _pia,
+      DnsTagKind.internet => _plain,
+      _ => null,
+    };
 
 /// The whole ROUTER DNS ROUTING screen.
 List<DnsBlock> buildDnsRouting(DnsRouting r, {required String readAt}) {
@@ -583,22 +640,38 @@ List<DnsBlock> buildDnsRouting(DnsRouting r, {required String readAt}) {
   // says which slot it is pinned to.
   final bySlot = <String, List<String>>{};
   final dnsFor = <String, Set<String>>{};
+  final devicesFor = <String, Set<String>>{};
   for (final e in r.redirects.entries) {
     final policy = r.policies.where((p) => p.ip == e.key && p.enabled).firstOrNull;
     final slot = r.slotForIndex(policy?.vpncIndex);
     final key = slot == null ? 'another profile' : r.label(slot);
     (bySlot[key] ??= []).add(r.names[e.key] ?? e.key);
     (dnsFor[key] ??= {}).add(e.value);
+    (devicesFor[key] ??= {}).add(e.key);
   }
+  // Where each group's lookups actually go, routed from the devices themselves (ID-337). Worst
+  // first: one device's lookups leaving by the internet is what the line has to say.
+  DnsTag pinnedWhere(String key) {
+    final devices = devicesFor[key] ?? const <String>{};
+    final tags = [for (final pr in r.pinnedRoutes) if (devices.contains(pr.$1)) r.tagForRoute(pr.$3)];
+    // Nothing was read for these devices: say so, rather than claim a tunnel.
+    if (tags.isEmpty) return const DnsTag('route not read', DnsTagKind.neutral);
+    return tags.firstWhere((t) => t.kind == DnsTagKind.internet,
+        orElse: () => tags.firstWhere((t) => t.kind == DnsTagKind.neutral, orElse: () => tags.first));
+  }
+
   final pinned = <DnsFlowLine>[
     for (final e in bySlot.entries)
-      DnsFlowLine(
-        head: e.key,
-        rest: ' → ${dnsFor[e.key]!.join(', ')}',
-        note: e.value.join(', '),
-        where: const DnsTag('tunnel', DnsTagKind.tunnel),
-        encryption: _pia,
-      ),
+      () {
+        final where = pinnedWhere(e.key);
+        return DnsFlowLine(
+          head: e.key,
+          rest: ' → ${dnsFor[e.key]!.join(', ')}',
+          note: e.value.join(', '),
+          where: where,
+          encryption: _encryptionOver(where),
+        );
+      }(),
   ];
 
   final dot = r.dotServers;

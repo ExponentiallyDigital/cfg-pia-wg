@@ -200,7 +200,11 @@ void main() {
       final c = _client();
       final s = await _state(c);
       await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
-      final order = c.commands.where((cmd) => cmd.contains('commit') || cmd.startsWith('service ')).toList();
+      // Writing guard.sh sends its text, which has its own commit in it (ID-348); a script write is
+      // not a call.
+      final order = c.commands
+          .where((cmd) => !cmd.contains('WATCHDOG_EOF') && (cmd.contains('commit') || cmd.startsWith('service ')))
+          .toList();
       expect(order, ['nvram commit', 'service restart_dnsmasq', 'service restart_vpnc_dev_policy']);
     });
 
@@ -426,8 +430,11 @@ void main() {
       await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {}, newDefaultIndex: 5);
       for (var i = 0; i < c.commands.length; i++) {
         if (!c.commands[i].startsWith('service ')) continue;
-        expect(c.commands[i - 1], contains('nvram get rc_service'),
+        // The queue check, then the count of calls the router has dropped so far (ID-334).
+        expect(c.commands[i - 2], contains('nvram get rc_service'),
             reason: '${c.commands[i]} was not preceded by a queue check');
+        expect(c.commands[i - 1], contains("grep -c 'skip the event'"),
+            reason: '${c.commands[i]} was not preceded by the dropped-call count');
       }
     });
 
@@ -594,7 +601,11 @@ void main() {
       await svc.apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
       expect(logs.any((m) => m.startsWith('The fail-closed guard could not be put in place')), isTrue,
           reason: logs.join(' | '));
-      expect(logs.last, 'Device assignments applied.');
+      // ID-332: this used to end "Device assignments applied." with the guard missing. The rules are
+      // read back now, and the device without a guard is named.
+      expect(logs.last, startsWith("Device assignments written, but the router's rules do not match yet"));
+      expect(logs.last, contains('192.168.1.20 has no fail-closed guard'));
+      expect(logs, isNot(contains('Device assignments applied.')));
     });
   });
 

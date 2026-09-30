@@ -215,6 +215,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('are NOT touched'), findsOneWidget);
+      // Hostile review (ID-346): UNINSTALL removes the guard and leaves the pins.
+      expect(find.textContaining('lose the fail-closed guard'), findsOneWidget);
       expect(find.textContaining('reconfigure history'), findsOneWidget);
       expect(find.textContaining('web interface'), findsOneWidget);
     });
@@ -535,7 +537,7 @@ void main() {
       await tester.tap(find.byKey(const Key('settings_forget_ip_confirm')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Remembered router address deleted.'), findsOneWidget);
+      expect(find.text('Remembered router address and its SSH key deleted.'), findsOneWidget);
       expect(c.rememberedRouterIp, '');
       expect(await prefs.load(), '');
       // The form goes back to the shipped default, not to a stale value.
@@ -681,7 +683,14 @@ void main() {
       final replies = [true, false, true];
       var calls = 0;
       Future<bool> answers(String host, int port) async => replies[calls < replies.length ? calls++ : replies.length - 1];
-      await pump(tester, c, RecordingSSHClient(responder: (_) => ''), answers: answers);
+      // A new boot id after the restart, as the kernel gives (ID-335).
+      var bootReads = 0;
+      await pump(
+          tester,
+          c,
+          RecordingSSHClient(
+              responder: (cmd) => cmd.contains('boot_id') ? (bootReads++ == 0 ? 'boot-before' : 'boot-after') : ''),
+          answers: answers);
       await confirmReboot(tester);
 
       await tester.pump(const Duration(seconds: 3));
@@ -692,8 +701,25 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Rebooting the router'), findsNothing);
-      expect(c.log.last.message, endsWith('] The router answered again after 9 seconds.'));
+      expect(c.log.last.message, endsWith('] The router restarted and answered again after 9 seconds.'));
       expect(c.log.last.isSuccess, isTrue);
+    });
+
+    // ID-335: one failed probe and one answer read as a reboot, whether or not the router restarted.
+    testWidgets('a router that answers with the same boot id has not restarted, and is not called rebooted',
+        (tester) async {
+      final c = connected();
+      final replies = [false, true];
+      var calls = 0;
+      Future<bool> answers(String host, int port) async => replies[calls < replies.length ? calls++ : replies.length - 1];
+      await pump(tester, c, RecordingSSHClient(responder: (cmd) => cmd.contains('boot_id') ? 'same-boot' : ''),
+          answers: answers);
+      await confirmReboot(tester);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(c.log.last.message, contains('it has not restarted'));
+      expect(c.log.last.isWarning, isTrue);
     });
 
     testWidgets('stops at 100 seconds and says the router has not answered', (tester) async {
@@ -729,13 +755,17 @@ void main() {
 
   // A user decision behind a visible warning. Stock only: Merlin has no such limit.
   group('maximum active VPNs', () {
-    RecordingSSHClient router({String tag = '', String current = '2'}) => RecordingSSHClient(
-          responder: (cmd) => cmd.contains('3rd-party')
-              ? tag
-              : cmd.contains('nvram get vpnc_max_conn')
-                  ? current
-                  : '',
-        );
+    // Remembers a write, as the router does, so the read-back after it sees the new value (ID-338).
+    RecordingSSHClient router({String tag = '', String current = '2'}) {
+      var value = current;
+      return RecordingSSHClient(responder: (cmd) {
+        final set = RegExp(r'nvram set vpnc_max_conn=(\d+)').firstMatch(cmd);
+        if (set != null) value = set.group(1)!;
+        if (cmd.contains('3rd-party')) return tag;
+        if (cmd.contains('nvram get vpnc_max_conn')) return value;
+        return '';
+      });
+    }
 
     Future<void> open(WidgetTester tester, RecordingSSHClient ssh) async {
       final c = SessionController(tickInterval: const Duration(hours: 1), routerPrefs: _MemoryRouterPrefs())
@@ -913,13 +943,17 @@ void main() {
       expect(logged(c, 'Could not delete the cached certificate', error: true), isTrue);
     });
 
-    RecordingSSHClient router({String tag = '', String current = '2'}) => RecordingSSHClient(
-          responder: (cmd) => cmd.contains('3rd-party')
-              ? tag
-              : cmd.contains('nvram get vpnc_max_conn')
-                  ? current
-                  : '',
-        );
+    // Remembers a write, as the router does, so the read-back after it sees the new value (ID-338).
+    RecordingSSHClient router({String tag = '', String current = '2'}) {
+      var value = current;
+      return RecordingSSHClient(responder: (cmd) {
+        final set = RegExp(r'nvram set vpnc_max_conn=(\d+)').firstMatch(cmd);
+        if (set != null) value = set.group(1)!;
+        if (cmd.contains('3rd-party')) return tag;
+        if (cmd.contains('nvram get vpnc_max_conn')) return value;
+        return '';
+      });
+    }
 
     testWidgets('MAX ACTIVE VPNS: a new limit in both logs', (tester) async {
       final c = connected();

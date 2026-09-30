@@ -158,7 +158,7 @@ void main() {
     test('COPY carries the answer, the tags and the evidence as text', () {
       final text = dnsReportText('ROUTER DNS ROUTING', kRoutingFixtureBlocks());
       expect(text, contains("Only pinned devices' lookups go through a tunnel."));
-      expect(text, contains('wgc1:pia-aus_perth → 9.9.9.9 [tunnel, encrypted to PIA] - TABLET'));
+      expect(text, contains('wgc1:pia-aus_perth → 9.9.9.9 [wgc1:pia-aus_perth, encrypted to PIA] - TABLET'));
       expect(text, contains('1016:   from all to 9.9.9.9 iif lo lookup 5  # wgc5:pia-aus_melbourne'));
     });
   });

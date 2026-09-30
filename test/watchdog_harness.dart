@@ -16,7 +16,8 @@
 //            NVRAM - or drops the call, as the router does when it is busy (ID-214)
 //   ping     per interface, and the WAN, on or off; server pings answer with a latency
 //   nslookup answers, fails, or records which tunnel the lookup would have left by
-//   curl, jq canned PIA answers: a token, a one-server list, an addKey reply
+//   curl     as MEASURED on ASUS: ignores --doh-url, honours --resolve and --cacert (see _curl)
+//   jq       canned PIA answers: a token, a one-server list, an addKey reply
 //   logger   appends to a syslog file; `sleep` returns at once unless a test asks for real time
 //
 // Skipped where no `sh` is on the PATH. The shell's own /usr/bin goes ahead of Windows' so that
@@ -148,6 +149,7 @@ case "$1" in
     cat "$STATE/nv/${IF}_ppub" > "$STATE/peer_$IF" 2>/dev/null
     if [ -f "$STATE/no_handshake" ]; then echo 0 > "$STATE/hs_$IF"; else date +%s > "$STATE/hs_$IF"; fi
     grep -qx "$IF" "$STATE/up" 2>/dev/null || echo "$IF" >> "$STATE/up"
+    [ -f "$STATE/dns_fix_on_restart" ] && echo ok > "$STATE/dns"
     ;;
 esac
 exit 0
@@ -180,20 +182,73 @@ echo "Name: $1"; echo "Address 1: 192.0.2.80"
 exit 0
 ''';
 
+// curl as ASUS's was MEASURED on 2026-09-30 (stock 7.84, Merlin 8.17), not as its manual says:
+//   --doh-url  IGNORED. A DoH server pointed at nothing still fetched the page; every lookup went to
+//              the router's ordinary resolver. Until then this stand-in honoured it, and every
+//              behaviour test inherited the bug it was meant to catch (ID-341).
+//   --resolve  honoured: a host listed there is never looked up.
+//   --cacert   honoured: addKey fails with 60 unless the file is the CA the download returns.
+// A hostname not in --resolve goes to the router's resolver, which a test can take down.
+//
+// It is also the DoH server the script's own lookup (doh_a) POSTs to: it keeps each query it is
+// sent, and answers it in DNS wire format with 192.0.2.53 - or is down, or answers FORMERR, or
+// answers an HTML error page, as a test asks (ID-307).
 const String _curl = r'''#!/bin/sh
-out=""; fmt=""; url=""; doh=0
+out=""; fmt=""; url=""; res=""; ca=""; data=""; user=""; cfg=""
+# Every call's whole command line, which ASUS's curl writes to /jffs/curllst and ps shows.
+echo "$*" >> "$STATE/curl_argv"
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift ;; -w) fmt="$2"; shift ;;
-    --doh-url) doh=1; shift ;;
-    -u|--cacert|--resolve|--data-urlencode|--max-time|--connect-timeout) shift ;;
+    --resolve) res="$res $2"; shift ;;
+    --cacert) ca="$2"; shift ;;
+    --doh-url) shift ;;
+    --data-binary) data="${2#@}"; shift ;;
+    -u) user="$2"; shift ;;
+    -K) [ "$2" = - ] && cfg="$(cat)"; shift ;;
+    --data-urlencode|--max-time|--connect-timeout|-H) shift ;;
     https://*) url="$1" ;;
   esac
   shift
 done
 echo "$url" >> "$STATE/curls"
+host="${url#https://}"; host="${host%%/*}"; host="${host%%:*}"
+case "$host" in
+  *[!0-9.]*)
+    listed=0
+    for r in $res; do [ "${r%%:*}" = "$host" ] && listed=1; done
+    if [ "$listed" = 1 ]; then
+      echo "$host" >> "$STATE/resolved_by_resolve"
+    else
+      echo "$host" >> "$STATE/resolved_by_system"
+      if [ -f "$STATE/sysdns_down" ]; then
+        echo "curl: (6) Could not resolve host: $host" >&2
+        [ -n "$fmt" ] && printf '000 exit=6 connects=0 err='
+        exit 6
+      fi
+    fi ;;
+esac
 case "$url" in
+  *dns-query*|*/p1)
+    [ -f "$STATE/doh_down" ] && { echo "curl: (7) Failed to connect" >&2; exit 7; }
+    [ -n "$data" ] && [ -f "$data" ] || exit 0
+    n="$(ls "$STATE"/doh_q_*.bin 2>/dev/null | wc -l | tr -d ' ')"
+    cp "$data" "$STATE/doh_q_$((n + 1)).bin"
+    od -An -v -tu1 "$data" | awk '{for (i = 1; i <= NF; i++) a[n++] = $i} END {p = 12; s = ""; while (p < n && a[p] != 0) {l = a[p]; w = ""; for (i = 1; i <= l; i++) w = w sprintf("%c", a[p + i]); s = s (s == "" ? "" : ".") w; p += l + 1} print s}' >> "$STATE/doh_names"
+    if [ -f "$STATE/doh_formerr" ]; then printf '\000\000\201\001\000\000\000\000\000\000\000\000' > "$out"; exit 0; fi
+    if [ -f "$STATE/doh_html" ]; then printf '<html>400 Bad Request</html>\r\n' > "$out"; exit 0; fi
+    q="$(od -An -v -tu1 "$data" | awk '{for (i = 1; i <= NF; i++) a[n++] = $i} END {for (i = 12; i < n; i++) printf "\\%03o", a[i]}')"
+    printf "\000\000\201\200\000\001\000\001\000\000\000\000${q}\300\014\000\001\000\001\000\000\000\074\000\004\300\000\002\065" > "$out"
+    exit 0 ;;
   *generateToken*)
+    # The login as curl would send it: -u, or a `user = "u:p"` line of a -K config, unescaped as
+    # curl's config parser does. None at all is PIA's 401.
+    auth="$user"
+    [ -z "$auth" ] && auth="$(echo "$cfg" | sed -n 's/^user = "\(.*\)"$/\1/p' | sed 's/\\"/"/g; s/\\\\/\\/g')"
+    echo "$auth" >> "$STATE/token_auth"
+    if [ -z "$auth" ]; then
+      [ -n "$out" ] && echo '{"message":"unauthorized"}' > "$out"; [ -n "$fmt" ] && printf '401 exit=0 connects=1 err='; exit 0
+    fi
     if [ -f "$STATE/pia_down" ]; then
       [ -n "$out" ] && echo 'error code: 504' > "$out"; [ -n "$fmt" ] && printf '504 exit=0 connects=1 err='; exit 0
     fi
@@ -202,19 +257,27 @@ case "$url" in
     fi
     [ -n "$out" ] && echo '{"token":"tok123"}' > "$out"; [ -n "$fmt" ] && printf '200 exit=0 connects=1 err='; exit 0 ;;
   *serverlist*) [ -n "$out" ] && echo '{"regions":[]}' > "$out"; exit 0 ;;
-  *addKey*) echo '{"status":"OK"}'; exit 0 ;;
+  *addKey*)
+    # A DELETE made while the rebuild is under way (ID-331): the watchdog's settings go now.
+    [ -f "$STATE/delete_during_rebuild" ] && rm -f "$STATE"/nv/*_wd_check_interval
+    if ! grep -q 'PIA-TEST-CA' "$ca" 2>/dev/null; then
+      echo "curl: (60) SSL certificate problem: unable to get local issuer certificate" >&2; exit 60
+    fi
+    echo '{"status":"OK"}'; exit 0 ;;
   *ca.rsa.4096.crt*)
-    if [ "$doh" = 1 ] && [ -f "$STATE/doh_broken" ]; then echo "curl: (6) Could not resolve host" >&2; exit 6; fi
-    [ -n "$out" ] && printf -- '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n' > "$out"; exit 0 ;;
+    [ -n "$out" ] && printf -- '-----BEGIN CERTIFICATE-----\nPIA-TEST-CA\n-----END CERTIFICATE-----\n' > "$out"; exit 0 ;;
 esac
 exit 0
 ''';
 
-// Only `openssl x509 -in FILE`, the certificate check: a file holding a certificate passes.
+// `openssl x509 -in FILE`, the certificate check: real openssl parses the certificate, so a file that
+// merely contains the BEGIN line fails, and here only the stand-in CA passes (ID-341). And
+// `openssl base64 -A -in FILE`, which the DoH lookup reads its binary answer with (ID-307).
 const String _openssl = r'''#!/bin/sh
-f=""
+mode="$1"; f=""
 while [ $# -gt 0 ]; do [ "$1" = "-in" ] && f="$2"; shift; done
-[ -n "$f" ] && grep -q 'BEGIN CERTIFICATE' "$f" 2>/dev/null
+if [ "$mode" = "base64" ]; then [ -f "$f" ] && base64 -w0 "$f" && echo; exit $?; fi
+[ -n "$f" ] && grep -q 'BEGIN CERTIFICATE' "$f" 2>/dev/null && grep -q 'PIA-TEST-CA' "$f" 2>/dev/null
 ''';
 
 // Canned answers, chosen by the filter, for the four things the rebuild asks of jq.
@@ -268,7 +331,8 @@ class WatchdogHarness {
       File('${root.path}/bin/${e.key}').writeAsStringSync(e.value);
     }
     File('${root.path}/jffs/cfg-pia-wg/jq').writeAsStringSync(_jq);
-    File('${root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt').writeAsStringSync('cert');
+    File('${root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt')
+        .writeAsStringSync('-----BEGIN CERTIFICATE-----\nPIA-TEST-CA\n-----END CERTIFICATE-----\n');
     File('${root.path}/etc/hosts').writeAsStringSync('127.0.0.1 localhost\n');
     if (!Platform.isWindows) {
       Process.runSync('chmod',
@@ -324,6 +388,18 @@ class WatchdogHarness {
 
   void wan(bool on) => _flag('wan', on);
   void dns(String mode) => File('${state.path}/dns').writeAsStringSync(mode);
+  /// The watchdog is DELETEd while a rebuild is under way, at the moment it registers its key (ID-331).
+  void deletedDuringRebuild() => _flag('delete_during_rebuild', true);
+
+  /// NVRAM writes the run made, in order.
+  List<String> get nvramWrites => _lines('nvram_writes');
+
+  /// The slot's DNS server answers nothing until the tunnel is rebuilt, then answers (ID-329).
+  void dnsFailsUntilRebuild() {
+    dns('fail');
+    _flag('dns_fix_on_restart', true);
+  }
+
   void skipRestarts(int n) => File('${state.path}/skip_restarts').writeAsStringSync('$n');
 
   /// PIA answers the token request with HTTP 403, as it does for a wrong username or password.
@@ -341,8 +417,27 @@ class WatchdogHarness {
   /// No certificate on the router yet, so a rebuild has to download it first.
   void noCachedCert() => File('${root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt').deleteSync();
 
-  /// The encrypted lookup fails: a download that uses it cannot find its server.
-  void dohBroken() => _flag('doh_broken', true);
+  /// The router's ordinary resolver answers nothing, as when its DNS servers are routed into the
+  /// dead tunnel (MRL-8, 2026-09-30). curl ignores `--doh-url`, so only a `--resolve` gets through.
+  void systemDnsDown() => _flag('sysdns_down', true);
+
+  /// The DoH server: down, answering FORMERR, or answering an HTML error page (ID-307).
+  void dohDown() => _flag('doh_down', true);
+  void dohFormErr() => _flag('doh_formerr', true);
+  void dohHtml() => _flag('doh_html', true);
+
+  /// The names the script asked the DoH server for, and the raw queries it sent, in order.
+  List<String> get dohNames => _lines('doh_names');
+  List<List<int>> get dohQueries {
+    int number(File f) => int.parse(RegExp(r'doh_q_(\d+)\.bin$').firstMatch(f.path)!.group(1)!);
+    final files = state.listSync().whereType<File>().where((f) => RegExp(r'doh_q_\d+\.bin$').hasMatch(f.path)).toList()
+      ..sort((a, b) => number(a).compareTo(number(b)));
+    return [for (final f in files) f.readAsBytesSync()];
+  }
+
+  /// Hosts curl found through `--resolve`, and hosts it had to ask the router's resolver for.
+  List<String> get resolvedByResolve => _lines('resolved_by_resolve');
+  List<String> get resolvedBySystem => _lines('resolved_by_system');
 
   /// A restart brings the interface up on the new key, and the server never answers it.
   void neverHandshakes() => _flag('no_handshake', true);
@@ -385,6 +480,12 @@ class WatchdogHarness {
   List<String> get services => _lines('services');
   List<String> get sleeps => _lines('sleeps');
   List<String> get curls => _lines('curls');
+
+  /// Every curl call's whole command line: what ASUS's curl writes to /jffs/curllst.
+  List<String> get curlArgv => _lines('curl_argv');
+
+  /// The login each token request carried, as curl would send it.
+  List<String> get tokenAuth => _lines('token_auth');
   List<String> get lookups => _lines('lookups');
   List<String> get rules => [for (final l in _lines('rules')) l.replaceAll('\t', ' ')];
   String get backoffFile {

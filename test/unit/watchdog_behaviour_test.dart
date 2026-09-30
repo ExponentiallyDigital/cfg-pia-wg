@@ -106,6 +106,23 @@ void main() {
         expect(h.log.any((l) => l.startsWith('Name resolution lost on wgc1; reconfiguring')), isTrue);
       });
 
+      // ID-329: the rebuild was reported as fixing the DNS failure without asking the DNS server again.
+      test('a rebuild after a DNS failure asks again, and says so when it still does not answer', () async {
+        h.dns('fail');
+        await h.run();
+        await h.run();
+        expect(h.log, contains('Rebuilt wgc1, but 9.9.9.9 still does not answer through it'));
+      });
+
+      test('a rebuild after a DNS failure that fixes it is reported as fixed, after asking', () async {
+        h.dns('fail');
+        await h.run();
+        h.dnsFailsUntilRebuild();
+        await h.run();
+        expect(h.log.where((l) => l.contains('still does not answer')), isEmpty);
+        expect(h.lookups.length, greaterThanOrEqualTo(3), reason: 'two misses, then the check after the rebuild');
+      });
+
       test('an answer in between starts the count again', () async {
         h.dns('fail');
         await h.run();
@@ -144,6 +161,24 @@ void main() {
         expect(h.get('wgc1_ppub'), 'NEWSERVERKEY');
         expect(h.services, contains('restart_vpnc'));
         expect(h.log.last, 'Reconfig SUCCESS: region pia-nz via 192.0.2.51:1337');
+      });
+
+      // Hostile review (ID-346): the login was on curl's command line, which ASUS's curl writes to
+      // /jffs/curllst on flash and ps shows. It goes on stdin now.
+      test('sends the PIA login on stdin, never on curl\'s command line', () async {
+        h.tunnelUp(handshakeAgo: null);
+        await h.run();
+        expect(h.log.last, startsWith('Reconfig SUCCESS'));
+        expect(h.tokenAuth, ['p123456789:secret'], reason: 'the login reached PIA');
+        expect(h.curlArgv.where((a) => a.contains('secret') || a.contains('p123456789')), isEmpty);
+      });
+
+      test('a password with a quote and a backslash reaches PIA intact', () async {
+        h
+          ..set('cfg_pia_wg_password', r'pa"ss\wd')
+          ..tunnelUp(handshakeAgo: null);
+        await h.run();
+        expect(h.tokenAuth.first, r'p123456789:pa"ss\wd');
       });
 
       test('on stock, restarts through VPN Fusion on its own clientlist row', () async {
@@ -221,12 +256,36 @@ void main() {
       expect(h.log.last, startsWith('Reconfig SUCCESS'));
     });
 
-    test('a certificate download that fails through encrypted DNS is retried without it', () async {
+    // ID-331: a DELETE made while a rebuild was under way was undone by it - the run wrote enable=1
+    // and restarted the tunnel the user had just removed.
+    test('a watchdog deleted mid-rebuild stops the rebuild before it writes anything', () async {
+      h.tunnelUp(handshakeAgo: null);
+      h.deletedDuringRebuild();
+      await h.run();
+      expect(h.log, contains("wgc1's watchdog was deleted while this run was rebuilding; stopping before writing anything"));
+      expect(h.nvramWrites.where((w) => w.startsWith('set wgc1_')), isEmpty);
+      expect(h.services, isEmpty, reason: 'nothing restarted');
+    });
+
+    // The CA pin, as measured on ASUS's curl 2026-09-30: --cacert is honoured, so a cached file that
+    // is not PIA's CA stops the rebuild at addKey rather than trusting whoever answered (ID-341).
+    test('addKey refuses a server when the cached CA is not PIA\'s', () async {
+      h.tunnelUp(handshakeAgo: null);
+      File('${h.root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt')
+          .writeAsStringSync('-----BEGIN CERTIFICATE-----\nSOMEONE-ELSE\n-----END CERTIFICATE-----\n');
+      await h.run();
+      expect(h.log, contains(startsWith('ERROR: curl addKey failed (exit 60')));
+      expect(h.log.where((l) => l.startsWith('Reconfig SUCCESS')), isEmpty);
+    });
+
+    // What MRL-8 found on 2026-09-30 (ID-307): the router's own resolver is down, and because ASUS's
+    // curl ignores --doh-url, "encrypted DNS" was never a way round it. The script's own lookup is.
+    test('with the router resolver down, the rebuild still finds PIA through its own DoH lookups (ID-307)', () async {
       h.tunnelUp(handshakeAgo: null);
       h.noCachedCert();
-      h.dohBroken();
+      h.systemDnsDown();
       await h.run(config: withDoh());
-      expect(h.log, contains('CA cert download failed through encrypted DNS; retrying once WITHOUT encrypted DNS'));
+      expect(h.resolvedBySystem, isEmpty, reason: 'nothing asked of the ordinary resolver');
       expect(h.log.last, startsWith('Reconfig SUCCESS'));
     });
 
@@ -366,6 +425,45 @@ void main() {
         expect(lock.existsSync(), isFalse);
       });
     });
+    // ID-320: the email's "the guard kept these devices off the internet" counted rule-90s by table,
+    // so a device whose blocking rule 91 was gone still counted as guarded.
+    group('the kill-switch line counts guarded devices from the kernel', () {
+      Future<String> guarded() async {
+        final s = h.script();
+        final start = s.indexOf('GUARDED=0');
+        final block = s.substring(start, s.indexOf('\ndone\n', start) + 6);
+        final r = await h.runSnippet('MYIDX=9\n$block\n' r'echo "$GUARDED"' '\n');
+        expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+        return '${r.stdout}'.trim();
+      }
+
+      setUp(() => h.set('vpnc_dev_policy_list', '<1>192.168.1.20>>9><1>192.168.1.21>>9><1>192.168.1.22>>5>'));
+
+      test('a device with both rules counts; one missing its blackhole does not', () async {
+        h
+          ..addRule('90:\tfrom 192.168.1.20 lookup 9 suppress_prefixlength 0')
+          ..addRule('91:\tfrom 192.168.1.20 blackhole')
+          ..addRule('90:\tfrom 192.168.1.21 lookup 9 suppress_prefixlength 0');
+        expect(await guarded(), '1');
+      });
+
+      test('a 90 rule without suppress_prefixlength 0 does not count', () async {
+        h
+          ..addRule('90:\tfrom 192.168.1.20 lookup 9')
+          ..addRule('91:\tfrom 192.168.1.20 blackhole');
+        expect(await guarded(), '0');
+      });
+
+      test('both pinned devices with both rules count 2, and another tunnel\'s device is not counted', () async {
+        for (final ip in ['192.168.1.20', '192.168.1.21', '192.168.1.22']) {
+          h
+            ..addRule('90:\tfrom $ip lookup ${ip.endsWith('22') ? 5 : 9} suppress_prefixlength 0')
+            ..addRule('91:\tfrom $ip blackhole');
+        }
+        expect(await guarded(), '2');
+      });
+    });
+
     // ID-242: the alert email counted the pinned devices - "the 1 device pinned to this tunnel" - where
     // DEVICE ASSIGNMENT names them. The names come from the same places the screen reads.
     group('the kill-switch line names the pinned devices', () {

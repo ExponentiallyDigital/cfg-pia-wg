@@ -242,8 +242,10 @@ void main() {
 
     test('the kill switch has three states, and stock never claims to have one', () {
       final merlin = script(RouterFirmware.merlin);
-      expect(merlin, contains('ON - traffic is blocked if the tunnel drops'));
-      expect(merlin, contains('ON - no traffic left the router while it was down'));
+      // ID-326: the setting, not a traffic claim.
+      expect(merlin, contains("ON in the router's settings, so Merlin blocks the devices it routes through this tunnel"));
+      expect(merlin, contains("ON in the router's settings; what Merlin blocked while the tunnel was down was not checked"));
+      expect(merlin, isNot(contains('no traffic left the router')));
       expect(merlin, contains('OFF - the kill switch is available but is not enabled'));
 
       final stock = script(RouterFirmware.stock);
@@ -260,7 +262,9 @@ void main() {
 
       test('it counts the pinned devices and the guard rules actually in place', () {
         expect(stock, contains(r'''$1=="1" && $4==i {n++} END {print n+0}'''));
-        expect(stock, contains(r'''$1=="90:" {for (k=2; k<NF; k++) if ($k=="lookup" && $(k+1)==i) n++}'''));
+        // Per device, both rules (ID-320); watchdog_behaviour_test runs this against a fake router.
+        expect(stock, contains(r'grep -q "^90:.*from $GIP lookup $MYIDX suppress_prefixlength 0"'));
+        expect(stock, contains(r'grep -q "^91:.*from $GIP blackhole"'));
       });
 
       test('a guarded tunnel says its pinned devices had no internet while it was down', () {
@@ -306,7 +310,7 @@ void main() {
           expect(s, contains(v), reason: '\$fw is missing \$v');
         }
       }
-      expect(script(RouterFirmware.merlin), contains('ON - traffic is blocked while the tunnel is down'));
+      expect(script(RouterFirmware.merlin), contains("ON in the router's settings, so Merlin should be blocking"));
       expect(script(RouterFirmware.stock), contains(r"the app's guard is keeping $NAMES"));
       // A failure picks the still-down wording whether or not this run was a deploy.
       expect(script(RouterFirmware.merlin), contains('''if [ "\$STATUS" != "SUCCESS" ]; then

@@ -18,6 +18,7 @@
 // session timer is gone, and so is the idle wipe that replaced it: credentials stay until the app exits.
 // The 60s clipboard auto-clear lives in the controller and keeps running after leaving the screen.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -26,6 +27,7 @@ import '../widgets/app_button.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../share_cache.dart';
 
 import '../app_colors.dart';
 import '../pia_service.dart';
@@ -86,6 +88,8 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     for (final c in [_regionCtrl, _usernameCtrl, _passwordCtrl, _dnsCtrl]) {
       c.dispose();
     }
+    // The app a config was shared to has had its chance to read share_plus's copy by now (ID-312).
+    unawaited(clearShareCache());
     super.dispose();
   }
 

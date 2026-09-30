@@ -47,8 +47,12 @@ const _cache = '{'
 
 const _sep = '@@CFGPIAWG@@';
 
-String _blob({String policy = _policyList, String defaultKey = '9'}) =>
-    ['', _clientlist, policy, defaultKey, _staticlist, '', _cfgDeviceList, _clJson, _cache, ''].join('\n$_sep\n');
+String _blob({String policy = _policyList, String defaultKey = '9', String? rules, String? ipv6, bool ping = false}) => [
+      '', _clientlist, policy, defaultKey, _staticlist, '', _cfgDeviceList, _clJson, _cache, '',
+      // `ip rule show` since ID-319, `ipv6_service` since ID-317, and the ping block since ID-348,
+      // after the parental controls.
+      if (rules != null || ipv6 != null || ping) ...[rules ?? '', ipv6 ?? '', ping ? '1' : '', ''],
+    ].join('\n$_sep\n');
 
 /// The tunnel check's one round trip: the up interfaces, the router clock (10000), then each slot the
 /// command asks about, in its order.
@@ -66,9 +70,11 @@ RecordingSSHClient _router({
   String defaultKey = '9',
   // wgc1's server answered 50 seconds ago on the router clock.
   Map<int, int> handshakes = const {1: 9950},
+  String? rules,
+  String? ipv6,
 }) =>
     RecordingSSHClient(responder: (cmd) {
-      if (cmd.contains('cfg_device_list')) return _blob(policy: policy, defaultKey: defaultKey);
+      if (cmd.contains('cfg_device_list')) return _blob(policy: policy, defaultKey: defaultKey, rules: rules, ipv6: ipv6);
       // Before the plain interface check below: the tunnel check's round trip contains that command.
       if (cmd.contains('latest-handshakes')) return _health(cmd, handshakes);
       if (cmd == 'nvram get vpnc_dev_policy_list') return policy;
@@ -219,8 +225,20 @@ void main() {
   testWidgets('the default connection is shown at the top with its explanation', (tester) async {
     await _pumpConnected(tester);
     expect(find.text('Default connection'), findsOneWidget);
-    expect(find.textContaining('fall back to it if their tunnel drops'), findsOneWidget);
+    expect(find.textContaining('never falls back to it'), findsOneWidget);
+    expect(find.textContaining('fall back to it if their tunnel drops'), findsNothing, reason: 'false since the guard (ID-340)');
     expect(find.text('wgc1:pia-aus_melbourne'), findsWidgets);
+  });
+
+  // ID-317: the app does not support IPv6, and a pinned device's IPv6 leaves outside its tunnel.
+  testWidgets('with IPv6 on in the router, DEVICES says what that means for assigned devices', (tester) async {
+    await _pumpConnected(tester, router: _router(ipv6: 'dhcp6'));
+    expect(find.byKey(const Key('ipv6_warning')), findsOneWidget);
+  });
+
+  testWidgets('with IPv6 off, or not read, there is no IPv6 warning', (tester) async {
+    await _pumpConnected(tester, router: _router(ipv6: 'disabled'));
+    expect(find.byKey(const Key('ipv6_warning')), findsNothing);
   });
 
   testWidgets('a default connection of INTERNET reads as Internet, not "profile 0"', (tester) async {
@@ -527,8 +545,39 @@ void main() {
     expect(find.textContaining('stays on your router afterwards'), findsOneWidget);
   });
 
+  // ID-348: the router's filter holds pings only for the whole network, so that part is a switch.
+  group('the ping block', () {
+    testWidgets('is off by default, and turning it on writes the setting and runs the guard at once', (tester) async {
+      final ssh = await _pumpConnected(tester);
+      expect(tester.widget<Switch>(find.byKey(const Key('ping_block_switch'))).value, isFalse);
+      await tester.ensureVisible(find.byKey(const Key('ping_block_switch')));
+      await tester.tap(find.byKey(const Key('ping_block_switch')));
+      await tester.pumpAndSettle();
+      final set = ssh.commands.indexOf('nvram set cfg_pia_wg_lw_icmp=1');
+      expect(set, greaterThan(-1));
+      expect(ssh.commands.indexOf('nvram commit', set), greaterThan(set));
+      expect(ssh.commands.skip(set).any((x) => x == "'/jffs/cfg-pia-wg/guard.sh'"), isTrue,
+          reason: 'applied now, not at the next cron run');
+    });
+
+    testWidgets('shows what the router holds, and turning it off unsets the setting', (tester) async {
+      final ssh = await _pumpConnected(tester,
+          router: RecordingSSHClient(responder: (cmd) {
+            if (cmd.contains('cfg_device_list')) return _blob(ping: true);
+            if (cmd.contains('ip -o link show up')) return '3: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP>';
+            return '';
+          }));
+      expect(tester.widget<Switch>(find.byKey(const Key('ping_block_switch'))).value, isTrue);
+      await tester.ensureVisible(find.byKey(const Key('ping_block_switch')));
+      await tester.tap(find.byKey(const Key('ping_block_switch')));
+      await tester.pumpAndSettle();
+      expect(ssh.commands, contains('nvram unset cfg_pia_wg_lw_icmp'));
+    });
+  });
+
   testWidgets('the confirmation warns when a foreign assignment is being replaced', (tester) async {
     await _pumpConnected(tester);
+    await tester.ensureVisible(find.byKey(const Key('row_44:55:66:77:88:99')));
     await tester.tap(find.byKey(const Key('row_44:55:66:77:88:99')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('pick_9')));
@@ -788,6 +837,46 @@ void main() {
       expect(
           find.descendant(of: find.byKey(const Key('row_11:22:33:44:55:66')), matching: find.text('wgc5:pia-aus_perth')),
           findsOneWidget);
+    });
+
+    // ID-319: "no internet" was worked out from the tunnel's state alone. It is now said only when the
+    // router holds the device's guard rules, and a device without them is called unguarded.
+    testWidgets('a pinned device whose guard the router holds is still shown as having no internet', (tester) async {
+      await _pumpConnected(tester,
+          router: _router(
+              policy: '1>192.168.1.20>>5>',
+              rules: '0:\tfrom all lookup local\n90:\tfrom 192.168.1.20 lookup 5 suppress_prefixlength 0\n'
+                  '91:\tfrom 192.168.1.20 blackhole\n100:\tfrom 192.168.1.20 lookup 5'));
+      expect(tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
+          'wgc5:pia-aus_perth is not running - no internet until it is enabled');
+    });
+
+    testWidgets('a pinned device missing its guard rules is shown as unguarded, not as having no internet',
+        (tester) async {
+      await _pumpConnected(tester,
+          router: _router(
+              policy: '1>192.168.1.20>>5>',
+              rules: '0:\tfrom all lookup local\n90:\tfrom 192.168.1.20 lookup 5 suppress_prefixlength 0\n'
+                  '100:\tfrom 192.168.1.20 lookup 5'));
+      expect(tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
+          startsWith('fail-closed guard missing - while wgc5:pia-aus_perth is down'));
+    });
+
+    // Hostile review (ID-346): a profile deleted in the web interface leaves its pins behind.
+    testWidgets('a device pinned to a profile that no longer exists says so, from rule 91', (tester) async {
+      await _pumpConnected(tester,
+          router: _router(
+              policy: '1>192.168.1.20>>7>',
+              rules: '0:\tfrom all lookup local\n91:\tfrom 192.168.1.20 blackhole\n100:\tfrom 192.168.1.20 lookup 7'));
+      expect(tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
+          startsWith('pinned to a VPN profile that no longer exists, so it has no internet'));
+    });
+
+    testWidgets('and says it is unguarded when the router holds no rule 91 for it', (tester) async {
+      await _pumpConnected(tester,
+          router: _router(policy: '1>192.168.1.20>>7>', rules: '0:\tfrom all lookup local\n100:\tfrom 192.168.1.20 lookup 7'));
+      expect(tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
+          startsWith('pinned to a VPN profile that no longer exists, and not guarded'));
     });
 
     testWidgets('a default that is not running sends unassigned devices to the internet', (tester) async {

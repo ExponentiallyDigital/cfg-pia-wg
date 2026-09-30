@@ -500,7 +500,19 @@ void main() {
       final c = router(upFor: 99);
       await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m), verifyMaxAttempts: 2).disableSlot(2);
       expect(logs.any((m) => m.contains('still up after the stop')), isTrue);
-      expect(logs.any((m) => m.contains('disabled.')), isTrue);
+      // ID-336: it said "disabled." as a success here, with the interface still up.
+      expect(logs.any((m) => m.endsWith('disabled.')), isFalse);
+      expect(logs.last, contains('was switched off, but its interface is still up'));
+    });
+
+    // ID-336: CREATE over a running slot ignored whether the stop worked, so a tunnel still up kept
+    // the old server running under the new name (the fault measured 2026-09-14).
+    test('CREATE over a running slot that will not stop writes nothing', () async {
+      final c = router(upFor: 99);
+      final base = c.commands.length;
+      await expectLater(svc(c, verifyMaxAttempts: 2).createConfigToSlot(slot: 2, config: _sampleConfig, regionId: 'aus_perth'),
+          throwsA(isA<Exception>().having((e) => '$e', 'message', contains('did not stop'))));
+      expect(c.commands.skip(base).where((x) => x.contains('wgc2_priv') || x.contains('wgc2_ppub')), isEmpty);
     });
 
     test('a failed enable reverts and waits too', () async {
@@ -1565,6 +1577,32 @@ void main() {
       await svc(c).deleteSlot(1);
       final moved = c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list='));
       expect(c.commands.lastIndexWhere((x) => x == "'$kGuardScriptPath'"), greaterThan(moved));
+    });
+  });
+
+  // ID-338: each of these was reported done without reading anything back.
+  group('read back before reporting', () {
+    test('MAX ACTIVE VPNS that the router did not take is an error, not "set"', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (cmd) => cmd == 'nvram get vpnc_max_conn' ? '2' : '');
+      await expectLater(svc(c).setMaxActiveVpns(3), throwsA(isA<Exception>().having((e) => '$e', 'message', contains('still has'))));
+    });
+
+    test('a DELETE that left the private key is reported, not called cleared', () async {
+      useMerlin();
+      final logs = <String>[];
+      final c = RecordingSSHClient(responder: (cmd) => cmd == 'nvram get wgc3_priv' ? 'STILLHERE' : '');
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).deleteSlot(3);
+      expect(logs.any((m) => m.endsWith('configuration cleared.')), isFalse);
+      expect(logs.last, contains('still holds its private key'));
+    });
+
+    test('a DELETE that took is reported cleared', () async {
+      useMerlin();
+      final logs = <String>[];
+      final c = RecordingSSHClient(responder: (_) => '');
+      await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).deleteSlot(3);
+      expect(logs.last, endsWith('configuration cleared.'));
     });
   });
 }
