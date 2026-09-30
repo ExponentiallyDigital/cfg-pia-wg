@@ -1366,7 +1366,29 @@ ROUTER_SSH='ssh -o ConnectTimeout=3 admin@192.168.1.1' scripts/check-reboot.sh
 
 - See: the router reboots, and about two minutes later a PASS or FAIL line. It fetches Cloudflare's trace page by IP address once a second and records which public address answered.
 - Pass if: PASS: no answer came from the router's WAN address. Its INFO lines say how many probes were blocked and when the tunnel carried DESKTOP again.
-- Note: on stock this fails on most boots, with 3 to 6 seconds out of the WAN, until ID-348 is settled. One PASS proves little: it's a race, so run it three times.
+- Note: run it three times. It's a race: before build 488, 4 boots in 6 leaked for 3 to 6 seconds, and the other two passed. Since build 488 the router's Network Services Filter holds from boot (ID-348), and three in a row passed on 2026-10-01.
+
+**GRD-8** The router's filter holds pinned devices, and pings are the user's choice [script]
+
+The guard's second layer (ID-348): the router's own Network Services Filter, which it applies at boot before the internet connection is up.
+
+- Starts with: DESKTOP pinned to wgc1.
+- Do: on the router:
+
+```bash
+logger "**GRD-8 START** The router's filter holds pinned devices"
+/jffs/cfg-pia-wg/guard.sh
+iptables -S FORWARD | grep -- "-s $D/32 -i br0 -o"
+nvram get filter_lw_icmp_x
+```
+
+- Pass if: `filter held N of N`, and two DROP lines for DESKTOP, `-p tcp` and `-p udp`, both `-o` your WAN interface: never a tunnel. The ICMP setting doesn't include `8`.
+- Do: DEVICES, turn on **Block pings to the internet**.
+- See: APP LOG "Pings out of the internet connection are blocked for every device."
+- Pass if: `nvram get filter_lw_icmp_x` now includes `8`; DESKTOP still pings 1.1.1.1 (through wgc1); a device that isn't pinned can't, while the default connection is Internet.
+- Do: turn it off again.
+- Pass if: `8` is gone from `nvram get filter_lw_icmp_x`, and anything else that was there is still there.
+- Do: `logger "**GRD-8 END** The router's filter holds pinned devices"`
 
 ---
 
@@ -2256,7 +2278,8 @@ Some automated tests can only check that a command is written a certain way: tha
 | `test/router_watchdog_service_test.dart`: `nvram unset cfg_pia_wg_password` | the credentials go when the last watchdog is deleted | by hand, after deleting the last watchdog: `nvram get cfg_pia_wg_password` prints nothing. END-1 covers UNINSTALL |
 | `test/unit/router_dns_test.dart`, `test/screens/router_dns_screen_test.dart`: the "encrypted" tags | the router's own lookups really are encrypted | check-claims `DNS-DoT`: with DNS-over-TLS on, fresh lookups send nothing to port 53 on the WAN, and a direct plain query is counted, as the control |
 | `test/unit/email_layout_test.dart`: the kill-switch line counts rules | the email's "kept off the internet" line | BRK-1 checks TABLET is offline and its exit IP; nothing checks the line's own words |
-| `test/unit/s50_template_test.dart`: the boot hook runs `guard.sh` | nothing leaks during a boot | GRD-7 (`scripts/check-reboot.sh`), from a pinned device. It fails on stock today: ID-348 |
+| `test/unit/s50_template_test.dart`: the boot hook runs `guard.sh` | nothing leaks during a boot | GRD-7 (`scripts/check-reboot.sh`), from a pinned device, three times |
+| `test/unit/fail_closed_guard_test.dart`: the Network Services Filter against a fake `nvram`, `service` and `iptables` | the router drops a pinned device's traffic out of the WAN from boot, and only the app's entries are touched | check-claims `FILTER-*`, read from the firewall itself; GRD-7 and GRD-8 |
 | `test/unit/fail_closed_guard_test.dart`: `guard.sh` against a fake `ip` | the kernel honours the guard's rules | check-claims `GUARD-*`: `ip route get` from every pinned device, with a rule broken on purpose, a wiped rule repaired by cron, and a tunnel stopped. GRD-2, GRD-3 and DEF-7 by hand |
 | `test/unit/device_assignment_service_test.dart`: the stale rule is deleted | a moved device really moves | DEV-5, DEV-6 and DEV-8: `e2e.sh` counts the rules and checks the exit IP |
 | `test/router_watchdog_service_test.dart`: `nvram set wgcN_dns` | pinned devices' DNS goes through their tunnel | check-claims `DNS-pinned`; WD-23 and DEV-10 by hand |

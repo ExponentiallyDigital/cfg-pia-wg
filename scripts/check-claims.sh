@@ -179,6 +179,24 @@ guard_check() {
   [ -z "$BAD" ] && pass "GUARD-$tag" "$N pinned device(s): rules held, every address through the tunnel or refused" || fail "GUARD-$tag" "the guard" "$(echo "$BAD" | cut -c1-300)"
 }
 guard_check now
+# The second layer (ID-348): each pinned device's TCP and UDP out of the WAN are dropped by the
+# router's own Network Services Filter, read from the firewall itself, not the settings.
+filter_check() {
+  FW="$(iptables -S FORWARD)"; FN=0; FMISS=""
+  for FE in $(pins); do
+    FIP="${FE%>*}"; FN=$((FN + 1))
+    for FP in tcp udp; do
+      echo "$FW" | grep -qE -- "-s $(echo "$FIP" | sed 's/[.]/[.]/g')/32 -i br0 -o $WAN -p $FP -j DROP" || FMISS="$FMISS $FIP/$FP"
+    done
+  done
+  [ "$FN" = 0 ] && return
+  if [ "$(nvram get fw_lw_enable_x)" = 1 ] && [ -z "$FMISS" ]; then
+    pass "FILTER-$1" "$FN pinned device(s): the router's firewall drops their TCP and UDP out of the WAN"
+  else
+    fail "FILTER-$1" "the Network Services Filter" "enabled=$(nvram get fw_lw_enable_x) missing:$(echo "$FMISS" | cut -c1-200)"
+  fi
+}
+filter_check now
 if [ -n "$(pins)" ]; then
   cru l | grep -q '#cfg_pia_wg_guard#' && pass GUARD-cron "the guard runs every minute from cron" || fail GUARD-cron "the guard runs every minute from cron" "no cfg_pia_wg_guard entry"
   grep -q 'cru a cfg_pia_wg_guard' /opt/etc/init.d/S50downloadmaster 2>/dev/null && grep -q 'guard.sh' /opt/etc/init.d/S50downloadmaster && pass GUARD-boot "the boot hook puts the guard and its cron back" || fail GUARD-boot "the boot hook" "S50downloadmaster lacks the guard"
@@ -347,6 +365,7 @@ rebuild() {  # $1 label, $2 expected: enc | plain | honest
     i=0; while [ "$i" -lt 45 ] && ! handshake "$WS"; do sleep 1; i=$((i + 1)); done
   done
   guard_check "after-$1"
+  filter_check "after-$1"
   sleep 30
 }
 variant() {  # $1 doh_ips (or "" for none), $2 email 0/1: a copy of the deployed script

@@ -1711,7 +1711,19 @@ class RouterWatchdog {
         // case the script was missing or failed. Left behind, the rules would keep every pinned
         // device off the internet whenever its tunnel is down, with no app left to explain why.
         final guardRules = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):'")).trim());
+        final filterHad = (await _read('nvram get cfg_pia_wg_lwlist')).trim().isNotEmpty;
         await _guardService.clear();
+        // The guard's second layer, the router's Network Services Filter (ID-348): the app's own
+        // entries out, and the filter and its ping setting put back as the app found them. Run
+        // directly as well, in case the script was missing; it touches nothing that isn't the app's.
+        await _read(kFilterClearCommand);
+        final filterLeft = (await _read('nvram get cfg_pia_wg_lwlist')).trim().isNotEmpty;
+        done.add(filterLeft
+            ? "The app's entries in the router's Network Services Filter could not all be removed: check Firewall, "
+                'Network Services Filter'
+            : filterHad
+                ? "Took the app's entries out of the router's Network Services Filter"
+                : 'No Network Services Filter entries to remove');
         await _read('for PR in 88 89 90 91; do N=0; while [ \$N -lt 400 ] && ip rule del priority \$PR 2>/dev/null; '
             'do N=\$((N + 1)); done; done; for T in 201 202 203 204 205; do ip route flush table \$T 2>/dev/null; done');
         final guardLeft = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):'")).trim()) ?? 0;
