@@ -65,7 +65,9 @@ Two groups, and they use different settings.
 - the watchdog sending you an alert email; and
 - downloading the helper programs cfg-pia-wg installs.
 
-Is the router's own lookup encrypted? That's up to the program making it, not the router. Most programs on the router look names up using ordinary DNS, which isn't encrypted. The watchdog doesn't: it looks up PIA's servers and your mail server over encrypted DNS (DoH), using the resolver chosen on the WATCHDOG form, Cloudflare unless you pick another. Leave both of its DoH fields empty and it uses ordinary DNS like everything else, so your internet provider could see that the router looked up a PIA server name, but nothing more. Either way, everything the watchdog then sends and receives is encrypted (HTTPS).
+Is the router's own lookup encrypted? That's up to the program making it, not the router. Most programs on the router look names up using ordinary DNS, which isn't encrypted. The watchdog doesn't: it looks up PIA's servers and your mail server over encrypted DNS (DoH), using the resolver chosen on the WATCHDOG form, Cloudflare unless you pick another. It sends each DNS query to that resolver itself, over HTTPS, and hands the answer to the program that needs it, so the name is never looked up in the clear. If the resolver doesn't answer, the watchdog looks the name up the ordinary way, so it can still rebuild your tunnel, and its log says so. Leave both of its DoH fields empty and it uses ordinary DNS like everything else, so your internet provider could see that the router looked up a PIA server name, but nothing more. Either way, everything the watchdog then sends and receives is encrypted (HTTPS).
+
+Until build 477 that paragraph was not true. The watchdog asked the router's own `curl` to use DoH, and ASUS's `curl` ignores that request on both stock and Merlin firmware, without a word: found 2026-09-30, when a DoH server that didn't exist made no difference at all. Every lookup it called encrypted went out as ordinary DNS. No public release carried that build.
 
 ### How can one tunnel take away DNS for everything?
 
@@ -325,6 +327,8 @@ If the router's DNS Server setting uses the same address as a slot, you'll also 
 | DNS sent straight to another server, such as `8.8.8.8` | Not redirected: follows its own traffic route | Not redirected: follows the default connection |
 
 The redirect only matches UDP port 53 sent to the router's own address. DoH looks like ordinary web traffic, so no router can redirect it by port.
+
+One more thing about a pinned device's own route. The firmware copies a few routes through your internet connection into each slot's table: the router's own DNS servers, the tunnel's PIA server, and your internet provider's local network. Before build 480, a pinned device reached those addresses outside its tunnel, even with the tunnel up: a phone using Android's Private DNS at `1.1.1.2`, say, sent it from your real address. The app's fail-closed guard now holds each of those addresses to the tunnel, or blocks it while the tunnel is down.
 
 #### Common DNS services
 
