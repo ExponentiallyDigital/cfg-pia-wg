@@ -102,6 +102,13 @@ if [ -f "$D/pia_ca.rsa.4096.crt" ]; then
 else
   info TLS-pin "no cached PIA CA yet; skipped"
 fi
+# The watchdog's TLS floor: --tlsv1.2 refuses a server that offers only TLS 1.1.
+bounded curl -s -o /dev/null --max-time 15 --tlsv1.2 https://tls-v1-1.badssl.com:1011/
+case "$RC" in
+  0) fail TLS-floor "--tlsv1.2 refuses a TLS 1.1 server" "it connected" ;;
+  7|28) info TLS-floor "tls-v1-1.badssl.com did not answer (rc=$RC); not checked" ;;
+  *) pass TLS-floor "--tlsv1.2 refuses a TLS 1.1 server (rc=$RC)" ;;
+esac
 # The platform fact the watchdog's own DoH exists for. INFO, not PASS: it is ASUS's behaviour.
 bounded curl -s -o /dev/null --max-time 15 --doh-url https://nothing.invalid/dns-query --resolve nothing.invalid:443:127.0.0.1 https://example.com/
 [ "$RC" = 0 ] && info DOH-0 "curl still ignores --doh-url (a dead DoH server made no difference)" || info DOH-0 "curl now honours --doh-url (rc=$RC): the watchdog's own lookups are still what it uses"
@@ -182,6 +189,33 @@ PW="$(nvram get cfg_pia_wg_password)"; U="$(nvram get cfg_pia_wg_user)"
 
 # From here on the router is changed, and put back by the trap.
 while read -r L; do X="${L%#}"; cru d "${X##*#}"; done < "$CRUSAVE"
+
+# ---- 4b. DNS-over-TLS: a lookup through the router sends no plain DNS out of the WAN -------------
+# A counting rule (it only counts, and is removed straight after) sees every port-53 packet the
+# router itself sends out of the WAN. The control: a plain query straight to a public server must
+# be counted, or the rule would prove nothing.
+if [ "$(nvram get dnspriv_enable)" = 1 ]; then
+  iptables -I OUTPUT -o "$WAN" -p udp --dport 53 -m comment --comment cfgcheck53 -j RETURN 2>/dev/null ||
+    iptables -I OUTPUT -o "$WAN" -p udp --dport 53 -j RETURN
+  C0="$(iptables -vxnL OUTPUT | awk 'NR > 2 && $3 == "RETURN" && /dpt:53/ {print $1; exit}')"
+  nslookup "cfg-check-$$-$(date +%s).example.com" 127.0.0.1 >/dev/null 2>&1
+  nslookup "cfg-check2-$$-$(date +%s).example.org" 127.0.0.1 >/dev/null 2>&1
+  C1="$(iptables -vxnL OUTPUT | awk 'NR > 2 && $3 == "RETURN" && /dpt:53/ {print $1; exit}')"
+  nslookup "cfg-check3-$$.example.net" 198.51.100.53 >/dev/null 2>&1 &
+  sleep 3; kill $! 2>/dev/null
+  C2="$(iptables -vxnL OUTPUT | awk 'NR > 2 && $3 == "RETURN" && /dpt:53/ {print $1; exit}')"
+  iptables -D OUTPUT -o "$WAN" -p udp --dport 53 -m comment --comment cfgcheck53 -j RETURN 2>/dev/null ||
+    iptables -D OUTPUT -o "$WAN" -p udp --dport 53 -j RETURN
+  if [ "$C2" -le "$C1" ]; then
+    fail DNS-DoT "the counting rule sees plain DNS" "a direct query wasn't counted ($C1 -> $C2), so the check proves nothing"
+  elif [ "$C1" = "$C0" ]; then
+    pass DNS-DoT "with DNS-over-TLS on, two fresh lookups sent no plain DNS out of the WAN (control counted $((C2 - C1)))"
+  else
+    fail DNS-DoT "no plain DNS out of the WAN with DNS-over-TLS on" "$((C1 - C0)) packet(s) to port 53"
+  fi
+else
+  info DNS-DoT "DNS-over-TLS is off on this router; not checked here (full mode turns it on)"
+fi
 
 # ---- 5. The guard repairs itself: rules wiped, as a firmware action does ------------------------
 E="$(pins | head -1)"
