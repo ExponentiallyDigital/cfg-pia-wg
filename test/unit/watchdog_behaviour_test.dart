@@ -106,6 +106,23 @@ void main() {
         expect(h.log.any((l) => l.startsWith('Name resolution lost on wgc1; reconfiguring')), isTrue);
       });
 
+      // ID-329: the rebuild was reported as fixing the DNS failure without asking the DNS server again.
+      test('a rebuild after a DNS failure asks again, and says so when it still does not answer', () async {
+        h.dns('fail');
+        await h.run();
+        await h.run();
+        expect(h.log, contains('Rebuilt wgc1, but 9.9.9.9 still does not answer through it'));
+      });
+
+      test('a rebuild after a DNS failure that fixes it is reported as fixed, after asking', () async {
+        h.dns('fail');
+        await h.run();
+        h.dnsFailsUntilRebuild();
+        await h.run();
+        expect(h.log.where((l) => l.contains('still does not answer')), isEmpty);
+        expect(h.lookups.length, greaterThanOrEqualTo(3), reason: 'two misses, then the check after the rebuild');
+      });
+
       test('an answer in between starts the count again', () async {
         h.dns('fail');
         await h.run();
@@ -219,6 +236,17 @@ void main() {
       await h.run(config: withDoh());
       expect(h.log, contains(startsWith('CA cert cached at')));
       expect(h.log.last, startsWith('Reconfig SUCCESS'));
+    });
+
+    // ID-331: a DELETE made while a rebuild was under way was undone by it - the run wrote enable=1
+    // and restarted the tunnel the user had just removed.
+    test('a watchdog deleted mid-rebuild stops the rebuild before it writes anything', () async {
+      h.tunnelUp(handshakeAgo: null);
+      h.deletedDuringRebuild();
+      await h.run();
+      expect(h.log, contains("wgc1's watchdog was deleted while this run was rebuilding; stopping before writing anything"));
+      expect(h.nvramWrites.where((w) => w.startsWith('set wgc1_')), isEmpty);
+      expect(h.services, isEmpty, reason: 'nothing restarted');
     });
 
     // The CA pin, as measured on ASUS's curl 2026-09-30: --cacert is honoured, so a cached file that

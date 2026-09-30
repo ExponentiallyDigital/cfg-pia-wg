@@ -446,6 +446,37 @@ void main() {
         isEmpty, reason: 'the SMTP login may be what is wrong: nothing is offered for saving');
   });
 
+  // ID-327: a first run that found no internet on the WAN exits 0 having done nothing, and the form
+  // closed as if the watchdog were proved. It says so in a popup now, not only in the app log.
+  testWidgets('a deploy whose first run did nothing says so in a popup, and never "deployed"', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(
+      responder: (cmd) {
+        if (cmd.contains('which jq')) return '/opt/bin/jq';
+        if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+        if (cmd.contains('nvram get wgc1_enable')) return '1';
+        if (cmd.contains('ip -o link show up')) return 'wgc1';
+        if (cmd.contains('ping')) return 'OK';
+        if (cmd.startsWith('tail -n +') && cmd.contains('watchdog_wgc1.log')) {
+          return '2026-01-01 10:00:05 no Internet on WAN interface, exiting.';
+        }
+        return '';
+      },
+    );
+    await tester.pumpWidget(_host(ssh, c));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('wd_save')));
+    await tester.tap(find.byKey(const Key('wd_save')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('The watchdog is scheduled, but its first run found no internet on the WAN'), findsOneWidget);
+    expect(c.log.where((e) => e.message.contains('Watchdog deployed')), isEmpty);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+  });
+
   // ID-255: the warning reached only the app, not ROUTER LOG where the rest of the deploy is recorded.
   testWidgets('an unreachable check target is written to ROUTER LOG, and the save goes on', (tester) async {
     final c = _controller();

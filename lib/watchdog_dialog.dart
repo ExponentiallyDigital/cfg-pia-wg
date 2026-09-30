@@ -531,6 +531,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       return;
     }
 
+    String? didNothing;
     final saved = await _withService((svc) async {
       // Pre-save reachability check over the WAN; warns but still allows saving (spec 2.1.3).
       final p = await svc.pingHostViaWan(cfg.primaryIp.trim());
@@ -547,7 +548,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         await AppErrors.inputs(context, _c, [...warnings, 'The settings will still be saved.']);
       }
       // '' when the alert email went, or was not due; otherwise why it did not.
-      return await svc.deployWatchdog(cfg, desc: newDesc) ?? '';
+      final problem = await svc.deployWatchdog(cfg, desc: newDesc) ?? '';
+      didNothing = svc.lastDeployDidNothing;
+      return problem;
     }, applying: true);
     if (saved == null || !mounted) return;
     // The deploy worked, but its email did not, and only the router's log said so (ID-300). Nobody
@@ -560,6 +563,13 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
           'The watchdog is deployed, but its alert email could not be sent: ${saved.replaceFirst(RegExp(r'\.$'), '')}. '
           'Check the email settings, then TEST EMAIL or SAVE & DEPLOY again.');
       return;
+    }
+    // Scheduled, but its first run did nothing, so nothing is proved yet (ID-327). Said here, not
+    // only in the app log, which nobody reads unprompted. The settings are fine: the form closes.
+    if (didNothing != null) {
+      await AppErrors.system(context, _c,
+          'The watchdog is scheduled, but $didNothing. It runs again in ${cfg.cronIntervalMinutes} minutes; check ROUTER LOG then.');
+      if (!mounted) return;
     }
     // The deploy worked, so the logins on the form are proven: offer them to the password manager.
     // Closing the form without this cancelled the offer (ID-225).

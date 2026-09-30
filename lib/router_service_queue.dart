@@ -100,6 +100,16 @@ class RouterServiceWedgedException implements Exception {
       'Nothing on the router has been changed by this app in the meantime.';
 }
 
+/// The router dropped a service call without running it (ID-334).
+class RouterServiceSkippedException implements Exception {
+  const RouterServiceSkippedException(this.service);
+  final String service;
+
+  @override
+  String toString() => 'The router was busy and dropped "$service" without running it, so what it should have '
+      'done has not been done. Wait a minute and try again.';
+}
+
 /// Guards a router service call against the queue described at the top of this file.
 class RouterServiceQueue {
   RouterServiceQueue({
@@ -177,6 +187,24 @@ class RouterServiceQueue {
     await logRouter?.call('INFO: cleared stale rc_service marker "${s.service}" (pid ${s.pid ?? '?'})');
     await run(kClearRcServiceCommand);
     return const RcServiceState(service: '', pid: null, pidAlive: false);
+  }
+
+  /// How many service calls the router has dropped so far, for [checkNotSkipped] (ID-334).
+  Future<int> skipCount() async =>
+      int.tryParse((await read("grep -c 'skip the event' /tmp/syslog.log 2>/dev/null || true")).trim()) ?? 0;
+
+  /// Throws [RouterServiceSkippedException] if the router dropped [service] since [before] was read.
+  ///
+  /// A dropped call ends with an idle queue, so [awaitIdle] returned as if it had run: every action
+  /// built on a service call - a tunnel restart, a device disabled, the default connection - could
+  /// report success having done nothing (claims audit #28). The router says so in its log, and that
+  /// is what is read here.
+  Future<void> checkNotSkipped(int before, String service) async {
+    final now = await skipCount();
+    if (now <= before) return;
+    final last = await read("grep 'skip the event' /tmp/syslog.log 2>/dev/null | tail -n ${now - before}");
+    final name = service.split(' ').first.replaceAll('"', '');
+    if (last.contains(name)) throw RouterServiceSkippedException(service);
   }
 
   /// Waits for the router to finish whatever it is doing.

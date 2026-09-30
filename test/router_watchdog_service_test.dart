@@ -360,6 +360,34 @@ void main() {
       expect(done, contains('Removed the fail-closed guard rules'));
     });
 
+    // ID-330: each step was counted BEFORE it ran and never after, so a step that did nothing still
+    // said "Removed". Now each is counted again, and what is left is named.
+    test('uninstall says what it could not remove, counted after each step', () async {
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains("grep -cE '^(8[89]|9[01]):'")) return '4';
+        if (cmd.contains("cru l | grep -cE")) return '1';
+        if (cmd.contains("nvram show 2>/dev/null | grep -cE")) return '2';
+        return '';
+      });
+      final done = await _wd(c).uninstallFromRouter();
+      expect(done, contains('4 fail-closed guard rule(s) could not be removed: check `ip rule show` on the router'));
+      expect(done, contains('1 schedule(s) could not be removed: check `cru l` on the router'));
+      expect(done, contains('2 app setting(s) could not be removed from NVRAM'));
+      expect(done.where((l) => l.startsWith('Removed the fail-closed guard rules')), isEmpty);
+    });
+
+    test('uninstall stops every schedule, the guard\'s included, before anything else', () async {
+      final c = RecordingSSHClient(responder: (cmd) => cmd == 'cru l'
+          ? '*/5 * * * * /jffs/cfg-pia-wg/watchdog_wgc1.sh #watchdog_wgc1#\n'
+              '* * * * * /jffs/cfg-pia-wg/guard.sh #$kGuardCronTag#'
+          : '');
+      await _wd(c).uninstallFromRouter();
+      final guardCron = c.commands.indexOf('cru d $kGuardCronTag');
+      expect(guardCron, isNonNegative);
+      expect(c.commands.indexOf('cru d watchdog_wgc1'), isNonNegative);
+      expect(guardCron, lessThan(c.commands.indexWhere((x) => x.contains("'$kGuardScriptPath' clear"))));
+    });
+
     test('uninstall restores what it can and reports what it did', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd.contains('.old') ? 'RESTORED' : 'REMOVED');
       final done = await _wd(c).uninstallFromRouter();
@@ -1522,6 +1550,53 @@ void main() {
       useStock();
       expect(await _wd(router('2026-01-01 10:00:05 Alert email sent (SUCCESS)')).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne'),
           isNull);
+    });
+
+    // ID-328: a run that decided not to send at all was reported as no email problem.
+    test('an email the run never sent is a problem too, with its reason', () {
+      expect(
+          deployEmailFailure('2026-01-01 10:00:05 Email not sent: the SMTP server setting is not a plain host:port. '
+              'Fix it on the WATCHDOG form and SAVE & DEPLOY'),
+          startsWith('the SMTP server setting is not a plain host:port'));
+      expect(deployEmailFailure('2026-01-01 10:00:05 Email enabled but SMTP server is not configured'),
+          'no SMTP server is set on the WATCHDOG form');
+    });
+  });
+
+  // ID-327: both of these runs exit 0, and the app said "Watchdog deployed" after either.
+  group('a deploy run that did nothing', () {
+    test('is recognised from its log', () {
+      expect(deployDidNothing('x no Internet on WAN interface, exiting.'), contains('no internet on the WAN'));
+      expect(deployDidNothing('x Backing off after 3 failed attempts: 10s of 600s elapsed'), contains('backing off'));
+      expect(deployDidNothing('x Handshake 20s ago\nx Alert email sent (SUCCESS)'), isNull);
+    });
+
+    RecordingSSHClient router(String runLog) {
+      final slot = _emptySlotGainingRow();
+      return RecordingSSHClient(responder: (cmd) {
+        if (cmd.startsWith('wc -l < /tmp/watchdog_wgc1.log')) return '12';
+        if (cmd.startsWith('tail -n +13 /tmp/watchdog_wgc1.log')) return runLog;
+        return slot(cmd);
+      });
+    }
+
+    test('is reported as scheduled but not proved, never as "deployed"', () async {
+      useStock();
+      final logs = <String>[];
+      final c = router('2026-01-01 10:00:05 no Internet on WAN interface, exiting.');
+      await _wd(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m))
+          .deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne');
+      expect(logs.where((l) => l.startsWith('Watchdog deployed')), isEmpty);
+      expect(logs.last, contains('is scheduled, but its first run found no internet on the WAN'));
+    });
+
+    test('a deploy clears a backoff left by earlier failures first, so it is not the reason', () async {
+      useStock();
+      final c = router('2026-01-01 10:00:05 Alert email sent (SUCCESS)');
+      await _wd(c).deployWatchdog(cfg(slot: 1), desc: 'aus_melbourne');
+      final clear = c.commands.indexOf('rm -f /tmp/watchdog_backoff_wgc1');
+      expect(clear, greaterThanOrEqualTo(0));
+      expect(clear, lessThan(c.commands.indexWhere((x) => x.endsWith('watchdog_wgc1.sh deploy'))));
     });
   });
 }

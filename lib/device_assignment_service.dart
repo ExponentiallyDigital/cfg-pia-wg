@@ -160,8 +160,10 @@ class DeviceAssignmentService {
       maxPolls: maxPolls,
     );
     await queue.clearIfStale();
+    final skips = await queue.skipCount();
     await _run('service $name');
     await queue.awaitIdle();
+    await queue.checkNotSkipped(skips, name);
   }
 
   // One marker-delimited round trip rather than seven. A phone on wifi pays for every round trip,
