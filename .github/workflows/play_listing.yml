@@ -63,17 +63,16 @@ jobs:
       # ------------------------------------------------------------
       # The same service account key the release and promote workflows use. It needs the Play Console
       # permission to edit the store listing, which uploading and promoting releases does not grant.
-      # No credentials file is written to the workspace.
-      - name: Authenticate to Google
-        id: auth
+      # The key signs its own token request, as scripts/play_promote.py does. google-github-actions/auth
+      # was used until build 490, and it asks the IAM Credentials API for the token instead, which needs
+      # that API switched on and the account allowed to mint tokens for itself: two grants this
+      # workflow has no other use for (ID-354). No credentials file is written to the workspace.
+      - name: Install google-auth
         if: ${{ !inputs.check_only }}
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
-        with:
-          credentials_json: ${{ secrets.PLAY_CONSOLE_JSON_KEY }}
-          token_format: access_token
-          access_token_scopes: https://www.googleapis.com/auth/androidpublisher
-          create_credentials_file: false
-          export_environment_variables: false
+        run: |
+          # A virtual environment: the runner's system Python refuses pip installs (PEP 668).
+          python3 -m venv "$RUNNER_TEMP/auth"
+          "$RUNNER_TEMP/auth/bin/pip" install --quiet --disable-pip-version-check google-auth==2.58.0 requests==2.34.2
 
       # ------------------------------------------------------------
       # Step D: One edit - open it, patch the listing, commit it
@@ -83,9 +82,20 @@ jobs:
       - name: Publish the store listing
         if: ${{ !inputs.check_only }}
         env:
-          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          PLAY_JSON: ${{ secrets.PLAY_CONSOLE_JSON_KEY }}
         run: |
           set -euo pipefail
+          ACCESS_TOKEN="$("$RUNNER_TEMP/auth/bin/python" -c '
+          import json, os
+          from google.auth.transport.requests import Request
+          from google.oauth2 import service_account
+          creds = service_account.Credentials.from_service_account_info(
+              json.loads(os.environ["PLAY_JSON"]), scopes=["https://www.googleapis.com/auth/androidpublisher"])
+          creds.refresh(Request())
+          print(creds.token)
+          ')"
+          echo "::add-mask::$ACCESS_TOKEN"
+          unset PLAY_JSON
           api="https://androidpublisher.googleapis.com/androidpublisher/v3/applications/$PACKAGE_NAME"
           call() {
             curl -sS --fail-with-body -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" "$@"

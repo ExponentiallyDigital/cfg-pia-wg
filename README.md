@@ -111,21 +111,22 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
 - **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
 - **Per-device VPN assignment:** pick, per device, whether it leaves through a VPN tunnel or straight out to the internet, from a list of everything on your network and what each one is using right now. One tap per device, nothing to stop first, and the list says where a device's traffic really goes when its tunnel is down. Stock firmware only: Merlin does the same job through VPN Director, which this app does not drive.
 - **Rename a device, or switch its internet off:** give a device a name you recognise, or take it off the internet and every VPN with one tap, a simple parental control. Both are written exactly as your router's own web interface writes them, so they show there and in the ASUS Router app too, and can be undone in either place ([5.4.6](#546-renaming-a-device-and-disabling-its-internet)).
-- **A kill switch on stock firmware:** Merlin has one. Stock doesn't. So the app builds its own, out of your router's routing rules and its own firewall filter. A device pinned to a tunnel uses that tunnel or nothing: if the tunnel's config expires, the watchdog is rebuilding it, you switch it off, or the router restarts, the device goes offline rather than out in the clear. Pinned devices only; [5.4](#54-devices---assign-rename-and-disable) has the detail and the limits.
+- **A kill switch on stock firmware:** Merlin has one. Stock doesn't. So the app builds its own, out of your router's routing rules and its own firewall filter. A device pinned to a tunnel uses that tunnel or nothing: if the tunnel's config expires, the watchdog is rebuilding it, you switch it off, or the router restarts, the device goes offline rather than out in the clear. Over IPv4 only: the app doesn't support IPv6, so switch IPv6 off in the router if you rely on this. Pinned devices only; [5.4](#54-devices---assign-rename-and-disable) has the detail and the limits.
 - **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
-- **Secure clipboard handling:** when copying a generated config, a visible 60-second countdown starts, then clears the clipboard automatically at expiry.
+- **Secure clipboard handling:** a copied config is marked sensitive, so Android 13 and later show dots rather than your private key in the clipboard preview. A visible 60-second countdown then clears the clipboard. If Android closes the app before then, the app clears its own copy the next time it starts.
 - **Share/save support:** share a generated `.conf` via the Android share function and save it to a file location of your choice.
 - **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WireGuard slot configurations directly.
-- **One remembered setting:** a successful router connect stores the router LAN address - and nothing else - in the app private storage, so you do not retype it every session. Clear it with **FORGET ROUTER IP** in the SETTINGS screen. See [SECURITY.md](SECURITY.md).
-- **No persistent credential storage (app):** PIA credentials, router SSH credentials and generated configs are stored only in volatile application memory and are never written to your device's storage.
+- **Two remembered settings:** a successful router connect stores the router's LAN address, so you don't retype it every session, and the fingerprint of its SSH key, so the app can refuse anything pretending to be your router. Both stay in the app's private storage. Clear both with **FORGET ROUTER IP** on the SETTINGS screen. See [SECURITY.md](SECURITY.md).
+- **Your router is who it says it is:** the app records your router's SSH key the first time you connect, says so in APP LOG, and refuses to send your router password to anything with a different key. If you reset or reflash the router, tap **FORGET ROUTER IP** and connect again.
+- **No persistent credential storage (app):** PIA credentials and router SSH credentials are held only in the app's memory, never written to your device's storage. A generated config is the same, until you SHARE it: then Android's sharing needs a file, which the app deletes when you leave the config screen.
 - **Watchdog credential storage (router):** deploying the watchdog stores the necessary PIA credentials in router NVRAM so it can monitor and self-heal independently of the app. This is a deliberate trade-off for "set and forget" operation, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
 - **Automated lowest-latency server selection:** measures live latency across all available servers in your selected region, ensuring that you provision with the fastest node.
 - **Native task-switcher protection:** `(FLAG_SECURE)` enforces native OS-level window flags to block third-party screenshot capturing and automatically obscures the app layout view inside the Android Recent Apps / Task Switcher interface. Debug builds skip the flag to enable screenshotting while testing; every release build sets it.
 - **Password manager support:** every credential field accepts autofill from your device's password manager (KeePass, Bitwarden, Google Password Manager - whatever is registered as the autofill service). PIA, router SSH and SMTP logins are kept in separate autofill groups, so your manager can hold a different entry for each and you pick between them. A "save password?" prompt is offered only after credentials have actually worked, never when you back out of a form.
 - **Type it once:** log in to your router on any screen and every other screen uses that login for the rest of the session. PIA credentials and email settings you've entered for one watchdog are offered for the next.
-- **Encrypted lookups for the watchdog:** it looks up PIA's servers, and your mail provider's, over encrypted DNS (DoH), so whoever can see your router's DNS can't see who you use. If DoH itself fails, the watchdog retries once in the clear, says so in its log, and repairs your tunnel anyway: a tunnel that stays down is worse.
+- **Encrypted lookups for the watchdog:** it looks up PIA's servers, and your mail provider's, over encrypted DNS (DoH), so whoever can see your router's DNS can't see who you use. It sends each query to your chosen DoH server itself. If that server doesn't answer, the watchdog looks the name up the ordinary way, says so in its log, and repairs your tunnel anyway: a tunnel that stays down is worse.
 - **Logs you can read at a glance:** in ROUTER LOG the app's lines are teal, the watchdog's lavender, and faults red. The watchdog's own log uses the same colours, plus teal for a rebuild that worked.
-- **Input field hardening:** user credential entry text boxes disable predictive text caching, auto-correction, and keyboard learning behaviours.
+- **Input field hardening:** every text field turns off suggestions and autocorrect, and asks your keyboard not to learn from what you type. Whether a keyboard honours that is up to the keyboard.
 - **Exit app safety:** all exit paths prompt for confirmation then wipe in-memory credentials and the system clipboard.
 - **Professional-grade build chain:** all releases undergo automated security and quality checks with
   - [SonarQube](https://docs.sonarsource.com/sonarqube-cloud) - code quality and test coverage;
@@ -284,6 +285,7 @@ Suggested settings:
 > [!NOTE]
 > - Before using `MANAGE`, `WATCHDOG` or `DEVICES` for the first time, it's recommended that you make a backup of your router configuration via the WebUI -> Advanced Settings -> Administration -> Restore/Save/Upload Setting -> Save setting.
 > - This app has an unusually strict testing regime, but it's always worth having a backup at hand. Just in case.
+> - Keep that backup file somewhere safe. It's a copy of your router's settings, so it holds every password and key stored there: your router login, each tunnel's WireGuard private key, and, once a watchdog is deployed, its PIA and email passwords.
 
 The app opens with thematic function groups:
 
@@ -413,7 +415,7 @@ So, what can I do about it?
 
 On stock, `cfg-pia-wg` also highlights if a slot's DNS matches the addresses your router uses for its _own_ encrypted lookups via a note under the `MANAGE > EDIT` DNS field, naming the shared addresses. Why? Sharing is a reasonable choice. `cfg-pia-wg` never changes your router's DNS settings. That's your domain, but it can impact the watchdog's ability to do its job of keeping your tunnel(s) up.
 
-Since build 454 (19 September 2026),`cfg-pia-wg`'s watchdog resolves **both** PIA and your mail server over encrypted DNS, to an address of your choice. This keeps your VPN provider and your email provider off the wire in the clear. On your phone/tablet, `cfg-pia-wg's` lookups go through your device's resolver like any other on-device app - turn on Private DNS in your device's settings if that's important to you.
+Since build 477 (30 September 2026), `cfg-pia-wg`'s watchdog resolves **both** PIA and your mail server over encrypted DNS, to an address of your choice. (Build 454 set out to do this, but the router's own `curl` quietly ignores its encrypted-DNS option, so until 477 those lookups were ordinary DNS. No public release carried it.) This keeps your VPN provider and your email provider off the wire in the clear. On your phone/tablet, `cfg-pia-wg's` lookups go through your device's resolver like any other on-device app - turn on Private DNS in your device's settings if that's important to you.
 
 See [ROUTER-DNS.md](ROUTER-DNS.md) for all the gory details: why the router answers for unpinned devices, two worked setups with juicy flow charts, how to use a slot for parental controls, a table of common DNS services, and the routing rules underneath it all for the technically inquisitive.
 
@@ -499,7 +501,7 @@ WHAT HAPPENED
 Event: reconfigured successfully on attempt 2
 Reconnected to: region_name408 (45.134.140.101:1337), 9 ms
 Tunnel was down for: 6m 12s (last seen good 2026-09-05 14:26:41 +1000)
-Kill switch: ON - no traffic left the router while it was down
+Kill switch: ON in the router's settings; what Merlin blocked while the tunnel was down was not checked
 Interval: 5 minutes
 
 ROUTER
@@ -598,7 +600,7 @@ DEVICES gives you one list of all your devices and lets you decide which tunnel 
 
 **What does it change on my router?** Its routing rules, the short list your router reads to decide which way each device's traffic goes, and one list in its firewall. Your router already writes one rule per pinned device, and the app doesn't replace it. It does three things on top. It deletes the stale rules your router leaves behind when you move a device, because the old one wins and your device would quietly keep using the tunnel you moved it off. It adds rules of its own for every pinned device, which are what keep that device offline, rather than out in the open, while its tunnel is down. And it lists every pinned device in your router's Network Services Filter (Firewall, Network Services Filter), so the router itself keeps it off your internet connection from the moment it starts ([5.4.1](#541-pinned-means-pinned-the-fail-closed-guard) says why). Only the app's own entries: anything you've put there yourself is left alone. Nothing else is touched: not your default connection's rules, not your router's own DNS, not your other devices. For the technically inquisitive, [ARCHITECTURE](ARCHITECTURE.md#every-routing-rule-the-app-touches) lists every rule, what the app does with each, and the hardware tests behind them.
 
-**What it doesn't cover.** Devices that follow the default connection rather than being pinned: pin the ones you care about. Pings, for a few seconds while your router starts, unless you turn on **Block pings to the internet** ([5.4.1](#541-pinned-means-pinned-the-fail-closed-guard)). And IPv6, which isn't supported by this app.
+**What it doesn't cover.** Devices that follow the default connection rather than being pinned: pin the ones you care about. Pings, for a few seconds while your router starts, unless you turn on **SECURE STARTUP** in SETTINGS ([5.4.1](#541-pinned-means-pinned-the-fail-closed-guard)). And IPv6, which isn't supported by this app.
 
 <br>
 <p align="center">
@@ -617,7 +619,7 @@ If one thing sets this app apart, it's this.
 
 **And while the router restarts?** Those rules live in your router's memory, so a restart wipes them, and stock firmware doesn't let the app put them back until a few seconds after your internet connection is up. Measured on a stock router: a pinned device reached the internet directly for 3 to 6 seconds on four restarts out of six. The same gap opened for up to a minute whenever the router's DNS servers changed. So the guard has a second layer, and it's your router's own: the Network Services Filter. The app lists each pinned device there, and your router applies that list itself, before its internet connection comes up, blocking the device from your internet connection and only from that. Its tunnel still works. Measured with it: no leak across three restarts in a row, nor through the DNS change, nor with the device's rules taken away on purpose.
 
-It holds everything except pings. Your router can only block pings for every device at once, not one at a time, so that part is your choice: **Block pings to the internet**, at the top of DEVICES, off unless you turn it on. With it on, devices that aren't going through a tunnel can't ping anything on the internet. Pinned devices still ping through their tunnels, and the router's own checks aren't affected.
+It holds everything except pings. Your router can only block pings for every device at once, not one at a time, so that part is your choice: **SECURE STARTUP**, in SETTINGS, off unless you turn it on. With it on, devices that aren't on a VPN can never ping anything on the internet. Devices on a VPN still ping through their tunnels, and the router's own checks aren't affected. One catch: a ping that's already running when you turn it on keeps getting replies, because the router lets an exchange it's already tracking carry on. Stop it, wait 30 seconds, and start it again.
 
 The app won't use the filter if doing so would change something of yours: if you run it as an allow list (where listing a device would let it out), if you've switched it off with entries of your own in it, or if the router's firewall is off. It says so in APP LOG, and the guard works as before. If you give the filter a timetable, the app says that too: the filter only holds at the times you've set.
 
@@ -679,7 +681,7 @@ cfg-pia-wg by Exponentially Digital
 **What it doesn't cover.**
 
 - Devices that follow the default connection rather than being pinned. Pin the ones you care about.
-- A few addresses your router always sends straight out, whatever the tunnel is doing: its own DNS servers, the PIA server itself, and your ISP's own network.
+- Pings, for a few seconds while your router starts, unless you turn on **SECURE STARTUP** in SETTINGS.
 - IPv6 is not supported by this feature.
 - A device while you move it in the router's web interface, as above. Use DEVICES.
 - A phone's mobile data. A phone whose Wi-Fi has no internet usually falls back to its mobile network, so a phone the guard is keeping off the internet isn't offline: it's out through your carrier, with no VPN. If that matters, turn off mobile data on the phone, or turn off the phone's own setting that switches to mobile data when Wi-Fi has no internet.
@@ -723,7 +725,7 @@ Two things you should know about the `default connection`:
 
 > [!IMPORTANT]
 > - Changing it restarts **every** tunnel on the router, so anything using a VPN drops for up to a minute. Assigning _individual_ devices restarts nothing.
-> - **Pinned means pinned.** A pinned device uses its tunnel or nothing. If that tunnel's config expires, the watchdog is rebuilding it, or you switch it off, the device waits with no internet rather than wandering out through the default connection. Devices that only _follow_ the default get no such promise, so pin the ones you care about.
+> - **Pinned means pinned.** A pinned device uses its tunnel or nothing. If that tunnel's config expires, the watchdog is rebuilding it, or you switch it off, the device waits with no internet rather than wandering out through the default connection. Devices that only _follow_ the default get no such promise, so pin the ones you care about. Over IPv4: the app doesn't support IPv6. Since build 480 this includes the few addresses your router's firmware sends straight out your internet connection from a tunnel's table, such as the router's own DNS servers: a pinned device reaches them through its tunnel, or not at all.
 
 And six things that can catch you out:
 
@@ -810,11 +812,6 @@ All those things that you won't need until you do need them, and all in one plac
   Reboot router
 </p><br>
 
-  - **FORGET ROUTER IP** - removes the remembered router address - the _**only**_ data retained on your device. No SSH credentials, no usernames, no PIA password, no tracking, no advertising ID, no ad cache, no in-app user journeys. Zip. Zilch. Nada.
-  - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run. Why? Just in case. The "Irish" approach - to be sure, to be sure. Try doing an Irish accent via a keyboard. Not easy. But why? In case it ever expires/gets updated by PIA, you'll have a way to get a fresh one straight from their official GitHub repo when you run any operation that authenticates with PIA's servers.
-  - **UNINSTALL FEATURES DEPLOYED TO ROUTER** - completely removes any watchdogs, their helper apps, and all app configuration deployed to your router; configured WireGuard VPNs are retained. See [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice. The "Irish" approach, alive and well. Everything really is removed, nothing's left behind, no stray filaments to clog up your device's storage. That's good software practice, I wish more folks did that.
-  - **RESTORE PURCHASE** - resurrects your Google Play Store entitlement for your one-off, lifetime purchase of `pia-cfg-wg`, you did buy a copy didn't you? If nothing matches, based on your device's current Play Store logged in account, you'll be told too.
-  - **MAX ACTIVE VPNS** - allows you to run more than two concurrent VPN clients on your router. Absolutely unsupported. You did read the license agreement didn't you? If not that's in ABOUT, because we all love reading legal documents.
   - **ROUTER RESOLVER STATUS** - is your router answering name lookups? It asks, there and then, through both of the router's own resolvers: dnsmasq, and stubby when DNS-over-TLS is on. You see every address that came back and how long it took, and if something didn't answer, what that means for your network. Below that are the files that decide how a lookup travels, each with when the router last wrote that configuration, and the DNS settings they're built from. All on-screen text is selectable, and COPY takes a copy and stores it on the system clipboard. **REFRESH** asks the router again, for example after you have changed a DNS setting in the web interface. `dnsmasq.conf` lists every reserved device's MAC and address, so review it before you share a copy. Informational read-only, no changes are made, do that in the WebUI or SSH etc. A wealth of detailed information is provided, not for the faint of heart!
   - **ROUTER DNS ROUTING** - where does each lookup actually go? Your devices', the router's own and each watchdog's, one line each, with one tag saying whether it goes through a tunnel or straight out to the Internet, and another saying whether anyone along the way can read it. COPY and REFRESH work as they do in ROUTER RESOLVER STATUS. Raw routing rules are at the bottom, for the technically inquisitive, and [ROUTER-DNS.md](ROUTER-DNS.md) explains why any of this matters. Again, informational read-only, no changes are made, do that in the WebUI or SSH etc. There's a _lot_ of information shown in here; helpful for troubleshooting and knowing precisely what goes where, and why.
 
@@ -826,6 +823,13 @@ All those things that you won't need until you do need them, and all in one plac
   <br>
   ROUTER RESOLVER STATUS, its files and settings further down, and ROUTER DNS ROUTING
 </p><br>
+
+  - **FORGET ROUTER IP** - removes the remembered router address and its SSH key fingerprint, the _**only**_ data retained on your device. No SSH credentials, no usernames, no PIA password, no tracking, no advertising ID, no ad cache, no in-app user journeys. Zip. Zilch. Nada.
+  - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run. Why? Just in case. The "Irish" approach - to be sure, to be sure. Try doing an Irish accent via a keyboard. Not easy. But why? In case it ever expires/gets updated by PIA, you'll have a way to get a fresh one straight from their official GitHub repo when you run any operation that authenticates with PIA's servers.
+  - **MAX ACTIVE VPNS** - allows you to run more than two concurrent VPN clients on your router. Absolutely unsupported. You did read the license agreement didn't you? If not that's in ABOUT, because we all love reading legal documents.
+  - **SECURE STARTUP** - closes the last gap in pinning on stock firmware. For a few seconds while your router starts, or up to a minute if its DNS servers ever change, devices on a VPN can ping the internet directly, which shows your real internet address to whatever they ping. Your router can only block pings for every device at once, so turning this on means devices that aren't on a VPN can never ping anything on the internet, which makes troubleshooting harder. Off by default, and for most people it should stay that way. It asks before it changes anything, and the whole story is in [5.4.1](#541-pinned-means-pinned-the-fail-closed-guard). Stock only: Merlin's own kill switch already covers it.
+  - **RESTORE PURCHASE** - resurrects your Google Play Store entitlement for your one-off, lifetime purchase of `pia-cfg-wg`, you did buy a copy didn't you? If nothing matches, based on your device's current Play Store logged in account, you'll be told too.
+  - **UNINSTALL FEATURES DEPLOYED TO ROUTER** - completely removes any watchdogs, their helper apps, and all app configuration deployed to your router; configured WireGuard VPNs are retained. See [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice. The "Irish" approach, alive and well. Everything really is removed, nothing's left behind, no stray filaments to clog up your device's storage. That's good software practice, I wish more folks did that.
 
 ### 5.8. About
 
@@ -927,7 +931,7 @@ A fair question - anything that talks to your router on your behalf deserves scr
 
 - routing rules at priorities 88 to 91 for each pinned device, which live in the router's memory and are put back by the guard script every minute, and at boot
 - an entry per pinned device in the router's Network Services Filter, for TCP and UDP, and the filter switched on if it was off and empty. Only the app's own entries are ever changed, and the app remembers which they are
-- if you turn on **Block pings to the internet**, ICMP echo requests added to that filter's ICMP setting, for every device
+- if you turn on **SECURE STARTUP** in SETTINGS, ICMP echo requests are added to that filter's ICMP setting, for every device
 
 **What it never does.** No firmware is modified. No packages are installed beyond the two helpers. No ports are opened. None of your traffic is routed anywhere by the app, and none of it goes to us - there is no server on our side to send it to.
 
