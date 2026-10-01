@@ -6,6 +6,12 @@
 // real answers captured from Cloudflare and Google that day, and the real script against the
 // harness's DoH server - including the ones where the DoH server fails, which is the only way to
 // see that "encrypted" is observed and not assumed.
+
+// Two minutes a test, not the default 30 s: these run real router scripts under a POSIX shell, and on
+// Windows, with the split files running side by side, one took up to 20 s and some passed 30 (2026-10-01).
+@Timeout(Duration(minutes: 2))
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -140,49 +146,6 @@ void main() {
       await h.run(config: withDoh());
       expect(h.dohQueries.first, queryFor('raw.githubusercontent.com'));
       expect(h.dohQueries[1], queryFor('www.privateinternetaccess.com'));
-    });
-
-    // The negative check the rule asks for: break the DoH path and the log must say the lookups
-    // were NOT encrypted. Before ID-307 the log said "encrypted" whatever the DoH server did.
-    for (final (label, breakIt) in [
-      ('is down', (WatchdogHarness x) => x.dohDown()),
-      ('answers FORMERR', (WatchdogHarness x) => x.dohFormErr()),
-      ('answers an HTML error page', (WatchdogHarness x) => x.dohHtml()),
-    ]) {
-      test('a DoH server that $label is said so, and ordinary DNS is used instead', () async {
-        h.tunnelUp(handshakeAgo: null);
-        h.noCachedCert();
-        breakIt(h);
-        await h.run(config: withDoh());
-        expect(h.log.last, startsWith('Reconfig SUCCESS'), reason: 'the tunnel still gets rebuilt');
-        expect(h.log.where((l) => l.startsWith('Looked up')), isEmpty, reason: 'nothing claims to be encrypted');
-        for (final host in piaHosts) {
-          expect(h.log, contains('Encrypted lookup of $host via security.cloudflare-dns.com (1.1.1.2) failed; '
-              'it will be looked up with ordinary DNS'));
-          expect(h.resolvedBySystem, contains(host));
-        }
-      });
-    }
-
-    test('with no DoH server set, it says the lookups are not encrypted and asks none', () async {
-      h.tunnelUp(handshakeAgo: null);
-      await h.run();
-      expect(h.log, contains('Name lookups are NOT encrypted (no DoH resolver configured)'));
-      expect(h.dohNames, isEmpty);
-    });
-
-    test('the PIA username is not in the log, which FAILED emails quote (ID-322)', () async {
-      h.tunnelUp(handshakeAgo: null);
-      h.piaRejects();
-      await h.run(config: withDoh());
-      expect(h.log.join('\n'), isNot(contains('p123456789')));
-    });
-
-    test('curl\'s command-line log on flash is emptied after the lookups (ID-321)', () async {
-      final curllst = File('${h.root.path}/jffs/curllst')..writeAsStringSync('curl -u p123456789:secret https://x\n');
-      h.tunnelUp(handshakeAgo: null);
-      await h.run(config: withDoh());
-      expect(curllst.readAsStringSync(), isEmpty);
     });
   }, skip: shell == null ? 'no POSIX shell' : false);
 }

@@ -213,8 +213,11 @@ class _AboutScreenState extends State<AboutScreen> {
   /// drawn in red (ID-157).
   bool get _appOlderThanScript {
     if (!_scriptStale) return false;
-    final app = buildNumberOf(appVersionLabel), script = buildNumberOf(_scriptVersion!);
-    return app != null && script != null && script > app;
+    // The newest slot's build: slots can be on different builds, and any one newer than the app
+    // means the app is behind.
+    final app = buildNumberOf(appVersionLabel);
+    final scripts = [for (final m in RegExp(r'build (\d+)').allMatches(_scriptVersion!)) int.parse(m.group(1)!)];
+    return app != null && scripts.isNotEmpty && scripts.reduce((a, b) => a > b ? a : b) > app;
   }
 
   /// The Router firmware row's value, or empty until something has told us.

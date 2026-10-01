@@ -427,30 +427,62 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
 
   /// Asks PIA whether these credentials work, BEFORE they are written to the router (ID-120).
   ///
-  /// Returns the sentence to show, or null to carry on. Only a refusal stops a save: PIA being
-  /// unreachable from this phone says nothing about the credentials, and the watchdog does its own
-  /// asking from the router, over the router's connection.
-  ///
   /// Worth the round trip because the alternative is finding out minutes later, in a FAILED alert
-  /// email, from a router that has already half-built a slot (ID-096).
-  Future<String?> _piaRejection(WatchdogConfig cfg) async {
-    if (cfg.piaUsername.trim().isEmpty || cfg.piaPassword.isEmpty) return null;
+  /// email, from a router that has already half-built a slot (ID-096). Three answers:
+  ///
+  /// - `rejected`: the login is wrong. The save stops.
+  /// - `down`: PIA's login service didn't answer. The deploy's first run on the router asks the same
+  ///   service and fails the same way, so going ahead cost 87 seconds, a FAILED email and a slot
+  ///   switched off and on for nothing (2026-10-01). The user is asked, CANCEL first.
+  /// - `ok`: carry on. That includes PIA being unreachable from this phone for any other reason,
+  ///   which says nothing about the credentials or about the router's own connection.
+  Future<({String outcome, String message})> _piaCheck(WatchdogConfig cfg) async {
+    if (cfg.piaUsername.trim().isEmpty || cfg.piaPassword.isEmpty) return (outcome: 'ok', message: '');
     try {
       await (widget.piaService ?? PiaService()).getToken(cfg.piaUsername.trim(), cfg.piaPassword, onProgress: _c.onLog);
-      return null;
+      return (outcome: 'ok', message: '');
     } catch (e) {
-      if (isPiaAuthRejection(e)) return kPiaCredentialsRejected;
+      if (isPiaAuthRejection(e)) return (outcome: 'rejected', message: kPiaCredentialsRejected);
       final msg = e.toString().replaceAll('Exception: ', '');
-      // PIA being down gets its own sentence: "try again later" followed by "saving anyway" read as
-      // two instructions that disagree (ID-245).
-      _c.logEntry(
-          msg.startsWith("PIA's login service isn't answering")
-              ? 'Could not check the PIA credentials: ${msg.split('. ').first}. Saving anyway; the router '
-                  'asks PIA for itself when it next needs a login.'
-              : 'Could not check the PIA credentials before deploying: $msg Saving anyway; the router will try for itself.',
+      if (msg.startsWith("PIA's login service isn't answering")) return (outcome: 'down', message: msg.split('. ').first);
+      _c.logEntry('Could not check the PIA credentials before deploying: $msg Saving anyway; the router will try for itself.',
           isWarning: true);
-      return null;
+      return (outcome: 'ok', message: '');
     }
+  }
+
+  /// PIA's login service is down: deploy anyway, or not. CANCEL first, because a deploy now can't
+  /// build the tunnel, and waits the best part of a minute to find that out.
+  Future<bool> _confirmDeployWhilePiaDown(String what) async {
+    // What DEPLOY ANYWAY does differs by slot. A failed deploy onto an empty slot takes everything
+    // back out (2026-10-01), so there is no schedule left to retry: saying it would was the bug.
+    final next = widget.slotIsEmpty
+        ? 'DEPLOY ANYWAY tries once now, which takes about a minute and will fail while PIA is down. Then it '
+            'takes back out everything it added, and wgc${widget.slotIndex} is empty again. Or CANCEL, and SAVE & '
+            'DEPLOY again later.'
+        : 'DEPLOY ANYWAY saves the watchdog, and the router tries once now, which takes about a minute and fails. '
+            'After that it keeps trying on its schedule and builds the tunnel when PIA is back. Or CANCEL, and SAVE & '
+            'DEPLOY again later.';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurface,
+        title: const Text("PIA's login service isn't answering", style: TextStyle(color: kText, fontSize: 15)),
+        content: Text(
+            "$what. This is at PIA's end. Until it answers, the watchdog can't get the login it needs to build the "
+            'tunnel.\n\n$next',
+            style: const TextStyle(color: kMuted, fontSize: 13)),
+        actions: [
+          AppButton(
+              keyValue: 'watchdog_pia_down_cancel',
+              label: 'CANCEL',
+              role: ButtonRole.dismiss,
+              onPressed: () => Navigator.pop(ctx, false)),
+          AppButton(keyValue: 'watchdog_pia_down_deploy', label: 'DEPLOY ANYWAY', onPressed: () => Navigator.pop(ctx, true)),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 
   Future<bool> _confirmOverwrite(String region) async {
@@ -524,11 +556,21 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     }
 
     // Before a single NVRAM key is written (ID-120).
-    final rejected = await _whileChecking(() => _piaRejection(cfg));
+    final pia = await _whileChecking(() => _piaCheck(cfg));
     if (!mounted) return;
-    if (rejected != null) {
-      await AppErrors.inputs(context, _c, [rejected]);
+    if (pia.outcome == 'rejected') {
+      await AppErrors.inputs(context, _c, [pia.message]);
       return;
+    }
+    if (pia.outcome == 'down') {
+      final go = await _confirmDeployWhilePiaDown(pia.message);
+      _c.logEntry(
+          go
+              ? 'Could not check the PIA credentials: ${pia.message}. Deploying anyway; the router asks PIA for itself, '
+                  'and keeps trying until it answers.'
+              : 'Not deployed: ${pia.message}. Nothing on the router was changed.',
+          isWarning: true);
+      if (!go || !mounted) return;
     }
 
     String? didNothing;

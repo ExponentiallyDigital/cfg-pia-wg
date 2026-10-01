@@ -709,6 +709,32 @@ logger "**WD-27 END** A watchdog paused while its run waits stands down"
 - Pass if: the public key is the same both times, so nothing was rebuilt, and the count is `0`: no run is left.
 - Do: WATCHDOG, select wgc5, ENABLE.
 
+**WD-28** A deploy that fails on an empty slot leaves nothing behind [hand]
+
+WD-21's opposite. A slot that had a tunnel keeps its watchdog, for the retry; an empty one can't be retried, because the clean-up removes the description the watchdog takes its region from. Until build 490 it kept the schedule anyway, and the watchdog failed every five minutes, emailed, and couldn't be deleted (2026-10-01).
+
+- Do: pick an empty slot; the example uses wgc4. Block the router's own HTTPS, as in WD-21:
+
+```bash
+logger "**WD-28 START** A deploy that fails on an empty slot leaves nothing behind"
+iptables -I OUTPUT -p tcp --dport 443 -j DROP
+```
+
+- Do: WATCHDOG, CREATE/EDIT on wgc4, choose a region, SAVE & DEPLOY.
+- See: the deploy fails, and the message says wgc4 was cleared back to empty and no watchdog was set up. It doesn't say it will try again.
+- Then:
+
+```bash
+iptables -D OUTPUT -p tcp --dport 443 -j DROP
+cru l | grep -c wgc4
+grep -c wgc4 /opt/etc/init.d/S50downloadmaster
+nvram show 2>/dev/null | grep -c '^wgc4_'
+ls /jffs/cfg-pia-wg/watchdog_wgc4.sh
+logger "**WD-28 END** A deploy that fails on an empty slot leaves nothing behind"
+```
+
+- Pass if: three counts of `0`, and `ls` says there is no such file. If another watchdog is running, it still works at its next check: the PIA login it uses was put back.
+
 The last two tests here are MANAGE ones. They live at the end of this group because they act on a watchdog, and there is none until this group has run.
 
 **MAN-13** Disable pauses a watchdog rather than removing it [hand]
@@ -903,7 +929,7 @@ iptables -I OUTPUT -o wgc1 -d 9.9.9.9 -j DROP
 
 **BRK-9** The probe skips what it cannot ask [ci]
 
-- In CI: the real script, on a fake router: a disabled slot stands down before any probe, and a slot with no DNS skips the name check and passes. `test/unit/watchdog_behaviour_test.dart`.
+- In CI: the real script, on a fake router: a disabled slot stands down before any probe, and a slot with no DNS skips the name check and passes. `test/unit/watchdog_behaviour_test.dart` and `test/unit/watchdog_dns_strike_test.dart`.
 
 ---
 
@@ -1383,11 +1409,15 @@ nvram get filter_lw_icmp_x
 ```
 
 - Pass if: `filter held N of N`, and two DROP lines for DESKTOP, `-p tcp` and `-p udp`, both `-o` your WAN interface: never a tunnel. The ICMP setting doesn't include `8`.
-- Do: DEVICES, turn on **Block pings to the internet**.
-- See: APP LOG "Pings out of the internet connection are blocked for every device."
-- Pass if: `nvram get filter_lw_icmp_x` now includes `8`; DESKTOP still pings 1.1.1.1 (through wgc1); a device that isn't pinned can't, while the default connection is Internet.
-- Do: turn it off again.
-- Pass if: `8` is gone from `nvram get filter_lw_icmp_x`, and anything else that was there is still there.
+- Do: SETTINGS, **SECURE STARTUP** (ID-356).
+- See: a popup titled Secure startup, with **ALLOW pings (default)** selected and **BLOCK pings** not, the text explaining both (with "anything" in bold red), and SAVE greyed out. Pick BLOCK pings: SAVE lights up. CANCEL closes it, and nothing changes.
+- Do: SECURE STARTUP again, BLOCK pings, SAVE.
+- See: APP LOG "Secure startup on: devices not on a VPN can't ping the internet. Devices on a VPN still ping through their tunnels."
+- Pass if: `nvram get filter_lw_icmp_x` now includes `8`; DESKTOP still pings 1.1.1.1 (through wgc1); a device that isn't pinned, while the default connection is Internet, can't. Start its ping fresh: one already running when you turn it on keeps getting replies until it's stopped for 30 seconds, because the router lets an exchange it's tracking carry on.
+- Do: SECURE STARTUP, which now opens on BLOCK pings. Pick ALLOW pings, SAVE.
+- See: APP LOG "Secure startup off: every device can ping the internet again."
+- Pass if: `8` is gone from `nvram get filter_lw_icmp_x`, anything else that was there is still there, and the unpinned device pings again.
+- Pass if: DEVICES has no ping switch.
 - Do: `logger "**GRD-8 END** The router's filter holds pinned devices"`
 
 ---
@@ -1793,6 +1823,17 @@ logger "**MRL-8 END** Break and rebuild"
 
 - Pass if: the log ends `Reconfig SUCCESS` then `Alert email sent (SUCCESS)`, and the SUCCESS email arrives with the kill switch line in Merlin's wording.
 - Pass if: that line agrees with `nvram get wgc1_enforce`: ON for `1`, OFF for `0`. The line reports the setting, so the setting is the check.
+
+**MRL-10** The router check on Merlin [script]
+
+- Starts with: a watchdog on wgc1 with its kill switch on, and a VPN Director rule sending one device to WGC1.
+- Do: on the router, `/bin/sh /jffs/check-claims.sh quick`, then `full`.
+- Pass if: no FAIL. `MAIL-name`: openssl, as Merlin's mail runs it, refuses a certificate for the wrong name and accepts the right one. `KS-wgc1-stopped`: with wgc1 stopped, the VPN Director device's route to the internet is refused, not out of the WAN. Full's `SETUP-as-is`: a real rebuild, with every PIA name looked up over DoH and packets counted by the router at the DoH server; `MAIL-sent`: its SUCCESS email sent (ID-353).
+
+**MRL-11** SECURE STARTUP is stock only [hand]
+
+- Do: after MANAGE has connected, SETTINGS.
+- Pass if: there is no SECURE STARTUP. Before the app knows the firmware it shows, and a tap says "Merlin's own kill switch already covers this, so there is nothing to change." with no popup (ID-356).
 
 **MRL-5** Boot persistence [hand]
 
@@ -2268,7 +2309,7 @@ Some automated tests can only check that a command is written a certain way: tha
 
 | Shape test | Stands for | Proved on the router by |
 | --- | --- | --- |
-| `test/unit/doh_resolver_test.dart`, `test/unit/input_checks_test.dart`: the DoH server's address and `--resolve` | the watchdog looks up PIA's names and the SMTP host over encrypted DNS | `test/unit/doh_lookup_test.dart` runs a real RFC 8484 lookup against a fake DoH server; check-claims `SETUP-*` (full) rebuilds under six DNS setups, and a dead or missing DoH server must be logged as plain |
+| `test/unit/doh_resolver_test.dart`, `test/unit/input_checks_test.dart`: the DoH server's address and `--resolve` | the watchdog looks up PIA's names and the SMTP host over encrypted DNS | `test/unit/doh_lookup_test.dart` and its two `doh_lookup_*_test.dart` siblings run a real RFC 8484 lookup against a fake DoH server; check-claims `SETUP-*` (full) rebuilds under six DNS setups, and a dead or missing DoH server must be logged as plain |
 | `test/watchdog_harness.dart`: the fake `curl` and `openssl` | ASUS curl's behaviour | the fakes copy what was measured (build 475): `--doh-url` ignored, `--cacert` and `--resolve` honoured. check-claims `DOH-0` says whether curl still ignores `--doh-url` |
 | `test/router_watchdog_unit_test.dart`: `-S --cacert` | addKey trusts only PIA's CA | check-claims `TLS-pin`: PIA's own website is refused under PIA's CA. In the app, `test/unit/pia_register_pin_test.dart` does real TLS against a server with the wrong CA |
 | `test/router_watchdog_unit_test.dart`: `--tlsv1.2` | the TLS floor | check-claims `TLS-floor`: a TLS 1.1 server is refused |
@@ -2279,8 +2320,8 @@ Some automated tests can only check that a command is written a certain way: tha
 | `test/unit/router_dns_test.dart`, `test/screens/router_dns_screen_test.dart`: the "encrypted" tags | the router's own lookups really are encrypted | check-claims `DNS-DoT`: with DNS-over-TLS on, fresh lookups send nothing to port 53 on the WAN, and a direct plain query is counted, as the control |
 | `test/unit/email_layout_test.dart`: the kill-switch line counts rules | the email's "kept off the internet" line | BRK-1 checks TABLET is offline and its exit IP; nothing checks the line's own words |
 | `test/unit/s50_template_test.dart`: the boot hook runs `guard.sh` | nothing leaks during a boot | GRD-7 (`scripts/check-reboot.sh`), from a pinned device, three times |
-| `test/unit/fail_closed_guard_test.dart`: the Network Services Filter against a fake `nvram`, `service` and `iptables` | the router drops a pinned device's traffic out of the WAN from boot, and only the app's entries are touched | check-claims `FILTER-*`, read from the firewall itself; GRD-7 and GRD-8 |
-| `test/unit/fail_closed_guard_test.dart`: `guard.sh` against a fake `ip` | the kernel honours the guard's rules | check-claims `GUARD-*`: `ip route get` from every pinned device, with a rule broken on purpose, a wiped rule repaired by cron, and a tunnel stopped. GRD-2, GRD-3 and DEF-7 by hand |
+| `test/unit/guard_filter_test.dart` and `guard_filter_more_test.dart`: the Network Services Filter against a fake `nvram`, `service` and `iptables` | the router drops a pinned device's traffic out of the WAN from boot, and only the app's entries are touched | check-claims `FILTER-*`, read from the firewall itself; GRD-7 and GRD-8 |
+| `test/unit/fail_closed_guard_test.dart` and `guard_orphan_wan_test.dart`: `guard.sh` against a fake `ip` | the kernel honours the guard's rules | check-claims `GUARD-*`: `ip route get` from every pinned device, with a rule broken on purpose, a wiped rule repaired by cron, and a tunnel stopped. GRD-2, GRD-3 and DEF-7 by hand |
 | `test/unit/device_assignment_service_test.dart`: the stale rule is deleted | a moved device really moves | DEV-5, DEV-6 and DEV-8: `e2e.sh` counts the rules and checks the exit IP |
 | `test/router_watchdog_service_test.dart`: `nvram set wgcN_dns` | pinned devices' DNS goes through their tunnel | check-claims `DNS-pinned`; WD-23 and DEV-10 by hand |
 | `test/unit/binary_installer_test.dart`: a fake `dgst` | a download is refused if its checksum is wrong | CON-5 is the happy path; the refusal is only tested in CI |

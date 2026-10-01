@@ -47,11 +47,10 @@ const _cache = '{'
 
 const _sep = '@@CFGPIAWG@@';
 
-String _blob({String policy = _policyList, String defaultKey = '9', String? rules, String? ipv6, bool ping = false}) => [
+String _blob({String policy = _policyList, String defaultKey = '9', String? rules, String? ipv6}) => [
       '', _clientlist, policy, defaultKey, _staticlist, '', _cfgDeviceList, _clJson, _cache, '',
-      // `ip rule show` since ID-319, `ipv6_service` since ID-317, and the ping block since ID-348,
-      // after the parental controls.
-      if (rules != null || ipv6 != null || ping) ...[rules ?? '', ipv6 ?? '', ping ? '1' : '', ''],
+      // `ip rule show` since ID-319 and `ipv6_service` since ID-317, after the parental controls.
+      if (rules != null || ipv6 != null) ...[rules ?? '', ipv6 ?? '', ''],
     ].join('\n$_sep\n');
 
 /// The tunnel check's one round trip: the up interfaces, the router clock (10000), then each slot the
@@ -105,6 +104,14 @@ Future<RecordingSSHClient> _pumpConnected(WidgetTester tester, {RecordingSSHClie
   await tester.tap(find.byKey(const Key('device_connect')));
   await tester.pumpAndSettle();
   return ssh;
+}
+
+/// The names of the routes pushed, to see where a screen sends the user.
+class _RouteNames extends NavigatorObserver {
+  final pushed = <String?>[];
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => pushed.add(route.settings.name);
 }
 
 /// A router that holds one command until [release] is called, to look at the screen mid-APPLY.
@@ -545,34 +552,11 @@ void main() {
     expect(find.textContaining('stays on your router afterwards'), findsOneWidget);
   });
 
-  // ID-348: the router's filter holds pings only for the whole network, so that part is a switch.
-  group('the ping block', () {
-    testWidgets('is off by default, and turning it on writes the setting and runs the guard at once', (tester) async {
-      final ssh = await _pumpConnected(tester);
-      expect(tester.widget<Switch>(find.byKey(const Key('ping_block_switch'))).value, isFalse);
-      await tester.ensureVisible(find.byKey(const Key('ping_block_switch')));
-      await tester.tap(find.byKey(const Key('ping_block_switch')));
-      await tester.pumpAndSettle();
-      final set = ssh.commands.indexOf('nvram set cfg_pia_wg_lw_icmp=1');
-      expect(set, greaterThan(-1));
-      expect(ssh.commands.indexOf('nvram commit', set), greaterThan(set));
-      expect(ssh.commands.skip(set).any((x) => x == "'/jffs/cfg-pia-wg/guard.sh'"), isTrue,
-          reason: 'applied now, not at the next cron run');
-    });
-
-    testWidgets('shows what the router holds, and turning it off unsets the setting', (tester) async {
-      final ssh = await _pumpConnected(tester,
-          router: RecordingSSHClient(responder: (cmd) {
-            if (cmd.contains('cfg_device_list')) return _blob(ping: true);
-            if (cmd.contains('ip -o link show up')) return '3: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP>';
-            return '';
-          }));
-      expect(tester.widget<Switch>(find.byKey(const Key('ping_block_switch'))).value, isTrue);
-      await tester.ensureVisible(find.byKey(const Key('ping_block_switch')));
-      await tester.tap(find.byKey(const Key('ping_block_switch')));
-      await tester.pumpAndSettle();
-      expect(ssh.commands, contains('nvram unset cfg_pia_wg_lw_icmp'));
-    });
+  // ID-356: the ping block moved to SECURE STARTUP in SETTINGS. DEVICES is the most used screen.
+  testWidgets('has no ping switch: it is SECURE STARTUP in SETTINGS now', (tester) async {
+    await _pumpConnected(tester);
+    expect(find.byKey(const Key('ping_block_switch')), findsNothing);
+    expect(find.textContaining('Block pings'), findsNothing);
   });
 
   testWidgets('the confirmation warns when a foreign assignment is being replaced', (tester) async {
@@ -756,6 +740,50 @@ void main() {
     await tester.tap(find.byKey(const Key('device_connect')));
     await tester.pumpAndSettle();
     expect(find.textContaining('stock-firmware feature'), findsOneWidget);
+  });
+
+  // ID-359, seen on Merlin 2026-10-01: already logged in, the refusal showed over the login form, and OK
+  // left the user on it. There is nothing to retry, so neither: no form behind it, and OK goes to HOME.
+  testWidgets('on Merlin, an already-connected session gets no login form behind the refusal, and OK goes to HOME',
+      (tester) async {
+    useMerlin();
+    final observer = _RouteNames();
+    final c = SessionController(tickInterval: const Duration(hours: 1))
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true
+      // What the app's route observer sets on entering DEVICES.
+      ..currentDestination = AppDestination.deviceAssignment;
+    addTearDown(c.dispose);
+    final ssh = _router();
+    await tester.pumpWidget(SessionScope(
+      controller: c,
+      child: MaterialApp(
+        navigatorObservers: [observer],
+        home: Scaffold(body: DeviceAssignmentScreen(testClientFactory: (_, __, ___) async => ssh)),
+      ),
+    ));
+    // Stepped: the connecting placeholder spins behind the refusal, by design, so nothing settles.
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+
+    expect(find.textContaining('stock-firmware feature'), findsOneWidget);
+    expect(find.byKey(const Key('device_connect')), findsNothing, reason: 'no login form behind the refusal');
+    expect(find.byType(TextFormField), findsNothing);
+
+    await tester.tap(find.byKey(const Key('error_ok')));
+    // Stepped rather than settled: HOME animates.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(observer.pushed.last, AppDestination.menu.routeName);
+    // Back from HOME finds the screen itself, not a placeholder that never ends.
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(ReconnectingBody), findsNothing);
+    expect(find.byKey(const Key('device_connect')), findsOneWidget);
   });
 
   // Reported 2026-09-13 while testing on hardware: devices were moved onto a tunnel that looked fine

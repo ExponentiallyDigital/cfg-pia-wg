@@ -40,12 +40,7 @@ class AssignmentState {
     this.rawParental = '',
     this.guardRules,
     this.ipv6Service = '',
-    this.pingBlock = false,
   });
-
-  /// Whether the user has asked for pings out of the internet connection to be blocked for the
-  /// whole network ([kPingBlockKey], ID-348).
-  final bool pingBlock;
 
   final List<LanDevice> devices;
   final List<DevicePolicy> policies;
@@ -200,7 +195,6 @@ class DeviceAssignmentService {
             'echo "$_sep"; $_parentalRead'
             'echo "$_sep"; ip rule show 2>/dev/null; '
             'echo "$_sep"; nvram get ipv6_service; '
-            'echo "$_sep"; nvram get $kPingBlockKey; '
             'echo "$_sep"'))
         .split(_sep);
 
@@ -231,9 +225,16 @@ class DeviceAssignmentService {
       // Empty means the read failed, not that there are no rules: a router always has rule 0.
       guardRules: at(9).isEmpty ? null : at(9),
       ipv6Service: at(10),
-      pingBlock: at(11) == '1',
     );
   }
+
+  /// Whether the user has asked for pings out of the internet connection to be blocked for the
+  /// whole network: SECURE STARTUP in SETTINGS ([kPingBlockKey], ID-348, ID-356).
+  Future<bool> readPingBlock() async => (await _read('nvram get $kPingBlockKey')).trim() == '1';
+
+  /// Whether any device is pinned to a tunnel. The guard holds the ping block only while one is.
+  Future<bool> anyPinned() async => parseDevicePolicyList(await _read('nvram get vpnc_dev_policy_list'))
+      .any((p) => p.isAssigned && (p.vpncIndex ?? 0) != 0);
 
   /// Turns the whole-network ping block on or off (ID-348), and has the guard apply it now.
   ///

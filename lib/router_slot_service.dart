@@ -406,9 +406,17 @@ Future<SSHClient> openSshClient(String ip, String user, String pass,
 /// says so when it could not be stored: a key that was not stored leaves the next connection
 /// unchecked, and SECURITY.md says the key is recorded.
 Future<void> recordFirstHostKey(RouterHostKeys keys, String id,
-    {required String? recorded, required String? presented, void Function(String message)? onWarning}) async {
+    {required String? recorded,
+    required String? presented,
+    void Function(String message)? onWarning,
+    void Function(String message)? onRecorded}) async {
   if (recorded != null || presented == null) return;
-  if (await keys.record(id, presented)) return;
+  if (await keys.record(id, presented)) {
+    // There is no prompt, as `ssh` has, so this line is the one sign the key was taken on trust.
+    (onRecorded ?? routerHostKeyNote)?.call("Router SSH key recorded ($presented). Later connections to $id are "
+        'checked against it, and refused before any password is sent if it changes.');
+    return;
+  }
   (onWarning ?? routerHostKeyWarning)?.call("The router's SSH key could not be recorded on this phone, so the "
       'next connection will not be checked against it. Connecting again tries to record it again.');
 }

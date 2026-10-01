@@ -45,6 +45,10 @@ class RecordingSSHClient implements SSHClient {
   /// text becomes stderr, so a test can exercise the strict-write path without an SSH server.
   final Map<String, String> failWith = {};
 
+  /// As [failWith], for a command that must match exactly: a substring can also be inside a
+  /// `logger` line that names the command, which then fails a step early.
+  final Map<String, String> failExactly = {};
+
   /// The path the app takes since 413: stdout and stderr apart, plus an exit code.
   ///
   /// [run] is kept delegating to this so the two can never disagree about what a command did.
@@ -57,8 +61,8 @@ class RecordingSSHClient implements SSHClient {
     Map<String, String>? environment,
   }) async {
     final out = await run(command, environment: environment, runInPty: runInPty, stderr: stderr, stdout: stdout);
-    for (final entry in failWith.entries) {
-      if (command.contains(entry.key)) {
+    for (final entry in {...failWith, ...failExactly}.entries) {
+      if (failExactly.containsKey(entry.key) ? command == entry.key : command.contains(entry.key)) {
         return SSHRunResult(
           output: out,
           stdout: Uint8List(0),
