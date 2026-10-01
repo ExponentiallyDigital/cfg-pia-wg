@@ -646,22 +646,81 @@ void main() {
     // ID-121 / ID-096: a deploy that fails part way used to leave a slot the app read as configured
     // while the router's web interface showed nothing - keys written, profile row added, slot
     // enabled, and then an abort. It now puts the slot back and says which.
-    test('a failed deploy clears a slot that started empty, and says so', () async {
+    //
+    // And its watchdog goes with it (2026-10-01). The schedule used to stay, because on 2026-09-17
+    // a scheduled check finished a failed build; but that slot still had its description, and the
+    // clean-up here deletes it, so on an empty slot the retry had no region and could never work.
+    test('a failed deploy clears a slot that started empty, and its watchdog with it', () async {
       useStock();
       final c = RecordingSSHClient(responder: _emptySlotGainingRow());
       // The script's own run is the step that fails, exactly as an aborted deploy does.
-      c.failWith['watchdog_wgc1.sh deploy'] = 'ERROR: PIA rejected the username and password';
+      c.failExactly['${watchdogScriptPath(1)} deploy'] = 'ERROR: PIA rejected the username and password';
 
       await expectLater(
         _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne'),
         throwsA(predicate((e) =>
             e.toString().contains('cleared back to empty') &&
-            e.toString().contains('try again in 5 minutes'))),
+            e.toString().contains('No watchdog was set up') &&
+            !e.toString().contains('try again'))),
       );
 
       expect(c.commands.any((x) => x.startsWith('nvram unset wgc1_priv')), isTrue, reason: 'the keys go');
-      expect(c.commands.any((x) => x.contains('cru d watchdog_wgc1')), isFalse,
-          reason: 'the schedule STAYS - it is the retry that rescued this on 2026-09-17');
+      final run = c.commands.indexOf('${watchdogScriptPath(1)} deploy');
+      expect(run, greaterThan(-1), reason: 'it failed at the run, not before');
+      final after = c.commands.skip(run).toList();
+      expect(after, contains('cru d watchdog_wgc1'));
+      expect(after, contains('cru d watchdog_log_rotate_wgc1'));
+      expect(after.any((x) => x.startsWith('rm -f ${watchdogScriptPath(1)}')), isTrue, reason: 'the script goes');
+      expect(after.any((x) => x.startsWith("cat > '$kS50Path'")), isTrue, reason: 'the boot hook is rewritten without it');
+      expect(after, contains('nvram unset wgc1_wd_check_interval'), reason: 'no settings: the slot was empty');
+      expect(after, contains('nvram unset cfg_pia_wg_password'), reason: 'no other watchdog had a login there');
+      // The deploy enabled the slot, so its interface is up. It is stopped while its profile row is
+      // still there, because the stop finds the slot by its row; clearing first left the interface
+      // running with nothing behind it (2026-10-01).
+      final stop = after.indexOf('service stop_vpnc');
+      expect(stop, greaterThan(-1), reason: 'the interface the deploy brought up is stopped');
+      expect(after.take(stop), contains('nvram set vpnc_unit=0'), reason: 'aimed at its row');
+      expect(stop, lessThan(after.indexWhere((x) => x.startsWith('nvram set vpnc_clientlist='))),
+          reason: 'before the row goes');
+    });
+
+    test('a failed deploy onto an empty slot puts back the PIA login other watchdogs were using', () async {
+      useStock();
+      final base = _emptySlotGainingRow();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd == 'nvram get cfg_pia_wg_user') return 'p1111111';
+        if (cmd == 'nvram get cfg_pia_wg_password') return 'the-old-one';
+        return base(cmd);
+      });
+      c.failExactly['${watchdogScriptPath(1)} deploy'] = 'ERROR: PIA rejected the username and password';
+
+      await expectLater(_wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne'), throwsA(anything));
+
+      final run = c.commands.indexOf('${watchdogScriptPath(1)} deploy');
+      final after = c.commands.skip(run).toList();
+      expect(after, contains("nvram set cfg_pia_wg_user='p1111111'"));
+      expect(after, contains("nvram set cfg_pia_wg_password='the-old-one'"));
+    });
+
+    // 2026-10-01: "router command failed (exit 1): /jffs/cfg-pia-wg/watchdog_wgc3.sh deploy" said
+    // nothing the user could act on. The run's own ERROR line does.
+    test("a failed first run names the run's own error, not the command", () async {
+      useStock();
+      final base = _emptySlotGainingRow();
+      final c = RecordingSSHClient(responder: (cmd) => cmd.startsWith("grep 'ERROR: ' /tmp/watchdog_wgc1.log")
+          ? "PIA's login service isn't answering (no answer in 15 s). This is usually at PIA's end; the watchdog will try again."
+          : base(cmd));
+      c.failExactly['${watchdogScriptPath(1)} deploy'] = '';
+
+      await expectLater(
+        _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne'),
+        throwsA(predicate((e) =>
+            e.toString().contains("The watchdog's first run failed: PIA's login service isn't answering (no answer in 15 s).") &&
+            !e.toString().contains('router command failed') &&
+            !e.toString().contains('will try again'))),
+      );
+      expect(c.commands.where((x) => x.contains('ERROR during') && x.contains('Exception:')), isEmpty,
+          reason: "ROUTER LOG gets the sentence without Dart's prefix");
     });
 
     // ID-196: a save that failed before its schedule was written left the new watchdog settings on
@@ -708,16 +767,21 @@ void main() {
         if (cmd.contains('nvram get vpnc_clientlist')) return 'pia-us_east>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
         return cmd.contains('jffs2') ? '0' : '';
       });
-      c.failWith['watchdog_wgc1.sh deploy'] = 'ERROR: the PIA server never answered';
+      c.failExactly['${watchdogScriptPath(1)} deploy'] = 'ERROR: the PIA server never answered';
 
       await expectLater(
         _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne'),
-        throwsA(predicate((e) => e.toString().contains('was left as it was'))),
+        throwsA(predicate((e) => e.toString().contains('was left as it was') && e.toString().contains('try again in 5 minutes'))),
       );
 
       expect(c.commands.any((x) => x.contains("nvram set wgc1_priv='OLDKEY'")), isTrue,
           reason: 'the old configuration is put back');
       expect(c.commands.any((x) => x.contains('nvram set vpnc_clientlist=')), isTrue);
+      // A slot with a tunnel to go back to keeps its watchdog, and the retry that rescued the build
+      // on 2026-09-17; and the PIA login its retry will use.
+      final after = c.commands.skip(c.commands.indexOf('${watchdogScriptPath(1)} deploy')).toList();
+      expect(after, isNot(contains('cru d watchdog_wgc1')));
+      expect(after.any((x) => x.startsWith('nvram unset cfg_pia_wg_') || x.startsWith('nvram set cfg_pia_wg_')), isFalse);
     });
 
     test('a slot that is already up, keeping its region, is not restarted', () async {
