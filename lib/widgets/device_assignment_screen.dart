@@ -27,6 +27,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 
 import 'app_button.dart';
+import 'app_drawer.dart' show navigateToDestination;
 
 import '../app_colors.dart';
 import '../device_assignment.dart';
@@ -187,43 +188,6 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     }
   }
 
-  /// The whole-network ping block (ID-348). Acts at once rather than waiting for APPLY: it is one
-  /// router setting, not an assignment, and says in the app log what the router now holds.
-  Future<void> _setPingBlock(bool on) async {
-    final svc = _service;
-    if (svc == null || _busy) return;
-    setState(() => _busy = true);
-    String? failure;
-    var held = false;
-    try {
-      held = await svc.setPingBlock(on);
-      final fresh = await svc.read();
-      if (mounted) setState(() => _state = fresh);
-    } catch (e) {
-      failure = 'Could not change the ping setting: $e';
-    }
-    if (mounted) setState(() => _busy = false);
-    if (!mounted) return;
-    if (failure != null) {
-      await AppErrors.system(context, _c, failure);
-      return;
-    }
-    final pinned = _state?.policies.any((p) => p.isAssigned && (p.vpncIndex ?? 0) != 0) ?? false;
-    if (on && held) {
-      _c.logEntry('Pings out of the internet connection are blocked for every device. Pinned devices still ping '
-          'through their tunnels.', isSuccess: true);
-    } else if (on && !pinned) {
-      _c.logEntry('Saved. Pings will be blocked once a device is pinned to a tunnel.');
-    } else if (on) {
-      _c.logEntry("The router hasn't taken the ping block yet. It is asked again every minute.", isWarning: true);
-    } else if (held) {
-      _c.logEntry('The app no longer blocks pings, but the router still does: something else set it, in '
-          'Firewall, Network Services Filter.', isWarning: true);
-    } else {
-      _c.logEntry('Pings out of the internet connection are allowed again.', isSuccess: true);
-    }
-  }
-
   /// Pull-to-refresh: the device list and the tunnels, read again. Staged changes are kept.
   Future<void> _pullRefresh() async {
     final svc = _service;
@@ -259,6 +223,9 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     // an early `return` from a try/finally exits the METHOD, so anything after the block is
     // skipped. A closure makes the early exits return a value instead of jumping past the code
     // that shows it.
+    // Merlin is a refusal, not a failed connection: there is nothing to retry, so the login form
+    // isn't shown behind it, and OK goes to HOME (ID-359).
+    var merlin = false;
     Future<String?> attempt() async {
       final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
       // The credentials have to be on the controller before asking for the session: it keys the
@@ -294,6 +261,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       }
 
       if (!isStockFirmware) {
+        merlin = true;
         return 'DEVICES is a stock-firmware feature. This router runs Asuswrt-Merlin, '
             'which has no VPN Fusion device policy to write.';
       }
@@ -346,11 +314,16 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _autoConnecting = false;
+          if (!merlin) _autoConnecting = false;
         });
       }
     }
     if (failure != null && mounted) await AppErrors.system(context, _c, failure, logDetail: failureDetail);
+    if (merlin && mounted) {
+      navigateToDestination(context, _c, AppDestination.menu);
+      // Under HOME now, so back finds the screen itself rather than a placeholder that never ends.
+      setState(() => _autoConnecting = false);
+    }
   }
 
   // ── Staging ──────────────────────────────────────────────────────────────────────
@@ -1015,31 +988,6 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
           style: TextStyle(color: kWarn, fontSize: 12),
         ),
       ],
-      const SizedBox(height: 12),
-      // ID-348: the router's filter holds a pinned device's TCP and UDP out of the internet
-      // connection from boot, with the pin. Pings it can only hold for every device, so that part
-      // is a choice, off by default.
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(
-          child: Text.rich(
-            TextSpan(children: [
-              const TextSpan(text: 'Block pings to the internet\n', style: TextStyle(color: kText, fontSize: 13)),
-              TextSpan(
-                text: 'Pinned devices are kept off your internet connection outside their tunnel from the moment the '
-                    "router starts. Pings can't be held for one device, only for every device, so this blocks pings "
-                    'to the internet from every device that is not going through a tunnel. Pinned devices still ping '
-                    'through their tunnels.',
-                style: TextStyle(color: kMuted, fontSize: 12),
-              ),
-            ]),
-          ),
-        ),
-        Switch(
-          key: const Key('ping_block_switch'),
-          value: state.pingBlock,
-          onChanged: _busy ? null : _setPingBlock,
-        ),
-      ]),
       const SizedBox(height: 12),
       _Panel(
         background: kConfigBg,

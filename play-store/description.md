@@ -12,7 +12,7 @@ PIA rotates its WireGuard keys and your tunnel dies. You find out a week later. 
 
 Pinned means pinned
 
-Stock ASUS firmware has no VPN kill switch, so this app builds one. A device pinned to a tunnel uses that tunnel or nothing (over IPv4: the app doesn't support IPv6, so switch it off in the router). If the tunnel drops, expires or is being rebuilt, the device waits offline instead of slipping out unprotected. No settings required; it just comes with the pin.
+Stock ASUS firmware has no VPN kill switch, so this app builds one for IPv4. A device pinned to a tunnel uses that tunnel or nothing. If the tunnel drops, expires or is being rebuilt, the device waits offline instead of slipping out unprotected. No settings required; it just comes with the pin.
 
 Faster than what you have now
 

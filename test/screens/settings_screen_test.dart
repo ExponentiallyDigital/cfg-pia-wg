@@ -65,6 +65,7 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
       await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
       await tester.pumpAndSettle();
 
@@ -87,6 +88,7 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
       await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
       await tester.pumpAndSettle();
 
@@ -120,11 +122,14 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall')));
       await tester.tap(find.byKey(const Key('settings_uninstall')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall_confirm')));
       await tester.tap(find.byKey(const Key('settings_uninstall_confirm')));
       await tester.pumpAndSettle();
       // The second ask. This is the one action in the app that cannot be undone from inside it.
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall_really')));
       await tester.tap(find.byKey(const Key('settings_uninstall_really')));
       await tester.pumpAndSettle();
       return ssh;
@@ -194,8 +199,10 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall')));
       await tester.tap(find.byKey(const Key('settings_uninstall')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall_cancel')));
       await tester.tap(find.byKey(const Key('settings_uninstall_cancel')));
       await tester.pumpAndSettle();
 
@@ -211,6 +218,7 @@ void main() {
         home: SessionScope(controller: c, child: const Scaffold(body: SettingsScreen())),
       ));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall')));
       await tester.tap(find.byKey(const Key('settings_uninstall')));
       await tester.pumpAndSettle();
 
@@ -238,8 +246,10 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall')));
       await tester.tap(find.byKey(const Key('settings_uninstall')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall_confirm')));
       await tester.tap(find.byKey(const Key('settings_uninstall_confirm')));
       await tester.pumpAndSettle();
 
@@ -248,6 +258,7 @@ void main() {
       // they are leaving is the most useful thing they could tell us.
       expect(find.textContaining('leaving us a review'), findsOneWidget);
 
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall_really_cancel')));
       await tester.tap(find.byKey(const Key('settings_uninstall_really_cancel')));
       await tester.pumpAndSettle();
       expect(ssh.commands, isEmpty, reason: 'cancelling the second ask touches nothing');
@@ -277,14 +288,18 @@ void main() {
     testWidgets('each action is a full-width row that explains what it removes', (tester) async {
       await _pumpSettings(tester);
 
-      // The order agreed on 2026-09-13. RESTORE PURCHASE sits between UNINSTALL and MAX ACTIVE VPNS on a
-      // store build; a test build has no store key, so it is not shown here.
+      // The order agreed on 2026-10-01 (ID-356): most used first, the uninstall last. RESTORE PURCHASE
+      // sits between SECURE STARTUP and UNINSTALL on a store build; a test build has no store key, so it
+      // is not shown here.
       const keys = [
         'settings_reboot_router',
+        'settings_resolver_status',
+        'settings_dns_routing',
         'settings_forget_router_ip',
         'settings_del_pia_cert',
-        'settings_uninstall',
         'settings_max_vpns',
+        'settings_secure_startup',
+        'settings_uninstall',
       ];
       for (final key in keys) {
         expect(find.byKey(Key(key)), findsOneWidget, reason: key);
@@ -329,6 +344,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Straight on to the confirmation, then the delete.
+      await tester.ensureVisible(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.tap(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.pumpAndSettle();
 
@@ -450,6 +466,7 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
       await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_del_cert_cancel')));
       await tester.tap(find.byKey(const Key('settings_del_cert_cancel')));
       await tester.pumpAndSettle();
 
@@ -464,6 +481,7 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
       await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.tap(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.pumpAndSettle();
 
@@ -480,6 +498,7 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
       await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.tap(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.pumpAndSettle();
 
@@ -493,6 +512,7 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
       await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.tap(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.pumpAndSettle();
 
@@ -530,10 +550,12 @@ void main() {
 
       expect(tester.widget<OutlinedButton>(find.byKey(const Key('settings_forget_router_ip'))).onPressed, isNotNull);
 
+      await tester.ensureVisible(find.byKey(const Key('settings_forget_router_ip')));
       await tester.tap(find.byKey(const Key('settings_forget_router_ip')));
       await tester.pumpAndSettle();
       // ID-052: it asks first, naming the address it is about to delete.
       expect(find.textContaining('Deletes 192.168.1.1 from this phone'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('settings_forget_ip_confirm')));
       await tester.tap(find.byKey(const Key('settings_forget_ip_confirm')));
       await tester.pumpAndSettle();
 
@@ -550,8 +572,10 @@ void main() {
       await c.rememberRouterIp('192.168.1.1');
       await _pumpSettings(tester, controller: c);
 
+      await tester.ensureVisible(find.byKey(const Key('settings_forget_router_ip')));
       await tester.tap(find.byKey(const Key('settings_forget_router_ip')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_forget_ip_cancel')));
       await tester.tap(find.byKey(const Key('settings_forget_ip_cancel')));
       await tester.pumpAndSettle();
 
@@ -575,6 +599,7 @@ void main() {
 
       // No session credentials, so DEL PIA CERT asks for them - and should not make the user
       // retype an address the app already knows.
+      await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
       await tester.tap(find.byKey(const Key('settings_del_pia_cert')));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextFormField, '192.168.1.1'), findsOneWidget);
@@ -606,8 +631,10 @@ void main() {
     }
 
     Future<void> confirmReboot(WidgetTester tester) async {
+      await tester.ensureVisible(find.byKey(const Key('settings_reboot_router')));
       await tester.tap(find.byKey(const Key('settings_reboot_router')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_reboot_confirm')));
       await tester.tap(find.byKey(const Key('settings_reboot_confirm')));
       await tester.pumpAndSettle();
     }
@@ -619,10 +646,12 @@ void main() {
       final c = connected();
       await pump(tester, c, ssh);
 
+      await tester.ensureVisible(find.byKey(const Key('settings_reboot_router')));
       await tester.tap(find.byKey(const Key('settings_reboot_router')));
       await tester.pumpAndSettle();
       expect(find.text('Are you sure? This will disconnect all devices including WiFi connections.'), findsOneWidget);
 
+      await tester.ensureVisible(find.byKey(const Key('settings_reboot_cancel')));
       await tester.tap(find.byKey(const Key('settings_reboot_cancel')));
       await tester.pumpAndSettle();
       expect(ssh.ran('reboot'), isFalse);
@@ -638,8 +667,10 @@ void main() {
       final c = connected();
       await pump(tester, c, ssh);
 
+      await tester.ensureVisible(find.byKey(const Key('settings_reboot_router')));
       await tester.tap(find.byKey(const Key('settings_reboot_router')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_reboot_confirm')));
       await tester.tap(find.byKey(const Key('settings_reboot_confirm')));
       await tester.pumpAndSettle();
 
@@ -826,6 +857,155 @@ void main() {
     });
   });
 
+  // ID-356: the ping block, moved here from DEVICES. Stock's filter holds pings for the whole network or
+  // not at all, so it is a choice, off by default, explained before it is made.
+  group('SECURE STARTUP', () {
+    RecordingSSHClient router({bool blocked = false, String tag = '', bool pinned = true}) {
+      var on = blocked;
+      // Whole commands only: the guard script the app writes contains these key names too.
+      return RecordingSSHClient(responder: (cmd) {
+        final c = cmd.trim();
+        if (c == 'nvram set cfg_pia_wg_lw_icmp=1') on = true;
+        if (c == 'nvram unset cfg_pia_wg_lw_icmp') on = false;
+        if (c.contains('3rd-party')) return tag;
+        if (c == 'nvram get cfg_pia_wg_lw_icmp') return on ? '1' : '';
+        if (c == 'nvram get filter_lw_icmp_x') return on && pinned ? '8' : '';
+        if (c == 'nvram get vpnc_dev_policy_list') return pinned ? '1>192.168.1.50>>5>' : '';
+        return '';
+      });
+    }
+
+    Future<SessionController> open(WidgetTester tester, RecordingSSHClient ssh) async {
+      addTearDown(resetRouterFirmware);
+      final c = SessionController(tickInterval: const Duration(hours: 1), routerPrefs: _MemoryRouterPrefs())
+        ..routerIp = '192.168.1.1'
+        ..sshUsername = 'admin'
+        ..sshPassword = 'pw'
+        ..routerConnected = true;
+      addTearDown(c.dispose);
+      await tester.pumpWidget(SessionScope(
+        controller: c,
+        child: MaterialApp(home: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh))),
+      ));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_secure_startup')));
+      await tester.tap(find.byKey(const Key('settings_secure_startup')));
+      await tester.pumpAndSettle();
+      return c;
+    }
+
+    bool selected(WidgetTester tester, String key) =>
+        tester.widget<Icon>(find.descendant(of: find.byKey(Key(key)), matching: find.byType(Icon))).icon ==
+        Icons.radio_button_checked;
+
+    bool saveEnabled(WidgetTester tester) =>
+        tester.widget<OutlinedButton>(find.byKey(const Key('secure_startup_save'))).onPressed != null;
+
+    testWidgets('says what it does under the button, with a shield', (tester) async {
+      await _pumpSettings(tester);
+      expect(find.text('SECURE STARTUP'), findsOneWidget);
+      expect(find.text('Stops devices on a VPN leaking pings while the router starts.'), findsOneWidget);
+      expect(find.descendant(of: find.byKey(const Key('settings_secure_startup')), matching: find.byIcon(Icons.security_outlined)),
+          findsOneWidget);
+    });
+
+    testWidgets('is hidden once the router is known to be Merlin, whose kill switch covers it', (tester) async {
+      useMerlin();
+      await _pumpSettings(tester);
+      expect(find.byKey(const Key('settings_secure_startup')), findsNothing);
+    });
+
+    testWidgets('opens on ALLOW, the default, explains both, and CANCEL changes nothing', (tester) async {
+      final ssh = router();
+      await open(tester, ssh);
+
+      expect(find.text('Secure startup'), findsOneWidget);
+      expect(selected(tester, 'secure_startup_allow'), isTrue);
+      expect(selected(tester, 'secure_startup_block'), isFalse);
+      expect(find.text('ALLOW pings (default)'), findsOneWidget);
+      final text = tester.widget<RichText>(
+          find.descendant(of: find.byKey(const Key('secure_startup_text')), matching: find.byType(RichText)));
+      final plain = text.text.toPlainText();
+      expect(plain, contains('briefly while the router starts'));
+      expect(plain, contains('if its DNS servers ever change'));
+      expect(plain, contains('showing your real internet address'));
+      expect(plain, contains('can never ping anything on the internet'));
+      expect(plain, contains("Stock ASUS firmware can't block pings for just some devices."));
+      // "anything" is the cost, so it is the one red word.
+      final spans = <TextSpan>[];
+      text.text.visitChildren((span) {
+        if (span is TextSpan && span.text == 'anything') spans.add(span);
+        return true;
+      });
+      expect(spans.single.style?.color, kError);
+      expect(spans.single.style?.fontWeight, FontWeight.bold);
+      expect(saveEnabled(tester), isFalse, reason: 'nothing to save until the other option is picked');
+
+      await tester.tap(find.byKey(const Key('secure_startup_block')));
+      await tester.pumpAndSettle();
+      expect(saveEnabled(tester), isTrue);
+      await tester.tap(find.byKey(const Key('secure_startup_cancel')));
+      await tester.pumpAndSettle();
+      expect(find.text('Secure startup'), findsNothing);
+      expect(ssh.ran('nvram set cfg_pia_wg_lw_icmp'), isFalse);
+      expect(ssh.ran('nvram unset cfg_pia_wg_lw_icmp'), isFalse);
+    });
+
+    testWidgets('BLOCK writes the setting, runs the guard at once and says what the router holds', (tester) async {
+      final ssh = router();
+      final c = await open(tester, ssh);
+      await tester.tap(find.byKey(const Key('secure_startup_block')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('secure_startup_save')));
+      await tester.pumpAndSettle();
+
+      final set = ssh.commands.indexOf('nvram set cfg_pia_wg_lw_icmp=1');
+      expect(set, greaterThan(-1));
+      expect(ssh.commands.indexOf('nvram commit', set), greaterThan(set));
+      expect(ssh.commands.skip(set).any((x) => x == "'/jffs/cfg-pia-wg/guard.sh'"), isTrue,
+          reason: 'applied now, not at the next cron run');
+      expect(c.log.last.message, contains("Secure startup on: devices not on a VPN can't ping the internet."));
+    });
+
+    testWidgets('BLOCK with no device on a VPN is saved for later, and says so', (tester) async {
+      final ssh = router(pinned: false);
+      final c = await open(tester, ssh);
+      await tester.tap(find.byKey(const Key('secure_startup_block')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('secure_startup_save')));
+      await tester.pumpAndSettle();
+      expect(c.log.last.message, endsWith('Secure startup saved. Pings will be blocked once a device is assigned to a VPN.'));
+    });
+
+    testWidgets('opens on BLOCK when the router has it, and ALLOW unsets it', (tester) async {
+      final ssh = router(blocked: true);
+      final c = await open(tester, ssh);
+      expect(selected(tester, 'secure_startup_block'), isTrue);
+      await tester.tap(find.byKey(const Key('secure_startup_allow')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('secure_startup_save')));
+      await tester.pumpAndSettle();
+      expect(ssh.commands, contains('nvram unset cfg_pia_wg_lw_icmp'));
+      expect(c.log.last.message, endsWith('Secure startup off: every device can ping the internet again.'));
+    });
+
+    testWidgets('on Merlin it says the kill switch covers this, and writes nothing', (tester) async {
+      final ssh = router(tag: 'merlin');
+      await open(tester, ssh);
+      expect(find.text('Secure startup'), findsNothing);
+      expect(find.textContaining("Merlin's own kill switch already covers this"), findsOneWidget);
+      expect(ssh.ran('cfg_pia_wg_lw_icmp'), isFalse);
+    });
+
+    testWidgets('is free: protection is never behind the paywall', (tester) async {
+      Entitlement.debugSetUnlocked(false);
+      addTearDown(() => Entitlement.debugSetUnlocked(null));
+      await open(tester, router());
+      expect(find.byKey(const Key('paywall_buy')), findsNothing);
+      expect(find.text('Secure startup'), findsOneWidget);
+    });
+  });
+
   // ID-046, reported: after logging in on a SETTINGS prompt, MAX ACTIVE VPNS asked for the login again, every
   // time. The credentials were stored but the session was never marked connected, and a session that has not
   // connected is not reused.
@@ -860,6 +1040,7 @@ void main() {
 
     Future<void> logInAndDeleteCert(WidgetTester tester) async {
       await logIn(tester);
+      await tester.ensureVisible(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.tap(find.byKey(const Key('settings_del_cert_confirm')));
       await tester.pumpAndSettle();
     }

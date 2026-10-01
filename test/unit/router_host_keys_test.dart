@@ -28,11 +28,14 @@ void main() {
   // Hostile review (ID-346): a key that could not be stored was accepted in silence, and every
   // later connection went unchecked.
   group('after a login', () {
-    test('the first key is recorded, with no warning', () async {
-      final warned = <String>[];
-      await recordFirstHostKey(keys, '192.168.1.1:22', recorded: null, presented: fpA, onWarning: warned.add);
+    test('the first key is recorded, with no warning, and APP LOG says so', () async {
+      final warned = <String>[], noted = <String>[];
+      await recordFirstHostKey(keys, '192.168.1.1:22',
+          recorded: null, presented: fpA, onWarning: warned.add, onRecorded: noted.add);
       expect(await keys.recorded('192.168.1.1:22'), fpA);
       expect(warned, isEmpty);
+      expect(noted.single, allOf(contains('Router SSH key recorded'), contains(fpA)),
+          reason: 'with no prompt, this line is the only sign the key was taken on trust');
     });
 
     test('a key that could not be stored is warned about', () async {
@@ -42,12 +45,14 @@ void main() {
       expect(warned.single, contains('could not be recorded'));
     });
 
-    test('a key already recorded is left alone', () async {
+    test('a key already recorded is left alone, and nothing is said', () async {
       await keys.record('192.168.1.1:22', fpA);
-      final warned = <String>[];
-      await recordFirstHostKey(keys, '192.168.1.1:22', recorded: fpA, presented: fpA, onWarning: warned.add);
+      final warned = <String>[], noted = <String>[];
+      await recordFirstHostKey(keys, '192.168.1.1:22',
+          recorded: fpA, presented: fpA, onWarning: warned.add, onRecorded: noted.add);
       expect(await keys.recorded('192.168.1.1:22'), fpA);
       expect(warned, isEmpty);
+      expect(noted, isEmpty, reason: 'only a first connect records, and only it is logged');
     });
   });
 

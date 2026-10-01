@@ -121,6 +121,7 @@ class SessionController extends ChangeNotifier {
         _routerPrefs = routerPrefs ?? RouterPrefs(),
         _hostKeys = hostKeys ?? routerHostKeys {
     routerHostKeyWarning = (m) => onLog(m, isWarning: true);
+    routerHostKeyNote = (m) => onLog(m);
   }
 
   // An empty write means "clear", and clearing goes through the host so Android does not show

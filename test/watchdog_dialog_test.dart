@@ -38,6 +38,13 @@ class _FakePia extends PiaService {
       ];
 }
 
+/// PIA's login service down: the token request gets no answer, as on 2026-10-01.
+class _DownPia extends _FakePia {
+  @override
+  Future<String> getToken(String username, String password, {void Function(String)? onProgress}) async =>
+      throw piaLoginUnavailable('no answer in 20 s');
+}
+
 SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
 
 Widget _host(
@@ -409,6 +416,68 @@ void main() {
     expect(ssh.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
     expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
     expect(ssh.ran('cru a watchdog_wgc1'), isTrue);
+  });
+
+  // 2026-10-01: with PIA's login service down, a deploy went ahead and took 87 seconds to fail on the
+  // router, which asked the same service. Now the phone's own answer stops it first, CANCEL first.
+  group("PIA's login service down", () {
+    RecordingSSHClient router() => RecordingSSHClient(responder: (cmd) {
+          if (cmd.contains('which jq')) return '/opt/bin/jq';
+          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+          if (cmd.contains('nvram get wgc1_enable')) return '1';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
+          if (cmd.contains('ping')) return 'OK';
+          return '';
+        });
+
+    Future<void> save(WidgetTester tester, RecordingSSHClient ssh, SessionController c) async {
+      await tester.pumpWidget(_host(ssh, c, pia: _DownPia()));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('wd_save')));
+      await tester.tap(find.byKey(const Key('wd_save')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('asks before touching the router, and CANCEL changes nothing', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = router();
+      await save(tester, ssh, c);
+      expect(find.text("PIA's login service isn't answering"), findsOneWidget);
+      await tester.tap(find.byKey(const Key('watchdog_pia_down_cancel')));
+      await tester.pumpAndSettle();
+      expect(ssh.commands.where((x) => x.startsWith('nvram set') || x.contains('cru a')), isEmpty);
+      expect(c.log.last.message, contains('Not deployed: PIA'));
+    });
+
+    testWidgets('says what DEPLOY ANYWAY will do: retry on a slot with a tunnel, empty again on an empty one',
+        (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      await save(tester, router(), c);
+      expect(find.textContaining('keeps trying on its schedule'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('watchdog_pia_down_cancel')));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(_host(router(), c, pia: _DownPia(), slotIsEmpty: true));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('wd_save')));
+      await tester.tap(find.byKey(const Key('wd_save')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('wgc1 is empty again'), findsOneWidget);
+      expect(find.textContaining('keeps trying on its schedule'), findsNothing);
+    });
+
+    testWidgets('DEPLOY ANYWAY goes on as before', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = router();
+      await save(tester, ssh, c);
+      await tester.tap(find.byKey(const Key('watchdog_pia_down_deploy')));
+      await tester.pumpAndSettle();
+      expect(ssh.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
+      expect(ssh.ran('cru a watchdog_wgc1'), isTrue);
+    });
   });
 
   // ID-300: a wrong SMTP password was noticed only because it was wrong on purpose. The deploy

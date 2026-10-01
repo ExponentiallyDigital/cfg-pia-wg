@@ -16,6 +16,11 @@
 #          first watchdog's tunnel; PIA logins 30 s apart. About 15 minutes; the internet drops for
 #          a few seconds at each DNS change.
 #
+# On Merlin (ID-353) the firmware-neutral checks run as they are: TLS, secrets, DNS-over-TLS. Mail is
+# checked as Merlin sends it, openssl naming the server. There is no guard or filter to check; Merlin's
+# own kill switch is measured instead, from the kernel, with a tunnel stopped (quick). Full adds one
+# real rebuild with the router's DNS as it is, which proves the encrypted lookups and sends the alert.
+#
 # DNS setups (full): the router's own DNS servers the same as the slot's, with DNS-over-TLS off and
 # on; different from the slot's; from the ISP; and the watchdog's DoH server dead, and unset. Each
 # is checked applied (by reading /etc/resolv.conf and /tmp/resolv.dnsmasq) before it is tested.
@@ -23,7 +28,7 @@
 # Safe by construction: every NVRAM key it touches is saved to /jffs/check-claims.restore first,
 # a trap puts them back on any exit, and `/bin/sh /jffs/check-claims.restore` does it by hand if the
 # script itself was killed. Watchdog and guard schedules are paused while it runs, and put back.
-# Stock only. BusyBox only: no seq, od, hexdump, xxd, base64, timeout, command or logread.
+# Stock and Merlin. BusyBox only: no seq, od, hexdump, xxd, base64, timeout, command or logread.
 #
 # Output: one line per check, `PASS <id> <what>`, `FAIL <id> <what>: <found>` or `INFO <id> <what>`,
 # then a summary; the exit status is the number of failures. Nothing secret is printed.
@@ -46,11 +51,13 @@ bounded() {
   while kill -0 "$BP" 2>/dev/null && [ "$BI" -lt "$T" ]; do sleep 1; BI=$((BI + 1)); done
   if kill -0 "$BP" 2>/dev/null; then kill "$BP" 2>/dev/null; wait "$BP" 2>/dev/null; RC=143; else wait "$BP"; RC=$?; fi
 }
-[ "$(nvram get 3rd-party)" = "merlin" ] && { echo "Stock only: this router runs Merlin."; exit 2; }
-[ -x "$D/guard.sh" ] || { echo "No $D/guard.sh: deploy a watchdog or APPLY in DEVICES first."; exit 2; }
+FW=stock; [ "$(nvram get 3rd-party)" = "merlin" ] && FW=merlin
+# On stock most of this proves the guard, so it must be there. Merlin has none: its kill switch is
+# the firmware's own.
+[ "$FW" = merlin ] || [ -x "$D/guard.sh" ] || { echo "No $D/guard.sh: deploy a watchdog or APPLY in DEVICES first."; exit 2; }
 
 # ---- snapshot and restore --------------------------------------------------------------------
-KEYS="wan0_dns1_x wan0_dns2_x wan0_dnsenable_x dnspriv_enable vpnc_unit"
+KEYS="wan0_dns1_x wan0_dns2_x wan0_dnsenable_x dnspriv_enable"; [ "$FW" = stock ] && KEYS="$KEYS vpnc_unit"
 if [ "$MODE" != dry ]; then
   : > "$RESTORE"
   for K in $KEYS; do printf 'nvram set %s=%s\n' "$K" "'$(nvram get "$K")'" >> "$RESTORE"; done
@@ -63,6 +70,10 @@ fi
 UPSTART="$(ip -o link show up | awk -F': ' '$2 ~ /^wgc[0-9]$/ {print $2}' | tr '\n' ' ')"
 unit_of() { nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$1" 'length($0)==0 {next} {if ($3 == s) {print n + 0; exit} n++}'; }
 handshake() { [ -n "$(wg show "$1" latest-handshakes 2>/dev/null | awk '$2 > 0')" ]; }
+# A tunnel by slot number, the way the app starts and stops it on each firmware.
+tunnel_start() { if [ "$FW" = merlin ]; then service "start_wgc $1"; service restart_vpnrouting0; else nvram set vpnc_unit="$(unit_of "$1")"; service restart_vpnc; fi; }
+tunnel_stop() { if [ "$FW" = merlin ]; then service "stop_wgc $1"; service start_vpnrouting0; else nvram set vpnc_unit="$(unit_of "$1")"; service stop_vpnc; fi; }
+guarded() { [ -x "$D/guard.sh" ] && "$D/guard.sh" 2>/dev/null | grep -o 'guarded [0-9]* of [0-9]*'; }
 RESTORED=""
 restore() {
   [ -n "$RESTORED" ] || [ "$MODE" = dry ] && return 0
@@ -76,22 +87,23 @@ restore() {
     ip -o link show up | grep -q " $IF:" && handshake "$IF" && continue
     # A service call can be dropped while another runs, so try twice and read the result.
     for TRY in 1 2; do
-      nvram set vpnc_unit="$(unit_of "${IF#wgc}")"; service restart_vpnc
+      tunnel_start "${IF#wgc}"
       i=0; while [ "$i" -lt 45 ] && ! handshake "$IF"; do sleep 1; i=$((i + 1)); done
       handshake "$IF" && break
     done
     handshake "$IF" || NOTBACK="$NOTBACK $IF"
   done
-  "$D/guard.sh" >/dev/null 2>&1
+  [ -x "$D/guard.sh" ] && "$D/guard.sh" >/dev/null 2>&1
   rm -f "$RESTORE" "$CRUSAVE" /tmp/check-claims-wd.sh
-  echo "== restored: $(cru l | grep -cE '#(watchdog_|cfg_pia_wg_guard)') schedules, guard $("$D/guard.sh" 2>/dev/null | grep -o 'guarded [0-9]* of [0-9]*'), tunnels up at the start:${UPSTART:+ $UPSTART}"
+  GTXT=""; [ "$FW" = stock ] && GTXT=" guard $(guarded),"
+  echo "== restored: $(cru l | grep -cE '#(watchdog_|cfg_pia_wg_guard)') schedules,$GTXT tunnels up at the start:${UPSTART:+ $UPSTART}"
   [ -z "$NOTBACK" ] || echo "== NOT RESTORED: no handshake on$NOTBACK. Enable it in MANAGE or the web interface."
 }
 trap restore EXIT INT TERM
 WAN="$(nvram get wan0_ifname)"
 
 logger "**CHECK-CLAIMS START** $MODE"
-echo "== check-claims $MODE, $(date '+%Y-%m-%d %H:%M:%S')"
+echo "== check-claims $MODE on $FW, $(date '+%Y-%m-%d %H:%M:%S')"
 
 # ---- 1. TLS: curl refuses bad certificates, and honours --cacert --------------------------------
 T=20
@@ -127,9 +139,29 @@ bounded curl -s -o /dev/null --max-time 15 --doh-url https://nothing.invalid/dns
 
 # ---- 2. Mail: certificate names are checked ----------------------------------------------------
 M="$D/mailsend-go"
-SH="$(nvram get wgc1_wd_smtp_server)"; SH="${SH%%:*}"; [ -n "$SH" ] || SH=smtp.gmail.com
+SH="$(nvram get wgc1_wd_smtp_server)"; SP="${SH##*:}"; SH="${SH%%:*}"; [ -n "$SH" ] || SH=smtp.gmail.com
+[ -n "$SP" ] && [ "$SP" != "$SH" ] || SP=465
 SIP="$(nslookup "$SH" 2>/dev/null | awk '/^Address/ && $3 ~ /^[0-9.]+$/ {print $3}' | tail -1)"
-if [ -x "$M" ] && [ -n "$SIP" ]; then
+if [ "$FW" = merlin ]; then
+  # Merlin's sendmail hands the connection to openssl, as the watchdog's $SMTPCONN does (ID-310):
+  # the name must be refused when it's wrong, or any publicly trusted certificate would do.
+  T=25
+  smtp_tls() { echo QUIT | openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error -connect "$SH:$SP" -servername "$SH" -verify_hostname "$1"; }
+  bounded smtp_tls wrong.example.com
+  WRC="$RC"
+  bounded smtp_tls "$SH"
+  case "$RC:$WRC" in
+    0:0) fail MAIL-name "openssl refuses a certificate for the wrong name" "it accepted wrong.example.com" ;;
+    0:143) info MAIL-name "the wrong-name connection hung; not checked" ;;
+    0:*) pass MAIL-name "openssl, as Merlin's mail uses it, refuses a certificate for the wrong name (rc=$WRC)" ;;
+    *) info MAIL-name "$SH:$SP did not complete TLS for the right name either (rc=$RC); not checked" ;;
+  esac
+  [ "$RC" = 0 ] && pass MAIL-0 "control: the right name is accepted"
+  for S in "$D"/watchdog_wgc*.sh; do
+    [ -f "$S" ] || continue
+    grep -q -- '-verify_return_error $SMTPCONN' "$S" && grep -q -- '-verify_hostname $SMTP_HOST' "$S" && pass "MAIL-script" "$(basename "$S") sends naming the server" || fail "MAIL-script" "$(basename "$S") sends naming the server" "missing"
+  done
+elif [ -x "$M" ] && [ -n "$SIP" ]; then
   T=25
   bounded "$M" -ssl -verifyCert -smtp "$SIP" -port 465 -f check@example.com -t check@example.com -sub check body -msg check auth -user check -pass check
   grep -q x509 "$LOG" && pass MAIL-name "mailsend-go -verifyCert refuses a certificate for the wrong name" || fail MAIL-name "mailsend-go -verifyCert refuses a certificate for the wrong name" "$(head -c 100 "$LOG")"
@@ -138,7 +170,7 @@ if [ -x "$M" ] && [ -n "$SIP" ]; then
 else
   info MAIL-name "no mailsend-go or SMTP address; skipped"
 fi
-for S in "$D"/watchdog_wgc*.sh; do
+[ "$FW" = stock ] && for S in "$D"/watchdog_wgc*.sh; do
   [ -f "$S" ] || continue
   grep -q -- '-verifyCert' "$S" && pass "MAIL-script" "$(basename "$S") sends with -verifyCert" || fail "MAIL-script" "$(basename "$S") sends with -verifyCert" "missing"
 done
@@ -178,15 +210,15 @@ guard_check() {
   fi
   [ -z "$BAD" ] && pass "GUARD-$tag" "$N pinned device(s): rules held, every address through the tunnel or refused" || fail "GUARD-$tag" "the guard" "$(echo "$BAD" | cut -c1-300)"
 }
-guard_check now
+[ "$FW" = stock ] && guard_check now
 # The second layer (ID-348): each pinned device's TCP and UDP out of the WAN are dropped by the
 # router's own Network Services Filter, read from the firewall itself, not the settings.
 filter_check() {
-  FW="$(iptables -S FORWARD)"; FN=0; FMISS=""
+  FRULES="$(iptables -S FORWARD)"; FN=0; FMISS=""
   for FE in $(pins); do
     FIP="${FE%>*}"; FN=$((FN + 1))
     for FP in tcp udp; do
-      echo "$FW" | grep -qE -- "-s $(echo "$FIP" | sed 's/[.]/[.]/g')/32 -i br0 -o $WAN -p $FP -j DROP" || FMISS="$FMISS $FIP/$FP"
+      echo "$FRULES" | grep -qE -- "-s $(echo "$FIP" | sed 's/[.]/[.]/g')/32 -i br0 -o $WAN -p $FP -j DROP" || FMISS="$FMISS $FIP/$FP"
     done
   done
   [ "$FN" = 0 ] && return
@@ -196,8 +228,8 @@ filter_check() {
     fail "FILTER-$1" "the Network Services Filter" "enabled=$(nvram get fw_lw_enable_x) missing:$(echo "$FMISS" | cut -c1-200)"
   fi
 }
-filter_check now
-if [ -n "$(pins)" ]; then
+[ "$FW" = stock ] && filter_check now
+if [ "$FW" = stock ] && [ -n "$(pins)" ]; then
   cru l | grep -q '#cfg_pia_wg_guard#' && pass GUARD-cron "the guard runs every minute from cron" || fail GUARD-cron "the guard runs every minute from cron" "no cfg_pia_wg_guard entry"
   grep -q 'cru a cfg_pia_wg_guard' /opt/etc/init.d/S50downloadmaster 2>/dev/null && grep -q 'guard.sh' /opt/etc/init.d/S50downloadmaster && pass GUARD-boot "the boot hook puts the guard and its cron back" || fail GUARD-boot "the boot hook" "S50downloadmaster lacks the guard"
 fi
@@ -208,7 +240,19 @@ while read -r S DD; do
   case "$(ip route get "$DD" from "$S" iif br0 2>&1 | head -1)" in *" dev wgc"*|*RTNETLINK*|*unreachable*|*prohibit*) ;; *) LEAK="$LEAK $S>$DD" ;; esac
 done < /tmp/check-claims.dnat
 rm -f /tmp/check-claims.dnat
-[ -z "$LEAK" ] && pass DNS-pinned "pinned devices' redirected DNS goes through their tunnel, or nowhere" || fail DNS-pinned "pinned devices' DNS" "$LEAK"
+[ "$FW" = merlin ] || { [ -z "$LEAK" ] && pass DNS-pinned "pinned devices' redirected DNS goes through their tunnel, or nowhere" || fail DNS-pinned "pinned devices' DNS" "$LEAK"; }
+
+# ---- 3m. Merlin: the kill switch, as the kernel has it ---------------------------------------
+# VPN Director's rules send a device to a tunnel's table: `from <ip> lookup wgcN`. The claim the
+# watchdog makes is only that the setting is on (ID-326); this measures what it does.
+mdevs() { ip rule show | awk -v t="wgc$1" '$NF == t {for (i = 2; i < NF; i++) if ($i == "from" && $(i + 1) != "all") print $(i + 1)}' | sort -u; }
+mroute() { ip route get 1.1.1.1 from "${1%/*}" iif br0 2>&1 | head -1; }
+if [ "$FW" = merlin ]; then
+  for SN in 1 2 3 4 5; do
+    [ -n "$(nvram get "wgc${SN}_addr")" ] || continue
+    info "KS-wgc$SN" "kill switch setting $(nvram get "wgc${SN}_enforce"), VPN Director devices: $(mdevs "$SN" | tr '\n' ' ')"
+  done
+fi
 
 # ---- 4. Secrets on flash and in the log -------------------------------------------------------
 PW="$(nvram get cfg_pia_wg_password)"; U="$(nvram get cfg_pia_wg_user)"
@@ -257,7 +301,7 @@ else
 fi
 
 # ---- 5. The guard repairs itself: rules wiped, as a firmware action does ------------------------
-E="$(pins | head -1)"
+E=""; [ "$FW" = stock ] && E="$(pins | head -1)"
 if [ -n "$E" ]; then
   IP="${E%>*}"
   # Broken towards closed: without 90 and the 88s, the 91 and 89 blackholes still drop everything,
@@ -275,14 +319,47 @@ if [ -n "$E" ]; then
   guard_check repaired
 fi
 
+# ---- 6m. Merlin: a tunnel with its kill switch on stopped; its devices must be refused ----------
+if [ "$FW" = merlin ]; then
+  KSN=""
+  for SN in 1 2 3 4 5; do
+    [ "$(nvram get "wgc${SN}_enforce")" = 1 ] && handshake "wgc$SN" && [ -n "$(mdevs "$SN")" ] && { KSN="$SN"; break; }
+  done
+  if [ -z "$KSN" ]; then
+    info KS-stopped "no running tunnel has its kill switch on and a VPN Director device; not checked"
+  else
+    KDEV="$(mdevs "$KSN" | head -1)"
+    case "$(mroute "$KDEV")" in *" dev wgc$KSN"*) ;; *) info "KS-wgc$KSN-up" "with wgc$KSN up, $KDEV routes: $(mroute "$KDEV")" ;; esac
+    tunnel_stop "$KSN"
+    i=0; while [ "$i" -lt 30 ] && ip -o link show up | grep -q " wgc$KSN:"; do sleep 1; i=$((i + 1)); done
+    sleep 3
+    if ip -o link show up | grep -q " wgc$KSN:"; then
+      info "KS-wgc$KSN-stopped" "wgc$KSN didn't stop within 30s; not checked"
+    else
+      KR="$(mroute "$KDEV")"
+      KRULES="$(ip rule show | grep -c "lookup wgc$KSN\$")"
+      case "$KR" in
+        *RTNETLINK*|*unreachable*|*prohibit*|*blackhole*) pass "KS-wgc$KSN-stopped" "kill switch on, wgc$KSN stopped: $KDEV is refused ($KRULES rule(s) still send it to the tunnel's table)" ;;
+        *" dev wgc$KSN"*) fail "KS-wgc$KSN-stopped" "kill switch on, wgc$KSN stopped" "$KDEV still routes to the stopped tunnel: $KR" ;;
+        *) fail "KS-wgc$KSN-stopped" "kill switch on, wgc$KSN stopped: $KDEV is refused" "it goes out: $KR" ;;
+      esac
+    fi
+    for TRY in 1 2; do
+      tunnel_start "$KSN"
+      i=0; while [ "$i" -lt 45 ] && ! handshake "wgc$KSN"; do sleep 1; i=$((i + 1)); done
+      handshake "wgc$KSN" && break
+    done
+    handshake "wgc$KSN" && pass "KS-wgc$KSN-restarted" "wgc$KSN came back" || fail "KS-wgc$KSN-restarted" "wgc$KSN came back" "no handshake after two starts"
+  fi
+fi
+
 # ---- 6. A tunnel stopped: its pinned devices are refused, not sent out the WAN ------------------
-E="$(pins | head -1)"
+E=""; [ "$FW" = stock ] && E="$(pins | head -1)"
 if [ -n "$E" ]; then
   TB="${E#*>}"; SL="$(slot_of "$TB")"
-  UNIT="$(unit_of "$SL")"
   # A service call can be dropped while another runs, so each is read back, and a check that
   # would be about a tunnel in the wrong state is not made.
-  nvram set vpnc_unit="$UNIT"; service stop_vpnc
+  tunnel_stop "$SL"
   i=0; while [ "$i" -lt 30 ] && ip -o link show up | grep -q " wgc$SL:"; do sleep 1; i=$((i + 1)); done
   if ip -o link show up | grep -q " wgc$SL:"; then
     info "GUARD-wgc$SL-stopped" "wgc$SL didn't stop within 30s (the call may have been dropped); not checked"
@@ -290,7 +367,7 @@ if [ -n "$E" ]; then
     guard_check "wgc$SL-stopped"
   fi
   for TRY in 1 2; do
-    nvram set vpnc_unit="$UNIT"; service restart_vpnc
+    tunnel_start "$SL"
     i=0; while [ "$i" -lt 45 ] && ! handshake "wgc$SL"; do sleep 1; i=$((i + 1)); done
     handshake "wgc$SL" && break
   done
@@ -311,7 +388,6 @@ WS="$(basename "$W1" .sh)"; WS="${WS#watchdog_}"; WSL="${WS#wgc}"
 SDNS="$(nvram get "${WS}_dns" | tr -d ' ')"; SD1="${SDNS%%,*}"; SD2="${SDNS#*,}"; [ "$SD2" = "$SDNS" ] && SD2="$SD1"
 # Router DNS that is NOT the slot's: the first DoT server, or Cloudflare's filtering one.
 OTHER1=1.1.1.2; OTHER2=1.0.0.2; [ "$SD1" = 1.1.1.2 ] && { OTHER1=9.9.9.9; OTHER2=149.112.112.112; }
-WUNIT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$WSL" 'length($0)==0 {next} {if ($3 == s) {print n + 0; exit} n++}')"
 
 apply_dns() {  # $1 dns1 $2 dns2 $3 isp(0/1) $4 dot(0/1)
   DNSCHANGED=1
@@ -361,11 +437,11 @@ rebuild() {  # $1 label, $2 expected: enc | plain | honest
   # Put the tunnel back for the next setup, whatever happened, and read it back.
   for TRY in 1 2; do
     handshake "$WS" && break
-    nvram set vpnc_unit="$WUNIT"; service restart_vpnc
+    tunnel_start "$WSL"
     i=0; while [ "$i" -lt 45 ] && ! handshake "$WS"; do sleep 1; i=$((i + 1)); done
   done
-  guard_check "after-$1"
-  filter_check "after-$1"
+  [ "$FW" = stock ] && guard_check "after-$1"
+  [ "$FW" = stock ] && filter_check "after-$1"
   sleep 30
 }
 variant() {  # $1 doh_ips (or "" for none), $2 email 0/1: a copy of the deployed script
@@ -382,6 +458,16 @@ setup() {  # $1 label, $2 dns1, $3 dns2, $4 isp, $5 dot, $6 doh ("" none, "dead"
   rebuild "$1" "$7"
 }
 [ -n "$DOHIP" ] || info SETUP "the deployed watchdog has no DoH server; the encrypted setups will say so"
+if [ "$FW" = merlin ]; then
+  # One rebuild with the router's DNS as it is: the DNS setups below are stock's question. The alert
+  # email is sent, which proves Merlin's mail path end to end (MRL-8).
+  variant "$DOHIP" 1
+  rebuild as-is enc
+  echo "$NEW" | grep -q 'Alert email sent (SUCCESS)' && pass MAIL-sent "the rebuild's SUCCESS email was sent" || fail MAIL-sent "the rebuild's SUCCESS email was sent" "$(echo "$NEW" | grep -E 'Email (FAILED|not sent)' | tail -1 | cut -c1-150)"
+  echo "== $PASSN passed, $FAILN failed"
+  logger "**CHECK-CLAIMS END** $MODE: $PASSN passed, $FAILN failed"
+  exit "$FAILN"
+fi
 setup same-as-slot-dot-off "$SD1" "$SD2" 0 0 real enc 0
 setup same-as-slot-dot-on "$SD1" "$SD2" 0 1 real enc 0
 setup different-dot-on "$OTHER1" "$OTHER2" 0 1 real enc 1

@@ -31,6 +31,7 @@ import 'package:flutter/material.dart';
 import '../widgets/app_button.dart';
 
 import '../app_colors.dart';
+import '../device_assignment_service.dart';
 import '../entitlement.dart';
 import '../firmware.dart';
 import '../router_slot_service.dart' show RouterSlotService, kDefaultStockMaxActiveSlots, openSshClient, splitHostPort;
@@ -558,6 +559,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// SECURE STARTUP (ID-356): whether pings to the internet are blocked for every device not on a
+  /// VPN, which is the only way stock can stop a pinned device's pings leaking while it starts. The
+  /// firmware's filter holds pings for the whole network or not at all (ID-348). Free, like the guard
+  /// it completes: protection is never behind the paywall.
+  Future<void> _secureStartup() async {
+    final creds = await _credentials();
+    if (creds == null || !mounted) return;
+    final (ip, user, pass) = creds;
+
+    setState(() => _busy = true);
+    DeviceAssignmentService? svc;
+    RouterFirmware? firmware;
+    var blocked = false;
+    String? error, errorDetail;
+    try {
+      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      firmware = classifyFirmwareTag(await RouterSlotService(client, onLog: _c.onLog).readFirmwareTag());
+      if (firmware != null) setRouterFirmware(firmware);
+      if (firmware == RouterFirmware.stock) {
+        svc = DeviceAssignmentService(client, onLog: _c.onLog);
+        blocked = await svc.readPingBlock();
+      }
+      await _connected(ip);
+    } catch (e) {
+      // Plain English on screen, the raw exception in the log (ID-108).
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
+    }
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    if (error != null) {
+      await AppErrors.system(context, _c, errorDetail == null ? 'Could not read the router: $error' : error,
+          logDetail: errorDetail);
+      return;
+    }
+    if (firmware != RouterFirmware.stock || svc == null) {
+      // Merlin's own kill switch already holds a VPN client's traffic, pings included.
+      final message = firmware == RouterFirmware.merlin
+          ? "Merlin's own kill switch already covers this, so there is nothing to change."
+          : 'This router firmware is not supported, so nothing was changed.';
+      _c.logEntry(message);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+
+    final chosen = await showDialog<bool>(context: context, builder: (_) => _SecureStartupDialog(blocked: blocked));
+    if (chosen == null || chosen == blocked || !mounted) return;
+
+    setState(() => _busy = true);
+    var held = false, pinned = true;
+    try {
+      held = await svc.setPingBlock(chosen);
+      if (chosen && !held) pinned = await svc.anyPinned();
+    } catch (e) {
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
+    }
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    if (error != null) {
+      await AppErrors.system(context, _c, errorDetail == null ? 'Could not change secure startup: $error' : error,
+          logDetail: errorDetail);
+      return;
+    }
+    final (String message, bool ok) = switch ((chosen, held, pinned)) {
+      (true, true, _) => (
+          "Secure startup on: devices not on a VPN can't ping the internet. Devices on a VPN still ping through "
+              'their tunnels.',
+          true
+        ),
+      (true, false, false) => ('Secure startup saved. Pings will be blocked once a device is assigned to a VPN.', true),
+      (true, false, true) => ("The router hasn't taken the ping block yet. It is asked again every minute.", false),
+      (false, true, _) => (
+          'Secure startup off, but the router still blocks pings: something else set it, in Firewall, '
+              'Network Services Filter.',
+          false
+        ),
+      (false, false, _) => ('Secure startup off: every device can ping the internet again.', true),
+    };
+    _c.logEntry(message, isSuccess: ok, isWarning: !ok);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _forgetRouterIp() async {
     // ID-052: asks first, like the other rows on this screen that remove something.
     final confirmed = await showDialog<bool>(
@@ -603,7 +689,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // Named after the menu item that opened it, in that item's colour (ID-112).
         destinationHeading(AppDestination.settings, key: const Key('settings_heading')),
         const SizedBox(height: 16),
-        // The order agreed on 2026-09-13.
+        // The order agreed on 2026-10-01 (ID-356): most used first, the uninstall last.
         _Action(
           keyValue: 'settings_reboot_router',
           label: 'REBOOT ROUTER',
@@ -611,6 +697,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: Icons.restart_alt_outlined,
           destructive: true,
           onTap: _busy ? null : _rebootRouter,
+        ),
+        // Two read-only windows on the router's name lookups (ID-194), each with an icon used nowhere
+        // else in the app. Neither changes anything, so neither is behind the paywall.
+        _Action(
+          keyValue: 'settings_resolver_status',
+          label: 'ROUTER RESOLVER STATUS',
+          note: 'Checks the router is answering name lookups, and shows the files and settings behind them. '
+              'Changes nothing.',
+          icon: Icons.troubleshoot_outlined,
+          onTap: _busy ? null : () => _openDnsReport(DnsReportScreen.resolver),
+        ),
+        _Action(
+          keyValue: 'settings_dns_routing',
+          label: 'ROUTER DNS ROUTING',
+          note: "Shows where each device's, the router's and the watchdogs' lookups go: through a tunnel, or to the "
+              'Internet. Changes nothing.',
+          icon: Icons.alt_route_outlined,
+          onTap: _busy ? null : () => _openDnsReport(DnsReportScreen.routing),
         ),
         // The router address is the one thing the app keeps on device storage, so it needs a way to
         // be cleared. Greyed out when there is nothing stored.
@@ -631,15 +735,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: Icons.gpp_bad_outlined,
           onTap: _busy ? null : _deletePiaCert,
         ),
+        // A user decision behind a plain warning, and deliberately not written up outside the code - see
+        // RouterSlotService.setMaxActiveVpns. Red because the warning is the point of the row.
         _Action(
-          keyValue: 'settings_uninstall',
-          label: 'UNINSTALL FEATURES DEPLOYED TO ROUTER',
-          note: 'Restores the two boot scripts the app replaced, deletes $kRouterAppDir, and removes the '
-              'watchdog schedules and every setting the app wrote. Your VPN tunnels are left alone.',
-          icon: Icons.delete_forever_outlined,
+          keyValue: 'settings_max_vpns',
+          label: 'MAX ACTIVE VPNS',
+          note: 'Unsupported by ASUS. Lets more than the default of 2 VPNs run at once, on stock firmware.',
+          icon: Icons.warning_amber_outlined,
           destructive: true,
-          onTap: _busy ? null : _uninstall,
+          onTap: _busy ? null : _maxActiveVpns,
         ),
+        // ID-356: hidden once the router is known to be Merlin, whose own kill switch covers it. Before
+        // the firmware is known it shows, and says on tap if there is nothing to change, as MAX ACTIVE
+        // VPNS does.
+        if (!(firmwareDetected && routerFirmware == RouterFirmware.merlin))
+          _Action(
+            keyValue: 'settings_secure_startup',
+            label: 'SECURE STARTUP',
+            note: 'Stops devices on a VPN leaking pings while the router starts.',
+            icon: Icons.security_outlined,
+            onTap: _busy ? null : _secureStartup,
+          ),
         // The only row here that gives something back rather than removing it. It is on this screen
         // because this is where the app's one-off actions live, and because someone hunting for it
         // after a new phone will look under settings before they look at a paywall.
@@ -652,33 +768,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.restore_outlined,
             onTap: _busy ? null : _restorePurchase,
           ),
-        // A user decision behind a plain warning, and deliberately not written up outside the code - see
-        // RouterSlotService.setMaxActiveVpns. Red because the warning is the point of the row.
         _Action(
-          keyValue: 'settings_max_vpns',
-          label: 'MAX ACTIVE VPNS',
-          note: 'Unsupported by ASUS. Lets more than the default of 2 VPNs run at once, on stock firmware.',
-          icon: Icons.warning_amber_outlined,
+          keyValue: 'settings_uninstall',
+          label: 'UNINSTALL FEATURES DEPLOYED TO ROUTER',
+          note: 'Restores the two boot scripts the app replaced, deletes $kRouterAppDir, and removes the '
+              'watchdog schedules and every setting the app wrote. Your VPN tunnels are left alone.',
+          icon: Icons.delete_forever_outlined,
           destructive: true,
-          onTap: _busy ? null : _maxActiveVpns,
-        ),
-        // Two read-only windows on the router's name lookups (ID-194), each with an icon used nowhere
-        // else in the app. Neither changes anything, so neither is behind the paywall.
-        _Action(
-          keyValue: 'settings_resolver_status',
-          label: 'ROUTER RESOLVER STATUS',
-          note: 'Checks the router is answering name lookups, and shows the files and settings behind them. '
-              'Changes nothing.',
-          icon: Icons.troubleshoot_outlined,
-          onTap: _busy ? null : () => _openDnsReport(DnsReportScreen.resolver),
-        ),
-        _Action(
-          keyValue: 'settings_dns_routing',
-          label: 'ROUTER DNS ROUTING',
-          note: "Shows where each device's, the router's and the watchdogs' lookups go: through a tunnel, or to the "
-              'Internet. Changes nothing.',
-          icon: Icons.alt_route_outlined,
-          onTap: _busy ? null : () => _openDnsReport(DnsReportScreen.routing),
+          onTap: _busy ? null : _uninstall,
         ),
         if (_busy) ...[
           const SizedBox(height: 24),
@@ -820,6 +917,93 @@ class _MaxVpnsDialogState extends State<_MaxVpnsDialog> {
           ),
         ),
       );
+}
+
+/// SECURE STARTUP's choice (ID-356): pings to the internet allowed, the default, or blocked for every
+/// device not on a VPN. SAVE is live only once the other option is picked, so CANCEL is always the
+/// way out with nothing changed. Wording agreed with Andrew on 2026-10-01.
+class _SecureStartupDialog extends StatefulWidget {
+  const _SecureStartupDialog({required this.blocked});
+  final bool blocked;
+
+  @override
+  State<_SecureStartupDialog> createState() => _SecureStartupDialogState();
+}
+
+class _SecureStartupDialogState extends State<_SecureStartupDialog> {
+  late bool _block = widget.blocked;
+
+  Widget _option(bool block, String label, String key) => InkWell(
+        key: Key(key),
+        onTap: () => setState(() => _block = block),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(children: [
+            Icon(_block == block ? Icons.radio_button_checked : Icons.radio_button_unchecked, color: kHighlight, size: 20),
+            const SizedBox(width: 12),
+            Expanded(child: Text(label, style: const TextStyle(color: kText, fontSize: 13))),
+          ]),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    const bold = TextStyle(fontWeight: FontWeight.bold);
+    return Dialog(
+      backgroundColor: kSurface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('Secure startup', style: TextStyle(color: kHighlight, fontSize: 14)),
+            const SizedBox(height: 12),
+            // The text scrolls on a small screen; the choice and the buttons stay in view.
+            _option(false, 'ALLOW pings (default)', 'secure_startup_allow'),
+            _option(true, 'BLOCK pings', 'secure_startup_block'),
+            const SizedBox(height: 12),
+            const Flexible(
+              child: SingleChildScrollView(
+                child: Text.rich(
+                  key: Key('secure_startup_text'),
+                  TextSpan(style: TextStyle(color: kText, fontSize: 12, height: 1.4), children: [
+                    TextSpan(text: 'Allow: ', style: bold),
+                    TextSpan(
+                        text: 'every device can ping the internet. But briefly while the router starts, or for up to '
+                            'a minute if its DNS servers ever change, devices on a VPN can ping outside their tunnel, '
+                            'showing your real internet address.\n\n'),
+                    TextSpan(text: 'Block: ', style: bold),
+                    TextSpan(text: 'closes that gap, but devices not on a VPN can never ping '),
+                    TextSpan(text: 'anything', style: TextStyle(color: kError, fontWeight: FontWeight.bold)),
+                    TextSpan(
+                        text: ' on the internet, which makes troubleshooting harder. Devices on a VPN still ping '
+                            'through their tunnels.\n\n'),
+                    TextSpan(text: "Stock ASUS firmware can't block pings for just some devices."),
+                  ]),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              AppButton(
+                keyValue: 'secure_startup_cancel',
+                label: 'CANCEL',
+                role: ButtonRole.dismiss,
+                onPressed: () => Navigator.pop(context),
+              ),
+              const SizedBox(width: 8),
+              AppButton(
+                keyValue: 'secure_startup_save',
+                label: 'SAVE',
+                onPressed: _block == widget.blocked ? null : () => Navigator.pop(context, _block),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
 }
 
 /// Counts a reboot up to 100 seconds, one per cent a second as the ASUS WebUI does, and closes as soon as the

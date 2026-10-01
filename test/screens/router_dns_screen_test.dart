@@ -73,12 +73,14 @@ Future<String?> _selectAllAndCopy(WidgetTester tester, String inside) async {
 
 void main() {
   group('SETTINGS', () {
-    testWidgets('the two new buttons follow MAX ACTIVE VPNS, teal, with icons used nowhere else', (tester) async {
+    // Since ID-356 they come straight after REBOOT ROUTER: SETTINGS is ordered by use.
+    testWidgets('the two DNS buttons follow REBOOT ROUTER, teal, with icons used nowhere else', (tester) async {
       await _pumpSettings(tester, _connected());
-      final max = tester.getTopLeft(find.byKey(const Key('settings_max_vpns'))).dy;
+      final reboot = tester.getTopLeft(find.byKey(const Key('settings_reboot_router'))).dy;
       final resolver = tester.getTopLeft(find.byKey(const Key('settings_resolver_status'))).dy;
       final routing = tester.getTopLeft(find.byKey(const Key('settings_dns_routing'))).dy;
-      expect(max < resolver && resolver < routing, isTrue);
+      final forget = tester.getTopLeft(find.byKey(const Key('settings_forget_router_ip'))).dy;
+      expect(reboot < resolver && resolver < routing && routing < forget, isTrue);
       expect(find.byIcon(Icons.troubleshoot_outlined), findsOneWidget);
       expect(find.byIcon(Icons.alt_route_outlined), findsOneWidget);
       final label = tester.widget<Text>(find.text('ROUTER RESOLVER STATUS'));
