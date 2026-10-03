@@ -261,8 +261,7 @@ jobs:
           GH_RELEASE_NAME="v${CLEAN_VER} (build ${VERSION_CODE})"
           echo "gh_release_name=$GH_RELEASE_NAME" >> $GITHUB_OUTPUT
 
-          # The note itself is written by the next step, out of CHANGELOG.md.
-          mkdir -p distribution/whatsnew
+          # The note itself is written by the next step, out of CHANGELOG.md, to play-store/whatsnew-en-AU.
 
       # ------------------------------------------------------------
       # Step I: Both release notes, out of every CHANGELOG block since the previous tag
@@ -274,7 +273,7 @@ jobs:
         run: |
           # tool/release_notes.dart explains both notes, and why a release covers every block since the
           # previous tag rather than only its own (ID-044). The checkout's fetch-depth: 0 is what gives it
-          # the tags. It writes github_release_notes.txt and distribution/whatsnew/whatsnew-en-AU, and
+          # the tags. It writes github_release_notes.txt and play-store/whatsnew-en-AU, and
           # fails the run when the Play note is over Google's 500-character limit.
           dart run tool/release_notes.dart --tag "$TARGET_TAG"
 
@@ -289,7 +288,8 @@ jobs:
           releaseFiles: build/cfg-pia-wg-${{ steps.tag.outputs.val }}_google-play-store.aab
           track: internal
           releaseName: ${{ steps.play_info.outputs.play_release_name }}
-          whatsNewDirectory: distribution/whatsnew/
+          # Only files named whatsnew-<locale> are read from it, so the listing files beside the note are ignored.
+          whatsNewDirectory: play-store/
 
       # ------------------------------------------------------------
       # Step K: Delete local .aab file after successful Google Play upload
@@ -331,7 +331,7 @@ jobs:
       # text where Syft does find it (npm/pub.dev-adjacent ecosystems).
       # ------------------------------------------------------------
       - name: Generate SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         env:
           SYFT_SOURCE_NAME: "cfg-pia-wg"
           SYFT_SOURCE_VERSION: ${{ steps.tag.outputs.val }}

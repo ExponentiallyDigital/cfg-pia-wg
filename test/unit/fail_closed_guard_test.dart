@@ -24,15 +24,18 @@ void main() {
   setUp(g.setUp);
   tearDown(g.tearDown);
 
-  // ID-320: a 90 rule without suppress_prefixlength 0 counted as guarded, though it hands the device
-  // the WAN default the firmware copies into the tunnel's table.
-  test('guard.sh replaces a 90 rule that lacks suppress_prefixlength 0', () async {
-    g.set('vpnc_dev_policy_list', '1>192.0.2.50>>9>');
-    File('${g.state.path}/rules').writeAsStringSync('90:\tfrom 192.0.2.50 lookup 9\n91:\tfrom 192.0.2.50 blackhole\n');
-    final r = await g.run();
-    expect('${r.stdout}', contains('guarded 1 of 1'));
-    expect(g.rules(), unorderedEquals(['90: from 192.0.2.50 lookup 9 suppress_prefixlength 0', '91: from 192.0.2.50 blackhole']));
-  });
+  // ID-364: rule 90 looks the device up in the guard's own table for its tunnel, 200 + slot. One that
+  // looks up anything else - the firmware's table, as builds before 491 did through
+  // suppress_prefixlength 0, or without it (ID-320) - is replaced, and counts as not guarded until it is.
+  for (final old in ['lookup 9 suppress_prefixlength 0', 'lookup 9']) {
+    test('guard.sh replaces a 90 rule that reads "$old" with one into its own table', () async {
+      g.set('vpnc_dev_policy_list', '1>192.0.2.50>>9>');
+      File('${g.state.path}/rules').writeAsStringSync('90:\tfrom 192.0.2.50 $old\n91:\tfrom 192.0.2.50 blackhole\n');
+      final r = await g.run();
+      expect('${r.stdout}', contains('guarded 1 of 1'));
+      expect(g.rules(), unorderedEquals(['90: from 192.0.2.50 lookup 201', '91: from 192.0.2.50 blackhole']));
+    }, skip: shell == null ? 'no POSIX shell on the PATH' : null);
+  }
 
   group('guard.sh', () {
     test('a device pinned to a WireGuard tunnel gets both rules', () async {
@@ -41,7 +44,7 @@ void main() {
       expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
       expect('${r.stdout}', contains('guarded 1'));
       expect(g.rules(), unorderedEquals([
-        '90: from 192.0.2.50 lookup 9 suppress_prefixlength 0',
+        '90: from 192.0.2.50 lookup 201',
         '91: from 192.0.2.50 blackhole',
       ]));
       expect(g.log(), ['Fail-closed guard on for 192.0.2.50 (wgc1)']);
@@ -92,7 +95,7 @@ void main() {
       g.set('vpnc_dev_policy_list', '1>192.0.2.50>>5>');
       await g.run();
       expect(g.rules(), unorderedEquals([
-        '90: from 192.0.2.50 lookup 5 suppress_prefixlength 0',
+        '90: from 192.0.2.50 lookup 205',
         '91: from 192.0.2.50 blackhole',
       ]));
     });
@@ -108,14 +111,14 @@ void main() {
     test('duplicates are reduced to one of each', () async {
       g.set('vpnc_dev_policy_list', '1>192.0.2.50>>9>');
       File('${g.state.path}/rules').writeAsStringSync(
-        '90:\tfrom 192.0.2.50 lookup 9 suppress_prefixlength 0\n'
-        '90:\tfrom 192.0.2.50 lookup 9 suppress_prefixlength 0\n'
+        '90:\tfrom 192.0.2.50 lookup 201\n'
+        '90:\tfrom 192.0.2.50 lookup 201\n'
         '91:\tfrom 192.0.2.50 blackhole\n'
         '91:\tfrom 192.0.2.50 blackhole\n',
       );
       await g.run();
       expect(g.rules(), unorderedEquals([
-        '90: from 192.0.2.50 lookup 9 suppress_prefixlength 0',
+        '90: from 192.0.2.50 lookup 201',
         '91: from 192.0.2.50 blackhole',
       ]));
     });
@@ -152,16 +155,28 @@ void main() {
   }, skip: shell == null ? 'no POSIX shell on the PATH' : null);
 
   group('the script text', () {
-    // 88 and 89 since ID-347. Measured free on a stock router 2026-09-30: the firmware uses 0, 90-91
-    // (the guard's), 100, 1016-1029, 32766 and 32767.
-    test('uses only priorities 88 to 91, which nothing else on the router uses', () {
+    // Measured free on a stock router 2026-09-30: the firmware uses 0, 100, 1016-1029, 32766 and 32767.
+    // 88 and 89 were the guard's too until build 491 (ID-347); now it only takes them out (ID-364).
+    test('adds rules only at 90 and 91, which nothing else on the router uses', () {
       final prios = RegExp(r'priority (\d+)').allMatches(kGuardScript).map((m) => m.group(1)).toSet();
-      expect(prios, {'88', '89', '90', '91'});
+      expect(prios, {'90', '91'});
     });
 
     test('adds the drop rule before the tunnel rule, so a half-added guard fails closed', () {
-      expect(kGuardScript.indexOf('blackhole priority 91 ||'),
-          lessThan(kGuardScript.indexOf('suppress_prefixlength 0 priority 90; then')));
+      expect(kGuardScript.indexOf('blackhole priority 91 ||'), lessThan(kGuardScript.indexOf(r'lookup "$T" priority 90; then')));
+    });
+
+    // The whole point of the guard's own table (ID-364): nothing in it may leave by the WAN.
+    test('copies only local routes into its tables, never one via the WAN, and keeps it that way', () {
+      expect(kGuardScript, contains(r"KEEP=' dev (br|lo|wgs|tun)[0-9.]*( |$)'"));
+      expect(kGuardScript, contains(r'LOCAL="$(ip route show table main | grep -E "$KEEP")"'));
+      expect(kGuardScript, contains(r'2>/dev/null | grep -vE "^default dev wgc$N( |\$)" | grep -vE "$KEEP" |'));
+      expect(kGuardScript, isNot(contains('suppress_prefixlength 0 priority')));
+    });
+
+    test('numbers its tables as the app does', () {
+      expect(kGuardScript, contains('200 + f[3]'));
+      expect(guardTableForSlot(5), 205);
     });
 
     test('has LF line endings only', () => expect(kGuardScript.contains('\r'), isFalse));

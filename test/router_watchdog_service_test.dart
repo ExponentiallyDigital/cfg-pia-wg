@@ -376,13 +376,15 @@ void main() {
       expect(done.where((l) => l.startsWith('Removed the fail-closed guard rules')), isEmpty);
     });
 
-    test('uninstall stops every schedule, the guard\'s included, before anything else', () async {
+    // Builds 480 to 490 ran the guard every minute from cron. Build 491 takes that out (ID-364), but a
+    // router the app has not reached since can still have it, and uninstall must not leave it running.
+    test('uninstall stops every schedule, the guard\'s old one included, before anything else', () async {
       final c = RecordingSSHClient(responder: (cmd) => cmd == 'cru l'
           ? '*/5 * * * * /jffs/cfg-pia-wg/watchdog_wgc1.sh #watchdog_wgc1#\n'
-              '* * * * * /jffs/cfg-pia-wg/guard.sh #$kGuardCronTag#'
+              '* * * * * /jffs/cfg-pia-wg/guard.sh #$kLegacyGuardCronTag#'
           : '');
       await _wd(c).uninstallFromRouter();
-      final guardCron = c.commands.indexOf('cru d $kGuardCronTag');
+      final guardCron = c.commands.indexOf('cru d $kLegacyGuardCronTag');
       expect(guardCron, isNonNegative);
       expect(c.commands.indexOf('cru d watchdog_wgc1'), isNonNegative);
       expect(guardCron, lessThan(c.commands.indexWhere((x) => x.contains("'$kGuardScriptPath' clear"))));
@@ -1234,11 +1236,14 @@ void main() {
       expect(await _wd(c).redeployScripts(), [5]);
       expect(c.ran("wc -c < '/jffs/cfg-pia-wg/watchdog_wgc5.sh'"), isTrue, reason: 'written, and the write proved');
       expect(c.ran("wc -c < '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isFalse, reason: 'no script there, so none put there');
-      // The one schedule allowed is the guard's own every-minute entry, which it keeps whenever any
-      // device is pinned (ID-316) - not a watchdog's.
+      // The one schedule change allowed is taking out the guard's old every-minute entry, which builds
+      // 480 to 490 kept whenever a device was pinned (ID-364) - never a watchdog's, and nothing added.
       expect(
           c.commands.any((x) =>
-              (x.startsWith('cru ') && !x.contains(kGuardCronTag)) || x.startsWith('service ') || x.startsWith('nvram set')),
+              x.startsWith('cru a') ||
+              (x.startsWith('cru ') && !x.contains(kLegacyGuardCronTag)) ||
+              x.startsWith('service ') ||
+              x.startsWith('nvram set')),
           isFalse,
           reason: 'no schedule, tunnel or setting changes');
     });

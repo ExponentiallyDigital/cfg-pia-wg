@@ -67,15 +67,21 @@ void main() {
       expect(g.nv('cfg_pia_wg_lw_icmp8'), '');
     });
 
-    test('a restart the service queue dropped is asked for again', () async {
+    // ID-364. The guard runs on firewall-start, which every firewall restart raises, so asking for a
+    // restart whenever the read-back came up short would loop. It asks only when the list changed,
+    // and a restart the queue dropped is put right by the router's next one, whatever causes it.
+    test('a firewall restart is asked for only when the list changed, so a run on firewall-start cannot loop', () async {
       g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5>');
       File('${g.state.path}/drop_service').writeAsStringSync('');
       final r1 = await g.run();
-      expect('${r1.stdout}', contains('filter held 0 of 1'));
+      expect('${r1.stdout}', contains('filter held 0 of 1'), reason: 'the restart was dropped, and the report says so');
       File('${g.state.path}/drop_service').deleteSync();
       final r2 = await g.run();
-      expect('${r2.stdout}', contains('filter held 1 of 1'), reason: 'the settings were right; the firewall was asked again');
-      expect(g.services().where((s) => s == 'restart_firewall'), hasLength(2));
+      expect('${r2.stdout}', contains('filter held 0 of 1'));
+      expect(g.services().where((s) => s == 'restart_firewall'), hasLength(1), reason: 'the list was already right');
+      await g.firewallRestart();
+      final r3 = await g.run();
+      expect('${r3.stdout}', contains('filter held 1 of 1'), reason: "the router's own restart built it from NVRAM");
     });
 
     test('a timetable on the filter is reported', () async {

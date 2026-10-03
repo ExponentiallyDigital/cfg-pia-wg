@@ -788,12 +788,14 @@ const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
 # Index 2 of a vpnc_clientlist record is the slot, index 6 the table its devices are routed by.
 MYIDX="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" '$3==s {print $7; exit}')"
 PINNED="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {n++} END {print n+0}')"
-# Per pinned device, from the kernel (ID-320): its 90 rule WITH suppress_prefixlength 0 and its 91
-# blackhole. Counting 90 rules by table said "guarded" for a device whose blocking rule was gone.
+# Per pinned device, from the kernel (ID-320): its 90 rule into the guard's own table for this slot,
+# 200 + slot (ID-364), and its 91 blackhole. Counting 90 rules alone said "guarded" for a device
+# whose blocking rule was gone.
 GUARDED=0
+GRULES="$(ip rule show)"
 for GIP in $(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {print $2}'); do
-  ip rule show | grep -q "^90:.*from $GIP lookup $MYIDX suppress_prefixlength 0" &&
-    ip rule show | grep -q "^91:.*from $GIP blackhole" && GUARDED=$((GUARDED + 1))
+  echo "$GRULES" | grep -qE "^90:.*from $GIP lookup $((200 + SLOT))( |\$)" &&
+    echo "$GRULES" | grep -q "^91:.*from $GIP blackhole" && GUARDED=$((GUARDED + 1))
 done
 DEVS="devices"
 [ "$PINNED" = "1" ] && DEVS="device"
@@ -1245,6 +1247,7 @@ class RouterWatchdog {
   Future<void> _refreshS50() async {
     final existing = await _read("cat '$kS50Path' 2>/dev/null");
     if (!existing.contains(_kOurScriptSignature)) return;
+    await _guardService.install();
     final rebuilt = buildS50Script(extractS50CruLines(existing));
     if (rebuilt.trim() == existing.trim()) return;
     await _writeFile(kS50Path, rebuilt, what: 'Boot persistence script', mode: '700');
@@ -1776,13 +1779,13 @@ class RouterWatchdog {
         final crons = await _read('cru l');
         final tags = [
           for (final line in crons.split('\n'))
-            if (RegExp('#((watchdog_[a-z_0-9]+)|$kGuardCronTag)#').firstMatch(line) case final m?) m.group(1)!
+            if (RegExp('#((watchdog_[a-z_0-9]+)|$kLegacyGuardCronTag)#').firstMatch(line) case final m?) m.group(1)!
         ];
         for (final tag in tags) {
           await _read('cru d $tag');
         }
         await _read("for P in \$(ps | grep -E '[w]atchdog_wgc[1-9][.]sh|[g]uard[.]sh' | awk '{print \$1}'); do kill \$P 2>/dev/null; done");
-        final cronLeft = int.tryParse((await _read("cru l | grep -cE '#(watchdog_|$kGuardCronTag)'")).trim()) ?? 0;
+        final cronLeft = int.tryParse((await _read("cru l | grep -cE '#(watchdog_|$kLegacyGuardCronTag)'")).trim()) ?? 0;
         final watchdogTags = tags.where((t) => t.startsWith('watchdog_')).length;
         done.add(cronLeft > 0
             ? '$cronLeft schedule(s) could not be removed: check `cru l` on the router'
@@ -1908,7 +1911,12 @@ class RouterWatchdog {
   // Rebuilds S50downloadmaster from the embedded template: drops [slot]'s existing cru lines,
   // keeps every other slot's (a later release runs several watchdogs at once), then appends
   // [extra]. Rebuilding rather than grep -v is what keeps the template scaffolding intact.
+  //
+  // The guard goes in first, so the hook is never newer than the guard it calls: a hook that says
+  // `guard.sh soon` to a guard from before build 491 would run it on every firewall-start of a
+  // burst, a second or so apart, which is what crashes the firmware's asd (ID-361, ID-364).
   Future<void> _writeS50(int slot, {List<String> extra = const []}) async {
+    await _guardService.install();
     final existing = await _run("cat '$kS50Path' 2>/dev/null");
     final lines = [
       for (final line in extractS50CruLines(existing))
@@ -2423,9 +2431,6 @@ PIA_PASS="$(nvram get cfg_pia_wg_password)"
 __BACKOFF__
 
 log "Watchdog started for $IFACE${APPVER:+ [script $APPVER]}"
-
-# The fail-closed guard (ID-213), before the stand-down: a disabled slot is when it matters.
-[ -x /jffs/cfg-pia-wg/guard.sh ] && /jffs/cfg-pia-wg/guard.sh >/dev/null 2>&1
 
 # A tunnel the user turned off stays off. Only an explicit "0" stands down; a deploy runs anyway.
 ENABLED="$(nvram get ${K}enable)"
@@ -3219,6 +3224,9 @@ while [ "$HSTRY" -lt 10 ]; do
   sleep 2
 done
 [ "$HSOK" = "1" ] || abort "$IFACE came up but the PIA server never answered it (no handshake in 20s)"
+# The guard's table for this tunnel went with the old interface; one run, coalesced with the
+# firewall-start the restart raised, puts it back (ID-364). In case the boot hook isn't there.
+[ -x /jffs/cfg-pia-wg/guard.sh ] && /jffs/cfg-pia-wg/guard.sh soon </dev/null >/dev/null 2>&1 &
 
 if [ "$RUNMODE" = "deploy" ]; then
   log "Deploy SUCCESS: region $DESC via $BEST_IP:$SERVER_PORT"

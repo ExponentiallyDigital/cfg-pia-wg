@@ -35,8 +35,12 @@ part_a() {
   say "ipv6_service=$(nvram get ipv6_service)"
   n=0; ok=0; bad=""
   for e in $(pins); do
-    ip="${e%>*}"; t="${e#*>}"; n=$((n + 1))
-    r90="$(ip rule show | grep -c "^90:.*from $ip lookup $t suppress_prefixlength 0")"
+    ip="${e%>*}"; t="${e#*>}"
+    # Rule 90 looks up the guard's own table for the tunnel, 200 + slot (ID-364). WireGuard pins only.
+    s="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v t="$t" '$2 == "WireGuard" && $7 == t {print $3; exit}')"
+    [ -n "$s" ] || continue
+    n=$((n + 1))
+    r90="$(ip rule show | grep -cE "^90:.*from $ip lookup $((200 + s))( |\$)")"
     r91="$(ip rule show | grep -c "^91:.*from $ip blackhole")"
     if [ "$r90" = 1 ] && [ "$r91" = 1 ]; then ok=$((ok + 1)); else bad="$bad $ip(90=$r90,91=$r91)"; fi
   done

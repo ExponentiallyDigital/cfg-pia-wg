@@ -101,7 +101,7 @@ void main() {
         for (final email in [false, true])
           ..._uses('watchdog ${fw.name} email=$email', buildWatchdogScript(_config(email: email), firmware: fw)),
       ..._uses('guard.sh', kGuardScript),
-      ..._uses('S50', buildS50Script([kGuardCronLine])),
+      ..._uses('S50', buildS50Script(['cru a watchdog_wgc1 "*/5 * * * *" /jffs/cfg-pia-wg/watchdog_wgc1.sh'])),
     ];
     expect(problems, isEmpty);
   });

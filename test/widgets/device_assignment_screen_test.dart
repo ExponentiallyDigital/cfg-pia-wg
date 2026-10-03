@@ -523,7 +523,7 @@ void main() {
 
     expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isTrue);
     expect(ssh.ran('service restart_dnsmasq'), isTrue);
-    expect(ssh.ran('restart_net_and_phy'), isFalse);
+    expect(ssh.executed.any((x) => x.contains('restart_net_and_phy')), isFalse);
   });
 
   testWidgets('the confirmation warns about a reservation only when one will be created', (tester) async {
@@ -873,7 +873,7 @@ void main() {
       await _pumpConnected(tester,
           router: _router(
               policy: '1>192.168.1.20>>5>',
-              rules: '0:\tfrom all lookup local\n90:\tfrom 192.168.1.20 lookup 5 suppress_prefixlength 0\n'
+              rules: '0:\tfrom all lookup local\n90:\tfrom 192.168.1.20 lookup 205\n'
                   '91:\tfrom 192.168.1.20 blackhole\n100:\tfrom 192.168.1.20 lookup 5'));
       expect(tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
           'wgc5:pia-aus_perth is not running - no internet until it is enabled');
@@ -884,7 +884,7 @@ void main() {
       await _pumpConnected(tester,
           router: _router(
               policy: '1>192.168.1.20>>5>',
-              rules: '0:\tfrom all lookup local\n90:\tfrom 192.168.1.20 lookup 5 suppress_prefixlength 0\n'
+              rules: '0:\tfrom all lookup local\n90:\tfrom 192.168.1.20 lookup 205\n'
                   '100:\tfrom 192.168.1.20 lookup 5'));
       expect(tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
           startsWith('fail-closed guard missing - while wgc5:pia-aus_perth is down'));

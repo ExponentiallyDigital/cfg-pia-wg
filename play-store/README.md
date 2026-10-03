@@ -16,10 +16,7 @@ Everything the Google Play listing needs that is not the app itself.
 
 ## Release notes are NOT written here any more
 
-**The "what's new" text lives in `CHANGELOG.md`, in the release block, inside a fenced ` ```play `
-block.** `release.yml` extracts it at build time, writes `distribution/whatsnew/whatsnew-en-AU`, and
-the upload puts it on the Play listing. You should never have to type a release note into Play
-Console again.
+**The "what's new" text lives in `CHANGELOG.md`, in the release block, inside a fenced ` ```play ` block.** `tool/release_notes.dart` extracts it, at build time in `release.yml` or by hand with `dart run tool/release_notes.dart --tag vX.Y.Z`, and writes it to `whatsnew-en-AU` in this folder, and the upload puts it on the Play listing. That file is tracked, so the note each release carried can be read in git, but it is the tool's output: edit the fence, never the file. You should never have to type a release note into Play Console again.
 
 Write it under the date line, first thing, while the release is fresh:
 
@@ -54,13 +51,10 @@ the whole release: joined fences read as separate notes and reach the 500-charac
 
 ### Why the format differs from `361 (0.7.01).txt`
 
-That older file wraps its text in `<en-AU>` tags. The upload action used here takes a **directory of
-plain-text files named by locale** instead - `whatsnew-en-AU`, no tags, no wrapper. Do not copy the
-tags into a ` ```play ` fence; they would be published literally.
+That older file wraps its text in `<en-AU>` tags. The upload action used here takes a **directory of plain-text files named by locale** instead - `whatsnew-en-AU`, no tags, no wrapper. The directory is this folder, and the action reads only the files named `whatsnew-<locale>`, so the listing text and screenshots beside them are left alone. Do not copy the tags into a ` ```play ` fence; they would be published literally.
 
 ### Adding another language
 
-Add a second file alongside `whatsnew-en-AU` in the same directory. Today the workflow writes only
-`en-AU`, so a second locale means teaching the parser about a second fence. Nothing needs it yet.
+Add a second file alongside `whatsnew-en-AU` in this folder. Today the workflow writes only `en-AU`, so a second locale means teaching the parser about a second fence. Nothing needs it yet.
 
 ---
