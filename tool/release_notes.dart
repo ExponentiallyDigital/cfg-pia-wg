@@ -34,6 +34,11 @@ const int kPlayNoteLimit = 500;
 /// What Play shows when no block in the release carries a ```play fence.
 const String kPlayNoteFallback = 'Please see https://exponentiallydigital.com/cfg-pia-wg/changelog';
 
+/// Where the Play note is written, tracked in git so the note that went out can be read later.
+/// release.yml hands its folder to the upload action, which reads only files named `whatsnew-<locale>`,
+/// so the listing text and screenshots beside it are left alone.
+const String kPlayNotePath = 'play-store/whatsnew-en-AU';
+
 final RegExp _versionHeader = RegExp(r'^\d{4}-\d{2}-\d{2}\s+v\d+\.\d+\.\d+');
 final RegExp _version = RegExp(r'v(\d+)\.(\d+)\.(\d+)');
 
@@ -211,8 +216,7 @@ void main(List<String> args) {
   );
 
   File('github_release_notes.txt').writeAsStringSync(notes.github);
-  Directory('distribution/whatsnew').createSync(recursive: true);
-  File('distribution/whatsnew/whatsnew-en-AU').writeAsStringSync('${notes.play}\n');
+  File(kPlayNotePath).writeAsStringSync('${notes.play}\n');
 
   stdout.writeln('--- covers ${notes.blocks.map((b) => b.version).join(', ')} '
       '(since ${notes.previousTag ?? 'no earlier tag'}) ---');

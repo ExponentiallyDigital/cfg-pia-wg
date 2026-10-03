@@ -263,21 +263,22 @@ class StockRouterModel {
     }
   }
 
-  /// kGuardScript, as rules: priorities 90 and 91 for every enabled record naming a WireGuard
-  /// table, and nothing else at either.
+  /// kGuardScript, as rules: for every enabled record naming a WireGuard profile, rule 90 into the
+  /// guard's own table for that profile's slot, and rule 91 blackhole; nothing else at either
+  /// (ID-364). The guard's table is modelled by [_viaOwnTable].
   String guard() {
-    final tables = {
+    final slotFor = {
       for (final p in profiles)
-        if (p.protocol == 'WireGuard' && p.vpncStateIndex != null) p.vpncStateIndex
+        if (p.protocol == 'WireGuard' && p.vpncStateIndex != null && p.slot != null) p.vpncStateIndex!: p.slot!,
     };
     final want = <String, int>{
       for (final d in parseDevicePolicyList(nvram['vpnc_dev_policy_list'] ?? ''))
-        if (d.enabled && d.ip.isNotEmpty && tables.contains(d.vpncIndex)) d.ip: d.vpncIndex!,
+        if (d.enabled && d.ip.isNotEmpty && slotFor.containsKey(d.vpncIndex)) d.ip: slotFor[d.vpncIndex]!,
     };
     rules.removeWhere((r) => r.priority == 90 || r.priority == 91);
-    want.forEach((ip, t) {
+    want.forEach((ip, slot) {
       _addRule(91, 'from $ip blackhole');
-      _addRule(90, 'from $ip lookup $t suppress_prefixlength 0');
+      _addRule(90, 'from $ip lookup ${guardTableForSlot(slot)}');
     });
     return 'guarded ${want.length}';
   }
@@ -287,8 +288,8 @@ class StockRouterModel {
   /// The server stops answering: the interface stays up and carries nothing.
   void expire(int slot) => tunnels[slot] = Tunnel.expired;
 
-  /// A watchdog rebuild: the firmware restarts the tunnel on a new key, then the guard runs, as it
-  /// does at the start of every watchdog run.
+  /// A watchdog rebuild: the firmware restarts the tunnel on a new key, and the guard runs once things
+  /// settle, as the boot hook asks it to on the firewall-start the restart raises (ID-364).
   void rebuild(int slot) {
     nvram['vpnc_unit'] = '${profiles.indexWhere((p) => p.slot == slot)}';
     service('restart_vpnc');
@@ -311,6 +312,15 @@ class StockRouterModel {
 
   // ── Where traffic goes ─────────────────────────────────────────────────────────────
 
+  /// The guard's own table for [slot] (ID-364): the tunnel's default while it runs, so the tunnel;
+  /// an expired tunnel is up and carries nothing; a stopped one took its route with it, so nothing
+  /// matches and the next rule decides.
+  Exit _viaOwnTable(int slot) => switch (tunnels[slot] ?? Tunnel.down) {
+        Tunnel.up => 'wgc$slot',
+        Tunnel.expired => kBlocked,
+        Tunnel.down => '',
+      };
+
   Exit _viaTable(int table, {required bool suppressDefault}) {
     final p = profileForTable(table);
     final t = p == null ? Tunnel.down : tunnels[p.slot] ?? Tunnel.down;
@@ -331,7 +341,8 @@ class StockRouterModel {
       if (table == 'main') return kWan;
       final n = int.tryParse(table ?? '');
       if (n == null) continue;
-      final out = _viaTable(n, suppressDefault: r.words.contains('suppress_prefixlength'));
+      final own = n > kGuardTableBase && n <= kGuardTableBase + 5;
+      final out = own ? _viaOwnTable(n - kGuardTableBase) : _viaTable(n, suppressDefault: r.words.contains('suppress_prefixlength'));
       if (out.isNotEmpty) return out;
     }
     return kWan;

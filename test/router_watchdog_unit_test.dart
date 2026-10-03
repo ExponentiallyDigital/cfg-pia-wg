@@ -990,21 +990,25 @@ void main() {
     });
   });
 
-  // ID-213: every check puts the fail-closed guard back, which is how a reboot and a pin changed in
-  // the web interface are both caught up within one interval.
-  group('the watchdog keeps the fail-closed guard in place', () {
+  // ID-364: the watchdog no longer runs the guard on every check. That run met the guard's cron run in
+  // the same second at every tick, and runs a second apart crash the firmware's asd (ID-361). A
+  // rebuild empties the guard's table for the tunnel, so the watchdog asks for one run once the new
+  // tunnel has a handshake, and the router's own events do the rest.
+  group('the watchdog and the fail-closed guard', () {
     final script = buildWatchdogScript(_valid(slot: 1));
+    final lines = script.split('\n');
+    final calls = [
+      for (var i = 0; i < lines.length; i++)
+        if (lines[i].contains(kGuardScriptPath) && !lines[i].trimLeft().startsWith('#')) i,
+    ];
 
-    test('runs the guard on every check, before a disabled slot stands down', () {
-      final lines = script.split('\n');
-      final guard = lines.indexWhere((l) => l.contains(kGuardScriptPath) && !l.trimLeft().startsWith('#'));
-      expect(guard, greaterThan(-1));
-      expect(guard, lessThan(lines.indexWhere((l) => l.contains('standing down until'))),
-          reason: 'a disabled slot is exactly when its pinned devices need the guard');
+    test('asks for one guard run, and only after a rebuild has a handshake', () {
+      expect(calls, hasLength(1), reason: 'no run on every check any more');
+      expect(calls.single, greaterThan(lines.indexWhere((l) => l.startsWith('[ "\$HSOK" = "1" ] || abort'))));
     });
 
-    test('only when the guard is there, and silently', () {
-      expect(script, contains('[ -x $kGuardScriptPath ] && $kGuardScriptPath >/dev/null 2>&1'));
+    test('only when the guard is there, in the background, and coalesced with the router\'s events', () {
+      expect(lines[calls.single], '[ -x $kGuardScriptPath ] && $kGuardScriptPath soon </dev/null >/dev/null 2>&1 &');
     });
   });
 }

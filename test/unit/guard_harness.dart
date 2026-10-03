@@ -55,9 +55,10 @@ echo "$*" >> "$STATE/log"
 ''';
 
 // Keeps rules as `<prio>:<TAB>from <ip> ...` lines and prints them in priority order, as `ip rule
-// show` does. Also the three route forms the guard uses since ID-347: `ip route show table T`
-// answers from $STATE/table_T, `ip route replace ... table T` appends there, and `ip -o link show
-// up` lists $STATE/up. Only the forms the guard uses are understood.
+// show` does. Also the route forms the guard uses since ID-364: `ip route show table T` answers
+// from $STATE/table_T (main as well), `ip route replace ... table T` adds there as `<dst> dev <dev>
+// scope link`, `ip route del <route as shown> table T` takes that line out, `ip route flush table T`
+// empties it, and `ip -o link show up` lists $STATE/up. Only the forms the guard uses are understood.
 const String kIpStub = r'''#!/bin/sh
 R="$STATE/rules"
 if [ "$1" = "-o" ] && [ "$2" = "link" ]; then
@@ -73,6 +74,15 @@ if [ "$1" = route ]; then
       while [ $# -gt 0 ]; do case "$1" in dev) dev="$2"; shift ;; table) t="$2"; shift ;; esac; shift; done
       grep -qxF "$dst dev $dev scope link" "$STATE/table_$t" 2>/dev/null || echo "$dst dev $dev scope link" >> "$STATE/table_$t"
       exit 0 ;;
+    del)
+      shift 2; t=""; spec=""
+      while [ $# -gt 0 ]; do if [ "$1" = table ]; then t="$2"; shift; else spec="$spec${spec:+ }$1"; fi; shift; done
+      [ -f "$STATE/table_$t" ] || exit 2
+      # Spacing as `ip` prints it is not spacing as the arguments arrive, so lines compare normalised.
+      awk -v s="$spec" '{ l = $0; $1 = $1 } !d && $0 == s { d = 1; next } { print l } END { exit !d }' "$STATE/table_$t" > "$STATE/table_$t.new"
+      rc=$?
+      mv "$STATE/table_$t.new" "$STATE/table_$t"
+      exit $rc ;;
     flush) [ "$3" = table ] && rm -f "$STATE/table_$4"; exit 0 ;;
   esac
   exit 1
@@ -158,12 +168,17 @@ class GuardRouter {
   // the shell's own form; `/usr/bin` is Git's tools on Windows and where they are anyway on Linux.
   static const _unixToolsFirst = r'PATH="${PATH%%:*}:/usr/bin:/bin:$PATH"; export PATH; exec sh "$@"';
 
+  /// How long `guard.sh soon` waits for a newer request; 10 s on the router.
+  int soonSeconds = 1;
+
   Future<ProcessResult> run([List<String> args = const []]) {
     final sep = Platform.isWindows ? ';' : ':';
     return Process.run(shell!, ['-c', _unixToolsFirst, 'sh', script.path, ...args], environment: {
       'PATH': '${dir.path}/bin$sep${Platform.environment['PATH']}',
       'STATE': state.path,
       'GUARD_LOCK': '${state.path}/lock',
+      'GUARD_NEXT': '${state.path}/next',
+      'GUARD_SOON': '$soonSeconds',
       'LW_WAIT': '1',
     });
   }
@@ -205,21 +220,36 @@ class GuardRouter {
     return f.existsSync() ? [for (final l in f.readAsLinesSync()) if (l.startsWith('Network Services Filter')) l] : [];
   }
 
-  // wgc5's table as the firmware builds it, from a stock router 2026-09-30 with documentation
-  // addresses: the tunnel's /1 routes and its DNS, and - via the WAN - the router's own DNS server,
-  // the tunnel's PIA server, the ISP subnet and the default.
-  void table5({String endpoint = '203.0.113.9'}) => File('${state.path}/table_5').writeAsStringSync('''
-0.0.0.0/1 dev wgc5  scope link
+  /// The main table of a stock router with documentation addresses, as read 2026-10-03: the default,
+  /// host routes to the router's own DNS servers and its gateway, and the WAN subnet, all via the
+  /// WAN; the LAN and a guest bridge; the router's WireGuard server's peers; loopback.
+  void mainTable() => File('${state.path}/table_main').writeAsStringSync('''
 default via 198.51.100.1 dev eth0
+1.0.0.2 via 198.51.100.1 dev eth0  metric 1
 1.1.1.2 via 198.51.100.1 dev eth0  metric 1
-$endpoint via 198.51.100.1 dev eth0
-127.0.0.0/8 dev lo  scope link
-128.0.0.0/1 dev wgc5  scope link
-9.9.9.9 dev wgc5  scope link
-198.51.100.0/24 dev eth0  proto kernel  scope link  src 198.51.100.36
-192.168.1.0/24 dev br0  proto kernel  scope link  src 192.168.1.1
 10.6.0.2 dev wgs1  scope link
+127.0.0.0/8 dev lo  scope link
+198.51.100.0/24 dev eth0  proto kernel  scope link  src 198.51.100.36
+198.51.100.1 dev eth0  proto kernel  scope link
+192.168.1.0/24 dev br0  proto kernel  scope link  src 192.168.1.1
+192.168.101.0/24 dev br1  proto kernel  scope link  src 192.168.101.1
 ''');
+
+  /// Table [t] as `ip route show table` prints it here; empty when it holds nothing.
+  List<String> table(int t) {
+    final f = File('${state.path}/table_$t');
+    return f.existsSync() ? [for (final l in f.readAsLinesSync()) if (l.trim().isNotEmpty) l] : [];
+  }
+
+  /// The router restarting its firewall by itself, as it does when its connection changes: the
+  /// Network Services Filter is rebuilt from NVRAM.
+  Future<void> firewallRestart() async {
+    final sep = Platform.isWindows ? ';' : ':';
+    await Process.run(shell!, ['-c', _unixToolsFirst, 'sh', '${dir.path}/bin/service', 'restart_firewall'], environment: {
+      'PATH': '${dir.path}/bin$sep${Platform.environment['PATH']}',
+      'STATE': state.path,
+    });
+  }
 
   void up(String iface) => File('${state.path}/up').writeAsStringSync('$iface\n');
 }

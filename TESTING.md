@@ -32,6 +32,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [R7. Examining NVRAM](#r7-examining-nvram)
 - [R8. Store testing notes](#r8-store-testing-notes)
 - [R9. What the shape tests stand for, and what proves it](#r9-what-the-shape-tests-stand-for-and-what-proves-it)
+- [R10. An AI assistant on the router and in an emulator](#r10-an-ai-assistant-on-the-router-and-in-an-emulator)
 
 **Part 2. Reference**
 
@@ -44,6 +45,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [R7. Examining NVRAM](#r7)
 - [R8. Store testing notes](#r8)
 - [R9. What the shape tests stand for, and what proves it](#r9)
+- [R10. An AI assistant on the router and in an emulator](#r10)
 
 ---
 
@@ -1277,6 +1279,8 @@ echo "$T $TMAC $D $P $I1 $I5"
 
 A device pinned to a tunnel gets that tunnel or nothing: no internet while the tunnel's server is silent, while the watchdog rebuilds it, or while it is switched off (ID-213, ARCHITECTURE 6.8.10). These tests prove that on a real router, where a unit test cannot.
 
+Since build 491 (ID-364) the guard is two rules per pinned device, `90: from <ip> lookup <200 + slot>` and `91: from <ip> blackhole`, and one table per tunnel with a pin, `200 + slot`, which holds the tunnel's default and the router's local routes. Nothing runs it on a timer: the app runs it after its own actions, and the router's firewall-start asks for one run 10 seconds after the last call of a burst. So after a tunnel starts, its pinned devices get their internet back about 10 seconds after the tunnel is up; until then they're refused. `e2e.sh`'s `guard <ip> <table>` takes the firmware's table, as before, and checks rule 90 against the guard's own.
+
 **Set up:** wgc1 and wgc5 up in different regions, a watchdog on wgc1 at 5 minutes, default connection wgc5, DESKTOP pinned to wgc1. Only DESKTOP loses its internet in this group.
 
 The router commands use the shell variables from [How to use the run sheet](#how-to-use): `D` is DESKTOP's address, `I1` and `I5` are wgc1's and wgc5's routing tables.
@@ -1300,7 +1304,7 @@ echo "$T $TMAC $D $P $I1 $I5"
 - Do: `sh /jffs/cfg-pia-wg/e2e.sh GRD-1 before`, then DEVICES, DESKTOP to wgc1, APPLY.
 - See: APP LOG "Fail-closed guard in place for N pinned device(s)."
 - Do: `sh /jffs/cfg-pia-wg/e2e.sh GRD-1 after "rule $D $I1" "guard $D $I1" "exit $D wgc1"`
-- Pass if: PASS. The changes show three new lines for DESKTOP - `90: from <D> lookup <I1> suppress_prefixlength 0`, `91: from <D> blackhole`, and the firmware's own `100: from <D> lookup <I1>` - one of each, never two.
+- Pass if: PASS. The changes show three new lines for DESKTOP - `90: from <D> lookup 201` (wgc1's guard table), `91: from <D> blackhole`, and the firmware's own `100: from <D> lookup <I1>` - one of each, never two.
 
 **GRD-2** A broken tunnel and its rebuild leak nothing [script]
 
@@ -1314,9 +1318,9 @@ sleep 10
 /jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
 ```
 
-- See: the ping goes from wgc1's usual time to unreachable or timed out, then back to wgc1's usual time.
+- See: the ping goes from wgc1's usual time to unreachable or timed out, then back to wgc1's usual time, about 10 seconds after the rebuild's handshake.
 - Pass if: not one reply in between.
-- Do: on the router:
+- Do: on the router, once the ping is back:
 
 ```bash
 sh /jffs/cfg-pia-wg/e2e.sh GRD-2 after "guard $D $I1" "exit $D wgc1" "up wgc1"
@@ -1332,7 +1336,7 @@ tail -3 /tmp/watchdog_wgc1.log
 - Do: DISABLE. Watch the ping for 30 seconds, then `sh /jffs/cfg-pia-wg/e2e.sh GRD-3 after "down wgc1" "guard $D $I1" "exit $D BLOCKED"`
 - Pass if: PASS, and the ping showed nothing but unreachable or timed out.
 - Do: MANAGE, wgc1, ENABLE.
-- Pass if: the ping comes back at wgc1's usual time. Stop it with Ctrl+C.
+- Pass if: the ping comes back at wgc1's usual time, about 10 seconds after wgc1 is up. Stop it with Ctrl+C.
 
 **GRD-4** The guard comes back after a reboot [script]
 
@@ -1352,21 +1356,21 @@ grep "Fail-closed guard on for .*$D (" /tmp/syslog.log | tail -1
 
 - Do: on the router, first: `sh /jffs/cfg-pia-wg/e2e.sh GRD-5 before`
 - Do: in the router's web interface, VPN Fusion, move DESKTOP from wgc1 to wgc5. It won't move a device while the tunnels run: stop them, move DESKTOP, apply, then start them again. While you do, DESKTOP is not guarded (README 5.4.1).
-- Do: once both tunnels are back, on the router:
+- Do: once both tunnels are back, wait 15 seconds, then on the router:
 
 ```bash
-/jffs/cfg-pia-wg/watchdog_wgc1.sh foreground
 sh /jffs/cfg-pia-wg/e2e.sh GRD-5 after "guard $D $I5" "exit $D wgc5"
+grep "Fail-closed guard on for .*$D (wgc5)" /tmp/syslog.log | tail -1
 ```
 
-- Pass if: PASS: the guard is on wgc5's table, with exactly one 91 line. Whichever watchdog ran first after the move put it there - in the release-candidate run it was wgc5's own - so the one run here may find nothing left to do.
+- Pass if: PASS: rule 90 looks up wgc5's guard table, 205, with exactly one 91 line, and the grep prints the line from just now. Nothing here ran the guard: starting the tunnels raised the router's firewall-start, which did (ID-364).
 - Do: DEVICES, DESKTOP back to wgc1, APPLY. GRD-6 needs it there.
 
 **GRD-6** A firewall restart leaves the guard alone [script]
 
-The firmware restarts its firewall whenever `asd` crashes, which on 2026-09-27 was every few minutes (ID-227). The guard is routing rules, not firewall rules, so it should be untouched; this measures that.
+The firmware restarts its firewall whenever `asd` crashes, which on 2026-09-27 was every few minutes (ID-227). The guard is routing rules, not firewall rules, so it should be untouched; this measures that. Since build 491 the restart also asks for a guard run (ID-364), which should find nothing to change.
 
-- Starts with: DESKTOP pinned to wgc1, from GRD-5's last step. Check first: `ip rule show | grep -w "$D"` shows `lookup 9` (wgc1's table) at 90 and 100. If it shows `lookup 5`, do GRD-5's last step. In the release-candidate run it was missed, and GRD-6 failed for that reason alone.
+- Starts with: DESKTOP pinned to wgc1, from GRD-5's last step. Check first: `ip rule show | grep -w "$D"` shows `lookup 201` at 90 and `lookup 9` at 100 (wgc1's tables). If it shows `lookup 205` and `lookup 5`, do GRD-5's last step. In the release-candidate run it was missed, and GRD-6 failed for that reason alone.
 - Do: on the router, with DESKTOP's `ping -t 1.1.1.1` running:
 
 ```bash
@@ -1419,6 +1423,18 @@ nvram get filter_lw_icmp_x
 - Pass if: `8` is gone from `nvram get filter_lw_icmp_x`, anything else that was there is still there, and the unpinned device pings again.
 - Pass if: DEVICES has no ping switch.
 - Do: `logger "**GRD-8 END** The router's filter holds pinned devices"`
+
+**GRD-9** The guard holds when it's broken on purpose, on two tunnels [script]
+
+The check that lets ID-364 leave WIP, under the CHANGELOG's rule for protection changes: `scripts/check-claims.sh` breaks the guard on purpose, expects each break to be seen, and expects the router's own events to put it right. It stops one tunnel and starts it again, so if that tunnel is the default connection, devices that follow the default lose it for a moment.
+
+- Starts with: DESKTOP pinned to wgc1, both tunnels up, and `check-claims.sh` in `/jffs`.
+- Do: DEVICES, PHONE to wgc5, APPLY.
+- Do: on the router, `/bin/sh /jffs/check-claims.sh quick`. It takes about five minutes.
+- Pass if: it ends `0 failed`, `GUARD-now` counts 2 pinned devices, and these are PASS: `GUARD-cron`, `GUARD-boot`, `GUARD-hook`, `GUARD-wiped`, `GUARD-event`, `GUARD-repaired`, `GUARD-planted` (twice), `FILTER-emptied`, `FILTER-chain`, `FILTER-event`, and for the first pinned device's tunnel, `GUARD-wgcN-empty`, `-refilled`, `-stopped`, `-no91`, `-back` and `-restarted`.
+- See: `GUARD-wgcN-no91` says where that device's traffic went with rule 91 gone: `WAN`, or the default connection's tunnel if that's another one. That line is the check seen to fail; `-stopped` just before it is the same check passing with the guard whole.
+- See: `GUARD-wgcN-back` gives the seconds from starting the tunnel to the device's traffic going through it: about 10, plus the tunnel's own start.
+- Do: DEVICES, PHONE back to where it was, APPLY.
 
 ---
 
@@ -1877,6 +1893,7 @@ nvram show | grep cfg_pia_wg             # nothing
 nvram show | grep -E 'wgc[1-9]_wd_'      # nothing
 ls /jffs/cfg-pia-wg                      # gone, guard.sh with it
 ip rule show | grep -E '^9[01]:'         # nothing: the guard's rules went first
+for N in 201 202 203 204 205; do ip route show table $N; done   # nothing: and its tables
 wg show interfaces                       # UNCHANGED: the tunnels are not the app's to remove
 nvram get vpnc_max_conn                  # back to 2, if the app raised it (SET-5); untouched if you set it yourself
 logger "**END-1 END** Uninstall"
@@ -2319,10 +2336,30 @@ Some automated tests can only check that a command is written a certain way: tha
 | `test/router_watchdog_service_test.dart`: `nvram unset cfg_pia_wg_password` | the credentials go when the last watchdog is deleted | by hand, after deleting the last watchdog: `nvram get cfg_pia_wg_password` prints nothing. END-1 covers UNINSTALL |
 | `test/unit/router_dns_test.dart`, `test/screens/router_dns_screen_test.dart`: the "encrypted" tags | the router's own lookups really are encrypted | check-claims `DNS-DoT`: with DNS-over-TLS on, fresh lookups send nothing to port 53 on the WAN, and a direct plain query is counted, as the control |
 | `test/unit/email_layout_test.dart`: the kill-switch line counts rules | the email's "kept off the internet" line | BRK-1 checks TABLET is offline and its exit IP; nothing checks the line's own words |
-| `test/unit/s50_template_test.dart`: the boot hook runs `guard.sh` | nothing leaks during a boot | GRD-7 (`scripts/check-reboot.sh`), from a pinned device, three times |
+| `test/unit/s50_template_test.dart`: the boot hook runs `guard.sh`, and asks for a run on firewall-start | nothing leaks during a boot, and the router's events put the guard back | GRD-7 (`scripts/check-reboot.sh`), from a pinned device, three times; check-claims `GUARD-boot`, `GUARD-hook` and `GUARD-event`, and `GUARD-wgcN-back` after a tunnel restart |
 | `test/unit/guard_filter_test.dart` and `guard_filter_more_test.dart`: the Network Services Filter against a fake `nvram`, `service` and `iptables` | the router drops a pinned device's traffic out of the WAN from boot, and only the app's entries are touched | check-claims `FILTER-*`, read from the firewall itself; GRD-7 and GRD-8 |
-| `test/unit/fail_closed_guard_test.dart` and `guard_orphan_wan_test.dart`: `guard.sh` against a fake `ip` | the kernel honours the guard's rules | check-claims `GUARD-*`: `ip route get` from every pinned device, with a rule broken on purpose, a wiped rule repaired by cron, and a tunnel stopped. GRD-2, GRD-3 and DEF-7 by hand |
+| `test/unit/fail_closed_guard_test.dart` and `guard_orphan_wan_test.dart`: `guard.sh` against a fake `ip` | the kernel honours the guard's rules | check-claims `GUARD-*`: `ip route get` from every pinned device to the internet and every address main sends out of the WAN, with a rule wiped and repaired by the router's own firewall restart, a WAN route planted in the guard's table, the table emptied with its tunnel up, and the tunnel stopped, rule 91 taken away for a moment to show the leak it stops (ID-364). GRD-2, GRD-3, GRD-9 and DEF-7 by hand |
 | `test/unit/device_assignment_service_test.dart`: the stale rule is deleted | a moved device really moves | DEV-5, DEV-6 and DEV-8: `e2e.sh` counts the rules and checks the exit IP |
 | `test/router_watchdog_service_test.dart`: `nvram set wgcN_dns` | pinned devices' DNS goes through their tunnel | check-claims `DNS-pinned`; WD-23 and DEV-10 by hand |
 | `test/unit/binary_installer_test.dart`: a fake `dgst` | a download is refused if its checksum is wrong | CON-5 is the happy path; the refusal is only tested in CI |
 | `test/busybox_tools_test.dart` | the scripts use only what stock's BusyBox has | it reads the scripts as deployed and every string in `lib/`; the check scripts above run them on the router |
+
+## <a name='r10'></a>R10. An AI assistant on the router and in an emulator
+
+Since 30 September 2026 much of this run sheet has been run by Claude Code rather than by hand: on the router itself, and in an Android emulator. What that needs, and what it doesn't.
+
+**The set-up, once.**
+
+- A key pair for the assistant alone, made on the PC with `ssh-keygen -t ed25519 -N ""`. Its public half goes into the router's web interface: Administration, System, Authorized Keys. The assistant logs in with the key, never the router password.
+- A settings restore replaces Authorized Keys, which live in NVRAM, so paste the key in again after one. The router's own host key lives in `/jffs/.ssh/` and survives a firmware flash; only a factory reset that formats JFFS replaces it, and then the app refuses the changed key until FORGET ROUTER IP (CON).
+- An emulator running the debug build. The person at the keyboard types the router password into it; the assistant never needs it.
+- To take the access away, delete the key from Authorized Keys and delete the key files.
+
+**How it runs things.**
+
+- Commands go to the router as `ssh … /bin/sh` with the commands on standard input. Never `sh`: over SSH, stock's PATH finds `/usr/sbin/sh` first, a Broadcom memory tool.
+- There is no `scp` on the router, so scripts go across with `ssh … 'cat > /jffs/<file>'`, and the copy is compared by `md5sum`.
+- `scripts/check-claims.sh` (`dry`, `quick`, `full`) proves the protection claims on the router, stock and Merlin; `scripts/check-reboot.sh` watches a reboot from a pinned device. Both put back everything they change.
+- In the emulator, `adb` installs the build, taps, types and takes screenshots.
+
+**How a run sheet for a person is built.** Every fact is checked against the code or read from the router that day, and anything not checked is marked unverified. The order follows each test's preconditions, with anything destructive last. Every read-only paste block is run on the router first. One copyable block per router step, a `Result:` line under each, and no tables. Anything left to do is a work item, never only a line in a run sheet.

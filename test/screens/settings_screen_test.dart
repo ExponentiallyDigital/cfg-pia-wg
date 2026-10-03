@@ -860,7 +860,9 @@ void main() {
   // ID-356: the ping block, moved here from DEVICES. Stock's filter holds pings for the whole network or
   // not at all, so it is a choice, off by default, explained before it is made.
   group('SECURE STARTUP', () {
-    RecordingSSHClient router({bool blocked = false, String tag = '', bool pinned = true}) {
+    // [applies] false: the router's filter never takes the ping block. [forced]: something else keeps it there.
+    RecordingSSHClient router(
+        {bool blocked = false, String tag = '', bool pinned = true, bool applies = true, bool forced = false}) {
       var on = blocked;
       // Whole commands only: the guard script the app writes contains these key names too.
       return RecordingSSHClient(responder: (cmd) {
@@ -869,7 +871,7 @@ void main() {
         if (c == 'nvram unset cfg_pia_wg_lw_icmp') on = false;
         if (c.contains('3rd-party')) return tag;
         if (c == 'nvram get cfg_pia_wg_lw_icmp') return on ? '1' : '';
-        if (c == 'nvram get filter_lw_icmp_x') return on && pinned ? '8' : '';
+        if (c == 'nvram get filter_lw_icmp_x') return forced || (on && pinned && applies) ? '8' : '';
         if (c == 'nvram get vpnc_dev_policy_list') return pinned ? '1>192.168.1.50>>5>' : '';
         return '';
       });
@@ -927,7 +929,9 @@ void main() {
           find.descendant(of: find.byKey(const Key('secure_startup_text')), matching: find.byType(RichText)));
       final plain = text.text.toPlainText();
       expect(plain, contains('briefly while the router starts'));
-      expect(plain, contains('if its DNS servers ever change'));
+      // ID-368: a change of DNS servers opens no gap since ID-364; a reset of the router's network does.
+      expect(plain, contains('for about half a minute after it resets its network'));
+      expect(plain, isNot(contains('DNS servers')));
       expect(plain, contains('showing your real internet address'));
       expect(plain, contains('can never ping anything on the internet'));
       expect(plain, contains("Stock ASUS firmware can't block pings for just some devices."));
@@ -963,7 +967,7 @@ void main() {
       expect(set, greaterThan(-1));
       expect(ssh.commands.indexOf('nvram commit', set), greaterThan(set));
       expect(ssh.commands.skip(set).any((x) => x == "'/jffs/cfg-pia-wg/guard.sh'"), isTrue,
-          reason: 'applied now, not at the next cron run');
+          reason: "applied now, not at the router's next event");
       expect(c.log.last.message, contains("Secure startup on: devices not on a VPN can't ping the internet."));
     });
 
@@ -987,6 +991,49 @@ void main() {
       await tester.pumpAndSettle();
       expect(ssh.commands, contains('nvram unset cfg_pia_wg_lw_icmp'));
       expect(c.log.last.message, endsWith('Secure startup off: every device can ping the internet again.'));
+    });
+
+    // ID-368: an outcome that isn't what was asked is a popup to dismiss, not a snackbar gone in four seconds.
+    testWidgets("BLOCK the router hasn't applied yet is a Warning popup that says when it will be", (tester) async {
+      final ssh = router(applies: false);
+      final c = await open(tester, ssh);
+      await tester.tap(find.byKey(const Key('secure_startup_block')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('secure_startup_save')));
+      await tester.pumpAndSettle();
+      expect(find.text('Warning'), findsOneWidget);
+      expect(find.textContaining("Secure startup is saved, but the router hasn't applied it yet."), findsOneWidget);
+      expect(find.textContaining('whenever a tunnel starts or stops, or the router restarts'), findsOneWidget);
+      expect(find.textContaining('every minute'), findsNothing);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(c.log.last.isWarning, isTrue);
+      expect(c.log.last.isError, isFalse);
+      await tester.tap(find.byKey(const Key('error_ok')));
+      await tester.pumpAndSettle();
+      expect(find.text('Warning'), findsNothing);
+    });
+
+    testWidgets('ALLOW while something else still blocks pings is a Warning popup too', (tester) async {
+      final ssh = router(blocked: true, forced: true);
+      final c = await open(tester, ssh);
+      await tester.tap(find.byKey(const Key('secure_startup_allow')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('secure_startup_save')));
+      await tester.pumpAndSettle();
+      expect(find.text('Warning'), findsOneWidget);
+      expect(find.textContaining('the router still blocks pings'), findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(c.log.last.isWarning, isTrue);
+    });
+
+    testWidgets('what was asked is a snackbar, not a popup', (tester) async {
+      await open(tester, router());
+      await tester.tap(find.byKey(const Key('secure_startup_block')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('secure_startup_save')));
+      await tester.pump();
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.text('Warning'), findsNothing);
     });
 
     testWidgets('on Merlin it says the kill switch covers this, and writes nothing', (tester) async {

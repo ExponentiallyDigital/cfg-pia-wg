@@ -70,7 +70,7 @@ void main() {
       await app.assign(_a, 9);
       expectSound();
       expect(router.actualExit(_a), 'wgc1');
-      expect(rulesFor(_a, 90), ['from $_a lookup 9 suppress_prefixlength 0']);
+      expect(rulesFor(_a, 90), ['from $_a lookup 201']);
       expect(rulesFor(_a, 91), ['from $_a blackhole']);
     });
 

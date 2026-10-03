@@ -1013,8 +1013,8 @@ Measured with one device pinned to wgc1 and a ping running on it throughout (`.c
 | What happened to the tunnel | Without the guard | With the guard | Measured |
 | --- | --- | --- | --- |
 | Its server stopped answering: a PIA registration ageing out, interface still up | blocked - the router answers "Destination host unreachable" | blocked | 2026-09-20 (BRK-1), 2026-09-24 |
-| The watchdog rebuilt it with `restart_vpnc` | about one second out through the default connection | blocked | 2026-09-24 |
-| DISABLE in the app, or turned off in the web interface | out through the default connection for as long as it stays off: another tunnel, or the WAN in the clear when the default is Internet | blocked | 2026-09-08, 2026-09-21 (DEF-7), 2026-09-24 |
+| The watchdog rebuilt it with `restart_vpnc` | about one second out through the default connection | blocked | 2026-09-24; for the build 491 design, 2026-10-03 |
+| DISABLE in the app, or turned off in the web interface | out through the default connection for as long as it stays off: another tunnel, or the WAN in the clear when the default is Internet | blocked | 2026-09-08, 2026-09-21 (DEF-7), 2026-09-24; for the build 491 design, 2026-10-03 (`stop_vpnc`) |
 | A reboot | out through the WAN until the tunnels start | blocked: the router's Network Services Filter holds from boot, until the boot hook puts the rules back (ID-348, build 488) | 2026-10-01, watched from a pinned device (`scripts/check-reboot.sh`, a probe a second): 3 of 3 boots with nothing out of the WAN. Before build 488, 4 of 6 leaked, for 3 to 6 seconds each |
 
 Why it leaks. The firmware's rule for a pinned device is `100: from <ip> lookup <table>`, and the table is not a small one: it carries a copy of the router's own routes, including `default via <ISP gateway> dev <WAN>`. While the tunnel is up its two `/1` routes are more specific and win. When the tunnel goes, those routes go with the interface, and what is left in the table sends the device straight out of the WAN. When the firmware removes the rule as well - DISABLE does - the device falls to the default connection's rules at 10000 instead. On 2026-09-24 the two paths could be told apart by a ping's TTL, because they answered in the same 11 ms: 58 through the Melbourne tunnel, 56 through the ISP. TTL only distinguishes paths against a reference like that - a UK server answered with 56 through its tunnel - so a runsheet that needs to tell paths apart puts the tunnels in regions with clearly different times.
@@ -1024,56 +1024,73 @@ What does NOT close it, both measured on 2026-09-24:
 - **A blackhole route in the slot's table.** The firmware rebuilds that table on every restart, so the route is gone after the first rebuild - and while it lasted, the copied WAN default at metric 0 beat it at metric 1000 anyway. Worse, the rule that pointed a device at that table outlived the tunnel, so DISABLE then sent the device out through the ISP in the clear rather than through the default connection's tunnel.
 - **Anything in the firewall.** `restart_vpnc` rebuilds the FORWARD chain, so counting or dropping rules added there were gone at the exact moment they were needed.
 
-What does: **rules, because the firmware only ever removes the rules it made itself.** Per pinned device, two:
+What does: **rules, because the firmware only ever removes the rules it made itself, and a routing table of the app's own** (ID-364, build 491, the shape of Merlin's kill switch). Per pinned device, two rules:
 
 ```text
-90:  from <ip> lookup <table> suppress_prefixlength 0    the tunnel's own routes, never a default
-91:  from <ip> blackhole                                 anything else is dropped
+90:  from <ip> lookup <200 + slot>    the guard's own table for that tunnel
+91:  from <ip> blackhole              whatever that table can't route is dropped
 ```
 
-And since build 480 (ID-347), for every address `X` the slot's table sends to the WAN - see "What it does not cover" below for what those are, and why rule 90 let them through:
+And per tunnel with a pinned device, one table, `200 + slot`, holding the tunnel's default and the router's local routes, and nothing else:
 
 ```text
-88:  from <ip> to X lookup <200 + slot>    a table the guard keeps: only the tunnel's two /1 routes
-89:  from <ip> to X blackhole              reached when the tunnel is down and that table is empty
+default dev wgcN                      while the tunnel is up
+<the LAN and guest bridges, loopback, the router's WireGuard and OpenVPN servers, copied from main>
 ```
 
-The `/1` routes in table `200 + slot` vanish with the interface and are put back by the next guard run, which is at most a minute away: until then `X` is blocked, not let out.
+**The table is defined by what it never holds: a route out of the WAN.** Local routes are copied from main by device, a whitelist (`dev (br|lo|wgs|tun)`), so an interface nobody thought of is left out, which fails closed, and nothing via the WAN can match. Every guard run also takes out anything in the table it wouldn't have put there, whatever put it there. Main holds host routes to the router's own DNS servers via the WAN beside its default and the WAN subnet (measured 2026-10-03), and none of them is copied, so a pinned device's traffic to those servers goes through its tunnel like everything else.
 
-`suppress_prefixlength 0` refuses a matched route whose prefix is `/0`, so while the tunnel is up its `/1` routes win and nothing changes; when they are gone, the only thing left is the copied default, which is refused, and the device reaches rule 91. That covers the rebuild window and DISABLE by construction, whatever the timing. Both rules survived a rebuild and a DISABLE on hardware, and with them in place DISABLE let not one reply out.
+**When the tunnel stops, the kernel takes its routes out of every table, the guard's included, so a pinned device reaches rule 91 with nothing having to run.** Measured 2026-10-03: after `stop_vpnc` the interface was gone within 0.26 s and its route in the guard's table with it, and the device was refused; with rule 91 removed, its traffic went out of the WAN. That covers a rebuild, a DISABLE and a tunnel switched off in the web interface by construction, whatever the timing. After `restart_vpnc` the interface was back within about a second, and the table stayed empty, so the device stayed refused, until the guard's next run refilled it.
 
-**One script owns them**, `/jffs/cfg-pia-wg/guard.sh` (`lib/fail_closed_guard.dart`). It works out the wanted set afresh from `vpnc_dev_policy_list` every time - an enabled record whose index names a WireGuard profile - and adds or removes rules until the router matches, so a pin made or removed in the web interface is followed too. It takes a `mkdir` lock, because two watchdogs start in the same second and would otherwise both add the same rule, and it adds the drop rule first, so a half-added guard fails closed rather than open. Priorities 90 and 91 are the guard's alone; the stale-rule sweep is confined to 100 and names it in every delete, because the rule at 90 has the same `from <ip> lookup <table>` shape and an unqualified delete removes whichever comes first.
+Measured the same day for the table itself, by `ip route get ... iif br0` for an address nothing on the LAN used: the internet, the WAN gateway and the router's DNS servers went through the tunnel; the LAN, a guest bridge and the WireGuard server's peers stayed local; and with the table's default gone, the internet and DNS were refused and the LAN still answered.
 
-Who calls it:
+Builds 460 to 490 used the same two priorities with a different shape: rule 90 looked up the firmware's own table with `suppress_prefixlength 0`, which refuses the copied WAN default but not the WAN host and subnet routes in that table, so rules 88 and 89 named each of those addresses (ID-347), and a cron entry ran the guard every minute to keep them current (ID-316). It held, but it was 72 rules for six devices, it went stale whenever the router's DNS servers or WAN changed, and at every watchdog tick the cron's run met the watchdog's own in the same second, which crashed the firmware's `asd` daemon (ID-361). The guard's first run takes rules 88 and 89 out and replaces the old rule 90, and the app takes the cron entry out.
+
+**One script owns them**, `/jffs/cfg-pia-wg/guard.sh` (`lib/fail_closed_guard.dart`). It works out the wanted set afresh from `vpnc_dev_policy_list` every time - an enabled record whose index names a WireGuard profile - and adds or removes rules until the router matches, so a pin made or removed in the web interface is followed at its next run. It takes a `mkdir` lock, so two runs never add the same rule, and it adds the drop rule first, so a half-added guard fails closed rather than open. Priorities 90 and 91 are the guard's alone; the stale-rule sweep is confined to 100 and names it in every delete, because the rule at 90 has the same `from <ip> lookup <table>` shape and an unqualified delete removes whichever comes first.
+
+**It runs when something happens, never on a timer.** Protection doesn't depend on it running: a missed event, an empty table or a tunnel that never came back leaves a device blocked, never let out. A run restores service. Who calls it:
 
 | When | Caller | Why there |
 | --- | --- | --- |
 | During and after every APPLY | `DeviceAssignmentService.apply` | the list it has just written is the list to guard: once straight after it is written, before the firmware installs its own rules, so a moved device is never on its old tunnel's guard or on none (ID-292), and again at the end |
 | Before DISABLE stops the tunnel | `RouterSlotService.disableSlot` | a reboot clears the rules, and a DISABLE is when they matter |
 | After DELETE moves devices to Internet | `_releasePinnedDevices` | the guard held them while the tunnel stopped; on the internet by design, they must not stay blocked |
-| Every watchdog check, before a disabled slot stands down | the watchdog script | catches a reboot, and a pin changed in the web interface, within one interval |
-| At boot | `S50downloadmaster`, when stock first calls it | a reboot clears every rule, and stock first calls the hook a few seconds after the WAN is up, so this leaves a window (ID-348, below). Since build 480 the guard writes this boot hook itself whenever any device is pinned; until then only a watchdog deploy did, so a router with pins and no watchdog had no guard after a reboot (ID-315) |
-| Every minute | the `cfg_pia_wg_guard` cron entry, kept by `FailClosedGuard.ensure` while any device is pinned | a firmware action that wipes rules - a web-interface VPN Fusion apply, `restart_net_and_phy` - no longer leaves the guard off until the next watchdog run, or indefinitely without one (ID-316) |
-| UPDATE WATCHDOG VERSION | `RouterWatchdog.redeployScripts` | installs the guard and rewrites the boot hook on a router updated from before 460 |
+| At boot | `S50downloadmaster start` | a reboot clears every rule. The tunnel was already up when stock first called the hook, at 29.6 s of uptime (measured 2026-10-03), so the boot run fills the tables too. The guard writes this hook itself whenever any device is pinned (ID-315) |
+| On every `firewall-start` | `S50downloadmaster firewall-start`, which runs `guard.sh soon` in the background and returns at once | stock raises it at boot, on `restart_firewall`, `restart_vpnc_dev_policy`, `stop_vpnc` and `restart_vpnc`, on a WAN reconnect and on `restart_net_and_phy` (measured 2026-08-31 and 2026-10-03): every event known to wipe the rules, empty a table or change what a table copies. An apply in the web interface's VPN Fusion starts with `stop_vpnc` (6.8.9), so a pin changed there is followed, though that hasn't been watched end to end |
+| After a watchdog rebuild, once the new tunnel has a handshake | the watchdog script, `guard.sh soon` | the rebuild's `restart_vpnc` empties the table, and this makes sure a run follows it |
+| UPDATE WATCHDOG VERSION | `RouterWatchdog.redeployScripts` | installs the current guard and boot hook, the guard first, so the hook never calls a guard older than itself |
 | UNINSTALL | `uninstallFromRouter`, first | left behind, the rules would block pinned devices with no app left to explain it |
+
+**`soon` turns a burst of events into one run.** Each request writes its process ID to `/tmp/cfg-pia-wg-guard.next`, waits 10 seconds, and runs only if no newer request came in meanwhile, so a burst costs one run, 10 seconds after its last call. Ten, because the bursts measured on 2026-10-03 had gaps of up to nine seconds inside them: a WAN reconnect called the hook 8 times over 18 s, `restart_net_and_phy` 10 times over 26 s, and `restart_vpnc` three times within 2 s. Runs one to two seconds apart crash `asd` at 9 to 13% a run (ID-361), so the spacing matters twice over. Stock waits for the hook - `app_init_run.sh` runs each init script in the foreground (read from stock's source, 2026-10-03) - so the hook sends the guard to the background with its output closed, and anything slow there would hold up the VPN.
+
+**The guard never causes the event it listens to unless something changed.** A firewall restart raises `firewall-start`, which runs the guard, so the guard asks for a firewall restart only when it has changed the Network Services Filter's list (below), and the run that restart raises finds nothing to change. Asking whenever the filter read back short, as builds 488 to 490 did, would loop. Measured 2026-10-03 (GRD-9): with a pinned device's entries taken out of the list and the firewall, the router's next firewall restart ran the guard, which put them back and asked for one restart of its own, and the calls stopped there, two in all. A wiped rule 90 was back 11 seconds after a firewall restart.
+
+**The hook depends on Download Master staying enabled.** On `start` and `firewall-start`, stock's `app_init_run.sh` runs a package's script only while `app_get_field.sh <package> Enabled` says `yes` (read from stock's source, 2026-10-03; `yes` on the test router). Turned off in the router's USB applications, Download Master silently takes the guard's boot run and every event run with it, as it always took the boot run. The Network Services Filter still holds TCP and UDP. `scripts/check-claims.sh` checks the setting.
+
+What it costs, against a run every minute:
+
+- **About ten seconds without internet after a tunnel restart**, until the coalesced run refills the table. Fails closed. Measured 2026-10-03 (GRD-9): 12 seconds from starting the tunnel to the device's traffic going through it.
+- **A WireGuard server peer added after the guard's last run** has no route in the tunnel tables until the next event, so a pinned device's replies to it go into the tunnel, and its remote access fails closed until then. Main holds these as one host route per peer.
+- **A pin changed in the web interface** takes effect at the router's next event rather than within a minute. An apply there starts with `stop_vpnc`, which raises one, so it should follow within seconds (Andrew's call, 2026-10-03: the README says so).
 
 What it does not cover:
 
 - **Devices that follow the default connection.** By design: pinning is how a device is protected. When the default is itself a tunnel, the devices following it still fall through while it is off, and the alert email says so.
-- ~~**Addresses the slot's table routes to the WAN directly**~~ - covered since build 480 (ID-347). The router's own DNS servers, the PIA endpoint and the ISP's subnet are host and subnet routes via the WAN in the slot's table, and `suppress_prefixlength 0` only refuses the `/0` default, so rule 90 sent a pinned device to them outside its tunnel even while the tunnel was healthy. Recorded here as "not covered" on 2026-09-24; measured as a leak on 2026-09-30, when `ip route get 1.1.1.2 from <pinned device> iif br0` went out the WAN with the tunnel up and stopped. With rules 88 and 89 it goes through the tunnel, or is refused.
-- **IPv6.** Not measured on a router with IPv6 enabled.
+- ~~**Addresses the slot's table routes to the WAN directly**~~ - covered since build 480 (ID-347), and by construction since build 491: the guard's table holds no route out of the WAN at all. The router's own DNS servers, the PIA endpoint and the ISP's subnet are host and subnet routes via the WAN in the firmware's table for the slot, and `suppress_prefixlength 0` only refused the `/0` default, so the rule 90 of builds 460 to 479 sent a pinned device to them outside its tunnel even while the tunnel was healthy. Measured as a leak on 2026-09-30, when `ip route get 1.1.1.2 from <pinned device> iif br0` went out the WAN with the tunnel up and stopped.
+- **`restart_net_and_phy`** clears policy rules, ours included (measured 2026-09-10), and the guard's run comes 10 seconds after the hook's last call of its burst, about 36 seconds in. Meanwhile the Network Services Filter holds TCP and UDP; pings can get out unless SECURE STARTUP is on (below).
+- **IPv6.** Not measured on a router with IPv6 enabled. The guard, like the filter, is IPv4 only.
 - ~~**The first seconds after a boot, on stock**~~ - covered since build 488 by the Network Services Filter (ID-348), below. A reboot clears the rules, and stock runs no add-on code until `/opt` mounts, which is after the WAN is up. Until the boot hook puts the guard back, the firmware's rule 100 sends a pinned device to its slot's table, and with the tunnel not yet up that table's copied default sends it out of the WAN. Watched from a pinned device on 2026-09-30 (`scripts/check-reboot.sh`, probing by IP address; that night's version probed once a second while answers came, but only every 2 to 3 seconds while blocked, so a leak shorter than that could fall between probes. It now probes once a second throughout): 4 of 6 boots leaked, for 3 to 6 seconds each (the sixth on 2026-10-01, probed once a second throughout), about a minute after the reboot was sent. The guard is back within about a second of stock's first call to the hook, so no speed-up in the guard closes this. What does, measured the same night: listing the device in stock's Network Services Filter (`fw_lw_enable_x=1`, `filter_lwlist`), which the firmware applies itself before the WAN is up, as `-A FORWARD -s <ip> -i br0 -o eth0 -j DROP`: WAN only, so the tunnel still carries the device. With it on, 0 of 4 boots leaked; and with the guard's rules removed and the tunnel stopped by hand, so the kernel routed the device to the WAN, 18 probes left by the WAN without the filter and none with it.
-- ~~**A WAN route the firmware adds between guard runs**~~ - covered since build 488 by the Network Services Filter (ID-348), below. Rules 88 and 89 name the addresses the slot's table sent out the WAN when the guard last ran. Measured 2026-10-01: after the router's DNS servers were changed, the firmware put a WAN route for the new server into the table within 6 seconds, and a pinned device's route to it went out of the WAN until the guard's cron run 48 seconds later. The same applies to a new ISP subnet after a WAN reconnect, and a new PIA server after a rebuild until the watchdog's own guard run. The Network Services Filter above closes this too, since it drops the device's WAN traffic whatever the routes say.
-- **Pings, in those two windows, unless the user blocks them.** The Network Services Filter can hold ICMP only for the whole LAN (`filter_lw_icmp_x` builds one `-i br0 -o <WAN> -p icmp --icmp-type N -j DROP` for every device), so it isn't part of pinning: it's **SECURE STARTUP** in SETTINGS, off by default (ID-356; until build 490 a switch in DEVICES). A ping already running when it goes on carries on: the rule sits after the firewall's `RELATED,ESTABLISHED` accept, and Windows `ping -t` keeps one conntrack entry alive by reusing its ID, so only a ping started after that entry's 30-second timeout meets the DROP (measured 2026-10-01).
+- ~~**A WAN route the firmware adds between guard runs**~~ - covered since build 488 by the Network Services Filter (ID-348), below, and since build 491 there is nothing to go stale: the guard's table copies no WAN route, so a new DNS server, ISP subnet or PIA server changes nothing in it. Measured 2026-10-01, under builds 480 to 490's rules 88 and 89, which named the addresses the slot's table sent out the WAN when the guard last ran: after the router's DNS servers were changed, the firmware put a WAN route for the new server into the table within 6 seconds, and a pinned device's route to it went out of the WAN until the guard's cron run 48 seconds later.
+- **Pings, after a boot and after `restart_net_and_phy`, unless the user blocks them.** The Network Services Filter can hold ICMP only for the whole LAN (`filter_lw_icmp_x` builds one `-i br0 -o <WAN> -p icmp --icmp-type N -j DROP` for every device), so it isn't part of pinning: it's **SECURE STARTUP** in SETTINGS, off by default (ID-356; until build 490 a switch in DEVICES). A ping already running when it goes on carries on: the rule sits after the firewall's `RELATED,ESTABLISHED` accept, and Windows `ping -t` keeps one conntrack entry alive by reusing its ID, so only a ping started after that entry's 30-second timeout meets the DROP (measured 2026-10-01).
 
-**The second layer: the router's Network Services Filter (ID-348, build 488).** Rules live in the kernel, so the two windows above are gaps no rule can close: stock runs no add-on code until after the WAN is up, and rules 88 and 89 only know the addresses they last saw. The Network Services Filter is the firmware's own: kept in NVRAM, applied by the firewall at boot before the WAN is up, and rebuilt by the firmware itself on every firewall restart, `restart_vpnc` included (measured: a rule added to the firewall by hand is gone after one; these aren't). The guard lists each pinned device there, the orphans included, as `<ip>>>>>TCP` and `<ip>>>>>UDP`, which the firmware builds as
+**The second layer: the router's Network Services Filter (ID-348, build 488).** Rules live in the kernel, so two windows are gaps no rule can close: stock runs no add-on code until after the WAN is up, and `restart_net_and_phy` clears the rules until the guard's next run. The Network Services Filter is the firmware's own: kept in NVRAM, applied by the firewall at boot before the WAN is up, and rebuilt by the firmware itself on every firewall restart, `restart_vpnc` included (measured: a rule added to the firewall by hand is gone after one; these aren't). The guard lists each pinned device there, the orphans included, as `<ip>>>>>TCP` and `<ip>>>>>UDP`, which the firmware builds as
 
 ```text
 -A FORWARD -s <ip>/32 -i br0 -o eth0 -p tcp -j DROP
 -A FORWARD -s <ip>/32 -i br0 -o eth0 -p udp -j DROP
 ```
 
-Out of the WAN only, so the tunnel still carries the device. The rules: the app changes only its own entries, remembered as `ip/PROTO` in `cfg_pia_wg_lwlist`; it turns the filter on only when it's off and empty (`cfg_pia_wg_lw_on` remembers that it did), and off again only if it did and the list is empty; it refuses, and says why in the app log, when the filter is an allow list (`filter_lw_default_x=DROP`, where listing a device would let it out), when it's off with the user's own entries in it, or when the firewall is off; and it warns when the filter has a timetable. A change is committed to NVRAM, so it survives a reboot, and read back from `iptables -S FORWARD`, not the settings: a firewall restart the service queue dropped shows as missing rules, and is asked for again on the next run. The guard prints `filter held N of M`. UNINSTALL takes the app's entries out and puts the filter and its ICMP setting back as the app found them, running the same shell function directly in case `guard.sh` is gone.
+Out of the WAN only, so the tunnel still carries the device. The rules: the app changes only its own entries, remembered as `ip/PROTO` in `cfg_pia_wg_lwlist`; it turns the filter on only when it's off and empty (`cfg_pia_wg_lw_on` remembers that it did), and off again only if it did and the list is empty; it refuses, and says why in the app log, when the filter is an allow list (`filter_lw_default_x=DROP`, where listing a device would let it out), when it's off with the user's own entries in it, or when the firewall is off; and it warns when the filter has a timetable. A change is committed to NVRAM, so it survives a reboot, and is applied by asking for one firewall restart, and only then (ID-364). The result is read back from `iptables -S FORWARD`, not the settings, and the guard prints `filter held N of M`; a restart the service queue dropped shows as missing rules until the router's next firewall restart builds them from NVRAM. A run with nothing to change reads the chain once (ID-362). UNINSTALL takes the app's entries out and puts the filter and its ICMP setting back as the app found them, running the same shell function directly in case `guard.sh` is gone.
 
 Measured on stock, 2026-09-30 and 2026-10-01: with the guard's rules removed and the tunnel stopped by hand, so the kernel routed the device to the WAN, 18 probes left by the WAN without the filter and none with it, by hand and again with the app's own entries. After the router's DNS servers changed, the kernel routed a pinned device to the new server via the WAN for 14 seconds, and every probe to it in that time was blocked. Three reboots in a row, a probe a second: nothing out of the WAN. 80 entries built 80 rules; 17 devices need 34.
 
@@ -1131,15 +1148,14 @@ Three points of care, all covered by `staleRuleTables` in `lib/device_assignment
 
 #### 6.8.12. <a name='every-routing-rule-the-app-touches'></a>Every routing rule the app touches
 
-The app adds no routes and leaves no firewall rules behind. What it touches is `ip rule`, the list the kernel reads top down, lowest priority number first, to decide which routing table a packet uses. This is the whole list, read from `ip rule show` on the maintainer's stock router, with what the app does to each and the hardware test behind it. README 5.4 links here.
+The app's only routes are in its own tables, 201 to 205, one for each tunnel with a pinned device (6.8.10), and it adds no firewall rules of its own: the Network Services Filter's are the firmware's, built from NVRAM. What it touches is `ip rule`, the list the kernel reads top down, lowest priority number first, to decide which routing table a packet uses. This is the whole list, read from `ip rule show` on the maintainer's stock router, with what the app does to each and the hardware test behind it. README 5.4 links here.
 
 | Priority | Rule | Made by | What the app does | Why |
 | --- | --- | --- | --- | --- |
 | 0 | `from all lookup local` | kernel | never touches | the router's own addresses |
-| 88 | `from <ip> to <X> lookup <200 + slot>` | the app's fail-closed guard, since build 480 | one per pinned device per address the slot's table sends to the WAN; removed with the pin, or when the address leaves the table; UNINSTALL removes all | those addresses go through the tunnel, not the WAN (ID-347, 6.8.10) |
-| 89 | `from <ip> to <X> blackhole` | the app's fail-closed guard, since build 480 | the same as 88, added first | while the tunnel is down, those addresses are blocked |
-| 90 | `from <ip> lookup <table> suppress_prefixlength 0` | the app's fail-closed guard | adds one per pinned device; removes it when the device is unpinned, moved or its slot deleted; UNINSTALL removes all | a pinned device uses its tunnel's own routes and never the WAN default copied into that table (6.8.10) |
-| 91 | `from <ip> blackhole` | the app's fail-closed guard | the same as 90, added first | whatever rule 90 refuses is dropped, so a pinned device fails closed |
+| 88, 89 | `from <ip> to <X> lookup <200 + slot>`, `from <ip> to <X> blackhole` | the app's fail-closed guard, builds 480 to 490 | adds none; removes any it finds | they named each address the firmware's table sent to the WAN (ID-347); the guard's own table holds none, so they aren't needed (ID-364, 6.8.10) |
+| 90 | `from <ip> lookup <200 + slot>` | the app's fail-closed guard | adds one per pinned device; removes it when the device is unpinned, moved or its slot deleted; replaces one into any other table, as builds 460 to 490 made; UNINSTALL removes all | a pinned device uses the guard's own table for its tunnel, which holds the tunnel's default and the router's local routes and no route out of the WAN (6.8.10) |
+| 91 | `from <ip> blackhole` | the app's fail-closed guard | the same as 90, added first; alone for a device pinned to a profile that no longer exists | whatever the table can't route is dropped, so a pinned device fails closed |
 | 100 | `from <ip> lookup <table>`, or `lookup main` when pinned to Internet | the firmware, on `restart_vpnc_dev_policy` | never adds; deletes stale copies after every APPLY and after DELETE moves devices to Internet, naming priority 100 in every delete | the firmware never removes an old rule and re-adds one per record on every call, so without the sweep a moved device keeps using the tunnel it left (6.8.11) |
 | 1000 | `to <dns> iif lo lookup <table>` | the watchdog's DNS probe | adds one for the length of one lookup and removes it, one probe at a time across all slots; each run first sweeps its own slot's, left by a run that was killed | aims the probe through the tunnel it is testing (ID-078); one at a time, because two probes in the same second shared a route and one asked through the other's tunnel (ID-193) |
 | 1016-1029 | `from all to <dns> iif lo lookup <table>` | the firmware, per DNS address of each running slot | never touches | the router's own lookups ([ROUTER-DNS.md](ROUTER-DNS.md#the-router-rules)) |
@@ -1158,6 +1174,7 @@ The hardware tests behind the table, all on stock with devices moved between wgc
 | 2026-09-19 | runsheet AN-2026-09-19_001 | the firmware's rules at 1016-1029 aim the router's lookups by the highest-numbered slot sharing an address, so the probe needs its own rule at 1000 |
 | 2026-09-21 | DEV-17 and two `ip rule show` dumps around a reboot | four copies of one device's rule after a morning of applies, one after the reboot: `restart_vpnc_dev_policy` re-adds a rule for every record each time, so the sweep covers the whole list (ID-183) |
 | 2026-09-24 | runsheets FC, FG and FR | a rebuild and a DISABLE let a pinned device out; a route in the slot's table and anything in the firewall are wiped by the firmware; rules at 90 and 91 survive both and block every reply (6.8.10, ID-213) |
+| 2026-10-03 | the four measurements for ID-364, in `.claude/plans/plan_kill-switch-redesign.md` | which events call the boot hook with `firewall-start`; a stopped tunnel's route leaves the guard's table by itself within 0.26 s, so the device is refused with nothing running, and without rule 91 it goes out the WAN; the table's routing for the internet, the WAN gateway, the router's DNS servers and the LAN; at boot the tunnel is up before the hook's first call |
 
 ### 6.9. <a name='time-scheduling-disabling-a-device'></a>Time Scheduling (`MULTIFILTER_*`) - disabling a device
 
@@ -1276,8 +1293,7 @@ flowchart TD
     STAGGER --> LOAD
     DETACH -->|no| LOAD
 
-    LOAD["read settings from NVRAM"] --> GUARD["run guard.sh<br/><i>stock, if installed</i>"]
-    GUARD --> ENABLED{"wgcN_enable = 0<br/>and not a deploy?"}
+    LOAD["read settings from NVRAM"] --> ENABLED{"wgcN_enable = 0<br/>and not a deploy?"}
     ENABLED -->|yes| STOP1["exit 0 - the user turned<br/>this tunnel off"]
     ENABLED -->|no| WAITED{"waited, and its<br/>schedule is gone?"}
     WAITED -->|yes| STOP4["exit 0 - paused or<br/>removed meanwhile"]
@@ -1304,7 +1320,7 @@ flowchart TD
     classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
     classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
     class CRON,DEPLOY,OK go
-    class STOP1,STOP2,STOP3,STOP4,STOP5,DETACH,REEXEC,STAGGER,LOAD,GUARD,ENABLED,WAITED,SETS,IFACE,HS,PING,BACKOFF,WAN step
+    class STOP1,STOP2,STOP3,STOP4,STOP5,DETACH,REEXEC,STAGGER,LOAD,ENABLED,WAITED,SETS,IFACE,HS,PING,BACKOFF,WAN step
     class RECONF work
 ```
 
@@ -1318,7 +1334,7 @@ The **stagger** keeps the watchdogs from starting together. Every slot's cron en
 
 The **router resolver line** comes after the checks, on every run: one lookup through the router's own resolver at `127.0.0.1`, logged as "Router resolver OK" or "Router resolver FAILED" (ID-194). It is never a gate. A dead dnsmasq or stubby takes names away from every unpinned device, but it is not the tunnel's fault, and rebuilding the tunnel would not bring it back.
 
-The **guard** runs first, before anything can stand down. `guard.sh` keeps the fail-closed rules for every pinned device in place (ID-213, [What happens when the tunnel drops](#what-happens-when-the-tunnel-drops)), and a disabled slot is exactly when those rules matter, so it runs on every check whatever happens next. It is on stock only, and does nothing when nothing has changed.
+**No guard run.** Until build 491 every check ran `guard.sh` first, so a reboot or a pin changed in the web interface was caught within one interval. That run met the guard's own per-minute cron run in the same second at every tick, and runs a second apart crash `asd` (ID-361). The guard now runs on the router's events instead, and a check that finds nothing wrong has nothing to give it (ID-364, [What happens when the tunnel drops](#what-happens-when-the-tunnel-drops)). A rebuild does: it asks for one run once the new tunnel has a handshake (7.3).
 
 The **enable check** stops the watchdog undoing a decision the user just made. A tunnel switched off in the web interface looks exactly like a tunnel that dropped.
 
@@ -1351,7 +1367,8 @@ flowchart TD
     T -->|"no, the first time"| W
     T -->|yes| K
     K{"wgcN up, and<br/>a handshake<br/>within 20s?"}
-    K -->|yes| OK["Reconfig SUCCESS<br/>count it,<br/>send the<br/>recovery alert"]
+    K -->|yes| GS["ask the guard for one run<br/><i>stock: guard.sh soon</i>"]
+    GS --> OK["Reconfig SUCCESS<br/>count it,<br/>send the<br/>recovery alert"]
     K -->|no| FAIL["abort<br/>count it,<br/>send the<br/>failure alert"]
     T -->|"no, twice"| FAIL
 
@@ -1361,7 +1378,7 @@ flowchart TD
     classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
     class OK go
     class FAIL bad
-    class A,B,C,D,E,F,G,W,H,T,K step
+    class A,B,C,D,E,F,G,W,H,T,K,GS step
 ```
 
 <p align="center"><em>A rebuild, from the PIA certificate to a handshake on the new server, and the two ways it ends.</em></p>
@@ -1398,7 +1415,7 @@ A `cru` (`crontab`) entry drives the configurable periodic health check. An addi
 | Firmware | Boot hook |
 | --- | --- |
 | Merlin | `/jffs/scripts/services-start`, created and made executable if absent |
-| Stock | `/opt/etc/init.d/S50downloadmaster` — a script stock already runs at boot and on a firewall restart, which the app replaces |
+| Stock | `/opt/etc/init.d/S50downloadmaster` — a script stock already runs at boot and on a firewall restart, which the app replaces. On `start` it puts these lines back and runs the fail-closed guard; on `firewall-start` it asks the guard for one run (ID-364, 6.8.10). Stock calls it only while Download Master is enabled in the router's USB applications |
 
 Stock has no user-script hook of its own, so the app **replaces** `S50downloadmaster` wholesale with its own template (`lib/s50_template.dart`), carrying across only the `cru` lines it finds between the `# ********** REPLACEMENT START/END **********` markers of the previous copy. Whatever else the file held is discarded.
 
