@@ -329,7 +329,7 @@ void main() {
     test("the fail-closed guard's rules for the same device are never swept", () {
       // The guard's rule at 90 reads `from <ip> lookup <table>` too. Taken for a duplicate, it would
       // be deleted on the next APPLY and the device left unguarded (ID-213).
-      const guarded = '90:\tfrom 192.168.1.51 lookup 9 suppress_prefixlength 0\n'
+      const guarded = '90:\tfrom 192.168.1.51 lookup 201\n'
           '91:\tfrom 192.168.1.51 blackhole\n'
           '100:\tfrom 192.168.1.51 lookup 9\n';
       expect(staleRuleTables(guarded, ip: '192.168.1.51', keepIndex: 9), isEmpty);

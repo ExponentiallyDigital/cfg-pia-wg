@@ -1,0 +1,9 @@
+A complete app rewrite and new interface
+
+• Stock ASUS firmware now supported, Merlin in beta
+• DEVICES: easily assign devices to a VPN or the Internet, rename, or block them
+• KILL SWITCH: on stock, built the Asuswrt-Merlin way - assigned devices use their tunnel or nothing
+• WATCHDOG: encrypted DNS, PIA backoff, rebuilt alerts
+• SETTINGS: run more than two VPNs, DNS transparency
+• LOGS: colourised and detailed
+• Router features now a one-time unlock; standalone configs remain free

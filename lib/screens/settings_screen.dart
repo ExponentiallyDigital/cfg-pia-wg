@@ -632,7 +632,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           true
         ),
       (true, false, false) => ('Secure startup saved. Pings will be blocked once a device is assigned to a VPN.', true),
-      (true, false, true) => ("The router hasn't taken the ping block yet. It is asked again every minute.", false),
+      // Nothing asks again on a timer since ID-364. The choice is saved, and the guard puts it into the
+      // router's filter on its next run, which the router's next firewall restart brings (ID-368).
+      (true, false, true) => (
+          "Secure startup is saved, but the router hasn't applied it yet. It will the next time the router "
+              'restarts its firewall, which it does whenever a tunnel starts or stops, or the router restarts.',
+          false
+        ),
       (false, true, _) => (
           'Secure startup off, but the router still blocks pings: something else set it, in Firewall, '
               'Network Services Filter.',
@@ -640,7 +646,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       (false, false, _) => ('Secure startup off: every device can ping the internet again.', true),
     };
-    _c.logEntry(message, isSuccess: ok, isWarning: !ok);
+    // What didn't go as asked is a popup the user dismisses; a snackbar is gone in four seconds (ID-368).
+    if (!ok) return AppErrors.warning(context, _c, message);
+    _c.logEntry(message, isSuccess: true);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
@@ -970,9 +978,9 @@ class _SecureStartupDialogState extends State<_SecureStartupDialog> {
                   TextSpan(style: TextStyle(color: kText, fontSize: 12, height: 1.4), children: [
                     TextSpan(text: 'Allow: ', style: bold),
                     TextSpan(
-                        text: 'every device can ping the internet. But briefly while the router starts, or for up to '
-                            'a minute if its DNS servers ever change, devices on a VPN can ping outside their tunnel, '
-                            'showing your real internet address.\n\n'),
+                        text: 'every device can ping the internet. But briefly while the router starts, or for about '
+                            'half a minute after it resets its network, devices on a VPN can ping outside their '
+                            'tunnel, showing your real internet address.\n\n'),
                     TextSpan(text: 'Block: ', style: bold),
                     TextSpan(text: 'closes that gap, but devices not on a VPN can never ping '),
                     TextSpan(text: 'anything', style: TextStyle(color: kError, fontWeight: FontWeight.bold)),

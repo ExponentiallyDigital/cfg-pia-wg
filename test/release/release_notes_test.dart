@@ -171,4 +171,23 @@ void main() {
     expect(notes.blocks.map((b) => b.version), ['v0.8.77', 'v0.8.76', 'v0.8.75']);
     expect(notes.errors, isEmpty);
   });
+
+  // The Play note is written into play-store/, beside the listing text and screenshots, and release.yml
+  // hands that folder to r0adkll/upload-google-play. The action keeps only the names its filter matches
+  // (src/whatsnew.ts at the pinned commit), so the note must match and nothing else in the folder may.
+  group('where the Play note goes', () {
+    final folder = kPlayNotePath.substring(0, kPlayNotePath.lastIndexOf('/') + 1);
+    final actionFilter = RegExp(r'whatsnew-((.*-.*)|(.*))\b');
+
+    test("release.yml gives the upload action the note's own folder, and nothing names the old one", () {
+      final workflow = File('.github/workflows/release.yml').readAsStringSync();
+      expect(workflow, contains('whatsNewDirectory: $folder\n'));
+      expect(workflow, isNot(contains('distribution/')));
+    });
+
+    test('in that folder the action picks up the note, and only the note', () {
+      final names = [for (final e in Directory(folder).listSync()) e.uri.pathSegments.where((s) => s.isNotEmpty).last];
+      expect(names.where(actionFilter.hasMatch), [kPlayNotePath.substring(folder.length)]);
+    });
+  });
 }

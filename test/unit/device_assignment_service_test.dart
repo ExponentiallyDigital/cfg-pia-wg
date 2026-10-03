@@ -181,7 +181,7 @@ void main() {
       expect(c.ran('nvram set dhcp_staticlist'), isTrue);
       expect(c.commands.firstWhere((cmd) => cmd.startsWith('nvram set dhcp_staticlist')),
           contains('<22:33:44:55:66:77>192.168.1.50>>'));
-      expect(c.ran('restart_net_and_phy'), isFalse, reason: 'the whole point of the light pair');
+      expect(c.executed.any((x) => x.contains('restart_net_and_phy')), isFalse, reason: 'the whole point of the light pair');
     });
 
     test('an existing reservation is not duplicated', () async {
@@ -243,7 +243,7 @@ void main() {
 
         expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9 priority 100'));
         expect(c.commands.any((x) => x.contains('lookup 5')), isFalse, reason: 'the new rule stays');
-        expect(c.ran('restart_net_and_phy'), isFalse, reason: 'deleting the rule is the light fix');
+        expect(c.executed.any((x) => x.contains('restart_net_and_phy')), isFalse, reason: 'deleting the rule is the light fix');
       });
 
       test('the sweep runs after the service that installs the new rule', () async {
@@ -276,7 +276,7 @@ void main() {
       test("the guard's own rules for the device survive the sweep", () async {
         // Same address, same table, priority 90: an unqualified sweep took it for a duplicate.
         final c = ruleClient([
-          '90:\tfrom 192.168.1.20 lookup 5 suppress_prefixlength 0',
+          '90:\tfrom 192.168.1.20 lookup 205',
           '91:\tfrom 192.168.1.20 blackhole',
           '100:\tfrom 192.168.1.20 lookup 5',
         ]);
@@ -361,7 +361,7 @@ void main() {
       final s = await _state(c);
       await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
 
-      final steps = c.commands
+      final steps = c.executed
           .where((cmd) =>
               cmd.contains('vpnc_unit') ||
               cmd.contains('stop_vpnc') ||

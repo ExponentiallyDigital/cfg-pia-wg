@@ -104,9 +104,11 @@ void main() {
       await e2e(['DEV-3', 'before']);
       write(
           'rules',
-          '0:\tfrom all lookup local\n90:\tfrom 192.168.1.20 lookup 5 suppress_prefixlength 0\n91:\tfrom 192.168.1.20 blackhole\n'
+          '0:\tfrom all lookup local\n90:\tfrom 192.168.1.20 lookup 205\n91:\tfrom 192.168.1.20 blackhole\n'
               '100:\tfrom 192.168.1.20 lookup 5\n32766:\tfrom all lookup main\n');
       write('nv_vpnc_dev_policy_list', '<1>192.168.1.20>>5>');
+      // wgc5 has table 5; its guard table is 205 (ID-364).
+      write('nv_vpnc_clientlist', '<pia-aus>WireGuard>5>>password>1>5>>>0>0>cfg-pia-wg');
       write('route_192.168.1.20', '1.1.1.1 from 192.168.1.20 dev wgc5 table 5 \n');
       final r = await e2e([
         'DEV-3',
@@ -135,6 +137,16 @@ void main() {
       expect(out, contains('FAIL  guard 192.168.1.20 5: found "0 0"'));
       expect(out, contains('FAIL  exit 192.168.1.20 wgc5: found "WAN"'));
       expect(out, contains('== DEV-4: FAIL (3)'));
+    });
+
+    // ID-364: before build 491, rule 90 looked up the firmware's table. That is not the guard now.
+    test("a 90 rule into the firmware's table is not the guard", () async {
+      write('nv_vpnc_clientlist', '<pia-aus>WireGuard>5>>password>1>5>>>0>0>cfg-pia-wg');
+      for (final old in ['lookup 5 suppress_prefixlength 0', 'lookup 5', 'lookup 2050']) {
+        write('rules', '90:\tfrom 192.168.1.20 $old\n91:\tfrom 192.168.1.20 blackhole\n');
+        final r = await e2e(['GRD-1', 'after', 'guard 192.168.1.20 5']);
+        expect('${r.stdout}', contains('FAIL  guard 192.168.1.20 5: found "0 1"'), reason: old);
+      }
     });
 
     test('a device the kernel has no route for reads as BLOCKED', () async {

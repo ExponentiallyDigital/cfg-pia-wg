@@ -11,7 +11,8 @@
 #   exit <ip> <wgcN|WAN|BLOCKED>   where the kernel would send that device's traffic now
 #   rule <ip> <table|main>         exactly one firmware rule (priority 100) for it, to that table
 #   norule <ip>                    no firmware rule for it
-#   guard <ip> <table>             the fail-closed guard's pair (90 and 91) for it
+#   guard <ip> <table>             the fail-closed guard's pair (90 and 91) for it, 90 into the
+#                                  guard's own table for that tunnel, 200 + slot (ID-364)
 #   noguard <ip>                   no guard rule for it
 #   default <index>                vpnc_default_wan (0 is Internet)
 #   up <wgcN> | down <wgcN>        whether the tunnel is running
@@ -106,7 +107,8 @@ check() {
       WANT="$3" ;;
     norule) GOT="$(rules_at 100 "$2" | grep -c .)"; WANT=0 ;;
     guard)
-      GOT="$(rules_at 90 "$2" | grep -c "lookup $3 suppress_prefixlength 0") $(rules_at 91 "$2" | grep -c blackhole)"
+      GT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v t="$3" '$2 == "WireGuard" && $7 == t {print 200 + $3; exit}')"
+      GOT="$(rules_at 90 "$2" | grep -cE "lookup ${GT:-none}( |\$)") $(rules_at 91 "$2" | grep -c blackhole)"
       WANT="1 1" ;;
     noguard) GOT="$(rules_at 90 "$2" | grep -c .) $(rules_at 91 "$2" | grep -c .)"; WANT="0 0" ;;
     default) GOT="$(nvram get vpnc_default_wan)"; WANT="$2" ;;

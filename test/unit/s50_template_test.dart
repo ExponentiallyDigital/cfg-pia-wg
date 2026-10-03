@@ -27,6 +27,16 @@ void main() {
       expect(kS50DownloadmasterTemplate, contains('# ********** REPLACEMENT START **********'));
       expect(kS50DownloadmasterTemplate, contains('# ********** REPLACEMENT END **********'));
     });
+
+    // ID-364. Stock waits for the hook (app_init_run.sh runs it in the foreground), so on
+    // firewall-start the guard goes to the background, its output closed so nothing holds the
+    // firmware, and the hook returns at once. `soon` coalesces the burst stock raises.
+    test('on firewall-start asks the guard for one run in the background, and returns at once', () {
+      const ask = '  [ -x /jffs/cfg-pia-wg/guard.sh ] && /jffs/cfg-pia-wg/guard.sh soon </dev/null >/dev/null 2>&1 &\n'
+          '  exit 0\n';
+      expect(kS50DownloadmasterTemplate, contains('if [ "\$1" = "firewall-start" ]; then\n$ask' 'fi\n'));
+      expect(kS50DownloadmasterTemplate.indexOf('firewall-start" ]'), lessThan(kS50DownloadmasterTemplate.indexOf('= "start" ] || exit 0')));
+    });
   });
 
   group('the lighttpd stub', () {
@@ -90,8 +100,9 @@ void main() {
       for (final line in [
         '#!/bin/sh',
         '# Minimal replacement for the stock Download Master init script.',
-        '# Sole purpose: install our cron jobs, and the fail-closed guard, once at boot.',
+        '# At boot (start): put our cron jobs back, and run the fail-closed guard.',
         '[ -x /jffs/cfg-pia-wg/guard.sh ] && /jffs/cfg-pia-wg/guard.sh >/dev/null 2>&1',
+        '[ -x /jffs/cfg-pia-wg/guard.sh ] && /jffs/cfg-pia-wg/guard.sh soon </dev/null >/dev/null 2>&1 &',
         'BOOT_FLAG=/tmp/.dm_boot_delay_done',
         r'[ "$1" = "start" ] || exit 0',
         'sleep 10',
@@ -111,6 +122,13 @@ void main() {
   group('extractS50CruLines', () {
     test('a pristine template yields nothing (its block is only comments)', () {
       expect(extractS50CruLines(kS50DownloadmasterTemplate), isEmpty);
+    });
+
+    // ID-364: builds 480 to 490 put the guard's per-minute cron line here. Whatever rebuilds the
+    // hook now leaves it out, so a boot can't put it back.
+    test("drops the guard's old per-minute line and keeps the watchdog's", () {
+      const legacy = 'cru a $kLegacyGuardCronTag "* * * * *" /jffs/cfg-pia-wg/guard.sh';
+      expect(extractS50CruLines(buildS50Script([legacy, _check])), [_check]);
     });
 
     test('round-trips what buildS50Script wrote', () {

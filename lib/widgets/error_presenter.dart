@@ -51,14 +51,20 @@ class AppErrors {
       await _present(context, controller, [message], detail: detail, logDetail: logDetail, actionLabel: actionLabel) ??
       false;
 
+  /// Something that didn't go as asked but isn't a failure: amber, titled Warning, and logged as a
+  /// warning. A popup rather than a snackbar because the user has to read it, and a snackbar is gone
+  /// in four seconds (ID-368).
+  static Future<void> warning(BuildContext context, SessionController controller, String message) =>
+      _present(context, controller, [message], warning: true);
+
   /// All input-validation errors batched into a single dialog. No-op for an empty list.
   static Future<void> inputs(BuildContext context, SessionController controller, List<String> errors) =>
       errors.isEmpty ? Future<void>.value() : _present(context, controller, errors);
 
   static Future<bool?> _present(BuildContext context, SessionController controller, List<String> messages,
-      {String? detail, String? logDetail, String? actionLabel}) async {
+      {String? detail, String? logDetail, String? actionLabel, bool warning = false}) async {
     for (final m in messages) {
-      controller.logEntry(m, isError: true);
+      controller.logEntry(m, isError: !warning, isWarning: warning);
     }
     if (logDetail != null) controller.logEntry(logDetail, isError: true);
     final shown = detail == null ? messages : [...messages, detail];
@@ -73,9 +79,10 @@ class AppErrors {
       context: context,
       useRootNavigator: true,
       builder: (ctx) => _ErrorDialog(
-        title: messages.length > 1 ? 'Please correct the following' : 'Error',
+        title: warning ? 'Warning' : (messages.length > 1 ? 'Please correct the following' : 'Error'),
         messages: shown,
         actionLabel: actionLabel,
+        warning: warning,
       ),
     );
     if (_token == myToken) _openErrorNav = null;
@@ -91,7 +98,10 @@ class _ErrorDialog extends StatelessWidget {
   /// An action the app can take about this error, shown beside OK. Null for the usual case, where
   /// there is nothing to offer.
   final String? actionLabel;
-  const _ErrorDialog({required this.title, required this.messages, this.actionLabel});
+
+  /// Amber and a warning icon, for [AppErrors.warning]; red otherwise.
+  final bool warning;
+  const _ErrorDialog({required this.title, required this.messages, this.actionLabel, this.warning = false});
 
   @override
   Widget build(BuildContext context) {
@@ -100,9 +110,11 @@ class _ErrorDialog extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       title: Row(
         children: [
-          const Icon(Icons.error_outline, color: kError, size: 20),
+          Icon(warning ? Icons.warning_amber_rounded : Icons.error_outline, color: warning ? kWarn : kError, size: 20),
           const SizedBox(width: 8),
-          Expanded(child: Text(title, style: const TextStyle(color: kError, fontSize: 14, fontWeight: FontWeight.w700))),
+          Expanded(
+              child: Text(title,
+                  style: TextStyle(color: warning ? kWarn : kError, fontSize: 14, fontWeight: FontWeight.w700))),
         ],
       ),
       content: Column(

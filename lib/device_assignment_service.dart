@@ -74,12 +74,18 @@ class AssignmentState {
   /// leaves outside its tunnel, up or down; the app does not support IPv6 and says so here.
   bool get ipv6On => ipv6Service.isNotEmpty && ipv6Service != 'disabled';
 
-  /// Whether the fail-closed guard holds the device at [ip] to the table [table]: exactly one rule
-  /// 90 with `suppress_prefixlength 0` and one rule 91 blackhole, read from the kernel. Null when the
-  /// rules were not read (ID-319).
+  /// Whether the fail-closed guard holds the device at [ip] to the profile whose table is [table]:
+  /// exactly one rule 90 into the guard's own table for that profile's slot, and one rule 91
+  /// blackhole, read from the kernel. Null when the rules were not read (ID-319), or no profile has
+  /// that table.
   bool? isGuarded(String ip, int table) {
     final rules = guardRules;
-    return rules == null ? null : guardHeld(rules, ip, table);
+    if (rules == null) return null;
+    for (final p in profiles) {
+      final slot = p.slot;
+      if (p.vpncStateIndex == table && slot != null) return guardHeld(rules, ip, slot);
+    }
+    return null;
   }
 
   /// Whether [device] has no internet now, disabled in the router's Time Scheduling.
@@ -98,11 +104,12 @@ class AssignmentState {
   }
 }
 
-/// Whether `ip rule show` output [rules] holds the fail-closed guard for [ip] on [table]: exactly one
-/// rule 90 with `suppress_prefixlength 0` and one rule 91 blackhole (ID-319, ID-332).
-bool guardHeld(String rules, String ip, int table) {
+/// Whether `ip rule show` output [rules] holds the fail-closed guard for [ip] pinned to [slot]:
+/// exactly one rule 90 into the guard's own table for that slot, and one rule 91 blackhole (ID-319,
+/// ID-332, ID-364).
+bool guardHeld(String rules, String ip, int slot) {
   final lines = rules.split('\n').map((l) => l.replaceAll(RegExp(r'\s+'), ' ').trim());
-  final r90 = lines.where((l) => l == '90: from $ip lookup $table suppress_prefixlength 0').length;
+  final r90 = lines.where((l) => l == '90: from $ip lookup ${guardTableForSlot(slot)}').length;
   final r91 = lines.where((l) => l == '91: from $ip blackhole').length;
   return r90 == 1 && r91 == 1;
 }
@@ -435,13 +442,16 @@ class DeviceAssignmentService {
   /// What the router's rules say after an APPLY, compared with what was written (ID-332).
   Future<List<String>> _readBack(List<DevicePolicy> policies, List<VpncRecord> profiles) async {
     final rules = await _read(kIpRuleCommand);
-    final wireguard = {for (final p in profiles) if (p.protocol == 'WireGuard') p.vpncStateIndex};
+    // Table index to slot, for the WireGuard profiles: the guard's rule 90 names the slot's own table.
+    final slotFor = {
+      for (final p in profiles)
+        if (p.protocol == 'WireGuard' && p.vpncStateIndex != null && p.slot != null) p.vpncStateIndex!: p.slot!,
+    };
     final problems = <String>[];
     expectedRuleTargets(policies).forEach((ip, index) {
       if (staleRuleTables(rules, ip: ip, keepIndex: index).isNotEmpty) problems.add('$ip still has an old routing rule');
-      if (index != null && wireguard.contains(index) && !guardHeld(rules, ip, index)) {
-        problems.add('$ip has no fail-closed guard');
-      }
+      final slot = slotFor[index];
+      if (slot != null && !guardHeld(rules, ip, slot)) problems.add('$ip has no fail-closed guard');
     });
     return problems;
   }
