@@ -147,6 +147,10 @@ class RecordingSSHClient implements SSHClient {
   /// True if any recorded command contains [needle].
   bool ran(String needle) => commands.any((c) => c.contains(needle));
 
+  /// The recorded commands less the files written by heredoc: a script that names a service in a
+  /// comment has not run it. guard.sh mentions restart_net_and_phy and stop_vpnc (ID-364).
+  List<String> get executed => [for (final c in commands) if (!_heredoc.hasMatch(c)) c];
+
   /// Count of recorded commands containing [needle].
   int count(String needle) => commands.where((c) => c.contains(needle)).length;
 }

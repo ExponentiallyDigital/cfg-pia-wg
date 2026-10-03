@@ -10,8 +10,11 @@
 # finds /usr/sbin/sh first, and that is a Broadcom memory tool, not the shell.
 #
 #   dry    prints what it would change, changes nothing, runs the read-only checks
-#   quick  the read-only checks, a rule wipe the guard must repair, and one tunnel stopped and
-#          put back; one PIA login at most. About 3 minutes.
+#   quick  the read-only checks, then on stock the guard broken on purpose and put back: a rule wiped
+#          and the filter emptied, each repaired by the router's own firewall restart; a WAN route
+#          planted in the guard's table; the table emptied with its tunnel up; and the tunnel
+#          stopped, with rule 91 taken away for a moment to show the check sees the leak it stops.
+#          One PIA login at most. About 5 minutes.
 #   full   quick, then each DNS setup below applied in turn, each proved by a real rebuild of the
 #          first watchdog's tunnel; PIA logins 30 s apart. About 15 minutes; the internet drops for
 #          a few seconds at each DNS change.
@@ -27,7 +30,8 @@
 #
 # Safe by construction: every NVRAM key it touches is saved to /jffs/check-claims.restore first,
 # a trap puts them back on any exit, and `/bin/sh /jffs/check-claims.restore` does it by hand if the
-# script itself was killed. Watchdog and guard schedules are paused while it runs, and put back.
+# script itself was killed. Watchdog schedules are paused while it runs, and put back, and so is the
+# guard's per-minute entry on a router that still has one from builds 480 to 490.
 # Stock and Merlin. BusyBox only: no seq, od, hexdump, xxd, base64, timeout, command or logread.
 #
 # Output: one line per check, `PASS <id> <what>`, `FAIL <id> <what>: <found>` or `INFO <id> <what>`,
@@ -57,7 +61,7 @@ FW=stock; [ "$(nvram get 3rd-party)" = "merlin" ] && FW=merlin
 [ "$FW" = merlin ] || [ -x "$D/guard.sh" ] || { echo "No $D/guard.sh: deploy a watchdog or APPLY in DEVICES first."; exit 2; }
 
 # ---- snapshot and restore --------------------------------------------------------------------
-KEYS="wan0_dns1_x wan0_dns2_x wan0_dnsenable_x dnspriv_enable"; [ "$FW" = stock ] && KEYS="$KEYS vpnc_unit"
+KEYS="wan0_dns1_x wan0_dns2_x wan0_dnsenable_x dnspriv_enable"; [ "$FW" = stock ] && KEYS="$KEYS vpnc_unit filter_lwlist cfg_pia_wg_lwlist"
 if [ "$MODE" != dry ]; then
   : > "$RESTORE"
   for K in $KEYS; do printf 'nvram set %s=%s\n' "$K" "'$(nvram get "$K")'" >> "$RESTORE"; done
@@ -94,6 +98,8 @@ restore() {
     handshake "$IF" || NOTBACK="$NOTBACK $IF"
   done
   [ -x "$D/guard.sh" ] && "$D/guard.sh" >/dev/null 2>&1
+  # Filter rules taken out of the firewall by hand come back only with a firewall restart.
+  [ -n "$FILTERBROKEN" ] && service restart_firewall
   rm -f "$RESTORE" "$CRUSAVE" /tmp/check-claims-wd.sh
   GTXT=""; [ "$FW" = stock ] && GTXT=" guard $(guarded),"
   echo "== restored: $(cru l | grep -cE '#(watchdog_|cfg_pia_wg_guard)') schedules,$GTXT tunnels up at the start:${UPSTART:+ $UPSTART}"
@@ -176,52 +182,108 @@ fi
 done
 
 # ---- 3. The guard, per pinned device, from the kernel -------------------------------------------
-pins() { nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' '$1=="1" && $2!="" && $4!="" && $4!="0" {print $2">"$4}'; }
-slot_of() { nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v t="$1" '$7 == t {print $3; exit}'; }
-wan_routes() { ip route show table "$1" | awk '$1 != "default" && $0 !~ / dev (wgc|br|lo|wgs)[0-9]* / {print $1}'; }
+# From build 491 (ID-364): rule 90 sends a pinned device to the guard's own table for its tunnel,
+# 200 + slot, which holds the tunnel's default and the router's local routes and never a route out
+# of the WAN, and rule 91 blackholes whatever that table can't route. Nothing runs the guard on a
+# timer: the boot hook asks for a run on every firewall-start, 10 s after the last call of a burst.
+#
+# Pinned devices as ip>table>slot, the slot "other" for another kind of VPN, which the guard leaves
+# alone, and "gone" for a profile that no longer exists, whose devices get rule 91 alone (ID-346).
+# Worked out here rather than borrowed from guard.sh, so a fault there can't empty the list this
+# checks and pass it.
+pins() {
+  PS=" $(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' '$7 != "" {k = "other"; if ($2 == "WireGuard" && $3 != "") k = $3; printf "%s:%s ", $7, k}')"
+  nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v s="$PS" '$1 == "1" && $2 != "" && $4 != "" && $4 != "0" {
+    k = "gone"; n = split(s, p, " "); for (i = 1; i <= n; i++) { split(p[i], q, ":"); if (q[1] == $4) k = q[2] }
+    print $2 ">" $4 ">" k }'
+}
+# The ones the guard holds: pinned to a WireGuard profile, or to one that no longer exists.
+gpins() { pins | grep -v '>other$'; }
+# Where the kernel sends a device's traffic for an address: wgcN, WAN, BLOCKED, or what it said.
+route_of() {
+  RO="$(ip route get "$2" from "$1" iif br0 2>&1 | head -1)"
+  case "$RO" in
+    *RTNETLINK*|*unreachable*|*prohibit*|*blackhole*) echo BLOCKED ;;
+    *" dev wgc"[0-9]*) echo "$RO" | sed 's/.* dev \(wgc[0-9]\).*/\1/' ;;
+    *" dev $WAN "*|*" dev $WAN") echo WAN ;;
+    *) echo "$RO" | tr ' ' '_' ;;
+  esac
+}
+# Every address main sends out of the WAN by more than its default - the gateway, the WAN subnet,
+# the router's own DNS servers (ID-347) - and a public one: where a pinned device would leak.
+leak_targets() {
+  echo 1.1.1.1
+  ip route show table main | awk -v w="$WAN" '$1 != "default" {for (i = 2; i < NF; i++) if ($i == "dev" && $(i + 1) == w) {print $1; next}}'
+}
+# Waits for a guard run the router's events have asked for, while one is pending or running, so a
+# check reads what that run leaves rather than racing it. At most 40 s.
+guard_settle() {
+  GW=0
+  while [ "$GW" -lt 40 ]; do
+    GP="$(cat /tmp/cfg-pia-wg-guard.next 2>/dev/null)"
+    { [ -n "$GP" ] && grep -q guard.sh "/proc/$GP/cmdline" 2>/dev/null; } || [ -d /tmp/cfg-pia-wg-guard.lock ] || return 0
+    sleep 1; GW=$((GW + 1))
+  done
+}
 # Its own variable names throughout: shell variables are global, and reusing IP here once pointed
 # the caller's repair check at the wrong device.
 guard_check() {
   tag="$1"; GN=0; BAD=""
-  for GE in $(pins); do
-    GIP="${GE%>*}"; GTB="${GE#*>}"; GN=$((GN + 1)); GSL="$(slot_of "$GTB")"
-    [ -n "$GSL" ] || continue
-    [ "$(ip rule show | grep -c "^90:.*from $GIP lookup $GTB suppress_prefixlength 0")" = 1 ] || BAD="$BAD $GIP:no90"
-    [ "$(ip rule show | grep -c "^91:.*from $GIP blackhole")" = 1 ] || BAD="$BAD $GIP:no91"
-    UPIF="$(ip -o link show up | grep -c " wgc$GSL:")"
-    for GX in 1.1.1.1 $(wan_routes "$GTB"); do
+  GRULES="$(ip rule show)"; GUP="$(ip -o link show up)"; GTGT="$(leak_targets)"
+  for GE in $(gpins); do
+    GIP="${GE%%>*}"; GSL="${GE##*>}"; GN=$((GN + 1))
+    G90="$(echo "$GRULES" | grep -c "^90:.*from $GIP ")"
+    [ "$(echo "$GRULES" | grep -c "^91:.*from $GIP blackhole")" = 1 ] || BAD="$BAD $GIP:no91"
+    echo "$GRULES" | grep -qE "^8[89]:.*from $GIP " && BAD="$BAD $GIP:old88-89"
+    if [ "$GSL" = gone ]; then
+      [ "$G90" = 0 ] || BAD="$BAD $GIP:90-for-a-deleted-profile"
+      GUPIF=0
+    else
+      { [ "$G90" = 1 ] && echo "$GRULES" | grep -qE "^90:.*from $GIP lookup $((200 + GSL))( |\$)"; } || BAD="$BAD $GIP:no90-to-$((200 + GSL))"
+      GUPIF="$(echo "$GUP" | grep -c " wgc$GSL:")"
+    fi
+    for GX in $GTGT; do
       GX1="${GX%/*}"
       # A subnet's own address is a broadcast address the kernel answers from its local table
       # before any rule, so ask about a host inside it instead: the network address plus two.
       case "$GX" in */*) GL="${GX1##*.}"; GX1="${GX1%.*}.$((GL + 2))" ;; esac
-      GR="$(ip route get "$GX1" from "$GIP" iif br0 2>&1 | head -1)"
-      case "$GR" in
-        *" dev wgc$GSL"*) [ "$UPIF" = 1 ] || BAD="$BAD $GIP>$GX1:via-down-wgc$GSL" ;;
-        *RTNETLINK*|*unreachable*|*prohibit*|*blackhole*) [ "$UPIF" = 0 ] || BAD="$BAD $GIP>$GX1:blocked-while-up" ;;
-        *) BAD="$BAD $GIP>$GX1:WAN($GR)" ;;
+      GR="$(route_of "$GIP" "$GX1")"
+      case "$GR:$GUPIF" in
+        "wgc$GSL:1" | BLOCKED:0) ;;
+        BLOCKED:1) BAD="$BAD $GIP>$GX1:blocked-while-wgc$GSL-up" ;;
+        *) BAD="$BAD $GIP>$GX1:$GR" ;;
       esac
     done
   done
+  # The guard's tables: the tunnel's default and the router's local routes, and nothing else.
+  for GSL in $(gpins | awk -F'>' '$3 ~ /^[0-9]+$/ {print $3}' | sort -u); do
+    GX="$(ip route show table $((200 + GSL)) 2>/dev/null | grep -vE "^default dev wgc$GSL( |\$)" | grep -vE ' dev (br|lo|wgs|tun)[0-9.]*( |$)' | head -1)"
+    [ -z "$GX" ] || BAD="$BAD table$((200 + GSL)):$(echo "$GX" | tr ' ' '_')"
+  done
   N="$GN"
   if [ "$2" = expect-broken ]; then
-    # The negative control: with a rule removed on purpose, this check must see it.
-    [ -n "$BAD" ] && pass "GUARD-$tag" "the check sees a guard broken on purpose: $(echo "$BAD" | cut -c1-80)" || fail "GUARD-$tag" "the check sees a broken guard" "it saw nothing wrong"
+    # The negative control: with the guard broken on purpose, this check must see it.
+    [ -n "$BAD" ] && pass "GUARD-$tag" "the check sees a guard broken on purpose: $(echo "$BAD" | cut -c1-100)" || fail "GUARD-$tag" "the check sees a broken guard" "it saw nothing wrong"
     return
   fi
-  [ -z "$BAD" ] && pass "GUARD-$tag" "$N pinned device(s): rules held, every address through the tunnel or refused" || fail "GUARD-$tag" "the guard" "$(echo "$BAD" | cut -c1-300)"
+  [ -z "$BAD" ] && pass "GUARD-$tag" "$N pinned device(s): both rules held, no WAN route in the guard's tables, every address through the device's tunnel or refused" || fail "GUARD-$tag" "the guard" "$(echo "$BAD" | cut -c1-300)"
 }
-[ "$FW" = stock ] && guard_check now
+[ "$FW" = stock ] && { guard_settle; guard_check now; }
 # The second layer (ID-348): each pinned device's TCP and UDP out of the WAN are dropped by the
 # router's own Network Services Filter, read from the firewall itself, not the settings.
 filter_check() {
   FRULES="$(iptables -S FORWARD)"; FN=0; FMISS=""
-  for FE in $(pins); do
-    FIP="${FE%>*}"; FN=$((FN + 1))
+  for FE in $(gpins); do
+    FIP="${FE%%>*}"; FN=$((FN + 1))
     for FP in tcp udp; do
       echo "$FRULES" | grep -qE -- "-s $(echo "$FIP" | sed 's/[.]/[.]/g')/32 -i br0 -o $WAN -p $FP -j DROP" || FMISS="$FMISS $FIP/$FP"
     done
   done
   [ "$FN" = 0 ] && return
+  if [ "$2" = expect-broken ]; then
+    [ -n "$FMISS" ] && pass "FILTER-$1" "the check sees a filter broken on purpose:$(echo "$FMISS" | cut -c1-100)" || fail "FILTER-$1" "the check sees a broken filter" "it saw nothing missing"
+    return
+  fi
   if [ "$(nvram get fw_lw_enable_x)" = 1 ] && [ -z "$FMISS" ]; then
     pass "FILTER-$1" "$FN pinned device(s): the router's firewall drops their TCP and UDP out of the WAN"
   else
@@ -229,9 +291,19 @@ filter_check() {
   fi
 }
 [ "$FW" = stock ] && filter_check now
-if [ "$FW" = stock ] && [ -n "$(pins)" ]; then
-  cru l | grep -q '#cfg_pia_wg_guard#' && pass GUARD-cron "the guard runs every minute from cron" || fail GUARD-cron "the guard runs every minute from cron" "no cfg_pia_wg_guard entry"
-  grep -q 'cru a cfg_pia_wg_guard' /opt/etc/init.d/S50downloadmaster 2>/dev/null && grep -q 'guard.sh' /opt/etc/init.d/S50downloadmaster && pass GUARD-boot "the boot hook puts the guard and its cron back" || fail GUARD-boot "the boot hook" "S50downloadmaster lacks the guard"
+if [ "$FW" = stock ] && [ -n "$(gpins)" ]; then
+  # Nothing schedules the guard from build 491 (ID-364). Builds 480 to 490 ran it every minute, in the
+  # same second as each watchdog tick's own run, and runs a second apart crash asd (ID-361).
+  cru l | grep -q '#cfg_pia_wg_guard#' && fail GUARD-cron "nothing schedules the guard" "the per-minute entry of builds 480 to 490 is still there" || pass GUARD-cron "nothing schedules the guard: the router's events run it"
+  HK=/opt/etc/init.d/S50downloadmaster
+  if grep -q '"firewall-start"' "$HK" 2>/dev/null && grep -q 'guard.sh soon' "$HK" && grep -q 'guard.sh >/dev/null' "$HK" && ! grep -q 'cru a cfg_pia_wg_guard' "$HK"; then
+    pass GUARD-boot "the boot hook runs the guard at boot, and asks for a run on every firewall-start"
+  else
+    fail GUARD-boot "the boot hook" "S50downloadmaster lacks the guard's boot run or its firewall-start call, or still schedules it"
+  fi
+  # Stock calls the hook on start and firewall-start only while Download Master is enabled.
+  DME="$(/usr/sbin/app_get_field.sh downloadmaster Enabled 1 2>/dev/null)"
+  [ "$DME" = yes ] && pass GUARD-hook "Download Master is enabled, so stock calls the boot hook" || fail GUARD-hook "Download Master is enabled, so stock calls the boot hook" "app_get_field.sh says \"$DME\""
 fi
 # The pinned devices' DNS redirects, routed from the devices.
 iptables -t nat -S VPN_FUSION 2>/dev/null | awk '{s=""; d=""; for (i = 1; i < NF; i++) {if ($i == "-s") s = $(i + 1); if ($i == "--to-destination") d = $(i + 1)} sub("/32", "", s); if (s != "" && d != "") print s, d}' > /tmp/check-claims.dnat
@@ -268,7 +340,7 @@ fi
 PW=""
 [ -n "$U" ] && { [ "$(grep -cF -- "Requesting PIA token for user $U" /tmp/syslog.log 2>/dev/null)" = 0 ] && pass SECRET-syslog "the watchdog logs no PIA user" || info SECRET-syslog "an older watchdog run logged the PIA user"; }
 
-[ "$MODE" = dry ] && { info DRY "stopping before anything is changed: quick adds a rule wipe and a tunnel stop, full adds the DNS setups"; exit "$FAILN"; }
+[ "$MODE" = dry ] && { info DRY "stopping before anything is changed: quick breaks the guard on purpose and stops a tunnel, full adds the DNS setups"; exit "$FAILN"; }
 
 # From here on the router is changed, and put back by the trap.
 while read -r L; do X="${L%#}"; cru d "${X##*#}"; done < "$CRUSAVE"
@@ -300,23 +372,61 @@ else
   info DNS-DoT "DNS-over-TLS is off on this router; not checked here (full mode turns it on)"
 fi
 
-# ---- 5. The guard repairs itself: rules wiped, as a firmware action does ------------------------
-E=""; [ "$FW" = stock ] && E="$(pins | head -1)"
+# ---- 5. The router's own events put the guard back (ID-364) ------------------------------------
+# Nothing runs the guard on a timer. A firewall restart raises firewall-start, and the boot hook asks
+# for one guard run, 10 s after the last call of a burst; the app runs it itself after its actions.
+E=""; [ "$FW" = stock ] && E="$(gpins | awk -F'>' '$3 ~ /^[0-9]+$/' | head -1)"
 if [ -n "$E" ]; then
-  IP="${E%>*}"
-  # Broken towards closed: without 90 and the 88s, the 91 and 89 blackholes still drop everything,
-  # so the device is offline, not out of the WAN, while cron repairs it.
+  IP="${E%%>*}"; SL="${E##*>}"; GT=$((200 + SL))
+  guard_settle
+  # Rule 90 wiped. Broken towards closed: rule 91 still drops everything, so the device is offline,
+  # not out of the WAN, until the guard runs.
   ip rule del from "$IP" priority 90 2>/dev/null
-  for R in $(ip rule show | awk -v ip="$IP" '$1 == "88:" && $3 == ip {print $5}'); do ip rule del from "$IP" to "$R" priority 88 2>/dev/null; done
-  guard_check broken expect-broken
-  # The schedules are paused, so run what cron would: one minute's run.
-  cru a cfg_pia_wg_guard "* * * * *" "$D/guard.sh"
-  i=0; while [ "$i" -lt 80 ] && [ "$(ip rule show | grep -c "^90:.*from $IP lookup")" = 0 ]; do sleep 1; i=$((i + 1)); done
-  # Let that run finish its other rules before they are checked.
-  j=0; while [ "$j" -lt 30 ] && [ -d /tmp/cfg-pia-wg-guard.lock ]; do sleep 1; j=$((j + 1)); done
-  cru d cfg_pia_wg_guard
-  [ "$(ip rule show | grep -c "^90:.*from $IP lookup")" = 1 ] && pass GUARD-repair "a wiped rule was put back by cron in ${i}s" || fail GUARD-repair "a wiped rule was put back" "not within 80s"
+  guard_check wiped expect-broken
+  T0="$(date +%s)"
+  service restart_firewall
+  i=0; while [ "$i" -lt 60 ] && ! ip rule show | grep -qE "^90:.*from $IP lookup $GT( |\$)"; do sleep 1; i=$((i + 1)); done
+  TE=$(($(date +%s) - T0))
+  guard_settle
+  ip rule show | grep -qE "^90:.*from $IP lookup $GT( |\$)" && pass GUARD-event "a wiped rule was put back by the router's own firewall restart, ${TE}s later" || fail GUARD-event "a wiped rule was put back by the router's own firewall restart" "not within 60s"
   guard_check repaired
+
+  # A route out of the WAN planted in the guard's table, which nothing in the design puts there:
+  # this check must see it, and the guard's next run must take it out.
+  WR="$(ip route show table main | awk -v w="$WAN" '$1 != "default" {for (i = 2; i < NF; i++) if ($i == "dev" && $(i + 1) == w) {print; exit}}')"
+  if [ -n "$WR" ]; then
+    ip route add $WR table "$GT" 2>/dev/null
+    guard_check planted expect-broken
+    "$D/guard.sh" >/dev/null 2>&1
+    ip route show table "$GT" | grep -q " dev $WAN" && fail GUARD-planted "the guard takes a WAN route out of its table" "it is still there" || pass GUARD-planted "the guard's next run took the planted WAN route out of its table"
+  fi
+
+  # The filter (ID-348, ID-362), short of this device in NVRAM and in the firewall, as a firewall
+  # restart with a short list would leave it. The router's next firewall restart runs the guard, which
+  # puts the list back and asks for one restart of its own; the run that one raises finds nothing to
+  # change, so the chain ends. Counted by the guard's run requests, one per firewall-start.
+  ER="$(echo "$IP" | sed 's/[.]/[.]/g')"
+  FILTERBROKEN=1
+  nvram set filter_lwlist="$(nvram get filter_lwlist | sed "s/<$ER>>>>TCP//; s/<$ER>>>>UDP//")"
+  for FP in tcp udp; do iptables -D FORWARD -s "$IP/32" -i br0 -o "$WAN" -p "$FP" -j DROP 2>/dev/null; done
+  filter_check emptied expect-broken
+  NEXT=/tmp/cfg-pia-wg-guard.next; LAST="$(cat "$NEXT" 2>/dev/null)"; CALLS=0; QUIET=0; K=0
+  service restart_firewall
+  # Every 0.2 s, until 30 s pass with no new request, or two minutes in all.
+  while [ "$QUIET" -lt 150 ] && [ "$K" -lt 600 ]; do
+    V="$(cat "$NEXT" 2>/dev/null)"
+    if [ "$V" != "$LAST" ]; then CALLS=$((CALLS + 1)); LAST="$V"; QUIET=0; else QUIET=$((QUIET + 1)); fi
+    usleep 200000; K=$((K + 1))
+  done
+  guard_settle
+  if [ "$QUIET" -ge 150 ]; then
+    pass FILTER-chain "the firewall restarts stopped by themselves after $CALLS firewall-start call(s): ours, and the guard's one"
+    [ "$CALLS" = 2 ] || info FILTER-chain "2 calls expected; $CALLS seen, so something else restarted the firewall meanwhile"
+  else
+    fail FILTER-chain "the firewall restarts stop by themselves" "$CALLS firewall-start calls in two minutes, and still coming"
+  fi
+  filter_check event
+  [ -z "$FMISS" ] && FILTERBROKEN=""
 fi
 
 # ---- 6m. Merlin: a tunnel with its kill switch on stopped; its devices must be refused ----------
@@ -354,9 +464,22 @@ if [ "$FW" = merlin ]; then
 fi
 
 # ---- 6. A tunnel stopped: its pinned devices are refused, not sent out the WAN ------------------
-E=""; [ "$FW" = stock ] && E="$(pins | head -1)"
+E=""; [ "$FW" = stock ] && E="$(gpins | awk -F'>' '$3 ~ /^[0-9]+$/' | head -1)"
 if [ -n "$E" ]; then
-  TB="${E#*>}"; SL="$(slot_of "$TB")"
+  IP="${E%%>*}"; SL="${E##*>}"; GT=$((200 + SL))
+  guard_settle
+  # The guard's table without its default, as a rebuild leaves it until the guard's next run: with
+  # the tunnel up, the device must be refused, not sent anywhere else.
+  if handshake "wgc$SL"; then
+    ip route del default dev "wgc$SL" table "$GT" 2>/dev/null
+    R="$(route_of "$IP" 1.1.1.1)"
+    [ "$R" = BLOCKED ] && pass "GUARD-wgc$SL-empty" "with wgc$SL up and the guard's table emptied of its default, $IP is refused" || fail "GUARD-wgc$SL-empty" "with the guard's table emptied of its default, $IP is refused" "it goes $R"
+    "$D/guard.sh" >/dev/null 2>&1
+    R="$(route_of "$IP" 1.1.1.1)"
+    [ "$R" = "wgc$SL" ] && pass "GUARD-wgc$SL-refilled" "a guard run, as the app makes after its own actions, sent $IP back through wgc$SL" || fail "GUARD-wgc$SL-refilled" "a guard run sends $IP back through wgc$SL" "it goes $R"
+  else
+    info "GUARD-wgc$SL-empty" "wgc$SL has no handshake; not checked"
+  fi
   # A service call can be dropped while another runs, so each is read back, and a check that
   # would be about a tunnel in the wrong state is not made.
   tunnel_stop "$SL"
@@ -364,15 +487,31 @@ if [ -n "$E" ]; then
   if ip -o link show up | grep -q " wgc$SL:"; then
     info "GUARD-wgc$SL-stopped" "wgc$SL didn't stop within 30s (the call may have been dropped); not checked"
   else
+    guard_settle
     guard_check "wgc$SL-stopped"
+    # The negative control (ID-364): with rule 91 gone, the same device must be seen going out, or
+    # the check above couldn't tell a leak from the guard. Put back at once.
+    ip rule del from "$IP" priority 91 2>/dev/null
+    R="$(route_of "$IP" 1.1.1.1)"
+    ip rule show | grep -q "^91:.*from $IP blackhole" || ip rule add from "$IP" blackhole priority 91
+    [ "$R" != BLOCKED ] && pass "GUARD-wgc$SL-no91" "without rule 91, $IP's traffic goes $R: the check sees the leak rule 91 stops" || fail "GUARD-wgc$SL-no91" "without rule 91, the check sees $IP's traffic go out" "it was still refused, so this check can't tell a leak from the guard"
+    R="$(route_of "$IP" 1.1.1.1)"
+    [ "$R" = BLOCKED ] || fail "GUARD-wgc$SL-91back" "rule 91 put back" "$IP goes $R"
   fi
+  T0="$(date +%s)"
   for TRY in 1 2; do
     tunnel_start "$SL"
     i=0; while [ "$i" -lt 45 ] && ! handshake "wgc$SL"; do sleep 1; i=$((i + 1)); done
     handshake "wgc$SL" && break
   done
   if handshake "wgc$SL"; then
-    sleep 3; "$D/guard.sh" >/dev/null 2>&1
+    # No guard run from here: restart_vpnc raises firewall-start, and the run the hook asks for
+    # refills the table 10 s after the last call (ID-364). Until then the device is refused.
+    i=0; while [ "$i" -lt 45 ] && [ "$(route_of "$IP" 1.1.1.1)" != "wgc$SL" ]; do sleep 1; i=$((i + 1)); done
+    TE=$(($(date +%s) - T0))
+    R="$(route_of "$IP" 1.1.1.1)"
+    [ "$R" = "wgc$SL" ] && pass "GUARD-wgc$SL-back" "$IP back through wgc$SL by the router's own events, ${TE}s after the tunnel was started" || fail "GUARD-wgc$SL-back" "$IP back through wgc$SL by the router's own events" "it goes $R, ${TE}s after the tunnel was started"
+    guard_settle
     guard_check "wgc$SL-restarted"
   else
     fail "GUARD-wgc$SL-restarted" "wgc$SL came back" "no handshake after two restarts"
@@ -440,7 +579,8 @@ rebuild() {  # $1 label, $2 expected: enc | plain | honest
     tunnel_start "$WSL"
     i=0; while [ "$i" -lt 45 ] && ! handshake "$WS"; do sleep 1; i=$((i + 1)); done
   done
-  [ "$FW" = stock ] && guard_check "after-$1"
+  # The rebuild's tunnel restart and the watchdog both ask for a guard run, 10 s on (ID-364).
+  [ "$FW" = stock ] && { guard_settle; guard_check "after-$1"; }
   [ "$FW" = stock ] && filter_check "after-$1"
   sleep 30
 }

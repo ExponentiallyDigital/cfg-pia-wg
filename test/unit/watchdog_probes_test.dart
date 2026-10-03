@@ -58,7 +58,7 @@ void main() {
         final s = h.script();
         final start = s.indexOf('GUARDED=0');
         final block = s.substring(start, s.indexOf('\ndone\n', start) + 6);
-        final r = await h.runSnippet('MYIDX=9\n$block\n' r'echo "$GUARDED"' '\n');
+        final r = await h.runSnippet('MYIDX=9\nSLOT=1\n$block\n' r'echo "$GUARDED"' '\n');
         expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
         return '${r.stdout}'.trim();
       }
@@ -67,23 +67,27 @@ void main() {
 
       test('a device with both rules counts; one missing its blackhole does not', () async {
         h
-          ..addRule('90:\tfrom 192.168.1.20 lookup 9 suppress_prefixlength 0')
+          ..addRule('90:\tfrom 192.168.1.20 lookup 201')
           ..addRule('91:\tfrom 192.168.1.20 blackhole')
-          ..addRule('90:\tfrom 192.168.1.21 lookup 9 suppress_prefixlength 0');
+          ..addRule('90:\tfrom 192.168.1.21 lookup 201');
         expect(await guarded(), '1');
       });
 
-      test('a 90 rule without suppress_prefixlength 0 does not count', () async {
-        h
-          ..addRule('90:\tfrom 192.168.1.20 lookup 9')
-          ..addRule('91:\tfrom 192.168.1.20 blackhole');
-        expect(await guarded(), '0');
-      });
+      // ID-364: rule 90 looks up the guard's own table, 200 + slot. One into the firmware's table,
+      // the shape before build 491, or into a table that merely starts the same, is not the guard.
+      for (final other in ['lookup 9 suppress_prefixlength 0', 'lookup 9', 'lookup 2011']) {
+        test('a 90 rule that reads "$other" does not count', () async {
+          h
+            ..addRule('90:\tfrom 192.168.1.20 $other')
+            ..addRule('91:\tfrom 192.168.1.20 blackhole');
+          expect(await guarded(), '0');
+        });
+      }
 
       test('both pinned devices with both rules count 2, and another tunnel\'s device is not counted', () async {
         for (final ip in ['192.168.1.20', '192.168.1.21', '192.168.1.22']) {
           h
-            ..addRule('90:\tfrom $ip lookup ${ip.endsWith('22') ? 5 : 9} suppress_prefixlength 0')
+            ..addRule('90:\tfrom $ip lookup ${ip.endsWith('22') ? 205 : 201}')
             ..addRule('91:\tfrom $ip blackhole');
         }
         expect(await guarded(), '2');
