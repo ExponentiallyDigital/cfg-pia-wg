@@ -104,6 +104,24 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
+2026-10-03 v0.8.122 build 492 - DEVICES drawn with the app's other screens in ARCHITECTURE, every screen introduced before its diagram, and README's SETTINGS text updated
+
+```play
+A complete app rewrite and new interface
+
+• Stock ASUS firmware now supported, Merlin in beta
+• DEVICES: easily assign devices to a VPN or the Internet, rename, or block them
+• KILL SWITCH: on stock, built the Asuswrt-Merlin way - assigned devices use their tunnel or nothing
+• WATCHDOG: encrypted DNS, PIA backoff, rebuilt alerts
+• SETTINGS: run more than two VPNs, DNS transparency
+• LOGS: colourised and detailed
+• Router features now a one-time unlock; standalone configs remain free
+```
+
+- ID-371 DOC: updated README text in section SETTINGS.
+- ID-372 DOC: **an application process flow of how DEVICES works on stock, drawn with the app's other screens in ARCHITECTURE section 3, and every screen there now introduced in words before its diagram.** Three DEVICES diagrams follow WATCHDOG, in menu order. Opening it: the firmware check, the one round trip that reads eleven sources, how the list is built, what each row shows and how it's kept current. Choosing changes: the four connection choices, a rename and the default connection, all staged on the phone until APPLY. APPLY: the paywall, the confirmation and its warnings, the check that the router hasn't changed, each write and service call in the order the code makes them, the two guard runs, the stale-rule sweep and the read back. A fourth, the default-connection sequence, sits in 6.8.8 beside the measured sequence it draws. Drawn from `lib/widgets/device_assignment_screen.dart` and `lib/device_assignment_service.dart` rather than from memory, in the style of the other diagrams, and each rendered before it went in. Section 3's opening said it held "the whole app, in four diagrams" without DEVICES; it now names every screen it draws and the ones it doesn't, and each of its seven diagrams has a short lead-in saying what the screen is for and the design decision worth knowing, and is centred on the page. Section 6 now opens with the topic, points to section 3 for the flow, and has a table from each step of it to the subsections that measure it, which leads into the reference from 6.1. Its old opening sentence is corrected too: it said DEVICES writes two keys and `scripts/clearall.sh` touches the same two, when DEVICES writes five as well as the Time Scheduling keys, and `clearall.sh` never touches the policy list. Nothing renumbered. Checked: every internal link has a target, and GitHub's renderer turns all eight diagrams this touched into diagrams and the table into a table. Andrew's calls, 2026-10-05.
+- CHG: WIP 0 -> 0 bullets. ID-372 went straight into this block, done. Nothing removed.
+
 2026-10-01 v0.8.121 build 491 - stock kill switch completely re-engineered, now using the Asuswrt-Merlin approach, with many thanks to its maintainers for an elegant design
 
 ```play
