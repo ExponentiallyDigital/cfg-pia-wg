@@ -137,7 +137,11 @@ Everything below was measured on hardware, not read in documentation - ASUS publ
 
 ## 3. <a name='app-processing-flow'></a>App processing flow
 
-The whole app, in four diagrams: the main menu, then the three screens that do the work. Each reads top to bottom. The two sections after them describe the push operation again in plain language and then in detail, because that is the part most worth being able to check.
+How the app works, screen by screen: the main menu, then each screen that does work, STANDALONE, MANAGE, WATCHDOG and DEVICES, in the order the menu lists them. Each diagram reads top to bottom. The two logs, SETTINGS and ABOUT aren't drawn: each of their actions is a single step. After the diagrams, 3.1 and 3.2 describe the push operation again in plain language and then in detail, because that is the part most worth being able to check.
+
+**The main menu.** Every screen opens from here, and the drawer offers the same destinations from anywhere in the app. EXIT is the one way out that wipes what the app holds: the logins, the generated config and the clipboard.
+
+<div align="center">
 
 ```mermaid
 flowchart LR
@@ -162,7 +166,13 @@ flowchart LR
     class X bad
 ```
 
+</div>
+
 <p align="center"><em>The main menu. STANDALONE works on the phone alone; the rest reach the router over SSH, with one login for the session.</em></p>
+
+**STANDALONE** builds a PIA WireGuard configuration on the phone, for any device or router, and never touches yours. The key pair is made on the phone and registered with PIA over HTTPS pinned to PIA's own certificate authority. It's free: the one-time unlock is for the router features.
+
+<div align="center">
 
 ```mermaid
 flowchart TB
@@ -191,7 +201,13 @@ flowchart TB
     class H,I step
 ```
 
+</div>
+
 <p align="center"><em>STANDALONE: a WireGuard config built on the phone, for any device. Nothing touches the router.</em></p>
+
+**MANAGE** works on the router's five WireGuard slots, wgc1 to wgc5. Every action ends by reading the slots again, so the list shows what the router holds rather than what was asked for. Putting a PIA region on the router, CREATE then ENABLE, is described step by step in [3.1](#overview) and [3.2](#detail).
+
+<div align="center">
 
 ```mermaid
 flowchart TB
@@ -218,7 +234,16 @@ flowchart TB
     class D1,D3,D5 step
 ```
 
+</div>
+
 <p align="center"><em>MANAGE: each action on a slot, and the slot list read again afterwards.</em></p>
+
+> [!NOTE]
+> WireGuard configuration is backed up before any destructive/configuration activity, and restored if any issue is detected.
+
+**WATCHDOG** puts a script on the router that checks a slot's tunnel at the interval you pick, and rebuilds it with a fresh PIA key when its server stops answering. DISABLE pauses it and keeps its settings; DELETE removes it. [Watchdog details](#watchdog-details) has how a run decides and what a rebuild does.
+
+<div align="center">
 
 ```mermaid
 flowchart TB
@@ -246,10 +271,138 @@ flowchart TB
     class E1,E3,E5 step
 ```
 
+</div>
+
 <p align="center"><em>WATCHDOG: setting up, pausing and removing the script that keeps a slot's tunnel alive.</em></p>
 
-> [!NOTE]
-> WireGuard configuration is backed up before any destructive/configuration activity, and restored if any issue is detected.
+**DEVICES** decides which way each device on your network reaches the internet: through one of the router's tunnels, straight out of the internet connection, or with the default connection. It's stock only, and [Device assignment (stock)](#device-assignment-stock) has how stock keeps all of it. Opening it reads everything in one round trip, because a phone on Wi-Fi pays for every round trip and none of these reads depends on another.
+
+<a name='devices-opening'></a>
+<div align="center">
+
+```mermaid
+flowchart TB
+    L["Router login<br/>asked once per session;<br/>straight in when connected"] --> F{"Which firmware?<br/><i>nvram get 3rd-party</i>"}
+    F -->|"Merlin"| FM["Refused: DEVICES is<br/>a stock feature.<br/>OK goes to HOME"]
+    F -->|"neither"| FU["Refused: firmware<br/>not supported"]
+    F -->|"stock"| READ
+
+    subgraph READ["DeviceAssignmentService.read: one round trip"]
+        R1["NVRAM: vpnc_clientlist,<br/>vpnc_dev_policy_list,<br/>vpnc_default_wan,<br/>dhcp_staticlist,<br/>custom_clientlist,<br/>cfg_device_list,<br/>MULTIFILTER_*, ipv6_service"]
+        R2["Files: nmp_cl_json.js,<br/>nmp_cache.js<br/>Kernel: ip rule show"]
+    end
+
+    READ --> B["buildDeviceList<br/>join the sources, drop<br/>the router and mesh nodes,<br/>online first, then by name"]
+    B --> FS["fetchSlots<br/>which tunnels are up,<br/>each slot's watchdog;<br/>left blank if it fails"]
+    FS --> S["DEVICES"]
+    S --> P1["DEFAULT CONNECTION<br/>Internet or a<br/>WireGuard slot, and<br/>where its devices go<br/>while that tunnel is down"]
+    S --> P2["IPv6 warning<br/>when ipv6_service is on"]
+    S --> P3["A row per device<br/>its name, address and<br/>connection; a note when<br/>its tunnel is down or<br/>its guard is missing"]
+    S --> K["Kept current<br/>tunnelHealth on return<br/>and every 15 s;<br/>pull down to re-read"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class S,P1,P2,P3 go
+    class FM,FU bad
+    class R1,R2,B,FS work
+    class L,F,K step
+```
+
+</div>
+
+<p align="center"><em>Opening DEVICES: stock only, everything read in one round trip, and the list kept current while it's on screen. Nothing is written.</em></p>
+
+**Choosing changes** writes nothing. Each change is staged on the app's session, not on the screen, which is rebuilt every time it's entered: while it lived on the screen, a glance at the log threw a dozen staged changes away.
+
+<a name='devices-choosing'></a>
+<div align="center">
+
+```mermaid
+flowchart TB
+    S["DEVICES"] --> T1["Tap a device's<br/>connection"]
+    S --> T2["Tap a device's name<br/>edit it in place;<br/>no angle brackets,<br/>32 characters at most;<br/>empty shows the<br/>detected name"]
+    S --> T3["Tap DEFAULT<br/>CONNECTION<br/>Internet or a<br/>WireGuard slot"]
+    T1 --> C1["default<br/>follows the<br/>default connection"]
+    T1 --> C2["Internet<br/>pinned to no VPN"]
+    T1 --> C3["wgcN<br/>pinned to that tunnel,<br/>shown with its state<br/>and watchdog"]
+    T1 --> C4["Disabled<br/>no Internet or VPN;<br/>its pin is kept"]
+    C1 --> ST["Staged, not written<br/>kept on the session, so<br/>leaving the screen loses<br/>nothing; a choice back to<br/>where it was is no change"]
+    C2 --> ST
+    C3 --> ST
+    C4 --> ST
+    T2 --> ST
+    T3 --> ST
+    ST --> D["DISCARD CHANGES<br/>clears them all"]
+    ST --> A["APPLY N CHANGES<br/>the next diagram"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class A go
+    class C4,D bad
+    class C1,C2,C3,ST work
+    class S,T1,T2,T3 step
+```
+
+</div>
+
+<p align="center"><em>Choosing changes: every choice is staged on the phone, and nothing reaches the router until APPLY.</em></p>
+
+**APPLY** is the first time anything is written to the router. It checks the router still holds what was read, so a change made in the web interface meanwhile is refused rather than overwritten, and then writes in a fixed order. The guard runs straight after the assignments are written, before the firmware installs its own rules, so a moved device is never left unguarded. And it uses the light pair of service calls, `restart_dnsmasq` and `restart_vpnc_dev_policy`, never the web interface's `restart_net_and_phy`, which bounces every port on the router.
+
+<a name='devices-apply'></a>
+<div align="center">
+
+```mermaid
+flowchart TB
+    A["APPLY N CHANGES"] --> PW{"Unlocked?"}
+    PW -->|"no"| PAY["Paywall<br/>nothing written<br/>unless bought"]
+    PAY -->|"bought"| TH
+    PW -->|"yes"| TH["tunnelHealth<br/>the tunnels this moves<br/>devices onto, read now"]
+    TH --> CF{"Confirm<br/>each change<br/>and its warnings"}
+    CF -->|"CANCEL"| NO["Nothing written"]
+    CF -->|"APPLY"| CHK{"Router unchanged<br/>since the read?"}
+    CHK -->|"no"| REF["Refused: changed<br/>elsewhere"]
+    CHK -->|"yes"| W1
+
+    subgraph WRITE["DeviceAssignmentService.apply: each step only when something of its kind is staged"]
+        W1["Reservations<br/>dhcp_staticlist, for a device<br/>pinned with none"]
+        W2["Names<br/>custom_clientlist, commit;<br/>no service call"]
+        W3["Disabled or enabled<br/>MULTIFILTER_*, commit,<br/>restart_firewall"]
+        W4["Assignments<br/>vpnc_dev_policy_list, commit"]
+        W5["Guard, straight away<br/>so a moved device is held<br/>by its new tunnel's guard<br/>from the start"]
+        W6["restart_dnsmasq,<br/>restart_vpnc_dev_policy<br/>the firmware's rules at 100"]
+        W7["Sweep stale rules at 100<br/>for every device in the list,<br/>three passes at most"]
+        W8["Default connection<br/>drawn in 6.8.8"]
+        W9["Guard again<br/>on the final state"]
+        W1 --> W2 --> W3 --> W4 --> W5 --> W6 --> W7 --> W8 --> W9
+    end
+
+    W9 --> RB{"Read back:<br/>rules as written?"}
+    RB -->|"yes"| OK["Device assignments<br/>applied"]
+    RB -->|"no"| WARN["Written, but the rules<br/>don't match yet:<br/>APPLY again"]
+    OK --> RR["Re-read the list<br/>and the tunnels;<br/>staged changes cleared"]
+    WARN --> RR
+    REF --> RR
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class OK,RR go
+    class PAY,NO,REF,WARN bad
+    class W1,W2,W3,W4,W5,W6,W7,W8,W9 work
+    class A,PW,TH,CF,CHK,RB step
+```
+
+</div>
+
+<p align="center"><em>APPLY: confirmed, checked against the router, written in this order, and read back before it's called done. The check compares the policy list, the profiles and, when they change, the names and Time Scheduling with what was read; the read back looks for one firmware rule per device and the guard for each pin. The read back follows an apply that moved a device; a default-connection change reads back its own. Every service call waits its turn in the router's queue (7.4.1).</em></p>
+
+The confirmation's warnings: a tunnel that is down or whose server isn't answering; devices that will be given a fixed address ([6.8.9](#assigning-a-device-with-no-dhcp-reservation-crea)); tunnels that will restart, when the default connection changes; schedules in Time Scheduling that disabling a device would switch on ([6.9](#time-scheduling-disabling-a-device)); an address that looks randomised; and a device on a VPN the app doesn't manage.
 
 ### 3.1. <a name='overview'></a>Overview
 
@@ -621,12 +774,23 @@ Resolved by `vpncUnitForSlot` in `router_slot_service.dart`, which reads the lis
 
 ## 6. <a name='device-assignment-stock'></a>Device assignment (stock)
 
-How stock binds a LAN device to a VPN profile, and the NVRAM lists involved. Measured on hardware 2026-09-06 and 2026-09-07 by diffing NVRAM either side of each WebUI action; see `.claude/plans/plan_vpn_device_assignments.md` for the method and for what is still unverified.
+Device assignment decides how each device on your network reaches the internet: through one of the router's WireGuard tunnels, straight out of the internet connection, or wherever the router's default connection points. On stock firmware this is VPN Fusion. It's kept in NVRAM as a list of devices pinned to profiles, `vpnc_dev_policy_list`, and one default for everything else, `vpnc_default_wan`. The DEVICES screen reads and writes those lists itself, as the web interface would. It deletes the stale rules stock leaves behind, and adds the fail-closed guard, so a device pinned to a tunnel gets that tunnel or nothing ([6.8.10](#what-happens-when-the-tunnel-drops)). Merlin has no VPN Fusion device policy, so DEVICES is stock only.
+
+How the screen works, step by step, is drawn in [App processing flow](#app-processing-flow) with the other screens. This section is what those steps rest on: how stock keeps each list, and what was measured about it.
+
+| Step | What's behind it |
+| --- | --- |
+| [Opening DEVICES](#devices-opening) | the lists read: [6.3](#dhcp-staticlist) reservations, [6.4](#custom-clientlist) names, [6.6](#reading-the-two-device-json-files) the device files, [6.7](#cfg-device-list-the-router-and-its-mesh-nodes) the router and its mesh nodes, [6.8](#vpnc-dev-policy-list-the-assignment) the assignments, [6.9](#time-scheduling-disabling-a-device) Time Scheduling |
+| [Choosing changes](#devices-choosing) | [6.8.7](#enabled-is-what-separates-on-the-internet-from-f) pinned to the internet versus following the default |
+| [APPLY](#devices-apply) | [6.8.1](#how-a-change-is-written) how a change is written, [6.8.5](#service-calls) the service calls, [6.8.9](#assigning-a-device-with-no-dhcp-reservation-crea) reservations, [6.8.10](#what-happens-when-the-tunnel-drops) the fail-closed guard, [6.8.11](#stock-leaves-the-old-routing-rule-behind-measure) stale rules, [6.9](#time-scheduling-disabling-a-device) disabling a device |
+| [Changing the default connection](#devices-default) | [6.8.8](#changing-the-default-connection-the-exact-sequen) the exact sequence, drawn there |
+
+From DEVICES the app writes `vpnc_dev_policy_list`, `vpnc_default_wan`, `dhcp_staticlist` (a reservation), `custom_clientlist` (a device's name) and the Time Scheduling keys. It sets `vpnc_unit` and `wgc_unit` while it changes the default connection, and reads the rest. `scripts/clearall.sh` resets `vpnc_default_wan` and leaves the policy list alone. The code is `lib/widgets/device_assignment_screen.dart` and `lib/device_assignment_service.dart`.
+
+Measured on hardware on 2026-09-06 and 2026-09-07, by diffing NVRAM before and after each web-interface action. `.claude/plans/plan_vpn_device_assignments.md` has the method. The reference starts with the key every device that isn't pinned follows.
 
 > [!NOTE]
 > Every IP address, hostname and MAC address in this section is invented, including in the sample records. Real values are never recorded in this repository.
-
-The app writes two of these keys - `vpnc_dev_policy_list` and `vpnc_default_wan` - from the DEVICES screen, and reads the rest. `scripts/clearall.sh` touches the same two.
 
 ### 6.1. <a name='vpnc-default-wan'></a>`vpnc_default_wan`
 
@@ -955,6 +1119,40 @@ nvram commit
 service restart_vpnc              # starts the target, and THIS installs the routing
 ```
 
+What the app does with it, in `_setDefaultConnection`: the same sequence, with a wait after each step, the switch to Internet, which has no target, the old default started again, and a read back before it says the change is made.
+
+<a name='devices-default'></a>
+<div align="center">
+
+```mermaid
+flowchart TB
+    U["vpnc_unit = the new<br/>default's row; the old<br/>default's when the new<br/>one is Internet"] --> S1["stop_vpnc<br/>wait for that<br/>tunnel to go"]
+    S1 --> S2["restart_default_wan<br/>wait for vpnc_default_wan<br/>to reset to 0"]
+    S2 --> T{"New default"}
+    T -->|"a tunnel"| S3["vpnc_default_wan =<br/>its index 6,<br/>wgc_unit = its slot,<br/>commit"]
+    S3 --> S4["restart_vpnc<br/>wait for wgcN: this installs<br/>the LAN rules at 10000"]
+    T -->|"Internet"| O
+    S4 --> O{"Old default a tunnel,<br/>still switched on,<br/>and not running?"}
+    O -->|"yes"| S5["vpnc_unit = its row,<br/>restart_vpnc"]
+    O -->|"no"| RB
+    S5 --> RB{"vpnc_default_wan and<br/>the rule at 10000 agree?"}
+    RB -->|"yes"| OK["Default connection set"]
+    RB -->|"no"| W["Warning: the router<br/>doesn't show it yet"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class OK go
+    class W bad
+    class U,S1,S2,S3,S4,S5 work
+    class T,O,RB step
+```
+
+</div>
+
+<p align="center"><em>Changing the default connection: the one change that stops and restarts tunnels, about a minute. Every step is load-bearing; 6.8.8 has the eleven probes that found the order.</em></p>
+
 > [!IMPORTANT]
 > **`vpnc_unit` is a pointer the firmware keeps between calls, and both services act on it.** Switching the default to the plain internet has no target profile, so there is no row to write - and until 458 the app wrote none and ran `restart_vpnc` anyway, which started whatever profile the pointer was last aimed at. Measured 2026-09-21: a MANAGE DISABLE had left it on wgc1's row, so returning the default to Internet started wgc1 - interface, routes and DNS rules up, `vpnc_clientlist` still reading disabled, and the WebUI still showing Disconnected. The teardown now names the OUTGOING default, and `restart_vpnc` runs only when there is a target to start (ID-172).
 
@@ -1282,6 +1480,8 @@ Every message is plain text with four sections — `WHAT HAPPENED`, `ROUTER`, `H
 
 Most runs do nothing, which is the point. The expensive path costs a PIA token and a key registration, so everything before it exists to avoid taking it.
 
+<div align="center">
+
 ```mermaid
 flowchart TD
     CRON["cron fires<br/><i>every N minutes</i>"] --> DETACH
@@ -1324,6 +1524,8 @@ flowchart TD
     class RECONF work
 ```
 
+</div>
+
 <p align="center"><em>One watchdog run: the checks that let most runs end without doing anything.</em></p>
 
 **Why each gate is there.**
@@ -1351,6 +1553,8 @@ The **WAN check** is last before the expensive path, and it exits SILENTLY. If t
 ### 7.3. <a name='what-a-reconfigure-does'></a>What a reconfigure does
 
 Reached only when everything above has failed. Every step can abort, and an abort sends the failure alert and increments the failure counter.
+
+<div align="center">
 
 ```mermaid
 flowchart TD
@@ -1380,6 +1584,8 @@ flowchart TD
     class FAIL bad
     class A,B,C,D,E,F,G,W,H,T,K,GS step
 ```
+
+</div>
 
 <p align="center"><em>A rebuild, from the PIA certificate to a handshake on the new server, and the two ways it ends.</em></p>
 
