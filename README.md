@@ -63,8 +63,8 @@ You'll need SSH enabled on the router, a PIA subscription, and firmware with Wir
     - [5.4.6. Renaming a device, and disabling its internet](#546-renaming-a-device-and-disabling-its-internet)
   - [5.5. ROUTER LOG](#55-router-log)
   - [5.6. APP LOG](#56-app-log)
-  - [5.7. Settings](#57-settings)
-  - [5.8. About](#58-about)
+  - [5.7. SETTINGS](#57-settings)
+  - [5.8. ABOUT](#58-about)
   - [5.9. EXIT - Close the app](#59-exit---close-the-app)
   - [5.10. Hamburger menu](#510-hamburger-menu)
 - [6. Notes](#6-notes)
@@ -109,7 +109,7 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
 
 - **Watchdog management:** deploy a router-side watchdog that monitors and self-heals your WireGuard VPN connection, with configurable checks, optional email alerts and access to the watchdog's log. Works on stock and Merlin; on stock it additionally needs `jq`, `mailsend-go` and DownloadMaster (see [4. Prerequisites](#4-prerequisites--requirements)).
 - **Email alerts worth reading:** each alert says how long the tunnel was down, whether the kill switch held while it was, which server it reconnected to and how fast, and - when it could not reconnect - what to try and the tail of the router's own log. Sent from your own SMTP account; see [5.3.1](#531-email-alerts) for examples.
-- **Per-device VPN assignment:** pick, per device, whether it leaves through a VPN tunnel or straight out to the internet, from a list of everything on your network and what each one is using right now. One tap per device, nothing to stop first, and the list says where a device's traffic really goes when its tunnel is down. Stock firmware only: Merlin does the same job through VPN Director, which this app does not drive.
+- **Per-device VPN assignment:** pick, per device, whether it leaves through a VPN tunnel or straight out to the internet, from a list of everything on your network and what each one is using right now. One tap per device, nothing to stop first, and the list says where a device's traffic really goes when its tunnel is down. Stock firmware only: Merlin does the same job through VPN Director, which this app does not replace.
 - **Rename a device, or switch its internet off:** give a device a name you recognise, or take it off the internet and every VPN with one tap, a simple parental control. Both are written exactly as your router's own web interface writes them, so they show there and in the ASUS Router app too, and can be undone in either place ([5.4.6](#546-renaming-a-device-and-disabling-its-internet)).
 - **A kill switch on stock firmware:** Merlin has one. Stock doesn't. So the app builds its own, out of your router's routing rules and its own firewall filter. A device pinned to a tunnel uses that tunnel or nothing: if the tunnel's config expires, the watchdog is rebuilding it, you switch it off, or the router restarts, the device goes offline rather than out in the clear. Over IPv4 only: the app doesn't support IPv6, so switch IPv6 off in the router if you rely on this. Pinned devices only; [5.4](#54-devices---assign-rename-and-disable) has the detail and the limits.
 - **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
@@ -590,7 +590,7 @@ What about rate limiting? No one wants to wake up to an inbox full of alerts! `c
 
 ### 5.4. DEVICES - assign, rename and disable
 
-**Stock firmware only.** Merlin does the same job through VPN Director, which this app does not drive.
+**Stock firmware only.** Merlin does the same job through VPN Director, which this app does not replace.
 
 Normally every device on your network follows the router's default connection. This capability lets you send particular devices through a particular VPN tunnel and leave everything else alone - a games console straight out to the internet, a laptop through Melbourne, everything else through Perth.
 
@@ -795,7 +795,7 @@ Your ASUS router's log, because we all love a great read. Seriously though, I've
   App log
 </p><br>
 
-### 5.7. Settings
+### 5.7. SETTINGS
 
 All those things that you won't need until you do need them, and all in one place.
 
@@ -812,26 +812,34 @@ All those things that you won't need until you do need them, and all in one plac
   Reboot router
 </p><br>
 
-  - **ROUTER RESOLVER STATUS** - is your router answering name lookups? It asks, there and then, through both of the router's own resolvers: dnsmasq, and stubby when DNS-over-TLS is on. You see every address that came back and how long it took, and if something didn't answer, what that means for your network. Below that are the files that decide how a lookup travels, each with when the router last wrote that configuration, and the DNS settings they're built from. All on-screen text is selectable, and COPY takes a copy and stores it on the system clipboard. **REFRESH** asks the router again, for example after you have changed a DNS setting in the web interface. `dnsmasq.conf` lists every reserved device's MAC and address, so review it before you share a copy. Informational read-only, no changes are made, do that in the WebUI or SSH etc. A wealth of detailed information is provided, not for the faint of heart!
+  - **ROUTER RESOLVER STATUS** - is your router answering name lookups? Run a live check, through both of your router's own resolvers: dnsmasq, and stubby when DNS-over-TLS is on. You see every address that came back and how long it took, and if something didn't answer, what that means for your network. Below that are the files that decide how a lookup travels, each with when the router last wrote that configuration, and the DNS settings they're built from. All on-screen text is selectable, and COPY takes a copy and stores it on the system clipboard. **REFRESH** asks the router again, for example after you have changed a DNS setting in the web interface. `dnsmasq.conf` lists every reserved device's MAC and address, so review it before you share a copy. Informational read-only, no changes are made, do that in the WebUI or SSH etc. A wealth of detailed information is provided, not for the faint of heart!
+
+<br>
+<p align="center">
+  <img src="./images/06.03-router-resolver-status.png" alt="live check" width="250">
+  <img src="./images/06.04-router-resolver-files.png" alt="name resolution paths taken" width="250">
+  <br>
+  Live check, and name resolution paths taken
+</p><br>
+
+
   - **ROUTER DNS ROUTING** - where does each lookup actually go? Your devices', the router's own and each watchdog's, one line each, with one tag saying whether it goes through a tunnel or straight out to the Internet, and another saying whether anyone along the way can read it. COPY and REFRESH work as they do in ROUTER RESOLVER STATUS. Raw routing rules are at the bottom, for the technically inquisitive, and [ROUTER-DNS.md](ROUTER-DNS.md) explains why any of this matters. Again, informational read-only, no changes are made, do that in the WebUI or SSH etc. There's a _lot_ of information shown in here; helpful for troubleshooting and knowing precisely what goes where, and why.
 
 <br>
 <p align="center">
-  <img src="./images/06.03-router-resolver-status.png" alt="ROUTER RESOLVER STATUS, the live check" width="250">
-  <img src="./images/06.04-router-resolver-files.png" alt="ROUTER RESOLVER STATUS, the files and settings" width="250">
-  <img src="./images/06.05-router-dns-routing.png" alt="ROUTER DNS ROUTING" width="250">
+  <img src="./images/06.05-router-dns-routing.png" alt="Check where do lookups go" width="250">
   <br>
-  ROUTER RESOLVER STATUS, its files and settings further down, and ROUTER DNS ROUTING
+  Check where do lookups go
 </p><br>
 
-  - **FORGET ROUTER IP** - removes the remembered router address and its SSH key fingerprint, the _**only**_ data retained on your device. No SSH credentials, no usernames, no PIA password, no tracking, no advertising ID, no ad cache, no in-app user journeys. Zip. Zilch. Nada.
+  - **FORGET ROUTER IP** - removes the remembered router address and its associated SSH key fingerprint, the _**only**_ data retained on your device. No SSH credentials, no usernames, no PIA password, no tracking, no advertising ID, no ad cache, no in-app user journeys. Zip. Zilch. Nada.
   - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run. Why? Just in case. The "Irish" approach - to be sure, to be sure. Try doing an Irish accent via a keyboard. Not easy. But why? In case it ever expires/gets updated by PIA, you'll have a way to get a fresh one straight from their official GitHub repo when you run any operation that authenticates with PIA's servers.
   - **MAX ACTIVE VPNS** - allows you to run more than two concurrent VPN clients on your router. Absolutely unsupported. You did read the license agreement didn't you? If not that's in ABOUT, because we all love reading legal documents.
-  - **SECURE STARTUP** - closes the last gap in pinning on stock firmware. For a few seconds while your router starts, or about half a minute after it resets its network, devices on a VPN can ping the internet directly, which shows your real internet address to whatever they ping. Your router can only block pings for every device at once, so turning this on means devices that aren't on a VPN can never ping anything on the internet, which makes troubleshooting harder. Off by default, and for most people it should stay that way. It asks before it changes anything, and the whole story is in [5.4.1](#541-pinned-means-pinned-the-fail-closed-guard). Stock only: Merlin's own kill switch already covers it.
-  - **RESTORE PURCHASE** - resurrects your Google Play Store entitlement for your one-off, lifetime purchase of `pia-cfg-wg`, you did buy a copy didn't you? If nothing matches, based on your device's current Play Store logged in account, you'll be told too.
+  - **SECURE STARTUP** - closes the last gap in pinning on stock firmware. For a few seconds while your router starts, or about half a minute after it resets its network, devices on a VPN can ping the internet directly, which shows your real internet address to whatever they ping. Your router can only block pings for every device at once, so turning this on means devices that aren't on a VPN can never ping anything on the internet, which makes troubleshooting harder. Off by default, and for most people it should stay that way. It asks before it changes anything, and the whole story is in [5.4.1](#541-pinned-means-pinned-the-fail-closed-guard). Stock only: Merlin's own excellent kill switch already covers this gap.
+  - **RESTORE PURCHASE** - if you install to a different device, this resurrects your Google Play Store entitlement for your one-off, lifetime purchase of `pia-cfg-wg`, you did do that didn't you? Help suppport independent open-source software development. If nothing matches, based on your device's current Play Store logged in account, you'll be told too. This button is only shown when you've installed the official Play Store release.
   - **UNINSTALL FEATURES DEPLOYED TO ROUTER** - completely removes any watchdogs, their helper apps, and all app configuration deployed to your router; configured WireGuard VPNs are retained. See [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice. The "Irish" approach, alive and well. Everything really is removed, nothing's left behind, no stray filaments to clog up your device's storage. That's good software practice, I wish more folks did that.
 
-### 5.8. About
+### 5.8. ABOUT
 
 All the details of what version you have, the provenance of who built it, and a bunch of stuff that geeks love, me included.
 <br>
