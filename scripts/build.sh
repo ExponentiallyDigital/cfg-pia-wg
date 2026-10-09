@@ -203,7 +203,8 @@ flutter pub get --enforce-lockfile
 
 if [ "$SKIP_ICONS" = false ]; then
     echo -e "${CYAN}Generating launcher icons...${RESET}"
-    dart run flutter_launcher_icons
+    # Through the wrapper, not the tool: the tool damages the Xcode project file (ID-374).
+    dart run tool/launcher_icons.dart
     # The splash screen is generated from the same artwork and written into the platform folders,
     # so it belongs with the icons rather than with the build (ID-111).
     echo -e "${CYAN}Generating the native splash screen...${RESET}"

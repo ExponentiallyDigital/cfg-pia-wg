@@ -72,7 +72,7 @@ Follow the build instructions from the README:
 ```bash
 flutter clean
 flutter pub get --enforce-lockfile
-dart run flutter_launcher_icons
+dart run tool/launcher_icons.dart
 ```
 
 ### 2.4. Follow code style & quality rules

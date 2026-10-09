@@ -62,7 +62,8 @@ jobs:
         run: flutter pub get --enforce-lockfile
 
       - name: Generate launcher icons
-        run: dart run flutter_launcher_icons
+        # The wrapper keeps the tool from damaging the Xcode project, which the tests read (ID-374).
+        run: dart run tool/launcher_icons.dart
 
       - name: Flutter analyze
         run: flutter analyze --fatal-infos
@@ -120,7 +121,8 @@ jobs:
         run: flutter pub get --enforce-lockfile
 
       - name: Generate launcher icons
-        run: dart run flutter_launcher_icons
+        # The wrapper keeps the tool from damaging the Xcode project, which the tests read (ID-374).
+        run: dart run tool/launcher_icons.dart
 
       - name: Build debug APK
         run: flutter build apk --debug
