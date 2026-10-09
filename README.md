@@ -149,6 +149,9 @@ If you want to build your own, see [BUILDING.md](https://github.com/Exponentiall
 
 ## 4. Prerequisites & requirements
 
+> [!TIP]
+> **New here?** [QUICKSTART.md](QUICKSTART.md) gets you protected in ten minutes, step by step, and links back here for the detail.
+
 Since build 403 (5 September 2026), this app extends support to stock ASUS firmware; [Merlin Firmware](https://www.asuswrt-merlin.net/) continues to be supported.
 
 > [!NOTE]

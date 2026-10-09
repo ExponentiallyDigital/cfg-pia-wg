@@ -1,6 +1,6 @@
 name: cfg_pia_wg
 description: cfg-pia-wg
-version: 0.8.122+492
+version: 0.8.123+493
 environment:
   sdk: ">=3.0.0 <4.0.0"
   flutter: ">=3.10.0"
@@ -32,6 +32,21 @@ flutter_launcher_icons:
   image_path: assets/icon/app_icon_legacy.png
   adaptive_icon_background: "#001620"
   adaptive_icon_foreground: assets/icon/app_icon_foreground.png
+  # iOS (ID-260): the legacy icon redrawn at the 1024 the App Store needs, from its measured shapes,
+  # since the largest original is 512. Kept out of assets/icon/ so the Android app doesn't carry them.
+  # The App Store refuses an icon with an alpha channel; the dark and tinted ones (iOS 18) are the
+  # same shapes on transparent, the tinted one made grey by the tool.
+  # Run it as `dart run tool/launcher_icons.dart`, never directly: the tool (0.14.4) also rewrites
+  # every ASSETCATALOG line in ios/Runner.xcodeproj/project.pbxproj to "= AppIcon;", breaking the
+  # yes/no setting ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS, and the wrapper
+  # puts those lines back (ID-374).
+  ios: true
+  image_path_ios: assets/ios_icon/app_icon_1024.png
+  remove_alpha_ios: true
+  background_color_ios: "#001620"
+  image_path_ios_dark_transparent: assets/ios_icon/app_icon_1024_dark.png
+  image_path_ios_tinted_grayscale: assets/ios_icon/app_icon_1024_dark.png
+  desaturate_tinted_to_grayscale_ios: true
 # The window the system draws while the app starts. Without one, Android shows a blank white
 # rectangle before the first frame, which on a dark app reads as a flash (ID-111).
 flutter_native_splash:

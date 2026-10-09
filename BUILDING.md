@@ -50,11 +50,13 @@ flutter pub get --enforce-lockfile
 
 #### 2.1.1. Generate assets (launcher icons)
 
-The app leverages the `flutter_launcher_icons` framework to generate adaptive foreground and background configurations for Android launchers. Before your initial compilation, generate the native resource files:
+The app leverages the `flutter_launcher_icons` framework to generate adaptive foreground and background configurations for Android launchers, and the iOS icon set. Before your initial compilation, generate the native resource files:
 
 ```bash
-dart run flutter_launcher_icons
+dart run tool/launcher_icons.dart
 ```
+
+Run it through `tool/launcher_icons.dart` rather than as `dart run flutter_launcher_icons`. Writing the iOS icons, the tool (0.14.4) also changes lines in `ios/Runner.xcodeproj/project.pbxproj` it shouldn't, and the wrapper puts them back.
 
 #### 2.1.2. Test and run
 
