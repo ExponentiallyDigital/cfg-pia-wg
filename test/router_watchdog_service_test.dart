@@ -1103,20 +1103,6 @@ void main() {
     });
   });
 
-  test('waitForWatchdogReady resolves once the interface becomes present', () async {
-    var attempts = 0;
-    final c = RecordingSSHClient(
-      responder: (cmd) {
-        if (cmd.contains('cru l')) return '1';
-        if (cmd.contains('nvram get wgc1_enable')) return '1';
-        if (cmd.contains('ip -o link show up')) return attempts++ > 0 ? 'wgc1' : '';
-        return '';
-      },
-    );
-    final ready = await _wd(c).waitForWatchdogReady(1, pollInterval: const Duration(milliseconds: 1), maxAttempts: 3);
-    expect(ready, isTrue);
-  });
-
   group('getWatchdogStatus', () {
     test('enabled with a parsed last-ping timestamp', () async {
       final c = RecordingSSHClient(

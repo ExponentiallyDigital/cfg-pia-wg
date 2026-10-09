@@ -191,7 +191,8 @@ jobs:
         run: |
           TAG="${{ steps.tag.outputs.val }}"
           flutter pub get --enforce-lockfile
-          dart run flutter_launcher_icons
+          # Through the wrapper, not the tool: the tool damages the Xcode project file (ID-374).
+          dart run tool/launcher_icons.dart
 
           # The Play build MUST carry the RevenueCat key. Without it the app cannot ask who has
           # paid, so it withholds nothing and the paid features ship to everyone - silently, and
