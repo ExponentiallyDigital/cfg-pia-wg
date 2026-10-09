@@ -2038,15 +2038,6 @@ class RouterWatchdog {
         onLog?.call('Watchdog disabled for $label.', isSuccess: true);
       });
 
-  Future<bool> waitForWatchdogReady(int slot, {Duration pollInterval = const Duration(seconds: 1), int maxAttempts = 10}) async {
-    for (var attempt = 0; attempt < maxAttempts; attempt++) {
-      final status = await getWatchdogStatus(slot);
-      if (status.isEnabled) return true;
-      await Future.delayed(pollInterval);
-    }
-    return false;
-  }
-
   // Enabled state requires both the watchdog cron entry and the actual WireGuard interface.
   Future<WatchdogStatus> getWatchdogStatus(int slot) async {
     // The script has to exist too: a deploy that failed to write it still left the cron entries,

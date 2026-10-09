@@ -1923,6 +1923,22 @@ Each of these presents as a different fault from the one it is, and none of them
 
 **A device assignment that is written correctly and has no effect.** Check `ip rule show` first. Stock never removes a device's previous rule when it is reassigned, so both rules sit at priority 100 and the older one wins. The record in `vpnc_dev_policy_list` looks perfect the whole time. Detail in [ARCHITECTURE.md, Stock leaves the old routing rule behind](ARCHITECTURE.md#stock-leaves-the-old-routing-rule-behind-measure).
 
+**Devices with no internet while every tunnel looks up, or the router's settings gone after a reboot.** Each was seen once and never explained: a phone and the media centre offline with both tunnels up and both watchdogs content, fixed by a reboot but not by `restart_net_and_phy` (ID-195, 2026-09-23); and every WireGuard setting gone after a reboot that followed an NVRAM commit, with the first `jffs2: check_node_data: wrong data CRC` error in that boot's log (ID-219, 2026-09-24). A restart or a reboot destroys most of the evidence, so capture first:
+
+- From a LAN device: `ping 1.1.1.1`, `nslookup google.com`, `nslookup google.com 9.9.9.9`. If the address answers, the first lookup fails and the second works, it's the router's resolver, not the tunnels.
+- On the router:
+
+```bash
+ip rule show; ip route show table main; ip route show table 5; ip route show table 9
+for T in 201 202 203 204 205; do echo "== table $T"; ip route show table $T; done
+nvram get vpnc_default_wan; nvram get vpnc_unit; nvram get vpnc_dev_policy_list
+cat /tmp/resolv.dnsmasq; ps | grep -E 'stubby|dnsmasq'; nslookup google.com 127.0.0.1; wg show interfaces
+```
+
+- If settings are missing after a reboot, also `dmesg | grep -i jffs2` and `nvram get wgc1_desc`, and keep copies of `/tmp/syslog.log` and `/jffs/syslog.log`.
+
+Two candidates were never ruled out for the first: the router's resolver (that night dnsmasq was restarted and stubby wasn't; the reboot restarted both), and, for one device alone, a 5 GHz radio flapping on a DFS channel (52). Moving 5 GHz to a channel outside DFS costs nothing and rules the second out.
+
 ## <a name='r2'></a>R2. How the watchdog decides a tunnel is broken
 
 Each check, the watchdog decides in this order:
