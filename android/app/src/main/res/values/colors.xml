@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#001620</color>
+
+    <!-- The widget's own palette (ID-376), matching the app's screens: teal "protected", amber
+         "a tunnel down", grey "not checked" - told by colour, shape and words together, never
+         colour alone. From the mock-up: https://claude.ai/artifact/SU6ha7UoqcczLr1d2f6oLn -->
+    <color name="widget_card_bg">#1A1D23</color>
+    <color name="widget_card_border">#2E3240</color>
+    <color name="widget_text_primary">#E8EAF0</color>
+    <color name="widget_text_secondary">#A0AABA</color>
+    <color name="widget_dim_dot">#5B6475</color>
+
+    <color name="widget_teal">#00D4AA</color>
+    <color name="widget_teal_bg">#0F3D2E</color>
+    <color name="widget_amber">#EF9F27</color>
+    <color name="widget_amber_bg">#2A1F0E</color>
+    <color name="widget_grey">#C3CAD6</color>
+    <color name="widget_grey_border">#8892A4</color>
+    <color name="widget_grey_bg">#1F242D</color>
 </resources>

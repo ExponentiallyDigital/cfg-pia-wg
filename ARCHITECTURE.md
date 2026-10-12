@@ -6,6 +6,7 @@ This app provisions Private Internet Access WireGuard configurations onto an ASU
 2. **Write a config into a router slot** over SSH, start the tunnel, and prove that traffic is really flowing through it.
 3. **Deploy a watchdog** onto the router, which checks the tunnel on a schedule and rebuilds it unattended when it fails.
 4. **Pin individual LAN devices to a tunnel**, so one device uses a VPN and another does not. Stock firmware only - Merlin does this through VPN Director, which the app does not drive.
+5. **Show each tunnel's state on the home screen**, refreshed without the app open. Optional, stock only, and the one job that needs the app to keep a login: a key restricted to a single status command, with the router login name beside it, in Keystore-backed secure storage. Nothing is kept unless the user sets it up. See [10](#10-the-home-screen-widget-id-376), and README 5.11 for the user-facing description.
 
 **"Slot" means one of the five WireGuard client profiles the router hardware provides**, numbered 1 to 5 and named `wgc1` to `wgc5`. They are fixed: the router has five, the app can fill any of them, and a slot holds one PIA server at a time. Nearly everything the app does to a router is scoped to a single slot, and almost every NVRAM key below is prefixed `wgcN_` for that reason.
 
@@ -79,22 +80,27 @@ This app provisions Private Internet Access WireGuard configurations onto an ASU
     - [The caller check](#the-caller-check)
 - [8. Network traffic](#8-network-traffic)
 - [9. Output \& session destruction](#9-output--session-destruction)
-- [10. Build provenance (the About screen)](#10-build-provenance-the-about-screen)
-  - [10.1. The channel](#101-the-channel)
-  - [10.2. Where each field comes from](#102-where-each-field-comes-from)
-  - [10.3. Gradle-side notes](#103-gradle-side-notes)
-  - [10.4. GNU licence text](#104-gnu-licence-text)
-- [11. Appendix: readings that were superseded](#11-appendix-readings-that-were-superseded)
-  - [11.1. The two-cost model for applying an assignment](#111-the-two-cost-model-for-applying-an-assignment)
-  - [11.2. Placeholder records in the policy list](#112-placeholder-records-in-the-policy-list)
-- [12. House style: what the app looks like](#12-house-style-what-the-app-looks-like)
-  - [12.1. The palette](#121-the-palette)
-  - [12.2. The type scale](#122-the-type-scale)
-  - [12.3. Controls](#123-controls)
-  - [12.4. Menus, headings and logs](#124-menus-headings-and-logs)
-  - [12.5. Layout constants](#125-layout-constants)
-  - [12.6. Which file does what](#126-which-file-does-what)
-  - [12.7. Editing a screenshot](#127-editing-a-screenshot)
+- [10. The home screen widget (ID-376)](#10-the-home-screen-widget-id-376)
+  - [10.1. The status read](#101-the-status-read)
+  - [10.2. The key, and what it can do](#102-the-key-and-what-it-can-do)
+  - [10.3. Refreshing, and the two rules it keeps](#103-refreshing-and-the-two-rules-it-keeps)
+  - [10.4. What the Kotlin side draws](#104-what-the-kotlin-side-draws)
+- [11. Build provenance (the About screen)](#11-build-provenance-the-about-screen)
+  - [11.1. The channel](#111-the-channel)
+  - [11.2. Where each field comes from](#112-where-each-field-comes-from)
+  - [11.3. Gradle-side notes](#113-gradle-side-notes)
+  - [11.4. GNU licence text](#114-gnu-licence-text)
+- [12. Appendix: readings that were superseded](#12-appendix-readings-that-were-superseded)
+  - [12.1. The two-cost model for applying an assignment](#121-the-two-cost-model-for-applying-an-assignment)
+  - [12.2. Placeholder records in the policy list](#122-placeholder-records-in-the-policy-list)
+- [13. House style: what the app looks like](#13-house-style-what-the-app-looks-like)
+  - [13.1. The palette](#131-the-palette)
+  - [13.2. The type scale](#132-the-type-scale)
+  - [13.3. Controls](#133-controls)
+  - [13.4. Menus, headings and logs](#134-menus-headings-and-logs)
+  - [13.5. Layout constants](#135-layout-constants)
+  - [13.6. Which file does what](#136-which-file-does-what)
+  - [13.7. Editing a screenshot](#137-editing-a-screenshot)
 - [Appendix. Process - BACKLOG and CHANGELOG management](#appendix-process---backlog-and-changelog-management)
 
 ## 1. <a name='how-it-works'></a>How it works
@@ -1861,11 +1867,64 @@ Generated configuration data is managed via:
 
 ---
 
-## 10. <a name='build-provenance-the-about-screen'></a>Build provenance (the About screen)
+## 10. <a name='the-home-screen-widget'></a>The home screen widget (ID-376)
+
+Optional, stock only, and the only part of the app that keeps a login. Nothing here exists until the user generates a key in SETTINGS; README 5.11 is the user-facing description, SECURITY.md "Data handling & privacy" states what is stored.
+
+**Stock only** because the rows name the devices pinned to each tunnel, which is read from `vpnc_dev_policy_list` ([6](#6-device-assignment-stock)). Merlin has no equivalent the app drives, so the widget has nothing to say there yet.
+
+### 10.1. <a name='the-status-read'></a>The status read
+
+One SSH round trip, `kWidgetStatusCommand` in `lib/widget_status_service.dart`, built the same way the device screen's read is ([3.2](#32-detail)): nine `nvram get` and file reads separated by an echoed marker, split on the way back. It is deliberately one string, because it is also the value of the key's `command="…"` restriction - what the app reads with the user's own login and what the widget reads with its restricted key are the same command, so neither can drift into being more than the other.
+
+The marker is single-quoted (`echo '@@CFGPIAWG-WIDGET@@'`) rather than double-quoted, for one reason: the whole command is later embedded inside the double quotes of `command="…"` in `authorized_keys`, and a double quote there would need escaping. `widgetKeyRestriction` escapes anyway, belt and braces, and a test asserts the real command survives that escaping with nothing unescaped.
+
+What comes back feeds `buildWidgetStatus` (`lib/widget_status.dart`), which is pure: the tunnel rows, who is pinned to each, who the guard is therefore holding offline, and one of three badges. "Up" is the interface being present; "answering" additionally requires a handshake within `kAnsweringWithinSeconds`, the same 300 seconds ENABLE and the watchdog use, so the widget never calls a tunnel healthy that they would not.
+
+### 10.2. <a name='the-key-and-what-it-can-do'></a>The key, and what it can do
+
+Ed25519, generated on the device by `pinenacl` - already in the tree through `dartssh2`, which authenticates with keys but cannot generate one. The private seed is the only secret stored; the public half is derived from it on demand (`widgetKeyPairFromSeed`), so there are not two things to keep in step.
+
+Installed into **both** `sshd_authkeys` (NVRAM, so it survives a reboot) and `~/.ssh/authorized_keys` (the live file Dropbear reads, so it works at once) - measured 2026-10-12 to be newline-joined and to match line for line. Writing one and trusting something else to propagate it is exactly the assumption the second guard layer's own bug (ID-377) turns on, so this writes both. Everything that is not the widget's own line is carried through byte for byte; the line is recognised by its fixed `cfg-pia-wg-widget` comment rather than by parsing options the app did not write.
+
+`dartssh2` can only authenticate from a PEM, so the stored seed is serialised to `openssh-key-v1` on the fly (`openSshPrivateKeyPem`). That format is written by hand here; it was checked against real `ssh-keygen -y`, which derived identical key material from it.
+
+**What the restriction buys, measured on stock, Dropbear v2022.82, 2026-10-12:** another command refused; reaching a second host through the router refused; opening a forwarded listening port refused. The first two were measured in-session, the third by the maintainer independently. The check that proves the third unattended is ID-378 and has not yet passed on hardware - until it does, that leg rests on a one-off measurement, which is why SECURITY.md says so rather than claiming more.
+
+### 10.3. <a name='refreshing-and-the-two-rules-it-keeps'></a>Refreshing, and the two rules it keeps
+
+WorkManager, 15 minutes, which is Android's floor and not a preference. `refreshWidgetStatus` (`lib/widget_refresh.dart`) holds every decision and takes every dependency as a seam, so the decisions are tested without a router; the plugin glue around it is thin and untested for the same reason `pushWidgetStatus` is.
+
+Two rules it keeps that the app's own screens do not, both because nobody is watching:
+
+1. **A recorded host key is required, not optional.** `openSshClient` records an unknown key on first use and tells the user it did, which is reasonable with a person present to read it. A background refresh refuses to connect at all until an ordinary connection in the app has recorded one. A background job must not be the thing that decides to trust a router it has never seen.
+2. **Failure is silent, but not invisible.** Off the home network the connection simply fails: no notification, nothing to dismiss, no hurried retry. The last good reading stays on the widget and the footer gains the time the attempt failed, and why: "could not reach the router" when it tried, "could not refresh: open the app" when it could not try (no address, no login, no recorded host key, or a host key that has changed), and "refresh failed" for any other fault, which is caught rather than left to kill the worker. The only exit that writes nothing is no key at all, because that widget was never promised a refresh. The first build of this said nothing at all on failure, which made "tried and could not reach the router" indistinguishable from "never tried", on a phone, with no way to tell them apart (2026-10-12).
+
+**The refresh button does not use `home_widget`'s background channel.** It did at first. That channel queues every tap under one fixed name with `ExistingWorkPolicy.APPEND`, so each tap waits on the one before it, and once any one fails, every tap queued after it fails too without running. On the emulator one tap had failed and fifteen more had failed behind it untried, and the button was dead for good. Now the button sends an explicit broadcast to `WidgetRefreshReceiver.kt`, which queues one run of the workmanager plugin's own worker, the same Dart entry point as the 15-minute refresh, under its own name with `KEEP`. A tap while one is queued or running is dropped, since it would read the same router a second later, and a failed run is finished, so it can never block the next tap. That was proved on the emulator by breaking the stored entry-point handle, seeing a tap fail, restoring it, and seeing the very next tap succeed. Until a key exists the button is drawn plain and opens the app instead, because there is nothing it could read with.
+
+A tap that fails before any Dart runs - a stale handle, say - still leaves no footer, because the footer is written from Dart. The next tap is not affected by it, which was the bug.
+
+**Two timing traps, both of which look like a broken feature:**
+
+- A periodic task runs at the **end** of its first interval, not at registration, and Android may defer it further. So installing the key starts an immediate read as well, or the widget would sit unchanged for fifteen minutes or more and look dead.
+- The handle WorkManager stores points at the Dart entry point of **the build that registered it**, and the refresh button runs through the same handle. After an app update a stale handle leaves a widget that looks perfectly healthy and never updates again. `main()` re-registers it at every start to prevent that; only a real update over the top proves it, which is test WGT-3.
+
+### 10.4. <a name='what-the-kotlin-side-draws'></a>What the Kotlin side draws
+
+Android widgets cannot be Flutter, so the two sizes are `RemoteViews` layouts driven by two `AppWidgetProvider`s under `android/app/src/main/kotlin/.../widget/`. They decide nothing: every string and every state is read from SharedPreferences, which `lib/widget_bridge.dart` writes through `home_widget`. The key names appear twice - `WidgetKeys.kt` on one side, `buildWidgetData` on the other - and a test asserts each one, because a drift between them draws a blank widget rather than failing.
+
+Two things the providers must do that are easy to get wrong:
+
+- **Resolve by fully-qualified name.** `home_widget` looks up a provider as `<applicationId>.<androidName>`, which misses a class in a subpackage; these live in `.widget`, so the Dart side passes `qualifiedAndroidName`. Without it, every update call silently asks Android for a class that does not exist.
+- **Never show an age.** The footer is written once and nothing redraws it until the next push, so "checked 2 minutes ago" becomes a lie the moment refreshing stops. It carries a clock time instead, which stays true however stale the reading gets.
+
+---
+
+## 11. <a name='build-provenance-the-about-screen'></a>Build provenance (the About screen)
 
 `lib/screens/about_screen.dart` exists so a bug reportor can identify which binary is running. Displays the commit, branch/tag, CI run, build type, and install source.
 
-### 10.1. <a name='the-channel'></a>The channel
+### 11.1. <a name='the-channel'></a>The channel
 
 `com.exponentiallydigital.pia_wireguard_cfga/build_info`, registered in `MainActivity.configureFlutterEngine` and answering a single method, `getBuildInfo`, with a flat `Map<String, String>`.
 
@@ -1873,7 +1932,7 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 
 `loadBuildInfo()` handles `MissingPluginException` and `PlatformException`, returning `BuildInfo.unknown()`. With `flutter test` no native side is registered, so every test takes that path.
 
-### 10.2. <a name='where-each-field-comes-from'></a>Where each field comes from
+### 11.2. <a name='where-each-field-comes-from'></a>Where each field comes from
 
 | Field                                                                                                | Source                                                                                                                                  |
 | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1884,7 +1943,7 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 | `osVersion`                                                                                          | `RELEASE_OR_CODENAME` on API 30+, else `RELEASE`, plus `SDK_INT`                                                                        |
 | `buildTimestamp`, `commitHash`, `commitDate`, `gitBranch`, `runnerId`, `compileSdk`, `kotlinVersion` | `BuildConfig`, injected by `android/app/build.gradle.kts` at configuration time                                                         |
 
-### 10.3. <a name='gradle-side-notes'></a>Gradle-side notes
+### 11.3. <a name='gradle-side-notes'></a>Gradle-side notes
 
 `buildFeatures { buildConfig = true }` is required, AGP 8+ defaults it to `false`, and AGP 9 removed the `android.defaults.buildfeatures.buildconfig` escape hatch. Once enabled, AGP generates `DEBUG`, `APPLICATION_ID`, `BUILD_TYPE`, `VERSION_CODE` and `VERSION_NAME` itself; only the seven custom fields are declared by hand.
 
@@ -1895,15 +1954,15 @@ Everything is a `String` deliberately: a uniform map crosses `StandardMessageCod
 - **`buildConfigField`'s value is emitted verbatim** into `BuildConfig.java`, so `javaStringLiteral()` escapes every string. These values come from git and the environment: a branch named `foo"bar` would otherwise produce uncompilable generated Java.
 - No new dependencies, so the STRICT `gradle.lockfile` set is untouched. This is also why the Kotlin side hand-rolls the `longVersionCode` branch rather than using `androidx.core`'s `PackageInfoCompat`.
 
-### 10.4. <a name='gnu-licence-text'></a>GNU licence text
+### 11.4. <a name='gnu-licence-text'></a>GNU licence text
 
 `lib/license_text.dart` holds `./LICENSE` a verbatim raw-string constant, generated at development time, not loaded at runtime and not registered as an asset.
 
-## 11. <a name='appendix-readings-that-were-superseded'></a>Appendix: readings that were superseded
+## 12. <a name='appendix-readings-that-were-superseded'></a>Appendix: readings that were superseded
 
 Each entry below was believed, written down, and then measured to be wrong. They are kept together here because a wrong idea that fits the evidence is a reasonable one to have twice: the one-line retraction where the idea would occur stops it being re-adopted, and this is the working behind it. **Nothing in this appendix describes how the app behaves.**
 
-### 11.1. <a name='the-two-cost-model-for-applying-an-assignment'></a>The two-cost model for applying an assignment
+### 12.1. <a name='the-two-cost-model-for-applying-an-assignment'></a>The two-cost model for applying an assignment
 
 Retracted in [Assigning a device with no DHCP reservation creates one](#assigning-a-device-with-no-dhcp-reservation-crea).
 
@@ -1918,7 +1977,7 @@ The design that followed was to offer reserved devices as the ordinary case and 
 
 **A second, independent signal said the same thing.** A day of syslog was searched for the Broadcom multicast-snooping error `bcm_mcast_netlink_process_snoop_cfg,884: interface N could not be found`. It appears in three bursts of around 120 lines each, and every burst follows a `restart_net_and_phy` within ten seconds. Nothing else provokes it: `restart_vpnc`, `stop_vpnc`, `restart_vpnc_dev_policy` alone, `restart_default_wan`, `restart_wgs` and `restart_firewall` all ran repeatedly in the same log and produced none. The heavy call tears down every network device at once, so `mcpd` retries its snooping config against interface indexes that no longer exist until the rebuild settles. This is an ASUS defect and not one the app can repair, but the app never triggers it, because the light pair does not rebuild the network stack. The number in the message is a kernel `ifindex`, never reused within a boot and reset on reboot; it identifies nothing the app owns and needs no handling.
 
-### 11.2. <a name='placeholder-records-in-the-policy-list'></a>Placeholder records in the policy list
+### 12.2. <a name='placeholder-records-in-the-policy-list'></a>Placeholder records in the policy list
 
 Retracted in [A record being present does not mean the device is assigned](#how-a-change-is-written) and in [The starting state, before any VPN exists](#the-starting-state-before-any-vpn-exists).
 
@@ -1933,7 +1992,7 @@ The rule the app depends on survived both readings unchanged, which is why nothi
 
 ---
 
-## 12. <a name='house-style'></a>House style: what the app looks like
+## 13. <a name='house-style'></a>House style: what the app looks like
 
 Every value here was read out of `lib/`, not designed on paper. It exists for two jobs: writing UI code that matches what is already there, and editing a screenshot - covering an address or a username - without the patch looking like a patch. The cross-reference at the end says which file to change when one of these needs to move.
 
@@ -1941,7 +2000,7 @@ Every value here was read out of `lib/`, not designed on paper. It exists for tw
 
 **The app is unconditionally dark.** There is no light theme and no system-theme switch.
 
-### 12.1. The palette
+### 13.1. The palette
 
 All of it is `lib/app_colors.dart`. Nothing in a screen may inline a hex value (CONTEXT, "Colours").
 
@@ -1978,7 +2037,7 @@ All of it is `lib/app_colors.dart`. Nothing in a screen may inline a hex value (
 
 **Slot-action verb colours** (`kSlotActionColours`), keyed by the button's label: CREATE and CREATE/EDIT green, ENABLE teal, EDIT blue, DISABLE amber, DELETE red, VIEW ROUTER WATCHDOG LOG grey. A verb keeps the colour of the thing it acts on.
 
-### 12.2. The type scale
+### 13.2. The type scale
 
 Sizes are in logical pixels. Nothing uses Flutter's text theme; every style is written where it is used.
 
@@ -1998,7 +2057,7 @@ Sizes are in logical pixels. Nothing uses Flutter's text theme; every style is w
 | 10 | normal | The "by Exponentially Digital" line; licence text (`height: 1.4`) |
 | 9 | normal | One thing only: the SHA-256 under a binary in the install dialog |
 
-### 12.3. Controls
+### 13.3. Controls
 
 **Buttons are bordered and unfilled** (`widgets/app_button.dart`). One shape, three roles, and the colour is the role:
 
@@ -2018,7 +2077,7 @@ Padding is 14 vertical, 16 horizontal; the border is 1px in the role colour; `bu
 
 **Badges** (`SlotBadge`): 10px monospace w600, 7x2 padding, 0.5px border, tinted background. ACTIVE teal on `#0F3D2E`, UP-NO-ANSWER amber on `#2A1F0E`, KILL SWITCH amber, WATCHDOG ACTIVE teal on `#0F2E3D`, WATCHDOG PAUSED `kMuted` on `#1F242D`.
 
-### 12.4. Menus, headings and logs
+### 13.4. Menus, headings and logs
 
 **The main menu** is nine bordered rows plus EXIT. Icon and label take the destination's colour; the outline stays teal on every row so they read as one control set; the chevron stays teal because it means the same thing everywhere. EXIT is red, has no chevron, and keeps the chevron's width so every label starts in the same column. Rows cap at `kMenuMaxWidth` 520 and centre; the two footer links indent by `kMenuIconIndent` 20 so their 16px icons line up with the rows' 20px ones.
 
@@ -2028,7 +2087,7 @@ Padding is 14 vertical, 16 horizontal; the border is 1px in the role colour; `bu
 
 **The app log** colours by outcome: success white, error `kError`, warning `kWarn`, everything else `kHighlight`, each with its own icon. **The router log** colours by author: the app's lines teal, the watchdog's `kWatchdogText`, errors red, the firmware's own lines plain. **The watchdog log** colours by outcome: errors red, the three SUCCESS lines teal, rebuild steps amber, routine checks plain.
 
-### 12.5. Layout constants
+### 13.5. Layout constants
 
 | Constant | Value | Meaning |
 | --- | --- | --- |
@@ -2039,7 +2098,7 @@ Padding is 14 vertical, 16 horizontal; the border is 1px in the role colour; `bu
 | HOME button | 20/0/20/20 | Pinned below the scroll view, full width |
 | header | 8 horizontal, 8 vertical | Inside the safe area |
 
-### 12.6. Which file does what
+### 13.6. Which file does what
 
 | Element | Defined in | Used or modified by |
 | --- | --- | --- |
@@ -2067,7 +2126,7 @@ Padding is 14 vertical, 16 horizontal; the border is 1px in the role colour; `bu
 | ROUTER RESOLVER STATUS and ROUTER DNS ROUTING: reading, parsing and analysis | `router_dns.dart` | The two windows below |
 | Those two windows, tags and check rows | `screens/router_dns_screen.dart` | SETTINGS |
 
-### 12.7. Editing a screenshot
+### 13.7. Editing a screenshot
 
 What to know when covering an address, a username or a MAC:
 

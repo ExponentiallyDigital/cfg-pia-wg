@@ -17,6 +17,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [GRD. Fail-closed guard](#grd-fail-closed-guard)
 - [LOG. App log and router log](#log-app-log-and-router-log)
 - [SET. Settings](#set-settings)
+- [WGT. Home screen widget (optional, stock)](#wgt-home-screen-widget-optional-stock)
 - [ABT. About](#abt-about)
 - [EXT. Exit, background and session](#ext-exit-background-and-session)
 - [LCK. Locked, with no purchase (store build)](#lck-locked-with-no-purchase-store-build)
@@ -1579,6 +1580,60 @@ The check that lets ID-364 leave WIP, under the CHANGELOG's rule for protection 
 - See: TABLET gone from YOUR DEVICES' LOOKUPS. With no device pinned anywhere, the top line reads "No lookups go through a tunnel." and the redirects section says no device is pinned; with others still pinned, it keeps "Only pinned devices' lookups go through a tunnel."
 
 UNINSTALL is at the very end of the run: [END](#end).
+
+---
+
+## <a name='wgt'></a>WGT. Home screen widget (optional, stock)
+
+The widget is the one part of the app that keeps a login, so these check what it stores as carefully as what it shows. Nothing here applies unless the widget is set up: with no key installed, WGT-1 is the whole section.
+
+**WGT-1** It works with nothing stored [hand]
+
+- Starts with: no widget key (SETTINGS, HOME SCREEN WIDGET KEY says "No key exists yet").
+- Do: long-press an empty spot on the home screen, Widgets, cfg-pia-wg, drag the 4x2 size on.
+- See: it draws. With no reading yet it shows the grey "Not checked" badge, no tunnel rows, and a plain (untinted) refresh button.
+- Do: tap the widget.
+- Pass if: the app opens. Nothing was stored to make this work.
+- Do: back on the home screen, tap the plain refresh button.
+- Pass if: the app opens. With no key there is nothing the button could read with, so it must not sit there doing nothing.
+
+**WGT-2** GENERATE installs the key and the widget fills in at once [hand]
+
+- Do: SETTINGS, HOME SCREEN WIDGET KEY, GENERATE. Give the router login when asked.
+- Pass if: the dialog says it is installed, and **the widget fills in within a few seconds** - a row per configured tunnel, the badge, and a footer reading "Router checked HH:MM" at the current time. It must not sit empty waiting for the schedule: a key install reads the router straight away for exactly this reason.
+- See: the footer is a clock time, never "just now". It is written once and nothing redraws it until the next refresh, so an age there would be a lie within minutes (ID-376, 2026-10-12).
+- Do: on the router, `nvram get sshd_authkeys`.
+- Pass if: one line ending `cfg-pia-wg-widget`, carrying `command="…"`, `no-port-forwarding`, `no-agent-forwarding`, `no-X11-forwarding` and `no-pty`, and any key of your own is still there untouched.
+
+**WGT-3** The widget keeps refreshing after an app update (ID-384) [hand]
+
+The one failure no test can reach, and the one that would be silent. WorkManager stores a handle to the Dart entry point that registered it, both the 15-minute refresh and the refresh button run through it, and the handle belongs to the build that made it - so after an update a stale handle leaves a widget that looks perfectly fine and never updates again. `main()` re-registers it at every start to prevent exactly this, and only a real update over the top proves it.
+
+- Starts with: WGT-2 passed, the widget on the home screen, and the next build ready to install.
+- Do: note the footer's time.
+- Do: install the new build **over the top** - `adb install -r`, or the Play update. Do not clear data, and do not remove the widget.
+- Do: open the app once, then leave it closed for 20 minutes.
+- Pass if: the footer's time has moved on. A footer still showing the pre-update time is the bug this test exists for.
+- If it fails: the widget is not broken for the user, it is stale - the rows still show the last good reading. Report it against ID-376 with the build numbers either side.
+
+**WGT-4** A refresh that cannot reach the router says so, and keeps the last reading [hand]
+
+- Starts with: WGT-2 passed, and the widget showing tunnel rows.
+- Do: take the phone off your home wifi (mobile data, or wifi off), then tap the widget's refresh button.
+- Pass if: the tunnel rows **stay as they were** - a failed read must never overwrite a good one - and the footer gains "could not reach the router at HH:MM".
+- See: no notification, and nothing to dismiss. Silent means no interruption, not no trace: without the footer line, "tried and failed" and "never tried" look identical.
+- Do: back on home wifi, tap refresh again.
+- Pass if: the footer returns to a plain "Router checked HH:MM".
+- Do: change something the widget shows - bring a tunnel up or down - wait for the minute to change, and tap refresh again. Repeat once more.
+- Pass if: every tap moves the footer's time on within a few seconds, and the rows show the change. One tap working is not enough: the first build's button died for good after a single failed tap, and every tap after it was dropped without running (2026-10-12).
+
+**WGT-5** REMOVE takes it off both the router and the phone [hand]
+
+- Do: SETTINGS, HOME SCREEN WIDGET KEY, REMOVE.
+- Pass if: it says it was removed from both, and the dialog now offers GENERATE again.
+- Do: on the router, `nvram get sshd_authkeys` and `cat ~/.ssh/authorized_keys`.
+- Pass if: no line ends `cfg-pia-wg-widget` in either, and any key of your own is still there.
+- See: the widget is still on the home screen and still opens the app when tapped. It simply stops refreshing on its own, which is WGT-1's state again.
 
 ---
 

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ID-376: the 4x2 widget's AppWidgetProviderInfo. updatePeriodMillis is 0 because background
+     refresh is driven by WorkManager (a later slice), not AppWidgetManager's own unreliable
+     scheduling - see lib/widget_status.dart and the plan at .claude/plans/plan_widget-id-376.md. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_tunnels_4x2"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_tunnels_description">
+</appwidget-provider>

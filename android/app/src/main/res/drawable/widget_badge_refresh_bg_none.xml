@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ID-376: the refresh button's background when the widget is already fresh - transparent, so
+     toggling between this and widget_badge_refresh_bg.xml is one setInt call either way. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="@android:color/transparent" />
+</shape>

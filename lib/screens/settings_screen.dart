@@ -43,6 +43,10 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/paywall.dart';
 import '../widgets/error_presenter.dart';
 import '../widgets/ssh_creds_dialog.dart';
+import '../widget_key.dart';
+import '../widget_key_service.dart';
+import '../widget_refresh.dart' show cancelWidgetRefresh, scheduleWidgetRefresh;
+import '../widget_status_service.dart' show kWidgetStatusCommand;
 import 'router_dns_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -54,7 +58,22 @@ class SettingsScreen extends StatefulWidget {
 
   /// Injected by tests in place of the check that the router answers again after a reboot.
   final Future<bool> Function(String host, int port)? testRouterAnswers;
-  const SettingsScreen({super.key, this.testClientFactory, this.testRestore, this.testRouterAnswers});
+
+  /// Injected by tests in place of the real Keystore-backed store (ID-376), so WIDGET KEY can be
+  /// exercised without a device's secure storage.
+  final WidgetKeyStore? testWidgetKeyStore;
+
+  /// Injected by tests in place of WorkManager's own scheduling (ID-376), which needs a device.
+  final Future<void> Function()? testScheduleRefresh, testCancelRefresh;
+  const SettingsScreen({
+    super.key,
+    this.testClientFactory,
+    this.testRestore,
+    this.testRouterAnswers,
+    this.testWidgetKeyStore,
+    this.testScheduleRefresh,
+    this.testCancelRefresh,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -63,6 +82,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late SessionController _c;
   bool _busy = false;
+  late final WidgetKeyStore _widgetKeyStore = widget.testWidgetKeyStore ?? WidgetKeyStore();
 
   @override
   void didChangeDependencies() {
@@ -559,6 +579,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// HOME SCREEN WIDGET KEY (ID-376): the dialog handles the phone side (Keystore) itself; these
+  /// two do the router side, the same credential flow every other action on this screen uses.
+  /// Nothing is saved on the phone unless the router side succeeds - see _WidgetKeyDialog._generate
+  /// and ._remove - so "a key exists" always means it is actually installed, not just made.
+  Future<void> _widgetKey() => showDialog<void>(
+        context: context,
+        builder: (_) => _WidgetKeyDialog(
+          store: _widgetKeyStore,
+          installOnRouter: _installWidgetKeyOnRouter,
+          removeFromRouter: _removeWidgetKeyFromRouter,
+        ),
+      );
+
+  /// Installs the line, remembers the login it was installed under (the key cannot be used without
+  /// it - see WidgetKeyStore's header), and starts the periodic refresh. Returns null, or a
+  /// plain-English reason the dialog shows instead of claiming success.
+  Future<String?> _installWidgetKeyOnRouter(String publicKeyLine) async {
+    final creds = await _credentials();
+    if (creds == null || !mounted) return 'Cancelled - nothing was made or installed.';
+    final (ip, user, pass) = creds;
+    try {
+      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      await WidgetKeyRouterService(client, onLog: _c.onLog).install(publicKeyLine);
+      await _connected(ip);
+      await _widgetKeyStore.saveLogin(user);
+      await (widget.testScheduleRefresh ?? scheduleWidgetRefresh)();
+      return null;
+    } catch (e) {
+      final plain = routerConnectMessage(e, ip);
+      return plain ?? e.toString().replaceAll('Exception: ', '');
+    }
+  }
+
+  /// Takes the line off the router and stops the periodic refresh. The phone's own copy of the key
+  /// and login is cleared by the dialog, and only once this has succeeded.
+  Future<String?> _removeWidgetKeyFromRouter() async {
+    final creds = await _credentials();
+    if (creds == null || !mounted) return "Cancelled - it's still on your router; nothing on this phone was touched either.";
+    final (ip, user, pass) = creds;
+    try {
+      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      await WidgetKeyRouterService(client, onLog: _c.onLog).remove();
+      await _connected(ip);
+      await (widget.testCancelRefresh ?? cancelWidgetRefresh)();
+      return null;
+    } catch (e) {
+      final plain = routerConnectMessage(e, ip);
+      return plain ?? e.toString().replaceAll('Exception: ', '');
+    }
+  }
+
   /// SECURE STARTUP (ID-356): whether pings to the internet are blocked for every device not on a
   /// VPN, which is the only way stock can stop a pinned device's pings leaking while it starts. The
   /// firmware's filter holds pings for the whole network or not at all (ID-348). Free, like the guard
@@ -764,6 +835,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.security_outlined,
             onTap: _busy ? null : _secureStartup,
           ),
+        // ID-376: phone-side only for now - this makes or removes the key, nothing on the router
+        // yet. The dialog itself reads the current state, so nothing here needs it in advance.
+        _Action(
+          keyValue: 'settings_widget_key',
+          label: 'HOME SCREEN WIDGET KEY',
+          note: "Makes or removes the key the home screen widget will use to check your router's status "
+              'on its own.',
+          icon: Icons.key_outlined,
+          onTap: _busy ? null : _widgetKey,
+        ),
         // The only row here that gives something back rather than removing it. It is on this screen
         // because this is where the app's one-off actions live, and because someone hunting for it
         // after a new phone will look under settings before they look at a paywall.
@@ -930,6 +1011,134 @@ class _MaxVpnsDialogState extends State<_MaxVpnsDialog> {
 /// SECURE STARTUP's choice (ID-356): pings to the internet allowed, the default, or blocked for every
 /// device not on a VPN. SAVE is live only once the other option is picked, so CANCEL is always the
 /// way out with nothing changed. Wording agreed with Andrew on 2026-10-01.
+/// ID-376: shows whether the widget's key exists, and makes/installs or removes it. The router
+/// round trip (asking for credentials if the session needs them, connecting, logging) is
+/// [installOnRouter]/[removeFromRouter], from _SettingsScreenState - this dialog only ever touches
+/// [store], the phone side, and only once the router side has already succeeded.
+class _WidgetKeyDialog extends StatefulWidget {
+  const _WidgetKeyDialog({required this.store, required this.installOnRouter, required this.removeFromRouter});
+  final WidgetKeyStore store;
+  final Future<String?> Function(String publicKeyLine) installOnRouter;
+  final Future<String?> Function() removeFromRouter;
+
+  @override
+  State<_WidgetKeyDialog> createState() => _WidgetKeyDialogState();
+}
+
+class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
+  bool _loading = true;
+  bool _exists = false;
+  bool _working = false;
+  String? _note;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final exists = await widget.store.exists();
+    if (!mounted) return;
+    setState(() {
+      _exists = exists;
+      _loading = false;
+    });
+  }
+
+  Future<void> _generate() async {
+    setState(() => _working = true);
+    final pair = generateWidgetKeyPair();
+    final line = openSshPublicKeyLine(
+      pair.publicKeyBytes,
+      restriction: widgetKeyRestriction(kWidgetStatusCommand),
+      comment: kWidgetKeyComment,
+    );
+    final error = await widget.installOnRouter(line);
+    if (error == null) await widget.store.save(pair.seed);
+    if (!mounted) return;
+    setState(() {
+      _exists = error == null;
+      _working = false;
+      _note = error == null
+          ? 'Made, and installed on your router. The widget can refresh itself once the background refresh is built.'
+          : 'Not installed: $error';
+    });
+  }
+
+  Future<void> _remove() async {
+    setState(() => _working = true);
+    final error = await widget.removeFromRouter();
+    if (error == null) await widget.store.remove();
+    if (!mounted) return;
+    setState(() {
+      _exists = error != null;
+      _working = false;
+      _note = error == null ? 'Removed from your router and this phone.' : 'Not removed: $error';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: kSurface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('Home screen widget key', style: TextStyle(color: kHighlight, fontSize: 14)),
+            const SizedBox(height: 12),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(child: CircularProgressIndicator(color: kHighlight)),
+              )
+            else ...[
+              Text(
+                _exists
+                    ? "A key exists, kept in Android's Keystore and installed on your router."
+                    : 'No key exists yet.',
+                key: const Key('widget_key_status'),
+                style: const TextStyle(color: kText, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "It will let the home screen widget read your router's status on its own, and do nothing else - "
+                'the router refuses it every other command. A stolen phone could read the status; it could not '
+                'change anything.',
+                style: TextStyle(color: kText, fontSize: 12, height: 1.4),
+              ),
+              if (_note != null) ...[
+                const SizedBox(height: 8),
+                Text(_note!, key: const Key('widget_key_note'), style: const TextStyle(color: kHighlight, fontSize: 12)),
+              ],
+            ],
+            const SizedBox(height: 16),
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              AppButton(
+                keyValue: 'widget_key_close',
+                label: 'CLOSE',
+                role: ButtonRole.dismiss,
+                onPressed: () => Navigator.pop(context),
+              ),
+              const SizedBox(width: 8),
+              if (!_loading)
+                AppButton(
+                  keyValue: _exists ? 'widget_key_remove' : 'widget_key_generate',
+                  label: _exists ? 'REMOVE' : 'GENERATE',
+                  role: _exists ? ButtonRole.destructive : ButtonRole.action,
+                  onPressed: _working ? null : (_exists ? _remove : _generate),
+                ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
 class _SecureStartupDialog extends StatefulWidget {
   const _SecureStartupDialog({required this.blocked});
   final bool blocked;
