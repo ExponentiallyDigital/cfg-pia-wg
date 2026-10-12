@@ -372,6 +372,63 @@ else
   info DNS-DoT "DNS-over-TLS is off on this router; not checked here (full mode turns it on)"
 fi
 
+# ---- 4c. SSH forwarding stays blocked for a restricted key (ID-376) ----------------------------
+# Unlike the rest of this file, this proves a future claim, not a shipped one: no restricted key is
+# installed yet. It's here so the claim has a check before the feature ships, not after. A key
+# carrying no-port-forwarding is installed, tried, and read for from the kernel, not asked nicely:
+# a first attempt (2026-10-12) read ambient state instead, which passes whenever nobody happens to
+# be forwarding at that instant, true almost always, and so proves nothing either way.
+AKF="$HOME/.ssh/authorized_keys"; TK=/tmp/check-claims-fwd
+# The port, and the same port as /proc/net/tcp spells it: upper-case hex, 4 digits. DERIVED, never
+# written twice - on 2026-10-12 the hex was hand-typed as 4656 (18006) for port 18022 (4666), so the
+# check watched a port nothing was ever going to open and reported "no listener" for the control as
+# well as the restricted key. A wrong constant here fails exactly like a working protection.
+FWDPORT=18022; FWDHEX="$(printf '%04X' "$FWDPORT")"
+CLIENT=""; for C in /usr/sbin/dbclient /usr/bin/dbclient /usr/sbin/ssh /usr/bin/ssh; do [ -x "$C" ] && CLIENT="$C" && break; done
+# No dry-mode test here: this section installs a key, so it must stay below the `dry` exit above,
+# which means dry never reaches it and prints no SSH-forwarding line at all. That is correct, and
+# was briefly confusing on 2026-10-12 when a dry-mode branch here implied otherwise.
+if [ -z "$CLIENT" ]; then
+  info SSH-forwarding "no SSH client on this router (checked dbclient, ssh): the restricted key's forwarding block can't be proven here, only measured by hand (BACKLOG ID-376)"
+else
+  # The account to dial: whatever logged this session in, not a guessed name - a wrong one risks
+  # the same "nonexistent user" lockout a hardcoded name caused elsewhere on 2026-10-12.
+  U="${USER:-$LOGNAME}"; [ -n "$U" ] || U="$(awk -F: -v h="$HOME" '$6==h{print $1; exit}' /etc/passwd 2>/dev/null)"
+  # Where to dial. NOT 127.0.0.1: stock starts dropbear bound to the LAN address alone
+  # (`dropbear -p <lan-ip>:22 -a`), so loopback refuses the connection outright - measured
+  # 2026-10-12, "Connect failed: Connection refused". Read the address off the running daemon, and
+  # fall back to NVRAM if its command line ever stops saying.
+  DIAL="$(ps w | sed -n 's/.*dropbear -p \([0-9.]*\):\([0-9]*\).*/\1 \2/p' | head -1)"
+  DIALIP="${DIAL% *}"; DIALPORT="${DIAL#* }"
+  [ -n "$DIALIP" ] || DIALIP="$(nvram get lan_ipaddr)"
+  [ -n "$DIALPORT" ] && [ "$DIALPORT" != "$DIALIP" ] || DIALPORT="$(nvram get sshd_port)"
+  [ -n "$DIALPORT" ] || DIALPORT=22
+  dropbearkey -t ed25519 -f "$TK" >/dev/null 2>&1
+  PUB="$(dropbearkey -y -f "$TK" | awk '/^ssh-/{print; exit}')"
+  AKBAK=""; [ -f "$AKF" ] && { AKBAK=/tmp/check-claims-ak.bak; cp -p "$AKF" "$AKBAK"; }
+  fwd_opens() { # $1: the authorized_keys line to test. Prints 1 if a listener appears, else 0.
+    { [ -n "$AKBAK" ] && cat "$AKBAK"; echo "$1"; } > "$AKF.new" && mv "$AKF.new" "$AKF"; chmod 600 "$AKF"
+    # dbclient, not ssh: "-y" is its own way of accepting a host key, and it has no "-o" at all.
+    "$CLIENT" -y -i "$TK" -p "$DIALPORT" -N -R "127.0.0.1:$FWDPORT:127.0.0.1:22" "$U@$DIALIP" >/tmp/check-claims-fwd.err 2>&1 &
+    CP=$!; I=0; OPEN=0
+    while [ "$I" -lt 5 ]; do grep -q ":$FWDHEX 00000000:0000 0A" /proc/net/tcp && OPEN=1 && break; sleep 1; I=$((I + 1)); done
+    kill "$CP" 2>/dev/null; wait "$CP" 2>/dev/null
+    echo "$OPEN"
+  }
+  CONTROL="$(fwd_opens "$PUB")"
+  RESTRICTED="$(fwd_opens 'command="echo CFGPIA-FORCED",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty '"$PUB")"
+  if [ -n "$AKBAK" ]; then cat "$AKBAK" > "$AKF"; rm -f "$AKBAK"; else rm -f "$AKF"; fi
+  CLIENTERR="$(tail -c 200 /tmp/check-claims-fwd.err 2>/dev/null)"
+  rm -f "$TK" "$TK.pub" /tmp/check-claims-fwd.err
+  if [ "$CONTROL" != 1 ]; then
+    info SSH-forwarding "couldn't prove this check can fail (no listener seen even for an unrestricted key), dialling as '$U': $CLIENTERR"
+  elif [ "$RESTRICTED" = 0 ]; then
+    pass SSH-forwarding "a restricted key can't make dropbear listen on a forwarded port"
+  else
+    fail SSH-forwarding "a restricted key opened a forwarded listener" "port 18022"
+  fi
+fi
+
 # ---- 5. The router's own events put the guard back (ID-364) ------------------------------------
 # Nothing runs the guard on a timer. A firewall restart raises firewall-start, and the boot hook asks
 # for one guard run, 10 s after the last call of a burst; the app runs it itself after its actions.

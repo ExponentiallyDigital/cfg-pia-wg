@@ -98,7 +98,7 @@
   </head>
   <body>
     <h1>Privacy Policy</h1>
-    <p><strong>Effective Date:</strong> 13 September, 2026</p>
+    <p><strong>Effective Date:</strong> 12 October, 2026</p>
     <p>
       Exponentially Digital ("we", "our", or "us") operates the
       <strong>cfg-pia-wg</strong> mobile application (the "App"). This Privacy Policy (the "Policy") outlines our strict data
@@ -160,6 +160,30 @@
       for the self-healing shell script to automatically reconfigure a VPN interface.
     </p>
 
+    <h3>1.4 What cfg-pia-wg keeps on your device</h3>
+    <p>
+      By default, two things, and neither is a credential: your router's LAN address, so you don't retype it every session, and
+      the fingerprint of your router's SSH key, so the app can refuse anything pretending to be your router. The address
+      identifies nothing outside your own network and the fingerprint is public by design. SETTINGS → FORGET ROUTER IP deletes
+      both.
+    </p>
+    <p>
+      The home screen widget is optional. If you choose to set it up, two further things are stored in Android's Keystore-backed
+      secure storage: a WireGuard-style SSH key the app generates on your device, and your router's login name. The key is
+      installed on your router restricted to a single command — reading your tunnel status — and your router refuses it everything
+      else. The login name is stored because SSH cannot connect without one; it is useless without the key, and the key is useless
+      without it. SETTINGS → HOME SCREEN WIDGET KEY → REMOVE deletes the key from your router and both items from your device. If
+      you do not add the widget, neither is ever stored.
+    </p>
+    <p>
+      Never stored on your device, in any configuration: your Private Internet Access username or password, your router's SSH
+      password, your SMTP password, or a generated WireGuard configuration. None of them is written to device storage at any
+      point.
+    </p>
+    <p>
+      Nothing on this list is backed up to Google Drive (android:allowBackup="false"), and none of it is transmitted anywhere by
+      the app.
+    </p>
     <h2>2. Third-party service providers</h2>
     <p>
       The App communicates directly with PIA APIs to fetch server regions and establish configuration profiles. While our App does
@@ -167,8 +191,8 @@
       independently by PIA.
     </p>
     <p>
-      During WireGuard key registration, the App also downloads the PIA CA certificate from the official PIA
-      open-source repository hosted on GitHub (<a
+      During WireGuard key registration, the App also downloads the PIA CA certificate from the official PIA open-source
+      repository hosted on GitHub (<a
         href="https://raw.githubusercontent.com/pia-foss/manual-connections/master/ca.rsa.4096.crt"
         target="_blank"
         rel="nofollow"
@@ -190,12 +214,12 @@
       reaches the App or us.
     </p>
     <p>
-      Purchases are managed on our behalf by <a href="https://www.revenuecat.com/privacy" target="_blank" rel="nofollow"
-        >RevenueCat</a
-      >, which records whether a given installation holds the unlock. RevenueCat receives the purchase history for a pseudonymous
-      installation identifier that it generates itself, and we use those purchase records to see how many copies have sold.
-      <strong>It is never told who you are.</strong> The App creates no account, asks for no email address, and does not link
-      that identifier to any identity, so it cannot be traced back to you by us or by RevenueCat.
+      Purchases are managed on our behalf by
+      <a href="https://www.revenuecat.com/privacy" target="_blank" rel="nofollow">RevenueCat</a>, which records whether a given
+      installation holds the unlock. RevenueCat receives the purchase history for a pseudonymous installation identifier that it
+      generates itself, and we use those purchase records to see how many copies have sold.
+      <strong>It is never told who you are.</strong> The App creates no account, asks for no email address, and does not link that
+      identifier to any identity, so it cannot be traced back to you by us or by RevenueCat.
     </p>
     <p>
       The App asks one question - does this installation hold the unlock - and receives yes or no. Nothing about a purchase is
@@ -224,8 +248,8 @@
     <h2>4. Children's privacy</h2>
     <p>
       Our App does not target or knowingly solicit information from anyone under the age of 13, and collects no personal
-      information about anyone of any age. The only data collected at all is the purchase record described in section 2, which
-      is pseudonymous and is not linked to any identity.
+      information about anyone of any age. The only data collected at all is the purchase record described in section 2, which is
+      pseudonymous and is not linked to any identity.
     </p>
 
     <h2>5. Changes to this privacy policy</h2>

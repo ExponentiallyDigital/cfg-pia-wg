@@ -371,11 +371,23 @@ void main() {
   // A stray close in an action's finally would pull the connection out from under the next action -
   // exactly the intermittent-failure mode this change has to avoid. The old code had about twenty
   // of them, one per action, which was correct then and is a bug now.
+  //
+  // The rule is about the SHARED session, the one SessionController hands every screen. A file
+  // that opens a connection of its own, and is the only thing holding it, must still close it -
+  // which is why the exemptions below are by ownership, not by seniority:
+  //
+  //   - router_session.dart: owns the shared session.
+  //   - pia_service.dart: its own connections to PIA, nothing to do with the router session.
+  //   - widget_refresh.dart (ID-376): runs in a background isolate, where there is no
+  //     SessionController at all and no next action to pull the rug from under. It opens one
+  //     connection per refresh and is the only thing that can close it; leaving it open would
+  //     leak a socket every time the phone wakes up.
   test('no screen or dialog closes the shared client', () {
+    const ownsItsOwnConnection = {'router_session.dart', 'pia_service.dart', 'widget_refresh.dart'};
     final offenders = <String>[];
     for (final f in Directory('lib').listSync(recursive: true).whereType<File>()) {
       if (!f.path.endsWith('.dart')) continue;
-      if (f.path.endsWith('router_session.dart') || f.path.endsWith('pia_service.dart')) continue;
+      if (ownsItsOwnConnection.any(f.path.endsWith)) continue;
       final src = f.readAsStringSync();
       for (final m in RegExp(r'\bclient\??\.close\(\)').allMatches(src)) {
         offenders.add('${f.path}: ${m.group(0)}');
