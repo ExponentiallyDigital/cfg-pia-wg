@@ -67,6 +67,10 @@ You'll need SSH enabled on the router, a PIA subscription, and firmware with Wir
   - [5.8. ABOUT](#58-about)
   - [5.9. EXIT - Close the app](#59-exit---close-the-app)
   - [5.10. Hamburger menu](#510-hamburger-menu)
+  - [5.11. HOME SCREEN WIDGET (optional)](#511-home-screen-widget-optional)
+    - [5.11.1. Why it needs a key, and what the key can do](#5111-why-it-needs-a-key-and-what-the-key-can-do)
+    - [5.11.2. What is stored, and where](#5112-what-is-stored-and-where)
+    - [5.11.3. When it refreshes, and when it doesn't](#5113-when-it-refreshes-and-when-it-doesnt)
 - [6. Notes](#6-notes)
 - [7. What does the app do to my router?](#7-what-does-the-app-do-to-my-router)
 - [8. App permissions](#8-app-permissions)
@@ -117,8 +121,9 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
 - **Share/save support:** share a generated `.conf` via the Android share function and save it to a file location of your choice.
 - **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WireGuard slot configurations directly.
 - **Two remembered settings:** a successful router connect stores the router's LAN address, so you don't retype it every session, and the fingerprint of its SSH key, so the app can refuse anything pretending to be your router. Both stay in the app's private storage. Clear both with **FORGET ROUTER IP** on the SETTINGS screen. See [SECURITY.md](SECURITY.md).
+- **Optional home screen widget:** each tunnel's state at a glance, refreshed in the background. It is off until you set it up, and setting it up is the one thing that makes the app keep a login - a restricted key and your router's login name, which it can use to read the router's status and nothing else. Don't want that? Don't add the widget, and nothing is kept. See [5.11](#511-home-screen-widget-optional).
 - **Your router is who it says it is:** the app records your router's SSH key the first time you connect, says so in APP LOG, and refuses to send your router password to anything with a different key. If you reset or reflash the router, tap **FORGET ROUTER IP** and connect again.
-- **No persistent credential storage (app):** PIA credentials and router SSH credentials are held only in the app's memory, never written to your device's storage. A generated config is the same, until you SHARE it: then Android's sharing needs a file, which the app deletes when you leave the config screen.
+- **No persistent credential storage (app):** your PIA login and your router's SSH password are held only in the app's memory, never written to your device's storage. A generated config is the same, until you SHARE it: then Android's sharing needs a file, which the app deletes when you leave the config screen. The one exception is the optional home screen widget, which cannot refresh itself without something to log in with - see [5.11](#511-home-screen-widget-optional). Your PIA login and your router's password are never stored either way.
 - **Watchdog credential storage (router):** deploying the watchdog stores the necessary PIA credentials in router NVRAM so it can monitor and self-heal independently of the app. This is a deliberate trade-off for "set and forget" operation, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
 - **Automated lowest-latency server selection:** measures live latency across all available servers in your selected region, ensuring that you provision with the fastest node.
 - **Native task-switcher protection:** `(FLAG_SECURE)` enforces native OS-level window flags to block third-party screenshot capturing and automatically obscures the app layout view inside the Android Recent Apps / Task Switcher interface. Debug builds skip the flag to enable screenshotting while testing; every release build sets it.
@@ -476,7 +481,7 @@ This manages a self-healing watchdog. When your WireGuard configurations inevita
   Email alerting
 </p><br>
 
-If you elect to `enable email alerts`, the router will send you a plain-text email whenever it rebuilds a tunnel, and if it tries and fails. Alerts come from your own SMTP account, with nothing routed through a third party. When a watchdog is saved, these settings are stored in your router's non-volatile memory and prefilled when creating another watchdog - saves typing! **No** credentials are stored on your phone/tablet, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
+If you elect to `enable email alerts`, the router will send you a plain-text email whenever it rebuilds a tunnel, and if it tries and fails. Alerts come from your own SMTP account, with nothing routed through a third party. When a watchdog is saved, these settings are stored in your router's non-volatile memory and prefilled when creating another watchdog - saves typing! **No** watchdog credentials - not your PIA login, not your SMTP password - are stored on your phone/tablet, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
 
 To set up email alerting, you'll need an **`app password`**, _not_ your "normal" one. Gmail and Outlook thankfully won't accept plain text passwords. How-to links below:
 
@@ -835,7 +840,8 @@ All those things that you won't need until you do need them, and all in one plac
   Check where do lookups go
 </p><br>
 
-  - **FORGET ROUTER IP** - removes the remembered router address and its associated SSH key fingerprint, the _**only**_ data retained on your device. No SSH credentials, no usernames, no PIA password, no tracking, no advertising ID, no ad cache, no in-app user journeys. Zip. Zilch. Nada.
+  - **FORGET ROUTER IP** - removes the remembered router address and its associated SSH key fingerprint. Unless you've added the home screen widget, that is the _**only**_ data retained on your device. No SSH credentials, no usernames, no PIA password, no tracking, no advertising ID, no ad cache, no in-app user journeys. Zip. Zilch. Nada.
+  - **HOME SCREEN WIDGET KEY** - makes or removes the key the optional home screen widget uses to check your router on its own. Nothing is kept on your phone until you tap GENERATE here, and REMOVE takes it off both your router and your phone. The whole story, including exactly what gets stored and what the key can and cannot do, is in [5.11](#511-home-screen-widget-optional).
   - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run. Why? Just in case. The "Irish" approach - to be sure, to be sure. Try doing an Irish accent via a keyboard. Not easy. But why? In case it ever expires/gets updated by PIA, you'll have a way to get a fresh one straight from their official GitHub repo when you run any operation that authenticates with PIA's servers.
   - **MAX ACTIVE VPNS** - allows you to run more than two concurrent VPN clients on your router. Absolutely unsupported. You did read the license agreement didn't you? If not that's in ABOUT, because we all love reading legal documents.
   - **SECURE STARTUP** - closes the last gap in pinning on stock firmware. For a few seconds while your router starts, or about half a minute after it resets its network, devices on a VPN can ping the internet directly, which shows your real internet address to whatever they ping. Your router can only block pings for every device at once, so turning this on means devices that aren't on a VPN can never ping anything on the internet, which makes troubleshooting harder. Off by default, and for most people it should stay that way. It asks before it changes anything, and the whole story is in [5.4.1](#541-pinned-means-pinned-the-fail-closed-guard). Stock only: Merlin's own excellent kill switch already covers this gap.
@@ -891,6 +897,50 @@ This is particularly useful for looking through the application's log during ope
   <br>
   Hamburger Menu
 </p>
+
+---
+
+### 5.11. HOME SCREEN WIDGET (optional)
+
+A watchdog, once it's set up, is something you rarely touch again. That's the point of it. But it does mean the app spends most of its life closed, and you have no idea what your tunnels are doing unless you go and look. The widget is the answer to that: each tunnel's state on your home screen, where you'll see it without opening anything.
+
+> [!IMPORTANT]
+> **The widget is entirely optional, and it's the only part of the app that keeps a login.** Skip it and nothing changes: the app stores your router's address and its SSH key fingerprint, exactly as before, and **your router's login name is not stored anywhere**. Everything below happens only if you choose to set it up, and **REMOVE** undoes all of it.
+
+Add it the way you add any widget: long-press an empty spot on your home screen, choose Widgets, find cfg-pia-wg, and drag the size you want into place. Two sizes: a large one with a row per tunnel - where it exits, up or down, how many devices are pinned to it, and which ones the guard is holding offline - and a small one with just the badge and a summary line.
+
+Tap it to open the app. That much works with nothing stored.
+
+#### 5.11.1. Why it needs a key, and what the key can do
+
+Here's the problem. Refreshing by itself means logging into your router while you're not there, and the app doesn't keep your router password - it asks you every session and forgets it. So a refresh at three in the morning has nothing to log in with.
+
+The answer is a key that can do exactly one thing. When you tap **GENERATE** under **HOME SCREEN WIDGET KEY** in SETTINGS, the app makes a new SSH key on your phone and installs it on your router, locked to a single command: read the status. Your router refuses it everything else.
+
+Measured on stock firmware, 12 October 2026, with that key:
+
+- Asked to run any other command: refused. It runs its own command or nothing.
+- Asked to reach another device through the router: refused.
+- Asked to make the router listen for a connection: refused.
+
+So if your phone is lost or stolen, whoever has it can read whether your tunnels are up. They cannot change a setting, cannot reach anything else on your network, and cannot get your router password, because the app never had it.
+
+#### 5.11.2. What is stored, and where
+
+Two things, both in Android's Keystore-backed secure storage, and both only once you've tapped GENERATE:
+
+- **The key itself.** The private half never leaves your phone.
+- **Your router's login name.** Not a password - the name. SSH cannot connect without one, so a key with no name beside it is a key that can never be used. It is no use on its own either: the name without the key logs into nothing.
+
+Neither is backed up to Google Drive (`android:allowBackup="false"`). **REMOVE** deletes the key from your router and both items from your phone, together - never one without the other.
+
+#### 5.11.3. When it refreshes, and when it doesn't
+
+Every 15 minutes, which is the shortest interval Android allows a background job, and less often while your phone is asleep - that's Android's decision, not the app's. The refresh button on the large widget checks immediately. Until you've generated a key the button is plain, and tapping it opens the app instead.
+
+It only works at home. Your router's SSH only ever answers on your own network, so away from the house the refresh simply fails and nothing is retried in a hurry. The widget keeps its last reading, and the footer adds the time it tried, for example "Router checked 19:54 · could not reach the router at 20:01". No error, no notification, nothing to dismiss. There's no point telling you that your router is unreachable from the other side of town, but you can see that it tried.
+
+One deliberate limit, stricter than the app's own screens: a background refresh will not connect to a router whose SSH key hasn't already been recorded by a normal connection in the app. The app records an unknown key the first time and tells you it did, because you're there to read it. Nothing is watching a 3 a.m. refresh, so it refuses rather than deciding to trust a router it has never seen. When that happens, or when the app has forgotten your router's address, the footer says "could not refresh at HH:MM: open the app", and opening the app is the fix.
 
 ---
 
@@ -1032,6 +1082,12 @@ This app asks a lot of you: it writes a script that holds your PIA password and 
 ## 10. Privacy
 
 This application does not collect analytics, advertising identifiers, or personal usage data. Authentication credentials are used only to communicate with Private Internet Access services required to generate configuration files. See [Privacy Policy](https://exponentiallydigital.com/cfg-pia-wg/privacy.html).
+
+What the app keeps on your device, in full:
+
+- **Always:** your router's LAN address, and the fingerprint of its SSH key. Neither is a credential - the address identifies nothing outside your own network, and the fingerprint is public by design. **FORGET ROUTER IP** deletes both.
+- **Only if you add the home screen widget:** the widget's own restricted SSH key, and your router's login name, both in Keystore-backed secure storage. **REMOVE** deletes both, along with the key on the router. Don't add the widget and neither exists - see [5.11](#511-home-screen-widget-optional).
+- **Never, in any configuration:** your PIA username or password, your router's SSH password, your SMTP password, or a generated WireGuard configuration.
 
 ---
 

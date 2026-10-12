@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ID-376: the "Protected" badge pill. No border, matching the mock-up's teal badge. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/widget_teal_bg" />
+    <corners android:radius="999dp" />
+</shape>

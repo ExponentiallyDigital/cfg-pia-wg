@@ -29,6 +29,13 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`ffi_leak_tracker`](https://pub.dev/packages/ffi_leak_tracker) | 0.1.2 | [BSD-3-Clause](https://pub.dev/packages/ffi_leak_tracker/license) | transitive |
 | [`file`](https://pub.dev/packages/file) | 7.0.1 | [BSD-3-Clause](https://pub.dev/packages/file/license) | transitive |
 | [`fixnum`](https://pub.dev/packages/fixnum) | 1.1.1 | [BSD-3-Clause](https://pub.dev/packages/fixnum/license) | transitive |
+| [`flutter_secure_storage`](https://pub.dev/packages/flutter_secure_storage) | 11.2.0 | [BSD-3-Clause](https://pub.dev/packages/flutter_secure_storage/license) | direct |
+| [`flutter_secure_storage_darwin`](https://pub.dev/packages/flutter_secure_storage_darwin) | 0.4.3 | [BSD-3-Clause](https://pub.dev/packages/flutter_secure_storage_darwin/license) | transitive |
+| [`flutter_secure_storage_linux`](https://pub.dev/packages/flutter_secure_storage_linux) | 3.0.3 | [BSD-3-Clause](https://pub.dev/packages/flutter_secure_storage_linux/license) | transitive |
+| [`flutter_secure_storage_platform_interface`](https://pub.dev/packages/flutter_secure_storage_platform_interface) | 2.1.1 | [BSD-3-Clause](https://pub.dev/packages/flutter_secure_storage_platform_interface/license) | transitive |
+| [`flutter_secure_storage_web`](https://pub.dev/packages/flutter_secure_storage_web) | 2.1.1 | [BSD-3-Clause](https://pub.dev/packages/flutter_secure_storage_web/license) | transitive |
+| [`flutter_secure_storage_windows`](https://pub.dev/packages/flutter_secure_storage_windows) | 4.2.2 | [BSD-3-Clause](https://pub.dev/packages/flutter_secure_storage_windows/license) | transitive |
+| [`home_widget`](https://pub.dev/packages/home_widget) | 0.10.0 | [BSD-3-Clause](https://pub.dev/packages/home_widget/license) | direct |
 | [`hooks`](https://pub.dev/packages/hooks) | 2.0.2 | [BSD-3-Clause](https://pub.dev/packages/hooks/license) | transitive |
 | [`http`](https://pub.dev/packages/http) | 1.6.0 | [BSD-3-Clause](https://pub.dev/packages/http/license) | direct |
 | [`http_parser`](https://pub.dev/packages/http_parser) | 4.1.2 | [BSD-3-Clause](https://pub.dev/packages/http_parser/license) | transitive |
@@ -50,7 +57,7 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`path_provider_linux`](https://pub.dev/packages/path_provider_linux) | 2.2.2 | [BSD-3-Clause](https://pub.dev/packages/path_provider_linux/license) | transitive |
 | [`path_provider_platform_interface`](https://pub.dev/packages/path_provider_platform_interface) | 2.1.3 | [BSD-3-Clause](https://pub.dev/packages/path_provider_platform_interface/license) | transitive |
 | [`path_provider_windows`](https://pub.dev/packages/path_provider_windows) | 2.3.0 | [BSD-3-Clause](https://pub.dev/packages/path_provider_windows/license) | transitive |
-| [`pinenacl`](https://pub.dev/packages/pinenacl) | 0.6.0 | [MIT](https://pub.dev/packages/pinenacl/license) | transitive |
+| [`pinenacl`](https://pub.dev/packages/pinenacl) | 0.6.0 | [MIT](https://pub.dev/packages/pinenacl/license) | direct |
 | [`platform`](https://pub.dev/packages/platform) | 3.2.0 | [BSD-3-Clause](https://pub.dev/packages/platform/license) | transitive |
 | [`plugin_platform_interface`](https://pub.dev/packages/plugin_platform_interface) | 2.1.8 | [BSD-3-Clause](https://pub.dev/packages/plugin_platform_interface/license) | transitive |
 | [`pointycastle`](https://pub.dev/packages/pointycastle) | 4.0.0 | [MIT](https://pub.dev/packages/pointycastle/license) | transitive |
@@ -75,6 +82,12 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`vector_math`](https://pub.dev/packages/vector_math) | 2.4.0 | [BSD-3-Clause](https://pub.dev/packages/vector_math/license) | transitive |
 | [`web`](https://pub.dev/packages/web) | 1.1.1 | [BSD-3-Clause](https://pub.dev/packages/web/license) | transitive |
 | [`win32`](https://pub.dev/packages/win32) | 6.4.0 | [BSD-3-Clause](https://pub.dev/packages/win32/license) | transitive |
+| [`workmanager`](https://pub.dev/packages/workmanager) | 0.10.10 | [MIT](https://pub.dev/packages/workmanager/license) | direct |
+| [`workmanager_android`](https://pub.dev/packages/workmanager_android) | 0.10.9 | [MIT](https://pub.dev/packages/workmanager_android/license) | transitive |
+| [`workmanager_apple`](https://pub.dev/packages/workmanager_apple) | 0.9.11 | [MIT](https://pub.dev/packages/workmanager_apple/license) | transitive |
+| [`workmanager_linux`](https://pub.dev/packages/workmanager_linux) | 0.1.1+1 | [MIT](https://pub.dev/packages/workmanager_linux/license) | transitive |
+| [`workmanager_platform_interface`](https://pub.dev/packages/workmanager_platform_interface) | 0.10.5 | [MIT](https://pub.dev/packages/workmanager_platform_interface/license) | transitive |
+| [`workmanager_web`](https://pub.dev/packages/workmanager_web) | 0.2.0 | [MIT](https://pub.dev/packages/workmanager_web/license) | transitive |
 | [`x25519`](https://pub.dev/packages/x25519) | 0.1.2 | [Apache-2.0](https://pub.dev/packages/x25519/license) | direct |
 | [`xdg_directories`](https://pub.dev/packages/xdg_directories) | 1.1.0 | [BSD-3-Clause](https://pub.dev/packages/xdg_directories/license) | transitive |
 | [`yaml`](https://pub.dev/packages/yaml) | 3.1.4 | [MIT](https://pub.dev/packages/yaml/license) | transitive |
@@ -92,15 +105,36 @@ The Java and Kotlin libraries the release build packages: the `releaseRuntimeCla
 | `androidx.arch.core:core-common` | 2.2.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.arch.core:core-runtime` | 2.2.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.browser:browser` | 1.9.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.collection:collection` | 1.4.2 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `androidx.collection:collection-jvm` | 1.4.2 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.collection:collection` | 1.4.4 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.collection:collection-jvm` | 1.4.4 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.collection:collection-ktx` | 1.4.4 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.compose.runtime:runtime` | 1.7.8 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.compose.runtime:runtime-android` | 1.7.8 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.compose.ui:ui-geometry` | 1.6.8 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.compose.ui:ui-geometry-android` | 1.6.8 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.compose.ui:ui-graphics` | 1.6.8 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.compose.ui:ui-graphics-android` | 1.6.8 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.compose.ui:ui-unit` | 1.6.8 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.compose.ui:ui-unit-android` | 1.6.8 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.compose.ui:ui-util` | 1.6.8 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.compose.ui:ui-util-android` | 1.6.8 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.concurrent:concurrent-futures` | 1.1.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.concurrent:concurrent-futures-ktx` | 1.1.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.core:core` | 1.17.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.core:core-ktx` | 1.17.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.core:core-remoteviews` | 1.1.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.core:core-viewtree` | 1.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.customview:customview` | 1.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.datastore:datastore` | 1.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.datastore:datastore-core` | 1.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.datastore:datastore-preferences` | 1.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.datastore:datastore-preferences-core` | 1.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.exifinterface:exifinterface` | 1.4.1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.fragment:fragment` | 1.7.1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.glance:glance` | 1.2.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.glance:glance-appwidget` | 1.2.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.glance:glance-appwidget-external-protobuf` | 1.2.0 | [BSD-3-Clause](https://opensource.org/licenses/BSD-3-Clause) |
+| `androidx.glance:glance-appwidget-proto` | 1.2.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.interpolator:interpolator` | 1.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.lifecycle:lifecycle-common` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.lifecycle:lifecycle-common-java8` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
@@ -109,18 +143,30 @@ The Java and Kotlin libraries the release build packages: the `releaseRuntimeCla
 | `androidx.lifecycle:lifecycle-livedata-core-ktx` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.lifecycle:lifecycle-process` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.lifecycle:lifecycle-runtime` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.lifecycle:lifecycle-service` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.lifecycle:lifecycle-viewmodel` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.lifecycle:lifecycle-viewmodel-savedstate` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.loader:loader` | 1.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.profileinstaller:profileinstaller` | 1.3.1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.room:room-common` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.room:room-common-jvm` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.room:room-runtime` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.room:room-runtime-android` | 2.7.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.savedstate:savedstate` | 1.2.1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.sqlite:sqlite` | 2.5.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.sqlite:sqlite-android` | 2.5.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.sqlite:sqlite-framework` | 2.5.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.sqlite:sqlite-framework-android` | 2.5.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.startup:startup-runtime` | 1.1.1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.tracing:tracing` | 1.2.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.tracing:tracing-ktx` | 1.2.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.versionedparcelable:versionedparcelable` | 1.1.1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.viewpager:viewpager` | 1.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.window.extensions.core:core` | 1.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.window:window` | 1.2.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `androidx.window:window-java` | 1.2.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.work:work-runtime` | 2.11.2 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `androidx.work:work-runtime-ktx` | 2.11.2 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.amazon.device:amazon-appstore-sdk` | 3.0.5 | [Program Materials License](https://developer.amazon.com/support/legal/pml) |
 | `com.android.billingclient:billing` | 8.3.0 | [Android Software Development Kit License](https://developer.android.com/studio/terms.html) |
 | `com.getkeepsafe.relinker:relinker` | 1.4.5 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
@@ -134,15 +180,17 @@ The Java and Kotlin libraries the release build packages: the `releaseRuntimeCla
 | `com.google.android.gms:play-services-location` | 19.0.0 | [Android Software Development Kit License](https://developer.android.com/studio/terms.html) |
 | `com.google.android.gms:play-services-places-placereport` | 17.0.0 | [Android Software Development Kit License](https://developer.android.com/studio/terms.html) |
 | `com.google.android.gms:play-services-tasks` | 18.2.0 | [Android Software Development Kit License](https://developer.android.com/studio/terms.html) |
-| `com.google.code.gson:gson` | 2.8.9 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `com.google.crypto.tink:tink-android` | 1.8.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `com.google.code.findbugs:jsr305` | 3.0.2 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `com.google.code.gson:gson` | 2.10.1 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `com.google.crypto.tink:tink-android` | 1.10.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `com.google.errorprone:error_prone_annotations` | 2.18.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.firebase:firebase-encoders` | 17.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.firebase:firebase-encoders-json` | 18.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.firebase:firebase-encoders-proto` | 16.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.guava:listenablefuture` | 1.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `com.revenuecat.purchases:purchases` | 10.20.0 | [MIT](http://opensource.org/licenses/MIT) |
-| `com.revenuecat.purchases:purchases-hybrid-common` | 18.37.0 | [MIT](http://opensource.org/licenses/MIT) |
-| `com.revenuecat.purchases:purchases-store-amazon` | 10.20.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases` | 10.22.1 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases-hybrid-common` | 19.2.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases-store-amazon` | 10.22.1 | [MIT](http://opensource.org/licenses/MIT) |
 | `dev.drewhamilton.poko:poko-annotations` | 0.17.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `dev.drewhamilton.poko:poko-annotations-jvm` | 0.17.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `javax.inject:javax.inject` | 1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
@@ -150,6 +198,8 @@ The Java and Kotlin libraries the release build packages: the `releaseRuntimeCla
 | `org.jetbrains.kotlin:kotlin-parcelize-runtime` | 2.0.21 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `org.jetbrains.kotlin:kotlin-stdlib` | 2.3.20 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `org.jetbrains.kotlin:kotlin-stdlib-common` | 2.3.20 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `org.jetbrains.kotlin:kotlin-stdlib-jdk7` | 1.9.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `org.jetbrains.kotlin:kotlin-stdlib-jdk8` | 1.9.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `org.jetbrains.kotlinx:kotlinx-coroutines-android` | 1.11.0 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `org.jetbrains.kotlinx:kotlinx-coroutines-bom` | 1.11.0 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 1.11.0 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
@@ -172,6 +222,7 @@ The dev dependencies in `pubspec.yaml`, used to build and test the project and n
 | [`flutter_launcher_icons`](https://pub.dev/packages/flutter_launcher_icons) | 0.14.4 | [MIT](https://pub.dev/packages/flutter_launcher_icons/license) |
 | [`flutter_lints`](https://pub.dev/packages/flutter_lints) | 6.0.0 | [BSD-3-Clause](https://pub.dev/packages/flutter_lints/license) |
 | [`flutter_native_splash`](https://pub.dev/packages/flutter_native_splash) | 2.4.8 | [MIT](https://pub.dev/packages/flutter_native_splash/license) |
+| [`flutter_secure_storage_platform_interface`](https://pub.dev/packages/flutter_secure_storage_platform_interface) | 2.1.1 | [BSD-3-Clause](https://pub.dev/packages/flutter_secure_storage_platform_interface/license) |
 | [`flutter_test`](https://pub.dev/packages/flutter_test) | SDK | [Flutter SDK](https://github.com/flutter/flutter/blob/main/LICENSE) |
 | [`mocktail`](https://pub.dev/packages/mocktail) | 1.0.5 | [MIT](https://pub.dev/packages/mocktail/license) |
 

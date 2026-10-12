@@ -58,5 +58,26 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- ID-376: the two home-screen widgets. All the deciding happens in Dart; these receivers
+             only draw whatever lib/widget_bridge.dart last wrote. -->
+        <!-- exported="true": the update broadcast comes from the system's widget host, a
+             different UID, matching home_widget's own example manifest. -->
+        <receiver android:name=".widget.TunnelsWidgetProvider" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_tunnels_info" />
+        </receiver>
+        <receiver android:name=".widget.CompactWidgetProvider" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_compact_info" />
+        </receiver>
+
+        <!-- The refresh button. exported="false": only the widget's own PendingIntent, which
+             names this class, ever sends it anything. -->
+        <receiver android:name=".widget.WidgetRefreshReceiver" android:exported="false" />
     </application>
 </manifest>

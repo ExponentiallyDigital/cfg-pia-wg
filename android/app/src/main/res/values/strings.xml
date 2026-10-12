@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ID-376: shown in the widget picker, not in the widget itself. -->
+    <string name="widget_tunnels_description">Each tunnel\'s state, where it exits, and the guard</string>
+    <string name="widget_compact_description">A one-line summary of the above</string>
+</resources>

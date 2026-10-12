@@ -250,3 +250,10 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // The widget's refresh button queues its own work (widget/WidgetRefreshReceiver.kt). The
+    // workmanager plugin already brings this in at run time; it is named here only so the app's
+    // own Kotlin can compile against it. Keep it at the version the lockfile already resolves.
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+}

@@ -180,16 +180,20 @@ Play accepts each version code once. Once a build's upload has succeeded, a seco
 
 Direct dependencies only; see `pubspec.lock` for the resolved transitive graph and `THIRD-PARTY-NOTICES.md` for licences.
 
-| Package             | Purpose                                                                             |
-| ------------------- | ----------------------------------------------------------------------------------- |
-| `dartssh2`          | SSH connection to the router - every slot and watchdog operation runs over it       |
-| `http`              | HTTP REST connection pipelines to PIA APIs                                          |
-| `in_app_review`     | Opens the app's Play Store listing from the home-screen review link                 |
-| `package_info_plus` | Querying app package metadata dynamically from `pubspec.yaml` for version reporting |
-| `path_provider`     | Platform directories for saving a generated config                                  |
-| `share_plus`        | Share/save config file via Android share sheet                                      |
-| `url_launcher`      | Opens external links - help, GitHub issues, donations                               |
-| `x25519`            | Ephemeral WireGuard keypair generation                                              |
+| Package                  | Purpose                                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| `dartssh2`               | SSH connection to the router - every slot and watchdog operation runs over it             |
+| `flutter_secure_storage` | Keystore-backed storage for the optional home screen widget's key and router login name   |
+| `home_widget`            | Writes what the home screen widget shows, and redraws it                                  |
+| `http`                   | HTTP REST connection pipelines to PIA APIs                                                |
+| `package_info_plus`      | Querying app package metadata dynamically from `pubspec.yaml` for version reporting       |
+| `path_provider`          | Platform directories for saving a generated config                                        |
+| `pinenacl`               | Ed25519 keypair for the optional home screen widget's restricted SSH key                  |
+| `purchases_flutter`      | In-app purchase through RevenueCat, read only by `lib/entitlement.dart`                   |
+| `share_plus`             | Share/save config file via Android share sheet                                            |
+| `url_launcher`           | Opens external links - help, GitHub issues, donations, the Play Store listing             |
+| `workmanager`            | The home screen widget's background refresh, every 15 minutes and from its refresh button |
+| `x25519`                 | Ephemeral WireGuard keypair generation                                                    |
 
 ## 4. Dependency pinning & reproducible builds
 

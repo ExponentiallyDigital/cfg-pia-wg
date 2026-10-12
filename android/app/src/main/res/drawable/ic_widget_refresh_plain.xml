@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ID-376: the refresh button, plain - shown when the widget is already fresh, so nothing draws
+     attention to a tap that is not needed yet. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp" android:height="20dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M20 11a8 8 0 1 0-2.3 5.7"
+        android:fillColor="#00000000" android:strokeColor="@color/widget_text_primary"
+        android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M20 4v7h-7"
+        android:fillColor="#00000000" android:strokeColor="@color/widget_text_primary"
+        android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>
