@@ -1,6 +1,6 @@
 name: cfg_pia_wg
 description: cfg-pia-wg
-version: 0.8.123+493
+version: 0.8.124+494
 environment:
   sdk: ">=3.0.0 <4.0.0"
   flutter: ">=3.10.0"
@@ -8,18 +8,23 @@ dependencies:
   dartssh2: ^4.0.0
   flutter:
     sdk: flutter
+  flutter_secure_storage: ^11.0.0
+  home_widget: ^0.10.0
   http: ^1.2.0
   package_info_plus: ^10.1.0
   path_provider: ^2.1.0
+  pinenacl: ^0.6.0
   purchases_flutter: ^10.12.0
   share_plus: ^13.1.0
   url_launcher: ^6.3.2
+  workmanager: ^0.10.10
   x25519: ^0.1.2
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.0
+  flutter_secure_storage_platform_interface: ^2.0.1
   mocktail: ^1.0.4
   dart_pubspec_licenses: ^3.2.0
   flutter_native_splash: ^2.4.0

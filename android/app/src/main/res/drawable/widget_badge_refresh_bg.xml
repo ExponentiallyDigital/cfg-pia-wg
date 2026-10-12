@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ID-376: the refresh button's circular teal background, shown only while the widget can refresh
+     on its own (a key is installed); otherwise the button is plain, matching the mock-up's two
+     footer styles (TunnelDown.dc.html has the tint, NotChecked.dc.html does not). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="@color/widget_teal_bg" />
+</shape>

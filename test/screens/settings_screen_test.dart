@@ -11,7 +11,10 @@ import 'package:cfg_pia_wg/router_prefs.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/screens/settings_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
+import 'package:cfg_pia_wg/widget_key.dart';
 import 'package:cfg_pia_wg/widgets/ssh_creds_dialog.dart';
+import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 
 import '../watchdog_test_utils.dart';
 
@@ -1244,6 +1247,157 @@ void main() {
 
       expect(find.textContaining('Could not check your purchase with Google Play'), findsOneWidget);
       expect(logged(c, 'Could not reach the store', error: true), isTrue, reason: 'the detail is in the log');
+    });
+  });
+
+  // ID-376: GENERATE and REMOVE both reach the router now (ID-376 slice 4) - the same credential
+  // flow every other action on this screen uses - and only touch the phone's secure storage once
+  // the router side has succeeded. Each test gets its own empty in-memory secure store, the way
+  // widget_key_test.dart exercises WidgetKeyStore itself.
+  group('HOME SCREEN WIDGET KEY', () {
+    late Map<String, String> backing;
+    late WidgetKeyStore store;
+
+    setUp(() {
+      backing = {};
+      FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform(backing);
+      store = WidgetKeyStore();
+    });
+
+    SessionController connected() => SessionController(tickInterval: const Duration(hours: 1))
+      ..routerIp = '192.168.1.1'
+      ..sshUsername = 'admin'
+      ..sshPassword = 'pw'
+      ..routerConnected = true;
+
+    // WorkManager needs a device, so the schedule calls are counted rather than made.
+    var scheduled = 0, cancelled = 0;
+
+    setUp(() {
+      scheduled = 0;
+      cancelled = 0;
+    });
+
+    Future<void> openDialog(WidgetTester tester, {SessionController? controller, RecordingSSHClient? ssh}) async {
+      final c = controller ?? connected();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(
+              body: SettingsScreen(
+                testWidgetKeyStore: store,
+                testClientFactory: (_, __, ___) async => ssh ?? RecordingSSHClient(responder: (_) => ''),
+                testScheduleRefresh: () async => scheduled++,
+                testCancelRefresh: () async => cancelled++,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_widget_key')));
+      await tester.tap(find.byKey(const Key('settings_widget_key')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('with no key yet, the dialog says so and offers GENERATE, not REMOVE', (tester) async {
+      await openDialog(tester);
+
+      expect(find.byKey(const Key('widget_key_status')), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).data, contains('No key exists'));
+      expect(find.byKey(const Key('widget_key_generate')), findsOneWidget);
+      expect(find.byKey(const Key('widget_key_remove')), findsNothing);
+    });
+
+    testWidgets('GENERATE installs on the router, then saves on the phone, then switches to REMOVE', (tester) async {
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await openDialog(tester, ssh: ssh);
+      await tester.tap(find.byKey(const Key('widget_key_generate')));
+      await tester.pumpAndSettle();
+
+      expect(await store.exists(), isTrue);
+      expect(ssh.commands, contains('nvram get sshd_authkeys'));
+      expect(ssh.commands.last, contains('authorized_keys'));
+      expect(find.byKey(const Key('widget_key_remove')), findsOneWidget);
+      expect(find.byKey(const Key('widget_key_generate')), findsNothing);
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data, contains('installed on your router'));
+    });
+
+    testWidgets('GENERATE remembers the login it installed under, and starts the periodic refresh', (tester) async {
+      await openDialog(tester);
+      await tester.tap(find.byKey(const Key('widget_key_generate')));
+      await tester.pumpAndSettle();
+
+      // Without the login the key cannot be used at all - see WidgetKeyStore's header.
+      expect(await store.readLogin(), 'admin');
+      expect(scheduled, 1);
+      expect(cancelled, 0);
+    });
+
+    testWidgets('a failed install schedules nothing and remembers no login', (tester) async {
+      await openDialog(tester, ssh: RecordingSSHClient(throwOn: const ['nvram get sshd_authkeys']));
+      await tester.tap(find.byKey(const Key('widget_key_generate')));
+      await tester.pumpAndSettle();
+
+      expect(await store.readLogin(), isNull);
+      expect(scheduled, 0);
+    });
+
+    testWidgets('GENERATE leaves nothing on the phone if the router side fails', (tester) async {
+      final ssh = RecordingSSHClient(throwOn: const ['nvram get sshd_authkeys']);
+      await openDialog(tester, ssh: ssh);
+      await tester.tap(find.byKey(const Key('widget_key_generate')));
+      await tester.pumpAndSettle();
+
+      expect(await store.exists(), isFalse);
+      expect(find.byKey(const Key('widget_key_generate')), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data, contains('Not installed'));
+    });
+
+    testWidgets('an existing key is offered REMOVE, not GENERATE, on opening', (tester) async {
+      await store.save(generateWidgetKeyPair().seed);
+      await openDialog(tester);
+
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).data, contains('A key exists'));
+      expect(find.byKey(const Key('widget_key_remove')), findsOneWidget);
+    });
+
+    testWidgets('REMOVE takes it off the router, then the phone, then switches back to GENERATE', (tester) async {
+      await store.save(generateWidgetKeyPair().seed);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd == 'nvram get sshd_authkeys' ? 'ssh-ed25519 AAAA cfg-pia-wg-widget' : '');
+      await openDialog(tester, ssh: ssh);
+      await tester.tap(find.byKey(const Key('widget_key_remove')));
+      await tester.pumpAndSettle();
+
+      expect(await store.exists(), isFalse);
+      expect(await store.readLogin(), isNull, reason: 'the login goes with the key, not without it');
+      expect(ssh.commands.last, isNot(contains('cfg-pia-wg-widget')));
+      expect(find.byKey(const Key('widget_key_generate')), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data, 'Removed from your router and this phone.');
+      expect(cancelled, 1, reason: 'a job that can no longer log in should not keep waking the phone');
+    });
+
+    testWidgets('REMOVE leaves the phone untouched if the router side fails', (tester) async {
+      await store.save(generateWidgetKeyPair().seed);
+      final ssh = RecordingSSHClient(throwOn: const ['nvram get sshd_authkeys']);
+      await openDialog(tester, ssh: ssh);
+      await tester.tap(find.byKey(const Key('widget_key_remove')));
+      await tester.pumpAndSettle();
+
+      expect(await store.exists(), isTrue);
+      expect(find.byKey(const Key('widget_key_remove')), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data, contains('Not removed'));
+    });
+
+    testWidgets('CLOSE dismisses without changing anything', (tester) async {
+      await openDialog(tester);
+      await tester.tap(find.byKey(const Key('widget_key_close')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('widget_key_status')), findsNothing);
+      expect(await store.exists(), isFalse);
     });
   });
 }

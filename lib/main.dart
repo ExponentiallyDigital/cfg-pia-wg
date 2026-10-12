@@ -23,6 +23,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'app_shell.dart';
 import 'firmware.dart';
 import 'share_cache.dart';
+import 'widget_refresh.dart' show reregisterWidgetRefresh;
 export 'app_shell.dart' show PiaWgApp;
 
 void main() {
@@ -30,6 +31,11 @@ void main() {
   unawaited(stampAppVersion());
   // Whatever a previous run shared and did not get to clear, because it was killed (ID-312).
   unawaited(clearShareCache());
+  // ID-376: re-register the widget's background entry points on every start, not only when its key
+  // is installed. The handles WorkManager and home_widget store are specific to the build that
+  // registered them, so an app update would leave a stale one behind and the widget would quietly
+  // stop refreshing - with nothing on screen to say so, since a refresh has no UI to fail in.
+  unawaited(reregisterWidgetRefresh());
   runApp(const PiaWgApp());
 }
 

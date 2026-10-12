@@ -262,6 +262,54 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.8"
+  flutter_secure_storage:
+    dependency: "direct main"
+    description:
+      name: flutter_secure_storage
+      sha256: d4e1fb6b2cb524868929e78dc0282fa000554b22060fb53789dc481c9fc95bb8
+      url: "https://pub.dev"
+    source: hosted
+    version: "11.2.0"
+  flutter_secure_storage_darwin:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_darwin
+      sha256: a031ceac9b070e62ef183cd7f7d1a8798ebde402d5049f0fe6eb3a51bd797a21
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.4.3"
+  flutter_secure_storage_linux:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_linux
+      sha256: caa75bd78f017422912e3a904933113b2428eb79f981ac37acd2dd2a700458ea
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.3"
+  flutter_secure_storage_platform_interface:
+    dependency: "direct dev"
+    description:
+      name: flutter_secure_storage_platform_interface
+      sha256: "64951127f001f546891c86f414972bf49ef2c4c8a4c92c65f5790cc0c9100045"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.1"
+  flutter_secure_storage_web:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_web
+      sha256: "073a62b3aeb866ab4ce795f960413948e51e5a42a9b0c8333b6daf5bb3208a1c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.1"
+  flutter_secure_storage_windows:
+    dependency: transitive
+    description:
+      name: flutter_secure_storage_windows
+      sha256: "471951813a97006d899db4948acc654a4f28c440083ea08178935ce20b173ec1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.2.2"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -288,6 +336,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
+  home_widget:
+    dependency: "direct main"
+    description:
+      name: home_widget
+      sha256: "1dbfdfbb3b47de24639adfba352050d85d66af112b9cc3ec5bf7627a7813abcb"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.10.0"
   hooks:
     dependency: transitive
     description:
@@ -577,7 +633,7 @@ packages:
     source: hosted
     version: "7.0.2"
   pinenacl:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: pinenacl
       sha256: "57e907beaacbc3c024a098910b6240758e899674de07d6949a67b52fd984cbdf"
@@ -957,6 +1013,54 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.4.0"
+  workmanager:
+    dependency: "direct main"
+    description:
+      name: workmanager
+      sha256: "96b09a4a852ec487d29371f27031dab80ce2e260911e2dbe0f904951e22a3956"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.10.10"
+  workmanager_android:
+    dependency: transitive
+    description:
+      name: workmanager_android
+      sha256: ffe8aa061885370c9363f7ae2d2196d31855217c58e7b15899d915d36c768c4a
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.10.9"
+  workmanager_apple:
+    dependency: transitive
+    description:
+      name: workmanager_apple
+      sha256: "9e0ca0b857df986b37ca964ffa3b21990e1bc0f7935356a9706b47e5b71a7524"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.9.11"
+  workmanager_linux:
+    dependency: transitive
+    description:
+      name: workmanager_linux
+      sha256: "7d8520e1103b910a43d8bafe37ec2415f4c7c148afcb1eee0ec73ae67b4cdd22"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.1+1"
+  workmanager_platform_interface:
+    dependency: transitive
+    description:
+      name: workmanager_platform_interface
+      sha256: a1022dca1284d64ba8bbe046edc9089cc5158b3d0e2cf9f68c7cde2fbf89746c
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.10.5"
+  workmanager_web:
+    dependency: transitive
+    description:
+      name: workmanager_web
+      sha256: "2ac481ade599bdd957ee2891be09a0c34be87923a2c3ca4dfe36add6fc735ffd"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.0"
   x25519:
     dependency: "direct main"
     description:

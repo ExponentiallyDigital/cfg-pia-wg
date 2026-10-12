@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ID-376: the "Not checked" badge pill - matching the mock-up's grey, neutral badge. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/widget_grey_bg" />
+    <stroke android:width="1dp" android:color="@color/widget_grey_border" />
+    <corners android:radius="999dp" />
+</shape>
