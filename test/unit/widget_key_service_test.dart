@@ -18,7 +18,7 @@ void main() {
         'nvram get sshd_authkeys',
         "nvram set sshd_authkeys='$kOurLine'; nvram commit; "
             "mkdir -p ~/.ssh; chmod 700 ~/.ssh; "
-            "printf '%s' '$kOurLine' > ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys",
+            "printf '%s\\n' '$kOurLine' > ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys",
       ]);
     });
 
@@ -70,7 +70,7 @@ void main() {
       await WidgetKeyRouterService(client).remove();
 
       expect(client.commands.last, contains("nvram set sshd_authkeys=''"));
-      expect(client.commands.last, contains("printf '%s' '' > ~/.ssh/authorized_keys"));
+      expect(client.commands.last, contains("printf '%s\\n' '' > ~/.ssh/authorized_keys"));
     });
   });
 }

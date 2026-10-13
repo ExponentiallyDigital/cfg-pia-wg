@@ -4,8 +4,9 @@
 // refused, so it fell back to asking for a password at the terminal of whoever ran the check - twice,
 // with no sign whether what was typed was used - and what was typed after the check killed it landed
 // on their command line, the router password among it. A script that runs unattended must have
-// nowhere to ask: every SSH client call goes through setsid (no controlling terminal, written
-// `$NOPROMPT` where the script checks setsid exists first) with its input from /dev/null.
+// nowhere to ask: every SSH client call has its input from /dev/null and either goes through setsid
+// (no controlling terminal) or runs from cron, marked `#cron-only`, since stock has no setsid
+// (measured 2026-10-13) and cron has no terminal at all.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -19,7 +20,8 @@ List<String> promptingCalls(Directory scripts) => [
         for (final (i, line) in f.readAsLinesSync().indexed)
           if (!line.trimLeft().startsWith('#') &&
               _sshCall.hasMatch(line) &&
-              !(RegExp(r'(\$NOPROMPT|setsid) +("\$CLIENT"|\S*(dbclient|ssh))').hasMatch(line) && line.contains('</dev/null')))
+              !((RegExp(r'setsid +("\$CLIENT"|\S*(dbclient|ssh))').hasMatch(line) || line.contains('#cron-only')) &&
+                  line.contains('</dev/null')))
             '${f.uri.pathSegments.last}:${i + 1}: ${line.trim()}',
     ];
 
@@ -28,10 +30,12 @@ void main() {
     expect(promptingCalls(Directory('scripts')), isEmpty);
   });
 
-  test("check-claims.sh doesn't run its forwarding check where setsid is missing", () {
+  test("check-claims.sh's client really does run from cron, and the run cleans its entry up", () {
     final s = File('scripts/check-claims.sh').readAsStringSync();
-    expect(s, contains('NOPROMPT=""; which setsid >/dev/null 2>&1 && NOPROMPT=setsid'));
-    expect(s, contains('elif [ -z "\$NOPROMPT" ]; then'));
+    expect(s, contains('cru a ccfwd "* * * * *" "/bin/sh \$RUN"'));
+    expect(RegExp(r'^cru d ccfwd$', multiLine: true).hasMatch(s), isTrue, reason: 'the scheduled script takes its own entry out');
+    expect(s, contains('  cru d ccfwd\n'), reason: 'and so does the check, whether or not it ran');
+    expect(s, contains('cru d ccfwd 2>/dev/null'), reason: 'and so does restore(), if the run was stopped');
   });
 
   test('the scan finds one: a bare client call is caught, a guarded one is not', () {
@@ -41,10 +45,11 @@ void main() {
 # "\$CLIENT" -y in a comment is fine
 CLIENT=""; for C in /usr/bin/dbclient; do [ -x "\$C" ] && CLIENT="\$C" && break; done
 "\$CLIENT" -y -i key user@host >out 2>&1 &
-\$NOPROMPT "\$CLIENT" -y -i key user@host </dev/null >out 2>&1 &
+  "\$CLIENT" -y -i key user@host </dev/null >out 2>&1 & #cron-only
 /usr/bin/dbclient -y user@host
 setsid /usr/bin/dbclient -y user@host </dev/null
+"\$CLIENT" -y -i key user@host >out 2>&1 & #cron-only
 ''');
-    expect(promptingCalls(dir), [contains('a.sh:3:'), contains('a.sh:5:')]);
+    expect(promptingCalls(dir), [contains('a.sh:3:'), contains('a.sh:5:'), contains('a.sh:7:')]);
   });
 }
