@@ -65,6 +65,8 @@ class WidgetKeyRouterService {
     final quoted = shellSingleQuote(value);
     await _run('nvram set sshd_authkeys=$quoted; nvram commit; '
         'mkdir -p ~/.ssh; chmod 700 ~/.ssh; '
-        "printf '%s' $quoted > ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys");
+        // A final newline, so a key added after ours the usual way (`echo key >> ...`) starts a line
+        // of its own rather than landing in our line's comment (ID-389).
+        "printf '%s\\n' $quoted > ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys");
   }
 }
