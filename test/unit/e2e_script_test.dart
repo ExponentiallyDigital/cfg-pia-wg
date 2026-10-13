@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../watchdog_harness.dart' show findShell;
+import '../posix_shell.dart';
 
 const _ip = r'''#!/bin/sh
 case "$1 $2" in
@@ -35,7 +36,7 @@ void main() {
 
   Future<ProcessResult> e2e(List<String> args) {
     final sep = Platform.isWindows ? ';' : ':';
-    return Process.run(
+    return runSh(
       shell!,
       [
         '-c',

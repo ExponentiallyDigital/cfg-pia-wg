@@ -3,10 +3,12 @@
 // Stand-ins for `nvram`, `ip`, `iptables`, `service` and `logger`, each behaving as a stock router was
 // measured to, and the real guard script. Shared by fail_closed_guard_test.dart and the guard_*_test.dart
 // files, which were one file until 2026-10-01: split so they run side by side, since the tests in
-// one file run one after another and each runs real shell, which is slow on Windows.
+// one file run one after another and each runs real shell, which is slow on Windows. On Windows the
+// shell runs in WSL when there is one, about ten times faster (test/posix_shell.dart, ID-355).
 import 'dart:io';
 
 import 'package:cfg_pia_wg/fail_closed_guard.dart';
+import '../posix_shell.dart';
 
 // The two tunnels the fixtures use: wgc1 is table 9, wgc5 is table 5. Addresses are documentation
 // ranges, never real ones.
@@ -173,7 +175,7 @@ class GuardRouter {
 
   Future<ProcessResult> run([List<String> args = const []]) {
     final sep = Platform.isWindows ? ';' : ':';
-    return Process.run(shell!, ['-c', _unixToolsFirst, 'sh', script.path, ...args], environment: {
+    return runSh(shell!, ['-c', _unixToolsFirst, 'sh', script.path, ...args], environment: {
       'PATH': '${dir.path}/bin$sep${Platform.environment['PATH']}',
       'STATE': state.path,
       'GUARD_LOCK': '${state.path}/lock',
@@ -245,7 +247,7 @@ default via 198.51.100.1 dev eth0
   /// Network Services Filter is rebuilt from NVRAM.
   Future<void> firewallRestart() async {
     final sep = Platform.isWindows ? ';' : ':';
-    await Process.run(shell!, ['-c', _unixToolsFirst, 'sh', '${dir.path}/bin/service', 'restart_firewall'], environment: {
+    await runSh(shell!, ['-c', _unixToolsFirst, 'sh', '${dir.path}/bin/service', 'restart_firewall'], environment: {
       'PATH': '${dir.path}/bin$sep${Platform.environment['PATH']}',
       'STATE': state.path,
     });
@@ -255,6 +257,7 @@ default via 198.51.100.1 dev eth0
 }
 
 String? findGuardShell() {
+  if (usesWsl) return 'sh';
   for (final candidate in ['sh', 'bash']) {
     try {
       if (Process.runSync(candidate, ['-c', 'exit 0']).exitCode == 0) return candidate;
