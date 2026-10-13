@@ -101,6 +101,10 @@ restore() {
   [ -x "$D/guard.sh" ] && "$D/guard.sh" >/dev/null 2>&1
   # Filter rules taken out of the firewall by hand come back only with a firewall restart.
   [ -n "$FILTERBROKEN" ] && service restart_firewall
+  # The SSH-forwarding test (4c), if this run was stopped while it was out: its cron entry, and the
+  # key file it swapped.
+  cru d ccfwd 2>/dev/null
+  [ -f /tmp/check-claims-ak.bak ] && { cat /tmp/check-claims-ak.bak > "$HOME/.ssh/authorized_keys"; rm -f /tmp/check-claims-ak.bak; }
   rm -f "$RESTORE" "$CRUSAVE" /tmp/check-claims-wd.sh
   GTXT=""; [ "$FW" = stock ] && GTXT=" guard $(guarded),"
   echo "== restored: $(cru l | grep -cE '#(watchdog_|cfg_pia_wg_guard)') schedules,$GTXT tunnels up at the start:${UPSTART:+ $UPSTART}"
@@ -373,76 +377,97 @@ else
   info DNS-DoT "DNS-over-TLS is off on this router; not checked here (full mode turns it on)"
 fi
 
-# ---- 4c. SSH forwarding stays blocked for a restricted key (ID-376) ----------------------------
-# Unlike the rest of this file, this proves a future claim, not a shipped one: no restricted key is
-# installed yet. It's here so the claim has a check before the feature ships, not after. A key
-# carrying no-port-forwarding is installed, tried, and read for from the kernel, not asked nicely:
-# a first attempt (2026-10-12) read ambient state instead, which passes whenever nobody happens to
-# be forwarding at that instant, true almost always, and so proves nothing either way.
+# ---- 4c. SSH forwarding stays blocked for a restricted key (ID-376, ID-378) -------------------
+# The home screen widget's key is installed with no-port-forwarding. This proves that holds: a
+# throwaway key is installed twice, once unrestricted (the control, which must open a listener, or
+# the check can't fail) and once restricted, each asked to forward a port, and the kernel's own
+# /proc/net/tcp is read for the listener - not ambient settings, which a first attempt (2026-10-12)
+# read, and which pass whenever nobody happens to be forwarding, so prove nothing.
 AKF="$HOME/.ssh/authorized_keys"; TK=/tmp/check-claims-fwd
 # The port, and the same port as /proc/net/tcp spells it: upper-case hex, 4 digits. DERIVED, never
 # written twice - on 2026-10-12 the hex was hand-typed as 4656 (18006) for port 18022 (4666), so the
-# check watched a port nothing was ever going to open and reported "no listener" for the control as
-# well as the restricted key. A wrong constant here fails exactly like a working protection.
+# check watched a port nothing was ever going to open. A wrong constant fails like a working protection.
 FWDPORT=18022; FWDHEX="$(printf '%04X' "$FWDPORT")"
 CLIENT=""; for C in /usr/sbin/dbclient /usr/bin/dbclient /usr/sbin/ssh /usr/bin/ssh; do [ -x "$C" ] && CLIENT="$C" && break; done
-# No dry-mode test here: this section installs a key, so it must stay below the `dry` exit above,
-# which means dry never reaches it and prints no SSH-forwarding line at all. That is correct, and
-# was briefly confusing on 2026-10-12 when a dry-mode branch here implied otherwise.
-# The client must never ask for a password (ID-378). On 2026-10-13 its key was refused, so dbclient
-# fell back to asking at the terminal of whoever ran this, twice, gave no sign whether what was typed
-# was used, and what was typed after it was killed landed on their command line - the router password
-# among it. With no controlling terminal (setsid) and nothing on its input it has nowhere to ask, and
-# without setsid this check doesn't run at all. test/unit/no_prompt_scripts_test.dart holds every SSH
-# client call in scripts/ to this.
-NOPROMPT=""; which setsid >/dev/null 2>&1 && NOPROMPT=setsid
+# No dry-mode test here: this section installs a key, so it stays below the `dry` exit above.
+#
+# The client runs from cron, never from this script (ID-378). A client whose key is refused falls
+# back to a password and asks for it on the terminal of whoever ran it: on 2026-10-13 that was
+# Andrew's, twice, with no sign whether what he typed was used, and what he typed after the client
+# was killed landed on his command line, the router password among it. Cron has no terminal, so
+# there is nowhere to ask. Stock has no setsid to detach it here instead (measured 2026-10-13).
+# test/unit/no_prompt_scripts_test.dart holds every SSH client call in scripts/ to this.
 if [ -z "$CLIENT" ]; then
   info SSH-forwarding "no SSH client on this router (checked dbclient, ssh): the restricted key's forwarding block can't be proven here, only measured by hand (BACKLOG ID-376)"
-elif [ -z "$NOPROMPT" ]; then
-  info SSH-forwarding "this router has no setsid, so its SSH client can't be kept from asking for a password at your terminal; not checked"
 else
   # The account to dial: whatever logged this session in, not a guessed name - a wrong one risks
   # the same "nonexistent user" lockout a hardcoded name caused elsewhere on 2026-10-12.
   U="${USER:-$LOGNAME}"; [ -n "$U" ] || U="$(awk -F: -v h="$HOME" '$6==h{print $1; exit}' /etc/passwd 2>/dev/null)"
   # Where to dial. NOT 127.0.0.1: stock starts dropbear bound to the LAN address alone
-  # (`dropbear -p <lan-ip>:22 -a`), so loopback refuses the connection outright - measured
-  # 2026-10-12, "Connect failed: Connection refused". Read the address off the running daemon, and
-  # fall back to NVRAM if its command line ever stops saying.
+  # (`dropbear -p <lan-ip>:22 -a`), so loopback refuses the connection outright (2026-10-12).
   DIAL="$(ps w | sed -n 's/.*dropbear -p \([0-9.]*\):\([0-9]*\).*/\1 \2/p' | head -1)"
   DIALIP="${DIAL% *}"; DIALPORT="${DIAL#* }"
   [ -n "$DIALIP" ] || DIALIP="$(nvram get lan_ipaddr)"
   [ -n "$DIALPORT" ] && [ "$DIALPORT" != "$DIALIP" ] || DIALPORT="$(nvram get sshd_port)"
   [ -n "$DIALPORT" ] || DIALPORT=22
-  dropbearkey -t ed25519 -f "$TK" >/dev/null 2>&1
+  rm -f "$TK"; dropbearkey -t ed25519 -f "$TK" >/dev/null 2>&1
   PUB="$(dropbearkey -y -f "$TK" | awk '/^ssh-/{print; exit}')"
+  RLINE='command="echo CFGPIA-FORCED",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty '"$PUB"
   AKBAK=""; [ -f "$AKF" ] && { AKBAK=/tmp/check-claims-ak.bak; cp -p "$AKF" "$AKBAK"; }
-  : > /tmp/check-claims-fwd.err; : > /tmp/check-claims-fwd.db
-  fwd_opens() { # $1: the authorized_keys line to test. Prints 1 if a listener appears, else 0.
-    { [ -n "$AKBAK" ] && cat "$AKBAK"; echo "$1"; } > "$AKF.new" && mv "$AKF.new" "$AKF"; chmod 600 "$AKF"
-    SL0="$(wc -l < /tmp/syslog.log 2>/dev/null)"
-    # dbclient, not ssh: "-y" is its own way of accepting a host key, and it has no "-o" at all.
-    $NOPROMPT "$CLIENT" -y -i "$TK" -p "$DIALPORT" -N -R "127.0.0.1:$FWDPORT:127.0.0.1:22" "$U@$DIALIP" </dev/null >>/tmp/check-claims-fwd.err 2>&1 &
-    CP=$!; I=0; OPEN=0
-    while [ "$I" -lt 5 ]; do grep -q ":$FWDHEX 00000000:0000 0A" /proc/net/tcp && OPEN=1 && break; sleep 1; I=$((I + 1)); done
-    kill "$CP" 2>/dev/null; wait "$CP" 2>/dev/null
-    # What the router's own SSH server made of the attempt: why a key is refused is said there, not by
-    # the client. Measure, don't guess - the control has never once opened a listener here. To a
-    # file: this function runs inside $(...), so a variable set here is gone when it returns.
-    echo "[$(tail -n +"$((${SL0:-0} + 1))" /tmp/syslog.log 2>/dev/null | grep -i dropbear | sed 's/.*dropbear\[[0-9]*\]: //' | tail -3 | tr '\n' ';')]" >> /tmp/check-claims-fwd.db
-    echo "$OPEN"
-  }
-  CONTROL="$(fwd_opens "$PUB")"
-  RESTRICTED="$(fwd_opens 'command="echo CFGPIA-FORCED",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty '"$PUB")"
+  RUN=/tmp/check-claims-fwd-run.sh; RES=/tmp/check-claims-fwd.res
+  rm -f "$RES" /tmp/check-claims-fwd.started /tmp/check-claims-fwd.err /tmp/check-claims-fwd.db
+  # None of these holds a single quote: paths, a login name, numbers, and an OpenSSH key line.
+  {
+    printf "AKF='%s'\n" "$AKF"; printf "AKBAK='%s'\n" "$AKBAK"; printf "TK='%s'\n" "$TK"
+    printf "CLIENT='%s'\n" "$CLIENT"; printf "DIALIP='%s'\n" "$DIALIP"; printf "DIALPORT='%s'\n" "$DIALPORT"
+    printf "U='%s'\n" "$U"; printf "FWDPORT='%s'\n" "$FWDPORT"; printf "FWDHEX='%s'\n" "$FWDHEX"
+    printf "PUB='%s'\n" "$PUB"; printf "RLINE='%s'\n" "$RLINE"
+  } > /tmp/check-claims-fwd.vars
+  cat > "$RUN" <<'FWDRUN'
+#!/bin/sh
+# check-claims.sh's SSH-forwarding test, run from cron so its client has no terminal (ID-378).
+cru d ccfwd
+[ -f /tmp/check-claims-fwd.started ] && exit 0
+: > /tmp/check-claims-fwd.started
+. /tmp/check-claims-fwd.vars
+fwd() { # $1: the key line to test. Prints 1 if a listener appeared, 0 if not, "missing" if the line isn't in the file.
+  # The key goes on a line of its own. The app writes the key file with no final newline, and until
+  # 2026-10-13 this appended straight after the widget's line, so the throwaway key ended up in that
+  # line's comment, was never seen as a key, and every run fell back to a password (ID-378).
+  { if [ -n "$AKBAK" ]; then cat "$AKBAK"; [ -n "$(tail -c 1 "$AKBAK")" ] && echo; fi; echo "$1"; } > "$AKF.new" && mv "$AKF.new" "$AKF"; chmod 600 "$AKF"
+  grep -qxF "$1" "$AKF" || { echo missing; return; }
+  SL0="$(wc -l < /tmp/syslog.log 2>/dev/null)"
+  "$CLIENT" -y -i "$TK" -p "$DIALPORT" -N -R "127.0.0.1:$FWDPORT:127.0.0.1:22" "$U@$DIALIP" </dev/null >>/tmp/check-claims-fwd.err 2>&1 & #cron-only
+  CP=$!; I=0; OPEN=0
+  while [ "$I" -lt 5 ]; do grep -q ":$FWDHEX 00000000:0000 0A" /proc/net/tcp && OPEN=1 && break; sleep 1; I=$((I + 1)); done
+  kill "$CP" 2>/dev/null; wait "$CP" 2>/dev/null
+  echo "[$(tail -n +"$((${SL0:-0} + 1))" /tmp/syslog.log 2>/dev/null | grep -i dropbear | sed 's/.*dropbear\[[0-9]*\]: //' | tail -4 | tr '\n' ';')]" >> /tmp/check-claims-fwd.db
+  echo "$OPEN"
+}
+C="$(fwd "$PUB")"
+R="$(fwd "$RLINE")"
+if [ -n "$AKBAK" ]; then cat "$AKBAK" > "$AKF"; else rm -f "$AKF"; fi
+echo "$C $R" > /tmp/check-claims-fwd.res
+FWDRUN
+  cru a ccfwd "* * * * *" "/bin/sh $RUN"
+  # Cron starts it at the top of the next minute, and the test takes about 12 seconds.
+  W=0; while [ "$W" -lt 90 ] && [ ! -s "$RES" ]; do sleep 1; W=$((W + 1)); done
+  cru d ccfwd
   if [ -n "$AKBAK" ]; then cat "$AKBAK" > "$AKF"; rm -f "$AKBAK"; else rm -f "$AKF"; fi
+  CONTROL="$(cut -d' ' -f1 "$RES" 2>/dev/null)"; RESTRICTED="$(cut -d' ' -f2 "$RES" 2>/dev/null)"
   CLIENTERR="$(grep -v 'key accepted unconditionally\|fingerprint' /tmp/check-claims-fwd.err 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
   DBSAID="$(tr '\n' ' ' < /tmp/check-claims-fwd.db 2>/dev/null | cut -c1-400)"
-  rm -f "$TK" "$TK.pub" /tmp/check-claims-fwd.err /tmp/check-claims-fwd.db
-  if [ "$CONTROL" != 1 ]; then
+  rm -f "$TK" "$TK.pub" "$RUN" "$RES" /tmp/check-claims-fwd.vars /tmp/check-claims-fwd.started /tmp/check-claims-fwd.err /tmp/check-claims-fwd.db
+  if [ -z "$CONTROL" ]; then
+    info SSH-forwarding "the test didn't report back within 90 seconds of being scheduled; not checked"
+  elif [ "$CONTROL" = missing ] || [ "$RESTRICTED" = missing ]; then
+    info SSH-forwarding "the test key wasn't on a line of its own in $AKF after writing it; not checked"
+  elif [ "$CONTROL" != 1 ]; then
     info SSH-forwarding "couldn't prove this check can fail (no listener seen even for an unrestricted key), dialling as '$U'. The client said: ${CLIENTERR:-nothing}. The router's SSH server said, control then restricted: ${DBSAID:-nothing}"
   elif [ "$RESTRICTED" = 0 ]; then
-    pass SSH-forwarding "a restricted key can't make dropbear listen on a forwarded port"
+    pass SSH-forwarding "an unrestricted key opened a forwarded listener, and the restricted key couldn't: no-port-forwarding holds"
   else
-    fail SSH-forwarding "a restricted key opened a forwarded listener" "port 18022"
+    fail SSH-forwarding "a restricted key opened a forwarded listener" "port $FWDPORT"
   fi
 fi
 
