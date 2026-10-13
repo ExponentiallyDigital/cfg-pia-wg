@@ -21,14 +21,17 @@
 //   logger   appends to a syslog file; `sleep` returns at once unless a test asks for real time
 //
 // Skipped where no `sh` is on the PATH. The shell's own /usr/bin goes ahead of Windows' so that
-// `sort`, `awk` and friends are the Unix ones (ID-216).
+// `sort`, `awk` and friends are the Unix ones (ID-216). On Windows the shell runs in WSL when there
+// is one, about ten times faster, and Git Bash otherwise (test/posix_shell.dart, ID-355).
 import 'dart:io';
 
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
+import 'posix_shell.dart';
 
 /// Finds a POSIX shell, or null.
 String? findShell() {
+  if (usesWsl) return 'sh';
   for (final candidate in ['sh', 'bash']) {
     try {
       if (Process.runSync(candidate, ['-c', 'exit 0']).exitCode == 0) return candidate;
@@ -512,7 +515,7 @@ class WatchdogHarness {
           ),
       firmware: RouterFirmware.stock,
     );
-    final r = root.path.replaceAll('\\', '/');
+    final r = shPath(root.path);
     return body.replaceAll('/tmp/', '$r/tmp/').replaceAll('/jffs/', '$r/jffs/').replaceAll('/etc/', '$r/etc/');
   }
 
@@ -520,22 +523,22 @@ class WatchdogHarness {
   Future<ProcessResult> run({String mode = 'foreground', WatchdogConfig? config}) async {
     final path = '${root.path}/watchdog_$iface.sh';
     File(path).writeAsStringSync(script(config));
-    return Process.run(shell, ['-c', _unixToolsFirst, 'sh', path, mode], environment: _env);
+    return runSh(shell, ['-c', _unixToolsFirst, 'sh', path, mode], environment: _env);
   }
 
   /// Runs [body], a piece of the script, against this fake router, for a test of one part alone.
   Future<ProcessResult> runSnippet(String body) async {
-    final r = root.path.replaceAll('\\', '/');
+    final r = shPath(root.path);
     final path = '${root.path}/snippet.sh';
     File(path).writeAsStringSync(body.replaceAll('/tmp/', '$r/tmp/').replaceAll('/jffs/', '$r/jffs/'));
-    return Process.run(shell, ['-c', _unixToolsFirst, 'sh', path], environment: _env);
+    return runSh(shell, ['-c', _unixToolsFirst, 'sh', path], environment: _env);
   }
 
   /// Starts a run without waiting, for tests about two watchdogs at once.
   Future<Process> start({String mode = 'foreground'}) async {
     final path = '${root.path}/watchdog_$iface.sh';
     File(path).writeAsStringSync(script());
-    return Process.start(shell, ['-c', _unixToolsFirst, 'sh', path, mode], environment: _env);
+    return startSh(shell, ['-c', _unixToolsFirst, 'sh', path, mode], environment: _env);
   }
 
   Map<String, String> get _env {

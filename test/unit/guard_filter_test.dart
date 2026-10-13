@@ -76,16 +76,20 @@ void main() {
       expect(g.nv('fw_lw_enable_x'), '1');
     });
 
-    test("an entry the user made for a pinned device stays theirs", () async {
+    // Until ID-377 this entry stayed the user's, and stayed after the unpin. Now an unrecorded entry
+    // in exactly the app's form, for a pinned device, is claimed: it can't be told from one the app
+    // lost the record of, and left unclaimed it kept an unpinned device off the internet. Andrew's
+    // decision, 2026-10-13, accepting that a hand-made entry of exactly that form goes with the unpin.
+    test("an entry in the app's own form for a pinned device is claimed, and goes with the unpin", () async {
       g.set('fw_lw_enable_x', '1');
       g.set('filter_lwlist', '<192.0.2.20>>>>TCP');
       g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5>');
       await g.run();
       expect(g.nv('filter_lwlist'), '<192.0.2.20>>>>TCP<192.0.2.20>>>>UDP');
-      expect(g.nv('cfg_pia_wg_lwlist'), '192.0.2.20/UDP');
+      expect(g.nv('cfg_pia_wg_lwlist').split(' '), unorderedEquals(['192.0.2.20/TCP', '192.0.2.20/UDP']));
       g.set('vpnc_dev_policy_list', '0>192.0.2.20>>0>');
       await g.run();
-      expect(g.nv('filter_lwlist'), '<192.0.2.20>>>>TCP');
+      expect(g.nv('filter_lwlist'), '');
     });
   }, skip: shell == null ? 'no POSIX shell on the PATH' : null);
 }

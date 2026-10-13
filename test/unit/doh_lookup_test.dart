@@ -17,6 +17,7 @@ import 'dart:io';
 
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../posix_shell.dart';
 
 import '../watchdog_harness.dart';
 
@@ -49,7 +50,7 @@ void main() {
 
     Future<ProcessResult> read(List<int> answer) async {
       final f = File('${dir.path}/a.b64')..writeAsStringSync('${base64.encode(answer)}\n');
-      return Process.run(shell!, ['-c', r'awk "$1" "$2"', 'sh', kDohAnswerAwk, f.path.replaceAll('\\', '/')]);
+      return runSh(shell!, ['-c', r'awk "$1" "$2"', 'sh', kDohAnswerAwk, shPath(f.path)]);
     }
 
     test('reads the first address from Cloudflare\'s and Google\'s real answers', () async {
