@@ -91,11 +91,30 @@ lw_sync() {
   LWOURS=" $(nvram get cfg_pia_wg_lwlist) "
   LWCUR="$(nvram get filter_lwlist)"
   LWREFUSED=""
-  # Entries that are not the app's: the user's own.
-  LWTHEIRS=""
+  # Entries that are not the app's: the user's own. Except (ID-377) ones the app's record has lost:
+  # exactly the form the app writes, for a device in DEVICES' list (vpnc_dev_policy_list), pinned
+  # or not, and only in a run that pins something. A settings restore or a reset can empty
+  # cfg_pia_wg_lwlist and leave filter_lwlist; those entries then read as the user's, so the filter
+  # was refused for every pinned device and stayed refused, and a device unpinned meanwhile kept its
+  # entries, since nothing recorded them as the app's to take out (measured on stock, 2026-10-12
+  # and 13). Claimed, an entry for a pinned device does what the app's own would, and one for a
+  # device not pinned goes, as it would have at the unpin. Only if nothing else refuses the filter,
+  # and named in the log. Andrew's decision, 2026-10-13: an entry made by hand in exactly that form
+  # for such a device goes too, and README says to give it a port or a destination to keep it.
+  LWKNOWN=" "
+  if [ "$LWWANT" != "  " ]; then
+    for LWR in $(nvram get vpnc_dev_policy_list | tr '<' ' '); do LWR="${LWR#*>}"; LWKNOWN="$LWKNOWN${LWR%%>*} "; done
+  fi
+  LWTHEIRS=""; LWCLAIM=""; LWGONE=""
   for E in $(echo "$LWCUR" | tr '<' ' '); do
     IP="${E%%>*}"; PR="${E##*>}"
     [ "$E" = "$IP>>>>$PR" ] && lw_in "$IP/$PR" "$LWOURS" && continue
+    if [ "$E" = "$IP>>>>$PR" ] && { [ "$PR" = TCP ] || [ "$PR" = UDP ]; } &&
+      { lw_in "$IP" "$LWWANT" || lw_in "$IP" "$LWKNOWN"; }; then
+      LWCLAIM="$LWCLAIM $IP/$PR"
+      lw_in "$IP" "$LWWANT" || LWGONE="$LWGONE $IP/$PR"
+      continue
+    fi
     LWTHEIRS="$LWTHEIRS $E"
   done
   if [ "$LWWANT" != "  " ]; then
@@ -108,8 +127,18 @@ lw_sync() {
     fi
     [ -n "$LWREFUSED" ] && LWWANT="  "
   fi
+  # The record as it was, to tell whether it changed; then the claimed entries become the app's.
+  LWOURS0="$LWOURS"
+  if [ -n "$LWREFUSED" ]; then
+    LWCLAIM=""; LWGONE=""
+  elif [ -n "$LWCLAIM" ]; then
+    LWOURS="$LWOURS$LWCLAIM "
+    lw_say "Network Services Filter: took over entries that matched the app's own but weren't recorded as its:$LWCLAIM"
+    [ -n "$LWGONE" ] && lw_say "Network Services Filter: of those, took out the ones for devices not pinned to a tunnel:$LWGONE"
+  fi
   # The new list: everything as it was, less the app's entries for devices no longer pinned, plus
-  # the ones missing. An entry the user made for a pinned device is left theirs.
+  # the ones missing. An entry of the user's for a pinned device is left theirs, unless it was claimed
+  # above for being in exactly the app's form.
   LWNORM=""; LWNEW=""
   for E in $(echo "$LWCUR" | tr '<' ' '); do
     LWNORM="$LWNORM<$E"
@@ -129,7 +158,7 @@ lw_sync() {
   LWNOURS="$(echo $LWNOURS)"
   CH=0
   [ "$LWNEW" != "$LWNORM" ] && { nvram set filter_lwlist="$LWNEW"; CH=1; }
-  if [ "$LWNOURS" != "$(echo $LWOURS)" ]; then
+  if [ "$LWNOURS" != "$(echo $LWOURS0)" ]; then
     if [ -n "$LWNOURS" ]; then nvram set cfg_pia_wg_lwlist="$LWNOURS"; else nvram unset cfg_pia_wg_lwlist; fi
     CH=1
   fi
@@ -179,6 +208,8 @@ lw_sync() {
   else
     lw_read
   fi
+  [ -n "$LWCLAIM" ] && echo "filter claimed$LWCLAIM"
+  [ -n "$LWGONE" ] && echo "filter released$LWGONE"
   if [ -n "$LWREFUSED" ]; then
     echo "filter refused: $LWREFUSED"
   elif [ "$LWM" -gt 0 ]; then
@@ -426,6 +457,17 @@ class FailClosedGuard {
   /// A refusal or a shortfall is always reported; a filter that holds every device only when not
   /// [quiet].
   void _reportFilter(String out, {required bool quiet}) {
+    // Said whenever it happens, quiet or not: it changes what the app owns on the router (ID-377).
+    final claimed = RegExp(r'filter claimed (.+)').firstMatch(out)?.group(1)?.trim();
+    final released = RegExp(r'filter released (.+)').firstMatch(out)?.group(1)?.trim();
+    if (claimed != null) {
+      onLog?.call(
+        "The router's Network Services Filter had entries that matched the app's own but weren't recorded as the "
+        "app's, probably left by a settings restore or reset: $claimed. The app has taken them over, so they hold "
+        'pinned devices as its own do, and unpinning a device takes its entries out.'
+        '${released == null ? '' : ' Those for devices not pinned to a tunnel were taken out, as an unpin would have: $released.'}',
+      );
+    }
     final refused = RegExp(r'filter refused: (.+)').firstMatch(out)?.group(1)?.trim();
     if (refused != null) {
       onLog?.call(
@@ -469,7 +511,7 @@ class FailClosedGuard {
   /// crashed the firmware's `asd` (ID-361). The entry is taken out here, from the router, and
   /// rebuilding the hook takes out its line there.
   Future<void> _persist(int pinned) async {
-    if ((await read("cru l | grep -c '#$kLegacyGuardCronTag#'")).trim() != '0') await run('cru d $kLegacyGuardCronTag');
+    if ((await read("cru l | grep -c '#$kLegacyGuardCronTag#' || true")).trim() != '0') await run('cru d $kLegacyGuardCronTag');
     final existing = await read("cat '$kS50Path' 2>/dev/null || true");
     final ours = existing.contains(kOurScriptSignature);
     if (!ours) {

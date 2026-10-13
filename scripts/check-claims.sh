@@ -11,7 +11,8 @@
 #
 #   dry    prints what it would change, changes nothing, runs the read-only checks
 #   quick  the read-only checks, then on stock the guard broken on purpose and put back: a rule wiped
-#          and the filter emptied, each repaired by the router's own firewall restart; a WAN route
+#          and the filter emptied, each repaired by the router's own firewall restart; the filter's
+#          record lost and the filter switched off, as a settings restore leaves it; a WAN route
 #          planted in the guard's table; the table emptied with its tunnel up; and the tunnel
 #          stopped, with rule 91 taken away for a moment to show the check sees the leak it stops.
 #          One PIA login at most. About 5 minutes.
@@ -61,7 +62,7 @@ FW=stock; [ "$(nvram get 3rd-party)" = "merlin" ] && FW=merlin
 [ "$FW" = merlin ] || [ -x "$D/guard.sh" ] || { echo "No $D/guard.sh: deploy a watchdog or APPLY in DEVICES first."; exit 2; }
 
 # ---- snapshot and restore --------------------------------------------------------------------
-KEYS="wan0_dns1_x wan0_dns2_x wan0_dnsenable_x dnspriv_enable"; [ "$FW" = stock ] && KEYS="$KEYS vpnc_unit filter_lwlist cfg_pia_wg_lwlist"
+KEYS="wan0_dns1_x wan0_dns2_x wan0_dnsenable_x dnspriv_enable"; [ "$FW" = stock ] && KEYS="$KEYS vpnc_unit filter_lwlist cfg_pia_wg_lwlist fw_lw_enable_x cfg_pia_wg_lw_on"
 if [ "$MODE" != dry ]; then
   : > "$RESTORE"
   for K in $KEYS; do printf 'nvram set %s=%s\n' "$K" "'$(nvram get "$K")'" >> "$RESTORE"; done
@@ -388,8 +389,17 @@ CLIENT=""; for C in /usr/sbin/dbclient /usr/bin/dbclient /usr/sbin/ssh /usr/bin/
 # No dry-mode test here: this section installs a key, so it must stay below the `dry` exit above,
 # which means dry never reaches it and prints no SSH-forwarding line at all. That is correct, and
 # was briefly confusing on 2026-10-12 when a dry-mode branch here implied otherwise.
+# The client must never ask for a password (ID-378). On 2026-10-13 its key was refused, so dbclient
+# fell back to asking at the terminal of whoever ran this, twice, gave no sign whether what was typed
+# was used, and what was typed after it was killed landed on their command line - the router password
+# among it. With no controlling terminal (setsid) and nothing on its input it has nowhere to ask, and
+# without setsid this check doesn't run at all. test/unit/no_prompt_scripts_test.dart holds every SSH
+# client call in scripts/ to this.
+NOPROMPT=""; which setsid >/dev/null 2>&1 && NOPROMPT=setsid
 if [ -z "$CLIENT" ]; then
   info SSH-forwarding "no SSH client on this router (checked dbclient, ssh): the restricted key's forwarding block can't be proven here, only measured by hand (BACKLOG ID-376)"
+elif [ -z "$NOPROMPT" ]; then
+  info SSH-forwarding "this router has no setsid, so its SSH client can't be kept from asking for a password at your terminal; not checked"
 else
   # The account to dial: whatever logged this session in, not a guessed name - a wrong one risks
   # the same "nonexistent user" lockout a hardcoded name caused elsewhere on 2026-10-12.
@@ -406,22 +416,29 @@ else
   dropbearkey -t ed25519 -f "$TK" >/dev/null 2>&1
   PUB="$(dropbearkey -y -f "$TK" | awk '/^ssh-/{print; exit}')"
   AKBAK=""; [ -f "$AKF" ] && { AKBAK=/tmp/check-claims-ak.bak; cp -p "$AKF" "$AKBAK"; }
+  : > /tmp/check-claims-fwd.err; : > /tmp/check-claims-fwd.db
   fwd_opens() { # $1: the authorized_keys line to test. Prints 1 if a listener appears, else 0.
     { [ -n "$AKBAK" ] && cat "$AKBAK"; echo "$1"; } > "$AKF.new" && mv "$AKF.new" "$AKF"; chmod 600 "$AKF"
+    SL0="$(wc -l < /tmp/syslog.log 2>/dev/null)"
     # dbclient, not ssh: "-y" is its own way of accepting a host key, and it has no "-o" at all.
-    "$CLIENT" -y -i "$TK" -p "$DIALPORT" -N -R "127.0.0.1:$FWDPORT:127.0.0.1:22" "$U@$DIALIP" >/tmp/check-claims-fwd.err 2>&1 &
+    $NOPROMPT "$CLIENT" -y -i "$TK" -p "$DIALPORT" -N -R "127.0.0.1:$FWDPORT:127.0.0.1:22" "$U@$DIALIP" </dev/null >>/tmp/check-claims-fwd.err 2>&1 &
     CP=$!; I=0; OPEN=0
     while [ "$I" -lt 5 ]; do grep -q ":$FWDHEX 00000000:0000 0A" /proc/net/tcp && OPEN=1 && break; sleep 1; I=$((I + 1)); done
     kill "$CP" 2>/dev/null; wait "$CP" 2>/dev/null
+    # What the router's own SSH server made of the attempt: why a key is refused is said there, not by
+    # the client. Measure, don't guess - the control has never once opened a listener here. To a
+    # file: this function runs inside $(...), so a variable set here is gone when it returns.
+    echo "[$(tail -n +"$((${SL0:-0} + 1))" /tmp/syslog.log 2>/dev/null | grep -i dropbear | sed 's/.*dropbear\[[0-9]*\]: //' | tail -3 | tr '\n' ';')]" >> /tmp/check-claims-fwd.db
     echo "$OPEN"
   }
   CONTROL="$(fwd_opens "$PUB")"
   RESTRICTED="$(fwd_opens 'command="echo CFGPIA-FORCED",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty '"$PUB")"
   if [ -n "$AKBAK" ]; then cat "$AKBAK" > "$AKF"; rm -f "$AKBAK"; else rm -f "$AKF"; fi
-  CLIENTERR="$(tail -c 200 /tmp/check-claims-fwd.err 2>/dev/null)"
-  rm -f "$TK" "$TK.pub" /tmp/check-claims-fwd.err
+  CLIENTERR="$(grep -v 'key accepted unconditionally\|fingerprint' /tmp/check-claims-fwd.err 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+  DBSAID="$(tr '\n' ' ' < /tmp/check-claims-fwd.db 2>/dev/null | cut -c1-400)"
+  rm -f "$TK" "$TK.pub" /tmp/check-claims-fwd.err /tmp/check-claims-fwd.db
   if [ "$CONTROL" != 1 ]; then
-    info SSH-forwarding "couldn't prove this check can fail (no listener seen even for an unrestricted key), dialling as '$U': $CLIENTERR"
+    info SSH-forwarding "couldn't prove this check can fail (no listener seen even for an unrestricted key), dialling as '$U'. The client said: ${CLIENTERR:-nothing}. The router's SSH server said, control then restricted: ${DBSAID:-nothing}"
   elif [ "$RESTRICTED" = 0 ]; then
     pass SSH-forwarding "a restricted key can't make dropbear listen on a forwarded port"
   else
@@ -484,6 +501,56 @@ if [ -n "$E" ]; then
   fi
   filter_check event
   [ -z "$FMISS" ] && FILTERBROKEN=""
+
+  # The filter's record lost (ID-377), as measured on stock 2026-10-12 after a settings restore or
+  # reset: cfg_pia_wg_lwlist empty, the filter off, and the pinned devices' entries still in
+  # filter_lwlist in the app's own form. A guard before ID-377 read them as the user's and refused
+  # the filter for every pinned device, run after run; this must FAIL on that guard. The guard now
+  # claims them, takes out the ones for devices no longer pinned (one was set to Internet on
+  # 2026-10-13 and kept its entries), and turns the filter on. Not checked when the list holds an
+  # entry the app would not claim - an entry of the user's - because refusing is then the right answer.
+  LOSTOK=1; LOSTGONE=""
+  for FE in $(nvram get filter_lwlist | tr '<' ' '); do
+    FIP="${FE%%>*}"; FPR="${FE##*>}"
+    if [ "$FE" = "$FIP>>>>$FPR" ] && { [ "$FPR" = TCP ] || [ "$FPR" = UDP ]; } &&
+      nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v ip="$FIP" '$2 == ip {f = 1} END {exit !f}'; then
+      gpins | grep -q "^$FIP>" || LOSTGONE="$LOSTGONE $FE"
+    else
+      LOSTOK=""
+    fi
+  done
+  if [ -z "$LOSTOK" ]; then
+    info FILTER-lost "the filter holds an entry of the user's, so a lost record can't be recreated safely; not checked"
+  else
+    FILTERBROKEN=1
+    nvram unset cfg_pia_wg_lwlist; nvram unset cfg_pia_wg_lw_on; nvram set fw_lw_enable_x=0
+    service restart_firewall
+    # Read inside the 10 s the boot hook's own guard request waits, before anything puts it right.
+    sleep 3
+    filter_check lost expect-broken
+    LOSTOUT="$("$D/guard.sh" 2>/dev/null)"
+    guard_settle
+    if echo "$LOSTOUT" | grep -q '^filter claimed'; then
+      pass FILTER-lost-claim "the guard claimed the entries its record had lost:$(echo "$LOSTOUT" | sed -n 's/^filter claimed//p' | cut -c1-120)"
+    else
+      fail FILTER-lost-claim "the guard claims entries its record lost" "$(echo "$LOSTOUT" | grep '^filter' | head -2 | tr '\n' ' ' | cut -c1-200)"
+    fi
+    LOSTREC=""
+    for FE in $(gpins); do
+      FIP="${FE%%>*}"
+      for FPR in TCP UDP; do
+        case " $(nvram get cfg_pia_wg_lwlist) " in *" $FIP/$FPR "*) ;; *) LOSTREC="$LOSTREC $FIP/$FPR" ;; esac
+      done
+    done
+    [ -z "$LOSTREC" ] && pass FILTER-lost-record "the app's record lists every pinned device's entries again" || fail FILTER-lost-record "the app's record lists every pinned device's entries" "missing:$(echo "$LOSTREC" | cut -c1-200)"
+    if [ -n "$LOSTGONE" ]; then
+      LOSTLEFT=""
+      for FE in $LOSTGONE; do case "<$(nvram get filter_lwlist)<" in *"<$FE<"*) LOSTLEFT="$LOSTLEFT $FE" ;; esac; done
+      [ -z "$LOSTLEFT" ] && pass FILTER-lost-released "the entries for devices no longer pinned were taken out:$(echo "$LOSTGONE" | cut -c1-120)" || fail FILTER-lost-released "the entries for devices no longer pinned are taken out" "still there:$(echo "$LOSTLEFT" | cut -c1-200)"
+    fi
+    filter_check lost-held
+    [ -z "$FMISS" ] && [ "$(nvram get fw_lw_enable_x)" = 1 ] && FILTERBROKEN=""
+  fi
 fi
 
 # ---- 6m. Merlin: a tunnel with its kill switch on stopped; its devices must be refused ----------

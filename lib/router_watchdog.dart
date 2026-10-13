@@ -1785,7 +1785,7 @@ class RouterWatchdog {
           await _read('cru d $tag');
         }
         await _read("for P in \$(ps | grep -E '[w]atchdog_wgc[1-9][.]sh|[g]uard[.]sh' | awk '{print \$1}'); do kill \$P 2>/dev/null; done");
-        final cronLeft = int.tryParse((await _read("cru l | grep -cE '#(watchdog_|$kLegacyGuardCronTag)'")).trim()) ?? 0;
+        final cronLeft = int.tryParse((await _read("cru l | grep -cE '#(watchdog_|$kLegacyGuardCronTag)' || true")).trim()) ?? 0;
         final watchdogTags = tags.where((t) => t.startsWith('watchdog_')).length;
         done.add(cronLeft > 0
             ? '$cronLeft schedule(s) could not be removed: check `cru l` on the router'
@@ -1796,7 +1796,7 @@ class RouterWatchdog {
         // The guard, while its script is still there to do it; then any rule it left, directly, in
         // case the script was missing or failed. Left behind, the rules would keep every pinned
         // device off the internet whenever its tunnel is down, with no app left to explain why.
-        final guardRules = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):'")).trim());
+        final guardRules = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):' || true")).trim());
         final filterHad = (await _read('nvram get cfg_pia_wg_lwlist')).trim().isNotEmpty;
         await _guardService.clear();
         // The guard's second layer, the router's Network Services Filter (ID-348): the app's own
@@ -1812,7 +1812,7 @@ class RouterWatchdog {
                 : 'No Network Services Filter entries to remove');
         await _read('for PR in 88 89 90 91; do N=0; while [ \$N -lt 400 ] && ip rule del priority \$PR 2>/dev/null; '
             'do N=\$((N + 1)); done; done; for T in 201 202 203 204 205; do ip route flush table \$T 2>/dev/null; done');
-        final guardLeft = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):'")).trim()) ?? 0;
+        final guardLeft = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):' || true")).trim()) ?? 0;
         done.add(guardLeft > 0
             ? '$guardLeft fail-closed guard rule(s) could not be removed: check `ip rule show` on the router'
             : guardRules == 0
@@ -1870,7 +1870,7 @@ class RouterWatchdog {
         // Every key the app ever writes, so an uninstalled router carries none of our settings.
         // The wgcN_* TUNNEL configuration is deliberately NOT touched: the tunnels keep working and
         // the user manages them from the web interface.
-        const countKeys = r"nvram show 2>/dev/null | grep -cE '^(cfg_pia_wg_|wgc[1-5]_wd_)'";
+        const countKeys = r"nvram show 2>/dev/null | grep -cE '^(cfg_pia_wg_|wgc[1-5]_wd_)' || true";
         final appKeys = int.tryParse((await _read(countKeys)).trim());
         await _read(kUninstallNvramCommand);
         // And by pattern, for a key the list above does not name - a newer build's, say (ID-330).

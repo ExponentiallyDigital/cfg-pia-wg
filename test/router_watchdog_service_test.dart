@@ -1,5 +1,4 @@
 // test/router_watchdog_service_test.dart - RouterWatchdog service tests over a fake SSH client.
-import 'dart:io';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
@@ -9,6 +8,7 @@ import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/s50_template.dart';
 
 import 'watchdog_harness.dart' show findShell;
+import 'posix_shell.dart';
 import 'watchdog_test_utils.dart';
 
 WatchdogConfig cfg({int slot = 1, int interval = 5, bool email = false}) => WatchdogConfig(
@@ -1064,7 +1064,7 @@ void main() {
       final probe = c.commands.firstWhere((cmd) => cmd.contains('_wd_check_interval)" ] && echo 1'));
 
       // wgc2 has a watchdog and wgc5, the last slot tested, has none: the case that failed.
-      final r = await Process.run(
+      final r = await runSh(
           shell, ['-c', 'nvram() { [ "\$2" = wgc2_wd_check_interval ] && echo 5; }; $probe']);
       expect(r.exitCode, 0, reason: probe);
       expect('${r.stdout}'.trim(), '1');

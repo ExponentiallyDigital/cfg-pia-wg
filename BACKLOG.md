@@ -61,7 +61,7 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.3. Unconfirmed BUGs
 
-`<none>`
+- ID-386 BUG?: **the small home screen widget cuts its summary line short at its own default size.** Seen 2026-10-13 on the emulator (Pixel 7 Pro, Android 17, Nova Launcher) while making ID-380's screenshot: dropped at 2×1, the size `widget_compact_info.xml` asks for (`targetCellWidth="2"`, `minWidth="110dp"`), it read "2 tunnels u…" for "2 tunnels up · 6 pinned"; widened by a cell, it fits. Not yet seen on a phone - Andrew's had been widened - and launchers size cells differently, so whether it needs a wider default, a shorter line, or nothing depends on more than this one launcher.
 
 ---
 
@@ -104,7 +104,6 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
     6. The watchdog and slot service functions: left to the firmware abstraction, and scored again after it.
   - **For every step:** behaviour pinned by a test before the change, functions only split, never reworked, the full suite, and the SonarCloud count read again afterwards.
   - **Decisions for Andrew:** start now, or keep holding (steps 1 to 3 carry little risk; 4 onward touch paths real users depend on); the router commands, constants or "won't fix" with a reason; and whether step 6 waits for the firmware abstraction.
-- ID-355 TST: **faster fake router commands for the script tests.** Each stand-in (`nvram`, `ip`, `iptables`, `service`, `logger`, `curl`) is a separate script, so every `nvram get` in a test starts a new shell, and Git Bash on Windows starts processes slowly: the script tests are about 90% of the suite's time. Splitting them into 13 files in build 490 took the suite from about 5 minutes to 3m 45s; this is the rest of the gain. The router scripts themselves don't change.
 
 ### 1.3. v1.0.0 iOS version
 

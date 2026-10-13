@@ -44,6 +44,123 @@ void main() {
       expect(g.commits(), 0);
     });
 
+    // ID-377, measured on stock 2026-10-12: the app's record of its entries was empty, the filter off,
+    // and two pinned devices' entries still in it, in the app's own form. They read as the user's, so
+    // the filter was refused for all twelve pinned devices, and stayed refused run after run.
+    group("entries the app's record has lost (ID-377)", () {
+      test('are claimed, so the filter goes on and holds every pinned device', () async {
+        g.set('filter_lwlist', '<192.0.2.20>>>>TCP<192.0.2.20>>>>UDP');
+        g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5><1>192.0.2.21>>9>');
+        final r = await g.run();
+        expect('${r.stdout}', isNot(contains('filter refused')));
+        expect('${r.stdout}', contains('filter claimed 192.0.2.20/TCP 192.0.2.20/UDP'));
+        expect('${r.stdout}', contains('filter held 2 of 2'));
+        expect(g.nv('fw_lw_enable_x'), '1');
+        expect(g.nv('cfg_pia_wg_lwlist').split(' '),
+            unorderedEquals(['192.0.2.20/TCP', '192.0.2.20/UDP', '192.0.2.21/TCP', '192.0.2.21/UDP']));
+        expect(g.filterLog(), contains(contains("took over entries that matched the app's own")));
+      });
+
+      test('once claimed, they are the app\'s: unpinning takes them out, and the filter goes off again', () async {
+        g.set('filter_lwlist', '<192.0.2.20>>>>TCP<192.0.2.20>>>>UDP');
+        g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+        await g.run();
+        final again = await g.run();
+        expect('${again.stdout}', isNot(contains('filter claimed')), reason: 'claimed once, then simply the app\'s');
+        g.set('vpnc_dev_policy_list', '');
+        await g.run();
+        expect(g.nv('filter_lwlist'), '');
+        expect(g.nv('cfg_pia_wg_lwlist'), '');
+        expect(g.nv('fw_lw_enable_x'), '0', reason: 'the app turned it on, and nothing is left in it');
+      });
+
+      test('only one of the pair is there: that one is claimed and the other added', () async {
+        g.set('filter_lwlist', '<192.0.2.20>>>>UDP');
+        g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+        final r = await g.run();
+        expect('${r.stdout}', contains('filter claimed 192.0.2.20/UDP'));
+        expect(g.nv('filter_lwlist'), '<192.0.2.20>>>>UDP<192.0.2.20>>>>TCP');
+        expect(g.nv('cfg_pia_wg_lwlist').split(' '), unorderedEquals(['192.0.2.20/TCP', '192.0.2.20/UDP']));
+      });
+
+      test("an entry with anything else filled in is the user's, not claimed, and still refuses", () async {
+        g.set('filter_lwlist', '<192.0.2.20>>>443>TCP');
+        g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+        final r = await g.run();
+        expect('${r.stdout}', contains('filter refused: it is off'));
+        expect('${r.stdout}', isNot(contains('filter claimed')));
+        expect(g.nv('cfg_pia_wg_lwlist'), '');
+      });
+
+      // The same router the next day, 2026-10-13: one of the two devices had been set to Internet
+      // meanwhile, and kept its entries, because nothing recorded them as the app's to take out. Left
+      // the user's, they would have kept the filter refused - and, turned on, cut that device off.
+      test("a device set to Internet since the record was lost: its entries are claimed and taken out", () async {
+        g.set('filter_lwlist', '<192.0.2.20>>>>TCP<192.0.2.20>>>>UDP<192.0.2.55>>>>TCP<192.0.2.55>>>>UDP');
+        g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5><0>192.0.2.55>>0>');
+        final r = await g.run();
+        expect('${r.stdout}', isNot(contains('filter refused')));
+        expect('${r.stdout}', contains('filter claimed 192.0.2.20/TCP 192.0.2.20/UDP 192.0.2.55/TCP 192.0.2.55/UDP'));
+        expect('${r.stdout}', contains('filter released 192.0.2.55/TCP 192.0.2.55/UDP'));
+        expect('${r.stdout}', contains('filter held 1 of 1'));
+        expect(g.nv('fw_lw_enable_x'), '1');
+        expect(g.nv('filter_lwlist'), '<192.0.2.20>>>>TCP<192.0.2.20>>>>UDP', reason: 'the Internet device is not blocked');
+        expect(g.nv('cfg_pia_wg_lwlist').split(' '), unorderedEquals(['192.0.2.20/TCP', '192.0.2.20/UDP']));
+        expect(g.filterLog(), contains(contains('took out the ones for devices not pinned to a tunnel: 192.0.2.55/TCP 192.0.2.55/UDP')));
+      });
+
+      test('with nothing pinned, nothing is claimed: the guard leaves the filter alone', () async {
+        g.set('filter_lwlist', '<192.0.2.55>>>>TCP');
+        g.set('vpnc_dev_policy_list', '0>192.0.2.55>>0>');
+        final r = await g.run();
+        expect('${r.stdout}', isNot(contains('filter claimed')));
+        expect(g.nv('filter_lwlist'), '<192.0.2.55>>>>TCP');
+        expect(g.nv('fw_lw_enable_x'), '0');
+      });
+
+      test("UNINSTALL's clean-up claims nothing: it takes out only what the record lists", () async {
+        g.set('filter_lwlist', '<192.0.2.55>>>>TCP<192.0.2.55>>>>UDP');
+        g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5><0>192.0.2.55>>0>');
+        g.set('fw_lw_enable_x', '1');
+        final r = await g.run(['clear']);
+        expect('${r.stdout}', isNot(contains('filter claimed')));
+        expect(g.nv('filter_lwlist'), '<192.0.2.55>>>>TCP<192.0.2.55>>>>UDP');
+      });
+
+      test("an entry for an address DEVICES doesn't know is the user's, not claimed, and still refuses", () async {
+        g.set('filter_lwlist', '<192.0.2.20>>>>TCP<192.0.2.99>>>>TCP');
+        g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+        final r = await g.run();
+        expect('${r.stdout}', contains('filter refused: it is off'));
+        expect('${r.stdout}', isNot(contains('filter claimed')), reason: 'a refused run claims nothing');
+        expect(g.nv('filter_lwlist'), '<192.0.2.20>>>>TCP<192.0.2.99>>>>TCP');
+        expect(g.nv('cfg_pia_wg_lwlist'), '');
+        expect(g.commits(), 0);
+      });
+
+      test('an allow list claims nothing: there, an entry lets a device out', () async {
+        g.set('filter_lw_default_x', 'DROP');
+        g.set('filter_lwlist', '<192.0.2.20>>>>TCP');
+        g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+        final r = await g.run();
+        expect('${r.stdout}', contains('filter refused: it is an allow list'));
+        expect('${r.stdout}', isNot(contains('filter claimed')));
+        expect(g.nv('filter_lwlist'), '<192.0.2.20>>>>TCP', reason: 'the user\'s, so left alone');
+        expect(g.nv('cfg_pia_wg_lwlist'), '');
+      });
+
+      test('with the filter already on, a lost entry is claimed too, so unpinning can clean it up', () async {
+        g.set('fw_lw_enable_x', '1');
+        g.set('filter_lwlist', '<192.0.2.20>>>>TCP<192.0.2.20>>>>UDP');
+        g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5>');
+        final r = await g.run();
+        expect('${r.stdout}', contains('filter claimed 192.0.2.20/TCP 192.0.2.20/UDP'));
+        g.set('vpnc_dev_policy_list', '');
+        await g.run();
+        expect(g.nv('filter_lwlist'), '', reason: 'left unclaimed, it would keep an unpinned device off the internet');
+      });
+    });
+
     test('a firewall with no filter at all is refused', () async {
       g.set('fw_enable_x', '0');
       g.set('vpnc_dev_policy_list', '1>192.0.2.20>>5>');
