@@ -75,6 +75,12 @@ fcr coverage/lcov.info --open ## creates & opens ./coverage/coverage-report.html
 flutter run -d <device_id>    ## get your device ID via "flutter devices"
 ```
 
+On Windows, the tests that run the router scripts start their shell in WSL if a Linux is installed there, and in Git Bash if not. The difference is time, not results: the whole suite took 218 seconds with Git Bash and 34 seconds through WSL, measured 2026-10-13, because Git Bash starts processes slowly and those tests start thousands of them. Nothing needs setting up beyond WSL itself; any Ubuntu has the tools the scripts use. To run them in Git Bash anyway, for example to rule WSL out when a script test behaves differently:
+
+```bash
+CFG_TEST_SHELL=gitbash flutter test
+```
+
 You may need to install the Android emulator for `flutter run` to execute
 
 ```bash

@@ -631,6 +631,8 @@ It holds everything except pings. Your router can only block pings for every dev
 
 The app won't use the filter if doing so would change something of yours: if you run it as an allow list (where listing a device would let it out), if you've switched it off with entries of your own in it, or if the router's firewall is off. It says so in APP LOG, and the guard works as before. If you give the filter a timetable, the app says that too: the filter only holds at the times you've set.
 
+One exception. The app keeps a record of which filter entries are its own, and a settings restore or a reset can lose it. Then it can't tell its entries from yours, so it treats any entry made exactly the way it makes them - a device's address and TCP or UDP, with no port or destination - for a device in DEVICES, as its own: kept while the device is pinned, taken out when it isn't, and named in ROUTER LOG either way. If you block a device by hand in the Network Services Filter, give the entry a port or a destination and the app will never touch it.
+
 **Do I need to do anything?** No. Pin a device and the guard comes with it. The app keeps it in place for you: every time you APPLY an assignment, before a DISABLE, when the router restarts, and whenever the router restarts its firewall, which it does when a tunnel starts or stops and when its internet connection comes back. Nothing runs on a timer: until something changes, there's nothing to do. And if you pin a device, or move one to another tunnel, in the router's own web interface rather than in this app? The guard catches it at the router's next firewall restart. The web interface stops and starts tunnels to apply a change, and that's one, so the device is covered within seconds of you applying it. **But while you're doing it, it isn't covered.** The web interface won't move a device while its tunnels are running, so you stop them, move it, apply, and start them again, and part way through that the router has the device pinned to nothing at all. Its traffic can go straight out to the Internet until the tunnels are back and the guard catches up. Move devices in DEVICES instead: the app moves them without stopping anything, and the guard goes with them.
 
 **How do I know it's working?**
@@ -909,6 +911,11 @@ A watchdog, once it's set up, is something you rarely touch again. That's the po
 
 Add it the way you add any widget: long-press an empty spot on your home screen, choose Widgets, find cfg-pia-wg, and drag the size you want into place. Two sizes: a large one with a row per tunnel - where it exits, up or down, how many devices are pinned to it, and which ones the guard is holding offline - and a small one with just the badge and a summary line.
 
+<p align="center">
+  <img src="./images/home-screen-widgets.png" alt="The small and large home screen widgets, both showing two tunnels up and protected" width="300">
+  <br>
+</p>
+
 Tap it to open the app. That much works with nothing stored.
 
 #### 5.11.1. Why it needs a key, and what the key can do
@@ -991,7 +998,7 @@ A fair question - anything that talks to your router on your behalf deserves scr
 **When you pin a device in DEVICES** (stock only), it writes the pin itself, as the router's web interface would, and the fail-closed guard ([5.4.1](#541-pinned-means-pinned-the-fail-closed-guard)):
 
 - two routing rules for each pinned device, at priorities 90 and 91, and a routing table for each tunnel with a device pinned to it, which live in the router's memory and are put back by the guard script at boot and whenever the router restarts its firewall
-- an entry per pinned device in the router's Network Services Filter, for TCP and UDP, and the filter switched on if it was off and empty. Only the app's own entries are ever changed, and the app remembers which they are
+- an entry per pinned device in the router's Network Services Filter, for TCP and UDP, and the filter switched on if it was off and held nothing of yours. Only the app's own entries are ever changed, and the app remembers which they are. The one exception is in 5.4.1: if that record is lost, an entry made exactly the way the app makes them, for a device in DEVICES, is treated as the app's
 - if you turn on **SECURE STARTUP** in SETTINGS, ICMP echo requests are added to that filter's ICMP setting, for every device
 
 **What it never does.** No firmware is modified. No packages are installed beyond the two helpers. No ports are opened. None of your traffic is routed anywhere by the app, and none of it goes to us - there is no server on our side to send it to.

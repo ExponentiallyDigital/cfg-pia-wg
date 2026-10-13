@@ -126,6 +126,23 @@ void main() {
       expect(await logsFor('filter held 2 of 2\nguarded 2 of 2', quiet: true), isEmpty);
     });
 
+    // ID-377: claiming changes what the app owns on the router, so it is said even on a quiet run -
+    // as information, not a warning, since the filter now holds those devices.
+    test('entries the app claimed are named, even when quiet, and not as a warning', () async {
+      final l = await logsFor('filter claimed 192.0.2.20/TCP 192.0.2.20/UDP\nfilter held 1 of 1\nguarded 1 of 1', quiet: true);
+      expect(l.single.$2, isFalse);
+      expect(l.single.$1, allOf(contains('192.0.2.20/TCP 192.0.2.20/UDP'), contains('taken them over'), contains('unpinning')));
+      expect(l.single.$1, isNot(contains('taken out')), reason: 'nothing was released');
+    });
+
+    test('claimed entries for devices not pinned are named as taken out, in the same message', () async {
+      final l = await logsFor(
+          'filter claimed 192.0.2.20/TCP 192.0.2.55/TCP\nfilter released 192.0.2.55/TCP\nfilter held 1 of 1\nguarded 1 of 1',
+          quiet: true);
+      expect(l.single.$2, isFalse);
+      expect(l.single.$1, allOf(contains('192.0.2.20/TCP 192.0.2.55/TCP'), contains('not pinned to a tunnel were taken out'), contains(': 192.0.2.55/TCP.')));
+    });
+
     test('a timetable on the filter is a warning', () async {
       final l = await logsFor('filter held 1 of 1\nfilter scheduled\nguarded 1 of 1', quiet: true);
       expect(l.single.$1, contains('timetable'));

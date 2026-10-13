@@ -38,6 +38,15 @@ WidgetTunnelInfo _tunnel({
 /// The four states the mock-up shows (Main, Protected, TunnelDown, NotChecked boards at
 /// https://claude.ai/artifact/SU6ha7UoqcczLr1d2f6oLn), as fixtures rather than a router read.
 final Map<String, WidgetStatus Function(DateTime now)> _fixtures = {
+  // README 5.11's screenshot (ID-380): the layout of a real phone's widgets, 2026-10-13, with
+  // invented tunnel names and devices, the slots' descriptions as the router holds them.
+  'README screenshot': (now) => WidgetStatus(
+        tunnels: [
+          _tunnel(slot: 5, region: 'pia-uk', pinned: ['TABLET', 'DESKTOP', 'LAPTOP', 'TV']),
+          _tunnel(slot: 1, region: 'pia-us_seattle', pinned: ['PHONE', 'CONSOLE']),
+        ],
+        checkedAt: now.subtract(const Duration(minutes: 6)),
+      ),
   'Protected, two tunnels': (now) => WidgetStatus(
         tunnels: [
           _tunnel(slot: 5, region: 'Melbourne, Australia', pinned: ['TABLET', 'DESKTOP']),
@@ -91,7 +100,8 @@ class _PreviewScreenState extends State<_PreviewScreen> {
 
   Future<void> _push(String label, WidgetStatus Function(DateTime) build) async {
     final now = DateTime.now();
-    await pushWidgetStatus(build(now), now: now);
+    // The README's shows the refresh button as it looks with the widget's key installed.
+    await pushWidgetStatus(build(now), now: now, canRefresh: label == 'README screenshot');
     setState(() => _status = 'Pushed "$label" - check your home screen.');
   }
 
