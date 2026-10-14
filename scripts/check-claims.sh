@@ -17,8 +17,13 @@
 #          stopped, with rule 91 taken away for a moment to show the check sees the leak it stops.
 #          One PIA login at most. About 5 minutes.
 #   full   quick, then each DNS setup below applied in turn, each proved by a real rebuild of the
-#          first watchdog's tunnel; PIA logins 30 s apart. About 15 minutes; the internet drops for
-#          a few seconds at each DNS change.
+#          first watchdog's tunnel; then three more rebuilds with PIA's server list tampered with as
+#          it lands (ID-325): it must be refused, the router's kept list used and alerted, or with no
+#          kept list nothing used at all. PIA logins 30 s apart. About 20 minutes; the internet drops
+#          for a few seconds at each DNS change.
+#
+# Every mode checks PIA's server list signature with the deployed watchdog's own check (ID-325):
+# today's list must pass, and copies of it with a region moved or the signature taken off must not.
 #
 # On Merlin (ID-353) the firmware-neutral checks run as they are: TLS, secrets, DNS-over-TLS. Mail is
 # checked as Merlin sends it, openssl naming the server. There is no guard or filter to check; Merlin's
@@ -147,6 +152,57 @@ esac
 # The platform fact the watchdog's own DoH exists for. INFO, not PASS: it is ASUS's behaviour.
 bounded curl -s -o /dev/null --max-time 15 --doh-url https://nothing.invalid/dns-query --resolve nothing.invalid:443:127.0.0.1 https://example.com/
 [ "$RC" = 0 ] && info DOH-0 "curl still ignores --doh-url (a dead DoH server made no difference)" || info DOH-0 "curl now honours --doh-url (rc=$RC): the watchdog's own lookups are still what it uses"
+
+# ---- 1b. PIA's server list: only a list carrying PIA's signature is used (ID-325) ---------------
+# The deployed watchdog's own check, lifted out of it, run on PIA's list as it arrives today and on
+# copies of it broken on purpose. The control: today's list must pass, or a check that refuses
+# everything would pass the rest.
+W0="$(for S in "$D"/watchdog_wgc*.sh; do [ -f "$S" ] && echo "$S" && break; done)"
+SLDIR=/tmp/check-claims-sig
+rm -rf "$SLDIR"; mkdir -p "$SLDIR"
+# The edit a tampered list gets here and in section 8: one region moved to a country it isn't in,
+# the exposure the check exists for. The signature is left as it was.
+cat > "$SLDIR/tamper.sh" <<'TAMPEREOF'
+sed -i '1s/"country":"\([A-Z][A-Z]\)"/"country":"ZZ"/' "$TMPSRVRAW" # check-claims: tampered on purpose
+TAMPEREOF
+if [ -z "$W0" ]; then
+  info SIGLIST "no watchdog deployed; not checked"
+elif ! grep -q '^list_verified()' "$W0"; then
+  info SIGLIST "the deployed watchdog has no signature check (it is from before build 497): SAVE & DEPLOY it again"
+else
+  sed -n '/^list_key()/,/^}$/p; /^list_verified()/,/^}$/p' "$W0" > "$SLDIR/fn.sh"
+  SLKEY="$SLDIR/key.pem"; SLDATA="$SLDIR/data"; SLSIG="$SLDIR/sig"
+  . "$SLDIR/fn.sh"
+  T=30; bounded curl -s --fail --max-time 25 -o "$SLDIR/list" https://serverlist.piaservers.net/vpninfo/servers/v6
+  if [ "$RC" != 0 ]; then
+    info SIGLIST "PIA's server list did not download (rc=$RC); not checked"
+  elif ! list_verified "$SLDIR/list"; then
+    fail SIGLIST-0 "control: PIA's list as it arrives today passes the deployed watchdog's check" "it failed, so every rebuild is falling back or refused: has PIA changed its key, or how it signs the list?"
+  else
+    pass SIGLIST-0 "control: PIA's list as it arrives today passes the deployed watchdog's check ($(wc -c < "$SLDIR/list" | tr -d ' ') bytes)"
+    cp "$SLDIR/list" "$SLDIR/moved"
+    TMPSRVRAW="$SLDIR/moved"; . "$SLDIR/tamper.sh"
+    if ! grep -q '"country":"ZZ"' "$SLDIR/moved"; then
+      info SIGLIST-moved "today's list has no country to change; not checked"
+    elif list_verified "$SLDIR/moved"; then
+      fail SIGLIST-moved "a list with one region moved to another country is refused" "it passed"
+    else
+      pass SIGLIST-moved "a list with one region moved to another country is refused"
+    fi
+    head -1 "$SLDIR/list" > "$SLDIR/nosig"
+    list_verified "$SLDIR/nosig" && fail SIGLIST-nosig "a list with its signature taken off is refused" "it passed" || pass SIGLIST-nosig "a list with its signature taken off is refused"
+  fi
+  # The router's kept list is what a list that fails falls back on, so it must pass too.
+  if [ ! -f "$D/pia_servers_verified.txt" ]; then
+    info SIGLIST-kept "no list kept yet: the next rebuild whose list passes keeps one"
+  elif list_verified "$D/pia_servers_verified.txt"; then
+    pass SIGLIST-kept "the router's kept list passes the check (kept $(cat "$D/pia_servers_verified.date" 2>/dev/null || echo 'on an unknown date'))"
+  else
+    fail SIGLIST-kept "the router's kept list passes the check" "it fails, so a list that fails would be refused outright"
+  fi
+fi
+# Only tamper.sh is needed from here on; the lists are 175 KB each, in RAM.
+rm -f "$SLDIR/list" "$SLDIR/moved" "$SLDIR/nosig" "$SLDIR/data" "$SLDIR/sig" "$SLDIR/key.pem"
 
 # ---- 2. Mail: certificate names are checked ----------------------------------------------------
 M="$D/mailsend-go"
@@ -716,11 +772,19 @@ rebuild() {  # $1 label, $2 expected: enc | plain | honest
   for V in $VIPS; do iptables -D OUTPUT -d "$V" -p tcp --dport 443 -j RETURN 2>/dev/null; done
   NEW="$(tail -n +"$((N0 + 1))" "/tmp/watchdog_$WS.log" 2>/dev/null | cut -c21-)"
   OKRB="$(echo "$NEW" | grep -c 'Reconfig SUCCESS')"
+  SIGFAIL="$(echo "$NEW" | grep -c "failed PIA's signature check, so it is not used")"
+  SIGFB="$(echo "$NEW" | grep -c 'Using the last server list that passed')"
+  SIGERR="$(echo "$NEW" | grep -c "^ERROR: PIA's server list failed its signature check")"
+  SIGSEL="$(echo "$NEW" | grep -c '^Selected server')"
   ENC="$(echo "$NEW" | grep -c 'Looked up .* over encrypted DNS')"
   PLAIN="$(echo "$NEW" | grep -c 'Encrypted lookup of .* failed\|Name lookups are NOT encrypted')"
   case "$2" in
     enc) [ "$OKRB" = 1 ] && [ "$ENC" -ge 2 ] && [ "$PLAIN" = 0 ] && [ "$DC" -gt 0 ] && pass "SETUP-$1" "rebuilt, every PIA name looked up over DoH ($DC packets to the DoH server, counted by the router)" || fail "SETUP-$1" "rebuild with DoH" "success=$OKRB encrypted=$ENC plain=$PLAIN doh_packets=$DC; $(echo "$NEW" | grep -m1 ERROR | cut -c1-120)" ;;
     plain) [ "$ENC" = 0 ] && [ "$PLAIN" -ge 1 ] && pass "SETUP-$1" "no DoH claimed, and the log says the lookups were not encrypted (rebuilt=$OKRB)" || fail "SETUP-$1" "honest logging without DoH" "encrypted=$ENC plain=$PLAIN" ;;
+    # ID-325, section 8.
+    sigfallback) [ "$OKRB" = 1 ] && [ "$SIGFAIL" = 1 ] && [ "$SIGFB" = 1 ] && pass "SIG-fallback" "a tampered list was refused, and the rebuild used the router's kept list: $(echo "$NEW" | grep -m1 'Using the last server list' | cut -c1-90)" || fail "SIG-fallback" "a tampered list is refused, and the kept list used" "rebuilt=$OKRB refused=$SIGFAIL fallback=$SIGFB; $(echo "$NEW" | grep -m1 ERROR | cut -c1-120)" ;;
+    sigrefused) [ "$OKRB" = 0 ] && [ "$SIGFAIL" = 1 ] && [ "$SIGERR" = 1 ] && [ "$SIGSEL" = 0 ] && pass "SIG-refused" "with no kept list, a tampered list was refused and no server chosen from it" || fail "SIG-refused" "with no kept list, a tampered list is refused outright" "rebuilt=$OKRB refused=$SIGFAIL error=$SIGERR server_chosen=$SIGSEL" ;;
+    signocheck) [ "$OKRB" = 1 ] && [ "$SIGFAIL" = 0 ] && [ "$SIGSEL" = 1 ] && pass "SIG-nocheck" "control: with the check taken out, the same tampered list was used, so SIG-refused can tell" || fail "SIG-nocheck" "control: with the check taken out, the tampered list is used" "rebuilt=$OKRB refused=$SIGFAIL server_chosen=$SIGSEL; without this the checks above prove nothing" ;;
   esac
   # Put the tunnel back for the next setup, whatever happened, and read it back.
   for TRY in 1 2; do
@@ -746,6 +810,44 @@ setup() {  # $1 label, $2 dns1, $3 dns2, $4 isp, $5 dot, $6 doh ("" none, "dead"
   case "$6" in dead) variant 192.0.2.1 "$8" ;; "") variant "" "$8" ;; *) variant "$DOHIP" "$8" ;; esac
   rebuild "$1" "$7"
 }
+# ---- 8. PIA's server list refused in a real rebuild (ID-325) -----------------------------------
+# A copy of the deployed watchdog whose download is tampered with as it lands (tamper.sh, section
+# 1b), so the rebuild meets a list that fails PIA's signature check exactly as it would meet a forged
+# one. Three rebuilds: with the router's kept list, which must be used, and alerted; with none, which
+# must be refused outright; and the control, the check taken out, where the tampered list must be
+# used, or the first two couldn't tell a check that works from one that never runs. The last two
+# keep their list in /tmp, so the router's kept list is never touched.
+sig_variant() {  # $1 the kept list to use, $2 its date, $3 "nocheck" to take the check out
+  variant "$DOHIP" "$SIGMAIL"
+  awk -v t="$SLDIR/tamper.sh" -v nocheck="$3" '
+    index($0, "if list_verified \"$TMPSRVRAW\"; then") == 1 { while ((getline l < t) > 0) print l }
+    nocheck == "nocheck" && $0 == "list_verified() {" { print "list_verified() { head -1 \"$1\" > \"$SLDATA\"; return 0"; next }
+    { print }' /tmp/check-claims-wd.sh > /tmp/check-claims-wd2.sh
+  sed "s#^SLGOOD=.*#SLGOOD=\"$1\"#; s#^SLGOODDATE=.*#SLGOODDATE=\"$2\"#" /tmp/check-claims-wd2.sh > /tmp/check-claims-wd.sh
+  rm -f /tmp/check-claims-wd2.sh
+}
+sigrebuilds() {
+  if ! grep -q '^list_verified()' "$W1"; then
+    info SIGRB "the deployed watchdog has no signature check (it is from before build 497); not checked"
+  elif [ ! -f "$D/pia_servers_verified.txt" ]; then
+    info SIGRB "no kept list on the router yet, so there is nothing to fall back on; not checked"
+  else
+    SIGMAIL=0; [ -n "$(nvram get "${WS}_wd_email_to")" ] && [ -n "$(nvram get "${WS}_wd_smtp_server")" ] && SIGMAIL=1
+    rm -f /tmp/check-claims-nokept /tmp/check-claims-nokept.date
+    sig_variant "$D/pia_servers_verified.txt" "$D/pia_servers_verified.date"
+    rebuild sig-fallback sigfallback
+    if [ "$SIGMAIL" = 1 ]; then
+      echo "$NEW" | grep -q 'Alert email sent (SUCCESS)' && info SIG-mail "the fallback's alert email was sent: it should carry a SERVER LIST section saying the list failed PIA's signature check" || fail SIG-mail "the fallback's alert email was sent" "$(echo "$NEW" | grep -E 'Email (FAILED|not sent)' | tail -1 | cut -c1-150)"
+    else
+      info SIG-mail "no email settings on $WS; the fallback's alert email was not checked"
+    fi
+    sig_variant /tmp/check-claims-nokept /tmp/check-claims-nokept.date
+    rebuild sig-refused sigrefused
+    sig_variant /tmp/check-claims-nokept /tmp/check-claims-nokept.date nocheck
+    rebuild sig-nocheck signocheck
+    rm -f /tmp/check-claims-nokept /tmp/check-claims-nokept.date /tmp/check-claims-nokept.new
+  fi
+}
 [ -n "$DOHIP" ] || info SETUP "the deployed watchdog has no DoH server; the encrypted setups will say so"
 if [ "$FW" = merlin ]; then
   # One rebuild with the router's DNS as it is: the DNS setups below are stock's question. The alert
@@ -753,6 +855,7 @@ if [ "$FW" = merlin ]; then
   variant "$DOHIP" 1
   rebuild as-is enc
   echo "$NEW" | grep -q 'Alert email sent (SUCCESS)' && pass MAIL-sent "the rebuild's SUCCESS email was sent" || fail MAIL-sent "the rebuild's SUCCESS email was sent" "$(echo "$NEW" | grep -E 'Email (FAILED|not sent)' | tail -1 | cut -c1-150)"
+  sigrebuilds
   echo "== $PASSN passed, $FAILN failed"
   logger "**CHECK-CLAIMS END** $MODE: $PASSN passed, $FAILN failed"
   exit "$FAILN"
@@ -763,6 +866,7 @@ setup different-dot-on "$OTHER1" "$OTHER2" 0 1 real enc 1
 setup isp-dot-off "$OTHER1" "$OTHER2" 1 0 real enc 0
 setup same-as-slot-doh-dead "$SD1" "$SD2" 0 0 dead plain 0
 setup different-no-doh "$OTHER1" "$OTHER2" 0 0 "" plain 0
+sigrebuilds
 
 echo "== $PASSN passed, $FAILN failed"
 logger "**CHECK-CLAIMS END** $MODE: $PASSN passed, $FAILN failed"

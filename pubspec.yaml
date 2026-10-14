@@ -1,6 +1,6 @@
 name: cfg_pia_wg
 description: cfg-pia-wg
-version: 0.8.126+496
+version: 0.8.127+497
 environment:
   sdk: ">=3.0.0 <4.0.0"
   flutter: ">=3.10.0"
@@ -14,6 +14,8 @@ dependencies:
   package_info_plus: ^10.1.0
   path_provider: ^2.1.0
   pinenacl: ^0.6.0
+  # Already in the app through dartssh2; used directly for PIA's server list signature (ID-325).
+  pointycastle: ^4.0.0
   purchases_flutter: ^10.12.0
   share_plus: ^13.1.0
   url_launcher: ^6.3.2

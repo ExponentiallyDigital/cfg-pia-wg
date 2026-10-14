@@ -8,6 +8,7 @@ import 'package:cfg_pia_wg/pia_service.dart';
 import 'package:cfg_pia_wg/session_controller.dart' show kDefaultDns;
 
 import 'http_test_helpers.dart';
+import 'server_list_test_key.dart';
 
 class TestPiaService extends PiaService {
   final List<Region> regions;
@@ -84,7 +85,7 @@ void main() {
           expect(method, 'GET');
           return FakeHttpClientResponse(
             200,
-            '${jsonEncode({
+            signedServerList({
                   'regions': [
                     {
                       'id': 'b_region',
@@ -103,7 +104,7 @@ void main() {
                       },
                     },
                   ],
-                })}\n',
+                }),
           );
         },
       );
@@ -144,7 +145,7 @@ void main() {
         },
         (url, method) => FakeHttpClientResponse(
           200,
-          '${jsonEncode({
+          signedServerList({
                 'regions': [
                   {'id': 'missing_servers'},
                   {
@@ -160,7 +161,7 @@ void main() {
                     },
                   },
                 ],
-              })}\n',
+              }),
         ),
       );
 

@@ -402,9 +402,16 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   Future<void> _browseRegions() async {
     setState(() => _loadingRegions = true);
     try {
-      final regions = await (widget.piaService ?? PiaService()).fetchRegions(onProgress: _c.onLog);
+      final service = widget.piaService ?? PiaService();
+      final regions = await service.fetchRegions(onProgress: _c.onLog);
       if (!mounted) return;
       setState(() => _loadingRegions = false);
+      // Today's list failed PIA's signature check and the last one that passed is in use (ID-325).
+      final fallback = service.fallbackListDate;
+      if (fallback != null) {
+        await AppErrors.warning(context, _c, serverListFallbackNotice(fallback));
+        if (!mounted) return;
+      }
       await RegionPickerSheet.show(context, regions: regions, onSelected: (id) => setState(() => _regionCtrl.text = id));
     } catch (e) {
       if (!mounted) return;

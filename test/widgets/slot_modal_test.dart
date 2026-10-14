@@ -41,6 +41,16 @@ class _FakePia extends PiaService {
       '[Peer]\nPublicKey = q\nEndpoint = 1.2.3.4:1337\nAllowedIPs = 0.0.0.0/0\n';
 }
 
+/// Today's list failed PIA's signature check and the last one that passed, from 2026-10-01, is in
+/// use (ID-325).
+class _FallbackPia extends _FakePia {
+  @override
+  Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async {
+    fallbackListDate = DateTime(2026, 10, 1, 12);
+    return super.fetchRegions(onProgress: onProgress);
+  }
+}
+
 /// Fails the generate the way PIA did on hardware, after the picker had already offered the region.
 class _FailingPia extends _FakePia {
   @override
@@ -2209,5 +2219,51 @@ void main() {
         c.dispose();
       });
     }
+  });
+
+  // ID-325: CREATE says so when the regions on offer come from the last list that passed.
+  testWidgets('CREATE warns, before the picker, when the server list in use is the last one that passed', (tester) async {
+    useMerlin();
+    addTearDown(resetRouterFirmware);
+    final c = _controller();
+    await tester.pumpWidget(_host(RecordingSSHClient(responder: (_) => ''), SlotModalMode.manage, _slots({}), c,
+        pia: _FallbackPia()));
+    await _open(tester);
+    await tester.tap(find.byKey(const Key('slot_row_2')));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('slot_create')));
+    await tester.tap(find.byKey(const Key('slot_create')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Warning'), findsOneWidget);
+    expect(find.textContaining('verified on 2026-10-01'), findsOneWidget);
+    expect(find.textContaining('might have been tampered with'), findsOneWidget);
+    expect(c.log.any((e) => e.message.contains('verified on 2026-10-01')), isTrue);
+
+    await tester.tap(find.byKey(const Key('error_ok')));
+    await tester.pumpAndSettle();
+    expect(find.text('aus_melbourne'), findsWidgets, reason: 'the picker follows, on the last list that passed');
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  testWidgets('CREATE says nothing when the server list passed', (tester) async {
+    useMerlin();
+    addTearDown(resetRouterFirmware);
+    final c = _controller();
+    await tester.pumpWidget(_host(RecordingSSHClient(responder: (_) => ''), SlotModalMode.manage, _slots({}), c));
+    await _open(tester);
+    await tester.tap(find.byKey(const Key('slot_row_2')));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const Key('slot_create')));
+    await tester.tap(find.byKey(const Key('slot_create')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Warning'), findsNothing);
+    expect(find.text('aus_melbourne'), findsWidgets);
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
   });
 }

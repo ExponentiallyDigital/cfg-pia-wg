@@ -294,6 +294,12 @@ class _SlotModalState extends State<SlotModal> {
     try {
       final regions = await widget.piaService.fetchRegions(onProgress: _c.onLog);
       if (!mounted) return null;
+      // Today's list failed PIA's signature check and the last one that passed is in use (ID-325).
+      final fallback = widget.piaService.fallbackListDate;
+      if (fallback != null) {
+        await AppErrors.warning(context, _c, serverListFallbackNotice(fallback));
+        if (!mounted) return null;
+      }
       await RegionPickerSheet.show(context, regions: regions, onSelected: (id) => chosen = regions.firstWhere((r) => r.id == id));
     } catch (e) {
       if (mounted) await AppErrors.system(context, _c, 'Failed to load regions: ${e.toString().replaceAll('Exception: ', '')}');
