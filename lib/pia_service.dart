@@ -21,6 +21,8 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:x25519/x25519.dart' as x25519;
 
+import 'server_list_signature.dart';
+
 class WgServer {
   final String ip, cn;
   const WgServer({required this.ip, required this.cn});
@@ -80,6 +82,21 @@ String piaLoginUnavailable(String what) =>
     "PIA's login service isn't answering ($what). This is at PIA's end, not the app or your router; "
     'try again later.';
 
+/// What the app says when the server list fails PIA's signature check and there is no earlier list
+/// that passed to fall back on (ID-325).
+const String kServerListRefused =
+    "PIA's server list failed its signature check, so it isn't used: it might have been tampered with. "
+    "There's no earlier list on this phone that passed to fall back on. Try again later.";
+
+/// A date as the server list messages give it, 2026-10-14, on the phone's own clock.
+String listDay(DateTime d) => d.toLocal().toIso8601String().substring(0, 10);
+
+/// What the screen says when the list in use is the last one that passed, not today's (ID-325).
+String serverListFallbackNotice(DateTime verifiedOn) =>
+    "PIA's server list failed its signature check, so it isn't used: a list that fails PIA's check might "
+    'have been tampered with.\n\nThe regions and servers offered are from the last list that passed, verified '
+    'on ${listDay(verifiedOn)}. PIA servers added or moved since then are not seen until a new list passes.';
+
 bool isPiaAuthRejection(Object error) {
   final text = error.toString();
   return text.contains('HTTP 401') || text.contains('HTTP 403');
@@ -109,12 +126,21 @@ class PiaService {
   /// Where PIA's CA certificate comes from. A test seam: a test serves its own CA.
   final Future<String> Function()? caCertLoader;
 
+  /// Where the last server list that passed PIA's signature check is kept (ID-325). A test seam.
+  final ServerListStore serverListStore;
+
+  /// When the list [fetchRegions] last returned is NOT today's download but the last one that passed
+  /// PIA's signature check, the date that one was saved; null when the download passed. Set by every
+  /// [fetchRegions], for the screen to say so (ID-325).
+  DateTime? fallbackListDate;
+
   PiaService({
     this.probePort = defaultProbePort,
     this.tokenTimeout = kPiaTokenTimeout,
     this.registerPort = defaultProbePort,
     this.caCertLoader,
-  });
+    ServerListStore? serverListStore,
+  }) : serverListStore = serverListStore ?? ServerListStore();
 
   final HttpClient _client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
 
@@ -128,17 +154,39 @@ class PiaService {
     return response.transform(utf8.decoder).join();
   }
 
-  // Fetch and map the system regions list
+  // The bytes as sent: the signature is over bytes, and a decode and re-encode needn't give them back.
+  Future<Uint8List> _httpGetBytes(String url) async {
+    final request = await _client.getUrl(Uri.parse(url));
+    final response = await request.close();
+    if (response.statusCode != 200) {
+      throw Exception('HTTP ${response.statusCode}');
+    }
+    final b = BytesBuilder(copy: false);
+    await response.forEach(b.add);
+    return b.takeBytes();
+  }
+
+  // Fetch and map the system regions list. Only a list that carries PIA's signature is used; one
+  // that fails gives way to the last list that passed, and [fallbackListDate] says so (ID-325).
   Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async {
     onProgress?.call('Fetching PIA server list...');
+    fallbackListDate = null;
     try {
-      final body = await _httpGet(_serverListUrl);
-      final newlineIdx = body.indexOf('\n');
-      if (newlineIdx == -1) {
-        throw Exception('Format error');
+      final body = await _httpGetBytes(_serverListUrl);
+      var json = verifiedServerListJson(body);
+      if (json != null) {
+        onProgress?.call("Server list verified: it carries PIA's signature.");
+        await serverListStore.write(body);
+      } else {
+        onProgress?.call("The server list failed PIA's signature check, so it isn't used: it might have been tampered with.");
+        final saved = await serverListStore.read();
+        json = saved == null ? null : verifiedServerListJson(saved.body);
+        if (json == null) throw Exception(kServerListRefused);
+        fallbackListDate = saved!.savedAt;
+        onProgress?.call('Using the last server list that passed, verified on ${listDay(saved.savedAt)}.');
       }
 
-      final decoded = jsonDecode(body.substring(0, newlineIdx)) as Map<String, dynamic>;
+      final decoded = jsonDecode(utf8.decode(json)) as Map<String, dynamic>;
       final rawRegions = decoded['regions'] as List? ?? [];
 
       final regions = rawRegions

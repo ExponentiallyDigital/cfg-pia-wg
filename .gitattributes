@@ -5,3 +5,5 @@
 *.png binary
 *.jpg binary
 *.zip binary
+# A server list exactly as PIA signed it (ID-325): one changed byte and its signature fails.
+test/fixtures/pia_servers_*.txt binary

@@ -3,11 +3,11 @@
 // generateConfig needs: a real loopback socket on the service's probe port (probeLatency), a real
 // cert PEM (registerKey parses it), and FakeHttpClient for the four HTTP calls. Prefer binding an
 // ephemeral port and passing it via PiaService(probePort:) so parallel test workers don't collide.
-import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 
 import 'http_test_helpers.dart';
+import 'server_list_test_key.dart';
 
 const String kTestRegion = 'us_test';
 const String kTestCn = 'server-cn';
@@ -32,7 +32,7 @@ MQRWTK4MMjOHQQ4tGnOJ0pThj2Au4XwOnU6S1nrcMJ9jb5srad2TH6BQFLe4uwrC
 1JXQGhGiJI6sr78U1FRmSV0=
 -----END CERTIFICATE-----''';
 
-String _serverListBody() => '${jsonEncode({
+String _serverListBody() => signedServerList({
           'regions': [
             {
               'id': kTestRegion,
@@ -43,7 +43,7 @@ String _serverListBody() => '${jsonEncode({
               }
             }
           ]
-        })}\n';
+        });
 
 FakeHttpClientResponse fakeGenerateResponses(Uri url, String method) {
   final u = url.toString();

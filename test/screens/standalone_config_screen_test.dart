@@ -15,6 +15,23 @@ import '../http_test_helpers.dart';
 import '../pia_generate_harness.dart';
 import '../watchdog_test_utils.dart';
 
+class _FakePia extends PiaService {
+  @override
+  Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async => const [
+        Region(id: 'aus_melbourne', wgServers: [WgServer(ip: '1.2.3.4', cn: 'aus')]),
+      ];
+}
+
+/// Today's list failed PIA's signature check and the last one that passed, from 2026-10-01, is in
+/// use (ID-325).
+class _FallbackPia extends _FakePia {
+  @override
+  Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async {
+    fallbackListDate = DateTime(2026, 10, 1, 12);
+    return super.fetchRegions(onProgress: onProgress);
+  }
+}
+
 SessionController _controller(List<String> clipWrites) =>
     SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (t) async => clipWrites.add(t));
 
@@ -407,6 +424,27 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextFormField, kTestRegion), findsOneWidget);
     }, fakeGenerateResponses);
+
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  // ID-325: STANDALONE's picker says so when the regions come from the last list that passed, with
+  // the browse spinner stopped first.
+  testWidgets('region picker warns when the server list in use is the last one that passed', (tester) async {
+    final c = _controller([]);
+    await tester.pumpWidget(_host(c, service: _FallbackPia()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.list_alt));
+    await tester.pumpAndSettle();
+    expect(find.text('Warning'), findsOneWidget);
+    expect(find.textContaining('verified on 2026-10-01'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing, reason: 'no spinner under the dialog');
+
+    await tester.tap(find.byKey(const Key('error_ok')));
+    await tester.pumpAndSettle();
+    expect(find.text('aus_melbourne'), findsWidgets, reason: 'the picker follows');
 
     await tester.pumpWidget(const SizedBox());
     c.dispose();

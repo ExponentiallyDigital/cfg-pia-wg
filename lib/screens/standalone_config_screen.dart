@@ -130,6 +130,14 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
       if (!mounted) return;
       final total = regions.fold<int>(0, (s, r) => s + r.wgServers.length);
       _controller.logEntry('Loaded ${regions.length} regions ($total servers).');
+      // Today's list failed PIA's signature check and the last one that passed is in use (ID-325).
+      // The spinner stops first: it must never animate under a dialog.
+      final fallback = _service.fallbackListDate;
+      if (fallback != null) {
+        setState(() => _loadingRegions = false);
+        await AppErrors.warning(context, _controller, serverListFallbackNotice(fallback));
+        if (!mounted) return;
+      }
       // Launch the sheet but do NOT await it here, otherwise the browse-button spinner would keep
       // animating until the sheet closes. enterModal/exitModal bracket the sheet's lifetime.
       _controller.enterModal();

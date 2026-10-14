@@ -1,11 +1,11 @@
 // test/main_screen_widget_test.dart - standalone screen reached through the full app.
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'app_test_harness.dart';
 import 'http_test_helpers.dart';
+import 'server_list_test_key.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -47,7 +47,7 @@ void main() {
         if (url.toString().contains('vpninfo/servers/v6')) {
           return FakeHttpClientResponse(
               200,
-              '${jsonEncode({
+              signedServerList({
                     'regions': [
                       {
                         'id': 'aus_melbourne',
@@ -58,7 +58,7 @@ void main() {
                         }
                       }
                     ]
-                  })}\n');
+                  }));
         }
         return FakeHttpClientResponse(404, 'not found');
       },
