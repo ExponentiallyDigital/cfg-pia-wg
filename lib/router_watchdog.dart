@@ -34,6 +34,7 @@ import 'router_slot_service.dart'
         slotKeysFor,
         slotLabel;
 import 's50_template.dart';
+import 'server_list_signature.dart' show kPiaServerListKeyPem;
 import 'watchdog_email.dart';
 
 // ─── PIA negotiation endpoints (mirrored from pia_service.dart) ─────────────────
@@ -46,6 +47,13 @@ const String kPiaTokenUrl = 'https://www.privateinternetaccess.com/gtoken/genera
 const String kPiaCaCertPath = '$kRouterAppDir/pia_ca.rsa.4096.crt';
 
 const String kPiaCaCertUrl = 'https://raw.githubusercontent.com/pia-foss/manual-connections/master/ca.rsa.4096.crt';
+
+/// The last PIA server list that passed PIA's signature check on this router, as it was downloaded,
+/// and the date it passed (ID-325). Shared by every slot's watchdog. A list that fails the check is
+/// refused and this one is used instead, and checked again first. SETTINGS -> REMOVE CACHED PIA
+/// SERVERS deletes both.
+const String kPiaServerListPath = '$kRouterAppDir/pia_servers_verified.txt';
+const String kPiaServerListDatePath = '$kRouterAppDir/pia_servers_verified.date';
 
 // Syslog tag used by every router-side log line (Bash scripts + Dart deploy/delete).
 const String kWatchdogLogTag = 'cfg-pia-wg';
@@ -1032,6 +1040,9 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       .replaceAll('__SLOT__', '${c.slotIndex}')
       .replaceAll('__JQ__', jqCommand(fw))
       .replaceAll('__CACERT__', kPiaCaCertPath)
+      .replaceAll('__SLGOOD__', kPiaServerListPath)
+      .replaceAll('__SLGOODDATE__', kPiaServerListDatePath)
+      .replaceAll('__PIALISTKEY__', kPiaServerListKeyPem)
       // enforce / fw / rip / ep_addr_r are Merlin-only (kMerlinOnlySlotKeys). Writing them on
       // stock creates keys nothing reads and DELETE does not clean up.
       .replaceAll('__MERLINONLY__', stock ? '' : _kMerlinOnlyNvsets)
@@ -1307,6 +1318,24 @@ class RouterWatchdog {
         isSuccess: deleted);
     // The router's own log records it too, like every other change the app makes there (ID-046).
     if (deleted) await _logRouter('Cached PIA certificate deleted from the app; the watchdog downloads a fresh copy next run');
+    return deleted;
+  }
+
+  /// Deletes the router's copy of the last PIA server list that passed (ID-325), and its date.
+  ///
+  /// Returns true if there was one to delete, read back in the same command, and throws if it is
+  /// still there. The next watchdog rebuild whose list passes keeps a new one; until then a list that
+  /// fails has nothing to fall back on, and is refused.
+  Future<bool> deleteCachedServerList() async {
+    final out = await _run("if [ -f '$kPiaServerListPath' ]; then rm -f '$kPiaServerListPath' '$kPiaServerListDatePath'; "
+        "[ -f '$kPiaServerListPath' ] && echo STILL || echo DELETED; else rm -f '$kPiaServerListDatePath'; echo ABSENT; fi");
+    if (out.contains('STILL')) throw Exception('$kPiaServerListPath is still on the router after the delete.');
+    final deleted = out.contains('DELETED');
+    onLog?.call(deleted ? 'Deleted the cached PIA server list ($kPiaServerListPath).' : 'No cached PIA server list on the router.',
+        isSuccess: deleted);
+    if (deleted) {
+      await _logRouter('Cached PIA server list deleted from the app; the next list that passes its signature check is kept');
+    }
     return deleted;
   }
 
@@ -2378,6 +2407,16 @@ CURL="$CURLB --fail"
 TMPMAIL="/tmp/mail_${IFACE}.txt"
 TMPSRV="/tmp/${IFACE}_servers.txt"
 TMPSRVRAW="/tmp/${IFACE}_servers_raw.json"
+# PIA's signature on its server list (ID-325): the key, the JSON the signature covers, and the
+# signature. Then the last list that passed, kept so a list that fails can be refused without
+# stopping every rebuild, and the date it passed.
+SLKEY="/tmp/${IFACE}_serverlist_key.pem"
+SLDATA="/tmp/${IFACE}_serverlist.json"
+SLSIG="/tmp/${IFACE}_serverlist.sig"
+SLGOOD="__SLGOOD__"
+SLGOODDATE="__SLGOODDATE__"
+# The date of the list in use when it isn't today's download; empty when the download passed.
+SLFALLBACK=""
 TMPERR="/tmp/${IFACE}_curl.err"
 TMPTOK="/tmp/${IFACE}_token.json"
 SERVERLIST_URL="https://serverlist.piaservers.net/vpninfo/servers/v6"
@@ -2390,6 +2429,25 @@ log() {
 }
 
 nvset() { nvram set "${K}$1"; }
+
+# PIA's key for its server list, from PIA's own desktop client (ID-325).
+list_key() {
+  cat > "$SLKEY" <<'SLKEYEOF'
+__PIALISTKEY__
+SLKEYEOF
+}
+
+# 0 when $1, a server list as PIA sends it, carries PIA's signature. PIA sends the JSON on one line, a
+# blank line, then the signature in base64. The JSON the signature covers is left in $SLDATA, and
+# that, never the download, is what the rebuild reads.
+list_verified() {
+  rm -f "$SLDATA" "$SLSIG"
+  [ -s "$1" ] || return 1
+  list_key
+  head -1 "$1" | tr -d '\n' > "$SLDATA"
+  sed '1d;/^$/d' "$1" | openssl base64 -d > "$SLSIG" 2>/dev/null
+  [ -s "$SLDATA" ] && [ -s "$SLSIG" ] && openssl dgst -sha256 -verify "$SLKEY" -signature "$SLSIG" "$SLDATA" >/dev/null 2>&1
+}
 
 # Read NVRAM config
 PRIMARY_IP="$(nvram get ${K}wd_primary_ip)"
@@ -2534,6 +2592,11 @@ __MAILHDR__
   row "Kill switch" "$KILLSW"
   row "Attempt" "$ATTEMPTV"
   row "Interval" "$INTERVALV"
+
+  # Every run that falls back says so, in the email it sends anyway (ID-325).
+  if [ -n "$SLFALLBACK" ]; then
+    printf '\nSERVER LIST\n%s\n' "PIA's server list failed its signature check on this run, so it was not used: a list that fails PIA's signature check might have been tampered with. The server was chosen from the last list that passed, verified on $SLFALLBACK. PIA servers added or moved since then are not seen until a new list passes." >> "$TMPMAIL"
+  fi
 
   if [ "$STATUS" != "SUCCESS" ]; then
 __WHATTODO__
@@ -3066,18 +3129,43 @@ fi
 if [ "$SRC" -ne 0 ]; then
   abort "could not fetch the PIA server list (curl exit $SRC: $(head -n 1 "$TMPERR" | cut -c1-120)). This is a network problem, not a region problem."
 fi
-# The payload is one long JSON line followed by a signature block; jq only wants the first.
-SERVERS="$(head -1 "$TMPSRVRAW" | "$JQ" -r --arg id "$REGION" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"' 2>"$TMPERR")"
+# Only a list that carries PIA's signature is used (ID-325). One that fails gives way to the last
+# list that passed, checked again first, and every run that does that says so in the log and the
+# email. A router that has never had a list pass refuses outright.
+if list_verified "$TMPSRVRAW"; then
+  log "Server list verified: it carries PIA's signature"
+  # Written beside the old copy and moved over it, so a run never reads half of one.
+  if cp "$TMPSRVRAW" "$SLGOOD.new" 2>/dev/null && mv "$SLGOOD.new" "$SLGOOD"; then
+    date '+%Y-%m-%d %H:%M %z' > "$SLGOODDATE"
+  else
+    rm -f "$SLGOOD.new"
+    log "Could not keep a copy of the verified server list in $SLGOOD"
+  fi
+else
+  log "The server list failed PIA's signature check, so it is not used: it might have been tampered with"
+  rm -f "$TMPSRVRAW"
+  if [ -f "$SLGOOD" ] && list_verified "$SLGOOD"; then
+    SLFALLBACK="$(cat "$SLGOODDATE" 2>/dev/null)"
+    [ -n "$SLFALLBACK" ] || SLFALLBACK="an unknown date"
+    log "Using the last server list that passed, verified on $SLFALLBACK"
+  else
+    rm -f "$SLDATA" "$SLSIG" "$SLKEY"
+    abort "PIA's server list failed its signature check, so it was not used: it might have been tampered with. This router has no earlier list that passed to fall back on, so the tunnel can't be rebuilt until a list passes. If this goes on, PIA may have changed how it signs the list: check for an app update, then SAVE & DEPLOY the watchdog again."
+  fi
+fi
+rm -f "$TMPSRVRAW" "$SLSIG" "$SLKEY"
+# The JSON the signature covers, one line; jq reads only that.
+SERVERS="$("$JQ" -r --arg id "$REGION" '.regions[] | select(.id==$id) | .servers.wg[] | "\(.ip) \(.cn)"' < "$SLDATA" 2>"$TMPERR")"
 if [ -z "$SERVERS" ]; then
   # Distinguish "the list did not parse" from "the list is fine and your region is not in it".
-  ALLIDS="$(head -1 "$TMPSRVRAW" | "$JQ" -r '.regions[].id' 2>/dev/null | wc -l | tr -d ' ')"
-  rm -f "$TMPSRVRAW"
+  ALLIDS="$("$JQ" -r '.regions[].id' < "$SLDATA" 2>/dev/null | wc -l | tr -d ' ')"
+  rm -f "$SLDATA"
   case "$ALLIDS" in
     ''|0) abort "the PIA server list downloaded but could not be parsed ($(head -n 1 "$TMPERR" | cut -c1-120)). Check $JQ runs on this router." ;;
     *) abort "PIA no longer lists the region '$REGION' ($ALLIDS regions offered). Either the slot description does not match a PIA region id exactly, or PIA has taken that region out of service - regions have been seen to drop off the list and come back. Pick another region in the app if it does not return." ;;
   esac
 fi
-rm -f "$TMPSRVRAW"
+rm -f "$SLDATA"
 log "Servers: $(echo "$SERVERS" | wc -l | tr -d ' ') candidates"
 echo -n > /jffs/curllst
 

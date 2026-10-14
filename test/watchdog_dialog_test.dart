@@ -38,6 +38,16 @@ class _FakePia extends PiaService {
       ];
 }
 
+/// Today's list failed PIA's signature check and the last one that passed, from 2026-10-01, is in
+/// use (ID-325).
+class _FallbackPia extends _FakePia {
+  @override
+  Future<List<Region>> fetchRegions({void Function(String)? onProgress}) async {
+    fallbackListDate = DateTime(2026, 10, 1, 12);
+    return super.fetchRegions(onProgress: onProgress);
+  }
+}
+
 /// PIA's login service down: the token request gets no answer, as on 2026-10-01.
 class _DownPia extends _FakePia {
   @override
@@ -974,5 +984,25 @@ void main() {
 
       expect(c.piaUsername, 'keepme');
     });
+  });
+
+  // ID-325: the region picker says so when the regions come from the last list that passed.
+  testWidgets('browsing regions warns when the server list in use is the last one that passed', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c, slotIsEmpty: true, pia: _FallbackPia()));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byIcon(Icons.list_alt));
+    await tester.tap(find.byIcon(Icons.list_alt));
+    await tester.pumpAndSettle();
+    expect(find.text('Warning'), findsOneWidget);
+    expect(find.textContaining('verified on 2026-10-01'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('error_ok')));
+    await tester.pumpAndSettle();
+    expect(find.text('aus_melbourne'), findsWidgets, reason: 'the picker follows');
+    await tester.pumpWidget(const SizedBox());
   });
 }

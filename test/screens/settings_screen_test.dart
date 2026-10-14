@@ -2,6 +2,8 @@
 //
 // DEL PIA CERT and FORGET ROUTER IP moved here from ABOUT in 422, and their tests came with them.
 // ABOUT is a page people open to read; every button on this one destroys something.
+import 'dart:io' show FileSystemException;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
@@ -10,6 +12,7 @@ import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_prefs.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'package:cfg_pia_wg/screens/settings_screen.dart';
+import 'package:cfg_pia_wg/server_list_signature.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widget_key.dart';
 import 'package:cfg_pia_wg/widgets/ssh_creds_dialog.dart';
@@ -32,6 +35,22 @@ class _MemoryRouterPrefs extends RouterPrefs {
 
   @override
   Future<void> forget() async => value = '';
+}
+
+/// In-memory stand-in for the phone's copy of the last server list that passed (ID-325), for the
+/// file I/O reason above.
+class _MemoryServerListStore extends ServerListStore {
+  _MemoryServerListStore({this.held = false, this.fails = false});
+  bool held;
+  final bool fails;
+
+  @override
+  Future<bool> remove() async {
+    if (fails) throw const FileSystemException('still there after the delete');
+    final was = held;
+    held = false;
+    return was;
+  }
 }
 
 SessionController _quietController() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
@@ -291,15 +310,17 @@ void main() {
     testWidgets('each action is a full-width row that explains what it removes', (tester) async {
       await _pumpSettings(tester);
 
-      // The order agreed on 2026-10-01 (ID-356): most used first, the uninstall last. RESTORE PURCHASE
-      // sits between SECURE STARTUP and UNINSTALL on a store build; a test build has no store key, so it
-      // is not shown here.
+      // The order Andrew set on 2026-10-14 (ID-325), the uninstall last. RESTORE PURCHASE sits between
+      // SECURE STARTUP and UNINSTALL on a store build; a test build has no store key, so it is not
+      // shown here.
       const keys = [
         'settings_reboot_router',
         'settings_resolver_status',
         'settings_dns_routing',
+        'settings_widget_key',
         'settings_forget_router_ip',
         'settings_del_pia_cert',
+        'settings_del_pia_servers',
         'settings_max_vpns',
         'settings_secure_startup',
         'settings_uninstall',
@@ -1398,6 +1419,92 @@ void main() {
 
       expect(find.byKey(const Key('widget_key_status')), findsNothing);
       expect(await store.exists(), isFalse);
+    });
+  });
+
+  // ID-325: the last server list that passed PIA's signature check, on the router and on this phone.
+  group('REMOVE CACHED PIA SERVERS', () {
+    Future<void> pump(WidgetTester tester, RecordingSSHClient ssh, ServerListStore store, {SessionController? c}) async {
+      final controller = c ??
+          (SessionController(tickInterval: const Duration(hours: 1))
+            ..routerIp = '192.168.1.1'
+            ..sshUsername = 'admin'
+            ..sshPassword = 'pw'
+            ..routerConnected = true);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(
+          controller: controller,
+          child: Scaffold(
+              body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh, testServerListStore: store)),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_del_pia_servers')));
+      await tester.tap(find.byKey(const Key('settings_del_pia_servers')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> confirm(WidgetTester tester) async {
+      await tester.ensureVisible(find.byKey(const Key('settings_del_servers_confirm')));
+      await tester.tap(find.byKey(const Key('settings_del_servers_confirm')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the row says what it removes', (tester) async {
+      await _pumpSettings(tester);
+      expect(find.text('REMOVE CACHED PIA SERVERS'), findsOneWidget);
+      expect(find.textContaining("$kPiaServerListPath and this phone's copy"), findsOneWidget);
+    });
+
+    testWidgets('CANCEL leaves both copies alone', (tester) async {
+      final ssh = RecordingSSHClient();
+      final store = _MemoryServerListStore(held: true);
+      await pump(tester, ssh, store);
+      expect(find.textContaining('a list that fails is refused outright'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('settings_del_servers_cancel')));
+      await tester.pumpAndSettle();
+      expect(ssh.commands, isEmpty);
+      expect(store.held, isTrue);
+    });
+
+    testWidgets('DELETE removes the router copy and the phone copy, and says so', (tester) async {
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains(kPiaServerListPath) ? 'DELETED' : '');
+      final store = _MemoryServerListStore(held: true);
+      final c = SessionController(tickInterval: const Duration(hours: 1))
+        ..routerIp = '192.168.1.1'
+        ..sshUsername = 'admin'
+        ..sshPassword = 'pw'
+        ..routerConnected = true;
+      await pump(tester, ssh, store, c: c);
+      await confirm(tester);
+
+      expect(ssh.ran(kPiaServerListPath), isTrue);
+      expect(ssh.ran(kPiaServerListDatePath), isTrue, reason: 'its date goes with it');
+      expect(store.held, isFalse);
+      expect(find.text("Cached PIA server list deleted from the router. This phone's copy deleted."), findsOneWidget);
+      expect(c.log.any((e) => e.message.contains('Deleted the cached PIA server list')), isTrue);
+      expect(c.log.any((e) => e.message.contains("Deleted this phone's cached PIA server list")), isTrue);
+    });
+
+    testWidgets('says so when there was nothing on either', (tester) async {
+      await pump(tester, RecordingSSHClient(responder: (_) => 'ABSENT'), _MemoryServerListStore());
+      await confirm(tester);
+      expect(find.text('None on the router. None on this phone.'), findsOneWidget);
+    });
+
+    testWidgets('a router copy still there after the delete is an error, not a success', (tester) async {
+      await pump(tester, RecordingSSHClient(responder: (_) => 'STILL'), _MemoryServerListStore(held: true));
+      await confirm(tester);
+      expect(find.textContaining('Could not delete the cached server list on the router'), findsOneWidget);
+      expect(find.textContaining("This phone's copy deleted."), findsOneWidget);
+    });
+
+    testWidgets("a phone copy that can't be deleted is an error, not a success", (tester) async {
+      await pump(tester, RecordingSSHClient(responder: (_) => 'DELETED'), _MemoryServerListStore(fails: true));
+      await confirm(tester);
+      expect(find.text('Error'), findsOneWidget);
+      expect(find.textContaining("This phone's copy could not be deleted."), findsOneWidget);
     });
   });
 }

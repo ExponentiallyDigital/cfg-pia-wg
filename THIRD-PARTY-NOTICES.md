@@ -60,7 +60,7 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`pinenacl`](https://pub.dev/packages/pinenacl) | 0.6.0 | [MIT](https://pub.dev/packages/pinenacl/license) | direct |
 | [`platform`](https://pub.dev/packages/platform) | 3.2.0 | [BSD-3-Clause](https://pub.dev/packages/platform/license) | transitive |
 | [`plugin_platform_interface`](https://pub.dev/packages/plugin_platform_interface) | 2.1.8 | [BSD-3-Clause](https://pub.dev/packages/plugin_platform_interface/license) | transitive |
-| [`pointycastle`](https://pub.dev/packages/pointycastle) | 4.0.0 | [MIT](https://pub.dev/packages/pointycastle/license) | transitive |
+| [`pointycastle`](https://pub.dev/packages/pointycastle) | 4.0.0 | [MIT](https://pub.dev/packages/pointycastle/license) | direct |
 | [`pub_semver`](https://pub.dev/packages/pub_semver) | 2.2.1 | [BSD-3-Clause](https://pub.dev/packages/pub_semver/license) | transitive |
 | [`purchases_flutter`](https://pub.dev/packages/purchases_flutter) | 10.13.1 | [MIT](https://pub.dev/packages/purchases_flutter/license) | direct |
 | [`record_use`](https://pub.dev/packages/record_use) | 0.6.0 | [BSD-3-Clause](https://pub.dev/packages/record_use/license) | transitive |
@@ -181,9 +181,9 @@ The Java and Kotlin libraries the release build packages: the `releaseRuntimeCla
 | `com.google.android.gms:play-services-places-placereport` | 17.0.0 | [Android Software Development Kit License](https://developer.android.com/studio/terms.html) |
 | `com.google.android.gms:play-services-tasks` | 18.2.0 | [Android Software Development Kit License](https://developer.android.com/studio/terms.html) |
 | `com.google.code.findbugs:jsr305` | 3.0.2 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `com.google.code.gson:gson` | 2.10.1 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `com.google.crypto.tink:tink-android` | 1.10.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `com.google.errorprone:error_prone_annotations` | 2.18.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `com.google.code.gson:gson` | 2.13.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `com.google.crypto.tink:tink-android` | 1.23.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
+| `com.google.errorprone:error_prone_annotations` | 2.41.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.firebase:firebase-encoders` | 17.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.firebase:firebase-encoders-json` | 18.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.firebase:firebase-encoders-proto` | 16.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
