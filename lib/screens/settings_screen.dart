@@ -38,6 +38,7 @@ import '../router_slot_service.dart' show RouterSlotService, kDefaultStockMaxAct
 import '../review_service.dart';
 import '../router_watchdog.dart';
 import '../router_session.dart' show routerConnectMessage;
+import '../server_list_signature.dart';
 import '../session_controller.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/paywall.dart';
@@ -65,6 +66,9 @@ class SettingsScreen extends StatefulWidget {
 
   /// Injected by tests in place of WorkManager's own scheduling (ID-376), which needs a device.
   final Future<void> Function()? testScheduleRefresh, testCancelRefresh;
+
+  /// Injected by tests in place of the phone's copy of the last PIA server list that passed (ID-325).
+  final ServerListStore? testServerListStore;
   const SettingsScreen({
     super.key,
     this.testClientFactory,
@@ -73,6 +77,7 @@ class SettingsScreen extends StatefulWidget {
     this.testWidgetKeyStore,
     this.testScheduleRefresh,
     this.testCancelRefresh,
+    this.testServerListStore,
   });
 
   @override
@@ -83,6 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late SessionController _c;
   bool _busy = false;
   late final WidgetKeyStore _widgetKeyStore = widget.testWidgetKeyStore ?? WidgetKeyStore();
+  late final ServerListStore _serverListStore = widget.testServerListStore ?? ServerListStore();
 
   @override
   void didChangeDependencies() {
@@ -133,8 +139,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 'This will remove your watchdog reconfigure history, every setting the app '
                 'wrote to your router, and any watchdog schedules. It puts back the two boot '
                 'scripts the app replaced, and deletes $kRouterAppDir along with everything '
-                'in it - the watchdog scripts, the cached PIA certificate, and the helper '
-                'binaries.\n\n'
+                'in it - the watchdog scripts, the cached PIA certificate and server list, and the '
+                'helper binaries.\n\n'
                 'Your VPN tunnels are NOT touched. They keep working, and you can manage them '
                 "from your router's own web interface.\n\n"
                 'Devices pinned to a tunnel keep their pin but lose the fail-closed guard: '
@@ -334,6 +340,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(deleted ? 'Cached PIA certificate deleted.' : 'No cached PIA certificate on the router.'),
+    ));
+  }
+
+  /// REMOVE CACHED PIA SERVERS (ID-325): the last server list that passed PIA's signature check, on
+  /// the router and on this phone. Modelled on REMOVE CACHED PIA CERT. Each copy is what a list that
+  /// fails falls back on, so with them gone a list that fails is refused until one passes again.
+  Future<void> _deleteServerLists() async {
+    final creds = await _credentials();
+    if (creds == null || !mounted) return;
+    final (ip, user, pass) = creds;
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: kSurface,
+            title: const Text('Delete the cached PIA server lists?', style: TextStyle(color: kHighlight, fontSize: 14)),
+            content: const SingleChildScrollView(
+              child: Text(
+                "Removes $kPiaServerListPath from the router, and this phone's copy. Each is the last PIA server "
+                "list that passed PIA's signature check, kept so a list that fails can be refused without "
+                'stopping a rebuild or CREATE.\n\n'
+                'The next list that passes is kept again. Until then, a list that fails is refused outright. '
+                'Nothing else is changed.',
+                style: TextStyle(color: kText, fontSize: 12),
+              ),
+            ),
+            actions: [
+              AppButton(
+                keyValue: 'settings_del_servers_cancel',
+                label: 'CANCEL',
+                role: ButtonRole.dismiss,
+                onPressed: () => Navigator.pop(ctx, false),
+              ),
+              AppButton(
+                keyValue: 'settings_del_servers_confirm',
+                label: 'DELETE',
+                role: ButtonRole.destructive,
+                onPressed: () => Navigator.pop(ctx, true),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    setState(() => _busy = true);
+    // The phone's copy first: it needs no router, so a router that can't be reached doesn't keep it.
+    bool? onPhone;
+    String? phoneError;
+    try {
+      onPhone = await _serverListStore.remove();
+      _c.logEntry(onPhone ? "Deleted this phone's cached PIA server list." : 'No cached PIA server list on this phone.',
+          isSuccess: onPhone);
+    } catch (e) {
+      phoneError = e.toString();
+    }
+    var onRouter = false;
+    String? error, errorDetail;
+    try {
+      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      onRouter = await RouterWatchdog(client, onLog: _c.onLog).deleteCachedServerList();
+      await _connected(ip);
+    } catch (e) {
+      // Plain English on screen, the raw exception in the log (ID-108).
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? e.toString().replaceAll('Exception: ', '');
+    }
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+    final phone = phoneError != null
+        ? "This phone's copy could not be deleted."
+        : onPhone!
+            ? "This phone's copy deleted."
+            : 'None on this phone.';
+    if (phoneError != null) _c.logEntry("Could not delete this phone's cached PIA server list: $phoneError", isError: true);
+    if (error != null) {
+      await AppErrors.system(
+          context, _c, errorDetail == null ? 'Could not delete the cached server list on the router: $error $phone' : '$error $phone',
+          logDetail: errorDetail);
+      return;
+    }
+    if (phoneError != null) {
+      await AppErrors.system(context, _c, "${onRouter ? "The router's copy deleted." : 'None on the router.'} $phone");
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('${onRouter ? 'Cached PIA server list deleted from the router.' : 'None on the router.'} $phone'),
     ));
   }
 
@@ -768,7 +862,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // Named after the menu item that opened it, in that item's colour (ID-112).
         destinationHeading(AppDestination.settings, key: const Key('settings_heading')),
         const SizedBox(height: 16),
-        // The order agreed on 2026-10-01 (ID-356): most used first, the uninstall last.
+        // The order Andrew set on 2026-10-14 (ID-325): the uninstall last. RESTORE PURCHASE, shown only
+        // where purchasing is, sits just above it.
         _Action(
           keyValue: 'settings_reboot_router',
           label: 'REBOOT ROUTER',
@@ -795,7 +890,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: Icons.alt_route_outlined,
           onTap: _busy ? null : () => _openDnsReport(DnsReportScreen.routing),
         ),
-        // The router address is the one thing the app keeps on device storage, so it needs a way to
+        // ID-376: makes or removes the widget's key, on the router and the phone. The dialog itself
+        // reads the current state, so nothing here needs it in advance.
+        _Action(
+          keyValue: 'settings_widget_key',
+          label: 'HOME SCREEN WIDGET KEY',
+          note: "Makes or removes the key the home screen widget will use to check your router's status "
+              'on its own.',
+          icon: Icons.key_outlined,
+          onTap: _busy ? null : _widgetKey,
+        ),
+        // The router address and its host key fingerprint are kept on the phone, so they need a way to
         // be cleared. Greyed out when there is nothing stored.
         ListenableBuilder(
           listenable: _c,
@@ -813,6 +918,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           note: 'Removes $kPiaCaCertPath. The watchdog downloads a fresh copy on its next run.',
           icon: Icons.gpp_bad_outlined,
           onTap: _busy ? null : _deletePiaCert,
+        ),
+        // ID-325: both copies of the last server list that passed PIA's signature check.
+        _Action(
+          keyValue: 'settings_del_pia_servers',
+          label: 'REMOVE CACHED PIA SERVERS',
+          note: "Removes $kPiaServerListPath and this phone's copy: the last PIA server lists that passed "
+              "PIA's signature check. The next list that passes is kept again.",
+          icon: Icons.dns_outlined,
+          onTap: _busy ? null : _deleteServerLists,
         ),
         // A user decision behind a plain warning, and deliberately not written up outside the code - see
         // RouterSlotService.setMaxActiveVpns. Red because the warning is the point of the row.
@@ -835,16 +949,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.security_outlined,
             onTap: _busy ? null : _secureStartup,
           ),
-        // ID-376: phone-side only for now - this makes or removes the key, nothing on the router
-        // yet. The dialog itself reads the current state, so nothing here needs it in advance.
-        _Action(
-          keyValue: 'settings_widget_key',
-          label: 'HOME SCREEN WIDGET KEY',
-          note: "Makes or removes the key the home screen widget will use to check your router's status "
-              'on its own.',
-          icon: Icons.key_outlined,
-          onTap: _busy ? null : _widgetKey,
-        ),
         // The only row here that gives something back rather than removing it. It is on this screen
         // because this is where the app's one-off actions live, and because someone hunting for it
         // after a new phone will look under settings before they look at a paywall.

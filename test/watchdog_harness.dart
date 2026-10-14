@@ -16,18 +16,23 @@
 //            NVRAM - or drops the call, as the router does when it is busy (ID-214)
 //   ping     per interface, and the WAN, on or off; server pings answer with a latency
 //   nslookup answers, fails, or records which tunnel the lookup would have left by
-//   curl     as MEASURED on ASUS: ignores --doh-url, honours --resolve and --cacert (see _curl)
+//   curl     as MEASURED on ASUS: ignores --doh-url, honours --resolve and --cacert (see _curl);
+//            the server list is PIA's real one, as PIA signed it (ID-325), unless a test changes it
+//   openssl  the certificate check and DoH's base64 stand in; the server list's signature check is
+//            the real openssl, so a list that passes here passes PIA's key
 //   jq       canned PIA answers: a token, a one-server list, an addKey reply
 //   logger   appends to a syslog file; `sleep` returns at once unless a test asks for real time
 //
 // Skipped where no `sh` is on the PATH. The shell's own /usr/bin goes ahead of Windows' so that
 // `sort`, `awk` and friends are the Unix ones (ID-216). On Windows the shell runs in WSL when there
 // is one, about ten times faster, and Git Bash otherwise (test/posix_shell.dart, ID-355).
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
 import 'posix_shell.dart';
+import 'server_list_test_key.dart' show kRealServerListFixture;
 
 /// Finds a POSIX shell, or null.
 String? findShell() {
@@ -259,7 +264,7 @@ case "$url" in
       [ -n "$out" ] && echo '{"message":"authentication failed"}' > "$out"; [ -n "$fmt" ] && printf '403 exit=0 connects=1 err='; exit 0
     fi
     [ -n "$out" ] && echo '{"token":"tok123"}' > "$out"; [ -n "$fmt" ] && printf '200 exit=0 connects=1 err='; exit 0 ;;
-  *serverlist*) [ -n "$out" ] && echo '{"regions":[]}' > "$out"; exit 0 ;;
+  *serverlist*) [ -n "$out" ] && cp "$STATE/serverlist" "$out"; exit 0 ;;
   *addKey*)
     # A DELETE made while the rebuild is under way (ID-331): the watchdog's settings go now.
     [ -f "$STATE/delete_during_rebuild" ] && rm -f "$STATE"/nv/*_wd_check_interval
@@ -276,7 +281,13 @@ exit 0
 // `openssl x509 -in FILE`, the certificate check: real openssl parses the certificate, so a file that
 // merely contains the BEGIN line fails, and here only the stand-in CA passes (ID-341). And
 // `openssl base64 -A -in FILE`, which the DoH lookup reads its binary answer with (ID-307).
+// The server list's signature check, `base64 -d` and `dgst -verify` (ID-325), is the real openssl:
+// the test machine's, not the router's, which check-claims.sh SIGLIST proves on the router itself.
 const String _openssl = r'''#!/bin/sh
+if [ "$1" = dgst ] || { [ "$1" = base64 ] && [ "$2" = -d ]; }; then
+  for R in /usr/bin/openssl /bin/openssl /mingw64/bin/openssl /ucrt64/bin/openssl; do [ -x "$R" ] && exec "$R" "$@"; done
+  echo "no real openssl for the signature check" >&2; exit 127
+fi
 mode="$1"; f=""
 while [ $# -gt 0 ]; do [ "$1" = "-in" ] && f="$2"; shift; done
 if [ "$mode" = "base64" ]; then [ -f "$f" ] && base64 -w0 "$f" && echo; exit $?; fi
@@ -288,7 +299,7 @@ const String _jq = r'''#!/bin/sh
 IN="$(cat)"
 case "$*" in
   *'.token'*) case "$IN" in *tok123*) echo tok123 ;; esac ;;
-  *'.servers.wg'*) echo "192.0.2.51 server-51" ;;
+  *'.servers.wg'*) case "$IN" in *FORGED-SERVER*) echo "198.51.100.66 FORGED-SERVER" ;; *) echo "192.0.2.51 server-51" ;; esac ;;
   *'.regions[].id'*) echo nz ;;
   *'.status'*) echo OK ;;
   *'@tsv'*) printf '10.0.0.2\tNEWSERVERKEY\t1337\n' ;;
@@ -337,6 +348,7 @@ class WatchdogHarness {
     File('${root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt')
         .writeAsStringSync('-----BEGIN CERTIFICATE-----\nPIA-TEST-CA\n-----END CERTIFICATE-----\n');
     File('${root.path}/etc/hosts').writeAsStringSync('127.0.0.1 localhost\n');
+    File(kRealServerListFixture).copySync('${root.path}/state/serverlist');
     if (!Platform.isWindows) {
       Process.runSync('chmod',
           ['+x', ...Directory('${root.path}/bin').listSync().map((f) => f.path), '${root.path}/jffs/cfg-pia-wg/jq']);
@@ -416,6 +428,42 @@ class WatchdogHarness {
 
   /// The router's own resolver, dnsmasq at 127.0.0.1, answers nothing (ID-194).
   void routerResolverDown() => _flag('resolver_down', true);
+
+  /// The server list PIA serves next, as it would arrive: [body] bytes, signature and all (ID-325).
+  void serverList(List<int> body) => File('${state.path}/serverlist').writeAsBytesSync(body);
+
+  /// PIA's real list with one server's name changed to FORGED-SERVER and its signature left as it
+  /// was: a list someone tampered with. The jq stand-in offers FORGED-SERVER from any list that holds it.
+  void tamperedServerList() {
+    final real = File(kRealServerListFixture).readAsStringSync();
+    final cn = RegExp(r'"cn":"([a-z0-9-]+)"').firstMatch(real)!.group(0)!;
+    serverList(utf8.encode(real.replaceFirst(cn, '"cn":"FORGED-SERVER"')));
+  }
+
+  /// Alert emails on, sent by a stand-in for stock's mailer that keeps each body in the state folder.
+  void captureMail() {
+    set('${iface}_wd_email_enabled', '1');
+    set('${iface}_wd_email_from', 'router@example.com');
+    set('${iface}_wd_email_to', 'me@example.com');
+    set('${iface}_wd_smtp_server', 'smtp.example.com:465');
+    final mailer = File('${root.path}$kStockMailsendPath')
+      ..writeAsStringSync(r'''#!/bin/sh
+while [ $# -gt 0 ]; do [ "$1" = -file ] && cp "$2" "$STATE/mail_$(ls "$STATE" | grep -c '^mail_')"; shift; done
+exit 0
+''');
+    if (!Platform.isWindows) Process.runSync('chmod', ['+x', mailer.path]);
+  }
+
+  /// The bodies of the alert emails sent, in order, once [captureMail] is on.
+  List<String> get mails {
+    final files = state.listSync().whereType<File>().where((f) => RegExp(r'mail_\d+$').hasMatch(f.path)).toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+    return [for (final f in files) f.readAsStringSync()];
+  }
+
+  /// The router's copy of the last list that passed, and the date it passed (ID-325).
+  File get savedServerList => File('${root.path}$kPiaServerListPath');
+  File get savedServerListDate => File('${root.path}$kPiaServerListDatePath');
 
   /// No certificate on the router yet, so a rebuild has to download it first.
   void noCachedCert() => File('${root.path}/jffs/cfg-pia-wg/pia_ca.rsa.4096.crt').deleteSync();
@@ -519,10 +567,11 @@ class WatchdogHarness {
     return body.replaceAll('/tmp/', '$r/tmp/').replaceAll('/jffs/', '$r/jffs/').replaceAll('/etc/', '$r/etc/');
   }
 
-  /// Runs one check in the foreground and waits for it.
-  Future<ProcessResult> run({String mode = 'foreground', WatchdogConfig? config}) async {
+  /// Runs one check in the foreground and waits for it. [edit] changes the script first, for a
+  /// control that takes a protection out to show a test can tell.
+  Future<ProcessResult> run({String mode = 'foreground', WatchdogConfig? config, String Function(String)? edit}) async {
     final path = '${root.path}/watchdog_$iface.sh';
-    File(path).writeAsStringSync(script(config));
+    File(path).writeAsStringSync((edit ?? (s) => s)(script(config)));
     return runSh(shell, ['-c', _unixToolsFirst, 'sh', path, mode], environment: _env);
   }
 

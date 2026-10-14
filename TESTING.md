@@ -934,6 +934,22 @@ iptables -I OUTPUT -o wgc1 -d 9.9.9.9 -j DROP
 
 - In CI: the real script, on a fake router: a disabled slot stands down before any probe, and a slot with no DNS skips the name check and passes. `test/unit/watchdog_behaviour_test.dart` and `test/unit/watchdog_dns_strike_test.dart`.
 
+**BRK-10** A server list that fails PIA's signature check is refused [script]
+
+The check that lets ID-325 leave WIP, under the CHANGELOG's rule for protection changes. `scripts/check-claims.sh` runs the deployed watchdog's own check on PIA's list and on copies of it tampered with, and in `full` mode makes three real rebuilds of the first watchdog's tunnel meet a list tampered with as it lands. Each rebuild drops that tunnel for a moment.
+
+- Starts with: a watchdog on wgc1 deployed by build 497 or later, with email alerts on, that has rebuilt at least once since, so the router keeps a list: `ls -l /jffs/cfg-pia-wg/pia_servers_verified.*` shows two files. BRK-2 leaves it that way. `check-claims.sh` in `/jffs`.
+- Do: on the router, `/bin/sh /jffs/check-claims.sh quick`.
+- Pass if: PASS for `SIGLIST-0`, the control (PIA's list as it arrives today passes the deployed watchdog's check, with the router's own openssl), `SIGLIST-moved`, `SIGLIST-nosig` and `SIGLIST-kept`.
+- Do: `/bin/sh /jffs/check-claims.sh full`. About 20 minutes.
+- Pass if: PASS for `SIG-fallback` (the tampered list refused, the router's kept list used), `SIG-refused` (with no kept list, nothing used) and `SIG-nocheck`. `SIG-nocheck` is the check seen to fail: with the check taken out of a copy of the watchdog, the same tampered list is used. `SIG-refused` just before it is the same check passing with the watchdog whole.
+- See: `SIG-mail` says the fallback's alert email was sent, and it arrives with a SERVER LIST section: "PIA's server list failed its signature check on this run, so it was not used", and the date of the list it used.
+- Pass if: `ls -l /jffs/cfg-pia-wg/pia_servers_verified.txt` afterwards has the same size and time as before `full`: the tampered lists never replaced it.
+
+**BRK-11** The app refuses a server list that fails PIA's signature check [ci]
+
+- In CI: PIA's real list, saved on 2026-10-14, passes with PIA's key; with one region moved to another country, one byte changed, or the signature changed, cut short or missing, it's refused. A list that fails gives way to the last one that passed, and CREATE, STANDALONE and the WATCHDOG form's picker each warn before they open; with none saved, the app refuses. `test/unit/server_list_signature_test.dart`, `test/widgets/slot_modal_test.dart`, `test/watchdog_dialog_test.dart` and `test/screens/standalone_config_screen_test.dart`.
+
 ---
 
 ## <a name='dev'></a>DEV. DEVICES: assignment, names and disabling
@@ -1496,7 +1512,7 @@ The check that lets ID-364 leave WIP, under the CHANGELOG's rule for protection 
 
 **SET-1** Rows [hand]
 
-- See: REBOOT ROUTER, FORGET ROUTER IP, REMOVE CACHED PIA CERT, UNINSTALL FEATURES DEPLOYED TO ROUTER, RESTORE PURCHASE (store build only), MAX ACTIVE VPNS, ROUTER RESOLVER STATUS, ROUTER DNS ROUTING. The last two are teal, with icons used nowhere else in the app.
+- See, in this order: REBOOT ROUTER, ROUTER RESOLVER STATUS, ROUTER DNS ROUTING, HOME SCREEN WIDGET KEY, FORGET ROUTER IP, REMOVE CACHED PIA CERT, REMOVE CACHED PIA SERVERS, MAX ACTIVE VPNS, SECURE STARTUP, RESTORE PURCHASE (store build only), UNINSTALL FEATURES DEPLOYED TO ROUTER. ROUTER RESOLVER STATUS and ROUTER DNS ROUTING are teal, with icons used nowhere else in the app.
 
 **SET-2** One login covers the screen [hand]
 
@@ -1578,6 +1594,20 @@ The check that lets ID-364 leave WIP, under the CHANGELOG's rule for protection 
 - Pass if: `/bin/sh /jffs/check-claims.sh quick` on the router shows PASS for `DNS-pinned` and `DNS-DoT`. The tags are the app's word; those two measure what they claim.
 - Do: unpin TABLET, APPLY, back to SETTINGS, ROUTER DNS ROUTING.
 - See: TABLET gone from YOUR DEVICES' LOOKUPS. With no device pinned anywhere, the top line reads "No lookups go through a tunnel." and the redirects section says no device is pinned; with others still pinned, it keeps "Only pinned devices' lookups go through a tunnel."
+
+**SET-11** Remove cached PIA servers [hand]
+
+- Starts with: a watchdog that has rebuilt since build 497, so `ls /jffs/cfg-pia-wg/pia_servers_verified.*` on the router shows two files, and a region list opened once in STANDALONE, so the phone keeps one too.
+- Do: REMOVE CACHED PIA SERVERS.
+- See: "Delete the cached PIA server lists?", naming `/jffs/cfg-pia-wg/pia_servers_verified.txt` and this phone's copy, and saying a list that fails is refused outright until one passes again.
+- Do: DELETE.
+- See: "Cached PIA server list deleted from the router. This phone's copy deleted."
+- Do: again.
+- See: "None on the router. None on this phone."
+- Pass if, on the router, `ls /jffs/cfg-pia-wg/pia_servers_verified.*` finds no such files.
+- See: ROUTER LOG has "Cached PIA server list deleted from the app".
+- Do: STANDALONE, open the region list.
+- Pass if: APP LOG has "Server list verified: it carries PIA's signature." and the list opens with no warning. The phone keeps a new copy; the router does at its next rebuild.
 
 UNINSTALL is at the very end of the run: [END](#end).
 
@@ -2134,6 +2164,8 @@ Clean up with `rm -f /tmp/watchdog_backoff_wgc5`, then ENABLE the watchdog in th
 /jffs/cfg-pia-wg/                         # everything the app owns lives here
 /jffs/cfg-pia-wg/watchdog_wgcN.sh         # one per watched slot
 /jffs/cfg-pia-wg/pia_ca.rsa.4096.crt      # cached PIA CA, shared by all slots
+/jffs/cfg-pia-wg/pia_servers_verified.txt # the last PIA server list that passed its signature check, shared (ID-325)
+/jffs/cfg-pia-wg/pia_servers_verified.date # the date it passed
 /tmp/watchdog_wgcN.log                    # and .log.old after the nightly rotate
 /tmp/watchdog_last_ping_success_wgcN
 /tmp/watchdog_backoff_wgcN
@@ -2411,6 +2443,7 @@ Some automated tests can only check that a command is written a certain way: tha
 | `test/unit/guard_filter_test.dart` and `guard_filter_more_test.dart`: the Network Services Filter against a fake `nvram`, `service` and `iptables` | the router drops a pinned device's traffic out of the WAN from boot, and only the app's entries are touched | check-claims `FILTER-*`, read from the firewall itself; GRD-7 and GRD-8 |
 | `test/unit/fail_closed_guard_test.dart` and `guard_orphan_wan_test.dart`: `guard.sh` against a fake `ip` | the kernel honours the guard's rules | check-claims `GUARD-*`: `ip route get` from every pinned device to the internet and every address main sends out of the WAN, with a rule wiped and repaired by the router's own firewall restart, a WAN route planted in the guard's table, the table emptied with its tunnel up, and the tunnel stopped, rule 91 taken away for a moment to show the leak it stops (ID-364). GRD-2, GRD-3, GRD-9 and DEF-7 by hand |
 | `test/unit/device_assignment_service_test.dart`: the stale rule is deleted | a moved device really moves | DEV-5, DEV-6 and DEV-8: `e2e.sh` counts the rules and checks the exit IP |
+| `test/unit/watchdog_server_list_test.dart`: the real script and PIA's real list, checked by the test machine's openssl | the watchdog uses only a server list that carries PIA's signature | check-claims `SIGLIST-*`, with `SIGLIST-0` as its control, runs the deployed watchdog's own check with the router's openssl; `SIG-*` (full) in three real rebuilds, `SIG-nocheck` the control. BRK-10 |
 | `test/router_watchdog_service_test.dart`: `nvram set wgcN_dns` | pinned devices' DNS goes through their tunnel | check-claims `DNS-pinned`; WD-23 and DEV-10 by hand |
 | `test/unit/binary_installer_test.dart`: a fake `dgst` | a download is refused if its checksum is wrong | CON-5 is the happy path; the refusal is only tested in CI |
 | `test/busybox_tools_test.dart` | the scripts use only what stock's BusyBox has | it reads the scripts as deployed and every string in `lib/`; the check scripts above run them on the router |

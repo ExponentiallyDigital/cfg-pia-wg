@@ -107,7 +107,7 @@ This app provisions Private Internet Access WireGuard configurations onto an ASU
 
 The provisioning logic in `lib/pia_service.dart` is a direct Dart translation of the command line version's [Go code](https://github.com/ExponentiallyDigital/pia-wireguard-cfg/blob/main/main.go), doing the same six steps in the same order:
 
-1. **Find the servers.** Fetch the endpoint list from `serverlist.piaservers.net/vpninfo/servers/v6` and split the payload at the first newline, discarding the signature block that follows it.
+1. **Find the servers.** Fetch the endpoint list from `serverlist.piaservers.net/vpninfo/servers/v6` and check PIA's signature on it, as PIA's own desktop client does. A list that fails is refused, and the last list that passed is used instead (`lib/server_list_signature.dart`; [What a reconfigure does](#what-a-reconfigure-does)). Until build 497 the signature was thrown away.
 2. **Pick the fastest one.** Open a TCP connection to port 1337 on each candidate in the chosen region and keep the one that answers first.
 3. **Get a session token.** POST the PIA username and password over TLS; the reply carries the token the next step needs.
 4. **Make a keypair.** X25519 with RFC 7748 clamping - `k[0] &= 248`, `k[31] &= 127`, `k[31] |= 64`.
@@ -1566,7 +1566,7 @@ Reached only when everything above has failed. Every step can abort, and an abor
 flowchart TD
     A["fetch the PIA CA cert<br/><i>cached after the first run;</i><br/><i>one retry without encrypted DNS</i>"] --> B
     B["POST for a session token<br/><i>with the PIA credentials from NVRAM</i>"] --> C
-    C["fetch the region's server list"] --> D
+    C["fetch the region's server list<br/><i>refused unless it carries PIA's signature;</i><br/><i>then the last list that passed is used</i>"] --> D
     D["ping every candidate,<br/>take the lowest latency"] --> E
     E["generate a fresh WireGuard keypair"] --> F
     F["register the public key<br/><i>addKey on the chosen server, port 1337</i>"] --> G
@@ -1596,6 +1596,18 @@ flowchart TD
 <p align="center"><em>A rebuild, from the PIA certificate to a handshake on the new server, and the two ways it ends.</em></p>
 
 **A fresh keypair every time is deliberate.** PIA's `addKey` binds a public key to a session; reusing an old one after a server change gives a tunnel that comes up and carries nothing.
+
+**PIA's server list is only used if it carries PIA's signature (ID-325, build 497).** PIA sends the list as one line of JSON, a blank line, and a base64 RSA signature over the JSON's bytes. The key and the method are PIA's own, from its desktop client (`pia-foss/desktop`, GPL-3.0 like this app): `Environment::defaultRegionsListPublicKey` in `daemon/src/environment.cpp`, a 2048-bit RSA key, checked by `verifySignature` in `common/src/openssl.cpp` with SHA-256 and PKCS#1 v1.5. `JsonRefresher::readReply` in `common/src/jsonrefresher.cpp` splits the download after the last `}`. The app and the watchdog carry the same PEM text, from one constant, `kPiaServerListKeyPem`.
+
+**Why check it, when addKey is already pinned to PIA's CA?** Because a forged list can do harm without a forged server. addKey trusts only PIA's CA (ID-309), so a forged list can't put a non-PIA server in the tunnel or take the token. What it can do is list real PIA servers from another country under the region the user chose, so traffic leaves from a country nobody chose. Forging it needs a mis-issued public certificate and a place on the network path, or a compromise of PIA's list hosting.
+
+**What happens when a list fails.** Andrew's decision, 2026-10-13: refuse it, and fall back to the last list that passed. Someone who can forge the list can already stop rebuilds by serving garbage, so refusing gives them nothing new; the cost of refusing falls on PIA's side - a key change, a change in how the list is signed, or a bug in the check - and the fallback takes most of it away.
+
+- **On the router**, the watchdog checks the list with the router's own `openssl dgst -sha256 -verify`, and reads only the JSON the signature covers. A list that passes is kept, exactly as downloaded, in `/jffs/cfg-pia-wg/pia_servers_verified.txt`, shared by every slot, with the date it passed beside it in `pia_servers_verified.date`. A list that fails is refused and the kept one is used, checked again first; the log says so, and so does the alert email the rebuild sends anyway, in a SERVER LIST section giving the date of the list in use. A router that has never had a list pass refuses outright.
+- **On the phone**, `PiaService.fetchRegions` does the same with pointycastle, which the app already carried through dartssh2. The kept list is `pia_servers_verified.txt` in the app support directory. When the kept list is in use, CREATE, STANDALONE and the WATCHDOG form's region picker each say so in a warning before the picker opens.
+- SETTINGS -> REMOVE CACHED PIA SERVERS deletes both kept lists. Until a new list passes, a list that fails is then refused outright.
+
+**How it is proved.** `scripts/check-claims.sh` lifts the deployed watchdog's own check out and runs it on PIA's list as it arrives and on copies with one region moved to another country or the signature taken off (SIGLIST), and in `full` mode makes three real rebuilds meet a list tampered with as it lands: the kept list must be used, with no kept list nothing must be, and with the check taken out the tampered list must be used (SIG-fallback, SIG-refused, SIG-nocheck). The automated tests run the watchdog against PIA's real list, saved on 2026-10-14, with the test machine's openssl, and were seen to fail with the check taken out. **Measured on the stock test router, 2026-10-14:** `quick` and `full` passed every check, with the router's own openssl, SIG-nocheck included.
 
 **PIA's login service can be down while the rest of PIA is up.** Measured 2026-09-28: the token endpoint answered every request, even a deliberately wrong login, with HTTP 504 after about 61 s - Cloudflare's page for PIA's server behind it not answering - while the server list answered in half a second and PIA's own Android app logged in. So a failed token request is not always the user's credentials. The script aborts on a 5xx, and on curl's own 15 s timeout (exit 28), with "PIA's login service isn't answering ... This is at PIA's end; the watchdog will try again.", which is the line the failure email carries, and the backoff retries it on schedule. The app gives the same request 20 seconds and says the same thing (`kPiaTokenTimeout`, `lib/pia_service.dart`). A 401 or 403 is still a refused login (ID-245, ID-253).
 
