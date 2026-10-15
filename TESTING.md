@@ -1663,7 +1663,7 @@ The one failure no test can reach, and the one that would be silent. WorkManager
 - Do: SETTINGS, HOME SCREEN WIDGET KEY, REMOVE.
 - Pass if: it says it was removed from both, and the dialog now offers GENERATE again.
 - Do: on the router, `nvram get sshd_authkeys` and `cat ~/.ssh/authorized_keys`.
-- Pass if: no line ends `cfg-pia-wg-widget` in either, and any key of your own is still there. With a second device set up as in WGT-6, exactly one `cfg-pia-wg-widget` line is left: the other device's.
+- Pass if: no line ends `cfg-pia-wg-widget` in either, and any key of your own is still there. Since build 500 REMOVE takes every device's widget key (ID-407), so with a second device set up as in WGT-6, its line is gone too.
 - See: the widget is still on the home screen and still opens the app when tapped. It simply stops refreshing on its own, which is WGT-1's state again.
 
 **WGT-6** Two devices, each with its own widget key (ID-398) [hand]
@@ -1676,8 +1676,20 @@ Until build 498 the second device's GENERATE took the first device's key off the
 - Pass if: it prints `2`.
 - Do: on each, tap the widget's refresh button.
 - Pass if: both widgets show a new "checked" time. Neither says it couldn't reach the router.
-- Do: on A, SETTINGS, HOME SCREEN WIDGET KEY, REMOVE. On the router, the same `grep -c`.
-- Pass if: it prints `1`, and B's widget still refreshes when tapped.
+- Do: on A, SETTINGS, HOME SCREEN WIDGET KEY, GENERATE again. On the router, the same `grep -c`.
+- Pass if: it prints `2`: A's new key replaced its old one, and B's stayed. B's widget still refreshes when tapped.
+
+**WGT-7** Leftover keys don't stop GENERATE (ID-407) [hand]
+
+Until build 500, clearing the app's storage left its key on the router, and once there were five, GENERATE failed with "SSHStateError(SSH connection closed)".
+
+- Do: on one device, GENERATE, then Android Settings, Apps, cfg-pia-wg, Storage, Clear storage. Repeat four more times, five in all.
+- Do: on the router, `nvram get sshd_authkeys | grep -c cfg-pia-wg-widget`.
+- Pass if: it prints `5` or more.
+- Do: in the app, SETTINGS, HOME SCREEN WIDGET KEY, GENERATE.
+- Pass if: it says the key was made and installed, and the router's count is one higher. Since build 500 the keys go to the router in pieces, so no number of them reaches the SSH limit.
+- Do: REMOVE, then REMOVE at "Remove every widget key?".
+- Pass if: it says every widget key was removed, the router's count is `0`, and any key of your own is still in `nvram get sshd_authkeys`.
 
 ---
 
