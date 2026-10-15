@@ -32,7 +32,9 @@ void main() {
   Future<String> runShell(String body) async {
     final r = shPath(dir.path);
     final script = 'pass() { echo "PASS \$1 \$2"; }\nfail() { echo "FAIL \$1 \$2: \$3"; }\ninfo() { echo "INFO \$1 \$2"; }\n'
-        '${body.replaceAll('/jffs/', '$r/jffs/').replaceAll('/tmp/', '$r/')}';
+        // /tmp/ first: on Linux the test's own folder is under /tmp/, so replacing /jffs/ first and then
+        // /tmp/ rewrote the path it had just written (ID-406, the build 498 CI run).
+        '${body.replaceAll('/tmp/', '$r/').replaceAll('/jffs/', '$r/jffs/')}';
     File('${dir.path}/t.sh').writeAsStringSync(script);
     final sep = Platform.isWindows ? ';' : ':';
     final res = await runSh(shell!, ['-c', r'P="${PATH%%:*}"; PATH="$P:/usr/bin:/bin:$PATH"; export PATH; exec sh "$1"', 'sh', '${dir.path}/t.sh'],
