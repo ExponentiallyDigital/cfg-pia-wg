@@ -1,7 +1,7 @@
 #!/bin/sh
 # probe-claims.sh - settles the claims audit's open questions on a stock router (ID-345, first part).
 #
-# Run it as `/bin/sh /jffs/probe-claims.sh [a|b|c|all]`, never `sh ...`: over SSH, stock's PATH finds
+# Run it as `/bin/sh /jffs/cfg-pia-wg/probe-claims.sh [a|b|c|all]`, never `sh ...`: over SSH, stock's PATH finds
 # /usr/sbin/sh first, which is a Broadcom memory tool, not the shell.
 #
 #   a  reads only: guard rules per pinned device, boot hook, IPv6, secrets left in /jffs/curllst,

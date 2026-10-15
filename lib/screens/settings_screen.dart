@@ -205,8 +205,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // What was done in the body colour, what was not done - nothing there, or not the app's -
           // in red, so a second uninstall reads as the no-op it is (ID-287, Andrew's request).
           for (final line in done!)
-            Text(line,
-                style: TextStyle(color: uninstallStepDidNothing(line) ? kError : kText, fontSize: 12)),
+            Text(line, style: TextStyle(color: uninstallStepDidNothing(line) ? kError : kText, fontSize: 12)),
           // Amber, and set apart. The cron entries are gone but a running watchdog process is
           // not, and the firmware keeps its own idea of what is configured until it restarts.
           // Only when something was removed: a run that changed nothing has nothing to restart for.
@@ -417,8 +416,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             : 'None on this phone.';
     if (phoneError != null) _c.logEntry("Could not delete this phone's cached PIA server list: $phoneError", isError: true);
     if (error != null) {
-      await AppErrors.system(
-          context, _c, errorDetail == null ? 'Could not delete the cached server list on the router: $error $phone' : '$error $phone',
+      await AppErrors.system(context, _c,
+          errorDetail == null ? 'Could not delete the cached server list on the router: $error $phone' : '$error $phone',
           logDetail: errorDetail);
       return;
     }
@@ -709,12 +708,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Takes the line off the router and stops the periodic refresh. The phone's own copy of the key
   /// and login is cleared by the dialog, and only once this has succeeded.
   Future<String?> _removeWidgetKeyFromRouter() async {
+    // This device's line is found by its key, so other devices' widget keys stay (ID-398).
+    final seed = await _widgetKeyStore.read();
+    if (seed == null) return 'There is no key on this phone to remove.';
     final creds = await _credentials();
     if (creds == null || !mounted) return "Cancelled - it's still on your router; nothing on this phone was touched either.";
     final (ip, user, pass) = creds;
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      await WidgetKeyRouterService(client, onLog: _c.onLog).remove();
+      await WidgetKeyRouterService(client, onLog: _c.onLog).remove(widgetKeyPairFromSeed(seed).publicKeyBytes);
       await _connected(ip);
       await (widget.testCancelRefresh ?? cancelWidgetRefresh)();
       return null;
@@ -1201,17 +1203,14 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
               )
             else ...[
               Text(
-                _exists
-                    ? "A key exists, kept in Android's Keystore and installed on your router."
-                    : 'No key exists yet.',
+                _exists ? "Key created: saved to Android's local keystore, and installed on your router." : 'No key exists yet.',
                 key: const Key('widget_key_status'),
                 style: const TextStyle(color: kText, fontSize: 13),
               ),
               const SizedBox(height: 8),
               const Text(
-                "It will let the home screen widget read your router's status on its own, and do nothing else - "
-                'the router refuses it every other command. A stolen phone could read the status; it could not '
-                'change anything.',
+                "This allows the home screen widget to display your router's VPN status, and do nothing else. "
+                'An unlocked stolen phone could read the status but it could not change anything at all.',
                 style: TextStyle(color: kText, fontSize: 12, height: 1.4),
               ),
               if (_note != null) ...[

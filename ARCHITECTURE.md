@@ -6,11 +6,12 @@ This app provisions Private Internet Access WireGuard configurations onto an ASU
 2. **Write a config into a router slot** over SSH, start the tunnel, and prove that traffic is really flowing through it.
 3. **Deploy a watchdog** onto the router, which checks the tunnel on a schedule and rebuilds it unattended when it fails.
 4. **Pin individual LAN devices to a tunnel**, so one device uses a VPN and another does not. Stock firmware only - Merlin does this through VPN Director, which the app does not drive.
-5. **Show each tunnel's state on the home screen**, refreshed without the app open. Optional, stock only, and the one job that needs the app to keep a login: a key restricted to a single status command, with the router login name beside it, in Keystore-backed secure storage. Nothing is kept unless the user sets it up. See [10](#10-the-home-screen-widget-id-376), and README 5.11 for the user-facing description.
+
+Optionally and for stock only, **show each tunnel's state on the home screen**, refreshed without the app open. This needs the app to retain a login, but we use a _key_ restricted to a single status command, with the router login name beside it, in keystore-backed secure storage; this is **not** the router admin login/password. Nothing is retained kept unless the user enables this. See [10] #10-the-home-screen-widget-id-376), and README 5.11 for the user-facing description.
 
 **"Slot" means one of the five WireGuard client profiles the router hardware provides**, numbered 1 to 5 and named `wgc1` to `wgc5`. They are fixed: the router has five, the app can fill any of them, and a slot holds one PIA server at a time. Nearly everything the app does to a router is scoped to a single slot, and almost every NVRAM key below is prefixed `wgcN_` for that reason.
 
-**One idea is needed before the detail makes sense.** The two firmwares drive WireGuard in completely different ways. Asuswrt-Merlin exposes each of the five client slots directly through VPN Director; stock Asuswrt hides them behind VPN Fusion, where a single profile is named by three different numbers depending on which key is being written. Nearly every awkward thing below is a consequence of that split, and the app carries both paths.
+**The two firmwares drive WireGuard in completely different ways**. _**Asuswrt-Merlin**_ exposes each of the five client slots directly through VPN Director; _**stock Asuswrt**_ hides them behind VPN Fusion, where a single profile is named by three different numbers depending on which key is being written. Nearly every awkward thing below is a consequence of that split, and the app carries both paths.
 
 **None of this comes from vendor documentation, because there is none.** Every claim about the firmware was measured on hardware, usually by changing one thing in the web interface and diffing NVRAM either side. Entries carry the date they were measured, and say when a reading is an inference rather than a measurement.
 
@@ -34,6 +35,7 @@ This app provisions Private Internet Access WireGuard configurations onto an ASU
     - [4.2.3. Stop/Disable](#423-stopdisable)
     - [4.2.4. Delete](#424-delete)
     - [4.2.5. VPN Fusion](#425-vpn-fusion)
+    - [4.2.6. More than three client tunnels: the pktrunner error](#426-more-than-three-client-tunnels-the-pktrunner-error)
 - [5. Router WireGuard NVRAM fields](#5-router-wireguard-nvram-fields)
   - [5.1. Field reference](#51-field-reference)
   - [5.2. Stock `vpnc_clientlist`](#52-stock-vpnc_clientlist)
@@ -640,6 +642,34 @@ service restart_vpnc_dev_policy
   ```
 
   `wgcN_*` are **not** removed when a profile is deleted.
+
+#### 4.2.6. <a name='pktrunner-host-table'></a>More than three client tunnels: the pktrunner error
+
+**Measured 2026-10-14, on stock:** once more than three WireGuard client tunnels are up, starting each further one makes the kernel log this, 1 to 2 s after `restart_vpnc`:
+
+```text
+[ERROR pktrunner] runnerUcast_inetaddr_event,220: Could not rdpa_system_ipv4_host_address_table_add ret=-3
+```
+
+Enabling the 3rd client tunnel logged nothing; the 4th and the 5th each logged it once. Started the other way round, wgc4 before wgc2, the 4th and 5th logged it again, so it follows the number of client tunnels, not the slot (`scripts/pktrunner-order.sh`, ID-393). Every tunnel came up, handshook, and passed the app's ENABLE check, with 8.8.8.8 and 1.1.1.1 answering through it.
+
+**What it is, from Broadcom's source.** `pktrunner` is the driver for Broadcom's Runner packet accelerator. Its `pktrunner_host.c`, in ASUS's GPL release for BCM4908 models (Broadcom-licensed, so it isn't copied here), is told of every IPv4 address added to any interface on the router, and adds it to the accelerator's table of the router's own addresses, for checksum offload (`CONFIG_BCM_CSO`). `-3` is `BDMF_ERR_NORES`, "No resources", in Broadcom's `bdmf_errno.h`. The table has `RDD_IPV4_HOST_ADDRESS_TABLE_SIZE` entries: 8 in the BCM4908 projects of Merlin's source tree. Other chips' sizes weren't checked, nor which one the test router has. Each client tunnel's address is one more entry, beside the router's own others: the LAN, the WAN and the WireGuard server among them.
+
+**Measured 2026-10-14, read from the accelerator itself** with Broadcom's `bs /b/e system` (stock has `/bin/bs`), five client tunnels up: the table held 8 addresses, all in use, in the order they came up - `127.0.1.1`, the LAN, the guest network, the WireGuard server, the WAN, then wgc5, wgc1 and wgc3. The two missing were the 4th and 5th tunnels started, wgc4 and wgc2, and `127.0.0.1`, likely there before the driver loaded. So the size is 8 on the test router too, and every address whose traffic passes through the accelerator - WAN, LAN, guest network, server - had its place.
+
+**Inferred, not measured:** the addresses that miss out cost nothing, because WireGuard is software: a tunnel's own address is decrypted to, and sent from, in the kernel, never through the accelerator. What could matter is the order. The table is first come, first served, and an address leaves it when its interface goes down, so a WAN reconnect or a reboot that brings tunnels up before the WAN could leave the WAN address out. `scripts/runner-host-table.sh` reads the table and says whether any of those addresses is missing, and with `wan` reconnects the WAN to see.
+
+**Measured 2026-10-14, two WAN reconnects:** before and after each, the second one in which the WAN was given a new address, the WAN, the LAN, the guest network and the WireGuard server were all in the table; only wgc2 and wgc4, the 4th and 5th tunnels, were left out. The WAN gives up its place when it goes down and takes it back when it comes up, and the tunnels, which keep their addresses through a WAN reconnect, don't compete for it. So across a reconnect the harmful order wasn't seen. A reading first recorded here as after a reboot was not: the router hadn't been rebooted.
+
+**Measured 2026-10-14, after a reboot:** read 5 minutes after the router restarted, with all five tunnels up, the same: every important address in, wgc2 and wgc4 left out. One reboot and two reconnects, so not yet a pattern proved, but nothing seen to break it. Still not measured: whether a tunnel left out of the table costs it anything, by timing the same tunnel in and out of the table.
+
+**Measured 2026-10-15: it costs nothing measurable.** `scripts/runner-tunnel-speed.sh` timed wgc4 in the table and out of it in turn, three times each, a 25 MB download each time, every one confirmed by wgc4's own received-bytes counter: average 3886 KB/s in the table, 3774 out, -2%, with the two fastest runs of all out of it. So the message is noise in the log. That was the router's own download through the tunnel; a pinned device's traffic comes back to the router at the same tunnel address, so the same is expected for it - inferred, not measured.
+
+**Sending the router's own traffic through one tunnel, on stock.** Measured while building that test, and worth knowing for anything else that needs it: with the tunnel's address as the source, the router routes by its main table and the traffic leaves by the WAN (2026-10-14); bound to the tunnel device, it connects and nothing ever answers (2026-10-15); a rule for the one destination address into the tunnel's routing table - stock numbers it 10 minus the slot - works, as the watchdog's DNS probe already does it: `ip rule add to <address> iif lo lookup <10 - slot> priority 1001`, taken out after. The app's ENABLE check used the first of the three until build 498, so on stock it didn't test the tunnel at all: measured 2026-10-15, its ping left by the WAN, 3 packets out of eth0 and none out of the tunnel, and answered. It uses the third now, reading the route back first and failing rather than sending a ping that could answer another way (ID-396, `kStockTunnelPingBody` in `lib/router_slot_service.dart`). Proved on the stock test router on 2026-10-15 by `check-claims.sh quick`, 45 passed and 0 failed: ENABLE-ping answered through the tunnel, and ENABLE-broken, with the tunnel refusing the ping, failed it.
+
+**Inferred, not measured, before that reading:** the table is full by the 4th client tunnel. A failed add means only that the accelerator doesn't know that address as the router's own, so packets to it take the CPU's path instead; WireGuard runs on the CPU anyway. Nothing seen so far depends on it. The app's only part is MAX ACTIVE VPNS letting more tunnels run than ASUS's default of two, and nothing the app writes can change the table.
+
+**Merlin** carries the same driver as a prebuilt Broadcom object, `bcmdrivers/broadcom/char/pktrunner/impl2/pktrunner.o` in `RMerl/asuswrt-merlin.ng`, with no source, so it can't change it either. Merlin sets no cap on active VPNs, so on the same hardware the same table fills, and by inference the same message is logged. Not measured on Merlin, and a web search on 2026-10-14 found no report of the message from anyone.
 
 ---
 
