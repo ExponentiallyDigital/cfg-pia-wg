@@ -939,9 +939,9 @@ So if your phone is lost or stolen, whoever has it can read whether your tunnels
 Two things, both in Android's Keystore-backed secure storage, and both only once you've tapped GENERATE:
 
 - **The key itself.** The private half never leaves your phone.
-- **Your router's login name.** Not a password - the name. SSH cannot connect without one, so a key with no name beside it is a key that can never be used. It is no use on its own either: the name without the key logs into nothing.
+- **Your router's login name.** Not a password; it's just a name. SSH cannot connect without a name, so a key with no name beside it is a key that can never be used. It is of no value/use on its own either: the name without the key logs into nothing.
 
-Neither is backed up to Google Drive (`android:allowBackup="false"`). Each phone or tablet you set the widget up on gets a key of its own. **REMOVE** deletes this phone's key from your router and both items from this phone, together - never one without the other - and leaves any other device's key, and its widget, working.
+Neither is backed up to Google Drive (`android:allowBackup="false"`). Each phone or tablet you set the widget up on gets a key of its own. REMOVE deletes every widget key from your router, your other devices' included, and both items from the current device, together - never one without the other. Use this if GENERATE fails, or after clearing the app's storage, then tap GENERATE on each device you want to display the widget on.
 
 #### 5.11.3. When it refreshes, and when it doesn't
 

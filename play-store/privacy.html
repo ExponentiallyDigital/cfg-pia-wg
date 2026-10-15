@@ -168,22 +168,23 @@
     <p>
       By default, three things, and none is a credential: your router's LAN address, so you don't retype it every session; the
       fingerprint of your router's SSH key, so the app can refuse anything pretending to be your router; and the last list of
-      PIA's servers that passed PIA's signature check. The address identifies nothing outside your own network and the
-      fingerprint is public by design. SETTINGS → FORGET ROUTER IP deletes both.
+      PIA's servers that passed PIA's signature check. The address identifies nothing outside your own network and the fingerprint
+      is public by design. SETTINGS → FORGET ROUTER IP deletes both.
     </p>
     <p>
       Why keep PIA's server list? PIA signs it, and the app refuses a list that fails the signature check, because a list that
-      fails might have been tampered with. Keeping the last list that passed means a list that fails doesn't stop the app: the
-      app uses the one it kept instead, and tells you so. The list is PIA's public list of its servers and holds nothing about
-      you. SETTINGS → REMOVE CACHED PIA SERVERS deletes it.
+      fails might have been tampered with. Keeping the last list that passed means a list that fails doesn't stop the app: the app
+      uses the one it kept instead, and tells you so. The list is PIA's public list of its servers and holds nothing about you.
+      SETTINGS → REMOVE CACHED PIA SERVERS deletes it.
     </p>
     <p>
       The home screen widget is optional. If you choose to set it up, two further things are stored in Android's Keystore-backed
       secure storage: a WireGuard-style SSH key the app generates on your device, and your router's login name. The key is
       installed on your router restricted to a single command — reading your tunnel status — and your router refuses it everything
       else. The login name is stored because SSH cannot connect without one; it is useless without the key, and the key is useless
-      without it. Each phone or tablet you set it up on has a key of its own. SETTINGS → HOME SCREEN WIDGET KEY → REMOVE deletes that device's key from your router and both items from that device, and leaves any other device's alone. If
-      you do not add the widget, neither is ever stored.
+      without it. Each phone or tablet you set it up on has a key of its own. SETTINGS → HOME SCREEN WIDGET KEY → REMOVE deletes
+      every widget key from your router, your other devices' included, and both items from the device you use it on. If you do not
+      add the widget, neither is ever stored.
     </p>
     <p>
       Never stored on your device, in any configuration: your Private Internet Access username or password, your router's SSH

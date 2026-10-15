@@ -29,8 +29,16 @@ import 'dart:typed_data';
 import 'package:dartssh2/dartssh2.dart';
 
 import 'router_command.dart';
-import 'router_watchdog.dart' show shellSingleQuote;
+import 'router_watchdog.dart' show heredocWriteCommands;
 import 'widget_key.dart';
+
+/// A failure this service found by reading the router back, already in plain English (ID-407).
+class WidgetKeyRouterException implements Exception {
+  const WidgetKeyRouterException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
 
 class WidgetKeyRouterService {
   WidgetKeyRouterService(this.client, {this.onLog});
@@ -42,34 +50,66 @@ class WidgetKeyRouterService {
   Future<void> _run(String cmd) async => runRouterCommand(client, cmd, onLog: onLog);
 
   /// Installs [publicKeyLine] (from `widgetKeyRestriction` and `openSshPublicKeyLine`, with
-  /// [kWidgetKeyComment] as its comment), replacing a previous widget key line if there is one.
-  Future<void> install(String publicKeyLine) async {
+  /// [kWidgetKeyComment] as its comment), replacing an earlier copy of the same key, and this
+  /// phone's previous key, [replacing], if it had one. Other devices' widget keys stay (ID-398).
+  /// Throws a plain-English reason if the router doesn't hold the new key afterwards (ID-407).
+  Future<void> install(String publicKeyLine, {Uint8List? replacing}) async {
     final current = await _read('nvram get sshd_authkeys');
-    await _write(replaceWidgetKeyLine(current, publicKeyLine));
+    var next = replaceWidgetKeyLine(current, publicKeyLine);
+    if (replacing != null) next = removeWidgetKeyLine(next, widgetKeyBlob(replacing));
+    await _write(next);
+    final blob = sshKeyBlob(publicKeyLine)!;
+    final (nv, live) = await _readBack();
+    if (!nv.contains(blob) || !live.contains(blob)) {
+      throw const WidgetKeyRouterException("The router didn't keep the new key, so nothing was saved on this phone. "
+          'Try again; if it fails again, use REMOVE first.');
+    }
   }
 
-  /// Takes this device's widget key - the one whose public half is [publicKeyBytes] - off the
-  /// router, leaving any other device's (ID-398). A no-op, not an error, if it isn't installed -
-  /// SETTINGS calls this both when the user asks and whenever the feature is turned off.
-  Future<void> remove(Uint8List publicKeyBytes) async {
+  /// Takes every widget key off the router - this phone's and every other phone's or tablet's,
+  /// leftovers from a cleared or reinstalled app among them, which the router can't tell from a key
+  /// still in use (ID-407). The user's own keys stay. Returns how many were taken off; throws a
+  /// plain-English reason if any is still there afterwards.
+  Future<int> removeAll() async {
     final current = await _read('nvram get sshd_authkeys');
-    final next = removeWidgetKeyLine(current, widgetKeyBlob(publicKeyBytes));
-    if (next == current) return;
-    await _write(next);
+    final next = removeAllWidgetKeyLines(current);
+    final count = widgetKeyLineCount(current);
+    if (count > 0) await _write(next);
+    final (nv, live) = await _readBack();
+    if (widgetKeyLineCount(nv) > 0 || widgetKeyLineCount(live) > 0) {
+      throw const WidgetKeyRouterException("The router still holds a widget key after REMOVE, so this phone's key was kept. Try again.");
+    }
+    return count;
+  }
+
+  /// `sshd_authkeys` and the live file, as the router has them now.
+  Future<(String, String)> _readBack() async {
+    final nv = await _read('nvram get sshd_authkeys');
+    final live = await _read('cat ~/.ssh/authorized_keys 2>/dev/null');
+    return (nv, live);
   }
 
   /// `nvram set` so it survives a reboot, `nvram commit` so it survives a power loss before the
   /// next one, and the live file so Dropbear has it immediately - see this file's header.
-  /// [shellSingleQuote] handles [value]'s embedded newlines and any quote inside the widget's own
-  /// `command="…"` the same way it already handles everything else sent over this app's SSH
-  /// connections; a literal newline inside single quotes is ordinary shell text, not a command
-  /// separator.
+  ///
+  /// In pieces (ID-407): the value goes to a file in the app's own heredoc writes, each well under
+  /// Dropbear's 9000-byte limit on one command, then into NVRAM and the live file from there. Sent
+  /// as one command, holding the value twice, it failed with 5 widget keys on the router (9870
+  /// bytes; each line is 749) and Dropbear dropped the connection. A heredoc with a quoted
+  /// delimiter carries the `command="…"`'s quotes as they are.
   Future<void> _write(String value) async {
-    final quoted = shellSingleQuote(value);
-    await _run('nvram set sshd_authkeys=$quoted; nvram commit; '
+    for (final cmd in heredocWriteCommands(kAuthKeysUploadPath, value)) {
+      await _run('umask 077; $cmd');
+    }
+    await _run('nvram set sshd_authkeys="\$(cat $kAuthKeysUploadPath)"; nvram commit; '
         'mkdir -p ~/.ssh; chmod 700 ~/.ssh; '
         // A final newline, so a key added after ours the usual way (`echo key >> ...`) starts a line
         // of its own rather than landing in our line's comment (ID-389).
-        "printf '%s\\n' $quoted > ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys");
+        "printf '%s\\n' \"\$(cat $kAuthKeysUploadPath)\" > ~/.ssh/authorized_keys; chmod 600 ~/.ssh/authorized_keys; "
+        'rm -f $kAuthKeysUploadPath');
   }
 }
+
+/// Where the key list is put together on the router before it goes into NVRAM (ID-407). In /tmp,
+/// RAM, gone at the next reboot; removed straight after the write anyway.
+const String kAuthKeysUploadPath = '/tmp/cfg-pia-wg-authkeys';
