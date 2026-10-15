@@ -112,9 +112,11 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
 - ID-403 CHG: The platform hardening does not. `FLAG_SECURE` has **no iOS equivalent** - screenshots cannot be blocked, only the task-switcher snapshot can be covered. `README.md` and `SECURITY.md` state that guarantee unconditionally today and would need to state it per-platform.
 - ID-404 CHG: The silent clipboard clear is an Android method channel (`ClipboardManager.clearPrimaryClip()`); iOS needs `UIPasteboard.general.items = []` or the 60-second auto-clear regresses to the system copy popup that 403 removed.
 - ID-405 CHG: update github actions to accomodate iOS (`release.yml`, SBOM, Gradle lockfiles, etc)
+- ID-394 ADD: on iOS can't use "EXIT" to exit the app, and this mus still cleanly remove all credentyials from memory.
+- ID-395 ADD: ABOUT needs to be updated for IOS specific details.
+- ID-029 DOC: phrase hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
 - ID-401 CHG: Extend RevenueCat to use Apple Store.
-- ID-029 DOC: phrase the hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
-- ID-375 BLD: **post the agreed comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix.** Agreed 2026-10-09, Andrew's call, but not posted: the `gh` token here can't comment outside the organisation ("Resource not accessible by personal access token"). Post it from Andrew's own login, or after `gh auth refresh -s public_repo`. Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment:
+- ID-375 BLD: **either** replace this module or **post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix.** Agreed 2026-10-09, Andrew's call, but not posted: the `gh` token here can't comment outside the organisation ("Resource not accessible by personal access token"). Post it from Andrew's own login, or after `gh auth refresh -s public_repo`. Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment:
 
   ```markdown
   Still happening on 0.14.4, and not only with flavors or App Clips: plain `ios: true` triggers it too.
@@ -133,8 +135,6 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
 
   For now we run the tool through a small wrapper that puts the other lines back afterwards.
   ```
-- ID-394 IOS bug: can't use "EXIT" to exit the app.
-- ID-395 IOS bug: ABOUT needs to be updated for IOS specific details.
 
 ---
 

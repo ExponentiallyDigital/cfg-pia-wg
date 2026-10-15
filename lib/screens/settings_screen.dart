@@ -681,7 +681,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         builder: (_) => _WidgetKeyDialog(
           store: _widgetKeyStore,
           installOnRouter: _installWidgetKeyOnRouter,
-          removeFromRouter: _removeWidgetKeyFromRouter,
+          removeFromRouter: _removeWidgetKeysFromRouter,
         ),
       );
 
@@ -692,38 +692,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final creds = await _credentials();
     if (creds == null || !mounted) return 'Cancelled - nothing was made or installed.';
     final (ip, user, pass) = creds;
+    // GENERATE on a phone that already has a key replaces it: the old line goes in the same write.
+    final old = await _widgetKeyStore.read();
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      await WidgetKeyRouterService(client, onLog: _c.onLog).install(publicKeyLine);
+      await WidgetKeyRouterService(client, onLog: _c.onLog)
+          .install(publicKeyLine, replacing: old == null ? null : widgetKeyPairFromSeed(old).publicKeyBytes);
       await _connected(ip);
       await _widgetKeyStore.saveLogin(user);
       await (widget.testScheduleRefresh ?? scheduleWidgetRefresh)();
       return null;
     } catch (e) {
-      final plain = routerConnectMessage(e, ip);
-      return plain ?? e.toString().replaceAll('Exception: ', '');
+      return _widgetKeyFailure(e, ip, 'the key was saved', 'nothing was saved on this phone');
     }
   }
 
-  /// Takes the line off the router and stops the periodic refresh. The phone's own copy of the key
-  /// and login is cleared by the dialog, and only once this has succeeded.
-  Future<String?> _removeWidgetKeyFromRouter() async {
-    // This device's line is found by its key, so other devices' widget keys stay (ID-398).
-    final seed = await _widgetKeyStore.read();
-    if (seed == null) return 'There is no key on this phone to remove.';
+  /// Takes every widget key off the router - every device's, leftovers included (ID-407) - and stops
+  /// the periodic refresh. The phone's own key and login are cleared by the dialog, and only once
+  /// this has succeeded.
+  Future<String?> _removeWidgetKeysFromRouter() async {
     final creds = await _credentials();
-    if (creds == null || !mounted) return "Cancelled - it's still on your router; nothing on this phone was touched either.";
+    if (creds == null || !mounted) return "Cancelled - nothing was removed from your router or this phone.";
     final (ip, user, pass) = creds;
     try {
       final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      await WidgetKeyRouterService(client, onLog: _c.onLog).remove(widgetKeyPairFromSeed(seed).publicKeyBytes);
+      final n = await WidgetKeyRouterService(client, onLog: _c.onLog).removeAll();
+      _c.logEntry('Removed $n widget key(s) from the router.', isSuccess: true);
       await _connected(ip);
       await (widget.testCancelRefresh ?? cancelWidgetRefresh)();
       return null;
     } catch (e) {
-      final plain = routerConnectMessage(e, ip);
-      return plain ?? e.toString().replaceAll('Exception: ', '');
+      return _widgetKeyFailure(e, ip, 'the keys were removed', "this phone's key was kept");
     }
+  }
+
+  /// What the widget key dialog says when its router side failed (ID-407): the service's own reading
+  /// as it is, a connection failure as routerConnectMessage puts it, and anything else in plain words,
+  /// with the raw error in the app log. "SSHStateError(SSH connection closed)" told nobody anything.
+  String _widgetKeyFailure(Object e, String ip, String what, String phone) {
+    if (e is WidgetKeyRouterException) return e.message;
+    final plain = routerConnectMessage(e, ip);
+    _c.logEntry('Widget key: $e', isError: true);
+    return plain ?? 'The router closed the connection before $what, so $phone. Try again.';
   }
 
   /// SECURE STARTUP (ID-356): whether pings to the internet are blocked for every device not on a
@@ -1173,14 +1183,41 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
   }
 
   Future<void> _remove() async {
+    // It takes other devices' keys too, so it asks first (ID-407).
+    final sure = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: kSurface,
+            title: const Text('Remove every widget key?', style: TextStyle(color: kHighlight, fontSize: 14)),
+            content: const Text(
+              'This takes the widget keys of all your phones and tablets off your router, not just this one. '
+              'Each widget stops refreshing until GENERATE is used on that device.',
+              style: TextStyle(color: kText, fontSize: 12),
+            ),
+            actions: [
+              AppButton(
+                  keyValue: 'widget_key_remove_cancel',
+                  label: 'CANCEL',
+                  role: ButtonRole.dismiss,
+                  onPressed: () => Navigator.pop(ctx, false)),
+              AppButton(
+                  keyValue: 'widget_key_remove_confirm',
+                  label: 'REMOVE',
+                  role: ButtonRole.destructive,
+                  onPressed: () => Navigator.pop(ctx, true)),
+            ],
+          ),
+        ) ??
+        false;
+    if (!sure || !mounted) return;
     setState(() => _working = true);
     final error = await widget.removeFromRouter();
     if (error == null) await widget.store.remove();
     if (!mounted) return;
     setState(() {
-      _exists = error != null;
+      _exists = error == null ? false : _exists;
       _working = false;
-      _note = error == null ? 'Removed from your router and this phone.' : 'Not removed: $error';
+      _note = error == null ? "Every widget key removed from your router, and this phone's key deleted." : 'Not removed: $error';
     });
   }
 
@@ -1201,23 +1238,42 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Center(child: CircularProgressIndicator(color: kHighlight)),
               )
-            else ...[
-              Text(
-                _exists ? "Key created: saved to Android's local keystore, and installed on your router." : 'No key exists yet.',
-                key: const Key('widget_key_status'),
-                style: const TextStyle(color: kText, fontSize: 13),
+            // The text scrolls on a small screen; the buttons stay in view (ID-407: with the result below
+            // the help, it overflowed a phone-sized screen).
+            else
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Text(
+                      _exists
+                          ? "Key created: saved to Android's local keystore, and installed on your router."
+                          : 'No key exists yet.',
+                      key: const Key('widget_key_status'),
+                      style: const TextStyle(color: kText, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      "This allows the home screen widget to display your router's VPN status, and do nothing else. "
+                      'An unlocked stolen phone could read the status but it could not change anything at all.',
+                      style: TextStyle(color: kText, fontSize: 12, height: 1.4),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'GENERATE makes a new key for this phone and installs it on your router. Keys belonging to your '
+                      'other phones or tablets are left alone.\n\n'
+                      'REMOVE takes every widget key off your router, including those of your other phones and tablets, '
+                      "and deletes this phone's key. Their widgets stop refreshing until you tap GENERATE on each one "
+                      "again. Use it if GENERATE fails, or after clearing the app's storage.",
+                      key: Key('widget_key_help'),
+                      style: TextStyle(color: kText, fontSize: 12, height: 1.4),
+                    ),
+                    if (_note != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_note!, key: const Key('widget_key_note'), style: const TextStyle(color: kHighlight, fontSize: 12)),
+                    ],
+                  ]),
+                ),
               ),
-              const SizedBox(height: 8),
-              const Text(
-                "This allows the home screen widget to display your router's VPN status, and do nothing else. "
-                'An unlocked stolen phone could read the status but it could not change anything at all.',
-                style: TextStyle(color: kText, fontSize: 12, height: 1.4),
-              ),
-              if (_note != null) ...[
-                const SizedBox(height: 8),
-                Text(_note!, key: const Key('widget_key_note'), style: const TextStyle(color: kHighlight, fontSize: 12)),
-              ],
-            ],
             const SizedBox(height: 16),
             Row(mainAxisAlignment: MainAxisAlignment.end, children: [
               AppButton(
@@ -1227,13 +1283,22 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
                 onPressed: () => Navigator.pop(context),
               ),
               const SizedBox(width: 8),
-              if (!_loading)
+              // All three, always (ID-407): REMOVE has to be there for a phone whose own key was lost with its
+              // storage, which is just when leftovers on the router stop GENERATE working.
+              if (!_loading) ...[
                 AppButton(
-                  keyValue: _exists ? 'widget_key_remove' : 'widget_key_generate',
-                  label: _exists ? 'REMOVE' : 'GENERATE',
-                  role: _exists ? ButtonRole.destructive : ButtonRole.action,
-                  onPressed: _working ? null : (_exists ? _remove : _generate),
+                  keyValue: 'widget_key_remove',
+                  label: 'REMOVE',
+                  role: ButtonRole.destructive,
+                  onPressed: _working ? null : _remove,
                 ),
+                const SizedBox(width: 8),
+                AppButton(
+                  keyValue: 'widget_key_generate',
+                  label: 'GENERATE',
+                  onPressed: _working ? null : _generate,
+                ),
+              ],
             ]),
           ]),
         ),

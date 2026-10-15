@@ -201,6 +201,17 @@ String replaceWidgetKeyLine(String current, String newLine) =>
 /// it isn't there.
 String removeWidgetKeyLine(String current, String keyBlob) => _linesWithout(current, keyBlob).join('\n');
 
+/// Takes out every widget key line - any device's, found by [kWidgetKeyComment] - and leaves the
+/// user's own keys (ID-407). REMOVE uses it, because a leftover from a cleared or reinstalled app
+/// can't be told from a key another device still uses.
+String removeAllWidgetKeyLines(String current) =>
+    current.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty && !_isWidgetLine(l)).join('\n');
+
+/// How many widget key lines [current] holds.
+int widgetKeyLineCount(String current) => current.split('\n').map((l) => l.trim()).where(_isWidgetLine).length;
+
+bool _isWidgetLine(String l) => l.endsWith(' $kWidgetKeyComment');
+
 List<String> _linesWithout(String current, String? keyBlob) => current
     .split('\n')
     .map((l) => l.trim())
