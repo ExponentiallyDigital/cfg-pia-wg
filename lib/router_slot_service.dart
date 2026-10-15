@@ -317,6 +317,31 @@ const int kAnsweringWithinSeconds = 300;
 
 /// One command for every interface's newest handshake, with the router's clock after it. Read
 /// together so the ages cannot be computed against this phone's clock, which may be minutes out.
+/// The router's side of ENABLE's ping on stock (ID-396), with `N` set to the slot and `IP` to the
+/// target before it. Prints OK, FAIL, or NOROUTE when the ping couldn't be aimed through the tunnel.
+///
+/// The ping goes through the tunnel by a rule for the one target address into the tunnel's own
+/// routing table - stock numbers it 10 minus the slot - added for the ping and taken out after, as
+/// the watchdog's DNS probe does it. Measured on stock: from the tunnel's address as the source, the
+/// router routes by its main table and the ping left by the WAN, 3 packets out of eth0 and none out
+/// of wgc4, and answered (2026-10-15) - so until build 498 this check passed with the tunnel dead;
+/// bound to the tunnel device, a connection got no answer at all (2026-10-15); and through such a
+/// rule a 5 MB download went through wgc4 (2026-10-15). The route is read back before the ping, and
+/// a route that isn't through the tunnel is NOROUTE, never a ping that might answer another way.
+///
+/// `scripts/check-claims.sh` carries this text word for word in its `enable_ping`, so the hardware
+/// check runs exactly what the app runs; router_slot_service_test.dart fails if the two drift.
+const String kStockTunnelPingBody = r'''TBL=$((10 - N))
+while ip rule del to "$IP" iif lo lookup "$TBL" priority 1002 2>/dev/null; do :; done
+ip rule add to "$IP" iif lo lookup "$TBL" priority 1002 2>/dev/null
+if ip route get "$IP" 2>/dev/null | grep -qE " dev wgc$N( |$)"; then
+  if ping -c 1 -w 5 "$IP" >/dev/null 2>&1; then R=OK; else R=FAIL; fi
+else
+  R=NOROUTE
+fi
+while ip rule del to "$IP" iif lo lookup "$TBL" priority 1002 2>/dev/null; do :; done
+echo "$R"''';
+
 const String kHandshakeAgesCommand = 'wg show all latest-handshakes 2>/dev/null; echo ---; date +%s';
 
 /// Seconds since each slot's newest handshake, from [kHandshakeAgesCommand]'s output.
@@ -1104,26 +1129,18 @@ class RouterSlotService {
     final secondaryOk = await pingViaSlot(secondaryIp, slot);
     await _logRouter('$label ENABLE connectivity check: '
         'primary $primaryIp ${primaryOk ? 'OK' : 'FAIL'}, secondary $secondaryIp ${secondaryOk ? 'OK' : 'FAIL'}');
-    // On Merlin a ping bound to the tunnel is a real end-to-end test, so a failure still blocks
-    // the enable. On stock it is neither: it pings from the tunnel's source address but routes
-    // over the WAN, so it reported OK for a tunnel the peer had never answered. There the
-    // handshake above is the gate and this is only logged.
-    if (!isStockFirmware && (!primaryOk || !secondaryOk)) {
+    // A real end-to-end test on both firmwares, so a failure blocks the enable on both. Until build
+    // 498 the stock ping left by the WAN from the tunnel's address and answered for a dead tunnel, so
+    // there the handshake above was the only gate and this was only logged (ID-339, ID-396).
+    if (!primaryOk || !secondaryOk) {
       final stopped = await _revertEnable(slot);
       throw Exception('Connectivity check failed via $label '
           '(primary $primaryIp ${primaryOk ? 'OK' : 'FAIL'}, secondary $secondaryIp ${secondaryOk ? 'OK' : 'FAIL'}). '
           'Slot left disabled.${_revertNote(label, stopped)}');
     }
-    if (isStockFirmware && !primaryOk && !secondaryOk) {
-      onLog?.call('Neither ping target answered via $label, but the tunnel has a handshake.', isError: true);
-    }
     await _logRouter('Enabled $label');
-    // What was checked, and no more (ID-339): on Merlin, pings through the tunnel; on stock, the
-    // interface and a handshake from its server, since a stock ping says nothing about the tunnel.
-    onLog?.call(
-        isStockFirmware
-            ? '$label enabled: up, and its server has answered.'
-            : '$label enabled: up, and both check addresses answered through it.',
+    // What was checked, and no more (ID-339): the handshake, and both pings through the tunnel.
+    onLog?.call('$label enabled: up, its server has answered, and both check addresses answered through it.',
         isSuccess: true);
   }
 
@@ -1380,32 +1397,25 @@ class RouterSlotService {
     }
   }
 
-// ── Ping bound to the VPN interface with a 5s timeout ─────────────────────────────────
+// ── A ping through the tunnel, with a 5s timeout ──────────────────────────────────────
+  /// True when [ip] answered a ping sent through wgc[slot]. On stock, through the tunnel's routing
+  /// table ([kStockTunnelPingBody], ID-396); on Merlin, bound to the tunnel.
   Future<bool> pingViaSlot(String ip, int slot) async {
     final safeIp = shellSingleQuote(ip);
-    final String cmd;
-
-    if (isStockFirmware) {
-      // Stock BusyBox ping requires a source IP address instead of an interface name.
-      cmd = '''
-      ADDR=\$(ip -4 addr show wgc$slot 2>/dev/null)
-      case "\$ADDR" in
-        *inet*)
-          IP=\${ADDR#*inet }
-          ping -I \${IP%%/*} -c 1 -w 5 $safeIp >/dev/null 2>&1 && echo OK
-          ;;
-      esac
-      ''';
-    } else {
-      // Merlin firmware ping accepts interface name.
-      cmd = 'ping -I wgc$slot -c 1 -w 5 $safeIp >/dev/null 2>&1 && echo OK';
-    }
+    final cmd = isStockFirmware
+        ? 'N=$slot; IP=$safeIp\n$kStockTunnelPingBody'
+        // Merlin firmware ping accepts interface name.
+        : 'ping -I wgc$slot -c 1 -w 5 $safeIp >/dev/null 2>&1 && echo OK';
 
     try {
-      final out = await _run(cmd);
-      return out.trim() == 'OK';
+      final out = (await _run(cmd)).trim();
+      if (out == 'NOROUTE') {
+        onLog?.call('Could not aim the check ping at $ip through wgc$slot, so it was not sent.', isWarning: true);
+      }
+      return out == 'OK';
     } catch (_) {
       return false;
     }
   }
+
 }

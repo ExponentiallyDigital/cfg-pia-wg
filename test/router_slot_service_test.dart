@@ -1,4 +1,6 @@
 // test/router_slot_service_test.dart - RouterSlotService tests over a fake SSH client.
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_service_queue.dart';
@@ -422,21 +424,43 @@ void main() {
         expect(await svc(never).handshakeAge(1), isNull, reason: 'wg reports 0 for a peer that never answered');
       });
 
-      // On stock the ping is routed over the WAN from the tunnel's source address, so it answered
-      // OK for a dead tunnel. It must not be able to veto - or rescue - an enable there.
-      test('stock does not block an enable on a ping failure', () async {
+      // ID-396: until build 498 the stock ping left by the WAN and answered for a dead tunnel, so it
+      // could only be logged. Sent through the tunnel now, it gates the enable as on Merlin.
+      RecordingSSHClient stockRouter(String pingAnswer) => RecordingSSHClient(
+            responder: (cmd) {
+              if (cmd.contains('vpnc_clientlist')) return 'pia-x>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
+              if (cmd.contains('ip -o link show up')) return 'wgc1';
+              if (cmd.contains('latest-handshakes')) return '${kFakeNow - 3}';
+              if (cmd.contains('date +%s')) return '$kFakeNow';
+              if (cmd.contains(kStockTunnelPingBody)) return pingAnswer;
+              return '';
+            },
+          );
+
+      test('stock blocks an enable when the pings through the tunnel fail', () async {
         useStock();
-        final c = RecordingSSHClient(
-          responder: (cmd) {
-            if (cmd.contains('vpnc_clientlist')) return 'pia-x>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
-            if (cmd.contains('ip -o link show up')) return 'wgc1';
-            if (cmd.contains('latest-handshakes')) return '${kFakeNow - 3}';
-            if (cmd.contains('date +%s')) return '$kFakeNow';
-            return ''; // every ping fails
-          },
-        );
-        await svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
-        expect(c.ran('nvram set wgc1_enable=0'), isFalse, reason: 'the handshake is the gate on stock');
+        final c = stockRouter('FAIL');
+        await expectLater(svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
+            throwsA(isA<Exception>().having((e) => e.toString(), 'message', contains('Connectivity check failed via'))));
+        expect(c.ran('nvram set wgc1_enable=0'), isTrue, reason: 'reverted, as on Merlin');
+      });
+
+      test('stock blocks an enable when the ping cannot be aimed through the tunnel', () async {
+        useStock();
+        final c = stockRouter('NOROUTE');
+        await expectLater(svc(c).enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'), throwsA(isA<Exception>()));
+        expect(c.ran('nvram set wgc1_enable=0'), isTrue);
+      });
+
+      test('stock enables when both pings answer through the tunnel, and says what was checked', () async {
+        useStock();
+        final c = stockRouter('OK');
+        final log = <String>[];
+        await RouterSlotService(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => log.add(m),
+                verifyPollInterval: Duration.zero, verifyMaxAttempts: 1)
+            .enableSlot(1, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
+        expect(c.ran('nvram set wgc1_enable=0'), isFalse);
+        expect(log.last, contains('both check addresses answered through it'));
       });
 
       test('stock still refuses when there is no handshake', () async {
@@ -870,12 +894,33 @@ void main() {
       expect(c.ran("nvram set wgc1_wd_secondary_ip='1.0.0.1'"), isTrue);
     });
 
-    test('pingViaSlot binds to the interface with a 5s timeout', () async {
+    test('pingViaSlot binds to the interface with a 5s timeout on Merlin', () async {
+      useMerlin();
       final ok = RecordingSSHClient(responder: (_) => 'OK');
       expect(await svc(ok).pingViaSlot('8.8.8.8', 2), isTrue);
       expect(ok.ran('ping -I wgc2 -c 1 -w 5'), isTrue);
       final fail = RecordingSSHClient(responder: (_) => 'FAIL');
       expect(await svc(fail).pingViaSlot('8.8.8.8', 2), isFalse);
+    });
+
+    // ID-396: on stock, through the tunnel's own routing table, never from the tunnel's address.
+    test('pingViaSlot on stock sends the shared body, and only OK counts', () async {
+      useStock();
+      final ok = RecordingSSHClient(responder: (_) => 'OK');
+      expect(await svc(ok).pingViaSlot('8.8.8.8', 2), isTrue);
+      expect(ok.commands.single, "N=2; IP='8.8.8.8'\n$kStockTunnelPingBody");
+      expect(ok.commands.single, isNot(contains('ping -I')), reason: 'the old way, out of the WAN');
+      expect(await svc(RecordingSSHClient(responder: (_) => 'FAIL')).pingViaSlot('8.8.8.8', 2), isFalse);
+      final log = <String>[];
+      final noRoute = RouterSlotService(RecordingSSHClient(responder: (_) => 'NOROUTE'),
+          onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => log.add(m));
+      expect(await noRoute.pingViaSlot('8.8.8.8', 2), isFalse);
+      expect(log.single, 'Could not aim the check ping at 8.8.8.8 through wgc2, so it was not sent.');
+    });
+
+    test("check-claims.sh's enable_ping is the app's own text, word for word", () {
+      final cc = File('scripts/check-claims.sh').readAsStringSync();
+      expect(cc, contains('enable_ping() (\nN="\$1"; IP="\$2"\n$kStockTunnelPingBody\n)'));
     });
   });
 
@@ -1312,9 +1357,7 @@ void main() {
         responder: (cmd) {
           if (cmd.contains('vpnc_clientlist')) return 'pia-aus>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
           if (cmd.contains('ip -o link show up')) return 'wgc1';
-          // These need to be checked in reverse order of specificity: ping -I first
-          if (cmd.contains('ping -I')) return 'OK';
-          if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
+          if (cmd.contains(kStockTunnelPingBody)) return 'OK'; // ID-396: through the tunnel
           return '';
         },
       );
@@ -1391,8 +1434,7 @@ void main() {
             return 'aus_melbourne>WireGuard>5>>pw>0>5>>>0>0>cfg-pia-wg<aus_perth>WireGuard>1>>pw>0>9>>>0>0>cfg-pia-wg';
           }
           if (cmd.contains('ip -o link show up')) return 'wgc1';
-          if (cmd.contains('ping -I')) return 'OK';
-          if (cmd.contains('ip -4 addr show wgc1')) return 'inet 10.0.0.2/32';
+          if (cmd.contains(kStockTunnelPingBody)) return 'OK'; // ID-396: through the tunnel
           return '';
         },
       );
@@ -1463,8 +1505,7 @@ void main() {
           }
           if (cmd.contains('vpnc_clientlist')) return list;
           if (cmd.contains('ip -o link show up')) return 'wgc3';
-          if (cmd.contains('ping -I')) return 'OK';
-          if (cmd.contains('ip -4 addr show wgc3')) return 'inet 10.0.0.2/32';
+          if (cmd.contains(kStockTunnelPingBody)) return 'OK'; // ID-396: through the tunnel
           return '';
         },
       );

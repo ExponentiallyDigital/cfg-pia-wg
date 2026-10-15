@@ -143,6 +143,7 @@ void main() {
 
   group('replaceWidgetKeyLine and removeWidgetKeyLine', () {
     const ours = 'command="echo hi",no-pty ssh-ed25519 AAAAOURS cfg-pia-wg-widget';
+    const tablet = 'command="echo hi",no-pty ssh-ed25519 AAAATABLET cfg-pia-wg-widget';
     const theirs = 'ssh-ed25519 AAAAOTHER andrew@laptop';
 
     test('an empty sshd_authkeys gets just the one line', () {
@@ -153,21 +154,32 @@ void main() {
       expect(replaceWidgetKeyLine(theirs, ours), '$theirs\n$ours');
     });
 
-    test('installing twice replaces the first copy, not duplicates it', () {
-      final once = replaceWidgetKeyLine(theirs, ours);
-      const again = 'command="echo bye",no-pty ssh-ed25519 AAAANEWER cfg-pia-wg-widget';
-      final twice = replaceWidgetKeyLine(once, again);
-
-      expect(twice, '$theirs\n$again');
-      expect(twice.split('\n'), hasLength(2));
+    test('installing the same key twice leaves one copy, not two', () {
+      final twice = replaceWidgetKeyLine(replaceWidgetKeyLine(theirs, ours), ours);
+      expect(twice, '$theirs\n$ours');
     });
 
-    test('removeWidgetKeyLine takes only the widget line out, leaving the rest', () {
-      expect(removeWidgetKeyLine('$theirs\n$ours'), theirs);
+    // ID-398: one widget key per phone or tablet. Until build 498 a second device's GENERATE took
+    // the first device's line out, because both end in the same comment.
+    test("another device's widget key stays when this one installs", () {
+      expect(replaceWidgetKeyLine('$theirs\n$tablet', ours), '$theirs\n$tablet\n$ours');
+    });
+
+    test("removeWidgetKeyLine takes only this device's line out, leaving the rest", () {
+      expect(removeWidgetKeyLine('$theirs\n$tablet\n$ours', 'AAAAOURS'), '$theirs\n$tablet');
     });
 
     test('removing when there is nothing of ours is a harmless no-op', () {
-      expect(removeWidgetKeyLine(theirs), theirs);
+      expect(removeWidgetKeyLine('$theirs\n$tablet', 'AAAAOURS'), '$theirs\n$tablet');
+    });
+
+    test('sshKeyBlob reads the key with or without options before it, and widgetKeyBlob matches the line', () {
+      expect(sshKeyBlob(ours), 'AAAAOURS');
+      expect(sshKeyBlob(theirs), 'AAAAOTHER');
+      expect(sshKeyBlob('ssh-rsa AAAAB3Nza andrew'), isNull, reason: 'only ed25519 lines are ours to read');
+      final pair = generateWidgetKeyPair();
+      final line = openSshPublicKeyLine(pair.publicKeyBytes, restriction: 'command="x",no-pty', comment: kWidgetKeyComment);
+      expect(sshKeyBlob(line), widgetKeyBlob(pair.publicKeyBytes));
     });
 
     test('blank lines in the existing value are dropped, not carried through as empty entries', () {

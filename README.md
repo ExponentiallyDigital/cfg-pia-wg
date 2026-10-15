@@ -140,7 +140,7 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
   - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
   - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
-  - Testing: as at build 466, 1353 automated tests run on every build against a line-coverage target of 80% (the Coverage badge above has today's figure), and 136 manual end-to-end tests run on a real router - 17 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 20 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
+  - Testing: as at build 498 (15 October 2026), 1861 automated tests run on every build against a line-coverage target of 80%, actual 94.95 (the Coverage badge above is dynamically updated and records today's figure), and 162 manual end-to-end tests run on a real router - 23 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 22 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
   - Pinned GitHub Action hashes across [release.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/release.yml), [promote.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/promote.yml), and [quality_and_security.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/quality_and_security.yml) ensure automated builds execute with specific, verified tool versions.
 
 ---
@@ -697,7 +697,8 @@ cfg-pia-wg by Exponentially Digital
 - A device while you move it in the router's web interface, as above. Use DEVICES.
 - A phone's mobile data. A phone whose Wi-Fi has no internet usually falls back to its mobile network, so a phone the guard is keeping off the internet isn't offline: it's out through your carrier, with no VPN. If that matters, turn off mobile data on the phone, or turn off the phone's own setting that switches to mobile data when Wi-Fi has no internet.
 
-> [!TIP] The guard's promise is no internet rather than unprotected internet. A tunnel that stays down keeps its devices offline. Getting the tunnel back is the watchdog's job ([5.3](#53-watchdog---watchdog-wireguard-configuration)).
+> [!TIP]
+> The guard's promise is no internet rather than unprotected internet. A tunnel that stays down keeps its devices offline. Getting the tunnel back is the watchdog's job ([5.3](#53-watchdog---watchdog-wireguard-configuration)).
 
 For the technically inquisitive, [ARCHITECTURE 6.8.10](ARCHITECTURE.md#what-happens-when-the-tunnel-drops) has the measurements, the two rules, and every point at which the app puts them in place.
 
@@ -916,9 +917,8 @@ Add it the way you add any widget: long-press an empty spot on your home screen,
 <p align="center">
   <img src="./images/home-screen-widgets.png" alt="The small and large home screen widgets, both showing two tunnels up and protected" width="300">
   <br>
+  Tap the widget to open the app.
 </p>
-
-Tap it to open the app. That much works with nothing stored.
 
 #### 5.11.1. Why it needs a key, and what the key can do
 
@@ -941,7 +941,7 @@ Two things, both in Android's Keystore-backed secure storage, and both only once
 - **The key itself.** The private half never leaves your phone.
 - **Your router's login name.** Not a password - the name. SSH cannot connect without one, so a key with no name beside it is a key that can never be used. It is no use on its own either: the name without the key logs into nothing.
 
-Neither is backed up to Google Drive (`android:allowBackup="false"`). **REMOVE** deletes the key from your router and both items from your phone, together - never one without the other.
+Neither is backed up to Google Drive (`android:allowBackup="false"`). Each phone or tablet you set the widget up on gets a key of its own. **REMOVE** deletes this phone's key from your router and both items from this phone, together - never one without the other - and leaves any other device's key, and its widget, working.
 
 #### 5.11.3. When it refreshes, and when it doesn't
 
