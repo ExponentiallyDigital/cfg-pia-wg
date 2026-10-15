@@ -61,7 +61,12 @@ Future<void> _pumpSettings(WidgetTester tester, {SessionController? controller})
   final c = controller ?? _quietController();
   if (controller == null) addTearDown(c.dispose);
   await tester.pumpWidget(
-    MaterialApp(home: SessionScope(controller: c, child: const Scaffold(body: SettingsScreen()))),
+    MaterialApp(
+      home: SessionScope(
+        controller: c,
+        child: const Scaffold(body: SettingsScreen()),
+      ),
+    ),
   );
   await tester.pumpAndSettle();
 }
@@ -79,12 +84,16 @@ void main() {
         ..sshPassword = 'pw';
       // routerConnected deliberately left false - that is the whole point.
       addTearDown(c.dispose);
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(
-          controller: c,
-          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: (_) => ''))),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(
+              body: SettingsScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: (_) => '')),
+            ),
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
@@ -102,12 +111,16 @@ void main() {
         ..sshPassword = 'pw'
         ..routerConnected = true;
       addTearDown(c.dispose);
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(
-          controller: c,
-          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: (_) => ''))),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(
+              body: SettingsScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: (_) => '')),
+            ),
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await tester.ensureVisible(find.byKey(const Key('settings_del_pia_cert')));
@@ -123,26 +136,33 @@ void main() {
   // half-undone router: restore the boot scripts BEFORE removing the directory, so a failure at
   // the last step still leaves a router that boots the way it did originally.
   group('uninstall from router', () {
-    Future<RecordingSSHClient> pumpAndConfirm(WidgetTester tester,
-        {bool backupsExist = true, String Function(String cmd)? responder}) async {
+    Future<RecordingSSHClient> pumpAndConfirm(
+      WidgetTester tester, {
+      bool backupsExist = true,
+      String Function(String cmd)? responder,
+    }) async {
       final ssh = RecordingSSHClient(
-          responder: responder ??
-              (cmd) {
-                if (!cmd.contains('.old')) return '';
-                return backupsExist ? 'RESTORED' : 'REMOVED';
-              });
+        responder:
+            responder ??
+            (cmd) {
+              if (!cmd.contains('.old')) return '';
+              return backupsExist ? 'RESTORED' : 'REMOVED';
+            },
+      );
       final c = SessionController(tickInterval: const Duration(hours: 1))
         ..routerIp = '192.168.1.1'
         ..sshUsername = 'admin'
         ..sshPassword = 'pw'
         ..routerConnected = true;
       addTearDown(c.dispose);
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(
-          controller: c,
-          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('settings_uninstall')));
       await tester.tap(find.byKey(const Key('settings_uninstall')));
@@ -189,18 +209,26 @@ void main() {
     // ID-287, END-2: run on a router already uninstalled, it said it had removed the guard rules and
     // the app's NVRAM settings, and asked for a restart, when there was nothing there at all.
     testWidgets('a second uninstall says nothing was there, in red, and asks for no restart', (tester) async {
-      await pumpAndConfirm(tester, responder: (cmd) {
-        if (cmd.contains('.old')) return 'NOTOURS';
-        if (cmd.contains('grep -c')) return '0';
-        if (cmd.contains('rm -rf')) return 'ABSENT';
-        return '';
-      });
+      await pumpAndConfirm(
+        tester,
+        responder: (cmd) {
+          if (cmd.contains('.old')) return 'NOTOURS';
+          if (cmd.contains('grep -c')) return '0';
+          if (cmd.contains('rm -rf')) return 'ABSENT';
+          return '';
+        },
+      );
 
       expect(find.text('No fail-closed guard rules to remove'), findsOneWidget);
       expect(find.text('No app settings in NVRAM to remove'), findsOneWidget);
       expect(find.textContaining('Removed'), findsOneWidget, reason: 'only the heading, "Removed from the router"');
-      for (final text in ['No fail-closed guard rules to remove', 'Left S50downloadmaster alone - it is not ours',
-        'No watchdog schedules to remove', 'No app settings in NVRAM to remove', 'No $kRouterAppDir to remove']) {
+      for (final text in [
+        'No fail-closed guard rules to remove',
+        'Left S50downloadmaster alone - it is not ours',
+        'No watchdog schedules to remove',
+        'No app settings in NVRAM to remove',
+        'No $kRouterAppDir to remove',
+      ]) {
         expect(tester.widget<Text>(find.text(text)).style?.color, kError, reason: text);
       }
       expect(find.text('Please restart your router.'), findsNothing);
@@ -214,12 +242,14 @@ void main() {
         ..sshPassword = 'pw'
         ..routerConnected = true;
       addTearDown(c.dispose);
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(
-          controller: c,
-          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('settings_uninstall')));
       await tester.tap(find.byKey(const Key('settings_uninstall')));
@@ -236,9 +266,14 @@ void main() {
     testWidgets('the prompt says what it does NOT remove', (tester) async {
       final c = SessionController(tickInterval: const Duration(hours: 1));
       addTearDown(c.dispose);
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(controller: c, child: const Scaffold(body: SettingsScreen())),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: const Scaffold(body: SettingsScreen()),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('settings_uninstall')));
       await tester.tap(find.byKey(const Key('settings_uninstall')));
@@ -261,12 +296,14 @@ void main() {
         ..sshPassword = 'pw'
         ..routerConnected = true;
       addTearDown(c.dispose);
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(
-          controller: c,
-          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('settings_uninstall')));
       await tester.tap(find.byKey(const Key('settings_uninstall')));
@@ -290,12 +327,14 @@ void main() {
   group('REMOVE CACHED PIA CERT', () {
     Future<void> pumpWithSsh(WidgetTester tester, SessionController c, RecordingSSHClient ssh) async {
       addTearDown(() => c.dispose());
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(
-          controller: c,
-          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
     }
 
@@ -303,7 +342,7 @@ void main() {
       ..routerIp = '192.168.1.1'
       ..sshUsername = 'admin'
       ..sshPassword = 'pw'
-        ..routerConnected = true;
+      ..routerConnected = true;
 
     // Every action on this screen is a full-width row with a line under it saying what it removes.
     // A bare label leaves the user guessing how much, which is not a guess to invite here.
@@ -637,20 +676,26 @@ void main() {
       ..sshPassword = 'pw'
       ..routerConnected = true;
 
-    Future<void> pump(WidgetTester tester, SessionController c, RecordingSSHClient ssh,
-        {Future<bool> Function(String host, int port)? answers}) async {
+    Future<void> pump(
+      WidgetTester tester,
+      SessionController c,
+      RecordingSSHClient ssh, {
+      Future<bool> Function(String host, int port)? answers,
+    }) async {
       addTearDown(c.dispose);
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(
-          controller: c,
-          child: Scaffold(
-            body: SettingsScreen(
-              testClientFactory: (_, __, ___) async => ssh,
-              testRouterAnswers: answers ?? (_, __) async => false,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(
+              body: SettingsScreen(
+                testClientFactory: (_, __, ___) async => ssh,
+                testRouterAnswers: answers ?? (_, __) async => false,
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
     }
 
@@ -679,8 +724,11 @@ void main() {
       await tester.tap(find.byKey(const Key('settings_reboot_cancel')));
       await tester.pumpAndSettle();
       expect(ssh.ran('reboot'), isFalse);
-      expect(c.log.any((e) => e.message.contains('reboot requested')), isFalse,
-          reason: 'a cancelled reboot must not claim one was requested');
+      expect(
+        c.log.any((e) => e.message.contains('reboot requested')),
+        isFalse,
+        reason: 'a cancelled reboot must not claim one was requested',
+      );
     });
 
     testWidgets('clears a ghost service marker BEFORE asking the router to reboot', (tester) async {
@@ -741,11 +789,11 @@ void main() {
       // A new boot id after the restart, as the kernel gives (ID-335).
       var bootReads = 0;
       await pump(
-          tester,
-          c,
-          RecordingSSHClient(
-              responder: (cmd) => cmd.contains('boot_id') ? (bootReads++ == 0 ? 'boot-before' : 'boot-after') : ''),
-          answers: answers);
+        tester,
+        c,
+        RecordingSSHClient(responder: (cmd) => cmd.contains('boot_id') ? (bootReads++ == 0 ? 'boot-before' : 'boot-after') : ''),
+        answers: answers,
+      );
       await confirmReboot(tester);
 
       await tester.pump(const Duration(seconds: 3));
@@ -761,14 +809,12 @@ void main() {
     });
 
     // ID-335: one failed probe and one answer read as a reboot, whether or not the router restarted.
-    testWidgets('a router that answers with the same boot id has not restarted, and is not called rebooted',
-        (tester) async {
+    testWidgets('a router that answers with the same boot id has not restarted, and is not called rebooted', (tester) async {
       final c = connected();
       final replies = [false, true];
       var calls = 0;
       Future<bool> answers(String host, int port) async => replies[calls < replies.length ? calls++ : replies.length - 1];
-      await pump(tester, c, RecordingSSHClient(responder: (cmd) => cmd.contains('boot_id') ? 'same-boot' : ''),
-          answers: answers);
+      await pump(tester, c, RecordingSSHClient(responder: (cmd) => cmd.contains('boot_id') ? 'same-boot' : ''), answers: answers);
       await confirmReboot(tester);
       await tester.pump(const Duration(seconds: 3));
       await tester.pump(const Duration(seconds: 3));
@@ -813,13 +859,15 @@ void main() {
     // Remembers a write, as the router does, so the read-back after it sees the new value (ID-338).
     RecordingSSHClient router({String tag = '', String current = '2'}) {
       var value = current;
-      return RecordingSSHClient(responder: (cmd) {
-        final set = RegExp(r'nvram set vpnc_max_conn=(\d+)').firstMatch(cmd);
-        if (set != null) value = set.group(1)!;
-        if (cmd.contains('3rd-party')) return tag;
-        if (cmd.contains('nvram get vpnc_max_conn')) return value;
-        return '';
-      });
+      return RecordingSSHClient(
+        responder: (cmd) {
+          final set = RegExp(r'nvram set vpnc_max_conn=(\d+)').firstMatch(cmd);
+          if (set != null) value = set.group(1)!;
+          if (cmd.contains('3rd-party')) return tag;
+          if (cmd.contains('nvram get vpnc_max_conn')) return value;
+          return '';
+        },
+      );
     }
 
     Future<void> open(WidgetTester tester, RecordingSSHClient ssh) async {
@@ -829,10 +877,14 @@ void main() {
         ..sshPassword = 'pw'
         ..routerConnected = true;
       addTearDown(c.dispose);
-      await tester.pumpWidget(SessionScope(
-        controller: c,
-        child: MaterialApp(home: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh))),
-      ));
+      await tester.pumpWidget(
+        SessionScope(
+          controller: c,
+          child: MaterialApp(
+            home: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('settings_max_vpns')));
       await tester.tap(find.byKey(const Key('settings_max_vpns')));
@@ -885,20 +937,27 @@ void main() {
   // not at all, so it is a choice, off by default, explained before it is made.
   group('SECURE STARTUP', () {
     // [applies] false: the router's filter never takes the ping block. [forced]: something else keeps it there.
-    RecordingSSHClient router(
-        {bool blocked = false, String tag = '', bool pinned = true, bool applies = true, bool forced = false}) {
+    RecordingSSHClient router({
+      bool blocked = false,
+      String tag = '',
+      bool pinned = true,
+      bool applies = true,
+      bool forced = false,
+    }) {
       var on = blocked;
       // Whole commands only: the guard script the app writes contains these key names too.
-      return RecordingSSHClient(responder: (cmd) {
-        final c = cmd.trim();
-        if (c == 'nvram set cfg_pia_wg_lw_icmp=1') on = true;
-        if (c == 'nvram unset cfg_pia_wg_lw_icmp') on = false;
-        if (c.contains('3rd-party')) return tag;
-        if (c == 'nvram get cfg_pia_wg_lw_icmp') return on ? '1' : '';
-        if (c == 'nvram get filter_lw_icmp_x') return forced || (on && pinned && applies) ? '8' : '';
-        if (c == 'nvram get vpnc_dev_policy_list') return pinned ? '1>192.168.1.50>>5>' : '';
-        return '';
-      });
+      return RecordingSSHClient(
+        responder: (cmd) {
+          final c = cmd.trim();
+          if (c == 'nvram set cfg_pia_wg_lw_icmp=1') on = true;
+          if (c == 'nvram unset cfg_pia_wg_lw_icmp') on = false;
+          if (c.contains('3rd-party')) return tag;
+          if (c == 'nvram get cfg_pia_wg_lw_icmp') return on ? '1' : '';
+          if (c == 'nvram get filter_lw_icmp_x') return forced || (on && pinned && applies) ? '8' : '';
+          if (c == 'nvram get vpnc_dev_policy_list') return pinned ? '1>192.168.1.50>>5>' : '';
+          return '';
+        },
+      );
     }
 
     Future<SessionController> open(WidgetTester tester, RecordingSSHClient ssh) async {
@@ -909,10 +968,14 @@ void main() {
         ..sshPassword = 'pw'
         ..routerConnected = true;
       addTearDown(c.dispose);
-      await tester.pumpWidget(SessionScope(
-        controller: c,
-        child: MaterialApp(home: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh))),
-      ));
+      await tester.pumpWidget(
+        SessionScope(
+          controller: c,
+          child: MaterialApp(
+            home: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('settings_secure_startup')));
       await tester.tap(find.byKey(const Key('settings_secure_startup')));
@@ -931,8 +994,10 @@ void main() {
       await _pumpSettings(tester);
       expect(find.text('SECURE STARTUP'), findsOneWidget);
       expect(find.text('Stops devices on a VPN leaking pings while the router starts.'), findsOneWidget);
-      expect(find.descendant(of: find.byKey(const Key('settings_secure_startup')), matching: find.byIcon(Icons.security_outlined)),
-          findsOneWidget);
+      expect(
+        find.descendant(of: find.byKey(const Key('settings_secure_startup')), matching: find.byIcon(Icons.security_outlined)),
+        findsOneWidget,
+      );
     });
 
     testWidgets('is hidden once the router is known to be Merlin, whose kill switch covers it', (tester) async {
@@ -950,7 +1015,8 @@ void main() {
       expect(selected(tester, 'secure_startup_block'), isFalse);
       expect(find.text('ALLOW pings (default)'), findsOneWidget);
       final text = tester.widget<RichText>(
-          find.descendant(of: find.byKey(const Key('secure_startup_text')), matching: find.byType(RichText)));
+        find.descendant(of: find.byKey(const Key('secure_startup_text')), matching: find.byType(RichText)),
+      );
       final plain = text.text.toPlainText();
       expect(plain, contains('briefly while the router starts'));
       // ID-368: a change of DNS servers opens no gap since ID-364; a reset of the router's network does.
@@ -990,8 +1056,11 @@ void main() {
       final set = ssh.commands.indexOf('nvram set cfg_pia_wg_lw_icmp=1');
       expect(set, greaterThan(-1));
       expect(ssh.commands.indexOf('nvram commit', set), greaterThan(set));
-      expect(ssh.commands.skip(set).any((x) => x == "'/jffs/cfg-pia-wg/guard.sh'"), isTrue,
-          reason: "applied now, not at the router's next event");
+      expect(
+        ssh.commands.skip(set).any((x) => x == "'/jffs/cfg-pia-wg/guard.sh'"),
+        isTrue,
+        reason: "applied now, not at the router's next event",
+      );
       expect(c.log.last.message, contains("Secure startup on: devices not on a VPN can't ping the internet."));
     });
 
@@ -1084,16 +1153,18 @@ void main() {
     Future<SessionController> pumpFresh(WidgetTester tester, RecordingSSHClient ssh, {bool unreachable = false}) async {
       final c = SessionController(tickInterval: const Duration(hours: 1), routerPrefs: _MemoryRouterPrefs());
       addTearDown(c.dispose);
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(
-          controller: c,
-          child: Scaffold(
-            body: SettingsScreen(
-              testClientFactory: (_, __, ___) async => unreachable ? throw Exception('Connection refused') : ssh,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(
+              body: SettingsScreen(
+                testClientFactory: (_, __, ___) async => unreachable ? throw Exception('Connection refused') : ssh,
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
       return c;
     }
@@ -1155,14 +1226,23 @@ void main() {
       ..sshPassword = 'pw'
       ..routerConnected = true;
 
-    Future<void> pump(WidgetTester tester, SessionController c, RecordingSSHClient ssh, {Future<bool> Function()? restore}) async {
+    Future<void> pump(
+      WidgetTester tester,
+      SessionController c,
+      RecordingSSHClient ssh, {
+      Future<bool> Function()? restore,
+    }) async {
       addTearDown(c.dispose);
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(
-          controller: c,
-          child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh, testRestore: restore)),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(
+              body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh, testRestore: restore),
+            ),
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
     }
 
@@ -1198,13 +1278,15 @@ void main() {
     // Remembers a write, as the router does, so the read-back after it sees the new value (ID-338).
     RecordingSSHClient router({String tag = '', String current = '2'}) {
       var value = current;
-      return RecordingSSHClient(responder: (cmd) {
-        final set = RegExp(r'nvram set vpnc_max_conn=(\d+)').firstMatch(cmd);
-        if (set != null) value = set.group(1)!;
-        if (cmd.contains('3rd-party')) return tag;
-        if (cmd.contains('nvram get vpnc_max_conn')) return value;
-        return '';
-      });
+      return RecordingSSHClient(
+        responder: (cmd) {
+          final set = RegExp(r'nvram set vpnc_max_conn=(\d+)').firstMatch(cmd);
+          if (set != null) value = set.group(1)!;
+          if (cmd.contains('3rd-party')) return tag;
+          if (cmd.contains('nvram get vpnc_max_conn')) return value;
+          return '';
+        },
+      );
     }
 
     testWidgets('MAX ACTIVE VPNS: a new limit in both logs', (tester) async {
@@ -1381,20 +1463,29 @@ void main() {
       await store.save(generateWidgetKeyPair().seed);
       await openDialog(tester);
 
-      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).data, contains('A key exists'));
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).data, contains('Key created'));
       expect(find.byKey(const Key('widget_key_remove')), findsOneWidget);
     });
 
-    testWidgets('REMOVE takes it off the router, then the phone, then switches back to GENERATE', (tester) async {
-      await store.save(generateWidgetKeyPair().seed);
-      final ssh = RecordingSSHClient(responder: (cmd) => cmd == 'nvram get sshd_authkeys' ? 'ssh-ed25519 AAAA cfg-pia-wg-widget' : '');
+    // ID-398: the router holds this phone's widget key and a tablet's. REMOVE takes out this phone's
+    // only, found by its key, and the tablet's widget keeps refreshing.
+    testWidgets('REMOVE takes this phone\'s key off the router, then the phone, then switches back to GENERATE', (tester) async {
+      final pair = generateWidgetKeyPair();
+      await store.save(pair.seed);
+      final ours = openSshPublicKeyLine(pair.publicKeyBytes, restriction: 'command="x"', comment: kWidgetKeyComment);
+      final tablet = openSshPublicKeyLine(generateWidgetKeyPair().publicKeyBytes, restriction: 'command="x"', comment: kWidgetKeyComment);
+      final ssh = RecordingSSHClient(
+        responder: (cmd) => cmd == 'nvram get sshd_authkeys' ? '$tablet\n$ours' : '',
+      );
       await openDialog(tester, ssh: ssh);
       await tester.tap(find.byKey(const Key('widget_key_remove')));
       await tester.pumpAndSettle();
 
       expect(await store.exists(), isFalse);
       expect(await store.readLogin(), isNull, reason: 'the login goes with the key, not without it');
-      expect(ssh.commands.last, isNot(contains('cfg-pia-wg-widget')));
+      expect(ssh.commands.last, contains('nvram set sshd_authkeys='), reason: 'a write was made');
+      expect(ssh.commands.last, isNot(contains(widgetKeyBlob(pair.publicKeyBytes))), reason: "this phone's key is gone");
+      expect(ssh.commands.last, contains(sshKeyBlob(tablet)!), reason: "the tablet's key stays");
       expect(find.byKey(const Key('widget_key_generate')), findsOneWidget);
       expect(tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data, 'Removed from your router and this phone.');
       expect(cancelled, 1, reason: 'a job that can no longer log in should not keep waking the phone');
@@ -1425,20 +1516,24 @@ void main() {
   // ID-325: the last server list that passed PIA's signature check, on the router and on this phone.
   group('REMOVE CACHED PIA SERVERS', () {
     Future<void> pump(WidgetTester tester, RecordingSSHClient ssh, ServerListStore store, {SessionController? c}) async {
-      final controller = c ??
+      final controller =
+          c ??
           (SessionController(tickInterval: const Duration(hours: 1))
             ..routerIp = '192.168.1.1'
             ..sshUsername = 'admin'
             ..sshPassword = 'pw'
             ..routerConnected = true);
       addTearDown(controller.dispose);
-      await tester.pumpWidget(MaterialApp(
-        home: SessionScope(
-          controller: controller,
-          child: Scaffold(
-              body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh, testServerListStore: store)),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: controller,
+            child: Scaffold(
+              body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh, testServerListStore: store),
+            ),
+          ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const Key('settings_del_pia_servers')));
       await tester.tap(find.byKey(const Key('settings_del_pia_servers')));

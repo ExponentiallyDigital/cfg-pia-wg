@@ -168,30 +168,44 @@ String widgetKeyRestriction(String statusCommand) {
   return 'command="$escaped",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty';
 }
 
-/// The comment every widget key line ends with - how [replaceWidgetKeyLine] and
-/// [removeWidgetKeyLine] find a previous entry of ours among lines that may carry options or
-/// comments this file never wrote and must not try to parse. Pass this, not a free-form comment,
-/// as [openSshPublicKeyLine]'s `comment` for the line that is actually installed.
+/// The comment every widget key line ends with, on every device's line alike, so a person reading
+/// the router's keys can see which are the widget's. It does not tell one device's line from
+/// another's - the key itself does ([sshKeyBlob], ID-398). Pass this, not a free-form comment, as
+/// [openSshPublicKeyLine]'s `comment` for the line that is actually installed.
 const String kWidgetKeyComment = 'cfg-pia-wg-widget';
 
+/// The base64 key on an `ssh-ed25519` line - the part after `ssh-ed25519 ` - or null for a line
+/// without one. Every phone or tablet makes its own widget key, so this, not the comment they all
+/// share, is how a device finds its own line among the others' (ID-398).
+String? sshKeyBlob(String line) => RegExp(r'(?:^|\s)ssh-ed25519\s+([A-Za-z0-9+/=]+)').firstMatch(line)?.group(1);
+
+/// The base64 key [openSshPublicKeyLine] writes for [publicKeyBytes].
+String widgetKeyBlob(Uint8List publicKeyBytes) =>
+    sshKeyBlob(openSshPublicKeyLine(publicKeyBytes, restriction: '', comment: ''))!;
+
 /// `sshd_authkeys`'s existing value (or the live file's - they matched line for line when
-/// measured, 2026-10-12, BACKLOG ID-376) with any previous widget key line removed and [newLine]
-/// appended, so installing twice replaces rather than duplicates. Every other line - anything not
-/// ending in [kWidgetKeyComment] - is carried through untouched, in its original order: this is
-/// not an allow list the app owns, it is the router's whole account, the user's own real key (if
-/// any) among it.
+/// measured, 2026-10-12, BACKLOG ID-376) with [newLine] appended, and any earlier line with the
+/// same key taken out first, so installing twice replaces rather than duplicates. Every other line
+/// is carried through untouched, in its original order: the user's own real key, if any, and other
+/// devices' widget keys among them. Until build 498 this took out every line ending in
+/// [kWidgetKeyComment], so a second phone's GENERATE removed the first phone's key, and its widget
+/// stopped refreshing (ID-398).
 ///
 /// Measured newline-joined, not the `>` this project's other NVRAM lists use - a different ASUS
 /// subsystem, not assumed to share a convention with filter_lwlist or vpnc_clientlist.
 String replaceWidgetKeyLine(String current, String newLine) =>
-    [..._linesWithoutOurs(current), newLine].join('\n');
+    [..._linesWithout(current, sshKeyBlob(newLine)), newLine].join('\n');
 
-/// As [replaceWidgetKeyLine], but takes the widget's line out and puts nothing back - used when
-/// the key is turned off. Harmless, and a no-op, if none is present.
-String removeWidgetKeyLine(String current) => _linesWithoutOurs(current).join('\n');
+/// Takes out the line with [keyBlob], this device's key ([widgetKeyBlob]), and puts nothing back -
+/// used when this device's key is turned off. Other devices' keys stay. Harmless, and a no-op, if
+/// it isn't there.
+String removeWidgetKeyLine(String current, String keyBlob) => _linesWithout(current, keyBlob).join('\n');
 
-List<String> _linesWithoutOurs(String current) =>
-    current.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty && !l.endsWith(kWidgetKeyComment)).toList();
+List<String> _linesWithout(String current, String? keyBlob) => current
+    .split('\n')
+    .map((l) => l.trim())
+    .where((l) => l.isNotEmpty && (keyBlob == null || sshKeyBlob(l) != keyBlob))
+    .toList();
 
 /// Keeps exactly two things, both Keystore-backed: the widget key's seed, and the router login
 /// name that key was installed under. Nothing else may ever be written through this - see

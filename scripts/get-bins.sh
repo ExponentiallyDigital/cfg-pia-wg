@@ -72,6 +72,8 @@ echo "Downloading jq from: $JQ_URL"
 wget -O /jffs/cfg-pia-wg/jq "$JQ_URL"
 chmod 755 /jffs/cfg-pia-wg/jq
 
+# ASUS's curl wrote this script's downloads to /jffs/curllst; ours leave nothing there (ID-400).
+for F in /jffs/curllst /jffs/curllst.[0-9]*; do [ -f "$F" ] && : > "$F"; done
 echo "Installation complete."
 echo "Binaries installed to /jffs/cfg-pia-wg/"
 echo "  - /jffs/cfg-pia-wg/mailsend-go"

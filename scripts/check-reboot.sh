@@ -33,7 +33,7 @@ PINNED="$(r "nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v ip='$ME
 [ -n "$WANIP" ] && [ -n "$BOOT0" ] || { echo "couldn't read the router over ROUTER_SSH"; exit 2; }
 [ -n "$PINNED" ] && [ "$PINNED" != 0 ] || { echo "this machine ($ME) isn't pinned to a tunnel: run it on one that is"; exit 2; }
 # The control: traffic that does leave by the WAN is seen as wan0_ipaddr (no CGNAT in the way).
-[ "$(r 'curl -s --max-time 8 https://api.ipify.org')" = "$WANIP" ] || { echo "the router's own traffic isn't seen as wan0_ipaddr, so a leak couldn't be told apart; not checked"; exit 2; }
+[ "$(r 'curl -s --max-time 8 https://api.ipify.org; for F in /jffs/curllst /jffs/curllst.[0-9]*; do [ -f "$F" ] && : > "$F"; done')" = "$WANIP" ] || { echo "the router's own traffic isn't seen as wan0_ipaddr, so a leak couldn't be told apart; not checked"; exit 2; }
 BEFORE="$(probe)"
 [ -n "$BEFORE" ] && [ "$BEFORE" != "$WANIP" ] || { echo "before the reboot, this machine's traffic doesn't come from a tunnel (got '${BEFORE:-nothing}'); nothing to check"; exit 2; }
 echo "== check-reboot $(date '+%Y-%m-%d %H:%M:%S'): pinned (VPN Fusion profile $PINNED); the tunnel answers before the reboot, and the WAN control holds"

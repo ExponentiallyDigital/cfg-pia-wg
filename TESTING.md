@@ -322,7 +322,8 @@ Every test starts on MANAGE, connected. MAN-13 and MAN-14 are in the [WD](#wd) g
 - Do: select wgc1, ENABLE.
 - See: "Connectivity check targets", filled in with 8.8.8.8 and 1.1.1.1.
 - Do: ENABLE.
-- See: APP LOG `wgc1:pia-<region> enabled: up, and its server has answered.` and the ACTIVE badge.
+- See: APP LOG `wgc1:pia-<region> enabled: up, its server has answered, and both check addresses answered through it.` and the ACTIVE badge.
+- See: ROUTER LOG `ENABLE connectivity check: primary 8.8.8.8 OK, secondary 1.1.1.1 OK`. Since build 498 those pings go through the tunnel on stock too; until then they left by the WAN (ID-396). check-claims `ENABLE-ping` proves it.
 - Pass if, on the router, `ip -o link show up | grep -c wgc1:` prints `1` and `echo $(( $(date +%s) - $(wg show wgc1 latest-handshakes | awk '{print $2}') ))` is under 180: the router's own record of a handshake.
 
 **MAN-4** Two tunnels up [hand]
@@ -938,10 +939,10 @@ iptables -I OUTPUT -o wgc1 -d 9.9.9.9 -j DROP
 
 The check that lets ID-325 leave WIP, under the CHANGELOG's rule for protection changes. `scripts/check-claims.sh` runs the deployed watchdog's own check on PIA's list and on copies of it tampered with, and in `full` mode makes three real rebuilds of the first watchdog's tunnel meet a list tampered with as it lands. Each rebuild drops that tunnel for a moment.
 
-- Starts with: a watchdog on wgc1 deployed by build 497 or later, with email alerts on, that has rebuilt at least once since, so the router keeps a list: `ls -l /jffs/cfg-pia-wg/pia_servers_verified.*` shows two files. BRK-2 leaves it that way. `check-claims.sh` in `/jffs`.
-- Do: on the router, `/bin/sh /jffs/check-claims.sh quick`.
+- Starts with: a watchdog on wgc1 deployed by build 497 or later, with email alerts on, that has rebuilt at least once since, so the router keeps a list: `ls -l /jffs/cfg-pia-wg/pia_servers_verified.*` shows two files. BRK-2 leaves it that way. `check-claims.sh` in `/jffs/cfg-pia-wg`.
+- Do: on the router, `/bin/sh /jffs/cfg-pia-wg/check-claims.sh quick`.
 - Pass if: PASS for `SIGLIST-0`, the control (PIA's list as it arrives today passes the deployed watchdog's check, with the router's own openssl), `SIGLIST-moved`, `SIGLIST-nosig` and `SIGLIST-kept`.
-- Do: `/bin/sh /jffs/check-claims.sh full`. About 20 minutes.
+- Do: `/bin/sh /jffs/cfg-pia-wg/check-claims.sh full`. About 20 minutes.
 - Pass if: PASS for `SIG-fallback` (the tampered list refused, the router's kept list used), `SIG-refused` (with no kept list, nothing used) and `SIG-nocheck`. `SIG-nocheck` is the check seen to fail: with the check taken out of a copy of the watchdog, the same tampered list is used. `SIG-refused` just before it is the same check passing with the watchdog whole.
 - See: `SIG-mail` says the fallback's alert email was sent, and it arrives with a SERVER LIST section: "PIA's server list failed its signature check on this run, so it was not used", and the date of the list it used.
 - Pass if: `ls -l /jffs/cfg-pia-wg/pia_servers_verified.txt` afterwards has the same size and time as before `full`: the tampered lists never replaced it.
@@ -1445,9 +1446,9 @@ nvram get filter_lw_icmp_x
 
 The check that lets ID-364 leave WIP, under the CHANGELOG's rule for protection changes: `scripts/check-claims.sh` breaks the guard on purpose, expects each break to be seen, and expects the router's own events to put it right. It stops one tunnel and starts it again, so if that tunnel is the default connection, devices that follow the default lose it for a moment.
 
-- Starts with: DESKTOP pinned to wgc1, both tunnels up, and `check-claims.sh` in `/jffs`.
+- Starts with: DESKTOP pinned to wgc1, both tunnels up, and `check-claims.sh` in `/jffs/cfg-pia-wg`.
 - Do: DEVICES, PHONE to wgc5, APPLY.
-- Do: on the router, `/bin/sh /jffs/check-claims.sh quick`. It takes about five minutes.
+- Do: on the router, `/bin/sh /jffs/cfg-pia-wg/check-claims.sh quick`. It takes about five minutes.
 - Pass if: it ends `0 failed`, `GUARD-now` counts 2 pinned devices, and these are PASS: `GUARD-cron`, `GUARD-boot`, `GUARD-hook`, `GUARD-wiped`, `GUARD-event`, `GUARD-repaired`, `GUARD-planted` (twice), `FILTER-emptied`, `FILTER-chain`, `FILTER-event`, and for the first pinned device's tunnel, `GUARD-wgcN-empty`, `-refilled`, `-stopped`, `-no91`, `-back` and `-restarted`.
 - See: `GUARD-wgcN-no91` says where that device's traffic went with rule 91 gone: `WAN`, or the default connection's tunnel if that's another one. That line is the check seen to fail; `-stopped` just before it is the same check passing with the guard whole.
 - See: `GUARD-wgcN-back` gives the seconds from starting the tunnel to the device's traffic going through it: about 10, plus the tunnel's own start.
@@ -1591,7 +1592,7 @@ The check that lets ID-364 leave WIP, under the CHANGELOG's rule for protection 
 - See: THE ROUTER'S OWN LOOKUPS lists each `/etc/resolv.conf` server: the DNS Server addresses tagged `not encrypted`, stubby tagged `encrypted (DoT)`, "only if both of the above fail".
 - See: THE WATCHDOGS' LOOKUPS, one line per slot with its region, and `encrypted (DoH)` for each watchdog; an empty slot reads `not configured`.
 - Pass if: EVIDENCE matches `ip rule show | grep 'iif lo'` and `iptables -t nat -S VPN_FUSION` on the router.
-- Pass if: `/bin/sh /jffs/check-claims.sh quick` on the router shows PASS for `DNS-pinned` and `DNS-DoT`. The tags are the app's word; those two measure what they claim.
+- Pass if: `/bin/sh /jffs/cfg-pia-wg/check-claims.sh quick` on the router shows PASS for `DNS-pinned` and `DNS-DoT`. The tags are the app's word; those two measure what they claim.
 - Do: unpin TABLET, APPLY, back to SETTINGS, ROUTER DNS ROUTING.
 - See: TABLET gone from YOUR DEVICES' LOOKUPS. With no device pinned anywhere, the top line reads "No lookups go through a tunnel." and the redirects section says no device is pinned; with others still pinned, it keeps "Only pinned devices' lookups go through a tunnel."
 
@@ -1662,8 +1663,21 @@ The one failure no test can reach, and the one that would be silent. WorkManager
 - Do: SETTINGS, HOME SCREEN WIDGET KEY, REMOVE.
 - Pass if: it says it was removed from both, and the dialog now offers GENERATE again.
 - Do: on the router, `nvram get sshd_authkeys` and `cat ~/.ssh/authorized_keys`.
-- Pass if: no line ends `cfg-pia-wg-widget` in either, and any key of your own is still there.
+- Pass if: no line ends `cfg-pia-wg-widget` in either, and any key of your own is still there. With a second device set up as in WGT-6, exactly one `cfg-pia-wg-widget` line is left: the other device's.
 - See: the widget is still on the home screen and still opens the app when tapped. It simply stops refreshing on its own, which is WGT-1's state again.
+
+**WGT-6** Two devices, each with its own widget key (ID-398) [hand]
+
+Until build 498 the second device's GENERATE took the first device's key off the router, and the first widget stopped refreshing.
+
+- Starts with: two phones or tablets with the app, A and B, neither with a widget key yet; at home.
+- Do: on A, SETTINGS, HOME SCREEN WIDGET KEY, GENERATE; add the widget to A's home screen. Then the same on B.
+- Do: on the router, `nvram get sshd_authkeys | grep -c cfg-pia-wg-widget`.
+- Pass if: it prints `2`.
+- Do: on each, tap the widget's refresh button.
+- Pass if: both widgets show a new "checked" time. Neither says it couldn't reach the router.
+- Do: on A, SETTINGS, HOME SCREEN WIDGET KEY, REMOVE. On the router, the same `grep -c`.
+- Pass if: it prints `1`, and B's widget still refreshes when tapped.
 
 ---
 
@@ -1928,7 +1942,7 @@ logger "**MRL-8 END** Break and rebuild"
 **MRL-10** The router check on Merlin [script]
 
 - Starts with: a watchdog on wgc1 with its kill switch on, and a VPN Director rule sending one device to WGC1.
-- Do: on the router, `/bin/sh /jffs/check-claims.sh quick`, then `full`.
+- Do: on the router, `/bin/sh /jffs/cfg-pia-wg/check-claims.sh quick`, then `full`.
 - Pass if: no FAIL. `MAIL-name`: openssl, as Merlin's mail runs it, refuses a certificate for the wrong name and accepts the right one. `KS-wgc1-stopped`: with wgc1 stopped, the VPN Director device's route to the internet is refused, not out of the WAN. Full's `SETUP-as-is`: a real rebuild, with every PIA name looked up over DoH and packets counted by the router at the DoH server; `MAIL-sent`: its SUCCESS email sent (ID-353).
 
 **MRL-11** SECURE STARTUP is stock only [hand]
@@ -2444,6 +2458,7 @@ Some automated tests can only check that a command is written a certain way: tha
 | `test/unit/fail_closed_guard_test.dart` and `guard_orphan_wan_test.dart`: `guard.sh` against a fake `ip` | the kernel honours the guard's rules | check-claims `GUARD-*`: `ip route get` from every pinned device to the internet and every address main sends out of the WAN, with a rule wiped and repaired by the router's own firewall restart, a WAN route planted in the guard's table, the table emptied with its tunnel up, and the tunnel stopped, rule 91 taken away for a moment to show the leak it stops (ID-364). GRD-2, GRD-3, GRD-9 and DEF-7 by hand |
 | `test/unit/device_assignment_service_test.dart`: the stale rule is deleted | a moved device really moves | DEV-5, DEV-6 and DEV-8: `e2e.sh` counts the rules and checks the exit IP |
 | `test/unit/watchdog_server_list_test.dart`: the real script and PIA's real list, checked by the test machine's openssl | the watchdog uses only a server list that carries PIA's signature | check-claims `SIGLIST-*`, with `SIGLIST-0` as its control, runs the deployed watchdog's own check with the router's openssl; `SIG-*` (full) in three real rebuilds, `SIG-nocheck` the control. BRK-10 |
+| `test/unit/enable_ping_test.dart` and `test/router_slot_service_test.dart`: ENABLE's stock ping, against a fake `ip` and `ping` | ENABLE's check pings through the tunnel, not out of the WAN (ID-396) | check-claims `ENABLE-ping`, counted by the router out of the tunnel and out of the WAN; `ENABLE-broken`, the tunnel refusing the ping, must fail it; `ENABLE-old` the control, the old way still answering by the WAN |
 | `test/router_watchdog_service_test.dart`: `nvram set wgcN_dns` | pinned devices' DNS goes through their tunnel | check-claims `DNS-pinned`; WD-23 and DEV-10 by hand |
 | `test/unit/binary_installer_test.dart`: a fake `dgst` | a download is refused if its checksum is wrong | CON-5 is the happy path; the refusal is only tested in CI |
 | `test/busybox_tools_test.dart` | the scripts use only what stock's BusyBox has | it reads the scripts as deployed and every string in `lib/`; the check scripts above run them on the router |

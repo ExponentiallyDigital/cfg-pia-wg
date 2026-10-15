@@ -6,7 +6,7 @@
 # watchdog's "encrypted" lookups passed every test for two weeks while ASUS's curl ignored
 # --doh-url, because a download over ordinary DNS succeeds exactly like one over DoH.
 #
-# Run it as `/bin/sh /jffs/check-claims.sh [dry|quick|full]`, never `sh ...`: over SSH, stock's PATH
+# Run it as `/bin/sh /jffs/cfg-pia-wg/check-claims.sh [dry|quick|full]`, never `sh ...`: over SSH, stock's PATH
 # finds /usr/sbin/sh first, and that is a Broadcom memory tool, not the shell.
 #
 #   dry    prints what it would change, changes nothing, runs the read-only checks
@@ -15,7 +15,8 @@
 #          record lost and the filter switched off, as a settings restore leaves it; a WAN route
 #          planted in the guard's table; the table emptied with its tunnel up; and the tunnel
 #          stopped, with rule 91 taken away for a moment to show the check sees the leak it stops.
-#          One PIA login at most. About 5 minutes.
+#          On stock, ENABLE's check ping must go through a tunnel, and fail when the tunnel refuses
+#          it (ID-396). One PIA login at most. About 5 minutes.
 #   full   quick, then each DNS setup below applied in turn, each proved by a real rebuild of the
 #          first watchdog's tunnel; then three more rebuilds with PIA's server list tampered with as
 #          it lands (ID-325): it must be refused, the router's kept list used and alerted, or with no
@@ -34,8 +35,8 @@
 # on; different from the slot's; from the ISP; and the watchdog's DoH server dead, and unset. Each
 # is checked applied (by reading /etc/resolv.conf and /tmp/resolv.dnsmasq) before it is tested.
 #
-# Safe by construction: every NVRAM key it touches is saved to /jffs/check-claims.restore first,
-# a trap puts them back on any exit, and `/bin/sh /jffs/check-claims.restore` does it by hand if the
+# Safe by construction: every NVRAM key it touches is saved to /jffs/cfg-pia-wg/check-claims.restore
+# first, a trap puts them back on any exit, and `/bin/sh /jffs/cfg-pia-wg/check-claims.restore` does it by hand if the
 # script itself was killed. Watchdog schedules are paused while it runs, and put back, and so is the
 # guard's per-minute entry on a router that still has one from builds 480 to 490.
 # Stock and Merlin. BusyBox only: no seq, od, hexdump, xxd, base64, timeout, command or logread.
@@ -45,7 +46,8 @@
 
 MODE="${1:-quick}"
 D=/jffs/cfg-pia-wg
-RESTORE=/jffs/check-claims.restore
+# Ours, so in the app's own directory, never loose in /jffs among the firmware's files (CONTEXT.md).
+RESTORE=$D/check-claims.restore
 CRUSAVE=/tmp/check-claims.cru
 LOG=/tmp/check-claims.log
 PASSN=0; FAILN=0
@@ -69,6 +71,7 @@ FW=stock; [ "$(nvram get 3rd-party)" = "merlin" ] && FW=merlin
 # ---- snapshot and restore --------------------------------------------------------------------
 KEYS="wan0_dns1_x wan0_dns2_x wan0_dnsenable_x dnspriv_enable"; [ "$FW" = stock ] && KEYS="$KEYS vpnc_unit filter_lwlist cfg_pia_wg_lwlist fw_lw_enable_x cfg_pia_wg_lw_on"
 if [ "$MODE" != dry ]; then
+  mkdir -p "$D"
   : > "$RESTORE"
   for K in $KEYS; do printf 'nvram set %s=%s\n' "$K" "'$(nvram get "$K")'" >> "$RESTORE"; done
   # restart_wan_if is what applies a DNS Server change; the hand restore always runs it.
@@ -85,7 +88,11 @@ tunnel_start() { if [ "$FW" = merlin ]; then service "start_wgc $1"; service res
 tunnel_stop() { if [ "$FW" = merlin ]; then service "stop_wgc $1"; service start_vpnrouting0; else nvram set vpnc_unit="$(unit_of "$1")"; service stop_vpnc; fi; }
 guarded() { [ -x "$D/guard.sh" ] && "$D/guard.sh" 2>/dev/null | grep -o 'guarded [0-9]* of [0-9]*'; }
 RESTORED=""
+# ASUS's curl writes every command line it runs to /jffs/curllst, rotating it to curllst.1 and on;
+# ours leave nothing in any of them (ID-400).
+curllst_clear() { for F in /jffs/curllst /jffs/curllst.[0-9]*; do [ -f "$F" ] && : > "$F"; done; return 0; }
 restore() {
+  curllst_clear
   [ -n "$RESTORED" ] || [ "$MODE" = dry ] && return 0
   RESTORED=1
   echo "== restoring"
@@ -390,13 +397,17 @@ fi
 # ---- 4. Secrets on flash and in the log -------------------------------------------------------
 PW="$(nvram get cfg_pia_wg_password)"; U="$(nvram get cfg_pia_wg_user)"
 # The password is searched for from a file, never as an argument, so it isn't in `ps` meanwhile.
-if [ -n "$PW" ] && [ ! -f /jffs/curllst ]; then
-  pass SECRET-curllst "the PIA password is not in /jffs/curllst (there is no such file)"
+# Every copy: curllst rotates to curllst.1 and on, and a rotated copy keeps what curllst once held
+# (ID-400).
+CLS="$(ls /jffs/curllst /jffs/curllst.[0-9]* 2>/dev/null | tr '\n' ' ')"
+if [ -n "$PW" ] && [ -z "$CLS" ]; then
+  pass SECRET-curllst "the PIA password is not in /jffs/curllst or a rotated copy (there are none)"
 elif [ -n "$PW" ]; then
   ( umask 077; printf '%s\n' "$PW" > /tmp/check-claims.pw )
-  N="$(grep -cFf /tmp/check-claims.pw /jffs/curllst)"
+  HITS=""
+  for F in $CLS; do N="$(grep -cFf /tmp/check-claims.pw "$F")"; [ "${N:-0}" = 0 ] || HITS="$HITS ${F##*/}:${N}"; done
   rm -f /tmp/check-claims.pw
-  [ "$N" = 0 ] && pass SECRET-curllst "the PIA password is not in /jffs/curllst" || fail SECRET-curllst "the PIA password is in /jffs/curllst" "${N:-unreadable} line(s)"
+  [ -z "$HITS" ] && pass SECRET-curllst "the PIA password is not in $CLS" || fail SECRET-curllst "the PIA password is not in /jffs/curllst or a rotated copy" "line(s) in$HITS"
 fi
 PW=""
 [ -n "$U" ] && { [ "$(grep -cF -- "Requesting PIA token for user $U" /tmp/syslog.log 2>/dev/null)" = 0 ] && pass SECRET-syslog "the watchdog logs no PIA user" || info SECRET-syslog "an older watchdog run logged the PIA user"; }
@@ -524,6 +535,59 @@ FWDRUN
     pass SSH-forwarding "an unrestricted key opened a forwarded listener, and the restricted key couldn't: no-port-forwarding holds"
   else
     fail SSH-forwarding "a restricted key opened a forwarded listener" "port $FWDPORT"
+  fi
+fi
+
+# ---- 4d. ENABLE's ping goes through the tunnel (ID-396) ------------------------------------------
+# Until build 498, ENABLE's check ping on stock was sent from the tunnel's address, which the router
+# routes out of the WAN: measured 2026-10-15, 3 packets out of eth0, none out of wgc4, and it
+# answered, so it passed with the tunnel dead. The app now sends it through the tunnel's routing
+# table. enable_ping is the app's own text, word for word (kStockTunnelPingBody in
+# lib/router_slot_service.dart; a test fails if they drift), in a subshell so its names stay its own.
+# Counted by the router, not the ping's word: ICMP to 8.8.8.8 out of the tunnel and out of the WAN.
+# Then the break: the tunnel refuses that ping, and the app's ping must fail. The control: the old
+# way, from the tunnel's address, still answers through the same break, by the WAN.
+enable_ping() (
+N="$1"; IP="$2"
+TBL=$((10 - N))
+while ip rule del to "$IP" iif lo lookup "$TBL" priority 1002 2>/dev/null; do :; done
+ip rule add to "$IP" iif lo lookup "$TBL" priority 1002 2>/dev/null
+if ip route get "$IP" 2>/dev/null | grep -qE " dev wgc$N( |$)"; then
+  if ping -c 1 -w 5 "$IP" >/dev/null 2>&1; then R=OK; else R=FAIL; fi
+else
+  R=NOROUTE
+fi
+while ip rule del to "$IP" iif lo lookup "$TBL" priority 1002 2>/dev/null; do :; done
+echo "$R"
+)
+if [ "$FW" != stock ]; then
+  info ENABLE-ping "Merlin's ENABLE ping binds to the tunnel; this is stock's"
+else
+  EN="$(echo "$UPSTART" | awk '{print $1}')"; EN="${EN#wgc}"
+  if [ -z "$EN" ]; then
+    info ENABLE-ping "no tunnel was up at the start; not checked"
+  else
+    EA="$(ip -o -4 addr show "wgc$EN" | awk '{split($4, a, "/"); print a[1]; exit}')"
+    EW="$(nvram get wan0_ifname)"
+    ecount() { iptables -vxnL OUTPUT | awk -v o="$1" '$3 == "RETURN" && $7 == o && $9 == "8.8.8.8" {print $1; exit}'; }
+    iptables -I OUTPUT -d 8.8.8.8 -p icmp -o "wgc$EN" -j RETURN
+    iptables -I OUTPUT -d 8.8.8.8 -p icmp -o "$EW" -j RETURN
+    ER="$(enable_ping "$EN" 8.8.8.8)"
+    ET="$(ecount "wgc$EN")"; EWN="$(ecount "$EW")"
+    iptables -D OUTPUT -d 8.8.8.8 -p icmp -o "wgc$EN" -j RETURN
+    iptables -D OUTPUT -d 8.8.8.8 -p icmp -o "$EW" -j RETURN
+    if [ "$ER" = OK ] && [ "${ET:-0}" -ge 1 ] && [ "${EWN:-0}" = 0 ]; then
+      pass ENABLE-ping "the app's ENABLE ping answered through wgc$EN: ${ET} packet(s) out of the tunnel, none out of the WAN"
+    else
+      fail ENABLE-ping "the app's ENABLE ping answers through the tunnel" "it said $ER; out of wgc$EN: ${ET:-0}, out of the WAN: ${EWN:-0}"
+    fi
+    iptables -I OUTPUT -d 8.8.8.8 -p icmp -o "wgc$EN" -j DROP
+    EB="$(enable_ping "$EN" 8.8.8.8)"
+    EO=FAIL; [ -n "$EA" ] && ping -I "$EA" -c 1 -w 5 8.8.8.8 >/dev/null 2>&1 && EO=OK
+    iptables -D OUTPUT -d 8.8.8.8 -p icmp -o "wgc$EN" -j DROP
+    [ "$EB" != OK ] && pass ENABLE-broken "with wgc$EN refusing it, the app's ENABLE ping fails (it said $EB)" || fail ENABLE-broken "with the tunnel refusing it, the app's ENABLE ping fails" "it said OK"
+    [ "$EO" = OK ] && pass ENABLE-old "control: through the same break, the old ENABLE ping, from the tunnel's address, still answered - by the WAN" || info ENABLE-old "the old ENABLE ping didn't answer through the break either (it said $EO), so this run's control shows nothing"
+    [ "$(iptables -S OUTPUT | grep -c -- '-d 8.8.8.8/32')" = 0 ] || fail ENABLE-clean "the counting and break rules taken out" "$(iptables -S OUTPUT | grep -c -- '-d 8.8.8.8/32') left"
   fi
 fi
 
