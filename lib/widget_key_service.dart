@@ -22,7 +22,9 @@
 //
 // All the deciding - what the new value should be, whether a previous widget line gets replaced
 // or just removed - is in widget_key.dart's [replaceWidgetKeyLine] and [removeWidgetKeyLine],
-// pure and tested there. This file only reads the router's current value and writes the result.
+// pure and tested there. Each device touches only its own line, found by its key (ID-398). This file only reads the router's current value and writes the result.
+
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 
@@ -46,11 +48,12 @@ class WidgetKeyRouterService {
     await _write(replaceWidgetKeyLine(current, publicKeyLine));
   }
 
-  /// Takes the widget's key off the router. A no-op, not an error, if none is installed -
+  /// Takes this device's widget key - the one whose public half is [publicKeyBytes] - off the
+  /// router, leaving any other device's (ID-398). A no-op, not an error, if it isn't installed -
   /// SETTINGS calls this both when the user asks and whenever the feature is turned off.
-  Future<void> remove() async {
+  Future<void> remove(Uint8List publicKeyBytes) async {
     final current = await _read('nvram get sshd_authkeys');
-    final next = removeWidgetKeyLine(current);
+    final next = removeWidgetKeyLine(current, widgetKeyBlob(publicKeyBytes));
     if (next == current) return;
     await _write(next);
   }

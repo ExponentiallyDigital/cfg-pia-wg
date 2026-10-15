@@ -150,6 +150,14 @@ class StockRouterModel {
       return tunnels[slot] == Tunnel.up ? '$now' : '0';
     }
     if (cmd == 'date +%s') return '$now';
+    // ENABLE's check ping (kStockTunnelPingBody, ID-396), sent through the tunnel's own routing table:
+    // it answers when that tunnel is running. Measured 2026-10-15 by check-claims ENABLE-ping and
+    // ENABLE-broken on stock: through a running tunnel it answered, and with the tunnel refusing it,
+    // it failed.
+    if (cmd.contains(kStockTunnelPingBody)) {
+      final slot = int.parse(RegExp(r'^N=(\d);').firstMatch(cmd)!.group(1)!);
+      return tunnels[slot] == Tunnel.up ? 'OK' : 'FAIL';
+    }
     if (cmd == "cat '$kGuardScriptPath' 2>/dev/null || true") return guardInstalled ? kGuardScript : '';
     if (cmd.startsWith("wc -c < '$kGuardScriptPath'")) return '${writtenByteCount(kGuardScript)}';
     if (cmd.contains(kGuardScriptPath) && cmd.contains('<<')) {

@@ -19,5 +19,6 @@ Pointers for an agent working in this repository. The detail lives in the docume
 - Markdown is never hard-wrapped; unwrap what you touch rather than matching an old wrapped paragraph.
 - Markdown prose follows `.claude/testing/voice-guide.md`.
 - A protection's check belongs in `scripts/check-claims.sh`, which runs on the router unattended.
+- Scripts copied to the router go in `/jffs/cfg-pia-wg`, the app's own directory, never loose in `/jffs` (CONTEXT.md section 1).
 - Router instructions are given as one copyable block with real values filled in, not prose steps to type.
 - Do not commit or push unless asked.
