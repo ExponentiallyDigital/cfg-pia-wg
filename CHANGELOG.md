@@ -106,6 +106,10 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-10-15 v0.8.129 build 499 - build 498's tests fixed for Linux, so CI passes
+
+- ID-406 FIX: **`test/unit/curllst_test.dart` passes on Linux too.** Build 498's CI run failed 3 of its tests, and passed the other 1858: the test moves the script's `/jffs/` and `/tmp/` into a folder of its own, and on Linux that folder is under `/tmp/`, so replacing `/jffs/` first and `/tmp/` second rewrote the path it had just written, and the scripts looked in a folder that wasn't there. On Windows the folder isn't under `/tmp/`, so it passed locally. Now `/tmp/` is replaced first. A fault in the test, not in the scripts it tests. Build 498 was committed but never released; this build carries it.
+
 2026-10-14 v0.8.128 build 498 - ENABLE's check pings through the tunnel on stock, a widget key for each device, and the router's pktrunner error measured harmless
 
 ```play
