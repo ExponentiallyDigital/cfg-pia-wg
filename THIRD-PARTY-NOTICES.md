@@ -18,13 +18,13 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`async`](https://pub.dev/packages/async) | 2.13.1 | [BSD-3-Clause](https://pub.dev/packages/async/license) | transitive |
 | [`characters`](https://pub.dev/packages/characters) | 1.4.1 | [BSD-3-Clause](https://pub.dev/packages/characters/license) | transitive |
 | [`clock`](https://pub.dev/packages/clock) | 1.1.3 | [Apache-2.0](https://pub.dev/packages/clock/license) | transitive |
-| [`code_assets`](https://pub.dev/packages/code_assets) | 1.2.1 | [BSD-3-Clause](https://pub.dev/packages/code_assets/license) | transitive |
+| [`code_assets`](https://pub.dev/packages/code_assets) | 2.1.0 | [BSD-3-Clause](https://pub.dev/packages/code_assets/license) | transitive |
 | [`collection`](https://pub.dev/packages/collection) | 1.19.1 | [BSD-3-Clause](https://pub.dev/packages/collection/license) | transitive |
 | [`convert`](https://pub.dev/packages/convert) | 3.1.2 | [BSD-3-Clause](https://pub.dev/packages/convert/license) | transitive |
 | [`cross_file`](https://pub.dev/packages/cross_file) | 0.3.5+5 | [BSD-3-Clause](https://pub.dev/packages/cross_file/license) | transitive |
 | [`crypto`](https://pub.dev/packages/crypto) | 3.0.7 | [BSD-3-Clause](https://pub.dev/packages/crypto/license) | transitive |
 | [`dartssh2`](https://pub.dev/packages/dartssh2) | 4.1.0 | [MIT](https://pub.dev/packages/dartssh2/license) | direct |
-| [`equatable`](https://pub.dev/packages/equatable) | 2.1.0 | [MIT](https://pub.dev/packages/equatable/license) | transitive |
+| [`equatable`](https://pub.dev/packages/equatable) | 3.0.0 | [MIT](https://pub.dev/packages/equatable/license) | transitive |
 | [`ffi`](https://pub.dev/packages/ffi) | 2.2.0 | [BSD-3-Clause](https://pub.dev/packages/ffi/license) | transitive |
 | [`ffi_leak_tracker`](https://pub.dev/packages/ffi_leak_tracker) | 0.1.2 | [BSD-3-Clause](https://pub.dev/packages/ffi_leak_tracker/license) | transitive |
 | [`file`](https://pub.dev/packages/file) | 7.0.1 | [BSD-3-Clause](https://pub.dev/packages/file/license) | transitive |
@@ -36,19 +36,19 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`flutter_secure_storage_web`](https://pub.dev/packages/flutter_secure_storage_web) | 2.1.1 | [BSD-3-Clause](https://pub.dev/packages/flutter_secure_storage_web/license) | transitive |
 | [`flutter_secure_storage_windows`](https://pub.dev/packages/flutter_secure_storage_windows) | 4.2.2 | [BSD-3-Clause](https://pub.dev/packages/flutter_secure_storage_windows/license) | transitive |
 | [`home_widget`](https://pub.dev/packages/home_widget) | 0.10.0 | [BSD-3-Clause](https://pub.dev/packages/home_widget/license) | direct |
-| [`hooks`](https://pub.dev/packages/hooks) | 2.0.2 | [BSD-3-Clause](https://pub.dev/packages/hooks/license) | transitive |
+| [`hooks`](https://pub.dev/packages/hooks) | 2.2.0 | [BSD-3-Clause](https://pub.dev/packages/hooks/license) | transitive |
 | [`http`](https://pub.dev/packages/http) | 1.6.0 | [BSD-3-Clause](https://pub.dev/packages/http/license) | direct |
 | [`http_parser`](https://pub.dev/packages/http_parser) | 4.1.2 | [BSD-3-Clause](https://pub.dev/packages/http_parser/license) | transitive |
-| [`jni`](https://pub.dev/packages/jni) | 1.0.3 | [BSD-3-Clause](https://pub.dev/packages/jni/license) | transitive |
-| [`jni_flutter`](https://pub.dev/packages/jni_flutter) | 1.0.3 | [BSD-3-Clause](https://pub.dev/packages/jni_flutter/license) | transitive |
+| [`jni`](https://pub.dev/packages/jni) | 1.1.0 | [BSD-3-Clause](https://pub.dev/packages/jni/license) | transitive |
+| [`jni_flutter`](https://pub.dev/packages/jni_flutter) | 1.0.4+1 | [BSD-3-Clause](https://pub.dev/packages/jni_flutter/license) | transitive |
 | [`jni_util`](https://pub.dev/packages/jni_util) | 1.0.0 | [BSD-3-Clause](https://pub.dev/packages/jni_util/license) | transitive |
 | [`logging`](https://pub.dev/packages/logging) | 1.3.0 | [BSD-3-Clause](https://pub.dev/packages/logging/license) | transitive |
 | [`material_color_utilities`](https://pub.dev/packages/material_color_utilities) | 0.13.0 | [Apache-2.0](https://pub.dev/packages/material_color_utilities/license) | transitive |
-| [`meta`](https://pub.dev/packages/meta) | 1.18.3 | [BSD-3-Clause](https://pub.dev/packages/meta/license) | transitive |
+| [`meta`](https://pub.dev/packages/meta) | 1.19.0 | [BSD-3-Clause](https://pub.dev/packages/meta/license) | transitive |
 | [`mime`](https://pub.dev/packages/mime) | 2.1.0 | [BSD-3-Clause](https://pub.dev/packages/mime/license) | transitive |
-| [`objective_c`](https://pub.dev/packages/objective_c) | 9.5.0 | [BSD-3-Clause](https://pub.dev/packages/objective_c/license) | transitive |
+| [`objective_c`](https://pub.dev/packages/objective_c) | 9.6.2 | [BSD-3-Clause](https://pub.dev/packages/objective_c/license) | transitive |
 | [`package_config`](https://pub.dev/packages/package_config) | 2.2.0 | [BSD-3-Clause](https://pub.dev/packages/package_config/license) | transitive |
-| [`package_info_plus`](https://pub.dev/packages/package_info_plus) | 10.2.1 | [BSD-3-Clause](https://pub.dev/packages/package_info_plus/license) | direct |
+| [`package_info_plus`](https://pub.dev/packages/package_info_plus) | 10.2.2 | [BSD-3-Clause](https://pub.dev/packages/package_info_plus/license) | direct |
 | [`package_info_plus_platform_interface`](https://pub.dev/packages/package_info_plus_platform_interface) | 4.1.0 | [BSD-3-Clause](https://pub.dev/packages/package_info_plus_platform_interface/license) | transitive |
 | [`path`](https://pub.dev/packages/path) | 1.9.1 | [BSD-3-Clause](https://pub.dev/packages/path/license) | transitive |
 | [`path_provider`](https://pub.dev/packages/path_provider) | 2.1.6 | [BSD-3-Clause](https://pub.dev/packages/path_provider/license) | direct |
@@ -62,15 +62,15 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`plugin_platform_interface`](https://pub.dev/packages/plugin_platform_interface) | 2.1.8 | [BSD-3-Clause](https://pub.dev/packages/plugin_platform_interface/license) | transitive |
 | [`pointycastle`](https://pub.dev/packages/pointycastle) | 4.0.0 | [MIT](https://pub.dev/packages/pointycastle/license) | direct |
 | [`pub_semver`](https://pub.dev/packages/pub_semver) | 2.2.1 | [BSD-3-Clause](https://pub.dev/packages/pub_semver/license) | transitive |
-| [`purchases_flutter`](https://pub.dev/packages/purchases_flutter) | 10.13.1 | [MIT](https://pub.dev/packages/purchases_flutter/license) | direct |
-| [`record_use`](https://pub.dev/packages/record_use) | 0.6.0 | [BSD-3-Clause](https://pub.dev/packages/record_use/license) | transitive |
-| [`share_plus`](https://pub.dev/packages/share_plus) | 13.3.0 | [BSD-3-Clause](https://pub.dev/packages/share_plus/license) | direct |
+| [`purchases_flutter`](https://pub.dev/packages/purchases_flutter) | 10.16.0 | [MIT](https://pub.dev/packages/purchases_flutter/license) | direct |
+| [`record_use`](https://pub.dev/packages/record_use) | 1.1.1 | [BSD-3-Clause](https://pub.dev/packages/record_use/license) | transitive |
+| [`share_plus`](https://pub.dev/packages/share_plus) | 13.3.1 | [BSD-3-Clause](https://pub.dev/packages/share_plus/license) | direct |
 | [`share_plus_platform_interface`](https://pub.dev/packages/share_plus_platform_interface) | 7.2.0 | [BSD-3-Clause](https://pub.dev/packages/share_plus_platform_interface/license) | transitive |
 | [`source_span`](https://pub.dev/packages/source_span) | 1.10.2 | [BSD-3-Clause](https://pub.dev/packages/source_span/license) | transitive |
 | [`string_scanner`](https://pub.dev/packages/string_scanner) | 1.4.1 | [BSD-3-Clause](https://pub.dev/packages/string_scanner/license) | transitive |
 | [`term_glyph`](https://pub.dev/packages/term_glyph) | 1.2.2 | [BSD-3-Clause](https://pub.dev/packages/term_glyph/license) | transitive |
 | [`typed_data`](https://pub.dev/packages/typed_data) | 1.4.0 | [BSD-3-Clause](https://pub.dev/packages/typed_data/license) | transitive |
-| [`url_launcher`](https://pub.dev/packages/url_launcher) | 6.3.2 | [BSD-3-Clause](https://pub.dev/packages/url_launcher/license) | direct |
+| [`url_launcher`](https://pub.dev/packages/url_launcher) | 6.3.3 | [BSD-3-Clause](https://pub.dev/packages/url_launcher/license) | direct |
 | [`url_launcher_android`](https://pub.dev/packages/url_launcher_android) | 6.3.33 | [BSD-3-Clause](https://pub.dev/packages/url_launcher_android/license) | transitive |
 | [`url_launcher_ios`](https://pub.dev/packages/url_launcher_ios) | 6.4.2 | [BSD-3-Clause](https://pub.dev/packages/url_launcher_ios/license) | transitive |
 | [`url_launcher_linux`](https://pub.dev/packages/url_launcher_linux) | 3.2.3 | [BSD-3-Clause](https://pub.dev/packages/url_launcher_linux/license) | transitive |
@@ -79,7 +79,7 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`url_launcher_web`](https://pub.dev/packages/url_launcher_web) | 2.4.3 | [BSD-3-Clause](https://pub.dev/packages/url_launcher_web/license) | transitive |
 | [`url_launcher_windows`](https://pub.dev/packages/url_launcher_windows) | 3.1.6 | [BSD-3-Clause](https://pub.dev/packages/url_launcher_windows/license) | transitive |
 | [`uuid`](https://pub.dev/packages/uuid) | 4.6.0 | [MIT](https://pub.dev/packages/uuid/license) | transitive |
-| [`vector_math`](https://pub.dev/packages/vector_math) | 2.4.0 | [BSD-3-Clause](https://pub.dev/packages/vector_math/license) | transitive |
+| [`vector_math`](https://pub.dev/packages/vector_math) | 2.4.3 | [BSD-3-Clause](https://pub.dev/packages/vector_math/license) | transitive |
 | [`web`](https://pub.dev/packages/web) | 1.1.1 | [BSD-3-Clause](https://pub.dev/packages/web/license) | transitive |
 | [`win32`](https://pub.dev/packages/win32) | 6.4.0 | [BSD-3-Clause](https://pub.dev/packages/win32/license) | transitive |
 | [`workmanager`](https://pub.dev/packages/workmanager) | 0.10.10 | [MIT](https://pub.dev/packages/workmanager/license) | direct |
@@ -188,9 +188,9 @@ The Java and Kotlin libraries the release build packages: the `releaseRuntimeCla
 | `com.google.firebase:firebase-encoders-json` | 18.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.firebase:firebase-encoders-proto` | 16.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.guava:listenablefuture` | 1.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `com.revenuecat.purchases:purchases` | 10.22.1 | [MIT](http://opensource.org/licenses/MIT) |
-| `com.revenuecat.purchases:purchases-hybrid-common` | 19.2.0 | [MIT](http://opensource.org/licenses/MIT) |
-| `com.revenuecat.purchases:purchases-store-amazon` | 10.22.1 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases` | 10.27.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases-hybrid-common` | 19.12.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases-store-amazon` | 10.27.0 | [MIT](http://opensource.org/licenses/MIT) |
 | `dev.drewhamilton.poko:poko-annotations` | 0.17.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `dev.drewhamilton.poko:poko-annotations-jvm` | 0.17.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `javax.inject:javax.inject` | 1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
@@ -228,7 +228,7 @@ The dev dependencies in `pubspec.yaml`, used to build and test the project and n
 
 ## Flutter SDK components
 
-The app also includes components of the Flutter SDK 3.47.5: `flutter`, `flutter_web_plugins`, `sky_engine`. They are licensed under [the Flutter SDK's licence](https://github.com/flutter/flutter/blob/main/LICENSE). The engine (`sky_engine`) bundles third-party code of its own, whose licences are listed in full on the app's licence page.
+The app also includes components of the Flutter SDK 3.47.7: `flutter`, `flutter_web_plugins`, `sky_engine`. They are licensed under [the Flutter SDK's licence](https://github.com/flutter/flutter/blob/main/LICENSE). The engine (`sky_engine`) bundles third-party code of its own, whose licences are listed in full on the app's licence page.
 
 ## Maintenance
 

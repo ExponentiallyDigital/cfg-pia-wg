@@ -87,7 +87,16 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
-`<none>`
+- ID-408 REL: FIX warnings created by a local build
+
+```
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/C:/Users/andrew/.gradle/wrapper/dists/gradle-9.1.0-all/7wzd0jkjit61aq2p43wpjgij9/gradle-9.1.0/lib/native-platform-0.22-milestone-28.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): home_widget, workmanager_android
+Future versions of Flutter will fail to build if your app uses plugins that apply KGP.
+```
 
 ---
 
@@ -105,6 +114,21 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-15 v0.8.130 build 500 - widget lifecycle now correctly managed.
+
+```play
+• Home screen widget: FIX lifecycle management of widget keys.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-407 BUG: **GENERATE fails with "Not installed: SSHStateError(SSH connection closed)" once the router holds 5 widget keys - a regression from build 498 (ID-398).** Seen 2026-10-15 on two emulators after clearing the app's storage, and fixed only by `nvram unset sshd_authkeys` on the router. Cause, measured in the app's own code: the install sends the whole key list twice in one SSH command, to NVRAM and to the live file, and each widget line is 749 bytes; with 4 keys already there the command is 8250 bytes, with 5 it is 9870, past dropbear's 9000-byte `MAX_CMD_LEN`, so dropbear drops the connection (CONTEXT.md records the same limit breaking the watchdog's deploy). Why 5: clearing the app's storage, or reinstalling, deletes the phone's key but leaves its line on the router, and since ID-398 GENERATE no longer takes out other lines, because it can't tell another device's live key from a leftover. Before build 498 it took out every widget line, so leftovers never built up.
+  - **Proposed fix, for Andrew to decide:** (1) send the key list in pieces, as the watchdog's deploy already sends its script (`heredocWriteCommands`), so no number of keys can reach the limit; and (2) a REMOVE ALL WIDGET KEYS in the widget key dialog, which takes every widget line off the router, with a warning that other phones' widgets stop until each does GENERATE again - the only honest way to clear leftovers, since the router can't tell them apart from live keys. Optionally, (3) each line's comment names the device and date it was made, so the router's Authorized Keys shows which is which. A cap on the number of keys is not proposed: it would silently remove a live device's key.
+  - **Andrew's decision, 2026-10-15:** send the key list in pieces; plain error messages, which should always have been there; and CLOSE, REMOVE and GENERATE always shown, REMOVE taking every widget key, since it is unusual for more than three devices to use the widget.
+  - **Built 2026-10-15.** The key list goes to the router in heredoc pieces under 4000 bytes, as the watchdog's deploy does, then into NVRAM and the live file: a test installs with ten keys already there and no command reaches the limit, and it fails with the old single command. GENERATE reads the router back and says "installed" only if both hold the new key, and on a phone that had a key it replaces that key's line. REMOVE asks first, then takes every widget key off, the user's own kept, and reads back that none is left. Failures are plain English, with the raw error in the app log. The dialog shows all three buttons, with Andrew's text, and its text now scrolls: with a result below it, it overflowed a phone-sized screen. SECURITY.md, the privacy policy and TESTING WGT-5, WGT-6 and the new WGT-7 updated.
+  - **TESTING WGT-7** completed on a device; updated README 5.11's REMOVE; updated privacy policy on exponentiallydigital.com.
+- Upgraded local flutter to 3.47.7 from 3.47.5.
+- updated SHA pins, `flutter pub upgrade --major-versions` & `.\android\gradlew -p android :dependencies :app:dependencies --write-locks`
 
 2026-10-15 v0.8.129 build 499 - build 498's tests fixed for Linux, so CI passes
 
