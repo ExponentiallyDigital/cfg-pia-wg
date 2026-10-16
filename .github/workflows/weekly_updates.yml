@@ -33,6 +33,12 @@ concurrency:
 env:
   GH_TOKEN: ${{ github.token }}
 
+# Named, so GitHub runs it with pipefail: without it `flutter pub upgrade | tee upgrade.txt` passes
+# even when the upgrade fails.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   flutter:
     name: Newer Flutter stable?
@@ -178,7 +184,9 @@ jobs:
       - name: Anything changed?
         id: diff
         run: |
-          files="pubspec.lock THIRD-PARTY-NOTICES.md $(git ls-files 'android/*.lockfile' 'android/**/*.lockfile')"
+          # On one line: ls-files prints one path per line, and a value with newlines in it breaks
+          # $GITHUB_OUTPUT ("Invalid format"), which failed the first run on 2026-10-16.
+          files="pubspec.lock THIRD-PARTY-NOTICES.md $(git ls-files 'android/*.lockfile' | tr '\n' ' ')"
           echo "files=$files" >> "$GITHUB_OUTPUT"
           if git diff --quiet -- $files; then
             echo "Nothing to update."
