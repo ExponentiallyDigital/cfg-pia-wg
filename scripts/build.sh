@@ -165,6 +165,18 @@ fi
 read -r VERSION BUILD_NUMBER <<< "$PUBSPEC_VERSION"
 echo -e "${GREEN}Version: v$VERSION build $BUILD_NUMBER${RESET}"
 
+# ID-410: CI builds with the Flutter pinned in pubspec.yaml. Another one here is a warning, not a stop:
+# a new Flutter is tried locally first, then the pin moves.
+FLUTTER_PIN=$(sed -nE 's/^[[:space:]]+flutter:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\1/p' pubspec.yaml | head -n 1)
+FLUTTER_LOCAL=$(flutter --version --machine | sed -nE 's/.*"frameworkVersion":[[:space:]]*"([^"]*)".*/\1/p' | head -n 1)
+if [ -z "$FLUTTER_PIN" ]; then
+    echo -e "${YELLOW}⚠ No exact Flutter version pinned in pubspec.yaml's environment; CI can't match this build.${RESET}"
+elif [ "$FLUTTER_LOCAL" != "$FLUTTER_PIN" ]; then
+    echo -e "${YELLOW}⚠ Flutter here is $FLUTTER_LOCAL, but pubspec.yaml pins $FLUTTER_PIN, which CI builds with.${RESET}"
+else
+    echo -e "${GREEN}Flutter: $FLUTTER_LOCAL, as pinned${RESET}"
+fi
+
 ###############################################################################
 # Pin GitHub actions: early, so a bad pin stops the build before a minute of cleaning and fetching
 ###############################################################################

@@ -1,0 +1,140 @@
+name: "PIA server list key check"
+run-name: "PIA server list key check - ${{ github.event_name }}${{ inputs.swap_key && ' - TEST with a wrong key' || '' }}"
+
+# ID-409. Emails Andrew if, and only if, PIA's server list key has changed (his requirement, 2026-10-16),
+# so a build carrying the new key can follow. tool/check_pia_server_list.dart decides; see its header for
+# the two signals. Nothing else sends anything: a download that fails, PIA or GitHub down, or a broken
+# step leaves a warning on the run and the run green, because a red run sends GitHub's own failed-
+# workflow email, and that isn't a key change. The cost: a check that breaks shows only on this page.
+#
+# Once per change: the email opens an issue titled "PIA server list key changed", and while one is open
+# no further email goes. Closing it, once a build with the new key is out, re-arms the check.
+#
+# Scheduled runs happen only from main, so this starts with the release that carries it.
+
+on:
+  schedule:
+    # 06:00 in Melbourne in winter (AEST), 07:00 in summer (AEDT). GitHub may start it late.
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      swap_key:
+        description: "Hand test: check with a wrong key, so the email and the issue are seen to fire"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write # to find and open the "key changed" issue
+  actions: read # to read the last scheduled run's result
+
+concurrency:
+  group: pia-key-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Has PIA's key changed?
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Fetch dependencies
+        run: flutter pub get --enforce-lockfile
+
+      # Signal 2 needs the live list to fail on two scheduled runs in a row. Each scheduled run keeps its
+      # result as an artifact; this reads the last one. A hand-started run neither reads nor writes it.
+      - name: Did the live list fail last time?
+        id: last
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          failed=false
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow pia_key_check.yml --event schedule --status success --limit 1 --json databaseId -q '.[0].databaseId')
+            if [ -n "$id" ] && gh run download "$id" --repo "$GITHUB_REPOSITORY" -n pia-key-state -D last 2>/dev/null; then
+              [ "$(cat last/list_failed 2>/dev/null)" = "true" ] && failed=true
+            fi
+          fi
+          echo "Live list failed last time: $failed"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+
+      - name: Check the key
+        id: check
+        continue-on-error: true
+        run: >-
+          dart run tool/check_pia_server_list.dart --out out
+          ${{ steps.last.outputs.failed == 'true' && '--list-failed-last-time' || '' }}
+          ${{ inputs.swap_key && '--swap-key' || '' }}
+
+      - name: Keep this run's result for the next
+        if: github.event_name == 'schedule' && steps.check.outcome == 'success'
+        run: |
+          mkdir -p state
+          echo "${{ steps.check.outputs.list_failed }}" > state/list_failed
+
+      - name: Upload this run's result
+        if: github.event_name == 'schedule' && steps.check.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pia-key-state
+          path: state/
+          retention-days: 14
+
+      - name: Is the change already reported?
+        id: open
+        if: steps.check.outputs.changed == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search 'in:title "PIA server list key changed"' --json number -q length)
+          echo "Open issues: ${n:-unknown}"
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+
+      # Sent from the runner with Python's smtplib, not a Marketplace mail action, so the app password
+      # is never handed to third-party code. If the issue search failed (count empty), it sends: a
+      # second email about a real change is better than none.
+      - name: Email Andrew
+        id: mail
+        if: steps.check.outputs.changed == 'true' && (steps.open.outputs.count == '0' || steps.open.outputs.count == '')
+        continue-on-error: true
+        env:
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          SUBJECT: "cfg-pia-wg: ${{ inputs.swap_key && 'TEST - ' || '' }}PIA server list key changed"
+        run: |
+          python3 - <<'PY'
+          import os, smtplib, ssl
+          from email.message import EmailMessage
+          m = EmailMessage()
+          m["From"] = os.environ["SMTP_USERNAME"]
+          m["To"] = os.environ["MAIL_TO"]
+          m["Subject"] = os.environ["SUBJECT"]
+          run = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          m.set_content(open("out/report.txt", encoding="utf-8").read() + f"\nThe run: {run}\n")
+          with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ssl.create_default_context(), timeout=60) as s:
+              s.login(os.environ["SMTP_USERNAME"], os.environ["SMTP_PASSWORD"])
+              s.send_message(m)
+          print("Sent.")
+          PY
+
+      - name: Open the issue
+        if: steps.mail.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue create --repo "$GITHUB_REPOSITORY" --title "PIA server list key changed" --body-file out/report.txt

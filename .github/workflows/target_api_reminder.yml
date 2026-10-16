@@ -1,0 +1,102 @@
+name: "Target API reminder"
+run-name: "Target API reminder - ${{ github.event_name }}"
+
+# ID-413. Every 1 June, opens an issue to raise the app's target Android API level before Google Play's
+# yearly deadline, usually 31 August: after it, an update that targets too low a level can't be published,
+# so fixes stop reaching users. The level comes from Flutter (flutter.targetSdkVersion in
+# android/app/build.gradle.kts), so it moves with the Flutter pin (ID-410). This reads it from a real
+# debug build, not from the source, so the issue says what the app actually ships.
+#
+# Play's rule: an update must target an API level within a year of the latest major Android release. In
+# practice the August requirement is the API level of the previous year's Android: 35 (Android 15) in
+# 2025, 36 (Android 16) in 2026. The issue gives that as the expected level and links Play's page, which
+# has the final word each year.
+
+on:
+  schedule:
+    # 1 June, 10:00 in Melbourne.
+    - cron: "0 0 1 6 *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  remind:
+    name: Open the target API issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Debug build
+        run: |
+          flutter pub get --enforce-lockfile
+          dart run tool/launcher_icons.dart
+          flutter build apk --debug
+
+      - name: Read the SDK levels from the build
+        id: levels
+        run: |
+          aapt2="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2"
+          badging=$("$aapt2" dump badging build/app/outputs/flutter-apk/app-debug.apk)
+          target=$(echo "$badging" | sed -nE "s/.*targetSdkVersion:'([0-9]+)'.*/\1/p" | head -1)
+          compile=$(echo "$badging" | sed -nE "s/.*compileSdkVersion='([0-9]+)'.*/\1/p" | head -1)
+          year=$(date -u +%Y)
+          expected=$((year - 1990))
+          echo "target=$target compile=$compile year=$year expected=$expected"
+          [ -n "$target" ] || { echo "::error::no targetSdkVersion in the APK"; exit 1; }
+          {
+            echo "target=$target"
+            echo "compile=$compile"
+            echo "year=$year"
+            echo "expected=$expected"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.levels.outputs.target }}
+          COMPILE: ${{ steps.levels.outputs.compile }}
+          YEAR: ${{ steps.levels.outputs.year }}
+          EXPECTED: ${{ steps.levels.outputs.expected }}
+        run: |
+          title="Target API level for Google Play's $YEAR deadline"
+          n=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number -q length)
+          if [ "$n" != "0" ]; then echo "Already open: $title"; exit 0; fi
+          if [ "$TARGET" -ge "$EXPECTED" ]; then
+            verdict="The app targets API $TARGET, which already meets the expected API $EXPECTED. Confirm the requirement on Play's page, and close this if it holds."
+          else
+            verdict="**The app targets API $TARGET; Play is expected to require API $EXPECTED from 31 August $YEAR.** Updates targeting less can't be published after the deadline."
+          fi
+          {
+            echo "$verdict"
+            echo
+            echo "- Target API now: **$TARGET** (compile SDK $COMPILE), read from a debug build of \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7}."
+            echo "- Expected requirement: **API $EXPECTED**, the previous year's Android release. Play's page has the exact level and date: https://developer.android.com/google/play/requirements/target-sdk"
+            echo
+            echo "Checklist (ID-413):"
+            echo "- [ ] Confirm the level and deadline on Play's page, and in Play Console's policy status."
+            echo "- [ ] Raise it: through a newer Flutter (the weekly Flutter PR, ID-410), or set \`targetSdk\` explicitly in \`android/app/build.gradle.kts\`."
+            echo "- [ ] Read Android's behaviour changes for apps targeting the new level."
+            echo "- [ ] Build, and run the app on an emulator with the new Android version."
+            echo "- [ ] Run TESTING.md's hand tests."
+            echo "- [ ] Release before the deadline."
+          } > body.md
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file body.md
