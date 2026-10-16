@@ -162,6 +162,19 @@ $VERSION = $Matches[1]
 $BUILD_NUMBER = $Matches[2]
 Write-Host "${GREEN}Version: v$VERSION build $BUILD_NUMBER${RESET}"
 
+# ID-410: CI builds with the Flutter pinned in pubspec.yaml. Another one here is a warning, not a stop:
+# a new Flutter is tried locally first, then the pin moves.
+$pinLine = Get-Content pubspec.yaml | Where-Object { $_ -match '^\s+flutter:\s*(\d+\.\d+\.\d+)\s*$' } | Select-Object -First 1
+$FLUTTER_PIN = if ($pinLine -match '(\d+\.\d+\.\d+)') { $Matches[1] } else { '' }
+$FLUTTER_LOCAL = (flutter --version --machine | ConvertFrom-Json).frameworkVersion
+if ($FLUTTER_PIN -eq '') {
+    Write-Host "${YELLOW}⚠ No exact Flutter version pinned in pubspec.yaml's environment; CI can't match this build.${RESET}"
+} elseif ($FLUTTER_LOCAL -ne $FLUTTER_PIN) {
+    Write-Host "${YELLOW}⚠ Flutter here is $FLUTTER_LOCAL, but pubspec.yaml pins $FLUTTER_PIN, which CI builds with.${RESET}"
+} else {
+    Write-Host "${GREEN}Flutter: $FLUTTER_LOCAL, as pinned${RESET}"
+}
+
 ###############################################################################
 # Pin GitHub actions: early, so a bad pin stops the build before a minute of cleaning and fetching
 ###############################################################################
