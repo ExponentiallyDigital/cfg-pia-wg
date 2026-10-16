@@ -1,2 +1,2 @@
-• Behind the scenes: build tools updated, and new automated checks, including a daily check that PIA's server list key hasn't changed. No change to how the app works.
+• Behind the scenes: a fix to the automated weekly update check. No change to how the app works.
 • Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
