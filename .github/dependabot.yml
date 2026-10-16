@@ -2,6 +2,10 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
+    # ID-412: PRs go to dev, like every other change, and reach main in a release. Without this they
+    # went straight to main (PR #39, 2026-10-11). Dependabot reads this file from main only, so it
+    # takes effect from the release that carries it.
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
