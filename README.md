@@ -141,7 +141,7 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
   - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
   - Testing: as at build 498 (15 October 2026), 1861 automated tests run on every build against a line-coverage target of 80%, actual 94.95 (the Coverage badge above is dynamically updated and records today's figure), and 162 manual end-to-end tests run on a real router - 23 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 22 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
-  - Pinned GitHub Action hashes across [release.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/release.yml), [promote.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/promote.yml), and [quality_and_security.yml](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/.github/workflows/quality_and_security.yml) ensure automated builds execute with specific, verified tool versions.
+  - Pinned GitHub Action hashes across [every workflow](https://github.com/ExponentiallyDigital/cfg-pia-wg/tree/main/.github/workflows) ensure automated builds execute with specific, verified tool versions.
 
 ---
 

@@ -28,7 +28,7 @@ The scripts `build.ps1` / `build.sh` in the `./scripts` folder automate a local 
 
 ## 1. Prerequisites
 
-- **Flutter SDK:** version 3.10 or later ([Flutter installation guide](https://flutter.dev/docs/get-started/install))
+- **Flutter SDK:** the version pinned as `flutter:` under `environment` in `pubspec.yaml`, which every workflow installs; `scripts/build.ps1` and `build.sh` warn when yours differs ([Flutter installation guide](https://flutter.dev/docs/get-started/install))
 - **Android SDK / Studio:** [download Android Studio](https://developer.android.com/studio) and configure with Java Development Kit (JDK 17), also install Android SDK Command-line Tools and check your config with `flutter doctor`
 - A connected physical Android device (with USB Debugging enabled) or an active Android Virtual Device (AVD) Emulator.
 
@@ -133,6 +133,11 @@ The `release.yml` workflow is designed to dynamically assemble this footprint be
    - KEY_PASSWORD
 
 The pipeline will decode the base64 asset and provision a temporary `key.properties` dynamically before executing `flutter build apk --release`.
+
+The scheduled workflows need two more things:
+
+- `pia_key_check.yml` emails when PIA's server list key changes, through Gmail's SMTP. It needs three repository secrets: `SMTP_USERNAME` (the sending Google account, also the From address), `SMTP_PASSWORD` (an app password for that account) and `MAIL_TO`.
+- `weekly_updates.yml` opens pull requests into `dev`, so it needs **Allow GitHub Actions to create and approve pull requests** ticked under Settings > Actions > General > Workflow permissions.
 
 #### 2.1.6. Build release APK
 
@@ -315,13 +320,18 @@ Exit codes: `0` when every pin matches its tag, `1` when one does not (the check
 
 ## 6. Build chain & utility notes
 
-- keep your build environment up to date with:
+- Keeping the build environment up to date is mostly automatic. Every Monday `weekly_updates.yml` opens up to two pull requests into `dev`, each checked with analyze, the tests and a debug build in the same run:
+  - **Flutter**, when a newer stable is out: it moves the pin in `pubspec.yaml`. Before merging, run `flutter upgrade` locally so your Flutter matches.
+  - **Packages**: `flutter pub upgrade` within the constraints, with the Gradle lockfiles and `THIRD-PARTY-NOTICES.md` regenerated to match. Its description lists the major versions left behind, and Gradle, the Android Gradle plugin and Kotlin against their latest.
+  - By hand, for a major version or one of those three:
 
-  ```cmd
-  flutter upgrade
-  flutter pub upgrade --major-versions
-  .\android\gradlew -p android :dependencies :app:dependencies --write-locks
-  ```
+    ```cmd
+    flutter pub upgrade --major-versions
+    .\android\gradlew -p android :dependencies :app:dependencies --write-locks
+    dart run tool/third_party_notices.dart
+    ```
+
+  - Moving Gradle itself: `.\android\gradlew -p android wrapper --gradle-version <version> --distribution-type all --gradle-distribution-sha256-sum <sum>`, with the sum from the `.sha256` file beside the distribution on services.gradle.org. The wrapper refuses a download that doesn't match it.
 
 - To run **OSV-Scanner** locally (scans dependencies against Google's OSV vulnerability database):
 

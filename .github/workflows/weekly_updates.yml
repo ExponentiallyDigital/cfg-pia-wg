@@ -1,0 +1,259 @@
+name: "Weekly updates"
+run-name: "Weekly updates - ${{ github.event_name }}"
+
+# Two pull requests into dev, each only when there is something to bring:
+#  - flutter (ID-410): a newer Flutter stable than the one pinned in pubspec.yaml.
+#  - packages (ID-411): `flutter pub upgrade` within pubspec.yaml's constraints, the Gradle lockfiles
+#    regenerated to match, and THIRD-PARTY-NOTICES.md regenerated - the three steps that had to be done
+#    together by hand, since release.yml refuses a stale notices file.
+#
+# Neither job commits to dev or main, or makes a build: every commit there is a build, and builds are
+# Andrew's. He merges the PR into dev and it goes out in his next build.
+#
+# Each job runs analyze, the tests and a debug build itself, and the PR says how they went (a draft when
+# any failed). It has to: a PR opened with the workflow's own token starts no other workflow, and CI
+# doesn't run on PRs into dev anyway; the full suite runs on the release PR into main.
+#
+# Needs "Allow GitHub Actions to create and approve pull requests" on, in Settings > Actions > General.
+
+on:
+  schedule:
+    # Monday 10:00 in Melbourne in winter, 11:00 in summer: after Dependabot's 09:00 run.
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write # to push the bot/ branches
+  pull-requests: write # to open and update their PRs
+
+concurrency:
+  group: weekly-updates
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  flutter:
+    name: Newer Flutter stable?
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+
+      - name: Set up Flutter (the pinned version)
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Compare the pin with the latest stable
+        id: pin
+        run: |
+          flutter pub get --enforce-lockfile
+          dart run tool/flutter_pin.dart --check
+
+      # One PR per version. A closed one is an answer, so it isn't opened again next week.
+      - name: Already proposed?
+        id: seen
+        if: steps.pin.outputs.newer == 'true'
+        run: |
+          n=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "bot/flutter-${{ steps.pin.outputs.latest }}" --state all --json number -q length)
+          echo "PRs for this version: $n"
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+
+      - name: Move the pin
+        id: move
+        if: steps.pin.outputs.newer == 'true' && steps.seen.outputs.count == '0'
+        run: dart run tool/flutter_pin.dart --set "${{ steps.pin.outputs.latest }}"
+
+      - name: Set up Java
+        if: steps.move.outcome == 'success'
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Set up Flutter (the new version)
+        if: steps.move.outcome == 'success'
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ steps.pin.outputs.latest }}
+          channel: "stable"
+          cache: true
+
+      - name: Fetch dependencies
+        if: steps.move.outcome == 'success'
+        run: |
+          flutter --version
+          flutter pub get
+          dart run tool/launcher_icons.dart
+
+      - name: Analyze
+        id: analyze
+        if: steps.move.outcome == 'success'
+        continue-on-error: true
+        run: flutter analyze --fatal-infos
+
+      - name: Test
+        id: test
+        if: steps.move.outcome == 'success'
+        continue-on-error: true
+        run: flutter test
+
+      - name: Debug build
+        id: build
+        if: steps.move.outcome == 'success'
+        continue-on-error: true
+        run: flutter build apk --debug
+
+      - name: Open the PR
+        if: steps.move.outcome == 'success'
+        env:
+          PINNED: ${{ steps.pin.outputs.pinned }}
+          LATEST: ${{ steps.pin.outputs.latest }}
+          ANALYZE: ${{ steps.analyze.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+        run: |
+          branch="bot/flutter-$LATEST"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add pubspec.yaml pubspec.lock
+          git commit -m "Flutter $LATEST, from the weekly check (ID-410)"
+          git push origin "$branch"
+          draft=""
+          [ "$ANALYZE$TEST$BUILD" = "successsuccesssuccess" ] || draft="--draft"
+          {
+            echo "Flutter $LATEST is the current stable; pubspec.yaml pins $PINNED. This moves the pin, which every workflow installs."
+            echo
+            echo "Checked in this run with Flutter $LATEST: analyze **$ANALYZE**, tests **$TEST**, debug build **$BUILD**. CI doesn't run on PRs into dev; the full suite runs on the release PR."
+            echo
+            echo "Before merging: upgrade Flutter locally (\`flutter upgrade\`), so scripts/build.ps1 stops warning, read the release notes for breaking changes, and add a CHANGELOG line to the next build."
+            echo
+            echo "Release notes: https://docs.flutter.dev/release/release-notes"
+          } > body.md
+          gh pr create --repo "$GITHUB_REPOSITORY" --base dev --head "$branch" $draft --title "Flutter $PINNED -> $LATEST" --body-file body.md
+
+  packages:
+    name: Packages, lockfiles and notices
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+
+      - name: Set up Java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      # Within pubspec.yaml's constraints: a major version stays a deliberate step, listed in the PR.
+      - name: Upgrade packages
+        run: flutter pub upgrade | tee upgrade.txt
+
+      # STRICT locking refuses a build whose dependencies differ from the lockfiles, so they are written
+      # before anything builds. --config-only generates the Gradle wrapper, which isn't committed.
+      - name: Regenerate the Gradle lockfiles
+        run: |
+          flutter build apk --config-only
+          ./android/gradlew -p android :dependencies :app:dependencies --write-locks -q
+
+      - name: Regenerate THIRD-PARTY-NOTICES.md
+        run: dart run tool/third_party_notices.dart
+
+      - name: Anything changed?
+        id: diff
+        run: |
+          files="pubspec.lock THIRD-PARTY-NOTICES.md $(git ls-files 'android/*.lockfile' 'android/**/*.lockfile')"
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          if git diff --quiet -- $files; then
+            echo "Nothing to update."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --stat -- $files
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate launcher icons
+        if: steps.diff.outputs.changed == 'true'
+        run: dart run tool/launcher_icons.dart
+
+      - name: Analyze
+        id: analyze
+        if: steps.diff.outputs.changed == 'true'
+        continue-on-error: true
+        run: flutter analyze --fatal-infos
+
+      - name: Test
+        id: test
+        if: steps.diff.outputs.changed == 'true'
+        continue-on-error: true
+        run: flutter test
+
+      - name: Debug build
+        id: build
+        if: steps.diff.outputs.changed == 'true'
+        continue-on-error: true
+        run: flutter build apk --debug
+
+      # One branch, rebuilt from dev each week, so there is only ever one of these PRs.
+      - name: Open or update the PR
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          FILES: ${{ steps.diff.outputs.files }}
+          ANALYZE: ${{ steps.analyze.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+        run: |
+          branch="bot/weekly-packages"
+          {
+            echo "This week's package upgrades within pubspec.yaml's constraints, with the Gradle lockfiles and THIRD-PARTY-NOTICES.md regenerated to match (ID-411)."
+            echo
+            echo "Checked in this run: analyze **$ANALYZE**, tests **$TEST**, debug build **$BUILD**. CI doesn't run on PRs into dev; the full suite runs on the release PR."
+            echo
+            echo "Before merging: add a CHANGELOG line to the next build saying what moved."
+            echo
+            echo "### What moved"
+            echo '```'
+            grep -E '^[>+*-] ' upgrade.txt || echo "(no Dart package changed; Android libraries only)"
+            echo '```'
+            echo '```'
+            git diff --stat -- $FILES
+            echo '```'
+            echo "### Left behind: newer major versions"
+            echo '```'
+            flutter pub outdated --no-dev-dependencies 2>&1 | head -60 || true
+            echo '```'
+            echo "### Not moved by this job"
+            echo "- Gradle: $(sed -nE 's/.*gradle-([0-9.]+)-(all|bin)\.zip/\1/p' android/gradle/wrapper/gradle-wrapper.properties), latest $(curl -sf https://services.gradle.org/versions/current | sed -nE 's/.*"version" *: *"([^"]+)".*/\1/p')"
+            echo "- Android Gradle plugin: $(sed -nE 's/.*"com\.android\.application"\) version "([^"]+)".*/\1/p' android/settings.gradle.kts), latest $(curl -sf https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/maven-metadata.xml | grep -oE '<version>[0-9]+\.[0-9]+\.[0-9]+</version>' | sed -E 's/<[^>]+>//g' | sort -V | tail -1)"
+            echo "- Kotlin: $(sed -nE 's/.*"org\.jetbrains\.kotlin\.android"\) version "([^"]+)".*/\1/p' android/settings.gradle.kts), latest $(curl -sf https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin/maven-metadata.xml | grep -oE '<version>[0-9]+\.[0-9]+\.[0-9]+</version>' | sed -E 's/<[^>]+>//g' | sort -V | tail -1)"
+          } > body.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add -- $FILES
+          git commit -m "Weekly package, lockfile and notices update (ID-411)"
+          git push --force origin "$branch"
+          n=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json number -q length)
+          if [ "$n" = "0" ]; then
+            draft=""
+            [ "$ANALYZE$TEST$BUILD" = "successsuccesssuccess" ] || draft="--draft"
+            gh pr create --repo "$GITHUB_REPOSITORY" --base dev --head "$branch" $draft --title "Weekly package update" --body-file body.md
+          else
+            gh pr edit "$branch" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          fi
