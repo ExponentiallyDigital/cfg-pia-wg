@@ -114,7 +114,7 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
 - ID-403 CHG: The platform hardening does not. `FLAG_SECURE` has **no iOS equivalent** - screenshots cannot be blocked, only the task-switcher snapshot can be covered. `README.md` and `SECURITY.md` state that guarantee unconditionally today and would need to state it per-platform.
 - ID-404 CHG: The silent clipboard clear is an Android method channel (`ClipboardManager.clearPrimaryClip()`); iOS needs `UIPasteboard.general.items = []` or the 60-second auto-clear regresses to the system copy popup that 403 removed.
 - ID-405 CHG: update github actions to accomodate iOS (`release.yml`, SBOM, Gradle lockfiles, etc)
-- ID-394 ADD: on iOS can't use "EXIT" to exit the app, and this mus still cleanly remove all credentyials from memory.
+- ID-394 ADD: on iOS can't use "EXIT" to exit the app, and this mus still cleanly remove all credentials from memory.
 - ID-395 ADD: ABOUT needs to be updated for IOS specific details.
 - ID-029 DOC: phrase hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
 - ID-401 CHG: Extend RevenueCat to use Apple Store.
