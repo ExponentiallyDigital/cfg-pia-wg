@@ -1,6 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :app:dependencies --write-locks
 androidx.activity:activity:1.8.1=debugAndroidTestCompileClasspath,debugCompileClasspath,debugUnitTestCompileClasspath,profileCompileClasspath,releaseCompileClasspath
 androidx.activity:activity:1.9.0=debugAndroidTestLintChecksClasspath,debugLintChecksClasspath,debugRuntimeClasspath,debugUnitTestLintChecksClasspath,debugUnitTestRuntimeClasspath,profileLintChecksClasspath,profileRuntimeClasspath,releaseLintChecksClasspath,releaseRuntimeClasspath
 androidx.annotation:annotation-experimental:1.4.1=debugAndroidTestCompileClasspath,debugAndroidTestLintChecksClasspath,debugCompileClasspath,debugLintChecksClasspath,debugRuntimeClasspath,debugUnitTestCompileClasspath,debugUnitTestLintChecksClasspath,debugUnitTestRuntimeClasspath,profileCompileClasspath,profileLintChecksClasspath,profileRuntimeClasspath,releaseCompileClasspath,releaseLintChecksClasspath,releaseRuntimeClasspath
