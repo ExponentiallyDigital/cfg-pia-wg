@@ -4,6 +4,7 @@
 // ABOUT is a page people open to read; every button on this one destroys something.
 import 'dart:io' show FileSystemException;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
@@ -317,11 +318,52 @@ void main() {
       // The one moment in the app where asking for a review is fair: the user is leaving, and why
       // they are leaving is the most useful thing they could tell us.
       expect(find.textContaining('leaving us a review'), findsOneWidget);
+      expect(find.textContaining('on the Google Play store', findRichText: true), findsOneWidget);
 
       await tester.ensureVisible(find.byKey(const Key('settings_uninstall_really_cancel')));
       await tester.tap(find.byKey(const Key('settings_uninstall_really_cancel')));
       await tester.pumpAndSettle();
       expect(ssh.commands, isEmpty, reason: 'cancelling the second ask touches nothing');
+    });
+
+    // ID-417: on iOS the ask names the App Store, and with no App Store listing yet it isn't made, since
+    // the link would have nowhere to go.
+    testWidgets('on iOS, with no App Store listing yet, the second ask makes no review request', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      // Reset by a teardown too, so a failure here can't leave every later test running as iOS.
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      final c = SessionController(tickInterval: const Duration(hours: 1))
+        ..routerIp = '192.168.1.1'
+        ..sshUsername = 'admin'
+        ..sshPassword = 'pw'
+        ..routerConnected = true;
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionScope(
+            controller: c,
+            child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall')));
+      await tester.tap(find.byKey(const Key('settings_uninstall')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall_confirm')));
+      await tester.tap(find.byKey(const Key('settings_uninstall_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Are you sure?'), findsOneWidget);
+      expect(find.textContaining('review'), findsNothing);
+      expect(find.textContaining('Google Play'), findsNothing);
+
+      await tester.ensureVisible(find.byKey(const Key('settings_uninstall_really_cancel')));
+      await tester.tap(find.byKey(const Key('settings_uninstall_really_cancel')));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
+      debugDefaultTargetPlatformOverride = null;
     });
   });
 

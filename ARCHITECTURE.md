@@ -147,7 +147,7 @@ Everything below was measured on hardware, not read in documentation - ASUS publ
 
 How the app works, screen by screen: the main menu, then each screen that does work, STANDALONE, MANAGE, WATCHDOG and DEVICES, in the order the menu lists them. Each diagram reads top to bottom. The two logs, SETTINGS and ABOUT aren't drawn: each of their actions is a single step. After the diagrams, 3.1 and 3.2 describe the push operation again in plain language and then in detail, because that is the part most worth being able to check.
 
-**The main menu.** Every screen opens from here, and the drawer offers the same destinations from anywhere in the app. EXIT is the one way out that wipes what the app holds: the logins, the generated config and the clipboard.
+**The main menu.** Every screen opens from here, and the drawer offers the same destinations from anywhere in the app. EXIT is the one way out that wipes what the app holds: the logins, the generated config and the clipboard. On iOS it reads CLEAR, because Apple doesn't let an app close itself: it wipes the same things, then closes every screen above the main menu and leaves the app open there (ID-394).
 
 <div align="center">
 

@@ -226,8 +226,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// The first confirmation explains what happens; this one is the "are you sure". It also asks for
   /// a review, which is the one moment in the app where asking is fair - the user is leaving, and
   /// why they are leaving is the most useful thing they could tell us.
+  ///
+  /// On iOS the ask names the App Store, and until the app has a listing there it isn't made at all:
+  /// there would be nowhere for the link to go (ID-417).
   Future<bool> _reallySure() async {
     final recogniser = TapGestureRecognizer()..onTap = _openReview;
+    final store = reviewsGoToAppStore() ? 'App Store' : 'Google Play store';
     try {
       return await showDialog<bool>(
             context: context,
@@ -235,18 +239,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               backgroundColor: kSurface,
               content: Text.rich(
                 TextSpan(style: const TextStyle(color: kText, fontSize: 13), children: [
-                  const TextSpan(text: 'Are you sure?\n\n'),
-                  const TextSpan(text: 'Please consider '),
-                  TextSpan(
-                    text: 'leaving us a review',
-                    style: const TextStyle(
-                      color: kHighlight,
-                      decoration: TextDecoration.underline,
-                      decorationColor: kHighlight,
+                  if (reviewListingUrl() == null)
+                    const TextSpan(text: 'Are you sure?')
+                  else ...[
+                    const TextSpan(text: 'Are you sure?\n\n'),
+                    const TextSpan(text: 'Please consider '),
+                    TextSpan(
+                      text: 'leaving us a review',
+                      style: const TextStyle(
+                        color: kHighlight,
+                        decoration: TextDecoration.underline,
+                        decorationColor: kHighlight,
+                      ),
+                      recognizer: recogniser,
                     ),
-                    recognizer: recogniser,
-                  ),
-                  const TextSpan(text: " on the Google Play store with why you're uninstalling."),
+                    TextSpan(text: " on the $store with why you're uninstalling."),
+                  ],
                 ]),
               ),
               // House style, in the order every other confirmation uses: the way out first, then the
@@ -275,9 +283,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// The same destination the home screen's review link uses.
   Future<void> _openReview() async {
-    if (!await openPlayStoreReview() && mounted) {
-      _c.logEntry('Could not open the Play Store listing on this device.', isError: true);
-    }
+    final result = await openStoreReview();
+    if (result != ReviewOpen.opened && mounted) _c.logEntry(reviewNotOpenedMessage(result), isError: true);
   }
 
   Future<void> _deletePiaCert() async {

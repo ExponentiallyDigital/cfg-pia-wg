@@ -59,7 +59,7 @@ void main() {
       final s = body();
       expect(s.indexOf(kSectionWhatHappened), lessThan(s.indexOf(kSectionRouter)));
       expect(s.indexOf(kSectionRouter), lessThan(s.indexOf(kSectionHistory)));
-      expect(s.indexOf(kSectionHistory), lessThan(s.indexOf(kEmailReviewLine)));
+      expect(s.indexOf(kSectionHistory), lessThan(s.indexOf(emailReviewLine())));
       expect(s, isNot(contains(kSectionWhatToDo)));
       expect(s, isNot(contains(kSectionRouterLog)));
     });
@@ -69,7 +69,7 @@ void main() {
       expect(s.indexOf(kSectionWhatHappened), lessThan(s.indexOf(kSectionWhatToDo)));
       expect(s.indexOf(kSectionWhatToDo), lessThan(s.indexOf(kSectionRouter)));
       expect(s.indexOf(kSectionHistory), lessThan(s.indexOf(kSectionRouterLog)));
-      expect(s.indexOf(kSectionRouterLog), lessThan(s.indexOf(kEmailReviewLine)));
+      expect(s.indexOf(kSectionRouterLog), lessThan(s.indexOf(emailReviewLine())));
       expect(s, contains('4. Review your router log.'));
       expect(s, contains('5. Is your PIA user account active?'));
     });
@@ -95,7 +95,7 @@ void main() {
 
     test('the footer sits above the review line, and the sign-off stays last', () {
       final s = body(whatToDo: kEmailWhatToDo);
-      expect(s.indexOf(kEmailHowToDisable), lessThan(s.indexOf(kEmailReviewLine)));
+      expect(s.indexOf(kEmailHowToDisable), lessThan(s.indexOf(emailReviewLine())));
       expect(s.trimRight(), endsWith(kEmailSignOff.last));
     });
 
