@@ -88,7 +88,7 @@ class MainMenuScreen extends StatelessWidget {
             _MenuRow(
               keyValue: 'menu_close_app',
               icon: kExitIcon,
-              label: 'EXIT',
+              label: exitLabel(), // CLEAR on iOS (ID-394)
               colour: kError,
               outline: kError,
               opensScreen: false,
@@ -214,7 +214,8 @@ class _HelpLinkState extends State<_HelpLink> {
   }
 }
 
-/// Tappable "(*) add a Play Store app review" line directly under the help line.
+/// Tappable "(*) add a Play Store app review" line directly under the help line; on iOS it names the
+/// App Store (ID-417).
 ///
 /// The whole line is the target, not just the glyphs: this is a 12px row, and a `TextSpan`
 /// recogniser only fires on the text itself, which is a small thing to hit accurately. A plain
@@ -224,9 +225,14 @@ class _ReviewLink extends StatelessWidget {
 
   Future<void> _open(BuildContext context) async {
     final controller = SessionScope.of(context);
-    if (!await openPlayStoreReview()) {
-      controller.logEntry('Could not open the Play Store listing on this device.', isError: true);
-    }
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final result = await openStoreReview();
+    if (result == ReviewOpen.opened) return;
+    final message = reviewNotOpenedMessage(result);
+    // Not an error when there's simply no listing yet; said on screen too, since a tap that only
+    // writes to a log the user isn't looking at reads as a link that does nothing.
+    controller.logEntry(message, isError: result == ReviewOpen.failed);
+    if (result == ReviewOpen.noListingYet) messenger?.showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -235,18 +241,18 @@ class _ReviewLink extends StatelessWidget {
       key: const Key('menu_review'),
       behavior: HitTestBehavior.opaque,
       onTap: () => _open(context),
-      child: const Padding(
-        padding: EdgeInsets.fromLTRB(kMenuIconIndent, 8, 0, 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(kMenuIconIndent, 8, 0, 8),
         child: Text.rich(
           textAlign: TextAlign.start,
           TextSpan(
-            style: TextStyle(color: kHighlight, fontSize: 12),
+            style: const TextStyle(color: kHighlight, fontSize: 12),
             children: [
-              WidgetSpan(
+              const WidgetSpan(
                 alignment: PlaceholderAlignment.middle,
                 child: Icon(Icons.star_outline, size: 16, color: kLinkIconColour),
               ),
-              TextSpan(text: ' add a Play Store app review'),
+              TextSpan(text: ' add ${reviewsGoToAppStore() ? 'an' : 'a'} ${reviewStoreName()} app review'),
             ],
           ),
         ),

@@ -137,6 +137,51 @@ jobs:
           retention-days: 1
 
   # ============================================================
+  # Job 2b: iOS simulator build (ID-405)
+  # ============================================================
+  # Builds the iOS app on macOS, so a change that breaks iOS - the Swift side, a plugin's pod, the Xcode
+  # project - shows on the release PR rather than on Andrew's Mac. Unsigned and for the simulator, so it
+  # needs no Apple certificate; signing and the App Store are ID-418. macOS runners cost nothing for a
+  # public repository.
+  #
+  # The tests stay in the quality job on Linux. They run in the Dart VM whatever the host, and the ones
+  # written for iOS run as iOS there (debugDefaultTargetPlatformOverride); here the script tests would
+  # meet macOS's BSD sed and awk, which neither the router's BusyBox nor CI's Linux has.
+  ios-build:
+    name: iOS simulator build
+    needs: osv-scan
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          # ID-410: the version pinned in pubspec.yaml, the one tested locally, not whatever is stable today.
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Toolchain versions
+        run: |
+          flutter --version
+          xcodebuild -version
+          sw_vers
+
+      - name: Fetch dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate launcher icons
+        # The wrapper keeps the tool from damaging the Xcode project (ID-374).
+        run: dart run tool/launcher_icons.dart
+
+      - name: Build for the iOS simulator
+        run: flutter build ios --simulator --debug --no-codesign
+
+  # ============================================================
   # Job 3: OSV dependency vulnerability scan - every other job waits on it
   # ============================================================
   # quality, build-debug and codeql `need` this job (and security needs build-debug), so a failed scan - a

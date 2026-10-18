@@ -34,6 +34,7 @@ import 'router_slot_service.dart'
         slotKeysFor,
         slotLabel;
 import 's50_template.dart';
+import 'review_service.dart' show reviewListingUrl, reviewsGoToAppStore;
 import 'server_list_signature.dart' show kPiaServerListKeyPem;
 import 'watchdog_email.dart';
 
@@ -552,8 +553,15 @@ const List<String> kEmailWhatToDo = [
 const String kEmailHowToDisable =
     'Email alerting can be disabled in the app via WATCHDOG, CREATE/EDIT, then deselecting "Enable email alerts".';
 
-const String kEmailReviewLine = 'If cfg-pia-wg is useful to you, please consider submitting a review '
-    'by tapping on the home screen link or via $kPlayStoreUrl';
+/// The review ask near the foot of every email. It follows the phone that deploys the watchdog, since
+/// the script is written then (ID-417): Play's listing from Android, the App Store's from iOS, and from
+/// iOS before there is an App Store listing, the ask without a link.
+String emailReviewLine() {
+  const ask = 'If cfg-pia-wg is useful to you, please consider submitting a review';
+  if (!reviewsGoToAppStore()) return '$ask by tapping on the home screen link or via $kPlayStoreUrl';
+  final url = reviewListingUrl();
+  return url == null ? '$ask on the App Store.' : '$ask by tapping on the home screen link or via $url';
+}
 
 const List<String> kEmailSignOff = ['Thank you,', 'cfg-pia-wg by Exponentially Digital'];
 
@@ -592,7 +600,7 @@ String buildEmailBody({
       ..writeln();
   }
   b
-    ..writeln(kEmailReviewLine)
+    ..writeln(emailReviewLine())
     ..writeln();
   for (final l in kEmailSignOff) {
     b.writeln(l);
@@ -1058,7 +1066,7 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       .replaceAll('__KILLSW__', stock ? _kKillSwitchStock : _kKillSwitchMerlin)
       .replaceAll('__MAILHDR__', stock ? _kMailHdrStock : _kMailHdrMerlin)
       .replaceAll('__WHATTODO__', _echoBlock(['', kSectionWhatToDo, ...kEmailWhatToDo]))
-      .replaceAll('__SIGNOFF__', _echoBlock(['', kEmailHowToDisable, '', kEmailReviewLine, '', ...kEmailSignOff]))
+      .replaceAll('__SIGNOFF__', _echoBlock(['', kEmailHowToDisable, '', emailReviewLine(), '', ...kEmailSignOff]))
       .replaceAll('__MAILCMD__', stock ? _kMailCmdStock : _kMailCmdMerlin);
 }
 

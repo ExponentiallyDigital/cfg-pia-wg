@@ -226,6 +226,8 @@ ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
 - See: the README section opens.
 - Do: "add a Play Store app review".
 - See: the Play Store app opens the listing, not a web page inside cfg-pia-wg.
+- Do: on an iPhone, the same line, which reads "add an App Store app review" there.
+- See: until the app has an App Store listing, a message at the foot of the screen says cfg-pia-wg isn't on the App Store yet, and nothing opens - Safari least of all. Once the listing is in, the App Store app opens it (ID-417).
 
 **HOM-5** Tablet [hand]
 
@@ -1798,6 +1800,15 @@ logger "**ABT-3 END** Script from another version"
 - Do: cold start the app - swipe it away first.
 - See: a dark splash on the app's own background while it starts, not a white flash.
 - See: on Android 12 and later, the system's circular splash uses the same artwork on the same background.
+
+**EXT-10** CLEAR on iPhone [hand]
+
+- Do: on an iPhone, enter the router login in MANAGE and connect, then GENERATE a config and COPY it.
+- See: the main menu's last row and the drawer's last entry both read CLEAR, not EXIT.
+- Do: open the drawer from the generated config's screen and tap CLEAR.
+- See: "Clear cfg-pia-wg?", saying the app returns to the main menu, with CANCEL and CLEAR.
+- Do: CLEAR.
+- Pass if: the app is still open, on the main menu; MANAGE asks for the router login again with every field blank; and pasting into a text field brings back nothing the app had copied (ID-394).
 
 ---
 

@@ -26,6 +26,8 @@
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
+		<key>NSLocalNetworkUsageDescription</key>
+		<string>cfg-pia-wg connects to your router on your home network to set up and manage its WireGuard VPN tunnels.</string>
 		<key>UIApplicationSceneManifest</key>
 		<dict>
 			<key>UIApplicationSupportsMultipleScenes</key>

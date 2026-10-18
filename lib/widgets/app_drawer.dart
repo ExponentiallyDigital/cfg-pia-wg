@@ -17,6 +17,7 @@
 // Android back button can retrace steps and return to a modal that was left open. Selecting the
 // current destination is a no-op.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'app_button.dart';
@@ -75,6 +76,14 @@ IconData destinationIcon(AppDestination dest) => switch (dest) {
 /// EXIT's icon, on the main menu and in the drawer.
 const IconData kExitIcon = Icons.power_settings_new;
 
+/// True on iOS, where an app can't close itself: Apple's guidelines say an app doesn't quit, and Flutter
+/// ignores `SystemNavigator.pop` there (ID-394). Read through [defaultTargetPlatform], so a test can run as iOS.
+bool get _appCannotClose => defaultTargetPlatform == TargetPlatform.iOS;
+
+/// EXIT's label: CLEAR on iOS, where it wipes the same things but leaves the app open (ID-394, Andrew's
+/// decision 2026-10-16), and EXIT everywhere else.
+String exitLabel() => _appCannotClose ? 'CLEAR' : 'EXIT';
+
 /// Pushes [dest] onto the stack (no-op if already the current destination).
 void navigateToDestination(BuildContext context, SessionController controller, AppDestination dest) {
   if (controller.currentDestination == dest) return;
@@ -90,22 +99,37 @@ Future<void> closeApp(SessionController controller) async {
   await SystemNavigator.pop();
 }
 
-/// Confirms before wiping + exiting. Wired to every exit path (back key, menu + drawer "Exit app").
+/// CLEAR on iOS (ID-394): the same wipe as [closeApp], then every screen and dialog above the main menu is
+/// closed, so nothing a screen still showed - a config, a log, a form - is left behind it.
+Future<void> clearAndReturnHome(BuildContext context, SessionController controller) async {
+  final navigator = Navigator.of(context);
+  await controller.wipeAll(reason: 'cleared');
+  navigator.popUntil((route) => route.isFirst);
+}
+
+/// Confirms before wiping + exiting, or on iOS wiping and returning to the main menu. Wired to every exit
+/// path (back key, menu + drawer EXIT).
 Future<void> confirmAndExit(BuildContext context, SessionController controller) async {
+  final clearOnly = _appCannotClose;
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: kSurface,
-      title: const Text('Exit cfg-pia-wg?', style: TextStyle(color: kText, fontSize: 15)),
-      content: const Text('All credentials and configuration will be wiped from memory.',
-          style: TextStyle(color: kMuted, fontSize: 13)),
+      title: Text(clearOnly ? 'Clear cfg-pia-wg?' : 'Exit cfg-pia-wg?', style: const TextStyle(color: kText, fontSize: 15)),
+      content: Text(
+          clearOnly
+              ? 'All credentials and configuration will be wiped from memory, and the app returns to the main menu.'
+              : 'All credentials and configuration will be wiped from memory.',
+          style: const TextStyle(color: kMuted, fontSize: 13)),
       actions: [
         AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
-        AppButton(label: 'EXIT', role: ButtonRole.destructive, onPressed: () => Navigator.pop(ctx, true)),
+        AppButton(label: exitLabel(), role: ButtonRole.destructive, onPressed: () => Navigator.pop(ctx, true)),
       ],
     ),
   );
-  if (ok == true) await closeApp(controller);
+  if (ok != true) return;
+  if (!clearOnly) return closeApp(controller);
+  if (context.mounted) await clearAndReturnHome(context, controller);
 }
 
 class AppDrawer extends StatelessWidget {
@@ -183,7 +207,7 @@ class AppDrawer extends StatelessWidget {
             ListTile(
               key: const Key('drawer_close_app'),
               leading: const Icon(kExitIcon, color: kError, size: 20),
-              title: const Text('EXIT', style: TextStyle(color: kError, fontSize: 13)),
+              title: Text(exitLabel(), style: const TextStyle(color: kError, fontSize: 13)),
               onTap: () {
                 onCloseDrawer();
                 final navContext = navigatorKey.currentContext;
