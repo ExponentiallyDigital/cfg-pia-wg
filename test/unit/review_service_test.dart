@@ -1,4 +1,4 @@
-// test/unit/review_service_test.dart - sending the user to the Play Store listing.
+// test/unit/review_service_test.dart - sending the user to the store listing: Play's, or the App Store's on iOS.
 //
 // Reported in 407: the home-screen link did nothing, on debug and release alike. 406 had asked Play
 // for its in-app rating card, and Play draws one only when it feels like it (quota-limited, and never
@@ -10,6 +10,7 @@
 // url_launcher rather than the in_app_review plugin, so these tests mock url_launcher's channel.
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/review_service.dart';
@@ -36,7 +37,7 @@ void main() {
 
   test('opens the store listing in the Play Store app, not an in-app browser', () async {
     final calls = installUrlLauncherMock();
-    expect(await openPlayStoreReview(), isTrue);
+    expect(await openStoreReview(), ReviewOpen.opened);
     expect(calls.map((c) => c.method), ['launch'], reason: 'one launch, nothing gating it first');
     final args = calls.single.arguments as Map;
     expect(args['url'], kPlayStoreListingUrl);
@@ -54,15 +55,43 @@ void main() {
 
   test('nothing to open it with returns false', () async {
     installUrlLauncherMock(opens: false);
-    expect(await openPlayStoreReview(), isFalse);
+    expect(await openStoreReview(), ReviewOpen.failed);
   });
 
   test('a platform error returns false rather than throwing out of a tap handler', () async {
     installUrlLauncherMock(failWith: PlatformException(code: 'ACTIVITY_NOT_FOUND'));
-    expect(await openPlayStoreReview(), isFalse);
+    expect(await openStoreReview(), ReviewOpen.failed);
   });
 
   test('with no url_launcher at all it is still a false, not an exception', () async {
-    expect(await openPlayStoreReview(), isFalse);
+    expect(await openStoreReview(), ReviewOpen.failed);
+  });
+
+  test('on Android the store is the Play Store, and the message says which listing failed', () {
+    expect(reviewsGoToAppStore(), isFalse);
+    expect(reviewStoreName(), 'Play Store');
+    expect(reviewListingUrl(), kPlayStoreListingUrl);
+    expect(reviewNotOpenedMessage(ReviewOpen.failed), 'Could not open the Play Store listing on this device.');
+  });
+
+  // ID-417. An iPhone sent to Play's listing gets Play's web page in Safari: no use to anyone.
+  group('on iOS', () {
+    setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.iOS);
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('the store is the App Store', () {
+      expect(reviewsGoToAppStore(), isTrue);
+      expect(reviewStoreName(), 'App Store');
+      expect(reviewNotOpenedMessage(ReviewOpen.failed), 'Could not open the App Store listing on this device.');
+    });
+
+    test('with no App Store listing yet, nothing is opened, Play least of all', () async {
+      expect(kAppStoreListingUrl, isEmpty, reason: 'once the link is in, replace this test with one that opens it');
+      final calls = installUrlLauncherMock();
+      expect(reviewListingUrl(), isNull);
+      expect(await openStoreReview(), ReviewOpen.noListingYet);
+      expect(calls, isEmpty);
+      expect(reviewNotOpenedMessage(ReviewOpen.noListingYet), contains("isn't on the App Store yet"));
+    });
   });
 }

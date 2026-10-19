@@ -8,7 +8,7 @@
     - [1.1.2. FTR - future implementation](#112-ftr---future-implementation)
     - [1.1.3. Unconfirmed BUGs](#113-unconfirmed-bugs)
   - [1.2. Codebase cleanup](#12-codebase-cleanup)
-  - [1.3. v1.0.0 iOS version](#13-v100-ios-version)
+  - [1.3. iOS version](#13-ios-version)
 - [2. New work items](#2-new-work-items)
 
 ---
@@ -19,10 +19,10 @@ See [Process - BACKLOG and CHANGELOG management](https://github.com/Exponentiall
 
 Work items use the same prefixes as CHANGELOG.md, plus these backlog-only ones:
 
-| Prefix | Meaning |
-|---|---|
-| OPS | Operational issue (hosting, external service, infrastructure) |
-| FTR | Future feature, not yet scheduled to a release |
+| Prefix | Meaning                                                       |
+| :----: | ------------------------------------------------------------- |
+|  OPS   | Operational issue (hosting, external service, infrastructure) |
+|  FTR   | Future feature, not yet scheduled to a release                |
 
 See CHANGELOG.md for the full shared list (ADD, ARC, BLD, BUG, CFG, CHG, DEC, DELETE, DOC, FIX, GUI, INF, MOD, NOTE, REL, SEC, TST, UI).
 
@@ -70,9 +70,6 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
 
-> [!IMPORTANT]
-> Do not start the firmware abstraction until stock support has soaked in release. It touches every path stock support just landed on, and a regression here would be indistinguishable from a stock-support bug - the same reasoning that gave SSH connection reuse its own build number.
-
 - Map codebase
   - By file and by function (done 2026-09-01, now in `CONTEXT.md`)
   - Identify redundant or duplicated code
@@ -88,36 +85,52 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
   - Model on `buildWatchdogScript`, which already resolves firmware once and substitutes the differences (`__KILLSW__`, `__MAILHDR__`, `__MAILCMD__`) rather than branching at runtime
   - Take it in slices, each on its own build: start/stop first, then slot reading, then cron persistence, then delete
 - Largest files, measured 2026-09-05: `router_watchdog.dart` 1,554 lines, `router_slot_service.dart` 842, `slot_modal.dart` 767. The email layout in `router_watchdog.dart` (`buildEmailBody`, `RouterEmailFacts`, the section constants) is self-contained and would move out with no behaviour change.
-- ID-041 CHG: **fix the [Sonar Cloud scan](https://sonarcloud.io/project/issues?id=ExponentiallyDigital_cfg-pia-wg&s=IMPACT_RANK&issueStatuses=OPEN%2CCONFIRMED)'s findings, now 88, in six batches from safest to riskiest.** Triaged 2026-09-15 at 35 and put on hold with the rest of this section; analysed again 2026-10-09. A plan, approved by Andrew, before any code: this is that plan, waiting on his three decisions at the end.
-  - **Where it stands, 2026-10-09:** 88 open, 50 of them newer than the triage, mostly the rewrite's new code. All code smells; none a bug or a vulnerability. CI's SonarCloud check passes, since the quality gate judges new code only. Cognitive complexity (S3776, limit 15): 38 functions, 571 points over. Nested ternaries (S3358): 29. Duplicated literals (S1192): 14. Too many parameters (S107): 2. Missing `const` (S7112, S3962): 5. Re-read the list with `https://sonarcloud.io/api/issues/search?componentKeys=ExponentiallyDigital_cfg-pia-wg&resolved=false&ps=500` before starting; it moves with every build.
-  - **The worst functions:**
-    - DEVICES: `_apply` 84, `_tunnelWarnings` 32 (`lib/widgets/device_assignment_screen.dart`), and `DeviceAssignmentService.apply` 31 with 13 parameters: APPLY, the most production-critical path.
-    - Router DNS: `buildDnsRouting` 67 and `dnsReportText` 55 (`lib/router_dns.dart`), both pure functions, so their output can be pinned by tests before anything changes.
-    - Watchdog and slots: `uninstallFromRouter` 53, `deployWatchdog` 45, `validate` 30 (`lib/router_watchdog.dart`); `createConfigToSlot` 37, `fetchSlots` 30, `enableSlot` 26 (`lib/router_slot_service.dart`). Full of stock-or-Merlin branches the firmware abstraction above would restructure anyway.
-    - Screens and dialogs: `_slotList` 46, `_buttons` 36, `_enableManage` 28 (`lib/widgets/slot_modal.dart`); `_save` 36, `_dohPicker` 26 (`lib/watchdog_dialog.dart`); `_onConnect` 35 (`lib/widgets/router_slots_screen.dart`); `_secureStartup` and `_maxActiveVpns` 30 each (`lib/screens/settings_screen.dart`); `slotParamErrors` 28 (`lib/input_checks.dart`).
-  - **The duplicated strings, judged:** `"Exception: "`, 24 times across four screens, is real duplication, the same error-tidying code copied around, and one shared helper fixes all four findings. The DNS file paths (`/etc/dnsmasq.conf`, `/tmp/resolv.dnsmasq`, `/etc/resolv.conf`) are shared facts that belong in constants, as does the DEVICES label `"Default connection"`. The router commands (`nvram commit` 24 times over three files, `nvram get vpnc_clientlist`, `nvram get vpnc_max_conn`, `date +%s`) arguably read better written out than as constants, and could instead be marked "won't fix" in SonarCloud with that reason.
-  - **The plan, one build per step:**
-    1. The quick, safe batch, about 20 issues: the five `const` fixes, the error-tidying helper, the DNS path and label constants, and the router commands as Andrew decides.
-    2. Router DNS's two pure functions: tests that pin their output first, then split them, changing nothing they produce. Two of the four worst.
-    3. The 29 nested ternaries, mechanical; the 8 in the watchdog script builder checked against the generated script text.
-    4. DEVICES' APPLY: `_apply`, `_tunnelWarnings` and `apply`, its 13 parameters into one request object. Pieces moved into functions of their own and nothing else changed; the tests that pin APPLY's exact order, "THE DEFAULT CONNECTION SEQUENCE IS EXACT" among them, are the safety net.
-    5. The screens and dialogs, one file per build.
-    6. The watchdog and slot service functions: left to the firmware abstraction, and scored again after it.
-  - **For every step:** behaviour pinned by a test before the change, functions only split, never reworked, the full suite, and the SonarCloud count read again afterwards.
-  - **Decisions for Andrew:** start now, or keep holding (steps 1 to 3 carry little risk; 4 onward touch paths real users depend on); the router commands, constants or "won't fix" with a reason; and whether step 6 waits for the firmware abstraction.
+- ID-419 CHG: **the SonarCloud findings in the watchdog and the slot service - ID-041's step 6 - after the firmware abstraction.** Split from ID-041 2026-10-16, Andrew's decision. `uninstallFromRouter` 53, `deployWatchdog` 45 and `validate` 30 (`lib/router_watchdog.dart`), and `createConfigToSlot` 37, `fetchSlots` 30 and `enableSlot` 26 (`lib/router_slot_service.dart`), are full of stock-or-Merlin branches the abstraction would restructure anyway, so they're scored again after it and what's left is fixed then.
 
-### 1.3. v1.0.0 iOS version
+### 1.3. iOS version
 
-**Parked** - US$99/year Apple Developer Program against an unknown iOS user base. Early thinking, and what actually blocks it: `.claude/plans/plan_ios-port.md`.
+**Under way** since 2026-10-16. In dependency order; marks his items. GPLv3 is fine on the App Store while Andrew holds all the copyright, so an outside contribution needs his permission to ship there.
 
-- ID-402 CHG: The router half ports for free: `dartssh2` is pure Dart, and the watchdog script runs on the router, which does not care what phone deployed it.
-- ID-403 CHG: The platform hardening does not. `FLAG_SECURE` has **no iOS equivalent** - screenshots cannot be blocked, only the task-switcher snapshot can be covered. `README.md` and `SECURITY.md` state that guarantee unconditionally today and would need to state it per-platform.
-- ID-404 CHG: The silent clipboard clear is an Android method channel (`ClipboardManager.clearPrimaryClip()`); iOS needs `UIPasteboard.general.items = []` or the 60-second auto-clear regresses to the system copy popup that 403 removed.
-- ID-405 CHG: update github actions to accomodate iOS (`release.yml`, SBOM, Gradle lockfiles, etc)
-- ID-394 ADD: on iOS can't use "EXIT" to exit the app, and this mus still cleanly remove all credentials from memory.
-- ID-395 ADD: ABOUT needs to be updated for IOS specific details.
-- ID-029 DOC: phrase hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
-- ID-401 CHG: Extend RevenueCat to use Apple Store.
+- ID-426 REL: **enrol in the Apple Developer Program as an individual.** Decided 2026-10-19.
+  - **Done when:** the membership is active.
+- ID-422 REL: **sign builds with the new team on all three iPhones.** After ID-426.
+  - **Done when:** a team-signed build runs on each iPhone.
+- ID-427 REL: **create the App Store Connect app record, bundle ID `com.exponentiallydigital.cfgpiawg`.** After ID-426.
+  - **Done when:** it exists, and its App Store link is sent to Claude for ID-417.
+- ID-428 REL: **declare the EU trader status, or leave the EU storefronts out.** After ID-427.
+  - **Done when:** App Store Connect shows it declared.
+- ID-429 DEC: **decide whether to support iPad, which needs iPad screenshots and review.**
+  - **Done when:** decided, and the Xcode project matches.
+- ID-418 REL: **CI builds a signed iOS release, with an App Store Connect API key kept in GitHub secrets.** After ID-405 and ID-427.
+  - **Done when:** a manual `release.yml` run produces a signed `.ipa`.
+- ID-430 CFG: **answer Apple's encryption question in `Info.plist` (`ITSAppUsesNonExemptEncryption`), agreed with Andrew.**
+  - **Done when:** an upload asks no encryption question.
+- ID-431 REL: **a release tag uploads the signed build to TestFlight.** After ID-418 and ID-430.
+  - **Done when:** a tag puts an installable build in TestFlight.
+- ID-432 REL: **App Store release notes come from CHANGELOG, like the Play note.** After ID-431.
+  - **Done when:** a TestFlight build carries its CHANGELOG notes.
+- ID-433 REL: **the release SBOM covers the iOS-only dependencies.**
+  - **Done when:** a release SBOM lists them.
+- ID-434 DOC: **the App Store listing: text, screenshots, privacy answers, age rating.** After ID-427 and ID-429.
+  - **Done when:** App Store Connect shows nothing missing.
+- ID-435 DOC: **App Review notes and a demo video.** The reviewer has no ASUS router or PIA account (guideline 2.1); the app offers no VPN itself (5.4); why PIA is named (5.2).
+  - **Done when:** written, with the video linked.
+- ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-434 and ID-435.
+  - **Done when:** the app is on sale.
+- ID-437 REL: **sign the Paid Apps Agreement and set up banking and tax.** After ID-426.
+  - **Done when:** the agreement is active.
+- ID-401 CHG: **RevenueCat on the App Store.** After ID-431 and ID-437.
+  - **Done when:** a TestFlight purchase unlocks the app, and RESTORE PURCHASE finds it again.
+- ID-424 TST: **measure how often iOS lets the app refresh in the background, for an iOS widget like Android's (ID-376).** After ID-422.
+  - **Done when:** a day's refresh times from an iPhone are recorded.
+- ID-438 ADD: **an iOS home screen widget showing the last status the app read.** After ID-431.
+  - **Done when:** it shows each tunnel's state as last read.
+- ID-439 ADD: **the iOS widget refreshes itself in the background.** After ID-424 and ID-438.
+  - **Done when:** it updates with the app closed.
+- ID-440 REL: **get D-U-N-S number**  from D&BS.
+  - **Done when: D-U-N-S number available
+- ID-421 REL: **move the Apple membership to the company, through Apple support.** After ID-440.
+  - **Done when:** the App Store shows the company as the seller.
 - ID-375 BLD: **either** replace this module or **post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix.** Agreed 2026-10-09, Andrew's call, but not posted: the `gh` token here can't comment outside the organisation ("Resource not accessible by personal access token"). Post it from Andrew's own login, or after `gh auth refresh -s public_repo`. Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment:
 
   ```markdown

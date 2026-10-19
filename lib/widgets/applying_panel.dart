@@ -27,10 +27,10 @@ class ApplyingPanel extends StatelessWidget {
   static const String message = 'Applying - do not leave this screen.';
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-        key: const Key('applying_panel'),
+  Widget build(BuildContext context) => const AlertDialog(
+        key: Key('applying_panel'),
         backgroundColor: kSurface,
-        content: Row(mainAxisSize: MainAxisSize.min, children: const [
+        content: Row(mainAxisSize: MainAxisSize.min, children: [
           SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight)),
           SizedBox(width: 16),
           Flexible(child: Text(message, style: TextStyle(color: kText, fontSize: 14))),

@@ -35,6 +35,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/error_presenter.dart';
 import '../widgets/log_buttons.dart';
 import '../widgets/ssh_creds_dialog.dart';
+import '../plain_error.dart';
 
 /// The colour of one router log line, or null for the plain text colour.
 ///
@@ -169,7 +170,7 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (!mounted) return;
     final loaded = page;
@@ -231,7 +232,7 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     try {
       text = unwrapPage((await runRouterCommand(_client(ip, user, pass), page.command, allowFailure: true)).stdout);
     } catch (e) {
-      error = e.toString().replaceAll('Exception: ', '');
+      error = plainError(e);
     }
     if (!mounted) return;
     setState(() {

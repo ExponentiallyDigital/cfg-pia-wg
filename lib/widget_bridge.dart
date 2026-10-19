@@ -42,7 +42,11 @@ String _pluralPinned(int n) => n == 1 ? '1 pinned' : '$n pinned';
 /// watchdog state: [WidgetStatus] does not carry either yet.
 String _tunnelDetail(WidgetTunnelInfo t) {
   final pinned = t.pinnedDeviceNames.length;
-  final state = t.answering ? 'up' : (t.up ? 'not answering' : 'down');
+  final state = switch ((t.answering, t.up)) {
+    (true, _) => 'up',
+    (_, true) => 'not answering',
+    _ => 'down',
+  };
   return 'wgc${t.slot} · $state · ${_pluralPinned(pinned)}';
 }
 
@@ -166,12 +170,13 @@ Map<String, Object> buildWidgetData(WidgetStatus status, {required DateTime now,
   // default for a row with no data at all, below [WidgetStatus.tunnels]'s actual length.
   String stateOf(WidgetTunnelInfo t) => t.answering ? 'answering' : 'down';
 
+  final more = status.tunnels.length - 2;
+  final moreTunnels = more == 1 ? 'tunnel' : 'tunnels';
   final data = <String, Object>{
     'badge': badgeName(),
     'down_count': status.tunnels.where((t) => !t.answering).length,
     'tunnel_count': status.tunnels.length,
-    'overflow_text':
-        status.tunnels.length > 2 ? '+${status.tunnels.length - 2} more tunnel${status.tunnels.length - 2 == 1 ? '' : 's'}' : '',
+    'overflow_text': more > 0 ? '+$more more $moreTunnels' : '',
     'last_checked_text': _lastCheckedText(status.checkedAt, now),
     'can_refresh': canRefresh,
     'compact_badge_text': _compactBadgeText(status),

@@ -1,4 +1,4 @@
-// review_service.dart - sending the user to the app's Play Store listing to leave a review.
+// review_service.dart - sending the user to the app's store listing to leave a review.
 //
 // This program is free software: you can redistribute it and/or modify it under the terms
 // of the GNU General Public License as published by the Free Software Foundation, either
@@ -31,8 +31,38 @@
 // the Kotlin Gradle plugin unconditionally, which fails the build under AGP 9's built-in Kotlin
 // (ID-043). url_launcher, already a dependency, does the same job. An unprompted ask - after a
 // successful watchdog deploy, say - would need a review plugin back, one that supports built-in Kotlin.
+//
+// On iOS every review ask names the App Store and opens its listing instead (ID-417). Until the app
+// has an App Store listing, [kAppStoreListingUrl] is empty, and a tap says so rather than sending an
+// iPhone to Play's web page.
 
+import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+/// The app's App Store listing. Empty until the app has one and Andrew has sent the link (ID-417); while
+/// it is empty, iOS has nowhere to send a review, and says so.
+const String kAppStoreListingUrl = '';
+
+/// True when this build's reviews go to the App Store: iOS, read through [defaultTargetPlatform] so a
+/// test can run as iOS. Everything else goes to Play.
+bool reviewsGoToAppStore() => defaultTargetPlatform == TargetPlatform.iOS;
+
+/// The store a review goes to, as the app names it: "App Store" on iOS, "Play Store" elsewhere.
+String reviewStoreName() => reviewsGoToAppStore() ? 'App Store' : 'Play Store';
+
+/// The listing a review goes to, or null on iOS while there is no App Store listing yet.
+String? reviewListingUrl() {
+  if (!reviewsGoToAppStore()) return kPlayStoreListingUrl;
+  return kAppStoreListingUrl.isEmpty ? null : kAppStoreListingUrl;
+}
+
+/// What a review tap did.
+enum ReviewOpen { opened, failed, noListingYet }
+
+/// What the app log says when a review tap opened nothing.
+String reviewNotOpenedMessage(ReviewOpen result) => result == ReviewOpen.noListingYet
+    ? "cfg-pia-wg isn't on the App Store yet, so there's no listing to review it on."
+    : 'Could not open the ${reviewStoreName()} listing on this device.';
 
 /// The app's Play Store listing. The id is the Play application id, which never changes
 /// (`android/app/build.gradle.kts` marks it as tied to the Play Store), so it is written out rather
@@ -40,18 +70,21 @@ import 'package:url_launcher/url_launcher.dart';
 const String kPlayStoreListingUrl =
     'https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga';
 
-/// Opens the app's Play Store listing so the user can leave a review.
+/// Opens the app's listing in this platform's store so the user can leave a review.
 ///
-/// Returns false when nothing could be opened - a desktop host, a device with no Play Store, a
-/// plain widget test - so the caller can say so rather than leave a tap with no effect.
-Future<bool> openPlayStoreReview() async {
+/// Anything but [ReviewOpen.opened] means nothing was opened - a desktop host, a device with no store,
+/// a plain widget test, or iOS before there is a listing - so the caller can say so rather than leave
+/// a tap with no effect.
+Future<ReviewOpen> openStoreReview() async {
+  final url = reviewListingUrl();
+  if (url == null) return ReviewOpen.noListingYet;
   try {
     // externalApplication, not platformDefault: for an https link platformDefault opens an in-app
-    // browser tab, which shows Play's web page instead of handing the link to the Play Store app.
+    // browser tab, which shows the store's web page instead of handing the link to the store app.
     // The manifest's <queries> already covers an https VIEW intent.
-    return await launchUrl(Uri.parse(kPlayStoreListingUrl), mode: LaunchMode.externalApplication);
+    return await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication) ? ReviewOpen.opened : ReviewOpen.failed;
   } catch (_) {
-    // No handler, or a platform error: false either way, and the caller logs it.
-    return false;
+    // No handler, or a platform error: failed either way, and the caller logs it.
+    return ReviewOpen.failed;
   }
 }

@@ -194,11 +194,11 @@ const int kFirmwareRulePriority = 100;
 List<String> staleRuleTables(String ipRuleOutput, {required String ip, int? keepIndex}) {
   // What this device SHOULD be routed by: its profile's table, `main` when it is pinned to the
   // plain internet, and nothing at all when it follows the default connection.
-  final keep = keepIndex == null
-      ? null
-      : keepIndex == 0
-          ? 'main'
-          : '$keepIndex';
+  final keep = switch (keepIndex) {
+    null => null,
+    0 => 'main',
+    _ => '$keepIndex',
+  };
   final stale = <String>[];
   var kept = false;
   for (final line in ipRuleOutput.split('\n')) {

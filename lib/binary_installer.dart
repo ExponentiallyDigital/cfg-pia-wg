@@ -289,7 +289,7 @@ class BinaryInstaller {
   }
 
   Future<InstallResult> _installAsset(HelperBinary binary, HelperAsset asset, String arch) async {
-    final tmp = '/tmp/cfg_pia_wg_dl';
+    const tmp = '/tmp/cfg_pia_wg_dl';
     final download = '$tmp/${binary.name}.download';
     final needKb = (asset.bytes * kFreeSpaceMultiple) ~/ 1024;
 

@@ -226,6 +226,8 @@ ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
 - See: the README section opens.
 - Do: "add a Play Store app review".
 - See: the Play Store app opens the listing, not a web page inside cfg-pia-wg.
+- Do: on an iPhone, the same line, which reads "add an App Store app review" there.
+- See: until the app has an App Store listing, a message at the foot of the screen says cfg-pia-wg isn't on the App Store yet, and nothing opens - Safari least of all. Once the listing is in, the App Store app opens it (ID-417).
 
 **HOM-5** Tablet [hand]
 
@@ -1744,6 +1746,18 @@ logger "**ABT-3 END** Script from another version"
 - See: it opens on its own screen and does not bleed through the header.
 - See: the link row is centred, and none of the five links is underlined; all five still open.
 
+**ABT-5** Build rows on each platform [hand]
+
+- Do: on Android, ABOUT.
+- See: the rows end CPU Architecture (ABI), Android version (the phone's, such as `Android 16 (API 36)`), Compile SDK and Kotlin; nothing says "Target Android version" (ID-395).
+- Do: on an iPhone, ABOUT, on a build from Xcode and later on one from TestFlight.
+- See: the first line has this build's version and build number, not `unknown`.
+- See: Built by reads Xcode on the Xcode build and TestFlight on the TestFlight one, with the time it was built.
+- See: Commit hash, Git branch/tag and Build runner ID are filled in: `Local Build` from Xcode, the run's id from CI.
+- See: the rows end CPU Architecture (`arm64`), iOS version (the phone's, such as `iOS 27.0`), iOS SDK (with the minimum, `iOS 15.0`) and Xcode; none of them reads `unknown`.
+- Do: COPY BUILD INFO, and paste it into a note.
+- Pass if: the pasted text has the same lines as the screen.
+
 ---
 
 ## <a name='ext'></a>EXT. Exit, background and session
@@ -1781,6 +1795,10 @@ logger "**ABT-3 END** Script from another version"
 
 - Do: on a **release** build, try to take a screenshot, then open the task switcher. A debug build allows both on purpose, so mark this SKIP if that is what you are running.
 - See: the screenshot is refused, and the task switcher shows a blank or masked thumbnail rather than the screen.
+- Do: on an iPhone, a **release** build (`flutter run --release`): open a screen with something on it, such as MANAGE's slot list, then swipe up and hold to open the app switcher.
+- See: the app's card shows the launch screen (dark, with the artwork), not the screen. A screenshot still works: iOS can't block one (ID-403).
+- Do: the same on a **debug** build (`flutter run`), which has no cover.
+- Pass if: the debug build's card shows the screen, so the cover is what hid it on the release build.
 
 **EXT-7** Rotate mid-action [hand]
 
@@ -1798,6 +1816,15 @@ logger "**ABT-3 END** Script from another version"
 - Do: cold start the app - swipe it away first.
 - See: a dark splash on the app's own background while it starts, not a white flash.
 - See: on Android 12 and later, the system's circular splash uses the same artwork on the same background.
+
+**EXT-10** CLEAR on iPhone [hand]
+
+- Do: on an iPhone, enter the router login in MANAGE and connect, then GENERATE a config and COPY it.
+- See: the main menu's last row and the drawer's last entry both read CLEAR, not EXIT.
+- Do: open the drawer from the generated config's screen and tap CLEAR.
+- See: "Clear cfg-pia-wg?", saying the app returns to the main menu, with CANCEL and CLEAR.
+- Do: CLEAR.
+- Pass if: the app is still open, on the main menu; MANAGE asks for the router login again with every field blank; and pasting into a text field brings back nothing the app had copied (ID-394).
 
 ---
 

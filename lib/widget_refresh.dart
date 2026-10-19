@@ -35,6 +35,7 @@ import 'dart:async';
 import 'dart:ui' show DartPluginRegistrant;
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'router_host_keys.dart';
@@ -234,6 +235,10 @@ Future<void> cancelWidgetRefresh() async {
   await Workmanager().cancelByUniqueName(kWidgetRefreshTask);
 }
 
+/// True where the app has a home screen widget: Android. Read through [defaultTargetPlatform], so a
+/// test can run as iOS (ID-425).
+bool homeWidgetSupported() => defaultTargetPlatform == TargetPlatform.android;
+
 /// Points WorkManager - and so the widget's refresh button, which runs through it - at THIS
 /// build's entry point, and does nothing else: no schedule is started here. Called from `main()`
 /// on every start, because the handle the plugin stores is specific to the build that registered
@@ -244,9 +249,13 @@ Future<void> cancelWidgetRefresh() async {
 /// [refreshWidgetStatus] returns [WidgetRefreshOutcome.noKey] if something does call it.
 /// Deliberately swallows its errors - a platform without the plugin (a test, a desktop build)
 /// must not stop the app from starting over a widget it does not have.
-Future<void> reregisterWidgetRefresh() async {
+///
+/// Android only: the widget is Android's, and iOS has none yet (ID-425, until ID-438). [initialize]
+/// stands in for the plugin in a test.
+Future<void> reregisterWidgetRefresh({Future<void> Function()? initialize}) async {
+  if (!homeWidgetSupported()) return;
   try {
-    await Workmanager().initialize(callbackDispatcher);
+    await (initialize ?? () => Workmanager().initialize(callbackDispatcher))();
   } catch (_) {
     // Nothing to report and nobody to report it to: the widget simply will not refresh itself.
   }

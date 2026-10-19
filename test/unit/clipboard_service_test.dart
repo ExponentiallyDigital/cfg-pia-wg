@@ -84,7 +84,8 @@ void main() {
 
     await c.copyToClipboard('secret');
     expect(calls, [kCopySensitiveMethod]);
-    expect(args.single, {'text': 'secret'});
+    // The expiry is the countdown's, so on iOS the copy goes when the countdown would take it (ID-404).
+    expect(args.single, {'text': 'secret', 'expiresInSeconds': 60});
     expect(writes, isEmpty, reason: 'the host copies it, so it can mark it sensitive');
 
     await c.clearClipboard();
@@ -126,6 +127,37 @@ void main() {
     // The copy is marked sensitive on every API level that reads the flag (ID-313).
     expect(kotlin, contains('ClipDescription.EXTRA_IS_SENSITIVE'));
     expect(kotlin, contains('"android.content.extra.IS_SENSITIVE"'));
+  });
+
+  // ID-404: the same channel and methods in Swift, and the two things that make the iOS copy safer.
+  test('AppDelegate.swift registers the same channel and methods, and never reads the clipboard', () {
+    final swift = File('ios/Runner/AppDelegate.swift').readAsStringSync();
+    final start = swift.indexOf('enum SensitiveClipboard');
+    expect(start, greaterThan(0));
+    final clipboard = swift.substring(start);
+
+    expect(clipboard, contains('static let channelName = "${clipboardChannel.name}"'));
+    expect(clipboard, contains('static let clearClipboard = "$kClearClipboardMethod"'));
+    expect(clipboard, contains('static let copySensitive = "$kCopySensitiveMethod"'));
+    expect(clipboard, contains('.localOnly: true'));
+    expect(clipboard, contains('.expirationDate:'));
+    // Reading the contents is what shows iOS's "pasted from" banner.
+    for (final read in ['.string', '.strings', '.url', '.image', '.data(forPasteboardType']) {
+      expect(clipboard.contains('UIPasteboard.general$read'), isFalse, reason: 'reads the clipboard: $read');
+    }
+  });
+
+  // ID-403: iOS can't block screenshots, so a release build covers the app switcher's picture instead,
+  // and a debug build skips it as Android's skips FLAG_SECURE. The cover itself runs in ios/RunnerTests.
+  test('AppDelegate.swift covers the app as its scene deactivates, in a release build only', () {
+    final swift = File('ios/Runner/AppDelegate.swift').readAsStringSync();
+    expect(swift, contains('    PrivacyCover.start()\n    return super.application('));
+    final start = swift.substring(swift.indexOf('static func start()'), swift.indexOf('private static func windows'));
+    expect(start, contains('#if !DEBUG'));
+    expect(start, contains('UIScene.willDeactivateNotification'));
+    expect(start, contains('forEach(show)'));
+    expect(start, contains('UIScene.didActivateNotification'));
+    expect(start, contains('forEach(hide)'));
   });
 
   // Screen capture is blocked in a release build. A debug build skips FLAG_SECURE so the app can
