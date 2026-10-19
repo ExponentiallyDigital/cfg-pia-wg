@@ -317,14 +317,14 @@ class _SlotModalState extends State<SlotModal> {
     if (!info.isEmpty) {
       // The title names what is being overwritten - wgcN:region - so the body does not have to
       // say it a second time (ID-113). The same shape the watchdog and the delete prompts use.
+      // The profile survives an overwrite, so its index 6 does too, and so does every pin
+      // naming it. Those devices follow the new region without being asked.
+      final whenPinned = running ? ' once the slot is enabled. Until then it uses the default connection.' : '.';
       final ok = await _confirm('Overwrite ${slotLabel(slot, info.desc)}?',
           message: 'Creating a new configuration will overwrite this slot.'
               '${running ? '\n\nIts tunnel is running, so it will be stopped first. The new configuration stays disabled '
                   'until you ENABLE it.' : ''}'
-              // The profile survives an overwrite, so its index 6 does too, and so does every pin
-              // naming it. Those devices follow the new region without being asked.
-              '${isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region'
-                  '${running ? ' once the slot is enabled. Until then it uses the default connection.' : '.'}' : ''}');
+              '${isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region$whenPinned' : ''}');
       if (!ok) return;
     }
     final region = await _pickRegion();
@@ -825,11 +825,11 @@ class _SlotModalState extends State<SlotModal> {
           // like a healthy tunnel from the link flag alone.
           final isActive = _slots.activeSlots.contains(slotNum);
           final isAnswering = _slots.answeringSlots.contains(slotNum);
-          final badgeLabel = !isActive
-              ? null
-              : isAnswering
-                  ? '● ACTIVE'
-                  : '● UP, NO ANSWER';
+          final badgeLabel = switch ((isActive, isAnswering)) {
+            (false, _) => null,
+            (_, true) => '● ACTIVE',
+            _ => '● UP, NO ANSWER',
+          };
           return InkWell(
             key: Key('slot_row_$slotNum'),
             onTap: _processing ? null : () => setState(() => _selected = slotNum),

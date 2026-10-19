@@ -421,11 +421,18 @@ String? resolverAdvice({
   return null;
 }
 
+/// Why a lookup failed, or nothing when it worked.
+String _checkDetail(NslookupResult r) {
+  if (r.ok) return '';
+  if (!r.finished) return 'no answer in 5 s';
+  return r.error.isEmpty ? 'no answer' : r.error;
+}
+
 DnsCheckRow _row(String who, NslookupResult r, bool running) => DnsCheckRow(
       who: who,
       state: r.ok ? DnsCheckState.ok : DnsCheckState.failed,
       addresses: r.addresses,
-      detail: r.ok ? '' : (!r.finished ? 'no answer in 5 s' : (r.error.isEmpty ? 'no answer' : r.error)),
+      detail: _checkDetail(r),
       running: running,
       ms: r.ok ? r.ms : null,
     );
@@ -629,11 +636,11 @@ DnsRouting parseDnsRouting(String output, {required Map<String, String> names, r
   );
 }
 
-String _join(List<String> xs) => xs.length <= 1
-    ? xs.join()
-    : xs.length == 2
-        ? '${xs[0]} and ${xs[1]}'
-        : '${xs.sublist(0, xs.length - 1).join(', ')} and ${xs.last}';
+String _join(List<String> xs) => switch (xs.length) {
+      <= 1 => xs.join(),
+      2 => '${xs[0]} and ${xs[1]}',
+      _ => '${xs.sublist(0, xs.length - 1).join(', ')} and ${xs.last}',
+    };
 
 DnsTag? _encryptionOver(DnsTag where) => switch (where.kind) {
       DnsTagKind.tunnel => _pia,
@@ -746,8 +753,11 @@ List<DnsFlowLine> _routerOwnLines(DnsRouting r) {
         DnsFlowLine(
           head: n,
           rest: ' stubby',
-          note: 'to ${_join(dot)}, '
-              '${ordinary.length == 2 ? 'only if both of the above fail' : ordinary.length == 1 ? 'only if the one above fails' : 'only if all of the above fail'}',
+          note: 'to ${_join(dot)}, ${switch (ordinary.length) {
+            2 => 'only if both of the above fail',
+            1 => 'only if the one above fails',
+            _ => 'only if all of the above fail',
+          }}',
           where: r.whereForAll(dot),
           encryption: _dot,
         )
@@ -796,30 +806,28 @@ List<DnsFlowLine> _slotDnsLines(DnsRouting r) {
     final dns = addressesIn(r.nvram['wgc${slot}_dns'] ?? '');
     if (r.configured(slot) && dns.isNotEmpty) (setUsers[dns.join(', ')] ??= []).add(slot);
   }
-  return [
-    for (final e in setUsers.entries)
-      () {
-        final addrs = e.key.split(', ');
-        final winners = [for (final a in addrs) r.ruleFor(a)].whereType<DnsRule>().toList();
-        final via = winners.isEmpty ? '' : ' Rules ${_join([for (final w in winners) '${w.priority}'])} send the '
-            "router's own lookups to them through ${r.tableLabel(winners.first.table)}.";
-        return DnsFlowLine(
-          head: e.key,
-          note: 'used by ${_join([for (final s in e.value) r.label(s)])}.$via',
-          where: DnsTag(e.value.length == 1 ? '1 slot' : 'shared by ${e.value.length}', DnsTagKind.neutral),
-        );
-      }(),
-  ];
+  return [for (final e in setUsers.entries) _slotDnsLine(r, e.key, e.value)];
+}
+
+/// One set of slot DNS servers: the slots that use it, and the rules that carry the router's own
+/// lookups to it.
+DnsFlowLine _slotDnsLine(DnsRouting r, String servers, List<int> slots) {
+  final winners = [for (final a in servers.split(', ')) r.ruleFor(a)].whereType<DnsRule>().toList();
+  final via = winners.isEmpty ? '' : ' Rules ${_join([for (final w in winners) '${w.priority}'])} send the '
+      "router's own lookups to them through ${r.tableLabel(winners.first.table)}.";
+  return DnsFlowLine(
+    head: servers,
+    note: 'used by ${_join([for (final s in slots) r.label(s)])}.$via',
+    where: DnsTag(slots.length == 1 ? '1 slot' : 'shared by ${slots.length}', DnsTagKind.neutral),
+  );
 }
 
 /// The screen's first line: whether anything but pinned devices goes through a tunnel.
 String _routingVerdict({required List<DnsFlowLine> pinned, required List<DnsFlowLine> others}) {
-  final othersTunnelled = others.any((l) => l.where.kind == DnsTagKind.tunnel);
-  return othersTunnelled
-      ? "Some of the router's own lookups go through a tunnel: the lines tagged with one."
-      : pinned.isNotEmpty
-          ? "Only pinned devices' lookups go through a tunnel."
-          : 'No lookups go through a tunnel.';
+  if (others.any((l) => l.where.kind == DnsTagKind.tunnel)) {
+    return "Some of the router's own lookups go through a tunnel: the lines tagged with one.";
+  }
+  return pinned.isNotEmpty ? "Only pinned devices' lookups go through a tunnel." : 'No lookups go through a tunnel.';
 }
 
 /// What the screen was read from: the rules, the redirects and each slot's DNS setting, as the router has them.

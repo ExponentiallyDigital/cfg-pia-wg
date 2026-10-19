@@ -65,7 +65,8 @@ class RouterResult {
     // stderr can echo the command, secrets included, so it is redacted like the command (ID-323).
     final err = redactCommand(stderr.trim().split('\n').first.trim(), maxLength: 1 << 20);
     final code = exitCode == null ? 'no exit code' : 'exit $exitCode';
-    return err.isEmpty ? code : '$code: ${err.length > 160 ? '${err.substring(0, 160)}...' : err}';
+    if (err.isEmpty) return code;
+    return '$code: ${err.length > 160 ? '${err.substring(0, 160)}...' : err}';
   }
 }
 

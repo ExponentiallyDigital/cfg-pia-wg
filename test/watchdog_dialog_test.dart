@@ -66,6 +66,7 @@ Widget _host(
   String piaPass = 'secret',
   Future<SSHClient> Function()? connect,
   Map<int, String> otherSlotDns = const {},
+  Set<String> routerDotServers = const {},
   PiaService? pia,
 }) {
   return SessionScope(
@@ -83,6 +84,7 @@ Widget _host(
           piaService: pia ?? _FakePia(),
           serviceFactory: (cl) => RouterWatchdog(cl, onLog: c.onLog),
           otherSlotDns: otherSlotDns,
+          routerDotServers: routerDotServers,
         ),
       ),
     ),
@@ -279,6 +281,42 @@ void main() {
     await tester.enterText(find.byKey(const Key('wd_doh_ip')), '76.76.2.1');
     await tester.pump();
     expect(note(), startsWith('The watchdog resolves PIA'));
+  });
+
+  // ID-041 step 3 moved these four notes into a function; each must read exactly as before.
+  testWidgets('the DoH note reads word for word as it did, for each kind of clash', (tester) async {
+    final c = _controller();
+    addTearDown(c.dispose);
+    final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+    await tester.pumpWidget(_host(ssh, c, otherSlotDns: {2: '76.76.10.1'}, routerDotServers: {'1.1.1.2'}));
+    await tester.pumpAndSettle();
+    String note() => tester.widget<Text>(find.byKey(const Key('wd_doh_note'))).data!;
+    await tester.enterText(find.widgetWithText(TextFormField, 'DNS servers'), '9.9.9.9');
+
+    await tester.enterText(find.byKey(const Key('wd_doh_ip')), '9.9.9.9');
+    await tester.pump();
+    expect(note(),
+        "This address is also this tunnel's DNS server, so the router sends its own lookups to it through this tunnel - "
+        "the watchdog's included. If the tunnel breaks, the watchdog cannot look up PIA to repair it. Choose an address "
+        'this tunnel does not use for DNS.');
+
+    await tester.enterText(find.byKey(const Key('wd_doh_ip')), '1.1.1.2');
+    await tester.pump();
+    expect(note(),
+        'The router already uses this address for its own encrypted DNS. If a tunnel uses it for DNS too, the '
+        "router's lookups to it go through that tunnel, and the watchdog's go with them. Choose an address nothing else uses.");
+
+    await tester.enterText(find.byKey(const Key('wd_doh_ip')), '76.76.10.1');
+    await tester.pump();
+    expect(note(),
+        "wgc2 uses this address for DNS, so the router sends the watchdog's lookups to it through that tunnel. If one "
+        'breaks, this watchdog cannot look up PIA. Choose an address no tunnel uses for DNS.');
+
+    await tester.enterText(find.byKey(const Key('wd_doh_ip')), '76.76.2.1');
+    await tester.pump();
+    expect(note(),
+        'The watchdog resolves PIA over an encrypted connection to this address. The DoH URL must be a name, not an IP '
+        'address. The DoH server address is how that name is reached. Leave both empty to look names up in the clear.');
   });
 
   // ID-170: "Something else" left the last resolver's URL and address in the fields.

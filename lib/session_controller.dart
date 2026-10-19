@@ -201,7 +201,7 @@ class SessionController extends ChangeNotifier {
   /// What the SSH form should start with: what the user typed this session, else the address
   /// remembered from a previous one, else the ASUS factory default.
   String get routerIpPrefill =>
-      routerIp.isNotEmpty ? routerIp : (rememberedRouterIp.isNotEmpty ? rememberedRouterIp : kDefaultRouterIp);
+      [routerIp, rememberedRouterIp].firstWhere((ip) => ip.isNotEmpty, orElse: () => kDefaultRouterIp);
 
   // ── Application log ──────────────────────────────────────────────────────────
   final List<LogEntry> log = [];

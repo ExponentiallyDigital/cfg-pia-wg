@@ -635,7 +635,7 @@ class RouterEmailFacts {
     String at(int i) => i < f.length ? f[i] : '';
     final ddns = at(0), lanHost = at(1), lanIp = at(2);
     return RouterEmailFacts(
-      name: ddns.isNotEmpty ? ddns : (lanHost.isNotEmpty ? lanHost : lanIp),
+      name: [ddns, lanHost].firstWhere((n) => n.isNotEmpty, orElse: () => lanIp),
       lanIp: lanIp,
       model: at(3),
       firmware: at(4),
@@ -1518,13 +1518,12 @@ class RouterWatchdog {
           }
           // Names the cause AND what was done about it: a failure that silently leaves a router in
           // an unknown state is the thing this whole item is about.
-          final watchdog = scheduled
-              ? 'Its watchdog stays scheduled and will try again in ${config.cronIntervalMinutes} minutes.'
-              : hadWatchdog
-                  ? "Its watchdog's previous settings were put back."
-                  : emptied
-                      ? 'No watchdog was set up. SAVE & DEPLOY again when the cause is fixed.'
-                      : 'No watchdog was set up.';
+          final watchdog = switch ((scheduled, hadWatchdog, emptied)) {
+            (true, _, _) => 'Its watchdog stays scheduled and will try again in ${config.cronIntervalMinutes} minutes.',
+            (_, true, _) => "Its watchdog's previous settings were put back.",
+            (_, _, true) => 'No watchdog was set up. SAVE & DEPLOY again when the cause is fixed.',
+            _ => 'No watchdog was set up.',
+          };
           throw Exception('$cause $undone $watchdog');
         }
         onLog?.call('Ran ${watchdogScriptPath(config.slotIndex)}', isSuccess: true);
@@ -1825,11 +1824,11 @@ class RouterWatchdog {
         await _read("for P in \$(ps | grep -E '[w]atchdog_wgc[1-9][.]sh|[g]uard[.]sh' | awk '{print \$1}'); do kill \$P 2>/dev/null; done");
         final cronLeft = int.tryParse((await _read("cru l | grep -cE '#(watchdog_|$kLegacyGuardCronTag)' || true")).trim()) ?? 0;
         final watchdogTags = tags.where((t) => t.startsWith('watchdog_')).length;
-        done.add(cronLeft > 0
-            ? '$cronLeft schedule(s) could not be removed: check `cru l` on the router'
-            : watchdogTags == 0
-                ? 'No watchdog schedules to remove'
-                : 'Removed $watchdogTags watchdog schedule(s)');
+        done.add(switch (cronLeft) {
+          > 0 => '$cronLeft schedule(s) could not be removed: check `cru l` on the router',
+          _ when watchdogTags == 0 => 'No watchdog schedules to remove',
+          _ => 'Removed $watchdogTags watchdog schedule(s)',
+        });
 
         // The guard, while its script is still there to do it; then any rule it left, directly, in
         // case the script was missing or failed. Left behind, the rules would keep every pinned
@@ -1842,20 +1841,20 @@ class RouterWatchdog {
         // directly as well, in case the script was missing; it touches nothing that isn't the app's.
         await _read(kFilterClearCommand);
         final filterLeft = (await _read('nvram get cfg_pia_wg_lwlist')).trim().isNotEmpty;
-        done.add(filterLeft
-            ? "The app's entries in the router's Network Services Filter could not all be removed: check Firewall, "
-                'Network Services Filter'
-            : filterHad
-                ? "Took the app's entries out of the router's Network Services Filter"
-                : 'No Network Services Filter entries to remove');
+        done.add(switch ((filterLeft, filterHad)) {
+          (true, _) => "The app's entries in the router's Network Services Filter could not all be removed: check Firewall, "
+              'Network Services Filter',
+          (_, true) => "Took the app's entries out of the router's Network Services Filter",
+          _ => 'No Network Services Filter entries to remove',
+        });
         await _read('for PR in 88 89 90 91; do N=0; while [ \$N -lt 400 ] && ip rule del priority \$PR 2>/dev/null; '
             'do N=\$((N + 1)); done; done; for T in 201 202 203 204 205; do ip route flush table \$T 2>/dev/null; done');
         final guardLeft = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):' || true")).trim()) ?? 0;
-        done.add(guardLeft > 0
-            ? '$guardLeft fail-closed guard rule(s) could not be removed: check `ip rule show` on the router'
-            : guardRules == 0
-                ? 'No fail-closed guard rules to remove'
-                : 'Removed the fail-closed guard rules');
+        done.add(switch (guardLeft) {
+          > 0 => '$guardLeft fail-closed guard rule(s) could not be removed: check `ip rule show` on the router',
+          _ when guardRules == 0 => 'No fail-closed guard rules to remove',
+          _ => 'Removed the fail-closed guard rules',
+        });
         for (final path in [kS50Path, kS50LighttpdPath]) {
           final name = path.split('/').last;
           final backup = originalScriptBackupPath(path);
@@ -1915,19 +1914,19 @@ class RouterWatchdog {
         await _read(r"for K in $(nvram show 2>/dev/null | grep -oE '^(cfg_pia_wg_|wgc[1-5]_wd_)[^=]*'); do nvram unset $K; done; "
             'nvram commit');
         final keysLeft = int.tryParse((await _read(countKeys)).trim()) ?? 0;
-        done.add(keysLeft > 0
-            ? '$keysLeft app setting(s) could not be removed from NVRAM'
-            : appKeys == 0
-                ? 'No app settings in NVRAM to remove'
-                : "Removed the app's NVRAM settings, including the reconfigure history");
+        done.add(switch (keysLeft) {
+          > 0 => '$keysLeft app setting(s) could not be removed from NVRAM',
+          _ when appKeys == 0 => 'No app settings in NVRAM to remove',
+          _ => "Removed the app's NVRAM settings, including the reconfigure history",
+        });
 
         final dir = await _read("[ -d '$kRouterAppDir' ] && rm -rf '$kRouterAppDir' && echo REMOVED || echo ABSENT");
         final dirLeft = (await _read("[ -d '$kRouterAppDir' ] && echo LEFT || echo GONE")).contains('LEFT');
-        done.add(dirLeft
-            ? '$kRouterAppDir could not be removed'
-            : dir.contains('REMOVED')
-                ? 'Removed $kRouterAppDir'
-                : 'No $kRouterAppDir to remove');
+        done.add(switch ((dirLeft, dir.contains('REMOVED'))) {
+          (true, _) => '$kRouterAppDir could not be removed',
+          (_, true) => 'Removed $kRouterAppDir',
+          _ => 'No $kRouterAppDir to remove',
+        });
         for (final line in done) {
           onLog?.call(line);
         }

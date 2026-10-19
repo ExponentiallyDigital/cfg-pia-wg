@@ -239,4 +239,11 @@ void main() {
       await q.checkNotSkipped(before, 'restart_vpnc');
     });
   });
+
+  // ID-041 step 3 changed how this is written; the text it gives must not change.
+  test('RcServiceState reads as idle, or as the service with its pid and whether it is alive', () {
+    expect(const RcServiceState(service: '', pid: null, pidAlive: false).toString(), 'idle');
+    expect(const RcServiceState(service: 'restart_vpnc', pid: 1234, pidAlive: true).toString(), 'restart_vpnc (pid 1234, alive)');
+    expect(const RcServiceState(service: 'restart_vpnc', pid: null, pidAlive: false).toString(), 'restart_vpnc (pid ?, gone)');
+  });
 }

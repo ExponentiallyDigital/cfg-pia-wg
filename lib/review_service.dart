@@ -51,8 +51,10 @@ bool reviewsGoToAppStore() => defaultTargetPlatform == TargetPlatform.iOS;
 String reviewStoreName() => reviewsGoToAppStore() ? 'App Store' : 'Play Store';
 
 /// The listing a review goes to, or null on iOS while there is no App Store listing yet.
-String? reviewListingUrl() =>
-    reviewsGoToAppStore() ? (kAppStoreListingUrl.isEmpty ? null : kAppStoreListingUrl) : kPlayStoreListingUrl;
+String? reviewListingUrl() {
+  if (!reviewsGoToAppStore()) return kPlayStoreListingUrl;
+  return kAppStoreListingUrl.isEmpty ? null : kAppStoreListingUrl;
+}
 
 /// What a review tap did.
 enum ReviewOpen { opened, failed, noListingYet }
