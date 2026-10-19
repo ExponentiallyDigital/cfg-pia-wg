@@ -239,30 +239,7 @@ class _SlotModalState extends State<SlotModal> {
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
         title: Text(title, style: const TextStyle(color: kText, fontSize: 15)),
-        // A question that already names the slot and its region needs no explanatory body. A
-        // [warning] is what the action does to something other than the slot, so it stands apart.
-        content: message == null && warning == null
-            ? null
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (message != null) Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
-                  if (message != null && warning != null) const SizedBox(height: 10),
-                  if (warning != null)
-                    // Amber, with DELETE's "moved to the Internet" in red: the one effect that can't be undone.
-                    Text.rich(
-                      TextSpan(children: [
-                        for (final (i, part) in warning.split(kMovedPhrase).indexed) ...[
-                          if (i > 0) const TextSpan(text: kMovedPhrase, style: TextStyle(color: kError)),
-                          TextSpan(text: part),
-                        ],
-                      ]),
-                      key: const Key('confirm_warning'),
-                      style: const TextStyle(color: kWarn, fontSize: 13),
-                    ),
-                ],
-              ),
+        content: _confirmBody(message, warning),
         actions: [
           AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
           AppButton(
@@ -275,6 +252,33 @@ class _SlotModalState extends State<SlotModal> {
     );
     return result ?? false;
   }
+
+  /// A question that already names the slot and its region needs no explanatory body. A [warning] is
+  /// what the action does to something other than the slot, so it stands apart.
+  Widget? _confirmBody(String? message, String? warning) {
+    if (message == null && warning == null) return null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (message != null) Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
+        if (message != null && warning != null) const SizedBox(height: 10),
+        if (warning != null) _confirmWarning(warning),
+      ],
+    );
+  }
+
+  /// Amber, with DELETE's "moved to the Internet" in red: the one effect that can't be undone.
+  Widget _confirmWarning(String warning) => Text.rich(
+        TextSpan(children: [
+          for (final (i, part) in warning.split(kMovedPhrase).indexed) ...[
+            if (i > 0) const TextSpan(text: kMovedPhrase, style: TextStyle(color: kError)),
+            TextSpan(text: part),
+          ],
+        ]),
+        key: const Key('confirm_warning'),
+        style: const TextStyle(color: kWarn, fontSize: 13),
+      );
 
   Future<void> _info(String title, String message) => showDialog<void>(
         context: context,
@@ -312,43 +316,12 @@ class _SlotModalState extends State<SlotModal> {
   Future<void> _create() async {
     final slot = _selected;
     final info = _slots.slots[slot]!;
-    // The service stops a running tunnel before it writes (createConfigToSlot); say so up front.
-    final running = info.enabled || _slots.activeSlots.contains(slot);
-    if (!info.isEmpty) {
-      // The title names what is being overwritten - wgcN:region - so the body does not have to
-      // say it a second time (ID-113). The same shape the watchdog and the delete prompts use.
-      // The profile survives an overwrite, so its index 6 does too, and so does every pin
-      // naming it. Those devices follow the new region without being asked.
-      final whenPinned = running ? ' once the slot is enabled. Until then it uses the default connection.' : '.';
-      final ok = await _confirm('Overwrite ${slotLabel(slot, info.desc)}?',
-          message: 'Creating a new configuration will overwrite this slot.'
-              '${running ? '\n\nIts tunnel is running, so it will be stopped first. The new configuration stays disabled '
-                  'until you ENABLE it.' : ''}'
-              '${isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region$whenPinned' : ''}');
-      if (!ok) return;
-    }
+    if (!info.isEmpty && !await _confirmOverwrite(slot, info)) return;
     final region = await _pickRegion();
     if (region == null) return;
     final regionId = region.id;
-    // Generated while the credentials dialog is still open, so the PIA login is proven before it
-    // closes: a refusal is shown there, where it can be corrected, and a login that worked is
-    // offered to the password manager, as STANDALONE does (ID-286). The dialog's autofill context
-    // is cancelled when it closes, so the offer could never be made afterwards.
-    String? config;
-    final creds = await _piaCredsDialog(submit: (user, pass, dns) async {
-      _c.logEntry('Generating configuration for $regionId...');
-      try {
-        config = await widget.piaService
-            .generateConfig(region: regionId, selected: region, username: user, password: pass, dns: dns, onProgress: _c.onLog);
-        return null;
-      } catch (e) {
-        final msg = plainError(e);
-        _c.logEntry(msg, isError: true);
-        return msg;
-      }
-    });
-    final generated = config;
-    if (creds == null || generated == null) return;
+    final generated = await _generateWithLogin(region);
+    if (generated == null) return;
 
     var stopped = false;
     final created = await _runSlot((svc) async {
@@ -366,6 +339,44 @@ class _SlotModalState extends State<SlotModal> {
     }
   }
 
+  /// The title names what is being overwritten - wgcN:region - so the body does not have to say it
+  /// a second time (ID-113). The same shape the watchdog and the delete prompts use.
+  Future<bool> _confirmOverwrite(int slot, SlotInfo info) {
+    // The service stops a running tunnel before it writes (createConfigToSlot); say so up front.
+    final running = info.enabled || _slots.activeSlots.contains(slot);
+    // The profile survives an overwrite, so its index 6 does too, and so does every pin naming it.
+    // Those devices follow the new region without being asked.
+    final whenPinned = running ? ' once the slot is enabled. Until then it uses the default connection.' : '.';
+    final stoppedFirst =
+        running ? '\n\nIts tunnel is running, so it will be stopped first. The new configuration stays disabled until you ENABLE it.' : '';
+    final pins = isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region$whenPinned' : '';
+    return _confirm('Overwrite ${slotLabel(slot, info.desc)}?',
+        message: 'Creating a new configuration will overwrite this slot.$stoppedFirst$pins');
+  }
+
+  /// The PIA login, then the config, or null when the user backed out.
+  ///
+  /// Generated while the credentials dialog is still open, so the PIA login is proven before it
+  /// closes: a refusal is shown there, where it can be corrected, and a login that worked is
+  /// offered to the password manager, as STANDALONE does (ID-286). The dialog's autofill context
+  /// is cancelled when it closes, so the offer could never be made afterwards.
+  Future<String?> _generateWithLogin(Region region) async {
+    String? config;
+    final creds = await _piaCredsDialog(submit: (user, pass, dns) async {
+      _c.logEntry('Generating configuration for ${region.id}...');
+      try {
+        config = await widget.piaService
+            .generateConfig(region: region.id, selected: region, username: user, password: pass, dns: dns, onProgress: _c.onLog);
+        return null;
+      } catch (e) {
+        final msg = plainError(e);
+        _c.logEntry(msg, isError: true);
+        return msg;
+      }
+    });
+    return creds == null ? null : config;
+  }
+
   Future<void> _enableManage() async {
     final slot = _selected;
     // Settings but no schedule is the paused state DISABLE leaves behind, so ENABLE puts the
@@ -379,31 +390,16 @@ class _SlotModalState extends State<SlotModal> {
     if (!mounted) return;
 
     // 2) Read stored ping targets (brief processing window).
-    var primary = '', secondary = '';
-    var haveTargets = false;
-    setState(() => _processing = true);
-    Object? readError;
-    try {
-      final client = await widget.connect();
-      final t = await _slotSvc(client).readWatchdogPingTargets(slot);
-      primary = t.$1;
-      secondary = t.$2;
-      haveTargets = primary.isNotEmpty && secondary.isNotEmpty;
-    } catch (e) {
-      readError = e;
-    }
-    if (mounted) setState(() => _processing = false);
-    if (readError != null) {
-      if (mounted) await AppErrors.system(context, _c, plainError(readError));
-      return;
-    }
+    final stored = await _readPingTargets(slot);
+    if (stored == null) return;
+    var (primary, secondary) = stored;
+    final haveTargets = primary.isNotEmpty && secondary.isNotEmpty;
 
     // 3) Prompt for targets if none are stored (spinner is off while the prompt is open).
     if (!haveTargets) {
       final targets = await _promptPingTargets(primary.isEmpty ? '8.8.8.8' : primary, secondary.isEmpty ? '1.1.1.1' : secondary);
       if (targets == null) return;
-      primary = targets.$1;
-      secondary = targets.$2;
+      (primary, secondary) = targets;
     }
 
     // 4) Write targets if prompted, then enable with the connectivity check. Other slots are left
@@ -423,18 +419,39 @@ class _SlotModalState extends State<SlotModal> {
     }
     await _refresh();
     if (mounted) setState(() => _processing = false);
-    if (error != null && mounted) {
-      final message = plainError(error);
-      // A tunnel that came up and was never answered, or one that never came up at all, is almost
-      // always a PIA registration that has gone stale - and rebuilding it is the fix. Offer it here
-      // rather than describing it and leaving the user to work out which button that is (ID-094).
-      if (looksLikeStaleConfig(message)) {
-        final rebuild = await AppErrors.systemWithAction(context, _c, message, actionLabel: 'RECREATE', detail: kStaleConfigHint);
-        if (rebuild && mounted) await _create();
-        return;
-      }
-      await AppErrors.system(context, _c, message, detail: kStaleConfigHint);
+    if (error != null && mounted) await _reportEnableFailure(plainError(error));
+  }
+
+  /// The slot's stored check targets, empty when it has none, or null when they could not be read,
+  /// which has been reported.
+  Future<(String, String)?> _readPingTargets(int slot) async {
+    setState(() => _processing = true);
+    Object? readError;
+    (String, String)? targets;
+    try {
+      final client = await widget.connect();
+      targets = await _slotSvc(client).readWatchdogPingTargets(slot);
+    } catch (e) {
+      readError = e;
     }
+    if (mounted) setState(() => _processing = false);
+    if (readError != null) {
+      if (mounted) await AppErrors.system(context, _c, plainError(readError));
+      return null;
+    }
+    return targets;
+  }
+
+  /// A tunnel that came up and was never answered, or one that never came up at all, is almost
+  /// always a PIA registration that has gone stale - and rebuilding it is the fix. Offer it here
+  /// rather than describing it and leaving the user to work out which button that is (ID-094).
+  Future<void> _reportEnableFailure(String message) async {
+    if (looksLikeStaleConfig(message)) {
+      final rebuild = await AppErrors.systemWithAction(context, _c, message, actionLabel: 'RECREATE', detail: kStaleConfigHint);
+      if (rebuild && mounted) await _create();
+      return;
+    }
+    await AppErrors.system(context, _c, message, detail: kStaleConfigHint);
   }
 
   // Asks first, as DELETE does and as the watchdog screen's DISABLE does. It used to take a tunnel down,
@@ -482,6 +499,24 @@ class _SlotModalState extends State<SlotModal> {
 
   Future<void> _editManage() async {
     final slot = _selected;
+    final params = await _readSlotParams(slot);
+    if (params == null || !mounted) return;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => SlotParamsEditor(
+        slot: slot,
+        initial: params,
+        desc: _slots.slots[slot]?.desc ?? '',
+        routerDotServers: _slots.routerDotServers,
+        onSave: (editable) => _saveSlotParams(slot, editable),
+      ),
+    );
+    if (saved == true) await _refresh();
+  }
+
+  /// The slot's settings for EDIT, or null when they could not be read, which has been reported.
+  Future<Map<String, String>?> _readSlotParams(int slot) async {
     Map<String, String>? params;
     setState(() => _processing = true);
     Object? error;
@@ -494,35 +529,25 @@ class _SlotModalState extends State<SlotModal> {
       if (mounted) setState(() => _processing = false);
     }
     if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
-    if (params == null || !mounted) return;
+    return params;
+  }
 
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => SlotParamsEditor(
-        slot: slot,
-        initial: params!,
-        desc: _slots.slots[slot]?.desc ?? '',
-        routerDotServers: _slots.routerDotServers,
-        onSave: (editable) async {
-          // A running tunnel keeps its old settings until it is restarted, which MAN-11 found the hard
-          // way on 2026-09-19. So SAVE restarts it, and says so first (ID-203).
-          final running = _slots.activeSlots.contains(slot);
-          if (running &&
-              !await _confirm(
-                'Save and restart ${slotLabel(slot, _slots.slots[slot]?.desc ?? '')}?',
-                message: 'Saving restarts wgc$slot. Anything using it drops for a few seconds.',
-                confirmLabel: 'SAVE',
-              )) {
-            return false;
-          }
-          if (!await _runSlot((svc) => svc.writeSlotParams(slot, editable))) return false;
-          // Saved either way from here: a restart that fails is reported, and the editor closes.
-          if (running) await _runSlot((svc) => svc.restartSlot(slot));
-          return true;
-        },
-      ),
-    );
-    if (saved == true) await _refresh();
+  /// EDIT's SAVE. A running tunnel keeps its old settings until it is restarted, which MAN-11 found
+  /// the hard way on 2026-09-19. So SAVE restarts it, and says so first (ID-203).
+  Future<bool> _saveSlotParams(int slot, Map<String, String> editable) async {
+    final running = _slots.activeSlots.contains(slot);
+    if (running &&
+        !await _confirm(
+          'Save and restart ${slotLabel(slot, _slots.slots[slot]?.desc ?? '')}?',
+          message: 'Saving restarts wgc$slot. Anything using it drops for a few seconds.',
+          confirmLabel: 'SAVE',
+        )) {
+      return false;
+    }
+    if (!await _runSlot((svc) => svc.writeSlotParams(slot, editable))) return false;
+    // Saved either way from here: a restart that fails is reported, and the editor closes.
+    if (running) await _runSlot((svc) => svc.restartSlot(slot));
+    return true;
   }
 
   /// The names of the devices pinned to [slot], for a confirmation to show: empty on Merlin, which
@@ -816,155 +841,158 @@ class _SlotModalState extends State<SlotModal> {
         // list's order. It matches the router's own web interface, which creates wgc5 first, and
         // the advice to make the highest slot the one carrying the router's own DNS: among slots
         // sharing a DNS address the lowest routing table wins, and that is the highest slot.
-        children: (_slots.slots.entries.toList()..sort((a, b) => b.key.compareTo(a.key))).map((entry) {
-          final slotNum = entry.key;
-          final info = entry.value;
-          final desc = info.isEmpty ? '<empty slot>' : info.desc;
-          // Up AND answered recently is ACTIVE; up with nothing coming back gets said out loud
-          // rather than badged the same way (ID-123). An expired PIA registration looks exactly
-          // like a healthy tunnel from the link flag alone.
-          final isActive = _slots.activeSlots.contains(slotNum);
-          final isAnswering = _slots.answeringSlots.contains(slotNum);
-          final badgeLabel = switch ((isActive, isAnswering)) {
-            (false, _) => null,
-            (_, true) => '● ACTIVE',
-            _ => '● UP, NO ANSWER',
-          };
-          return InkWell(
-            key: Key('slot_row_$slotNum'),
-            onTap: _processing ? null : () => setState(() => _selected = slotNum),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              child: Row(
-                children: [
-                  Icon(_selected == slotNum ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                      color: kHighlight, size: 20),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // One line, `wgc1:pia-region_name`, the way every log line and dialog names a slot (ID-035).
-                        // The slot stays teal and the region white; an empty slot says so in grey.
-                        Text.rich(
-                          TextSpan(children: [
-                            TextSpan(
-                              text: 'wgc$slotNum',
-                              style: const TextStyle(color: kHighlight, fontFamily: 'monospace', fontWeight: FontWeight.bold),
-                            ),
-                            info.isEmpty
-                                ? TextSpan(text: ' $desc', style: const TextStyle(color: kMuted, fontSize: 12))
-                                : TextSpan(text: ':${desc.trim()}', style: const TextStyle(color: Colors.white)),
-                          ]),
-                        ),
-                        // A watchdog whose schedule has been removed still has its settings on
-                        // the router, so it gets a badge of its own rather than disappearing.
-                        if (isActive || info.killSwitch || info.watchdogActive || (info.watchdogConfigured && !info.isEmpty)) ...[
-                          const SizedBox(height: 5),
-                          Wrap(spacing: 6, runSpacing: 4, children: [
-                            if (badgeLabel != null)
-                              // Amber for "up, no answer": it is not a healthy tunnel and it is not
-                              // a stopped one either, and calling it ACTIVE was the old lie (ID-123).
-                              SlotBadge(
-                                label: badgeLabel,
-                                text: isAnswering ? kHighlight : kWarn,
-                                border: isAnswering ? kHighlight : kWarn,
-                                bg: isAnswering ? const Color(0xFF0F3D2E) : const Color(0xFF2A1F0E),
-                              ),
-                            if (info.killSwitch)
-                              const SlotBadge(label: '⚑ KILL SWITCH', text: kWarn, border: kWarn, bg: Color(0xFF2A1F0E)),
-                            if (info.watchdogActive)
-                              const SlotBadge(
-                                  label: '◆ WATCHDOG ACTIVE', text: kHighlight, border: kHighlight, bg: Color(0xFF0F2E3D)),
-                            // Shown next to WATCHDOG ACTIVE when the watchdog will send email alerts.
-                            if (info.watchdogActive && info.emailAlerting)
-                              const SlotBadge(
-                                  label: '✉ EMAIL ALERTING', text: kHighlight, border: kHighlight, bg: Color(0xFF0F2E3D)),
-                            // Configured but unscheduled: DISABLE keeps the settings, so ENABLE can
-                            // put the schedule straight back. Muted, not teal - nothing is running.
-                            if (info.watchdogConfigured && !info.watchdogActive && !info.isEmpty)
-                              const SlotBadge(label: '⏸ WATCHDOG PAUSED', text: kMuted, border: kMuted, bg: Color(0xFF1F242D)),
-                          ]),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }).toList(),
+        children: [
+          for (final entry in _slots.slots.entries.toList()..sort((a, b) => b.key.compareTo(a.key)))
+            _slotRow(entry.key, entry.value),
+        ],
       ),
     );
   }
 
-  List<Widget> _buttons() {
-    final info = _selectedInfo;
+  Widget _slotRow(int slotNum, SlotInfo info) {
+    final desc = info.isEmpty ? '<empty slot>' : info.desc;
+    final badges = _slotBadges(slotNum, info);
+    return InkWell(
+      key: Key('slot_row_$slotNum'),
+      onTap: _processing ? null : () => setState(() => _selected = slotNum),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        child: Row(
+          children: [
+            Icon(_selected == slotNum ? Icons.radio_button_checked : Icons.radio_button_unchecked, color: kHighlight, size: 20),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // One line, `wgc1:pia-region_name`, the way every log line and dialog names a slot (ID-035).
+                  // The slot stays teal and the region white; an empty slot says so in grey.
+                  Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                        text: 'wgc$slotNum',
+                        style: const TextStyle(color: kHighlight, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                      ),
+                      info.isEmpty
+                          ? TextSpan(text: ' $desc', style: const TextStyle(color: kMuted, fontSize: 12))
+                          : TextSpan(text: ':${desc.trim()}', style: const TextStyle(color: Colors.white)),
+                    ]),
+                  ),
+                  if (badges.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Wrap(spacing: 6, runSpacing: 4, children: badges),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// A slot row's badges, none for a slot with nothing to say. A watchdog whose schedule has been
+  /// removed still has its settings on the router, so it gets a badge of its own rather than
+  /// disappearing.
+  List<Widget> _slotBadges(int slotNum, SlotInfo info) {
+    // Up AND answered recently is ACTIVE; up with nothing coming back gets said out loud rather than
+    // badged the same way (ID-123). An expired PIA registration looks exactly like a healthy tunnel
+    // from the link flag alone.
+    final isActive = _slots.activeSlots.contains(slotNum);
+    final isAnswering = _slots.answeringSlots.contains(slotNum);
+    if (!(isActive || info.killSwitch || info.watchdogActive || (info.watchdogConfigured && !info.isEmpty))) return const [];
+    return [
+      // Amber for "up, no answer": it is not a healthy tunnel and it is not a stopped one either, and
+      // calling it ACTIVE was the old lie (ID-123).
+      if (isActive)
+        SlotBadge(
+          label: isAnswering ? '● ACTIVE' : '● UP, NO ANSWER',
+          text: isAnswering ? kHighlight : kWarn,
+          border: isAnswering ? kHighlight : kWarn,
+          bg: isAnswering ? const Color(0xFF0F3D2E) : const Color(0xFF2A1F0E),
+        ),
+      if (info.killSwitch) const SlotBadge(label: '⚑ KILL SWITCH', text: kWarn, border: kWarn, bg: Color(0xFF2A1F0E)),
+      if (info.watchdogActive)
+        const SlotBadge(label: '◆ WATCHDOG ACTIVE', text: kHighlight, border: kHighlight, bg: Color(0xFF0F2E3D)),
+      // Shown next to WATCHDOG ACTIVE when the watchdog will send email alerts.
+      if (info.watchdogActive && info.emailAlerting)
+        const SlotBadge(label: '✉ EMAIL ALERTING', text: kHighlight, border: kHighlight, bg: Color(0xFF0F2E3D)),
+      // Configured but unscheduled: DISABLE keeps the settings, so ENABLE can put the schedule straight
+      // back. Muted, not teal - nothing is running.
+      if (info.watchdogConfigured && !info.watchdogActive && !info.isEmpty)
+        const SlotBadge(label: '⏸ WATCHDOG PAUSED', text: kMuted, border: kMuted, bg: Color(0xFF1F242D)),
+    ];
+  }
+
+  List<Widget> _buttons() => widget.mode == SlotModalMode.manage ? _manageButtons(_selectedInfo) : _watchdogButtons(_selectedInfo);
+
+  List<Widget> _manageButtons(SlotInfo? info) {
     final hasDesc = info != null && !info.isEmpty;
     final enabled = info?.enabled ?? false;
-    final wdActive = info?.watchdogActive ?? false;
     // There is something to stop if the flag says so OR the interface is up. The two can disagree,
     // and gating on the flag alone would strand a user with a running tunnel and a greyed DISABLE.
     final stoppable = enabled || (info != null && _slots.activeSlots.contains(info.index));
-
-    // Gated is CREATE or CHANGE; free is REMOVE. A locked user can always undo, never build.
-    //
-    // An action that is ALREADY null stays null: it is greyed for a reason of its own - nothing to
-    // stop, no slot selected - and turning that into a sales pitch would be answering a question
-    // the user did not ask. The paywall is only ever the answer to a deliberate tap.
-    VoidCallback? gated(String pitch, VoidCallback? action) {
-      if (action == null || _c.isUnlocked) return action;
-      return () async {
-        if (await Paywall.show(context, _c, pitch: pitch) && mounted) action();
-      };
-    }
-
-    Widget btn(String key, String label, VoidCallback? onTap) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: SizedBox(
-            width: double.infinity,
-            // DELETE is the one destructive action in either set; everything else here does something.
-            // The verb's colour comes from the shared map (ID-118); a disabled button ignores it.
-            child: AppButton(
-              keyValue: key,
-              label: label,
-              role: key == 'slot_delete' ? ButtonRole.destructive : ButtonRole.action,
-              colour: slotActionColour(label),
-              onPressed: _processing ? null : onTap,
-            ),
-          ),
-        );
-
-    if (widget.mode == SlotModalMode.manage) {
-      return [
-        btn('slot_create', 'CREATE', gated(Pitch.create, info == null ? null : _create)),
-        // ENABLE is greyed when the slot is already active (only one interface active at a time).
-        btn('slot_enable', 'ENABLE', gated(Pitch.enable, (hasDesc && !enabled) ? _enableManage : null)),
-        btn('slot_edit', 'EDIT', gated(Pitch.edit, hasDesc ? _editManage : null)),
-        // DISABLE and DELETE are free even without the entitlement. Greyed once the slot is down -
-        // nothing left to stop.
-        btn('slot_disable', 'DISABLE', (hasDesc && stoppable) ? _disableManage : null),
-        btn('slot_delete', 'DELETE', hasDesc ? _deleteManage : null),
-      ];
-    }
-    // Watchdog mode: CREATE/EDIT creates-or-updates and deploys, so it is live for an empty slot
-    // too; DELETE and VIEW LOG still require a non-empty slot (spec round-2).
-    //
-    // ENABLE / DISABLE act on the SCHEDULE, not the tunnel: DISABLE drops the cron entries and
-    // keeps the settings, so ENABLE only lights up for a slot that has settings but no schedule.
-    final wdConfigured = info?.watchdogConfigured ?? false;
     return [
-      btn('slot_edit', 'CREATE/EDIT', gated(Pitch.watchdog, info != null ? _editWatchdog : null)),
-      btn('slot_wd_enable', 'ENABLE',
-          gated(Pitch.watchdogEnable, (hasDesc && wdConfigured && !wdActive) ? _enableWatchdog : null)),
-      // Stopping and removing stay free: never trap a script on someone's router behind a purchase.
-      btn('slot_wd_disable', 'DISABLE', (hasDesc && wdActive) ? _disableWatchdog : null),
-      btn('slot_delete', 'DELETE', hasDesc ? _deleteWatchdog : null),
-      // Configured is enough: /tmp/watchdog_wgcN.log outlives the schedule, and the log of the
-      // run that prompted a DISABLE is exactly what you want to read afterwards.
-      btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (hasDesc && (wdActive || wdConfigured)) ? _viewWatchdogLog : null),
+      _btn('slot_create', 'CREATE', _gated(Pitch.create, info == null ? null : _create)),
+      // ENABLE is greyed when the slot is already active (only one interface active at a time).
+      _btn('slot_enable', 'ENABLE', _gated(Pitch.enable, (hasDesc && !enabled) ? _enableManage : null)),
+      _btn('slot_edit', 'EDIT', _gated(Pitch.edit, hasDesc ? _editManage : null)),
+      // DISABLE and DELETE are free even without the entitlement. Greyed once the slot is down -
+      // nothing left to stop.
+      _btn('slot_disable', 'DISABLE', (hasDesc && stoppable) ? _disableManage : null),
+      _btn('slot_delete', 'DELETE', hasDesc ? _deleteManage : null),
     ];
   }
+
+  /// Watchdog mode: CREATE/EDIT creates-or-updates and deploys, so it is live for an empty slot too;
+  /// DELETE and VIEW LOG still require a non-empty slot (spec round-2).
+  ///
+  /// ENABLE / DISABLE act on the SCHEDULE, not the tunnel: DISABLE drops the cron entries and keeps
+  /// the settings, so ENABLE only lights up for a slot that has settings but no schedule.
+  List<Widget> _watchdogButtons(SlotInfo? info) {
+    final hasDesc = info != null && !info.isEmpty;
+    final wdActive = info?.watchdogActive ?? false;
+    final wdConfigured = info?.watchdogConfigured ?? false;
+    return [
+      _btn('slot_edit', 'CREATE/EDIT', _gated(Pitch.watchdog, info != null ? _editWatchdog : null)),
+      _btn('slot_wd_enable', 'ENABLE',
+          _gated(Pitch.watchdogEnable, (hasDesc && wdConfigured && !wdActive) ? _enableWatchdog : null)),
+      // Stopping and removing stay free: never trap a script on someone's router behind a purchase.
+      _btn('slot_wd_disable', 'DISABLE', (hasDesc && wdActive) ? _disableWatchdog : null),
+      _btn('slot_delete', 'DELETE', hasDesc ? _deleteWatchdog : null),
+      // Configured is enough: /tmp/watchdog_wgcN.log outlives the schedule, and the log of the
+      // run that prompted a DISABLE is exactly what you want to read afterwards.
+      _btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (hasDesc && (wdActive || wdConfigured)) ? _viewWatchdogLog : null),
+    ];
+  }
+
+  /// Gated is CREATE or CHANGE; free is REMOVE. A locked user can always undo, never build.
+  ///
+  /// An action that is ALREADY null stays null: it is greyed for a reason of its own - nothing to
+  /// stop, no slot selected - and turning that into a sales pitch would be answering a question the
+  /// user did not ask. The paywall is only ever the answer to a deliberate tap.
+  VoidCallback? _gated(String pitch, VoidCallback? action) {
+    if (action == null || _c.isUnlocked) return action;
+    return () async {
+      if (await Paywall.show(context, _c, pitch: pitch) && mounted) action();
+    };
+  }
+
+  Widget _btn(String key, String label, VoidCallback? onTap) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: SizedBox(
+          width: double.infinity,
+          // DELETE is the one destructive action in either set; everything else here does something.
+          // The verb's colour comes from the shared map (ID-118); a disabled button ignores it.
+          child: AppButton(
+            keyValue: key,
+            label: label,
+            role: key == 'slot_delete' ? ButtonRole.destructive : ButtonRole.action,
+            colour: slotActionColour(label),
+            onPressed: _processing ? null : onTap,
+          ),
+        ),
+      );
 }
 
 class _PiaCredsDialog extends StatefulWidget {
