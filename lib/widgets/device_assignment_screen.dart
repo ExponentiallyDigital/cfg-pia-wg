@@ -250,41 +250,15 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       await client.authenticated;
 
       final slotSvc = widget.slotServiceFactory?.call(client) ?? RouterSlotService(client);
-
-      // Detect the firmware HERE. `routerFirmware` defaults to Merlin until something probes it,
-      // so a user who opens this screen first - rather than passing through MANAGE - was told
-      // their stock router was Merlin. Reported from B1 on 2026-09-08.
-      if (!firmwareDetected) {
-        final detected = classifyFirmwareTag(await slotSvc.readFirmwareTag());
-        if (detected == null) {
-          return 'This router reports a firmware this app does not support.';
-        }
-        setRouterFirmware(detected);
-        _c.logEntry('Router firmware detected: ${detected.name}.');
+      final refusal = await _firmwareRefusal(slotSvc);
+      if (refusal != null) {
+        merlin = refusal.merlin;
+        return refusal.message;
       }
 
-      if (!isStockFirmware) {
-        merlin = true;
-        return 'DEVICES is a stock-firmware feature. This router runs Asuswrt-Merlin, '
-            'which has no VPN Fusion device policy to write.';
-      }
-
-      final svc = widget.serviceFactory?.call(client) ??
-          DeviceAssignmentService(client,
-              onLog: (m, {isError = false, isSuccess = false, isWarning = false}) =>
-                  _c.logEntry(m, isError: isError, isSuccess: isSuccess, isWarning: isWarning));
+      final svc = _assignmentService(client);
       final state = await svc.read();
-      // Watchdog state for the picker. A tolerated failure: the notes go blank rather than the
-      // whole screen failing, because assignment does not depend on knowing them.
-      Map<int, SlotInfo> slots = const {};
-      Set<int>? active;
-      try {
-        final fetched = await slotSvc.fetchSlots();
-        slots = fetched.slots;
-        active = fetched.activeSlots;
-      } catch (_) {
-        // left blank on purpose
-      }
+      final (slots, active) = await _slotsIfReadable(slotSvc);
       if (!mounted) return null;
       _c.routerConnected = true;
       setState(() {
@@ -326,6 +300,45 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       navigateToDestination(context, _c, AppDestination.menu);
       // Under HOME now, so back finds the screen itself rather than a placeholder that never ends.
       setState(() => _autoConnecting = false);
+    }
+  }
+
+  /// Why DEVICES can't work with this router, or null when it can.
+  ///
+  /// Detect the firmware HERE. `routerFirmware` defaults to Merlin until something probes it, so a
+  /// user who opens this screen first - rather than passing through MANAGE - was told their stock
+  /// router was Merlin. Reported from B1 on 2026-09-08.
+  Future<({String message, bool merlin})?> _firmwareRefusal(RouterSlotService slotSvc) async {
+    if (!firmwareDetected) {
+      final detected = classifyFirmwareTag(await slotSvc.readFirmwareTag());
+      if (detected == null) {
+        return (message: 'This router reports a firmware this app does not support.', merlin: false);
+      }
+      setRouterFirmware(detected);
+      _c.logEntry('Router firmware detected: ${detected.name}.');
+    }
+    if (isStockFirmware) return null;
+    return (
+      message: 'DEVICES is a stock-firmware feature. This router runs Asuswrt-Merlin, '
+          'which has no VPN Fusion device policy to write.',
+      merlin: true,
+    );
+  }
+
+  DeviceAssignmentService _assignmentService(SSHClient client) =>
+      widget.serviceFactory?.call(client) ??
+      DeviceAssignmentService(client,
+          onLog: (m, {isError = false, isSuccess = false, isWarning = false}) =>
+              _c.logEntry(m, isError: isError, isSuccess: isSuccess, isWarning: isWarning));
+
+  /// Watchdog state for the picker. A tolerated failure: the notes go blank rather than the whole
+  /// screen failing, because assignment does not depend on knowing them.
+  Future<(Map<int, SlotInfo>, Set<int>?)> _slotsIfReadable(RouterSlotService slotSvc) async {
+    try {
+      final fetched = await slotSvc.fetchSlots();
+      return (fetched.slots, fetched.activeSlots);
+    } catch (_) {
+      return (const <int, SlotInfo>{}, null);
     }
   }
 
@@ -616,30 +629,28 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                 Text(label, style: TextStyle(color: labelColour, fontSize: 14)),
-                // Teal ACTIVE / amber DISABLED, the colours the slot modal uses for the same
-                // facts - amber being the app's "configured but not doing anything" colour, as on
-                // a paused watchdog and on a staged-but-unapplied change.
-                if (active != null || note.isNotEmpty)
-                  Row(children: [
-                    if (active != null) ...[
-                      Text(active ? 'Active' : 'Disabled',
-                          style: TextStyle(
-                              color: active ? kHighlight : kWarn, fontSize: 12, fontWeight: FontWeight.w700)),
-                      if (note.isNotEmpty) const Text(' - ', style: TextStyle(color: kMuted, fontSize: 12)),
-                    ],
-                    if (note.isNotEmpty)
-                      Flexible(
-                        child: Text(note,
-                            style: TextStyle(
-                                color: note == kWatchdogActiveNote ? kHighlight : kMuted, fontSize: 12)),
-                      ),
-                  ]),
+                if (active != null || note.isNotEmpty) _pickerNote(active, note),
               ]),
             ),
             const Icon(Icons.chevron_right, size: 18, color: kMuted),
           ]),
         ),
       );
+
+  /// Teal ACTIVE / amber DISABLED, the colours the slot modal uses for the same facts - amber being
+  /// the app's "configured but not doing anything" colour, as on a paused watchdog and on a
+  /// staged-but-unapplied change.
+  Widget _pickerNote(bool? active, String note) => Row(children: [
+        if (active != null) ...[
+          Text(active ? 'Active' : 'Disabled',
+              style: TextStyle(color: active ? kHighlight : kWarn, fontSize: 12, fontWeight: FontWeight.w700)),
+          if (note.isNotEmpty) const Text(' - ', style: TextStyle(color: kMuted, fontSize: 12)),
+        ],
+        if (note.isNotEmpty)
+          Flexible(
+            child: Text(note, style: TextStyle(color: note == kWatchdogActiveNote ? kHighlight : kMuted, fontSize: 12)),
+          ),
+      ]);
 
   String _watchdogNote(VpncRecord p) {
     final slot = p.slot;
@@ -998,41 +1009,11 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   Widget _buildList() {
     final state = _state!;
-    final defaultNote = _exitNote(null, forDefault: true);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       // Two panels on different grounds. The default connection is a router-wide setting and the
       // list below it is per-device; read as one continuous column they were indistinguishable,
       // which is what B1 reported on 2026-09-08.
-      _Panel(
-        // Same ground as the device list with a teal border on both, so the two panels read as
-        // one family rather than two unrelated boxes. Not kSurface - that is the header colour,
-        // and the panel disappeared into it (B2 and B3 feedback 2026-09-08).
-        background: kConfigBg,
-        borderColour: kHighlight,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text(kDefaultConnectionLabel, style: TextStyle(color: kHighlight, fontSize: 12)),
-          const SizedBox(height: 4),
-          _PickerButton(
-            keyValue: 'default_picker',
-            label: _defaultLabel,
-            changed: _stagedDefault != null,
-            muted: defaultNote != null,
-            onTap: _busy ? null : _pickDefault,
-          ),
-          if (defaultNote != null) ...[
-            const SizedBox(height: 4),
-            Text(defaultNote, key: const Key('default_exit'), style: const TextStyle(color: kWarn, fontSize: 12)),
-          ],
-          const SizedBox(height: 6),
-          // Until build 480 this said assigned devices fall back to the default when their tunnel
-          // drops. With the fail-closed guard they do not: they have no internet (ID-340).
-          const Text(
-            'Devices set to "default" use this. A device assigned to a tunnel never falls back to it: while '
-            'that tunnel is down, the device has no internet.',
-            style: TextStyle(color: kMuted, fontSize: 12),
-          ),
-        ]),
-      ),
+      _defaultPanel(),
       if (state.ipv6On) ...[
         const SizedBox(height: 12),
         // ID-317: the app does not support IPv6. The guard and the firmware's pins are IPv4 only.
@@ -1053,24 +1034,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           for (final d in state.devices) ...[
             if (d != state.devices.first) const Divider(color: kBorder, height: 20),
-            _DeviceRow(
-              device: d,
-              name: _nameOf(d),
-              nameChanged: _stagedNames.containsKey(d.mac),
-              label: _labelForDevice(_effectiveIndex(d)),
-              changed: _staged.containsKey(d.ip) || _stagedBlocks.containsKey(d.mac),
-              blocked: _blocked(d),
-              foreign: _isForeign(d),
-              // Where a stopped tunnel sends the traffic says nothing about a device with none.
-              note: d.assignable && !_blocked(d) ? _guardNote(d) ?? _exitNote(_effectiveIndex(d)) : null,
-              onTap: _busy || !d.assignable ? null : () => _pick(d),
-              editing: _editingMac == d.mac,
-              nameController: _nameCtrl,
-              nameError: _editingMac == d.mac ? _nameError : null,
-              onNameTap: _busy ? null : () => _startRename(d),
-              onNameSubmitted: () => _submitRename(d),
-              onNameCancel: _cancelRename,
-            ),
+            _deviceRow(d),
           ],
         ]),
       ),
@@ -1078,40 +1042,103 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       const Text("Names come from your router's client list. Tap a name to change it.",
           textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 11)),
       const SizedBox(height: 8),
-      // One row, two equal halves, both buttons at HOME's height so the three read as one set
-      // rather than three sizes stacked up the screen.
-      //
-      // Both are always shown and follow the pending state: with changes staged, DISCARD is red and
-      // APPLY teal; with none, both are grey and disabled. It was a Wrap, which put them side by
-      // side once a change was staged and stacked them before that - the widest label the screen
-      // ever shows is the idle APPLY 0 CHANGES, so the pair reflowed exactly when nothing was
-      // happening (ID-090). Expanded halves at the smaller label size hold the row at every width.
-      Row(children: [
-        Expanded(
-          child: AppButton(
-            keyValue: 'device_discard',
-            label: 'DISCARD CHANGES',
-            role: ButtonRole.destructive,
-            fullWidth: true,
-            fontSize: 12,
-            onPressed: _busy || _pendingCount == 0 ? null : () => setState(_c.clearStagedAssignments),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: AppButton(
-            keyValue: 'device_apply',
-            // 'APPLY 1' read as a step number rather than a count (B3 feedback).
-            label: _pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES',
-            fullWidth: true,
-            fontSize: 12,
-            onPressed: _busy || _pendingCount == 0 ? null : _apply,
-          ),
-        ),
-      ]),
+      _applyRow(),
       // AppScaffold pins HOME to the bottom over the scroll view, which clipped APPLY when the
       // list was scrolled fully down (B1 screenshot 2026-09-08).
       const SizedBox(height: 16),
+    ]);
+  }
+
+  /// The default connection, above the device list.
+  ///
+  /// Same ground as the device list with a teal border on both, so the two panels read as one family
+  /// rather than two unrelated boxes. Not kSurface - that is the header colour, and the panel
+  /// disappeared into it (B2 and B3 feedback 2026-09-08).
+  Widget _defaultPanel() {
+    final defaultNote = _exitNote(null, forDefault: true);
+    return _Panel(
+      background: kConfigBg,
+      borderColour: kHighlight,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const Text(kDefaultConnectionLabel, style: TextStyle(color: kHighlight, fontSize: 12)),
+        const SizedBox(height: 4),
+        _PickerButton(
+          keyValue: 'default_picker',
+          label: _defaultLabel,
+          changed: _stagedDefault != null,
+          muted: defaultNote != null,
+          onTap: _busy ? null : _pickDefault,
+        ),
+        if (defaultNote != null) ...[
+          const SizedBox(height: 4),
+          Text(defaultNote, key: const Key('default_exit'), style: const TextStyle(color: kWarn, fontSize: 12)),
+        ],
+        const SizedBox(height: 6),
+        // Until build 480 this said assigned devices fall back to the default when their tunnel
+        // drops. With the fail-closed guard they do not: they have no internet (ID-340).
+        const Text(
+          'Devices set to "default" use this. A device assigned to a tunnel never falls back to it: while '
+          'that tunnel is down, the device has no internet.',
+          style: TextStyle(color: kMuted, fontSize: 12),
+        ),
+      ]),
+    );
+  }
+
+  Widget _deviceRow(LanDevice d) {
+    final editing = _editingMac == d.mac;
+    return _DeviceRow(
+      device: d,
+      name: _nameOf(d),
+      nameChanged: _stagedNames.containsKey(d.mac),
+      label: _labelForDevice(_effectiveIndex(d)),
+      changed: _staged.containsKey(d.ip) || _stagedBlocks.containsKey(d.mac),
+      blocked: _blocked(d),
+      foreign: _isForeign(d),
+      // Where a stopped tunnel sends the traffic says nothing about a device with none.
+      note: d.assignable && !_blocked(d) ? _guardNote(d) ?? _exitNote(_effectiveIndex(d)) : null,
+      onTap: _busy || !d.assignable ? null : () => _pick(d),
+      editing: editing,
+      nameController: _nameCtrl,
+      nameError: editing ? _nameError : null,
+      onNameTap: _busy ? null : () => _startRename(d),
+      onNameSubmitted: () => _submitRename(d),
+      onNameCancel: _cancelRename,
+    );
+  }
+
+  /// One row, two equal halves, both buttons at HOME's height so the three read as one set rather
+  /// than three sizes stacked up the screen.
+  ///
+  /// Both are always shown and follow the pending state: with changes staged, DISCARD is red and
+  /// APPLY teal; with none, both are grey and disabled. It was a Wrap, which put them side by side
+  /// once a change was staged and stacked them before that - the widest label the screen ever shows
+  /// is the idle APPLY 0 CHANGES, so the pair reflowed exactly when nothing was happening (ID-090).
+  /// Expanded halves at the smaller label size hold the row at every width.
+  Widget _applyRow() {
+    final idle = _busy || _pendingCount == 0;
+    return Row(children: [
+      Expanded(
+        child: AppButton(
+          keyValue: 'device_discard',
+          label: 'DISCARD CHANGES',
+          role: ButtonRole.destructive,
+          fullWidth: true,
+          fontSize: 12,
+          onPressed: idle ? null : () => setState(_c.clearStagedAssignments),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: AppButton(
+          keyValue: 'device_apply',
+          // 'APPLY 1' read as a step number rather than a count (B3 feedback).
+          label: _pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES',
+          fullWidth: true,
+          fontSize: 12,
+          onPressed: idle ? null : _apply,
+        ),
+      ),
     ]);
   }
 
@@ -1195,27 +1222,7 @@ class _DeviceRow extends StatelessWidget {
         // Teal, not the body grey: on a phone the whole screen read as one undifferentiated block
         // and the device names are what the eye needs to land on first (B1 feedback 2026-09-08).
         if (editing)
-          // Edited in place (ID-261). Enter keeps the name; tapping anywhere else leaves it as it was.
-          TapRegion(
-            onTapOutside: (_) => onNameCancel(),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              TextField(
-                enableIMEPersonalizedLearning: false,
-                key: Key('name_field_${device.mac}'),
-                controller: nameController,
-                autofocus: true,
-                textInputAction: TextInputAction.done,
-                style: const TextStyle(color: kText, fontSize: 13),
-                decoration: const InputDecoration(isDense: true, hintText: 'empty shows the name the router detected'),
-                onSubmitted: (_) => onNameSubmitted(),
-              ),
-              if (nameError != null)
-                Text(nameError!, key: Key('name_error_${device.mac}'), style: const TextStyle(color: kError, fontSize: 12))
-              else
-                const Text('Enter to keep it, up to $kMaxDeviceNameLength characters.',
-                    style: TextStyle(color: kMuted, fontSize: 11)),
-            ]),
-          )
+          _nameEditor()
         else
           GestureDetector(
             key: Key('name_${device.mac}'),
@@ -1251,6 +1258,27 @@ class _DeviceRow extends StatelessWidget {
       ]),
     );
   }
+
+  /// Edited in place (ID-261). Enter keeps the name; tapping anywhere else leaves it as it was.
+  Widget _nameEditor() => TapRegion(
+        onTapOutside: (_) => onNameCancel(),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          TextField(
+            enableIMEPersonalizedLearning: false,
+            key: Key('name_field_${device.mac}'),
+            controller: nameController,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            style: const TextStyle(color: kText, fontSize: 13),
+            decoration: const InputDecoration(isDense: true, hintText: 'empty shows the name the router detected'),
+            onSubmitted: (_) => onNameSubmitted(),
+          ),
+          if (nameError != null)
+            Text(nameError!, key: Key('name_error_${device.mac}'), style: const TextStyle(color: kError, fontSize: 12))
+          else
+            const Text('Enter to keep it, up to $kMaxDeviceNameLength characters.', style: TextStyle(color: kMuted, fontSize: 11)),
+        ]),
+      );
 }
 
 class _PickerButton extends StatelessWidget {
