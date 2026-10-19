@@ -701,60 +701,75 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   /// The confirmation: every staged change, line by line, and what the user should know first.
   Future<bool?> _confirmApply(AssignmentState state, Map<String, String> reservations, List<String> tunnelWarnings) {
-    LanDevice byMac(String mac) => _byMac(state, mac);
-    // Disabling turns the router's Time Scheduling on. Andrew's decision: when that also brings
-    // schedules someone set up and left switched off into force, APPLY names them first (ID-261).
-    final parentalAfter = applyBlocks(state.parental, Map.of(_stagedBlocks));
-    final switchedOn = schedulesSwitchedOn(state.parental, parentalAfter, _stagedBlocks.keys.toSet());
-    final disabling = [for (final e in _stagedBlocks.entries) if (e.value) byMac(e.key)];
-    String pinLabel(LanDevice d) => _labelForDevice(d.ip == null ? null : _effectiveIndex(d));
-    const blockedLabel = 'disabled - no Internet or VPN access';
-
+    final disabling = _disabling(state);
     return showDialog<bool>(
       context: context,
       builder: (ctx) => _ApplyDialog(
         tunnelWarnings: tunnelWarnings,
-        lines: [
-          for (final e in _stagedNames.entries)
-            _ChangeLine(
-              name: byMac(e.key).displayName,
-              from: 'name ${byMac(e.key).displayName}',
-              to: e.value.isEmpty ? 'name ${_nameOf(byMac(e.key))}, detected by the router' : 'name ${e.value}',
-            ),
-          for (final e in _stagedBlocks.entries)
-            _ChangeLine(
-              name: _nameOf(byMac(e.key)),
-              from: e.value ? pinLabel(byMac(e.key)) : blockedLabel,
-              to: e.value ? blockedLabel : pinLabel(byMac(e.key)),
-            ),
-          for (final entry in _staged.entries)
-            _ChangeLine(
-              name: _byIp(state, entry.key).displayName,
-              from: _labelForDevice(assignedIndexFor(state.policies, entry.key)),
-              to: _labelForDevice(entry.value),
-            ),
-          if (_stagedDefault != null)
-            _ChangeLine(
-              name: kDefaultConnectionLabel,
-              from: _labelForIndex(state.defaultIndex ?? 0),
-              to: _labelForIndex(_stagedDefault ?? 0),
-            ),
-        ],
-        reservationNames: [for (final mac in reservations.keys) byMac(mac).displayName],
+        lines: _changeLines(state),
+        reservationNames: [for (final mac in reservations.keys) _byMac(state, mac).displayName],
         restartsTunnels: _stagedDefault != null,
-        scheduleWarning: switchedOn.isEmpty
-            ? null
-            : "Time Scheduling is off in your router. Disabling ${joinNames([for (final d in disabling) _nameOf(d)])} "
-                'turns it on, which also puts the schedules already set there for '
-                '${joinNames([for (final e in switchedOn) e.name.isEmpty ? e.mac : e.name])} into force.',
+        scheduleWarning: _scheduleWarning(state, disabling),
         randomMacNames: [for (final d in disabling) if (d.hasRandomisedMac) _nameOf(d)],
-        foreignNames: [
-          for (final entry in _staged.entries)
-            if (_isForeignIndex(assignedIndexFor(state.policies, entry.key))) _byIp(state, entry.key).displayName
-        ],
+        foreignNames: _foreignNames(state),
       ),
     );
   }
+
+  /// Each staged change as the confirmation lists it: names, then disabling, then moves, then the
+  /// default connection.
+  List<_ChangeLine> _changeLines(AssignmentState state) {
+    LanDevice byMac(String mac) => _byMac(state, mac);
+    String pinLabel(LanDevice d) => _labelForDevice(d.ip == null ? null : _effectiveIndex(d));
+    const blockedLabel = 'disabled - no Internet or VPN access';
+    return [
+      for (final e in _stagedNames.entries)
+        _ChangeLine(
+          name: byMac(e.key).displayName,
+          from: 'name ${byMac(e.key).displayName}',
+          to: e.value.isEmpty ? 'name ${_nameOf(byMac(e.key))}, detected by the router' : 'name ${e.value}',
+        ),
+      for (final e in _stagedBlocks.entries)
+        _ChangeLine(
+          name: _nameOf(byMac(e.key)),
+          from: e.value ? pinLabel(byMac(e.key)) : blockedLabel,
+          to: e.value ? blockedLabel : pinLabel(byMac(e.key)),
+        ),
+      for (final entry in _staged.entries)
+        _ChangeLine(
+          name: _byIp(state, entry.key).displayName,
+          from: _labelForDevice(assignedIndexFor(state.policies, entry.key)),
+          to: _labelForDevice(entry.value),
+        ),
+      if (_stagedDefault != null)
+        _ChangeLine(
+          name: kDefaultConnectionLabel,
+          from: _labelForIndex(state.defaultIndex ?? 0),
+          to: _labelForIndex(_stagedDefault ?? 0),
+        ),
+    ];
+  }
+
+  /// The devices this apply disables.
+  List<LanDevice> _disabling(AssignmentState state) =>
+      [for (final e in _stagedBlocks.entries) if (e.value) _byMac(state, e.key)];
+
+  /// Disabling turns the router's Time Scheduling on. Andrew's decision: when that also brings
+  /// schedules someone set up and left switched off into force, APPLY names them first (ID-261).
+  String? _scheduleWarning(AssignmentState state, List<LanDevice> disabling) {
+    final parentalAfter = applyBlocks(state.parental, Map.of(_stagedBlocks));
+    final switchedOn = schedulesSwitchedOn(state.parental, parentalAfter, _stagedBlocks.keys.toSet());
+    if (switchedOn.isEmpty) return null;
+    return "Time Scheduling is off in your router. Disabling ${joinNames([for (final d in disabling) _nameOf(d)])} "
+        'turns it on, which also puts the schedules already set there for '
+        '${joinNames([for (final e in switchedOn) e.name.isEmpty ? e.mac : e.name])} into force.';
+  }
+
+  /// Devices whose assignment to a VPN this app doesn't manage the apply replaces.
+  List<String> _foreignNames(AssignmentState state) => [
+        for (final entry in _staged.entries)
+          if (_isForeignIndex(assignedIndexFor(state.policies, entry.key))) _byIp(state, entry.key).displayName
+      ];
 
   /// What APPLY asks of the router. The service knows IP addresses and profile indexes; only the
   /// screen knows what the user calls them, and naming the change here is what makes the app log
