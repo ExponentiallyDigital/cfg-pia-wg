@@ -52,44 +52,61 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.2. FTR - future implementation
 
-- ID-135 FTR: **DEVICES can clear offline devices from its list.** It stays clear of DHCP reservations. Pinning a device reserves its address in `dhcp_staticlist`, unpinning leaves the reservation, and the app never removes one (Andrew's decision, 2026-09-28, merged from ID-153). Removing one restarts the whole network, and can break a pin silently at a later lease renewal (ARCHITECTURE 6.3, 6.8.3). Anyone who wants to can do it in the web interface.
-- ID-305 FTR: **move stock to `mailsend-go` v1.0.13 and add `-printCerts` to a failed send's diagnostics.** v1.0.13 (2026-09-29, upstream issue #76) prints the server's certificate while sending, not only with `-info`, and adds `-verbose`. `-verifyCert` already applied to sending in v1.0.12: its `sendMail` sets `InsecureSkipVerify: !VerifyCert`. So the alerts have been verifying the SMTP server's certificate all along, and this is diagnostics only. The upstream ChangeLog agrees there's "no need to update unless you need certificate details". The work: new pins and SHA-256s for both architectures in `binary_installer.dart` from the published checksums, recomputed on hardware; the archive member names; offering the update to routers that already have v1.0.12; and a run of TEST EMAIL and a deliberate failure on stock.
-- ID-127 FTR: **ship our own `curl` beside `jq` and `mailsend-go`, if ASUS tighten their wrapper further.** Stock's `/usr/sbin/curl` silently refuses a caller with `crond` in its ancestry, and any URL whose host is an IP address (ARCHITECTURE 2, rows 6 and 7). Both are worked around: the script detaches from cron, and every request uses a hostname with `--resolve`. `BinaryInstaller` could ship one, but a TLS stack of our own makes its CVEs this project's job, sits outside the dependency scanning, and asks users to trust far more than a JSON parser. Revisit only if a firmware update breaks row 6 or 7. Raised 2026-09-19.
-- ID-024 FTR: localise into French, Spanish and Latin American Spanish, then decide on more. Translate the Play listing by hand: Google's automatic translations break its character limits.
-- ID-257 FTR: **pilot: manual tests as Flutter integration tests.** The real app, on the emulator, taps through a flow, checks the screen, and checks the real router over its own SSH connection. Start with groups that need no PIA login (SET, ROUTER LOG, ROUTER RESOLVER STATUS, ROUTER DNS ROUTING), and judge it before going further. Needs a router the test can reset to a known state, and credentials kept out of the repo. Stays by hand: anything physical, emails arriving, the password manager, Play installs and purchases. **Parked 2026-09-28, unrun (Andrew's decision):** the `integration_test` package puts `androidx.test`, `junit` and `guava` into the debug build, which broke the Gradle lockfile; locking them moved RevenueCat in the debug build and brought `junit` and `guava` findings into the OSV scan (ID-058). The plan is `.claude/plans/plan_integration-test-pilot.md`. To resume: lock the new libraries or exempt the debug build from locking, then follow the plan.
-- ID-414 FTR: **clear the build's Kotlin Gradle plugin warning once `home_widget` and `workmanager_android` stop applying the plugin.** Split from ID-408 on 2026-10-16, Andrew's decision, because nothing in this repository can clear it. Every local build says `Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): home_widget, workmanager_android` and that future Flutter versions will fail to build with such plugins. On 2026-10-16 both were already the latest on pub.dev (`home_widget` 0.10.0, `workmanager_android` 0.10.9 through `workmanager` 0.10.10), so the fix has to come from their authors. Check each new release of the two (ID-411's weekly upgrade will bring them), and before taking each new Flutter, check its release notes for the point where the warning becomes a failure: if that comes first, the choice is a fork of the plugin or holding Flutter back.
-  - **Done when:** a local `flutter build apk` no longer prints the KGP warning.
+- ID-135 DEC: **decide what "clear offline devices" in DEVICES should do.** Raised 2026-09-28 (merged from ID-153). Whatever it does, it leaves DHCP reservations alone: removing one restarts the whole network and can break a pin at a later lease renewal (ARCHITECTURE 6.3, 6.8.3), and the web interface can already do it.
+  - **The choice:** hide offline devices in DEVICES on this phone only; or remove them from the router's own client list, as the web interface does.
+  - **Done when:** decided, and the build item written with its own done-when.
+- ID-305 FTR: **stock's mail sender moves to `mailsend-go` v1.0.13, so a failed send's diagnostics include the server's certificate (`-printCerts`).** Diagnostics only: v1.0.12 already verifies the certificate when sending (`InsecureSkipVerify: !VerifyCert`), and upstream says there's "no need to update unless you need certificate details" (issue #76).
+  - **Work:** new pins and SHA-256s for both architectures in `binary_installer.dart`, from the published checksums and recomputed on hardware; the archive member names; offering the update to routers on v1.0.12.
+  - **Done when:** on stock, TEST EMAIL sends with v1.0.13, and a deliberately failed send prints the certificate in the app log.
+- ID-127 FTR: **contingency, not scheduled: ship our own `curl` if a firmware update breaks stock's two curl workarounds.** Stock's `/usr/sbin/curl` refuses a caller with `crond` in its ancestry and any URL whose host is an IP address (ARCHITECTURE 2, rows 6 and 7); the script detaches from cron and uses hostnames with `--resolve`. Our own curl would make its TLS CVEs this project's job, outside the dependency scanning. Raised 2026-09-19.
+  - **Trigger:** a firmware update breaks row 6 or 7. Until then there is nothing to do.
+- ID-024 FTR: **decide whether and when to localise the app, starting with French, Spanish and Latin American Spanish.** The groundwork and each language are ID-442 to ID-446.
+  - **Done when:** decided, and those items sequenced or closed.
+- ID-442 FTR: **the app's text moves into Flutter's localisation files, English only, nothing visibly changed.** Every on-screen string read through `AppLocalizations`.
+  - **Done when:** no user-facing string literal is left in `lib/` outside the English file, a test fails if one is added, and the full suite passes.
+- ID-443 FTR: **the app in French.** After ID-442.
+  - **Done when:** a test runs every screen in French with no missing key, and a French speaker has read it.
+- ID-444 FTR: **the app in Spanish (Spain).** After ID-442.
+  - **Done when:** as ID-443, for `es`.
+- ID-445 FTR: **the app in Latin American Spanish.** After ID-444.
+  - **Done when:** as ID-443, for `es-419`.
+- ID-446 FTR: **the Play listing in each language the app is in, translated by hand.** Google's automatic translations break the character limits.
+  - **Done when:** the Update Play listing workflow publishes each, within Play's limits.
+- ID-257 FTR: **parked 2026-09-28 (Andrew's decision): a pilot of hand tests as Flutter integration tests on the emulator, against a real router.** Start with SET, ROUTER LOG, ROUTER RESOLVER STATUS and ROUTER DNS ROUTING. It stopped because `integration_test` put `androidx.test`, `junit` and `guava` into the debug build, which broke the Gradle lockfile and brought new OSV findings (ID-058). Plan: `.claude/plans/plan_integration-test-pilot.md`.
+  - **To resume:** lock the new libraries or exempt the debug build from locking.
+  - **Done when:** the four groups run as integration tests against the router, and Andrew has judged whether to go further.
+- ID-414 FTR: **waiting on upstream: clear the Kotlin Gradle plugin warning once `home_widget` and `workmanager_android` stop applying the plugin.** Split from ID-408 on 2026-10-16. Every build warns that future Flutter versions will fail with such plugins; on 2026-10-19 both were still the latest (`home_widget` 0.10.0, `workmanager` 0.10.10). Check each new release of the two, which ID-411's weekly upgrade brings, and each new Flutter's notes for when the warning becomes a failure: if that comes first, fork the plugin or hold Flutter back.
+  - **Done when:** a local `flutter build apk` no longer prints the warning.
 
 #### 1.1.3. Unconfirmed BUGs
 
-- ID-386 BUG?: **the small home screen widget cuts its summary line short at its own default size.** Seen 2026-10-13 on the emulator (Pixel 7 Pro, Android 17, Nova Launcher) while making ID-380's screenshot: dropped at 2×1, the size `widget_compact_info.xml` asks for (`targetCellWidth="2"`, `minWidth="110dp"`), it read "2 tunnels u…" for "2 tunnels up · 6 pinned"; widened by a cell, it fits. Not yet seen on a phone - Andrew's had been widened - and launchers size cells differently, so whether it needs a wider default, a shorter line, or nothing depends on more than this one launcher.
+- ID-386 BUG?: **unconfirmed: the small home screen widget may cut its summary line short at its default 2×1 size.** Seen 2026-10-13 on the emulator only (Pixel 7 Pro, Android 17, Nova Launcher): "2 tunnels u…" for "2 tunnels up · 6 pinned", fitting once widened a cell. Launchers size cells differently.
+  - **Done when:** Andrew has added the small widget at its default size on his phone, and either it fits, or a fix - a wider default or a shorter line - is tested on that phone.
 
 ---
 
 ### 1.2. Codebase cleanup
 
-Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
+The firmware abstraction, in slices, each on its own build and released on its own, with MAN, WD and DEV hand tests on stock and the MRL smoke test on Merlin before each release. It touches every path stock support landed on, so it starts after the release that carries ID-041 step 4. Plan: `.claude/plans/plan_firmware-abstraction.md`.
 
-- Map codebase
-  - By file and by function (done 2026-09-01, now in `CONTEXT.md`)
-  - Identify redundant or duplicated code
-- Optimise and simplify
-  - nvram statements
-  - Duplication of variables
-  - Complexity reduction/reduce lines of code
-    - audit large/long/complex source files
-    - audit naming of source code files
-- Abstract firmware from Manage and watchdog. Measured 2026-09-05: 27 `isStockFirmware` branches across six files, 21 of them in `router_slot_service.dart` (14) and `router_watchdog.dart` (7). Both stock bugs found this session were "the stock branch does not match the Merlin branch's intent".
-  - Create functions to act on classes of activities
-  - Split out to functions
-  - Model on `buildWatchdogScript`, which already resolves firmware once and substitutes the differences (`__KILLSW__`, `__MAILHDR__`, `__MAILCMD__`) rather than branching at runtime
-  - Take it in slices, each on its own build: start/stop first, then slot reading, then cron persistence, then delete
-- Largest files, measured 2026-09-05: `router_watchdog.dart` 1,554 lines, `router_slot_service.dart` 842, `slot_modal.dart` 767. The email layout in `router_watchdog.dart` (`buildEmailBody`, `RouterEmailFacts`, the section constants) is self-contained and would move out with no behaviour change.
-- ID-419 CHG: **the SonarCloud findings in the watchdog and the slot service - ID-041's step 6 - after the firmware abstraction.** Split from ID-041 2026-10-16, Andrew's decision. `uninstallFromRouter` 53, `deployWatchdog` 45 and `validate` 30 (`lib/router_watchdog.dart`), and `createConfigToSlot` 37, `fetchSlots` 30 and `enableSlot` 26 (`lib/router_slot_service.dart`), are full of stock-or-Merlin branches the abstraction would restructure anyway, so they're scored again after it and what's left is fixed then.
+- ID-448 TST: **a test that every operation the firmware abstraction will hold runs on both firmwares**, so a stock-only path can't quietly lose its Merlin coverage. After the release carrying ID-041 step 4.
+  - **Done when:** the test lists start, stop, slot reading, cron persistence and delete, finds each run under both `useStock()` and `useMerlin()`, and fails when one isn't.
+- ID-449 ARC: **firmware abstraction, slice 1: starting and stopping a slot go through one `RouterOps`, resolved once per session.** After ID-448. The smallest slice, and the one that produced two hardware bugs (`restart_vpnc` for `stop_vpnc`, a row index for a slot).
+  - **Done when:** no `isStockFirmware` branch is left in start or stop, the suite passes with no test changed, and MAN-3, MAN-8 and MRL pass on hardware.
+- ID-450 ARC: **slice 2: reading the slots (`fetchSlots`, `vpnc_clientlist`).** After ID-449's release.
+  - **Done when:** as ID-449, for reading, with MAN-15, MAN-16 and DEV-1 on hardware.
+- ID-451 ARC: **slice 3: persisting the watchdog's schedule (services-start or `S50downloadmaster`).** After ID-450's release.
+  - **Done when:** as ID-449, for persistence, with WD-9 and WD-17 on hardware.
+- ID-452 ARC: **slice 4: deleting a slot and clearing its runtime keys.** After ID-451's release. Then ID-419.
+  - **Done when:** as ID-449, for delete, with MAN-14 and the delete DEV tests on hardware.
+- ID-453 MOD: **the slot modal's manage mode and watchdog mode become two widgets sharing the slot list.** They share little else. Independent of the slices.
+  - **Done when:** each mode is its own widget, nothing a user sees changes, and the full suite passes unchanged.
+- ID-419 CHG: **the SonarCloud findings left in the watchdog and the slot service, after ID-452.** Split from ID-041 2026-10-16, Andrew's decision. On 2026-10-19: `uninstallFromRouter` 38, `deployWatchdog` 36, `validate` 30, `testEmail` 18 (`router_watchdog.dart`); `createConfigToSlot` 37, `fetchSlots` 30, `enableSlot` 22, `restartSlot` 19 (`router_slot_service.dart`).
+  - **Done when:** SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
 
 ### 1.3. iOS version
 
-**Under way** since 2026-10-16. In dependency order; marks his items. GPLv3 is fine on the App Store while Andrew holds all the copyright, so an outside contribution needs his permission to ship there.
+**Under way** since 2026-10-16. In dependency order. GPLv3 is fine on the App Store while Andrew holds all the copyright, so an outside contribution needs his permission to ship there.
 
 - ID-426 REL: **enrol in the Apple Developer Program as an individual.** Decided 2026-10-19.
   - **Done when:** the membership is active.
@@ -103,34 +120,35 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
   - **Done when:** decided, and the Xcode project matches.
 - ID-418 REL: **CI builds a signed iOS release, with an App Store Connect API key kept in GitHub secrets.** After ID-405 and ID-427.
   - **Done when:** a manual `release.yml` run produces a signed `.ipa`.
-- ID-430 CFG: **answer Apple's encryption question in `Info.plist` (`ITSAppUsesNonExemptEncryption`), agreed with Andrew.**
-  - **Done when:** an upload asks no encryption question.
 - ID-431 REL: **a release tag uploads the signed build to TestFlight.** After ID-418 and ID-430.
   - **Done when:** a tag puts an installable build in TestFlight.
 - ID-432 REL: **App Store release notes come from CHANGELOG, like the Play note.** After ID-431.
   - **Done when:** a TestFlight build carries its CHANGELOG notes.
-- ID-433 REL: **the release SBOM covers the iOS-only dependencies.**
-  - **Done when:** a release SBOM lists them.
-- ID-434 DOC: **the App Store listing: text, screenshots, privacy answers, age rating.** After ID-427 and ID-429.
-  - **Done when:** App Store Connect shows nothing missing.
-- ID-435 DOC: **App Review notes and a demo video.** The reviewer has no ASUS router or PIA account (guideline 2.1); the app offers no VPN itself (5.4); why PIA is named (5.2).
-  - **Done when:** written, with the video linked.
-- ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-434 and ID-435.
+- ID-433 REL: **the release SBOM covers the iOS-only dependencies, such as the native SDKs plugins pull in on iOS.** After ID-418.
+  - **Done when:** a release's SBOM lists them.
+- ID-454 DOC: **App Store screenshots.** After ID-422 and ID-429.
+  - **Done when:** the sizes Apple asks for are taken, from a signed build.
+- ID-455 REL: **the listing entered in App Store Connect.** After ID-427, ID-434 and ID-454.
+  - **Done when:** App Store Connect shows nothing missing for submission.
+- ID-456 DOC: **a demo video for App Review**, showing the app working against a router, as the notes describe. After ID-422.
+  - **Done when:** it's recorded and the notes link it.
+- ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-435, ID-455 and ID-456.
   - **Done when:** the app is on sale.
 - ID-437 REL: **sign the Paid Apps Agreement and set up banking and tax.** After ID-426.
   - **Done when:** the agreement is active.
 - ID-401 CHG: **RevenueCat on the App Store.** After ID-431 and ID-437.
   - **Done when:** a TestFlight purchase unlocks the app, and RESTORE PURCHASE finds it again.
-- ID-441 BUG?: **on iOS, unconfirmed: no visible offer to save the PIA login in a password manager.** Seen by Andrew 2026-10-19 in STD-1 on an iPhone, using KeePassium; whether iOS should prompt, and whether KeePassium can be asked to, isn't known yet. Investigate after the SonarCloud work (ID-041).
-  - **Done when:** it's known whether iOS offers to save each of the three logins (PIA, router SSH, SMTP) with KeePassium and with iCloud Passwords, and any fix is tested on an iPhone.
+- ID-441 BUG?: **unconfirmed: on iOS, nothing offered to save the PIA login.** Seen by Andrew 2026-10-19 in STD-1 on an iPhone, with KeePassium. iOS may offer to save an app's login only when the app declares its website as an Associated Domain (`webcredentials:`), which needs the paid team and a file on that website; no source found settles it.
+  - **First:** on an iPhone, with a signed build (after ID-422), see whether iOS offers to save each of the three logins (PIA, router SSH, SMTP), with KeePassium and with iCloud Passwords.
+  - **Done when:** that is recorded, and either it works or a fix, such as the Associated Domain, has been seen to work on an iPhone.
 - ID-424 TST: **measure how often iOS lets the app refresh in the background, for an iOS widget like Android's (ID-376).** After ID-422.
   - **Done when:** a day's refresh times from an iPhone are recorded.
 - ID-438 ADD: **an iOS home screen widget showing the last status the app read.** After ID-431.
   - **Done when:** it shows each tunnel's state as last read.
 - ID-439 ADD: **the iOS widget refreshes itself in the background.** After ID-424 and ID-438.
   - **Done when:** it updates with the app closed.
-- ID-440 REL: **get D-U-N-S number**  from D&BS.
-  - **Done when: D-U-N-S number available
+- ID-440 REL: **get a D-U-N-S number from Dun & Bradstreet.**
+  - **Done when:** the D-U-N-S number is issued.
 - ID-421 REL: **move the Apple membership to the company, through Apple support.** After ID-440.
   - **Done when:** the App Store shows the company as the seller.
 - ID-375 BLD: **either** replace this module or **post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix.** Agreed 2026-10-09, Andrew's call, but not posted: the `gh` token here can't comment outside the organisation ("Resource not accessible by personal access token"). Post it from Andrew's own login, or after `gh auth refresh -s public_repo`. Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment:
@@ -152,7 +170,7 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
 
   For now we run the tool through a small wrapper that puts the other lines back afterwards.
   ```
-
+  - **Done when:** a `flutter_launcher_icons` release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the comment having been posted, and the wrapper and its notes are gone. Checked 2026-10-19: 0.14.4 is still the latest, and PR #549 is open.
 ---
 
 ## 2. New work items
