@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    PrivacyCover.start()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -145,5 +146,56 @@ enum SensitiveClipboard {
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+}
+
+/// The app switcher cover on iOS (ID-403). iOS can't block screenshots, but it takes its app switcher
+/// picture as the app leaves the foreground, so the window is covered the moment the scene stops being
+/// active and uncovered when it is active again. The cover is the launch screen: the app's background
+/// with the launch artwork.
+///
+/// A debug build skips it, as Android's FLAG_SECURE is skipped in one (MainActivity.kt), so the app can
+/// be captured while testing - and so a debug build is how the cover is seen taken out.
+/// ios/RunnerTests/RunnerTests.swift checks `show` and `hide`.
+enum PrivacyCover {
+  static let tag = 0x403
+  private static var observers: [NSObjectProtocol] = []
+
+  static func start() {
+    #if !DEBUG
+      let centre = NotificationCenter.default
+      observers = [
+        centre.addObserver(forName: UIScene.willDeactivateNotification, object: nil, queue: .main) { note in
+          windows(of: note.object).forEach(show)
+        },
+        centre.addObserver(forName: UIScene.didActivateNotification, object: nil, queue: .main) { note in
+          windows(of: note.object).forEach(hide)
+        },
+      ]
+    #endif
+  }
+
+  private static func windows(of scene: Any?) -> [UIWindow] {
+    (scene as? UIWindowScene)?.windows ?? []
+  }
+
+  static func show(_ window: UIWindow) {
+    guard window.viewWithTag(tag) == nil else { return }
+    let cover = UIView(frame: window.bounds)
+    cover.tag = tag
+    cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    // kBg in lib/app_colors.dart.
+    cover.backgroundColor = UIColor(red: 0x12 / 255.0, green: 0x14 / 255.0, blue: 0x1A / 255.0, alpha: 1)
+    if let artwork = UIImage(named: "LaunchImage") {
+      let image = UIImageView(image: artwork)
+      image.center = CGPoint(x: cover.bounds.midX, y: cover.bounds.midY)
+      image.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin, .flexibleLeftMargin, .flexibleRightMargin]
+      cover.addSubview(image)
+    }
+    window.addSubview(cover)
+  }
+
+  static func hide(_ window: UIWindow) {
+    window.viewWithTag(tag)?.removeFromSuperview()
   }
 }

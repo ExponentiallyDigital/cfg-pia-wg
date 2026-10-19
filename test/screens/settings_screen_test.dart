@@ -421,6 +421,23 @@ void main() {
       expect(tester.takeException(), isNull, reason: 'no overflow');
     });
 
+    // ID-425: the key serves Android's home screen widget, and iOS has none yet.
+    testWidgets('on iOS there is no HOME SCREEN WIDGET KEY, and the other rows are all there', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      // Reset by a teardown too, so a failure here can't leave every later test running as iOS.
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      await _pumpSettings(tester);
+
+      expect(find.byKey(const Key('settings_widget_key')), findsNothing);
+      expect(find.text('HOME SCREEN WIDGET KEY'), findsNothing);
+      for (final key in const ['settings_dns_routing', 'settings_forget_router_ip', 'settings_uninstall']) {
+        expect(find.byKey(Key(key)), findsOneWidget, reason: key);
+      }
+
+      await tester.pumpWidget(const SizedBox());
+      debugDefaultTargetPlatformOverride = null;
+    });
+
     // RESTORE PURCHASE is the one row here that gives something back rather than taking it away,
     // and it is conditional: a build with no store key cannot sell and so has nothing to restore.
     // Showing it there would offer a recovery that can only ever report "no purchase found".

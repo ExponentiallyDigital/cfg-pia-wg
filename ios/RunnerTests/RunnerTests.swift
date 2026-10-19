@@ -4,8 +4,8 @@ import XCTest
 
 @testable import Runner
 
-/// ID-404: the iOS clipboard, through the same handler the channel calls. Run on a simulator by the
-/// ios-build job in .github/workflows/quality_and_security.yml.
+/// ID-404: the iOS clipboard, through the same handler the channel calls, and ID-403's app switcher cover.
+/// Run on a simulator by the ios-build job in .github/workflows/quality_and_security.yml.
 class RunnerTests: XCTestCase {
 
   private let secret = "cfg-pia-wg RunnerTests secret"
@@ -46,6 +46,19 @@ class RunnerTests: XCTestCase {
       RunLoop.current.run(until: Date().addingTimeInterval(0.25))
     }
     XCTAssertFalse(UIPasteboard.general.hasStrings, "still on the clipboard after its expiry")
+  }
+
+  /// ID-403: the cover goes on once however often the scene deactivates, fills the window, and comes off.
+  func testPrivacyCoverGoesOnOnceAndComesOff() {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    PrivacyCover.show(window)
+    PrivacyCover.show(window)
+    let covers = window.subviews.filter { $0.tag == PrivacyCover.tag }
+    XCTAssertEqual(covers.count, 1)
+    XCTAssertEqual(covers.first?.frame, window.bounds)
+
+    PrivacyCover.hide(window)
+    XCTAssertNil(window.viewWithTag(PrivacyCover.tag))
   }
 
   func testAnUnknownMethodIsNotImplemented() {
