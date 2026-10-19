@@ -134,6 +134,7 @@ Work items for the **current** release:
   - **Step 5, `settings_screen.dart`, built in build 517:** five of its actions repeated the same tail - mark the screen busy, run on the router, report a failure in plain English with the raw error in the log (ID-108) - and now share it as `_onRouter`, which keeps each one's own wording ("Could not reboot the router: ..."). Three confirmations share `_ask`, keeping their `settings_<key>_cancel` and `_confirm` keys. MAX ACTIVE VPNS and SECURE STARTUP share `_notStock` for the Merlin and unsupported-firmware messages, and SECURE STARTUP's outcome went to `_secureStartupOutcome`. REMOVE CACHED PIA SERVERS keeps its own router step, since its failure message adds the phone's result; its phone step and report went to `_deletePhoneServerList` and `_reportServerListsDeleted`. UNINSTALL's itemised result went to `_showUninstalled`. `build`'s ten `_busy ? null : action` became `_unlessBusy(action)`. `_session` replaces six copies of the line that opens the shared session. The full suite passes, SETTINGS' 79 tests among them.
   - **Step 5, `watchdog_dialog.dart`, built in build 518:** `_field`'s 8 parameters became 7 by moving the eye on a password field into `_passwordField`, which hands `_field` its icon. `build`'s status card and email section went to `_statusCard` and `_emailFields`. `_save` is an outline over `_routerReady`, `_formIsValid`, `_piaAllowsDeploy`, `_deploy` and `_reportDeploy`, each step in its old order with its own messages. The full suite passes, the watchdog form's 44 tests among them.
   - **Step 5, DEVICES' other functions, built in build 519:** `_connect`'s firmware check, service and tolerant slot read went to `_firmwareRefusal`, `_assignmentService` and `_slotsIfReadable`. `_pickerTile`'s status line went to `_pickerNote`. `_buildList`'s default-connection panel, device row and DISCARD/APPLY row went to `_defaultPanel`, `_deviceRow` and `_applyRow`. `_DeviceRow.build`'s name editor went to `_nameEditor`. In the service, `_setDefaultConnection`'s last two blocks, restarting the outgoing default and the read-back, went word for word to `_restartOutgoingDefault` and `_reportDefaultSet`, in the same order; THE DEFAULT CONNECTION SEQUENCE IS EXACT and the full suite pass.
+  - **Step 5, the rest, built in build 520:** MANAGE's `_onConnect` went to `_connectAndRead` and `_gateFailed`. ROUTER LOG's `_refresh` and `_loadOlder` went to `_readNewest`, `_startFrom` and `_insertOlder`. The resolver check's row went to `_checkRow`, and the licences page's list to `_licenceList`. `slotParamErrors` became the EDIT form's two halves, `_slotPeerErrors` then `_slotTunnelErrors`, in the same order. `buildWidgetStatus`'s pin lookup went to `_pinnedBySlot`. The full suite passes. That leaves only the watchdog's and the slot service's eight findings, which wait for the firmware abstraction (ID-419).
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -150,6 +151,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.150 build 520 - SonarCloud fixes, step 5: the remaining screens and checks split
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 2026-10-19 v0.8.149 build 519 - SonarCloud fixes, step 5: DEVICES' other functions split
 
