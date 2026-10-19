@@ -426,11 +426,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
-    final phone = switch (phoneError) {
-      != null => "This phone's copy could not be deleted.",
-      _ => onPhone! ? "This phone's copy deleted." : 'None on this phone.',
-    };
-    if (phoneError != null) _c.logEntry("Could not delete this phone's cached PIA server list: $phoneError", isError: true);
+    final phone = _phoneCopyResult(onPhone, phoneError);
     if (error != null) {
       await AppErrors.system(context, _c,
           errorDetail == null ? 'Could not delete the cached server list on the router: $error $phone' : '$error $phone',
@@ -438,6 +434,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     await _reportServerListsDeleted(onRouter: onRouter, phone: phone, phoneFailed: phoneError != null);
+  }
+
+  /// What happened to this phone's copy, as a sentence, with a failure in the log.
+  String _phoneCopyResult(bool? onPhone, String? phoneError) {
+    if (phoneError == null) return onPhone! ? "This phone's copy deleted." : 'None on this phone.';
+    _c.logEntry("Could not delete this phone's cached PIA server list: $phoneError", isError: true);
+    return "This phone's copy could not be deleted.";
   }
 
   /// This phone's copy of the server list: whether there was one, or why it could not be deleted.
@@ -616,9 +619,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     RouterFirmware? firmware;
     var current = kDefaultStockMaxActiveSlots;
     final read = await _onRouter(ip, 'Could not read the router', () async {
-      svc = RouterSlotService(_session(ip, user, pass), onLog: _c.onLog);
-      firmware = classifyFirmwareTag(await svc!.readFirmwareTag());
-      if (firmware == RouterFirmware.stock) current = await svc!.readMaxActiveVpns();
+      (firmware, svc, current) = await _readMaxVpns(_session(ip, user, pass));
       await _connected(ip);
     });
     if (!read || !mounted) return;
@@ -639,6 +640,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final message = 'Maximum active VPNs set to $chosen.';
     _c.logEntry(message, isWarning: chosen > 2);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// The firmware, and on stock the limit as it stands.
+  Future<(RouterFirmware?, RouterSlotService, int)> _readMaxVpns(SSHClient client) async {
+    final svc = RouterSlotService(client, onLog: _c.onLog);
+    final firmware = classifyFirmwareTag(await svc.readFirmwareTag());
+    final current = firmware == RouterFirmware.stock ? await svc.readMaxActiveVpns() : kDefaultStockMaxActiveSlots;
+    return (firmware, svc, current);
   }
 
   /// HOME SCREEN WIDGET KEY (ID-376): the dialog handles the phone side (Keystore) itself; these
@@ -718,13 +727,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     RouterFirmware? firmware;
     var blocked = false;
     final read = await _onRouter(ip, 'Could not read the router', () async {
-      final client = _session(ip, user, pass);
-      firmware = classifyFirmwareTag(await RouterSlotService(client, onLog: _c.onLog).readFirmwareTag());
-      if (firmware != null) setRouterFirmware(firmware!);
-      if (firmware == RouterFirmware.stock) {
-        svc = DeviceAssignmentService(client, onLog: _c.onLog);
-        blocked = await svc!.readPingBlock();
-      }
+      (firmware, svc, blocked) = await _readPingBlock(_session(ip, user, pass));
       await _connected(ip);
     });
     if (!read || !mounted) return;
@@ -748,6 +751,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!ok) return AppErrors.warning(context, _c, message);
     _c.logEntry(message, isSuccess: true);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// The firmware, remembered for the rest of the app, and on stock whether pings are blocked now.
+  Future<(RouterFirmware?, DeviceAssignmentService?, bool)> _readPingBlock(SSHClient client) async {
+    final firmware = classifyFirmwareTag(await RouterSlotService(client, onLog: _c.onLog).readFirmwareTag());
+    if (firmware != null) setRouterFirmware(firmware);
+    if (firmware != RouterFirmware.stock) return (firmware, null, false);
+    final svc = DeviceAssignmentService(client, onLog: _c.onLog);
+    return (firmware, svc, await svc.readPingBlock());
   }
 
   /// What SECURE STARTUP says after a change, and whether it went as asked.

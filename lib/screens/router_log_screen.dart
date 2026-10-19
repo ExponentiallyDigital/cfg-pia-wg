@@ -171,14 +171,33 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
       if (error != null || newest == null) return;
       _startFrom(newest.sizes, newest.page, newest.first);
     });
-    // The newest lines are at the BOTTOM of a syslog, and they are what anyone opening this screen
-    // came for. Jumping after the frame that laid the text out, so the extent is known.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
-    });
+    _jumpToNewest();
     if (error != null && mounted) {
       await AppErrors.system(context, _c, errorDetail == null ? 'Could not read the router log: $error' : error,
           logDetail: errorDetail);
+    }
+  }
+
+  /// The newest lines are at the BOTTOM of a syslog, and they are what anyone opening this screen came
+  /// for. Jumping after the frame that laid the text out, so the extent is known.
+  void _jumpToNewest() => WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      });
+
+  /// After a page goes in above, puts the reader back the same distance from the bottom.
+  void _keepDistanceFromBottom(double anchorFromBottom) => WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scroll.hasClients) return;
+        final max = _scroll.position.maxScrollExtent;
+        final target = (max - anchorFromBottom).clamp(0.0, max);
+        if ((target - _scroll.offset).abs() > 0.5) _scroll.jumpTo(target);
+      });
+
+  /// One page's text, or why it could not be read.
+  Future<(String?, String?)> _readPage(SSHClient client, LogPage page) async {
+    try {
+      return (unwrapPage((await runRouterCommand(client, page.command, allowFailure: true)).stdout), null);
+    } catch (e) {
+      return (null, plainError(e));
     }
   }
 
@@ -243,24 +262,13 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     }
     final (ip, user, pass) = creds;
 
-    String? text;
-    String? error;
-    try {
-      text = unwrapPage((await runRouterCommand(_client(ip, user, pass), page.command, allowFailure: true)).stdout);
-    } catch (e) {
-      error = plainError(e);
-    }
+    final (text, error) = await _readPage(_client(ip, user, pass), page);
     if (!mounted) return;
     setState(() {
       _loading = false;
       if (error == null && text != null) _insertOlder(page, text);
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scroll.hasClients) return;
-      final max = _scroll.position.maxScrollExtent;
-      final target = (max - anchorFromBottom).clamp(0.0, max);
-      if ((target - _scroll.offset).abs() > 0.5) _scroll.jumpTo(target);
-    });
+    _keepDistanceFromBottom(anchorFromBottom);
     if (error != null && mounted) await AppErrors.system(context, _c, 'Could not read more of the router log: $error');
   }
 

@@ -220,67 +220,20 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   Future<void> _connect() async {
     setState(() => _busy = true);
-    // The work is a closure returning the failure text, if any, rather than presenting it inline.
+    // The work is a method returning the failure text, if any, rather than presenting it inline.
     // Two reasons, and both bit: the CONNECT spinner animates for as long as _busy holds, so a
     // dialog raised from inside leaves it spinning behind (and pumpAndSettle never settles); and
     // an early `return` from a try/finally exits the METHOD, so anything after the block is
-    // skipped. A closure makes the early exits return a value instead of jumping past the code
-    // that shows it.
+    // skipped. A method of its own makes the early exits return a value instead of jumping past
+    // the code that shows it.
     // Merlin is a refusal, not a failed connection: there is nothing to retry, so the login form
     // isn't shown behind it, and OK goes to HOME (ID-359).
     var merlin = false;
-    Future<String?> attempt() async {
-      final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
-      // The credentials have to be on the controller before asking for the session: it keys the
-      // shared connection on them, and a stale key would hand back a session pointed at the
-      // previous router.
-      _c.routerIp = ip;
-      _c.sshUsername = user;
-      _c.sshPassword = pass;
-
-      // The SHARED session, not a fresh SSHClient. Holding a raw client meant the screen kept a
-      // connection that had already gone: six minutes elapsed between connect and APPLY on
-      // 2026-09-08 and the write failed with `errno 103, software caused connection abort`. The app
-      // drops the connection after kBackgroundSessionGrace in the background, and the router can
-      // drop it at any time. RouterSession reopens and retries; a raw client cannot.
-      final SSHClient client = _c.routerSession(
-          () => widget.testClientFactory != null ? widget.testClientFactory!(ip, user, pass) : openSshClient(ip, user, pass));
-      // Force the connection before anything else, so a wrong address or a refused login reports
-      // as itself rather than as whatever the next command happens to be doing (build 413).
-      await client.authenticated;
-
-      final slotSvc = widget.slotServiceFactory?.call(client) ?? RouterSlotService(client);
-      final refusal = await _firmwareRefusal(slotSvc);
-      if (refusal != null) {
-        merlin = refusal.merlin;
-        return refusal.message;
-      }
-
-      final svc = _assignmentService(client);
-      final state = await svc.read();
-      final (slots, active) = await _slotsIfReadable(slotSvc);
-      if (!mounted) return null;
-      _c.routerConnected = true;
-      setState(() {
-        _service = svc;
-        _slotSvc = slotSvc;
-        _state = state;
-        _slotInfo = slots;
-        _activeSlots = active;
-        _sinceCheck = 0;
-        // Staged changes survive leaving the screen and coming back - they live on the session,
-        // not on this State, which is rebuilt from scratch on every entry. Losing a dozen staged
-        // assignments to a glance at the log was the reported bug.
-        // Deliberately NOT cleared here: the staged changes are the user's, and a reconnect is
-        // not a decision to throw them away. apply() re-reads and refuses on a conflict, so
-        // carrying them across a reconnect cannot write anything based on a stale view.
-      });
-      return null;
-    }
-
     String? failure, failureDetail;
     try {
-      failure = await attempt();
+      final result = await _attemptConnect();
+      failure = result.failure;
+      merlin = result.merlin;
     } catch (e) {
       // Plain English on screen, the raw exception in the log (ID-108).
       failure = routerConnectMessage(e, _ipCtrl.text) ?? 'Could not read the device list: $e';
@@ -301,6 +254,56 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       // Under HOME now, so back finds the screen itself rather than a placeholder that never ends.
       setState(() => _autoConnecting = false);
     }
+  }
+
+  /// Connects with the form's login and reads the devices: the failure text, if any, and whether
+  /// it is Merlin's refusal.
+  Future<({String? failure, bool merlin})> _attemptConnect() async {
+    final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
+    // The credentials have to be on the controller before asking for the session: it keys the
+    // shared connection on them, and a stale key would hand back a session pointed at the
+    // previous router.
+    _c.routerIp = ip;
+    _c.sshUsername = user;
+    _c.sshPassword = pass;
+
+    // The SHARED session, not a fresh SSHClient. Holding a raw client meant the screen kept a
+    // connection that had already gone: six minutes elapsed between connect and APPLY on
+    // 2026-09-08 and the write failed with `errno 103, software caused connection abort`. The app
+    // drops the connection after kBackgroundSessionGrace in the background, and the router can
+    // drop it at any time. RouterSession reopens and retries; a raw client cannot.
+    final SSHClient client = _c.routerSession(
+        () => widget.testClientFactory != null ? widget.testClientFactory!(ip, user, pass) : openSshClient(ip, user, pass));
+    // Force the connection before anything else, so a wrong address or a refused login reports
+    // as itself rather than as whatever the next command happens to be doing (build 413).
+    await client.authenticated;
+
+    final slotSvc = widget.slotServiceFactory?.call(client) ?? RouterSlotService(client);
+    final refusal = await _firmwareRefusal(slotSvc);
+    if (refusal != null) {
+      return (failure: refusal.message, merlin: refusal.merlin);
+    }
+
+    final svc = _assignmentService(client);
+    final state = await svc.read();
+    final (slots, active) = await _slotsIfReadable(slotSvc);
+    if (!mounted) return (failure: null, merlin: false);
+    _c.routerConnected = true;
+    setState(() {
+      _service = svc;
+      _slotSvc = slotSvc;
+      _state = state;
+      _slotInfo = slots;
+      _activeSlots = active;
+      _sinceCheck = 0;
+      // Staged changes survive leaving the screen and coming back - they live on the session,
+      // not on this State, which is rebuilt from scratch on every entry. Losing a dozen staged
+      // assignments to a glance at the log was the reported bug.
+      // Deliberately NOT cleared here: the staged changes are the user's, and a reconnect is
+      // not a decision to throw them away. apply() re-reads and refuses on a conflict, so
+      // carrying them across a reconnect cannot write anything based on a stale view.
+    });
+    return (failure: null, merlin: false);
   }
 
   /// Why DEVICES can't work with this router, or null when it can.

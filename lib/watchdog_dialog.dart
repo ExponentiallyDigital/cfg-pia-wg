@@ -791,6 +791,11 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   Widget _statusCard() {
     final status = _status;
     final enabled = status?.isEnabled == true;
+    final state = switch (status) {
+      null => 'Loading...',
+      _ when enabled => 'Enabled',
+      _ => 'Disabled',
+    };
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: kField, borderRadius: BorderRadius.circular(8)),
@@ -802,8 +807,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(status == null ? 'Loading...' : (enabled ? 'Enabled' : 'Disabled'),
-                    style: const TextStyle(color: kText, fontWeight: FontWeight.bold)),
+                Text(state, style: const TextStyle(color: kText, fontWeight: FontWeight.bold)),
                 Text(
                   status?.lastSuccessfulPing == null
                       ? 'Last successful ping: never'
