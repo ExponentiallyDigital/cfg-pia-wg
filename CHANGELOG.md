@@ -79,10 +79,7 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
-- ID-029 DOC: phrase hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
-  - **Andrew's decisions, 2026-10-16:** Claude may edit README.md and SECURITY.md for this item, and puts a note at the top of each file it changes saying iOS support is being prepared. It covers ID-403's wording too.
-  - **Done when:** every hardening claim in both files says which platform it holds on, with ID-403's and ID-404's iOS results stated as measured.
-  - **Built in build 507:** README (the feature list's clipboard, task-switcher, input, exit and widget lines; 5.9 EXIT; sharing) and SECURITY.md (a note at the top that iOS support is being prepared; the clipboard, keyboard, task-switcher, screen capture and widget lines; iCloud backups of the three remembered files, which hold no credential) now say what holds on Android and what on iOS. README already carried Andrew's iOS note at the top. ID-404's iOS clipboard is stated as measured on a simulator in CI. ID-403's cover is stated as "not yet confirmed on an iPhone". Left: take that qualifier out once Andrew's EXT-6 passes.
+`<none>`
 
 ---
 
@@ -156,6 +153,11 @@ Work items for the **current** release:
   - **Sequenced, 2026-10-16:** steps 1 to 3 come where this item sits; steps 4 and 5 come after ID-029, step 4 in its own release with TESTING's DEVICES hand tests. Step 6 is ID-419.
   - **Moved to WIP 2026-10-19:** steps 1 to 3 are being built now, by Andrew's go for the work up to step 3.
   - **Step 1, built in build 508:** `plainError()` in the new `lib/plain_error.dart` replaces all 36 copies of `.toString().replaceAll('Exception: ', '')` across eleven files, the four flagged and seven more; three tests pin what it returns. `kDnsmasqConf`, `kResolvDnsmasq` and `kResolvConf` in `lib/router_dns.dart`, and `kDefaultConnectionLabel` in DEVICES, replace their duplicated literals. Five `const`s added (`applying_panel.dart`, `app_scaffold.dart`, `router_slot_service.dart`, `binary_installer.dart`). Nothing a user sees changes; the full suite passes. Left for Andrew, needing his SonarCloud login: mark the seven router-command findings (`nvram commit` in three files, `nvram get vpnc_clientlist`, `nvram get vpnc_max_conn`, `nvram get sshd_authkeys`, `date +%s`) as won't fix, per his decision.
+  - **Step 2, built in build 509:** first, `test/unit/router_dns_golden_test.dart` wrote ROUTER DNS ROUTING and ROUTER RESOLVER STATUS out word for word from the unchanged code, nine cases that between them run every line of both functions (measured with coverage). Then `buildDnsRouting` became one function per section (pinned devices, everything else, the router's own lookups, the watchdogs, the slots' DNS servers, the verdict, the evidence), and `dnsReportText` one per kind of block, each section's code moved as it was. The goldens pass on the split code, and fail when one character of the output changes. SonarCloud's scores are read after CI.
+- ID-029 DOC: phrase hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
+  - **Andrew's decisions, 2026-10-16:** Claude may edit README.md and SECURITY.md for this item, and puts a note at the top of each file it changes saying iOS support is being prepared. It covers ID-403's wording too.
+  - **Done when:** every hardening claim in both files says which platform it holds on, with ID-403's and ID-404's iOS results stated as measured.
+  - **Built in build 507:** README (the feature list's clipboard, task-switcher, input, exit and widget lines; 5.9 EXIT; sharing) and SECURITY.md (a note at the top that iOS support is being prepared; the clipboard, keyboard, task-switcher, screen capture and widget lines; iCloud backups of the three remembered files, which hold no credential) now say what holds on Android and what on iOS. README already carried Andrew's iOS note at the top. ID-404's iOS clipboard is stated as measured on a simulator in CI. ID-403's cover is stated as "not yet confirmed on an iPhone". Left: take that qualifier out once Andrew's EXT-6 passes.
 
 ---
 
@@ -173,6 +175,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.139 build 509 - SonarCloud fixes, step 2: the two DNS screens' builders split, output pinned word for word
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 2026-10-19 v0.8.138 build 508 - SonarCloud fixes, step 1: one error tidy-up, shared constants
 
