@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import UniformTypeIdentifiers
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -14,6 +15,9 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "CfgPiaWgBuildInfo") {
       BuildInfo.register(with: registrar.messenger())
+    }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "CfgPiaWgClipboard") {
+      SensitiveClipboard.register(with: registrar.messenger())
     }
   }
 }
@@ -103,5 +107,43 @@ enum BuildInfo {
     var text = "\(major).\(digits[2])"
     if digits[3] != "0" { text += ".\(digits[3])" }
     return build == unknown ? text : "\(text) (\(build))"
+  }
+}
+
+/// The clipboard on iOS (ID-404): the channel MainActivity.kt answers on Android, with the same methods.
+/// lib/clipboard_service.dart falls back to Flutter's own clipboard without it, and that clear only
+/// writes an empty string over the copy.
+///
+/// Nothing here reads what is on the clipboard: on iOS that is what shows the "pasted from" banner.
+/// The clear is checked by counting items instead. A copy is kept on this phone (`localOnly`, so
+/// Universal Clipboard doesn't hand it to the user's Mac) and given an expiry, so iOS removes it by
+/// itself even if the app is suspended before its own countdown ends.
+/// ios/RunnerTests/RunnerTests.swift calls `handle` the way the channel does.
+enum SensitiveClipboard {
+  static let channelName = "com.exponentiallydigital.pia_wireguard_cfga/clipboard"
+  static let clearClipboard = "clearClipboard"
+  static let copySensitive = "copySensitive"
+  static let defaultExpirySeconds = 60.0
+
+  static func register(with messenger: FlutterBinaryMessenger) {
+    FlutterMethodChannel(name: channelName, binaryMessenger: messenger).setMethodCallHandler(handle)
+  }
+
+  static func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case clearClipboard:
+      UIPasteboard.general.items = []
+      result(UIPasteboard.general.numberOfItems == 0)
+    case copySensitive:
+      let args = call.arguments as? [String: Any]
+      let text = args?["text"] as? String ?? ""
+      let seconds = (args?["expiresInSeconds"] as? NSNumber)?.doubleValue ?? defaultExpirySeconds
+      UIPasteboard.general.setItems(
+        [[UTType.utf8PlainText.identifier: text]],
+        options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(seconds)])
+      result(nil)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
   }
 }

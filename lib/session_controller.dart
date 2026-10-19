@@ -101,7 +101,7 @@ class LogEntry {
 /// A single periodic tick drives the 60-second clipboard auto-clear countdown.
 class SessionController extends ChangeNotifier {
   SessionController({
-    Duration clipboardTimeout = const Duration(seconds: 60),
+    Duration clipboardTimeout = kClipboardTimeout,
     Duration tickInterval = const Duration(seconds: 1),
     Future<void> Function(String text)? clipboardWriter,
     RouterPrefs? routerPrefs,
