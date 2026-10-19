@@ -114,6 +114,23 @@ class _RouteNames extends NavigatorObserver {
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => pushed.add(route.settings.name);
 }
 
+/// A router whose next read of the device list fails once [failNextRead] is set: the re-read APPLY
+/// does afterwards.
+class _FailingReRead extends RecordingSSHClient {
+  _FailingReRead(String Function(String cmd) responder) : super(responder: responder);
+  bool failNextRead = false;
+
+  @override
+  Future<Uint8List> run(String command,
+      {Map<String, String>? environment, bool runInPty = false, bool stderr = true, bool stdout = true}) async {
+    if (failNextRead && command.contains('cfg_device_list')) {
+      failNextRead = false;
+      throw Exception('fake-fail:re-read');
+    }
+    return super.run(command, environment: environment, runInPty: runInPty, stderr: stderr, stdout: stdout);
+  }
+}
+
 /// A router that holds one command until [release] is called, to look at the screen mid-APPLY.
 class _HeldRouter extends RecordingSSHClient {
   _HeldRouter({required super.responder, required this.holdOn});
@@ -524,6 +541,51 @@ void main() {
     expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isTrue);
     expect(ssh.ran('service restart_dnsmasq'), isTrue);
     expect(ssh.executed.any((x) => x.contains('restart_net_and_phy')), isFalse);
+  });
+
+  // ID-041 step 4 split _apply; these three are the paths no test reached before it.
+  group('APPLY when the router fails', () {
+    Future<void> stageAndApply(WidgetTester tester, {bool confirm = true}) async {
+      await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('pick_5')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('device_apply')));
+      await tester.tap(find.byKey(const Key('device_apply')));
+      await tester.pumpAndSettle();
+      if (!confirm) return;
+      await tester.tap(find.byKey(const Key('apply_confirm')));
+      await tester.pumpAndSettle();
+    }
+
+    RecordingSSHClient failing(List<String> throwOn) {
+      final healthy = _router();
+      return RecordingSSHClient(responder: healthy.responder, throwOn: throwOn);
+    }
+
+    testWidgets('a tunnel check that fails says so in the confirmation, and APPLY can still go ahead', (tester) async {
+      await _pumpConnected(tester, router: failing(const ['latest-handshakes']));
+      await stageAndApply(tester, confirm: false);
+      expect(find.textContaining('The tunnels could not be checked before applying, so whether they are running is not known: '),
+          findsOneWidget);
+      expect(find.byKey(const Key('apply_confirm')), findsOneWidget);
+    });
+
+    testWidgets('a write that fails is reported as such, not as a conflict', (tester) async {
+      await _pumpConnected(tester, router: failing(const ['nvram set vpnc_dev_policy_list']));
+      await stageAndApply(tester);
+      expect(find.textContaining('Could not apply the changes: '), findsOneWidget);
+      expect(find.textContaining('changed while you were editing'), findsNothing);
+    });
+
+    testWidgets('a re-read that fails after a good apply says the changes were applied', (tester) async {
+      final ssh = _FailingReRead(_router().responder!);
+      await _pumpConnected(tester, router: ssh);
+      ssh.failNextRead = true;
+      await stageAndApply(tester);
+      expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isTrue);
+      expect(find.textContaining('Applied, but could not re-read the router: '), findsOneWidget);
+    });
   });
 
   testWidgets('the confirmation warns about a reservation only when one will be created', (tester) async {
