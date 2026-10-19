@@ -606,7 +606,8 @@ class _BuildInfoBlock extends StatelessWidget {
 /// The Router firmware value, in the About block and in the issue: type and version once the router
 /// has been read, the type alone when only this session knows it, and a plain "not detected" otherwise.
 String routerFirmwareStatus({String type = '', String version = ''}) {
-  final t = type.isNotEmpty ? type : (firmwareDetected ? firmwareLabel(routerFirmware) : '');
+  final detected = firmwareDetected ? firmwareLabel(routerFirmware) : '';
+  final t = type.isNotEmpty ? type : detected;
   if (t.isEmpty && version.isEmpty) return 'not detected this session';
   return [t, version].where((part) => part.isNotEmpty).join(' ');
 }
@@ -614,7 +615,11 @@ String routerFirmwareStatus({String type = '', String version = ''}) {
 /// "homegrown" for a copy built without a store key - it cannot sell anything, so it unlocks
 /// everything - and otherwise whether this installation holds the unlock.
 String licenceStatus({required bool purchasingAvailable, required bool unlocked}) =>
-    !purchasingAvailable ? 'homegrown' : (unlocked ? 'licensed' : 'unlicenced');
+    switch ((purchasingAvailable, unlocked)) {
+      (false, _) => 'homegrown',
+      (_, true) => 'licensed',
+      _ => 'unlicenced',
+    };
 
 /// A prefilled "new bug report" URL for the running build.
 ///

@@ -417,11 +417,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
-    final phone = phoneError != null
-        ? "This phone's copy could not be deleted."
-        : onPhone!
-            ? "This phone's copy deleted."
-            : 'None on this phone.';
+    final phone = switch (phoneError) {
+      != null => "This phone's copy could not be deleted.",
+      _ => onPhone! ? "This phone's copy deleted." : 'None on this phone.',
+    };
     if (phoneError != null) _c.logEntry("Could not delete this phone's cached PIA server list: $phoneError", isError: true);
     if (error != null) {
       await AppErrors.system(context, _c,
@@ -569,11 +568,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String? storeError;
     try {
       final found = await (widget.testRestore ?? Entitlement.restore)();
-      message = !found
-          ? RestoreMessages.noneFound
-          : wasUnlocked
-              ? RestoreMessages.alreadyUnlocked
-              : RestoreMessages.restored;
+      message = switch ((found, wasUnlocked)) {
+        (false, _) => RestoreMessages.noneFound,
+        (_, true) => RestoreMessages.alreadyUnlocked,
+        _ => RestoreMessages.restored,
+      };
     } catch (e) {
       message = RestoreMessages.failedPlain;
       storeError = RestoreMessages.failed(e);
