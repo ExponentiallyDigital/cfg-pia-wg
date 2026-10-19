@@ -147,11 +147,14 @@ Work items for the **current** release:
   - **After build 521, 2026-10-19:** CI passed (run 39242922177), and SonarCloud shows 8 open, from 95 before step 1: exactly the watchdog's and the slot service's, left for the firmware abstraction (ID-419). Steps 1 to 5 are done. Left before this item closes: Andrew's DEVICES hand tests (DEV-2, DEV-4 to DEV-8, DEV-11, DEV-18 to DEV-20; DEF-1, DEF-3, DEF-8) on build 521 or later, then a release of its own.
 - ID-434 DOC: **drafts of the App Store listing text, the privacy answers and the age rating answers, in `app-store/`.** From BACKLOG 1.3, 2026-10-19. Needs no Apple account.
   - **Done when:** the drafts are in `app-store/`, within Apple's limits, and Andrew has read them.
+  - **Drafted in build 523:** `app-store/description.md` (3,335 of 4,000 characters, from Play's, with screenshot blocking, Recent Apps and keyboard learning taken out, since none holds on iOS, and a line saying the app offers no VPN itself), `app-store/listing.md` (name, subtitle, promotional text, keywords, categories, URLs) and `app-store/privacy_and_age_rating.md` ("Data Not Collected", with why for each kind of data, to revisit at ID-401; every age question None, so 4+). `test/unit/app_store_listing_test.dart` holds each field to Apple's limit and fails if another platform is named; seen to fail with the subtitle one character over. `app-store/README.md` lists Andrew's decisions: the price on iOS until ID-401, the name, and ID-430. Left: Andrew reads them.
 - ID-435 DOC: **a draft of the App Review notes, in `app-store/`.** From BACKLOG 1.3, 2026-10-19. The reviewer has no ASUS router or PIA account (guideline 2.1); the notes say the app configures a router and offers no VPN itself (5.4), and why PIA is named (5.2).
   - **Done when:** the draft is in `app-store/` and Andrew has read it.
+  - **Drafted in build 523:** `app-store/review_notes.md`: what the app is and isn't (a router configuration tool; no VPN on the phone, no Network Extension), why PIA is named, how to review without a router (a demo video, ID-456, and what works without one, GENERATE included), the one permission, and no account, tracking or purchase. Left: Andrew reads it, and the video's link goes in.
 - ID-430 DEC: **Apple's export compliance answer, decided and set in `Info.plist`.** From BACKLOG 1.3, 2026-10-19. Claude sets out the facts first: SSH runs on dartssh2's own Dart cryptography, not Apple's, and HTTPS on the platform's.
   - **Done when:** Andrew has decided, `ITSAppUsesNonExemptEncryption` is set to match, and an upload asks no encryption question.
 
+  - **Facts written in build 523:** `app-store/export_compliance.md`: SSH on dartssh2's own Dart cryptography, HTTPS on the TLS built into the Flutter engine (neither Apple's), WireGuard keys made on the phone, and RSA and Ed25519 used only to authenticate; all standard algorithms. Apple's page on export compliance could not be fetched, so the file says which answer fits is Andrew's to decide, not Claude's. Left: Andrew decides, then `Info.plist` is set.
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -168,6 +171,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.153 build 523 - App Store listing, review notes and export compliance facts drafted
+
+```play
+• Behind the scenes: groundwork for an iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 2026-10-19 v0.8.152 build 522 - every open item INVEST-ready; the email layout in a file of its own
 
