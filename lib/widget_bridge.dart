@@ -171,11 +171,12 @@ Map<String, Object> buildWidgetData(WidgetStatus status, {required DateTime now,
   String stateOf(WidgetTunnelInfo t) => t.answering ? 'answering' : 'down';
 
   final more = status.tunnels.length - 2;
+  final moreTunnels = more == 1 ? 'tunnel' : 'tunnels';
   final data = <String, Object>{
     'badge': badgeName(),
     'down_count': status.tunnels.where((t) => !t.answering).length,
     'tunnel_count': status.tunnels.length,
-    'overflow_text': more > 0 ? '+$more more tunnel${more == 1 ? '' : 's'}' : '',
+    'overflow_text': more > 0 ? '+$more more $moreTunnels' : '',
     'last_checked_text': _lastCheckedText(status.checkedAt, now),
     'can_refresh': canRefresh,
     'compact_badge_text': _compactBadgeText(status),
