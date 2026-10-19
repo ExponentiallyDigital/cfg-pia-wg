@@ -86,23 +86,77 @@ class Enable extends LiveAction {
   String toString() => 'enable wgc$slot';
 }
 
+/// DEVICES' name field and APPLY: [name] as the device's own name, empty to clear it.
+class Rename extends LiveAction {
+  const Rename(this.mac, this.name);
+  final String mac, name;
+  @override
+  String toString() => name.isEmpty ? 'clear $mac\'s name' : 'rename $mac to "$name"';
+}
+
+/// DEVICES' Disabled, and picking a connection again: Time Scheduling's block for [mac], on or off.
+class Block extends LiveAction {
+  const Block(this.mac, this.on);
+  final String mac;
+  final bool on;
+  @override
+  String toString() => '${on ? 'disable' : 'enable'} $mac';
+}
+
+/// A check e2e.sh doesn't make, read from the router by the run itself.
+sealed class RouterCheck {
+  const RouterCheck();
+}
+
+/// `custom_clientlist` names [mac] [name], or has no record for it when [name] is empty.
+class NameIs extends RouterCheck {
+  const NameIs(this.mac, this.name);
+  final String mac, name;
+}
+
+/// No `rc_service` or `notify_rc` line in the router log between `before` and `after`.
+class NoServiceCall extends RouterCheck {
+  const NoServiceCall();
+}
+
+/// Time Scheduling blocks [mac], with its three DROP rules, or holds nothing at all.
+class BlockedIs extends RouterCheck {
+  const BlockedIs(this.mac, this.on);
+  final String mac;
+  final bool on;
+}
+
+/// The policy record still pins [ip] to [index], enabled.
+class PinKept extends RouterCheck {
+  const PinKept(this.ip, this.index);
+  final String ip;
+  final int index;
+}
+
 /// One checked test: [setup] before `e2e.sh <id> before`, [actions] between it and `after`, and
-/// [cleanup] once the check has passed.
+/// [cleanup] once the check has passed. [checks] are made after `after`, and must all hold too.
 class LiveStep {
-  const LiveStep(this.id, {this.setup = const [], required this.actions, required this.expect, this.cleanup = const []});
+  const LiveStep(this.id,
+      {this.setup = const [], required this.actions, this.expect = const [], this.checks = const [], this.cleanup = const []});
   final String id;
   final List<LiveAction> setup, actions, cleanup;
   final List<String> expect;
+  final List<RouterCheck> checks;
 }
 
 /// TESTING.md's DEVICES and default connection tests that need no device in hand, in its order,
 /// with its expectations. [t] and [d] are TABLET's and DESKTOP's addresses, [i1] and [i5] the index 6
 /// of wgc1 and wgc5.
 ///
-/// Two differ from the sheet. DEV-11b is DEV-11's last step, ENABLE wgc5 and TABLET moves to it
-/// without reassigning, given an id of its own so it gets a check. DEF-4 is the router side only:
-/// the sheet's DEF-4 is the exit IP on a device, which stays a hand check.
-List<LiveStep> buildPlan({required String t, required String d, required int i1, required int i5}) => [
+/// Some differ from the sheet. A step's second half has an id of its own, with a `b`, so it gets a
+/// check: DEV-11b is ENABLE wgc5 and TABLET moving to it without reassigning, DEV-18b clearing the
+/// name, DEV-19b and DEV-20b enabling TABLET again. DEF-4 is the router side only: the sheet's DEF-4
+/// is the exit IP on a device, which stays a hand check. DEV-18 to DEV-20 come last, after DEF-8,
+/// where the sheet's start state for them holds again, so a failure there costs none of the others.
+/// [tmac] is TABLET's MAC, and [tabletName] the name it has now, empty for none: DEV-18 puts it back.
+List<LiveStep> buildPlan(
+        {required String t, required String d, required int i1, required int i5, String tmac = '', String tabletName = ''}) =>
+    [
       LiveStep('DEV-4', actions: [Pin({t: i1})], expect: ['rule $t $i1', 'guard $t $i1', 'exit $t wgc1']),
       LiveStep('DEV-5', actions: [Pin({t: i5})], expect: ['rule $t $i5', 'guard $t $i5', 'exit $t wgc5']),
       LiveStep('DEV-6a', actions: [Pin({t: 0})], expect: ['rule $t main', 'noguard $t', 'exit $t WAN']),
@@ -139,7 +193,80 @@ List<LiveStep> buildPlan({required String t, required String d, required int i1,
           expect: ['guard $d $i1', 'exit $d BLOCKED'],
           cleanup: [const Enable(1), Pin({d: i5})]),
       LiveStep('DEF-8', actions: [const SetDefault(0)], expect: ['default 0', 'up wgc1', 'up wgc5', 'exit $t WAN']),
+      LiveStep('DEV-18', actions: [Rename(tmac, 'DN-Test Name')], checks: [NameIs(tmac, 'DN-Test Name'), const NoServiceCall()]),
+      LiveStep('DEV-18b',
+          actions: [Rename(tmac, '')],
+          checks: [NameIs(tmac, '')],
+          cleanup: [if (tabletName.isNotEmpty) Rename(tmac, tabletName)]),
+      LiveStep('DEV-19', actions: [Block(tmac, true)], checks: [BlockedIs(tmac, true)]),
+      LiveStep('DEV-19b', actions: [Block(tmac, false)], checks: [BlockedIs(tmac, false)]),
+      LiveStep('DEV-20',
+          setup: [Pin({t: i1})],
+          actions: [Block(tmac, true)],
+          expect: ['rule $t $i1', 'guard $t $i1'],
+          checks: [PinKept(t, i1), BlockedIs(tmac, true)]),
+      LiveStep('DEV-20b',
+          actions: [Block(tmac, false)],
+          expect: ['rule $t $i1', 'guard $t $i1', 'exit $t wgc1'],
+          checks: [BlockedIs(tmac, false)]),
     ];
+
+/// The `custom_clientlist` record for [mac], or null when it has none. Records are `<`-separated,
+/// fields `>`-separated, the name first and the MAC second.
+List<String>? _nameRecord(String raw, String mac) {
+  for (final r in raw.split('<')) {
+    final f = r.split('>');
+    if (f.length > 1 && f[1].trim().toUpperCase() == mac.toUpperCase()) return f;
+  }
+  return null;
+}
+
+/// What is wrong with [raw], `nvram get custom_clientlist`, for [NameIs].
+List<String> nameProblems(String raw, String mac, String name) {
+  final rec = _nameRecord(raw.trim(), mac);
+  if (name.isEmpty) return [if (rec != null) 'custom_clientlist still has a record for $mac: "${rec.first}"'];
+  if (rec == null) return ['custom_clientlist has no record for $mac'];
+  return [if (rec.first != name) 'custom_clientlist names $mac "${rec.first}", not "$name"'];
+}
+
+/// What is wrong for [BlockedIs], from the `MULTIFILTER_` lines of `nvram show` and the lines of
+/// `iptables -S` that name [mac]. The start state has Time Scheduling off and empty, so enabling the
+/// device again must leave it exactly that.
+List<String> blockProblems(String multifilter, String iptables, String mac, bool on) {
+  final keys = <String, String>{
+    for (final l in multifilter.split('\n'))
+      if (l.contains('=')) l.substring(0, l.indexOf('=')).trim(): l.substring(l.indexOf('=') + 1).trim(),
+  };
+  final drops = iptables.split('\n').where((l) => l.contains('DROP') && l.toUpperCase().contains(mac.toUpperCase()));
+  final chains = {for (final l in drops) l.split(RegExp(r'\s+')).elementAtOrNull(1) ?? ''};
+  if (!on) {
+    return [
+      if (keys['MULTIFILTER_ALL'] != '0') 'MULTIFILTER_ALL is "${keys['MULTIFILTER_ALL']}", not 0',
+      if ((keys['MULTIFILTER_MAC'] ?? '').isNotEmpty) 'MULTIFILTER_MAC still holds "${keys['MULTIFILTER_MAC']}"',
+      if (drops.isNotEmpty) 'iptables still drops $mac in ${chains.join(', ')}',
+    ];
+  }
+  final macs = (keys['MULTIFILTER_MAC'] ?? '').split('>').map((m) => m.toUpperCase()).toList();
+  final at = macs.indexOf(mac.toUpperCase());
+  final modes = (keys['MULTIFILTER_ENABLE'] ?? '').split('>');
+  return [
+    if (keys['MULTIFILTER_ALL'] != '1') 'MULTIFILTER_ALL is "${keys['MULTIFILTER_ALL']}", not 1',
+    if (keys['MULTIFILTER_BLOCK_ALL'] != '0') 'MULTIFILTER_BLOCK_ALL is "${keys['MULTIFILTER_BLOCK_ALL']}", not 0',
+    if (at < 0) 'MULTIFILTER_MAC does not hold $mac',
+    if (at >= 0 && modes.elementAtOrNull(at) != '2') 'MULTIFILTER_ENABLE for $mac is "${modes.elementAtOrNull(at)}", not 2',
+    for (final c in ['FORWARD', 'PControls', 'WGNPControls'])
+      if (!chains.contains(c)) 'no DROP rule for $mac in $c',
+  ];
+}
+
+/// What is wrong for [PinKept], from `nvram get vpnc_dev_policy_list`.
+List<String> pinKeptProblems(String policyList, String ip, int index) => [
+      if (assignedIndexFor(parseDevicePolicyList(policyList), ip) != index) '$ip is no longer pinned to $index',
+    ];
+
+/// What the router log's service-call count says for [NoServiceCall].
+List<String> serviceCallProblems(int before, int after) =>
+    [if (after != before) '${after - before} service call(s) logged during the step'];
 
 // An expectation is words, addresses and numbers. Anything else would be shell, and is refused
 // rather than quoted.
@@ -177,6 +304,7 @@ class StartState {
     required this.i1,
     required this.i5,
     required this.upTunnels,
+    this.timeSchedulingClear = true,
   });
 
   final bool stock, e2ePresent;
@@ -189,6 +317,9 @@ class StartState {
 
   /// The `wgcN` interfaces that are up.
   final Set<String> upTunnels;
+
+  /// Time Scheduling off, with nothing in its list: DEV-19's start state, and what it leaves.
+  final bool timeSchedulingClear;
 }
 
 /// Every reason the run must not start, each a line beginning STOP. Empty means go.
@@ -210,6 +341,9 @@ List<String> preflightProblems(StartState s, LiveConfig c) {
     if (!s.upTunnels.contains('wgc$slot')) out.add('STOP: wgc$slot is not running.');
   }
   if ((s.defaultIndex ?? 0) != 0) out.add('STOP: the default connection is not Internet.');
+  if (!s.timeSchedulingClear) {
+    out.add('STOP: Time Scheduling is on or lists a device. Turn it off and empty it in the web interface.');
+  }
   return out;
 }
 
@@ -225,3 +359,8 @@ List<String> preflightProblems(StartState s, LiveConfig c) {
   if (changes.isEmpty && newDefault == null) return null;
   return (changes: changes, newDefault: newDefault);
 }
+
+/// What puts TABLET's name and internet access back: enable it if it is disabled, and give it the
+/// name it started with if it has another. Null for either when nothing needs doing.
+({bool? unblock, String? rename}) deviceRestoreFor({required bool blocked, required String nameNow, required String nameAtStart}) =>
+    (unblock: blocked ? true : null, rename: nameNow == nameAtStart ? null : nameAtStart);

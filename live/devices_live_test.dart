@@ -15,6 +15,7 @@ library;
 
 import 'dart:io';
 
+import 'package:cfg_pia_wg/device_assignment.dart';
 import 'package:cfg_pia_wg/device_assignment_service.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_command.dart';
@@ -55,6 +56,10 @@ class _LiveRun {
   final Set<int> _disabled = {};
   final Set<int> _pausedWatchdogs = {};
 
+  // TABLET's MAC, and the name it started with, which the restore gives back.
+  String _tmac = '';
+  String _tabletName = '';
+
   void _say(String line) {
     // ignore: avoid_print
     print(line);
@@ -87,9 +92,14 @@ class _LiveRun {
       failures.addAll(stops);
       return;
     }
-    final plan = buildPlan(t: config.tablet, d: config.desktop, i1: start.i1!, i5: start.i5!);
-    _say('Start state holds. wgc1 is table ${start.i1}, wgc5 is table ${start.i5}.');
-    if (!start.devices.firstWhere((d) => d.ip == config.tablet).reserved) {
+    final tablet = start.devices.firstWhere((d) => d.ip == config.tablet);
+    _tmac = tablet.mac;
+    _tabletName = tablet.customName ?? '';
+    final plan = buildPlan(
+        t: config.tablet, d: config.desktop, i1: start.i1!, i5: start.i5!, tmac: _tmac, tabletName: _tabletName);
+    _say('Start state holds. wgc1 is table ${start.i1}, wgc5 is table ${start.i5}. TABLET is $_tmac, '
+        '${_tabletName.isEmpty ? 'with no name of its own' : 'named "$_tabletName"'}.');
+    if (!tablet.reserved) {
       _say('TABLET has no reservation, so DEV-4 creates one, as on the sheet.');
     } else {
       _say('TABLET already has a reservation, so DEV-4 does not test creating one.');
@@ -97,7 +107,7 @@ class _LiveRun {
     if (!config.go) {
       _say('The plan, not run. Set CFG_LIVE_GO=1 to run it:');
       for (final s in plan) {
-        _say('  ${s.id}: ${[...s.setup, ...s.actions]} then ${s.expect}');
+        _say('  ${s.id}: ${[...s.setup, ...s.actions]} then ${s.expect} ${s.checks.map((c) => c.runtimeType).toList()}');
       }
       return;
     }
@@ -123,6 +133,7 @@ class _LiveRun {
       i1: _indexFor(state, 1),
       i5: _indexFor(state, 5),
       upTunnels: {for (final l in up) if (l.startsWith('wgc')) l.split('@').first},
+      timeSchedulingClear: !state.parental.on && state.parental.entries.isEmpty,
     );
   }
 
@@ -140,15 +151,25 @@ class _LiveRun {
         await _act(a);
       }
       await _sh(e2eCommand(step.id, 'before'));
+      final callsBefore = await _serviceCalls();
       for (final a in step.actions) {
         await _act(a);
       }
+      final callsAfter = await _serviceCalls();
       final out = await _sh(e2eCommand(step.id, 'after', step.expect));
       _say(out);
-      if (!e2ePassed(step.id, out)) {
-        failures.add('${step.id}: FAIL');
+      final problems = [
+        if (!e2ePassed(step.id, out)) 'e2e.sh did not pass',
+        for (final c in step.checks) ...await _check(c, callsBefore, callsAfter),
+      ];
+      for (final p in problems) {
+        _say('    FAIL  $p');
+      }
+      if (problems.isNotEmpty) {
+        failures.add('${step.id}: ${problems.join('; ')}');
         return false;
       }
+      if (step.checks.isNotEmpty) _say('    PASS  ${step.checks.length} router check(s)');
       for (final a in step.cleanup) {
         await _act(a);
       }
@@ -171,18 +192,46 @@ class _LiveRun {
         await _disable(slot);
       case Enable(:final slot):
         await _enable(slot);
+      case Rename(:final mac, :final name):
+        await _apply(renames: {mac: name});
+      case Block(:final mac, :final on):
+        await _apply(blocks: {mac: on});
     }
   }
 
-  // As DEVICES' APPLY builds its request: reservations for devices that need one, from a fresh read.
-  Future<void> _apply({Map<String, int?> changes = const {}, int? newDefault}) async {
+  Future<int> _serviceCalls() async =>
+      int.tryParse((await _sh('grep -cE "rc_service|notify_rc" /tmp/syslog.log')).trim()) ?? 0;
+
+  Future<List<String>> _check(RouterCheck c, int callsBefore, int callsAfter) async => switch (c) {
+        NameIs(:final mac, :final name) => nameProblems(await _sh('nvram get custom_clientlist'), mac, name),
+        NoServiceCall() => serviceCallProblems(callsBefore, callsAfter),
+        BlockedIs(:final mac, :final on) => blockProblems(
+            await _sh('nvram show 2>/dev/null | grep -E "^MULTIFILTER_(ALL|BLOCK_ALL|ENABLE|MAC)="'),
+            await _sh('iptables -S | grep -i "$mac"'),
+            mac,
+            on),
+        PinKept(:final ip, :final index) => pinKeptProblems(await _sh('nvram get vpnc_dev_policy_list'), ip, index),
+      };
+
+  // As DEVICES' APPLY builds its request, from a fresh read: reservations for devices that need one,
+  // the router's device type with a new name so its icon stays, and the name Time Scheduling shows.
+  Future<void> _apply(
+      {Map<String, int?> changes = const {}, int? newDefault, Map<String, String> renames = const {}, Map<String, bool> blocks = const {}}) async {
     final base = await _devices.read();
+    LanDevice byMac(String mac) => base.devices.firstWhere((d) => d.mac == mac, orElse: () => LanDevice(mac: mac));
     await _devices.apply(
       base: base,
       request: ApplyRequest(
         changes: changes,
         reservationsToCreate: reservationsFor(base.devices, changes),
         newDefaultIndex: newDefault,
+        renames: renames,
+        deviceTypes: {
+          for (final mac in renames.keys)
+            if (byMac(mac).type != null) mac: byMac(mac).type!,
+        },
+        blocks: blocks,
+        blockNames: {for (final mac in blocks.keys) mac: byMac(mac).displayName},
       ),
     );
   }
@@ -219,6 +268,12 @@ class _LiveRun {
       }
     }
     try {
+      final named = await _devices.read();
+      final tablet = named.devices.where((d) => d.mac == _tmac).firstOrNull;
+      final device = deviceRestoreFor(
+          blocked: named.parental.isBlocked(_tmac), nameNow: tablet?.customName ?? '', nameAtStart: _tabletName);
+      if (device.unblock ?? false) await _act(Block(_tmac, false));
+      if (device.rename != null) await _act(Rename(_tmac, device.rename!));
       final now = await _devices.read();
       final undo = restoreFor(policies: now.policies, defaultIndex: now.defaultIndex, ips: [config.tablet, config.desktop]);
       if (undo != null) await _apply(changes: undo.changes, newDefault: undo.newDefault);
