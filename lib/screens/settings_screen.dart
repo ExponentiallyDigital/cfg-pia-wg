@@ -129,45 +129,91 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _c.rememberRouterIp(ip);
   }
 
-  Future<void> _uninstall() async {
-    final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: kSurface,
-            title: const Text('Remove cfg-pia-wg from the router?', style: TextStyle(color: kHighlight, fontSize: 14)),
-            content: const SingleChildScrollView(
-              child: Text(
-                'This will remove your watchdog reconfigure history, every setting the app '
-                'wrote to your router, and any watchdog schedules. It puts back the two boot '
-                'scripts the app replaced, and deletes $kRouterAppDir along with everything '
-                'in it - the watchdog scripts, the cached PIA certificate and server list, and the '
-                'helper binaries.\n\n'
-                'Your VPN tunnels are NOT touched. They keep working, and you can manage them '
-                "from your router's own web interface.\n\n"
-                'Devices pinned to a tunnel keep their pin but lose the fail-closed guard: '
-                'whenever their tunnel is down, they reach the internet through the default '
-                'connection, which may be your internet connection with no VPN.\n\n'
-                'The app itself keeps working. Deploying a watchdog again puts everything back.',
-                style: TextStyle(color: kText, fontSize: 12),
-              ),
+  /// The shared router session, opened with this login if there isn't one.
+  SSHClient _session(String ip, String user, String pass) =>
+      _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+
+  /// Runs [action] with the screen busy, and reports a failure as every action here does: plain
+  /// English on screen, the raw exception in the log (ID-108). [failure] starts the sentence when the
+  /// cause isn't a connection problem. True when it worked and the screen is still there.
+  Future<bool> _onRouter(String ip, String failure, Future<void> Function() action) async {
+    setState(() => _busy = true);
+    String? error, errorDetail;
+    try {
+      await action();
+    } catch (e) {
+      final plain = routerConnectMessage(e, ip);
+      errorDetail = plain == null ? null : e.toString();
+      error = plain ?? plainError(e);
+    }
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return false;
+    if (error != null) {
+      await AppErrors.system(context, _c, errorDetail == null ? '$failure: $error' : error, logDetail: errorDetail);
+      return false;
+    }
+    return true;
+  }
+
+  /// A row's action, or nothing while another runs.
+  VoidCallback? _unlessBusy(VoidCallback action) => _busy ? null : action;
+
+  /// Says, in the log and on screen, why a stock-only setting changes nothing on this router.
+  void _notStock(RouterFirmware? firmware, String onMerlin) {
+    final message = firmware == RouterFirmware.merlin ? onMerlin : 'This router firmware is not supported, so nothing was changed.';
+    _c.logEntry(message);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// A yes-or-no question before something that can't be taken back, with its two buttons keyed for
+  /// the tests as `settings_<key>_cancel` and `settings_<key>_confirm`.
+  Future<bool> _ask({required String key, required String title, required Widget body, required String confirmLabel}) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: kSurface,
+          title: Text(title, style: const TextStyle(color: kHighlight, fontSize: 14)),
+          content: body,
+          actions: [
+            AppButton(
+              keyValue: 'settings_${key}_cancel',
+              label: 'CANCEL',
+              role: ButtonRole.dismiss,
+              onPressed: () => Navigator.pop(ctx, false),
             ),
-            actions: [
-              AppButton(
-                keyValue: 'settings_uninstall_cancel',
-                label: 'CANCEL',
-                role: ButtonRole.dismiss,
-                onPressed: () => Navigator.pop(ctx, false),
-              ),
-              AppButton(
-                keyValue: 'settings_uninstall_confirm',
-                label: 'REMOVE',
-                role: ButtonRole.destructive,
-                onPressed: () => Navigator.pop(ctx, true),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+            AppButton(
+              keyValue: 'settings_${key}_confirm',
+              label: confirmLabel,
+              role: ButtonRole.destructive,
+              onPressed: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  Future<void> _uninstall() async {
+    final confirmed = await _ask(
+      key: 'uninstall',
+      title: 'Remove cfg-pia-wg from the router?',
+      confirmLabel: 'REMOVE',
+      body: const SingleChildScrollView(
+        child: Text(
+          'This will remove your watchdog reconfigure history, every setting the app '
+          'wrote to your router, and any watchdog schedules. It puts back the two boot '
+          'scripts the app replaced, and deletes $kRouterAppDir along with everything '
+          'in it - the watchdog scripts, the cached PIA certificate and server list, and the '
+          'helper binaries.\n\n'
+          'Your VPN tunnels are NOT touched. They keep working, and you can manage them '
+          "from your router's own web interface.\n\n"
+          'Devices pinned to a tunnel keep their pin but lose the fail-closed guard: '
+          'whenever their tunnel is down, they reach the internet through the default '
+          'connection, which may be your internet connection with no VPN.\n\n'
+          'The app itself keeps working. Deploying a watchdog again puts everything back.',
+          style: TextStyle(color: kText, fontSize: 12),
+        ),
+      ),
+    );
     if (!confirmed || !mounted) return;
     if (!await _reallySure() || !mounted) return;
 
@@ -175,28 +221,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (creds == null || !mounted) return;
     final (ip, user, pass) = creds;
 
-    setState(() => _busy = true);
-    List<String>? done;
-    String? error, errorDetail;
-    try {
-      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      done = await RouterWatchdog(client, onLog: _c.onLog).uninstallFromRouter();
+    var done = const <String>[];
+    final ok = await _onRouter(ip, 'Could not remove the app from the router', () async {
+      done = await RouterWatchdog(_session(ip, user, pass), onLog: _c.onLog).uninstallFromRouter();
       await _connected(ip);
-    } catch (e) {
-      // Plain English on screen, the raw exception in the log (ID-108).
-      final plain = routerConnectMessage(e, ip);
-      errorDetail = plain == null ? null : e.toString();
-      error = plain ?? plainError(e);
-    }
-    if (mounted) setState(() => _busy = false);
-    if (!mounted) return;
-    if (error != null) {
-      await AppErrors.system(context, _c, errorDetail == null ? 'Could not remove the app from the router: $error' : error,
-          logDetail: errorDetail);
-      return;
-    }
-    // What happened, itemised. "Restored yours" and "removed ours" are different outcomes and the
-    // user is entitled to know which of the two they got for each script.
+    });
+    if (ok && mounted) await _showUninstalled(done);
+  }
+
+  /// What happened, itemised. "Restored yours" and "removed ours" are different outcomes and the
+  /// user is entitled to know which of the two they got for each script.
+  Future<void> _showUninstalled(List<String> done) async {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -205,7 +240,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           // What was done in the body colour, what was not done - nothing there, or not the app's -
           // in red, so a second uninstall reads as the no-op it is (ID-287, Andrew's request).
-          for (final line in done!)
+          for (final line in done)
             Text(line, style: TextStyle(color: uninstallStepDidNothing(line) ? kError : kText, fontSize: 12)),
           // Amber, and set apart. The cron entries are gone but a running watchdog process is
           // not, and the firmware keeps its own idea of what is configured until it restarts.
@@ -329,7 +364,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     var deleted = false;
     String? error, errorDetail;
     try {
-      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      final client = _session(ip, user, pass);
       deleted = await RouterWatchdog(client, onLog: _c.onLog).deleteCachedPiaCert();
       await _connected(ip);
     } catch (e) {
@@ -358,56 +393,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (creds == null || !mounted) return;
     final (ip, user, pass) = creds;
 
-    final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: kSurface,
-            title: const Text('Delete the cached PIA server lists?', style: TextStyle(color: kHighlight, fontSize: 14)),
-            content: const SingleChildScrollView(
-              child: Text(
-                "Removes $kPiaServerListPath from the router, and this phone's copy. Each is the last PIA server "
-                "list that passed PIA's signature check, kept so a list that fails can be refused without "
-                'stopping a rebuild or CREATE.\n\n'
-                'The next list that passes is kept again. Until then, a list that fails is refused outright. '
-                'Nothing else is changed.',
-                style: TextStyle(color: kText, fontSize: 12),
-              ),
-            ),
-            actions: [
-              AppButton(
-                keyValue: 'settings_del_servers_cancel',
-                label: 'CANCEL',
-                role: ButtonRole.dismiss,
-                onPressed: () => Navigator.pop(ctx, false),
-              ),
-              AppButton(
-                keyValue: 'settings_del_servers_confirm',
-                label: 'DELETE',
-                role: ButtonRole.destructive,
-                onPressed: () => Navigator.pop(ctx, true),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final confirmed = await _ask(
+      key: 'del_servers',
+      title: 'Delete the cached PIA server lists?',
+      confirmLabel: 'DELETE',
+      body: const SingleChildScrollView(
+        child: Text(
+          "Removes $kPiaServerListPath from the router, and this phone's copy. Each is the last PIA server "
+          "list that passed PIA's signature check, kept so a list that fails can be refused without "
+          'stopping a rebuild or CREATE.\n\n'
+          'The next list that passes is kept again. Until then, a list that fails is refused outright. '
+          'Nothing else is changed.',
+          style: TextStyle(color: kText, fontSize: 12),
+        ),
+      ),
+    );
     if (!confirmed || !mounted) return;
 
     setState(() => _busy = true);
     // The phone's copy first: it needs no router, so a router that can't be reached doesn't keep it.
-    bool? onPhone;
-    String? phoneError;
-    try {
-      onPhone = await _serverListStore.remove();
-      _c.logEntry(onPhone ? "Deleted this phone's cached PIA server list." : 'No cached PIA server list on this phone.',
-          isSuccess: onPhone);
-    } catch (e) {
-      phoneError = e.toString();
-    }
+    final (onPhone, phoneError) = await _deletePhoneServerList();
     var onRouter = false;
     String? error, errorDetail;
     try {
-      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      onRouter = await RouterWatchdog(client, onLog: _c.onLog).deleteCachedServerList();
+      onRouter = await RouterWatchdog(_session(ip, user, pass), onLog: _c.onLog).deleteCachedServerList();
       await _connected(ip);
     } catch (e) {
       // Plain English on screen, the raw exception in the log (ID-108).
@@ -428,7 +437,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           logDetail: errorDetail);
       return;
     }
-    if (phoneError != null) {
+    await _reportServerListsDeleted(onRouter: onRouter, phone: phone, phoneFailed: phoneError != null);
+  }
+
+  /// This phone's copy of the server list: whether there was one, or why it could not be deleted.
+  Future<(bool?, String?)> _deletePhoneServerList() async {
+    try {
+      final onPhone = await _serverListStore.remove();
+      _c.logEntry(onPhone ? "Deleted this phone's cached PIA server list." : 'No cached PIA server list on this phone.',
+          isSuccess: onPhone);
+      return (onPhone, null);
+    } catch (e) {
+      return (null, e.toString());
+    }
+  }
+
+  /// Both copies gone, or the phone's could not be: a popup for that, which the user dismisses.
+  Future<void> _reportServerListsDeleted({required bool onRouter, required String phone, required bool phoneFailed}) async {
+    if (phoneFailed) {
       await AppErrors.system(context, _c, "${onRouter ? "The router's copy deleted." : 'None on the router.'} $phone");
       return;
     }
@@ -442,57 +468,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (creds == null || !mounted) return;
     final (ip, user, pass) = creds;
 
-    final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: kSurface,
-            title: const Text('Reboot the router?', style: TextStyle(color: kHighlight, fontSize: 14)),
-            content: const Text(
-              'Are you sure? This will disconnect all devices including WiFi connections.',
-              style: TextStyle(color: kText, fontSize: 12),
-            ),
-            actions: [
-              AppButton(
-                keyValue: 'settings_reboot_cancel',
-                label: 'CANCEL',
-                role: ButtonRole.dismiss,
-                onPressed: () => Navigator.pop(ctx, false),
-              ),
-              AppButton(
-                keyValue: 'settings_reboot_confirm',
-                label: 'REBOOT',
-                role: ButtonRole.destructive,
-                onPressed: () => Navigator.pop(ctx, true),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final confirmed = await _ask(
+      key: 'reboot',
+      title: 'Reboot the router?',
+      confirmLabel: 'REBOOT',
+      body: const Text(
+        'Are you sure? This will disconnect all devices including WiFi connections.',
+        style: TextStyle(color: kText, fontSize: 12),
+      ),
+    );
     if (!confirmed || !mounted) return;
 
-    setState(() => _busy = true);
-    String? error, errorDetail;
     var bootBefore = '';
-    try {
-      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      final wd = RouterWatchdog(client, onLog: _c.onLog);
+    final ok = await _onRouter(ip, 'Could not reboot the router', () async {
+      final wd = RouterWatchdog(_session(ip, user, pass), onLog: _c.onLog);
       // Read before asking, so "it restarted" can be checked rather than assumed (ID-335).
       bootBefore = await wd.bootId();
       await wd.rebootRouter();
       await _connected(ip);
-    } catch (e) {
-      // Plain English on screen, the raw exception in the log (ID-108).
-      final plain = routerConnectMessage(e, ip);
-      errorDetail = plain == null ? null : e.toString();
-      error = plain ?? plainError(e);
-    }
-    if (mounted) setState(() => _busy = false);
-    if (!mounted) return;
-    if (error != null) {
-      await AppErrors.system(context, _c, errorDetail == null ? 'Could not reboot the router: $error' : error,
-          logDetail: errorDetail);
-      return;
-    }
+    });
+    if (!ok || !mounted) return;
     // The shared connection went down with the router; the next action opens a fresh one.
     unawaited(_c.closeRouterSession());
     final target = splitHostPort(ip);
@@ -523,7 +518,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String after = '';
     try {
       await _c.closeRouterSession();
-      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      final client = _session(ip, user, pass);
       after = await RouterWatchdog(client, onLog: _c.onLog).bootId();
     } catch (_) {}
     final String message;
@@ -601,7 +596,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final creds = await _credentials();
     if (creds == null || !mounted) return;
     final (ip, user, pass) = creds;
-    final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+    final client = _session(ip, user, pass);
     await Navigator.of(context).push<void>(MaterialPageRoute(
       settings: RouteSettings(name: AppDestination.settings.routeName),
       builder: (_) => screen(client: client, onLoaded: () => _connected(ip)),
@@ -617,38 +612,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (creds == null || !mounted) return;
     final (ip, user, pass) = creds;
 
-    setState(() => _busy = true);
     RouterSlotService? svc;
     RouterFirmware? firmware;
     var current = kDefaultStockMaxActiveSlots;
-    String? error, errorDetail;
-    try {
-      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
-      svc = RouterSlotService(client, onLog: _c.onLog);
-      firmware = classifyFirmwareTag(await svc.readFirmwareTag());
-      if (firmware == RouterFirmware.stock) current = await svc.readMaxActiveVpns();
+    final read = await _onRouter(ip, 'Could not read the router', () async {
+      svc = RouterSlotService(_session(ip, user, pass), onLog: _c.onLog);
+      firmware = classifyFirmwareTag(await svc!.readFirmwareTag());
+      if (firmware == RouterFirmware.stock) current = await svc!.readMaxActiveVpns();
       await _connected(ip);
-    } catch (e) {
-      // Plain English on screen, the raw exception in the log (ID-108).
-      final plain = routerConnectMessage(e, ip);
-      errorDetail = plain == null ? null : e.toString();
-      error = plain ?? plainError(e);
-    }
-    if (mounted) setState(() => _busy = false);
-    if (!mounted) return;
-    if (error != null) {
-      await AppErrors.system(context, _c, errorDetail == null ? 'Could not read the router: $error' : error,
-          logDetail: errorDetail);
-      return;
-    }
-    if (firmware != RouterFirmware.stock || svc == null) {
+    });
+    if (!read || !mounted) return;
+    final stock = svc;
+    if (firmware != RouterFirmware.stock || stock == null) {
       // Merlin has no such key and no such limit; writing it there would create a setting nothing reads.
-      final message = firmware == RouterFirmware.merlin
-          ? 'Merlin has no limit on active VPNs, so there is nothing to change.'
-          : 'This router firmware is not supported, so nothing was changed.';
-      _c.logEntry(message);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-      return;
+      return _notStock(firmware, 'Merlin has no limit on active VPNs, so there is nothing to change.');
     }
 
     final chosen = await showDialog<int>(context: context, builder: (_) => _MaxVpnsDialog(current: current));
@@ -658,22 +635,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    setState(() => _busy = true);
-    try {
-      await svc.setMaxActiveVpns(chosen);
-    } catch (e) {
-      // Plain English on screen, the raw exception in the log (ID-108).
-      final plain = routerConnectMessage(e, ip);
-      errorDetail = plain == null ? null : e.toString();
-      error = plain ?? plainError(e);
-    }
-    if (mounted) setState(() => _busy = false);
-    if (!mounted) return;
-    if (error != null) {
-      await AppErrors.system(context, _c, errorDetail == null ? 'Could not change the limit: $error' : error,
-          logDetail: errorDetail);
-      return;
-    }
+    if (!await _onRouter(ip, 'Could not change the limit', () => stock.setMaxActiveVpns(chosen)) || !mounted) return;
     final message = 'Maximum active VPNs set to $chosen.';
     _c.logEntry(message, isWarning: chosen > 2);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -702,7 +664,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // GENERATE on a phone that already has a key replaces it: the old line goes in the same write.
     final old = await _widgetKeyStore.read();
     try {
-      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      final client = _session(ip, user, pass);
       await WidgetKeyRouterService(client, onLog: _c.onLog)
           .install(publicKeyLine, replacing: old == null ? null : widgetKeyPairFromSeed(old).publicKeyBytes);
       await _connected(ip);
@@ -722,7 +684,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (creds == null || !mounted) return "Cancelled - nothing was removed from your router or this phone.";
     final (ip, user, pass) = creds;
     try {
-      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+      final client = _session(ip, user, pass);
       final n = await WidgetKeyRouterService(client, onLog: _c.onLog).removeAll();
       _c.logEntry('Removed $n widget key(s) from the router.', isSuccess: true);
       await _connected(ip);
@@ -752,63 +714,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (creds == null || !mounted) return;
     final (ip, user, pass) = creds;
 
-    setState(() => _busy = true);
     DeviceAssignmentService? svc;
     RouterFirmware? firmware;
     var blocked = false;
-    String? error, errorDetail;
-    try {
-      final client = _c.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
+    final read = await _onRouter(ip, 'Could not read the router', () async {
+      final client = _session(ip, user, pass);
       firmware = classifyFirmwareTag(await RouterSlotService(client, onLog: _c.onLog).readFirmwareTag());
-      if (firmware != null) setRouterFirmware(firmware);
+      if (firmware != null) setRouterFirmware(firmware!);
       if (firmware == RouterFirmware.stock) {
         svc = DeviceAssignmentService(client, onLog: _c.onLog);
-        blocked = await svc.readPingBlock();
+        blocked = await svc!.readPingBlock();
       }
       await _connected(ip);
-    } catch (e) {
-      // Plain English on screen, the raw exception in the log (ID-108).
-      final plain = routerConnectMessage(e, ip);
-      errorDetail = plain == null ? null : e.toString();
-      error = plain ?? plainError(e);
-    }
-    if (mounted) setState(() => _busy = false);
-    if (!mounted) return;
-    if (error != null) {
-      await AppErrors.system(context, _c, errorDetail == null ? 'Could not read the router: $error' : error,
-          logDetail: errorDetail);
-      return;
-    }
-    if (firmware != RouterFirmware.stock || svc == null) {
+    });
+    if (!read || !mounted) return;
+    final stock = svc;
+    if (firmware != RouterFirmware.stock || stock == null) {
       // Merlin's own kill switch already holds a VPN client's traffic, pings included.
-      final message = firmware == RouterFirmware.merlin
-          ? "Merlin's own kill switch already covers this, so there is nothing to change."
-          : 'This router firmware is not supported, so nothing was changed.';
-      _c.logEntry(message);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-      return;
+      return _notStock(firmware, "Merlin's own kill switch already covers this, so there is nothing to change.");
     }
 
     final chosen = await showDialog<bool>(context: context, builder: (_) => _SecureStartupDialog(blocked: blocked));
     if (chosen == null || chosen == blocked || !mounted) return;
 
-    setState(() => _busy = true);
     var held = false, pinned = true;
-    try {
-      held = await svc.setPingBlock(chosen);
-      if (chosen && !held) pinned = await svc.anyPinned();
-    } catch (e) {
-      final plain = routerConnectMessage(e, ip);
-      errorDetail = plain == null ? null : e.toString();
-      error = plain ?? plainError(e);
-    }
-    if (mounted) setState(() => _busy = false);
-    if (!mounted) return;
-    if (error != null) {
-      await AppErrors.system(context, _c, errorDetail == null ? 'Could not change secure startup: $error' : error,
-          logDetail: errorDetail);
-      return;
-    }
+    final changed = await _onRouter(ip, 'Could not change secure startup', () async {
+      held = await stock.setPingBlock(chosen);
+      if (chosen && !held) pinned = await stock.anyPinned();
+    });
+    if (!changed || !mounted) return;
+    final (message, ok) = _secureStartupOutcome(chosen: chosen, held: held, pinned: pinned);
+    // What didn't go as asked is a popup the user dismisses; a snackbar is gone in four seconds (ID-368).
+    if (!ok) return AppErrors.warning(context, _c, message);
+    _c.logEntry(message, isSuccess: true);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// What SECURE STARTUP says after a change, and whether it went as asked.
+  (String, bool) _secureStartupOutcome({required bool chosen, required bool held, required bool pinned}) {
     final (String message, bool ok) = switch ((chosen, held, pinned)) {
       (true, true, _) => (
           "Secure startup on: devices not on a VPN can't ping the internet. Devices on a VPN still ping through "
@@ -830,10 +773,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       (false, false, _) => ('Secure startup off: every device can ping the internet again.', true),
     };
-    // What didn't go as asked is a popup the user dismisses; a snackbar is gone in four seconds (ID-368).
-    if (!ok) return AppErrors.warning(context, _c, message);
-    _c.logEntry(message, isSuccess: true);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    return (message, ok);
   }
 
   Future<void> _forgetRouterIp() async {
@@ -889,7 +829,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           note: 'Restarts the router. Everything on your network loses its connection while it comes back.',
           icon: Icons.restart_alt_outlined,
           destructive: true,
-          onTap: _busy ? null : _rebootRouter,
+          onTap: _unlessBusy(_rebootRouter),
         ),
         // Two read-only windows on the router's name lookups (ID-194), each with an icon used nowhere
         // else in the app. Neither changes anything, so neither is behind the paywall.
@@ -899,7 +839,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           note: 'Checks the router is answering name lookups, and shows the files and settings behind them. '
               'Changes nothing.',
           icon: Icons.troubleshoot_outlined,
-          onTap: _busy ? null : () => _openDnsReport(DnsReportScreen.resolver),
+          onTap: _unlessBusy(() => _openDnsReport(DnsReportScreen.resolver)),
         ),
         _Action(
           keyValue: 'settings_dns_routing',
@@ -907,7 +847,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           note: "Shows where each device's, the router's and the watchdogs' lookups go: through a tunnel, or to the "
               'Internet. Changes nothing.',
           icon: Icons.alt_route_outlined,
-          onTap: _busy ? null : () => _openDnsReport(DnsReportScreen.routing),
+          onTap: _unlessBusy(() => _openDnsReport(DnsReportScreen.routing)),
         ),
         // ID-376: makes or removes the widget's key, on the router and the phone. The dialog itself
         // reads the current state, so nothing here needs it in advance. Android only: iOS has no
@@ -919,7 +859,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             note: "Makes or removes the key the home screen widget will use to check your router's status "
                 'on its own.',
             icon: Icons.key_outlined,
-            onTap: _busy ? null : _widgetKey,
+            onTap: _unlessBusy(_widgetKey),
           ),
         // The router address and its host key fingerprint are kept on the phone, so they need a way to
         // be cleared. Greyed out when there is nothing stored.
@@ -930,7 +870,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             label: 'FORGET ROUTER IP',
             note: 'Deletes the remembered router address. No router SSH credentials are stored on this device.',
             icon: Icons.wifi_off_outlined,
-            onTap: _c.rememberedRouterIp.isEmpty || _busy ? null : _forgetRouterIp,
+            onTap: _c.rememberedRouterIp.isEmpty ? null : _unlessBusy(_forgetRouterIp),
           ),
         ),
         _Action(
@@ -938,7 +878,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           label: 'REMOVE CACHED PIA CERT',
           note: 'Removes $kPiaCaCertPath. The watchdog downloads a fresh copy on its next run.',
           icon: Icons.gpp_bad_outlined,
-          onTap: _busy ? null : _deletePiaCert,
+          onTap: _unlessBusy(_deletePiaCert),
         ),
         // ID-325: both copies of the last server list that passed PIA's signature check.
         _Action(
@@ -947,7 +887,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           note: "Removes $kPiaServerListPath and this phone's copy: the last PIA server lists that passed "
               "PIA's signature check. The next list that passes is kept again.",
           icon: Icons.dns_outlined,
-          onTap: _busy ? null : _deleteServerLists,
+          onTap: _unlessBusy(_deleteServerLists),
         ),
         // A user decision behind a plain warning, and deliberately not written up outside the code - see
         // RouterSlotService.setMaxActiveVpns. Red because the warning is the point of the row.
@@ -957,7 +897,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           note: 'Unsupported by ASUS. Lets more than the default of 2 VPNs run at once, on stock firmware.',
           icon: Icons.warning_amber_outlined,
           destructive: true,
-          onTap: _busy ? null : _maxActiveVpns,
+          onTap: _unlessBusy(_maxActiveVpns),
         ),
         // ID-356: hidden once the router is known to be Merlin, whose own kill switch covers it. Before
         // the firmware is known it shows, and says on tap if there is nothing to change, as MAX ACTIVE
@@ -968,7 +908,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             label: 'SECURE STARTUP',
             note: 'Stops devices on a VPN leaking pings while the router starts.',
             icon: Icons.security_outlined,
-            onTap: _busy ? null : _secureStartup,
+            onTap: _unlessBusy(_secureStartup),
           ),
         // The only row here that gives something back rather than removing it. It is on this screen
         // because this is where the app's one-off actions live, and because someone hunting for it
@@ -980,7 +920,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             note: 'Recovers the unlock on a new phone or after a reinstall. Nothing is stored on this device: '
                 'the purchase belongs to your Google account.',
             icon: Icons.restore_outlined,
-            onTap: _busy ? null : _restorePurchase,
+            onTap: _unlessBusy(_restorePurchase),
           ),
         _Action(
           keyValue: 'settings_uninstall',
@@ -989,7 +929,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'watchdog schedules and every setting the app wrote. Your VPN tunnels are left alone.',
           icon: Icons.delete_forever_outlined,
           destructive: true,
-          onTap: _busy ? null : _uninstall,
+          onTap: _unlessBusy(_uninstall),
         ),
         if (_busy) ...[
           const SizedBox(height: 24),
