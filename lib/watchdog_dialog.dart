@@ -504,14 +504,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   }
 
   Future<void> _save() async {
-    if (_jqMissing) {
-      await AppErrors.system(context, _c, 'Cannot save: $_jqLabel is not installed on the router.');
-      return;
-    }
-    if (_bootDirMissing) {
-      await AppErrors.system(context, _c, kBootDirMissingMessage);
-      return;
-    }
+    if (!await _routerReady() || !mounted) return;
     // Drop focus so the keyboard retracts and the last-edited field loses its green border; a
     // field still looking editable while a save runs is the other half of what made this read as
     // nothing having happened. Nothing waits on it - the progress overlay is not in the scroll
@@ -525,23 +518,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     final region = _regionCtrl.text.trim();
     final enabled = _status?.isEnabled == true;
     final regionChanges = !enabled || region != _regionIdOf(widget.regionDesc);
-    // Every problem at once, in the order the fields appear: the region is at the top of the form, so
-    // it comes first. A made-up region used to be reported only once the SMTP fields below it were
-    // right, one dialog at a time (ID-202).
-    final String? regionProblem;
-    if (region.isEmpty) {
-      regionProblem = 'Choose a region first.';
-    } else if (regionChanges) {
-      regionProblem = await _whileChecking(() => _regionProblem(region));
-    } else {
-      regionProblem = null;
-    }
-    if (!mounted) return;
-    final errors = [if (regionProblem != null) regionProblem, ...cfg.validate()];
-    if (errors.isNotEmpty) {
-      await AppErrors.inputs(context, _c, errors);
-      return;
-    }
+    if (!await _formIsValid(cfg, region, regionChanges)) return;
 
     String? newDesc;
     if (regionChanges) {
@@ -550,23 +527,74 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     }
 
     // Before a single NVRAM key is written (ID-120).
+    if (!await _piaAllowsDeploy(cfg)) return;
+
+    final (saved, didNothing) = await _deploy(cfg, newDesc);
+    if (saved == null || !mounted) return;
+    if (!await _reportDeploy(cfg, saved, didNothing) || !mounted) return;
+    // The deploy worked, so the logins on the form are proven: offer them to the password manager.
+    // Closing the form without this cancelled the offer (ID-225).
+    TextInput.finishAutofillContext();
+    // No enable here: deployWatchdog brings the slot up itself. This used to call enableVpnSlot
+    // again for a slot that started empty, which bounced the tunnel the deploy's immediate script
+    // run had just established - two `service restart_vpnc` calls on stock for one deploy.
+    Navigator.of(context).pop();
+  }
+
+  /// The two things a deploy needs on the router before anything else is asked.
+  Future<bool> _routerReady() async {
+    if (_jqMissing) {
+      await AppErrors.system(context, _c, 'Cannot save: $_jqLabel is not installed on the router.');
+      return false;
+    }
+    if (_bootDirMissing) {
+      await AppErrors.system(context, _c, kBootDirMissingMessage);
+      return false;
+    }
+    return true;
+  }
+
+  /// Every problem at once, in the order the fields appear: the region is at the top of the form, so
+  /// it comes first. A made-up region used to be reported only once the SMTP fields below it were
+  /// right, one dialog at a time (ID-202).
+  Future<bool> _formIsValid(WatchdogConfig cfg, String region, bool regionChanges) async {
+    final String? regionProblem;
+    if (region.isEmpty) {
+      regionProblem = 'Choose a region first.';
+    } else if (regionChanges) {
+      regionProblem = await _whileChecking(() => _regionProblem(region));
+    } else {
+      regionProblem = null;
+    }
+    if (!mounted) return false;
+    final errors = [if (regionProblem != null) regionProblem, ...cfg.validate()];
+    if (errors.isEmpty) return true;
+    await AppErrors.inputs(context, _c, errors);
+    return false;
+  }
+
+  /// PIA's answer to the login on the form: refused stops the deploy; unreachable asks first.
+  Future<bool> _piaAllowsDeploy(WatchdogConfig cfg) async {
     final pia = await _whileChecking(() => _piaCheck(cfg));
-    if (!mounted) return;
+    if (!mounted) return false;
     if (pia.outcome == 'rejected') {
       await AppErrors.inputs(context, _c, [pia.message]);
-      return;
+      return false;
     }
-    if (pia.outcome == 'down') {
-      final go = await _confirmDeployWhilePiaDown(pia.message);
-      _c.logEntry(
-          go
-              ? 'Could not check the PIA credentials: ${pia.message}. Deploying anyway; the router asks PIA for itself, '
-                  'and keeps trying until it answers.'
-              : 'Not deployed: ${pia.message}. Nothing on the router was changed.',
-          isWarning: true);
-      if (!go || !mounted) return;
-    }
+    if (pia.outcome != 'down') return true;
+    final go = await _confirmDeployWhilePiaDown(pia.message);
+    _c.logEntry(
+        go
+            ? 'Could not check the PIA credentials: ${pia.message}. Deploying anyway; the router asks PIA for itself, '
+                'and keeps trying until it answers.'
+            : 'Not deployed: ${pia.message}. Nothing on the router was changed.',
+        isWarning: true);
+    return go && mounted;
+  }
 
+  /// The deploy: '' when the alert email went or was not due, otherwise why it did not, or null when
+  /// the deploy failed (reported); and, when its first run did nothing, why.
+  Future<(String?, String?)> _deploy(WatchdogConfig cfg, String? newDesc) async {
     String? didNothing;
     final saved = await _withService((svc) async {
       // Pre-save reachability check over the WAN; warns but still allows saving (spec 2.1.3).
@@ -588,7 +616,11 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       didNothing = svc.lastDeployDidNothing;
       return problem;
     }, applying: true);
-    if (saved == null || !mounted) return;
+    return (saved, didNothing);
+  }
+
+  /// What a deploy that worked has to say first. False keeps the form open.
+  Future<bool> _reportDeploy(WatchdogConfig cfg, String saved, String? didNothing) async {
     // The deploy worked, but its email did not, and only the router's log said so (ID-300). Nobody
     // looks there, so say it here, and keep the form open to fix the email settings. No offer to
     // the password manager: the SMTP login may be the very thing that is wrong, as with TEST EMAIL.
@@ -598,22 +630,15 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
           _c,
           'The watchdog is deployed, but its alert email could not be sent: ${saved.replaceFirst(RegExp(r'\.$'), '')}. '
           'Check the email settings, then TEST EMAIL or SAVE & DEPLOY again.');
-      return;
+      return false;
     }
     // Scheduled, but its first run did nothing, so nothing is proved yet (ID-327). Said here, not
     // only in the app log, which nobody reads unprompted. The settings are fine: the form closes.
     if (didNothing != null) {
       await AppErrors.system(context, _c,
           'The watchdog is scheduled, but $didNothing. It runs again in ${cfg.cronIntervalMinutes} minutes; check ROUTER LOG then.');
-      if (!mounted) return;
     }
-    // The deploy worked, so the logins on the form are proven: offer them to the password manager.
-    // Closing the form without this cancelled the offer (ID-225).
-    TextInput.finishAutofillContext();
-    // No enable here: deployWatchdog brings the slot up itself. This used to call enableVpnSlot
-    // again for a slot that started empty, which bounced the tunnel the deploy's immediate script
-    // run had just established - two `service restart_vpnc` calls on stock for one deploy.
-    Navigator.of(context).pop();
+    return true;
   }
 
   Future<void> _testEmail() async {
@@ -639,8 +664,6 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final status = _status;
-    final enabled = status?.isEnabled == true;
     // A full screen, not a dialog (418). This is a long form - ping targets, a schedule, five
     // email fields - and as a card it had a height nobody could get right. Twice it shipped with
     // the SAVE row and its spinner below the fold and the content refusing to scroll (409, then
@@ -681,31 +704,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
               Text(widget.regionDesc.isEmpty ? '(no region set)' : widget.regionDesc,
                   style: const TextStyle(color: kMuted, fontSize: 12)),
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: kField, borderRadius: BorderRadius.circular(8)),
-                child: Row(
-                  children: [
-                    Icon(enabled ? Icons.check_circle : Icons.cancel, color: enabled ? kHighlight : kMuted, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(status == null ? 'Loading...' : (enabled ? 'Enabled' : 'Disabled'),
-                              style: const TextStyle(color: kText, fontWeight: FontWeight.bold)),
-                          Text(
-                            status?.lastSuccessfulPing == null
-                                ? 'Last successful ping: never'
-                                : 'Last successful ping: ${status!.lastSuccessfulPing}',
-                            style: const TextStyle(color: kMuted, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _statusCard(),
               if (_jqMissing) ...[
                 const SizedBox(height: 12),
                 Text('$_jqLabel is not installed on the router — install jq before enabling.',
@@ -737,11 +736,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _field(_piaUserCtrl, 'PIA username', const Key('wd_pia_user'), autofillHints: const [AutofillHints.username]),
-                    _field(_piaPassCtrl, 'PIA password', const Key('wd_pia_pass'),
-                        obscure: !_piaPassVisible,
-                        onToggle: () => setState(() => _piaPassVisible = !_piaPassVisible),
-                        visible: _piaPassVisible,
-                        autofillHints: const [AutofillHints.password]),
+                    _passwordField(_piaPassCtrl, 'PIA password', const Key('wd_pia_pass'),
+                        visible: _piaPassVisible, onToggle: () => setState(() => _piaPassVisible = !_piaPassVisible)),
                   ],
                 ),
               ),
@@ -753,34 +749,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
                 value: _emailEnabled,
                 onChanged: _loading ? null : (v) => setState(() => _emailEnabled = v),
               ),
-              if (_emailEnabled) ...[
-                _field(_fromCtrl, 'From', const Key('wd_from')),
-                _field(_toCtrl, 'To', const Key('wd_to')),
-                _field(_subjectCtrl, 'Subject', const Key('wd_subject')),
-                _field(_smtpServerCtrl, 'SMTP server (host:port)', const Key('wd_smtp_server')),
-                AutofillGroup(
-                  onDisposeAction: AutofillContextAction.cancel,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _field(_smtpUserCtrl, 'SMTP username', const Key('wd_smtp_user'),
-                          autofillHints: const [AutofillHints.username]),
-                      _field(_smtpPassCtrl, 'SMTP password', const Key('wd_smtp_pass'),
-                          obscure: !_smtpPassVisible,
-                          onToggle: () => setState(() => _smtpPassVisible = !_smtpPassVisible),
-                          visible: _smtpPassVisible,
-                          autofillHints: const [AutofillHints.password]),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                AppButton(
-                  keyValue: 'wd_test_email',
-                  label: 'TEST EMAIL',
-                  icon: Icons.mail_outline,
-                  onPressed: _loading ? null : _testEmail,
-                ),
-              ],
+              if (_emailEnabled) ..._emailFields(),
               const SizedBox(height: 16),
               AppButton(
                 keyValue: 'wd_save',
@@ -818,20 +787,89 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     ));
   }
 
+  /// Whether the watchdog is running, and when its tunnel last answered.
+  Widget _statusCard() {
+    final status = _status;
+    final enabled = status?.isEnabled == true;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: kField, borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        children: [
+          Icon(enabled ? Icons.check_circle : Icons.cancel, color: enabled ? kHighlight : kMuted, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(status == null ? 'Loading...' : (enabled ? 'Enabled' : 'Disabled'),
+                    style: const TextStyle(color: kText, fontWeight: FontWeight.bold)),
+                Text(
+                  status?.lastSuccessfulPing == null
+                      ? 'Last successful ping: never'
+                      : 'Last successful ping: ${status!.lastSuccessfulPing}',
+                  style: const TextStyle(color: kMuted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The email section, shown while alerts are on.
+  List<Widget> _emailFields() => [
+        _field(_fromCtrl, 'From', const Key('wd_from')),
+        _field(_toCtrl, 'To', const Key('wd_to')),
+        _field(_subjectCtrl, 'Subject', const Key('wd_subject')),
+        _field(_smtpServerCtrl, 'SMTP server (host:port)', const Key('wd_smtp_server')),
+        AutofillGroup(
+          onDisposeAction: AutofillContextAction.cancel,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _field(_smtpUserCtrl, 'SMTP username', const Key('wd_smtp_user'), autofillHints: const [AutofillHints.username]),
+              _passwordField(_smtpPassCtrl, 'SMTP password', const Key('wd_smtp_pass'),
+                  visible: _smtpPassVisible, onToggle: () => setState(() => _smtpPassVisible = !_smtpPassVisible)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        AppButton(
+          keyValue: 'wd_test_email',
+          label: 'TEST EMAIL',
+          icon: Icons.mail_outline,
+          onPressed: _loading ? null : _testEmail,
+        ),
+      ];
+
+  /// A password field, with the eye that shows or hides it.
+  Widget _passwordField(TextEditingController ctrl, String label, Key key,
+          {required bool visible, required VoidCallback onToggle}) =>
+      _field(
+        ctrl,
+        label,
+        key,
+        obscure: !visible,
+        autofillHints: const [AutofillHints.password],
+        suffix: GestureDetector(
+          onTap: onToggle,
+          child: Icon(visible ? Icons.visibility_off : Icons.visibility, color: kMuted, size: 18),
+        ),
+      );
+
   Widget _field(
     TextEditingController ctrl,
     String label,
     Key key, {
     bool obscure = false,
     TextInputType? keyboard,
-    VoidCallback? onToggle,
-//    bool enableInteractiveSelection = true, // disable copy if password field is revealed
-    bool visible = false,
+    Widget? suffix,
     // Only the credentials carry hints. Ping targets, mail addresses and the SMTP host are not
     // secrets and a password manager has no business filling them.
     List<String> autofillHints = const <String>[],
   }) {
-    final toggleIcon = visible ? Icons.visibility_off : Icons.visibility;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: TextField(
@@ -851,12 +889,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
           filled: true,
           fillColor: kField,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: kBorder)),
-          suffixIcon: onToggle == null
-              ? null
-              : GestureDetector(
-                  onTap: onToggle,
-                  child: Icon(toggleIcon, color: kMuted, size: 18),
-                ),
+          suffixIcon: suffix,
         ),
       ),
     );
