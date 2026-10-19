@@ -4,6 +4,7 @@
 </h1>
 <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/v/release/ExponentiallyDigital/cfg-pia-wg?color=0969DA" alt="Release"></a> 
 <a href="https://www.android.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-Android-57606A?logo=android&logoColor=white" alt="Platform"></a> 
+<a href="https://www.apple.com/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/platform-iOS-57606A?&logoColor=white" alt="Platform"></a> 
 <a href="https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/github/license/ExponentiallyDigital/cfg-pia-wg?color=0969DA" alt="License"></a> 
 <a href="https://github.com/ExponentiallyDigital/ExponentiallyDigital/security/policy" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/security-policy-57606A" alt="Security Policy"></a> 
 </br>
@@ -22,7 +23,7 @@
 
 ---
 
-A native Android app for Private Internet Access (PIA) WireGuard VPNs on ASUS routers, stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) (beta).
+A native Android app for Private Internet Access (PIA) WireGuard VPNs on ASUS routers, stock firmware or [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) (beta). 2026-10-19, iOS support is now in progress!
 
 **Device assignment.** Which device is on which VPN? On stock firmware, your router can't easily tell you. It thinks in slots: five numbered WireGuard clients, and finding out which devices use one generally requires stopping it and seeing what breaks, or what goes out in the clear. `cfg-pia-wg` thinks in devices. One screen lists everything on your network and the VPN each device is using right now. Moving a device to a different VPN - or off VPN entirely - is taps away. No slot numbers, nothing to stop first, and no deciphering a multi-click WebUI apparently designed by a sadist.
 
