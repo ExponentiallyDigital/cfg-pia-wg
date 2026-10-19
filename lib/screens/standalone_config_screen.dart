@@ -37,6 +37,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/common_fields.dart';
 import '../widgets/error_presenter.dart';
 import '../widgets/region_picker_sheet.dart';
+import '../plain_error.dart';
 
 class StandaloneConfigScreen extends StatefulWidget {
   final PiaService? service;
@@ -153,7 +154,7 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _loadingRegions = false); // stop the spinner before the (awaited) error modal
-        await AppErrors.system(context, _controller, 'Failed to load regions: ${e.toString().replaceAll('Exception: ', '')}');
+        await AppErrors.system(context, _controller, 'Failed to load regions: ${plainError(e)}');
       }
     } finally {
       if (mounted) setState(() => _loadingRegions = false);
@@ -198,7 +199,7 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
       // The AutofillGroups cancel on dispose, so nothing is offered on any other path.
       TextInput.finishAutofillContext();
     } catch (e) {
-      if (mounted) await AppErrors.system(context, _controller, e.toString().replaceAll('Exception: ', ''));
+      if (mounted) await AppErrors.system(context, _controller, plainError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

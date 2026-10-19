@@ -46,6 +46,7 @@ import 'error_presenter.dart';
 import 'log_buttons.dart';
 import 'paywall.dart';
 import 'region_picker_sheet.dart';
+import '../plain_error.dart';
 
 /// Shown in the DIALOG when an ENABLE fails, and deliberately not written to the app log: an
 /// explanation that helps at the moment of failure is noise in a log read later, and the log
@@ -226,7 +227,7 @@ class _SlotModalState extends State<SlotModal> {
     }
     await _refresh();
     if (mounted) setState(() => _processing = false);
-    if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
+    if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
     return error == null;
   }
 
@@ -302,7 +303,7 @@ class _SlotModalState extends State<SlotModal> {
       }
       await RegionPickerSheet.show(context, regions: regions, onSelected: (id) => chosen = regions.firstWhere((r) => r.id == id));
     } catch (e) {
-      if (mounted) await AppErrors.system(context, _c, 'Failed to load regions: ${e.toString().replaceAll('Exception: ', '')}');
+      if (mounted) await AppErrors.system(context, _c, 'Failed to load regions: ${plainError(e)}');
     }
     return chosen;
   }
@@ -341,7 +342,7 @@ class _SlotModalState extends State<SlotModal> {
             .generateConfig(region: regionId, selected: region, username: user, password: pass, dns: dns, onProgress: _c.onLog);
         return null;
       } catch (e) {
-        final msg = e.toString().replaceAll('Exception: ', '');
+        final msg = plainError(e);
         _c.logEntry(msg, isError: true);
         return msg;
       }
@@ -393,7 +394,7 @@ class _SlotModalState extends State<SlotModal> {
     }
     if (mounted) setState(() => _processing = false);
     if (readError != null) {
-      if (mounted) await AppErrors.system(context, _c, readError.toString().replaceAll('Exception: ', ''));
+      if (mounted) await AppErrors.system(context, _c, plainError(readError));
       return;
     }
 
@@ -423,7 +424,7 @@ class _SlotModalState extends State<SlotModal> {
     await _refresh();
     if (mounted) setState(() => _processing = false);
     if (error != null && mounted) {
-      final message = error.toString().replaceAll('Exception: ', '');
+      final message = plainError(error);
       // A tunnel that came up and was never answered, or one that never came up at all, is almost
       // always a PIA registration that has gone stale - and rebuilding it is the fix. Offer it here
       // rather than describing it and leaving the user to work out which button that is (ID-094).
@@ -492,7 +493,7 @@ class _SlotModalState extends State<SlotModal> {
     } finally {
       if (mounted) setState(() => _processing = false);
     }
-    if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
+    if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
     if (params == null || !mounted) return;
 
     final saved = await showDialog<bool>(
@@ -661,7 +662,7 @@ class _SlotModalState extends State<SlotModal> {
     }
     await _refresh();
     if (mounted) setState(() => _processing = false);
-    if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
+    if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
   }
 
   Future<void> _viewWatchdogLog() async {
@@ -678,7 +679,7 @@ class _SlotModalState extends State<SlotModal> {
     } finally {
       if (mounted) setState(() => _processing = _reading = false);
     }
-    if (error != null && mounted) await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
+    if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
     if (log == null || !mounted) return;
     final logText = log.isEmpty ? '(watchdog log is empty)' : log;
     // A PAGE, not a dialog. Reported 2026-09-10: selecting the whole log put Android's own
@@ -716,7 +717,7 @@ class _SlotModalState extends State<SlotModal> {
       if (mounted) setState(() => _processing = false);
     }
     if (error != null && mounted) {
-      await AppErrors.system(context, _c, error.toString().replaceAll('Exception: ', ''));
+      await AppErrors.system(context, _c, plainError(error));
     } else {
       _c.logEntry('Watchdog log cleared for wgc$slot.', isSuccess: true);
     }
@@ -1284,7 +1285,7 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
     } catch (e) {
       if (mounted) {
         await AppErrors.system(context, widget.controller, 'Could not read the watchdog log: '
-            '${e.toString().replaceAll('Exception: ', '')}');
+            '${plainError(e)}');
       }
     } finally {
       if (mounted) setState(() => _refreshing = false);

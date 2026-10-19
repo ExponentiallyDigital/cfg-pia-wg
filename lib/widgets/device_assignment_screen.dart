@@ -42,6 +42,9 @@ import 'applying_panel.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
 
+/// What DEVICES calls the router's default route, the one a device with no tunnel uses.
+const String kDefaultConnectionLabel = 'Default connection';
+
 class DeviceAssignmentScreen extends StatefulWidget {
   const DeviceAssignmentScreen({
     super.key,
@@ -710,7 +713,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             ),
           if (_stagedDefault != null)
             _ChangeLine(
-              name: 'Default connection',
+              name: kDefaultConnectionLabel,
               from: _labelForIndex(state.defaultIndex ?? 0),
               to: _labelForIndex(_stagedDefault ?? 0),
             ),
@@ -954,7 +957,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         background: kConfigBg,
         borderColour: kHighlight,
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Default connection', style: TextStyle(color: kHighlight, fontSize: 12)),
+          const Text(kDefaultConnectionLabel, style: TextStyle(color: kHighlight, fontSize: 12)),
           const SizedBox(height: 4),
           _PickerButton(
             keyValue: 'default_picker',
@@ -1063,7 +1066,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     final chosen = await showDialog<Object?>(
       context: context,
       builder: (ctx) => _PickerDialog(
-        title: 'Default connection',
+        title: kDefaultConnectionLabel,
         children: [
           _pickerTile(ctx, key: 'default_pick_internet', label: 'Internet', note: 'no VPN', value: 0),
           for (final p in _wireguardProfiles)

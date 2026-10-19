@@ -22,6 +22,7 @@ import 'dart:typed_data';
 import 'package:x25519/x25519.dart' as x25519;
 
 import 'server_list_signature.dart';
+import 'plain_error.dart';
 
 class WgServer {
   final String ip, cn;
@@ -292,7 +293,7 @@ class PiaService {
       throw '$kPiaCredentialsRejected (HTTP ${e.status})';
     } catch (e) {
       // Clean up any internal "Exception:" text if it exists
-      final cleanMsg = e.toString().replaceAll('Exception: ', '');
+      final cleanMsg = plainError(e);
       throw 'Auth error: $cleanMsg';
     }
   }
