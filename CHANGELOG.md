@@ -155,6 +155,12 @@ Work items for the **current** release:
   - **Done when:** Andrew has decided, `ITSAppUsesNonExemptEncryption` is set to match, and an upload asks no encryption question.
 
   - **Facts written in build 523:** `app-store/export_compliance.md`: SSH on dartssh2's own Dart cryptography, HTTPS on the TLS built into the Flutter engine (neither Apple's), WireGuard keys made on the phone, and RSA and Ed25519 used only to authenticate; all standard algorithms. Apple's page on export compliance could not be fetched, so the file says which answer fits is Andrew's to decide, not Claude's. Left: Andrew decides, then `Info.plist` is set.
+- ID-457 TST: **the DEVICES and default connection tests that need no device in hand run unattended against a live router.** Andrew's requirement, 2026-10-19: automate the hand tests wherever possible. Today each [script] test needs him to tap APPLY or DISABLE between two `e2e.sh` pastes.
+  - **What:** a runner on the PC makes the router calls APPLY and MANAGE make, through the app's own `DeviceAssignmentService` and `RouterSlotService`, runs `e2e.sh` before and after each, and stops at the first FAIL. It checks TESTING.md's start state first and stops if it doesn't hold, changes nothing without `CFG_LIVE_GO=1`, and puts TABLET, DESKTOP, the default connection and both slots back however it ends.
+  - **Covers:** DEV-4, DEV-5, DEV-6a, DEV-6b, DEV-7, DEV-8, DEV-11 (and DEV-11b, its ENABLE step), DEF-1, DEF-3, DEF-4's router side, DEF-6, DEF-7 and DEF-8. Not covered, and still by hand: the confirmation wording, exit IPs on the devices, DEV-1, DEV-2, DEV-10, and anything on a screen.
+  - **Done when:** the plan's logic has unit tests seen to fail, and one live run against Andrew's router has passed every step and left the router in its start state, read back.
+  - **Built in build 524:** `live/live_plan.dart` holds the plan, the `e2e.sh` commands, the PASS check, the start-state check and the restore; `live/devices_live_test.dart` runs it, outside `test/` so CI never does. `test/unit/live_plan_test.dart`, 16 tests, holds each step's expectations to TESTING.md's word for word, refuses anything shell-like reaching the router, and checks every DISABLE has its ENABLE. Seen to fail three ways: one expectation changed, any line with PASS taken as a pass, and the default-connection check removed. Without its variables the live test skips. TESTING.md's DEVICES and DEF groups point to it. Left: Andrew's first live run.
+
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -171,6 +177,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.154 build 524 - the DEVICES and default connection router checks run unattended from the PC
+
+```play
+• Behind the scenes: automated router tests. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 2026-10-19 v0.8.153 build 523 - App Store listing, review notes and export compliance facts drafted
 

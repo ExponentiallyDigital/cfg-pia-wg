@@ -959,6 +959,8 @@ The check that lets ID-325 leave WIP, under the CHANGELOG's rule for protection 
 
 Stock only. Assigning a device does not restart any tunnel; changing the default connection does, and has its own section, [DEF](#def). Set up: wgc1 and wgc5 up in different regions, default connection Internet.
 
+**Unattended, from the PC (ID-457):** `live/devices_live_test.dart` runs DEV-4 to DEV-8, DEV-11, DEF-1, DEF-3, DEF-4's router side, DEF-6, DEF-7 and DEF-8 with nobody tapping. It makes the same router calls APPLY and MANAGE make, through the app's own code, runs `e2e.sh` before and after each, stops at the first FAIL, and puts TABLET, DESKTOP, the default connection and both slots back. It needs this group's start state, and checks it first. Its file header says how to run it. It checks the router only: the confirmations, the exit IPs on the devices and everything on screen stay the hand steps below.
+
 **Before DEV-1, paste this into your SSH session to the router.** The `e2e.sh` checks need these values, and refuse to run when one is missing (ID-282). The last line must print six values. Paste it again in every new SSH session, including after DEV-17's reboot.
 
 ```bash
@@ -1194,7 +1196,7 @@ logger "**DEV-20 END** A disabled device pinned to a tunnel"
 
 ## <a name='def'></a>DEF. Default connection
 
-Changing the default tears the WireGuard clients down and brings the enabled ones back, which can take a minute. Anything using a tunnel can drop, so do not run this on a router someone is relying on - though on run 1 nothing visibly dropped, so write down what actually happens. Set up: wgc1 and wgc5 up in different regions, TABLET on "default", DESKTOP pinned to wgc5. DEV leaves TABLET pinned to Internet, so first: DEVICES, TABLET to default, APPLY.
+Changing the default tears the WireGuard clients down and brings the enabled ones back, which can take a minute. Anything using a tunnel can drop, so do not run this on a router someone is relying on - though on run 1 nothing visibly dropped, so write down what actually happens. Set up: wgc1 and wgc5 up in different regions, TABLET on "default", DESKTOP pinned to wgc5. DEV leaves TABLET pinned to Internet, so first: DEVICES, TABLET to default, APPLY. DEF-1, DEF-3, DEF-6, DEF-7 and DEF-8's router side also run unattended: see the note before DEV-1.
 
 **Before DEF-1, paste this into your SSH session to the router.** The `e2e.sh` checks need these values, and refuse to run when one is missing (ID-282). The last line must print six values. Paste it again in every new SSH session, including after DEF-10's reboot.
 
