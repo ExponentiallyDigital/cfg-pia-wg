@@ -137,6 +137,87 @@ jobs:
           retention-days: 1
 
   # ============================================================
+  # Job 2b: iOS simulator build (ID-405)
+  # ============================================================
+  # Builds the iOS app on macOS, so a change that breaks iOS - the Swift side, a plugin's pod, the Xcode
+  # project - shows on the release PR rather than on Andrew's Mac. Unsigned and for the simulator, so it
+  # needs no Apple certificate; signing and the App Store are ID-418. macOS runners cost nothing for a
+  # public repository.
+  #
+  # The tests stay in the quality job on Linux. They run in the Dart VM whatever the host, and the ones
+  # written for iOS run as iOS there (debugDefaultTargetPlatformOverride); here the script tests would
+  # meet macOS's BSD sed and awk, which neither the router's BusyBox nor CI's Linux has.
+  ios-build:
+    name: iOS simulator build
+    needs: osv-scan
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          # ID-410: the version pinned in pubspec.yaml, the one tested locally, not whatever is stable today.
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Toolchain versions
+        run: |
+          flutter --version
+          xcodebuild -version
+          sw_vers
+
+      - name: Fetch dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate launcher icons
+        # The wrapper keeps the tool from damaging the Xcode project (ID-374).
+        run: dart run tool/launcher_icons.dart
+
+      - name: Build for the iOS simulator
+        run: flutter build ios --simulator --debug --no-codesign
+
+      # ID-395: ABOUT reads these from the built app's Info.plist, written by ios/stamp_build_info.sh.
+      # A key that isn't there would only show as "unknown" on an iPhone, so read them back here.
+      - name: Check the build info was stamped into the app
+        run: |
+          plist=build/ios/iphonesimulator/Runner.app/Info.plist
+          for key in CfgGitCommit CfgGitCommitDate CfgGitBranch CfgRunnerId CfgBuildTimestamp CfgBuildType DTPlatformVersion DTXcode; do
+            value=$(plutil -extract "$key" raw "$plist") || { echo "::error title=Build info not stamped::$key is missing from $plist"; exit 1; }
+            echo "$key = $value"
+          done
+          [ "$(plutil -extract CfgRunnerId raw "$plist")" = "$GITHUB_RUN_ID" ] || { echo "::error::CfgRunnerId is not this run's id"; exit 1; }
+          [ "$(plutil -extract CfgGitCommit raw "$plist")" = "$(git log -1 --abbrev=7 --format=%h)" ] || { echo "::error::CfgGitCommit is not this commit"; exit 1; }
+
+      # ID-404: ios/RunnerTests drives the clipboard channel's Swift handler inside the app on a simulator -
+      # copy, clear, read back nothing, and the copy's own expiry. The build above leaves what xcodebuild needs.
+      - name: Run the iOS tests on a simulator
+        shell: bash
+        run: |
+          set -o pipefail
+          udid=$(xcrun simctl list devices available | grep -E '^ +iPhone' | head -1 | grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}')
+          [ -n "$udid" ] || { echo "::error::no iPhone simulator available"; xcrun simctl list devices available; exit 1; }
+          echo "Simulator: $(xcrun simctl list devices available | grep "$udid" | sed 's/^ *//')"
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -destination "id=$udid" \
+            -only-testing:RunnerTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-test.log | grep -iE "test case|error:|executed|\*\* test"
+          # A run that compiled no tests also "succeeds", so count them. Newer Xcode says "Test case", older "Test Case".
+          passed=$(grep -ciE "test case .*passed" xcodebuild-test.log || true)
+          echo "Tests passed: $passed"
+          [ "$passed" -ge 4 ] || { echo "::error::expected 4 iOS tests to pass (ios/RunnerTests), saw $passed"; exit 1; }
+
+      - name: Keep the xcodebuild log
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: xcodebuild-test-log
+          path: xcodebuild-test.log
+          retention-days: 7
+
+  # ============================================================
   # Job 3: OSV dependency vulnerability scan - every other job waits on it
   # ============================================================
   # quality, build-debug and codeql `need` this job (and security needs build-debug), so a failed scan - a
@@ -182,7 +263,7 @@ jobs:
           args: "build/app/outputs/flutter-apk/app-debug.apk --sarif --output mobsfscan.sarif || true"
 
       - name: Upload MobSF results to Security tab
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: mobsfscan.sarif
 
@@ -211,7 +292,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -247,6 +328,6 @@ jobs:
         run: flutter build apk --debug
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           category: "/language:${{ matrix.language }}"

@@ -32,6 +32,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
+import 'plain_error.dart';
 
 /// Whether the paid features are available to this user.
 /// Thrown before a purchase or restore when Google Play cannot be reached at all (ID-288).
@@ -178,7 +179,7 @@ abstract class Entitlement {
   ///
   /// The paywall used to show the plugin's raw exception text, and log nothing at all.
   static String describeStoreError(Object e) {
-    if (e is! PlatformException) return e.toString().replaceAll('Exception: ', '');
+    if (e is! PlatformException) return plainError(e);
     final PurchasesErrorCode code;
     try {
       code = PurchasesErrorHelper.getErrorCode(e);
@@ -245,5 +246,5 @@ abstract class Entitlement {
 
   static void _ignore(String _) {}
 
-  static String _plain(Object e) => e.toString().replaceAll('Exception: ', '');
+  static String _plain(Object e) => plainError(e);
 }

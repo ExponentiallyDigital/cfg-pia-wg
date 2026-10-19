@@ -1,0 +1,41 @@
+ROUTER DNS ROUTING
+Only pinned devices' lookups go through a tunnel.
+read 04:09:30
+
+== YOUR DEVICES' LOOKUPS ==
+wgc1:pia-aus_perth → 9.9.9.9 [wgc1:pia-aus_perth, encrypted to PIA] - TABLET
+Everything else → dnsmasq → stubby → 1.1.1.2, 1.0.0.2 [Internet, encrypted (DoT)] - DNS-over-TLS
+
+== THE ROUTER'S OWN LOOKUPS ==
+1.1.1.2 [Internet, not encrypted] - DNS Server setting, ordinary DNS
+1.0.0.2 [Internet, not encrypted] - DNS Server setting, ordinary DNS
+127.0.1.1 stubby [Internet, encrypted (DoT)] - to 1.1.1.2 and 1.0.0.2, only if both of the above fail
+
+== THE WATCHDOGS' LOOKUPS ==
+wgc1:pia-aus_perth [Internet, encrypted (DoH)] - freedns.controld.com (76.76.2.1)
+wgc2:pia-au_adelaide-pf [Internet, encrypted (DoH)] - freedns.controld.com (76.76.2.1)
+wgc3:pia-au_brisbane-pf [Internet, encrypted (DoH)] - security.cloudflare-dns.com (1.1.1.2)
+wgc4 [not configured]
+wgc5:pia-aus_melbourne [Internet, encrypted (DoH)] - freedns.controld.com (76.76.2.1)
+
+== THE SLOTS' DNS SERVERS ==
+No slot has DNS servers set.
+
+== EVIDENCE ==
+
+DNS routing rules (ip rule, iif lo)
+Which tunnel carries the router's own lookups to each address. The lowest rule number wins.
+(none: every address goes out your internet connection)
+
+DNS redirects (VPN_FUSION)
+Pinned devices' lookups to the router, sent on to their slot's first DNS server.
+-N VPN_FUSION
+-A VPN_FUSION -s 192.168.1.55/32 -d 192.168.1.254/32 -p udp -m udp --dport 53 -j DNAT --to-destination 9.9.9.9
+
+Slot DNS settings (nvram)
+Each slot's DNS servers, as set in MANAGE or the web interface.
+wgc1_dns=  # wgc1:pia-aus_perth
+wgc2_dns=  # wgc2:pia-au_adelaide-pf
+wgc3_dns=  # wgc3:pia-au_brisbane-pf
+wgc4_dns=  # not configured
+wgc5_dns=  # wgc5:pia-aus_melbourne

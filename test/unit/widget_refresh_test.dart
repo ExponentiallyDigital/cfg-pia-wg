@@ -13,6 +13,7 @@ import 'package:cfg_pia_wg/widget_status_service.dart' show kWidgetStatusCommand
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../watchdog_test_utils.dart';
@@ -282,6 +283,29 @@ void main() {
     final kotlin =
         File('android/app/src/main/kotlin/com/exponentiallydigital/pia_wireguard_cfga/widget/WidgetRefreshReceiver.kt').readAsStringSync();
     expect(kotlin, contains('const val TAP_TASK = "$kWidgetTapTask"'));
+  });
+
+  // ID-425: the widget is Android's, so iOS registers no background refresh for it.
+  group('reregisterWidgetRefresh', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('registers on Android', () async {
+      var calls = 0;
+      await reregisterWidgetRefresh(initialize: () async => calls++);
+      expect(calls, 1);
+    });
+
+    test('does nothing on iOS, where there is no widget', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      var calls = 0;
+      await reregisterWidgetRefresh(initialize: () async => calls++);
+      expect(calls, 0);
+      expect(homeWidgetSupported(), isFalse);
+    });
+
+    test("a plugin that fails doesn't stop the app starting", () async {
+      await reregisterWidgetRefresh(initialize: () async => throw StateError('no plugin'));
+    });
   });
 }
 

@@ -236,9 +236,55 @@ void main() {
     expect(find.textContaining('Git branch/tag: v9.9.9', findRichText: true), findsOneWidget);
     expect(find.textContaining('Build runner ID: 1234567890', findRichText: true), findsOneWidget);
     expect(find.textContaining('CPU Architecture (ABI): arm64-v8a', findRichText: true), findsOneWidget);
-    expect(find.textContaining('Target Android version: Android 15 (API 35)', findRichText: true), findsOneWidget);
+    // ID-395: the phone's Android version, which is what the row always showed; it was labelled the target.
+    expect(find.textContaining('Android version: Android 15 (API 35)', findRichText: true), findsOneWidget);
+    expect(find.textContaining('Target Android version', findRichText: true), findsNothing);
     expect(find.textContaining('Compile SDK: 36', findRichText: true), findsOneWidget);
     expect(find.textContaining('Kotlin: 2.3.20', findRichText: true), findsOneWidget);
+  });
+
+  // ID-395. What ios/Runner/AppDelegate.swift answers, in the shape it answers it.
+  testWidgets('on iOS the rows name iOS things, read from the same channel', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    // Reset by a teardown too, so a failure here can't leave every later test running as iOS.
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    _mockChannel(tester, (call) async => const <String, String>{
+          'versionName': '0.8.134',
+          'buildNumber': '504',
+          'installer': 'TestFlight',
+          'buildTimestamp': '2026-10-19 01:02:03 UTC',
+          'buildType': 'release',
+          'commitHash': 'def5678',
+          'commitDate': '2026-10-19T12:00:00+11:00',
+          'gitBranch': 'v0.8.134',
+          'runnerId': '9876543210',
+          'cpuAbi': 'arm64',
+          'osVersion': 'iOS 27.0',
+          'compileSdk': 'iOS 26.0 SDK, minimum iOS 15.0',
+          'xcodeVersion': '26.1 (17B55)',
+        });
+
+    await _pumpAbout(tester);
+
+    for (final line in const [
+      'cfg-pia-wg: v0.8.134 build 504',
+      'Built by: TestFlight at 2026-10-19 01:02:03 UTC',
+      'Commit hash: def5678',
+      'Git branch/tag: v0.8.134',
+      'Build runner ID: 9876543210',
+      'CPU Architecture: arm64',
+      'iOS version: iOS 27.0',
+      'iOS SDK: iOS 26.0 SDK, minimum iOS 15.0',
+      'Xcode: 26.1 (17B55)',
+    ]) {
+      expect(find.textContaining(line, findRichText: true), findsOneWidget, reason: line);
+    }
+    for (final android in const ['(ABI)', 'Android version', 'Compile SDK', 'Kotlin']) {
+      expect(find.textContaining(android, findRichText: true), findsNothing, reason: android);
+    }
+
+    await tester.pumpWidget(const SizedBox());
+    debugDefaultTargetPlatformOverride = null;
   });
 
   // Under `flutter test` there is no native side at all, so this is the path CI actually takes.

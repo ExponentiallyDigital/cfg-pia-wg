@@ -1,0 +1,46 @@
+ROUTER DNS ROUTING
+No lookups go through a tunnel.
+read 04:09:30
+
+== YOUR DEVICES' LOOKUPS ==
+Everything else → dnsmasq → stubby → 1.1.1.2, 1.0.0.2 [Internet, encrypted (DoT)] - DNS-over-TLS
+
+== THE ROUTER'S OWN LOOKUPS ==
+1.1.1.2 [Internet, not encrypted] - from your internet provider, ordinary DNS
+127.0.1.1 stubby [Internet, encrypted (DoT)] - to 1.1.1.2 and 1.0.0.2, only if the one above fails
+
+== THE WATCHDOGS' LOOKUPS ==
+wgc1:pia-aus_perth [Internet, encrypted (DoH)] - freedns.controld.com (76.76.2.1)
+wgc2:pia-au_adelaide-pf [no watchdog]
+wgc3:pia-au_brisbane-pf [Internet, not encrypted] - no encrypted DNS set: the router's DNS Server setting
+wgc4 [not configured]
+wgc5:pia-aus_melbourne [Internet, encrypted (DoH)] - freedns.controld.com (76.76.2.1)
+
+== THE SLOTS' DNS SERVERS ==
+9.9.9.9 [1 slot] - used by wgc1:pia-aus_perth. Rules 1016 send the router's own lookups to them through wgc5:pia-aus_melbourne.
+9.9.9.9, 149.112.112.112 [shared by 3] - used by wgc2:pia-au_adelaide-pf, wgc3:pia-au_brisbane-pf and wgc5:pia-aus_melbourne. Rules 1016 and 1017 send the router's own lookups to them through wgc5:pia-aus_melbourne.
+
+== EVIDENCE ==
+
+DNS routing rules (ip rule, iif lo)
+Which tunnel carries the router's own lookups to each address. The lowest rule number wins.
+1016:   from all to 9.9.9.9 iif lo lookup 5  # wgc5:pia-aus_melbourne
+1017:   from all to 149.112.112.112 iif lo lookup 5  # wgc5:pia-aus_melbourne
+1022:   from all to 9.9.9.9 iif lo lookup 7  # wgc3:pia-au_brisbane-pf
+1023:   from all to 149.112.112.112 iif lo lookup 7  # wgc3:pia-au_brisbane-pf
+1025:   from all to 9.9.9.9 iif lo lookup 8  # wgc2:pia-au_adelaide-pf
+1026:   from all to 149.112.112.112 iif lo lookup 8  # wgc2:pia-au_adelaide-pf
+1028:   from all to 9.9.9.9 iif lo lookup 9  # wgc1:pia-aus_perth
+1029:   from all to 149.112.112.112 iif lo lookup 9  # wgc1:pia-aus_perth
+
+DNS redirects (VPN_FUSION)
+Pinned devices' lookups to the router, sent on to their slot's first DNS server.
+(none: no device is pinned to a slot with DNS servers)
+
+Slot DNS settings (nvram)
+Each slot's DNS servers, as set in MANAGE or the web interface.
+wgc1_dns=9.9.9.9  # wgc1:pia-aus_perth
+wgc2_dns=9.9.9.9, 149.112.112.112  # wgc2:pia-au_adelaide-pf
+wgc3_dns=9.9.9.9, 149.112.112.112  # wgc3:pia-au_brisbane-pf
+wgc4_dns=  # not configured
+wgc5_dns=9.9.9.9, 149.112.112.112  # wgc5:pia-aus_melbourne

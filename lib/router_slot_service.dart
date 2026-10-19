@@ -942,7 +942,7 @@ class RouterSlotService {
     // Written in kSlotNvramKeys order; stock skips the four keys its firmware does not have.
     // Single-quoted like every other write: DNS is typed by the user, and the rest comes from PIA's
     // answer, and in double quotes a `$`, backtick or quote in either ran as shell (ID-237).
-    final q = shellSingleQuote;
+    const q = shellSingleQuote;
     final values = <String, String>{
       'addr': q(wgMap['Address'] ?? ''),
       'alive': '25',

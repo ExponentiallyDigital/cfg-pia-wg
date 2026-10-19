@@ -16,26 +16,26 @@ See [Process - BACKLOG and CHANGELOG management](https://github.com/Exponentiall
 
 Work items below use these three-letter prefixes.
 
-| Prefix | Meaning |
-|---|---|
-| ADD | New feature or capability added |
-| ARC | Architecture, design or structure notes |
-| BLD | Build process or build scripts |
-| BUG | Known bug or defect |
-| CFG | Configuration change |
-| CHG | General change to existing behaviour |
-| DEC | Design decision recorded |
-| DELETE | Removal of a file, feature, or item |
-| DOC | Documentation |
-| FIX | Bug fix |
-| GUI | User interface change, may altapoear under code UI |
-| INF | Informational note, points elsewhere for detail |
-| MOD | Code modification or optimisation |
-| NOTE | General note |
-| REL | Release process or release readiness item |
-| SEC | Security related change |
-| TST | Test added or updated |
-| UI | User interface, element or copy level, may also appear under code GUI|
+| Prefix | Meaning                                                               |
+| :----: | --------------------------------------------------------------------- |
+|  ADD   | New feature or capability added                                       |
+|  ARC   | Architecture, design or structure notes                               |
+|  BLD   | Build process or build scripts                                        |
+|  BUG   | Known bug or defect                                                   |
+|  CFG   | Configuration change                                                  |
+|  CHG   | General change to existing behaviour                                  |
+|  DEC   | Design decision recorded                                              |
+| DELETE | Removal of a file, feature, or item                                   |
+|  DOC   | Documentation                                                         |
+|  FIX   | Bug fix                                                               |
+|  GUI   | User interface change, may altapoear under code UI                    |
+|  INF   | Informational note, points elsewhere for detail                       |
+|  MOD   | Code modification or optimisation                                     |
+|  NOTE  | General note                                                          |
+|  REL   | Release process or release readiness item                             |
+|  SEC   | Security related change                                               |
+|  TST   | Test added or updated                                                 |
+|   UI   | User interface, element or copy level, may also appear under code GUI |
 
 Bold the first sentence only on multi-sentence items, as a scannable headline. Single-sentence items stay plain.
 
@@ -87,15 +87,55 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
-- ID-412 BLD: **Dependabot's GitHub Actions updates go to `dev`, not straight to `main`.** `.github/dependabot.yml` set no `target-branch`, so its Monday PR went to `main`, bypassing `dev` and the build process: PR #39 did on 2026-10-11. It now sets `target-branch: "dev"`. Andrew's decision, 2026-10-16: no auto-merge. CI never runs on `dev`, so auto-merge would have nothing to wait for; he reads the weekly PR, checking it changes only pinned SHAs under `.github/workflows/`, merges it into `dev`, and it goes out in his next build, with the full CI on the release PR. A test in `test/unit/ci_config_test.dart` holds the setting.
-  - **Waiting for:** Dependabot reads this file from `main` only, so it acts from the release that carries it. Done when a Monday PR has been seen to open against `dev`. Until then, a Monday PR opened against `main` has its base moved to `dev`.
-- ID-411 BLD: **a weekly pull request that brings packages, the Gradle lockfiles and THIRD-PARTY-NOTICES.md up to date together.** By hand this was three steps: `flutter pub upgrade`, the Gradle `--write-locks`, then `dart run tool/third_party_notices.dart`; build 500 needed all three, the notices were 17 rows behind, and `release.yml` refuses a stale file.
-  - **Built:** the `packages` job in `.github/workflows/weekly_updates.yml` checks out `dev` and runs `flutter pub upgrade` within the constraints (majors stay a deliberate step), `flutter build apk --config-only` to generate the Gradle wrapper, which isn't committed, then the `--write-locks` and the notices tool. If `pubspec.lock`, a lockfile or the notices changed, it runs analyze, the tests and a debug build, and force-pushes one branch, `bot/weekly-packages`, rebuilt from `dev` each week, opening a PR into `dev` or updating the open one. The description gives the check results, what moved, `flutter pub outdated` for the majors left behind, and Gradle, the plugin and Kotlin against their latest.
-  - **Andrew's decision, 2026-10-16:** the job runs the checks itself, with the workflow's own token and no new credential. A PR opened with that token starts no other workflow, and CI never runs on PRs into `dev` anyway; the full suite runs on the release PR. The bot never commits to `dev` or `main`: Andrew merges its PR, and it goes out in his next build with a CHANGELOG line.
-  - **Checked so far:** actionlint passes; the description's three version lookups were run locally and gave the versions above.
-  - **First run on `main`, 2026-10-16, failed - a fault of mine, fixed in build 502:** it upgraded the packages, wrote the locks and regenerated the notices, and found `pubspec.lock` (4 lines) and `android/app/gradle.lockfile` (1 line) to bring, but `git ls-files` printed the lockfiles one per line, and that list written to `$GITHUB_OUTPUT` failed with `Invalid format 'android/buildscript-gradle.lockfile'`. actionlint can't see that. The list is now put on one line, checked locally by writing it to a file the same way, and the PR description's script was run locally with sample input. The workflow also now names `bash` as its shell, so GitHub adds `pipefail`: without it, `flutter pub upgrade | tee upgrade.txt` passed even if the upgrade failed.
-  - **Waiting for:** the release that carries the fix, and the repository setting in ID-410. Done when, on `main`, a run has been seen to open a PR with package, lockfile and notices changes together and its checks passed.
-
+- ID-415 REL: "Warning: WARNING!! 'track' is deprecated and will be removed in a future release. Please migrate to 'tracks'".
+  - **Where:** the Google Play upload in `release.yml` (`r0adkll/upload-google-play`) still passes `track: internal`; the action now wants `tracks: internal`.
+  - **Done when:** a release's log no longer prints the warning. It can only be seen at a release, since the step uploads to Play.
+  - **Built in build 503:** the step now passes `tracks: internal`. The action's README says `tracks` defaults to `production`, so a misspelt input would publish to everyone; a test in `test/unit/ci_config_test.dart` holds the step to `tracks: internal` with no `track:` left, seen to fail with `track: internal` put back and again with `tracks: production`. A dry run of `release.yml` skips this step, so only a real release shows the warning gone.
+- ID-417 ADD: **the home screen's review link names the store of the platform the app is built for.** Andrew's requirement, 2026-10-16. Today it says Play Store everywhere, and on iOS it fails silently: `in_app_review`'s `openStoreListing()` needs an App Store id on iOS and throws without one, and `review_service.dart` catches everything, so a tap only logs "Could not open the Play Store listing" (`.claude/plans/plan_ios-port.md`).
+  - **What:** on iOS the text names the App Store. Until Andrew sends the App Store link, a tap on iOS says plainly that the review link isn't available yet. The review line in the watchdog's alert email follows the platform of the phone that deployed the watchdog.
+  - **Done when:** tests run as iOS and as Android show each platform's text and behaviour, and, once Andrew has sent the App Store link, a tap on an iPhone opens the listing.
+  - **Corrected 2026-10-19:** the silent failure described above was taken from `.claude/plans/plan_ios-port.md` and is out of date. `in_app_review` was removed in build 449 (ID-042), and the link has opened the Play URL with `url_launcher` since, so on an iPhone a tap would most likely open Play's web page in Safari rather than fail. Read from the code, not seen on a phone. Either way it was the wrong store.
+  - **Built in build 503:** `lib/review_service.dart` now picks the store: `reviewStoreName()` is the App Store on iOS and the Play Store elsewhere, and `openStoreReview()` opens `reviewListingUrl()`. `kAppStoreListingUrl` is empty until Andrew sends the link, and until then iOS opens nothing. Three places follow it. The home screen line reads "add an App Store app review" on iOS, and a tap says on screen and in the app log that cfg-pia-wg isn't on the App Store yet. SETTINGS' second uninstall ask names the App Store, and is left out on iOS until there's a listing to send anyone to. The watchdog email's review line is now `emailReviewLine()`, written into the script on the phone that deploys it: Play's link from Android, the App Store's from iOS, and from iOS without a listing, an ask with no link. CONTEXT 4.8.3 and TESTING HOM-4 say the same.
+  - **Checked so far:** new tests run as iOS in `test/unit/review_service_test.dart` (the store's name; nothing launched with no listing), `test/screens/main_menu_screen_test.dart` (the label, the on-screen message, a log line that isn't an error, nothing launched), `test/screens/settings_screen_test.dart` (no review ask, no Google Play) and `test/router_watchdog_unit_test.dart` (the deployed script and the test email name the App Store and carry no Play link). Android's existing tests are unchanged and pass, with one added check that SETTINGS still names the Google Play store. Seen to fail with the platform check returning Android always, and again with iOS given Play's listing. On the way: a failing iOS test left the platform override set and failed every later test in its file, so the override is now reset by a teardown as well. Left: the App Store link from Andrew, then a tap on an iPhone.
+  - **Seen on an iPhone, 2026-10-19:** Andrew's HOM-4 passed: the line names the App Store, and with no listing yet a tap says so. Left: the App Store link (BACKLOG ID-427), then a tap that opens it.
+- ID-405 CHG: update github actions to accomodate iOS (`release.yml`, SBOM, Gradle lockfiles, etc)
+  - **Split, Andrew's decision 2026-10-16:** this item is the CI half. A macOS job in `quality_and_security.yml` builds the app for the iOS simulator without signing (`flutter build ios --simulator --no-codesign`) and runs the tests on macOS, so an iOS break shows on the release PR; GitHub's macOS runners cost nothing for a public repository. Signing, the App Store upload, iOS releases and the SBOM are ID-418 in BACKLOG.
+  - **Done when:** the job has passed on a release PR.
+  - **Built in build 503:** an `ios-build` job in `.github/workflows/quality_and_security.yml`, after the OSV scan like the others, on `macos-latest`: Flutter from the pin, `flutter pub get --enforce-lockfile`, the launcher icons, then `flutter build ios --simulator --debug --no-codesign`, printing the Flutter, Xcode and macOS versions first. `release.yml` waits on the whole quality workflow, so a broken iOS build now stops a release. A test in `test/unit/ci_config_test.dart` holds the job in place (a shape test; the job's own run is the evidence). actionlint passes.
+  - **Changed from the plan, for Andrew to overrule:** the job doesn't run the tests on macOS. They run in the Dart VM whatever the host, and the iOS tests in this build run as iOS on Linux already (`debugDefaultTargetPlatformOverride`). On macOS, the script tests would meet BSD `sed` and `awk`, which neither the router's BusyBox nor CI's Linux has: failures that say nothing about iOS, blocking releases. ID-404's simulator test will run in this job when it comes.
+  - **Not yet run:** a workflow change is tested from `dev` (ID-416), so once build 503 is on `dev`: `gh workflow run quality_and_security.yml --ref dev`, which runs every job, this one included, before the release PR has to.
+  - **Seen on `dev`, 2026-10-19:** run 39173841764, started by hand on build 503, passed every job. The iOS one built `build/ios/iphonesimulator/Runner.app` with Flutter 3.47.7 from the pin, Xcode 26.6, on macOS 26.6.2. Left: the same on the release PR.
+- ID-402 CHG: The router half ports for free: `dartssh2` is pure Dart, and the watchdog script runs on the router, which does not care what phone deployed it.
+  - **Proving it:** Andrew has a MacBook Pro set up, two iPhone 11s and an iPhone SE on iOS 27, and on 2026-10-16 had already run a build on an iPhone 11.
+  - **Seen by Andrew, by 2026-10-19:** on an iPhone 11 the app opened and showed the same active slots as the Android app, so it reached the router; he also looked at ABOUT (ID-395). Nothing else has been tried on an iPhone yet.
+  - **Done when:** ID-405's iOS build passes in CI, and GENERATE, MANAGE and the watchdog have worked from an iPhone against the router, by TESTING's hand tests for those screens.
+  - **Built in build 503:** `ios/Runner/Info.plist` now carries `NSLocalNetworkUsageDescription`. The app reaches the router over the home network, which since iOS 14 asks the user for local network access, and without the key iOS words the prompt itself. A test in `test/unit/ios_info_plist_test.dart` holds it, seen to fail with the key removed. Found on the way, read from the code and not seen on a phone: SETTINGS offers HOME SCREEN WIDGET KEY on iOS, for a widget only Android has; ID-424 in BACKLOG section 2 is now the iOS widget itself (split again 2026-10-19: ID-424 measures iOS's background refresh, ID-438 and ID-439 are the widget).
+- ID-041 CHG: **fix the [Sonar Cloud scan](https://sonarcloud.io/project/issues?id=ExponentiallyDigital_cfg-pia-wg&s=IMPACT_RANK&issueStatuses=OPEN%2CCONFIRMED)'s findings, now 88, in six batches from safest to riskiest.** Triaged 2026-09-15 at 35 and put on hold with the rest of this section; analysed again 2026-10-09. The plan below, with Andrew's decisions at the end.
+  - **Where it stands, 2026-10-09:** 88 open, 50 of them newer than the triage, mostly the rewrite's new code. All code smells; none a bug or a vulnerability. CI's SonarCloud check passes, since the quality gate judges new code only. Cognitive complexity (S3776, limit 15): 38 functions, 571 points over. Nested ternaries (S3358): 29. Duplicated literals (S1192): 14. Too many parameters (S107): 2. Missing `const` (S7112, S3962): 5. Re-read the list with `https://sonarcloud.io/api/issues/search?componentKeys=ExponentiallyDigital_cfg-pia-wg&resolved=false&ps=500` before starting; it moves with every build.
+  - **The worst functions:**
+    - DEVICES: `_apply` 84, `_tunnelWarnings` 32 (`lib/widgets/device_assignment_screen.dart`), and `DeviceAssignmentService.apply` 31 with 13 parameters: APPLY, the most production-critical path.
+    - Router DNS: `buildDnsRouting` 67 and `dnsReportText` 55 (`lib/router_dns.dart`), both pure functions, so their output can be pinned by tests before anything changes.
+    - Watchdog and slots: `uninstallFromRouter` 53, `deployWatchdog` 45, `validate` 30 (`lib/router_watchdog.dart`); `createConfigToSlot` 37, `fetchSlots` 30, `enableSlot` 26 (`lib/router_slot_service.dart`). Full of stock-or-Merlin branches the firmware abstraction (BACKLOG 1.2) would restructure anyway.
+    - Screens and dialogs: `_slotList` 46, `_buttons` 36, `_enableManage` 28 (`lib/widgets/slot_modal.dart`); `_save` 36, `_dohPicker` 26 (`lib/watchdog_dialog.dart`); `_onConnect` 35 (`lib/widgets/router_slots_screen.dart`); `_secureStartup` and `_maxActiveVpns` 30 each (`lib/screens/settings_screen.dart`); `slotParamErrors` 28 (`lib/input_checks.dart`).
+  - **The duplicated strings, judged:** `"Exception: "`, 24 times across four screens, is real duplication, the same error-tidying code copied around, and one shared helper fixes all four findings. The DNS file paths (`/etc/dnsmasq.conf`, `/tmp/resolv.dnsmasq`, `/etc/resolv.conf`) are shared facts that belong in constants, as does the DEVICES label `"Default connection"`. The router commands (`nvram commit` 24 times over three files, `nvram get vpnc_clientlist`, `nvram get vpnc_max_conn`, `date +%s`) arguably read better written out than as constants, and could instead be marked "won't fix" in SonarCloud with that reason.
+  - **The plan, one build per step:**
+    1. The quick, safe batch, about 20 issues: the five `const` fixes, the error-tidying helper, the DNS path and label constants, and the router commands as Andrew decides.
+    2. Router DNS's two pure functions: tests that pin their output first, then split them, changing nothing they produce. Two of the four worst.
+    3. The 29 nested ternaries, mechanical; the 8 in the watchdog script builder checked against the generated script text.
+    4. DEVICES' APPLY: `_apply`, `_tunnelWarnings` and `apply`, its 13 parameters into one request object. Pieces moved into functions of their own and nothing else changed; the tests that pin APPLY's exact order, "THE DEFAULT CONNECTION SEQUENCE IS EXACT" among them, are the safety net.
+    5. The screens and dialogs, one file per build.
+    6. The watchdog and slot service functions: left to the firmware abstraction, and scored again after it - ID-419 in BACKLOG.
+  - **For every step:** behaviour pinned by a test before the change, functions only split, never reworked, the full suite, and the SonarCloud count read again afterwards.
+  - **Andrew's decisions, 2026-10-16:** start now, as stock has soaked long enough; the router commands are marked "won't fix" in SonarCloud, with the reason that they read better written out; and step 6 waits for the firmware abstraction.
+  - **Sequenced, 2026-10-16:** steps 1 to 3 come where this item sits; steps 4 and 5 come after ID-029, step 4 in its own release with TESTING's DEVICES hand tests. Step 6 is ID-419.
+  - **Moved to WIP 2026-10-19:** steps 1 to 3 are being built now, by Andrew's go for the work up to step 3.
+  - **Step 1, built in build 508:** `plainError()` in the new `lib/plain_error.dart` replaces all 36 copies of `.toString().replaceAll('Exception: ', '')` across eleven files, the four flagged and seven more; three tests pin what it returns. `kDnsmasqConf`, `kResolvDnsmasq` and `kResolvConf` in `lib/router_dns.dart`, and `kDefaultConnectionLabel` in DEVICES, replace their duplicated literals. Five `const`s added (`applying_panel.dart`, `app_scaffold.dart`, `router_slot_service.dart`, `binary_installer.dart`). Nothing a user sees changes; the full suite passes. Left for Andrew, needing his SonarCloud login: mark the seven router-command findings (`nvram commit` in three files, `nvram get vpnc_clientlist`, `nvram get vpnc_max_conn`, `nvram get sshd_authkeys`, `date +%s`) as won't fix, per his decision.
+  - **Step 2, built in build 509:** first, `test/unit/router_dns_golden_test.dart` wrote ROUTER DNS ROUTING and ROUTER RESOLVER STATUS out word for word from the unchanged code, nine cases that between them run every line of both functions (measured with coverage). Then `buildDnsRouting` became one function per section (pinned devices, everything else, the router's own lookups, the watchdogs, the slots' DNS servers, the verdict, the evidence), and `dnsReportText` one per kind of block, each section's code moved as it was. The goldens pass on the split code, and fail when one character of the output changes.
+  - **SonarCloud after build 509, 2026-10-19:** CI passed on builds 508 and 509 (runs 39189446796, 39190499923). Open findings went from 95 to 81: steps 1 and 2 cleared 14, among them `buildDnsRouting` (67) and `dnsReportText` (55). One is new: `_slotDnsLines`, split out of `buildDnsRouting`, scores 21 against 15, so step 3 splits it again.
+  - **Step 3, built in build 510:** all 33 nested ternaries (S3358) in 14 files are gone. Chains became Dart `switch` expressions with patterns or guards (`switch ((found, wasUnlocked)) { (false, _) => ... }`), an `if` chain, or a named local, with every condition in its original order and every value unchanged. The DoH note became `_dohNote()`. `_slotDnsLines` lost its per-line builder to `_slotDnsLine`, for its score of 21. Three sites no test ran got a test first, run on the old code before the change: `RcServiceState.toString()`, and the DoH note word for word for all four clashes (the router's own encrypted DNS had no test). A fourth looked unrun, but RESTORE PURCHASE's tests cover its three outcomes. The DNS goldens still pass.
+  - **SonarCloud after build 510, 2026-10-19:** CI passed (run 39191914461). Open findings went from 81 to 47, and `_slotDnsLines` no longer scores over 15. One nested ternary was left, introduced by step 3 itself in `widget_bridge.dart`'s overflow line; build 511 takes it out.
+  - **After build 511, 2026-10-19:** CI passed (run 39192631913), and SonarCloud shows 46 open findings, from 95 before step 1: no nested ternaries, `const` or DNS-path findings left. What remains: 37 cognitive complexity (steps 4 to 6), 7 duplicated literals, all router commands Andrew decided to mark won't fix, and 2 parameter counts (step 4). Steps 1 to 3 are done; step 4, DEVICES' APPLY, is next, in its own release.
+  - **Won't fix, 2026-10-19:** Andrew marked the seven router-command findings won't fix in SonarCloud, as decided. SonarCloud now shows 39 open.
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -112,6 +152,143 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.142 build 512 - iOS groundwork checked on an iPhone; BACKLOG's iOS items made atomic
+
+```play
+• Behind the scenes: groundwork for an iOS version and a code tidy-up. No change to how the app works on Android, except ABOUT, which now labels your phone's Android version "Android version".
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- DOC: **BACKLOG 1.3, the iOS items, made atomic**, Andrew's request 2026-10-19: 6 items to 20, 635 words to 588, each one outcome with its own done-when and its dependencies named, in dependency order. New: ID-427 to ID-440. ID-418 is now only the signed CI build; ID-424 the background refresh measurement, with the widget in ID-438 and ID-439; ID-421 only the membership move, after a company exists (ID-440).
+- ID-394 ADD: on iOS can't use "EXIT" to exit the app, and this must still cleanly remove all credentials from memory.
+  - **Andrew's decision, 2026-10-16:** option (c). On iOS builds the EXIT button reads CLEAR and does what EXIT does - every credential wiped from memory - but returns to the start screen, since Apple doesn't let an app close itself. Nothing wipes on its own when the app goes to the background, and nothing changes on Android.
+  - **Done when:** tests run as iOS and as Android show each platform's label, and that CLEAR wipes everything EXIT does; and Andrew has seen CLEAR work on an iPhone.
+  - **Built in build 503:** `exitLabel()` in `lib/widgets/app_drawer.dart` gives CLEAR on iOS and EXIT elsewhere, for the main menu's row, the drawer's entry and the dialog's button. On iOS the dialog reads "Clear cfg-pia-wg?" and says the app returns to the main menu; confirming runs the same `wipeAll` as EXIT, then closes every screen and dialog above the main menu, so nothing a screen still showed is left behind it. `SystemNavigator.pop` isn't called on iOS, which ignores it. ARCHITECTURE, CONTEXT and TESTING (new EXT-10, the iPhone check) say the same.
+  - **Checked so far:** four tests in `test/main_test.dart` run as iOS: CLEAR on the menu, the drawer and the dialog; the wipe leaving exactly what EXIT's leaves on Android across all ten fields `wipeAll` clears, with no request to close the app; CLEAR from the app log returning to the main menu; and CANCEL leaving everything alone. Seen to fail with the wipe taken out of CLEAR, and with the label fixed at EXIT. Android's EXIT tests are unchanged and pass. Left: Andrew's EXT-10 on an iPhone.
+  - **Seen on an iPhone, 2026-10-19:** Andrew's EXT-10 passed. Done.
+- ID-395 ADD: ABOUT needs to be updated for IOS specific details.
+  - **First:** show Andrew what ABOUT lists today, and agree which lines are Android-only and what replaces them on iOS.
+  - **Done when:** tests run as iOS and as Android show each platform's lines, and Andrew has seen ABOUT on an iPhone.
+  - **Agreed 2026-10-19, Andrew's decision:** the list Claude proposed, as below, and the Android label fixed in the same change. Before it, nothing answered ABOUT's build info channel on iOS, since only `MainActivity.kt` registers it, so on iOS every build row, the version included, would have read `unknown` (from the code, not seen on a phone).
+  - **Built in build 504:** `ios/Runner/AppDelegate.swift` now answers the same channel with the same keys. It reads the version and build number from the bundle, the installer (Xcode for a debug or provisioned build, TestFlight for a sandbox receipt, otherwise App Store), the CPU architecture, the iOS version, the SDK with the minimum iOS version, and the Xcode that built it. The commit, commit date, branch, runner id, build time and configuration come from `ios/stamp_build_info.sh`, a new last build phase on the Runner target ("Stamp build info"). It writes them into the built app's Info.plist, worked out as `android/app/build.gradle.kts` does: `--abbrev=7`, `GITHUB_REF_NAME` before git, the run id or `Local Build`. In `lib/screens/about_screen.dart` the last four rows take each platform's terms: CPU Architecture, iOS version, iOS SDK and Xcode on iOS (`BuildInfo` gains `xcodeVersion`). The Kotlin row has Xcode as its iOS counterpart; it wasn't in the list Andrew agreed, since Claude missed it. On Android, "Target Android version" now reads "Android version": the value was always the phone's Android version, not the target, which is a build setting. CONTEXT 4.10 and TESTING (new ABT-5) say the same.
+  - **Checked so far:** a test in `test/screens/about_screen_test.dart` runs ABOUT as iOS with the map the Swift side answers, and finds every iOS row and none of Android's; Android's test now expects "Android version" and no "Target Android version". Seen to fail with the iOS labels taken out. `test/unit/ios_build_info_test.dart` holds the three files together: the channel and method names, every key the Dart side reads against the Swift map, every `Cfg*` key against the stamp script, and the phase last on the Runner target. It was seen to fail with one stamp key renamed. The Swift and the build phase are compiled only on a Mac. The `ios-build` CI job now reads the stamped keys back out of the built app, and checks the runner id and commit are that run's. Left: that job's run, then Andrew's ABT-5 on an iPhone.
+  - **Seen in CI, 2026-10-19:** run 39178845403 on build 504 passed every job. The iOS one compiled the Swift (Flutter shows only Xcode errors, so warnings weren't seen either way) and read back from the built app `CfgGitCommit = d1011f5`, `CfgGitBranch = dev`, `CfgRunnerId = 39178845403` (that run's), the commit date, the build time, `CfgBuildType = debug`, `DTPlatformVersion = 26.5` and `DTXcode = 2660`. Left: ABT-5 on an iPhone.
+  - **Seen on an iPhone, 2026-10-19:** Andrew's ABT-5 passed. Done.
+- ID-404 CHG: The silent clipboard clear is an Android method channel (`ClipboardManager.clearPrimaryClip()`); iOS needs `UIPasteboard.general.items = []` or the 60-second auto-clear regresses to the system copy popup that 403 removed.
+  - **Done when:** a simulator test in ID-405's macOS job copies text, clears it through the channel and reads back nothing, and is seen to fail with the Swift removed - CHANGELOG's rule for a protection's check; and on an iPhone the 60-second clear happens with no system paste popup.
+  - **Moved to WIP 2026-10-19, Andrew's decision:** ahead of ID-041, so the iOS work goes on while he enrols with Apple.
+  - **Built in build 505:** `enum SensitiveClipboard` in `ios/Runner/AppDelegate.swift` answers the clipboard channel. Copy: kept on this phone (`localOnly`, so not on the user's Mac by Universal Clipboard) and set to expire after the countdown's 60 seconds (`kClipboardTimeout`, now passed by `copySensitive()`), so iOS removes it even if the app is suspended first. Clear: `items = []`, checked by `numberOfItems`; nothing reads the contents, since that shows iOS's paste banner. Three XCTests in `ios/RunnerTests/RunnerTests.swift` call the handler as the channel does, run on a simulator by a new step in the `ios-build` job: copy then clear reads back nothing, a 2-second copy expires by itself, and an unknown method isn't implemented. A Dart test holds the Swift names to the Dart side and fails if the Swift reads the clipboard.
+  - **Seen in CI, 2026-10-19:** run 39186128849 on build 505 passed every job, and the simulator step (iPhone 17 Pro) ended `** TEST SUCCEEDED **`. Its log filter missed the per-test lines, since newer Xcode writes "Test case" in lower case, so how many ran wasn't shown; build 506 fixes the filter and fails the step if fewer tests pass than exist.
+  - **Seen to pass and to fail, 2026-10-19:** run 39187595118 on build 506 passed all four RunnerTests on an iPhone 17 Pro simulator. Run 39187631074, on a throwaway `fix/` branch with the clear, the expiry and the cover removed from the Swift, failed `testCopyThenClearLeavesNothing` and `testCopyExpiresOnItsOwn` (and the cover's test), while the unknown-method test still passed; the Dart shape test failed on the missing `.expirationDate:` too. The branch was deleted. Left: on an iPhone, the 60-second clear with no paste banner.
+  - **Seen on an iPhone, 2026-10-19:** Andrew's check passed: a copied config cleared after 60 seconds, with no paste banner. Done.
+- ID-403 CHG: The platform hardening does not. `FLAG_SECURE` has **no iOS equivalent** - screenshots cannot be blocked, only the task-switcher snapshot can be covered. `README.md` and `SECURITY.md` state that guarantee unconditionally today and would need to state it per-platform.
+  - **What:** cover the window when the app leaves the foreground and uncover it when it returns, so the app switcher shows the cover, not the screen. Screenshots can't be blocked on iOS at all. The README.md and SECURITY.md wording goes with ID-029.
+  - **Done when:** Andrew has seen the cover in the app switcher on an iPhone, and the screen there with the cover taken out - CHANGELOG's rule for a protection's check.
+  - **Moved to WIP 2026-10-19, Andrew's decision:** with ID-404.
+  - **Built in build 506:** `enum PrivacyCover` in `ios/Runner/AppDelegate.swift`. It covers each window with the launch screen (`kBg` and the launch artwork) when its scene is about to deactivate, which is before iOS takes the app switcher's picture, and removes it when the scene is active again. Release builds only, as Android skips `FLAG_SECURE` in a debug build, so a debug build is how the cover is seen taken out. An XCTest checks the cover goes on once, fills the window and comes off; a Dart test holds the wiring and the release-only rule. TESTING EXT-6 has the iPhone steps. Left: Andrew's EXT-6 on an iPhone, release and debug.
+  - **Seen in CI, 2026-10-19:** the cover's XCTest passed on build 506 (run 39187595118) and failed with `window.addSubview(cover)` taken out (run 39187631074, throwaway branch). That checks the cover, not the app switcher; EXT-6 on an iPhone still decides it.
+  - **Seen on an iPhone, 2026-10-19:** Andrew's EXT-6 passed: the release build's app switcher card showed the cover, and the debug build's, with no cover, showed the screen. Done.
+- ID-029 DOC: phrase hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
+  - **Andrew's decisions, 2026-10-16:** Claude may edit README.md and SECURITY.md for this item, and puts a note at the top of each file it changes saying iOS support is being prepared. It covers ID-403's wording too.
+  - **Done when:** every hardening claim in both files says which platform it holds on, with ID-403's and ID-404's iOS results stated as measured.
+  - **Built in build 507:** README (the feature list's clipboard, task-switcher, input, exit and widget lines; 5.9 EXIT; sharing) and SECURITY.md (a note at the top that iOS support is being prepared; the clipboard, keyboard, task-switcher, screen capture and widget lines; iCloud backups of the three remembered files, which hold no credential) now say what holds on Android and what on iOS. README already carried Andrew's iOS note at the top. ID-404's iOS clipboard is stated as measured on a simulator in CI. ID-403's cover is stated as "not yet confirmed on an iPhone". Left: take that qualifier out once Andrew's EXT-6 passes.
+  - **Done, build 512:** with EXT-6 passed, README no longer says the cover is "not yet confirmed on an iPhone", and SECURITY.md says it was seen working on one.
+- BLD: **PR #52, the weekly package update, merged into `dev`:** `shelf` 1.4.2 to 1.4.3 and `shelf_static` 1.1.3 to 1.2.0 in `pubspec.lock`, both pulled in by the test tools rather than the app (ID-411). The bot's own run passed analyze, the tests and a debug build.
+
+2026-10-19 v0.8.141 build 511 - the last nested ternary; BACKLOG's iOS items rewritten for an individual enrolment
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- DOC: **BACKLOG 1.3, the iOS items, rewritten around an individual enrolment**, Andrew's decision 2026-10-19: 944 words to 635, still seven items. ID-426 is now the individual enrolment, ID-421 the optional later move to an organisation, which needs a company rather than a business name. ID-418's review, licence and signing notes are condensed.
+2026-10-19 v0.8.140 build 510 - SonarCloud fixes, step 3: no nested ternaries left; Apple enrolment decided
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-420 DEC: **Apple Developer Program, and the app's iOS bundle ID.** None of the 1.2 WIP items wait on it, since the free Xcode team covers the iPhone tests and ID-405's CI build is unsigned.
+  - **Organisation.** App Review guideline 5.4 says apps "offering VPN services… may only be offered by developers enrolled as an organization", and a reviewer could read this app as one even though it configures the router rather than running a VPN on the phone. An organisation's name, not Andrew's legal name, shows as the seller. It needs a legal entity that can sign contracts with Apple (no trade names), a D-U-N-S number, a public website on the entity's domain with real content, and a work email on that domain. Moving from individual to organisation later goes through Apple support.
+  - **The Apple Account.** Andrew's legal first and last names, two-factor authentication on, and for an organisation Apple recommends the organisation's email address. It becomes the Account Holder - done 2026-10-19.
+  - **The bundle ID.** iOS is `com.exponentiallydigital.cfgpiawg`, Android `com.exponentiallydigital.pia_wireguard_cfga`. iOS allows no underscores, and the ID can't change once an App Store record uses it (ID-422). Claude recommends keeping the current one; matching Android is an Xcode change for Claude, made before ID-422.
+  - **Andrew's decisions, 2026-10-19:** enroll as an organisation, and the bundle ID `com.exponentiallydigital.cfgpiawg`, all lower case, since Apple treats bundle IDs as case sensitive. Changed from `cfgPiaWg` in `ios/Runner.xcodeproj/project.pbxproj` the same day, in build 505. Done.
+
+2026-10-19 v0.8.139 build 509 - SonarCloud fixes, step 2: the two DNS screens' builders split, output pinned word for word
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.138 build 508 - SonarCloud fixes, step 1: one error tidy-up, shared constants
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.137 build 507 - README and SECURITY.md say which platform each protection holds on
+
+```play
+• Behind the scenes: documentation for the coming iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.136 build 506 - iOS app switcher cover, and no widget key on iOS
+
+```play
+• Behind the scenes: more groundwork for an iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-425 CHG: **on iOS, hide HOME SCREEN WIDGET KEY and skip the widget's background registration until iOS has a widget.** Split from ID-424 on 2026-10-19, Andrew's go. The key serves Android's widget only.
+  - **Done when:** a test run as iOS finds no HOME SCREEN WIDGET KEY, one run as Android still does, and the app doesn't register the widget refresh on iOS.
+  - **Built:** `homeWidgetSupported()` in `lib/widget_refresh.dart` is true on Android only. SETTINGS leaves out HOME SCREEN WIDGET KEY where it's false, and `reregisterWidgetRefresh()` returns before touching WorkManager. Tests run as iOS find no row and no registration, and Android's are unchanged; both were seen to fail with the check made true everywhere.
+
+2026-10-19 v0.8.135 build 505 - iOS clipboard clear, iOS bundle ID and app name
+
+```play
+• Behind the scenes: more groundwork for an iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-420 DEC: **the iOS bundle ID is now `com.exponentiallydigital.cfgpiawg`, all lower case.** Andrew's decision, 2026-10-19: Apple treats bundle IDs as case sensitive, and the App Store record is tied to one for good. `ios/Runner.xcodeproj/project.pbxproj` had `cfgPiaWg`; the test target is now `.runnertests`. A test in `test/unit/ios_info_plist_test.dart` holds it. An iPhone with the old build keeps it as a separate app.
+- UI: **the iOS app's name under its icon is now "cfg pia wg"**, Android's "cfg-pia-wg" with spaces for dashes. Andrew's choice, 2026-10-19; Flutter's default was "Cfg Pia Wg". `CFBundleDisplayName` in `ios/Runner/Info.plist`, held by a test in `test/unit/ios_info_plist_test.dart`.
+2026-10-19 v0.8.134 build 504 - ABOUT for iOS, and the Android version row labelled correctly; Dependabot reaches dev
+
+```play
+• ABOUT now labels your phone's Android version "Android version". It was called the target version, which it never was.
+• Behind the scenes: more groundwork for an iOS version.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-423 FIX: Github license file icon showing as "invalid" - no changes have been made to the license file in the five months since I started this project. Cache issue. Invalidated the GitHub cameo cache with `curl -X PURGE https://camo.githubusercontent.com/92d17a7b9ce685b664155556d285b04e619f27e7e1b2cfec5b40ce03d2614858/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f6c6963656e73652f4578706f6e656e7469616c6c794469676974616c2f6366672d7069612d77673f636f6c6f723d303936394441`
+- DOC: added note at top of README that iOS support is in progress, added iOS badge.
+- ID-412 BLD: **Dependabot's GitHub Actions updates go to `dev`, not straight to `main`.** `.github/dependabot.yml` set no `target-branch`, so its Monday PR went to `main`, bypassing `dev` and the build process: PR #39 did on 2026-10-11. It now sets `target-branch: "dev"`. Andrew's decision, 2026-10-16: no auto-merge. CI never runs on `dev`, so auto-merge would have nothing to wait for; he reads the weekly PR, checking it changes only pinned SHAs under `.github/workflows/`, merges it into `dev`, and it goes out in his next build, with the full CI on the release PR. A test in `test/unit/ci_config_test.dart` holds the setting.
+  - **Waiting for:** Dependabot reads this file from `main` only, so it acts from the release that carries it. Done when a Monday PR has been seen to open against `dev`. Until then, a Monday PR opened against `main` has its base moved to `dev`.
+  - **Seen, 2026-10-19:** Dependabot's Monday run opened PR #51, "bump the github-actions group with 3 updates", against `dev`, from `dependabot/github_actions/dev/...`. It changes only `.github/workflows/quality_and_security.yml`: `github/codeql-action` `upload-sarif`, `init` and `analyze` from v4.38.3 to v4.39.0, pinned to `6f2ac81f5cd8`, which `git ls-remote` confirms is v4.39.0's commit. Its one breaking change, a minimum CodeQL bundle of 2.20.7, doesn't touch us: the action downloads its own bundle. Built in build 501, closed here.
+
+2026-10-16 v0.8.133 build 503 - iOS groundwork: CLEAR, store-aware review links and an iOS CI build; weekly package update
+
+```play
+• Behind the scenes: groundwork for an iOS version, and a package update. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-411 BLD: **a weekly pull request that brings packages, the Gradle lockfiles and THIRD-PARTY-NOTICES.md up to date together.** By hand this was three steps: `flutter pub upgrade`, the Gradle `--write-locks`, then `dart run tool/third_party_notices.dart`; build 500 needed all three, the notices were 17 rows behind, and `release.yml` refuses a stale file.
+  - **Built:** the `packages` job in `.github/workflows/weekly_updates.yml` checks out `dev` and runs `flutter pub upgrade` within the constraints (majors stay a deliberate step), `flutter build apk --config-only` to generate the Gradle wrapper, which isn't committed, then the `--write-locks` and the notices tool. If `pubspec.lock`, a lockfile or the notices changed, it runs analyze, the tests and a debug build, and force-pushes one branch, `bot/weekly-packages`, rebuilt from `dev` each week, opening a PR into `dev` or updating the open one. The description gives the check results, what moved, `flutter pub outdated` for the majors left behind, and Gradle, the plugin and Kotlin against their latest.
+  - **Andrew's decision, 2026-10-16:** the job runs the checks itself, with the workflow's own token and no new credential. A PR opened with that token starts no other workflow, and CI never runs on PRs into `dev` anyway; the full suite runs on the release PR. The bot never commits to `dev` or `main`: Andrew merges its PR, and it goes out in his next build with a CHANGELOG line.
+  - **Checked so far:** actionlint passes; the description's three version lookups were run locally and gave the versions above.
+  - **First run on `main`, 2026-10-16, failed - a fault of mine, fixed in build 502:** it upgraded the packages, wrote the locks and regenerated the notices, and found `pubspec.lock` (4 lines) and `android/app/gradle.lockfile` (1 line) to bring, but `git ls-files` printed the lockfiles one per line, and that list written to `$GITHUB_OUTPUT` failed with `Invalid format 'android/buildscript-gradle.lockfile'`. actionlint can't see that. The list is now put on one line, checked locally by writing it to a file the same way, and the PR description's script was run locally with sample input. The workflow also now names `bash` as its shell, so GitHub adds `pipefail`: without it, `flutter pub upgrade | tee upgrade.txt` passed even if the upgrade failed.
+  - **Seen on `main`, 2026-10-16, after v0.8.132:** a hand-started run opened PR #50, "Weekly package update", into `dev` from `bot/weekly-packages`, with analyze, the tests and the debug build all passing: `vm_service` 15.3.0 to 15.4.0 in `pubspec.lock`, and one new line in `android/app/gradle.lockfile`; THIRD-PARTY-NOTICES.md needed no change. That also proves the repository setting ID-410 needed is on. The Flutter job found no newer stable. Built in build 501, fixed in 502, closed here. Claude merged PR #50 into `dev` at Andrew's request, 2026-10-16, so this build carries it: `vm_service` 15.3.0 to 15.4.0, a dev-only package, and the comment line Gradle writes at the top of `android/app/gradle.lockfile` on Linux.
+- ID-416 REL: Test workflow changes from dev, with no release needed. The workflow still runs on GitHub with the same checks; it just stops costing a release.
+  - **What:** a working agreement in `.claude/CONTEXT.md` section 1: once a workflow is on `main`, a change to it is tested with `gh workflow run <file> --ref dev`, which runs the version on `dev`, rather than releasing to see it run. v0.8.132 was released only to test ID-411's fix. The exception was to be a workflow that publishes, such as `release.yml`, thought to run only from a tag; it has a `dry_run`, so it isn't one (Built, below).
+  - **Done when:** the agreement is written in CONTEXT.md section 1.
+  - **Built:** the agreement is in `.claude/CONTEXT.md` section 1. Checked against the workflows before writing it: every one on `main` takes `workflow_dispatch`; `release.yml`'s `dry_run` skips only the Play upload and the GitHub release, and `tool/release_notes.dart` works from the tags that exist, so a dry run with a `tag_name` not yet pushed builds its notes. The agreement also names the three things that still need `main`: a new workflow, a `schedule`, and `.github/dependabot.yml`.
 
 2026-10-16 v0.8.132 build 502 - weekly package update fixed; PIA key check, Flutter pin and API reminder proven on main
 

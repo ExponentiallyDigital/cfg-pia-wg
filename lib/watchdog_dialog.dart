@@ -38,6 +38,7 @@ import 'widgets/app_scaffold.dart';
 import 'widgets/common_fields.dart';
 import 'widgets/error_presenter.dart';
 import 'widgets/region_picker_sheet.dart';
+import 'plain_error.dart';
 
 class WatchdogDialog extends StatefulWidget {
   final int slotIndex;
@@ -226,7 +227,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       final svc = (widget.serviceFactory ?? (c) => RouterWatchdog(c, onLog: _c.onLog))(client);
       return await op(svc);
     } catch (e) {
-      if (mounted) await AppErrors.system(context, _c, 'Watchdog error: ${e.toString().replaceAll('Exception: ', '')}');
+      if (mounted) await AppErrors.system(context, _c, 'Watchdog error: ${plainError(e)}');
       return null;
     } finally {
       if (mounted) setState(() => _loading = _applying = false);
@@ -348,24 +349,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       _field(_dohUrlCtrl, 'DoH URL', const Key('wd_doh_url')),
       _field(_dohIpCtrl, 'DoH server address', const Key('wd_doh_ip')),
       Text(
-        // Two causes, named apart. The note said "used for DNS on this router" for both, and the
-        // common one is neither the router nor another tunnel: it is this tunnel's own DNS (ID-144).
-        clashSlot
-            ? "This address is also this tunnel's DNS server, so the router sends its own lookups to it "
-                "through this tunnel - the watchdog's included. If the tunnel breaks, the watchdog cannot look "
-                'up PIA to repair it. Choose an address this tunnel does not use for DNS.'
-            : clashRouter
-                ? "The router already uses this address for its own encrypted DNS. If a tunnel uses it for DNS "
-                    "too, the router's lookups to it go through that tunnel, and the watchdog's go with them. "
-                    'Choose an address nothing else uses.'
-                : clashOthers.isNotEmpty
-                    ? '${clashOthers.map((s) => 'wgc$s').join(' and ')} ${clashOthers.length == 1 ? 'uses' : 'use'} '
-                        "this address for DNS, so the router sends the watchdog's lookups to it through "
-                        '${clashOthers.length == 1 ? 'that tunnel' : 'those tunnels'}. If one breaks, this watchdog '
-                        'cannot look up PIA. Choose an address no tunnel uses for DNS.'
-                    : 'The watchdog resolves PIA over an encrypted connection to this address. The DoH URL must be a '
-                'name, not an IP address. The DoH server address is how that name is reached. Leave both '
-                'empty to look names up in the clear.',
+        _dohNote(clashSlot: clashSlot, clashRouter: clashRouter, clashOthers: clashOthers),
         key: const Key('wd_doh_note'),
         style: TextStyle(color: clash ? kWarn : kMuted, fontSize: 11),
       ),
@@ -416,7 +400,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loadingRegions = false);
-      await AppErrors.system(context, _c, 'Failed to load regions: ${e.toString().replaceAll('Exception: ', '')}');
+      await AppErrors.system(context, _c, 'Failed to load regions: ${plainError(e)}');
     }
   }
 
@@ -428,7 +412,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       final regions = await (widget.piaService ?? PiaService()).fetchRegions(onProgress: _c.onLog);
       return regions.any((r) => r.id == region) ? null : '"$region" is not a PIA WireGuard region. Choose one from the list.';
     } catch (e) {
-      return 'Could not check the region with PIA: ${e.toString().replaceAll('Exception: ', '')}';
+      return 'Could not check the region with PIA: ${plainError(e)}';
     }
   }
 
@@ -450,7 +434,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       return (outcome: 'ok', message: '');
     } catch (e) {
       if (isPiaAuthRejection(e)) return (outcome: 'rejected', message: kPiaCredentialsRejected);
-      final msg = e.toString().replaceAll('Exception: ', '');
+      final msg = plainError(e);
       if (msg.startsWith("PIA's login service isn't answering")) return (outcome: 'down', message: msg.split('. ').first);
       _c.logEntry('Could not check the PIA credentials before deploying: $msg Saving anyway; the router will try for itself.',
           isWarning: true);
@@ -544,11 +528,14 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     // Every problem at once, in the order the fields appear: the region is at the top of the form, so
     // it comes first. A made-up region used to be reported only once the SMTP fields below it were
     // right, one dialog at a time (ID-202).
-    final regionProblem = region.isEmpty
-        ? 'Choose a region first.'
-        : regionChanges
-            ? await _whileChecking(() => _regionProblem(region))
-            : null;
+    final String? regionProblem;
+    if (region.isEmpty) {
+      regionProblem = 'Choose a region first.';
+    } else if (regionChanges) {
+      regionProblem = await _whileChecking(() => _regionProblem(region));
+    } else {
+      regionProblem = null;
+    }
     if (!mounted) return;
     final errors = [if (regionProblem != null) regionProblem, ...cfg.validate()];
     if (errors.isNotEmpty) {
@@ -844,6 +831,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     // secrets and a password manager has no business filling them.
     List<String> autofillHints = const <String>[],
   }) {
+    final toggleIcon = visible ? Icons.visibility_off : Icons.visibility;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: TextField(
@@ -867,10 +855,34 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
               ? null
               : GestureDetector(
                   onTap: onToggle,
-                  child: Icon(visible ? Icons.visibility_off : Icons.visibility, color: kMuted, size: 18),
+                  child: Icon(toggleIcon, color: kMuted, size: 18),
                 ),
         ),
       ),
     );
   }
+}
+
+/// The note under the DoH fields. Two causes, named apart: the note said "used for DNS on this router" for
+/// both, and the common one is neither the router nor another tunnel: it is this tunnel's own DNS (ID-144).
+String _dohNote({required bool clashSlot, required bool clashRouter, required List<int> clashOthers}) {
+  if (clashSlot) {
+    return "This address is also this tunnel's DNS server, so the router sends its own lookups to it "
+        "through this tunnel - the watchdog's included. If the tunnel breaks, the watchdog cannot look "
+        'up PIA to repair it. Choose an address this tunnel does not use for DNS.';
+  }
+  if (clashRouter) {
+    return "The router already uses this address for its own encrypted DNS. If a tunnel uses it for DNS "
+        "too, the router's lookups to it go through that tunnel, and the watchdog's go with them. "
+        'Choose an address nothing else uses.';
+  }
+  if (clashOthers.isNotEmpty) {
+    return '${clashOthers.map((s) => 'wgc$s').join(' and ')} ${clashOthers.length == 1 ? 'uses' : 'use'} '
+        "this address for DNS, so the router sends the watchdog's lookups to it through "
+        '${clashOthers.length == 1 ? 'that tunnel' : 'those tunnels'}. If one breaks, this watchdog '
+        'cannot look up PIA. Choose an address no tunnel uses for DNS.';
+  }
+  return 'The watchdog resolves PIA over an encrypted connection to this address. The DoH URL must be a '
+      'name, not an IP address. The DoH server address is how that name is reached. Leave both '
+      'empty to look names up in the clear.';
 }

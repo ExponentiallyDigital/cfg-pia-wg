@@ -288,7 +288,9 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_CONSOLE_JSON_KEY }}
           packageName: com.exponentiallydigital.pia_wireguard_cfga
           releaseFiles: build/cfg-pia-wg-${{ steps.tag.outputs.val }}_google-play-store.aab
-          track: internal
+          # tracks, not the deprecated track (ID-415). It defaults to production, so a misspelt input here
+          # would publish to everyone; test/unit/ci_config_test.dart holds it to internal.
+          tracks: internal
           releaseName: ${{ steps.play_info.outputs.play_release_name }}
           # Only files named whatsnew-<locale> are read from it, so the listing files beside the note are ignored.
           whatsNewDirectory: play-store/

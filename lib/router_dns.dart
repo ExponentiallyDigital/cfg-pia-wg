@@ -123,46 +123,45 @@ class DnsFlow extends DnsBlock {
 }
 
 /// The report as plain text, for COPY: what the screen says, in the order it says it.
-String dnsReportText(String title, List<DnsBlock> blocks) {
-  final out = StringBuffer('$title\n');
-  for (final b in blocks) {
-    switch (b) {
-      case DnsGroup(:final title):
-        out.write('\n== $title ==\n');
-      case DnsVerdict(:final text):
-        out.write('$text\n');
-      case DnsStamp(:final text):
-        out.write('$text\n');
-      case DnsFile(:final name, :final role, :final content, :final written, :final caution):
-        out.write('\n$name${written == null ? '' : ' (written $written)'}\n$role\n');
-        if (caution != null) out.write('$caution\n');
-        out.write('$content\n');
-      case DnsCheck(:final rows, :final checkedAt, :final advice):
-        for (final r in rows) {
-          out.write('${r.who}: ${switch (r.state) {
-            DnsCheckState.ok => 'OK',
-            DnsCheckState.failed => 'FAILED',
-            DnsCheckState.notUsed => 'NOT USED',
-          }}');
-          if (r.addresses.isNotEmpty) out.write(' ${r.addresses.join(', ')}');
-          if (r.detail.isNotEmpty) out.write(' ${r.detail}');
-          final extra = [
-            if (r.running != null) r.running! ? 'running' : 'not running',
-            if (r.ms != null) '${r.ms} ms',
-          ];
-          if (extra.isNotEmpty) out.write(' (${extra.join(', ')})');
-          out.write('\n');
-        }
-        if (advice != null) out.write('$advice\n');
-        out.write('$checkedAt\n');
-      case DnsFlow(:final lines):
-        for (final l in lines) {
-          final tags = [l.where.label, if (l.encryption != null) l.encryption!.label].join(', ');
-          out.write('${l.head}${l.rest} [$tags]${l.note.isEmpty ? '' : ' - ${l.note}'}\n');
-        }
-    }
-  }
-  return out.toString();
+///
+/// One function per kind of block since build 509 (ID-041 step 2); test/unit/router_dns_golden_test.dart
+/// holds the text to what it was before the split.
+String dnsReportText(String title, List<DnsBlock> blocks) => '$title\n${blocks.map(_blockText).join()}';
+
+String _blockText(DnsBlock b) => switch (b) {
+      DnsGroup(:final title) => '\n== $title ==\n',
+      DnsVerdict(:final text) => '$text\n',
+      DnsStamp(:final text) => '$text\n',
+      DnsFile() => _fileText(b),
+      DnsCheck() => _checkText(b),
+      DnsFlow(:final lines) => lines.map(_flowLineText).join(),
+    };
+
+String _fileText(DnsFile f) =>
+    '\n${f.name}${f.written == null ? '' : ' (written ${f.written})'}\n${f.role}\n${f.caution == null ? '' : '${f.caution}\n'}${f.content}\n';
+
+String _checkText(DnsCheck c) =>
+    '${c.rows.map(_checkRowText).join()}${c.advice == null ? '' : '${c.advice}\n'}${c.checkedAt}\n';
+
+String _checkRowText(DnsCheckRow r) {
+  final state = switch (r.state) {
+    DnsCheckState.ok => 'OK',
+    DnsCheckState.failed => 'FAILED',
+    DnsCheckState.notUsed => 'NOT USED',
+  };
+  final extra = [
+    if (r.running != null) r.running! ? 'running' : 'not running',
+    if (r.ms != null) '${r.ms} ms',
+  ];
+  return '${r.who}: $state'
+      '${r.addresses.isEmpty ? '' : ' ${r.addresses.join(', ')}'}'
+      '${r.detail.isEmpty ? '' : ' ${r.detail}'}'
+      '${extra.isEmpty ? '' : ' (${extra.join(', ')})'}\n';
+}
+
+String _flowLineText(DnsFlowLine l) {
+  final tags = [l.where.label, if (l.encryption != null) l.encryption!.label].join(', ');
+  return '${l.head}${l.rest} [$tags]${l.note.isEmpty ? '' : ' - ${l.note}'}\n';
 }
 
 // ── Reading the router ────────────────────────────────────────────────────────────────
@@ -170,13 +169,22 @@ String dnsReportText(String title, List<DnsBlock> blocks) {
 /// Where stubby listens, on stock and Merlin alike. A resolver line naming it means DNS-over-TLS is on.
 const String kStubbyAddress = '127.0.1.1';
 
+/// dnsmasq's configuration: the router's DNS and DHCP server.
+const String kDnsmasqConf = '/etc/dnsmasq.conf';
+
+/// Where dnsmasq forwards the lookups it can't answer itself.
+const String kResolvDnsmasq = '/tmp/resolv.dnsmasq';
+
+/// The router's own resolver list.
+const String kResolvConf = '/etc/resolv.conf';
+
 /// The resolver files, in the order a device's lookup travels through them, then the router's own.
 const List<String> kResolverFiles = [
-  '/etc/dnsmasq.conf',
+  kDnsmasqConf,
   '/etc/hosts',
-  '/tmp/resolv.dnsmasq',
+  kResolvDnsmasq,
   '/etc/stubby/stubby.yml',
-  '/etc/resolv.conf',
+  kResolvConf,
 ];
 
 /// Each file under a marker line carrying its path and when it was last written. `date -r` follows
@@ -369,17 +377,17 @@ List<String> parseDotAddresses(String rulelist) => [
 // ── ROUTER RESOLVER STATUS ─────────────────────────────────────────────────────────────
 
 String _role(String path) => switch (path) {
-      '/etc/dnsmasq.conf' =>
+      kDnsmasqConf =>
         "The router's DNS and DHCP server: how it answers your devices' lookups, and which address each device gets.",
       '/etc/hosts' =>
         'Names dnsmasq answers without asking anyone. The watchdog adds your mail server here for a moment while it sends an alert.',
-      '/tmp/resolv.dnsmasq' => "Where dnsmasq sends your devices' lookups it can't answer itself.",
+      kResolvDnsmasq => "Where dnsmasq sends your devices' lookups it can't answer itself.",
       '/etc/stubby/stubby.yml' => 'stubby, the DNS-over-TLS client: the encrypted servers it forwards lookups to.',
-      '/etc/resolv.conf' => "The router's own lookups: your DNS Server setting, then stubby when DNS-over-TLS is on.",
+      kResolvConf => "The router's own lookups: your DNS Server setting, then stubby when DNS-over-TLS is on.",
       _ => '',
     };
 
-String _group(String path) => path == '/etc/resolv.conf' ? "THE ROUTER'S OWN LOOKUPS" : "YOUR DEVICES' LOOKUPS";
+String _group(String path) => path == kResolvConf ? "THE ROUTER'S OWN LOOKUPS" : "YOUR DEVICES' LOOKUPS";
 
 /// What to do about a failed check, from which resolver failed and whether it is running. Null
 /// when nothing failed. Facts and a next step, never a guess at the cause.
@@ -413,11 +421,18 @@ String? resolverAdvice({
   return null;
 }
 
+/// Why a lookup failed, or nothing when it worked.
+String _checkDetail(NslookupResult r) {
+  if (r.ok) return '';
+  if (!r.finished) return 'no answer in 5 s';
+  return r.error.isEmpty ? 'no answer' : r.error;
+}
+
 DnsCheckRow _row(String who, NslookupResult r, bool running) => DnsCheckRow(
       who: who,
       state: r.ok ? DnsCheckState.ok : DnsCheckState.failed,
       addresses: r.addresses,
-      detail: r.ok ? '' : (!r.finished ? 'no answer in 5 s' : (r.error.isEmpty ? 'no answer' : r.error)),
+      detail: _checkDetail(r),
       running: running,
       ms: r.ok ? r.ms : null,
     );
@@ -435,7 +450,7 @@ List<DnsBlock> buildResolverStatus({
   final stubbyRunning = RegExp(r'^@@stubby \d', multiLine: true).hasMatch(facts);
   final parsed = parseResolverFiles(files);
   final dnsmasqServers = parseDnsmasqServers(
-      parsed.firstWhere((x) => x.path == '/tmp/resolv.dnsmasq', orElse: () => const ResolverFile('', null, '')).content);
+      parsed.firstWhere((x) => x.path == kResolvDnsmasq, orElse: () => const ResolverFile('', null, '')).content);
   final dotOn = dnsmasqServers.contains(kStubbyAddress);
   final c = splitChecks(checks);
   final a = parseNslookup(c['a'] ?? '');
@@ -465,7 +480,7 @@ List<DnsBlock> buildResolverStatus({
       written: file.written,
       role: _role(file.path),
       content: file.content.isEmpty ? '(not present)' : file.content,
-      caution: file.path == '/etc/dnsmasq.conf' && file.content.contains('dhcp-host=')
+      caution: file.path == kDnsmasqConf && file.content.contains('dhcp-host=')
           ? "Lists every reserved device's MAC and address: review before sharing."
           : null,
     ));
@@ -621,11 +636,11 @@ DnsRouting parseDnsRouting(String output, {required Map<String, String> names, r
   );
 }
 
-String _join(List<String> xs) => xs.length <= 1
-    ? xs.join()
-    : xs.length == 2
-        ? '${xs[0]} and ${xs[1]}'
-        : '${xs.sublist(0, xs.length - 1).join(', ')} and ${xs.last}';
+String _join(List<String> xs) => switch (xs.length) {
+      <= 1 => xs.join(),
+      2 => '${xs[0]} and ${xs[1]}',
+      _ => '${xs.sublist(0, xs.length - 1).join(', ')} and ${xs.last}',
+    };
 
 DnsTag? _encryptionOver(DnsTag where) => switch (where.kind) {
       DnsTagKind.tunnel => _pia,
@@ -634,10 +649,38 @@ DnsTag? _encryptionOver(DnsTag where) => switch (where.kind) {
     };
 
 /// The whole ROUTER DNS ROUTING screen.
+///
+/// One function per section since build 509 (ID-041 step 2); test/unit/router_dns_golden_test.dart
+/// holds the screen to what it was before the split.
 List<DnsBlock> buildDnsRouting(DnsRouting r, {required String readAt}) {
-  // Pinned devices, grouped by the slot they are pinned to: at most five lines however many are
-  // pinned (agreed 2026-09-27). The redirect names the device and its DNS server; the policy list
-  // says which slot it is pinned to.
+  final pinned = _pinnedLines(r);
+  final everyone = _everyoneLine(r);
+  final routerOwn = _routerOwnLines(r);
+  final watchdogs = _watchdogLines(r);
+  final slotDns = _slotDnsLines(r);
+
+  return [
+    DnsVerdict(_routingVerdict(pinned: pinned, others: [...routerOwn, everyone, ...watchdogs]), lead: true),
+    DnsStamp('read $readAt'),
+    const DnsGroup("YOUR DEVICES' LOOKUPS"),
+    DnsFlow([...pinned, everyone]),
+    const DnsGroup("THE ROUTER'S OWN LOOKUPS"),
+    DnsFlow(routerOwn),
+    const DnsGroup("THE WATCHDOGS' LOOKUPS"),
+    DnsFlow(watchdogs),
+    const DnsGroup("THE SLOTS' DNS SERVERS"),
+    if (slotDns.isEmpty) const DnsVerdict('No slot has DNS servers set.') else DnsFlow(slotDns),
+    if (r.merlin)
+      const DnsVerdict('On Merlin, a slot applies its DNS through its own firewall rules, which this screen does not '
+          'read, so pinned devices are not shown.'),
+    ..._routingEvidence(r),
+  ];
+}
+
+/// Pinned devices, grouped by the slot they are pinned to: at most five lines however many are
+/// pinned (agreed 2026-09-27). The redirect names the device and its DNS server; the policy list
+/// says which slot it is pinned to.
+List<DnsFlowLine> _pinnedLines(DnsRouting r) {
   final bySlot = <String, List<String>>{};
   final dnsFor = <String, Set<String>>{};
   final devicesFor = <String, Set<String>>{};
@@ -660,7 +703,7 @@ List<DnsBlock> buildDnsRouting(DnsRouting r, {required String readAt}) {
         orElse: () => tags.firstWhere((t) => t.kind == DnsTagKind.neutral, orElse: () => tags.first));
   }
 
-  final pinned = <DnsFlowLine>[
+  return [
     for (final e in bySlot.entries)
       () {
         final where = pinnedWhere(e.key);
@@ -673,9 +716,13 @@ List<DnsBlock> buildDnsRouting(DnsRouting r, {required String readAt}) {
         );
       }(),
   ];
+}
 
+/// Every device's lookups that aren't pinned: through stubby when DNS-over-TLS is on, otherwise
+/// straight to dnsmasq's servers.
+DnsFlowLine _everyoneLine(DnsRouting r) {
   final dot = r.dotServers;
-  final everyone = r.dotOn
+  return r.dotOn
       ? DnsFlowLine(
           head: 'Everything else',
           rest: ' → dnsmasq → stubby → ${dot.join(', ')}',
@@ -690,17 +737,27 @@ List<DnsBlock> buildDnsRouting(DnsRouting r, {required String readAt}) {
           where: r.whereForAll(r.dnsmasqServers),
           encryption: _encryptionOver(r.whereForAll(r.dnsmasqServers)),
         );
+}
 
+/// The router's own resolvers, other than stubby.
+List<String> _ordinaryNameservers(DnsRouting r) => r.nameservers.where((n) => n != kStubbyAddress).toList();
+
+/// The router's own lookups, one line per resolver in `/etc/resolv.conf`.
+List<DnsFlowLine> _routerOwnLines(DnsRouting r) {
+  final dot = r.dotServers;
   final fromIsp = r.nvram['wan0_dnsenable_x'] == '1';
-  final ordinary = r.nameservers.where((n) => n != kStubbyAddress).toList();
-  final routerOwn = <DnsFlowLine>[
+  final ordinary = _ordinaryNameservers(r);
+  return [
     for (final n in r.nameservers)
       if (n == kStubbyAddress)
         DnsFlowLine(
           head: n,
           rest: ' stubby',
-          note: 'to ${_join(dot)}, '
-              '${ordinary.length == 2 ? 'only if both of the above fail' : ordinary.length == 1 ? 'only if the one above fails' : 'only if all of the above fail'}',
+          note: 'to ${_join(dot)}, ${switch (ordinary.length) {
+            2 => 'only if both of the above fail',
+            1 => 'only if the one above fails',
+            _ => 'only if all of the above fail',
+          }}',
           where: r.whereForAll(dot),
           encryption: _dot,
         )
@@ -712,8 +769,12 @@ List<DnsBlock> buildDnsRouting(DnsRouting r, {required String readAt}) {
           encryption: _encryptionOver(r.whereFor(n)),
         ),
   ];
+}
 
-  final watchdogs = <DnsFlowLine>[
+/// Each slot's watchdog: its encrypted DNS when it has one, otherwise the router's own resolvers.
+List<DnsFlowLine> _watchdogLines(DnsRouting r) {
+  final ordinary = _ordinaryNameservers(r);
+  return [
     for (var slot = 1; slot <= 5; slot++)
       if (!r.configured(slot))
         DnsFlowLine(head: 'wgc$slot', where: const DnsTag('not configured', DnsTagKind.neutral))
@@ -735,56 +796,48 @@ List<DnsBlock> buildDnsRouting(DnsRouting r, {required String readAt}) {
           encryption: _encryptionOver(r.whereForAll(ordinary)),
         ),
   ];
+}
 
-  // Each distinct set of slot DNS servers once, with the slots that use it, and the rules that
-  // would carry the router's own lookups to it. Facts only (agreed 2026-09-27).
+/// Each distinct set of slot DNS servers once, with the slots that use it, and the rules that
+/// would carry the router's own lookups to it. Facts only (agreed 2026-09-27).
+List<DnsFlowLine> _slotDnsLines(DnsRouting r) {
   final setUsers = <String, List<int>>{};
   for (var slot = 1; slot <= 5; slot++) {
     final dns = addressesIn(r.nvram['wgc${slot}_dns'] ?? '');
     if (r.configured(slot) && dns.isNotEmpty) (setUsers[dns.join(', ')] ??= []).add(slot);
   }
-  final slotDns = <DnsFlowLine>[
-    for (final e in setUsers.entries)
-      () {
-        final addrs = e.key.split(', ');
-        final winners = [for (final a in addrs) r.ruleFor(a)].whereType<DnsRule>().toList();
-        final via = winners.isEmpty ? '' : ' Rules ${_join([for (final w in winners) '${w.priority}'])} send the '
-            "router's own lookups to them through ${r.tableLabel(winners.first.table)}.";
-        return DnsFlowLine(
-          head: e.key,
-          note: 'used by ${_join([for (final s in e.value) r.label(s)])}.$via',
-          where: DnsTag(e.value.length == 1 ? '1 slot' : 'shared by ${e.value.length}', DnsTagKind.neutral),
-        );
-      }(),
-  ];
+  return [for (final e in setUsers.entries) _slotDnsLine(r, e.key, e.value)];
+}
 
-  final othersTunnelled = [...routerOwn, everyone, ...watchdogs].any((l) => l.where.kind == DnsTagKind.tunnel);
-  final verdict = othersTunnelled
-      ? "Some of the router's own lookups go through a tunnel: the lines tagged with one."
-      : pinned.isNotEmpty
-          ? "Only pinned devices' lookups go through a tunnel."
-          : 'No lookups go through a tunnel.';
+/// One set of slot DNS servers: the slots that use it, and the rules that carry the router's own
+/// lookups to it.
+DnsFlowLine _slotDnsLine(DnsRouting r, String servers, List<int> slots) {
+  final winners = [for (final a in servers.split(', ')) r.ruleFor(a)].whereType<DnsRule>().toList();
+  final via = winners.isEmpty ? '' : ' Rules ${_join([for (final w in winners) '${w.priority}'])} send the '
+      "router's own lookups to them through ${r.tableLabel(winners.first.table)}.";
+  return DnsFlowLine(
+    head: servers,
+    note: 'used by ${_join([for (final s in slots) r.label(s)])}.$via',
+    where: DnsTag(slots.length == 1 ? '1 slot' : 'shared by ${slots.length}', DnsTagKind.neutral),
+  );
+}
 
+/// The screen's first line: whether anything but pinned devices goes through a tunnel.
+String _routingVerdict({required List<DnsFlowLine> pinned, required List<DnsFlowLine> others}) {
+  if (others.any((l) => l.where.kind == DnsTagKind.tunnel)) {
+    return "Some of the router's own lookups go through a tunnel: the lines tagged with one.";
+  }
+  return pinned.isNotEmpty ? "Only pinned devices' lookups go through a tunnel." : 'No lookups go through a tunnel.';
+}
+
+/// What the screen was read from: the rules, the redirects and each slot's DNS setting, as the router has them.
+List<DnsBlock> _routingEvidence(DnsRouting r) {
   String annotateRule(DnsRule rule) => '${rule.line}  # ${rule.table == 'main' ? 'main' : r.tableLabel(rule.table)}';
   final slotDnsLines = [
     for (var slot = 1; slot <= 5; slot++)
       'wgc${slot}_dns=${r.nvram['wgc${slot}_dns'] ?? ''}  # ${r.configured(slot) ? r.label(slot) : 'not configured'}',
   ];
-
   return [
-    DnsVerdict(verdict, lead: true),
-    DnsStamp('read $readAt'),
-    const DnsGroup("YOUR DEVICES' LOOKUPS"),
-    DnsFlow([...pinned, everyone]),
-    const DnsGroup("THE ROUTER'S OWN LOOKUPS"),
-    DnsFlow(routerOwn),
-    const DnsGroup("THE WATCHDOGS' LOOKUPS"),
-    DnsFlow(watchdogs),
-    const DnsGroup("THE SLOTS' DNS SERVERS"),
-    if (slotDns.isEmpty) const DnsVerdict('No slot has DNS servers set.') else DnsFlow(slotDns),
-    if (r.merlin)
-      const DnsVerdict('On Merlin, a slot applies its DNS through its own firewall rules, which this screen does not '
-          'read, so pinned devices are not shown.'),
     const DnsGroup('EVIDENCE'),
     DnsFile(
       name: 'DNS routing rules (ip rule, iif lo)',
@@ -816,7 +869,7 @@ Future<List<DnsBlock>> loadResolverStatus(SSHClient client, {DateTime Function()
   final facts = await _read(client, kResolverFactsCommand);
   final files = await _read(client, resolverFilesCommand());
   final dotOn = parseDnsmasqServers(
-          parseResolverFiles(files).where((f) => f.path == '/tmp/resolv.dnsmasq').firstOrNull?.content ?? '')
+          parseResolverFiles(files).where((f) => f.path == kResolvDnsmasq).firstOrNull?.content ?? '')
       .contains(kStubbyAddress);
   final checks = await _read(client, dnsCheckCommand(withStubby: dotOn));
   return buildResolverStatus(facts: facts, checks: checks, files: files, checkedAt: _clock((now ?? DateTime.now)()));

@@ -1,4 +1,5 @@
 // test/screens/main_menu_screen_test.dart - main menu + global chrome + drawer navigation.
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -352,6 +353,34 @@ void main() {
       expect(c.log.any((e) => e.message.contains('Could not open the Play Store listing')), isTrue);
 
       await _teardown(tester, c);
+    });
+
+    // ID-417: on iOS the line names the App Store, and until there is a listing a tap says so on screen
+    // rather than sending an iPhone to Play's web page.
+    testWidgets('on iOS it names the App Store, and a tap says there is no listing yet', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      // Reset by a teardown too, so a failure here can't leave every later test running as iOS.
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final calls = installUrlLauncherMock();
+      final c = _quietController();
+      await tester.pumpWidget(PiaWgApp(controller: c));
+      await tester.pumpAndSettle();
+
+      final text = tester.widget<Text>(find.descendant(of: find.byKey(const Key('menu_review')), matching: find.byType(Text)));
+      expect(((text.textSpan! as TextSpan).children!.last as TextSpan).text, ' add an App Store app review');
+
+      await tester.ensureVisible(find.byKey(const Key('menu_review')));
+      await tester.tap(find.byKey(const Key('menu_review')));
+      await tester.pump();
+
+      expect(launchedUrls(calls), isEmpty, reason: 'not Play, and there is no App Store listing yet');
+      expect(find.descendant(of: find.byType(SnackBar), matching: find.textContaining("isn't on the App Store yet")), findsOneWidget);
+      final logged = c.log.where((e) => e.message.contains("isn't on the App Store yet"));
+      expect(logged, hasLength(1));
+      expect(logged.single.isError, isFalse, reason: 'nothing went wrong; there is just no listing');
+
+      await _teardown(tester, c);
+      debugDefaultTargetPlatformOverride = null;
     });
   });
 

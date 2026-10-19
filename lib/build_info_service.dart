@@ -45,6 +45,9 @@ class BuildInfo {
   final String compileSdk;
   final String kotlinVersion;
 
+  /// The Xcode that built an iOS app (ID-395), iOS's counterpart of [kotlinVersion]; unknown on Android.
+  final String xcodeVersion;
+
   const BuildInfo({
     required this.versionName,
     required this.buildNumber,
@@ -59,6 +62,7 @@ class BuildInfo {
     required this.osVersion,
     required this.compileSdk,
     required this.kotlinVersion,
+    this.xcodeVersion = kUnknownBuildValue,
   });
 
   /// Every field defaults to [kUnknownBuildValue] so a host that grows a new key, or drops an
@@ -80,10 +84,11 @@ class BuildInfo {
       osVersion: value('osVersion'),
       compileSdk: value('compileSdk'),
       kotlinVersion: value('kotlinVersion'),
+      xcodeVersion: value('xcodeVersion'),
     );
   }
 
-  /// Used when the channel is unavailable (widget tests, or any non-Android host).
+  /// Used when the channel is unavailable (widget tests, or a host with no native side).
   const BuildInfo.unknown()
       : versionName = kUnknownBuildValue,
         buildNumber = kUnknownBuildValue,
@@ -97,7 +102,8 @@ class BuildInfo {
         cpuAbi = kUnknownBuildValue,
         osVersion = kUnknownBuildValue,
         compileSdk = kUnknownBuildValue,
-        kotlinVersion = kUnknownBuildValue;
+        kotlinVersion = kUnknownBuildValue,
+        xcodeVersion = kUnknownBuildValue;
 }
 
 /// Fetches the host's build info, falling back to [BuildInfo.unknown] on any channel failure.

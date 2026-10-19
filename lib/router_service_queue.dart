@@ -67,7 +67,10 @@ class RcServiceState {
   bool get busy => service.isNotEmpty && pidAlive;
 
   @override
-  String toString() => idle ? 'idle' : '$service (pid ${pid ?? '?'}, ${pidAlive ? 'alive' : 'gone'})';
+  String toString() {
+    if (idle) return 'idle';
+    return '$service (pid ${pid ?? '?'}, ${pidAlive ? 'alive' : 'gone'})';
+  }
 }
 
 /// Parses [kRcServiceCommand]'s output: `service@@pid@@alive|dead`.

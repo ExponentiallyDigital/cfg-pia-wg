@@ -254,8 +254,9 @@ class DeviceAssignmentService {
     await FailClosedGuard(read: _read, run: _run, onLog: onLog).ensure(quiet: true);
     final types = (await _read('nvram get filter_lw_icmp_x')).trim().split(RegExp(r'\s+'));
     final held = types.contains('8');
+    final pings = held ? 'blocked' : 'to be blocked while a device is pinned';
     await _read(buildLoggerCommand(on
-        ? 'Pings out of the internet connection ${held ? 'blocked' : 'to be blocked while a device is pinned'} (from the app)'
+        ? 'Pings out of the internet connection $pings (from the app)'
         : 'Pings out of the internet connection no longer blocked by the app'));
     return held;
   }

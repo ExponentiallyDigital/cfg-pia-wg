@@ -220,9 +220,9 @@ class ReconnectingBody extends StatelessWidget {
   const ReconnectingBody({super.key});
 
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) => const Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
+        children: [
           CircularProgressIndicator(color: kHighlight),
           SizedBox(height: 20),
           Text('Reconnecting to the router...', style: TextStyle(color: kMuted, fontSize: 13)),

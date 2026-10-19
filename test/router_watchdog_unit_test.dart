@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 // test/router_watchdog_unit_test.dart - pure-function unit tests for the watchdog module.
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart' show kMerlinOnlySlotKeys;
@@ -474,8 +475,23 @@ void main() {
         expect(s, contains(step));
       }
       // Above the review line, sign-off last, exactly as buildEmailBody orders them.
-      expect(s.indexOf(kEmailHowToDisable), lessThan(s.indexOf(kEmailReviewLine)));
-      expect(s.indexOf(kEmailReviewLine), lessThan(s.indexOf(kEmailSignOff.last)));
+      expect(s.indexOf(kEmailHowToDisable), lessThan(s.indexOf(emailReviewLine())));
+      expect(s.indexOf(emailReviewLine()), lessThan(s.indexOf(kEmailSignOff.last)));
+    });
+
+    // ID-417: the script is written on the phone that deploys it, so its review ask follows that phone.
+    test('deployed from iOS, the review ask names the App Store and carries no Play link', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final s = buildWatchdogScript(_valid(slot: 1));
+      final body = buildEmailBody(opening: 'o', whatHappened: const ['w'], router: const ['r'], history: 'h');
+      debugDefaultTargetPlatformOverride = null;
+
+      for (final text in [s, body]) {
+        expect(text, contains('If cfg-pia-wg is useful to you, please consider submitting a review on the App Store.'));
+        expect(text, isNot(contains('play.google.com')));
+      }
+      expect(buildWatchdogScript(_valid(slot: 1)), contains(kPlayStoreUrl), reason: 'deployed from Android, the Play link stays');
     });
 
     test('abort empties curllst so a failed token fetch leaves no PIA password on flash', () {

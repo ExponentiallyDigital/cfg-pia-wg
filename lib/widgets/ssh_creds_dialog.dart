@@ -29,6 +29,7 @@ import '../router_session.dart' show routerConnectMessage;
 import '../router_slot_service.dart' show openSshClient;
 import '../session_controller.dart';
 import 'common_fields.dart';
+import '../plain_error.dart';
 
 /// Logs in to the router with these credentials over the session's shared connection, and on
 /// success records them the way the router screens do: the session counts as connected, so every
@@ -45,7 +46,7 @@ Future<String?> verifyRouterLogin(SessionController c, String ip, String user, S
   } catch (e) {
     // Plain English in the dialog, the raw exception in the log (ID-108).
     c.logEntry('Router login failed: $e', isError: true);
-    return routerConnectMessage(e, ip) ?? 'Could not log in to the router: ${e.toString().replaceAll('Exception: ', '')}';
+    return routerConnectMessage(e, ip) ?? 'Could not log in to the router: ${plainError(e)}';
   }
   c.routerConnected = true;
   await c.rememberRouterIp(ip);

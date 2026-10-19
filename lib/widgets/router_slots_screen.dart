@@ -39,6 +39,7 @@ import 'common_fields.dart';
 import 'error_presenter.dart';
 import 'firmware_notice.dart';
 import 'slot_modal.dart';
+import '../plain_error.dart';
 
 /// What came of offering to install the missing helper binaries. Distinguishes a fresh refusal
 /// from one made earlier in the session: the first has just been told everything the follow-up
@@ -192,7 +193,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       try {
         tag = await svc.readFirmwareTag();
       } catch (e) {
-        return _FirmwareGate.error('Unable to determine router firmware type: ${e.toString().replaceAll('Exception: ', '')}');
+        return _FirmwareGate.error('Unable to determine router firmware type: ${plainError(e)}');
       }
       final detected = classifyFirmwareTag(tag);
       if (detected == null) return const _FirmwareGate.unsupported();
@@ -255,7 +256,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       connectErrorDetail = routerConnectMessage(e, _ipCtrl.text) == null ? null : e.toString();
       connectError = routerConnectMessage(e, _ipCtrl.text) ??
-          'Router SSH connection error: ${e.toString().replaceAll('Exception: ', '')}';
+          'Router SSH connection error: ${plainError(e)}';
     } finally {
       // Both flags together: on the failure paths below the user needs the form, and this is the
       // point at which it stops being a lie to show it.
@@ -352,7 +353,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
       }
     } catch (e) {
       allOk = false;
-      failure = e.toString().replaceAll('Exception: ', '');
+      failure = plainError(e);
     } finally {
       if (mounted) setState(() => _connecting = false);
     }
