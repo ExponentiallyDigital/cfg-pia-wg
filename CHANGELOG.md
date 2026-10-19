@@ -130,6 +130,7 @@ Work items for the **current** release:
   - **Step 4, built in build 513:** DEVICES' APPLY split with nothing reordered. `DeviceAssignmentService.apply` takes the state it read and one `ApplyRequest` in place of 13 parameters, and runs one function per stage: the stale-write check, reservations, names, disabling, the moves, the default connection, the guard, the read-back. The screen's `_apply` is now an outline over `_reservationsToCreate`, `_confirmApply`, `_applyRequest`, `_showProgress`, `_runApply` and `_refreshAfterApply`, and `_tunnelWarnings` over `_tunnelsToCheck` and `_warningsFrom`. Before the change: three tests for the paths none reached (a failed tunnel check, a failed write, a failed re-read), run on the old code. After it: a test pinning the stages' order in an APPLY that does everything, added because moving the device moves before the disabling broke no test; it now fails for that and for renames after disabling. THE DEFAULT CONNECTION SEQUENCE IS EXACT caught the guard moved before the default. The full suite passes. Left: CI, SonarCloud's scores, and Andrew's DEVICES hand tests in this step's own release.
   - **After build 513, 2026-10-19:** CI passed (run 39219301952) and SonarCloud shows 36 open, from 39: `_apply`, `_tunnelWarnings` and `apply`'s 13 parameters are gone. `_confirmApply`, split out of `_apply`, still scored 46, so build 514 splits it again into `_changeLines`, `_disabling`, `_scheduleWarning` and `_foreignNames`. The full suite passes, the confirmation's tests among them. Left: CI on build 514, then Andrew's DEVICES hand tests (DEV-2, DEV-4 to DEV-8, DEV-11, DEV-18 to DEV-20; DEF-1, DEF-3, DEF-8) before this step's own release.
   - **After build 514, 2026-10-19:** CI passed (run 39221326472) and SonarCloud shows 35 open; nothing in APPLY is flagged now. DEVICES' other findings are outside APPLY, for step 5: `_connect` 25, `_buildList` 22, `_pickerTile` 18, `build` 17 (`device_assignment_screen.dart`), and `_setDefaultConnection` 23 (`device_assignment_service.dart`).
+  - **Step 5, `slot_modal.dart`, built in build 516:** its six flagged functions split, with nothing reworked. `_confirm`'s body went to `_confirmBody` and `_confirmWarning`. `_create`'s overwrite question and login went to `_confirmOverwrite` and `_generateWithLogin`. `_enableManage`'s target read and failure report went to `_readPingTargets` and `_reportEnableFailure`. `_editManage`'s read and save went to `_readSlotParams` and `_saveSlotParams`. `_slotList`'s row and badges went to `_slotRow` and `_slotBadges`. `_buttons` became `_manageButtons` and `_watchdogButtons` over `_gated` and `_btn`. The full suite passes.
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -146,6 +147,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.146 build 516 - SonarCloud fixes, step 5: the slot modal split
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 2026-10-19 v0.8.145 build 515 - safety commit: iPhone results so far recorded
 
