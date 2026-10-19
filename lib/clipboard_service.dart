@@ -27,6 +27,9 @@ const MethodChannel clipboardChannel = MethodChannel('com.exponentiallydigital.p
 const String kClearClipboardMethod = 'clearClipboard';
 const String kCopySensitiveMethod = 'copySensitive';
 
+/// How long a copy stays on the clipboard: the app's countdown, and on iOS the copy's own expiry (ID-404).
+const Duration kClipboardTimeout = Duration(seconds: 60);
+
 /// Empties the system clipboard, silently where the host can.
 ///
 /// Returns true when the host read the clipboard back and found it empty, false when it cleared it
@@ -50,9 +53,13 @@ Future<bool?> clearSystemClipboard() async {
 
 /// Copies [text] marked sensitive, so Android 13+ hides it in the clipboard preview (ID-313), and
 /// labelled as this app's, so MainActivity can clear it at the next start if the app was killed first. Falls back to a plain copy.
-Future<void> copySensitive(String text) async {
+///
+/// On iOS (ID-404) the copy stays on this phone, out of Universal Clipboard, and expires after
+/// [expiresIn], so iOS removes it even if the app is suspended before its countdown ends. Android
+/// ignores the expiry.
+Future<void> copySensitive(String text, {Duration expiresIn = kClipboardTimeout}) async {
   try {
-    await clipboardChannel.invokeMethod<void>(kCopySensitiveMethod, {'text': text});
+    await clipboardChannel.invokeMethod<void>(kCopySensitiveMethod, {'text': text, 'expiresInSeconds': expiresIn.inSeconds});
   } on MissingPluginException {
     await Clipboard.setData(ClipboardData(text: text));
   } on PlatformException {

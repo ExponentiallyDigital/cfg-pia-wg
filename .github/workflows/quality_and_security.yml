@@ -193,6 +193,26 @@ jobs:
           [ "$(plutil -extract CfgRunnerId raw "$plist")" = "$GITHUB_RUN_ID" ] || { echo "::error::CfgRunnerId is not this run's id"; exit 1; }
           [ "$(plutil -extract CfgGitCommit raw "$plist")" = "$(git log -1 --abbrev=7 --format=%h)" ] || { echo "::error::CfgGitCommit is not this commit"; exit 1; }
 
+      # ID-404: ios/RunnerTests drives the clipboard channel's Swift handler inside the app on a simulator -
+      # copy, clear, read back nothing, and the copy's own expiry. The build above leaves what xcodebuild needs.
+      - name: Run the iOS tests on a simulator
+        shell: bash
+        run: |
+          set -o pipefail
+          udid=$(xcrun simctl list devices available | grep -E '^ +iPhone' | head -1 | grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}')
+          [ -n "$udid" ] || { echo "::error::no iPhone simulator available"; xcrun simctl list devices available; exit 1; }
+          echo "Simulator: $(xcrun simctl list devices available | grep "$udid" | sed 's/^ *//')"
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -destination "id=$udid" \
+            -only-testing:RunnerTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-test.log | grep -E "Test Case|error:|Executed|\*\* TEST"
+
+      - name: Keep the xcodebuild log
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: xcodebuild-test-log
+          path: xcodebuild-test.log
+          retention-days: 7
+
   # ============================================================
   # Job 3: OSV dependency vulnerability scan - every other job waits on it
   # ============================================================
