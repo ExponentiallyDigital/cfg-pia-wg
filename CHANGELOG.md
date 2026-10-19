@@ -145,11 +145,12 @@ Work items for the **current** release:
   - **Done when:** a simulator test in ID-405's macOS job copies text, clears it through the channel and reads back nothing, and is seen to fail with the Swift removed - CHANGELOG's rule for a protection's check; and on an iPhone the 60-second clear happens with no system paste popup.
   - **Moved to WIP 2026-10-19, Andrew's decision:** ahead of ID-041, so the iOS work goes on while he enrols with Apple.
   - **Built in build 505:** `enum SensitiveClipboard` in `ios/Runner/AppDelegate.swift` answers the clipboard channel. Copy: kept on this phone (`localOnly`, so not on the user's Mac by Universal Clipboard) and set to expire after the countdown's 60 seconds (`kClipboardTimeout`, now passed by `copySensitive()`), so iOS removes it even if the app is suspended first. Clear: `items = []`, checked by `numberOfItems`; nothing reads the contents, since that shows iOS's paste banner. Three XCTests in `ios/RunnerTests/RunnerTests.swift` call the handler as the channel does, run on a simulator by a new step in the `ios-build` job: copy then clear reads back nothing, a 2-second copy expires by itself, and an unknown method isn't implemented. A Dart test holds the Swift names to the Dart side and fails if the Swift reads the clipboard.
+  - **Seen in CI, 2026-10-19:** run 39186128849 on build 505 passed every job, and the simulator step (iPhone 17 Pro) ended `** TEST SUCCEEDED **`. Its log filter missed the per-test lines, since newer Xcode writes "Test case" in lower case, so how many ran wasn't shown; build 506 fixes the filter and fails the step if fewer tests pass than exist.
 - ID-403 CHG: The platform hardening does not. `FLAG_SECURE` has **no iOS equivalent** - screenshots cannot be blocked, only the task-switcher snapshot can be covered. `README.md` and `SECURITY.md` state that guarantee unconditionally today and would need to state it per-platform.
   - **What:** cover the window when the app leaves the foreground and uncover it when it returns, so the app switcher shows the cover, not the screen. Screenshots can't be blocked on iOS at all. The README.md and SECURITY.md wording goes with ID-029.
   - **Done when:** Andrew has seen the cover in the app switcher on an iPhone, and the screen there with the cover taken out - CHANGELOG's rule for a protection's check.
   - **Moved to WIP 2026-10-19, Andrew's decision:** with ID-404.
-
+  - **Built in build 506:** `enum PrivacyCover` in `ios/Runner/AppDelegate.swift`. It covers each window with the launch screen (`kBg` and the launch artwork) when its scene is about to deactivate, which is before iOS takes the app switcher's picture, and removes it when the scene is active again. Release builds only, as Android skips `FLAG_SECURE` in a debug build, so a debug build is how the cover is seen taken out. An XCTest checks the cover goes on once, fills the window and comes off; a Dart test holds the wiring and the release-only rule. TESTING EXT-6 has the iPhone steps. Left: Andrew's EXT-6 on an iPhone, release and debug.
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -166,6 +167,17 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.136 build 506 - iOS app switcher cover, and no widget key on iOS
+
+```play
+• Behind the scenes: more groundwork for an iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-425 CHG: **on iOS, hide HOME SCREEN WIDGET KEY and skip the widget's background registration until iOS has a widget.** Split from ID-424 on 2026-10-19, Andrew's go. The key serves Android's widget only.
+  - **Done when:** a test run as iOS finds no HOME SCREEN WIDGET KEY, one run as Android still does, and the app doesn't register the widget refresh on iOS.
+  - **Built:** `homeWidgetSupported()` in `lib/widget_refresh.dart` is true on Android only. SETTINGS leaves out HOME SCREEN WIDGET KEY where it's false, and `reregisterWidgetRefresh()` returns before touching WorkManager. Tests run as iOS find no row and no registration, and Android's are unchanged; both were seen to fail with the check made true everywhere.
 
 2026-10-19 v0.8.135 build 505 - iOS clipboard clear, iOS bundle ID and app name
 

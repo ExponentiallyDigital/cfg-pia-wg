@@ -147,6 +147,19 @@ void main() {
     }
   });
 
+  // ID-403: iOS can't block screenshots, so a release build covers the app switcher's picture instead,
+  // and a debug build skips it as Android's skips FLAG_SECURE. The cover itself runs in ios/RunnerTests.
+  test('AppDelegate.swift covers the app as its scene deactivates, in a release build only', () {
+    final swift = File('ios/Runner/AppDelegate.swift').readAsStringSync();
+    expect(swift, contains('    PrivacyCover.start()\n    return super.application('));
+    final start = swift.substring(swift.indexOf('static func start()'), swift.indexOf('private static func windows'));
+    expect(start, contains('#if !DEBUG'));
+    expect(start, contains('UIScene.willDeactivateNotification'));
+    expect(start, contains('forEach(show)'));
+    expect(start, contains('UIScene.didActivateNotification'));
+    expect(start, contains('forEach(hide)'));
+  });
+
   // Screen capture is blocked in a release build. A debug build skips FLAG_SECURE so the app can
   // be captured on a device while testing; this fails if that ever widens to a release.
   test('MainActivity.kt keeps FLAG_SECURE for release builds', () {

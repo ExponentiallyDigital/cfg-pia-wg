@@ -46,7 +46,7 @@ import '../widgets/error_presenter.dart';
 import '../widgets/ssh_creds_dialog.dart';
 import '../widget_key.dart';
 import '../widget_key_service.dart';
-import '../widget_refresh.dart' show cancelWidgetRefresh, scheduleWidgetRefresh;
+import '../widget_refresh.dart' show cancelWidgetRefresh, homeWidgetSupported, scheduleWidgetRefresh;
 import '../widget_status_service.dart' show kWidgetStatusCommand;
 import 'router_dns_screen.dart';
 
@@ -910,15 +910,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onTap: _busy ? null : () => _openDnsReport(DnsReportScreen.routing),
         ),
         // ID-376: makes or removes the widget's key, on the router and the phone. The dialog itself
-        // reads the current state, so nothing here needs it in advance.
-        _Action(
-          keyValue: 'settings_widget_key',
-          label: 'HOME SCREEN WIDGET KEY',
-          note: "Makes or removes the key the home screen widget will use to check your router's status "
-              'on its own.',
-          icon: Icons.key_outlined,
-          onTap: _busy ? null : _widgetKey,
-        ),
+        // reads the current state, so nothing here needs it in advance. Android only: iOS has no
+        // widget for the key to serve (ID-425).
+        if (homeWidgetSupported())
+          _Action(
+            keyValue: 'settings_widget_key',
+            label: 'HOME SCREEN WIDGET KEY',
+            note: "Makes or removes the key the home screen widget will use to check your router's status "
+                'on its own.',
+            icon: Icons.key_outlined,
+            onTap: _busy ? null : _widgetKey,
+          ),
         // The router address and its host key fingerprint are kept on the phone, so they need a way to
         // be cleared. Greyed out when there is nothing stored.
         ListenableBuilder(

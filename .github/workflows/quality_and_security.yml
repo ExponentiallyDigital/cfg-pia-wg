@@ -203,7 +203,11 @@ jobs:
           [ -n "$udid" ] || { echo "::error::no iPhone simulator available"; xcrun simctl list devices available; exit 1; }
           echo "Simulator: $(xcrun simctl list devices available | grep "$udid" | sed 's/^ *//')"
           xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner -destination "id=$udid" \
-            -only-testing:RunnerTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-test.log | grep -E "Test Case|error:|Executed|\*\* TEST"
+            -only-testing:RunnerTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-test.log | grep -iE "test case|error:|executed|\*\* test"
+          # A run that compiled no tests also "succeeds", so count them. Newer Xcode says "Test case", older "Test Case".
+          passed=$(grep -ciE "test case .*passed" xcodebuild-test.log || true)
+          echo "Tests passed: $passed"
+          [ "$passed" -ge 4 ] || { echo "::error::expected 4 iOS tests to pass (ios/RunnerTests), saw $passed"; exit 1; }
 
       - name: Keep the xcodebuild log
         if: failure()

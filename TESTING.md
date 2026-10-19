@@ -1795,6 +1795,10 @@ logger "**ABT-3 END** Script from another version"
 
 - Do: on a **release** build, try to take a screenshot, then open the task switcher. A debug build allows both on purpose, so mark this SKIP if that is what you are running.
 - See: the screenshot is refused, and the task switcher shows a blank or masked thumbnail rather than the screen.
+- Do: on an iPhone, a **release** build (`flutter run --release`): open a screen with something on it, such as MANAGE's slot list, then swipe up and hold to open the app switcher.
+- See: the app's card shows the launch screen (dark, with the artwork), not the screen. A screenshot still works: iOS can't block one (ID-403).
+- Do: the same on a **debug** build (`flutter run`), which has no cover.
+- Pass if: the debug build's card shows the screen, so the cover is what hid it on the release build.
 
 **EXT-7** Rotate mid-action [hand]
 
