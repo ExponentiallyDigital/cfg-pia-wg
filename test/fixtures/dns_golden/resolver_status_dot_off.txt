@@ -1,0 +1,46 @@
+ROUTER RESOLVER STATUS
+dnsmasq: OK 172.66.147.243, 104.20.23.154, 2606:4700:10::ac42:93f3, 2606:4700:10::6814:179a (running, 40 ms)
+stubby: NOT USED DNS-over-TLS is off (running)
+checked 04:08:12
+
+== YOUR DEVICES' LOOKUPS ==
+
+/etc/dnsmasq.conf (written 01:56)
+The router's DNS and DHCP server: how it answers your devices' lookups, and which address each device gets.
+Lists every reserved device's MAC and address: review before sharing.
+pid-file=/var/run/dnsmasq.pid
+servers-file=/tmp/resolv.dnsmasq
+dhcp-host=00:11:32:4A:6C:1E,set:00:11:32:4A:6C:1E,FamilyNAS,192.168.1.200
+
+/etc/hosts (written 12:10)
+Names dnsmasq answers without asking anyone. The watchdog adds your mail server here for a moment while it sends an alert.
+127.0.0.1 localhost.localdomain localhost
+
+/tmp/resolv.dnsmasq (written 02:04)
+Where dnsmasq sends your devices' lookups it can't answer itself.
+server=1.1.1.2
+
+/etc/stubby/stubby.yml (written 01:56)
+stubby, the DNS-over-TLS client: the encrypted servers it forwards lookups to.
+upstream_recursive_servers:
+  - address_data: 1.1.1.2
+
+== THE ROUTER'S OWN LOOKUPS ==
+
+/etc/resolv.conf (written 02:04)
+The router's own lookups: your DNS Server setting, then stubby when DNS-over-TLS is on.
+nameserver 1.1.1.2
+nameserver 1.0.0.2
+nameserver 127.0.1.1
+
+== SETTINGS ==
+
+Active DNS settings (nvram)
+What you set in the web interface. The files above are built from these; if they disagree, the router needs a restart.
+dnspriv_enable=0
+dnspriv_profile=1
+dnspriv_rulelist=<1.1.1.2>853>security.cloudflare-dns.com><1.0.0.2>853>security.cloudflare-dns.com>
+wan0_dns1_x=1.1.1.2
+wan0_dns2_x=1.0.0.2
+wan0_dns=1.1.1.2 1.0.0.2
+wan0_dnsenable_x=0
