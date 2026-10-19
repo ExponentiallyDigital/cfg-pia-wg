@@ -144,6 +144,14 @@ Work items for the **current** release:
     - ROUTER LOG's scrolling and page read went to `_jumpToNewest`, `_keepDistanceFromBottom` and `_readPage`.
     - DEVICES' connect attempt became the method `_attemptConnect`.
     - The full suite passes.
+  - **After build 521, 2026-10-19:** CI passed (run 39242922177), and SonarCloud shows 8 open, from 95 before step 1: exactly the watchdog's and the slot service's, left for the firmware abstraction (ID-419). Steps 1 to 5 are done. Left before this item closes: Andrew's DEVICES hand tests (DEV-2, DEV-4 to DEV-8, DEV-11, DEV-18 to DEV-20; DEF-1, DEF-3, DEF-8) on build 521 or later, then a release of its own.
+- ID-434 DOC: **drafts of the App Store listing text, the privacy answers and the age rating answers, in `app-store/`.** From BACKLOG 1.3, 2026-10-19. Needs no Apple account.
+  - **Done when:** the drafts are in `app-store/`, within Apple's limits, and Andrew has read them.
+- ID-435 DOC: **a draft of the App Review notes, in `app-store/`.** From BACKLOG 1.3, 2026-10-19. The reviewer has no ASUS router or PIA account (guideline 2.1); the notes say the app configures a router and offers no VPN itself (5.4), and why PIA is named (5.2).
+  - **Done when:** the draft is in `app-store/` and Andrew has read it.
+- ID-430 DEC: **Apple's export compliance answer, decided and set in `Info.plist`.** From BACKLOG 1.3, 2026-10-19. Claude sets out the facts first: SSH runs on dartssh2's own Dart cryptography, not Apple's, and HTTPS on the platform's.
+  - **Done when:** Andrew has decided, `ITSAppUsesNonExemptEncryption` is set to match, and an upload asks no encryption question.
+
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -160,6 +168,22 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.152 build 522 - every open item INVEST-ready; the email layout in a file of its own
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- DOC: **BACKLOG reviewed so every open item is INVEST-ready**, Andrew's request 2026-10-19: one outcome each, its own done-when and its dependencies.
+  - **Split:** localisation into a decision (ID-024), the groundwork (ID-442), three languages (ID-443 to ID-445) and the Play listings (ID-446). The firmware abstraction's loose bullets into ID-447 to ID-453, its slices each released on its own after the release carrying ID-041 step 4. The App Store listing into drafts (ID-434), screenshots (ID-454) and entry (ID-455), and the review notes into a draft (ID-435) and a video (ID-456).
+  - **Reworded:** ID-135 into a decision; ID-127 into a contingency with its trigger; ID-305, ID-257, ID-386, ID-375 and ID-440 given done-when lines; ID-441 into an investigation with its first step; ID-433 placed after ID-418.
+  - **Dropped as not work items:** "Map codebase" (done 2026-09-01) and the unspecific "Optimise and simplify" bullets, which the SonarCloud work (ID-041) has now covered.
+  - ID-447, ID-434, ID-435 and ID-430 moved to WIP as the items needing neither Apple nor hardware.
+- ID-447 MOD: **the watchdog's email layout moves out of `router_watchdog.dart` into a file of its own, with no behaviour change.** From BACKLOG 1.2, 2026-10-19, Andrew's go to implement what needs no hardware.
+  - **Done when:** they live in their own file, nothing that uses them changes beyond an import, and the full suite passes unchanged.
+  - **Built:** `lib/watchdog_email_layout.dart` holds the 158 lines word for word; `router_watchdog.dart` imports and re-exports it, so the screens and tests that reach the layout through it changed nothing. The full suite passes with no test changed. CONTEXT's file map has the new file.
 
 2026-10-19 v0.8.151 build 521 - SonarCloud fixes, step 5: the near misses
 
