@@ -100,6 +100,7 @@ Work items for the **next** release:
 - ID-029 DOC: phrase hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
   - **Andrew's decisions, 2026-10-16:** Claude may edit README.md and SECURITY.md for this item, and puts a note at the top of each file it changes saying iOS support is being prepared. It covers ID-403's wording too.
   - **Done when:** every hardening claim in both files says which platform it holds on, with ID-403's and ID-404's iOS results stated as measured.
+  - **Built in build 507:** README (the feature list's clipboard, task-switcher, input, exit and widget lines; 5.9 EXIT; sharing) and SECURITY.md (a note at the top that iOS support is being prepared; the clipboard, keyboard, task-switcher, screen capture and widget lines; iCloud backups of the three remembered files, which hold no credential) now say what holds on Android and what on iOS. README already carried Andrew's iOS note at the top. ID-404's iOS clipboard is stated as measured on a simulator in CI. ID-403's cover is stated as "not yet confirmed on an iPhone". Left: take that qualifier out once Andrew's EXT-6 passes.
 
 ---
 
@@ -146,11 +147,13 @@ Work items for the **current** release:
   - **Moved to WIP 2026-10-19, Andrew's decision:** ahead of ID-041, so the iOS work goes on while he enrols with Apple.
   - **Built in build 505:** `enum SensitiveClipboard` in `ios/Runner/AppDelegate.swift` answers the clipboard channel. Copy: kept on this phone (`localOnly`, so not on the user's Mac by Universal Clipboard) and set to expire after the countdown's 60 seconds (`kClipboardTimeout`, now passed by `copySensitive()`), so iOS removes it even if the app is suspended first. Clear: `items = []`, checked by `numberOfItems`; nothing reads the contents, since that shows iOS's paste banner. Three XCTests in `ios/RunnerTests/RunnerTests.swift` call the handler as the channel does, run on a simulator by a new step in the `ios-build` job: copy then clear reads back nothing, a 2-second copy expires by itself, and an unknown method isn't implemented. A Dart test holds the Swift names to the Dart side and fails if the Swift reads the clipboard.
   - **Seen in CI, 2026-10-19:** run 39186128849 on build 505 passed every job, and the simulator step (iPhone 17 Pro) ended `** TEST SUCCEEDED **`. Its log filter missed the per-test lines, since newer Xcode writes "Test case" in lower case, so how many ran wasn't shown; build 506 fixes the filter and fails the step if fewer tests pass than exist.
+  - **Seen to pass and to fail, 2026-10-19:** run 39187595118 on build 506 passed all four RunnerTests on an iPhone 17 Pro simulator. Run 39187631074, on a throwaway `fix/` branch with the clear, the expiry and the cover removed from the Swift, failed `testCopyThenClearLeavesNothing` and `testCopyExpiresOnItsOwn` (and the cover's test), while the unknown-method test still passed; the Dart shape test failed on the missing `.expirationDate:` too. The branch was deleted. Left: on an iPhone, the 60-second clear with no paste banner.
 - ID-403 CHG: The platform hardening does not. `FLAG_SECURE` has **no iOS equivalent** - screenshots cannot be blocked, only the task-switcher snapshot can be covered. `README.md` and `SECURITY.md` state that guarantee unconditionally today and would need to state it per-platform.
   - **What:** cover the window when the app leaves the foreground and uncover it when it returns, so the app switcher shows the cover, not the screen. Screenshots can't be blocked on iOS at all. The README.md and SECURITY.md wording goes with ID-029.
   - **Done when:** Andrew has seen the cover in the app switcher on an iPhone, and the screen there with the cover taken out - CHANGELOG's rule for a protection's check.
   - **Moved to WIP 2026-10-19, Andrew's decision:** with ID-404.
   - **Built in build 506:** `enum PrivacyCover` in `ios/Runner/AppDelegate.swift`. It covers each window with the launch screen (`kBg` and the launch artwork) when its scene is about to deactivate, which is before iOS takes the app switcher's picture, and removes it when the scene is active again. Release builds only, as Android skips `FLAG_SECURE` in a debug build, so a debug build is how the cover is seen taken out. An XCTest checks the cover goes on once, fills the window and comes off; a Dart test holds the wiring and the release-only rule. TESTING EXT-6 has the iPhone steps. Left: Andrew's EXT-6 on an iPhone, release and debug.
+  - **Seen in CI, 2026-10-19:** the cover's XCTest passed on build 506 (run 39187595118) and failed with `window.addSubview(cover)` taken out (run 39187631074, throwaway branch). That checks the cover, not the app switcher; EXT-6 on an iPhone still decides it.
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -167,6 +170,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.137 build 507 - README and SECURITY.md say which platform each protection holds on
+
+```play
+• Behind the scenes: documentation for the coming iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 2026-10-19 v0.8.136 build 506 - iOS app switcher cover, and no widget key on iOS
 
