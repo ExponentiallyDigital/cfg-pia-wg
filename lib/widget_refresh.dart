@@ -250,7 +250,7 @@ bool homeWidgetSupported() => defaultTargetPlatform == TargetPlatform.android;
 /// Deliberately swallows its errors - a platform without the plugin (a test, a desktop build)
 /// must not stop the app from starting over a widget it does not have.
 ///
-/// Android only: the widget is Android's, and iOS has none yet (ID-425, until ID-424). [initialize]
+/// Android only: the widget is Android's, and iOS has none yet (ID-425, until ID-438). [initialize]
 /// stands in for the plugin in a test.
 Future<void> reregisterWidgetRefresh({Future<void> Function()? initialize}) async {
   if (!homeWidgetSupported()) return;

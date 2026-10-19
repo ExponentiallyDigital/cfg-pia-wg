@@ -8,7 +8,7 @@
     - [1.1.2. FTR - future implementation](#112-ftr---future-implementation)
     - [1.1.3. Unconfirmed BUGs](#113-unconfirmed-bugs)
   - [1.2. Codebase cleanup](#12-codebase-cleanup)
-  - [1.3. v1.0.0 iOS version](#13-v100-ios-version)
+  - [1.3. iOS version](#13-ios-version)
 - [2. New work items](#2-new-work-items)
 
 ---
@@ -19,10 +19,10 @@ See [Process - BACKLOG and CHANGELOG management](https://github.com/Exponentiall
 
 Work items use the same prefixes as CHANGELOG.md, plus these backlog-only ones:
 
-| Prefix | Meaning |
-|---|---|
-| OPS | Operational issue (hosting, external service, infrastructure) |
-| FTR | Future feature, not yet scheduled to a release |
+| Prefix | Meaning                                                       |
+| :----: | ------------------------------------------------------------- |
+|  OPS   | Operational issue (hosting, external service, infrastructure) |
+|  FTR   | Future feature, not yet scheduled to a release                |
 
 See CHANGELOG.md for the full shared list (ADD, ARC, BLD, BUG, CFG, CHG, DEC, DELETE, DOC, FIX, GUI, INF, MOD, NOTE, REL, SEC, TST, UI).
 
@@ -70,9 +70,6 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
 
-> [!IMPORTANT]
-> Do not start the firmware abstraction until stock support has soaked in release. It touches every path stock support just landed on, and a regression here would be indistinguishable from a stock-support bug - the same reasoning that gave SSH connection reuse its own build number.
-
 - Map codebase
   - By file and by function (done 2026-09-01, now in `CONTEXT.md`)
   - Identify redundant or duplicated code
@@ -90,31 +87,50 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
 - Largest files, measured 2026-09-05: `router_watchdog.dart` 1,554 lines, `router_slot_service.dart` 842, `slot_modal.dart` 767. The email layout in `router_watchdog.dart` (`buildEmailBody`, `RouterEmailFacts`, the section constants) is self-contained and would move out with no behaviour change.
 - ID-419 CHG: **the SonarCloud findings in the watchdog and the slot service - ID-041's step 6 - after the firmware abstraction.** Split from ID-041 2026-10-16, Andrew's decision. `uninstallFromRouter` 53, `deployWatchdog` 45 and `validate` 30 (`lib/router_watchdog.dart`), and `createConfigToSlot` 37, `fetchSlots` 30 and `enableSlot` 26 (`lib/router_slot_service.dart`), are full of stock-or-Merlin branches the abstraction would restructure anyway, so they're scored again after it and what's left is fixed then.
 
-### 1.3. v1.0.0 iOS version
+### 1.3. iOS version
 
-**Under way** since 2026-10-16, Andrew's decision. The items being built are in CHANGELOG 1.2; these wait on them or on Apple. Enrolling as an individual first (2026-10-19); an organisation later is optional (ID-421). Early thinking: `.claude/plans/plan_ios-port.md`.
+**Under way** since 2026-10-16. In dependency order; marks his items. GPLv3 is fine on the App Store while Andrew holds all the copyright, so an outside contribution needs his permission to ship there.
 
-- ID-426 REL: **Andrew enrols in the Apple Developer Program as an individual.** Andrew's decision, 2026-10-19: his legal name is already public as the Play Store seller.
-  - At developer.apple.com/programs/enroll or in the Apple Developer app, with his Apple Account (legal name, two-factor on). US$99 a year, charged in Australian dollars. Apple may ask for photo ID.
-  - **Done when:** the membership shows as active.
-- ID-422 REL: **Andrew sets up the team in Xcode and App Store Connect.** Depends on ID-426.
-  - Xcode: Settings > Accounts, sign in. Runner > Signing & Capabilities: the new team, "Automatically manage signing". Run once on each iPhone, so builds last a year instead of 7 days.
-  - App Store Connect: Apps > + > New App, bundle ID `com.exponentiallydigital.cfgpiawg` (exact case), a name, language and SKU. This reserves the name and gives ID-417 its App Store link.
-  - EU trader status (App Information > Digital Services Act): declare it, or leave the EU storefronts out.
-  - **Done when:** signed builds run on all three iPhones, the app record exists, and the trader status is declared.
-- ID-418 REL: **iOS releases: signing in CI, TestFlight, the App Store, release notes and the SBOM.** Depends on ID-405 and ID-422.
-  - CI signs with an App Store Connect API key (App Manager role); its `.p8` file downloads once and lives only in GitHub secrets.
-  - The first upload asks the export compliance question (the app uses SSH and HTTPS): answered with Andrew then.
-  - The listing comes mostly from Play's. Decide whether to keep iPad (`TARGETED_DEVICE_FAMILY = "1,2"`), which needs iPad screenshots.
-  - Review notes: the reviewer has no ASUS router or PIA account, so a demo video and an explanation (guideline 2.1); that the app configures a router and offers no VPN itself (5.4); and the PIA name (5.2).
-  - GPLv3 is fine while Andrew holds all the copyright (checked 2026-10-19: no GPL dependency, every commit his or a bot's). An outside contribution would need his permission to ship here.
-  - **Done when:** a tagged release uploads a signed build to TestFlight, with App Store notes and an iOS SBOM.
-- ID-424 ADD: **an iOS home screen widget like the Android one (ID-376).** Andrew's requirement, 2026-10-19; after ID-418, so it's built on a signed app that can reach TestFlight.
-  - A WidgetKit extension in Swift, an App Group to share the status, and iOS's own background refresh (BGTaskScheduler), whose real frequency is measured on an iPhone before anything is promised. The key must be readable from the Keychain while the phone is locked. On iOS 17+ the refresh button runs an App Intent, so it may have to open the app.
-  - Until then, ID-425 hides HOME SCREEN WIDGET KEY on iOS.
-- ID-401 CHG: **RevenueCat on the App Store.** Needs the Paid Apps Agreement, banking and tax forms in App Store Connect first.
-- ID-421 REL: **later, optional: move to an organisation membership, so the seller reads "Exponentially Digital".** Apple accepts only a legal entity that can sign contracts: "We do not accept DBAs, fictitious business names, trade names, or branches". A registered business name, as Exponentially Digital became with ASIC on 2026-10-19, isn't one, so this needs a company (a Pty Ltd, say), its D-U-N-S number, a public website and email on its domain, then a membership change through Apple support. The D-U-N-S number requested 2026-10-19 (Equifax up to 30 days; Apple's form up to 7) only helps here if it's for a company.
-  - **Done when:** the App Store shows the organisation as the seller.
+- ID-426 REL: **enrol in the Apple Developer Program as an individual.** Decided 2026-10-19.
+  - **Done when:** the membership is active.
+- ID-422 REL: **sign builds with the new team on all three iPhones.** After ID-426.
+  - **Done when:** a team-signed build runs on each iPhone.
+- ID-427 REL: **create the App Store Connect app record, bundle ID `com.exponentiallydigital.cfgpiawg`.** After ID-426.
+  - **Done when:** it exists, and its App Store link is sent to Claude for ID-417.
+- ID-428 REL: **declare the EU trader status, or leave the EU storefronts out.** After ID-427.
+  - **Done when:** App Store Connect shows it declared.
+- ID-429 DEC: **decide whether to support iPad, which needs iPad screenshots and review.**
+  - **Done when:** decided, and the Xcode project matches.
+- ID-418 REL: **CI builds a signed iOS release, with an App Store Connect API key kept in GitHub secrets.** After ID-405 and ID-427.
+  - **Done when:** a manual `release.yml` run produces a signed `.ipa`.
+- ID-430 CFG: **answer Apple's encryption question in `Info.plist` (`ITSAppUsesNonExemptEncryption`), agreed with Andrew.**
+  - **Done when:** an upload asks no encryption question.
+- ID-431 REL: **a release tag uploads the signed build to TestFlight.** After ID-418 and ID-430.
+  - **Done when:** a tag puts an installable build in TestFlight.
+- ID-432 REL: **App Store release notes come from CHANGELOG, like the Play note.** After ID-431.
+  - **Done when:** a TestFlight build carries its CHANGELOG notes.
+- ID-433 REL: **the release SBOM covers the iOS-only dependencies.**
+  - **Done when:** a release SBOM lists them.
+- ID-434 DOC: **the App Store listing: text, screenshots, privacy answers, age rating.** After ID-427 and ID-429.
+  - **Done when:** App Store Connect shows nothing missing.
+- ID-435 DOC: **App Review notes and a demo video.** The reviewer has no ASUS router or PIA account (guideline 2.1); the app offers no VPN itself (5.4); why PIA is named (5.2).
+  - **Done when:** written, with the video linked.
+- ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-434 and ID-435.
+  - **Done when:** the app is on sale.
+- ID-437 REL: **sign the Paid Apps Agreement and set up banking and tax.** After ID-426.
+  - **Done when:** the agreement is active.
+- ID-401 CHG: **RevenueCat on the App Store.** After ID-431 and ID-437.
+  - **Done when:** a TestFlight purchase unlocks the app, and RESTORE PURCHASE finds it again.
+- ID-424 TST: **measure how often iOS lets the app refresh in the background, for an iOS widget like Android's (ID-376).** After ID-422.
+  - **Done when:** a day's refresh times from an iPhone are recorded.
+- ID-438 ADD: **an iOS home screen widget showing the last status the app read.** After ID-431.
+  - **Done when:** it shows each tunnel's state as last read.
+- ID-439 ADD: **the iOS widget refreshes itself in the background.** After ID-424 and ID-438.
+  - **Done when:** it updates with the app closed.
+- ID-440 REL: **get D-U-N-S number**  from D&BS.
+  - **Done when: D-U-N-S number available
+- ID-421 REL: **move the Apple membership to the company, through Apple support.** After ID-440.
+  - **Done when:** the App Store shows the company as the seller.
 - ID-375 BLD: **either** replace this module or **post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix.** Agreed 2026-10-09, Andrew's call, but not posted: the `gh` token here can't comment outside the organisation ("Resource not accessible by personal access token"). Post it from Andrew's own login, or after `gh auth refresh -s public_repo`. Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment:
 
   ```markdown
