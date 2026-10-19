@@ -38,6 +38,7 @@ import 'widgets/app_scaffold.dart';
 import 'widgets/common_fields.dart';
 import 'widgets/error_presenter.dart';
 import 'widgets/region_picker_sheet.dart';
+import 'plain_error.dart';
 
 class WatchdogDialog extends StatefulWidget {
   final int slotIndex;
@@ -226,7 +227,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       final svc = (widget.serviceFactory ?? (c) => RouterWatchdog(c, onLog: _c.onLog))(client);
       return await op(svc);
     } catch (e) {
-      if (mounted) await AppErrors.system(context, _c, 'Watchdog error: ${e.toString().replaceAll('Exception: ', '')}');
+      if (mounted) await AppErrors.system(context, _c, 'Watchdog error: ${plainError(e)}');
       return null;
     } finally {
       if (mounted) setState(() => _loading = _applying = false);
@@ -416,7 +417,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loadingRegions = false);
-      await AppErrors.system(context, _c, 'Failed to load regions: ${e.toString().replaceAll('Exception: ', '')}');
+      await AppErrors.system(context, _c, 'Failed to load regions: ${plainError(e)}');
     }
   }
 
@@ -428,7 +429,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       final regions = await (widget.piaService ?? PiaService()).fetchRegions(onProgress: _c.onLog);
       return regions.any((r) => r.id == region) ? null : '"$region" is not a PIA WireGuard region. Choose one from the list.';
     } catch (e) {
-      return 'Could not check the region with PIA: ${e.toString().replaceAll('Exception: ', '')}';
+      return 'Could not check the region with PIA: ${plainError(e)}';
     }
   }
 
@@ -450,7 +451,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       return (outcome: 'ok', message: '');
     } catch (e) {
       if (isPiaAuthRejection(e)) return (outcome: 'rejected', message: kPiaCredentialsRejected);
-      final msg = e.toString().replaceAll('Exception: ', '');
+      final msg = plainError(e);
       if (msg.startsWith("PIA's login service isn't answering")) return (outcome: 'down', message: msg.split('. ').first);
       _c.logEntry('Could not check the PIA credentials before deploying: $msg Saving anyway; the router will try for itself.',
           isWarning: true);

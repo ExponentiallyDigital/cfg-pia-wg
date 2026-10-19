@@ -37,6 +37,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/paywall.dart';
 import '../widgets/ssh_creds_dialog.dart';
 import '../widgets/error_presenter.dart';
+import '../plain_error.dart';
 
 const String _kRepoUrl = 'https://github.com/ExponentiallyDigital/cfg-pia-wg';
 const String _kRepoBlobUrl = '$_kRepoUrl/blob/main';
@@ -175,7 +176,7 @@ class _AboutScreenState extends State<AboutScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (!mounted) return;
     setState(() {
@@ -249,7 +250,7 @@ class _AboutScreenState extends State<AboutScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (!mounted) return;
     setState(() {

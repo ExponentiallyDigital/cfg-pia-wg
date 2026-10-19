@@ -49,6 +49,7 @@ import '../widget_key_service.dart';
 import '../widget_refresh.dart' show cancelWidgetRefresh, homeWidgetSupported, scheduleWidgetRefresh;
 import '../widget_status_service.dart' show kWidgetStatusCommand;
 import 'router_dns_screen.dart';
+import '../plain_error.dart';
 
 class SettingsScreen extends StatefulWidget {
   /// Injected by tests so the router actions can run without a router.
@@ -185,7 +186,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
@@ -335,7 +336,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
@@ -412,7 +413,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
@@ -484,7 +485,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
@@ -632,7 +633,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
@@ -665,7 +666,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
@@ -770,7 +771,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;
@@ -800,7 +801,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
-      error = plain ?? e.toString().replaceAll('Exception: ', '');
+      error = plain ?? plainError(e);
     }
     if (mounted) setState(() => _busy = false);
     if (!mounted) return;

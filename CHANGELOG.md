@@ -79,24 +79,6 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
-- ID-041 CHG: **fix the [Sonar Cloud scan](https://sonarcloud.io/project/issues?id=ExponentiallyDigital_cfg-pia-wg&s=IMPACT_RANK&issueStatuses=OPEN%2CCONFIRMED)'s findings, now 88, in six batches from safest to riskiest.** Triaged 2026-09-15 at 35 and put on hold with the rest of this section; analysed again 2026-10-09. The plan below, with Andrew's decisions at the end.
-  - **Where it stands, 2026-10-09:** 88 open, 50 of them newer than the triage, mostly the rewrite's new code. All code smells; none a bug or a vulnerability. CI's SonarCloud check passes, since the quality gate judges new code only. Cognitive complexity (S3776, limit 15): 38 functions, 571 points over. Nested ternaries (S3358): 29. Duplicated literals (S1192): 14. Too many parameters (S107): 2. Missing `const` (S7112, S3962): 5. Re-read the list with `https://sonarcloud.io/api/issues/search?componentKeys=ExponentiallyDigital_cfg-pia-wg&resolved=false&ps=500` before starting; it moves with every build.
-  - **The worst functions:**
-    - DEVICES: `_apply` 84, `_tunnelWarnings` 32 (`lib/widgets/device_assignment_screen.dart`), and `DeviceAssignmentService.apply` 31 with 13 parameters: APPLY, the most production-critical path.
-    - Router DNS: `buildDnsRouting` 67 and `dnsReportText` 55 (`lib/router_dns.dart`), both pure functions, so their output can be pinned by tests before anything changes.
-    - Watchdog and slots: `uninstallFromRouter` 53, `deployWatchdog` 45, `validate` 30 (`lib/router_watchdog.dart`); `createConfigToSlot` 37, `fetchSlots` 30, `enableSlot` 26 (`lib/router_slot_service.dart`). Full of stock-or-Merlin branches the firmware abstraction (BACKLOG 1.2) would restructure anyway.
-    - Screens and dialogs: `_slotList` 46, `_buttons` 36, `_enableManage` 28 (`lib/widgets/slot_modal.dart`); `_save` 36, `_dohPicker` 26 (`lib/watchdog_dialog.dart`); `_onConnect` 35 (`lib/widgets/router_slots_screen.dart`); `_secureStartup` and `_maxActiveVpns` 30 each (`lib/screens/settings_screen.dart`); `slotParamErrors` 28 (`lib/input_checks.dart`).
-  - **The duplicated strings, judged:** `"Exception: "`, 24 times across four screens, is real duplication, the same error-tidying code copied around, and one shared helper fixes all four findings. The DNS file paths (`/etc/dnsmasq.conf`, `/tmp/resolv.dnsmasq`, `/etc/resolv.conf`) are shared facts that belong in constants, as does the DEVICES label `"Default connection"`. The router commands (`nvram commit` 24 times over three files, `nvram get vpnc_clientlist`, `nvram get vpnc_max_conn`, `date +%s`) arguably read better written out than as constants, and could instead be marked "won't fix" in SonarCloud with that reason.
-  - **The plan, one build per step:**
-    1. The quick, safe batch, about 20 issues: the five `const` fixes, the error-tidying helper, the DNS path and label constants, and the router commands as Andrew decides.
-    2. Router DNS's two pure functions: tests that pin their output first, then split them, changing nothing they produce. Two of the four worst.
-    3. The 29 nested ternaries, mechanical; the 8 in the watchdog script builder checked against the generated script text.
-    4. DEVICES' APPLY: `_apply`, `_tunnelWarnings` and `apply`, its 13 parameters into one request object. Pieces moved into functions of their own and nothing else changed; the tests that pin APPLY's exact order, "THE DEFAULT CONNECTION SEQUENCE IS EXACT" among them, are the safety net.
-    5. The screens and dialogs, one file per build.
-    6. The watchdog and slot service functions: left to the firmware abstraction, and scored again after it - ID-419 in BACKLOG.
-  - **For every step:** behaviour pinned by a test before the change, functions only split, never reworked, the full suite, and the SonarCloud count read again afterwards.
-  - **Andrew's decisions, 2026-10-16:** start now, as stock has soaked long enough; the router commands are marked "won't fix" in SonarCloud, with the reason that they read better written out; and step 6 waits for the firmware abstraction.
-  - **Sequenced, 2026-10-16:** steps 1 to 3 come where this item sits; steps 4 and 5 come after ID-029, step 4 in its own release with TESTING's DEVICES hand tests. Step 6 is ID-419.
 - ID-029 DOC: phrase hardening claims in `README.md` and `SECURITY.md` as "on Android" rather than absolutely, so an iOS build cannot quietly make them untrue.
   - **Andrew's decisions, 2026-10-16:** Claude may edit README.md and SECURITY.md for this item, and puts a note at the top of each file it changes saying iOS support is being prepared. It covers ID-403's wording too.
   - **Done when:** every hardening claim in both files says which platform it holds on, with ID-403's and ID-404's iOS results stated as measured.
@@ -154,6 +136,27 @@ Work items for the **current** release:
   - **Moved to WIP 2026-10-19, Andrew's decision:** with ID-404.
   - **Built in build 506:** `enum PrivacyCover` in `ios/Runner/AppDelegate.swift`. It covers each window with the launch screen (`kBg` and the launch artwork) when its scene is about to deactivate, which is before iOS takes the app switcher's picture, and removes it when the scene is active again. Release builds only, as Android skips `FLAG_SECURE` in a debug build, so a debug build is how the cover is seen taken out. An XCTest checks the cover goes on once, fills the window and comes off; a Dart test holds the wiring and the release-only rule. TESTING EXT-6 has the iPhone steps. Left: Andrew's EXT-6 on an iPhone, release and debug.
   - **Seen in CI, 2026-10-19:** the cover's XCTest passed on build 506 (run 39187595118) and failed with `window.addSubview(cover)` taken out (run 39187631074, throwaway branch). That checks the cover, not the app switcher; EXT-6 on an iPhone still decides it.
+- ID-041 CHG: **fix the [Sonar Cloud scan](https://sonarcloud.io/project/issues?id=ExponentiallyDigital_cfg-pia-wg&s=IMPACT_RANK&issueStatuses=OPEN%2CCONFIRMED)'s findings, now 88, in six batches from safest to riskiest.** Triaged 2026-09-15 at 35 and put on hold with the rest of this section; analysed again 2026-10-09. The plan below, with Andrew's decisions at the end.
+  - **Where it stands, 2026-10-09:** 88 open, 50 of them newer than the triage, mostly the rewrite's new code. All code smells; none a bug or a vulnerability. CI's SonarCloud check passes, since the quality gate judges new code only. Cognitive complexity (S3776, limit 15): 38 functions, 571 points over. Nested ternaries (S3358): 29. Duplicated literals (S1192): 14. Too many parameters (S107): 2. Missing `const` (S7112, S3962): 5. Re-read the list with `https://sonarcloud.io/api/issues/search?componentKeys=ExponentiallyDigital_cfg-pia-wg&resolved=false&ps=500` before starting; it moves with every build.
+  - **The worst functions:**
+    - DEVICES: `_apply` 84, `_tunnelWarnings` 32 (`lib/widgets/device_assignment_screen.dart`), and `DeviceAssignmentService.apply` 31 with 13 parameters: APPLY, the most production-critical path.
+    - Router DNS: `buildDnsRouting` 67 and `dnsReportText` 55 (`lib/router_dns.dart`), both pure functions, so their output can be pinned by tests before anything changes.
+    - Watchdog and slots: `uninstallFromRouter` 53, `deployWatchdog` 45, `validate` 30 (`lib/router_watchdog.dart`); `createConfigToSlot` 37, `fetchSlots` 30, `enableSlot` 26 (`lib/router_slot_service.dart`). Full of stock-or-Merlin branches the firmware abstraction (BACKLOG 1.2) would restructure anyway.
+    - Screens and dialogs: `_slotList` 46, `_buttons` 36, `_enableManage` 28 (`lib/widgets/slot_modal.dart`); `_save` 36, `_dohPicker` 26 (`lib/watchdog_dialog.dart`); `_onConnect` 35 (`lib/widgets/router_slots_screen.dart`); `_secureStartup` and `_maxActiveVpns` 30 each (`lib/screens/settings_screen.dart`); `slotParamErrors` 28 (`lib/input_checks.dart`).
+  - **The duplicated strings, judged:** `"Exception: "`, 24 times across four screens, is real duplication, the same error-tidying code copied around, and one shared helper fixes all four findings. The DNS file paths (`/etc/dnsmasq.conf`, `/tmp/resolv.dnsmasq`, `/etc/resolv.conf`) are shared facts that belong in constants, as does the DEVICES label `"Default connection"`. The router commands (`nvram commit` 24 times over three files, `nvram get vpnc_clientlist`, `nvram get vpnc_max_conn`, `date +%s`) arguably read better written out than as constants, and could instead be marked "won't fix" in SonarCloud with that reason.
+  - **The plan, one build per step:**
+    1. The quick, safe batch, about 20 issues: the five `const` fixes, the error-tidying helper, the DNS path and label constants, and the router commands as Andrew decides.
+    2. Router DNS's two pure functions: tests that pin their output first, then split them, changing nothing they produce. Two of the four worst.
+    3. The 29 nested ternaries, mechanical; the 8 in the watchdog script builder checked against the generated script text.
+    4. DEVICES' APPLY: `_apply`, `_tunnelWarnings` and `apply`, its 13 parameters into one request object. Pieces moved into functions of their own and nothing else changed; the tests that pin APPLY's exact order, "THE DEFAULT CONNECTION SEQUENCE IS EXACT" among them, are the safety net.
+    5. The screens and dialogs, one file per build.
+    6. The watchdog and slot service functions: left to the firmware abstraction, and scored again after it - ID-419 in BACKLOG.
+  - **For every step:** behaviour pinned by a test before the change, functions only split, never reworked, the full suite, and the SonarCloud count read again afterwards.
+  - **Andrew's decisions, 2026-10-16:** start now, as stock has soaked long enough; the router commands are marked "won't fix" in SonarCloud, with the reason that they read better written out; and step 6 waits for the firmware abstraction.
+  - **Sequenced, 2026-10-16:** steps 1 to 3 come where this item sits; steps 4 and 5 come after ID-029, step 4 in its own release with TESTING's DEVICES hand tests. Step 6 is ID-419.
+  - **Moved to WIP 2026-10-19:** steps 1 to 3 are being built now, by Andrew's go for the work up to step 3.
+  - **Step 1, built in build 508:** `plainError()` in the new `lib/plain_error.dart` replaces all 36 copies of `.toString().replaceAll('Exception: ', '')` across eleven files, the four flagged and seven more; three tests pin what it returns. `kDnsmasqConf`, `kResolvDnsmasq` and `kResolvConf` in `lib/router_dns.dart`, and `kDefaultConnectionLabel` in DEVICES, replace their duplicated literals. Five `const`s added (`applying_panel.dart`, `app_scaffold.dart`, `router_slot_service.dart`, `binary_installer.dart`). Nothing a user sees changes; the full suite passes. Left for Andrew, needing his SonarCloud login: mark the seven router-command findings (`nvram commit` in three files, `nvram get vpnc_clientlist`, `nvram get vpnc_max_conn`, `nvram get sshd_authkeys`, `date +%s`) as won't fix, per his decision.
+
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -170,6 +173,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.138 build 508 - SonarCloud fixes, step 1: one error tidy-up, shared constants
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 2026-10-19 v0.8.137 build 507 - README and SECURITY.md say which platform each protection holds on
 

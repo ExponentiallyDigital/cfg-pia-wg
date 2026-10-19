@@ -170,13 +170,22 @@ String dnsReportText(String title, List<DnsBlock> blocks) {
 /// Where stubby listens, on stock and Merlin alike. A resolver line naming it means DNS-over-TLS is on.
 const String kStubbyAddress = '127.0.1.1';
 
+/// dnsmasq's configuration: the router's DNS and DHCP server.
+const String kDnsmasqConf = '/etc/dnsmasq.conf';
+
+/// Where dnsmasq forwards the lookups it can't answer itself.
+const String kResolvDnsmasq = '/tmp/resolv.dnsmasq';
+
+/// The router's own resolver list.
+const String kResolvConf = '/etc/resolv.conf';
+
 /// The resolver files, in the order a device's lookup travels through them, then the router's own.
 const List<String> kResolverFiles = [
-  '/etc/dnsmasq.conf',
+  kDnsmasqConf,
   '/etc/hosts',
-  '/tmp/resolv.dnsmasq',
+  kResolvDnsmasq,
   '/etc/stubby/stubby.yml',
-  '/etc/resolv.conf',
+  kResolvConf,
 ];
 
 /// Each file under a marker line carrying its path and when it was last written. `date -r` follows
@@ -369,17 +378,17 @@ List<String> parseDotAddresses(String rulelist) => [
 // ── ROUTER RESOLVER STATUS ─────────────────────────────────────────────────────────────
 
 String _role(String path) => switch (path) {
-      '/etc/dnsmasq.conf' =>
+      kDnsmasqConf =>
         "The router's DNS and DHCP server: how it answers your devices' lookups, and which address each device gets.",
       '/etc/hosts' =>
         'Names dnsmasq answers without asking anyone. The watchdog adds your mail server here for a moment while it sends an alert.',
-      '/tmp/resolv.dnsmasq' => "Where dnsmasq sends your devices' lookups it can't answer itself.",
+      kResolvDnsmasq => "Where dnsmasq sends your devices' lookups it can't answer itself.",
       '/etc/stubby/stubby.yml' => 'stubby, the DNS-over-TLS client: the encrypted servers it forwards lookups to.',
-      '/etc/resolv.conf' => "The router's own lookups: your DNS Server setting, then stubby when DNS-over-TLS is on.",
+      kResolvConf => "The router's own lookups: your DNS Server setting, then stubby when DNS-over-TLS is on.",
       _ => '',
     };
 
-String _group(String path) => path == '/etc/resolv.conf' ? "THE ROUTER'S OWN LOOKUPS" : "YOUR DEVICES' LOOKUPS";
+String _group(String path) => path == kResolvConf ? "THE ROUTER'S OWN LOOKUPS" : "YOUR DEVICES' LOOKUPS";
 
 /// What to do about a failed check, from which resolver failed and whether it is running. Null
 /// when nothing failed. Facts and a next step, never a guess at the cause.
@@ -435,7 +444,7 @@ List<DnsBlock> buildResolverStatus({
   final stubbyRunning = RegExp(r'^@@stubby \d', multiLine: true).hasMatch(facts);
   final parsed = parseResolverFiles(files);
   final dnsmasqServers = parseDnsmasqServers(
-      parsed.firstWhere((x) => x.path == '/tmp/resolv.dnsmasq', orElse: () => const ResolverFile('', null, '')).content);
+      parsed.firstWhere((x) => x.path == kResolvDnsmasq, orElse: () => const ResolverFile('', null, '')).content);
   final dotOn = dnsmasqServers.contains(kStubbyAddress);
   final c = splitChecks(checks);
   final a = parseNslookup(c['a'] ?? '');
@@ -465,7 +474,7 @@ List<DnsBlock> buildResolverStatus({
       written: file.written,
       role: _role(file.path),
       content: file.content.isEmpty ? '(not present)' : file.content,
-      caution: file.path == '/etc/dnsmasq.conf' && file.content.contains('dhcp-host=')
+      caution: file.path == kDnsmasqConf && file.content.contains('dhcp-host=')
           ? "Lists every reserved device's MAC and address: review before sharing."
           : null,
     ));
@@ -816,7 +825,7 @@ Future<List<DnsBlock>> loadResolverStatus(SSHClient client, {DateTime Function()
   final facts = await _read(client, kResolverFactsCommand);
   final files = await _read(client, resolverFilesCommand());
   final dotOn = parseDnsmasqServers(
-          parseResolverFiles(files).where((f) => f.path == '/tmp/resolv.dnsmasq').firstOrNull?.content ?? '')
+          parseResolverFiles(files).where((f) => f.path == kResolvDnsmasq).firstOrNull?.content ?? '')
       .contains(kStubbyAddress);
   final checks = await _read(client, dnsCheckCommand(withStubby: dotOn));
   return buildResolverStatus(facts: facts, checks: checks, files: files, checkedAt: _clock((now ?? DateTime.now)()));

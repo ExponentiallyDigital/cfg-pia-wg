@@ -37,6 +37,7 @@ import 's50_template.dart';
 import 'review_service.dart' show reviewListingUrl, reviewsGoToAppStore;
 import 'server_list_signature.dart' show kPiaServerListKeyPem;
 import 'watchdog_email.dart';
+import 'plain_error.dart';
 
 // ─── PIA negotiation endpoints (mirrored from pia_service.dart) ─────────────────
 // Kept in one place so the Bash re-negotiation and the Dart app stay in sync.
@@ -1503,7 +1504,7 @@ class RouterWatchdog {
           if (!scheduled) await _restoreWatchdogSettings(settingsBefore);
           if (emptied) await _restoreWatchdogSettings(loginBefore);
           final undone = await _restoreSlot(slot, before);
-          var cause = e.toString().replaceAll('Exception: ', '').trim();
+          var cause = plainError(e).trim();
           // When it was the watchdog's first run that failed, its own log says why in plain words:
           // "router command failed (exit 1): /jffs/cfg-pia-wg/watchdog_wgc3.sh deploy" said nothing
           // the user could act on (2026-10-01).
