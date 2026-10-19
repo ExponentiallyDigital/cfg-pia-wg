@@ -665,20 +665,43 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       if (!await Paywall.show(context, _c, pitch: Pitch.assign) || !mounted) return;
     }
     final state = _state!;
-    // A device gains a reservation when it has none: the policy record is keyed by IP, and an
-    // address that is not pinned will eventually move to another device.
+    final reservations = _reservationsToCreate(state);
+
+    // The tunnels this apply moves devices onto, read now rather than trusted from connect time.
+    final tunnelWarnings = await _tunnelWarnings(state);
+    if (!mounted) return;
+    final ok = await _confirmApply(state, reservations, tunnelWarnings);
+    if (ok != true || !mounted) return;
+
+    setState(() => _busy = true);
+    final dismissProgress = _showProgress();
+    final failure = await _refreshAfterApply(await _runApply(state, reservations));
+    dismissProgress();
+    if (mounted) setState(() => _busy = false);
+    if (failure != null && mounted) await AppErrors.system(context, _c, failure);
+  }
+
+  /// A device gains a reservation when it has none: the policy record is keyed by IP, and an
+  /// address that is not pinned will eventually move to another device.
+  Map<String, String> _reservationsToCreate(AssignmentState state) {
     final reservations = <String, String>{};
     for (final d in state.devices) {
       final ip = d.ip;
       if (ip == null || !_staged.containsKey(ip)) continue;
       if (_staged[ip] != null && !d.reserved) reservations[d.mac] = ip;
     }
+    return reservations;
+  }
 
-    // The tunnels this apply moves devices onto, read now rather than trusted from connect time.
-    final tunnelWarnings = await _tunnelWarnings(state);
-    if (!mounted) return;
+  LanDevice _byMac(AssignmentState state, String mac) =>
+      state.devices.firstWhere((d) => d.mac == mac, orElse: () => LanDevice(mac: mac));
 
-    LanDevice byMac(String mac) => state.devices.firstWhere((d) => d.mac == mac, orElse: () => LanDevice(mac: mac));
+  LanDevice _byIp(AssignmentState state, String ip) =>
+      state.devices.firstWhere((d) => d.ip == ip, orElse: () => LanDevice(mac: ip));
+
+  /// The confirmation: every staged change, line by line, and what the user should know first.
+  Future<bool?> _confirmApply(AssignmentState state, Map<String, String> reservations, List<String> tunnelWarnings) {
+    LanDevice byMac(String mac) => _byMac(state, mac);
     // Disabling turns the router's Time Scheduling on. Andrew's decision: when that also brings
     // schedules someone set up and left switched off into force, APPLY names them first (ID-261).
     final parentalAfter = applyBlocks(state.parental, Map.of(_stagedBlocks));
@@ -686,9 +709,8 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     final disabling = [for (final e in _stagedBlocks.entries) if (e.value) byMac(e.key)];
     String pinLabel(LanDevice d) => _labelForDevice(d.ip == null ? null : _effectiveIndex(d));
     const blockedLabel = 'disabled - no Internet or VPN access';
-    if (!mounted) return;
 
-    final ok = await showDialog<bool>(
+    return showDialog<bool>(
       context: context,
       builder: (ctx) => _ApplyDialog(
         tunnelWarnings: tunnelWarnings,
@@ -707,7 +729,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             ),
           for (final entry in _staged.entries)
             _ChangeLine(
-              name: state.devices.firstWhere((d) => d.ip == entry.key, orElse: () => LanDevice(mac: entry.key)).displayName,
+              name: _byIp(state, entry.key).displayName,
               from: _labelForDevice(assignedIndexFor(state.policies, entry.key)),
               to: _labelForDevice(entry.value),
             ),
@@ -718,10 +740,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
               to: _labelForIndex(_stagedDefault ?? 0),
             ),
         ],
-        reservationNames: [
-          for (final mac in reservations.keys)
-            state.devices.firstWhere((d) => d.mac == mac, orElse: () => LanDevice(mac: mac)).displayName
-        ],
+        reservationNames: [for (final mac in reservations.keys) byMac(mac).displayName],
         restartsTunnels: _stagedDefault != null,
         scheduleWarning: switchedOn.isEmpty
             ? null
@@ -731,77 +750,89 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         randomMacNames: [for (final d in disabling) if (d.hasRandomisedMac) _nameOf(d)],
         foreignNames: [
           for (final entry in _staged.entries)
-            if (_isForeignIndex(assignedIndexFor(state.policies, entry.key)))
-              state.devices.firstWhere((d) => d.ip == entry.key, orElse: () => LanDevice(mac: entry.key)).displayName
+            if (_isForeignIndex(assignedIndexFor(state.policies, entry.key))) _byIp(state, entry.key).displayName
         ],
       ),
     );
-    if (ok != true || !mounted) return;
+  }
 
-    setState(() => _busy = true);
-    // A centred modal, not a spinner inside the button. Putting it in the button left a grey blob
-    // at the bottom of the screen where the label had been, which read as the button having broken
-    // rather than as work in progress (B8n feedback 2026-09-08). This also blocks input, which is
-    // right: changing the default connection stops the tunnels and must not be interrupted.
-    //
-    // Closed by its own route, never by popping whatever is on top (ID-285). The drawer sits above
-    // the navigator, so it opens over this dialog, and a screen picked from it is pushed on top. A
-    // plain pop at the end then closed THAT screen and left this dialog up for good, over a DEVICES
-    // that had finished. Removing the route itself works whatever is above it, and whether or not
-    // this screen is still mounted.
+  /// What APPLY asks of the router. The service knows IP addresses and profile indexes; only the
+  /// screen knows what the user calls them, and naming the change here is what makes the app log
+  /// readable a week later.
+  ApplyRequest _applyRequest(AssignmentState state, Map<String, String> reservations) {
+    LanDevice byMac(String mac) => _byMac(state, mac);
+    return ApplyRequest(
+      changes: Map.of(_staged),
+      reservationsToCreate: reservations,
+      newDefaultIndex: _stagedDefault,
+      changeDescriptions: [
+        for (final entry in _staged.entries)
+          '${_byIp(state, entry.key).displayName}: '
+              '${_labelForDevice(assignedIndexFor(state.policies, entry.key))} -> ${_labelForDevice(entry.value)}',
+      ],
+      defaultFrom: _labelForIndex(state.defaultIndex ?? 0),
+      defaultTo: _labelForIndex(_stagedDefault ?? 0),
+      renames: Map.of(_stagedNames),
+      deviceTypes: {
+        for (final mac in _stagedNames.keys)
+          if (byMac(mac).type != null) mac: byMac(mac).type!,
+      },
+      renameDescriptions: [
+        for (final e in _stagedNames.entries)
+          e.value.isEmpty
+              ? '${byMac(e.key).displayName}: its name cleared, so the router shows ${_nameOf(byMac(e.key))}'
+              : '${byMac(e.key).displayName} renamed to ${e.value}',
+      ],
+      blocks: Map.of(_stagedBlocks),
+      blockNames: {for (final mac in _stagedBlocks.keys) mac: _nameOf(byMac(mac))},
+      blockDescriptions: [
+        for (final e in _stagedBlocks.entries) '${_nameOf(byMac(e.key))}: internet access ${e.value ? 'disabled' : 'enabled again'}',
+      ],
+    );
+  }
+
+  /// Shows "Applying" and returns what closes it.
+  ///
+  /// A centred modal, not a spinner inside the button. Putting it in the button left a grey blob
+  /// at the bottom of the screen where the label had been, which read as the button having broken
+  /// rather than as work in progress (B8n feedback 2026-09-08). This also blocks input, which is
+  /// right: changing the default connection stops the tunnels and must not be interrupted.
+  ///
+  /// Closed by its own route, never by popping whatever is on top (ID-285). The drawer sits above
+  /// the navigator, so it opens over this dialog, and a screen picked from it is pushed on top. A
+  /// plain pop at the end then closed THAT screen and left this dialog up for good, over a DEVICES
+  /// that had finished. Removing the route itself works whatever is above it, and whether or not
+  /// this screen is still mounted.
+  void Function() _showProgress() {
     final progress = DialogRoute<void>(
       context: context,
       barrierDismissible: false,
       builder: (_) => const _ProgressDialog(),
     );
     unawaited(Navigator.of(context, rootNavigator: true).push(progress));
-    void dismissProgress() {
+    return () {
       if (progress.isActive) progress.navigator?.removeRoute(progress);
-    }
+    };
+  }
 
-    String? failure;
+  /// Sends the changes, and returns what went wrong, or null.
+  Future<String?> _runApply(AssignmentState state, Map<String, String> reservations) async {
     try {
-      await _service!.apply(
-        base: state,
-        changes: Map.of(_staged),
-        reservationsToCreate: reservations,
-        newDefaultIndex: _stagedDefault,
-        // The service knows IP addresses and profile indexes; only the screen knows what the user
-        // calls them. Naming the change here is what makes the app log readable a week later.
-        changeDescriptions: [
-          for (final entry in _staged.entries)
-            '${state.devices.firstWhere((d) => d.ip == entry.key, orElse: () => LanDevice(mac: entry.key)).displayName}: '
-                '${_labelForDevice(assignedIndexFor(state.policies, entry.key))} -> ${_labelForDevice(entry.value)}',
-        ],
-        defaultFrom: _labelForIndex(state.defaultIndex ?? 0),
-        defaultTo: _labelForIndex(_stagedDefault ?? 0),
-        renames: Map.of(_stagedNames),
-        deviceTypes: {
-          for (final mac in _stagedNames.keys)
-            if (byMac(mac).type != null) mac: byMac(mac).type!,
-        },
-        renameDescriptions: [
-          for (final e in _stagedNames.entries)
-            e.value.isEmpty
-                ? '${byMac(e.key).displayName}: its name cleared, so the router shows ${_nameOf(byMac(e.key))}'
-                : '${byMac(e.key).displayName} renamed to ${e.value}',
-        ],
-        blocks: Map.of(_stagedBlocks),
-        blockNames: {for (final mac in _stagedBlocks.keys) mac: _nameOf(byMac(mac))},
-        blockDescriptions: [
-          for (final e in _stagedBlocks.entries)
-            '${_nameOf(byMac(e.key))}: internet access ${e.value ? 'disabled' : 'enabled again'}',
-        ],
-      );
+      await _service!.apply(base: state, request: _applyRequest(state, reservations));
+      return null;
     } on AssignmentConflictException catch (e) {
-      failure = e.toString();
+      return e.toString();
     } catch (e) {
-      failure = 'Could not apply the changes: $e';
+      return 'Could not apply the changes: $e';
     }
+  }
 
-    // Re-read either way. On success it shows what was written; after a conflict it replaces the
-    // base that caused the refusal, which otherwise made every later APPLY refuse as well and left
-    // leaving the screen as the only way out.
+  /// Re-reads the router after an APPLY, and returns [failure], or what this read could not do.
+  ///
+  /// Re-read either way. On success it shows what was written; after a conflict it replaces the
+  /// base that caused the refusal, which otherwise made every later APPLY refuse as well and left
+  /// leaving the screen as the only way out.
+  Future<String?> _refreshAfterApply(String? failure) async {
     try {
       final fresh = await _service!.read();
       if (mounted) {
@@ -826,10 +857,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     } catch (_) {
       // The notes keep what they had; the assignment itself is unaffected.
     }
-
-    dismissProgress();
-    if (mounted) setState(() => _busy = false);
-    if (failure != null && mounted) await AppErrors.system(context, _c, failure);
+    return failure;
   }
 
   /// What APPLY's confirmation says about the tunnels this apply moves devices onto.
@@ -838,22 +866,8 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
   /// internet until the slot is enabled - the fail-closed guard holds it (ID-213). The same read
   /// refreshes the row notes.
   Future<List<String>> _tunnelWarnings(AssignmentState state) async {
-    String nameOf(String ip) =>
-        state.devices.firstWhere((d) => d.ip == ip, orElse: () => LanDevice(mac: ip)).displayName;
-    final slotOf = <int, int>{
-      for (final p in _wireguardProfiles)
-        if (p.slot != null) p.vpncStateIndex!: p.slot!,
-    };
-    final defaultAfter = _stagedDefault ?? state.defaultIndex ?? 0;
-    // Devices pinned onto each tunnel, by profile index, in the order they were staged.
-    final onto = <int, List<String>>{};
-    for (final e in _staged.entries) {
-      final idx = e.value;
-      if (idx != null && slotOf.containsKey(idx)) onto.putIfAbsent(idx, () => []).add(nameOf(e.key));
-    }
-    // The default connection's tunnel, when this apply changes the default or sends a device to it.
-    final checkDefault = slotOf.containsKey(defaultAfter) && (_stagedDefault != null || _staged.containsValue(null));
-    final slots = {for (final idx in onto.keys) slotOf[idx]!, if (checkDefault) slotOf[defaultAfter]!};
+    final plan = _tunnelsToCheck(state);
+    final slots = {for (final idx in plan.onto.keys) plan.slotOf[idx]!, if (plan.checkDefault) plan.slotOf[plan.defaultAfter]!};
     if (slots.isEmpty) return const [];
 
     setState(() => _busy = true);
@@ -866,27 +880,51 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
                 if (e.value.up) e.key,
             });
       }
-      final warnings = <String>[];
-      for (final e in onto.entries) {
-        final h = health[slotOf[e.key]];
-        if (h == null) continue;
-        // Pinned devices wait for their own tunnel; they no longer fall through to the default.
-        final w = tunnelWarning(h, tunnel: _labelForIndex(e.key), who: joinNames(e.value), blocked: true);
-        if (w != null) warnings.add(w);
-      }
-      if (checkDefault) {
-        final h = health[slotOf[defaultAfter]];
-        final w = h == null
-            ? null
-            : tunnelWarning(h, tunnel: _labelForIndex(defaultAfter), who: 'devices on the default connection');
-        if (w != null) warnings.add(w);
-      }
-      return warnings;
+      return _warningsFrom(health, plan);
     } catch (e) {
       return ['The tunnels could not be checked before applying, so whether they are running is not known: $e'];
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Which tunnels this apply moves devices onto, by profile index, and whether the default
+  /// connection's tunnel needs checking too.
+  ({Map<int, int> slotOf, Map<int, List<String>> onto, bool checkDefault, int defaultAfter}) _tunnelsToCheck(
+      AssignmentState state) {
+    final slotOf = <int, int>{
+      for (final p in _wireguardProfiles)
+        if (p.slot != null) p.vpncStateIndex!: p.slot!,
+    };
+    final defaultAfter = _stagedDefault ?? state.defaultIndex ?? 0;
+    // Devices pinned onto each tunnel, by profile index, in the order they were staged.
+    final onto = <int, List<String>>{};
+    for (final e in _staged.entries) {
+      final idx = e.value;
+      if (idx != null && slotOf.containsKey(idx)) onto.putIfAbsent(idx, () => []).add(_byIp(state, e.key).displayName);
+    }
+    // The default connection's tunnel, when this apply changes the default or sends a device to it.
+    final checkDefault = slotOf.containsKey(defaultAfter) && (_stagedDefault != null || _staged.containsValue(null));
+    return (slotOf: slotOf, onto: onto, checkDefault: checkDefault, defaultAfter: defaultAfter);
+  }
+
+  List<String> _warningsFrom(
+      Map<int, TunnelHealth> health,
+      ({Map<int, int> slotOf, Map<int, List<String>> onto, bool checkDefault, int defaultAfter}) plan) {
+    final warnings = <String>[];
+    for (final e in plan.onto.entries) {
+      final h = health[plan.slotOf[e.key]];
+      if (h == null) continue;
+      // Pinned devices wait for their own tunnel; they no longer fall through to the default.
+      final w = tunnelWarning(h, tunnel: _labelForIndex(e.key), who: joinNames(e.value), blocked: true);
+      if (w != null) warnings.add(w);
+    }
+    if (plan.checkDefault) {
+      final h = health[plan.slotOf[plan.defaultAfter]];
+      final w = h == null ? null : tunnelWarning(h, tunnel: _labelForIndex(plan.defaultAfter), who: 'devices on the default connection');
+      if (w != null) warnings.add(w);
+    }
+    return warnings;
   }
 
   bool _isForeignIndex(int? idx) =>
