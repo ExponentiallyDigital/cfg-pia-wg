@@ -154,16 +154,9 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
 
     setState(() => _loading = true);
     String? error, errorDetail;
-    List<int>? sizes;
-    String? first;
-    LogPage? page;
+    ({List<int> sizes, LogPage? page, String? first})? newest;
     try {
-      final client = _client(ip, user, pass);
-      sizes = parseLogSizes((await runRouterCommand(client, buildLogSizesCommand(), allowFailure: true)).stdout);
-      page = nextLogPage(sizes: sizes, consumed: [0, 0]);
-      if (page != null) {
-        first = unwrapPage((await runRouterCommand(client, page.command, allowFailure: true)).stdout);
-      }
+      newest = await _readNewest(_client(ip, user, pass));
       _c.routerConnected = true;
       await _c.rememberRouterIp(ip);
     } catch (e) {
@@ -173,22 +166,10 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
       error = plain ?? plainError(e);
     }
     if (!mounted) return;
-    final loaded = page;
     setState(() {
       _loading = false;
-      if (error != null) return;
-      _sizes = sizes ?? [0, 0];
-      _consumed = [0, 0];
-      _pages.clear();
-      _heldFragment = '';
-      _exhausted = loaded == null;
-      if (loaded != null && first != null) {
-        final split = splitPage(first, reachesStart: loaded.reachesStart);
-        _pages.add(split.lines);
-        _heldFragment = split.fragment;
-        _consumed[kRouterLogFiles.indexOf(loaded.file)] = loaded.length;
-        _exhausted = nextLogPage(sizes: _sizes, consumed: _consumed) == null;
-      }
+      if (error != null || newest == null) return;
+      _startFrom(newest.sizes, newest.page, newest.first);
     });
     // The newest lines are at the BOTTOM of a syslog, and they are what anyone opening this screen
     // came for. Jumping after the frame that laid the text out, so the extent is known.
@@ -199,6 +180,41 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
       await AppErrors.system(context, _c, errorDetail == null ? 'Could not read the router log: $error' : error,
           logDetail: errorDetail);
     }
+  }
+
+  /// The log files' sizes and the newest page.
+  Future<({List<int> sizes, LogPage? page, String? first})> _readNewest(SSHClient client) async {
+    final sizes = parseLogSizes((await runRouterCommand(client, buildLogSizesCommand(), allowFailure: true)).stdout);
+    final page = nextLogPage(sizes: sizes, consumed: [0, 0]);
+    final first = page == null ? null : unwrapPage((await runRouterCommand(client, page.command, allowFailure: true)).stdout);
+    return (sizes: sizes, page: page, first: first);
+  }
+
+  /// Drops everything loaded and starts again from [first], the newest page. Called inside setState.
+  void _startFrom(List<int> sizes, LogPage? loaded, String? first) {
+    _sizes = sizes;
+    _consumed = [0, 0];
+    _pages.clear();
+    _heldFragment = '';
+    _exhausted = loaded == null;
+    if (loaded == null || first == null) return;
+    final split = splitPage(first, reachesStart: loaded.reachesStart);
+    _pages.add(split.lines);
+    _heldFragment = split.fragment;
+    _consumed[kRouterLogFiles.indexOf(loaded.file)] = loaded.length;
+    _exhausted = nextLogPage(sizes: _sizes, consumed: _consumed) == null;
+  }
+
+  /// Puts [text], the page older than everything loaded, above it. Called inside setState.
+  ///
+  /// The older page ends exactly where the held fragment begins, byte for byte, so the two together
+  /// are the line the cut went through. A page that starts a new file holds nothing.
+  void _insertOlder(LogPage page, String text) {
+    final split = splitPage(text + _heldFragment, reachesStart: page.reachesStart);
+    _pages.insert(0, split.lines);
+    _heldFragment = split.fragment;
+    _consumed[kRouterLogFiles.indexOf(page.file)] += page.length;
+    _exhausted = nextLogPage(sizes: _sizes, consumed: _consumed) == null;
   }
 
   /// Fetches one page older than everything loaded, and inserts it ABOVE without moving the view.
@@ -237,14 +253,7 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     if (!mounted) return;
     setState(() {
       _loading = false;
-      if (error != null || text == null) return;
-      // The older page ends exactly where the held fragment begins, byte for byte, so the two
-      // together are the line the cut went through. A page that starts a new file holds nothing.
-      final split = splitPage(text + _heldFragment, reachesStart: page.reachesStart);
-      _pages.insert(0, split.lines);
-      _heldFragment = split.fragment;
-      _consumed[kRouterLogFiles.indexOf(page.file)] += page.length;
-      _exhausted = nextLogPage(sizes: _sizes, consumed: _consumed) == null;
+      if (error == null && text != null) _insertOlder(page, text);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;

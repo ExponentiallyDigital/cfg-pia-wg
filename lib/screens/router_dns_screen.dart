@@ -253,28 +253,7 @@ class _DnsReportScreenState extends State<DnsReportScreen> {
           ])),
           for (final r in c.rows) ...[
             const SizedBox(height: 8),
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SizedBox(width: 64, child: Text('${r.who} ', style: const TextStyle(color: kText, fontSize: 12))),
-              _pill(r.state),
-              _space,
-              // One text per row: the addresses, why it failed, and the running line, each on its own
-              // line when copied.
-              Expanded(
-                child: Text.rich(TextSpan(style: const TextStyle(color: kText, fontSize: 12, height: 1.5), children: [
-                  if (r.addresses.isNotEmpty) TextSpan(text: '${r.addresses.join('\n')}\n'),
-                  if (r.detail.isNotEmpty) TextSpan(text: '${r.detail}\n'),
-                  if (r.running != null || r.ms != null)
-                    TextSpan(
-                      text: [
-                        if (r.running != null) r.running! ? 'running' : 'not running',
-                        if (r.ms != null) '${r.ms} ms',
-                      ].join(' · '),
-                      style: TextStyle(color: r.running == false ? kError : kHighlight, fontSize: 11),
-                    ),
-                  _br,
-                ])),
-              ),
-            ]),
+            _checkRow(r),
           ],
           if (c.advice != null) ...[
             const SizedBox(height: 8),
@@ -284,6 +263,29 @@ class _DnsReportScreenState extends State<DnsReportScreen> {
           _t(c.checkedAt, _note),
         ]),
       );
+
+  Widget _checkRow(DnsCheckRow r) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(width: 64, child: Text('${r.who} ', style: const TextStyle(color: kText, fontSize: 12))),
+        _pill(r.state),
+        _space,
+        // One text per row: the addresses, why it failed, and the running line, each on its own
+        // line when copied.
+        Expanded(
+          child: Text.rich(TextSpan(style: const TextStyle(color: kText, fontSize: 12, height: 1.5), children: [
+            if (r.addresses.isNotEmpty) TextSpan(text: '${r.addresses.join('\n')}\n'),
+            if (r.detail.isNotEmpty) TextSpan(text: '${r.detail}\n'),
+            if (r.running != null || r.ms != null)
+              TextSpan(
+                text: [
+                  if (r.running != null) r.running! ? 'running' : 'not running',
+                  if (r.ms != null) '${r.ms} ms',
+                ].join(' · '),
+                style: TextStyle(color: r.running == false ? kError : kHighlight, fontSize: 11),
+              ),
+            _br,
+          ])),
+        ),
+      ]);
 
   static SlotBadge _tag(DnsTag t) => switch (t.kind) {
         DnsTagKind.tunnel || DnsTagKind.encrypted =>
