@@ -9,6 +9,8 @@ import '../../live/live_plan.dart';
 
 const _t = '192.168.1.20', _d = '192.168.1.30';
 const _i1 = 9, _i5 = 5;
+const _tmac = 'AA:BB:CC:00:00:20';
+const _runOwn = {'DEV-11b', 'DEF-4', 'DEV-18', 'DEV-18b', 'DEV-19', 'DEV-19b', 'DEV-20', 'DEV-20b'};
 
 const _env = {
   'CFG_LIVE_ROUTER': '192.168.1.1:22',
@@ -28,6 +30,7 @@ StartState _start({
   int? i1 = _i1,
   int? i5 = _i5,
   Set<String> up = const {'wgc1', 'wgc5'},
+  bool clear = true,
 }) =>
     StartState(
       stock: stock,
@@ -38,6 +41,7 @@ StartState _start({
       i1: i1,
       i5: i5,
       upTunnels: up,
+      timeSchedulingClear: clear,
     );
 
 /// TESTING.md's `e2e.sh <id> after` expectations, with the sheet's shell variables filled in.
@@ -69,17 +73,18 @@ void main() {
   });
 
   group('the plan', () {
-    final plan = buildPlan(t: _t, d: _d, i1: _i1, i5: _i5);
+    final plan = buildPlan(t: _t, d: _d, i1: _i1, i5: _i5, tmac: _tmac, tabletName: 'Tablet');
 
     test('runs the sheet\'s tests in the sheet\'s order', () {
       expect([for (final s in plan) s.id],
-          ['DEV-4', 'DEV-5', 'DEV-6a', 'DEV-6b', 'DEV-7', 'DEV-8', 'DEV-11', 'DEV-11b', 'DEF-1', 'DEF-3', 'DEF-4', 'DEF-6', 'DEF-7', 'DEF-8']);
+          ['DEV-4', 'DEV-5', 'DEV-6a', 'DEV-6b', 'DEV-7', 'DEV-8', 'DEV-11', 'DEV-11b', 'DEF-1', 'DEF-3', 'DEF-4', 'DEF-6', 'DEF-7', 'DEF-8', //
+           'DEV-18', 'DEV-18b', 'DEV-19', 'DEV-19b', 'DEV-20', 'DEV-20b']);
     });
 
     test('checks exactly what TESTING.md checks, for every test the sheet has', () {
       final sheet = _sheetExpectations();
       for (final s in plan) {
-        if (s.id == 'DEV-11b' || s.id == 'DEF-4') continue; // the run's own; the sheet checks these by hand
+        if (_runOwn.contains(s.id)) continue; // the sheet checks these by hand, with no e2e.sh line
         expect(sheet[s.id], s.expect, reason: '${s.id} has drifted from TESTING.md');
       }
     });
@@ -95,8 +100,27 @@ void main() {
       }
     });
 
-    test('ends with the default on Internet', () {
-      expect(plan.last.actions, [isA<SetDefault>().having((a) => a.index, 'index', 0)]);
+    test('DEF-8 puts the default back on Internet', () {
+      expect(plan.firstWhere((s) => s.id == 'DEF-8').actions, [isA<SetDefault>().having((a) => a.index, 'index', 0)]);
+    });
+
+    test('TABLET gets its name back, and is enabled again, every time it is disabled', () {
+      expect(plan.firstWhere((s) => s.id == 'DEV-18b').cleanup, [isA<Rename>().having((a) => a.name, 'name', 'Tablet')]);
+      expect(buildPlan(t: _t, d: _d, i1: _i1, i5: _i5, tmac: _tmac).firstWhere((s) => s.id == 'DEV-18b').cleanup, isEmpty);
+      var blocked = false;
+      for (final s in plan) {
+        for (final a in [...s.setup, ...s.actions, ...s.cleanup].whereType<Block>()) {
+          blocked = a.on;
+        }
+        if (s.id.endsWith('b')) expect(blocked, isFalse, reason: '${s.id} leaves TABLET disabled');
+      }
+      expect(blocked, isFalse);
+    });
+
+    test('DEV-20 checks the pin is kept while TABLET is disabled', () {
+      final s = plan.firstWhere((s) => s.id == 'DEV-20');
+      expect(s.checks.whereType<PinKept>().single.index, _i1);
+      expect(s.expect, ['rule $_t $_i1', 'guard $_t $_i1']);
     });
   });
 
@@ -153,6 +177,7 @@ void main() {
         'wgc1 has no VPN profile': _start(i1: null),
         'wgc5 is not running': _start(up: {'wgc1'}),
         'not Internet': _start(defaultIndex: _i1),
+        'Time Scheduling is on': _start(clear: false),
       };
       cases.forEach((why, s) {
         final stops = preflightProblems(s, _config);
@@ -171,7 +196,54 @@ void main() {
     });
   });
 
+  group('the router checks', () {
+    test('a name: its record, with that name; or no record at all', () {
+      const list = 'Phone>AA:BB:CC:00:00:40>0>2>><DN-Test Name>aa:bb:cc:00:00:20>0>21>>';
+      expect(nameProblems(list, _tmac, 'DN-Test Name'), isEmpty);
+      expect(nameProblems(list, _tmac, 'Tablet'), [contains('"DN-Test Name", not "Tablet"')]);
+      expect(nameProblems(list, _tmac, ''), [contains('still has a record')]);
+      expect(nameProblems('Phone>AA:BB:CC:00:00:40>0>2>>', _tmac, ''), isEmpty);
+      expect(nameProblems('', _tmac, 'DN-Test Name'), [contains('no record')]);
+    });
+
+    final blockedKeys = ['MULTIFILTER_ALL=1', 'MULTIFILTER_BLOCK_ALL=0', 'MULTIFILTER_ENABLE=2', 'MULTIFILTER_MAC=$_tmac'].join('\n');
+    final dropLines = [
+      '-A FORWARD -m mac --mac-source $_tmac -j DROP',
+      '-A PControls -m mac --mac-source $_tmac -j DROP',
+      '-A WGNPControls -m mac --mac-source $_tmac -j DROP',
+    ];
+    final drops = dropLines.join('\n');
+
+    test('disabled: the four keys as the sheet has them, and a DROP in each of the three chains', () {
+      expect(blockProblems(blockedKeys, drops, _tmac, true), isEmpty);
+      expect(blockProblems(blockedKeys.replaceFirst('ENABLE=2', 'ENABLE=1'), drops, _tmac, true), [contains('not 2')]);
+      expect(blockProblems(blockedKeys, dropLines.take(2).join('\n'), _tmac, true), [contains('in WGNPControls')]);
+      expect(blockProblems(blockedKeys.replaceFirst('ALL=1', 'ALL=0'), drops, _tmac, true), [contains('not 1')]);
+      final second = ['MULTIFILTER_ALL=1', 'MULTIFILTER_BLOCK_ALL=0', 'MULTIFILTER_ENABLE=0>2', 'MULTIFILTER_MAC=11:22:33:44:55:66>$_tmac'];
+      expect(blockProblems(second.join('\n'), drops, _tmac, true), isEmpty, reason: 'the second entry');
+    });
+
+    test('enabled again: Time Scheduling off and empty, and no rule left', () {
+      final clear = ['MULTIFILTER_ALL=0', 'MULTIFILTER_BLOCK_ALL=0', 'MULTIFILTER_ENABLE=', 'MULTIFILTER_MAC='];
+      expect(blockProblems(clear.join('\n'), '', _tmac, false), isEmpty);
+      expect(blockProblems(blockedKeys, drops, _tmac, false), hasLength(3));
+    });
+
+    test('a pin kept, and a step with no service call', () {
+      expect(pinKeptProblems('1>$_t>>$_i1>', _t, _i1), isEmpty);
+      expect(pinKeptProblems('0>$_t>>$_i1>', _t, _i1), [contains('no longer pinned')]);
+      expect(serviceCallProblems(7, 7), isEmpty);
+      expect(serviceCallProblems(7, 8), [contains('1 service call')]);
+    });
+  });
+
   group('putting the router back', () {
+    test('TABLET enabled again if disabled, and its own name back if it has another', () {
+      expect(deviceRestoreFor(blocked: false, nameNow: 'Tablet', nameAtStart: 'Tablet'), (unblock: null, rename: null));
+      expect(deviceRestoreFor(blocked: true, nameNow: 'DN-Test Name', nameAtStart: 'Tablet'), (unblock: true, rename: 'Tablet'));
+      expect(deviceRestoreFor(blocked: false, nameNow: 'DN-Test Name', nameAtStart: ''), (unblock: null, rename: ''));
+    });
+
     test('nothing to do in the start state', () {
       expect(restoreFor(policies: parseDevicePolicyList('0>$_t>>0>'), defaultIndex: 0, ips: [_t, _d]), isNull);
       expect(restoreFor(policies: const [], defaultIndex: null, ips: [_t, _d]), isNull);
