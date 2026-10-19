@@ -98,6 +98,7 @@ Work items for the **current** release:
   - **Proving it:** Andrew has a MacBook Pro set up, two iPhone 11s and an iPhone SE on iOS 27, and on 2026-10-16 had already run a build on an iPhone 11.
   - **Seen by Andrew, by 2026-10-19:** on an iPhone 11 the app opened and showed the same active slots as the Android app, so it reached the router; he also looked at ABOUT (ID-395). Nothing else has been tried on an iPhone yet.
   - **2026-10-19:** ID-405's iOS build has passed on the release PR, the first half of done. Left: the iPhone hand tests given to Andrew: CON-1 to CON-3, STD-1, STD-4, STD-8, MAN-1, MAN-3, MAN-6, MAN-8, WD-3, WD-9, WD-16, WD-18, then MAN-13 and MAN-14, on the spare slot wgc4.
+  - **Seen on an iPhone, 2026-10-19:** CON-1, CON-2 and CON-3 passed, local network permission included. STD-1 partly: the config generated, but no password manager offered to save the PIA login, with KeePassium; that is BACKLOG ID-441. Not yet run: STD-4 onwards.
   - **Done when:** ID-405's iOS build passes in CI, and GENERATE, MANAGE and the watchdog have worked from an iPhone against the router, by TESTING's hand tests for those screens.
   - **Built in build 503:** `ios/Runner/Info.plist` now carries `NSLocalNetworkUsageDescription`. The app reaches the router over the home network, which since iOS 14 asks the user for local network access, and without the key iOS words the prompt itself. A test in `test/unit/ios_info_plist_test.dart` holds it, seen to fail with the key removed. Found on the way, read from the code and not seen on a phone: SETTINGS offers HOME SCREEN WIDGET KEY on iOS, for a widget only Android has; ID-424 in BACKLOG section 2 is now the iOS widget itself (split again 2026-10-19: ID-424 measures iOS's background refresh, ID-438 and ID-439 are the widget).
 - ID-041 CHG: **fix the [Sonar Cloud scan](https://sonarcloud.io/project/issues?id=ExponentiallyDigital_cfg-pia-wg&s=IMPACT_RANK&issueStatuses=OPEN%2CCONFIRMED)'s findings, now 88, in six batches from safest to riskiest.** Triaged 2026-09-15 at 35 and put on hold with the rest of this section; analysed again 2026-10-09. The plan below, with Andrew's decisions at the end.
@@ -128,6 +129,7 @@ Work items for the **current** release:
   - **Won't fix, 2026-10-19:** Andrew marked the seven router-command findings won't fix in SonarCloud, as decided. SonarCloud now shows 39 open.
   - **Step 4, built in build 513:** DEVICES' APPLY split with nothing reordered. `DeviceAssignmentService.apply` takes the state it read and one `ApplyRequest` in place of 13 parameters, and runs one function per stage: the stale-write check, reservations, names, disabling, the moves, the default connection, the guard, the read-back. The screen's `_apply` is now an outline over `_reservationsToCreate`, `_confirmApply`, `_applyRequest`, `_showProgress`, `_runApply` and `_refreshAfterApply`, and `_tunnelWarnings` over `_tunnelsToCheck` and `_warningsFrom`. Before the change: three tests for the paths none reached (a failed tunnel check, a failed write, a failed re-read), run on the old code. After it: a test pinning the stages' order in an APPLY that does everything, added because moving the device moves before the disabling broke no test; it now fails for that and for renames after disabling. THE DEFAULT CONNECTION SEQUENCE IS EXACT caught the guard moved before the default. The full suite passes. Left: CI, SonarCloud's scores, and Andrew's DEVICES hand tests in this step's own release.
   - **After build 513, 2026-10-19:** CI passed (run 39219301952) and SonarCloud shows 36 open, from 39: `_apply`, `_tunnelWarnings` and `apply`'s 13 parameters are gone. `_confirmApply`, split out of `_apply`, still scored 46, so build 514 splits it again into `_changeLines`, `_disabling`, `_scheduleWarning` and `_foreignNames`. The full suite passes, the confirmation's tests among them. Left: CI on build 514, then Andrew's DEVICES hand tests (DEV-2, DEV-4 to DEV-8, DEV-11, DEV-18 to DEV-20; DEF-1, DEF-3, DEF-8) before this step's own release.
+  - **After build 514, 2026-10-19:** CI passed (run 39221326472) and SonarCloud shows 35 open; nothing in APPLY is flagged now. DEVICES' other findings are outside APPLY, for step 5: `_connect` 25, `_buildList` 22, `_pickerTile` 18, `build` 17 (`device_assignment_screen.dart`), and `_setDefaultConnection` 23 (`device_assignment_service.dart`).
 ---
 
 ### 1.3. Implemented - chronological change history
@@ -144,6 +146,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-19 v0.8.145 build 515 - safety commit: iPhone results so far recorded
+
+```play
+• Behind the scenes: a tidy-up of how DEVICES applies your changes. Nothing it does, or the order it does it in, has changed.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 2026-10-19 v0.8.144 build 514 - SonarCloud fixes, step 4: APPLY's confirmation split too
 

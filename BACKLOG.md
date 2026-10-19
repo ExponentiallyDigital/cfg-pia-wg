@@ -121,6 +121,8 @@ Early thinking, with measurements: `.claude/plans/plan_firmware-abstraction.md`.
   - **Done when:** the agreement is active.
 - ID-401 CHG: **RevenueCat on the App Store.** After ID-431 and ID-437.
   - **Done when:** a TestFlight purchase unlocks the app, and RESTORE PURCHASE finds it again.
+- ID-441 BUG?: **on iOS, unconfirmed: no visible offer to save the PIA login in a password manager.** Seen by Andrew 2026-10-19 in STD-1 on an iPhone, using KeePassium; whether iOS should prompt, and whether KeePassium can be asked to, isn't known yet. Investigate after the SonarCloud work (ID-041).
+  - **Done when:** it's known whether iOS offers to save each of the three logins (PIA, router SSH, SMTP) with KeePassium and with iCloud Passwords, and any fix is tested on an iPhone.
 - ID-424 TST: **measure how often iOS lets the app refresh in the background, for an iOS widget like Android's (ID-376).** After ID-422.
   - **Done when:** a day's refresh times from an iPhone are recorded.
 - ID-438 ADD: **an iOS home screen widget showing the last status the app read.** After ID-431.
