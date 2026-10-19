@@ -405,21 +405,28 @@ class _SlotModalState extends State<SlotModal> {
     // 4) Write targets if prompted, then enable with the connectivity check. Other slots are left
     //    running - they no longer have to be torn down first.
     setState(() => _processing = true);
-    Object? error;
+    final error = await _enable(slot, (primary, secondary), writeTargets: !haveTargets, resumeWatchdog: resumeWatchdog);
+    await _refresh();
+    if (mounted) setState(() => _processing = false);
+    if (error != null && mounted) await _reportEnableFailure(plainError(error));
+  }
+
+  /// Writes the targets when they were just chosen, enables the slot with its connectivity check, and
+  /// puts a paused watchdog back. Returns what failed, or null.
+  Future<Object?> _enable(int slot, (String, String) targets, {required bool writeTargets, required bool resumeWatchdog}) async {
+    final (primary, secondary) = targets;
     try {
       final client = await widget.connect();
       final svc = _slotSvc(client);
-      if (!haveTargets) await svc.writeWatchdogPingTargets(slot, primary, secondary);
+      if (writeTargets) await svc.writeWatchdogPingTargets(slot, primary, secondary);
       await svc.enableSlot(slot, primaryIp: primary, secondaryIp: secondary);
       // After the tunnel is up: a schedule put back on a tunnel that failed its check would start
       // by rebuilding what the app has just reverted.
       if (resumeWatchdog) await _wdSvc(client).enableWatchdog(slot);
+      return null;
     } catch (e) {
-      error = e;
+      return e;
     }
-    await _refresh();
-    if (mounted) setState(() => _processing = false);
-    if (error != null && mounted) await _reportEnableFailure(plainError(error));
   }
 
   /// The slot's stored check targets, empty when it has none, or null when they could not be read,
@@ -900,7 +907,6 @@ class _SlotModalState extends State<SlotModal> {
     // from the link flag alone.
     final isActive = _slots.activeSlots.contains(slotNum);
     final isAnswering = _slots.answeringSlots.contains(slotNum);
-    if (!(isActive || info.killSwitch || info.watchdogActive || (info.watchdogConfigured && !info.isEmpty))) return const [];
     return [
       // Amber for "up, no answer": it is not a healthy tunnel and it is not a stopped one either, and
       // calling it ACTIVE was the old lie (ID-123).
