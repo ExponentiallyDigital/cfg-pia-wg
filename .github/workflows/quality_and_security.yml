@@ -181,6 +181,18 @@ jobs:
       - name: Build for the iOS simulator
         run: flutter build ios --simulator --debug --no-codesign
 
+      # ID-395: ABOUT reads these from the built app's Info.plist, written by ios/stamp_build_info.sh.
+      # A key that isn't there would only show as "unknown" on an iPhone, so read them back here.
+      - name: Check the build info was stamped into the app
+        run: |
+          plist=build/ios/iphonesimulator/Runner.app/Info.plist
+          for key in CfgGitCommit CfgGitCommitDate CfgGitBranch CfgRunnerId CfgBuildTimestamp CfgBuildType DTPlatformVersion DTXcode; do
+            value=$(plutil -extract "$key" raw "$plist") || { echo "::error title=Build info not stamped::$key is missing from $plist"; exit 1; }
+            echo "$key = $value"
+          done
+          [ "$(plutil -extract CfgRunnerId raw "$plist")" = "$GITHUB_RUN_ID" ] || { echo "::error::CfgRunnerId is not this run's id"; exit 1; }
+          [ "$(plutil -extract CfgGitCommit raw "$plist")" = "$(git log -1 --abbrev=7 --format=%h)" ] || { echo "::error::CfgGitCommit is not this commit"; exit 1; }
+
   # ============================================================
   # Job 3: OSV dependency vulnerability scan - every other job waits on it
   # ============================================================

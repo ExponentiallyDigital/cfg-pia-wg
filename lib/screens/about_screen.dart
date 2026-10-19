@@ -540,10 +540,19 @@ class _BuildInfoBlock extends StatelessWidget {
       ('Commit hash', v((b) => b.commitHash)),
       ('Git branch/tag', v((b) => b.gitBranch)),
       ('Build runner ID', v((b) => b.runnerId)),
-      ('CPU Architecture (ABI)', v((b) => b.cpuAbi)),
-      ('Target Android version', v((b) => b.osVersion)),
-      ('Compile SDK', v((b) => b.compileSdk)),
-      ('Kotlin', v((b) => b.kotlinVersion)),
+      // ID-395: the last four in each platform's own terms. osVersion is the phone's OS, which the
+      // Android row called "Target Android version" until 2026-10-19; the target is a build setting.
+      if (defaultTargetPlatform == TargetPlatform.iOS) ...[
+        ('CPU Architecture', v((b) => b.cpuAbi)),
+        ('iOS version', v((b) => b.osVersion)),
+        ('iOS SDK', v((b) => b.compileSdk)),
+        ('Xcode', v((b) => b.xcodeVersion)),
+      ] else ...[
+        ('CPU Architecture (ABI)', v((b) => b.cpuAbi)),
+        ('Android version', v((b) => b.osVersion)),
+        ('Compile SDK', v((b) => b.compileSdk)),
+        ('Kotlin', v((b) => b.kotlinVersion)),
+      ],
     ];
   }
 

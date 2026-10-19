@@ -1746,6 +1746,18 @@ logger "**ABT-3 END** Script from another version"
 - See: it opens on its own screen and does not bleed through the header.
 - See: the link row is centred, and none of the five links is underlined; all five still open.
 
+**ABT-5** Build rows on each platform [hand]
+
+- Do: on Android, ABOUT.
+- See: the rows end CPU Architecture (ABI), Android version (the phone's, such as `Android 16 (API 36)`), Compile SDK and Kotlin; nothing says "Target Android version" (ID-395).
+- Do: on an iPhone, ABOUT, on a build from Xcode and later on one from TestFlight.
+- See: the first line has this build's version and build number, not `unknown`.
+- See: Built by reads Xcode on the Xcode build and TestFlight on the TestFlight one, with the time it was built.
+- See: Commit hash, Git branch/tag and Build runner ID are filled in: `Local Build` from Xcode, the run's id from CI.
+- See: the rows end CPU Architecture (`arm64`), iOS version (the phone's, such as `iOS 27.0`), iOS SDK (with the minimum, `iOS 15.0`) and Xcode; none of them reads `unknown`.
+- Do: COPY BUILD INFO, and paste it into a note.
+- Pass if: the pasted text has the same lines as the screen.
+
 ---
 
 ## <a name='ext'></a>EXT. Exit, background and session
