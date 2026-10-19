@@ -411,23 +411,30 @@ class DeviceAssignmentService {
       await _service('restart_vpnc');
       await _awaitInterface('wgc$slot', up: true);
     }
-    // The tunnel that WAS the default has to be running again at the end, if it is still switched
-    // on. Switching to Internet stopped it above and nothing started it: its watchdog found it down
-    // two minutes later and rebuilt it, and without one it stayed down with its pinned devices
-    // offline (ID-220). Switching to another tunnel, `restart_default_wan` stops the default's own
-    // tunnel, so there it is checked rather than assumed - that case has not been measured.
-    // A switched-off one stays off (ID-172).
-    if (outgoing >= 0 && outgoing != row && base.profiles[outgoing].active && base.profiles[outgoing].slot != null) {
-      final restarting = base.profiles[outgoing].slot!;
-      if (row < 0 || !(await _read(kUpInterfacesCommand)).contains('wgc$restarting')) {
-        await _run('nvram set vpnc_unit=$outgoing');
-        await _service('restart_vpnc');
-        await _awaitInterface('wgc$restarting', up: true);
-      }
+    await _restartOutgoingDefault(base, outgoing: outgoing, row: row);
+    await _reportDefaultSet(index, change);
+  }
+
+  /// The tunnel that WAS the default has to be running again at the end, if it is still switched on.
+  /// Switching to Internet stopped it and nothing started it: its watchdog found it down two minutes
+  /// later and rebuilt it, and without one it stayed down with its pinned devices offline (ID-220).
+  /// Switching to another tunnel, `restart_default_wan` stops the default's own tunnel, so there it is
+  /// checked rather than assumed - that case has not been measured. A switched-off one stays off
+  /// (ID-172).
+  Future<void> _restartOutgoingDefault(AssignmentState base, {required int outgoing, required int row}) async {
+    if (outgoing < 0 || outgoing == row || !base.profiles[outgoing].active || base.profiles[outgoing].slot == null) return;
+    final restarting = base.profiles[outgoing].slot!;
+    if (row < 0 || !(await _read(kUpInterfacesCommand)).contains('wgc$restarting')) {
+      await _run('nvram set vpnc_unit=$outgoing');
+      await _service('restart_vpnc');
+      await _awaitInterface('wgc$restarting', up: true);
     }
-    // Read back before saying so (ID-333). The waits above log and carry on, and a service call can
-    // be dropped, so "set" is claimed only when vpnc_default_wan names it and the priority-10000 rule
-    // sends the LAN to it - or, for Internet, when no such rule is left.
+  }
+
+  /// Read back before saying so (ID-333). The waits log and carry on, and a service call can be
+  /// dropped, so "set" is claimed only when vpnc_default_wan names it and the priority-10000 rule sends
+  /// the LAN to it - or, for Internet, when no such rule is left.
+  Future<void> _reportDefaultSet(int index, String change) async {
     final key = int.tryParse((await _read('nvram get vpnc_default_wan')).trim()) ?? 0;
     final rules = await _read(kIpRuleCommand);
     final lanRule = RegExp(r'^10000:.*iif br0 lookup (\S+)', multiLine: true).firstMatch(rules)?.group(1);
