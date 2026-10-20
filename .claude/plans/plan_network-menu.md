@@ -212,6 +212,15 @@ To settle before this goes into the setup instructions:
 - Whether to suggest the form's optional TTL (an expiry date) or client IP filtering. IP filtering won't work for a phone that moves between networks and tunnels, and an expiry date means the screen has to explain a token that has stopped working.
 - Where the app keeps the token: the same secure storage as the router password (`flutter_secure_storage`), and never in the app log or an emailed report.
 
+## Measured on the router, 2026-10-20
+
+- **curl can't choose a tunnel on stock.** `--interface wgcN` and `--interface <wgcN's address>` both got no answer through wgc1 or wgc5.
+- **The watchdog's way works (ID-078).** For one request: take the watchdog's DNS probe lock (`/tmp/cfg-pia-wg-dnsprobe.lock`, ID-193), add `ip rule add to <address> iif lo lookup <10 - slot> priority 1000`, check `ip route get <address>` names `dev wgcN`, make the request with `--resolve cloudflare-dns.com:443:<address>`, delete the rule, release the lock. Each tunnel answered with its own IP and its region's country, and no rule was left. It needs the address below 128.0.0.0: the firmware's table sends only `0.0.0.0/1` through the tunnel, and the rest out of the WAN, which the `ip route get` check catches.
+
+## Radar's licence, checked 2026-10-20
+
+Cloudflare's developer docs: data from the Radar API is under CC BY-NC 4.0, non-commercial; exceptions by request, from Radar's About page. The app is paid, so this rules Radar out without an exception, whoever's token is used. IPinfo Lite is the alternative: by IPinfo's own pages CC BY-SA 4.0, commercial use allowed with attribution ("IP address data is powered by IPinfo"), unlimited requests with a free token, country and provider only, at `https://api.ipinfo.io/lite/<IP>?token=<token>`. Not yet tried by hand.
+
 ## What it leaves open for this app
 
 - **Radar's limit is per Cloudflare user, and the limit is shared with that user's dashboard and other API use.** If each user supplies their own token, the limit is theirs and two requests per lookup is nothing (one lookup per tunnel plus the device is under a dozen). The cost is that every user needs a Cloudflare account and has to make a token. A 429 means waiting out the `Retry-After`, and hitting it would also block that user's other Cloudflare API calls for 5 minutes.

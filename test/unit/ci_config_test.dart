@@ -72,6 +72,31 @@ void main() {
     expect(job, contains('flutter-version-file: pubspec.yaml'));
   });
 
+  // ID-418. A shape test, like ID-405's: the job's own run is the evidence that it signs.
+  test('the release builds a signed iOS app with the App Store Connect key, and keeps the key secret', () {
+    final yaml = File('.github/workflows/release.yml').readAsStringSync();
+    final start = yaml.indexOf(RegExp(r'^  ios-release:', multiLine: true));
+    expect(start, greaterThan(0), reason: 'no ios-release job');
+    final next = yaml.indexOf(RegExp(r'^  [a-z-]+:', multiLine: true), start + 1);
+    final job = yaml.substring(start, next < 0 ? yaml.length : next);
+    expect(job, contains('runs-on: macos-'));
+    expect(job, contains('needs: quality-and-security'));
+    for (final s in ['APP_STORE_CONNECT_KEY_ID', 'APP_STORE_CONNECT_ISSUER_ID', 'APP_STORE_CONNECT_API_KEY']) {
+      expect(job, contains('secrets.$s'), reason: s);
+    }
+    expect(job, contains('-allowProvisioningUpdates'));
+    expect(job, contains('-exportOptionsPlist ios/ExportOptions.plist'));
+    // The key never reaches the log, and never outlives the job.
+    expect(RegExp(r'echo[^\n]*\$ASC_API_KEY').hasMatch(job), isFalse);
+    expect(RegExp(r'if: always\(\)\s+run: rm -f "\$RUNNER_TEMP/AuthKey\.p8"').hasMatch(job), isTrue);
+
+    // Exported for App Store Connect by the team the Xcode project signs with (ID-422).
+    final export = File('ios/ExportOptions.plist').readAsStringSync();
+    expect(RegExp(r'<key>method</key>\s*<string>app-store-connect</string>').hasMatch(export), isTrue);
+    final team = RegExp(r'<key>teamID</key>\s*<string>([^<]+)</string>').firstMatch(export)!.group(1);
+    expect(File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync(), contains('DEVELOPMENT_TEAM = $team;'));
+  });
+
   test("Dependabot's PRs go to dev, not straight to main", () {
     final config = File('.github/dependabot.yml').readAsStringSync();
     final ecosystems = RegExp(r'^\s+- package-ecosystem:', multiLine: true).allMatches(config).length;

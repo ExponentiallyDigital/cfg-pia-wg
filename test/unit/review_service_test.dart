@@ -85,13 +85,13 @@ void main() {
       expect(reviewNotOpenedMessage(ReviewOpen.failed), 'Could not open the App Store listing on this device.');
     });
 
-    test('with no App Store listing yet, nothing is opened, Play least of all', () async {
-      expect(kAppStoreListingUrl, isEmpty, reason: 'once the link is in, replace this test with one that opens it');
+    // ID-427: the App Store record exists, Apple ID 6824823717, so a tap opens its listing.
+    test('a tap opens the App Store listing, never Play', () async {
+      expect(kAppStoreListingUrl, 'https://apps.apple.com/app/id6824823717');
       final calls = installUrlLauncherMock();
-      expect(reviewListingUrl(), isNull);
-      expect(await openStoreReview(), ReviewOpen.noListingYet);
-      expect(calls, isEmpty);
-      expect(reviewNotOpenedMessage(ReviewOpen.noListingYet), contains("isn't on the App Store yet"));
+      expect(reviewListingUrl(), kAppStoreListingUrl);
+      expect(await openStoreReview(), ReviewOpen.opened);
+      expect((calls.single.arguments as Map)['url'], kAppStoreListingUrl);
     });
   });
 }

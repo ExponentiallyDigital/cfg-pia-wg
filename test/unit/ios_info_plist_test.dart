@@ -33,8 +33,8 @@ void main() {
     expect(plistString(plist, 'CFBundleDisplayName'), 'cfg-pia-wg');
   });
 
-  // ID-420. Apple treats bundle IDs as case sensitive, so Andrew chose all lower case, and the App Store
-  // record is tied to it for good.
+  // ID-420. Andrew chose all lower case, and the App Store record is tied to it for good. Apple's
+  // registration ignores case: the lower-case ID registered only once the old cfgPiaWg was removed (ID-427).
   test('the bundle IDs are all lower case, and the app is com.exponentiallydigital.cfgpiawg', () {
     final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
     final ids = [for (final m in RegExp(r'PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);').allMatches(pbxproj)) m.group(1)!];
