@@ -480,7 +480,7 @@ void main() {
     });
 
     // ID-417: the script is written on the phone that deploys it, so its review ask follows that phone.
-    test('deployed from iOS, the review ask names the App Store and carries no Play link', () {
+    test('deployed from iOS, the review ask carries the App Store link and no Play link', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       final s = buildWatchdogScript(_valid(slot: 1));
@@ -488,7 +488,7 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
 
       for (final text in [s, body]) {
-        expect(text, contains('If cfg-pia-wg is useful to you, please consider submitting a review on the App Store.'));
+        expect(text, contains('please consider submitting a review by tapping on the home screen link or via https://apps.apple.com/app/id6824823717'));
         expect(text, isNot(contains('play.google.com')));
       }
       expect(buildWatchdogScript(_valid(slot: 1)), contains(kPlayStoreUrl), reason: 'deployed from Android, the Play link stays');

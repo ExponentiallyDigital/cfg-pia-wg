@@ -32,16 +32,16 @@
 // (ID-043). url_launcher, already a dependency, does the same job. An unprompted ask - after a
 // successful watchdog deploy, say - would need a review plugin back, one that supports built-in Kotlin.
 //
-// On iOS every review ask names the App Store and opens its listing instead (ID-417). Until the app
-// has an App Store listing, [kAppStoreListingUrl] is empty, and a tap says so rather than sending an
-// iPhone to Play's web page.
+// On iOS every review ask names the App Store and opens its listing instead (ID-417). Were
+// [kAppStoreListingUrl] ever empty again, a tap would say so rather than send an iPhone to Play's web
+// page.
 
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// The app's App Store listing. Empty until the app has one and Andrew has sent the link (ID-417); while
-/// it is empty, iOS has nowhere to send a review, and says so.
-const String kAppStoreListingUrl = '';
+/// The app's App Store listing: its App Store Connect record, Apple ID 6824823717 (ID-427). The page
+/// is live once the first submission is approved (ID-436); an iOS build reaches nobody before then.
+const String kAppStoreListingUrl = 'https://apps.apple.com/app/id6824823717';
 
 /// True when this build's reviews go to the App Store: iOS, read through [defaultTargetPlatform] so a
 /// test can run as iOS. Everything else goes to Play.

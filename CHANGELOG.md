@@ -118,15 +118,12 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
-**Claude, in priority order: the iOS release and the NETWORK menu.**
+**Claude, in priority order: the iOS release.**
 
-- ID-458 ADD: **a "Network" item on the main menu that shows the public IP address and provider of this device, and of each tunnel, using Cloudflare Radar.** Raised 2026-10-20 by Andrew. Cloudflare's assistant suggested an approach, which is recorded as given, and not yet checked, in `.claude/plans/plan_network-menu.md`: get the external IP (`https://1.1.1.1/cdn-cgi/trace` or ipify), then call Radar's `/radar/entities/ip` (location) and `/radar/entities/asns/ip` (provider) with a read-only API token. A follow-up answer, recorded in the same file, gives a way that needs no token and uses hostnames only: `https://ipinfo.io/json` returns both the IP and the provider (`org`, e.g. "AS12345 Example Provider"), and `https://cloudflare-dns.com/cdn-cgi/trace` gives the IP alone. The plan file's "Recommended design" section holds Claude's recommendation, not yet decided: the IP from the trace, sent from the phone and through each `wgcN` on the router; the provider from one Radar call on the phone, with the user's own token; PIA's region name instead of a town. A hand run on 2026-10-20 confirmed that one Radar call, `/radar/entities/ip`, returns the country and a readable provider name, so the second call isn't needed. The steps Andrew used to make the token are in the plan's "Getting a Radar token" section, for the setup instructions. It rules out ipinfo.io without a token, because its 1,000 requests a day are shared by everyone on the same IP, and a PIA exit IP has many users.
-  - **To decide first:** Radar with a token, which every user would have to supply because one compiled into the app can be pulled out (its limit, 1,200 requests per 5 minutes per Cloudflare user, is ample at two requests per lookup, but each user needs a Cloudflare account), or ipinfo.io without one, once its rate limit and terms are read; how each tunnel's exit IP is read on the router, by a request sent out through `wgcN` to a hostname, since stock's curl refuses a URL whose host is an IP address (ID-127); and what the screen tells the user about sending the address to the lookup service.
-  - **First probe:** a read-only paste block on stock showing whether `curl --interface wgcN` sends its request out through the tunnel, and not out through the ISP.
-  - **Done when:** decided, the probe has been run, the chosen service's endpoints and terms are confirmed against its own documentation, and the build items are written with their own done-when.
 - ID-418 REL: **CI builds a signed iOS release, with an App Store Connect API key kept in GitHub secrets.** After ID-405 and ID-427.
   - **Done when:** a manual `release.yml` run produces a signed `.ipa`.
   - **Uses:** ID-463's three secrets.
+  - **Built in build 527:** a new `ios-release` job in `release.yml`, on macOS, after the quality checks and alongside the Android release, never blocking it. It writes the key from the secrets to a file only the job can read, stopping with the missing secrets' names if any is empty; archives with `xcodebuild -allowProvisioningUpdates` authorised by the key, so Xcode makes the signing certificate and profile on the runner and none is kept anywhere; exports with the new `ios/ExportOptions.plist` (App Store Connect, automatic signing, team RL4UB6WKMV); checks the .ipa's bundle ID, team and Apple Distribution signature with `codesign`; keeps the .ipa as a 7-day artifact; and deletes the key file however the job ends. Nothing goes to Apple yet (ID-431). A test in `test/unit/ci_config_test.dart` holds the job's shape, the key kept out of the log, its removal, and the export's team matching the Xcode project; each seen to fail when broken. Left: a manual run (dry run, tag v0.8.157) that produces the signed .ipa, and a look at whether each run leaves another development certificate in the account.
 - ID-433 REL: **the release SBOM covers the iOS-only dependencies, such as the native SDKs plugins pull in on iOS.** After ID-418.
   - **Done when:** a release's SBOM lists them.
 - ID-431 REL: **a release tag uploads the signed build to TestFlight.** After ID-418 and ID-430.
@@ -144,31 +141,22 @@ Work items for the **current** release:
   - **Built in build 503:** `lib/review_service.dart` now picks the store: `reviewStoreName()` is the App Store on iOS and the Play Store elsewhere, and `openStoreReview()` opens `reviewListingUrl()`. `kAppStoreListingUrl` is empty until Andrew sends the link, and until then iOS opens nothing. Three places follow it. The home screen line reads "add an App Store app review" on iOS, and a tap says on screen and in the app log that cfg-pia-wg isn't on the App Store yet. SETTINGS' second uninstall ask names the App Store, and is left out on iOS until there's a listing to send anyone to. The watchdog email's review line is now `emailReviewLine()`, written into the script on the phone that deploys it: Play's link from Android, the App Store's from iOS, and from iOS without a listing, an ask with no link. CONTEXT 4.8.3 and TESTING HOM-4 say the same.
   - **Checked so far:** new tests run as iOS in `test/unit/review_service_test.dart` (the store's name; nothing launched with no listing), `test/screens/main_menu_screen_test.dart` (the label, the on-screen message, a log line that isn't an error, nothing launched), `test/screens/settings_screen_test.dart` (no review ask, no Google Play) and `test/router_watchdog_unit_test.dart` (the deployed script and the test email name the App Store and carry no Play link). Android's existing tests are unchanged and pass, with one added check that SETTINGS still names the Google Play store. Seen to fail with the platform check returning Android always, and again with iOS given Play's listing. On the way: a failing iOS test left the platform override set and failed every later test in its file, so the override is now reset by a teardown as well. Left: the App Store link from Andrew, then a tap on an iPhone.
   - **Seen on an iPhone, 2026-10-19:** Andrew's HOM-4 passed: the line names the App Store, and with no listing yet a tap says so. Left: the App Store link (BACKLOG ID-427), then a tap that opens it.
+  - **Built in build 527:** `kAppStoreListingUrl` is `https://apps.apple.com/app/id6824823717` (ID-427). On iOS the home screen line, SETTINGS' second uninstall ask and the watchdog email's review line now open or carry it. The four tests that pinned "no listing yet" now check the link is opened or carried, and Play never is; with the link emptied again all four fail. The full suite passes. Left: a tap on an iPhone that opens the listing, which can only show once the first submission is approved (ID-436).
 - ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-435, ID-455 and ID-456.
   - **Done when:** the app is on sale.
+  - **Also:** Apple's email confirming the Small Business Program enrolment (ID-437) has arrived, so the US$9.99 pays 15% commission, not 30%.
+  - **Confirmed, 2026-10-20:** Apple's email confirming the enrolment arrived.
 
 **Andrew, in the background: setting the app up on the App Store, in order.**
 
-- ID-422 REL: **sign builds with the new team on all three iPhones.** From BACKLOG 1.3, 2026-10-20, after ID-426.
-  - **Done when:** a team-signed build runs on each iPhone.
-  - **Built in build 526:** `DEVELOPMENT_TEAM = RL4UB6WKMV` in all six of the Xcode project's target configurations, Runner and RunnerTests, Debug, Profile and Release, with automatic signing as before. RL4UB6WKMV is the Team ID from Andrew's membership page; 5N82LGHKZ2, briefly taken for it, is the enrolment ID. A test in `test/unit/ios_info_plist_test.dart` holds it, seen to fail with one value changed. Left: Andrew runs the app from Xcode on each iPhone.
-- ID-427 REL: **create the App Store Connect app record, bundle ID `com.exponentiallydigital.cfgpiawg`.** After ID-426.
-  - **Done when:** it exists, and its App Store link is sent to Claude for ID-417.
-  - **Also:** untick France in the app's availability before the first submission (ID-430, ID-462).
 - ID-430 DEC: **Apple's export compliance answer, decided and set in `Info.plist`.** From BACKLOG 1.3, 2026-10-19. Claude sets out the facts first: SSH runs on dartssh2's own Dart cryptography, not Apple's, and HTTPS on the platform's.
   - **Done when:** Andrew has decided, `ITSAppUsesNonExemptEncryption` is set to match, and an upload asks no encryption question.
   - **Facts written in build 523:** `app-store/export_compliance.md`: SSH on dartssh2's own Dart cryptography, HTTPS on the TLS built into the Flutter engine (neither Apple's), WireGuard keys made on the phone, and RSA and Ed25519 used only to authenticate; all standard algorithms. Apple's page on export compliance could not be fetched, so the file says which answer fits is Andrew's to decide, not Claude's. Left: Andrew decides, then `Info.plist` is set.
   - **Decided, 2026-10-20:** on sale in France (Andrew). `app-store/export_compliance.md` now quotes Apple's four pages, read 2026-10-20: standard algorithms not provided by Apple's operating system need the French encryption declaration when the app is sold in France, and the key is NO only for apps needing no document. So `ITSAppUsesNonExemptEncryption` is YES in `Info.plist`, held by a test in `test/unit/ios_info_plist_test.dart`, seen to fail set to NO. Left: Andrew prepares and uploads the French declaration in App Store Connect; once Apple approves it, its code goes in as `ITSEncryptionExportComplianceCode`, and an upload asks no question.
   - **Revised, 2026-10-20 (Andrew):** France is left out of the first release, so the declaration can't delay shipping; selling there is ID-462. Outside France Apple's table asks for no document, so `ITSAppUsesNonExemptEncryption` is NO, and its test, seen to fail set to YES, says so. Left: France unticked in App Store Connect's availability before the first submission (ID-427), and whether the US year-end self-classification report applies, which doesn't hold up shipping.
-- ID-437 REL: **sign the Paid Apps Agreement and set up banking and tax.** After ID-426.
-  - **Done when:** the agreement is active.
-  - **Also:** enrol in the App Store Small Business Program, so Apple takes 15% of the US$9.99 (ID-461), not 30%.
-- ID-463 REL: **an App Store Connect API key, saved as three GitHub secrets, for CI's signed build (ID-418).** Split from ID-418 on 2026-10-20: the key is Andrew's to make. In App Store Connect: Users and Access, Integrations, App Store Connect API, Team Keys, then a new key with the Admin role, which automatic signing needs to create certificates (ID-418 checks whether a narrower role will do). Its `.p8` file can be downloaded only once.
-  - **Done when:** the GitHub secrets `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and `APP_STORE_CONNECT_API_KEY` (the `.p8` file's text) are set.
+  - **Availability set, 2026-10-20:** Andrew confirmed the app is Free and not available in France. Left: whether the US year-end self-classification report applies.
 - ID-464 REL: **the US$9.99 unlock as an App Store in-app purchase, and RevenueCat's iOS app, for ID-401.** Split from ID-401 on 2026-10-20: both are set up in Apple's and RevenueCat's dashboards. After ID-427 and ID-437. In App Store Connect: a non-consumable in-app purchase at US$9.99 (ID-461), and the in-app purchase key RevenueCat asks for. In RevenueCat: an Apple App Store app for bundle ID `com.exponentiallydigital.cfgpiawg`, with the product attached to the entitlement `router_features` and to the current offering, as on Android.
   - **Done when:** the product shows in RevenueCat, and its public Apple SDK key is the GitHub secret `REVENUECAT_IOS_KEY`.
-- ID-428 REL: **declare the EU trader status, or leave the EU storefronts out.** After ID-427.
-  - **Done when:** App Store Connect shows it declared.
 - ID-429 DEC: **decide whether to support iPad, which needs iPad screenshots and review.**
   - **Done when:** decided, and the Xcode project matches.
 - ID-441 BUG?: **unconfirmed: on iOS, nothing offered to save the PIA login.** Seen by Andrew 2026-10-19 in STD-1 on an iPhone, with KeePassium. iOS may offer to save an app's login only when the app declares its website as an Associated Domain (`webcredentials:`), which needs the paid team and a file on that website; no source found settles it.
@@ -197,6 +185,41 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-20 v0.8.157 build 527 - the App Store record, team signing, and a signed iOS build in CI
+
+```play
+• Behind the scenes: groundwork for the iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- CHG: WIP 20 -> 19 bullets. Removed: ID-458, the NETWORK menu, to BACKLOG 1.1.2, on hold by Andrew's decision so the iOS release comes first. The WIP group heading drops "and the NETWORK menu".
+- REL: **CI, 2026-10-20:** build 526 passed every job (run 39372434630), the iOS simulator build, MobSF, CodeQL and OSV among them.
+- ID-422 REL: **sign builds with the new team on all three iPhones.** From BACKLOG 1.3, 2026-10-20, after ID-426.
+  - **Done when:** a team-signed build runs on each iPhone.
+  - **Built in build 526:** `DEVELOPMENT_TEAM = RL4UB6WKMV` in all six of the Xcode project's target configurations, Runner and RunnerTests, Debug, Profile and Release, with automatic signing as before. RL4UB6WKMV is the Team ID from Andrew's membership page; 5N82LGHKZ2, briefly taken for it, is the enrolment ID. A test in `test/unit/ios_info_plist_test.dart` holds it, seen to fail with one value changed. Left: Andrew runs the app from Xcode on each iPhone.
+  - **Seen on all three iPhones, 2026-10-20:** the team-signed release build (`flutter run --release`) installs and runs on each. Not on the iPhone 18 Pro simulator, which is expected: Flutter builds only debug mode for the simulator, and the simulator needs no signing. Andrew's Mac now matches dev with `git reset --hard origin/dev` in place of `git pull`, since it never pushes and Xcode and `tool/launcher_icons.dart` rewrite files there.
+- CHG: WIP 19 -> 18 bullets. Removed: ID-422, done, above.
+- ID-427 REL: **create the App Store Connect app record, bundle ID `com.exponentiallydigital.cfgpiawg`.** After ID-426.
+  - **Done when:** it exists, and its App Store link is sent to Claude for ID-417.
+  - **Also:** untick France in the app's availability before the first submission (ID-430, ID-462).
+  - **Bundle ID registered, 2026-10-20:** the New App form offered only `com.exponentiallydigital.cfgPiaWg`, the ID before build 505, and `com.exponentiallydigital.cfgpiawg.dev`, both registered from the Mac. Registering `com.exponentiallydigital.cfgpiawg` was refused as "not available": Apple's uniqueness check ignores case, though ID-420 chose lower case thinking it didn't. Andrew removed the unused `cfgPiaWg` App ID, and the lower-case one then registered. The project already uses it, so nothing changed in the code. Left: the record, Free with France unticked, and its Apple ID sent to Claude for ID-417.
+  - **Record created, 2026-10-20:** Andrew created it, Apple ID 6824823717, so the App Store link is `https://apps.apple.com/app/id6824823717`. Done. The price at Free and France unticked are checked under ID-430 before the first submission.
+- CHG: WIP 18 -> 17 bullets. Removed: ID-427, done, above.
+- ID-463 REL: **an App Store Connect API key, saved as three GitHub secrets, for CI's signed build (ID-418).** Split from ID-418 on 2026-10-20: the key is Andrew's to make. In App Store Connect: Users and Access, Integrations, App Store Connect API, Team Keys, then a new key with the Admin role, which automatic signing needs to create certificates (ID-418 checks whether a narrower role will do). Its `.p8` file can be downloaded only once.
+  - **Done when:** the GitHub secrets `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and `APP_STORE_CONNECT_API_KEY` (the `.p8` file's text) are set.
+  - **Set, 2026-10-20:** Andrew made the key, `cfg-pia-wg CI` with the Admin role, key ID 6668J8F52L, saved the three secrets on the GitHub website, and kept the `.p8` file in his password manager. Not read back from here: the `gh` token on the PC can't list secrets (HTTP 403), so ID-418's first run is what proves them.
+- CHG: WIP 17 -> 16 bullets. Removed: ID-463, done, above.
+- ID-428 REL: **declare the EU trader status, or leave the EU storefronts out.** After ID-427.
+  - **Done when:** App Store Connect shows it declared.
+  - **Declared, 2026-10-20:** Andrew certified as a trader under the EU Digital Services Act and gave the address, phone and email Apple shows on the app's page in EU storefronts. Selling a paid app as a business makes him one; the other answer would have meant leaving every EU country out, not only France.
+- CHG: WIP 16 -> 15 bullets. Removed: ID-428, done, above.
+- ID-437 REL: **sign the Paid Apps Agreement and set up banking and tax.** After ID-426.
+  - **Done when:** the agreement is active.
+  - **Also:** enrol in the App Store Small Business Program, so Apple takes 15% of the US$9.99 (ID-461), not 30%.
+  - **Done by Andrew, 2026-10-20:** the Paid Apps Agreement accepted, with the bank account, tax forms and contacts completed, and the Small Business Program enrolment submitted. Left: Paid Apps showing Active in App Store Connect's Business section, and Apple's email confirming the enrolment.
+  - **Active, 2026-10-20:** App Store Connect shows the Paid Apps Agreement, the bank account and every tax form Active. Done. Apple's email confirming the Small Business Program is now checked under ID-436, before the first submission.
+- CHG: WIP 15 -> 14 bullets. Removed: ID-437, done, above.
 
 2026-10-20 v0.8.156 build 526 - every device APPLY moves gets the router's own routing rule, and the iOS app is set up for the App Store
 
