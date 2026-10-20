@@ -264,7 +264,10 @@ def cmd_listing(args):
     print(f'  age rating: {len(answers)} questions answered None or No')
 
     version = editable_version(api, app, version_string)
-    api.patch('appStoreVersions', version, {'copyright': f['Copyright']})
+    # The version number is pubspec.yaml's, as on Play, and as the build it is submitted with carries:
+    # App Store Connect made the record at 1.0 (2026-10-21).
+    api.patch('appStoreVersions', version, {'copyright': f['Copyright'], 'versionString': version_string})
+    print(f'  version {version_string}, copyright {f["Copyright"]}')
     vloc = localization(api, f'/v1/appStoreVersions/{version}/appStoreVersionLocalizations',
                         'appStoreVersionLocalizations', 'appStoreVersion', version, {})
     api.patch('appStoreVersionLocalizations', vloc, {
