@@ -33,7 +33,7 @@ What it costs
 
 Looking is free. Slots, devices, status, logs: always visible, no unlock. Standalone config generation is free for everyone, forever.
 
-Writing to your router is a one-time US$6.99. Less than a month of the VPN you already pay for, and it never renews. No subscription. No tracking, no analytics, no advertising ID, no in-app adverts. Works offline once bought and keeps working.
+Writing to your router is a one-time US$6.99. Less than a month of the VPN you already pay for, and it never renews. No subscription. No tracking, no advertising ID, no in-app adverts. Works offline once bought and keeps working.
 
 The source is on GitHub and the build instructions are good enough to follow. What you're paying for is not having to.
 

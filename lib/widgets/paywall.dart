@@ -207,7 +207,7 @@ class _PaywallScreenState extends State<_PaywallScreen> {
         for (final line in const [
           'One lifetime payment. No subscription, ever.',
           'Works offline once bought, and keeps working.',
-          'Nothing is tracked. No analytics, no advertising id.',
+          'Nothing is tracked. No ads, no advertising id.',
         ])
           Padding(
             padding: const EdgeInsets.only(bottom: 6),

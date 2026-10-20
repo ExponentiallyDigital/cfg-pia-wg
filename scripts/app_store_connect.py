@@ -100,6 +100,8 @@ def gather():
         if not files:
             die(f'no screenshots in app-store/screenshots/{folder}: run scripts/app-store-screenshots.py')
         plan['screenshots'][slot] = files
+    if not os.path.isfile(IAP_SCREENSHOT):
+        die('no app-store/screenshots/iap-review.png: run test/release/paywall_screenshot_test.dart (its header says how)')
     return plan
 
 
@@ -112,6 +114,7 @@ def show(plan):
     print(f'  Review notes: {len(plan["notes"])} characters')
     for slot, files in plan['screenshots'].items():
         print(f'  {slot}: {len(files)} screenshots')
+    print(f'  {IAP_PRODUCT}: review screenshot {os.path.basename(IAP_SCREENSHOT)}')
 
 
 # ── The API ────────────────────────────────────────────────────────────────────────────────
@@ -289,7 +292,41 @@ def cmd_listing(args):
 
     for slot, files in plan['screenshots'].items():
         upload_screenshots(api, vloc, slot, files)
+    upload_iap_screenshot(api, app)
     print('::notice::The listing is in App Store Connect. Left by hand: App Privacy, and the demo video.')
+
+
+IAP_PRODUCT = 'lifetime_unlock'
+IAP_SCREENSHOT = os.path.join(APP_STORE, 'screenshots', 'iap-review.png')
+
+
+def upload(api, path, kind, relationship, rel_kind, parent_id):
+    """One file through App Store Connect's upload operations, for [kind] (a screenshot of some sort)."""
+    with open(path, 'rb') as f:
+        data = f.read()
+    item = api.post(kind, {'fileName': os.path.basename(path), 'fileSize': len(data)},
+                    {relationship: rel(rel_kind, parent_id)})
+    for op in item['attributes']['uploadOperations']:
+        chunk = data[op['offset']:op['offset'] + op['length']]
+        headers = {h['name']: h['value'] for h in op.get('requestHeaders', [])}
+        r = api._http.request(op['method'], op['url'], data=chunk, headers=headers, timeout=120)
+        if r.status_code >= 400:
+            die(f'uploading {path}: HTTP {r.status_code} {r.text[:500]}')
+    api.patch(kind, item['id'], {'uploaded': True, 'sourceFileChecksum': hashlib.md5(data).hexdigest()})
+
+
+def upload_iap_screenshot(api, app):
+    """The paywall, drawn by test/release/paywall_screenshot_test.dart, as the in-app purchase's
+    review screenshot (ID-454), replacing any already there."""
+    found = api.get(f'/v1/apps/{app}/inAppPurchasesV2', **{'filter[productId]': IAP_PRODUCT})['data']
+    if not found:
+        die(f'no in-app purchase {IAP_PRODUCT} (ID-464)')
+    iap = found[0]['id']
+    old = api.get(f'/v2/inAppPurchases/{iap}/appStoreReviewScreenshot').get('data')
+    if old:
+        api.call('DELETE', f'/v1/inAppPurchaseAppStoreReviewScreenshots/{old["id"]}')
+    upload(api, IAP_SCREENSHOT, 'inAppPurchaseAppStoreReviewScreenshots', 'inAppPurchaseV2', 'inAppPurchases', iap)
+    print(f'  {IAP_PRODUCT}: review screenshot uploaded')
 
 
 def cmd_testers(args):
