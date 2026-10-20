@@ -278,9 +278,14 @@ def cmd_listing(args):
     existing = api.get(f'/v1/appStoreVersions/{version}/appStoreReviewDetail').get('data')
     if existing:
         api.patch('appStoreReviewDetails', existing['id'], review)
-    else:
+        print(f'  review notes set{"" if "contactPhone" in review else "; no APP_REVIEW_PHONE, so the contact phone is left as it is"}')
+    elif 'contactPhone' in review:
         api.post('appStoreReviewDetails', review, {'appStoreVersion': rel('appStoreVersions', version)})
-    print(f'  review notes set{"" if "contactPhone" in review else "; no APP_REVIEW_PHONE, so the contact phone is left as it is"}')
+        print('  review notes and contact set')
+    else:
+        # Apple won't make the review details without a phone, in the form +61 4xx xxx xxx (2026-10-20).
+        print('::warning::No APP_REVIEW_PHONE secret, so the review notes and contact were not set. Add it, '
+              'with the country code (+61 ...), and run this again.')
 
     for slot, files in plan['screenshots'].items():
         upload_screenshots(api, vloc, slot, files)
