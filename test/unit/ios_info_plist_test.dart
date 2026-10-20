@@ -53,6 +53,17 @@ void main() {
     expect(RegExp(r'<key>ITSAppUsesNonExemptEncryption</key>\s*<false/>').hasMatch(plist), isTrue);
   });
 
+  // ID-429. Andrew's decision, 2026-10-20: iPhone and iPad, iPad tried on the simulator only. An iPad app
+  // must allow all four orientations, or App Review's iPad multitasking check refuses it.
+  test('the app is built for iPhone and iPad, with every iPad orientation', () {
+    final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+    expect(RegExp(r'TARGETED_DEVICE_FAMILY = "1,2";').allMatches(pbxproj), hasLength(3), reason: 'Debug, Profile and Release');
+    final ipad = RegExp(r'<key>UISupportedInterfaceOrientations~ipad</key>\s*<array>(.*?)</array>', dotAll: true).firstMatch(plist)!.group(1)!;
+    for (final o in ['Portrait', 'PortraitUpsideDown', 'LandscapeLeft', 'LandscapeRight']) {
+      expect(ipad, contains('<string>UIInterfaceOrientation$o</string>'), reason: o);
+    }
+  });
+
   // ID-422. Andrew's individual membership, 2026-10-20. The Team ID, not the enrolment ID
   // (5N82LGHKZ2), which was briefly taken for it.
   test('every target signs with team RL4UB6WKMV', () {

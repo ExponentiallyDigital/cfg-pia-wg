@@ -16,8 +16,8 @@
 // The ONLY place the rest of the app asks about payment, and the only place that touches the
 // RevenueCat SDK. Every gated screen reads [isUnlocked]; none of them import `purchases_flutter`.
 //
-// THE KEY IS NOT COMPILED IN. It arrives as `--dart-define=REVENUECAT_ANDROID_KEY=...`, which the
-// release workflow supplies from a repository secret. That is not for secrecy - RevenueCat's public
+// THE KEY IS NOT COMPILED IN. It arrives as `--dart-define=REVENUECAT_ANDROID_KEY=...`, or on iOS
+// `--dart-define=REVENUECAT_IOS_KEY=...` (ID-401), which the release workflow supplies from a repository secret. That is not for secrecy - RevenueCat's public
 // key is designed to be embedded and can be read out of any APK - it is so that a build WITHOUT the
 // key behaves correctly. Google Play refuses purchases from an artifact it did not distribute, so a
 // self-built copy could never complete a paywall. Rather than show one it cannot honour, a keyless
@@ -30,6 +30,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'plain_error.dart';
@@ -39,19 +40,44 @@ import 'plain_error.dart';
 class StoreUnreachableException implements Exception {
   const StoreUnreachableException();
   @override
-  String toString() => "Google Play can't be reached; this device looks to be offline. Check it's online and try again.";
+  String toString() => "${Entitlement.storeNameStart} can't be reached; this device looks to be offline. Check it's online and try again.";
 }
 
 abstract class Entitlement {
   /// Supplied at build time; empty in a local or self-built copy. See the file header.
   static const androidKey = String.fromEnvironment('REVENUECAT_ANDROID_KEY');
 
+  /// The iOS build's key, from the App Store app in RevenueCat (ID-401, ID-464).
+  static const iosKey = String.fromEnvironment('REVENUECAT_IOS_KEY');
+
+  /// True when this build sells through the App Store: iOS, read through [defaultTargetPlatform] so a
+  /// test can run as iOS.
+  static bool get _appStore => defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// The key for this platform's store.
+  static String get apiKey => keyFor(appStore: _appStore, ios: iosKey, android: androidKey);
+
+  /// [ios] on the App Store, [android] everywhere else. Apart so a test can tell the two keys apart:
+  /// every test build has both empty.
+  static String keyFor({required bool appStore, required String ios, required String android}) =>
+      appStore ? ios : android;
+
+  /// The store as a sentence names it. App Review refuses an app that names another platform
+  /// (guideline 2.3.10), so an iPhone never reads "Google Play".
+  static String get storeName => _appStore ? 'the App Store' : 'Google Play';
+
+  /// [storeName] at the start of a sentence.
+  static String get storeNameStart => _appStore ? 'The App Store' : 'Google Play';
+
+  /// The account a purchase belongs to.
+  static String get accountName => _appStore ? 'Apple Account' : 'Google account';
+
   /// The entitlement identifier configured in the RevenueCat dashboard. This string has to match
   /// exactly, and a mismatch fails in the worst way available: purchases succeed and unlock nothing.
   static const entitlementId = 'router_features';
 
   /// False when this build cannot take money, which is the honest state of a keyless build.
-  static bool get purchasingAvailable => androidKey.isNotEmpty;
+  static bool get purchasingAvailable => apiKey.isNotEmpty;
 
   /// True when the paid features are available.
   ///
@@ -79,7 +105,7 @@ abstract class Entitlement {
     _onLog = onLog;
     try {
       await Purchases.setLogLevel(LogLevel.error);
-      await Purchases.configure(PurchasesConfiguration(androidKey));
+      await Purchases.configure(PurchasesConfiguration(apiKey));
       // Registered BEFORE the first fetch, so a purchase completing during startup cannot slip
       // between the two and leave a paying customer looking at a locked screen.
       _onChanged = onChanged;
@@ -142,12 +168,15 @@ abstract class Entitlement {
     return _apply(await Purchases.restorePurchases());
   }
 
-  /// Whether Google Play's servers can be reached. Replaceable in tests.
+  /// Whether the store's servers can be reached. Replaceable in tests.
   static Future<bool> Function() storeReachable = _lookupStore;
+
+  /// The name looked up to tell "offline" from "the store said no".
+  static String get storeHost => _appStore ? 'buy.itunes.apple.com' : 'play.googleapis.com';
 
   static Future<bool> _lookupStore() async {
     try {
-      final found = await InternetAddress.lookup('play.googleapis.com').timeout(const Duration(seconds: 5));
+      final found = await InternetAddress.lookup(storeHost).timeout(const Duration(seconds: 5));
       return found.isNotEmpty;
     } on SocketException {
       return false;
@@ -187,12 +216,12 @@ abstract class Entitlement {
       return e.message ?? e.code;
     }
     final detail = switch (code) {
-      PurchasesErrorCode.paymentPendingError => 'Payment is pending. The unlock arrives once Google Play confirms it.',
+      PurchasesErrorCode.paymentPendingError => 'Payment is pending. The unlock arrives once $storeName confirms it.',
       PurchasesErrorCode.networkError => 'Could not reach the store. Check the connection and try again.',
-      PurchasesErrorCode.productAlreadyPurchasedError => 'This Google account already owns the unlock. Use Restore.',
+      PurchasesErrorCode.productAlreadyPurchasedError => 'This $accountName already owns the unlock. Use Restore.',
       PurchasesErrorCode.purchaseNotAllowedError => 'Purchases are not allowed on this device or account.',
       PurchasesErrorCode.productNotAvailableForPurchaseError => 'The unlock is not available to buy right now.',
-      PurchasesErrorCode.storeProblemError => 'Google Play could not complete the payment.',
+      PurchasesErrorCode.storeProblemError => '$storeNameStart could not complete the payment.',
       _ => e.message ?? 'The store reported an error.',
     };
     return '$detail (${code.name})';

@@ -85,6 +85,13 @@ void main() {
       expect(job, contains('secrets.$s'), reason: s);
     }
     expect(job, contains('-allowProvisioningUpdates'));
+    // ID-401: the App Store build carries the RevenueCat key, and refuses to build without it.
+    expect(job, contains('--dart-define=REVENUECAT_IOS_KEY="\$REVENUECAT_IOS_KEY"'));
+    expect(job, contains('if [ -z "\$REVENUECAT_IOS_KEY" ]; then'));
+    // ID-431: a tag, or a manual run asking for it, uploads to App Store Connect; nothing else does.
+    final upload = job.substring(job.indexOf('- name: Upload to App Store Connect for TestFlight'));
+    expect(upload.split('\n')[1], contains("if: \${{ startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true }}"));
+    expect(upload, contains('Set :destination upload'));
     expect(job, contains('-exportOptionsPlist ios/ExportOptions.plist'));
     // The key never reaches the log, and never outlives the job.
     expect(RegExp(r'echo[^\n]*\$ASC_API_KEY').hasMatch(job), isFalse);

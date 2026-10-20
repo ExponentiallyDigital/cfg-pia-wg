@@ -5,6 +5,7 @@
 // every sideloaded and F-Droid-style build - must sell nothing and never reach the SDK.
 import 'package:cfg_pia_wg/entitlement.dart';
 import 'package:cfg_pia_wg/widgets/paywall.dart' show RestoreMessages;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
@@ -45,6 +46,46 @@ void main() {
     test('anything that is not a store error is shown without the Exception prefix', () {
       expect(Entitlement.describeStoreError(Exception('nothing to buy')), 'nothing to buy');
     });
+  });
+
+  // ID-401. On an iPhone every word about money names Apple's store and account: App Review refuses an
+  // app that names another platform (guideline 2.3.10), and "Google account" would only confuse.
+  group('on iOS', () {
+    setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.iOS);
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test("the key is the App Store app's, and the store is reached at Apple", () {
+      expect(Entitlement.keyFor(appStore: true, ios: 'appl_x', android: 'goog_y'), 'appl_x');
+      expect(Entitlement.keyFor(appStore: false, ios: 'appl_x', android: 'goog_y'), 'goog_y');
+      expect(Entitlement.apiKey, Entitlement.iosKey);
+      expect(Entitlement.storeHost, 'buy.itunes.apple.com');
+      // Tests run without REVENUECAT_IOS_KEY too: an iOS build without it sells nothing.
+      expect(Entitlement.purchasingAvailable, isFalse);
+    });
+
+    test('no purchase message names Google', () {
+      final texts = [
+        for (final code in PurchasesErrorCode.values) Entitlement.describeStoreError(_store(code)),
+        const StoreUnreachableException().toString(),
+        RestoreMessages.alreadyUnlocked,
+        RestoreMessages.noneFound,
+        RestoreMessages.failedPlain,
+        RestoreMessages.failed(const StoreUnreachableException()),
+      ];
+      for (final t in texts) {
+        expect(t, isNot(contains('Google')), reason: t);
+      }
+      expect(Entitlement.describeStoreError(_store(PurchasesErrorCode.storeProblemError)), startsWith('The App Store could not'));
+      expect(Entitlement.describeStoreError(_store(PurchasesErrorCode.productAlreadyPurchasedError)), startsWith('This Apple Account'));
+      expect(const StoreUnreachableException().toString(), startsWith("The App Store can't be reached"));
+      expect(RestoreMessages.noneFound, 'No purchase found on this Apple Account.');
+    });
+  });
+
+  test('on Android the key, the store and the account are Google Play\'s, as before', () {
+    expect(Entitlement.apiKey, Entitlement.androidKey);
+    expect(Entitlement.storeHost, 'play.googleapis.com');
+    expect(RestoreMessages.noneFound, 'No purchase found on this Google account.');
   });
 
   group('isPaymentPending', () {
