@@ -104,6 +104,21 @@ void main() {
     expect(File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync(), contains('DEVELOPMENT_TEAM = $team;'));
   });
 
+  // ID-455. Like the Play listing's: checked before anything is sent, and a check-only run sends nothing.
+  test('the App Store listing workflow checks first, pins its packages, and keeps the key out of the log', () {
+    final yaml = File('.github/workflows/app_store_listing.yml').readAsStringSync();
+    expect(yaml, contains('scripts/app_store_connect.py listing --check'));
+    expect(yaml, contains('PyJWT==2.10.1 cryptography==44.0.2 requests==2.34.2'));
+    final publish = yaml.substring(yaml.indexOf('- name: Publish the listing'));
+    expect(publish.split('\n')[1], contains(r'if: ${{ !inputs.check_only }}'));
+    expect(yaml.indexOf('listing --check'), lessThan(yaml.indexOf('- name: Publish the listing')));
+    expect(RegExp(r'echo[^\n]*APP_STORE_CONNECT_API_KEY').hasMatch(yaml), isFalse);
+    // The release's TestFlight upload gets its notes and testers the same way (ID-432, ID-465).
+    final release = File('.github/workflows/release.yml').readAsStringSync();
+    expect(release, contains('scripts/app_store_connect.py whats-new --build "\$BUILD" --notes play-store/whatsnew-en-AU'));
+    expect(release, contains('scripts/app_store_connect.py testers'));
+  });
+
   test("Dependabot's PRs go to dev, not straight to main", () {
     final config = File('.github/dependabot.yml').readAsStringSync();
     final ecosystems = RegExp(r'^\s+- package-ecosystem:', multiLine: true).allMatches(config).length;

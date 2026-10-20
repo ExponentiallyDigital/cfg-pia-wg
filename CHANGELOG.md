@@ -122,12 +122,12 @@ Work items for the **current** release:
 
 - ID-433 REL: **the release SBOM covers the iOS-only dependencies, such as the native SDKs plugins pull in on iOS.** After ID-418.
   - **Done when:** a release's SBOM lists them.
+  - **Built in build 529:** the native packages exist only on the Mac, once Xcode has resolved them for the archive, so the Android job's SBOM, made from the repo on Linux, can't list them. The iOS job now runs Syft (`anchore/sbom-action`, as the Android job does) on `ios/` after the archive, where Swift Package Manager wrote its `Package.resolved` files, and fails if the result doesn't list RevenueCat's `purchases-ios`, so a missed scan can't pass as an SBOM. It keeps the SBOM as an artifact, and on a tag waits for the Android job's release and attaches it as `cfg-pia-wg-<tag>_ios-sbom.spdx.json`; the job's permission becomes `contents: write` for that. Left: a run that shows the native packages listed, then a release carrying it.
 - ID-431 REL: **a release tag uploads the signed build to TestFlight.** After ID-418 and ID-430.
   - **Done when:** a tag puts an installable build in TestFlight.
   - **Also:** after two runs, Andrew checks Certificates, IDs & Profiles, Certificates, for a new certificate left by each run (ID-418); if they pile up, the job keeps one in a secret instead.
   - **Built in build 528:** a step in the iOS release job exports the same archive again with `destination` set to `upload`, which sends it to App Store Connect, with the same API key. It runs on a tag, or on a manual run with the new `testflight` input ticked, which a dry run can use to test it without releasing Android. A test holds that condition and the upload export; with the condition removed it fails. Left: a run that puts an installable build in TestFlight.
-- ID-432 REL: **App Store release notes come from CHANGELOG, like the Play note.** After ID-431.
-  - **Done when:** a TestFlight build carries its CHANGELOG notes.
+  - **Uploaded, 2026-10-20:** a dry run with `testflight` ticked (run 39404589231) uploaded build 528: "Upload succeeded", then "Uploaded package is processing". Every job passed, the key reached `Generated.xcconfig`, and nothing went to Play. Left: Andrew installing it from TestFlight on an iPhone, which also tests ID-401's purchase.
 - ID-401 CHG: **RevenueCat on the App Store.** After ID-431 and ID-437.
   - **Done when:** a TestFlight purchase unlocks the app, and RESTORE PURCHASE finds it again.
   - **Also:** `app-store/review_notes.md` ends "no in-app purchase in this version", which stops being true here: it then says what the US$9.99 unlock (ID-461) gives, and how App Review can test it.
@@ -141,6 +141,19 @@ Work items for the **current** release:
   - **Checked so far:** new tests run as iOS in `test/unit/review_service_test.dart` (the store's name; nothing launched with no listing), `test/screens/main_menu_screen_test.dart` (the label, the on-screen message, a log line that isn't an error, nothing launched), `test/screens/settings_screen_test.dart` (no review ask, no Google Play) and `test/router_watchdog_unit_test.dart` (the deployed script and the test email name the App Store and carry no Play link). Android's existing tests are unchanged and pass, with one added check that SETTINGS still names the Google Play store. Seen to fail with the platform check returning Android always, and again with iOS given Play's listing. On the way: a failing iOS test left the platform override set and failed every later test in its file, so the override is now reset by a teardown as well. Left: the App Store link from Andrew, then a tap on an iPhone.
   - **Seen on an iPhone, 2026-10-19:** Andrew's HOM-4 passed: the line names the App Store, and with no listing yet a tap says so. Left: the App Store link (BACKLOG ID-427), then a tap that opens it.
   - **Built in build 527:** `kAppStoreListingUrl` is `https://apps.apple.com/app/id6824823717` (ID-427). On iOS the home screen line, SETTINGS' second uninstall ask and the watchdog email's review line now open or carry it. The four tests that pinned "no listing yet" now check the link is opened or carried, and Play never is; with the link emptied again all four fail. The full suite passes. Left: a tap on an iPhone that opens the listing, which can only show once the first submission is approved (ID-436).
+- ID-432 REL: **App Store release notes come from CHANGELOG, like the Play note.** After ID-431.
+  - **Done when:** a TestFlight build carries its CHANGELOG notes.
+  - **Built in build 529:** after each TestFlight upload, `release.yml` runs `tool/release_notes.dart` for the tag and `scripts/app_store_connect.py whats-new`, which waits for Apple to finish processing the build, up to 40 minutes, then sets its en-AU TestFlight notes to the Play note. It also prints the build's `usesNonExemptEncryption`, which ID-430 needs. The iOS job's timeout goes from 60 to 90 minutes for the wait. Left: a run that shows the notes on a TestFlight build.
+- ID-454 DOC: **App Store screenshots.** After ID-422 and ID-429.
+  - **Done when:** the sizes Apple asks for are taken, from a signed build.
+  - **Also:** iPad's sizes too (ID-429), from the iPad simulator, with every screen looked at there first, since no iPad is to hand.
+  - **Taken on by Claude, 2026-10-20 (Andrew's go):** no simulator or app change was needed. The Play screenshots' sources already use invented names, addresses, MACs and credentials, and the app's screens are the same on iOS, so the new `scripts/app-store-screenshots.py` crops Android's status and gesture bars off them and lays them out with the Play captions: 7 for iPhone at 1290 x 2796 (`APP_IPHONE_67`) and 4 for iPad at 2048 x 2732 (`APP_IPAD_PRO_3GEN_129`), in `app-store/screenshots/`. Every source was looked at first: those naming another platform's phone ("Pixel-8", "android-dhcp-17") are left out, guideline 2.3.10, which drops the DNS screen and three tablet shots. Looked at once built: no Android bar left, captions clear. Left: the in-app purchase's review screenshot, of the paywall on an iPhone, which Andrew takes during ID-401's sandbox test (the side button and volume-up together), and the upload, by ID-455.
+- ID-455 REL: **the listing entered in App Store Connect.** After ID-427, ID-434 and ID-454.
+  - **Done when:** App Store Connect shows nothing missing for submission.
+  - **Taken on by Claude, 2026-10-20 (Andrew's go):** the new `scripts/app_store_connect.py listing` puts `app-store/` into App Store Connect through the API key (ID-463): name, subtitle, privacy policy URL, categories, every age rating question answered None or No (only those the API returns), copyright, description, keywords, promotional text, URLs, the review notes and contact, and the screenshots, replacing any already there. A new workflow, `app_store_listing.yml`, runs it by hand, like Play's, after `--check` reads and checks every file and sends nothing; a check-only run stops there. The review notes now say the video is attached, not linked. A test in `test/unit/ci_config_test.dart` holds the check first, the pinned packages and the key kept out of the log; with the publish step's condition removed it fails. `--check` passes on the files as they are. Left: the secret `APP_REVIEW_PHONE` (App Review's contact phone), the first run, and by hand App Privacy, which the API doesn't offer, and the video's attachment (ID-456). App Privacy changes with RevenueCat (ID-401): Purchases, Purchase History, for App Functionality, not linked to the user, not for tracking; `privacy_and_age_rating.md` waits for Andrew's approval of that change.
+- ID-465 REL: **an internal TestFlight group that gets every build, with Andrew in it, made by the API.** Split from what was Andrew's TestFlight set-up, 2026-10-20, Andrew's go for Claude to take on what it can.
+  - **Done when:** a TestFlight build reaches Andrew's iPhone with nobody adding testers by hand.
+  - **Built in build 529:** `scripts/app_store_connect.py testers` finds or makes the internal group "Internal" with access to every build, and adds `andrew@exponentiallydigital.com` if he isn't in it; idempotent. It runs in `app_store_listing.yml` and after each TestFlight upload in `release.yml`. Left: its first run.
 - ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-435, ID-455 and ID-456.
   - **Done when:** the app is on sale.
   - **Also:** Apple's email confirming the Small Business Program enrolment (ID-437) has arrived, so the US$9.99 pays 15% commission, not 30%.
@@ -158,13 +171,9 @@ Work items for the **current** release:
 - ID-441 BUG?: **unconfirmed: on iOS, nothing offered to save the PIA login.** Seen by Andrew 2026-10-19 in STD-1 on an iPhone, with KeePassium. iOS may offer to save an app's login only when the app declares its website as an Associated Domain (`webcredentials:`), which needs the paid team and a file on that website; no source found settles it.
   - **First:** on an iPhone, with a signed build (after ID-422), see whether iOS offers to save each of the three logins (PIA, router SSH, SMTP), with KeePassium and with iCloud Passwords.
   - **Done when:** that is recorded, and either it works or a fix, such as the Associated Domain, has been seen to work on an iPhone.
-- ID-454 DOC: **App Store screenshots.** After ID-422 and ID-429.
-  - **Done when:** the sizes Apple asks for are taken, from a signed build.
-  - **Also:** iPad's sizes too (ID-429), from the iPad simulator, with every screen looked at there first, since no iPad is to hand.
 - ID-456 DOC: **a demo video for App Review**, showing the app working against a router, as the notes describe. After ID-422.
   - **Done when:** it's recorded and the notes link it.
-- ID-455 REL: **the listing entered in App Store Connect.** After ID-427, ID-434 and ID-454.
-  - **Done when:** App Store Connect shows nothing missing for submission.
+  - **A shot list, Andrew's decision, 2026-10-20,** not a demo mode: a demo mode, a sample router in the app, would take several builds and keep costing on every new router command, ahead of a release Andrew wants first. `app-store/demo_video_shot_list.md` is every step, written for someone new to the iPhone: the screen-recording button, a practice run, six shots on the spare slot wgc4 (connect, CREATE, ENABLE, the watchdog, ROUTER LOG), putting wgc4 back with DELETE, and getting the video to the Mac. It goes to Apple only, attached in App Store Connect, since it shows the home network. Left: the recording, after ID-401's sandbox purchase, and attaching it (ID-455).
 
 ---
 
@@ -182,6 +191,15 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-20 v0.8.159 build 529 - the App Store listing, screenshots, TestFlight notes and testers, and the iOS SBOM, all from the repo
+
+```play
+• Behind the scenes: groundwork for the iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- CHG: WIP 11 -> 12 bullets. Moved from Andrew's group to Claude's, by Andrew's go to take on what Claude can: ID-454 and ID-455; ID-432 moved within Claude's group; new: ID-465. Nothing removed.
 
 2026-10-20 v0.8.158 build 528 - the signed iOS build sells the unlock through the App Store and uploads to TestFlight
 
