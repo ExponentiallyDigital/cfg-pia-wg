@@ -126,15 +126,41 @@ void main() {
 
   group('e2e.sh', () {
     test('before and after, each expectation one argument', () {
-      expect(e2eCommand('DEV-4', 'before'), 'sh /jffs/cfg-pia-wg/e2e.sh DEV-4 before');
+      expect(e2eCommand('DEV-4', 'before'), '/bin/sh /jffs/cfg-pia-wg/e2e.sh DEV-4 before');
       expect(e2eCommand('DEV-4', 'after', ['rule $_t 9', 'exit $_t wgc1']),
-          'sh /jffs/cfg-pia-wg/e2e.sh DEV-4 after "rule $_t 9" "exit $_t wgc1"');
+          '/bin/sh /jffs/cfg-pia-wg/e2e.sh DEV-4 after "rule $_t 9" "exit $_t wgc1"');
     });
 
     test('refuses anything that would be shell', () {
       for (final bad in [r'exit $(reboot) WAN', 'rule 1;reboot', 'a"b', 'x`y`']) {
         expect(() => e2eCommand('DEV-4', 'after', [bad]), throwsArgumentError, reason: bad);
       }
+    });
+
+    test('the after check is retried until it passes, and no longer', () async {
+      final outs = ['== DEV-4: FAIL (1)', '== DEV-4: FAIL (1)', '== DEV-4: PASS', '== DEV-4: FAIL (1)'];
+      var calls = 0;
+      final waits = <Duration>[];
+      final (out, tries) = await settle(() async => outs[calls++], (o) => e2ePassed('DEV-4', o),
+          wait: (d) async => waits.add(d));
+      expect((out, tries, calls), ('== DEV-4: PASS', 3, 3));
+      expect(waits, [kSettleGap, kSettleGap]);
+    });
+
+    test('a check that never passes gives up after its tries, with the last output', () async {
+      var calls = 0;
+      final waits = <Duration>[];
+      final (out, tries) = await settle(() async => 'FAIL ${++calls}', (o) => false,
+          tries: 4, wait: (d) async => waits.add(d));
+      expect((out, tries, calls, waits.length), ('FAIL 4', 4, 4, 3));
+    });
+
+    test('a before counts only when it took its snapshot', () {
+      expect(e2eSnapshotTaken('DEV-4', 'DEV-4: snapshot taken. Do the step, then: sh e2e.sh DEV-4 after'), isTrue);
+      expect(e2eSnapshotTaken('DEV-4', 'Error: Address /jffs/cfg-pia-wg/e2e.sh is invalid'), isFalse);
+      expect(e2eSnapshotTaken('DEV-4', ''), isFalse);
+      expect(e2eSnapshotTaken('DEV-4', 'DEV-5: snapshot taken.'), isFalse);
+      expect(e2eSnapshotTaken('DEV-6', 'DEV-6a: snapshot taken.'), isFalse);
     });
 
     test('a pass is its own PASS line, and nothing else', () {
@@ -207,17 +233,24 @@ void main() {
     });
 
     final blockedKeys = ['MULTIFILTER_ALL=1', 'MULTIFILTER_BLOCK_ALL=0', 'MULTIFILTER_ENABLE=2', 'MULTIFILTER_MAC=$_tmac'].join('\n');
-    final dropLines = [
-      '-A FORWARD -m mac --mac-source $_tmac -j DROP',
-      '-A PControls -m mac --mac-source $_tmac -j DROP',
-      '-A WGNPControls -m mac --mac-source $_tmac -j DROP',
-    ];
+    // ARCHITECTURE's rules, measured on stock, with the MAC filled in. Lines made up here once
+    // passed a check that wanted a DROP in FORWARD, which stock never writes (2026-10-20).
+    final measured = RegExp(r'```text\n(-A FORWARD -i br0[^`]*)```').firstMatch(File('ARCHITECTURE.md').readAsStringSync())!;
+    final dropLines = measured.group(1)!.trim().split('\n').map((l) => l.replaceAll('<mac>', _tmac.toLowerCase())).toList();
     final drops = dropLines.join('\n');
+
+    test('the rules are ARCHITECTURE\'s three, FORWARD jumping and the other two dropping', () {
+      expect(dropLines, hasLength(3));
+      expect(dropLines.first, endsWith('-j PControls'));
+      // A FORWARD rule that doesn't jump to PControls isn't the block.
+      final noJump = [dropLines.first.replaceFirst('-j PControls', '-j ACCEPT'), ...dropLines.skip(1)].join('\n');
+      expect(blockProblems(blockedKeys, noJump, _tmac, true), [contains('-A FORWARD ... -j PControls')]);
+    });
 
     test('disabled: the four keys as the sheet has them, and a DROP in each of the three chains', () {
       expect(blockProblems(blockedKeys, drops, _tmac, true), isEmpty);
       expect(blockProblems(blockedKeys.replaceFirst('ENABLE=2', 'ENABLE=1'), drops, _tmac, true), [contains('not 2')]);
-      expect(blockProblems(blockedKeys, dropLines.take(2).join('\n'), _tmac, true), [contains('in WGNPControls')]);
+      expect(blockProblems(blockedKeys, dropLines.take(2).join('\n'), _tmac, true), [contains('-A WGNPControls ... -j DROP')]);
       expect(blockProblems(blockedKeys.replaceFirst('ALL=1', 'ALL=0'), drops, _tmac, true), [contains('not 1')]);
       final second = ['MULTIFILTER_ALL=1', 'MULTIFILTER_BLOCK_ALL=0', 'MULTIFILTER_ENABLE=0>2', 'MULTIFILTER_MAC=11:22:33:44:55:66>$_tmac'];
       expect(blockProblems(second.join('\n'), drops, _tmac, true), isEmpty, reason: 'the second entry');
@@ -234,6 +267,17 @@ void main() {
       expect(pinKeptProblems('0>$_t>>$_i1>', _t, _i1), [contains('no longer pinned')]);
       expect(serviceCallProblems(7, 7), isEmpty);
       expect(serviceCallProblems(7, 8), [contains('1 service call')]);
+    });
+  });
+
+  group('watchdogs at the end', () {
+    test('the same as at the start is nothing to report', () {
+      expect(watchdogProblems(atStart: {1, 5}, now: {5, 1}), isEmpty);
+    });
+
+    test('one paused and never resumed is named, and so is one left scheduled', () {
+      expect(watchdogProblems(atStart: {1, 5}, now: {1}), ["wgc5's watchdog was scheduled at the start and is not now."]);
+      expect(watchdogProblems(atStart: {}, now: {3}), ["wgc3's watchdog is scheduled now and was not at the start."]);
     });
   });
 

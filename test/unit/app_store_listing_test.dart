@@ -34,6 +34,12 @@ void main() {
     expect(field(listing, 'Keywords'), isNot(contains(', ')));
   });
 
+  // Andrew's decision, 2026-10-20: one name on both stores, and the same under the icon.
+  test('the App Store name is cfg-pia-wg, as on Play and under the icon', () {
+    expect(field(listing, 'Name'), 'cfg-pia-wg');
+    expect(File('ios/Runner/Info.plist').readAsStringSync(), contains('<string>cfg-pia-wg</string>'));
+  });
+
   test('no other platform is named', () {
     for (final word in ['Android', 'Google', 'Play Store', 'Recent Apps']) {
       expect(description.contains(word) || listing.contains(word), isFalse, reason: word);

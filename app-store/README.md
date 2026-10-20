@@ -15,5 +15,9 @@ Everything the App Store listing needs that is not the app itself, drafted befor
 ## Andrew's decisions before submission
 
 - **The price on iOS.** Until RevenueCat reaches the App Store (ID-401), an iOS build has no store key, so it sells nothing and unlocks everything. Either the first iOS release is free, or it waits for ID-401. The description says nothing about price until this is decided.
+  - **Decided, 2026-10-20 (ID-461):** US$9.99, a one-time unlock, against Play's US$6.99. Play's price plus about a third, for Apple's A$149 a year.
 - **The name.** `cfg pia wg` matches the name under the icon. It must be unique across the App Store, and "pia" may draw App Review's questions under guideline 5.2.
+  - **Decided, 2026-10-20:** `cfg-pia-wg`, the same as Android, on the App Store and under the icon. If App Store Connect refuses the hyphens when the record is made (ID-427), the store name falls back to `cfg pia wg` and the icon keeps `cfg-pia-wg`.
 - **The encryption answer** (ID-430).
+  - **Decided, 2026-10-20:** on sale in France, so the French encryption declaration, and `ITSAppUsesNonExemptEncryption` YES (`export_compliance.md`).
+  - **Revised the same day:** France left out of the first release so the declaration can't delay it, and the key NO. France is ID-462.

@@ -55,6 +55,12 @@ class _LiveRun {
   // What the run has changed that ENABLE must put back.
   final Set<int> _disabled = {};
   final Set<int> _pausedWatchdogs = {};
+  Set<int> _watchdogsAtStart = {};
+
+  Future<Set<int>> _scheduledWatchdogs() async {
+    final slots = (await _slots.fetchSlots()).slots;
+    return {for (final e in slots.entries) if (e.value.watchdogActive) e.key};
+  }
 
   // TABLET's MAC, and the name it started with, which the restore gives back.
   String _tmac = '';
@@ -84,8 +90,14 @@ class _LiveRun {
     _devices = DeviceAssignmentService(_client, onLog: _onLog);
     _slots = RouterSlotService(_client, onLog: _onLog);
     _watchdog = RouterWatchdog(_client, onLog: _onLog);
+    // The app sets this when it connects, and its code takes Merlin's path until it is set. Without
+    // it, DEV-11's watchdog pause took Merlin's and failed on stock (2026-10-20).
+    // Not recognised leaves it unset, and the start-state check stops the run as not stock.
+    final firmware = classifyFirmwareTag(await _slots.readFirmwareTag());
+    if (firmware != null) setRouterFirmware(firmware);
 
     final start = await _readStart();
+    _watchdogsAtStart = await _scheduledWatchdogs();
     final stops = preflightProblems(start, config);
     if (stops.isNotEmpty) {
       stops.forEach(_say);
@@ -113,6 +125,7 @@ class _LiveRun {
     }
     try {
       for (final step in plan) {
+        if (step != plan.first) await Future<void>.delayed(kStepGap);
         if (!await _runStep(step)) break;
       }
     } finally {
@@ -150,14 +163,27 @@ class _LiveRun {
       for (final a in step.setup) {
         await _act(a);
       }
-      await _sh(e2eCommand(step.id, 'before'));
+      final snap = await _sh(e2eCommand(step.id, 'before'));
+      if (!e2eSnapshotTaken(step.id, snap)) {
+        _say(snap);
+        _say('    FAIL  e2e.sh before took no snapshot');
+        failures.add('${step.id}: e2e.sh before took no snapshot');
+        return false;
+      }
       final callsBefore = await _serviceCalls();
       for (final a in step.actions) {
         await _act(a);
       }
       final callsAfter = await _serviceCalls();
-      final out = await _sh(e2eCommand(step.id, 'after', step.expect));
+      final (out, tries) = await settle(
+          () => _sh(e2eCommand(step.id, 'after', step.expect)), (o) => e2ePassed(step.id, o));
       _say(out);
+      if (tries > 1) {
+        final waited = (tries - 1) * kSettleGap.inSeconds;
+        _say(e2ePassed(step.id, out)
+            ? '    (the after check passed on try $tries, about ${waited}s after the step)'
+            : '    (the after check still failed after $tries tries, ${waited}s)');
+      }
       final problems = [
         if (!e2ePassed(step.id, out)) 'e2e.sh did not pass',
         for (final c in step.checks) ...await _check(c, callsBefore, callsAfter),
@@ -239,8 +265,9 @@ class _LiveRun {
   // As MANAGE's DISABLE: a running watchdog is paused first, or it would rebuild the tunnel.
   Future<void> _disable(int slot) async {
     if ((await _slots.fetchSlots()).slots[slot]?.watchdogActive ?? false) {
-      await _watchdog.disableWatchdog(slot);
+      // Recorded first: a pause that fails partway has still removed some of the schedule.
       _pausedWatchdogs.add(slot);
+      await _watchdog.disableWatchdog(slot);
     }
     _disabled.add(slot);
     if (!await _slots.disableSlot(slot)) throw StateError('wgc$slot was disabled but its tunnel is still up');
@@ -267,6 +294,16 @@ class _LiveRun {
         failures.add('restore: wgc$slot not enabled: $e');
       }
     }
+    // A watchdog paused for a slot that never got as far as being disabled.
+    for (final slot in {..._pausedWatchdogs}) {
+      try {
+        await _watchdog.enableWatchdog(slot);
+        _pausedWatchdogs.remove(slot);
+      } catch (e) {
+        _say("    could not resume wgc$slot's watchdog: $e");
+        failures.add("restore: wgc$slot's watchdog not resumed: $e");
+      }
+    }
     try {
       final named = await _devices.read();
       final tablet = named.devices.where((d) => d.mac == _tmac).firstOrNull;
@@ -277,7 +314,10 @@ class _LiveRun {
       final now = await _devices.read();
       final undo = restoreFor(policies: now.policies, defaultIndex: now.defaultIndex, ips: [config.tablet, config.desktop]);
       if (undo != null) await _apply(changes: undo.changes, newDefault: undo.newDefault);
-      final after = preflightProblems(await _readStart(), config);
+      final after = [
+        ...preflightProblems(await _readStart(), config),
+        ...watchdogProblems(atStart: _watchdogsAtStart, now: await _scheduledWatchdogs()),
+      ];
       if (after.isEmpty) {
         _say('Read back: the router is in its start state again.');
       } else {

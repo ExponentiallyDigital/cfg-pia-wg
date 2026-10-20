@@ -1,6 +1,6 @@
 A privacy and security tool for your ASUS router. It already has a WireGuard client built in; this app turns it into VPN protection that looks after itself.
 
-cfg pia wg puts every device on your network and every PIA VPN on your router onto one screen, from your iPhone.
+cfg-pia-wg puts every device on your network and every PIA VPN on your router onto one screen, from your iPhone.
 
 Devices, not slots
 

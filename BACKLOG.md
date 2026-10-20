@@ -52,6 +52,10 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.2. FTR - future implementation
 
+- ID-462 FTR: **sell the iOS app in France, once the French encryption declaration is accepted.** Split from ID-430 on 2026-10-20, Andrew's decision: France is left out of the first App Store release so the declaration can't delay it. Selling in France needs the declaration uploaded in App Store Connect (`app-store/export_compliance.md`), then `ITSAppUsesNonExemptEncryption` YES and Apple's `ITSEncryptionExportComplianceCode` in `Info.plist`.
+  - **Done when:** the declaration is accepted, the two keys are set with a test, and App Store Connect lists France.
+- ID-414 FTR: **waiting on upstream: clear the Kotlin Gradle plugin warning once `home_widget` and `workmanager_android` stop applying the plugin.** Split from ID-408 on 2026-10-16. Every build warns that future Flutter versions will fail with such plugins; on 2026-10-19 both were still the latest (`home_widget` 0.10.0, `workmanager` 0.10.10). Check each new release of the two, which ID-411's weekly upgrade brings, and each new Flutter's notes for when the warning becomes a failure: if that comes first, fork the plugin or hold Flutter back.
+  - **Done when:** a local `flutter build apk` no longer prints the warning.
 - ID-135 DEC: **decide what "clear offline devices" in DEVICES should do.** Raised 2026-09-28 (merged from ID-153). Whatever it does, it leaves DHCP reservations alone: removing one restarts the whole network and can break a pin at a later lease renewal (ARCHITECTURE 6.3, 6.8.3), and the web interface can already do it.
   - **The choice:** hide offline devices in DEVICES on this phone only; or remove them from the router's own client list, as the web interface does.
   - **Done when:** decided, and the build item written with its own done-when.
@@ -75,19 +79,20 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 - ID-257 FTR: **parked 2026-09-28 (Andrew's decision): a pilot of hand tests as Flutter integration tests on the emulator, against a real router.** Start with SET, ROUTER LOG, ROUTER RESOLVER STATUS and ROUTER DNS ROUTING. It stopped because `integration_test` put `androidx.test`, `junit` and `guava` into the debug build, which broke the Gradle lockfile and brought new OSV findings (ID-058). Plan: `.claude/plans/plan_integration-test-pilot.md`.
   - **To resume:** lock the new libraries or exempt the debug build from locking.
   - **Done when:** the four groups run as integration tests against the router, and Andrew has judged whether to go further.
-- ID-414 FTR: **waiting on upstream: clear the Kotlin Gradle plugin warning once `home_widget` and `workmanager_android` stop applying the plugin.** Split from ID-408 on 2026-10-16. Every build warns that future Flutter versions will fail with such plugins; on 2026-10-19 both were still the latest (`home_widget` 0.10.0, `workmanager` 0.10.10). Check each new release of the two, which ID-411's weekly upgrade brings, and each new Flutter's notes for when the warning becomes a failure: if that comes first, fork the plugin or hold Flutter back.
-  - **Done when:** a local `flutter build apk` no longer prints the warning.
 
 #### 1.1.3. Unconfirmed BUGs
 
-- ID-386 BUG?: **unconfirmed: the small home screen widget may cut its summary line short at its default 2×1 size.** Seen 2026-10-13 on the emulator only (Pixel 7 Pro, Android 17, Nova Launcher): "2 tunnels u…" for "2 tunnels up · 6 pinned", fitting once widened a cell. Launchers size cells differently.
-  - **Done when:** Andrew has added the small widget at its default size on his phone, and either it fits, or a fix - a wider default or a shorter line - is tested on that phone.
+ `<none>`
 
 ---
 
 ### 1.2. Codebase cleanup
 
 The firmware abstraction, in slices, each on its own build and released on its own, with MAN, WD and DEV hand tests on stock and the MRL smoke test on Merlin before each release. It touches every path stock support landed on, so it starts after the release that carries ID-041 step 4. Plan: `.claude/plans/plan_firmware-abstraction.md`.
+
+Sequenced into CHANGELOG 1.1 and 1.2 on 2026-10-20; nothing is left here.
+
+Moved back from CHANGELOG 1.1 the same day, Andrew's decision: the iOS release and the NETWORK menu come first.
 
 - ID-448 TST: **a test that every operation the firmware abstraction will hold runs on both firmwares**, so a stock-only path can't quietly lose its Merlin coverage. After the release carrying ID-041 step 4.
   - **Done when:** the test lists start, stop, slot reading, cron persistence and delete, finds each run under both `useStock()` and `useMerlin()`, and fails when one isn't.
@@ -99,8 +104,6 @@ The firmware abstraction, in slices, each on its own build and released on its o
   - **Done when:** as ID-449, for persistence, with WD-9 and WD-17 on hardware.
 - ID-452 ARC: **slice 4: deleting a slot and clearing its runtime keys.** After ID-451's release. Then ID-419.
   - **Done when:** as ID-449, for delete, with MAN-14 and the delete DEV tests on hardware.
-- ID-453 MOD: **the slot modal's manage mode and watchdog mode become two widgets sharing the slot list.** They share little else. Independent of the slices.
-  - **Done when:** each mode is its own widget, nothing a user sees changes, and the full suite passes unchanged.
 - ID-419 CHG: **the SonarCloud findings left in the watchdog and the slot service, after ID-452.** Split from ID-041 2026-10-16, Andrew's decision. On 2026-10-19: `uninstallFromRouter` 38, `deployWatchdog` 36, `validate` 30, `testEmail` 18 (`router_watchdog.dart`); `createConfigToSlot` 37, `fetchSlots` 30, `enableSlot` 22, `restartSlot` 19 (`router_slot_service.dart`).
   - **Done when:** SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
 
@@ -108,69 +111,8 @@ The firmware abstraction, in slices, each on its own build and released on its o
 
 **Under way** since 2026-10-16. In dependency order. GPLv3 is fine on the App Store while Andrew holds all the copyright, so an outside contribution needs his permission to ship there.
 
-- ID-426 REL: **enrol in the Apple Developer Program as an individual.** Decided 2026-10-19.
-  - **Done when:** the membership is active.
-- ID-422 REL: **sign builds with the new team on all three iPhones.** After ID-426.
-  - **Done when:** a team-signed build runs on each iPhone.
-- ID-427 REL: **create the App Store Connect app record, bundle ID `com.exponentiallydigital.cfgpiawg`.** After ID-426.
-  - **Done when:** it exists, and its App Store link is sent to Claude for ID-417.
-- ID-428 REL: **declare the EU trader status, or leave the EU storefronts out.** After ID-427.
-  - **Done when:** App Store Connect shows it declared.
-- ID-429 DEC: **decide whether to support iPad, which needs iPad screenshots and review.**
-  - **Done when:** decided, and the Xcode project matches.
-- ID-418 REL: **CI builds a signed iOS release, with an App Store Connect API key kept in GitHub secrets.** After ID-405 and ID-427.
-  - **Done when:** a manual `release.yml` run produces a signed `.ipa`.
-- ID-431 REL: **a release tag uploads the signed build to TestFlight.** After ID-418 and ID-430.
-  - **Done when:** a tag puts an installable build in TestFlight.
-- ID-432 REL: **App Store release notes come from CHANGELOG, like the Play note.** After ID-431.
-  - **Done when:** a TestFlight build carries its CHANGELOG notes.
-- ID-433 REL: **the release SBOM covers the iOS-only dependencies, such as the native SDKs plugins pull in on iOS.** After ID-418.
-  - **Done when:** a release's SBOM lists them.
-- ID-454 DOC: **App Store screenshots.** After ID-422 and ID-429.
-  - **Done when:** the sizes Apple asks for are taken, from a signed build.
-- ID-455 REL: **the listing entered in App Store Connect.** After ID-427, ID-434 and ID-454.
-  - **Done when:** App Store Connect shows nothing missing for submission.
-- ID-456 DOC: **a demo video for App Review**, showing the app working against a router, as the notes describe. After ID-422.
-  - **Done when:** it's recorded and the notes link it.
-- ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-435, ID-455 and ID-456.
-  - **Done when:** the app is on sale.
-- ID-437 REL: **sign the Paid Apps Agreement and set up banking and tax.** After ID-426.
-  - **Done when:** the agreement is active.
-- ID-401 CHG: **RevenueCat on the App Store.** After ID-431 and ID-437.
-  - **Done when:** a TestFlight purchase unlocks the app, and RESTORE PURCHASE finds it again.
-- ID-441 BUG?: **unconfirmed: on iOS, nothing offered to save the PIA login.** Seen by Andrew 2026-10-19 in STD-1 on an iPhone, with KeePassium. iOS may offer to save an app's login only when the app declares its website as an Associated Domain (`webcredentials:`), which needs the paid team and a file on that website; no source found settles it.
-  - **First:** on an iPhone, with a signed build (after ID-422), see whether iOS offers to save each of the three logins (PIA, router SSH, SMTP), with KeePassium and with iCloud Passwords.
-  - **Done when:** that is recorded, and either it works or a fix, such as the Associated Domain, has been seen to work on an iPhone.
-- ID-424 TST: **measure how often iOS lets the app refresh in the background, for an iOS widget like Android's (ID-376).** After ID-422.
-  - **Done when:** a day's refresh times from an iPhone are recorded.
-- ID-438 ADD: **an iOS home screen widget showing the last status the app read.** After ID-431.
-  - **Done when:** it shows each tunnel's state as last read.
-- ID-439 ADD: **the iOS widget refreshes itself in the background.** After ID-424 and ID-438.
-  - **Done when:** it updates with the app closed.
-- ID-440 REL: **get a D-U-N-S number from Dun & Bradstreet.**
-  - **Done when:** the D-U-N-S number is issued.
-- ID-421 REL: **move the Apple membership to the company, through Apple support.** After ID-440.
-  - **Done when:** the App Store shows the company as the seller.
-- ID-375 BLD: **either** replace this module or **post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix.** Agreed 2026-10-09, Andrew's call, but not posted: the `gh` token here can't comment outside the organisation ("Resource not accessible by personal access token"). Post it from Andrew's own login, or after `gh auth refresh -s public_repo`. Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment:
+Sequenced into CHANGELOG 1.1 and 1.2 on 2026-10-20; nothing is left here.
 
-  ```markdown
-  Still happening on 0.14.4, and not only with flavors or App Clips: plain `ios: true` triggers it too.
-
-  With `ios: true` and no flavor, `createIcons` ends with `changeIosLauncherIcon('AppIcon', flavor)`, which sets every line containing `ASSETCATALOG` in the build configurations to the icon name. In our `ios/Runner.xcodeproj/project.pbxproj` (Flutter 3.47.5), two of the three
-
-      ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-
-  lines became
-
-      ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = AppIcon;
-
-  even though the icon set's name hadn't changed.
-
-  This PR's one-line fix still works, but it no longer applies as is: the check has moved to around line 340 of `lib/ios.dart`. The equivalent there is `line.contains('ASSETCATALOG_COMPILER_APPICON_NAME')` in place of `line.contains('ASSETCATALOG')`.
-
-  For now we run the tool through a small wrapper that puts the other lines back afterwards.
-  ```
-  - **Done when:** a `flutter_launcher_icons` release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the comment having been posted, and the wrapper and its notes are gone. Checked 2026-10-19: 0.14.4 is still the latest, and PR #549 is open.
 ---
 
 ## 2. New work items

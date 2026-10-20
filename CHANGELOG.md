@@ -79,7 +79,38 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
-`<none>`
+- ID-424 TST: **measure how often iOS lets the app refresh in the background, for an iOS widget like Android's (ID-376).** After ID-422.
+  - **Done when:** a day's refresh times from an iPhone are recorded.
+- ID-453 MOD: **the slot modal's manage mode and watchdog mode become two widgets sharing the slot list.** They share little else. Independent of the slices.
+  - **Done when:** each mode is its own widget, nothing a user sees changes, and the full suite passes unchanged.
+- ID-438 ADD: **an iOS home screen widget showing the last status the app read.** After ID-431.
+  - **Done when:** it shows each tunnel's state as last read.
+- ID-439 ADD: **the iOS widget refreshes itself in the background.** After ID-424 and ID-438.
+  - **Done when:** it updates with the app closed.
+- ID-440 REL: **get a D-U-N-S number from Dun & Bradstreet.**
+  - **Done when:** the D-U-N-S number is issued.
+- ID-421 REL: **move the Apple membership to the company, through Apple support.** After ID-440.
+  - **Done when:** the App Store shows the company as the seller.
+- ID-375 BLD: **either** replace this module or **post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix.** Agreed 2026-10-09, Andrew's call, but not posted: the `gh` token here can't comment outside the organisation ("Resource not accessible by personal access token"). Post it from Andrew's own login, or after `gh auth refresh -s public_repo`. Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment:
+
+  ```markdown
+  Still happening on 0.14.4, and not only with flavors or App Clips: plain `ios: true` triggers it too.
+
+  With `ios: true` and no flavor, `createIcons` ends with `changeIosLauncherIcon('AppIcon', flavor)`, which sets every line containing `ASSETCATALOG` in the build configurations to the icon name. In our `ios/Runner.xcodeproj/project.pbxproj` (Flutter 3.47.5), two of the three
+
+      ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+
+  lines became
+
+      ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = AppIcon;
+
+  even though the icon set's name hadn't changed.
+
+  This PR's one-line fix still works, but it no longer applies as is: the check has moved to around line 340 of `lib/ios.dart`. The equivalent there is `line.contains('ASSETCATALOG_COMPILER_APPICON_NAME')` in place of `line.contains('ASSETCATALOG')`.
+
+  For now we run the tool through a small wrapper that puts the other lines back afterwards.
+  ```
+  - **Done when:** a `flutter_launcher_icons` release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the comment having been posted, and the wrapper and its notes are gone. Checked 2026-10-19: 0.14.4 is still the latest, and PR #549 is open.
 
 ---
 
@@ -87,6 +118,25 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
+**Claude, in priority order: the iOS release and the NETWORK menu.**
+
+- ID-458 ADD: **a "Network" item on the main menu that shows the public IP address and provider of this device, and of each tunnel, using Cloudflare Radar.** Raised 2026-10-20 by Andrew. Cloudflare's assistant suggested an approach, which is recorded as given, and not yet checked, in `.claude/plans/plan_network-menu.md`: get the external IP (`https://1.1.1.1/cdn-cgi/trace` or ipify), then call Radar's `/radar/entities/ip` (location) and `/radar/entities/asns/ip` (provider) with a read-only API token. A follow-up answer, recorded in the same file, gives a way that needs no token and uses hostnames only: `https://ipinfo.io/json` returns both the IP and the provider (`org`, e.g. "AS12345 Example Provider"), and `https://cloudflare-dns.com/cdn-cgi/trace` gives the IP alone. The plan file's "Recommended design" section holds Claude's recommendation, not yet decided: the IP from the trace, sent from the phone and through each `wgcN` on the router; the provider from one Radar call on the phone, with the user's own token; PIA's region name instead of a town. A hand run on 2026-10-20 confirmed that one Radar call, `/radar/entities/ip`, returns the country and a readable provider name, so the second call isn't needed. The steps Andrew used to make the token are in the plan's "Getting a Radar token" section, for the setup instructions. It rules out ipinfo.io without a token, because its 1,000 requests a day are shared by everyone on the same IP, and a PIA exit IP has many users.
+  - **To decide first:** Radar with a token, which every user would have to supply because one compiled into the app can be pulled out (its limit, 1,200 requests per 5 minutes per Cloudflare user, is ample at two requests per lookup, but each user needs a Cloudflare account), or ipinfo.io without one, once its rate limit and terms are read; how each tunnel's exit IP is read on the router, by a request sent out through `wgcN` to a hostname, since stock's curl refuses a URL whose host is an IP address (ID-127); and what the screen tells the user about sending the address to the lookup service.
+  - **First probe:** a read-only paste block on stock showing whether `curl --interface wgcN` sends its request out through the tunnel, and not out through the ISP.
+  - **Done when:** decided, the probe has been run, the chosen service's endpoints and terms are confirmed against its own documentation, and the build items are written with their own done-when.
+- ID-418 REL: **CI builds a signed iOS release, with an App Store Connect API key kept in GitHub secrets.** After ID-405 and ID-427.
+  - **Done when:** a manual `release.yml` run produces a signed `.ipa`.
+  - **Uses:** ID-463's three secrets.
+- ID-433 REL: **the release SBOM covers the iOS-only dependencies, such as the native SDKs plugins pull in on iOS.** After ID-418.
+  - **Done when:** a release's SBOM lists them.
+- ID-431 REL: **a release tag uploads the signed build to TestFlight.** After ID-418 and ID-430.
+  - **Done when:** a tag puts an installable build in TestFlight.
+- ID-432 REL: **App Store release notes come from CHANGELOG, like the Play note.** After ID-431.
+  - **Done when:** a TestFlight build carries its CHANGELOG notes.
+- ID-401 CHG: **RevenueCat on the App Store.** After ID-431 and ID-437.
+  - **Done when:** a TestFlight purchase unlocks the app, and RESTORE PURCHASE finds it again.
+  - **Also:** `app-store/review_notes.md` ends "no in-app purchase in this version", which stops being true here: it then says what the US$9.99 unlock (ID-461) gives, and how App Review can test it.
+  - **Uses:** ID-464's product and `REVENUECAT_IOS_KEY`.
 - ID-417 ADD: **the home screen's review link names the store of the platform the app is built for.** Andrew's requirement, 2026-10-16. Today it says Play Store everywhere, and on iOS it fails silently: `in_app_review`'s `openStoreListing()` needs an App Store id on iOS and throws without one, and `review_service.dart` catches everything, so a tap only logs "Could not open the Play Store listing" (`.claude/plans/plan_ios-port.md`).
   - **What:** on iOS the text names the App Store. Until Andrew sends the App Store link, a tap on iOS says plainly that the review link isn't available yet. The review line in the watchdog's alert email follows the platform of the phone that deployed the watchdog.
   - **Done when:** tests run as iOS and as Android show each platform's text and behaviour, and, once Andrew has sent the App Store link, a tap on an iPhone opens the listing.
@@ -94,6 +144,84 @@ Work items for the **current** release:
   - **Built in build 503:** `lib/review_service.dart` now picks the store: `reviewStoreName()` is the App Store on iOS and the Play Store elsewhere, and `openStoreReview()` opens `reviewListingUrl()`. `kAppStoreListingUrl` is empty until Andrew sends the link, and until then iOS opens nothing. Three places follow it. The home screen line reads "add an App Store app review" on iOS, and a tap says on screen and in the app log that cfg-pia-wg isn't on the App Store yet. SETTINGS' second uninstall ask names the App Store, and is left out on iOS until there's a listing to send anyone to. The watchdog email's review line is now `emailReviewLine()`, written into the script on the phone that deploys it: Play's link from Android, the App Store's from iOS, and from iOS without a listing, an ask with no link. CONTEXT 4.8.3 and TESTING HOM-4 say the same.
   - **Checked so far:** new tests run as iOS in `test/unit/review_service_test.dart` (the store's name; nothing launched with no listing), `test/screens/main_menu_screen_test.dart` (the label, the on-screen message, a log line that isn't an error, nothing launched), `test/screens/settings_screen_test.dart` (no review ask, no Google Play) and `test/router_watchdog_unit_test.dart` (the deployed script and the test email name the App Store and carry no Play link). Android's existing tests are unchanged and pass, with one added check that SETTINGS still names the Google Play store. Seen to fail with the platform check returning Android always, and again with iOS given Play's listing. On the way: a failing iOS test left the platform override set and failed every later test in its file, so the override is now reset by a teardown as well. Left: the App Store link from Andrew, then a tap on an iPhone.
   - **Seen on an iPhone, 2026-10-19:** Andrew's HOM-4 passed: the line names the App Store, and with no listing yet a tap says so. Left: the App Store link (BACKLOG ID-427), then a tap that opens it.
+- ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-435, ID-455 and ID-456.
+  - **Done when:** the app is on sale.
+
+**Andrew, in the background: setting the app up on the App Store, in order.**
+
+- ID-422 REL: **sign builds with the new team on all three iPhones.** From BACKLOG 1.3, 2026-10-20, after ID-426.
+  - **Done when:** a team-signed build runs on each iPhone.
+  - **Built in build 526:** `DEVELOPMENT_TEAM = RL4UB6WKMV` in all six of the Xcode project's target configurations, Runner and RunnerTests, Debug, Profile and Release, with automatic signing as before. RL4UB6WKMV is the Team ID from Andrew's membership page; 5N82LGHKZ2, briefly taken for it, is the enrolment ID. A test in `test/unit/ios_info_plist_test.dart` holds it, seen to fail with one value changed. Left: Andrew runs the app from Xcode on each iPhone.
+- ID-427 REL: **create the App Store Connect app record, bundle ID `com.exponentiallydigital.cfgpiawg`.** After ID-426.
+  - **Done when:** it exists, and its App Store link is sent to Claude for ID-417.
+  - **Also:** untick France in the app's availability before the first submission (ID-430, ID-462).
+- ID-430 DEC: **Apple's export compliance answer, decided and set in `Info.plist`.** From BACKLOG 1.3, 2026-10-19. Claude sets out the facts first: SSH runs on dartssh2's own Dart cryptography, not Apple's, and HTTPS on the platform's.
+  - **Done when:** Andrew has decided, `ITSAppUsesNonExemptEncryption` is set to match, and an upload asks no encryption question.
+  - **Facts written in build 523:** `app-store/export_compliance.md`: SSH on dartssh2's own Dart cryptography, HTTPS on the TLS built into the Flutter engine (neither Apple's), WireGuard keys made on the phone, and RSA and Ed25519 used only to authenticate; all standard algorithms. Apple's page on export compliance could not be fetched, so the file says which answer fits is Andrew's to decide, not Claude's. Left: Andrew decides, then `Info.plist` is set.
+  - **Decided, 2026-10-20:** on sale in France (Andrew). `app-store/export_compliance.md` now quotes Apple's four pages, read 2026-10-20: standard algorithms not provided by Apple's operating system need the French encryption declaration when the app is sold in France, and the key is NO only for apps needing no document. So `ITSAppUsesNonExemptEncryption` is YES in `Info.plist`, held by a test in `test/unit/ios_info_plist_test.dart`, seen to fail set to NO. Left: Andrew prepares and uploads the French declaration in App Store Connect; once Apple approves it, its code goes in as `ITSEncryptionExportComplianceCode`, and an upload asks no question.
+  - **Revised, 2026-10-20 (Andrew):** France is left out of the first release, so the declaration can't delay shipping; selling there is ID-462. Outside France Apple's table asks for no document, so `ITSAppUsesNonExemptEncryption` is NO, and its test, seen to fail set to YES, says so. Left: France unticked in App Store Connect's availability before the first submission (ID-427), and whether the US year-end self-classification report applies, which doesn't hold up shipping.
+- ID-437 REL: **sign the Paid Apps Agreement and set up banking and tax.** After ID-426.
+  - **Done when:** the agreement is active.
+  - **Also:** enrol in the App Store Small Business Program, so Apple takes 15% of the US$9.99 (ID-461), not 30%.
+- ID-463 REL: **an App Store Connect API key, saved as three GitHub secrets, for CI's signed build (ID-418).** Split from ID-418 on 2026-10-20: the key is Andrew's to make. In App Store Connect: Users and Access, Integrations, App Store Connect API, Team Keys, then a new key with the Admin role, which automatic signing needs to create certificates (ID-418 checks whether a narrower role will do). Its `.p8` file can be downloaded only once.
+  - **Done when:** the GitHub secrets `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and `APP_STORE_CONNECT_API_KEY` (the `.p8` file's text) are set.
+- ID-464 REL: **the US$9.99 unlock as an App Store in-app purchase, and RevenueCat's iOS app, for ID-401.** Split from ID-401 on 2026-10-20: both are set up in Apple's and RevenueCat's dashboards. After ID-427 and ID-437. In App Store Connect: a non-consumable in-app purchase at US$9.99 (ID-461), and the in-app purchase key RevenueCat asks for. In RevenueCat: an Apple App Store app for bundle ID `com.exponentiallydigital.cfgpiawg`, with the product attached to the entitlement `router_features` and to the current offering, as on Android.
+  - **Done when:** the product shows in RevenueCat, and its public Apple SDK key is the GitHub secret `REVENUECAT_IOS_KEY`.
+- ID-428 REL: **declare the EU trader status, or leave the EU storefronts out.** After ID-427.
+  - **Done when:** App Store Connect shows it declared.
+- ID-429 DEC: **decide whether to support iPad, which needs iPad screenshots and review.**
+  - **Done when:** decided, and the Xcode project matches.
+- ID-441 BUG?: **unconfirmed: on iOS, nothing offered to save the PIA login.** Seen by Andrew 2026-10-19 in STD-1 on an iPhone, with KeePassium. iOS may offer to save an app's login only when the app declares its website as an Associated Domain (`webcredentials:`), which needs the paid team and a file on that website; no source found settles it.
+  - **First:** on an iPhone, with a signed build (after ID-422), see whether iOS offers to save each of the three logins (PIA, router SSH, SMTP), with KeePassium and with iCloud Passwords.
+  - **Done when:** that is recorded, and either it works or a fix, such as the Associated Domain, has been seen to work on an iPhone.
+- ID-454 DOC: **App Store screenshots.** After ID-422 and ID-429.
+  - **Done when:** the sizes Apple asks for are taken, from a signed build.
+- ID-456 DOC: **a demo video for App Review**, showing the app working against a router, as the notes describe. After ID-422.
+  - **Done when:** it's recorded and the notes link it.
+- ID-455 REL: **the listing entered in App Store Connect.** After ID-427, ID-434 and ID-454.
+  - **Done when:** App Store Connect shows nothing missing for submission.
+
+---
+
+### 1.3. Implemented - chronological change history
+
+This section contains, in chronological order, all **completed** work items that are ready for the **current** release, or have been **committed** to a release. Each block commences with a header that contains the date that work commenced, the version and build number, followed by a very brief summary in one sentence or less describing what that release contains. Following the header are **completed** work items.
+
+Every release committed to GitHub **must** contain the version formatted as "vN.N.NN" and build number formatted as "build NNN", a dash and the brief summary, then a new line and all completed work items in chronological implementation sequence.
+
+When a work item in "1.2. WIP" is completed, move it to the bottom of the current release block below, keeping its ID.
+
+Every commit is a build. Whoever commits follows these steps, in this order:
+
+1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
+2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
+
+---
+
+2026-10-20 v0.8.156 build 526 - every device APPLY moves gets the router's own routing rule, and the iOS app is set up for the App Store
+
+```play
+• Fixed: a device moved in DEVICES now always gets the router's own routing rule, as it does when moved in the router's web interface. Pinned devices stayed in their tunnel throughout.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-459 FIX: **APPLY and DELETE set `vpnc_dev_policy_list_tmp` to the outgoing list before writing the new one, as the web interface does, so the firmware adds a rule for each device that changed.** Found by ID-457's live runner, 2026-10-20: DEV-4 pinned TABLET to wgc1 and the firmware never added its rule at 100. Measured with a one-second watcher on the router: each `restart_vpnc_dev_policy` re-added the rule for the last three records only, and nothing for TABLET, and the sweep then removed the three copies. The firmware applies only what differs from `_tmp`, and the app never wrote `_tmp` (ARCHITECTURE 6.8.4 says it should). Here `_tmp` held 11 records, an old web-interface state: the last three records were missing from it, so they counted as new on every restart, and it already held TABLET as `1>…>>9>`, so pinning TABLET there counted as no change. ID-183's "re-adds a rule for every record" was most likely this same diff against an older `_tmp`.
+  - **Exposure:** none found. A device pinned to a tunnel is routed by the guard at 90 and 91 whether or not the firmware's rule is there, and DEV-4's exit check passed through wgc1. A device pinned to Internet has no guard, so with no rule at 100 it follows the default connection, which is a tunnel or the WAN: a wrong route, not a leak.
+  - **Done when:** both writers set `_tmp` from the router's own current value first, a test fails without it, and the live runner's DEV-4 finds the rule at 100.
+  - **Built in build 526:** `kSavePolicyListTmpCommand` in `lib/device_assignment.dart`, run before the list is written by APPLY (`device_assignment_service.dart`) and by DELETE (`router_slot_service.dart`). It copies the value on the router, so `_tmp` is the outgoing list byte for byte. One test per writer, each seen to fail with its line taken out. Seven existing tests found the list write by the prefix `nvram set vpnc_dev_policy_list`, which the new command also has, and now match on `=`. ARCHITECTURE 6.8.4 records the measurement. The full suite passes, 1,969 tests. Left: the live runner on Andrew's router.
+  - **Live run, 2026-10-20:** passed. DEV-4 found TABLET's rule at 100 (`PASS rule $T $I1`), and DEV-5 to DEV-8 passed with their rules too. No APPLY in the run cleared a stale rule, where every APPLY before the fix had cleared the same three.
+- ID-457 TST: **the DEVICES and default connection tests that need no device in hand run unattended against a live router.** Andrew's requirement, 2026-10-19: automate the hand tests wherever possible. Today each [script] test needs him to tap APPLY or DISABLE between two `e2e.sh` pastes.
+  - **What:** a runner on the PC makes the router calls APPLY and MANAGE make, through the app's own `DeviceAssignmentService` and `RouterSlotService`, runs `e2e.sh` before and after each, and stops at the first FAIL. It checks TESTING.md's start state first and stops if it doesn't hold, changes nothing without `CFG_LIVE_GO=1`, and puts TABLET, DESKTOP, the default connection and both slots back however it ends.
+  - **Covers:** DEV-4, DEV-5, DEV-6a, DEV-6b, DEV-7, DEV-8, DEV-11 (and DEV-11b, its ENABLE step), DEF-1, DEF-3, DEF-4's router side, DEF-6, DEF-7 and DEF-8, then DEV-18 to DEV-20's router checks. Not covered, and still by hand: the confirmation wording, exit IPs on the devices, DEV-1, DEV-2, DEV-10, the web interface and ASUS app showing a name, and anything on a screen.
+  - **Done when:** the plan's logic has unit tests seen to fail, and one live run against Andrew's router has passed every step and left the router in its start state, read back.
+  - **Built in build 524:** `live/live_plan.dart` holds the plan, the `e2e.sh` commands, the PASS check, the start-state check and the restore; `live/devices_live_test.dart` runs it, outside `test/` so CI never does. `test/unit/live_plan_test.dart`, 16 tests, holds each step's expectations to TESTING.md's word for word, refuses anything shell-like reaching the router, and checks every DISABLE has its ENABLE. Seen to fail three ways: one expectation changed, any line with PASS taken as a pass, and the default-connection check removed. Without its variables the live test skips. TESTING.md's DEVICES and DEF groups point to it. Left: Andrew's first live run.
+  - **Built in build 525:** DEV-18 to DEV-20's router checks added, after DEF-8. The run renames TABLET, clears the name and gives its own back, disables and enables it, and disables it while pinned to wgc1. It then reads `custom_clientlist`, the `MULTIFILTER_` keys, `iptables` and the policy record against the sheet's pass lines, and checks the router log shows no service call for a rename. The start-state check adds Time Scheduling off and empty, and the restore enables TABLET and gives its name back. 23 tests; the new checks were seen to fail four ways: a missing DROP chain passed, a leftover name record passed, the restore not enabling TABLET, and the Time Scheduling check removed.
+  - **CI, 2026-10-20:** passed on build 524 (run 39256136786), which also covers build 523. Passed on build 525 too (run 39258057021).
+  - **First live run, 2026-10-20:** DEV-4 failed before testing anything. The runner called `e2e.sh` with a bare `sh`, which over SSH on this router is a memory tool ("Address /jffs/cfg-pia-wg/e2e.sh is invalid"), so neither the before snapshot nor the after check ran. The before's output wasn't checked, so the run only stopped at the after. The restore put the router back, and its read-back found the start state. Fixed in build 526: the runner calls `/bin/sh`, and a step stops when its before takes no snapshot. A test that accepted any "snapshot taken" line was seen to fail.
+  - **Second live run, 2026-10-20:** DEV-4's after check found the guard (90 and 91) and the exit through wgc1, but not the firmware's rule at 100. The runner checks the moment APPLY returns, and the firmware most likely adds that rule a few seconds later, since the hand sheet's DEV-4 expects it and a person pasting the check never sees the gap. The restore's read-back found the start state. Fixed in build 526: the after check is retried every 3 seconds for up to 30, and the log says which try passed, so the firmware's delay is measured. A retry that stopped only on its last try was seen to fail its test.
+  - **Third live run, 2026-10-20:** with ID-459's fix, DEV-4 to DEV-8 passed, so the second run's failure wasn't timing: the firmware had never added the rule (ID-459). DEV-11 then stopped. The runner never set the app's firmware setting, which reads Merlin until it is set, so pausing wgc5's watchdog took Merlin's path: it removed wgc5's two cron jobs, then failed editing `/jffs/scripts/services-start`, which stock doesn't have. The runner recorded the pause only after it succeeded, so the restore didn't resume it, and the read-back doesn't look at watchdogs, so it still said the start state held. DEV-4 to DEV-8 were unaffected: the assignment code has no firmware branch. Fixed in build 526: the runner sets the firmware before anything else, records a pause before making it, resumes any paused watchdog in the restore, and compares the scheduled watchdogs at the end with those at the start. A test that dropped the "not now" line was seen to fail.
+  - **Fourth live run, 2026-10-20:** DEV-4 to DEV-18b passed, DEV-11's DISABLE and ENABLE among them, with the watchdogs paused and resumed on stock's path. DEV-19 then failed on the runner's own check, not on the router: it wanted a DROP for TABLET in FORWARD, but stock's FORWARD rule jumps to PControls and only PControls and WGNPControls drop (ARCHITECTURE, measured 2026-09-28). Its test had used lines made up for it rather than the measured ones. Fixed in build 526: the check wants ARCHITECTURE's three rules, and its test reads them from ARCHITECTURE; with the old FORWARD-drops rule put back, two tests failed. The router log also showed 4 `asd` crashes in the 3 minutes, each in the same second as a guard run that changed a rule (ID-460, unconfirmed): the runner now waits 20 seconds before each step, about a person's pace.
+  - **Fifth live run, 2026-10-20: passed.** All 20 steps passed on the first after check, from DEV-4 to DEV-20b, and the read-back found the start state. 9 minutes, with 20 seconds before each step. The router log held no `asd` crash, against 4 in the 3 minutes of the fourth run, and one crash of another firmware process, `aaews`, in the same second as ENABLE's `restart_vpnc` (ID-460). Done: the plan's logic has unit tests seen to fail, and a live run passed every step and left the router in its start state, read back.
 - ID-402 CHG: The router half ports for free: `dartssh2` is pure Dart, and the watchdog script runs on the router, which does not care what phone deployed it.
   - **Proving it:** Andrew has a MacBook Pro set up, two iPhone 11s and an iPhone SE on iOS 27, and on 2026-10-16 had already run a build on an iPhone 11.
   - **Seen by Andrew, by 2026-10-19:** on an iPhone 11 the app opened and showed the same active slots as the Android app, so it reached the router; he also looked at ABOUT (ID-395). Nothing else has been tried on an iPhone yet.
@@ -101,6 +229,8 @@ Work items for the **current** release:
   - **Seen on an iPhone, 2026-10-19:** CON-1, CON-2 and CON-3 passed, local network permission included. STD-1 partly: the config generated, but no password manager offered to save the PIA login, with KeePassium; that is BACKLOG ID-441. Not yet run: STD-4 onwards.
   - **Done when:** ID-405's iOS build passes in CI, and GENERATE, MANAGE and the watchdog have worked from an iPhone against the router, by TESTING's hand tests for those screens.
   - **Built in build 503:** `ios/Runner/Info.plist` now carries `NSLocalNetworkUsageDescription`. The app reaches the router over the home network, which since iOS 14 asks the user for local network access, and without the key iOS words the prompt itself. A test in `test/unit/ios_info_plist_test.dart` holds it, seen to fail with the key removed. Found on the way, read from the code and not seen on a phone: SETTINGS offers HOME SCREEN WIDGET KEY on iOS, for a widget only Android has; ID-424 in BACKLOG section 2 is now the iOS widget itself (split again 2026-10-19: ID-424 measures iOS's background refresh, ID-438 and ID-439 are the widget).
+  - **Seen on an iPhone, 2026-10-20:** STD-4, STD-8, MAN-1, MAN-3, MAN-6, MAN-8, WD-3, WD-9, WD-16 and WD-18 passed, then MAN-13 and MAN-14 on wgc4. Done: ID-405's iOS build passes in CI, and GENERATE, MANAGE and the watchdog have worked from an iPhone against the router. STD-1's password manager is ID-441, tracked on its own.
+- ID-426 REL: **Andrew is enrolled in the Apple Developer Program as an individual.** Decided 2026-10-19; active 2026-10-20, A$149 a year. The Team ID is RL4UB6WKMV (ID-422).
 - ID-041 CHG: **fix the [Sonar Cloud scan](https://sonarcloud.io/project/issues?id=ExponentiallyDigital_cfg-pia-wg&s=IMPACT_RANK&issueStatuses=OPEN%2CCONFIRMED)'s findings, now 88, in six batches from safest to riskiest.** Triaged 2026-09-15 at 35 and put on hold with the rest of this section; analysed again 2026-10-09. The plan below, with Andrew's decisions at the end.
   - **Where it stands, 2026-10-09:** 88 open, 50 of them newer than the triage, mostly the rewrite's new code. All code smells; none a bug or a vulnerability. CI's SonarCloud check passes, since the quality gate judges new code only. Cognitive complexity (S3776, limit 15): 38 functions, 571 points over. Nested ternaries (S3358): 29. Duplicated literals (S1192): 14. Too many parameters (S107): 2. Missing `const` (S7112, S3962): 5. Re-read the list with `https://sonarcloud.io/api/issues/search?componentKeys=ExponentiallyDigital_cfg-pia-wg&resolved=false&ps=500` before starting; it moves with every build.
   - **The worst functions:**
@@ -145,39 +275,31 @@ Work items for the **current** release:
     - DEVICES' connect attempt became the method `_attemptConnect`.
     - The full suite passes.
   - **After build 521, 2026-10-19:** CI passed (run 39242922177), and SonarCloud shows 8 open, from 95 before step 1: exactly the watchdog's and the slot service's, left for the firmware abstraction (ID-419). Steps 1 to 5 are done. Left before this item closes: Andrew's DEVICES hand tests (DEV-2, DEV-4 to DEV-8, DEV-11, DEV-18 to DEV-20; DEF-1, DEF-3, DEF-8) on build 521 or later, then a release of its own.
+  - **Hand tests, 2026-10-20:** DEV-1, DEV-2, DEV-10 and DEV-18 passed by hand on Android. DEV-4 to DEV-8, DEV-11, DEV-19, DEV-20, DEF-1, DEF-3 and DEF-8, and DEV-18's router side, passed in ID-457's unattended run, which makes the same router calls through the app's own code. Left: one APPLY made on the phone, for its confirmation, which the runner never sees; then a release of its own.
+  - **Confirmation, 2026-10-20:** passed. Andrew pinned a device in DEVICES and tapped APPLY on Android, and the confirmation named the device and the tunnel. Every hand test for step 4 has passed. Left: a release of its own.
 - ID-434 DOC: **drafts of the App Store listing text, the privacy answers and the age rating answers, in `app-store/`.** From BACKLOG 1.3, 2026-10-19. Needs no Apple account.
   - **Done when:** the drafts are in `app-store/`, within Apple's limits, and Andrew has read them.
   - **Drafted in build 523:** `app-store/description.md` (3,335 of 4,000 characters, from Play's, with screenshot blocking, Recent Apps and keyboard learning taken out, since none holds on iOS, and a line saying the app offers no VPN itself), `app-store/listing.md` (name, subtitle, promotional text, keywords, categories, URLs) and `app-store/privacy_and_age_rating.md` ("Data Not Collected", with why for each kind of data, to revisit at ID-401; every age question None, so 4+). `test/unit/app_store_listing_test.dart` holds each field to Apple's limit and fails if another platform is named; seen to fail with the subtitle one character over. `app-store/README.md` lists Andrew's decisions: the price on iOS until ID-401, the name, and ID-430. Left: Andrew reads them.
+  - **Read and approved by Andrew, 2026-10-20:** `description.md`, `listing.md`, `privacy_and_age_rating.md` and `README.md`. The price on iOS, the first of README's decisions, is now ID-461.
+- ID-460 BUG?: **unconfirmed: each APPLY that moves a device may crash the firmware's `asd` a few per cent of the time, because it runs the fail-closed guard twice a few seconds apart.** Seen 2026-10-20 in ID-457's live run: 4 `asd` kernel traces in about 40 guard runs over 3 minutes, each in the same second as a guard run that changed a rule, and each followed by a `restart_firewall`. APPLY runs `guard.ensure` early (ID-292) and again at the end, and ID-361 measured runs 1 to 5 seconds apart crashing `asd` at 3 to 13% a run. The runner made an APPLY every 6 seconds or so, which adds more pairs than a person would. ID-360 measured the guard holding through the crashes, so this is a firewall restart, not an exposure.
+  - **Since:** the next run, with 20 seconds before each step, had no `asd` crash in 9 minutes, which fits the spacing mattering. It had one crash of a different firmware process, `aaews`, in the same second as ENABLE's `restart_vpnc`, the call the web interface makes too. Once, so not yet a pattern.
+  - **To confirm:** count `asd` traces in the router log over 30 APPLYs made a minute apart, against 30 minutes with none.
+  - **Done when:** measured, and either closed or moved to CHANGELOG with a fix, such as the second run going through the guard's `soon`.
+  - **Closed 2026-10-20, Andrew's decision, neither confirmed nor fixed. Kept here for visibility.**
+- ID-386 BUG?: **unconfirmed: the small home screen widget may cut its summary line short at its default 2×1 size.** Seen 2026-10-13 on the emulator only (Pixel 7 Pro, Android 17, Nova Launcher): "2 tunnels u…" for "2 tunnels up · 6 pinned", fitting once widened a cell. Launchers size cells differently.
+  - **Done when:** Andrew has added the small widget at its default size on his phone, and either it fits, or a fix - a wider default or a shorter line - is tested on that phone.
+  - **Closed 2026-10-20, Andrew's decision, neither confirmed nor fixed. Kept here for visibility.**
+- CHG: WIP 5 -> 9 bullets, 1.1 1 -> 24. Added to WIP: ID-427, ID-428, ID-429 and ID-437 from BACKLOG 1.3, and ID-461, new. Added to 1.1, in sequence: the rest of BACKLOG 1.2 and 1.3, around ID-458. Removed from WIP: ID-434, done, below. ID-460 and ID-386 closed from BACKLOG 1.1.3, below. Nothing deleted.
+- ID-461 DEC: **the price of the unlock on the App Store.** Andrew's thinking, 2026-10-20: Play's US$6.99 plus a third, for Apple's A$149 a year. It applies once RevenueCat reaches the App Store (ID-401); until then an iOS build sells nothing.
+  - **Done when:** decided, and `app-store/README.md` says so.
+  - **Decided, 2026-10-20:** US$9.99 (Andrew), after comparing similar iOS apps: one-time network utilities at US$2.99 to US$3.99, VPN and SSH tools at US$20 to US$120 a year or US$25 to US$100 once. `app-store/README.md` says so. Apple's 15% commission, rather than 30%, needs the App Store Small Business Program (ID-437).
 - ID-435 DOC: **a draft of the App Review notes, in `app-store/`.** From BACKLOG 1.3, 2026-10-19. The reviewer has no ASUS router or PIA account (guideline 2.1); the notes say the app configures a router and offers no VPN itself (5.4), and why PIA is named (5.2).
   - **Done when:** the draft is in `app-store/` and Andrew has read it.
   - **Drafted in build 523:** `app-store/review_notes.md`: what the app is and isn't (a router configuration tool; no VPN on the phone, no Network Extension), why PIA is named, how to review without a router (a demo video, ID-456, and what works without one, GENERATE included), the one permission, and no account, tracking or purchase. Left: Andrew reads it, and the video's link goes in.
-- ID-430 DEC: **Apple's export compliance answer, decided and set in `Info.plist`.** From BACKLOG 1.3, 2026-10-19. Claude sets out the facts first: SSH runs on dartssh2's own Dart cryptography, not Apple's, and HTTPS on the platform's.
-  - **Done when:** Andrew has decided, `ITSAppUsesNonExemptEncryption` is set to match, and an upload asks no encryption question.
-
-  - **Facts written in build 523:** `app-store/export_compliance.md`: SSH on dartssh2's own Dart cryptography, HTTPS on the TLS built into the Flutter engine (neither Apple's), WireGuard keys made on the phone, and RSA and Ed25519 used only to authenticate; all standard algorithms. Apple's page on export compliance could not be fetched, so the file says which answer fits is Andrew's to decide, not Claude's. Left: Andrew decides, then `Info.plist` is set.
-- ID-457 TST: **the DEVICES and default connection tests that need no device in hand run unattended against a live router.** Andrew's requirement, 2026-10-19: automate the hand tests wherever possible. Today each [script] test needs him to tap APPLY or DISABLE between two `e2e.sh` pastes.
-  - **What:** a runner on the PC makes the router calls APPLY and MANAGE make, through the app's own `DeviceAssignmentService` and `RouterSlotService`, runs `e2e.sh` before and after each, and stops at the first FAIL. It checks TESTING.md's start state first and stops if it doesn't hold, changes nothing without `CFG_LIVE_GO=1`, and puts TABLET, DESKTOP, the default connection and both slots back however it ends.
-  - **Covers:** DEV-4, DEV-5, DEV-6a, DEV-6b, DEV-7, DEV-8, DEV-11 (and DEV-11b, its ENABLE step), DEF-1, DEF-3, DEF-4's router side, DEF-6, DEF-7 and DEF-8, then DEV-18 to DEV-20's router checks. Not covered, and still by hand: the confirmation wording, exit IPs on the devices, DEV-1, DEV-2, DEV-10, the web interface and ASUS app showing a name, and anything on a screen.
-  - **Done when:** the plan's logic has unit tests seen to fail, and one live run against Andrew's router has passed every step and left the router in its start state, read back.
-  - **Built in build 524:** `live/live_plan.dart` holds the plan, the `e2e.sh` commands, the PASS check, the start-state check and the restore; `live/devices_live_test.dart` runs it, outside `test/` so CI never does. `test/unit/live_plan_test.dart`, 16 tests, holds each step's expectations to TESTING.md's word for word, refuses anything shell-like reaching the router, and checks every DISABLE has its ENABLE. Seen to fail three ways: one expectation changed, any line with PASS taken as a pass, and the default-connection check removed. Without its variables the live test skips. TESTING.md's DEVICES and DEF groups point to it. Left: Andrew's first live run.
-  - **Built in build 525:** DEV-18 to DEV-20's router checks added, after DEF-8. The run renames TABLET, clears the name and gives its own back, disables and enables it, and disables it while pinned to wgc1. It then reads `custom_clientlist`, the `MULTIFILTER_` keys, `iptables` and the policy record against the sheet's pass lines, and checks the router log shows no service call for a rename. The start-state check adds Time Scheduling off and empty, and the restore enables TABLET and gives its name back. 23 tests; the new checks were seen to fail four ways: a missing DROP chain passed, a leftover name record passed, the restore not enabling TABLET, and the Time Scheduling check removed.
-
----
-
-### 1.3. Implemented - chronological change history
-
-This section contains, in chronological order, all **completed** work items that are ready for the **current** release, or have been **committed** to a release. Each block commences with a header that contains the date that work commenced, the version and build number, followed by a very brief summary in one sentence or less describing what that release contains. Following the header are **completed** work items.
-
-Every release committed to GitHub **must** contain the version formatted as "vN.N.NN" and build number formatted as "build NNN", a dash and the brief summary, then a new line and all completed work items in chronological implementation sequence.
-
-When a work item in "1.2. WIP" is completed, move it to the bottom of the current release block below, keeping its ID.
-
-Every commit is a build. Whoever commits follows these steps, in this order:
-
-1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
-2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
-
----
+  - **Read by Andrew, 2026-10-20,** with one addition, his decision: a line saying the source code is public on GitHub, for a reviewer who wants to confirm the notes. The video's link waits for ID-456, and the purchase line for ID-401.
+- CHG: WIP 9 -> 7 bullets. Removed: ID-461 and ID-435, done, above. Nothing deleted.
+- UI: **the iOS app is cfg-pia-wg, the same name as Android, on the App Store and under its icon.** Andrew's decision, 2026-10-20, replacing "cfg pia wg" from 2026-10-19. `CFBundleDisplayName` in `ios/Runner/Info.plist`, and the name in `app-store/listing.md`, `description.md` and `review_notes.md`. A new test in `test/unit/app_store_listing_test.dart` holds the store name and the icon name to `cfg-pia-wg`, seen to fail with the old name. If App Store Connect refuses the hyphens at ID-427, the store name falls back to `cfg pia wg`.
+- CHG: WIP 7 -> 20 bullets, in two groups, 1.1 24 -> 7. Andrew's priorities, 2026-10-20: the iOS release and the NETWORK menu first, with what Andrew can do in the background set apart. Added to WIP from 1.1: ID-458, ID-418, ID-433, ID-431, ID-432, ID-401, ID-436, ID-441, ID-454, ID-456 and ID-455; new: ID-463, split from ID-418, and ID-464, split from ID-401. Moved back to BACKLOG 1.2, the firmware abstraction: ID-448 to ID-452 and ID-419. Left in 1.1: ID-424, ID-453, ID-438, ID-439, ID-440, ID-421 and ID-375. Nothing deleted.
 
 2026-10-19 v0.8.155 build 525 - the unattended router checks cover renaming and disabling a device
 

@@ -153,7 +153,7 @@ void main() {
   // top of the "Applying" dialog. The APPLY then ended with a plain pop, which closed THAT screen
   // and left the dialog up for good over a DEVICES that had finished.
   testWidgets('a screen opened over the Applying dialog stays, and the dialog still goes', (tester) async {
-    final ssh = _HeldRouter(responder: _router().responder, holdOn: 'nvram set vpnc_dev_policy_list');
+    final ssh = _HeldRouter(responder: _router().responder, holdOn: 'nvram set vpnc_dev_policy_list=');
     await _pumpConnected(tester, router: ssh);
     await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
     await tester.pumpAndSettle();
@@ -390,7 +390,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Enabled, index 0: pinned. The unassign form would have been `0>...>>0>`.
-    final write = ssh.commands.firstWhere((c) => c.startsWith('nvram set vpnc_dev_policy_list'));
+    final write = ssh.commands.firstWhere((c) => c.startsWith('nvram set vpnc_dev_policy_list='));
     expect(write, contains('1>192.168.1.20>>0>'));
   });
 
@@ -538,7 +538,7 @@ void main() {
     await tester.tap(find.byKey(const Key('apply_confirm')));
     await tester.pumpAndSettle();
 
-    expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isTrue);
+    expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list=')), isTrue);
     expect(ssh.ran('service restart_dnsmasq'), isTrue);
     expect(ssh.executed.any((x) => x.contains('restart_net_and_phy')), isFalse);
   });
@@ -572,7 +572,7 @@ void main() {
     });
 
     testWidgets('a write that fails is reported as such, not as a conflict', (tester) async {
-      await _pumpConnected(tester, router: failing(const ['nvram set vpnc_dev_policy_list']));
+      await _pumpConnected(tester, router: failing(const ['nvram set vpnc_dev_policy_list=']));
       await stageAndApply(tester);
       expect(find.textContaining('Could not apply the changes: '), findsOneWidget);
       expect(find.textContaining('changed while you were editing'), findsNothing);
@@ -583,7 +583,7 @@ void main() {
       await _pumpConnected(tester, router: ssh);
       ssh.failNextRead = true;
       await stageAndApply(tester);
-      expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isTrue);
+      expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list=')), isTrue);
       expect(find.textContaining('Applied, but could not re-read the router: '), findsOneWidget);
     });
   });
@@ -662,7 +662,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('changed while you were editing'), findsOneWidget);
-    expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isFalse);
+    expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list=')), isFalse);
 
     // And the screen RECOVERS. Without the re-read it kept the base it had loaded before the
     // conflict, so every later APPLY refused too and the only way out was to leave the screen.
@@ -873,7 +873,7 @@ void main() {
           findsOneWidget);
       await tester.tap(find.byKey(const Key('apply_confirm')));
       await tester.pumpAndSettle();
-      expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isTrue,
+      expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list=')), isTrue,
           reason: 'a warning, not a block: assigning to a disabled slot is legitimate');
     });
 
@@ -1159,7 +1159,7 @@ void main() {
       expect(ssh.ran("nvram set MULTIFILTER_ENABLE='2'"), isTrue);
       expect(ssh.ran('service restart_firewall'), isTrue);
       // The VPN assignment is kept underneath (Andrew's decision): the policy list is not rewritten.
-      expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isFalse);
+      expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list=')), isFalse);
     });
 
     testWidgets('choosing a connection for a disabled device enables it again, where it was', (tester) async {
