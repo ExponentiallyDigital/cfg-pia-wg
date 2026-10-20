@@ -149,6 +149,16 @@ int? assignedIndexFor(List<DevicePolicy> records, String ip) {
   return null;
 }
 
+/// Copies the policy list, as the router holds it now, into `vpnc_dev_policy_list_tmp`. Run before
+/// every write of the list, as the web interface does (ARCHITECTURE 6.8.4).
+///
+/// `restart_vpnc_dev_policy` adds rules only for the records that differ from `_tmp` (ID-459).
+/// Measured 2026-10-20 with `_tmp` left at an old web-interface state: pinning a device to the
+/// index `_tmp` already gave it added no rule at 100, and the three records `_tmp` lacked had their
+/// rules added again on every restart. Copied on the router, not written from the app's parsed copy,
+/// so `_tmp` is the outgoing value byte for byte.
+const String kSavePolicyListTmpCommand = r'nvram set vpnc_dev_policy_list_tmp="$(nvram get vpnc_dev_policy_list)"';
+
 /// Lists the policy routing rules. Each assigned device gets one, `from <ip> lookup <index 6>`.
 const String kIpRuleCommand = 'ip rule show';
 

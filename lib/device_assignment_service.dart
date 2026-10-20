@@ -629,6 +629,7 @@ class DeviceAssignmentService {
     if (changes.isEmpty) return null;
     var policies = base.policies;
     changes.forEach((ip, index) => policies = setDevicePolicy(policies, ip: ip, vpncIndex: index));
+    await _run(kSavePolicyListTmpCommand);
     await _run('nvram set vpnc_dev_policy_list=${shellSingleQuote(serialiseDevicePolicyList(policies))}');
     await _run('nvram commit');
 

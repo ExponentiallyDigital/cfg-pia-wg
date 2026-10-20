@@ -4,7 +4,7 @@ Drafts (ID-434). Each value is the line under its heading, exactly as it is ente
 
 ## Name (30 characters)
 
-cfg pia wg
+cfg-pia-wg
 
 ## Subtitle (30 characters)
 

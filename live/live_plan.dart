@@ -237,13 +237,22 @@ List<String> blockProblems(String multifilter, String iptables, String mac, bool
     for (final l in multifilter.split('\n'))
       if (l.contains('=')) l.substring(0, l.indexOf('=')).trim(): l.substring(l.indexOf('=') + 1).trim(),
   };
-  final drops = iptables.split('\n').where((l) => l.contains('DROP') && l.toUpperCase().contains(mac.toUpperCase()));
-  final chains = {for (final l in drops) l.split(RegExp(r'\s+')).elementAtOrNull(1) ?? ''};
+  // The device's rules in the three chains `restart_firewall` writes for it (ARCHITECTURE, measured
+  // 2026-09-28): FORWARD jumps to PControls, and PControls and WGNPControls drop. FORWARD itself
+  // never drops, which the first live run's check got wrong (2026-10-20).
+  final rules = [
+    for (final l in iptables.split('\n'))
+      if (l.toUpperCase().contains(mac.toUpperCase())) l.trim().split(RegExp(r'\s+')),
+  ];
+  bool has(String chain, String target) => rules.any((f) =>
+      f.length > 1 && f[0] == '-A' && f[1] == chain && f.contains('-j') && f.elementAtOrNull(f.indexOf('-j') + 1) == target);
+  const wanted = [('FORWARD', 'PControls'), ('PControls', 'DROP'), ('WGNPControls', 'DROP')];
   if (!on) {
+    final left = {for (final f in rules) if (f.length > 1 && wanted.any((w) => w.$1 == f[1])) f[1]};
     return [
       if (keys['MULTIFILTER_ALL'] != '0') 'MULTIFILTER_ALL is "${keys['MULTIFILTER_ALL']}", not 0',
       if ((keys['MULTIFILTER_MAC'] ?? '').isNotEmpty) 'MULTIFILTER_MAC still holds "${keys['MULTIFILTER_MAC']}"',
-      if (drops.isNotEmpty) 'iptables still drops $mac in ${chains.join(', ')}',
+      if (left.isNotEmpty) 'iptables still has a rule for $mac in ${left.join(', ')}',
     ];
   }
   final macs = (keys['MULTIFILTER_MAC'] ?? '').split('>').map((m) => m.toUpperCase()).toList();
@@ -254,8 +263,8 @@ List<String> blockProblems(String multifilter, String iptables, String mac, bool
     if (keys['MULTIFILTER_BLOCK_ALL'] != '0') 'MULTIFILTER_BLOCK_ALL is "${keys['MULTIFILTER_BLOCK_ALL']}", not 0',
     if (at < 0) 'MULTIFILTER_MAC does not hold $mac',
     if (at >= 0 && modes.elementAtOrNull(at) != '2') 'MULTIFILTER_ENABLE for $mac is "${modes.elementAtOrNull(at)}", not 2',
-    for (final c in ['FORWARD', 'PControls', 'WGNPControls'])
-      if (!chains.contains(c)) 'no DROP rule for $mac in $c',
+    for (final (chain, target) in wanted)
+      if (!has(chain, target)) 'no "-A $chain ... -j $target" rule for $mac',
   ];
 }
 
@@ -272,14 +281,50 @@ List<String> serviceCallProblems(int before, int after) =>
 // rather than quoted.
 final RegExp _safeWord = RegExp(r'^[A-Za-z0-9 .:_-]+$');
 
-/// The command for one phase of one check: `sh e2e.sh <id> before`, or `after` with each
-/// expectation as one quoted argument.
+/// The command for one phase of one check: `/bin/sh e2e.sh <id> before`, or `after` with each
+/// expectation as one quoted argument. Over SSH a bare `sh` on the router is a memory tool, not the
+/// shell (it printed "Address /jffs/cfg-pia-wg/e2e.sh is invalid" on the first live run).
 String e2eCommand(String id, String phase, [List<String> expect = const []]) {
   for (final w in [id, phase, ...expect]) {
     if (!_safeWord.hasMatch(w)) throw ArgumentError('not safe to pass to the router shell: "$w"');
   }
   final args = [for (final e in expect) '"$e"'].join(' ');
-  return 'sh $kE2ePath $id $phase${args.isEmpty ? '' : ' $args'}';
+  return '/bin/sh $kE2ePath $id $phase${args.isEmpty ? '' : ' $args'}';
+}
+
+/// Whether e2e.sh's `before` for [id] took its snapshot. Without one, `after` has nothing to compare
+/// against, so a step must not go on.
+bool e2eSnapshotTaken(String id, String stdout) =>
+    stdout.split('\n').map((l) => l.trim()).any((l) => l.startsWith('$id: snapshot taken.'));
+
+/// How long a step's after check is retried. The firmware adds its own rule at priority 100 a few
+/// seconds after APPLY returns (first live run, 2026-10-20: checked at once, the rule wasn't there
+/// yet), and a person pasting the after check by hand never sees that gap.
+const int kSettleTries = 10;
+const Duration kSettleGap = Duration(seconds: 3);
+
+/// The pause before each step, about the pace of a person at the sheet. Steps 6 seconds apart put
+/// guard runs close enough together to crash the firmware's `asd` four times in one run (ID-460,
+/// 2026-10-20); runs 10 seconds or more apart crashed it far less often (ID-361).
+const Duration kStepGap = Duration(seconds: 20);
+
+/// Runs [check] until [passed] holds or [tries] are used, waiting [gap] between them, and returns the
+/// last output with the number of tries it took. A check that never passes returns its last output,
+/// so the failure shown is the router as it ended up.
+Future<(String, int)> settle(
+  Future<String> Function() check,
+  bool Function(String) passed, {
+  int tries = kSettleTries,
+  Duration gap = kSettleGap,
+  Future<void> Function(Duration) wait = Future<void>.delayed,
+}) async {
+  var out = '';
+  for (var n = 1; n <= tries; n++) {
+    out = await check();
+    if (passed(out)) return (out, n);
+    if (n < tries) await wait(gap);
+  }
+  return (out, tries);
 }
 
 /// Whether e2e.sh's output for [id] ends in its PASS line. Anything else - FAIL, a usage line, no
@@ -346,6 +391,15 @@ List<String> preflightProblems(StartState s, LiveConfig c) {
   }
   return out;
 }
+
+/// The slots whose watchdog the run left differently from how it found them, one line each, empty
+/// when they match. A watchdog paused and never resumed leaves its tunnel unwatched with nothing on
+/// screen to say so: on 2026-10-20 DEV-11's pause removed wgc5's schedule, failed partway, and the
+/// read-back still said the start state held.
+List<String> watchdogProblems({required Set<int> atStart, required Set<int> now}) => [
+      for (final s in atStart.difference(now).toList()..sort()) "wgc$s's watchdog was scheduled at the start and is not now.",
+      for (final s in now.difference(atStart).toList()..sort()) "wgc$s's watchdog is scheduled now and was not at the start.",
+    ];
 
 /// What puts TABLET and DESKTOP back to following the default, and the default back to Internet,
 /// from what the router holds now. Null when nothing needs doing.

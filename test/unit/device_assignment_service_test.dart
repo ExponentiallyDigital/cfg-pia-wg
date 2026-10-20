@@ -5,6 +5,7 @@
 // apply untouched, and an apply must refuse outright if the router changed under it.
 //
 // MACs are invented - see test/unit/no_lan_identifiers_test.dart.
+import 'package:cfg_pia_wg/device_assignment.dart' show kSavePolicyListTmpCommand;
 import 'package:cfg_pia_wg/device_assignment_service.dart';
 import 'package:cfg_pia_wg/fail_closed_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -154,16 +155,28 @@ void main() {
       final c = _client();
       final s = await _state(c);
       await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
-      final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list'));
+      final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list='));
       expect(write, contains('1>192.168.1.50>>3>'));
       expect(write, contains('1>192.168.1.20>>5>'));
+    });
+
+    test('_tmp gets the outgoing list, from the router, before the list is written (ID-459)', () async {
+      // The firmware adds rules only for records that differ from _tmp. Left stale, a device pinned
+      // where _tmp already had it got no rule at 100 (measured 2026-10-20).
+      final c = _client();
+      final s = await _state(c);
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
+      final saved = c.commands.indexOf(kSavePolicyListTmpCommand);
+      expect(saved, isNonNegative);
+      expect(saved, lessThan(c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list='))));
+      expect(kSavePolicyListTmpCommand, r'nvram set vpnc_dev_policy_list_tmp="$(nvram get vpnc_dev_policy_list)"');
     });
 
     test('unassigning disables the record rather than deleting it', () async {
       final c = _client();
       final s = await _state(c);
       await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': null}, reservationsToCreate: {}));
-      final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list'));
+      final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list='));
       expect(write, contains('0>192.168.1.20>>0>'));
     });
 
@@ -584,7 +597,7 @@ void main() {
           pollInterval: Duration.zero,
           onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m));
       await svc.apply(base: await _state(c), request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
-      final written = c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list'));
+      final written = c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list='));
       final first = c.commands.indexOf("'$kGuardScriptPath'");
       final last = c.commands.lastIndexOf("'$kGuardScriptPath'");
       expect(first, greaterThan(written));
@@ -677,7 +690,7 @@ void main() {
         first('nvram set custom_clientlist'),
         first('nvram set MULTIFILTER_ALL'),
         first('service restart_firewall'),
-        first('nvram set vpnc_dev_policy_list'),
+        first('nvram set vpnc_dev_policy_list='),
         first('service restart_dnsmasq'),
         first('service restart_vpnc_dev_policy'),
         first('nvram set vpnc_default_wan'),

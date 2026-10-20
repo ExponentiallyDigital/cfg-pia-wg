@@ -27,9 +27,10 @@ void main() {
     expect(why, contains('router'));
   });
 
-  // Andrew's choice, 2026-10-19: Android's name with spaces for dashes. Flutter's default was "Cfg Pia Wg".
-  test('the name under the icon is cfg pia wg', () {
-    expect(plistString(plist, 'CFBundleDisplayName'), 'cfg pia wg');
+  // Andrew's choice, 2026-10-20: the same name as Android, hyphens and all. From 2026-10-19 it was
+  // "cfg pia wg"; Flutter's default was "Cfg Pia Wg".
+  test('the name under the icon is cfg-pia-wg', () {
+    expect(plistString(plist, 'CFBundleDisplayName'), 'cfg-pia-wg');
   });
 
   // ID-420. Apple treats bundle IDs as case sensitive, so Andrew chose all lower case, and the App Store
@@ -42,5 +43,21 @@ void main() {
       expect(id, id.toLowerCase());
     }
     expect(ids.where((id) => id == 'com.exponentiallydigital.cfgpiawg'), hasLength(3), reason: 'Debug, Profile and Release');
+  });
+
+  // ID-430. Standard encryption not provided by Apple's operating system: Apple's table asks for a
+  // document only for France, the French encryption declaration, and the key is NO for an app needing
+  // none (app-store/export_compliance.md). France is left out of the first release, Andrew's decision,
+  // 2026-10-20, so NO; selling there is ID-462, which sets it to YES with Apple's code.
+  test('the app declares only encryption needing no documents', () {
+    expect(RegExp(r'<key>ITSAppUsesNonExemptEncryption</key>\s*<false/>').hasMatch(plist), isTrue);
+  });
+
+  // ID-422. Andrew's individual membership, 2026-10-20. The Team ID, not the enrolment ID
+  // (5N82LGHKZ2), which was briefly taken for it.
+  test('every target signs with team RL4UB6WKMV', () {
+    final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+    final teams = [for (final m in RegExp(r'DEVELOPMENT_TEAM = ([^;]+);').allMatches(pbxproj)) m.group(1)!];
+    expect(teams, List.filled(6, 'RL4UB6WKMV'), reason: 'Runner and RunnerTests, Debug, Profile and Release');
   });
 }

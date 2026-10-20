@@ -1092,7 +1092,15 @@ Three things follow:
 
 Confirmed: it holds the **previous committed value** of `vpnc_dev_policy_list`. After every one of the eight steps, `_tmp` equalled the list as it stood before that step. It is the WebUI rollback copy.
 
-The app should write it the same way - set `_tmp` to the outgoing value, then set the list - so a WebUI visit afterwards does not find a stale rollback point pointing at a configuration that never existed.
+The app writes it the same way: `_tmp` is set to the outgoing value, copied on the router, and then the list is set (`kSavePolicyListTmpCommand`, before both writers, APPLY and DELETE).
+
+It is more than a rollback copy. **`restart_vpnc_dev_policy` adds rules only for the records that differ from `_tmp`** (ID-459). Until build 526 the app never wrote `_tmp`, and on 2026-10-20 the maintainer's router still held an 11-record `_tmp` from an old web-interface visit, while the list had 15. Watched once a second through two APPLYs:
+
+- TABLET was pinned to wgc1 as `1>IP>>9>`, which `_tmp` already held, and the firmware added no rule at 100 for it.
+- The three records `_tmp` lacked had their rules added again on every restart, a second copy each, which the stale-rule sweep then removed.
+- The 10 records `_tmp` held unchanged gained nothing.
+
+So ID-183's measurement, that every restart re-adds a rule for every record, was most likely this same comparison against an older `_tmp`. The sweep stays either way: it is what removes a moved device's old rule.
 
 #### 6.8.5. <a name='service-calls'></a>Service calls
 
