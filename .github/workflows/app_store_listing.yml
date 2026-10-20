@@ -1,0 +1,72 @@
+# ==========================================================================
+# GitHub Actions Workflow: Update the App Store listing (ID-455)
+# Trigger manually via the Actions tab after editing anything in app-store/
+# ==========================================================================
+name: "Update App Store listing"
+run-name: "App Store listing - en-AU - ${{ inputs.check_only && 'check only' || 'publish' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: "Only check the files; send nothing to App Store Connect"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-store-listing
+  cancel-in-progress: false # a run in flight must finish; queue the second run
+
+jobs:
+  listing:
+    name: Update the en-AU App Store listing
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the API client's packages
+        run: |
+          # A virtual environment: the runner's system Python refuses pip installs (PEP 668).
+          python3 -m venv "$RUNNER_TEMP/asc"
+          "$RUNNER_TEMP/asc/bin/pip" install --quiet --disable-pip-version-check \
+            PyJWT==2.10.1 cryptography==44.0.2 requests==2.34.2
+
+      # scripts/app_store_connect.py reads listing.md, description.md, review_notes.md and the
+      # screenshots, and stops naming the file at the first one that is wrong, before anything is sent.
+      - name: Check the listing files
+        run: '"$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py listing --check'
+
+      # The same key as release.yml's iOS job (ID-463). Name, subtitle, privacy policy URL, categories,
+      # age rating, copyright, description, keywords, promotional text, URLs, review notes and contact,
+      # and every screenshot. Left by hand: App Privacy, and the demo video (ID-456).
+      - name: Publish the listing
+        if: ${{ !inputs.check_only }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APP_REVIEW_FIRST_NAME: Andrew
+          APP_REVIEW_LAST_NAME: Newbury
+          APP_REVIEW_EMAIL: andrew@exponentiallydigital.com
+          # A secret, so the phone number isn't in the repo. Unset leaves App Review's contact phone as it is.
+          APP_REVIEW_PHONE: ${{ secrets.APP_REVIEW_PHONE }}
+        run: '"$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py listing'
+
+      # Idempotent: an internal TestFlight group that gets every build, with Andrew in it (ID-465).
+      - name: TestFlight testers
+        if: ${{ !inputs.check_only }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APP_REVIEW_FIRST_NAME: Andrew
+          APP_REVIEW_LAST_NAME: Newbury
+          TESTFLIGHT_TESTER_EMAIL: andrew@exponentiallydigital.com
+        run: '"$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py testers'
