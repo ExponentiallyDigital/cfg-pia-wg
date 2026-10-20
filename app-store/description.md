@@ -31,7 +31,7 @@ No desktop. No laptop. No scripts. Tap a region, enter your PIA login, deploy.
 
 Built for people who read the privacy policy
 
-No tracking, no analytics, no advertising identifier, no adverts. Credentials and private keys stay in memory and are never logged. A copied config stays on this iPhone and clears itself after 60 seconds, and the app is covered when you switch away. Router writes take a snapshot first and roll back if verification fails. Every file the app puts on your router is marked as its own, and uninstall refuses to delete anything it didn't create.
+No tracking, no advertising identifier, no adverts. Credentials and private keys stay in memory and are never logged. A copied config stays on this iPhone and clears itself after 60 seconds, and the app is covered when you switch away. Router writes take a snapshot first and roll back if verification fails. Every file the app puts on your router is marked as its own, and uninstall refuses to delete anything it didn't create.
 
 Open source under GPL v3. Pinned dependencies, verifiable build provenance, automated security scanning on every release. Architecture and build steps are on GitHub. Audit it yourself.
 
