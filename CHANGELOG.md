@@ -151,6 +151,7 @@ Work items for the **current** release:
 - ID-455 REL: **the listing entered in App Store Connect.** After ID-427, ID-434 and ID-454.
   - **Done when:** App Store Connect shows nothing missing for submission.
   - **Taken on by Claude, 2026-10-20 (Andrew's go):** the new `scripts/app_store_connect.py listing` puts `app-store/` into App Store Connect through the API key (ID-463): name, subtitle, privacy policy URL, categories, every age rating question answered None or No (only those the API returns), copyright, description, keywords, promotional text, URLs, the review notes and contact, and the screenshots, replacing any already there. A new workflow, `app_store_listing.yml`, runs it by hand, like Play's, after `--check` reads and checks every file and sends nothing; a check-only run stops there. The review notes now say the video is attached, not linked. A test in `test/unit/ci_config_test.dart` holds the check first, the pinned packages and the key kept out of the log; with the publish step's condition removed it fails. `--check` passes on the files as they are. Left: the secret `APP_REVIEW_PHONE` (App Review's contact phone), the first run, and by hand App Privacy, which the API doesn't offer, and the video's attachment (ID-456). App Privacy changes with RevenueCat (ID-401): Purchases, Purchase History, for App Functionality, not linked to the user, not for tracking; `privacy_and_age_rating.md` waits for Andrew's approval of that change.
+  - **Built in build 530:** GitHub starts a workflow by hand only once its file is on the default branch, and `app_store_listing.yml` is new on `dev`, so it couldn't be run. It is now also a reusable workflow, and `release.yml` calls it when a manual run ticks the new `app_store_listing` option; a tag never does. Standalone runs work once it reaches `main`.
 - ID-465 REL: **an internal TestFlight group that gets every build, with Andrew in it, made by the API.** Split from what was Andrew's TestFlight set-up, 2026-10-20, Andrew's go for Claude to take on what it can.
   - **Done when:** a TestFlight build reaches Andrew's iPhone with nobody adding testers by hand.
   - **Built in build 529:** `scripts/app_store_connect.py testers` finds or makes the internal group "Internal" with access to every build, and adds `andrew@exponentiallydigital.com` if he isn't in it; idempotent. It runs in `app_store_listing.yml` and after each TestFlight upload in `release.yml`. Left: its first run.
@@ -191,6 +192,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-20 v0.8.160 build 530 - the App Store listing can be run from a manual release run
+
+```play
+• Behind the scenes: groundwork for the iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 2026-10-20 v0.8.159 build 529 - the App Store listing, screenshots, TestFlight notes and testers, and the iOS SBOM, all from the repo
 

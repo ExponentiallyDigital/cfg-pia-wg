@@ -12,6 +12,13 @@ on:
         description: "Only check the files; send nothing to App Store Connect"
         type: boolean
         default: false
+  # Also from release.yml's app_store_listing option. GitHub starts a workflow by hand only once its
+  # file is on the default branch, and a release run reads the branch's own copy of this one.
+  workflow_call:
+    inputs:
+      check_only:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
