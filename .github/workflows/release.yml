@@ -32,6 +32,11 @@ on:
         type: boolean
         required: false
         default: false
+      app_store_listing:
+        description: "Also update the App Store listing from app-store/ (ID-455)"
+        type: boolean
+        required: false
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -477,6 +482,21 @@ jobs:
             cfg-pia-wg-${{ steps.tag.outputs.val }}_dart-licenses.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =================================================================
+  # Step 2b: The App Store listing, when asked for (ID-455)
+  # =================================================================
+  # The same job as the Update App Store listing workflow, reached from here so a manual run on a
+  # branch can use it before that workflow's file is on main. Needs nothing built.
+  app-store-listing:
+    name: App Store listing
+    if: ${{ inputs.app_store_listing == true }}
+    uses: ./.github/workflows/app_store_listing.yml
+    permissions:
+      contents: read
+    with:
+      check_only: false
+    secrets: inherit
 
   # =================================================================
   # Step 3: Signed iOS build (ID-418)
