@@ -930,7 +930,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             keyValue: 'settings_restore_purchase',
             label: 'RESTORE PURCHASE',
             note: 'Recovers the unlock on a new phone or after a reinstall. Nothing is stored on this device: '
-                'the purchase belongs to your Google account.',
+                'the purchase belongs to your ${Entitlement.accountName}.',
             icon: Icons.restore_outlined,
             onTap: _unlessBusy(_restorePurchase),
           ),

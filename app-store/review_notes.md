@@ -16,4 +16,6 @@ The app's complete source code is public at https://github.com/ExponentiallyDigi
 
 Permissions: the app asks for local network access, because it reaches the router at its private address on the home network. It asks for nothing else.
 
-There is no account with us, no sign-in to any service of ours, no analytics or tracking, and no in-app purchase in this version.
+There is no account with us, no sign-in to any service of ours, and no analytics or tracking.
+
+In-app purchase: one non-consumable, "Router features" (lifetime_unlock), a one-time US$9.99 unlock of what writes to the router: creating, editing and enabling VPN tunnels, the watchdog, and assigning devices to a VPN. Everything that only looks at the router is free, as is GENERATE. Any of those buttons offers the purchase, and SETTINGS has RESTORE PURCHASE.
