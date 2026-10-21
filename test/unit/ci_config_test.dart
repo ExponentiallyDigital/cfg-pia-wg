@@ -117,6 +117,9 @@ void main() {
     final release = File('.github/workflows/release.yml').readAsStringSync();
     expect(release, contains('scripts/app_store_connect.py whats-new --build "\$BUILD" --notes play-store/whatsnew-en-AU'));
     expect(release, contains('scripts/app_store_connect.py testers'));
+    // ID-436: the build goes on the App Store version only when a manual run asks for it.
+    expect(release, contains(r'ATTACH_BUILD: ${{ inputs.attach_build == true }}'));
+    expect(release, contains('if [ "\$ATTACH_BUILD" = "true" ]; then'));
   });
 
   test("Dependabot's PRs go to dev, not straight to main", () {

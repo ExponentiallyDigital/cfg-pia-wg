@@ -37,6 +37,11 @@ on:
         type: boolean
         required: false
         default: false
+      attach_build:
+        description: "Attach the TestFlight build to the App Store version, for submission (ID-436)"
+        type: boolean
+        required: false
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -671,6 +676,7 @@ jobs:
           APP_REVIEW_LAST_NAME: Newbury
           TESTFLIGHT_TESTER_EMAIL: andrew@exponentiallydigital.com
           TARGET_TAG: ${{ inputs.tag_name || github.ref_name }}
+          ATTACH_BUILD: ${{ inputs.attach_build == true }}
         run: |
           dart run tool/release_notes.dart --tag "$TARGET_TAG"
           python3 -m venv "$RUNNER_TEMP/asc"
@@ -679,6 +685,11 @@ jobs:
           "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py testers
           BUILD=$(grep -m1 '^version:' pubspec.yaml | sed 's/.*+//')
           "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py whats-new --build "$BUILD" --notes play-store/whatsnew-en-AU
+          # ID-436: only when asked, and only once processed, which whats-new has just waited for. The
+          # listing job sets the version's number from pubspec.yaml, so the two match.
+          if [ "$ATTACH_BUILD" = "true" ]; then
+            "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py attach-build --build "$BUILD"
+          fi
 
       - name: Keep the .ipa for a week
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
