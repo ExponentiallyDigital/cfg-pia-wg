@@ -27,13 +27,14 @@ void main() {
     expect(why, contains('router'));
   });
 
-  // Andrew's choice, 2026-10-19: Android's name with spaces for dashes. Flutter's default was "Cfg Pia Wg".
-  test('the name under the icon is cfg pia wg', () {
-    expect(plistString(plist, 'CFBundleDisplayName'), 'cfg pia wg');
+  // Andrew's choice, 2026-10-20: the same name as Android, hyphens and all. From 2026-10-19 it was
+  // "cfg pia wg"; Flutter's default was "Cfg Pia Wg".
+  test('the name under the icon is cfg-pia-wg', () {
+    expect(plistString(plist, 'CFBundleDisplayName'), 'cfg-pia-wg');
   });
 
-  // ID-420. Apple treats bundle IDs as case sensitive, so Andrew chose all lower case, and the App Store
-  // record is tied to it for good.
+  // ID-420. Andrew chose all lower case, and the App Store record is tied to it for good. Apple's
+  // registration ignores case: the lower-case ID registered only once the old cfgPiaWg was removed (ID-427).
   test('the bundle IDs are all lower case, and the app is com.exponentiallydigital.cfgpiawg', () {
     final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
     final ids = [for (final m in RegExp(r'PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);').allMatches(pbxproj)) m.group(1)!];
@@ -42,5 +43,32 @@ void main() {
       expect(id, id.toLowerCase());
     }
     expect(ids.where((id) => id == 'com.exponentiallydigital.cfgpiawg'), hasLength(3), reason: 'Debug, Profile and Release');
+  });
+
+  // ID-430. Standard encryption not provided by Apple's operating system: Apple's table asks for a
+  // document only for France, the French encryption declaration, and the key is NO for an app needing
+  // none (app-store/export_compliance.md). France is left out of the first release, Andrew's decision,
+  // 2026-10-20, so NO; selling there is ID-462, which sets it to YES with Apple's code.
+  test('the app declares only encryption needing no documents', () {
+    expect(RegExp(r'<key>ITSAppUsesNonExemptEncryption</key>\s*<false/>').hasMatch(plist), isTrue);
+  });
+
+  // ID-429. Andrew's decision, 2026-10-20: iPhone and iPad, iPad tried on the simulator only. An iPad app
+  // must allow all four orientations, or App Review's iPad multitasking check refuses it.
+  test('the app is built for iPhone and iPad, with every iPad orientation', () {
+    final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+    expect(RegExp(r'TARGETED_DEVICE_FAMILY = "1,2";').allMatches(pbxproj), hasLength(3), reason: 'Debug, Profile and Release');
+    final ipad = RegExp(r'<key>UISupportedInterfaceOrientations~ipad</key>\s*<array>(.*?)</array>', dotAll: true).firstMatch(plist)!.group(1)!;
+    for (final o in ['Portrait', 'PortraitUpsideDown', 'LandscapeLeft', 'LandscapeRight']) {
+      expect(ipad, contains('<string>UIInterfaceOrientation$o</string>'), reason: o);
+    }
+  });
+
+  // ID-422. Andrew's individual membership, 2026-10-20. The Team ID, not the enrolment ID
+  // (5N82LGHKZ2), which was briefly taken for it.
+  test('every target signs with team RL4UB6WKMV', () {
+    final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+    final teams = [for (final m in RegExp(r'DEVELOPMENT_TEAM = ([^;]+);').allMatches(pbxproj)) m.group(1)!];
+    expect(teams, List.filled(6, 'RL4UB6WKMV'), reason: 'Runner and RunnerTests, Debug, Profile and Release');
   });
 }

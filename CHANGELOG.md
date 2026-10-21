@@ -1,6 +1,6 @@
 # 1. CHANGELOG.md
 
-** DO NOT ALTER THE STRUCTURE OF THIS FILE** it is used by GitHub actions workflows.
+**DO NOT ALTER THE STRUCTURE OF THIS FILE** it is used by GitHub actions workflows.
 
 - [Prefix codes](#prefix-codes)
 - [1. Changes](#1-changes)
@@ -79,7 +79,40 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
-`<none>`
+- ID-469 REL: **the next tagged release's iOS build reaches TestFlight from the tag, and signing leaves no pile of certificates.** Split from ID-431 when it closed, 2026-10-21. v0.8.164's tag skips the upload, since Apple has build 534 from the submission run (ID-468), so a tag's own upload is first seen on the next release.
+  - **Done when:** a tag's run uploads its build and it shows in TestFlight, and Andrew has checked Certificates, IDs & Profiles, Certificates, after it: if each run leaves a new certificate, the job keeps one in a secret instead (ID-418).
+- ID-424 TST: **measure how often iOS lets the app refresh in the background, for an iOS widget like Android's (ID-376).** After ID-422.
+  - **Done when:** a day's refresh times from an iPhone are recorded.
+- ID-453 MOD: **the slot modal's manage mode and watchdog mode become two widgets sharing the slot list.** They share little else. Independent of the slices.
+  - **Done when:** each mode is its own widget, nothing a user sees changes, and the full suite passes unchanged.
+- ID-438 ADD: **an iOS home screen widget showing the last status the app read.** After ID-431.
+  - **Done when:** it shows each tunnel's state as last read.
+- ID-439 ADD: **the iOS widget refreshes itself in the background.** After ID-424 and ID-438.
+  - **Done when:** it updates with the app closed.
+- ID-440 REL: **get a D-U-N-S number from Dun & Bradstreet.**
+  - **Done when:** the D-U-N-S number is issued.
+- ID-421 REL: **move the Apple membership to the company, through Apple support.** After ID-440.
+  - **Done when:** the App Store shows the company as the seller.
+- ID-375 BLD: **either** replace this module or **post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix.** Agreed 2026-10-09, Andrew's call, but not posted: the `gh` token here can't comment outside the organisation ("Resource not accessible by personal access token"). Post it from Andrew's own login, or after `gh auth refresh -s public_repo`. Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment:
+
+  ```markdown
+  Still happening on 0.14.4, and not only with flavors or App Clips: plain `ios: true` triggers it too.
+
+  With `ios: true` and no flavor, `createIcons` ends with `changeIosLauncherIcon('AppIcon', flavor)`, which sets every line containing `ASSETCATALOG` in the build configurations to the icon name. In our `ios/Runner.xcodeproj/project.pbxproj` (Flutter 3.47.5), two of the three
+
+      ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+
+  lines became
+
+      ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = AppIcon;
+
+  even though the icon set's name hadn't changed.
+
+  This PR's one-line fix still works, but it no longer applies as is: the check has moved to around line 340 of `lib/ios.dart`. The equivalent there is `line.contains('ASSETCATALOG_COMPILER_APPICON_NAME')` in place of `line.contains('ASSETCATALOG')`.
+
+  For now we run the tool through a small wrapper that puts the other lines back afterwards.
+  ```
+  - **Done when:** a `flutter_launcher_icons` release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the comment having been posted, and the wrapper and its notes are gone. Checked 2026-10-19: 0.14.4 is still the latest, and PR #549 is open.
 
 ---
 
@@ -87,10 +120,75 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
-- ID-415 REL: "Warning: WARNING!! 'track' is deprecated and will be removed in a future release. Please migrate to 'tracks'".
-  - **Where:** the Google Play upload in `release.yml` (`r0adkll/upload-google-play`) still passes `track: internal`; the action now wants `tracks: internal`.
-  - **Done when:** a release's log no longer prints the warning. It can only be seen at a release, since the step uploads to Play.
-  - **Built in build 503:** the step now passes `tracks: internal`. The action's README says `tracks` defaults to `production`, so a misspelt input would publish to everyone; a test in `test/unit/ci_config_test.dart` holds the step to `tracks: internal` with no `track:` left, seen to fail with `track: internal` put back and again with `tracks: production`. A dry run of `release.yml` skips this step, so only a real release shows the warning gone.
+**Claude, in priority order: the iOS release.**
+
+- ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-435, ID-455 and ID-456.
+  - **Done when:** the app is on sale, and on an iPhone the home screen's review link opens its listing (from ID-417).
+  - **Built in build 534:** `scripts/app_store_connect.py attach-build` puts a processed build on the App Store version, and stops if the two version numbers differ, since Apple takes only a match. `release.yml`'s new `attach_build` option runs it after the TestFlight notes, once Apple has processed the build; a tag never does. The first submission's run ticks `testflight`, `app_store_listing` and `attach_build` together: the listing sets the version from pubspec.yaml, the upload carries the same number. A test holds the option's gate. Left: that run, the in-app purchase ticked on the version page (no API for the first one found), then Andrew's Add for Review and Submit.
+  - **Run, 2026-10-21 (run 39522411279): passed.** The listing set the version to 0.8.164; build 534 uploaded, processed with `usesNonExemptEncryption = False`, took its TestFlight notes, and was attached: "build 534 (0.8.164) attached to App Store version 0.8.164". Left: Andrew ticking Router features under In-App Purchases and Subscriptions, choosing how the version is released, Add for Review, Submit to App Review, and App Review's answer.
+  - **Submitted, 2026-10-21 (Andrew):** in this App Store Connect the in-app purchase isn't chosen on the version page: Andrew put Router features in a Draft Submission from its own page, then Add for Review on the version added 0.8.164 (534) to the same draft. Apple first asked for Content Rights, answered "No, it does not contain, show, or access third-party content", recorded in `privacy_and_age_rating.md` and now set by `listing` too. "2 Items Submitted": the version and Router features, reviewed together, up to 48 hours. Left: App Review's answer.
+  - **Also:** Apple's email confirming the Small Business Program enrolment (ID-437) has arrived, so the US$9.99 pays 15% commission, not 30%.
+  - **Confirmed, 2026-10-20:** Apple's email confirming the enrolment arrived.
+- ID-468 REL: **"Promote release" promotes on Google Play and the App Store together, and a tag doesn't fail on a build Apple already has.**
+  - **Why:** a tag already uploads to both stores, but only Play's half could be promoted. Andrew asked, 2026-10-21, for both stores to get each release from one dev-to-main merge and tag.
+  - **The App Store's side of Play's tracks:** internal is TestFlight's Internal group, which already gets every build on the tag (ID-465). alpha and beta are the external TestFlight group Family: the build is added to it and sent to Beta App Review. `** PRODUCTION **` is App Review: the App Store version for the build's version number is found, or made from the last one, with the build's TestFlight notes as its "What's New"; the build is attached and the version submitted. A version already with App Review is left alone; one approved for a manual release is released; one on sale is reported. So production is run once to submit and, with a manual release, once more after approval.
+  - **Built:** `scripts/app_store_connect.py promote`, whose next step for each state is a table of its own (`production_step`, `testflight_step`) with Python tests in `scripts/test_app_store_connect.py`, now run by the quality workflow. `promote.yml` gains an App Store job beside Play's, and a `stores` choice: both, Google Play only, or App Store only. Its dry run shows both stores' next steps and changes nothing. Play's job now checks the source track carries the build named, so one run can't promote two different builds.
+  - **The tag:** `scripts/app_store_connect.py has-build` asks Apple whether it has the build number, and release.yml's iOS job skips the TestFlight upload when it has, since Apple refuses one twice. Build 534 went up from a manual run, for the submission, before v0.8.164 was tagged. The notes and testers step still runs, so the build takes the release's notes. release.yml's header names both stores.
+  - **Done when:** v0.8.164's tag run passes with the iOS upload skipped and the release carrying the iOS SBOM (from ID-433), and a dry run of "Promote release" shows both stores' next steps.
+
+---
+
+### 1.3. Implemented - chronological change history
+
+This section contains, in chronological order, all **completed** work items that are ready for the **current** release, or have been **committed** to a release. Each block commences with a header that contains the date that work commenced, the version and build number, followed by a very brief summary in one sentence or less describing what that release contains. Following the header are **completed** work items.
+
+Every release committed to GitHub **must** contain the version formatted as "vN.N.NN" and build number formatted as "build NNN", a dash and the brief summary, then a new line and all completed work items in chronological implementation sequence.
+
+When a work item in "1.2. WIP" is completed, move it to the bottom of the current release block below, keeping its ID.
+
+Every commit is a build. Whoever commits follows these steps, in this order:
+
+1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
+2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
+
+---
+
+2026-10-21 v0.8.164 build 534 - ready for the first App Store submission: the demo video attached, the policy published, and a build attached on request
+
+```play
+• Fixed: a device moved in DEVICES now always gets the router's own routing rule, as it does when moved in the router's web interface. Pinned devices stayed in their tunnel throughout.
+• The unlock screen now says "No ads, no advertising id".
+• The privacy policy now covers the new iPhone and iPad version too.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-466 DOC: **the privacy policy covers the App Store as well as Google Play, before the first submission.** Found 2026-10-21: the policy the listing links to (`play-store/privacy.html`, published at exponentiallydigital.com/cfg-pia-wg/privacy.html) names only Google Play and the Google account for purchases, and says nothing on the device is backed up "to Google Drive (android:allowBackup="false")", which is Android's; an iPhone's own backup, to iCloud or a computer, may include what the app keeps, such as the router's address. Apple reads the policy in review. What it already says fits the App Privacy answers: RevenueCat's records are used "to see how many copies have sold", which is the Analytics purpose.
+  - **Proposed wording, for Andrew's approval:** the purchases heading "Purchases: Google Play or the App Store, and RevenueCat"; payment "handled entirely by Google Play on Android, or by Apple's App Store on iPhone and iPad"; the purchase "belongs to your Google account or your Apple Account"; and the backup sentence "On Android, nothing on this list is backed up to Google Drive (android:allowBackup="false"). On iPhone and iPad, it may be included in the device's own backup, to iCloud or a computer, as other apps' settings are. None of it is transmitted anywhere by the app."
+  - **Done when:** Andrew has approved the wording, the file says it, and the published page shows it.
+  - **Approved and written, build 533 (Andrew, 2026-10-21):** `play-store/privacy.html` carries the proposed wording word for word, and its effective date is 21 October 2026. Left: Andrew publishing it at exponentiallydigital.com/cfg-pia-wg/privacy.html.
+  - **Published, 2026-10-21 (Andrew):** read back from exponentiallydigital.com/cfg-pia-wg/privacy.html the same day: the App Store purchase wording, the Apple Account, the iPhone backup sentence, and the effective date of 21 October 2026 are all there. Done.
+- CHG: WIP 9 -> 8 bullets. Removed: ID-466, done, above.
+- ID-456 DOC: **a demo video for App Review**, showing the app working against a router, as the notes describe. After ID-422.
+  - **Done when:** it's recorded and the notes link it.
+  - **A shot list, Andrew's decision, 2026-10-20,** not a demo mode: a demo mode, a sample router in the app, would take several builds and keep costing on every new router command, ahead of a release Andrew wants first. `app-store/demo_video_shot_list.md` is every step, written for someone new to the iPhone: the screen-recording button, a practice run, six shots on the spare slot wgc4 (connect, CREATE, ENABLE, the watchdog, ROUTER LOG), putting wgc4 back with DELETE, and getting the video to the Mac. It goes to Apple only, attached in App Store Connect, since it shows the home network. Left: the recording, after ID-401's sandbox purchase, and attaching it (ID-455).
+  - **Recorded and attached, 2026-10-21 (Andrew):** recorded on an iPhone from the shot list, and attached in App Store Connect under App Review Information, Attachment, which the review notes refer to. App Store Connect refused it as `HQVB3593.MP4`: it checks extensions in lower case only, so it went in as `cfg-pia-wg-demo.mp4`. The page saved it as it uploaded. Done.
+- CHG: WIP 8 -> 7 bullets. Removed: ID-456, done, above.
+- DOC: updated README 5.8 About's license status "Play/App Store account", was "Google account".
+- NOTE: **build 534 is released from a second commit, with no new build number, so both stores carry 0.8.164.** Andrew's decision, 2026-10-21 (option A): App Review has 0.8.164 (534), built from the first commit, and a build 535 would have put Play one version ahead of it. The second commit changes no app code, only CI, scripts and documents, so Android's 534 is built from the same app as the iPhone's. "Every commit is a build" is set aside this once, on purpose. Its commit subject is the header above, as for the first.
+- CHG: **this block's Play note says what Android users get since v0.8.142 (build 512).** It said "No change to how the app works on Android", true of build 534 alone, but `tool/release_notes.dart` takes the tagged block's note as the whole release's, and v0.8.164 follows v0.8.142 by 22 builds, most of them iOS work released through manual runs, never tagged. It now carries the Android changes of builds 526, 532 and 533: APPLY getting the router's own rule (ID-459), "No ads", and the privacy policy.
+- FIX: **the iOS job's TestFlight notes cover every CHANGELOG block since the last release, as Play's do.** Seen in the first submission run (run 39522411279): `release_notes.dart` warned "no version tag below v0.8.164, so the notes carry its own CHANGELOG block only", because the iOS job checked out one commit and no tags. Its checkout now fetches the full history, `fetch-depth: 0`, like the Android job's. That run's notes, build 534's own, were enough for TestFlight.
+- DOC: ARCHITECTURE.md's new appendix, "Process - GitHub Actions workflows", lists what each workflow does and when, and how Play's tracks map to the App Store's steps.
+- ID-433 REL: **the release SBOM covers the iOS-only dependencies, such as the native SDKs plugins pull in on iOS.** After ID-418.
+  - **Done when:** a release's SBOM lists them.
+  - **Built in build 529:** the native packages exist only on the Mac, once Xcode has resolved them for the archive, so the Android job's SBOM, made from the repo on Linux, can't list them. The iOS job now runs Syft (`anchore/sbom-action`, as the Android job does) on `ios/` after the archive, where Swift Package Manager wrote its `Package.resolved` files, and fails if the result doesn't list RevenueCat's `purchases-ios`, so a missed scan can't pass as an SBOM. It keeps the SBOM as an artifact, and on a tag waits for the Android job's release and attaches it as `cfg-pia-wg-<tag>_ios-sbom.spdx.json`; the job's permission becomes `contents: write` for that. Left: a run that shows the native packages listed, then a release carrying it.
+  - **Run, 2026-10-20 (run 39409098628):** Syft found both `Package.resolved` files and listed `purchases-ios-spm` and `purchases-hybrid-common`. Left: the first tag's release carrying it.
+  - **Closed, 2026-10-21:** done as far as a run can show it: the SBOM lists the native packages. Its attachment to a release is first seen on v0.8.164's tag, which ID-468's done-when now checks.
+- ID-431 REL: **a release tag uploads the signed build to TestFlight.** After ID-418 and ID-430.
+  - **Done when:** a tag puts an installable build in TestFlight.
+  - **Also:** after two runs, Andrew checks Certificates, IDs & Profiles, Certificates, for a new certificate left by each run (ID-418); if they pile up, the job keeps one in a secret instead.
+  - **Built in build 528:** a step in the iOS release job exports the same archive again with `destination` set to `upload`, which sends it to App Store Connect, with the same API key. It runs on a tag, or on a manual run with the new `testflight` input ticked, which a dry run can use to test it without releasing Android. A test holds that condition and the upload export; with the condition removed it fails. Left: a run that puts an installable build in TestFlight.
+  - **Uploaded, 2026-10-20:** a dry run with `testflight` ticked (run 39404589231) uploaded build 528: "Upload succeeded", then "Uploaded package is processing". Every job passed, the key reached `Generated.xcconfig`, and nothing went to Play. Left: Andrew installing it from TestFlight on an iPhone, which also tests ID-401's purchase.
+  - **Closed, 2026-10-21:** an uploaded build installs from TestFlight: Andrew installed build 530 and made the test purchase on it (ID-401). A tag runs the same step, but v0.8.164's tag skips it, as Apple has build 534 already (ID-468). The first upload from a tag, and the certificate check above, are now ID-469.
 - ID-417 ADD: **the home screen's review link names the store of the platform the app is built for.** Andrew's requirement, 2026-10-16. Today it says Play Store everywhere, and on iOS it fails silently: `in_app_review`'s `openStoreListing()` needs an App Store id on iOS and throws without one, and `review_service.dart` catches everything, so a tap only logs "Could not open the Play Store listing" (`.claude/plans/plan_ios-port.md`).
   - **What:** on iOS the text names the App Store. Until Andrew sends the App Store link, a tap on iOS says plainly that the review link isn't available yet. The review line in the watchdog's alert email follows the platform of the phone that deployed the watchdog.
   - **Done when:** tests run as iOS and as Android show each platform's text and behaviour, and, once Andrew has sent the App Store link, a tap on an iPhone opens the listing.
@@ -98,18 +196,190 @@ Work items for the **current** release:
   - **Built in build 503:** `lib/review_service.dart` now picks the store: `reviewStoreName()` is the App Store on iOS and the Play Store elsewhere, and `openStoreReview()` opens `reviewListingUrl()`. `kAppStoreListingUrl` is empty until Andrew sends the link, and until then iOS opens nothing. Three places follow it. The home screen line reads "add an App Store app review" on iOS, and a tap says on screen and in the app log that cfg-pia-wg isn't on the App Store yet. SETTINGS' second uninstall ask names the App Store, and is left out on iOS until there's a listing to send anyone to. The watchdog email's review line is now `emailReviewLine()`, written into the script on the phone that deploys it: Play's link from Android, the App Store's from iOS, and from iOS without a listing, an ask with no link. CONTEXT 4.8.3 and TESTING HOM-4 say the same.
   - **Checked so far:** new tests run as iOS in `test/unit/review_service_test.dart` (the store's name; nothing launched with no listing), `test/screens/main_menu_screen_test.dart` (the label, the on-screen message, a log line that isn't an error, nothing launched), `test/screens/settings_screen_test.dart` (no review ask, no Google Play) and `test/router_watchdog_unit_test.dart` (the deployed script and the test email name the App Store and carry no Play link). Android's existing tests are unchanged and pass, with one added check that SETTINGS still names the Google Play store. Seen to fail with the platform check returning Android always, and again with iOS given Play's listing. On the way: a failing iOS test left the platform override set and failed every later test in its file, so the override is now reset by a teardown as well. Left: the App Store link from Andrew, then a tap on an iPhone.
   - **Seen on an iPhone, 2026-10-19:** Andrew's HOM-4 passed: the line names the App Store, and with no listing yet a tap says so. Left: the App Store link (BACKLOG ID-427), then a tap that opens it.
-- ID-405 CHG: update github actions to accomodate iOS (`release.yml`, SBOM, Gradle lockfiles, etc)
-  - **Split, Andrew's decision 2026-10-16:** this item is the CI half. A macOS job in `quality_and_security.yml` builds the app for the iOS simulator without signing (`flutter build ios --simulator --no-codesign`) and runs the tests on macOS, so an iOS break shows on the release PR; GitHub's macOS runners cost nothing for a public repository. Signing, the App Store upload, iOS releases and the SBOM are ID-418 in BACKLOG.
-  - **Done when:** the job has passed on a release PR.
-  - **Built in build 503:** an `ios-build` job in `.github/workflows/quality_and_security.yml`, after the OSV scan like the others, on `macos-latest`: Flutter from the pin, `flutter pub get --enforce-lockfile`, the launcher icons, then `flutter build ios --simulator --debug --no-codesign`, printing the Flutter, Xcode and macOS versions first. `release.yml` waits on the whole quality workflow, so a broken iOS build now stops a release. A test in `test/unit/ci_config_test.dart` holds the job in place (a shape test; the job's own run is the evidence). actionlint passes.
-  - **Changed from the plan, for Andrew to overrule:** the job doesn't run the tests on macOS. They run in the Dart VM whatever the host, and the iOS tests in this build run as iOS on Linux already (`debugDefaultTargetPlatformOverride`). On macOS, the script tests would meet BSD `sed` and `awk`, which neither the router's BusyBox nor CI's Linux has: failures that say nothing about iOS, blocking releases. ID-404's simulator test will run in this job when it comes.
-  - **Not yet run:** a workflow change is tested from `dev` (ID-416), so once build 503 is on `dev`: `gh workflow run quality_and_security.yml --ref dev`, which runs every job, this one included, before the release PR has to.
-  - **Seen on `dev`, 2026-10-19:** run 39173841764, started by hand on build 503, passed every job. The iOS one built `build/ios/iphonesimulator/Runner.app` with Flutter 3.47.7 from the pin, Xcode 26.6, on macOS 26.6.2. Left: the same on the release PR.
+  - **Built in build 527:** `kAppStoreListingUrl` is `https://apps.apple.com/app/id6824823717` (ID-427). On iOS the home screen line, SETTINGS' second uninstall ask and the watchdog email's review line now open or carry it. The four tests that pinned "no listing yet" now check the link is opened or carried, and Play never is; with the link emptied again all four fail. The full suite passes. Left: a tap on an iPhone that opens the listing, which can only show once the first submission is approved (ID-436).
+  - **Closed, 2026-10-21:** built and tested as iOS and as Android, and HOM-4 seen on an iPhone. The tap that opens the listing can only happen once the app is on sale, so it is now part of ID-436's done-when.
+- ID-455 REL: **the listing entered in App Store Connect.** After ID-427, ID-434 and ID-454.
+  - **Done when:** App Store Connect shows nothing missing for submission.
+  - **Taken on by Claude, 2026-10-20 (Andrew's go):** the new `scripts/app_store_connect.py listing` puts `app-store/` into App Store Connect through the API key (ID-463): name, subtitle, privacy policy URL, categories, every age rating question answered None or No (only those the API returns), copyright, description, keywords, promotional text, URLs, the review notes and contact, and the screenshots, replacing any already there. A new workflow, `app_store_listing.yml`, runs it by hand, like Play's, after `--check` reads and checks every file and sends nothing; a check-only run stops there. The review notes now say the video is attached, not linked. A test in `test/unit/ci_config_test.dart` holds the check first, the pinned packages and the key kept out of the log; with the publish step's condition removed it fails. `--check` passes on the files as they are. Left: the secret `APP_REVIEW_PHONE` (App Review's contact phone), the first run, and by hand App Privacy, which the API doesn't offer, and the video's attachment (ID-456). App Privacy changes with RevenueCat (ID-401): Purchases, Purchase History, for App Functionality, not linked to the user, not for tracking; `privacy_and_age_rating.md` waits for Andrew's approval of that change.
+  - **Built in build 530:** GitHub starts a workflow by hand only once its file is on the default branch, and `app_store_listing.yml` is new on `dev`, so it couldn't be run. It is now also a reusable workflow, and `release.yml` calls it when a manual run ticks the new `app_store_listing` option; a tag never does. Standalone runs work once it reaches `main`.
+  - **First run, 2026-10-20 (run 39409098628):** the name, subtitle, privacy policy URL, categories, all 22 age rating questions (None or No), copyright, description, keywords, promotional text and URLs went in. Then Apple refused to make the review details: `contactPhone` is required, as `+` and the country code. So the screenshots didn't run. Fixed in build 531: with no `APP_REVIEW_PHONE` the review details are skipped with a warning and the run carries on to the screenshots. Left: the `APP_REVIEW_PHONE` secret from Andrew, a run that sets the review details and uploads the screenshots, and by hand App Privacy and the video.
+  - **Second run, 2026-10-20 (run 39412295909): passed.** The text, categories and age rating again, then all 11 screenshots, 7 iPhone and 4 iPad, uploaded. The review details were skipped, with no phone yet. Left: `APP_REVIEW_PHONE`, then one more run (the release workflow's `app_store_listing` option) for the review notes and contact; App Privacy and the video by hand.
+  - **Third run, 2026-10-21 (run 39470183312):** with Andrew's `APP_REVIEW_PHONE`, the review notes and contact went in. Left: App Privacy by hand (steps given to Andrew: Purchases, Purchase History, for Analytics and App Functionality, not linked, not for tracking, then Publish), the video (ID-456), and the privacy policy's App Store wording (ID-466).
+  - **App Privacy published, 2026-10-21 (Andrew):** Purchase History, for Analytics and App Functionality, not linked to the user, not for tracking. Apple shows it under the label "An account's or individual's purchases or purchase tendencies".
+  - **The version number, build 533:** App Store Connect made the version 1.0. `listing` now sets it to pubspec.yaml's, as Play's is and as the build submitted with it carries. Left: the run that sets it, and the video (ID-456).
+  - **Set, 2026-10-21 (run 39476986901):** the version is 0.8.163. A version and the build submitted with it must carry the same number, and TestFlight holds 0.8.158 and 0.8.160, so the submission (ID-436) starts with one manual release run with both `testflight` and `app_store_listing` ticked, which makes the two match. Left: the video (ID-456).
+  - **Header, 2026-10-21:** Apple's product page has a new custom header (Header and Search Results; 5244 x 2950 or 3840 x 1646). Andrew's Play developer page header, the moon behind clouds, came from Play's image server at its largest, 4096 x 2304, and was scaled to 3840 wide and cropped to 1646 high with the moon in the middle, rather than enlarged to 5244 x 2950: `app-store/header/header-3840x1646.jpg`. No API for the header was found, so Andrew uploads it by hand. The developer icon has no App Store equivalent; the app's icon comes from the build. Left: Andrew's upload.
+  - **Uploaded, 2026-10-21 (Andrew):** App Store Connect took it as PNG, not JPEG, so the repo's copy is now `app-store/header/header-3840x1646.png`, the same image.
+  - **App Privacy published by Andrew, 2026-10-21,** as `privacy_and_age_rating.md` says. The version read 1.0, which App Store Connect gave the record; from build 533 the listing sets it to pubspec.yaml's version, as Play and the build carry, so it reads 0.8.163 after the next run. Left: that run, and the video (ID-456).
+  - **Closed, 2026-10-21:** App Store Connect accepted the submission (ID-436), which it doesn't with anything missing: the listing, screenshots, App Privacy, version number, header and video are all in.
+- ID-465 REL: **an internal TestFlight group that gets every build, with Andrew in it, made by the API.** Split from what was Andrew's TestFlight set-up, 2026-10-20, Andrew's go for Claude to take on what it can.
+  - **Done when:** a TestFlight build reaches Andrew's iPhone with nobody adding testers by hand.
+  - **Built in build 529:** `scripts/app_store_connect.py testers` finds or makes the internal group "Internal" with access to every build, and adds `andrew@exponentiallydigital.com` if he isn't in it; idempotent. It runs in `app_store_listing.yml` and after each TestFlight upload in `release.yml`. Left: its first run.
+  - **First run, 2026-10-20 (run 39409098628):** made the internal group "Internal" with every build, and added `andrew@exponentiallydigital.com`. Left: build 530 reaching Andrew's iPhone through TestFlight.
+  - **Closed, 2026-10-21:** Andrew installed build 530 from TestFlight through the Internal group, with no tester added by hand.
+- CHG: WIP 7 -> 2 bullets, Andrew's review, 2026-10-21. Removed: ID-433, ID-431, ID-417, ID-455 and ID-465, closed, above; ID-441 to BACKLOG 1.1.3, since unconfirmed bugs live there, not here. Added: ID-468, from this block, since its check comes with the tag. Removed the heading left empty, "Andrew, in the background: setting the app up on the App Store, in order."
+
+2026-10-21 v0.8.163 build 533 - the privacy policy covers the App Store, and the App Store version follows the app's
+
+```play
+• The privacy policy now covers the App Store as well as Google Play.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-454 DOC: **App Store screenshots.** After ID-422 and ID-429.
+  - **Done when:** the sizes Apple asks for are taken, from a signed build.
+  - **Also:** iPad's sizes too (ID-429), from the iPad simulator, with every screen looked at there first, since no iPad is to hand.
+  - **Taken on by Claude, 2026-10-20 (Andrew's go):** no simulator or app change was needed. The Play screenshots' sources already use invented names, addresses, MACs and credentials, and the app's screens are the same on iOS, so the new `scripts/app-store-screenshots.py` crops Android's status and gesture bars off them and lays them out with the Play captions: 7 for iPhone at 1290 x 2796 (`APP_IPHONE_67`) and 4 for iPad at 2048 x 2732 (`APP_IPAD_PRO_3GEN_129`), in `app-store/screenshots/`. Every source was looked at first: those naming another platform's phone ("Pixel-8", "android-dhcp-17") are left out, guideline 2.3.10, which drops the DNS screen and three tablet shots. Looked at once built: no Android bar left, captions clear. Left: the in-app purchase's review screenshot, of the paywall on an iPhone, which Andrew takes during ID-401's sandbox test (the side button and volume-up together), and the upload, by ID-455.
+  - **Uploaded, 2026-10-20 (run 39412295909):** all 11 are in App Store Connect, in the iPhone and iPad slots. Left: the in-app purchase's review screenshot. The sandbox purchase is made, so the paywall no longer shows; clearing the sandbox tester's purchase history in App Store Connect brings it back.
+  - **Paywall screenshot drawn, build 532:** Andrew's purchase was TestFlight's, on his own Apple Account, which App Store Connect can't clear, and he has no sandbox tester. So the new `test/release/paywall_screenshot_test.dart` draws the app's own paywall with its own theme at 1290 x 2796, priced US$9.99, into `app-store/screenshots/iap-review.png`; skipped unless asked for, since it needs Windows' fonts. Flutter's tests have no system font, so the unlock button's label, which on a phone is the system font, is drawn in Noto Sans. Looked at once drawn. `scripts/app_store_connect.py listing` now uploads it as the `lifetime_unlock` review screenshot, replacing any there, and `--check` refuses to run without it. Left: the run that uploads it.
+  - **Uploaded, 2026-10-21 (run 39474077858):** the listing's publish step passed, which it can't with a failed upload, so the review screenshot is in, with the "no ads" description and review notes. Every screenshot ID-454 needs is now in App Store Connect. Done.
+- CHG: WIP 10 -> 9 bullets. Removed: ID-454, done, above. Added before it, in build 532: ID-466.
+
+2026-10-20 v0.8.162 build 532 - the paywall's review screenshot drawn by the test suite, and "no ads" for "no analytics"
+
+```play
+• The unlock screen says "No ads, no advertising id" where it said "No analytics".
+• Behind the scenes: groundwork for the iOS version.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- CHG: **"Nothing is tracked. No ads, no advertising id." on the paywall, where it said "No analytics".** Andrew's decision, 2026-10-21. App Privacy on iOS now declares Analytics as a purpose of RevenueCat's purchase records, its sales dashboard, as RevenueCat's guidance says every app using it must, and "No analytics" beside that would read as a contradiction to App Review, though the app itself measures nothing. The same claim goes from the Play description ("No tracking, no advertising ID, no in-app adverts"), the App Store description and the review notes ("no tracking or advertising"). The privacy policy is ID-466. The paywall's tests pass unchanged.
+- ID-401 CHG: **RevenueCat on the App Store.** After ID-431 and ID-437.
+  - **Done when:** a TestFlight purchase unlocks the app, and RESTORE PURCHASE finds it again.
+  - **Also:** `app-store/review_notes.md` ends "no in-app purchase in this version", which stops being true here: it then says what the US$9.99 unlock (ID-461) gives, and how App Review can test it.
+  - **Uses:** ID-464's product and `REVENUECAT_IOS_KEY`.
+  - **Built in build 528:** `Entitlement.apiKey` is `REVENUECAT_IOS_KEY` on iOS and `REVENUECAT_ANDROID_KEY` elsewhere, through `keyFor`, so a test can tell the two apart; a build without its platform's key still sells nothing and unlocks everything. Every purchase message names the platform's store and account: on iOS "the App Store" and "Apple Account", never Google (guideline 2.3.10), in the store errors, the offline message, the restore answers and SETTINGS' RESTORE PURCHASE note; the offline check looks up `buy.itunes.apple.com` on iOS. The iOS release job passes the key with `--dart-define`, refuses to build without it, and checks it reached `Generated.xcconfig` without printing it. `app-store/review_notes.md` now describes the purchase. New tests run as iOS: the key choice, no message naming Google, Apple's wording; seen to fail with the key choice always Android's, and with the account always Google's. Android's wording is unchanged and its tests pass as before. Left: a TestFlight purchase that unlocks the app, and RESTORE PURCHASE finding it (ID-431).
+  - **Seen on an iPhone, 2026-10-21:** Andrew installed build 530 from TestFlight on the iPhone "D1", saw the paywall, bought the unlock with a sandbox account, and RESTORE PURCHASE found it. Done. App Privacy now declares RevenueCat's Purchase History (`app-store/privacy_and_age_rating.md`), entered by hand under ID-455. The paywall screenshot for the in-app purchase's review wasn't taken; it stays with ID-454.
+- ID-430 DEC: **Apple's export compliance answer, decided and set in `Info.plist`.** From BACKLOG 1.3, 2026-10-19. Claude sets out the facts first: SSH runs on dartssh2's own Dart cryptography, not Apple's, and HTTPS on the platform's.
+  - **Done when:** Andrew has decided, `ITSAppUsesNonExemptEncryption` is set to match, and an upload asks no encryption question.
+  - **Facts written in build 523:** `app-store/export_compliance.md`: SSH on dartssh2's own Dart cryptography, HTTPS on the TLS built into the Flutter engine (neither Apple's), WireGuard keys made on the phone, and RSA and Ed25519 used only to authenticate; all standard algorithms. Apple's page on export compliance could not be fetched, so the file says which answer fits is Andrew's to decide, not Claude's. Left: Andrew decides, then `Info.plist` is set.
+  - **Decided, 2026-10-20:** on sale in France (Andrew). `app-store/export_compliance.md` now quotes Apple's four pages, read 2026-10-20: standard algorithms not provided by Apple's operating system need the French encryption declaration when the app is sold in France, and the key is NO only for apps needing no document. So `ITSAppUsesNonExemptEncryption` is YES in `Info.plist`, held by a test in `test/unit/ios_info_plist_test.dart`, seen to fail set to NO. Left: Andrew prepares and uploads the French declaration in App Store Connect; once Apple approves it, its code goes in as `ITSEncryptionExportComplianceCode`, and an upload asks no question.
+  - **Revised, 2026-10-20 (Andrew):** France is left out of the first release, so the declaration can't delay shipping; selling there is ID-462. Outside France Apple's table asks for no document, so `ITSAppUsesNonExemptEncryption` is NO, and its test, seen to fail set to YES, says so. Left: France unticked in App Store Connect's availability before the first submission (ID-427), and whether the US year-end self-classification report applies, which doesn't hold up shipping.
+  - **Availability set, 2026-10-20:** Andrew confirmed the app is Free and not available in France. Left: whether the US year-end self-classification report applies.
+  - **The yearly report, read 2026-10-20:** US law firms' summaries of BIS's rule of 29 March 2021 (Thompson Hine, Jones Day, DLA Piper) say it ended the annual self-classification report for most mass market encryption items under License Exception ENC, 740.17(b)(1), keeping it only for some chips, chipsets, components and their software; the same rule eased rules for publicly available encryption source code. Read from summaries, not the regulation, and not legal advice; it points to no report for this app. Left: Andrew's decision on that, and the first TestFlight upload (ID-431) asking no encryption question.
+  - **Upload, 2026-10-20 (run 39409098628):** Apple recorded build 530 as `usesNonExemptEncryption = False`, from `Info.plist`, and asked no encryption question. Left: Andrew's decision on the yearly report.
+  - **Decided, 2026-10-21 (Andrew):** no yearly self-classification report, on the reading above. Done: Info.plist answers NO, France is left out (ID-462), and the first upload asked no encryption question.
+- CHG: WIP 11 -> 9 bullets. Removed: ID-401 and ID-430, done, above.
+
+2026-10-20 v0.8.161 build 531 - the App Store listing carries on to the screenshots without a review phone
+
+```play
+• Behind the scenes: groundwork for the iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-432 REL: **App Store release notes come from CHANGELOG, like the Play note.** After ID-431.
+  - **Done when:** a TestFlight build carries its CHANGELOG notes.
+  - **Built in build 529:** after each TestFlight upload, `release.yml` runs `tool/release_notes.dart` for the tag and `scripts/app_store_connect.py whats-new`, which waits for Apple to finish processing the build, up to 40 minutes, then sets its en-AU TestFlight notes to the Play note. It also prints the build's `usesNonExemptEncryption`, which ID-430 needs. The iOS job's timeout goes from 60 to 90 minutes for the wait. Left: a run that shows the notes on a TestFlight build.
+  - **Run, 2026-10-20 (run 39409098628): passed.** Build 530 uploaded, was "not there yet" for two minutes while Apple processed it, then took its TestFlight notes, the Play note, 186 characters. Done.
+- CHG: WIP 12 -> 11 bullets. Removed: ID-432, done, above.
+
+2026-10-20 v0.8.160 build 530 - the App Store listing can be run from a manual release run
+
+```play
+• Behind the scenes: groundwork for the iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-20 v0.8.159 build 529 - the App Store listing, screenshots, TestFlight notes and testers, and the iOS SBOM, all from the repo
+
+```play
+• Behind the scenes: groundwork for the iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- CHG: WIP 11 -> 12 bullets. Moved from Andrew's group to Claude's, by Andrew's go to take on what Claude can: ID-454 and ID-455; ID-432 moved within Claude's group; new: ID-465. Nothing removed.
+
+2026-10-20 v0.8.158 build 528 - the signed iOS build sells the unlock through the App Store and uploads to TestFlight
+
+```play
+• Behind the scenes: groundwork for the iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-418 REL: **CI builds a signed iOS release, with an App Store Connect API key kept in GitHub secrets.** After ID-405 and ID-427.
+  - **Done when:** a manual `release.yml` run produces a signed `.ipa`.
+  - **Uses:** ID-463's three secrets.
+  - **Built in build 527:** a new `ios-release` job in `release.yml`, on macOS, after the quality checks and alongside the Android release, never blocking it. It writes the key from the secrets to a file only the job can read, stopping with the missing secrets' names if any is empty; archives with `xcodebuild -allowProvisioningUpdates` authorised by the key, so Xcode makes the signing certificate and profile on the runner and none is kept anywhere; exports with the new `ios/ExportOptions.plist` (App Store Connect, automatic signing, team RL4UB6WKMV); checks the .ipa's bundle ID, team and Apple Distribution signature with `codesign`; keeps the .ipa as a 7-day artifact; and deletes the key file however the job ends. Nothing goes to Apple yet (ID-431). A test in `test/unit/ci_config_test.dart` holds the job's shape, the key kept out of the log, its removal, and the export's team matching the Xcode project; each seen to fail when broken. Left: a manual run (dry run, tag v0.8.157) that produces the signed .ipa, and a look at whether each run leaves another development certificate in the account.
+  - **Run, 2026-10-20: passed on its first run.** A manual dry run of `release.yml` with tag v0.8.157 (run 39395599063), on Xcode 26.6: archive and export succeeded, and `codesign` read `Identifier=com.exponentiallydigital.cfgpiawg`, `Authority=Apple Distribution: Andrew Newbury (RL4UB6WKMV)` and `TeamIdentifier=RL4UB6WKMV`. The .ipa, 29.7 MB, is the run's artifact until 2026-10-27. Every other job passed too, and nothing went to Play. Done. Whether each run leaves another certificate in the account is now checked under ID-431, which runs this job on every tag.
+- CHG: WIP 14 -> 13 bullets. Removed: ID-418, done, above.
+- ID-464 REL: **the US$9.99 unlock as an App Store in-app purchase, and RevenueCat's iOS app, for ID-401.** Split from ID-401 on 2026-10-20: both are set up in Apple's and RevenueCat's dashboards. After ID-427 and ID-437. In App Store Connect: a non-consumable in-app purchase at US$9.99 (ID-461), and the in-app purchase key RevenueCat asks for. In RevenueCat: an Apple App Store app for bundle ID `com.exponentiallydigital.cfgpiawg`, with the product attached to the entitlement `router_features` and to the current offering, as on Android.
+  - **Done when:** the product shows in RevenueCat, and its public Apple SDK key is the GitHub secret `REVENUECAT_IOS_KEY`.
+  - **Set up, 2026-10-20:** in App Store Connect, the non-consumable `lifetime_unlock`, the same ID as Play's, "Router features", US$9.99, every country but France, described as "Unlocks writing to your router, one-time purchase." (Apple's description limit is 55 characters); saved, not added for review, since it goes with the first submission (ID-436), and Missing Metadata until its review screenshot (ID-454). An In-App Purchase key named RevenueCat. In RevenueCat: the App Store app `cfg-pia-wg iOS` for `com.exponentiallydigital.cfgpiawg` with that key, shown valid; the product `lifetime_unlock`, Non-consumable, attached to `router_features` and to the `default` offering's `$rc_lifetime` package beside Play's. Its store status reads "Could not check", expected while Apple shows Missing Metadata and with no App Store Connect API key given to RevenueCat. The public `appl_` key is the GitHub secret `REVENUECAT_IOS_KEY`. Done. Worth knowing for the setup notes: RevenueCat's API keys are a menu item of their own now, and AdGuard had to be turned off for attaching the entitlement to work.
+- CHG: WIP 13 -> 12 bullets. Removed: ID-464, done, above.
+- ID-429 DEC: **decide whether to support iPad, which needs iPad screenshots and review.**
+  - **Done when:** decided, and the Xcode project matches.
+  - **Decided, 2026-10-20 (Andrew):** iPhone and iPad, with iPad tried on the simulator only, since there is no iPad to hand. The Xcode project already matched: `TARGETED_DEVICE_FAMILY = "1,2"` in all three configurations, and all four iPad orientations, which App Review's iPad multitasking check needs. A new test in `test/unit/ios_info_plist_test.dart` holds both, seen to fail with iPhone only. iPad screenshots, and a look at each screen's layout on an iPad simulator, are now part of ID-454. Done.
+- CHG: WIP 12 -> 11 bullets. Removed: ID-429, done, above.
+
+2026-10-20 v0.8.157 build 527 - the App Store record, team signing, and a signed iOS build in CI
+
+```play
+• Behind the scenes: groundwork for the iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- CHG: WIP 20 -> 19 bullets. Removed: ID-458, the NETWORK menu, to BACKLOG 1.1.2, on hold by Andrew's decision so the iOS release comes first. The WIP group heading drops "and the NETWORK menu".
+- REL: **CI, 2026-10-20:** build 526 passed every job (run 39372434630), the iOS simulator build, MobSF, CodeQL and OSV among them.
+- ID-422 REL: **sign builds with the new team on all three iPhones.** From BACKLOG 1.3, 2026-10-20, after ID-426.
+  - **Done when:** a team-signed build runs on each iPhone.
+  - **Built in build 526:** `DEVELOPMENT_TEAM = RL4UB6WKMV` in all six of the Xcode project's target configurations, Runner and RunnerTests, Debug, Profile and Release, with automatic signing as before. RL4UB6WKMV is the Team ID from Andrew's membership page; 5N82LGHKZ2, briefly taken for it, is the enrolment ID. A test in `test/unit/ios_info_plist_test.dart` holds it, seen to fail with one value changed. Left: Andrew runs the app from Xcode on each iPhone.
+  - **Seen on all three iPhones, 2026-10-20:** the team-signed release build (`flutter run --release`) installs and runs on each. Not on the iPhone 18 Pro simulator, which is expected: Flutter builds only debug mode for the simulator, and the simulator needs no signing. Andrew's Mac now matches dev with `git reset --hard origin/dev` in place of `git pull`, since it never pushes and Xcode and `tool/launcher_icons.dart` rewrite files there.
+- CHG: WIP 19 -> 18 bullets. Removed: ID-422, done, above.
+- ID-427 REL: **create the App Store Connect app record, bundle ID `com.exponentiallydigital.cfgpiawg`.** After ID-426.
+  - **Done when:** it exists, and its App Store link is sent to Claude for ID-417.
+  - **Also:** untick France in the app's availability before the first submission (ID-430, ID-462).
+  - **Bundle ID registered, 2026-10-20:** the New App form offered only `com.exponentiallydigital.cfgPiaWg`, the ID before build 505, and `com.exponentiallydigital.cfgpiawg.dev`, both registered from the Mac. Registering `com.exponentiallydigital.cfgpiawg` was refused as "not available": Apple's uniqueness check ignores case, though ID-420 chose lower case thinking it didn't. Andrew removed the unused `cfgPiaWg` App ID, and the lower-case one then registered. The project already uses it, so nothing changed in the code. Left: the record, Free with France unticked, and its Apple ID sent to Claude for ID-417.
+  - **Record created, 2026-10-20:** Andrew created it, Apple ID 6824823717, so the App Store link is `https://apps.apple.com/app/id6824823717`. Done. The price at Free and France unticked are checked under ID-430 before the first submission.
+- CHG: WIP 18 -> 17 bullets. Removed: ID-427, done, above.
+- ID-463 REL: **an App Store Connect API key, saved as three GitHub secrets, for CI's signed build (ID-418).** Split from ID-418 on 2026-10-20: the key is Andrew's to make. In App Store Connect: Users and Access, Integrations, App Store Connect API, Team Keys, then a new key with the Admin role, which automatic signing needs to create certificates (ID-418 checks whether a narrower role will do). Its `.p8` file can be downloaded only once.
+  - **Done when:** the GitHub secrets `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and `APP_STORE_CONNECT_API_KEY` (the `.p8` file's text) are set.
+  - **Set, 2026-10-20:** Andrew made the key, `cfg-pia-wg CI` with the Admin role, key ID 6668J8F52L, saved the three secrets on the GitHub website, and kept the `.p8` file in his password manager. Not read back from here: the `gh` token on the PC can't list secrets (HTTP 403), so ID-418's first run is what proves them.
+- CHG: WIP 17 -> 16 bullets. Removed: ID-463, done, above.
+- ID-428 REL: **declare the EU trader status, or leave the EU storefronts out.** After ID-427.
+  - **Done when:** App Store Connect shows it declared.
+  - **Declared, 2026-10-20:** Andrew certified as a trader under the EU Digital Services Act and gave the address, phone and email Apple shows on the app's page in EU storefronts. Selling a paid app as a business makes him one; the other answer would have meant leaving every EU country out, not only France.
+- CHG: WIP 16 -> 15 bullets. Removed: ID-428, done, above.
+- ID-437 REL: **sign the Paid Apps Agreement and set up banking and tax.** After ID-426.
+  - **Done when:** the agreement is active.
+  - **Also:** enrol in the App Store Small Business Program, so Apple takes 15% of the US$9.99 (ID-461), not 30%.
+  - **Done by Andrew, 2026-10-20:** the Paid Apps Agreement accepted, with the bank account, tax forms and contacts completed, and the Small Business Program enrolment submitted. Left: Paid Apps showing Active in App Store Connect's Business section, and Apple's email confirming the enrolment.
+  - **Active, 2026-10-20:** App Store Connect shows the Paid Apps Agreement, the bank account and every tax form Active. Done. Apple's email confirming the Small Business Program is now checked under ID-436, before the first submission.
+- CHG: WIP 15 -> 14 bullets. Removed: ID-437, done, above.
+
+2026-10-20 v0.8.156 build 526 - every device APPLY moves gets the router's own routing rule, and the iOS app is set up for the App Store
+
+```play
+• Fixed: a device moved in DEVICES now always gets the router's own routing rule, as it does when moved in the router's web interface. Pinned devices stayed in their tunnel throughout.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-459 FIX: **APPLY and DELETE set `vpnc_dev_policy_list_tmp` to the outgoing list before writing the new one, as the web interface does, so the firmware adds a rule for each device that changed.** Found by ID-457's live runner, 2026-10-20: DEV-4 pinned TABLET to wgc1 and the firmware never added its rule at 100. Measured with a one-second watcher on the router: each `restart_vpnc_dev_policy` re-added the rule for the last three records only, and nothing for TABLET, and the sweep then removed the three copies. The firmware applies only what differs from `_tmp`, and the app never wrote `_tmp` (ARCHITECTURE 6.8.4 says it should). Here `_tmp` held 11 records, an old web-interface state: the last three records were missing from it, so they counted as new on every restart, and it already held TABLET as `1>…>>9>`, so pinning TABLET there counted as no change. ID-183's "re-adds a rule for every record" was most likely this same diff against an older `_tmp`.
+  - **Exposure:** none found. A device pinned to a tunnel is routed by the guard at 90 and 91 whether or not the firmware's rule is there, and DEV-4's exit check passed through wgc1. A device pinned to Internet has no guard, so with no rule at 100 it follows the default connection, which is a tunnel or the WAN: a wrong route, not a leak.
+  - **Done when:** both writers set `_tmp` from the router's own current value first, a test fails without it, and the live runner's DEV-4 finds the rule at 100.
+  - **Built in build 526:** `kSavePolicyListTmpCommand` in `lib/device_assignment.dart`, run before the list is written by APPLY (`device_assignment_service.dart`) and by DELETE (`router_slot_service.dart`). It copies the value on the router, so `_tmp` is the outgoing list byte for byte. One test per writer, each seen to fail with its line taken out. Seven existing tests found the list write by the prefix `nvram set vpnc_dev_policy_list`, which the new command also has, and now match on `=`. ARCHITECTURE 6.8.4 records the measurement. The full suite passes, 1,969 tests. Left: the live runner on Andrew's router.
+  - **Live run, 2026-10-20:** passed. DEV-4 found TABLET's rule at 100 (`PASS rule $T $I1`), and DEV-5 to DEV-8 passed with their rules too. No APPLY in the run cleared a stale rule, where every APPLY before the fix had cleared the same three.
+- ID-457 TST: **the DEVICES and default connection tests that need no device in hand run unattended against a live router.** Andrew's requirement, 2026-10-19: automate the hand tests wherever possible. Today each [script] test needs him to tap APPLY or DISABLE between two `e2e.sh` pastes.
+  - **What:** a runner on the PC makes the router calls APPLY and MANAGE make, through the app's own `DeviceAssignmentService` and `RouterSlotService`, runs `e2e.sh` before and after each, and stops at the first FAIL. It checks TESTING.md's start state first and stops if it doesn't hold, changes nothing without `CFG_LIVE_GO=1`, and puts TABLET, DESKTOP, the default connection and both slots back however it ends.
+  - **Covers:** DEV-4, DEV-5, DEV-6a, DEV-6b, DEV-7, DEV-8, DEV-11 (and DEV-11b, its ENABLE step), DEF-1, DEF-3, DEF-4's router side, DEF-6, DEF-7 and DEF-8, then DEV-18 to DEV-20's router checks. Not covered, and still by hand: the confirmation wording, exit IPs on the devices, DEV-1, DEV-2, DEV-10, the web interface and ASUS app showing a name, and anything on a screen.
+  - **Done when:** the plan's logic has unit tests seen to fail, and one live run against Andrew's router has passed every step and left the router in its start state, read back.
+  - **Built in build 524:** `live/live_plan.dart` holds the plan, the `e2e.sh` commands, the PASS check, the start-state check and the restore; `live/devices_live_test.dart` runs it, outside `test/` so CI never does. `test/unit/live_plan_test.dart`, 16 tests, holds each step's expectations to TESTING.md's word for word, refuses anything shell-like reaching the router, and checks every DISABLE has its ENABLE. Seen to fail three ways: one expectation changed, any line with PASS taken as a pass, and the default-connection check removed. Without its variables the live test skips. TESTING.md's DEVICES and DEF groups point to it. Left: Andrew's first live run.
+  - **Built in build 525:** DEV-18 to DEV-20's router checks added, after DEF-8. The run renames TABLET, clears the name and gives its own back, disables and enables it, and disables it while pinned to wgc1. It then reads `custom_clientlist`, the `MULTIFILTER_` keys, `iptables` and the policy record against the sheet's pass lines, and checks the router log shows no service call for a rename. The start-state check adds Time Scheduling off and empty, and the restore enables TABLET and gives its name back. 23 tests; the new checks were seen to fail four ways: a missing DROP chain passed, a leftover name record passed, the restore not enabling TABLET, and the Time Scheduling check removed.
+  - **CI, 2026-10-20:** passed on build 524 (run 39256136786), which also covers build 523. Passed on build 525 too (run 39258057021).
+  - **First live run, 2026-10-20:** DEV-4 failed before testing anything. The runner called `e2e.sh` with a bare `sh`, which over SSH on this router is a memory tool ("Address /jffs/cfg-pia-wg/e2e.sh is invalid"), so neither the before snapshot nor the after check ran. The before's output wasn't checked, so the run only stopped at the after. The restore put the router back, and its read-back found the start state. Fixed in build 526: the runner calls `/bin/sh`, and a step stops when its before takes no snapshot. A test that accepted any "snapshot taken" line was seen to fail.
+  - **Second live run, 2026-10-20:** DEV-4's after check found the guard (90 and 91) and the exit through wgc1, but not the firmware's rule at 100. The runner checks the moment APPLY returns, and the firmware most likely adds that rule a few seconds later, since the hand sheet's DEV-4 expects it and a person pasting the check never sees the gap. The restore's read-back found the start state. Fixed in build 526: the after check is retried every 3 seconds for up to 30, and the log says which try passed, so the firmware's delay is measured. A retry that stopped only on its last try was seen to fail its test.
+  - **Third live run, 2026-10-20:** with ID-459's fix, DEV-4 to DEV-8 passed, so the second run's failure wasn't timing: the firmware had never added the rule (ID-459). DEV-11 then stopped. The runner never set the app's firmware setting, which reads Merlin until it is set, so pausing wgc5's watchdog took Merlin's path: it removed wgc5's two cron jobs, then failed editing `/jffs/scripts/services-start`, which stock doesn't have. The runner recorded the pause only after it succeeded, so the restore didn't resume it, and the read-back doesn't look at watchdogs, so it still said the start state held. DEV-4 to DEV-8 were unaffected: the assignment code has no firmware branch. Fixed in build 526: the runner sets the firmware before anything else, records a pause before making it, resumes any paused watchdog in the restore, and compares the scheduled watchdogs at the end with those at the start. A test that dropped the "not now" line was seen to fail.
+  - **Fourth live run, 2026-10-20:** DEV-4 to DEV-18b passed, DEV-11's DISABLE and ENABLE among them, with the watchdogs paused and resumed on stock's path. DEV-19 then failed on the runner's own check, not on the router: it wanted a DROP for TABLET in FORWARD, but stock's FORWARD rule jumps to PControls and only PControls and WGNPControls drop (ARCHITECTURE, measured 2026-09-28). Its test had used lines made up for it rather than the measured ones. Fixed in build 526: the check wants ARCHITECTURE's three rules, and its test reads them from ARCHITECTURE; with the old FORWARD-drops rule put back, two tests failed. The router log also showed 4 `asd` crashes in the 3 minutes, each in the same second as a guard run that changed a rule (ID-460, unconfirmed): the runner now waits 20 seconds before each step, about a person's pace.
+  - **Fifth live run, 2026-10-20: passed.** All 20 steps passed on the first after check, from DEV-4 to DEV-20b, and the read-back found the start state. 9 minutes, with 20 seconds before each step. The router log held no `asd` crash, against 4 in the 3 minutes of the fourth run, and one crash of another firmware process, `aaews`, in the same second as ENABLE's `restart_vpnc` (ID-460). Done: the plan's logic has unit tests seen to fail, and a live run passed every step and left the router in its start state, read back.
 - ID-402 CHG: The router half ports for free: `dartssh2` is pure Dart, and the watchdog script runs on the router, which does not care what phone deployed it.
   - **Proving it:** Andrew has a MacBook Pro set up, two iPhone 11s and an iPhone SE on iOS 27, and on 2026-10-16 had already run a build on an iPhone 11.
   - **Seen by Andrew, by 2026-10-19:** on an iPhone 11 the app opened and showed the same active slots as the Android app, so it reached the router; he also looked at ABOUT (ID-395). Nothing else has been tried on an iPhone yet.
+  - **2026-10-19:** ID-405's iOS build has passed on the release PR, the first half of done. Left: the iPhone hand tests given to Andrew: CON-1 to CON-3, STD-1, STD-4, STD-8, MAN-1, MAN-3, MAN-6, MAN-8, WD-3, WD-9, WD-16, WD-18, then MAN-13 and MAN-14, on the spare slot wgc4.
+  - **Seen on an iPhone, 2026-10-19:** CON-1, CON-2 and CON-3 passed, local network permission included. STD-1 partly: the config generated, but no password manager offered to save the PIA login, with KeePassium; that is BACKLOG ID-441. Not yet run: STD-4 onwards.
   - **Done when:** ID-405's iOS build passes in CI, and GENERATE, MANAGE and the watchdog have worked from an iPhone against the router, by TESTING's hand tests for those screens.
   - **Built in build 503:** `ios/Runner/Info.plist` now carries `NSLocalNetworkUsageDescription`. The app reaches the router over the home network, which since iOS 14 asks the user for local network access, and without the key iOS words the prompt itself. A test in `test/unit/ios_info_plist_test.dart` holds it, seen to fail with the key removed. Found on the way, read from the code and not seen on a phone: SETTINGS offers HOME SCREEN WIDGET KEY on iOS, for a widget only Android has; ID-424 in BACKLOG section 2 is now the iOS widget itself (split again 2026-10-19: ID-424 measures iOS's background refresh, ID-438 and ID-439 are the widget).
+  - **Seen on an iPhone, 2026-10-20:** STD-4, STD-8, MAN-1, MAN-3, MAN-6, MAN-8, WD-3, WD-9, WD-16 and WD-18 passed, then MAN-13 and MAN-14 on wgc4. Done: ID-405's iOS build passes in CI, and GENERATE, MANAGE and the watchdog have worked from an iPhone against the router. STD-1's password manager is ID-441, tracked on its own.
+- ID-426 REL: **Andrew is enrolled in the Apple Developer Program as an individual.** Decided 2026-10-19; active 2026-10-20, A$149 a year. The Team ID is RL4UB6WKMV (ID-422).
 - ID-041 CHG: **fix the [Sonar Cloud scan](https://sonarcloud.io/project/issues?id=ExponentiallyDigital_cfg-pia-wg&s=IMPACT_RANK&issueStatuses=OPEN%2CCONFIRMED)'s findings, now 88, in six batches from safest to riskiest.** Triaged 2026-09-15 at 35 and put on hold with the rest of this section; analysed again 2026-10-09. The plan below, with Andrew's decisions at the end.
   - **Where it stands, 2026-10-09:** 88 open, 50 of them newer than the triage, mostly the rewrite's new code. All code smells; none a bug or a vulnerability. CI's SonarCloud check passes, since the quality gate judges new code only. Cognitive complexity (S3776, limit 15): 38 functions, 571 points over. Nested ternaries (S3358): 29. Duplicated literals (S1192): 14. Too many parameters (S107): 2. Missing `const` (S7112, S3962): 5. Re-read the list with `https://sonarcloud.io/api/issues/search?componentKeys=ExponentiallyDigital_cfg-pia-wg&resolved=false&ps=500` before starting; it moves with every build.
   - **The worst functions:**
@@ -136,22 +406,163 @@ Work items for the **current** release:
   - **SonarCloud after build 510, 2026-10-19:** CI passed (run 39191914461). Open findings went from 81 to 47, and `_slotDnsLines` no longer scores over 15. One nested ternary was left, introduced by step 3 itself in `widget_bridge.dart`'s overflow line; build 511 takes it out.
   - **After build 511, 2026-10-19:** CI passed (run 39192631913), and SonarCloud shows 46 open findings, from 95 before step 1: no nested ternaries, `const` or DNS-path findings left. What remains: 37 cognitive complexity (steps 4 to 6), 7 duplicated literals, all router commands Andrew decided to mark won't fix, and 2 parameter counts (step 4). Steps 1 to 3 are done; step 4, DEVICES' APPLY, is next, in its own release.
   - **Won't fix, 2026-10-19:** Andrew marked the seven router-command findings won't fix in SonarCloud, as decided. SonarCloud now shows 39 open.
----
+  - **Step 4, built in build 513:** DEVICES' APPLY split with nothing reordered. `DeviceAssignmentService.apply` takes the state it read and one `ApplyRequest` in place of 13 parameters, and runs one function per stage: the stale-write check, reservations, names, disabling, the moves, the default connection, the guard, the read-back. The screen's `_apply` is now an outline over `_reservationsToCreate`, `_confirmApply`, `_applyRequest`, `_showProgress`, `_runApply` and `_refreshAfterApply`, and `_tunnelWarnings` over `_tunnelsToCheck` and `_warningsFrom`. Before the change: three tests for the paths none reached (a failed tunnel check, a failed write, a failed re-read), run on the old code. After it: a test pinning the stages' order in an APPLY that does everything, added because moving the device moves before the disabling broke no test; it now fails for that and for renames after disabling. THE DEFAULT CONNECTION SEQUENCE IS EXACT caught the guard moved before the default. The full suite passes. Left: CI, SonarCloud's scores, and Andrew's DEVICES hand tests in this step's own release.
+  - **After build 513, 2026-10-19:** CI passed (run 39219301952) and SonarCloud shows 36 open, from 39: `_apply`, `_tunnelWarnings` and `apply`'s 13 parameters are gone. `_confirmApply`, split out of `_apply`, still scored 46, so build 514 splits it again into `_changeLines`, `_disabling`, `_scheduleWarning` and `_foreignNames`. The full suite passes, the confirmation's tests among them. Left: CI on build 514, then Andrew's DEVICES hand tests (DEV-2, DEV-4 to DEV-8, DEV-11, DEV-18 to DEV-20; DEF-1, DEF-3, DEF-8) before this step's own release.
+  - **After build 514, 2026-10-19:** CI passed (run 39221326472) and SonarCloud shows 35 open; nothing in APPLY is flagged now. DEVICES' other findings are outside APPLY, for step 5: `_connect` 25, `_buildList` 22, `_pickerTile` 18, `build` 17 (`device_assignment_screen.dart`), and `_setDefaultConnection` 23 (`device_assignment_service.dart`).
+  - **Step 5, `slot_modal.dart`, built in build 516:** its six flagged functions split, with nothing reworked. `_confirm`'s body went to `_confirmBody` and `_confirmWarning`. `_create`'s overwrite question and login went to `_confirmOverwrite` and `_generateWithLogin`. `_enableManage`'s target read and failure report went to `_readPingTargets` and `_reportEnableFailure`. `_editManage`'s read and save went to `_readSlotParams` and `_saveSlotParams`. `_slotList`'s row and badges went to `_slotRow` and `_slotBadges`. `_buttons` became `_manageButtons` and `_watchdogButtons` over `_gated` and `_btn`. The full suite passes.
+  - **Step 5, `settings_screen.dart`, built in build 517:** five of its actions repeated the same tail - mark the screen busy, run on the router, report a failure in plain English with the raw error in the log (ID-108) - and now share it as `_onRouter`, which keeps each one's own wording ("Could not reboot the router: ..."). Three confirmations share `_ask`, keeping their `settings_<key>_cancel` and `_confirm` keys. MAX ACTIVE VPNS and SECURE STARTUP share `_notStock` for the Merlin and unsupported-firmware messages, and SECURE STARTUP's outcome went to `_secureStartupOutcome`. REMOVE CACHED PIA SERVERS keeps its own router step, since its failure message adds the phone's result; its phone step and report went to `_deletePhoneServerList` and `_reportServerListsDeleted`. UNINSTALL's itemised result went to `_showUninstalled`. `build`'s ten `_busy ? null : action` became `_unlessBusy(action)`. `_session` replaces six copies of the line that opens the shared session. The full suite passes, SETTINGS' 79 tests among them.
+  - **Step 5, `watchdog_dialog.dart`, built in build 518:** `_field`'s 8 parameters became 7 by moving the eye on a password field into `_passwordField`, which hands `_field` its icon. `build`'s status card and email section went to `_statusCard` and `_emailFields`. `_save` is an outline over `_routerReady`, `_formIsValid`, `_piaAllowsDeploy`, `_deploy` and `_reportDeploy`, each step in its old order with its own messages. The full suite passes, the watchdog form's 44 tests among them.
+  - **Step 5, DEVICES' other functions, built in build 519:** `_connect`'s firmware check, service and tolerant slot read went to `_firmwareRefusal`, `_assignmentService` and `_slotsIfReadable`. `_pickerTile`'s status line went to `_pickerNote`. `_buildList`'s default-connection panel, device row and DISCARD/APPLY row went to `_defaultPanel`, `_deviceRow` and `_applyRow`. `_DeviceRow.build`'s name editor went to `_nameEditor`. In the service, `_setDefaultConnection`'s last two blocks, restarting the outgoing default and the read-back, went word for word to `_restartOutgoingDefault` and `_reportDefaultSet`, in the same order; THE DEFAULT CONNECTION SEQUENCE IS EXACT and the full suite pass.
+  - **Step 5, the rest, built in build 520:** MANAGE's `_onConnect` went to `_connectAndRead` and `_gateFailed`. ROUTER LOG's `_refresh` and `_loadOlder` went to `_readNewest`, `_startFrom` and `_insertOlder`. The resolver check's row went to `_checkRow`, and the licences page's list to `_licenceList`. `slotParamErrors` became the EDIT form's two halves, `_slotPeerErrors` then `_slotTunnelErrors`, in the same order. `buildWidgetStatus`'s pin lookup went to `_pinnedBySlot`. The full suite passes. That leaves only the watchdog's and the slot service's eight findings, which wait for the firmware abstraction (ID-419).
+  - **After build 520, 2026-10-19:** CI passed on builds 516 and 520 (runs 39238570856, 39240734113). SonarCloud shows 17 open, from 35 before step 5: the 8 left for ID-419, 8 functions just over the limit at 16 to 19, and one nested ternary that moved with the watchdog's status card. **Build 521** clears those nine:
+    - `_slotBadges` lost a guard that was always true when it had badges to return.
+    - The status card's line is a `switch`.
+    - `_enableManage`'s write-and-enable went to `_enable`.
+    - MAX ACTIVE VPNS' and SECURE STARTUP's reads went to `_readMaxVpns` and `_readPingBlock`.
+    - REMOVE CACHED PIA SERVERS' phone sentence went to `_phoneCopyResult`.
+    - ROUTER LOG's scrolling and page read went to `_jumpToNewest`, `_keepDistanceFromBottom` and `_readPage`.
+    - DEVICES' connect attempt became the method `_attemptConnect`.
+    - The full suite passes.
+  - **After build 521, 2026-10-19:** CI passed (run 39242922177), and SonarCloud shows 8 open, from 95 before step 1: exactly the watchdog's and the slot service's, left for the firmware abstraction (ID-419). Steps 1 to 5 are done. Left before this item closes: Andrew's DEVICES hand tests (DEV-2, DEV-4 to DEV-8, DEV-11, DEV-18 to DEV-20; DEF-1, DEF-3, DEF-8) on build 521 or later, then a release of its own.
+  - **Hand tests, 2026-10-20:** DEV-1, DEV-2, DEV-10 and DEV-18 passed by hand on Android. DEV-4 to DEV-8, DEV-11, DEV-19, DEV-20, DEF-1, DEF-3 and DEF-8, and DEV-18's router side, passed in ID-457's unattended run, which makes the same router calls through the app's own code. Left: one APPLY made on the phone, for its confirmation, which the runner never sees; then a release of its own.
+  - **Confirmation, 2026-10-20:** passed. Andrew pinned a device in DEVICES and tapped APPLY on Android, and the confirmation named the device and the tunnel. Every hand test for step 4 has passed. Left: a release of its own.
+- ID-434 DOC: **drafts of the App Store listing text, the privacy answers and the age rating answers, in `app-store/`.** From BACKLOG 1.3, 2026-10-19. Needs no Apple account.
+  - **Done when:** the drafts are in `app-store/`, within Apple's limits, and Andrew has read them.
+  - **Drafted in build 523:** `app-store/description.md` (3,335 of 4,000 characters, from Play's, with screenshot blocking, Recent Apps and keyboard learning taken out, since none holds on iOS, and a line saying the app offers no VPN itself), `app-store/listing.md` (name, subtitle, promotional text, keywords, categories, URLs) and `app-store/privacy_and_age_rating.md` ("Data Not Collected", with why for each kind of data, to revisit at ID-401; every age question None, so 4+). `test/unit/app_store_listing_test.dart` holds each field to Apple's limit and fails if another platform is named; seen to fail with the subtitle one character over. `app-store/README.md` lists Andrew's decisions: the price on iOS until ID-401, the name, and ID-430. Left: Andrew reads them.
+  - **Read and approved by Andrew, 2026-10-20:** `description.md`, `listing.md`, `privacy_and_age_rating.md` and `README.md`. The price on iOS, the first of README's decisions, is now ID-461.
+- ID-460 BUG?: **unconfirmed: each APPLY that moves a device may crash the firmware's `asd` a few per cent of the time, because it runs the fail-closed guard twice a few seconds apart.** Seen 2026-10-20 in ID-457's live run: 4 `asd` kernel traces in about 40 guard runs over 3 minutes, each in the same second as a guard run that changed a rule, and each followed by a `restart_firewall`. APPLY runs `guard.ensure` early (ID-292) and again at the end, and ID-361 measured runs 1 to 5 seconds apart crashing `asd` at 3 to 13% a run. The runner made an APPLY every 6 seconds or so, which adds more pairs than a person would. ID-360 measured the guard holding through the crashes, so this is a firewall restart, not an exposure.
+  - **Since:** the next run, with 20 seconds before each step, had no `asd` crash in 9 minutes, which fits the spacing mattering. It had one crash of a different firmware process, `aaews`, in the same second as ENABLE's `restart_vpnc`, the call the web interface makes too. Once, so not yet a pattern.
+  - **To confirm:** count `asd` traces in the router log over 30 APPLYs made a minute apart, against 30 minutes with none.
+  - **Done when:** measured, and either closed or moved to CHANGELOG with a fix, such as the second run going through the guard's `soon`.
+  - **Closed 2026-10-20, Andrew's decision, neither confirmed nor fixed. Kept here for visibility.**
+- ID-386 BUG?: **unconfirmed: the small home screen widget may cut its summary line short at its default 2×1 size.** Seen 2026-10-13 on the emulator only (Pixel 7 Pro, Android 17, Nova Launcher): "2 tunnels u…" for "2 tunnels up · 6 pinned", fitting once widened a cell. Launchers size cells differently.
+  - **Done when:** Andrew has added the small widget at its default size on his phone, and either it fits, or a fix - a wider default or a shorter line - is tested on that phone.
+  - **Closed 2026-10-20, Andrew's decision, neither confirmed nor fixed. Kept here for visibility.**
+- CHG: WIP 5 -> 9 bullets, 1.1 1 -> 24. Added to WIP: ID-427, ID-428, ID-429 and ID-437 from BACKLOG 1.3, and ID-461, new. Added to 1.1, in sequence: the rest of BACKLOG 1.2 and 1.3, around ID-458. Removed from WIP: ID-434, done, below. ID-460 and ID-386 closed from BACKLOG 1.1.3, below. Nothing deleted.
+- ID-461 DEC: **the price of the unlock on the App Store.** Andrew's thinking, 2026-10-20: Play's US$6.99 plus a third, for Apple's A$149 a year. It applies once RevenueCat reaches the App Store (ID-401); until then an iOS build sells nothing.
+  - **Done when:** decided, and `app-store/README.md` says so.
+  - **Decided, 2026-10-20:** US$9.99 (Andrew), after comparing similar iOS apps: one-time network utilities at US$2.99 to US$3.99, VPN and SSH tools at US$20 to US$120 a year or US$25 to US$100 once. `app-store/README.md` says so. Apple's 15% commission, rather than 30%, needs the App Store Small Business Program (ID-437).
+- ID-435 DOC: **a draft of the App Review notes, in `app-store/`.** From BACKLOG 1.3, 2026-10-19. The reviewer has no ASUS router or PIA account (guideline 2.1); the notes say the app configures a router and offers no VPN itself (5.4), and why PIA is named (5.2).
+  - **Done when:** the draft is in `app-store/` and Andrew has read it.
+  - **Drafted in build 523:** `app-store/review_notes.md`: what the app is and isn't (a router configuration tool; no VPN on the phone, no Network Extension), why PIA is named, how to review without a router (a demo video, ID-456, and what works without one, GENERATE included), the one permission, and no account, tracking or purchase. Left: Andrew reads it, and the video's link goes in.
+  - **Read by Andrew, 2026-10-20,** with one addition, his decision: a line saying the source code is public on GitHub, for a reviewer who wants to confirm the notes. The video's link waits for ID-456, and the purchase line for ID-401.
+- CHG: WIP 9 -> 7 bullets. Removed: ID-461 and ID-435, done, above. Nothing deleted.
+- UI: **the iOS app is cfg-pia-wg, the same name as Android, on the App Store and under its icon.** Andrew's decision, 2026-10-20, replacing "cfg pia wg" from 2026-10-19. `CFBundleDisplayName` in `ios/Runner/Info.plist`, and the name in `app-store/listing.md`, `description.md` and `review_notes.md`. A new test in `test/unit/app_store_listing_test.dart` holds the store name and the icon name to `cfg-pia-wg`, seen to fail with the old name. If App Store Connect refuses the hyphens at ID-427, the store name falls back to `cfg pia wg`.
+- CHG: WIP 7 -> 20 bullets, in two groups, 1.1 24 -> 7. Andrew's priorities, 2026-10-20: the iOS release and the NETWORK menu first, with what Andrew can do in the background set apart. Added to WIP from 1.1: ID-458, ID-418, ID-433, ID-431, ID-432, ID-401, ID-436, ID-441, ID-454, ID-456 and ID-455; new: ID-463, split from ID-418, and ID-464, split from ID-401. Moved back to BACKLOG 1.2, the firmware abstraction: ID-448 to ID-452 and ID-419. Left in 1.1: ID-424, ID-453, ID-438, ID-439, ID-440, ID-421 and ID-375. Nothing deleted.
 
-### 1.3. Implemented - chronological change history
+2026-10-19 v0.8.155 build 525 - the unattended router checks cover renaming and disabling a device
 
-This section contains, in chronological order, all **completed** work items that are ready for the **current** release, or have been **committed** to a release. Each block commences with a header that contains the date that work commenced, the version and build number, followed by a very brief summary in one sentence or less describing what that release contains. Following the header are **completed** work items.
+```play
+• Behind the scenes: automated router tests. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
-Every release committed to GitHub **must** contain the version formatted as "vN.N.NN" and build number formatted as "build NNN", a dash and the brief summary, then a new line and all completed work items in chronological implementation sequence.
+2026-10-19 v0.8.154 build 524 - the DEVICES and default connection router checks run unattended from the PC
 
-When a work item in "1.2. WIP" is completed, move it to the bottom of the current release block below, keeping its ID.
+```play
+• Behind the scenes: automated router tests. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
-Every commit is a build. Whoever commits follows these steps, in this order:
+2026-10-19 v0.8.153 build 523 - App Store listing, review notes and export compliance facts drafted
 
-1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
-2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
+```play
+• Behind the scenes: groundwork for an iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
----
+2026-10-19 v0.8.152 build 522 - every open item INVEST-ready; the email layout in a file of its own
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- DOC: **BACKLOG reviewed so every open item is INVEST-ready**, Andrew's request 2026-10-19: one outcome each, its own done-when and its dependencies.
+  - **Split:** localisation into a decision (ID-024), the groundwork (ID-442), three languages (ID-443 to ID-445) and the Play listings (ID-446). The firmware abstraction's loose bullets into ID-447 to ID-453, its slices each released on its own after the release carrying ID-041 step 4. The App Store listing into drafts (ID-434), screenshots (ID-454) and entry (ID-455), and the review notes into a draft (ID-435) and a video (ID-456).
+  - **Reworded:** ID-135 into a decision; ID-127 into a contingency with its trigger; ID-305, ID-257, ID-386, ID-375 and ID-440 given done-when lines; ID-441 into an investigation with its first step; ID-433 placed after ID-418.
+  - **Dropped as not work items:** "Map codebase" (done 2026-09-01) and the unspecific "Optimise and simplify" bullets, which the SonarCloud work (ID-041) has now covered.
+  - ID-447, ID-434, ID-435 and ID-430 moved to WIP as the items needing neither Apple nor hardware.
+- ID-447 MOD: **the watchdog's email layout moves out of `router_watchdog.dart` into a file of its own, with no behaviour change.** From BACKLOG 1.2, 2026-10-19, Andrew's go to implement what needs no hardware.
+  - **Done when:** they live in their own file, nothing that uses them changes beyond an import, and the full suite passes unchanged.
+  - **Built:** `lib/watchdog_email_layout.dart` holds the 158 lines word for word; `router_watchdog.dart` imports and re-exports it, so the screens and tests that reach the layout through it changed nothing. The full suite passes with no test changed. CONTEXT's file map has the new file.
+
+2026-10-19 v0.8.151 build 521 - SonarCloud fixes, step 5: the near misses
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.150 build 520 - SonarCloud fixes, step 5: the remaining screens and checks split
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.149 build 519 - SonarCloud fixes, step 5: DEVICES' other functions split
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.148 build 518 - SonarCloud fixes, step 5: the watchdog form split
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.147 build 517 - SonarCloud fixes, step 5: SETTINGS split
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.146 build 516 - SonarCloud fixes, step 5: the slot modal split
+
+```play
+• Behind the scenes: code tidy-up. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.145 build 515 - safety commit: iPhone results so far recorded
+
+```play
+• Behind the scenes: a tidy-up of how DEVICES applies your changes. Nothing it does, or the order it does it in, has changed.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.144 build 514 - SonarCloud fixes, step 4: APPLY's confirmation split too
+
+```play
+• Behind the scenes: a tidy-up of how DEVICES applies your changes. Nothing it does, or the order it does it in, has changed.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+2026-10-19 v0.8.143 build 513 - SonarCloud fixes, step 4: DEVICES' APPLY split, its order pinned by a test
+
+```play
+• Behind the scenes: a tidy-up of how DEVICES applies your changes. Nothing it does, or the order it does it in, has changed.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-405 CHG: update github actions to accomodate iOS (`release.yml`, SBOM, Gradle lockfiles, etc)
+  - **Split, Andrew's decision 2026-10-16:** this item is the CI half. A macOS job in `quality_and_security.yml` builds the app for the iOS simulator without signing (`flutter build ios --simulator --no-codesign`) and runs the tests on macOS, so an iOS break shows on the release PR; GitHub's macOS runners cost nothing for a public repository. Signing, the App Store upload, iOS releases and the SBOM are ID-418 in BACKLOG.
+  - **Done when:** the job has passed on a release PR.
+  - **Built in build 503:** an `ios-build` job in `.github/workflows/quality_and_security.yml`, after the OSV scan like the others, on `macos-latest`: Flutter from the pin, `flutter pub get --enforce-lockfile`, the launcher icons, then `flutter build ios --simulator --debug --no-codesign`, printing the Flutter, Xcode and macOS versions first. `release.yml` waits on the whole quality workflow, so a broken iOS build now stops a release. A test in `test/unit/ci_config_test.dart` holds the job in place (a shape test; the job's own run is the evidence). actionlint passes.
+  - **Changed from the plan, for Andrew to overrule:** the job doesn't run the tests on macOS. They run in the Dart VM whatever the host, and the iOS tests in this build run as iOS on Linux already (`debugDefaultTargetPlatformOverride`). On macOS, the script tests would meet BSD `sed` and `awk`, which neither the router's BusyBox nor CI's Linux has: failures that say nothing about iOS, blocking releases. ID-404's simulator test will run in this job when it comes.
+  - **Not yet run:** a workflow change is tested from `dev` (ID-416), so once build 503 is on `dev`: `gh workflow run quality_and_security.yml --ref dev`, which runs every job, this one included, before the release PR has to.
+  - **Seen on `dev`, 2026-10-19:** run 39173841764, started by hand on build 503, passed every job. The iOS one built `build/ios/iphonesimulator/Runner.app` with Flutter 3.47.7 from the pin, Xcode 26.6, on macOS 26.6.2. Left: the same on the release PR.
+  - **Seen on the release PR, 2026-10-19:** PR #53 (`dev` to `main`, builds 503 to 512) passed every check, the iOS simulator build and its RunnerTests among them. Done.
+- ID-415 REL: "Warning: WARNING!! 'track' is deprecated and will be removed in a future release. Please migrate to 'tracks'".
+  - **Where:** the Google Play upload in `release.yml` (`r0adkll/upload-google-play`) still passes `track: internal`; the action now wants `tracks: internal`.
+  - **Done when:** a release's log no longer prints the warning. It can only be seen at a release, since the step uploads to Play.
+  - **Built in build 503:** the step now passes `tracks: internal`. The action's README says `tracks` defaults to `production`, so a misspelt input would publish to everyone; a test in `test/unit/ci_config_test.dart` holds the step to `tracks: internal` with no `track:` left, seen to fail with `track: internal` put back and again with `tracks: production`. A dry run of `release.yml` skips this step, so only a real release shows the warning gone.
+  - **Seen at release, 2026-10-19:** v0.8.142's release run (39215728685) passed `tracks: internal` to the upload, validated the track as `internal`, uploaded and committed the build, and its log has no "'track' is deprecated" line. Done.
 
 2026-10-19 v0.8.142 build 512 - iOS groundwork checked on an iPhone; BACKLOG's iOS items made atomic
 

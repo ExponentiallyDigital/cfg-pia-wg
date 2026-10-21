@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_service_queue.dart';
-import 'package:cfg_pia_wg/device_assignment.dart' show kDeviceSourcesCommand, kSourceSeparator;
+import 'package:cfg_pia_wg/device_assignment.dart' show kDeviceSourcesCommand, kSavePolicyListTmpCommand, kSourceSeparator;
 import 'package:cfg_pia_wg/fail_closed_guard.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';
 
@@ -1618,6 +1618,15 @@ void main() {
       await svc(c).deleteSlot(1);
       final moved = c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list='));
       expect(c.commands.lastIndexWhere((x) => x == "'$kGuardScriptPath'"), greaterThan(moved));
+    });
+
+    test('DELETE saves _tmp from the router before moving the devices (ID-459)', () async {
+      useStock();
+      final c = pinnedClient();
+      await svc(c).deleteSlot(1);
+      final saved = c.commands.indexOf(kSavePolicyListTmpCommand);
+      expect(saved, isNonNegative);
+      expect(saved, lessThan(c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list='))));
     });
   });
 

@@ -5,6 +5,7 @@
 // apply untouched, and an apply must refuse outright if the router changed under it.
 //
 // MACs are invented - see test/unit/no_lan_identifiers_test.dart.
+import 'package:cfg_pia_wg/device_assignment.dart' show kSavePolicyListTmpCommand;
 import 'package:cfg_pia_wg/device_assignment_service.dart';
 import 'package:cfg_pia_wg/fail_closed_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -119,7 +120,7 @@ void main() {
       final c = _client();
       final s = await _state(c);
       c.commands.clear();
-      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {});
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {}, reservationsToCreate: {}));
       expect(c.commands, isEmpty);
     });
 
@@ -128,7 +129,7 @@ void main() {
       final s = await _state(c);
       c.commands.clear();
       await expectLater(
-        _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {}),
+        _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {})),
         throwsA(isA<AssignmentConflictException>()),
       );
       expect(c.commands.any((cmd) => cmd.contains('nvram set')), isFalse, reason: 'nothing written');
@@ -143,7 +144,7 @@ void main() {
       });
       final s = await _state(c);
       await expectLater(
-        _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {}),
+        _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {})),
         throwsA(isA<AssignmentConflictException>()),
       );
     });
@@ -153,17 +154,29 @@ void main() {
       // reorder or drop it - that would silently destroy an assignment made in the web interface.
       final c = _client();
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
-      final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list'));
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
+      final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list='));
       expect(write, contains('1>192.168.1.50>>3>'));
       expect(write, contains('1>192.168.1.20>>5>'));
+    });
+
+    test('_tmp gets the outgoing list, from the router, before the list is written (ID-459)', () async {
+      // The firmware adds rules only for records that differ from _tmp. Left stale, a device pinned
+      // where _tmp already had it got no rule at 100 (measured 2026-10-20).
+      final c = _client();
+      final s = await _state(c);
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
+      final saved = c.commands.indexOf(kSavePolicyListTmpCommand);
+      expect(saved, isNonNegative);
+      expect(saved, lessThan(c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list='))));
+      expect(kSavePolicyListTmpCommand, r'nvram set vpnc_dev_policy_list_tmp="$(nvram get vpnc_dev_policy_list)"');
     });
 
     test('unassigning disables the record rather than deleting it', () async {
       final c = _client();
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {'192.168.1.20': null}, reservationsToCreate: {});
-      final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list'));
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': null}, reservationsToCreate: {}));
+      final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set vpnc_dev_policy_list='));
       expect(write, contains('0>192.168.1.20>>0>'));
     });
 
@@ -175,8 +188,10 @@ void main() {
       final s = await _state(c);
       await _svc(c).apply(
         base: s,
-        changes: {'192.168.1.50': 5},
-        reservationsToCreate: {'22:33:44:55:66:77': '192.168.1.50'},
+        request: ApplyRequest(
+          changes: {'192.168.1.50': 5},
+          reservationsToCreate: {'22:33:44:55:66:77': '192.168.1.50'},
+        ),
       );
       expect(c.ran('nvram set dhcp_staticlist'), isTrue);
       expect(c.commands.firstWhere((cmd) => cmd.startsWith('nvram set dhcp_staticlist')),
@@ -189,8 +204,10 @@ void main() {
       final s = await _state(c);
       await _svc(c).apply(
         base: s,
-        changes: {'192.168.1.20': 5},
-        reservationsToCreate: {'11:22:33:44:55:66': '192.168.1.20'},
+        request: ApplyRequest(
+          changes: {'192.168.1.20': 5},
+          reservationsToCreate: {'11:22:33:44:55:66': '192.168.1.20'},
+        ),
       );
       final write = c.commands.firstWhere((cmd) => cmd.startsWith('nvram set dhcp_staticlist'));
       expect(RegExp('11:22:33:44:55:66').allMatches(write).length, 1);
@@ -199,7 +216,7 @@ void main() {
     test('commits, then calls the light pair in order', () async {
       final c = _client();
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
       // Writing guard.sh sends its text, which has its own commit in it (ID-348); a script write is
       // not a call.
       final order = c.commands
@@ -239,7 +256,7 @@ void main() {
           '10000:\tfrom all iif br0 lookup 5',
         ]);
         final s = await _state(c);
-        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
 
         expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9 priority 100'));
         expect(c.commands.any((x) => x.contains('lookup 5')), isFalse, reason: 'the new rule stays');
@@ -249,7 +266,7 @@ void main() {
       test('the sweep runs after the service that installs the new rule', () async {
         final c = ruleClient(['100:\tfrom 192.168.1.20 lookup 9']);
         final s = await _state(c);
-        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
         expect(c.commands.indexOf('service restart_vpnc_dev_policy'),
             lessThan(c.commands.indexWhere((x) => x.startsWith('ip rule del'))));
       });
@@ -260,7 +277,7 @@ void main() {
           '10000:\tfrom all iif br0 lookup 9',
         ]);
         final s = await _state(c);
-        await _svc(c).apply(base: s, changes: {'192.168.1.20': null}, reservationsToCreate: {});
+        await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': null}, reservationsToCreate: {}));
 
         expect(c.commands, contains('ip rule del from 192.168.1.20 lookup 9 priority 100'));
         expect(c.commands.any((x) => x.contains('from all')), isFalse);
@@ -269,7 +286,7 @@ void main() {
       test('nothing is deleted when the rules are already right', () async {
         final c = ruleClient(['100:\tfrom 192.168.1.20 lookup 5']);
         final s = await _state(c);
-        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
         expect(c.commands.any((x) => x.startsWith('ip rule del')), isFalse);
       });
 
@@ -281,14 +298,14 @@ void main() {
           '100:\tfrom 192.168.1.20 lookup 5',
         ]);
         final s = await _state(c);
-        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
         expect(c.commands.any((x) => x.startsWith('ip rule del')), isFalse);
       });
 
       test('every delete names priority 100, so it can never reach the guard at 90', () async {
         final c = ruleClient(['100:\tfrom 192.168.1.20 lookup 9', '100:\tfrom 192.168.1.20 lookup 5']);
         final s = await _state(c);
-        await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+        await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
         final deletes = c.commands.where((x) => x.startsWith('ip rule del'));
         expect(deletes, isNotEmpty);
         expect(deletes.every((x) => x.endsWith(' priority 100')), isTrue);
@@ -297,7 +314,7 @@ void main() {
       test('a default-connection change on its own touches no per-device rule', () async {
         final c = ruleClient(['100:\tfrom 192.168.1.20 lookup 9']);
         final s = await _state(c);
-        await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
+        await _svc(c).apply(base: s, request: ApplyRequest(changes: {}, reservationsToCreate: {}, newDefaultIndex: 5));
         expect(c.commands.any((x) => x.startsWith('ip rule del')), isFalse);
       });
     });
@@ -316,9 +333,11 @@ void main() {
 
         await svc.apply(
           base: s,
-          changes: {'192.168.1.20': 5},
-          reservationsToCreate: {},
-          changeDescriptions: const ['Box: default - Internet -> wgc5:pia-aus_perth'],
+          request: ApplyRequest(
+            changes: {'192.168.1.20': 5},
+            reservationsToCreate: {},
+            changeDescriptions: const ['Box: default - Internet -> wgc5:pia-aus_perth'],
+          ),
         );
 
         expect(logged, contains('Applying 1 device change:'));
@@ -339,11 +358,13 @@ void main() {
 
         await svc.apply(
           base: s,
-          changes: const {},
-          reservationsToCreate: {},
-          newDefaultIndex: 5,
-          defaultFrom: 'Internet',
-          defaultTo: 'wgc5:pia-aus_perth',
+          request: ApplyRequest(
+            changes: const {},
+            reservationsToCreate: {},
+            newDefaultIndex: 5,
+            defaultFrom: 'Internet',
+            defaultTo: 'wgc5:pia-aus_perth',
+          ),
         );
 
         expect(logged.join('\n'), contains('from Internet to wgc5:pia-aus_perth'));
@@ -359,7 +380,7 @@ void main() {
       // for the profile vpnc_unit names, which is why the row is set first.
       final c = _client();
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {}, reservationsToCreate: {}, newDefaultIndex: 5));
 
       final steps = c.executed
           .where((cmd) =>
@@ -391,7 +412,7 @@ void main() {
       // Row 0, the outgoing default, is switched off in the router.
       final c = _client(clientlist: _clientlist.replaceFirst('>password>1>9>', '>password>0>9>'));
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 0);
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {}, reservationsToCreate: {}, newDefaultIndex: 0));
 
       // Exact match: 'restart_vpnc' is a substring of 'restart_vpnc_dev_policy'.
       expect(c.commands.contains('service restart_vpnc'), isFalse,
@@ -413,7 +434,7 @@ void main() {
     test('switching to Internet restarts the outgoing tunnel when it is switched on', () async {
       final c = _client();
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 0);
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {}, reservationsToCreate: {}, newDefaultIndex: 0));
       final stop = c.commands.indexOf('service stop_vpnc');
       final wan = c.commands.indexOf('service restart_default_wan');
       final start = c.commands.indexOf('service restart_vpnc');
@@ -427,7 +448,7 @@ void main() {
     test('every service call waits for the router to be free first (ID-214)', () async {
       final c = _client();
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {}, newDefaultIndex: 5);
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}, newDefaultIndex: 5));
       for (var i = 0; i < c.commands.length; i++) {
         if (!c.commands[i].startsWith('service ')) continue;
         // The queue check, then the count of calls the router has dropped so far (ID-334).
@@ -442,7 +463,7 @@ void main() {
       // The no-regression half: the sequence ID-172 changed must be untouched when there IS a target.
       final c = _client();
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {}, reservationsToCreate: {}, newDefaultIndex: 5));
       final unit = c.commands.indexOf('nvram set vpnc_unit=1'); // pia-aus_perth is row 1
       final stop = c.commands.indexOf('service stop_vpnc');
       final start = c.commands.indexOf('service restart_vpnc');
@@ -473,7 +494,7 @@ void main() {
         return '';
       });
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
 
       expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 3 priority 100'),
           reason: 'the duplicate belongs to a device the apply never mentioned');
@@ -496,7 +517,7 @@ void main() {
         return '';
       });
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {'192.168.1.20': 9}, reservationsToCreate: {});
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 9}, reservationsToCreate: {}));
       expect(c.commands, contains('ip rule del from 192.168.1.50 lookup 5 priority 100'));
     });
 
@@ -504,7 +525,7 @@ void main() {
       // The single fact that took the longest to find: writing it first always ended with 0.
       final c = _client();
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {}, reservationsToCreate: {}, newDefaultIndex: 5);
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {}, reservationsToCreate: {}, newDefaultIndex: 5));
       final wan = c.commands.indexWhere((cmd) => cmd == 'service restart_default_wan');
       final key = c.commands.indexWhere((cmd) => cmd.startsWith('nvram set vpnc_default_wan='));
       expect(wan, lessThan(key), reason: 'restart_default_wan resets the key, so it must run first');
@@ -514,7 +535,7 @@ void main() {
       // The whole point of keeping the two apart: assigning a device is instant and invisible.
       final c = _client();
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
       // Exact matches: 'restart_vpnc' is a substring of 'restart_vpnc_dev_policy', which a
       // device-only apply DOES call.
       expect(c.commands.contains('service stop_vpnc'), isFalse);
@@ -526,7 +547,7 @@ void main() {
     test('no default change means no default_wan write at all', () async {
       final c = _client();
       final s = await _state(c);
-      await _svc(c).apply(base: s, changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      await _svc(c).apply(base: s, request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
       // The batched read mentions the key, so this must look for the WRITE specifically.
       expect(c.ran('nvram set vpnc_default_wan'), isFalse);
       expect(c.ran('restart_default_wan'), isFalse);
@@ -575,8 +596,8 @@ void main() {
       final svc = DeviceAssignmentService(c,
           pollInterval: Duration.zero,
           onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m));
-      await svc.apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
-      final written = c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list'));
+      await svc.apply(base: await _state(c), request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
+      final written = c.commands.indexWhere((x) => x.startsWith('nvram set vpnc_dev_policy_list='));
       final first = c.commands.indexOf("'$kGuardScriptPath'");
       final last = c.commands.lastIndexOf("'$kGuardScriptPath'");
       expect(first, greaterThan(written));
@@ -588,7 +609,7 @@ void main() {
 
     test('an unchanged script is run, not rewritten', () async {
       final c = guardClient(installed: true);
-      await _svc(c).apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      await _svc(c).apply(base: await _state(c), request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
       expect(c.commands.any((x) => x.contains('guard.sh') && x.contains('WATCHDOG_EOF')), isFalse);
     });
 
@@ -598,7 +619,7 @@ void main() {
       final svc = DeviceAssignmentService(c,
           pollInterval: Duration.zero,
           onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m));
-      await svc.apply(base: await _state(c), changes: {'192.168.1.20': 5}, reservationsToCreate: {});
+      await svc.apply(base: await _state(c), request: ApplyRequest(changes: {'192.168.1.20': 5}, reservationsToCreate: {}));
       expect(logs.any((m) => m.startsWith('The fail-closed guard could not be put in place')), isTrue,
           reason: logs.join(' | '));
       // ID-332: this used to end "Device assignments applied." with the guard missing. The rules are
@@ -639,15 +660,55 @@ void main() {
       expect(s.rawCustomClientlist, custom);
     });
 
+    // ID-041 step 4 split apply into one function per stage. This pins the stages' order when one APPLY
+    // does everything: nothing written before the check, then reservations, names, disabling, the moves
+    // and the default connection, as before the split.
+    test('one APPLY that does everything runs its stages in their fixed order', () async {
+      final c = router();
+      final s = await _state(c);
+      c.commands.clear();
+      await _svc(c).apply(
+        base: s,
+        request: ApplyRequest(
+          changes: const {'192.168.1.50': 5},
+          reservationsToCreate: const {'44:55:66:77:88:99': '192.168.1.50'},
+          newDefaultIndex: 5,
+          renames: const {'11:22:33:44:55:66': 'Kids tablet'},
+          blocks: const {'11:22:33:44:55:66': true},
+          blockNames: const {'11:22:33:44:55:66': 'Box'},
+        ),
+      );
+      int first(String prefix) {
+        final i = c.commands.indexWhere((cmd) => cmd.startsWith(prefix));
+        expect(i, greaterThanOrEqualTo(0), reason: 'never ran: $prefix');
+        return i;
+      }
+
+      final order = [
+        first('nvram get vpnc_dev_policy_list'),
+        first('nvram set dhcp_staticlist'),
+        first('nvram set custom_clientlist'),
+        first('nvram set MULTIFILTER_ALL'),
+        first('service restart_firewall'),
+        first('nvram set vpnc_dev_policy_list='),
+        first('service restart_dnsmasq'),
+        first('service restart_vpnc_dev_policy'),
+        first('nvram set vpnc_default_wan'),
+      ];
+      expect(order, orderedEquals(List.of(order)..sort()), reason: 'stages out of order: $order');
+    });
+
     test('a rename writes custom_clientlist, commits, and calls no service', () async {
       final c = router();
       final s = await _state(c);
       await _svc(c).apply(
         base: s,
-        changes: const {},
-        reservationsToCreate: const {},
-        renames: const {'11:22:33:44:55:66': 'Kids tablet'},
-        renameDescriptions: const ['Box renamed to Kids tablet'],
+        request: ApplyRequest(
+          changes: const {},
+          reservationsToCreate: const {},
+          renames: const {'11:22:33:44:55:66': 'Kids tablet'},
+          renameDescriptions: const ['Box renamed to Kids tablet'],
+        ),
       );
       expect(c.ran("nvram set custom_clientlist='<Kids tablet>11:22:33:44:55:66>0>20>>>>'"), isTrue);
       expect(c.ran('nvram commit'), isTrue);
@@ -660,10 +721,12 @@ void main() {
       final s = await _state(c);
       await _svc(c).apply(
         base: s,
-        changes: const {},
-        reservationsToCreate: const {},
-        blocks: const {'11:22:33:44:55:66': true},
-        blockNames: const {'11:22:33:44:55:66': 'Box'},
+        request: ApplyRequest(
+          changes: const {},
+          reservationsToCreate: const {},
+          blocks: const {'11:22:33:44:55:66': true},
+          blockNames: const {'11:22:33:44:55:66': 'Box'},
+        ),
       );
       expect(c.ran("nvram set MULTIFILTER_ALL='1'"), isTrue);
       expect(c.ran("nvram set MULTIFILTER_MAC='11:22:33:44:55:66'"), isTrue);
@@ -680,7 +743,7 @@ void main() {
       final c = router(timeSchedulingOnReRead: parental(all: '1', macs: '22:33:44:55:66:77', names: 'X', modes: '1', days: 'y'));
       final s = await _state(c);
       await expectLater(
-        _svc(c).apply(base: s, changes: const {}, reservationsToCreate: const {}, blocks: const {'11:22:33:44:55:66': true}),
+        _svc(c).apply(base: s, request: ApplyRequest(changes: const {}, reservationsToCreate: const {}, blocks: const {'11:22:33:44:55:66': true})),
         throwsA(isA<AssignmentConflictException>()),
       );
       expect(c.commands.any((cmd) => cmd.startsWith('nvram set')), isFalse);
@@ -690,7 +753,7 @@ void main() {
       final c = router(customOnReRead: '<Renamed>11:22:33:44:55:66>0>20>>>>');
       final s = await _state(c);
       await expectLater(
-        _svc(c).apply(base: s, changes: const {}, reservationsToCreate: const {}, renames: const {'11:22:33:44:55:66': 'Y'}),
+        _svc(c).apply(base: s, request: ApplyRequest(changes: const {}, reservationsToCreate: const {}, renames: const {'11:22:33:44:55:66': 'Y'})),
         throwsA(isA<AssignmentConflictException>()),
       );
       expect(c.commands.any((cmd) => cmd.startsWith('nvram set')), isFalse);

@@ -228,30 +228,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     _FirmwareGate? gate;
     String? connectError, connectErrorDetail;
     try {
-      final client = await _connect();
-      // Force the connection HERE, so a bad address or a refused login is reported as what it is.
-      // RouterSession connects lazily, so `_connect()` does no I/O - the first command did, which
-      // meant a connection failure surfaced inside _checkFirmware and was relabelled "Unable to
-      // determine router firmware type". Only on the first connect of a session, since after that
-      // the firmware is cached and the probe is skipped - which is why the same mistake reported
-      // two different errors depending on what had happened earlier.
-      await client.authenticated;
-      // The login is proven here, whatever the firmware and helper checks below decide: remember the
-      // address and offer to save the credentials now. After the checks, a NOT NOW at the helper
-      // install prompt stored neither (ID-201). A wrong address still never gets this far.
-      await _c.rememberRouterIp(_ipCtrl.text.trim());
-      TextInput.finishAutofillContext();
-      final svc = _slotSvc(client);
-      // Detection has to precede fetchSlots: on stock the slot list comes from vpnc_clientlist.
-      gate = await _checkFirmware(svc);
-      if (gate.passed) {
-        if (justInstalled != null && justInstalled.isNotEmpty) {
-          _c.logEntry('${justInstalled.join(' and ')} installed; the router has everything this screen needs.',
-              isSuccess: true);
-        }
-        slots = await svc.fetchSlots();
-        _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
-      }
+      (gate, slots) = await _connectAndRead(justInstalled);
     } catch (e) {
       // Plain English on screen, the raw exception in the log (ID-108).
       connectErrorDetail = routerConnectMessage(e, _ipCtrl.text) == null ? null : e.toString();
@@ -271,37 +248,7 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
 
     // Spinner is off, so it is safe to await a modal (see .claude/CONTEXT.md, "Async + UI").
     if (connectError != null) return AppErrors.system(context, _c, connectError, logDetail: connectErrorDetail);
-    if (gate != null && !gate.passed) {
-      // Missing binaries are the one gate failure the app can do something about, so offer
-      // rather than just explaining. Everything else still just explains.
-      if (gate.missingBinaries.isNotEmpty) {
-        final missing = gate.missingBinaries;
-        final outcome = await _offerInstall(missing);
-        if (!mounted) return;
-        // Retry the gate, do not assume.
-        if (outcome == _InstallOutcome.installed) return _onConnect(justInstalled: missing);
-        // Declining is an informed choice - the dialog said what happens and where to read more -
-        // so following it with the same information again is nagging. The notice still appears on
-        // the NEXT visit, which is where it stops being a repeat and starts being a reminder.
-        // Declining ends at the main menu: left here, the screen showed the login form again,
-        // which read as being asked to log in a second time (ID-252).
-        if (outcome == _InstallOutcome.justDeclined) return _leaveForMenu();
-        // A failed install has already said so, in its own words and naming the cause. Following
-        // that with "Unable to locate" tells the user something they were just told, in red, in a
-        // way that reads as a second, separate fault (ID-097).
-        if (outcome == _InstallOutcome.failed) return;
-      }
-      if (!mounted) return;
-      // INSTALL on the notice leads straight into the install the user just declined, rather than
-      // dead-ending on a warning about something the app can fix from here.
-      if (await gate.present(context, _c) && mounted) {
-        _c.declinedBinaryInstalls.remove(gate.missingBinaries.join(','));
-        return _onConnect();
-      }
-      // Closing a reminder about missing helpers without installing is declining again (ID-252).
-      if (gate.missingBinaries.isNotEmpty && mounted) _leaveForMenu();
-      return;
-    }
+    if (gate != null && !gate.passed) return _gateFailed(gate);
     if (slots == null) return;
 
     // Shown IN PLACE, not pushed and not in a dialog. This screen is the connect form until it has
@@ -313,6 +260,66 @@ class _RouterSlotsScreenState extends State<RouterSlotsScreen> {
     // enterModal/exitModal are deliberately not called: modalDepth says something is stacked OVER
     // a screen, and this is the screen.
     setState(() => _slots = slots);
+  }
+
+  /// Connects, proves the login, checks the firmware and helpers, and reads the slots when the
+  /// check passed. Throws on a connection failure, which the caller reports.
+  Future<(_FirmwareGate, RouterSlots?)> _connectAndRead(List<String>? justInstalled) async {
+    final client = await _connect();
+    // Force the connection HERE, so a bad address or a refused login is reported as what it is.
+    // RouterSession connects lazily, so `_connect()` does no I/O - the first command did, which
+    // meant a connection failure surfaced inside _checkFirmware and was relabelled "Unable to
+    // determine router firmware type". Only on the first connect of a session, since after that
+    // the firmware is cached and the probe is skipped - which is why the same mistake reported
+    // two different errors depending on what had happened earlier.
+    await client.authenticated;
+    // The login is proven here, whatever the firmware and helper checks below decide: remember the
+    // address and offer to save the credentials now. After the checks, a NOT NOW at the helper
+    // install prompt stored neither (ID-201). A wrong address still never gets this far.
+    await _c.rememberRouterIp(_ipCtrl.text.trim());
+    TextInput.finishAutofillContext();
+    final svc = _slotSvc(client);
+    // Detection has to precede fetchSlots: on stock the slot list comes from vpnc_clientlist.
+    final gate = await _checkFirmware(svc);
+    if (!gate.passed) return (gate, null);
+    if (justInstalled != null && justInstalled.isNotEmpty) {
+      _c.logEntry('${justInstalled.join(' and ')} installed; the router has everything this screen needs.', isSuccess: true);
+    }
+    final slots = await svc.fetchSlots();
+    _c.routerConnected = true; // remember the successful connect for auto-reconnect on re-entry
+    return (gate, slots);
+  }
+
+  /// The firmware or helper check failed: offer what the app can fix, explain the rest.
+  Future<void> _gateFailed(_FirmwareGate gate) async {
+    // Missing binaries are the one gate failure the app can do something about, so offer
+    // rather than just explaining. Everything else still just explains.
+    if (gate.missingBinaries.isNotEmpty) {
+      final missing = gate.missingBinaries;
+      final outcome = await _offerInstall(missing);
+      if (!mounted) return;
+      // Retry the gate, do not assume.
+      if (outcome == _InstallOutcome.installed) return _onConnect(justInstalled: missing);
+      // Declining is an informed choice - the dialog said what happens and where to read more -
+      // so following it with the same information again is nagging. The notice still appears on
+      // the NEXT visit, which is where it stops being a repeat and starts being a reminder.
+      // Declining ends at the main menu: left here, the screen showed the login form again,
+      // which read as being asked to log in a second time (ID-252).
+      if (outcome == _InstallOutcome.justDeclined) return _leaveForMenu();
+      // A failed install has already said so, in its own words and naming the cause. Following
+      // that with "Unable to locate" tells the user something they were just told, in red, in a
+      // way that reads as a second, separate fault (ID-097).
+      if (outcome == _InstallOutcome.failed) return;
+    }
+    if (!mounted) return;
+    // INSTALL on the notice leads straight into the install the user just declined, rather than
+    // dead-ending on a warning about something the app can fix from here.
+    if (await gate.present(context, _c) && mounted) {
+      _c.declinedBinaryInstalls.remove(gate.missingBinaries.join(','));
+      return _onConnect();
+    }
+    // Closing a reminder about missing helpers without installing is declining again (ID-252).
+    if (gate.missingBinaries.isNotEmpty && mounted) _leaveForMenu();
   }
 
   /// Back to the main menu, after the user has declined what this screen needs to go on.

@@ -326,9 +326,8 @@ void main() {
       expect(ssh.commands, isEmpty, reason: 'cancelling the second ask touches nothing');
     });
 
-    // ID-417: on iOS the ask names the App Store, and with no App Store listing yet it isn't made, since
-    // the link would have nowhere to go.
-    testWidgets('on iOS, with no App Store listing yet, the second ask makes no review request', (tester) async {
+    // ID-417: on iOS the ask names the App Store, now there is a listing (ID-427), and never Google Play.
+    testWidgets('on iOS, the second ask names the App Store, not Google Play', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       // Reset by a teardown too, so a failure here can't leave every later test running as iOS.
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -356,8 +355,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Are you sure?'), findsOneWidget);
-      expect(find.textContaining('review'), findsNothing);
-      expect(find.textContaining('Google Play'), findsNothing);
+      expect(find.textContaining('on the App Store with why', findRichText: true), findsOneWidget);
+      expect(find.textContaining('Google Play', findRichText: true), findsNothing);
 
       await tester.ensureVisible(find.byKey(const Key('settings_uninstall_really_cancel')));
       await tester.tap(find.byKey(const Key('settings_uninstall_really_cancel')));

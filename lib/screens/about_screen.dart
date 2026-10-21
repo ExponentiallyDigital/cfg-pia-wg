@@ -753,34 +753,33 @@ class _LicensesDialogState extends State<_LicensesDialog> {
             );
           }
 
-          final grouped = groupLicensesByPackage(snapshot.data!);
           // Its own selection region: the About screen's does not extend into this dialog.
-          return SelectionArea(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              children: [
-                for (final (package, notices) in grouped) ...[
-                  Text(
-                    package,
-                    style: const TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                  for (var n = 0; n < notices.length; n++) ...[
-                    if (n > 0) const SizedBox(height: 12),
-                    // Paragraph by paragraph, honouring indent and the centred-header marker, the
-                    // way the framework's own licence page does. Text is never altered: hard line
-                    // breaks inside a paragraph are already lost upstream, where
-                    // LicenseEntryWithLineBreaks joins a paragraph's lines with spaces.
-                    for (final paragraph in notices[n]) _LicenceParagraph(paragraph),
-                  ],
-                  const Divider(color: kBorder, height: 24),
-                ],
-              ],
-            ),
-          );
+          return SelectionArea(child: _licenceList(groupLicensesByPackage(snapshot.data!)));
         },
       ),
     );
   }
+
+  static Widget _licenceList(List<(String, List<List<LicenseParagraph>>)> grouped) => ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        children: [
+          for (final (package, notices) in grouped) ...[
+            Text(
+              package,
+              style: const TextStyle(color: kText, fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            for (var n = 0; n < notices.length; n++) ...[
+              if (n > 0) const SizedBox(height: 12),
+              // Paragraph by paragraph, honouring indent and the centred-header marker, the
+              // way the framework's own licence page does. Text is never altered: hard line
+              // breaks inside a paragraph are already lost upstream, where
+              // LicenseEntryWithLineBreaks joins a paragraph's lines with spaces.
+              for (final paragraph in notices[n]) _LicenceParagraph(paragraph),
+            ],
+            const Divider(color: kBorder, height: 24),
+          ],
+        ],
+      );
 }
 
 /// One licence paragraph, indented or centred per [LicenseParagraph.indent].

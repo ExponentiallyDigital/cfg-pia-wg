@@ -355,9 +355,8 @@ void main() {
       await _teardown(tester, c);
     });
 
-    // ID-417: on iOS the line names the App Store, and until there is a listing a tap says so on screen
-    // rather than sending an iPhone to Play's web page.
-    testWidgets('on iOS it names the App Store, and a tap says there is no listing yet', (tester) async {
+    // ID-417: on iOS the line names the App Store, and a tap opens its listing (ID-427), never Play's web page.
+    testWidgets('on iOS it names the App Store, and a tap opens the App Store listing', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       // Reset by a teardown too, so a failure here can't leave every later test running as iOS.
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -373,11 +372,8 @@ void main() {
       await tester.tap(find.byKey(const Key('menu_review')));
       await tester.pump();
 
-      expect(launchedUrls(calls), isEmpty, reason: 'not Play, and there is no App Store listing yet');
-      expect(find.descendant(of: find.byType(SnackBar), matching: find.textContaining("isn't on the App Store yet")), findsOneWidget);
-      final logged = c.log.where((e) => e.message.contains("isn't on the App Store yet"));
-      expect(logged, hasLength(1));
-      expect(logged.single.isError, isFalse, reason: 'nothing went wrong; there is just no listing');
+      expect(launchedUrls(calls), [kAppStoreListingUrl]);
+      expect(find.byType(SnackBar), findsNothing);
 
       await _teardown(tester, c);
       debugDefaultTargetPlatformOverride = null;

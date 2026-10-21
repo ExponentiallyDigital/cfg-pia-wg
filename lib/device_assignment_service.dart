@@ -127,6 +127,49 @@ bool blackholeHeld(String rules, String ip) => rules
 /// The web interface rewrites the WHOLE of a list from the copy its page loaded, so an apply that
 /// blindly wrote our version could silently undo a change made elsewhere in the meantime. README
 /// section 6 records the same hazard in the other direction.
+/// Everything one APPLY asks of the router (ID-041 step 4: it was 13 parameters of
+/// [DeviceAssignmentService.apply]). The descriptions and names are the screen's: the service knows
+/// addresses and profile indexes, and only the screen knows what the user calls them.
+class ApplyRequest {
+  const ApplyRequest({
+    required this.changes,
+    required this.reservationsToCreate,
+    this.newDefaultIndex,
+    this.changeDescriptions = const [],
+    this.defaultFrom = '',
+    this.defaultTo = '',
+    this.renames = const {},
+    this.deviceTypes = const {},
+    this.renameDescriptions = const [],
+    this.blocks = const {},
+    this.blockNames = const {},
+    this.blockDescriptions = const [],
+  });
+
+  /// Device IP to the profile index 6 it should route through, or null for the default connection.
+  final Map<String, int?> changes;
+
+  /// MAC to IP, for devices that need a DHCP reservation before they can be pinned.
+  final Map<String, String> reservationsToCreate;
+
+  /// Rewrites `vpnc_default_wan` when given.
+  final int? newDefaultIndex;
+  final List<String> changeDescriptions;
+  final String defaultFrom, defaultTo;
+
+  /// MAC to the new name, empty to clear it.
+  final Map<String, String> renames;
+  final Map<String, String> deviceTypes;
+  final List<String> renameDescriptions;
+
+  /// MAC to true to disable the device, false to enable it again.
+  final Map<String, bool> blocks;
+  final Map<String, String> blockNames;
+  final List<String> blockDescriptions;
+
+  bool get isEmpty => changes.isEmpty && newDefaultIndex == null && renames.isEmpty && blocks.isEmpty;
+}
+
 class AssignmentConflictException implements Exception {
   const AssignmentConflictException(this.what);
   final String what;
@@ -368,23 +411,30 @@ class DeviceAssignmentService {
       await _service('restart_vpnc');
       await _awaitInterface('wgc$slot', up: true);
     }
-    // The tunnel that WAS the default has to be running again at the end, if it is still switched
-    // on. Switching to Internet stopped it above and nothing started it: its watchdog found it down
-    // two minutes later and rebuilt it, and without one it stayed down with its pinned devices
-    // offline (ID-220). Switching to another tunnel, `restart_default_wan` stops the default's own
-    // tunnel, so there it is checked rather than assumed - that case has not been measured.
-    // A switched-off one stays off (ID-172).
-    if (outgoing >= 0 && outgoing != row && base.profiles[outgoing].active && base.profiles[outgoing].slot != null) {
-      final restarting = base.profiles[outgoing].slot!;
-      if (row < 0 || !(await _read(kUpInterfacesCommand)).contains('wgc$restarting')) {
-        await _run('nvram set vpnc_unit=$outgoing');
-        await _service('restart_vpnc');
-        await _awaitInterface('wgc$restarting', up: true);
-      }
+    await _restartOutgoingDefault(base, outgoing: outgoing, row: row);
+    await _reportDefaultSet(index, change);
+  }
+
+  /// The tunnel that WAS the default has to be running again at the end, if it is still switched on.
+  /// Switching to Internet stopped it and nothing started it: its watchdog found it down two minutes
+  /// later and rebuilt it, and without one it stayed down with its pinned devices offline (ID-220).
+  /// Switching to another tunnel, `restart_default_wan` stops the default's own tunnel, so there it is
+  /// checked rather than assumed - that case has not been measured. A switched-off one stays off
+  /// (ID-172).
+  Future<void> _restartOutgoingDefault(AssignmentState base, {required int outgoing, required int row}) async {
+    if (outgoing < 0 || outgoing == row || !base.profiles[outgoing].active || base.profiles[outgoing].slot == null) return;
+    final restarting = base.profiles[outgoing].slot!;
+    if (row < 0 || !(await _read(kUpInterfacesCommand)).contains('wgc$restarting')) {
+      await _run('nvram set vpnc_unit=$outgoing');
+      await _service('restart_vpnc');
+      await _awaitInterface('wgc$restarting', up: true);
     }
-    // Read back before saying so (ID-333). The waits above log and carry on, and a service call can
-    // be dropped, so "set" is claimed only when vpnc_default_wan names it and the priority-10000 rule
-    // sends the LAN to it - or, for Internet, when no such rule is left.
+  }
+
+  /// Read back before saying so (ID-333). The waits log and carry on, and a service call can be
+  /// dropped, so "set" is claimed only when vpnc_default_wan names it and the priority-10000 rule sends
+  /// the LAN to it - or, for Internet, when no such rule is left.
+  Future<void> _reportDefaultSet(int index, String change) async {
     final key = int.tryParse((await _read('nvram get vpnc_default_wan')).trim()) ?? 0;
     final rules = await _read(kIpRuleCommand);
     final lanRule = RegExp(r'^10000:.*iif br0 lookup (\S+)', multiLine: true).firstMatch(rules)?.group(1);
@@ -479,10 +529,8 @@ class DeviceAssignmentService {
     }
   }
 
-  /// Applies staged changes in one pass.
-  ///
-  /// [changes] maps a device IP to the profile index 6 it should route through, or null to send it
-  /// back to the default connection. [newDefaultIndex] rewrites `vpnc_default_wan` when given.
+  /// Applies staged changes in one pass, in a fixed order: the stale-write check, reservations,
+  /// names, disabling, then device moves and the default connection, the guard, and the read-back.
   ///
   /// Reservations: a device with no DHCP reservation gets one written here, because the policy
   /// record is keyed by IP and an unpinned address will eventually move. Measured 2026-09-08 -
@@ -491,26 +539,29 @@ class DeviceAssignmentService {
   /// does for the same job. Reservations are never removed again on unassign: removing one is as
   /// disruptive as adding one, and the device keeps the address anyway, so the breakage would
   /// arrive silently at some later renewal.
-  Future<void> apply({
-    required AssignmentState base,
-    required Map<String, int?> changes,
-    required Map<String, String> reservationsToCreate,
-    int? newDefaultIndex,
-    List<String> changeDescriptions = const [],
-    String defaultFrom = '',
-    String defaultTo = '',
-    Map<String, String> renames = const {},
-    Map<String, String> deviceTypes = const {},
-    List<String> renameDescriptions = const [],
-    Map<String, bool> blocks = const {},
-    Map<String, String> blockNames = const {},
-    List<String> blockDescriptions = const [],
-  }) async {
-    if (changes.isEmpty && newDefaultIndex == null && renames.isEmpty && blocks.isEmpty) return;
+  Future<void> apply({required AssignmentState base, required ApplyRequest request}) async {
+    if (request.isEmpty) return;
     final guard = FailClosedGuard(read: _read, run: _run, onLog: onLog);
+    await _checkUnchanged(base, request);
+    await _createReservations(request.reservationsToCreate);
+    await _applyRenames(base, request);
+    await _applyBlocks(base, request);
+    final written = await _applyChanges(base, request, guard);
+    if (request.newDefaultIndex != null) {
+      await _setDefaultConnection(base, request.newDefaultIndex!, from: request.defaultFrom, to: request.defaultTo);
+    }
+    // Again after everything else, so it sees the final state: it changes nothing when the early
+    // run already did the work, and reports. A device just unpinned loses its guard, or it would be
+    // blocked from the connection it was moved to (ID-213).
+    await guard.ensure();
+    // Nothing to say when no device moved: the default connection's own line reports that change,
+    // and "applied" after it would claim what the read-back may just have denied.
+    if (written != null) await _reportApplied(written, base);
+  }
 
-    // The stale-write check. Re-read and compare BEFORE touching anything, so a conflict costs
-    // nothing and the user is told rather than quietly overwritten.
+  /// The stale-write check. Re-read and compare BEFORE touching anything, so a conflict costs
+  /// nothing and the user is told rather than quietly overwritten.
+  Future<void> _checkUnchanged(AssignmentState base, ApplyRequest request) async {
     onLog?.call('Checking the router has not changed...');
     if ((await _read('nvram get vpnc_dev_policy_list')).trim() != base.rawPolicyList) {
       throw const AssignmentConflictException('device assignments were changed elsewhere');
@@ -519,100 +570,99 @@ class DeviceAssignmentService {
       throw const AssignmentConflictException('the VPN profile list was changed elsewhere');
     }
     // The same for the two lists a rename and a disable rewrite whole (ID-261).
-    if (renames.isNotEmpty && (await _read('nvram get custom_clientlist')).trim() != base.rawCustomClientlist) {
+    if (request.renames.isNotEmpty && (await _read('nvram get custom_clientlist')).trim() != base.rawCustomClientlist) {
       throw const AssignmentConflictException('device names were changed elsewhere');
     }
-    if (blocks.isNotEmpty && _joinParental(_parseParental(await _read(_parentalRead))) != base.rawParental) {
+    if (request.blocks.isNotEmpty && _joinParental(_parseParental(await _read(_parentalRead))) != base.rawParental) {
       throw const AssignmentConflictException("the router's Time Scheduling was changed elsewhere");
     }
+  }
 
-    if (reservationsToCreate.isNotEmpty) {
-      final current = await _read('nvram get dhcp_staticlist');
-      var list = current.trim();
-      for (final entry in reservationsToCreate.entries) {
-        if (parseDhcpStaticlist(list).containsKey(entry.key.toUpperCase())) continue;
-        list = '$list<${entry.key.toUpperCase()}>${entry.value}>>';
-      }
-      onLog?.call('Creating ${reservationsToCreate.length} DHCP reservation(s)...');
-      await _run('nvram set dhcp_staticlist=${shellSingleQuote(list)}');
+  Future<void> _createReservations(Map<String, String> reservationsToCreate) async {
+    if (reservationsToCreate.isEmpty) return;
+    final current = await _read('nvram get dhcp_staticlist');
+    var list = current.trim();
+    for (final entry in reservationsToCreate.entries) {
+      if (parseDhcpStaticlist(list).containsKey(entry.key.toUpperCase())) continue;
+      list = '$list<${entry.key.toUpperCase()}>${entry.value}>>';
     }
+    onLog?.call('Creating ${reservationsToCreate.length} DHCP reservation(s)...');
+    await _run('nvram set dhcp_staticlist=${shellSingleQuote(list)}');
+  }
 
-    // Names first: one key, and no service call - the web interface makes none either, and the new
-    // name shows straight away (measured 2026-09-28). Logged in both logs, as a reassignment is.
-    if (renames.isNotEmpty) {
-      var list = base.rawCustomClientlist;
-      renames.forEach((mac, name) => list = setCustomName(list, mac: mac, name: name, type: deviceTypes[mac]));
-      await _run('nvram set custom_clientlist=${shellSingleQuote(list)}');
-      await _run('nvram commit');
-      for (final d in renameDescriptions) {
-        onLog?.call(d);
-        await _read(buildLoggerCommand(d));
-      }
+  /// Names first: one key, and no service call - the web interface makes none either, and the new
+  /// name shows straight away (measured 2026-09-28). Logged in both logs, as a reassignment is.
+  Future<void> _applyRenames(AssignmentState base, ApplyRequest request) async {
+    if (request.renames.isEmpty) return;
+    var list = base.rawCustomClientlist;
+    request.renames.forEach((mac, name) => list = setCustomName(list, mac: mac, name: name, type: request.deviceTypes[mac]));
+    await _run('nvram set custom_clientlist=${shellSingleQuote(list)}');
+    await _run('nvram commit');
+    for (final d in request.renameDescriptions) {
+      onLog?.call(d);
+      await _read(buildLoggerCommand(d));
     }
+  }
 
-    // Disabling and enabling a device: the router's own Time Scheduling, then `restart_firewall`,
-    // which is what turns an entry into the MAC rules that drop its traffic (measured 2026-09-28).
-    if (blocks.isNotEmpty) {
-      final after = applyBlocks(base.parental, blocks, names: blockNames);
-      for (final e in after.toNvram().entries) {
-        await _run('nvram set ${e.key}=${shellSingleQuote(e.value)}');
-      }
-      await _run('nvram commit');
-      for (final d in blockDescriptions) {
-        onLog?.call(d);
-        await _read(buildLoggerCommand(d));
-      }
-      await _service('restart_firewall');
+  /// Disabling and enabling a device: the router's own Time Scheduling, then `restart_firewall`,
+  /// which is what turns an entry into the MAC rules that drop its traffic (measured 2026-09-28).
+  Future<void> _applyBlocks(AssignmentState base, ApplyRequest request) async {
+    if (request.blocks.isEmpty) return;
+    final after = applyBlocks(base.parental, request.blocks, names: request.blockNames);
+    for (final e in after.toNvram().entries) {
+      await _run('nvram set ${e.key}=${shellSingleQuote(e.value)}');
     }
+    await _run('nvram commit');
+    for (final d in request.blockDescriptions) {
+      onLog?.call(d);
+      await _read(buildLoggerCommand(d));
+    }
+    await _service('restart_firewall');
+  }
 
-    // Only when something actually moved. A default-connection change on its own has no business
-    // rewriting the policy list, and rewriting it would put our copy over anything that arrived
-    // between the read and here.
-    List<DevicePolicy>? written;
-    if (changes.isNotEmpty) {
-      var policies = base.policies;
-      changes.forEach((ip, index) => policies = setDevicePolicy(policies, ip: ip, vpncIndex: index));
-      written = policies;
-      await _run('nvram set vpnc_dev_policy_list=${shellSingleQuote(serialiseDevicePolicyList(policies))}');
-      await _run('nvram commit');
+  /// Writes the policy list and applies it, returning what was written, or null when no device
+  /// moved. Only when something actually moved: a default-connection change on its own has no
+  /// business rewriting the policy list, and rewriting it would put our copy over anything that
+  /// arrived between the read and here.
+  Future<List<DevicePolicy>?> _applyChanges(AssignmentState base, ApplyRequest request, FailClosedGuard guard) async {
+    final changes = request.changes;
+    if (changes.isEmpty) return null;
+    var policies = base.policies;
+    changes.forEach((ip, index) => policies = setDevicePolicy(policies, ip: ip, vpncIndex: index));
+    await _run(kSavePolicyListTmpCommand);
+    await _run('nvram set vpnc_dev_policy_list=${shellSingleQuote(serialiseDevicePolicyList(policies))}');
+    await _run('nvram commit');
 
-      // The light pair, per ARCHITECTURE.md "Device assignment (stock)". `restart_net_and_phy` - what the web interface
-      // uses for the same job - bounces every switch port and re-leases the WAN, and is not needed.
-      // What is being applied, by name, one per line. "Applying..." told the reader nothing, and
-      // the app log is the only record of an assignment once the screen has moved on.
-      onLog?.call('Applying ${changes.length} device change${changes.length == 1 ? '' : 's'}:');
-      for (final d in changeDescriptions) {
-        onLog?.call('  $d');
-        // The same line in the ROUTER log. The app log is wiped when the app exits; a reassignment
-        // that explains a device's traffic weeks later has to be somewhere that survives.
-        await _read(buildLoggerCommand('$d reassigned'));
-      }
-      // The guard straight away, before the firmware is asked for its rules (ID-292). It reads the
-      // list just written, and its rules win over the firmware's, so a moved device is on its new
-      // tunnel - or blocked - from here. Run last, it came about five seconds after the firmware's
-      // rules (measured 2026-09-29), and meanwhile the old tunnel's guard still held the device, or
-      // a device newly pinned from Internet had no guard at all. Quiet: the run at the end reports.
-      await guard.ensure(quiet: true);
-      await _service('restart_dnsmasq');
-      await _service('restart_vpnc_dev_policy');
-      // Sweep against the WHOLE policy list, not just what moved: the service re-installs a rule
-      // for every record it holds, so anything left out of the sweep gains a duplicate per apply
-      // (ID-183).
-      await _clearStaleRules(expectedRuleTargets(policies));
+    // The light pair, per ARCHITECTURE.md "Device assignment (stock)". `restart_net_and_phy` - what the web interface
+    // uses for the same job - bounces every switch port and re-leases the WAN, and is not needed.
+    // What is being applied, by name, one per line. "Applying..." told the reader nothing, and
+    // the app log is the only record of an assignment once the screen has moved on.
+    onLog?.call('Applying ${changes.length} device change${changes.length == 1 ? '' : 's'}:');
+    for (final d in request.changeDescriptions) {
+      onLog?.call('  $d');
+      // The same line in the ROUTER log. The app log is wiped when the app exits; a reassignment
+      // that explains a device's traffic weeks later has to be somewhere that survives.
+      await _read(buildLoggerCommand('$d reassigned'));
     }
-    if (newDefaultIndex != null) {
-      await _setDefaultConnection(base, newDefaultIndex, from: defaultFrom, to: defaultTo);
-    }
-    // Again after everything else, so it sees the final state: it changes nothing when the early
-    // run already did the work, and reports. A device just unpinned loses its guard, or it would be
-    // blocked from the connection it was moved to (ID-213).
-    await guard.ensure();
-    // Said only when the router holds it (ID-332): the firmware's rules with no stale ones left, and
-    // the guard's for every device pinned to a tunnel. The sweep above gives up after three passes,
-    // and the guard can fail, and until now either still ended in "applied".
-    // Nothing to say when no device moved: the default connection's own line reports that change,
-    // and "applied" after it would claim what the read-back above may just have denied.
-    if (written == null) return;
+    // The guard straight away, before the firmware is asked for its rules (ID-292). It reads the
+    // list just written, and its rules win over the firmware's, so a moved device is on its new
+    // tunnel - or blocked - from here. Run last, it came about five seconds after the firmware's
+    // rules (measured 2026-09-29), and meanwhile the old tunnel's guard still held the device, or
+    // a device newly pinned from Internet had no guard at all. Quiet: the run at the end reports.
+    await guard.ensure(quiet: true);
+    await _service('restart_dnsmasq');
+    await _service('restart_vpnc_dev_policy');
+    // Sweep against the WHOLE policy list, not just what moved: the service re-installs a rule
+    // for every record it holds, so anything left out of the sweep gains a duplicate per apply
+    // (ID-183).
+    await _clearStaleRules(expectedRuleTargets(policies));
+    return policies;
+  }
+
+  /// Said only when the router holds it (ID-332): the firmware's rules with no stale ones left, and
+  /// the guard's for every device pinned to a tunnel. The sweep gives up after three passes, and the
+  /// guard can fail, and until then either still ended in "applied".
+  Future<void> _reportApplied(List<DevicePolicy> written, AssignmentState base) async {
     final problems = await _readBack(written, base.profiles);
     if (problems.isEmpty) {
       onLog?.call('Device assignments applied.', isSuccess: true);

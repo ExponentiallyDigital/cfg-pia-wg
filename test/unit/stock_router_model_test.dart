@@ -36,12 +36,12 @@ class _App {
   /// Pins [ip] to a table (0 is Internet), or back to the default with null.
   Future<void> assign(String ip, int? table) async {
     final base = await _assign.read();
-    await _assign.apply(base: base, changes: {ip: table}, reservationsToCreate: {});
+    await _assign.apply(base: base, request: ApplyRequest(changes: {ip: table}, reservationsToCreate: {}));
   }
 
   Future<void> setDefault(int table) async {
     final base = await _assign.read();
-    await _assign.apply(base: base, changes: {}, reservationsToCreate: {}, newDefaultIndex: table);
+    await _assign.apply(base: base, request: ApplyRequest(changes: {}, reservationsToCreate: {}, newDefaultIndex: table));
   }
 
   Future<void> disable(int slot) => _manage.disableSlot(slot);
