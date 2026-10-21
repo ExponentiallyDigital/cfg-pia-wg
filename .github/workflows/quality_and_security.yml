@@ -72,6 +72,10 @@ jobs:
       - name: Flutter tests with coverage
         run: flutter test --coverage
 
+      # ID-468: the release scripts' own tests. Standard library only: no key, no network.
+      - name: Release script tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+
       # SKIPPED for Dependabot. A Dependabot-triggered run does not read the normal Actions secrets
       # - it reads the separate "Dependabot" secrets store - so SONAR_TOKEN arrives empty and the
       # scanner dies on startup with exit code 3, which reads like a code problem and is not one.
