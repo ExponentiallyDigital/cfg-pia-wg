@@ -71,12 +71,12 @@ abstract class RestoreMessages {
   /// The answer when the app was ALREADY unlocked. It used to say "Purchase restored" here too,
   /// which reported a change that never happened and left the user wondering what had just been
   /// done to their account (ID-091).
-  static const alreadyUnlocked = 'This app is already unlocked on this Google account. Nothing changed.';
-  static const noneFound = 'No purchase found on this Google account.';
+  static String get alreadyUnlocked => 'This app is already unlocked on this ${Entitlement.accountName}. Nothing changed.';
+  static String get noneFound => 'No purchase found on this ${Entitlement.accountName}.';
 
   /// On screen. The store's own words are rarely English and never actionable, so they go to the
   /// app log instead - [failed] is that line.
-  static const failedPlain = 'Could not check your purchase with Google Play. Check this device is online '
+  static String get failedPlain => 'Could not check your purchase with ${Entitlement.storeName}. Check this device is online '
       'and try again; the app log has what the store reported.';
   static String failed(Object e) =>
       e is StoreUnreachableException ? e.toString() : 'Could not reach the store: ${Entitlement.describeStoreError(e)}';
@@ -150,7 +150,7 @@ class _PaywallScreenState extends State<_PaywallScreen> {
       _c.logEntry('Purchase cancelled.');
     } catch (e) {
       if (!mounted) return;
-      // A slow card is not a failure: the unlock arrives when Google Play confirms the payment.
+      // A slow card is not a failure: the unlock arrives when the store confirms the payment.
       final pending = Entitlement.isPaymentPending(e);
       final detail = Entitlement.describeStoreError(e);
       final message = pending ? detail : 'Purchase failed: $detail';
@@ -207,7 +207,7 @@ class _PaywallScreenState extends State<_PaywallScreen> {
         for (final line in const [
           'One lifetime payment. No subscription, ever.',
           'Works offline once bought, and keeps working.',
-          'Nothing is tracked. No analytics, no advertising id.',
+          'Nothing is tracked. No ads, no advertising id.',
         ])
           Padding(
             padding: const EdgeInsets.only(bottom: 6),

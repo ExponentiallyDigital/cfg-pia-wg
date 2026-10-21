@@ -151,13 +151,20 @@ String? checkCidrList(String raw, {required String field}) {
 }
 
 /// Everything wrong with a slot's parameters from MANAGE -> EDIT, in the order the form shows them.
-List<String> slotParamErrors(Map<String, String> p) => [
+List<String> slotParamErrors(Map<String, String> p) => [..._slotPeerErrors(p), ..._slotTunnelErrors(p)];
+
+/// The slot's name, its address and the server it connects to: the top of the EDIT form.
+List<String> _slotPeerErrors(Map<String, String> p) => [
       if (p.containsKey('desc')) if (checkSlotDescription(p['desc']!) case final e?) e,
       if (p.containsKey('addr') && !isIpv4Cidr(p['addr']!)) 'Address must be like 10.0.0.2/32.',
       if (p.containsKey('ep_addr') && !isValidIpv4(p['ep_addr']!) && !isHostname(p['ep_addr']!))
         'Endpoint must be a server address or name.',
       if (p.containsKey('ep_port')) if (checkIntRange(p['ep_port']!, field: 'Endpoint port', min: 1, max: 65535) case final e?) e,
       if (p.containsKey('ppub')) if (checkWireGuardKey(p['ppub']!, field: 'Server public key') case final e?) e,
+    ];
+
+/// The keys and tunnel settings: the rest of the EDIT form.
+List<String> _slotTunnelErrors(Map<String, String> p) => [
       if (p.containsKey('priv')) if (checkWireGuardKey(p['priv']!, field: 'Private key') case final e?) e,
       if (p.containsKey('dns')) if (checkIpv4List(p['dns']!, field: 'DNS servers') case final e?) e,
       if (p.containsKey('mtu')) if (checkIntRange(p['mtu']!, field: 'MTU', min: 1280, max: 1500) case final e?) e,

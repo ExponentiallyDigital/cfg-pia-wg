@@ -644,6 +644,7 @@ class RouterSlotService {
       await _logRouter('${label(ip)} moved to Internet - its VPN was deleted');
     }
     final updated = serialiseDevicePolicyList(releaseDevicesFrom(policies, vpncIndex));
+    await _run(kSavePolicyListTmpCommand);
     await _run('nvram set vpnc_dev_policy_list=${shellSingleQuote(updated)}');
     await _run('nvram commit');
     await _queuedService('restart_vpnc_dev_policy');

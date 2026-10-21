@@ -1,5 +1,5 @@
 # =================================================================
-# GitHub Actions Workflow: Build, Release, and Deploy to Play Store
+# GitHub Actions Workflow: Build and release, to Google Play and the App Store
 # Triggers on git tag pushes matching "v*" (e.g. v0.7.06)
 # =================================================================
 name: "Build and release"
@@ -27,6 +27,21 @@ on:
         type: string
         required: false
         default: ""
+      testflight:
+        description: "Upload the signed iOS build to TestFlight, even on a dry run (ID-431)"
+        type: boolean
+        required: false
+        default: false
+      app_store_listing:
+        description: "Also update the App Store listing from app-store/ (ID-455)"
+        type: boolean
+        required: false
+        default: false
+      attach_build:
+        description: "Attach the TestFlight build to the App Store version, for submission (ID-436)"
+        type: boolean
+        required: false
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -472,3 +487,257 @@ jobs:
             cfg-pia-wg-${{ steps.tag.outputs.val }}_dart-licenses.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =================================================================
+  # Step 2b: The App Store listing, when asked for (ID-455)
+  # =================================================================
+  # The same job as the Update App Store listing workflow, reached from here so a manual run on a
+  # branch can use it before that workflow's file is on main. Needs nothing built.
+  app-store-listing:
+    name: App Store listing
+    if: ${{ inputs.app_store_listing == true }}
+    uses: ./.github/workflows/app_store_listing.yml
+    permissions:
+      contents: read
+    with:
+      check_only: false
+    secrets: inherit
+
+  # =================================================================
+  # Step 3: Signed iOS build (ID-418)
+  # =================================================================
+  # Archives the app on macOS and exports an .ipa signed for App Store Connect by team RL4UB6WKMV.
+  # Signing is Xcode's automatic signing, authorised by the App Store Connect API key in three
+  # secrets (ID-463), so no certificate or profile is kept anywhere: Xcode makes what it needs on
+  # the runner. Runs alongside the Android release and never blocks it. A tag, or a manual run with
+  # testflight ticked, also uploads it to App Store Connect for TestFlight (ID-431), unless Apple has
+  # that build number already (ID-468); otherwise the .ipa is only kept as a short-lived artifact.
+  ios-release:
+    name: Signed iOS build
+    needs: quality-and-security
+    if: |
+      always() &&
+      needs.quality-and-security.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+    runs-on: macos-latest
+    # The archive takes about 20 minutes, and the TestFlight notes wait up to 40 for Apple.
+    timeout-minutes: 90
+    permissions:
+      # write only for attaching the iOS SBOM to the tag's release (ID-433)
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Every tag, as the Android job has: the TestFlight notes cover each CHANGELOG block since
+          # the last release tag, and a shallow checkout has none ("no version tag below", 2026-10-21).
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          # ID-410: the version pinned in pubspec.yaml, the one tested locally.
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Toolchain versions
+        run: |
+          flutter --version
+          xcodebuild -version
+
+      - name: Fetch dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate launcher icons
+        # The wrapper keeps the tool from damaging the Xcode project (ID-374).
+        run: dart run tool/launcher_icons.dart
+
+      - name: Write the App Store Connect key
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          missing=""
+          [ -n "$ASC_KEY_ID" ] || missing="$missing APP_STORE_CONNECT_KEY_ID"
+          [ -n "$ASC_ISSUER_ID" ] || missing="$missing APP_STORE_CONNECT_ISSUER_ID"
+          [ -n "$ASC_API_KEY" ] || missing="$missing APP_STORE_CONNECT_API_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error title=App Store Connect key missing::These secrets are empty:$missing (ID-463). Nothing was built."
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$ASC_API_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+          grep -q -- '-----BEGIN PRIVATE KEY-----' "$RUNNER_TEMP/AuthKey.p8" || {
+            echo "::error title=App Store Connect key unreadable::APP_STORE_CONNECT_API_KEY is not the .p8 file's text, from -----BEGIN PRIVATE KEY----- to -----END PRIVATE KEY----- (ID-463)."
+            exit 1
+          }
+
+      - name: Prepare the Xcode project
+        # Writes Flutter's generated settings, the version and build number from pubspec.yaml and the
+        # RevenueCat key among them, without building: xcodebuild below builds and signs.
+        env:
+          REVENUECAT_IOS_KEY: ${{ secrets.REVENUECAT_IOS_KEY }}
+        run: |
+          # As for Play: without the key the app can't ask who has paid, so it withholds nothing and
+          # the paid features ship to everyone, looking entirely normal (ID-401).
+          if [ -z "$REVENUECAT_IOS_KEY" ]; then
+            echo "::error::REVENUECAT_IOS_KEY is empty. The App Store build would ship unlocked to everyone."
+            exit 1
+          fi
+          flutter build ios --release --config-only --dart-define=REVENUECAT_IOS_KEY="$REVENUECAT_IOS_KEY"
+          # The key reaches the build through Generated.xcconfig's DART_DEFINES, which xcodebuild's
+          # Flutter build phase reads. Checked, not printed.
+          grep -q '^DART_DEFINES=.' ios/Flutter/Generated.xcconfig || {
+            echo "::error::the RevenueCat key did not reach ios/Flutter/Generated.xcconfig"
+            exit 1
+          }
+
+      - name: Archive, signed with the team's own certificate
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            archive
+
+      # ID-433: the native packages Xcode resolved for this build (RevenueCat's iOS SDK among them)
+      # exist only here, on the Mac, after the archive, so the Android job's SBOM can't list them.
+      # Syft reads the Package.resolved files Swift Package Manager wrote under ios/.
+      - name: Generate the iOS SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        env:
+          SYFT_SOURCE_NAME: "cfg-pia-wg-ios"
+          SYFT_SOURCE_VERSION: ${{ inputs.tag_name || github.ref_name }}
+          SYFT_SOURCE_SUPPLIER: "Exponentially Digital"
+        with:
+          path: ios
+          format: spdx-json
+          output-file: ${{ runner.temp }}/cfg-pia-wg-ios-sbom.spdx.json
+          upload-artifact: false
+
+      - name: Check the iOS SBOM lists the native packages
+        run: |
+          find ios -name Package.resolved -not -path '*/.build/*'
+          python3 - "$RUNNER_TEMP/cfg-pia-wg-ios-sbom.spdx.json" <<'PY'
+          import json, sys
+          names = sorted({p.get("name", "") for p in json.load(open(sys.argv[1]))["packages"]})
+          print(f"{len(names)} packages:", ", ".join(names))
+          if not any("purchases" in n.lower() for n in names):
+              print("::error::the iOS SBOM does not list RevenueCat's purchases-ios, so it missed the native packages")
+              sys.exit(1)
+          PY
+
+      - name: Export the .ipa for App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportPath "$RUNNER_TEMP/ipa" -exportOptionsPlist ios/ExportOptions.plist \
+            -allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Check the .ipa is signed for the App Store by the team
+        run: |
+          ipa=$(ls "$RUNNER_TEMP"/ipa/*.ipa)
+          mkdir "$RUNNER_TEMP/check" && unzip -q "$ipa" -d "$RUNNER_TEMP/check"
+          sig=$(codesign -dvv "$RUNNER_TEMP"/check/Payload/*.app 2>&1)
+          echo "$sig" | grep -E '^(Identifier|Authority|TeamIdentifier)='
+          echo "$sig" | grep -q '^Identifier=com.exponentiallydigital.cfgpiawg$' || { echo "::error::the .ipa is not com.exponentiallydigital.cfgpiawg"; exit 1; }
+          echo "$sig" | grep -q '^TeamIdentifier=RL4UB6WKMV$' || { echo "::error::the .ipa is not signed by team RL4UB6WKMV"; exit 1; }
+          echo "$sig" | grep -q '^Authority=Apple Distribution' || { echo "::error::the .ipa is not signed for distribution"; exit 1; }
+
+      # ID-468: Apple refuses a build number twice, and a build can go up from a manual run before its
+      # tag, as 534 did for the first submission. The client is set up here for the steps after, too.
+      - name: Is the build in App Store Connect already
+        id: asc
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/asc"
+          "$RUNNER_TEMP/asc/bin/pip" install --quiet --disable-pip-version-check \
+            PyJWT==2.10.1 cryptography==44.0.2 requests==2.34.2
+          BUILD=$(grep -m1 '^version:' pubspec.yaml | sed 's/.*+//')
+          "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py has-build --build "$BUILD"
+
+      - name: Upload to App Store Connect for TestFlight
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true) && steps.asc.outputs.uploaded == 'false' }}
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          # The same export, sent to Apple instead of written to disk.
+          cp ios/ExportOptions.plist "$RUNNER_TEMP/upload.plist"
+          /usr/libexec/PlistBuddy -c "Set :destination upload" "$RUNNER_TEMP/upload.plist"
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportPath "$RUNNER_TEMP/upload" -exportOptionsPlist "$RUNNER_TEMP/upload.plist" \
+            -allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      # ID-432 and ID-465: the build's TestFlight notes are the Play note, from CHANGELOG, and the
+      # internal group that gets every build has Andrew in it. The notes wait for Apple to finish
+      # processing the upload, which takes some minutes.
+      - name: TestFlight notes and testers
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APP_REVIEW_FIRST_NAME: Andrew
+          APP_REVIEW_LAST_NAME: Newbury
+          TESTFLIGHT_TESTER_EMAIL: andrew@exponentiallydigital.com
+          TARGET_TAG: ${{ inputs.tag_name || github.ref_name }}
+          ATTACH_BUILD: ${{ inputs.attach_build == true }}
+        run: |
+          dart run tool/release_notes.dart --tag "$TARGET_TAG"
+          "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py testers
+          BUILD=$(grep -m1 '^version:' pubspec.yaml | sed 's/.*+//')
+          "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py whats-new --build "$BUILD" --notes play-store/whatsnew-en-AU
+          # ID-436: only when asked, and only once processed, which whats-new has just waited for. The
+          # listing job sets the version's number from pubspec.yaml, so the two match.
+          if [ "$ATTACH_BUILD" = "true" ]; then
+            "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py attach-build --build "$BUILD"
+          fi
+
+      - name: Keep the .ipa for a week
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cfg-pia-wg-ios-ipa
+          path: ${{ runner.temp }}/ipa/*.ipa
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Keep the iOS SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cfg-pia-wg-ios-sbom
+          path: ${{ runner.temp }}/cfg-pia-wg-ios-sbom.spdx.json
+          if-no-files-found: error
+
+      # On a tag, beside the Android SBOM. The Android job makes the release, and this job runs
+      # alongside it, so it waits for the release to exist, up to 30 minutes.
+      - name: Attach the iOS SBOM to the release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cp "$RUNNER_TEMP/cfg-pia-wg-ios-sbom.spdx.json" "$RUNNER_TEMP/cfg-pia-wg-${TAG}_ios-sbom.spdx.json"
+          for i in $(seq 1 60); do
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 && break
+            [ "$i" = 60 ] && { echo "::error::no release $TAG after 30 minutes, so the iOS SBOM is only the run's artifact"; exit 1; }
+            sleep 30
+          done
+          gh release upload "$TAG" "$RUNNER_TEMP/cfg-pia-wg-${TAG}_ios-sbom.spdx.json" --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Remove the App Store Connect key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"

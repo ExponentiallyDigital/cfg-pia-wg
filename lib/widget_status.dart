@@ -20,7 +20,7 @@
 // list` to read pins from, and is a later slice.
 
 import 'device_assignment.dart';
-import 'router_slot_service.dart' show parseHandshakeAges, parseVpncClientlist, kAnsweringWithinSeconds;
+import 'router_slot_service.dart' show VpncRecord, parseHandshakeAges, parseVpncClientlist, kAnsweringWithinSeconds;
 
 /// One tunnel's row in the widget.
 class WidgetTunnelInfo {
@@ -109,24 +109,8 @@ WidgetStatus buildWidgetStatus({
   required DateTime checkedAt,
 }) {
   final profiles = parseVpncClientlist(vpncClientlist);
-  final policies = parseDevicePolicyList(devicePolicyList);
   final ages = parseHandshakeAges(handshakeAgesRaw);
-
-  // A pin names a profile by its vpncStateIndex (ARCHITECTURE's "iptables ID"), not by slot
-  // number directly - the same indirection DeviceAssignmentService already resolves for DEVICES.
-  final slotByStateIndex = {
-    for (final p in profiles)
-      if (p.slot != null && p.vpncStateIndex != null) p.vpncStateIndex!: p.slot!,
-  };
-  final nameByIp = {for (final d in devices) if ((d.ip ?? '').isNotEmpty) d.ip!: d.displayName};
-
-  final pinnedBySlot = <int, List<String>>{};
-  for (final policy in policies) {
-    if (!policy.isAssigned) continue; // unpinned, or pinned to the plain internet - not a tunnel row
-    final slot = slotByStateIndex[policy.vpncIndex];
-    if (slot == null) continue;
-    pinnedBySlot.putIfAbsent(slot, () => []).add(nameByIp[policy.ip] ?? policy.ip);
-  }
+  final pinnedBySlot = _pinnedBySlot(profiles, parseDevicePolicyList(devicePolicyList), devices);
 
   final tunnels = [
     for (final p in profiles)
@@ -146,4 +130,24 @@ WidgetStatus buildWidgetStatus({
   ];
 
   return WidgetStatus(tunnels: tunnels, guardedOfflineDeviceNames: offline, checkedAt: checkedAt);
+}
+
+/// The devices pinned to each slot, by the names DEVICES shows.
+///
+/// A pin names a profile by its vpncStateIndex (ARCHITECTURE's "iptables ID"), not by slot number
+/// directly - the same indirection DeviceAssignmentService already resolves for DEVICES.
+Map<int, List<String>> _pinnedBySlot(List<VpncRecord> profiles, List<DevicePolicy> policies, List<LanDevice> devices) {
+  final slotByStateIndex = {
+    for (final p in profiles)
+      if (p.slot != null && p.vpncStateIndex != null) p.vpncStateIndex!: p.slot!,
+  };
+  final nameByIp = {for (final d in devices) if ((d.ip ?? '').isNotEmpty) d.ip!: d.displayName};
+  final pinnedBySlot = <int, List<String>>{};
+  for (final policy in policies) {
+    if (!policy.isAssigned) continue; // unpinned, or pinned to the plain internet - not a tunnel row
+    final slot = slotByStateIndex[policy.vpncIndex];
+    if (slot == null) continue;
+    pinnedBySlot.putIfAbsent(slot, () => []).add(nameByIp[policy.ip] ?? policy.ip);
+  }
+  return pinnedBySlot;
 }

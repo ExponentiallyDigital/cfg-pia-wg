@@ -72,6 +72,91 @@ void main() {
     expect(job, contains('flutter-version-file: pubspec.yaml'));
   });
 
+  // ID-418. A shape test, like ID-405's: the job's own run is the evidence that it signs.
+  test('the release builds a signed iOS app with the App Store Connect key, and keeps the key secret', () {
+    final yaml = File('.github/workflows/release.yml').readAsStringSync();
+    final start = yaml.indexOf(RegExp(r'^  ios-release:', multiLine: true));
+    expect(start, greaterThan(0), reason: 'no ios-release job');
+    final next = yaml.indexOf(RegExp(r'^  [a-z-]+:', multiLine: true), start + 1);
+    final job = yaml.substring(start, next < 0 ? yaml.length : next);
+    expect(job, contains('runs-on: macos-'));
+    expect(job, contains('needs: quality-and-security'));
+    for (final s in ['APP_STORE_CONNECT_KEY_ID', 'APP_STORE_CONNECT_ISSUER_ID', 'APP_STORE_CONNECT_API_KEY']) {
+      expect(job, contains('secrets.$s'), reason: s);
+    }
+    expect(job, contains('-allowProvisioningUpdates'));
+    // ID-401: the App Store build carries the RevenueCat key, and refuses to build without it.
+    expect(job, contains('--dart-define=REVENUECAT_IOS_KEY="\$REVENUECAT_IOS_KEY"'));
+    expect(job, contains('if [ -z "\$REVENUECAT_IOS_KEY" ]; then'));
+    // ID-431: a tag, or a manual run asking for it, uploads to App Store Connect; nothing else does.
+    // ID-468: and only a build Apple hasn't got, since it refuses a build number twice.
+    final upload = job.substring(job.indexOf('- name: Upload to App Store Connect for TestFlight'));
+    expect(upload.split('\n')[1],
+        contains("if: \${{ (startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true) && steps.asc.outputs.uploaded == 'false' }}"));
+    final asked = job.substring(job.indexOf('- name: Is the build in App Store Connect already'));
+    expect(asked.split('\n')[1], contains('id: asc'));
+    expect(asked, contains('scripts/app_store_connect.py has-build --build "\$BUILD"'));
+    expect(job.indexOf('has-build'), lessThan(job.indexOf('- name: Upload to App Store Connect for TestFlight')));
+    expect(upload, contains('Set :destination upload'));
+    expect(job, contains('-exportOptionsPlist ios/ExportOptions.plist'));
+    // The key never reaches the log, and never outlives the job.
+    expect(RegExp(r'echo[^\n]*\$ASC_API_KEY').hasMatch(job), isFalse);
+    expect(RegExp(r'if: always\(\)\s+run: rm -f "\$RUNNER_TEMP/AuthKey\.p8"').hasMatch(job), isTrue);
+
+    // Exported for App Store Connect by the team the Xcode project signs with (ID-422).
+    final export = File('ios/ExportOptions.plist').readAsStringSync();
+    expect(RegExp(r'<key>method</key>\s*<string>app-store-connect</string>').hasMatch(export), isTrue);
+    final team = RegExp(r'<key>teamID</key>\s*<string>([^<]+)</string>').firstMatch(export)!.group(1);
+    expect(File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync(), contains('DEVELOPMENT_TEAM = $team;'));
+  });
+
+  // ID-455. Like the Play listing's: checked before anything is sent, and a check-only run sends nothing.
+  test('the App Store listing workflow checks first, pins its packages, and keeps the key out of the log', () {
+    final yaml = File('.github/workflows/app_store_listing.yml').readAsStringSync();
+    expect(yaml, contains('scripts/app_store_connect.py listing --check'));
+    expect(yaml, contains('PyJWT==2.10.1 cryptography==44.0.2 requests==2.34.2'));
+    final publish = yaml.substring(yaml.indexOf('- name: Publish the listing'));
+    expect(publish.split('\n')[1], contains(r'if: ${{ !inputs.check_only }}'));
+    expect(yaml.indexOf('listing --check'), lessThan(yaml.indexOf('- name: Publish the listing')));
+    expect(RegExp(r'echo[^\n]*APP_STORE_CONNECT_API_KEY').hasMatch(yaml), isFalse);
+    // The release's TestFlight upload gets its notes and testers the same way (ID-432, ID-465).
+    final release = File('.github/workflows/release.yml').readAsStringSync();
+    expect(release, contains('scripts/app_store_connect.py whats-new --build "\$BUILD" --notes play-store/whatsnew-en-AU'));
+    expect(release, contains('scripts/app_store_connect.py testers'));
+    // ID-436: the build goes on the App Store version only when a manual run asks for it.
+    expect(release, contains(r'ATTACH_BUILD: ${{ inputs.attach_build == true }}'));
+    expect(release, contains('if [ "\$ATTACH_BUILD" = "true" ]; then'));
+  });
+
+  // ID-468. A shape test: each store's job, the same build on both, and the dry run reaching both.
+  // The App Store side's decisions have their own tests, in scripts/test_app_store_connect.py.
+  test('Promote release promotes the same build on Google Play and the App Store', () {
+    final yaml = File('.github/workflows/promote.yml').readAsStringSync();
+    String job(String name) {
+      final start = yaml.indexOf(RegExp('^  $name:', multiLine: true));
+      expect(start, greaterThan(0), reason: 'no $name job');
+      final next = yaml.indexOf(RegExp(r'^  [a-z-]+:', multiLine: true), start + 1);
+      return yaml.substring(start, next < 0 ? yaml.length : next);
+    }
+
+    expect(yaml, contains(r'BUILD: ${{ inputs.build }}'));
+    expect(job('check'), contains("'' | *[!0-9]*)"));
+    final play = job('promote'), apple = job('app-store');
+    for (final j in [play, apple]) {
+      expect(j, contains('needs: check'));
+      expect(j, contains(r'DRY_RUN: ${{ inputs.dry_run }}'));
+    }
+    expect(play, contains("if: \${{ inputs.stores != 'App Store only' }}"));
+    expect(apple, contains("if: \${{ inputs.stores != 'Google Play only' }}"));
+    expect(apple, contains('scripts/app_store_connect.py promote --build "\$BUILD" --to "\$TO_TRACK" \$flag'));
+    expect(apple, contains('[ "\$DRY_RUN" = "true" ] && flag="--dry-run"'));
+    // Play's job refuses a source track that doesn't carry the build named.
+    expect(File('scripts/play_promote.py').readAsStringSync(), contains("os.environ.get('BUILD', '')"));
+    // And the scripts' own tests run with the rest.
+    expect(File('.github/workflows/quality_and_security.yml').readAsStringSync(),
+        contains("python3 -m unittest discover -s scripts -p 'test_*.py'"));
+  });
+
   test("Dependabot's PRs go to dev, not straight to main", () {
     final config = File('.github/dependabot.yml').readAsStringSync();
     final ecosystems = RegExp(r'^\s+- package-ecosystem:', multiLine: true).allMatches(config).length;

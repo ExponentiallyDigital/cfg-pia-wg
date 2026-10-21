@@ -220,93 +220,20 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   Future<void> _connect() async {
     setState(() => _busy = true);
-    // The work is a closure returning the failure text, if any, rather than presenting it inline.
+    // The work is a method returning the failure text, if any, rather than presenting it inline.
     // Two reasons, and both bit: the CONNECT spinner animates for as long as _busy holds, so a
     // dialog raised from inside leaves it spinning behind (and pumpAndSettle never settles); and
     // an early `return` from a try/finally exits the METHOD, so anything after the block is
-    // skipped. A closure makes the early exits return a value instead of jumping past the code
-    // that shows it.
+    // skipped. A method of its own makes the early exits return a value instead of jumping past
+    // the code that shows it.
     // Merlin is a refusal, not a failed connection: there is nothing to retry, so the login form
     // isn't shown behind it, and OK goes to HOME (ID-359).
     var merlin = false;
-    Future<String?> attempt() async {
-      final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
-      // The credentials have to be on the controller before asking for the session: it keys the
-      // shared connection on them, and a stale key would hand back a session pointed at the
-      // previous router.
-      _c.routerIp = ip;
-      _c.sshUsername = user;
-      _c.sshPassword = pass;
-
-      // The SHARED session, not a fresh SSHClient. Holding a raw client meant the screen kept a
-      // connection that had already gone: six minutes elapsed between connect and APPLY on
-      // 2026-09-08 and the write failed with `errno 103, software caused connection abort`. The app
-      // drops the connection after kBackgroundSessionGrace in the background, and the router can
-      // drop it at any time. RouterSession reopens and retries; a raw client cannot.
-      final SSHClient client = _c.routerSession(
-          () => widget.testClientFactory != null ? widget.testClientFactory!(ip, user, pass) : openSshClient(ip, user, pass));
-      // Force the connection before anything else, so a wrong address or a refused login reports
-      // as itself rather than as whatever the next command happens to be doing (build 413).
-      await client.authenticated;
-
-      final slotSvc = widget.slotServiceFactory?.call(client) ?? RouterSlotService(client);
-
-      // Detect the firmware HERE. `routerFirmware` defaults to Merlin until something probes it,
-      // so a user who opens this screen first - rather than passing through MANAGE - was told
-      // their stock router was Merlin. Reported from B1 on 2026-09-08.
-      if (!firmwareDetected) {
-        final detected = classifyFirmwareTag(await slotSvc.readFirmwareTag());
-        if (detected == null) {
-          return 'This router reports a firmware this app does not support.';
-        }
-        setRouterFirmware(detected);
-        _c.logEntry('Router firmware detected: ${detected.name}.');
-      }
-
-      if (!isStockFirmware) {
-        merlin = true;
-        return 'DEVICES is a stock-firmware feature. This router runs Asuswrt-Merlin, '
-            'which has no VPN Fusion device policy to write.';
-      }
-
-      final svc = widget.serviceFactory?.call(client) ??
-          DeviceAssignmentService(client,
-              onLog: (m, {isError = false, isSuccess = false, isWarning = false}) =>
-                  _c.logEntry(m, isError: isError, isSuccess: isSuccess, isWarning: isWarning));
-      final state = await svc.read();
-      // Watchdog state for the picker. A tolerated failure: the notes go blank rather than the
-      // whole screen failing, because assignment does not depend on knowing them.
-      Map<int, SlotInfo> slots = const {};
-      Set<int>? active;
-      try {
-        final fetched = await slotSvc.fetchSlots();
-        slots = fetched.slots;
-        active = fetched.activeSlots;
-      } catch (_) {
-        // left blank on purpose
-      }
-      if (!mounted) return null;
-      _c.routerConnected = true;
-      setState(() {
-        _service = svc;
-        _slotSvc = slotSvc;
-        _state = state;
-        _slotInfo = slots;
-        _activeSlots = active;
-        _sinceCheck = 0;
-        // Staged changes survive leaving the screen and coming back - they live on the session,
-        // not on this State, which is rebuilt from scratch on every entry. Losing a dozen staged
-        // assignments to a glance at the log was the reported bug.
-        // Deliberately NOT cleared here: the staged changes are the user's, and a reconnect is
-        // not a decision to throw them away. apply() re-reads and refuses on a conflict, so
-        // carrying them across a reconnect cannot write anything based on a stale view.
-      });
-      return null;
-    }
-
     String? failure, failureDetail;
     try {
-      failure = await attempt();
+      final result = await _attemptConnect();
+      failure = result.failure;
+      merlin = result.merlin;
     } catch (e) {
       // Plain English on screen, the raw exception in the log (ID-108).
       failure = routerConnectMessage(e, _ipCtrl.text) ?? 'Could not read the device list: $e';
@@ -326,6 +253,95 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       navigateToDestination(context, _c, AppDestination.menu);
       // Under HOME now, so back finds the screen itself rather than a placeholder that never ends.
       setState(() => _autoConnecting = false);
+    }
+  }
+
+  /// Connects with the form's login and reads the devices: the failure text, if any, and whether
+  /// it is Merlin's refusal.
+  Future<({String? failure, bool merlin})> _attemptConnect() async {
+    final ip = _ipCtrl.text.trim(), user = _userCtrl.text.trim(), pass = _passCtrl.text;
+    // The credentials have to be on the controller before asking for the session: it keys the
+    // shared connection on them, and a stale key would hand back a session pointed at the
+    // previous router.
+    _c.routerIp = ip;
+    _c.sshUsername = user;
+    _c.sshPassword = pass;
+
+    // The SHARED session, not a fresh SSHClient. Holding a raw client meant the screen kept a
+    // connection that had already gone: six minutes elapsed between connect and APPLY on
+    // 2026-09-08 and the write failed with `errno 103, software caused connection abort`. The app
+    // drops the connection after kBackgroundSessionGrace in the background, and the router can
+    // drop it at any time. RouterSession reopens and retries; a raw client cannot.
+    final SSHClient client = _c.routerSession(
+        () => widget.testClientFactory != null ? widget.testClientFactory!(ip, user, pass) : openSshClient(ip, user, pass));
+    // Force the connection before anything else, so a wrong address or a refused login reports
+    // as itself rather than as whatever the next command happens to be doing (build 413).
+    await client.authenticated;
+
+    final slotSvc = widget.slotServiceFactory?.call(client) ?? RouterSlotService(client);
+    final refusal = await _firmwareRefusal(slotSvc);
+    if (refusal != null) {
+      return (failure: refusal.message, merlin: refusal.merlin);
+    }
+
+    final svc = _assignmentService(client);
+    final state = await svc.read();
+    final (slots, active) = await _slotsIfReadable(slotSvc);
+    if (!mounted) return (failure: null, merlin: false);
+    _c.routerConnected = true;
+    setState(() {
+      _service = svc;
+      _slotSvc = slotSvc;
+      _state = state;
+      _slotInfo = slots;
+      _activeSlots = active;
+      _sinceCheck = 0;
+      // Staged changes survive leaving the screen and coming back - they live on the session,
+      // not on this State, which is rebuilt from scratch on every entry. Losing a dozen staged
+      // assignments to a glance at the log was the reported bug.
+      // Deliberately NOT cleared here: the staged changes are the user's, and a reconnect is
+      // not a decision to throw them away. apply() re-reads and refuses on a conflict, so
+      // carrying them across a reconnect cannot write anything based on a stale view.
+    });
+    return (failure: null, merlin: false);
+  }
+
+  /// Why DEVICES can't work with this router, or null when it can.
+  ///
+  /// Detect the firmware HERE. `routerFirmware` defaults to Merlin until something probes it, so a
+  /// user who opens this screen first - rather than passing through MANAGE - was told their stock
+  /// router was Merlin. Reported from B1 on 2026-09-08.
+  Future<({String message, bool merlin})?> _firmwareRefusal(RouterSlotService slotSvc) async {
+    if (!firmwareDetected) {
+      final detected = classifyFirmwareTag(await slotSvc.readFirmwareTag());
+      if (detected == null) {
+        return (message: 'This router reports a firmware this app does not support.', merlin: false);
+      }
+      setRouterFirmware(detected);
+      _c.logEntry('Router firmware detected: ${detected.name}.');
+    }
+    if (isStockFirmware) return null;
+    return (
+      message: 'DEVICES is a stock-firmware feature. This router runs Asuswrt-Merlin, '
+          'which has no VPN Fusion device policy to write.',
+      merlin: true,
+    );
+  }
+
+  DeviceAssignmentService _assignmentService(SSHClient client) =>
+      widget.serviceFactory?.call(client) ??
+      DeviceAssignmentService(client,
+          onLog: (m, {isError = false, isSuccess = false, isWarning = false}) =>
+              _c.logEntry(m, isError: isError, isSuccess: isSuccess, isWarning: isWarning));
+
+  /// Watchdog state for the picker. A tolerated failure: the notes go blank rather than the whole
+  /// screen failing, because assignment does not depend on knowing them.
+  Future<(Map<int, SlotInfo>, Set<int>?)> _slotsIfReadable(RouterSlotService slotSvc) async {
+    try {
+      final fetched = await slotSvc.fetchSlots();
+      return (fetched.slots, fetched.activeSlots);
+    } catch (_) {
+      return (const <int, SlotInfo>{}, null);
     }
   }
 
@@ -616,30 +632,28 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                 Text(label, style: TextStyle(color: labelColour, fontSize: 14)),
-                // Teal ACTIVE / amber DISABLED, the colours the slot modal uses for the same
-                // facts - amber being the app's "configured but not doing anything" colour, as on
-                // a paused watchdog and on a staged-but-unapplied change.
-                if (active != null || note.isNotEmpty)
-                  Row(children: [
-                    if (active != null) ...[
-                      Text(active ? 'Active' : 'Disabled',
-                          style: TextStyle(
-                              color: active ? kHighlight : kWarn, fontSize: 12, fontWeight: FontWeight.w700)),
-                      if (note.isNotEmpty) const Text(' - ', style: TextStyle(color: kMuted, fontSize: 12)),
-                    ],
-                    if (note.isNotEmpty)
-                      Flexible(
-                        child: Text(note,
-                            style: TextStyle(
-                                color: note == kWatchdogActiveNote ? kHighlight : kMuted, fontSize: 12)),
-                      ),
-                  ]),
+                if (active != null || note.isNotEmpty) _pickerNote(active, note),
               ]),
             ),
             const Icon(Icons.chevron_right, size: 18, color: kMuted),
           ]),
         ),
       );
+
+  /// Teal ACTIVE / amber DISABLED, the colours the slot modal uses for the same facts - amber being
+  /// the app's "configured but not doing anything" colour, as on a paused watchdog and on a
+  /// staged-but-unapplied change.
+  Widget _pickerNote(bool? active, String note) => Row(children: [
+        if (active != null) ...[
+          Text(active ? 'Active' : 'Disabled',
+              style: TextStyle(color: active ? kHighlight : kWarn, fontSize: 12, fontWeight: FontWeight.w700)),
+          if (note.isNotEmpty) const Text(' - ', style: TextStyle(color: kMuted, fontSize: 12)),
+        ],
+        if (note.isNotEmpty)
+          Flexible(
+            child: Text(note, style: TextStyle(color: note == kWatchdogActiveNote ? kHighlight : kMuted, fontSize: 12)),
+          ),
+      ]);
 
   String _watchdogNote(VpncRecord p) {
     final slot = p.slot;
@@ -665,143 +679,189 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       if (!await Paywall.show(context, _c, pitch: Pitch.assign) || !mounted) return;
     }
     final state = _state!;
-    // A device gains a reservation when it has none: the policy record is keyed by IP, and an
-    // address that is not pinned will eventually move to another device.
+    final reservations = _reservationsToCreate(state);
+
+    // The tunnels this apply moves devices onto, read now rather than trusted from connect time.
+    final tunnelWarnings = await _tunnelWarnings(state);
+    if (!mounted) return;
+    final ok = await _confirmApply(state, reservations, tunnelWarnings);
+    if (ok != true || !mounted) return;
+
+    setState(() => _busy = true);
+    final dismissProgress = _showProgress();
+    final failure = await _refreshAfterApply(await _runApply(state, reservations));
+    dismissProgress();
+    if (mounted) setState(() => _busy = false);
+    if (failure != null && mounted) await AppErrors.system(context, _c, failure);
+  }
+
+  /// A device gains a reservation when it has none: the policy record is keyed by IP, and an
+  /// address that is not pinned will eventually move to another device.
+  Map<String, String> _reservationsToCreate(AssignmentState state) {
     final reservations = <String, String>{};
     for (final d in state.devices) {
       final ip = d.ip;
       if (ip == null || !_staged.containsKey(ip)) continue;
       if (_staged[ip] != null && !d.reserved) reservations[d.mac] = ip;
     }
+    return reservations;
+  }
 
-    // The tunnels this apply moves devices onto, read now rather than trusted from connect time.
-    final tunnelWarnings = await _tunnelWarnings(state);
-    if (!mounted) return;
+  LanDevice _byMac(AssignmentState state, String mac) =>
+      state.devices.firstWhere((d) => d.mac == mac, orElse: () => LanDevice(mac: mac));
 
-    LanDevice byMac(String mac) => state.devices.firstWhere((d) => d.mac == mac, orElse: () => LanDevice(mac: mac));
-    // Disabling turns the router's Time Scheduling on. Andrew's decision: when that also brings
-    // schedules someone set up and left switched off into force, APPLY names them first (ID-261).
-    final parentalAfter = applyBlocks(state.parental, Map.of(_stagedBlocks));
-    final switchedOn = schedulesSwitchedOn(state.parental, parentalAfter, _stagedBlocks.keys.toSet());
-    final disabling = [for (final e in _stagedBlocks.entries) if (e.value) byMac(e.key)];
-    String pinLabel(LanDevice d) => _labelForDevice(d.ip == null ? null : _effectiveIndex(d));
-    const blockedLabel = 'disabled - no Internet or VPN access';
-    if (!mounted) return;
+  LanDevice _byIp(AssignmentState state, String ip) =>
+      state.devices.firstWhere((d) => d.ip == ip, orElse: () => LanDevice(mac: ip));
 
-    final ok = await showDialog<bool>(
+  /// The confirmation: every staged change, line by line, and what the user should know first.
+  Future<bool?> _confirmApply(AssignmentState state, Map<String, String> reservations, List<String> tunnelWarnings) {
+    final disabling = _disabling(state);
+    return showDialog<bool>(
       context: context,
       builder: (ctx) => _ApplyDialog(
         tunnelWarnings: tunnelWarnings,
-        lines: [
-          for (final e in _stagedNames.entries)
-            _ChangeLine(
-              name: byMac(e.key).displayName,
-              from: 'name ${byMac(e.key).displayName}',
-              to: e.value.isEmpty ? 'name ${_nameOf(byMac(e.key))}, detected by the router' : 'name ${e.value}',
-            ),
-          for (final e in _stagedBlocks.entries)
-            _ChangeLine(
-              name: _nameOf(byMac(e.key)),
-              from: e.value ? pinLabel(byMac(e.key)) : blockedLabel,
-              to: e.value ? blockedLabel : pinLabel(byMac(e.key)),
-            ),
-          for (final entry in _staged.entries)
-            _ChangeLine(
-              name: state.devices.firstWhere((d) => d.ip == entry.key, orElse: () => LanDevice(mac: entry.key)).displayName,
-              from: _labelForDevice(assignedIndexFor(state.policies, entry.key)),
-              to: _labelForDevice(entry.value),
-            ),
-          if (_stagedDefault != null)
-            _ChangeLine(
-              name: kDefaultConnectionLabel,
-              from: _labelForIndex(state.defaultIndex ?? 0),
-              to: _labelForIndex(_stagedDefault ?? 0),
-            ),
-        ],
-        reservationNames: [
-          for (final mac in reservations.keys)
-            state.devices.firstWhere((d) => d.mac == mac, orElse: () => LanDevice(mac: mac)).displayName
-        ],
+        lines: _changeLines(state),
+        reservationNames: [for (final mac in reservations.keys) _byMac(state, mac).displayName],
         restartsTunnels: _stagedDefault != null,
-        scheduleWarning: switchedOn.isEmpty
-            ? null
-            : "Time Scheduling is off in your router. Disabling ${joinNames([for (final d in disabling) _nameOf(d)])} "
-                'turns it on, which also puts the schedules already set there for '
-                '${joinNames([for (final e in switchedOn) e.name.isEmpty ? e.mac : e.name])} into force.',
+        scheduleWarning: _scheduleWarning(state, disabling),
         randomMacNames: [for (final d in disabling) if (d.hasRandomisedMac) _nameOf(d)],
-        foreignNames: [
-          for (final entry in _staged.entries)
-            if (_isForeignIndex(assignedIndexFor(state.policies, entry.key)))
-              state.devices.firstWhere((d) => d.ip == entry.key, orElse: () => LanDevice(mac: entry.key)).displayName
-        ],
+        foreignNames: _foreignNames(state),
       ),
     );
-    if (ok != true || !mounted) return;
+  }
 
-    setState(() => _busy = true);
-    // A centred modal, not a spinner inside the button. Putting it in the button left a grey blob
-    // at the bottom of the screen where the label had been, which read as the button having broken
-    // rather than as work in progress (B8n feedback 2026-09-08). This also blocks input, which is
-    // right: changing the default connection stops the tunnels and must not be interrupted.
-    //
-    // Closed by its own route, never by popping whatever is on top (ID-285). The drawer sits above
-    // the navigator, so it opens over this dialog, and a screen picked from it is pushed on top. A
-    // plain pop at the end then closed THAT screen and left this dialog up for good, over a DEVICES
-    // that had finished. Removing the route itself works whatever is above it, and whether or not
-    // this screen is still mounted.
+  /// Each staged change as the confirmation lists it: names, then disabling, then moves, then the
+  /// default connection.
+  List<_ChangeLine> _changeLines(AssignmentState state) {
+    LanDevice byMac(String mac) => _byMac(state, mac);
+    String pinLabel(LanDevice d) => _labelForDevice(d.ip == null ? null : _effectiveIndex(d));
+    const blockedLabel = 'disabled - no Internet or VPN access';
+    return [
+      for (final e in _stagedNames.entries)
+        _ChangeLine(
+          name: byMac(e.key).displayName,
+          from: 'name ${byMac(e.key).displayName}',
+          to: e.value.isEmpty ? 'name ${_nameOf(byMac(e.key))}, detected by the router' : 'name ${e.value}',
+        ),
+      for (final e in _stagedBlocks.entries)
+        _ChangeLine(
+          name: _nameOf(byMac(e.key)),
+          from: e.value ? pinLabel(byMac(e.key)) : blockedLabel,
+          to: e.value ? blockedLabel : pinLabel(byMac(e.key)),
+        ),
+      for (final entry in _staged.entries)
+        _ChangeLine(
+          name: _byIp(state, entry.key).displayName,
+          from: _labelForDevice(assignedIndexFor(state.policies, entry.key)),
+          to: _labelForDevice(entry.value),
+        ),
+      if (_stagedDefault != null)
+        _ChangeLine(
+          name: kDefaultConnectionLabel,
+          from: _labelForIndex(state.defaultIndex ?? 0),
+          to: _labelForIndex(_stagedDefault ?? 0),
+        ),
+    ];
+  }
+
+  /// The devices this apply disables.
+  List<LanDevice> _disabling(AssignmentState state) =>
+      [for (final e in _stagedBlocks.entries) if (e.value) _byMac(state, e.key)];
+
+  /// Disabling turns the router's Time Scheduling on. Andrew's decision: when that also brings
+  /// schedules someone set up and left switched off into force, APPLY names them first (ID-261).
+  String? _scheduleWarning(AssignmentState state, List<LanDevice> disabling) {
+    final parentalAfter = applyBlocks(state.parental, Map.of(_stagedBlocks));
+    final switchedOn = schedulesSwitchedOn(state.parental, parentalAfter, _stagedBlocks.keys.toSet());
+    if (switchedOn.isEmpty) return null;
+    return "Time Scheduling is off in your router. Disabling ${joinNames([for (final d in disabling) _nameOf(d)])} "
+        'turns it on, which also puts the schedules already set there for '
+        '${joinNames([for (final e in switchedOn) e.name.isEmpty ? e.mac : e.name])} into force.';
+  }
+
+  /// Devices whose assignment to a VPN this app doesn't manage the apply replaces.
+  List<String> _foreignNames(AssignmentState state) => [
+        for (final entry in _staged.entries)
+          if (_isForeignIndex(assignedIndexFor(state.policies, entry.key))) _byIp(state, entry.key).displayName
+      ];
+
+  /// What APPLY asks of the router. The service knows IP addresses and profile indexes; only the
+  /// screen knows what the user calls them, and naming the change here is what makes the app log
+  /// readable a week later.
+  ApplyRequest _applyRequest(AssignmentState state, Map<String, String> reservations) {
+    LanDevice byMac(String mac) => _byMac(state, mac);
+    return ApplyRequest(
+      changes: Map.of(_staged),
+      reservationsToCreate: reservations,
+      newDefaultIndex: _stagedDefault,
+      changeDescriptions: [
+        for (final entry in _staged.entries)
+          '${_byIp(state, entry.key).displayName}: '
+              '${_labelForDevice(assignedIndexFor(state.policies, entry.key))} -> ${_labelForDevice(entry.value)}',
+      ],
+      defaultFrom: _labelForIndex(state.defaultIndex ?? 0),
+      defaultTo: _labelForIndex(_stagedDefault ?? 0),
+      renames: Map.of(_stagedNames),
+      deviceTypes: {
+        for (final mac in _stagedNames.keys)
+          if (byMac(mac).type != null) mac: byMac(mac).type!,
+      },
+      renameDescriptions: [
+        for (final e in _stagedNames.entries)
+          e.value.isEmpty
+              ? '${byMac(e.key).displayName}: its name cleared, so the router shows ${_nameOf(byMac(e.key))}'
+              : '${byMac(e.key).displayName} renamed to ${e.value}',
+      ],
+      blocks: Map.of(_stagedBlocks),
+      blockNames: {for (final mac in _stagedBlocks.keys) mac: _nameOf(byMac(mac))},
+      blockDescriptions: [
+        for (final e in _stagedBlocks.entries) '${_nameOf(byMac(e.key))}: internet access ${e.value ? 'disabled' : 'enabled again'}',
+      ],
+    );
+  }
+
+  /// Shows "Applying" and returns what closes it.
+  ///
+  /// A centred modal, not a spinner inside the button. Putting it in the button left a grey blob
+  /// at the bottom of the screen where the label had been, which read as the button having broken
+  /// rather than as work in progress (B8n feedback 2026-09-08). This also blocks input, which is
+  /// right: changing the default connection stops the tunnels and must not be interrupted.
+  ///
+  /// Closed by its own route, never by popping whatever is on top (ID-285). The drawer sits above
+  /// the navigator, so it opens over this dialog, and a screen picked from it is pushed on top. A
+  /// plain pop at the end then closed THAT screen and left this dialog up for good, over a DEVICES
+  /// that had finished. Removing the route itself works whatever is above it, and whether or not
+  /// this screen is still mounted.
+  void Function() _showProgress() {
     final progress = DialogRoute<void>(
       context: context,
       barrierDismissible: false,
       builder: (_) => const _ProgressDialog(),
     );
     unawaited(Navigator.of(context, rootNavigator: true).push(progress));
-    void dismissProgress() {
+    return () {
       if (progress.isActive) progress.navigator?.removeRoute(progress);
-    }
+    };
+  }
 
-    String? failure;
+  /// Sends the changes, and returns what went wrong, or null.
+  Future<String?> _runApply(AssignmentState state, Map<String, String> reservations) async {
     try {
-      await _service!.apply(
-        base: state,
-        changes: Map.of(_staged),
-        reservationsToCreate: reservations,
-        newDefaultIndex: _stagedDefault,
-        // The service knows IP addresses and profile indexes; only the screen knows what the user
-        // calls them. Naming the change here is what makes the app log readable a week later.
-        changeDescriptions: [
-          for (final entry in _staged.entries)
-            '${state.devices.firstWhere((d) => d.ip == entry.key, orElse: () => LanDevice(mac: entry.key)).displayName}: '
-                '${_labelForDevice(assignedIndexFor(state.policies, entry.key))} -> ${_labelForDevice(entry.value)}',
-        ],
-        defaultFrom: _labelForIndex(state.defaultIndex ?? 0),
-        defaultTo: _labelForIndex(_stagedDefault ?? 0),
-        renames: Map.of(_stagedNames),
-        deviceTypes: {
-          for (final mac in _stagedNames.keys)
-            if (byMac(mac).type != null) mac: byMac(mac).type!,
-        },
-        renameDescriptions: [
-          for (final e in _stagedNames.entries)
-            e.value.isEmpty
-                ? '${byMac(e.key).displayName}: its name cleared, so the router shows ${_nameOf(byMac(e.key))}'
-                : '${byMac(e.key).displayName} renamed to ${e.value}',
-        ],
-        blocks: Map.of(_stagedBlocks),
-        blockNames: {for (final mac in _stagedBlocks.keys) mac: _nameOf(byMac(mac))},
-        blockDescriptions: [
-          for (final e in _stagedBlocks.entries)
-            '${_nameOf(byMac(e.key))}: internet access ${e.value ? 'disabled' : 'enabled again'}',
-        ],
-      );
+      await _service!.apply(base: state, request: _applyRequest(state, reservations));
+      return null;
     } on AssignmentConflictException catch (e) {
-      failure = e.toString();
+      return e.toString();
     } catch (e) {
-      failure = 'Could not apply the changes: $e';
+      return 'Could not apply the changes: $e';
     }
+  }
 
-    // Re-read either way. On success it shows what was written; after a conflict it replaces the
-    // base that caused the refusal, which otherwise made every later APPLY refuse as well and left
-    // leaving the screen as the only way out.
+  /// Re-reads the router after an APPLY, and returns [failure], or what this read could not do.
+  ///
+  /// Re-read either way. On success it shows what was written; after a conflict it replaces the
+  /// base that caused the refusal, which otherwise made every later APPLY refuse as well and left
+  /// leaving the screen as the only way out.
+  Future<String?> _refreshAfterApply(String? failure) async {
     try {
       final fresh = await _service!.read();
       if (mounted) {
@@ -826,10 +886,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
     } catch (_) {
       // The notes keep what they had; the assignment itself is unaffected.
     }
-
-    dismissProgress();
-    if (mounted) setState(() => _busy = false);
-    if (failure != null && mounted) await AppErrors.system(context, _c, failure);
+    return failure;
   }
 
   /// What APPLY's confirmation says about the tunnels this apply moves devices onto.
@@ -838,22 +895,8 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
   /// internet until the slot is enabled - the fail-closed guard holds it (ID-213). The same read
   /// refreshes the row notes.
   Future<List<String>> _tunnelWarnings(AssignmentState state) async {
-    String nameOf(String ip) =>
-        state.devices.firstWhere((d) => d.ip == ip, orElse: () => LanDevice(mac: ip)).displayName;
-    final slotOf = <int, int>{
-      for (final p in _wireguardProfiles)
-        if (p.slot != null) p.vpncStateIndex!: p.slot!,
-    };
-    final defaultAfter = _stagedDefault ?? state.defaultIndex ?? 0;
-    // Devices pinned onto each tunnel, by profile index, in the order they were staged.
-    final onto = <int, List<String>>{};
-    for (final e in _staged.entries) {
-      final idx = e.value;
-      if (idx != null && slotOf.containsKey(idx)) onto.putIfAbsent(idx, () => []).add(nameOf(e.key));
-    }
-    // The default connection's tunnel, when this apply changes the default or sends a device to it.
-    final checkDefault = slotOf.containsKey(defaultAfter) && (_stagedDefault != null || _staged.containsValue(null));
-    final slots = {for (final idx in onto.keys) slotOf[idx]!, if (checkDefault) slotOf[defaultAfter]!};
+    final plan = _tunnelsToCheck(state);
+    final slots = {for (final idx in plan.onto.keys) plan.slotOf[idx]!, if (plan.checkDefault) plan.slotOf[plan.defaultAfter]!};
     if (slots.isEmpty) return const [];
 
     setState(() => _busy = true);
@@ -866,27 +909,51 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
                 if (e.value.up) e.key,
             });
       }
-      final warnings = <String>[];
-      for (final e in onto.entries) {
-        final h = health[slotOf[e.key]];
-        if (h == null) continue;
-        // Pinned devices wait for their own tunnel; they no longer fall through to the default.
-        final w = tunnelWarning(h, tunnel: _labelForIndex(e.key), who: joinNames(e.value), blocked: true);
-        if (w != null) warnings.add(w);
-      }
-      if (checkDefault) {
-        final h = health[slotOf[defaultAfter]];
-        final w = h == null
-            ? null
-            : tunnelWarning(h, tunnel: _labelForIndex(defaultAfter), who: 'devices on the default connection');
-        if (w != null) warnings.add(w);
-      }
-      return warnings;
+      return _warningsFrom(health, plan);
     } catch (e) {
       return ['The tunnels could not be checked before applying, so whether they are running is not known: $e'];
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Which tunnels this apply moves devices onto, by profile index, and whether the default
+  /// connection's tunnel needs checking too.
+  ({Map<int, int> slotOf, Map<int, List<String>> onto, bool checkDefault, int defaultAfter}) _tunnelsToCheck(
+      AssignmentState state) {
+    final slotOf = <int, int>{
+      for (final p in _wireguardProfiles)
+        if (p.slot != null) p.vpncStateIndex!: p.slot!,
+    };
+    final defaultAfter = _stagedDefault ?? state.defaultIndex ?? 0;
+    // Devices pinned onto each tunnel, by profile index, in the order they were staged.
+    final onto = <int, List<String>>{};
+    for (final e in _staged.entries) {
+      final idx = e.value;
+      if (idx != null && slotOf.containsKey(idx)) onto.putIfAbsent(idx, () => []).add(_byIp(state, e.key).displayName);
+    }
+    // The default connection's tunnel, when this apply changes the default or sends a device to it.
+    final checkDefault = slotOf.containsKey(defaultAfter) && (_stagedDefault != null || _staged.containsValue(null));
+    return (slotOf: slotOf, onto: onto, checkDefault: checkDefault, defaultAfter: defaultAfter);
+  }
+
+  List<String> _warningsFrom(
+      Map<int, TunnelHealth> health,
+      ({Map<int, int> slotOf, Map<int, List<String>> onto, bool checkDefault, int defaultAfter}) plan) {
+    final warnings = <String>[];
+    for (final e in plan.onto.entries) {
+      final h = health[plan.slotOf[e.key]];
+      if (h == null) continue;
+      // Pinned devices wait for their own tunnel; they no longer fall through to the default.
+      final w = tunnelWarning(h, tunnel: _labelForIndex(e.key), who: joinNames(e.value), blocked: true);
+      if (w != null) warnings.add(w);
+    }
+    if (plan.checkDefault) {
+      final h = health[plan.slotOf[plan.defaultAfter]];
+      final w = h == null ? null : tunnelWarning(h, tunnel: _labelForIndex(plan.defaultAfter), who: 'devices on the default connection');
+      if (w != null) warnings.add(w);
+    }
+    return warnings;
   }
 
   bool _isForeignIndex(int? idx) =>
@@ -945,41 +1012,11 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
 
   Widget _buildList() {
     final state = _state!;
-    final defaultNote = _exitNote(null, forDefault: true);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       // Two panels on different grounds. The default connection is a router-wide setting and the
       // list below it is per-device; read as one continuous column they were indistinguishable,
       // which is what B1 reported on 2026-09-08.
-      _Panel(
-        // Same ground as the device list with a teal border on both, so the two panels read as
-        // one family rather than two unrelated boxes. Not kSurface - that is the header colour,
-        // and the panel disappeared into it (B2 and B3 feedback 2026-09-08).
-        background: kConfigBg,
-        borderColour: kHighlight,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text(kDefaultConnectionLabel, style: TextStyle(color: kHighlight, fontSize: 12)),
-          const SizedBox(height: 4),
-          _PickerButton(
-            keyValue: 'default_picker',
-            label: _defaultLabel,
-            changed: _stagedDefault != null,
-            muted: defaultNote != null,
-            onTap: _busy ? null : _pickDefault,
-          ),
-          if (defaultNote != null) ...[
-            const SizedBox(height: 4),
-            Text(defaultNote, key: const Key('default_exit'), style: const TextStyle(color: kWarn, fontSize: 12)),
-          ],
-          const SizedBox(height: 6),
-          // Until build 480 this said assigned devices fall back to the default when their tunnel
-          // drops. With the fail-closed guard they do not: they have no internet (ID-340).
-          const Text(
-            'Devices set to "default" use this. A device assigned to a tunnel never falls back to it: while '
-            'that tunnel is down, the device has no internet.',
-            style: TextStyle(color: kMuted, fontSize: 12),
-          ),
-        ]),
-      ),
+      _defaultPanel(),
       if (state.ipv6On) ...[
         const SizedBox(height: 12),
         // ID-317: the app does not support IPv6. The guard and the firmware's pins are IPv4 only.
@@ -1000,24 +1037,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           for (final d in state.devices) ...[
             if (d != state.devices.first) const Divider(color: kBorder, height: 20),
-            _DeviceRow(
-              device: d,
-              name: _nameOf(d),
-              nameChanged: _stagedNames.containsKey(d.mac),
-              label: _labelForDevice(_effectiveIndex(d)),
-              changed: _staged.containsKey(d.ip) || _stagedBlocks.containsKey(d.mac),
-              blocked: _blocked(d),
-              foreign: _isForeign(d),
-              // Where a stopped tunnel sends the traffic says nothing about a device with none.
-              note: d.assignable && !_blocked(d) ? _guardNote(d) ?? _exitNote(_effectiveIndex(d)) : null,
-              onTap: _busy || !d.assignable ? null : () => _pick(d),
-              editing: _editingMac == d.mac,
-              nameController: _nameCtrl,
-              nameError: _editingMac == d.mac ? _nameError : null,
-              onNameTap: _busy ? null : () => _startRename(d),
-              onNameSubmitted: () => _submitRename(d),
-              onNameCancel: _cancelRename,
-            ),
+            _deviceRow(d),
           ],
         ]),
       ),
@@ -1025,40 +1045,103 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       const Text("Names come from your router's client list. Tap a name to change it.",
           textAlign: TextAlign.center, style: TextStyle(color: kMuted, fontSize: 11)),
       const SizedBox(height: 8),
-      // One row, two equal halves, both buttons at HOME's height so the three read as one set
-      // rather than three sizes stacked up the screen.
-      //
-      // Both are always shown and follow the pending state: with changes staged, DISCARD is red and
-      // APPLY teal; with none, both are grey and disabled. It was a Wrap, which put them side by
-      // side once a change was staged and stacked them before that - the widest label the screen
-      // ever shows is the idle APPLY 0 CHANGES, so the pair reflowed exactly when nothing was
-      // happening (ID-090). Expanded halves at the smaller label size hold the row at every width.
-      Row(children: [
-        Expanded(
-          child: AppButton(
-            keyValue: 'device_discard',
-            label: 'DISCARD CHANGES',
-            role: ButtonRole.destructive,
-            fullWidth: true,
-            fontSize: 12,
-            onPressed: _busy || _pendingCount == 0 ? null : () => setState(_c.clearStagedAssignments),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: AppButton(
-            keyValue: 'device_apply',
-            // 'APPLY 1' read as a step number rather than a count (B3 feedback).
-            label: _pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES',
-            fullWidth: true,
-            fontSize: 12,
-            onPressed: _busy || _pendingCount == 0 ? null : _apply,
-          ),
-        ),
-      ]),
+      _applyRow(),
       // AppScaffold pins HOME to the bottom over the scroll view, which clipped APPLY when the
       // list was scrolled fully down (B1 screenshot 2026-09-08).
       const SizedBox(height: 16),
+    ]);
+  }
+
+  /// The default connection, above the device list.
+  ///
+  /// Same ground as the device list with a teal border on both, so the two panels read as one family
+  /// rather than two unrelated boxes. Not kSurface - that is the header colour, and the panel
+  /// disappeared into it (B2 and B3 feedback 2026-09-08).
+  Widget _defaultPanel() {
+    final defaultNote = _exitNote(null, forDefault: true);
+    return _Panel(
+      background: kConfigBg,
+      borderColour: kHighlight,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const Text(kDefaultConnectionLabel, style: TextStyle(color: kHighlight, fontSize: 12)),
+        const SizedBox(height: 4),
+        _PickerButton(
+          keyValue: 'default_picker',
+          label: _defaultLabel,
+          changed: _stagedDefault != null,
+          muted: defaultNote != null,
+          onTap: _busy ? null : _pickDefault,
+        ),
+        if (defaultNote != null) ...[
+          const SizedBox(height: 4),
+          Text(defaultNote, key: const Key('default_exit'), style: const TextStyle(color: kWarn, fontSize: 12)),
+        ],
+        const SizedBox(height: 6),
+        // Until build 480 this said assigned devices fall back to the default when their tunnel
+        // drops. With the fail-closed guard they do not: they have no internet (ID-340).
+        const Text(
+          'Devices set to "default" use this. A device assigned to a tunnel never falls back to it: while '
+          'that tunnel is down, the device has no internet.',
+          style: TextStyle(color: kMuted, fontSize: 12),
+        ),
+      ]),
+    );
+  }
+
+  Widget _deviceRow(LanDevice d) {
+    final editing = _editingMac == d.mac;
+    return _DeviceRow(
+      device: d,
+      name: _nameOf(d),
+      nameChanged: _stagedNames.containsKey(d.mac),
+      label: _labelForDevice(_effectiveIndex(d)),
+      changed: _staged.containsKey(d.ip) || _stagedBlocks.containsKey(d.mac),
+      blocked: _blocked(d),
+      foreign: _isForeign(d),
+      // Where a stopped tunnel sends the traffic says nothing about a device with none.
+      note: d.assignable && !_blocked(d) ? _guardNote(d) ?? _exitNote(_effectiveIndex(d)) : null,
+      onTap: _busy || !d.assignable ? null : () => _pick(d),
+      editing: editing,
+      nameController: _nameCtrl,
+      nameError: editing ? _nameError : null,
+      onNameTap: _busy ? null : () => _startRename(d),
+      onNameSubmitted: () => _submitRename(d),
+      onNameCancel: _cancelRename,
+    );
+  }
+
+  /// One row, two equal halves, both buttons at HOME's height so the three read as one set rather
+  /// than three sizes stacked up the screen.
+  ///
+  /// Both are always shown and follow the pending state: with changes staged, DISCARD is red and
+  /// APPLY teal; with none, both are grey and disabled. It was a Wrap, which put them side by side
+  /// once a change was staged and stacked them before that - the widest label the screen ever shows
+  /// is the idle APPLY 0 CHANGES, so the pair reflowed exactly when nothing was happening (ID-090).
+  /// Expanded halves at the smaller label size hold the row at every width.
+  Widget _applyRow() {
+    final idle = _busy || _pendingCount == 0;
+    return Row(children: [
+      Expanded(
+        child: AppButton(
+          keyValue: 'device_discard',
+          label: 'DISCARD CHANGES',
+          role: ButtonRole.destructive,
+          fullWidth: true,
+          fontSize: 12,
+          onPressed: idle ? null : () => setState(_c.clearStagedAssignments),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: AppButton(
+          keyValue: 'device_apply',
+          // 'APPLY 1' read as a step number rather than a count (B3 feedback).
+          label: _pendingCount == 1 ? 'APPLY 1 CHANGE' : 'APPLY $_pendingCount CHANGES',
+          fullWidth: true,
+          fontSize: 12,
+          onPressed: idle ? null : _apply,
+        ),
+      ),
     ]);
   }
 
@@ -1142,27 +1225,7 @@ class _DeviceRow extends StatelessWidget {
         // Teal, not the body grey: on a phone the whole screen read as one undifferentiated block
         // and the device names are what the eye needs to land on first (B1 feedback 2026-09-08).
         if (editing)
-          // Edited in place (ID-261). Enter keeps the name; tapping anywhere else leaves it as it was.
-          TapRegion(
-            onTapOutside: (_) => onNameCancel(),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              TextField(
-                enableIMEPersonalizedLearning: false,
-                key: Key('name_field_${device.mac}'),
-                controller: nameController,
-                autofocus: true,
-                textInputAction: TextInputAction.done,
-                style: const TextStyle(color: kText, fontSize: 13),
-                decoration: const InputDecoration(isDense: true, hintText: 'empty shows the name the router detected'),
-                onSubmitted: (_) => onNameSubmitted(),
-              ),
-              if (nameError != null)
-                Text(nameError!, key: Key('name_error_${device.mac}'), style: const TextStyle(color: kError, fontSize: 12))
-              else
-                const Text('Enter to keep it, up to $kMaxDeviceNameLength characters.',
-                    style: TextStyle(color: kMuted, fontSize: 11)),
-            ]),
-          )
+          _nameEditor()
         else
           GestureDetector(
             key: Key('name_${device.mac}'),
@@ -1198,6 +1261,27 @@ class _DeviceRow extends StatelessWidget {
       ]),
     );
   }
+
+  /// Edited in place (ID-261). Enter keeps the name; tapping anywhere else leaves it as it was.
+  Widget _nameEditor() => TapRegion(
+        onTapOutside: (_) => onNameCancel(),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          TextField(
+            enableIMEPersonalizedLearning: false,
+            key: Key('name_field_${device.mac}'),
+            controller: nameController,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            style: const TextStyle(color: kText, fontSize: 13),
+            decoration: const InputDecoration(isDense: true, hintText: 'empty shows the name the router detected'),
+            onSubmitted: (_) => onNameSubmitted(),
+          ),
+          if (nameError != null)
+            Text(nameError!, key: Key('name_error_${device.mac}'), style: const TextStyle(color: kError, fontSize: 12))
+          else
+            const Text('Enter to keep it, up to $kMaxDeviceNameLength characters.', style: TextStyle(color: kMuted, fontSize: 11)),
+        ]),
+      );
 }
 
 class _PickerButton extends StatelessWidget {
