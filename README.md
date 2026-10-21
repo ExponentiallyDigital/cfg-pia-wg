@@ -865,7 +865,7 @@ All the details of what version you have, the provenance of who built it, and a 
 </p><br>
 
 - **Router firmware** - whether the router runs stock or Merlin firmware, and its version.
-- **License status** - `licensed` when the one-off purchase is entitled per the currently logged in Google account (absolutely not something I have access to, track, or want to know),`unlicenced`, or `homegrown` for a self-built copy (go you, gratz!).
+- **License status** - `licensed` when the one-off purchase is entitled per the currently logged in Play/App Store account (absolutely not something I have access to, track, or want to know),`unlicenced`, or `homegrown` for a self-built copy (go you, gratz!).
 - **"Value"** history - counted across every slot since the first watchdog was deployed to this router.
 
 - **COPY BUILD INFO** - copies the build info block as plain text, for pasting into a bug report or framing.

@@ -1,6 +1,6 @@
 # 1. CHANGELOG.md
 
-** DO NOT ALTER THE STRUCTURE OF THIS FILE** it is used by GitHub actions workflows.
+**DO NOT ALTER THE STRUCTURE OF THIS FILE** it is used by GitHub actions workflows.
 
 - [Prefix codes](#prefix-codes)
 - [1. Changes](#1-changes)
@@ -146,6 +146,9 @@ Work items for the **current** release:
   - **Third run, 2026-10-21 (run 39470183312):** with Andrew's `APP_REVIEW_PHONE`, the review notes and contact went in. Left: App Privacy by hand (steps given to Andrew: Purchases, Purchase History, for Analytics and App Functionality, not linked, not for tracking, then Publish), the video (ID-456), and the privacy policy's App Store wording (ID-466).
   - **App Privacy published, 2026-10-21 (Andrew):** Purchase History, for Analytics and App Functionality, not linked to the user, not for tracking. Apple shows it under the label "An account's or individual's purchases or purchase tendencies".
   - **The version number, build 533:** App Store Connect made the version 1.0. `listing` now sets it to pubspec.yaml's, as Play's is and as the build submitted with it carries. Left: the run that sets it, and the video (ID-456).
+  - **Set, 2026-10-21 (run 39476986901):** the version is 0.8.163. A version and the build submitted with it must carry the same number, and TestFlight holds 0.8.158 and 0.8.160, so the submission (ID-436) starts with one manual release run with both `testflight` and `app_store_listing` ticked, which makes the two match. Left: the video (ID-456).
+  - **Header, 2026-10-21:** Apple's product page has a new custom header (Header and Search Results; 5244 x 2950 or 3840 x 1646). Andrew's Play developer page header, the moon behind clouds, came from Play's image server at its largest, 4096 x 2304, and was scaled to 3840 wide and cropped to 1646 high with the moon in the middle, rather than enlarged to 5244 x 2950: `app-store/header/header-3840x1646.jpg`. No API for the header was found, so Andrew uploads it by hand. The developer icon has no App Store equivalent; the app's icon comes from the build. Left: Andrew's upload.
+  - **Uploaded, 2026-10-21 (Andrew):** App Store Connect took it as PNG, not JPEG, so the repo's copy is now `app-store/header/header-3840x1646.png`, the same image.
   - **App Privacy published by Andrew, 2026-10-21,** as `privacy_and_age_rating.md` says. The version read 1.0, which App Store Connect gave the record; from build 533 the listing sets it to pubspec.yaml's version, as Play and the build carry, so it reads 0.8.163 after the next run. Left: that run, and the video (ID-456).
 - ID-465 REL: **an internal TestFlight group that gets every build, with Andrew in it, made by the API.** Split from what was Andrew's TestFlight set-up, 2026-10-20, Andrew's go for Claude to take on what it can.
   - **Done when:** a TestFlight build reaches Andrew's iPhone with nobody adding testers by hand.
@@ -153,22 +156,15 @@ Work items for the **current** release:
   - **First run, 2026-10-20 (run 39409098628):** made the internal group "Internal" with every build, and added `andrew@exponentiallydigital.com`. Left: build 530 reaching Andrew's iPhone through TestFlight.
 - ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-435, ID-455 and ID-456.
   - **Done when:** the app is on sale.
+  - **Built in build 534:** `scripts/app_store_connect.py attach-build` puts a processed build on the App Store version, and stops if the two version numbers differ, since Apple takes only a match. `release.yml`'s new `attach_build` option runs it after the TestFlight notes, once Apple has processed the build; a tag never does. The first submission's run ticks `testflight`, `app_store_listing` and `attach_build` together: the listing sets the version from pubspec.yaml, the upload carries the same number. A test holds the option's gate. Left: that run, the in-app purchase ticked on the version page (no API for the first one found), then Andrew's Add for Review and Submit.
   - **Also:** Apple's email confirming the Small Business Program enrolment (ID-437) has arrived, so the US$9.99 pays 15% commission, not 30%.
   - **Confirmed, 2026-10-20:** Apple's email confirming the enrolment arrived.
-- ID-466 DOC: **the privacy policy covers the App Store as well as Google Play, before the first submission.** Found 2026-10-21: the policy the listing links to (`play-store/privacy.html`, published at exponentiallydigital.com/cfg-pia-wg/privacy.html) names only Google Play and the Google account for purchases, and says nothing on the device is backed up "to Google Drive (android:allowBackup="false")", which is Android's; an iPhone's own backup, to iCloud or a computer, may include what the app keeps, such as the router's address. Apple reads the policy in review. What it already says fits the App Privacy answers: RevenueCat's records are used "to see how many copies have sold", which is the Analytics purpose.
-  - **Proposed wording, for Andrew's approval:** the purchases heading "Purchases: Google Play or the App Store, and RevenueCat"; payment "handled entirely by Google Play on Android, or by Apple's App Store on iPhone and iPad"; the purchase "belongs to your Google account or your Apple Account"; and the backup sentence "On Android, nothing on this list is backed up to Google Drive (android:allowBackup="false"). On iPhone and iPad, it may be included in the device's own backup, to iCloud or a computer, as other apps' settings are. None of it is transmitted anywhere by the app."
-  - **Done when:** Andrew has approved the wording, the file says it, and the published page shows it.
-  - **Approved and written, build 533:** Andrew's "yes", 2026-10-21. `play-store/privacy.html` carries the four changes as proposed, and its effective date is 21 October 2026. Left: Andrew publishing it to exponentiallydigital.com.
-  - **Approved and written, build 533 (Andrew, 2026-10-21):** `play-store/privacy.html` carries the proposed wording word for word, and its effective date is 21 October 2026. Left: Andrew publishing it at exponentiallydigital.com/cfg-pia-wg/privacy.html.
 
 **Andrew, in the background: setting the app up on the App Store, in order.**
 
 - ID-441 BUG?: **unconfirmed: on iOS, nothing offered to save the PIA login.** Seen by Andrew 2026-10-19 in STD-1 on an iPhone, with KeePassium. iOS may offer to save an app's login only when the app declares its website as an Associated Domain (`webcredentials:`), which needs the paid team and a file on that website; no source found settles it.
   - **First:** on an iPhone, with a signed build (after ID-422), see whether iOS offers to save each of the three logins (PIA, router SSH, SMTP), with KeePassium and with iCloud Passwords.
   - **Done when:** that is recorded, and either it works or a fix, such as the Associated Domain, has been seen to work on an iPhone.
-- ID-456 DOC: **a demo video for App Review**, showing the app working against a router, as the notes describe. After ID-422.
-  - **Done when:** it's recorded and the notes link it.
-  - **A shot list, Andrew's decision, 2026-10-20,** not a demo mode: a demo mode, a sample router in the app, would take several builds and keep costing on every new router command, ahead of a release Andrew wants first. `app-store/demo_video_shot_list.md` is every step, written for someone new to the iPhone: the screen-recording button, a practice run, six shots on the spare slot wgc4 (connect, CREATE, ENABLE, the watchdog, ROUTER LOG), putting wgc4 back with DELETE, and getting the video to the Mac. It goes to Apple only, attached in App Store Connect, since it shows the home network. Left: the recording, after ID-401's sandbox purchase, and attaching it (ID-455).
 
 ---
 
@@ -187,7 +183,27 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
-2026-10-21 v0.8.163 build 533 - the privacy policy covers the App Store, and the App Store version follows pubspec.yaml
+2026-10-21 v0.8.164 build 534 - ready for the first App Store submission: the demo video attached, the policy published, and a build attached on request
+
+```play
+• Behind the scenes: groundwork for the iOS version. No change to how the app works on Android.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-466 DOC: **the privacy policy covers the App Store as well as Google Play, before the first submission.** Found 2026-10-21: the policy the listing links to (`play-store/privacy.html`, published at exponentiallydigital.com/cfg-pia-wg/privacy.html) names only Google Play and the Google account for purchases, and says nothing on the device is backed up "to Google Drive (android:allowBackup="false")", which is Android's; an iPhone's own backup, to iCloud or a computer, may include what the app keeps, such as the router's address. Apple reads the policy in review. What it already says fits the App Privacy answers: RevenueCat's records are used "to see how many copies have sold", which is the Analytics purpose.
+  - **Proposed wording, for Andrew's approval:** the purchases heading "Purchases: Google Play or the App Store, and RevenueCat"; payment "handled entirely by Google Play on Android, or by Apple's App Store on iPhone and iPad"; the purchase "belongs to your Google account or your Apple Account"; and the backup sentence "On Android, nothing on this list is backed up to Google Drive (android:allowBackup="false"). On iPhone and iPad, it may be included in the device's own backup, to iCloud or a computer, as other apps' settings are. None of it is transmitted anywhere by the app."
+  - **Done when:** Andrew has approved the wording, the file says it, and the published page shows it.
+  - **Approved and written, build 533 (Andrew, 2026-10-21):** `play-store/privacy.html` carries the proposed wording word for word, and its effective date is 21 October 2026. Left: Andrew publishing it at exponentiallydigital.com/cfg-pia-wg/privacy.html.
+  - **Published, 2026-10-21 (Andrew):** read back from exponentiallydigital.com/cfg-pia-wg/privacy.html the same day: the App Store purchase wording, the Apple Account, the iPhone backup sentence, and the effective date of 21 October 2026 are all there. Done.
+- CHG: WIP 9 -> 8 bullets. Removed: ID-466, done, above.
+- ID-456 DOC: **a demo video for App Review**, showing the app working against a router, as the notes describe. After ID-422.
+  - **Done when:** it's recorded and the notes link it.
+  - **A shot list, Andrew's decision, 2026-10-20,** not a demo mode: a demo mode, a sample router in the app, would take several builds and keep costing on every new router command, ahead of a release Andrew wants first. `app-store/demo_video_shot_list.md` is every step, written for someone new to the iPhone: the screen-recording button, a practice run, six shots on the spare slot wgc4 (connect, CREATE, ENABLE, the watchdog, ROUTER LOG), putting wgc4 back with DELETE, and getting the video to the Mac. It goes to Apple only, attached in App Store Connect, since it shows the home network. Left: the recording, after ID-401's sandbox purchase, and attaching it (ID-455).
+  - **Recorded and attached, 2026-10-21 (Andrew):** recorded on an iPhone from the shot list, and attached in App Store Connect under App Review Information, Attachment, which the review notes refer to. App Store Connect refused it as `HQVB3593.MP4`: it checks extensions in lower case only, so it went in as `cfg-pia-wg-demo.mp4`. The page saved it as it uploaded. Done.
+- CHG: WIP 8 -> 7 bullets. Removed: ID-456, done, above.
+- DOC: updated README 5.8 About's license status "Play/App Store account", was "Google account".
+
+2026-10-21 v0.8.163 build 533 - the privacy policy covers the App Store, and the App Store version follows the app's
 
 ```play
 • The privacy policy now covers the App Store as well as Google Play.

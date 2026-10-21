@@ -4,6 +4,7 @@
   python scripts/app_store_connect.py listing [--check]   the listing, screenshots, age rating, review notes (ID-455)
   python scripts/app_store_connect.py testers             an internal TestFlight group with Andrew in it (ID-465)
   python scripts/app_store_connect.py whats-new --build N --notes FILE   a build's TestFlight notes (ID-432)
+  python scripts/app_store_connect.py attach-build --build N   the build the App Store version is submitted with (ID-436)
 
 --check reads and checks every file and says what it would send, and sends nothing; it needs no key.
 Otherwise the key comes from the environment, as release.yml's iOS job has it (ID-463):
@@ -393,6 +394,25 @@ def cmd_whats_new(args):
     print(f'  build {args.build}: TestFlight notes set ({len(notes)} characters)')
 
 
+def cmd_attach_build(args):
+    """The processed build [args.build] becomes the one the App Store version is submitted with (ID-436).
+    Apple takes only a build whose version number is the version's, so a mismatch stops here."""
+    api = Api()
+    app = app_id(api)
+    found = api.get('/v1/builds', **{'filter[app]': app, 'filter[version]': args.build})['data']
+    if not found or found[0]['attributes'].get('processingState') != 'VALID':
+        die(f'build {args.build} is not processed yet')
+    build = found[0]
+    build_version = api.get(f'/v1/builds/{build["id"]}/preReleaseVersion')['data']['attributes']['version']
+    version_string, _ = pubspec_version()
+    version = editable_version(api, app, version_string)
+    store_version = api.get(f'/v1/appStoreVersions/{version}')['data']['attributes']['versionString']
+    if store_version != build_version:
+        die(f'the App Store version is {store_version} and build {args.build} is {build_version}; they must match')
+    api.call('PATCH', f'/v1/appStoreVersions/{version}/relationships/build', {'data': {'type': 'builds', 'id': build['id']}})
+    print(f'  build {args.build} ({build_version}) attached to App Store version {store_version}')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='cmd', required=True)
@@ -402,8 +422,11 @@ def main():
     w = sub.add_parser('whats-new')
     w.add_argument('--build', required=True)
     w.add_argument('--notes', required=True)
+    a = sub.add_parser('attach-build')
+    a.add_argument('--build', required=True)
     args = p.parse_args()
-    {'listing': cmd_listing, 'testers': cmd_testers, 'whats-new': cmd_whats_new}[args.cmd](args)
+    {'listing': cmd_listing, 'testers': cmd_testers, 'whats-new': cmd_whats_new,
+     'attach-build': cmd_attach_build}[args.cmd](args)
 
 
 if __name__ == '__main__':

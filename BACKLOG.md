@@ -144,4 +144,8 @@ When asked to triage BACKLOG new work, work through it in this order:
 
 ---
 
-`<none>`
+- ID-467 CHG: **shorter widget key lines on the router, through a script.** Raised 2026-10-21, Andrew, on seeing them in the web interface's Authorized Keys. Each home screen widget key's line in `sshd_authkeys` carries the whole status read inline as its `command=` restriction, about 750 characters, so the key can run nothing but that read. The same restriction, as strong, fits in about 60 characters: the read in a script in `/jffs/cfg-pia-wg` (for example `widget-read.sh`) and the line `command="/bin/sh /jffs/cfg-pia-wg/widget-read.sh"`; only root can change the script, and root can already change the keys.
+  - **Costs:** GENERATE puts the script on the router and keeps it in step with the app's read (`lib/widget_status_service.dart`); UNINSTALL removes it with the folder, so widgets stop until GENERATE is run again; keys already on routers are long lines until each phone does GENERATE again.
+  - **To check first:** whether the web interface's Authorized Keys box has a length limit, so that saving that page could cut a long line short and break the widget. If it has, this is a fix, not tidiness.
+  - **Not urgent:** the limit that broke GENERATE with five keys (ID-407) is fixed: the key list is sent in pieces.
+  - **Done when:** a widget works through a line under 100 characters, a test fails if the inline read comes back, and WGT-7 passes on a phone.
