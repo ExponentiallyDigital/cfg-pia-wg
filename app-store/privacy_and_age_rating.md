@@ -28,3 +28,7 @@ Every question is answered **None** or **No**, which gives **4+**.
 - **User-generated content: No.** Nothing is shared between users.
 - **Messaging and chat: No.**
 - **Medical or treatment information: No.**
+
+## Content rights
+
+**"No, it does not contain, show, or access third-party content."** Andrew's answer, 2026-10-21, asked by App Store Connect before the first submission. Apple means content made by others that the app shows people, such as music, films, images or articles. The app shows the user's own router settings and logs, and PIA's list of server regions, fetched with the user's own PIA account: the user's data, not published content. `scripts/app_store_connect.py listing` sets it on each run.

@@ -93,7 +93,10 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.3. Unconfirmed BUGs
 
- `<none>`
+- ID-441 BUG?: **unconfirmed: on iOS, nothing offered to save the PIA login.** Seen by Andrew 2026-10-19 in STD-1 on an iPhone, with KeePassium. iOS may offer to save an app's login only when the app declares its website as an Associated Domain (`webcredentials:`), which needs the paid team and a file on that website; no source found settles it.
+  - **First:** on an iPhone, with a signed build (after ID-422), see whether iOS offers to save each of the three logins (PIA, router SSH, SMTP), with KeePassium and with iCloud Passwords.
+  - **Done when:** that is recorded, and either it works or a fix, such as the Associated Domain, has been seen to work on an iPhone.
+  - **Moved from CHANGELOG WIP, 2026-10-21:** unconfirmed bugs live here.
 
 ---
 

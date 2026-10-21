@@ -5,6 +5,8 @@
   python scripts/app_store_connect.py testers             an internal TestFlight group with Andrew in it (ID-465)
   python scripts/app_store_connect.py whats-new --build N --notes FILE   a build's TestFlight notes (ID-432)
   python scripts/app_store_connect.py attach-build --build N   the build the App Store version is submitted with (ID-436)
+  python scripts/app_store_connect.py has-build --build N      whether Apple already has that build number (ID-468)
+  python scripts/app_store_connect.py promote --build N --to alpha|beta|production [--dry-run]   Play's tracks, on the App Store (ID-468)
 
 --check reads and checks every file and says what it would send, and sends nothing; it needs no key.
 Otherwise the key comes from the environment, as release.yml's iOS job has it (ID-463):
@@ -158,8 +160,10 @@ class Api:
         return self.call('PATCH', f'/v1/{kind}/{id_}', {'data': data})
 
     def post(self, kind, attributes, relationships):
-        return self.call('POST', f'/v1/{kind}', {'data': {'type': kind, 'attributes': attributes,
-                                                          'relationships': relationships}})['data']
+        data = {'type': kind, 'relationships': relationships}
+        if attributes:
+            data['attributes'] = attributes
+        return self.call('POST', f'/v1/{kind}', {'data': data})['data']
 
 
 def rel(kind, id_):
@@ -245,6 +249,10 @@ def cmd_listing(args):
     f = plan['fields']
     app = app_id(api)
     version_string, _ = pubspec_version()
+
+    # privacy_and_age_rating.md, Content rights: Andrew's answer, 2026-10-21.
+    api.patch('apps', app, {'contentRightsDeclaration': 'DOES_NOT_USE_THIRD_PARTY_CONTENT'})
+    print('  content rights: no third-party content')
 
     info = editable_app_info(api, app)
     loc = localization(api, f'/v1/appInfos/{info}/appInfoLocalizations', 'appInfoLocalizations', 'appInfo', info,
@@ -399,11 +407,7 @@ def cmd_attach_build(args):
     Apple takes only a build whose version number is the version's, so a mismatch stops here."""
     api = Api()
     app = app_id(api)
-    found = api.get('/v1/builds', **{'filter[app]': app, 'filter[version]': args.build})['data']
-    if not found or found[0]['attributes'].get('processingState') != 'VALID':
-        die(f'build {args.build} is not processed yet')
-    build = found[0]
-    build_version = api.get(f'/v1/builds/{build["id"]}/preReleaseVersion')['data']['attributes']['version']
+    build, build_version = processed_build(api, app, args.build)
     version_string, _ = pubspec_version()
     version = editable_version(api, app, version_string)
     store_version = api.get(f'/v1/appStoreVersions/{version}')['data']['attributes']['versionString']
@@ -411,6 +415,180 @@ def cmd_attach_build(args):
         die(f'the App Store version is {store_version} and build {args.build} is {build_version}; they must match')
     api.call('PATCH', f'/v1/appStoreVersions/{version}/relationships/build', {'data': {'type': 'builds', 'id': build['id']}})
     print(f'  build {args.build} ({build_version}) attached to App Store version {store_version}')
+
+
+def processed_build(api, app, number):
+    """Build [number] once Apple has processed it, and its version number, such as 0.8.164."""
+    found = api.get('/v1/builds', **{'filter[app]': app, 'filter[version]': number})['data']
+    if not found or found[0]['attributes'].get('processingState') != 'VALID':
+        die(f'build {number} is not processed yet')
+    build = found[0]
+    return build, api.get(f'/v1/builds/{build["id"]}/preReleaseVersion')['data']['attributes']['version']
+
+
+def cmd_has_build(args):
+    """Whether Apple already has build [args.build], for release.yml (ID-468). Apple refuses a build number
+    twice, and a build can go up from a manual run, as 534 did for the first submission, before its tag."""
+    api = Api()
+    found = api.get('/v1/builds', **{'filter[app]': app_id(api), 'filter[version]': args.build})['data']
+    print(f'  build {args.build}: ' + ('already in App Store Connect, so it is not uploaded again' if found
+                                       else 'not in App Store Connect yet'))
+    out = os.environ.get('GITHUB_OUTPUT')
+    if out:
+        with open(out, 'a', encoding='utf-8') as f:
+            f.write(f'uploaded={"true" if found else "false"}\n')
+
+
+# ── Promotion: Play's tracks, on the App Store (ID-468) ─────────────────────────────────────
+#
+# promote.yml runs this beside Play's own promotion. Play's internal track is TestFlight's Internal
+# group, which gets every build on the tag (ID-465), so there is nothing to promote to. alpha and beta,
+# Play's closed and open testing, are the external group below, after Beta App Review. production is
+# App Review, then the release. Every step is safe to run again: what is done already is reported.
+
+EXTERNAL_GROUP = 'Family'
+
+# appVersionState, or the older appStoreState Apple still sends beside it.
+WITH_APP_REVIEW = {'WAITING_FOR_REVIEW', 'IN_REVIEW', 'READY_FOR_REVIEW', 'WAITING_FOR_EXPORT_COMPLIANCE', 'ACCEPTED'}
+RELEASED = {'READY_FOR_SALE', 'READY_FOR_DISTRIBUTION', 'PENDING_APPLE_RELEASE', 'PROCESSING_FOR_DISTRIBUTION',
+            'PROCESSING_FOR_APP_STORE'}
+
+
+def production_step(state, attached, build):
+    """What production does next with an App Store version in [state] carrying the build [attached]
+    (None for none), to release build [build]: one of attach, submit, wait, release, done or stop,
+    and why, for the log."""
+    if state in EDITABLE:
+        if attached == build:
+            return 'submit', f'{state}, with this build attached: send it to App Review'
+        return 'attach', f'{state}: attach this build, then send it to App Review'
+    if attached != build:
+        return 'stop', f'{state}, but with build {attached or "none"}, not this one'
+    if state in WITH_APP_REVIEW:
+        return 'wait', f'{state}: with App Review already. Run this again once Apple approves it'
+    if state == 'PENDING_DEVELOPER_RELEASE':
+        return 'release', 'approved, and waiting to be released by hand: release it'
+    if state in RELEASED:
+        return 'done', f'{state}: released already'
+    return 'stop', f'{state}: not a state this knows what to do with'
+
+
+def testflight_step(state):
+    """What alpha or beta does next with a build whose external TestFlight state is [state]: one of
+    submit, wait, done or stop, and why."""
+    if state == 'READY_FOR_BETA_SUBMISSION':
+        return 'submit', 'not sent to Beta App Review yet: send it'
+    if state in ('WAITING_FOR_BETA_REVIEW', 'IN_BETA_REVIEW'):
+        return 'wait', f'{state}: with Beta App Review already. The group gets it once Apple approves it'
+    if state in ('BETA_APPROVED', 'READY_FOR_BETA_TESTING', 'IN_BETA_TESTING'):
+        return 'done', f'{state}: approved for external testers'
+    return 'stop', f'{state}: it can\'t go to external testers'
+
+
+def submit_for_review(api, app, version):
+    """App Store version [version] into a review submission, and the submission to App Review. An open
+    submission is used when there is one, as Apple keeps only one at a time."""
+    subs = api.get('/v1/reviewSubmissions', **{'filter[app]': app, 'filter[platform]': 'IOS'})['data']
+    open_ = [s for s in subs if s['attributes'].get('state') in ('READY_FOR_REVIEW', 'UNRESOLVED_ISSUES')]
+    sub = open_[0]['id'] if open_ else api.post('reviewSubmissions', {'platform': 'IOS'}, {'app': rel('apps', app)})['id']
+    items = api.get(f'/v1/reviewSubmissions/{sub}/items', include='appStoreVersion')['data']
+    if not any(((i.get('relationships') or {}).get('appStoreVersion') or {}).get('data', {}) == {'type': 'appStoreVersions', 'id': version}
+               for i in items):
+        api.post('reviewSubmissionItems', None, {'reviewSubmission': rel('reviewSubmissions', sub),
+                                                 'appStoreVersion': rel('appStoreVersions', version)})
+    api.patch('reviewSubmissions', sub, {'submitted': True})
+
+
+def build_notes(api, build_id):
+    """The build's en-AU TestFlight notes, set by whats-new from the release's Play note."""
+    for l in api.get(f'/v1/builds/{build_id}/betaBuildLocalizations')['data']:
+        if l['attributes'].get('locale') == LOCALE:
+            return (l['attributes'].get('whatsNew') or '').strip()
+    return ''
+
+
+def promote_testflight(api, app, build, number, dry_run):
+    groups = [g for g in api.get(f'/v1/apps/{app}/betaGroups')['data']
+              if g['attributes'].get('name') == EXTERNAL_GROUP and not g['attributes'].get('isInternalGroup')]
+    if not groups:
+        die(f'no external TestFlight group "{EXTERNAL_GROUP}"')
+    group = groups[0]['id']
+    in_group = any(b['id'] == build['id'] for b in api.get(f'/v1/betaGroups/{group}/builds', limit=200)['data'])
+    state = api.get(f'/v1/builds/{build["id"]}/buildBetaDetail')['data']['attributes'].get('externalBuildState')
+    step, why = testflight_step(state)
+    lines = [f'TestFlight group {EXTERNAL_GROUP}: build {number} ' + ('is in it' if in_group else 'is not in it yet'),
+             f'Beta App Review: {why}']
+    if step == 'stop':
+        die('; '.join(lines))
+    if dry_run:
+        return lines + ['Dry run: nothing was changed.']
+    if not in_group:
+        api.call('POST', f'/v1/betaGroups/{group}/relationships/builds', {'data': [{'type': 'builds', 'id': build['id']}]})
+        lines.append(f'Added build {number} to {EXTERNAL_GROUP}.')
+    if step == 'submit':
+        api.post('betaAppReviewSubmissions', None, {'build': rel('builds', build['id'])})
+        lines.append(f'Sent build {number} to Beta App Review; {EXTERNAL_GROUP} gets it once Apple approves it.')
+    return lines
+
+
+def promote_production(api, app, build, number, build_version, dry_run):
+    found = api.get(f'/v1/apps/{app}/appStoreVersions',
+                    **{'filter[platform]': 'IOS', 'filter[versionString]': build_version})['data']
+    lines = []
+    if not found:
+        # A later version: made from the last one, whose listing Apple copies, with "What's New" from
+        # the build's TestFlight notes, which an update must have.
+        notes = build_notes(api, build['id'])
+        if not notes:
+            die(f'build {number} has no TestFlight notes for "What\'s New"')
+        if dry_run:
+            return [f'App Store version {build_version}: not made yet. Would make it, with "What\'s New" from '
+                    f'build {number}\'s TestFlight notes, attach the build and send it to App Review.',
+                    'Dry run: nothing was changed.']
+        version = editable_version(api, app, build_version)
+        api.patch('appStoreVersions', version, {'versionString': build_version})
+        vloc = localization(api, f'/v1/appStoreVersions/{version}/appStoreVersionLocalizations',
+                            'appStoreVersionLocalizations', 'appStoreVersion', version, {})
+        api.patch('appStoreVersionLocalizations', vloc, {'whatsNew': notes})
+        lines.append(f'App Store version {build_version} made, with "What\'s New" from the TestFlight notes.')
+    else:
+        version = found[0]['id']
+    a = api.get(f'/v1/appStoreVersions/{version}')['data']['attributes']
+    state = a.get('appVersionState') or a.get('appStoreState')
+    attached = (api.get(f'/v1/appStoreVersions/{version}/build').get('data') or {}).get('id')
+    step, why = production_step(state, attached, build['id'])
+    lines.append(f'App Store version {build_version}: {why}')
+    if step == 'stop':
+        die('; '.join(lines))
+    if dry_run:
+        return lines + ['Dry run: nothing was changed.']
+    if step == 'attach':
+        api.call('PATCH', f'/v1/appStoreVersions/{version}/relationships/build', {'data': {'type': 'builds', 'id': build['id']}})
+        lines.append(f'Attached build {number}.')
+    if step in ('attach', 'submit'):
+        submit_for_review(api, app, version)
+        lines.append(f'Sent {build_version} ({number}) to App Review. It is released when approved, or by '
+                     'running this again, as the version\'s release option says.')
+    if step == 'release':
+        api.post('appStoreVersionReleaseRequests', None, {'appStoreVersion': rel('appStoreVersions', version)})
+        lines.append(f'Released {build_version} ({number}) on the App Store.')
+    return lines
+
+
+def cmd_promote(args):
+    api = Api()
+    app = app_id(api)
+    build, build_version = processed_build(api, app, args.build)
+    if args.to == 'production':
+        lines = promote_production(api, app, build, args.build, build_version, args.dry_run)
+    else:
+        lines = promote_testflight(api, app, build, args.build, args.dry_run)
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    for line in lines:
+        print(f'  {line}')
+    if summary:
+        with open(summary, 'a', encoding='utf-8') as f:
+            f.write(f'**App Store, build {args.build} ({build_version}) to {args.to}:** ' + ' '.join(lines) + '\n')
 
 
 def main():
@@ -424,9 +602,15 @@ def main():
     w.add_argument('--notes', required=True)
     a = sub.add_parser('attach-build')
     a.add_argument('--build', required=True)
+    h = sub.add_parser('has-build')
+    h.add_argument('--build', required=True)
+    pr = sub.add_parser('promote')
+    pr.add_argument('--build', required=True)
+    pr.add_argument('--to', required=True, choices=['alpha', 'beta', 'production'])
+    pr.add_argument('--dry-run', action='store_true')
     args = p.parse_args()
     {'listing': cmd_listing, 'testers': cmd_testers, 'whats-new': cmd_whats_new,
-     'attach-build': cmd_attach_build}[args.cmd](args)
+     'attach-build': cmd_attach_build, 'has-build': cmd_has_build, 'promote': cmd_promote}[args.cmd](args)
 
 
 if __name__ == '__main__':

@@ -12,6 +12,7 @@ Environment:
   FROM_TRACK     internal, alpha or beta
   TO_TRACK       alpha, beta or production
   DRY_RUN        "true" to show what would move and change nothing (the edit is thrown away)
+  BUILD          the version code the source track must carry, or nothing is promoted (ID-468)
 """
 import json
 import os
@@ -51,6 +52,11 @@ def main() -> None:
         release.pop('userFraction', None)
     moving = '; '.join(f"{r.get('name', '(unnamed)')}, version code {', '.join(r.get('versionCodes', []))}" for r in releases)
     print(f'On {source}: {moving}')
+    # ID-468: the App Store job promotes the build named, so Play must be moving the same one.
+    build = os.environ.get('BUILD', '').strip()
+    if build and not any(build in r.get('versionCodes', []) for r in releases):
+        call('DELETE', f'/edits/{edit}')
+        sys.exit(f'::error::{source} carries {moving}, not build {build}, so nothing was promoted.')
 
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if dry_run:

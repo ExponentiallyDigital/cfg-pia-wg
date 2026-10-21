@@ -104,6 +104,7 @@ Optionally and for stock only, **show each tunnel's state on the home screen**, 
   - [13.6. Which file does what](#136-which-file-does-what)
   - [13.7. Editing a screenshot](#137-editing-a-screenshot)
 - [Appendix. Process - BACKLOG and CHANGELOG management](#appendix-process---backlog-and-changelog-management)
+- [Appendix. Process - GitHub Actions workflows](#appendix-process---github-actions-workflows)
 
 ## 1. <a name='how-it-works'></a>How it works
 
@@ -2238,5 +2239,32 @@ flowchart TB
 ```
 
 <p align="center"><em>A work item's route from where it was noticed, through BACKLOG and CHANGELOG, to a commit and a release.</em></p>
+
+---
+
+## Appendix. <a name='appendix-process---github-actions-workflows'></a>Process - GitHub Actions workflows
+
+What each workflow in `.github/workflows` does, and when it runs. A release goes out to both stores from one merge of `dev` to `main` and one `v*` tag on the merge commit; "Promote release" then moves the same build onwards on both (ID-468).
+
+| Workflow | Runs when | What it does |
+| --- | --- | --- |
+| `release.yml` | a `v*` tag, or by hand | **Android:** builds and uploads to Play's internal track, and makes the GitHub release and SBOM. **iOS:** builds, signs, uploads to TestFlight with notes and testers, and makes the iOS SBOM. A build number Apple already has isn't uploaded again. A manual run can also update the App Store listing and attach the build to the App Store version. |
+| `promote.yml` | by hand | **Both stores, or either:** moves one build onwards. On Play, between tracks; on the App Store, to the step that matches the track (below). |
+| `quality_and_security.yml` | pull requests to `main`, pushes to `feature/` and `fix/` branches, a schedule, and before each release | tests (Flutter's and the release scripts'), analysis, OSV, CodeQL, MobSF, the debug APK and the iOS simulator build |
+| `play_listing.yml` | by hand | Play listing text |
+| `app_store_listing.yml` | by hand (once on `main`), or from `release.yml` | App Store listing, screenshots, review notes, age rating |
+| `pia_key_check.yml` | daily | emails Andrew if PIA's server list key changes |
+| `target_api_reminder.yml` | each 1 June | opens an issue to raise Android's target API level |
+| `weekly_updates.yml` | weekly | pull requests for a newer Flutter and package updates |
+
+The App Store has no tracks. Every version goes through App Review, so each of Play's tracks has an App Store counterpart:
+
+| Play track | App Store counterpart |
+| --- | --- |
+| internal | TestFlight's Internal group, which gets every build on the tag |
+| alpha / beta | TestFlight's external group Family: the build is added and sent to Beta App Review |
+| `** PRODUCTION **` | the version goes to App Review with the build; once approved, it's released, by Apple or by running production again, as the version's release option says |
+
+Each App Store step is safe to run again: what is already done is reported, and a version carrying a different build stops the run. A dry run shows both stores' next steps and changes nothing.
 
 ---

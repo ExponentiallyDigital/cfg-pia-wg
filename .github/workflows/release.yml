@@ -1,5 +1,5 @@
 # =================================================================
-# GitHub Actions Workflow: Build, Release, and Deploy to Play Store
+# GitHub Actions Workflow: Build and release, to Google Play and the App Store
 # Triggers on git tag pushes matching "v*" (e.g. v0.7.06)
 # =================================================================
 name: "Build and release"
@@ -510,8 +510,8 @@ jobs:
   # Signing is Xcode's automatic signing, authorised by the App Store Connect API key in three
   # secrets (ID-463), so no certificate or profile is kept anywhere: Xcode makes what it needs on
   # the runner. Runs alongside the Android release and never blocks it. A tag, or a manual run with
-  # testflight ticked, also uploads it to App Store Connect for TestFlight (ID-431); otherwise the
-  # .ipa is only kept as a short-lived artifact.
+  # testflight ticked, also uploads it to App Store Connect for TestFlight (ID-431), unless Apple has
+  # that build number already (ID-468); otherwise the .ipa is only kept as a short-lived artifact.
   ios-release:
     name: Signed iOS build
     needs: quality-and-security
@@ -530,6 +530,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Every tag, as the Android job has: the TestFlight notes cover each CHANGELOG block since
+          # the last release tag, and a shallow checkout has none ("no version tag below", 2026-10-21).
+          fetch-depth: 0
 
       - name: Set up Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -649,8 +652,24 @@ jobs:
           echo "$sig" | grep -q '^TeamIdentifier=RL4UB6WKMV$' || { echo "::error::the .ipa is not signed by team RL4UB6WKMV"; exit 1; }
           echo "$sig" | grep -q '^Authority=Apple Distribution' || { echo "::error::the .ipa is not signed for distribution"; exit 1; }
 
-      - name: Upload to App Store Connect for TestFlight
+      # ID-468: Apple refuses a build number twice, and a build can go up from a manual run before its
+      # tag, as 534 did for the first submission. The client is set up here for the steps after, too.
+      - name: Is the build in App Store Connect already
+        id: asc
         if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/asc"
+          "$RUNNER_TEMP/asc/bin/pip" install --quiet --disable-pip-version-check \
+            PyJWT==2.10.1 cryptography==44.0.2 requests==2.34.2
+          BUILD=$(grep -m1 '^version:' pubspec.yaml | sed 's/.*+//')
+          "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py has-build --build "$BUILD"
+
+      - name: Upload to App Store Connect for TestFlight
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true) && steps.asc.outputs.uploaded == 'false' }}
         env:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -679,9 +698,6 @@ jobs:
           ATTACH_BUILD: ${{ inputs.attach_build == true }}
         run: |
           dart run tool/release_notes.dart --tag "$TARGET_TAG"
-          python3 -m venv "$RUNNER_TEMP/asc"
-          "$RUNNER_TEMP/asc/bin/pip" install --quiet --disable-pip-version-check \
-            PyJWT==2.10.1 cryptography==44.0.2 requests==2.34.2
           "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py testers
           BUILD=$(grep -m1 '^version:' pubspec.yaml | sed 's/.*+//')
           "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py whats-new --build "$BUILD" --notes play-store/whatsnew-en-AU
