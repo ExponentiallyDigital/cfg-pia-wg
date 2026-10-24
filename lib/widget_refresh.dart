@@ -47,11 +47,15 @@ import 'widget_status.dart';
 import 'widget_status_service.dart';
 
 /// What one refresh did, so the caller - and the tests - can tell "nothing to do" from "could not
-/// reach it". None of these raises a notification; all but [noKey] and [done] leave a footer
+/// reach it". None of these raises a notification; all but [noKey], [locked] and [done] leave a footer
 /// saying the refresh did not happen - see rule 2 in this file's header.
 enum WidgetRefreshOutcome {
   /// No key is installed, so the widget was never promised a refresh. Nothing was tried.
   noKey,
+
+  /// The phone is locked, so the key can't be read (ID-438). Nothing was tried and nothing is
+  /// written: it isn't a fault, and the last reading stands until the phone is unlocked.
+  locked,
 
   /// A key, but no remembered router address or login to use it with.
   notSetUp,
@@ -139,6 +143,7 @@ Future<WidgetRefreshOutcome> _refresh(
   DateTime Function() clock,
 ) async {
   final keys = store ?? WidgetKeyStore();
+  if (!await keys.readable()) return WidgetRefreshOutcome.locked;
   final seed = await keys.read();
   if (seed == null) return WidgetRefreshOutcome.noKey;
 
@@ -217,6 +222,11 @@ void callbackDispatcher() {
 /// widget sits on whatever it last knew for fifteen minutes or more after the key goes in, which
 /// looks exactly like a feature that does not work (reported on a real phone, 2026-10-12).
 Future<void> scheduleWidgetRefresh() async {
+  if (!backgroundRefreshSupported()) {
+    // iOS: no schedule yet (ID-439). The app reads the router when it opens instead.
+    unawaited(refreshWidgetStatus());
+    return;
+  }
   await Workmanager().initialize(callbackDispatcher);
   unawaited(refreshWidgetStatus());
   await Workmanager().registerPeriodicTask(
@@ -231,13 +241,28 @@ Future<void> scheduleWidgetRefresh() async {
 /// Stops the periodic refresh. Called when the key is removed - a job that can no longer log in
 /// has nothing to do but wake the phone up.
 Future<void> cancelWidgetRefresh() async {
+  if (!backgroundRefreshSupported()) return;
   await Workmanager().initialize(callbackDispatcher);
   await Workmanager().cancelByUniqueName(kWidgetRefreshTask);
 }
 
-/// True where the app has a home screen widget: Android. Read through [defaultTargetPlatform], so a
-/// test can run as iOS (ID-425).
-bool homeWidgetSupported() => defaultTargetPlatform == TargetPlatform.android;
+/// True where the app has a home screen widget: Android, and iOS from ID-438. Read through
+/// [defaultTargetPlatform], so a test can run as either.
+bool homeWidgetSupported() =>
+    defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
+
+/// True where the widget refreshes itself in the background: Android. iOS until ID-439 reads the
+/// router only when the app opens or comes back ([refreshWidgetOnOpen]).
+bool backgroundRefreshSupported() => defaultTargetPlatform == TargetPlatform.android;
+
+/// Where the widget can't refresh itself yet (iOS, until ID-439), the app refreshes it as it opens
+/// and each time it comes back, so a tap on the widget, which opens the app, brings it up to date.
+/// With no key it stops at the key store, and on Android it does nothing: WorkManager has it.
+/// [refresh] stands in for [refreshWidgetStatus] in a test.
+Future<void> refreshWidgetOnOpen({Future<WidgetRefreshOutcome> Function()? refresh}) async {
+  if (!homeWidgetSupported() || backgroundRefreshSupported()) return;
+  await (refresh ?? refreshWidgetStatus)();
+}
 
 /// Points WorkManager - and so the widget's refresh button, which runs through it - at THIS
 /// build's entry point, and does nothing else: no schedule is started here. Called from `main()`
@@ -250,10 +275,10 @@ bool homeWidgetSupported() => defaultTargetPlatform == TargetPlatform.android;
 /// Deliberately swallows its errors - a platform without the plugin (a test, a desktop build)
 /// must not stop the app from starting over a widget it does not have.
 ///
-/// Android only: the widget is Android's, and iOS has none yet (ID-425, until ID-438). [initialize]
-/// stands in for the plugin in a test.
+/// Android only: iOS registers no background refresh until ID-439. [initialize] stands in for the
+/// plugin in a test.
 Future<void> reregisterWidgetRefresh({Future<void> Function()? initialize}) async {
-  if (!homeWidgetSupported()) return;
+  if (!backgroundRefreshSupported()) return;
   try {
     await (initialize ?? () => Workmanager().initialize(callbackDispatcher))();
   } catch (_) {

@@ -229,9 +229,19 @@ List<String> _linesWithout(String current, String? keyBlob) => current
 /// `router_prefs.dart`, which stays the router address and nothing else, for the reasons its own
 /// header gives. README, SECURITY.md and the privacy policy have to say both are kept.
 class WidgetKeyStore {
-  WidgetKeyStore({FlutterSecureStorage? storage}) : _storage = storage ?? const FlutterSecureStorage();
+  WidgetKeyStore({FlutterSecureStorage? storage, Future<bool?> Function()? protectedDataAvailable})
+      : _storage = storage ?? const FlutterSecureStorage(),
+        _protectedDataAvailable = protectedDataAvailable;
 
   final FlutterSecureStorage _storage;
+  final Future<bool?> Function()? _protectedDataAvailable;
+
+  /// False while an iPhone is locked: the key is kept with iOS's default protection, readable only
+  /// while the phone is unlocked, which is Andrew's choice (2026-10-21): no refresh on a locked phone
+  /// (ID-438). True everywhere else, since the plugin answers null off iOS. [protectedDataAvailable]
+  /// stands in for the plugin in a test.
+  Future<bool> readable() async =>
+      (await (_protectedDataAvailable ?? _storage.isCupertinoProtectedDataAvailable)()) ?? true;
 
   /// The private seed. Deliberately the only secret here - Ed25519 derives the public half.
   static const String kStorageKey = 'cfg_pia_wg_widget_key_seed';

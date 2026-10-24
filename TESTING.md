@@ -1695,6 +1695,19 @@ Until build 500, clearing the app's storage left its key on the router, and once
 - Do: REMOVE, then REMOVE at "Remove every widget key?".
 - Pass if: it says every widget key was removed, the router's count is `0`, and any key of your own is still in `nvram get sshd_authkeys`.
 
+**WGT-8** The iPhone widgets show the last reading, and opening the app updates them (ID-438) [hand]
+
+- Starts with: an iPhone with this build from TestFlight, at home, and the app connected to the router once.
+- Do: in the app, SETTINGS, HOME SCREEN WIDGET KEY, GENERATE. Give the router login when asked.
+- Do: go to the iPhone's home screen. Touch and hold an empty space until the icons wiggle. Tap Edit at the top left, then Add Widget. Type `cfg-pia-wg` in the search box and tap it. Swipe to Tunnels, the wide one, and tap Add Widget. Tap Done at the top right.
+- Pass if: the widget shows a row per configured tunnel, the badge, and "Router checked HH:MM" at about the time of GENERATE.
+- Do: add Summary the same way, the small square one.
+- Pass if: it shows the same badge, and one line under it.
+- Do: wait two minutes, then tap the Tunnels widget. The app opens. Go back to the home screen: swipe up from the bottom edge.
+- Pass if: the footer's time is now the time you tapped it.
+- Do: press the side button to lock the iPhone. Wait two minutes, then unlock it.
+- Pass if: the widget shows the same reading as before, with nothing about a failed refresh. A locked iPhone doesn't refresh, by design.
+
 ---
 
 ## <a name='abt'></a>ABT. About

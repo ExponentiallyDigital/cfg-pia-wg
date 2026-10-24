@@ -87,6 +87,7 @@ Optionally and for stock only, **show each tunnel's state on the home screen**, 
   - [10.2. The key, and what it can do](#102-the-key-and-what-it-can-do)
   - [10.3. Refreshing, and the two rules it keeps](#103-refreshing-and-the-two-rules-it-keeps)
   - [10.4. What the Kotlin side draws](#104-what-the-kotlin-side-draws)
+  - [10.5. The iPhone widgets](#105-the-iphone-widgets)
 - [11. Build provenance (the About screen)](#11-build-provenance-the-about-screen)
   - [11.1. The channel](#111-the-channel)
   - [11.2. Where each field comes from](#112-where-each-field-comes-from)
@@ -1969,6 +1970,15 @@ Two things the providers must do that are easy to get wrong:
 - **Resolve by fully-qualified name.** `home_widget` looks up a provider as `<applicationId>.<androidName>`, which misses a class in a subpackage; these live in `.widget`, so the Dart side passes `qualifiedAndroidName`. Without it, every update call silently asks Android for a class that does not exist.
 - **Never show an age.** The footer is written once and nothing redraws it until the next push, so "checked 2 minutes ago" becomes a lie the moment refreshing stops. It carries a clock time instead, which stays true however stale the reading gets.
 
+### 10.5. <a name='the-iphone-widgets'></a>The iPhone widgets
+
+The same design, so nothing is decided twice (ID-438). Everything above 10.4 is shared Dart: the read, the key, the rules, and the strings. iOS widgets can't be Flutter either, so `ios/CfgPiaWgWidget/CfgPiaWgWidget.swift` draws the two sizes in SwiftUI, Tunnels (medium) and Summary (small), from the keys `home_widget` writes. It is an app extension, a second target built into the app, not a second app.
+
+- **Shared through an app group,** `group.com.exponentiallydigital.cfgpiawg`, in both targets' entitlements; `pushWidgetStatus` names it before it writes. `test/unit/widget_ios_test.dart` holds the keys, the widget kinds, the group and the colours to the Dart side and to Android's.
+- **Embedded before Thin Binary.** After it, Xcode reports a dependency cycle in a Flutter app.
+- **No background refresh yet (ID-439).** The app reads the router as it opens and each time it comes back (`refreshWidgetOnOpen`), so a tap on the widget, which opens the app, brings it up to date.
+- **Nothing while the phone is locked,** Andrew's choice. The key keeps iOS's default protection, readable only while the phone is unlocked, and a refresh that finds it locked returns `locked` and writes nothing: the last reading stands, with no failure in the footer.
+
 ---
 
 ## 11. <a name='build-provenance-the-about-screen'></a>Build provenance (the About screen)
@@ -2239,6 +2249,8 @@ flowchart TB
 ```
 
 <p align="center"><em>A work item's route from where it was noticed, through BACKLOG and CHANGELOG, to a commit and a release.</em></p>
+
+A work item says what is to be done, at a high level, in as few lines as it can, and doesn't grow: `DoD:`, `Plan:` and a one-line `Now:` are added only when they earn their place, and the detail lives in its plan file under `.claude/plans/` (CHANGELOG.md, "Work items: less is better").
 
 ---
 

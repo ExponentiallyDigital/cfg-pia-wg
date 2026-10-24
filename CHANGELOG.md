@@ -37,7 +37,13 @@ Work items below use these three-letter prefixes.
 |  TST   | Test added or updated                                                 |
 |   UI   | User interface, element or copy level, may also appear under code GUI |
 
-Bold the first sentence only on multi-sentence items, as a scannable headline. Single-sentence items stay plain.
+**Work items: less is better.** A work item says what is to be done, at a high level, in as few lines as it can: often its first line alone. It is not a running status, and it doesn't grow. Add a line only when it earns its place, and only these:
+
+- `DoD:` the definition of done, when the first line doesn't make it plain.
+- `Plan:` a link to its plan file in `.claude/plans/`, which holds the design, the decisions, the reasoning and a dated log of runs and evidence.
+- `Now:` where it stands, in one line, replaced when it changes, never added to. Anything still to do is written here, never only in the plan.
+
+No bold inside work items. When an item closes, it moves to its release block with one line added: `Closed <date>: <the evidence>.` Release blocks before build 535 keep their older, longer form.
 
 **A privacy or security item is not done until its check has been seen to fail.** Before a SEC item, or any item that makes or changes a claim about protection, moves out of WIP, a check that breaks the protected path must exist, and it must have been run and seen to fail with the protection broken and pass with it restored. The check goes in `scripts/check-claims.sh` wherever it can run on the router. A test that only checks command text doesn't count. This rule was added on 2026-09-30, after the watchdog's encrypted lookups (ID-076) turned out never to have worked.
 
@@ -79,40 +85,15 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
-- ID-469 REL: **the next tagged release's iOS build reaches TestFlight from the tag, and signing leaves no pile of certificates.** Split from ID-431 when it closed, 2026-10-21. v0.8.164's tag skips the upload, since Apple has build 534 from the submission run (ID-468), so a tag's own upload is first seen on the next release.
-  - **Done when:** a tag's run uploads its build and it shows in TestFlight, and Andrew has checked Certificates, IDs & Profiles, Certificates, after it: if each run leaves a new certificate, the job keeps one in a secret instead (ID-418).
-- ID-424 TST: **measure how often iOS lets the app refresh in the background, for an iOS widget like Android's (ID-376).** After ID-422.
-  - **Done when:** a day's refresh times from an iPhone are recorded.
-- ID-453 MOD: **the slot modal's manage mode and watchdog mode become two widgets sharing the slot list.** They share little else. Independent of the slices.
-  - **Done when:** each mode is its own widget, nothing a user sees changes, and the full suite passes unchanged.
-- ID-438 ADD: **an iOS home screen widget showing the last status the app read.** After ID-431.
-  - **Done when:** it shows each tunnel's state as last read.
-- ID-439 ADD: **the iOS widget refreshes itself in the background.** After ID-424 and ID-438.
-  - **Done when:** it updates with the app closed.
-- ID-440 REL: **get a D-U-N-S number from Dun & Bradstreet.**
-  - **Done when:** the D-U-N-S number is issued.
-- ID-421 REL: **move the Apple membership to the company, through Apple support.** After ID-440.
-  - **Done when:** the App Store shows the company as the seller.
-- ID-375 BLD: **either** replace this module or **post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix.** Agreed 2026-10-09, Andrew's call, but not posted: the `gh` token here can't comment outside the organisation ("Resource not accessible by personal access token"). Post it from Andrew's own login, or after `gh auth refresh -s public_repo`. Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment:
-
-  ```markdown
-  Still happening on 0.14.4, and not only with flavors or App Clips: plain `ios: true` triggers it too.
-
-  With `ios: true` and no flavor, `createIcons` ends with `changeIosLauncherIcon('AppIcon', flavor)`, which sets every line containing `ASSETCATALOG` in the build configurations to the icon name. In our `ios/Runner.xcodeproj/project.pbxproj` (Flutter 3.47.5), two of the three
-
-      ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-
-  lines became
-
-      ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = AppIcon;
-
-  even though the icon set's name hadn't changed.
-
-  This PR's one-line fix still works, but it no longer applies as is: the check has moved to around line 340 of `lib/ios.dart`. The equivalent there is `line.contains('ASSETCATALOG_COMPILER_APPICON_NAME')` in place of `line.contains('ASSETCATALOG')`.
-
-  For now we run the tool through a small wrapper that puts the other lines back afterwards.
-  ```
-  - **Done when:** a `flutter_launcher_icons` release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the comment having been posted, and the wrapper and its notes are gone. Checked 2026-10-19: 0.14.4 is still the latest, and PR #549 is open.
+- ID-469 REL: the next tag uploads its own iOS build to TestFlight.
+  - DoD: the build shows in TestFlight, and Certificates, IDs & Profiles shows no new certificate left by each run.
+  - Plan: [plan_promote-both-stores.md](.claude/plans/plan_promote-both-stores.md)
+- ID-424 TST: measure how often iOS lets the app refresh in the background.
+  - DoD: a day's refresh times from an iPhone are recorded.
+- ID-439 ADD: the iOS widget refreshes itself in the background. After ID-424.
+  - DoD: it updates with the app closed.
+- ID-453 MOD: the slot modal's manage and watchdog modes become two widgets sharing the slot list; they share little else.
+  - DoD: nothing a user sees changes, and the full suite passes unchanged.
 
 ---
 
@@ -122,19 +103,14 @@ Work items for the **current** release:
 
 **Claude, in priority order: the iOS release.**
 
-- ID-436 REL: **the first App Store submission is approved.** After ID-431, ID-435, ID-455 and ID-456.
-  - **Done when:** the app is on sale, and on an iPhone the home screen's review link opens its listing (from ID-417).
-  - **Built in build 534:** `scripts/app_store_connect.py attach-build` puts a processed build on the App Store version, and stops if the two version numbers differ, since Apple takes only a match. `release.yml`'s new `attach_build` option runs it after the TestFlight notes, once Apple has processed the build; a tag never does. The first submission's run ticks `testflight`, `app_store_listing` and `attach_build` together: the listing sets the version from pubspec.yaml, the upload carries the same number. A test holds the option's gate. Left: that run, the in-app purchase ticked on the version page (no API for the first one found), then Andrew's Add for Review and Submit.
-  - **Run, 2026-10-21 (run 39522411279): passed.** The listing set the version to 0.8.164; build 534 uploaded, processed with `usesNonExemptEncryption = False`, took its TestFlight notes, and was attached: "build 534 (0.8.164) attached to App Store version 0.8.164". Left: Andrew ticking Router features under In-App Purchases and Subscriptions, choosing how the version is released, Add for Review, Submit to App Review, and App Review's answer.
-  - **Submitted, 2026-10-21 (Andrew):** in this App Store Connect the in-app purchase isn't chosen on the version page: Andrew put Router features in a Draft Submission from its own page, then Add for Review on the version added 0.8.164 (534) to the same draft. Apple first asked for Content Rights, answered "No, it does not contain, show, or access third-party content", recorded in `privacy_and_age_rating.md` and now set by `listing` too. "2 Items Submitted": the version and Router features, reviewed together, up to 48 hours. Left: App Review's answer.
-  - **Also:** Apple's email confirming the Small Business Program enrolment (ID-437) has arrived, so the US$9.99 pays 15% commission, not 30%.
-  - **Confirmed, 2026-10-20:** Apple's email confirming the enrolment arrived.
-- ID-468 REL: **"Promote release" promotes on Google Play and the App Store together, and a tag doesn't fail on a build Apple already has.**
-  - **Why:** a tag already uploads to both stores, but only Play's half could be promoted. Andrew asked, 2026-10-21, for both stores to get each release from one dev-to-main merge and tag.
-  - **The App Store's side of Play's tracks:** internal is TestFlight's Internal group, which already gets every build on the tag (ID-465). alpha and beta are the external TestFlight group Family: the build is added to it and sent to Beta App Review. `** PRODUCTION **` is App Review: the App Store version for the build's version number is found, or made from the last one, with the build's TestFlight notes as its "What's New"; the build is attached and the version submitted. A version already with App Review is left alone; one approved for a manual release is released; one on sale is reported. So production is run once to submit and, with a manual release, once more after approval.
-  - **Built:** `scripts/app_store_connect.py promote`, whose next step for each state is a table of its own (`production_step`, `testflight_step`) with Python tests in `scripts/test_app_store_connect.py`, now run by the quality workflow. `promote.yml` gains an App Store job beside Play's, and a `stores` choice: both, Google Play only, or App Store only. Its dry run shows both stores' next steps and changes nothing. Play's job now checks the source track carries the build named, so one run can't promote two different builds.
-  - **The tag:** `scripts/app_store_connect.py has-build` asks Apple whether it has the build number, and release.yml's iOS job skips the TestFlight upload when it has, since Apple refuses one twice. Build 534 went up from a manual run, for the submission, before v0.8.164 was tagged. The notes and testers step still runs, so the build takes the release's notes. release.yml's header names both stores.
-  - **Done when:** v0.8.164's tag run passes with the iOS upload skipped and the release carrying the iOS SBOM (from ID-433), and a dry run of "Promote release" shows both stores' next steps.
+- ID-436 REL: the first App Store submission is approved, and the app is on sale.
+  - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
+  - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
+  - Now: 0.8.164 (534) and Router features are with App Review, submitted 2026-10-21.
+- ID-438 ADD: an iOS home screen widget showing the last status the app read.
+  - DoD: it shows each tunnel's state as last read.
+  - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
+  - Now: built in build 535, tests pass; left: a CI build, signing, and WGT-8 on an iPhone.
 
 ---
 
@@ -152,6 +128,20 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-21 v0.8.165 build 535 - release promotion covers both stores, and the iOS home screen widget is built
+
+- DOC: work items follow a new rule, "less is better", in this file's header: what is to be done, often in one line, with only `DoD:`, `Plan:` and a one-line `Now:` added when they earn their place, and no bold. Detail goes to plan files. Andrew's decision, 2026-10-21. BACKLOG's items now say `DoD:` and carry no bold.
+- CHG: WIP 2 -> 2 bullets. ID-436 and ID-468 made short; their detail moved word for word to `plan_app-store-submission.md` and `plan_promote-both-stores.md`.
+- CHG: CHANGELOG 1.1 in Andrew's agreed order: ID-469, ID-438, ID-424, ID-439, ID-453. Made short; the widget items' detail moved to `plan_ios-widget.md`, ID-469's to `plan_promote-both-stores.md`. Dropped from ID-453: "Independent of the slices."
+- DOC: removed "1.3. iOS version" from BACKLOG.md
+- ID-468 REL: "Promote release" promotes the same build on Google Play and the App Store.
+  - DoD: v0.8.164's tag run passes, with the iOS upload skipped and the iOS SBOM attached, and a dry run shows both stores.
+  - Plan: [plan_promote-both-stores.md](.claude/plans/plan_promote-both-stores.md)
+  - Closed 2026-10-21: tag run 39542215493 passed with the upload skipped and both SBOMs attached; dry runs 39544201487 (alpha) and 39544205094 (production) showed both stores.
+- CHG: WIP 2 -> 1 bullets. Removed: ID-468, closed, above.
+- REL: v0.8.164 (534) promoted to Play production, 2026-10-21 (run 39544595728). The App Store side reported 0.8.164 still with App Review.
+- CHG: WIP 1 -> 2 bullets. Added: ID-438, from 1.1, Andrew's go. Added to BACKLOG: ID-470, Android's widget not refreshing while locked, to match.
 
 2026-10-21 v0.8.164 build 534 - ready for the first App Store submission: the demo video attached, the policy published, and a build attached on request
 
