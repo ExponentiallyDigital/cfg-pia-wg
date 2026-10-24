@@ -420,15 +420,15 @@ void main() {
       expect(tester.takeException(), isNull, reason: 'no overflow');
     });
 
-    // ID-425: the key serves Android's home screen widget, and iOS has none yet.
-    testWidgets('on iOS there is no HOME SCREEN WIDGET KEY, and the other rows are all there', (tester) async {
+    // ID-438: iOS has the home screen widget too, so it has the key's row, with the others.
+    testWidgets('on iOS there is a HOME SCREEN WIDGET KEY, and the other rows are all there', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       // Reset by a teardown too, so a failure here can't leave every later test running as iOS.
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       await _pumpSettings(tester);
 
-      expect(find.byKey(const Key('settings_widget_key')), findsNothing);
-      expect(find.text('HOME SCREEN WIDGET KEY'), findsNothing);
+      expect(find.byKey(const Key('settings_widget_key')), findsOneWidget);
+      expect(find.text('HOME SCREEN WIDGET KEY'), findsOneWidget);
       for (final key in const ['settings_dns_routing', 'settings_forget_router_ip', 'settings_uninstall']) {
         expect(find.byKey(Key(key)), findsOneWidget, reason: key);
       }

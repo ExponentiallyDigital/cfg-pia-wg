@@ -55,10 +55,11 @@ if ($args.Count -eq 0) {
     Write-Host "  .\scripts\build.ps1 [mode] [options]"
     Write-Host ""
     Write-Host "${CYAN}Modes:${RESET}"
-    Write-Host "  all         Build everything"
+    Write-Host "  all         Build everything (on a Mac, the .ipa too)"
     Write-Host "  debug       Build only the debug APK"
     Write-Host "  release     Build only the release APK"
     Write-Host "  aab         Build only the Play Store AAB"
+    Write-Host "  ipa         Build only the iOS .ipa (Mac only)"
     Write-Host ""
     Write-Host "${CYAN}Options:${RESET}"
     Write-Host "  --no-clean   Skip running 'flutter clean'"
@@ -70,6 +71,7 @@ if ($args.Count -eq 0) {
     Write-Host "  .\scripts\build.ps1 all"
     Write-Host "  .\scripts\build.ps1 release --no-clean"
     Write-Host "  .\scripts\build.ps1 debug"
+    Write-Host "  ./scripts/build.ps1 ipa --skip-test   (on a Mac)"
     Write-Host ""
     exit 0
 }
@@ -85,7 +87,7 @@ $SKIP_PIN = $false
 
 foreach ($arg in $args) {
     switch -Regex ($arg) {
-        "^(debug|release|aab|all)$" { $MODE = $arg }
+        "^(debug|release|aab|ipa|all)$" { $MODE = $arg }
         "^--no-clean$" { $RUN_CLEAN = $false }
         "^--clean$" { $RUN_CLEAN = $true }
         "^--skip-test$" { $SKIP_TEST = $true }
@@ -125,20 +127,27 @@ $BUILD_START = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $DEBUG_BUILD_TIME = 0
 $RELEASE_BUILD_TIME = 0
 $AAB_BUILD_TIME = 0
+$IPA_BUILD_TIME = 0
 
 ###############################################################################
 # Validate environment
 ###############################################################################
 Write-Host "${CYAN}Validating environment...${RESET}"
 
+# ID-475: the .ipa needs Xcode, so only a Mac builds it, alone or as part of all.
+if ($MODE -eq "ipa" -and -not $IsMacOS) { Stop-Build "An .ipa needs Xcode, so only a Mac can build one." }
+$BUILD_IPA = $MODE -eq "ipa" -or ($MODE -eq "all" -and $IsMacOS)
+$BUILD_ANDROID = $MODE -ne "ipa"
+
 $tools = @('flutter', 'dart')
 if (-not $SKIP_PIN) { $tools += 'git' }
+if ($BUILD_IPA) { $tools += 'xcodebuild' }
 foreach ($tool in $tools) {
     if (-not (Get-Command $tool -ErrorAction Ignore)) { Stop-Build "$tool not found in PATH." }
 }
 
 # flutter doctor is slow, so it only runs when ANDROID_HOME has to be found.
-if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
+if ($BUILD_ANDROID -and [string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
     Write-Host "${CYAN}ANDROID_HOME is not set; asking flutter doctor (this may take a moment)...${RESET}"
     # Only the SDK path is wanted here; nothing else doctor reports should stop the build.
     $doctorOutput = & { $PSNativeCommandUseErrorActionPreference = $false; flutter doctor -v }
@@ -148,10 +157,44 @@ if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
         if (Test-Path $sdkPath) { $env:ANDROID_HOME = $sdkPath }
     }
 }
-if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
+if ($BUILD_ANDROID -and [string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
     Stop-Build "ANDROID_HOME is not set and could not be detected via Flutter."
 }
-Write-Host "${GREEN}Environment OK (ANDROID_HOME: $env:ANDROID_HOME)${RESET}"
+
+# Release signing, checked now rather than when Gradle signs: without it the release build fails
+# after the tests and the debug build ("SigningConfig "release" is missing required property
+# "storeFile""). Gradle resolves storeFile from android/app, so ../release.jks is android/release.jks.
+if ($MODE -in "release", "aab", "all") {
+    $keyProps = "android/key.properties"
+    if (-not (Test-Path $keyProps)) {
+        Stop-Build "$keyProps is missing, so a release can't be signed (see android/app/build.gradle.kts)."
+    }
+    $storeLine = Get-Content $keyProps | Where-Object { $_ -match '^\s*storeFile\s*=' } | Select-Object -First 1
+    $storeFile = if ($storeLine) { ($storeLine -split '=', 2)[1].Trim() } else { '' }
+    if ($storeFile -eq '') { Stop-Build "$keyProps has no storeFile." }
+    $storePath = if ([IO.Path]::IsPathRooted($storeFile)) { $storeFile } else { Join-Path "android/app" $storeFile }
+    if (-not (Test-Path $storePath)) {
+        Stop-Build "The keystore $keyProps names, $storeFile, is not there (looked for $storePath)."
+    }
+    Write-Host "${GREEN}Release signing: $storePath${RESET}"
+}
+# The App Store key, as release.yml passes it. Without it the app can't ask who has paid, so every
+# feature is unlocked: fine for trying a build on a phone, never for one that goes to Apple.
+if ($BUILD_IPA -and [string]::IsNullOrWhiteSpace($env:REVENUECAT_IOS_KEY)) {
+    Write-Host "${YELLOW}⚠ REVENUECAT_IOS_KEY is not set, so this .ipa has every feature unlocked. For testing only; App Store builds come from release.yml.${RESET}"
+}
+if ($BUILD_ANDROID) {
+    Write-Host "${GREEN}Environment OK (ANDROID_HOME: $env:ANDROID_HOME)${RESET}"
+} else {
+    Write-Host "${GREEN}Environment OK${RESET}"
+}
+
+# ID-473: on macOS and Linux, Gradle's launcher (android/gradlew, which Flutter generates and git
+# ignores, so it can't carry this) loads a native library, and Java 25 warns about it on every build:
+# "A restricted method in java.lang.System has been called". Windows builds don't print it (ID-408).
+if (-not $IsWindows) {
+    $env:GRADLE_OPTS = "--enable-native-access=ALL-UNNAMED $env:GRADLE_OPTS".Trim()
+}
 
 # Version and build number from pubspec.yaml, for the release APK's name.
 $pubspecLine = Get-Content pubspec.yaml | Where-Object { $_ -match '^version:' } | Select-Object -First 1
@@ -203,7 +246,8 @@ if ($RUN_CLEAN) {
 # Pre-warm caches
 ###############################################################################
 Write-Host "${CYAN}Pre-warming Flutter caches...${RESET}"
-flutter precache --android
+if ($BUILD_ANDROID) { flutter precache --android }
+if ($BUILD_IPA) { flutter precache --ios }
 
 ###############################################################################
 # Fetch dependencies, then icons
@@ -231,7 +275,24 @@ if (-not $SKIP_TEST) {
     Write-Host "${CYAN}Running analyze and tests...${RESET}"
     # --fatal-infos, as CI runs it: an info-level lint that passes here would fail there.
     flutter analyze --fatal-infos
-    flutter test --coverage
+    if (-not $IsMacOS) {
+        flutter test --coverage
+    } else {
+        # On macOS a transcript splits flutter's output into lines, and a bare `r ends one, so each
+        # redraw of the one-line progress became a line of its own: 2000 of them scrolling past. So
+        # the transcript pauses, script(1) gives flutter the terminal itself and keeps a copy, and
+        # the copy goes into the log with each line as it was last drawn.
+        $testCopy = [IO.Path]::GetTempFileName()
+        Stop-Transcript | Out-Null
+        & { $PSNativeCommandUseErrorActionPreference = $false; bash -c "script -q '$testCopy' flutter test --coverage > /dev/tty" }
+        $testExit = $LASTEXITCODE
+        $raw = [IO.File]::ReadAllText($testCopy) -replace "`e\][^`a]*`a", '' -replace "`e\[[0-9;?]*[A-Za-z]", '' -replace "`e[=>]", ''
+        $lines = $raw -split "`n" | ForEach-Object { "$(@($_ -split "`r" | Where-Object { $_ -ne '' })[-1])".TrimEnd() }
+        Add-Content -Path $LOGFILE -Value $lines
+        Remove-Item $testCopy -ErrorAction SilentlyContinue
+        Start-Transcript -Path $LOGFILE -Append | Out-Null
+        if ($testExit -ne 0) { Stop-Build "flutter test failed (exit $testExit) - see above, or $LOGFILE." }
+    }
 } else {
     Write-Host "${YELLOW}Skipping analyze and tests (--skip-test)...${RESET}"
 }
@@ -242,6 +303,7 @@ if (-not $SKIP_TEST) {
 $APK_DEBUG = "build/app/outputs/flutter-apk/app-debug.apk"
 $APK_RELEASE = "build/cfg-pia-wg-v${VERSION}_build${BUILD_NUMBER}_release.apk"
 $AAB_RELEASE = "build/app/outputs/bundle/release/cfg_pia_wg-release.aab"
+$IPA_RELEASE = "build/cfg-pia-wg-v${VERSION}_build${BUILD_NUMBER}.ipa"
 
 if ($MODE -in "debug", "all") {
     Write-Host "${GREEN}Compiling debug version...${RESET}"
@@ -266,6 +328,21 @@ if ($MODE -in "aab", "all") {
     $AAB_BUILD_TIME = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $START
 }
 
+if ($BUILD_IPA) {
+    # Signed for App Store Connect by team RL4UB6WKMV, with ios/ExportOptions.plist, as release.yml
+    # exports it; locally Xcode signs with the Apple account in Xcode's Settings, Accounts.
+    Write-Host "${GREEN}Compiling the iOS app (.ipa)...${RESET}"
+    $START = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $ipaArgs = @('build', 'ipa', '--release', '--export-options-plist', 'ios/ExportOptions.plist')
+    if (-not [string]::IsNullOrWhiteSpace($env:REVENUECAT_IOS_KEY)) { $ipaArgs += "--dart-define=REVENUECAT_IOS_KEY=$env:REVENUECAT_IOS_KEY" }
+    flutter @ipaArgs
+    $ipaBuilt = Get-ChildItem "build/ios/ipa/*.ipa" -ErrorAction Ignore | Sort-Object LastWriteTimeUtc | Select-Object -Last 1
+    if (-not $ipaBuilt) { Stop-Build "flutter build ipa left no .ipa in build/ios/ipa." }
+    Move-Item -Path $ipaBuilt.FullName -Destination $IPA_RELEASE -Force
+    Write-Host "${GREEN}Renamed the .ipa to: $IPA_RELEASE${RESET}"
+    $IPA_BUILD_TIME = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $START
+}
+
 ###############################################################################
 # Third-party notices: regenerated in 'all' mode, once the builds have filled the Gradle cache
 ###############################################################################
@@ -285,6 +362,7 @@ $expected = @()
 if ($MODE -in "debug", "all") { $expected += @{ Label = "Debug APK"; Path = $APK_DEBUG; Seconds = $DEBUG_BUILD_TIME } }
 if ($MODE -in "release", "all") { $expected += @{ Label = "Release APK"; Path = $APK_RELEASE; Seconds = $RELEASE_BUILD_TIME } }
 if ($MODE -in "aab", "all") { $expected += @{ Label = "Play Store AAB"; Path = $AAB_RELEASE; Seconds = $AAB_BUILD_TIME } }
+if ($BUILD_IPA) { $expected += @{ Label = "iOS IPA"; Path = $IPA_RELEASE; Seconds = $IPA_BUILD_TIME } }
 
 Write-Host ""
 Write-Host "${MAGENTA}-------------------------------------------------------------------------------${RESET}"

@@ -1695,6 +1695,19 @@ Until build 500, clearing the app's storage left its key on the router, and once
 - Do: REMOVE, then REMOVE at "Remove every widget key?".
 - Pass if: it says every widget key was removed, the router's count is `0`, and any key of your own is still in `nvram get sshd_authkeys`.
 
+**WGT-8** The iPhone widgets show the last reading, and opening the app updates them (ID-438) [hand]
+
+- Starts with: an iPhone with this build from TestFlight, at home, and the app connected to the router once.
+- Do: in the app, SETTINGS, HOME SCREEN WIDGET KEY, GENERATE. Give the router login when asked.
+- Do: go to the iPhone's home screen. Touch and hold an empty space until the icons wiggle. Tap Edit at the top left, then Add Widget. Type `cfg-pia-wg` in the search box and tap it. Swipe to Tunnels, the wide one, and tap Add Widget. Tap Done at the top right.
+- Pass if: the widget shows a row per configured tunnel, the badge, and "Router checked HH:MM" at about the time of GENERATE.
+- Do: add Summary the same way, the small square one.
+- Pass if: it shows the same badge, and one line under it.
+- Do: wait two minutes, then tap the Tunnels widget. The app opens. Go back to the home screen: swipe up from the bottom edge.
+- Pass if: the footer's time is now the time you tapped it.
+- Do: press the side button to lock the iPhone. Wait two minutes, then unlock it.
+- Pass if: the widget shows the same reading as before, with nothing about a failed refresh. A locked iPhone doesn't refresh, by design.
+
 ---
 
 ## <a name='abt'></a>ABT. About
@@ -2490,7 +2503,7 @@ Some automated tests can only check that a command is written a certain way: tha
 | `test/router_watchdog_unit_test.dart`: `--tlsv1.2` | the TLS floor | check-claims `TLS-floor`: a TLS 1.1 server is refused |
 | `test/router_watchdog_unit_test.dart`: `openssl s_client -verify_hostname` (Merlin) | Merlin's mail checks the server's name | none yet: needs a Merlin router (MRL-7 is the happy path) |
 | `test/router_watchdog_unit_test.dart`, `test/router_watchdog_service_test.dart`: `-ssl -verifyCert` | mailsend-go checks the certificate and its name | check-claims `MAIL-name`, with `MAIL-0` as its control, and `MAIL-script` for each deployed watchdog |
-| `test/router_watchdog_unit_test.dart`: `echo -n > /jffs/curllst` | the PIA password isn't left on flash | check-claims `SECRET-curllst` |
+| `test/router_watchdog_unit_test.dart`: `: > /jffs/curllst` | the PIA password isn't left on flash | check-claims `SECRET-curllst` |
 | `test/router_watchdog_service_test.dart`: `nvram unset cfg_pia_wg_password` | the credentials go when the last watchdog is deleted | by hand, after deleting the last watchdog: `nvram get cfg_pia_wg_password` prints nothing. END-1 covers UNINSTALL |
 | `test/unit/router_dns_test.dart`, `test/screens/router_dns_screen_test.dart`: the "encrypted" tags | the router's own lookups really are encrypted | check-claims `DNS-DoT`: with DNS-over-TLS on, fresh lookups send nothing to port 53 on the WAN, and a direct plain query is counted, as the control |
 | `test/unit/email_layout_test.dart`: the kill-switch line counts rules | the email's "kept off the internet" line | BRK-1 checks TABLET is offline and its exit IP; nothing checks the line's own words |

@@ -26,6 +26,8 @@
 
 The scripts `build.ps1` / `build.sh` in the `./scripts` folder automate a local build or if you prefer to compile and test the application locally, follow the below steps.
 
+On a Mac, `build.ps1 ipa` builds the iOS app as `build/cfg-pia-wg-v<version>_build<build>.ipa`, signed for App Store Connect by Xcode with the Apple account in Xcode's Settings, Accounts, and `build.ps1 all` builds it after the Android ones. Without `REVENUECAT_IOS_KEY` set, the .ipa has every feature unlocked, so it is for trying on a phone; App Store builds come from `release.yml`.
+
 ## 1. Prerequisites
 
 - **Flutter SDK:** the version pinned as `flutter:` under `environment` in `pubspec.yaml`, which every workflow installs; `scripts/build.ps1` and `build.sh` warn when yours differs ([Flutter installation guide](https://flutter.dev/docs/get-started/install))

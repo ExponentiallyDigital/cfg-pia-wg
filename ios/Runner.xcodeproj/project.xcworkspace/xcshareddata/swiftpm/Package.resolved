@@ -1,0 +1,23 @@
+{
+  "pins" : [
+    {
+      "identity" : "purchases-hybrid-common",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/RevenueCat/purchases-hybrid-common.git",
+      "state" : {
+        "revision" : "a3d5cc0cfd80d75f4e2eebb3012deb05c13a77f4",
+        "version" : "19.12.0"
+      }
+    },
+    {
+      "identity" : "purchases-ios-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/RevenueCat/purchases-ios-spm",
+      "state" : {
+        "revision" : "95ad250230efa7fc3e811c158ed264832aed2e79",
+        "version" : "5.95.0"
+      }
+    }
+  ],
+  "version" : 2
+}
