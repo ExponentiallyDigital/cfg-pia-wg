@@ -82,7 +82,11 @@ void main() {
   });
   tearDown(() => dir.deleteSync(recursive: true));
 
-  /// Runs the watcher for [seconds], and calls [during] about 1.5 s in. Returns its log.
+  /// Runs the watcher for [seconds], and calls [during] once its loop has taken a sample. Returns its log.
+  ///
+  /// Not at a fixed time: a Mac's shell starts processes slowly enough that 1.5 s in, the watcher had
+  /// not yet reached its loop, and the restart was taken by the setup before it, where no restart is
+  /// counted.
   Future<String> watch(int seconds, {void Function()? during}) async {
     final sep = Platform.isWindows ? ';' : ':';
     final env = {'PATH': '${dir.path}/bin$sep${Platform.environment['PATH']}', 'STATE': state};
@@ -90,7 +94,10 @@ void main() {
         r'cd "$STATE" && sed "s#/tmp/move-watch#$STATE/move-watch#g" "$1" > mw.sh && exec sh mw.sh 192.0.2.20 "$2"';
     final p = await startSh(shell!, ['-c', cmd, 'sh', '${Directory.current.path}/scripts/move-watch.sh', '$seconds'], environment: env);
     if (during != null) {
-      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      final samplesFile = File('$state/samples');
+      for (var i = 0; i < 100 && !samplesFile.existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
       during();
     }
     await p.exitCode;

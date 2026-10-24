@@ -155,7 +155,25 @@ fi
 if [ -z "${ANDROID_HOME:-}" ]; then
     fail "ANDROID_HOME is not set and could not be detected via Flutter."
 fi
+
+# Release signing, checked now rather than when Gradle signs: without it the release build fails
+# after the tests and the debug build ("SigningConfig "release" is missing required property
+# "storeFile""). Gradle resolves storeFile from android/app, so ../release.jks is android/release.jks.
+if [[ "$MODE" == "release" || "$MODE" == "aab" || "$MODE" == "all" ]]; then
+    KEY_PROPS="android/key.properties"
+    [ -f "$KEY_PROPS" ] || fail "$KEY_PROPS is missing, so a release can't be signed (see android/app/build.gradle.kts)."
+    STORE_FILE=$(sed -nE 's/^[[:space:]]*storeFile[[:space:]]*=[[:space:]]*//p' "$KEY_PROPS" | head -n 1 | tr -d '\r' | sed -E 's/[[:space:]]+$//')
+    [ -n "$STORE_FILE" ] || fail "$KEY_PROPS has no storeFile."
+    case "$STORE_FILE" in /*) STORE_PATH="$STORE_FILE" ;; *) STORE_PATH="android/app/$STORE_FILE" ;; esac
+    [ -f "$STORE_PATH" ] || fail "The keystore $KEY_PROPS names, $STORE_FILE, is not there (looked for $STORE_PATH)."
+    echo -e "${GREEN}Release signing: $STORE_PATH${RESET}"
+fi
 echo -e "${GREEN}Environment OK (ANDROID_HOME: $ANDROID_HOME)${RESET}"
+
+# ID-473: Gradle's launcher (android/gradlew, which Flutter generates and git ignores, so it can't
+# carry this) loads a native library, and Java 25 warns about it on every build: "A restricted
+# method in java.lang.System has been called".
+export GRADLE_OPTS="--enable-native-access=ALL-UNNAMED${GRADLE_OPTS:+ $GRADLE_OPTS}"
 
 # Version and build number from pubspec.yaml, for the release APK's name.
 PUBSPEC_VERSION=$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)[[:space:]]*$/\1 \2/p' pubspec.yaml | head -n 1)

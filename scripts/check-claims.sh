@@ -170,7 +170,7 @@ rm -rf "$SLDIR"; mkdir -p "$SLDIR"
 # The edit a tampered list gets here and in section 8: one region moved to a country it isn't in,
 # the exposure the check exists for. The signature is left as it was.
 cat > "$SLDIR/tamper.sh" <<'TAMPEREOF'
-sed -i '1s/"country":"\([A-Z][A-Z]\)"/"country":"ZZ"/' "$TMPSRVRAW" # check-claims: tampered on purpose
+sed '1s/"country":"\([A-Z][A-Z]\)"/"country":"ZZ"/' "$TMPSRVRAW" > "$TMPSRVRAW.new" && mv "$TMPSRVRAW.new" "$TMPSRVRAW" # check-claims: tampered on purpose
 TAMPEREOF
 if [ -z "$W0" ]; then
   info SIGLIST "no watchdog deployed; not checked"
@@ -863,7 +863,7 @@ rebuild() {  # $1 label, $2 expected: enc | plain | honest
 }
 variant() {  # $1 doh_ips (or "" for none), $2 email 0/1: a copy of the deployed script
   sed -e "s/^DOHIPS=.*/DOHIPS=\"$1\"/" -e "s/^EMAIL_ON=.*/EMAIL_ON=\"$2\"/" "$W1" > /tmp/check-claims-wd.sh
-  [ -z "$1" ] && sed -i 's/^DOHURL=.*/DOHURL=""/' /tmp/check-claims-wd.sh
+  [ -z "$1" ] && sed 's/^DOHURL=.*/DOHURL=""/' /tmp/check-claims-wd.sh > /tmp/check-claims-wd.sh.new && mv /tmp/check-claims-wd.sh.new /tmp/check-claims-wd.sh
 }
 DOHIP="$(sed -n 's/^DOHIPS="\(.*\)"$/\1/p' "$W1")"
 

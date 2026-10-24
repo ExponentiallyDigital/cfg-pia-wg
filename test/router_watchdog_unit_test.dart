@@ -502,7 +502,7 @@ void main() {
       final abort = s.indexOf('abort() {');
       expect(abort, greaterThan(0));
       final body = s.substring(abort, s.indexOf('\n}\n', abort));
-      expect(body, contains('echo -n > /jffs/curllst'));
+      expect(body, contains(': > /jffs/curllst'));
     });
 
     // The CA cache moved from /jffs into the app's own directory, so the ABOUT screen's

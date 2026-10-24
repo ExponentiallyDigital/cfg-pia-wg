@@ -100,6 +100,8 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
   - DoD: a `flutter_launcher_icons` release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the comment having been posted, and the wrapper and its notes are gone. Checked 2026-10-19: 0.14.4 is still the latest, and PR #549 is open.
 - ID-414 FTR: waiting on upstream: clear the Kotlin Gradle plugin warning once `home_widget` and `workmanager_android` stop applying the plugin. Split from ID-408 on 2026-10-16. Every build warns that future Flutter versions will fail with such plugins; on 2026-10-19 both were still the latest (`home_widget` 0.10.0, `workmanager` 0.10.10). Check each new release of the two, which ID-411's weekly upgrade brings, and each new Flutter's notes for when the warning becomes a failure: if that comes first, fork the plugin or hold Flutter back.
   - DoD: a local `flutter build apk` no longer prints the warning.
+  - Plan: [plan_kgp-plugins.md](.claude/plans/plan_kgp-plugins.md)
+  - Now: still the latest on 2026-10-24 (workmanager_android 0.10.9, Flutter 3.47.7).
 - ID-135 DEC: decide what "clear offline devices" in DEVICES should do. Raised 2026-09-28 (merged from ID-153). Whatever it does, it leaves DHCP reservations alone: removing one restarts the whole network and can break a pin at a later lease renewal (ARCHITECTURE 6.3, 6.8.3), and the web interface can already do it.
   - The choice: hide offline devices in DEVICES on this phone only; or remove them from the router's own client list, as the web interface does.
   - DoD: decided, and the build item written with its own done-when.

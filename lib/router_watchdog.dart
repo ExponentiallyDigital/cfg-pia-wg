@@ -2198,7 +2198,7 @@ nvset "rip="''';
 //
 // NB /usr/sbin/curl creates /jffs/curllst with 666 permissions, this file contains every
 // curl command line executed (!) and there is no way to disable this, so after every
-// curl invocation, the curllst log file is flushed with "echo -n > /jffs/curllst" :)
+// curl invocation, the curllst log file is flushed with ": > /jffs/curllst" :)
 // The same file records each caller's process ancestry, and that is what exposed the caller
 // check curl enforces - see the detach guard at the top of the template.
 //
@@ -2655,7 +2655,7 @@ doh_a() {
   $CURLPLAIN --fail -H 'content-type: application/dns-message' -H 'accept: application/dns-message' \
     --data-binary @"$DOHQ" --resolve "$DOHHOST:443:$DOHIPS" -o "$DOHA" "$DOHURL" 2>/dev/null
   DOHRC=$?
-  echo -n > /jffs/curllst
+  : > /jffs/curllst
   DOHIP=""
   [ "$DOHRC" -eq 0 ] && DOHIP="$(openssl base64 -A -in "$DOHA" 2>/dev/null | awk "$DOH_AWK")"
   rm -f "$DOHQ" "$DOHA"
@@ -2707,7 +2707,7 @@ abort() {
   log "ERROR: $1"
   # The token fetch passes -u user:password, and curl logs every command line to world-readable
   # /jffs/curllst. Success paths flush it; without this one a failure left the password on flash.
-  echo -n > /jffs/curllst
+  : > /jffs/curllst
   bump cfg_pia_wg_reconfig_fail
   # A deploy that could not bring the tunnel up has no outage and no attempt history to report -
   # it is the first run. Both rows are left out rather than filled with nonsense.
@@ -2865,7 +2865,7 @@ if [ ! -f "$CACERT" ]; then
       $CURLPLAIN -S --fail "$CACERT_URL" -o "$CACERT" 2>"$TMPERR"
     fi
   fi
-  echo -n > /jffs/curllst
+  : > /jffs/curllst
   if ! openssl x509 -noout -in "$CACERT" >/dev/null 2>&1; then
     rm -f "$CACERT"
     abort "could not download the PIA CA certificate ($(head -n 1 "$TMPERR" | cut -c1-120)). The router needs internet access to $CACERT_URL."
@@ -2959,8 +2959,8 @@ if [ -z "$TOKEN" ]; then
   abort "failed to obtain PIA token (exit $RC, HTTP ${HTTP:-none}, body ${BSZ:-0}B: ${BODY:-empty}) $ERRLINE"
 fi
 rm -f "$TMPTOK"
-echo -n > /jffs/curllst
-log "PIA token obtained (len=$(echo -n "$TOKEN" | wc -c))"
+: > /jffs/curllst
+log "PIA token obtained (len=$(printf %s "$TOKEN" | wc -c))"
 
 log "Fetching server list for region $REGION"
 SLHOST="${SERVERLIST_URL#https://}"; SLHOST="${SLHOST%%/*}"
@@ -3017,7 +3017,7 @@ if [ -z "$SERVERS" ]; then
 fi
 rm -f "$SLDATA"
 log "Servers: $(echo "$SERVERS" | wc -l | tr -d ' ') candidates"
-echo -n > /jffs/curllst
+: > /jffs/curllst
 
 # Latency sweep
 echo "$SERVERS" > "$TMPSRV"
@@ -3052,7 +3052,7 @@ log "Registering public key with $BEST_IP ($BEST_CN)"
 REG="$($CURL -S --cacert "$CACERT" --resolve "$BEST_CN:1337:$BEST_IP" -G --data-urlencode "pt=$TOKEN" --data-urlencode "pubkey=$PUB" "https://$BEST_CN:1337/addKey" 2>"$TMPERR")"
 RC=$?
 [ $RC -eq 0 ] || abort "curl addKey failed (exit $RC: $(head -n 1 "$TMPERR" | cut -c1-160))"
-echo -n > /jffs/curllst
+: > /jffs/curllst
 log "addKey response received"
 RSTATUS="$(echo "$REG" | "$JQ" -r '.status // empty')"
 [ "$RSTATUS" = "OK" ] || abort "addKey failed (status: $RSTATUS)"

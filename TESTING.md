@@ -2503,7 +2503,7 @@ Some automated tests can only check that a command is written a certain way: tha
 | `test/router_watchdog_unit_test.dart`: `--tlsv1.2` | the TLS floor | check-claims `TLS-floor`: a TLS 1.1 server is refused |
 | `test/router_watchdog_unit_test.dart`: `openssl s_client -verify_hostname` (Merlin) | Merlin's mail checks the server's name | none yet: needs a Merlin router (MRL-7 is the happy path) |
 | `test/router_watchdog_unit_test.dart`, `test/router_watchdog_service_test.dart`: `-ssl -verifyCert` | mailsend-go checks the certificate and its name | check-claims `MAIL-name`, with `MAIL-0` as its control, and `MAIL-script` for each deployed watchdog |
-| `test/router_watchdog_unit_test.dart`: `echo -n > /jffs/curllst` | the PIA password isn't left on flash | check-claims `SECRET-curllst` |
+| `test/router_watchdog_unit_test.dart`: `: > /jffs/curllst` | the PIA password isn't left on flash | check-claims `SECRET-curllst` |
 | `test/router_watchdog_service_test.dart`: `nvram unset cfg_pia_wg_password` | the credentials go when the last watchdog is deleted | by hand, after deleting the last watchdog: `nvram get cfg_pia_wg_password` prints nothing. END-1 covers UNINSTALL |
 | `test/unit/router_dns_test.dart`, `test/screens/router_dns_screen_test.dart`: the "encrypted" tags | the router's own lookups really are encrypted | check-claims `DNS-DoT`: with DNS-over-TLS on, fresh lookups send nothing to port 53 on the WAN, and a direct plain query is counted, as the control |
 | `test/unit/email_layout_test.dart`: the kill-switch line counts rules | the email's "kept off the internet" line | BRK-1 checks TABLET is offline and its exit IP; nothing checks the line's own words |

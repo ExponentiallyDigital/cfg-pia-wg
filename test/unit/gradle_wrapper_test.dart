@@ -43,6 +43,15 @@ void main() {
     expect(_atLeast(_version(url), [9, 8, 1]), isTrue, reason: '$url - 9.1.0 printed the native-access warning');
   });
 
+  // ID-473: on a Mac 9.8.1 still printed it, from the launcher gradlew starts, not the daemon. gradlew
+  // is Flutter's and git ignores it, so the build scripts pass the option instead.
+  test('the build scripts start Gradle with native access allowed on macOS and Linux', () {
+    expect(File('scripts/build.ps1').readAsStringSync(),
+        contains(r'$env:GRADLE_OPTS = "--enable-native-access=ALL-UNNAMED $env:GRADLE_OPTS"'));
+    expect(File('scripts/build.sh').readAsStringSync(),
+        contains(r'export GRADLE_OPTS="--enable-native-access=ALL-UNNAMED${GRADLE_OPTS:+ $GRADLE_OPTS}"'));
+  });
+
   test('the wrapper checks its download against a SHA-256', () {
     expect(_properties()['distributionSha256Sum'], matches(RegExp(r'^[0-9a-f]{64}$')),
         reason: 'when moving Gradle, take the new sum from the .sha256 file beside the distribution');
