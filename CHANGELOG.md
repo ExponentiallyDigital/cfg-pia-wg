@@ -111,6 +111,10 @@ Work items for the **current** release:
   - DoD: it shows each tunnel's state as last read.
   - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
   - Now: built in build 535, tests pass; left: a CI build, signing, and WGT-8 on an iPhone.
+- ID-471 TST: the tests and build.ps1 work on a Mac as well as on Windows.
+  - DoD: build.ps1 all passes on both, with the tests' progress on one line on the Mac.
+  - Plan: [plan_mac-build.md](.claude/plans/plan_mac-build.md)
+  - Now: build.ps1 all passes on the MacBook; left: a build.ps1 run on Windows.
 
 ---
 
@@ -128,6 +132,18 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-24 v0.8.166 build 536 - the tests and build.ps1 run on a MacBook, and a release build stops early without its signing key
+
+- CHG: WIP 2 -> 4 bullets. Added: ID-471 and ID-473, found building on the MacBook.
+- ID-474 BLD: build.ps1 and build.sh stop at the start when a release build has no signing key.
+  - Plan: [plan_mac-build.md](.claude/plans/plan_mac-build.md)
+  - Closed 2026-10-24: with the check lifted from each script, a missing key.properties and a missing keystore stopped it, and the real setup passed.
+- ID-473 BLD: Mac and Linux builds don't print Java's restricted-method warning.
+  - Plan: [plan_mac-build.md](.claude/plans/plan_mac-build.md)
+  - Closed 2026-10-25: Andrew's build.ps1 all on the MacBook passed with no restricted-method warning.
+- CHG: BACKLOG ID-472 removed, a duplicate of ID-414; its 2026-10-24 check is now in ID-414.
+- BLD: the iOS Swift package versions (`Package.resolved`, two copies Xcode keeps) are committed, so CI and the Mac build the same RevenueCat.
 
 2026-10-21 v0.8.165 build 535 - release promotion covers both stores, and the iOS home screen widget is built
 

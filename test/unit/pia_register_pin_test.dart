@@ -95,6 +95,24 @@ void main() {
     }
   });
 
+  // The fixtures can't run 100 years any more (test/pia_tls_fixtures.dart): Apple's trust code
+  // refuses a server certificate valid for more than 825 days. So they expire, and this says so
+  // two months ahead, rather than the tests above failing on the day with a handshake error.
+  test('the test certificates are not about to expire', () async {
+    final s = await _Server.start(kGoodCrt, kGoodKey);
+    try {
+      final ctx = SecurityContext(withTrustedRoots: false)..setTrustedCertificatesBytes(utf8.encode(kCaCrt));
+      final socket = await SecureSocket.connect(InternetAddress.loopbackIPv4, s.server.port,
+          context: ctx, onBadCertificate: (_) => true);
+      final ends = socket.peerCertificate!.endValidity;
+      socket.destroy();
+      expect(ends.isAfter(DateTime.now().add(const Duration(days: 60))), isTrue,
+          reason: 'the fixtures end $ends: regenerate them with the commands in test/pia_tls_fixtures.dart');
+    } finally {
+      await s.close();
+    }
+  });
+
   test('an HTTP error carries the body', () async {
     final s = await _Server.start(kGoodCrt, kGoodKey)
       ..status = 500

@@ -151,7 +151,32 @@ if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
 if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
     Stop-Build "ANDROID_HOME is not set and could not be detected via Flutter."
 }
+
+# Release signing, checked now rather than when Gradle signs: without it the release build fails
+# after the tests and the debug build ("SigningConfig "release" is missing required property
+# "storeFile""). Gradle resolves storeFile from android/app, so ../release.jks is android/release.jks.
+if ($MODE -in "release", "aab", "all") {
+    $keyProps = "android/key.properties"
+    if (-not (Test-Path $keyProps)) {
+        Stop-Build "$keyProps is missing, so a release can't be signed (see android/app/build.gradle.kts)."
+    }
+    $storeLine = Get-Content $keyProps | Where-Object { $_ -match '^\s*storeFile\s*=' } | Select-Object -First 1
+    $storeFile = if ($storeLine) { ($storeLine -split '=', 2)[1].Trim() } else { '' }
+    if ($storeFile -eq '') { Stop-Build "$keyProps has no storeFile." }
+    $storePath = if ([IO.Path]::IsPathRooted($storeFile)) { $storeFile } else { Join-Path "android/app" $storeFile }
+    if (-not (Test-Path $storePath)) {
+        Stop-Build "The keystore $keyProps names, $storeFile, is not there (looked for $storePath)."
+    }
+    Write-Host "${GREEN}Release signing: $storePath${RESET}"
+}
 Write-Host "${GREEN}Environment OK (ANDROID_HOME: $env:ANDROID_HOME)${RESET}"
+
+# ID-473: on macOS and Linux, Gradle's launcher (android/gradlew, which Flutter generates and git
+# ignores, so it can't carry this) loads a native library, and Java 25 warns about it on every build:
+# "A restricted method in java.lang.System has been called". Windows builds don't print it (ID-408).
+if (-not $IsWindows) {
+    $env:GRADLE_OPTS = "--enable-native-access=ALL-UNNAMED $env:GRADLE_OPTS".Trim()
+}
 
 # Version and build number from pubspec.yaml, for the release APK's name.
 $pubspecLine = Get-Content pubspec.yaml | Where-Object { $_ -match '^version:' } | Select-Object -First 1
@@ -231,7 +256,24 @@ if (-not $SKIP_TEST) {
     Write-Host "${CYAN}Running analyze and tests...${RESET}"
     # --fatal-infos, as CI runs it: an info-level lint that passes here would fail there.
     flutter analyze --fatal-infos
-    flutter test --coverage
+    if (-not $IsMacOS) {
+        flutter test --coverage
+    } else {
+        # On macOS a transcript splits flutter's output into lines, and a bare `r ends one, so each
+        # redraw of the one-line progress became a line of its own: 2000 of them scrolling past. So
+        # the transcript pauses, script(1) gives flutter the terminal itself and keeps a copy, and
+        # the copy goes into the log with each line as it was last drawn.
+        $testCopy = [IO.Path]::GetTempFileName()
+        Stop-Transcript | Out-Null
+        & { $PSNativeCommandUseErrorActionPreference = $false; bash -c "script -q '$testCopy' flutter test --coverage > /dev/tty" }
+        $testExit = $LASTEXITCODE
+        $raw = [IO.File]::ReadAllText($testCopy) -replace "`e\][^`a]*`a", '' -replace "`e\[[0-9;?]*[A-Za-z]", '' -replace "`e[=>]", ''
+        $lines = $raw -split "`n" | ForEach-Object { "$(@($_ -split "`r" | Where-Object { $_ -ne '' })[-1])".TrimEnd() }
+        Add-Content -Path $LOGFILE -Value $lines
+        Remove-Item $testCopy -ErrorAction SilentlyContinue
+        Start-Transcript -Path $LOGFILE -Append | Out-Null
+        if ($testExit -ne 0) { Stop-Build "flutter test failed (exit $testExit) - see above, or $LOGFILE." }
+    }
 } else {
     Write-Host "${YELLOW}Skipping analyze and tests (--skip-test)...${RESET}"
 }
