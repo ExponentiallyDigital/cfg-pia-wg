@@ -285,7 +285,59 @@ void main() {
     expect(kotlin, contains('const val TAP_TASK = "$kWidgetTapTask"'));
   });
 
-  // ID-425: the widget is Android's, so iOS registers no background refresh for it.
+  // ID-438: no refresh on a locked iPhone, Andrew's choice. Not a fault, so nothing is written.
+  test('a locked phone: nothing is tried, and the footer is left as it was', () async {
+    await setUpKey();
+    var connected = false, recorded = false, pushed = false;
+    final outcome = await refreshWidgetStatus(
+      store: WidgetKeyStore(protectedDataAvailable: () async => false),
+      prefs: _MemoryRouterPrefs('192.168.1.1'),
+      connect: ({required ip, required user, required pem}) async {
+        connected = true;
+        throw StateError('should not be reached');
+      },
+      push: (status, {required now, canRefresh = false}) async => pushed = true,
+      onFailed: (at, [why = WidgetAttemptFailure.unreachable]) async => recorded = true,
+    );
+
+    expect(outcome, WidgetRefreshOutcome.locked);
+    expect(connected, isFalse);
+    expect(pushed, isFalse, reason: 'the last reading stands');
+    expect(recorded, isFalse, reason: 'a locked phone is not a failed refresh');
+  });
+
+  test('the key store is readable wherever the plugin has no answer, as off iOS', () async {
+    expect(await WidgetKeyStore(protectedDataAvailable: () async => null).readable(), isTrue);
+    expect(await WidgetKeyStore(protectedDataAvailable: () async => true).readable(), isTrue);
+    expect(await WidgetKeyStore(protectedDataAvailable: () async => false).readable(), isFalse);
+  });
+
+  // ID-438: iOS has the widget, but no background refresh until ID-439, so the app refreshes it as
+  // it opens and comes back. Android's refresh stays WorkManager's alone.
+  group('refreshWidgetOnOpen', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('refreshes on iOS', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      var calls = 0;
+      await refreshWidgetOnOpen(refresh: () async {
+        calls++;
+        return WidgetRefreshOutcome.noKey;
+      });
+      expect(calls, 1);
+    });
+
+    test('does nothing on Android, where WorkManager refreshes', () async {
+      var calls = 0;
+      await refreshWidgetOnOpen(refresh: () async {
+        calls++;
+        return WidgetRefreshOutcome.noKey;
+      });
+      expect(calls, 0);
+    });
+  });
+
+  // ID-425, then ID-438: iOS has the widget now, but registers no background refresh until ID-439.
   group('reregisterWidgetRefresh', () {
     tearDown(() => debugDefaultTargetPlatformOverride = null);
 
@@ -295,12 +347,13 @@ void main() {
       expect(calls, 1);
     });
 
-    test('does nothing on iOS, where there is no widget', () async {
+    test('does nothing on iOS, which has the widget but no background refresh yet', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       var calls = 0;
       await reregisterWidgetRefresh(initialize: () async => calls++);
       expect(calls, 0);
-      expect(homeWidgetSupported(), isFalse);
+      expect(homeWidgetSupported(), isTrue);
+      expect(backgroundRefreshSupported(), isFalse);
     });
 
     test("a plugin that fails doesn't stop the app starting", () async {

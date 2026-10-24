@@ -38,11 +38,15 @@ void main() {
   test('the bundle IDs are all lower case, and the app is com.exponentiallydigital.cfgpiawg', () {
     final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
     final ids = [for (final m in RegExp(r'PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);').allMatches(pbxproj)) m.group(1)!];
-    expect(ids, hasLength(6));
+    expect(ids, hasLength(9), reason: 'the app, RunnerTests and the widget (ID-438), Debug, Profile and Release');
     for (final id in ids) {
       expect(id, id.toLowerCase());
     }
     expect(ids.where((id) => id == 'com.exponentiallydigital.cfgpiawg'), hasLength(3), reason: 'Debug, Profile and Release');
+    // Apple requires an extension's ID to start with its app's.
+    for (final id in ids) {
+      expect(id, startsWith('com.exponentiallydigital.cfgpiawg'));
+    }
   });
 
   // ID-430. Standard encryption not provided by Apple's operating system: Apple's table asks for a
@@ -57,7 +61,7 @@ void main() {
   // must allow all four orientations, or App Review's iPad multitasking check refuses it.
   test('the app is built for iPhone and iPad, with every iPad orientation', () {
     final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
-    expect(RegExp(r'TARGETED_DEVICE_FAMILY = "1,2";').allMatches(pbxproj), hasLength(3), reason: 'Debug, Profile and Release');
+    expect(RegExp(r'TARGETED_DEVICE_FAMILY = "1,2";').allMatches(pbxproj), hasLength(6), reason: 'the app and the widget, Debug, Profile and Release');
     final ipad = RegExp(r'<key>UISupportedInterfaceOrientations~ipad</key>\s*<array>(.*?)</array>', dotAll: true).firstMatch(plist)!.group(1)!;
     for (final o in ['Portrait', 'PortraitUpsideDown', 'LandscapeLeft', 'LandscapeRight']) {
       expect(ipad, contains('<string>UIInterfaceOrientation$o</string>'), reason: o);
@@ -69,6 +73,6 @@ void main() {
   test('every target signs with team RL4UB6WKMV', () {
     final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
     final teams = [for (final m in RegExp(r'DEVELOPMENT_TEAM = ([^;]+);').allMatches(pbxproj)) m.group(1)!];
-    expect(teams, List.filled(6, 'RL4UB6WKMV'), reason: 'Runner and RunnerTests, Debug, Profile and Release');
+    expect(teams, List.filled(9, 'RL4UB6WKMV'), reason: 'Runner, RunnerTests and the widget, Debug, Profile and Release');
   });
 }

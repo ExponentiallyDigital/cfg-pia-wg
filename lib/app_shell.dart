@@ -25,6 +25,7 @@ import 'entitlement.dart';
 import 'session_controller.dart';
 import 'widgets/paywall.dart';
 import 'widgets/app_scaffold.dart';
+import 'widget_refresh.dart' show refreshWidgetOnOpen;
 
 /// Keeps [SessionController.currentDestination] in sync with the route on top so the drawer can
 /// no-op when the current screen is re-selected.
@@ -147,6 +148,8 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
     // reads it when it prefills, and the controller notifies if it arrives after that.
     _controller.loadRememberedRouterIp();
     unawaited(_startPurchasing());
+    // ID-438: on iOS the widget is brought up to date as the app opens, until it can refresh itself.
+    unawaited(refreshWidgetOnOpen());
   }
 
   /// Brings up the store, off the first frame.
@@ -185,6 +188,7 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
       _sessionCloseTimer?.cancel();
       _sessionCloseTimer = null;
       _controller.resyncOnResume();
+      unawaited(refreshWidgetOnOpen());
     }
     // An authenticated router session held open behind a locked screen is a wider exposure than
     // credentials sitting in memory - but closing it the instant the app is paused charges a
