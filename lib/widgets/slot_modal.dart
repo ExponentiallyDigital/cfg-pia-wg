@@ -13,12 +13,14 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// One modal serves both router screens (spec 3.2). The button set + actions vary by [mode]:
-//   manage   -> CREATE, ENABLE, EDIT, DISABLE, DELETE
-//   watchdog -> CREATE/EDIT, DELETE, VIEW ROUTER WATCHDOG LOG
-// Every action runs on the session's shared SSH connection (router_session.dart) - it is never
-// closed here; that would pull it out from under the next action. The slot list is refreshed after
-// every action, and a processing overlay covers the modal while busy.
+// One screen serves both router destinations (spec 3.2), and [SlotModal.mode] picks which widget:
+//   manage   -> _ManageSlots:   CREATE, ENABLE, EDIT, DISABLE, DELETE
+//   watchdog -> _WatchdogSlots: CREATE/EDIT, ENABLE, DISABLE, DELETE, VIEW ROUTER WATCHDOG LOG
+// What both share - the slot list and its badges, keeping it current, the processing overlay, the
+// confirmations, the VPN limit - is _SlotModalState; each mode's actions and buttons are its own
+// (ID-453). Every action runs on the session's shared SSH connection (router_session.dart) - it is
+// never closed here; that would pull it out from under the next action. The slot list is refreshed
+// after every action, and a processing overlay covers the screen while busy.
 
 import 'dart:async';
 
@@ -92,7 +94,7 @@ String? movedDeviceWarning(List<String>? names) {
       'for ${one ? 'it' : 'them'} in DEVICES.';
 }
 
-class SlotModal extends StatefulWidget {
+class SlotModal extends StatelessWidget {
   final SlotModalMode mode;
   final SessionController controller;
   final Future<SSHClient> Function() connect;
@@ -120,11 +122,32 @@ class SlotModal extends StatefulWidget {
   final Duration? quietRefreshInterval;
 
   @override
-  State<SlotModal> createState() => _SlotModalState();
+  Widget build(BuildContext context) => mode == SlotModalMode.manage ? _ManageSlots(this) : _WatchdogSlots(this);
 }
 
-class _SlotModalState extends State<SlotModal> {
-  late RouterSlots _slots = widget.initialSlots;
+/// One mode's screen. [spec] is the [SlotModal] it was built from, which holds everything both need.
+abstract class _SlotScreen extends StatefulWidget {
+  const _SlotScreen(this.spec);
+  final SlotModal spec;
+}
+
+class _ManageSlots extends _SlotScreen {
+  const _ManageSlots(super.spec);
+  @override
+  State<_ManageSlots> createState() => _ManageSlotsState();
+}
+
+class _WatchdogSlots extends _SlotScreen {
+  const _WatchdogSlots(super.spec);
+  @override
+  State<_WatchdogSlots> createState() => _WatchdogSlotsState();
+}
+
+/// What both modes share. A subclass gives the heading, the menu item it belongs to, and its buttons.
+abstract class _SlotModalState<T extends _SlotScreen> extends State<T> {
+  SlotModal get _spec => widget.spec;
+
+  late RouterSlots _slots = _spec.initialSlots;
   int _selected = -1;
   bool _processing = false;
 
@@ -133,7 +156,7 @@ class _SlotModalState extends State<SlotModal> {
   bool _reading = false;
   bool get _applying => _processing && !_reading;
 
-  SessionController get _c => widget.controller;
+  SessionController get _c => _spec.controller;
   SlotInfo? get _selectedInfo => _selected == -1 ? null : _slots.slots[_selected];
 
   // ── Keeping the badges current (ID-122) ──────────────────────────────────────────
@@ -153,7 +176,7 @@ class _SlotModalState extends State<SlotModal> {
   @override
   void initState() {
     super.initState();
-    if (widget.quietRefreshInterval != null) _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+    if (_spec.quietRefreshInterval != null) _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
 
   @override
@@ -174,7 +197,7 @@ class _SlotModalState extends State<SlotModal> {
     _wasVisible = visible;
     _sinceRead++;
     if (!visible || _processing || _quietReading) return;
-    if (cameBack || _sinceRead >= widget.quietRefreshInterval!.inSeconds) unawaited(_quietRefresh());
+    if (cameBack || _sinceRead >= _spec.quietRefreshInterval!.inSeconds) unawaited(_quietRefresh());
   }
 
   /// [_refresh] without the app log. A failure changes nothing: the next tick tries again.
@@ -183,7 +206,7 @@ class _SlotModalState extends State<SlotModal> {
     _sinceRead = 0;
     final started = _reads;
     try {
-      final client = await widget.connect();
+      final client = await _spec.connect();
       // Its own service, never the factory's: one with no onLog is what keeps this out of the app log.
       final s = await RouterSlotService(client).fetchSlots();
       // An action that started meanwhile reads the list itself when it finishes; this one is stale.
@@ -195,15 +218,15 @@ class _SlotModalState extends State<SlotModal> {
     }
   }
 
-  RouterSlotService _slotSvc(SSHClient c) => widget.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
-  RouterWatchdog _wdSvc(SSHClient c) => widget.watchdogServiceFactory?.call(c) ?? RouterWatchdog(c, onLog: _c.onLog);
+  RouterSlotService _slotSvc(SSHClient c) => _spec.slotServiceFactory?.call(c) ?? RouterSlotService(c, onLog: _c.onLog);
+  RouterWatchdog _wdSvc(SSHClient c) => _spec.watchdogServiceFactory?.call(c) ?? RouterWatchdog(c, onLog: _c.onLog);
 
   // ── Connection helpers ──────────────────────────────────────────────────────────
   Future<void> _refresh() async {
     _sinceRead = 0;
     _reads++;
     try {
-      final client = await widget.connect();
+      final client = await _spec.connect();
       final s = await _slotSvc(client).fetchSlots();
       if (mounted) setState(() => _slots = s);
     } catch (_) {
@@ -220,7 +243,7 @@ class _SlotModalState extends State<SlotModal> {
     setState(() => _processing = true);
     Object? error;
     try {
-      final client = await widget.connect();
+      final client = await _spec.connect();
       await op(_slotSvc(client));
     } catch (e) {
       error = e;
@@ -290,310 +313,15 @@ class _SlotModalState extends State<SlotModal> {
         ),
       );
 
-  // Region picker that returns the chosen id (or null if dismissed).
-  /// Returns the region RECORD, not just its id. `generateConfig` would otherwise fetch the server
-  /// list a second time and resolve the id against that - and a region with no WireGuard servers in
-  /// the second snapshot is dropped, which failed a CREATE on a region the picker had just offered.
-  Future<Region?> _pickRegion() async {
-    Region? chosen;
-    try {
-      final regions = await widget.piaService.fetchRegions(onProgress: _c.onLog);
-      if (!mounted) return null;
-      // Today's list failed PIA's signature check and the last one that passed is in use (ID-325).
-      final fallback = widget.piaService.fallbackListDate;
-      if (fallback != null) {
-        await AppErrors.warning(context, _c, serverListFallbackNotice(fallback));
-        if (!mounted) return null;
-      }
-      await RegionPickerSheet.show(context, regions: regions, onSelected: (id) => chosen = regions.firstWhere((r) => r.id == id));
-    } catch (e) {
-      if (mounted) await AppErrors.system(context, _c, 'Failed to load regions: ${plainError(e)}');
-    }
-    return chosen;
-  }
-
-  // ── Manage-mode actions ──────────────────────────────────────────────────────────
-  Future<void> _create() async {
-    final slot = _selected;
-    final info = _slots.slots[slot]!;
-    if (!info.isEmpty && !await _confirmOverwrite(slot, info)) return;
-    final region = await _pickRegion();
-    if (region == null) return;
-    final regionId = region.id;
-    final generated = await _generateWithLogin(region);
-    if (generated == null) return;
-
-    var stopped = false;
-    final created = await _runSlot((svc) async {
-      stopped = await svc.createConfigToSlot(slot: slot, config: generated, regionId: regionId);
-    });
-    // Only on success. This used to fire whatever happened, so a failed generate was followed by
-    // "wgc5 has been created" over the top of the error saying it had not been.
-    if (created && mounted) {
-      await _info(
-          'Slot created',
-          stopped
-              ? 'wgc$slot has been created. Its old tunnel was stopped, so the slot is disabled. Remember to ENABLE it via '
-                  'the ENABLE button.'
-              : 'wgc$slot has been created. Remember to ENABLE it via the ENABLE button.');
-    }
-  }
-
-  /// The title names what is being overwritten - wgcN:region - so the body does not have to say it
-  /// a second time (ID-113). The same shape the watchdog and the delete prompts use.
-  Future<bool> _confirmOverwrite(int slot, SlotInfo info) {
-    // The service stops a running tunnel before it writes (createConfigToSlot); say so up front.
-    final running = info.enabled || _slots.activeSlots.contains(slot);
-    // The profile survives an overwrite, so its index 6 does too, and so does every pin naming it.
-    // Those devices follow the new region without being asked.
-    final whenPinned = running ? ' once the slot is enabled. Until then it uses the default connection.' : '.';
-    final stoppedFirst =
-        running ? '\n\nIts tunnel is running, so it will be stopped first. The new configuration stays disabled until you ENABLE it.' : '';
-    final pins = isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region$whenPinned' : '';
-    return _confirm('Overwrite ${slotLabel(slot, info.desc)}?',
-        message: 'Creating a new configuration will overwrite this slot.$stoppedFirst$pins');
-  }
-
-  /// The PIA login, then the config, or null when the user backed out.
-  ///
-  /// Generated while the credentials dialog is still open, so the PIA login is proven before it
-  /// closes: a refusal is shown there, where it can be corrected, and a login that worked is
-  /// offered to the password manager, as STANDALONE does (ID-286). The dialog's autofill context
-  /// is cancelled when it closes, so the offer could never be made afterwards.
-  Future<String?> _generateWithLogin(Region region) async {
-    String? config;
-    final creds = await _piaCredsDialog(submit: (user, pass, dns) async {
-      _c.logEntry('Generating configuration for ${region.id}...');
-      try {
-        config = await widget.piaService
-            .generateConfig(region: region.id, selected: region, username: user, password: pass, dns: dns, onProgress: _c.onLog);
-        return null;
-      } catch (e) {
-        final msg = plainError(e);
-        _c.logEntry(msg, isError: true);
-        return msg;
-      }
-    });
-    return creds == null ? null : config;
-  }
-
-  Future<void> _enableManage() async {
-    final slot = _selected;
-    // Settings but no schedule is the paused state DISABLE leaves behind, so ENABLE puts the
-    // schedule back with the tunnel (ID-095). A slot with no watchdog settings has nothing to
-    // resume, and neither has one whose watchdog is already scheduled.
-    final resumeWatchdog = (_selectedInfo?.watchdogConfigured ?? false) && !(_selectedInfo?.watchdogActive ?? false);
-
-    // 1) Concurrency gate FIRST. It needs no router round trip, so refusing here spares the user
-    //    a ping-target prompt for an enable that was never going to happen.
-    if (!await _withinVpnLimit(slot)) return;
-    if (!mounted) return;
-
-    // 2) Read stored ping targets (brief processing window).
-    final stored = await _readPingTargets(slot);
-    if (stored == null) return;
-    var (primary, secondary) = stored;
-    final haveTargets = primary.isNotEmpty && secondary.isNotEmpty;
-
-    // 3) Prompt for targets if none are stored (spinner is off while the prompt is open).
-    if (!haveTargets) {
-      final targets = await _promptPingTargets(primary.isEmpty ? '8.8.8.8' : primary, secondary.isEmpty ? '1.1.1.1' : secondary);
-      if (targets == null) return;
-      (primary, secondary) = targets;
-    }
-
-    // 4) Write targets if prompted, then enable with the connectivity check. Other slots are left
-    //    running - they no longer have to be torn down first.
-    setState(() => _processing = true);
-    final error = await _enable(slot, (primary, secondary), writeTargets: !haveTargets, resumeWatchdog: resumeWatchdog);
-    await _refresh();
-    if (mounted) setState(() => _processing = false);
-    if (error != null && mounted) await _reportEnableFailure(plainError(error));
-  }
-
-  /// Writes the targets when they were just chosen, enables the slot with its connectivity check, and
-  /// puts a paused watchdog back. Returns what failed, or null.
-  Future<Object?> _enable(int slot, (String, String) targets, {required bool writeTargets, required bool resumeWatchdog}) async {
-    final (primary, secondary) = targets;
-    try {
-      final client = await widget.connect();
-      final svc = _slotSvc(client);
-      if (writeTargets) await svc.writeWatchdogPingTargets(slot, primary, secondary);
-      await svc.enableSlot(slot, primaryIp: primary, secondaryIp: secondary);
-      // After the tunnel is up: a schedule put back on a tunnel that failed its check would start
-      // by rebuilding what the app has just reverted.
-      if (resumeWatchdog) await _wdSvc(client).enableWatchdog(slot);
-      return null;
-    } catch (e) {
-      return e;
-    }
-  }
-
-  /// The slot's stored check targets, empty when it has none, or null when they could not be read,
-  /// which has been reported.
-  Future<(String, String)?> _readPingTargets(int slot) async {
-    setState(() => _processing = true);
-    Object? readError;
-    (String, String)? targets;
-    try {
-      final client = await widget.connect();
-      targets = await _slotSvc(client).readWatchdogPingTargets(slot);
-    } catch (e) {
-      readError = e;
-    }
-    if (mounted) setState(() => _processing = false);
-    if (readError != null) {
-      if (mounted) await AppErrors.system(context, _c, plainError(readError));
-      return null;
-    }
-    return targets;
-  }
-
-  /// A tunnel that came up and was never answered, or one that never came up at all, is almost
-  /// always a PIA registration that has gone stale - and rebuilding it is the fix. Offer it here
-  /// rather than describing it and leaving the user to work out which button that is (ID-094).
-  Future<void> _reportEnableFailure(String message) async {
-    if (looksLikeStaleConfig(message)) {
-      final rebuild = await AppErrors.systemWithAction(context, _c, message, actionLabel: 'RECREATE', detail: kStaleConfigHint);
-      if (rebuild && mounted) await _create();
-      return;
-    }
-    await AppErrors.system(context, _c, message, detail: kStaleConfigHint);
-  }
-
-  // Asks first, as DELETE does and as the watchdog screen's DISABLE does. It used to take a tunnel down,
-  // and any watchdog running on it, on a single tap - the one action in either set that did not ask.
-  Future<void> _disableManage() async {
-    final slot = _selected;
-    final info = _selectedInfo;
-    final wdActive = info?.watchdogActive ?? false;
-    // Named before asking, because this is the one effect of a DISABLE on something other than the
-    // slot: a device pinned here keeps no internet at all while it is off (ID-213).
-    final pinned = await _pinnedNames(slot);
-    final ok = await _confirm(
-      'Disable VPN ${slotLabel(slot, info?.desc ?? '')}?',
-      message: wdActive
-          ? 'Takes the tunnel down and PAUSES its watchdog - a watchdog left running would rebuild the '
-              'tunnel you just stopped. The script and both sets of settings stay on the router, so ENABLE '
-              'brings the tunnel and the watchdog back together.'
-          : 'Takes the tunnel down. The settings stay on the router, so ENABLE brings it back.',
-      warning: pinnedDeviceWarning(pinned),
-      confirmLabel: 'DISABLE',
-    );
-    if (!ok) return;
-    var wentDown = true;
-    await _runSlot((svc) async {
-      // PAUSE, not remove (ID-095). `stopWatchdog` tears down the schedule, the script and the
-      // settings, which is DELETE's job - and on the last watchdog it takes the PIA credentials
-      // with it, leaving nothing for an ENABLE to restore.
-      if (wdActive) await _wdSvc(svc.client).disableWatchdog(slot);
-      wentDown = await svc.disableSlot(slot);
-    });
-    // The router took the setting and the interface stayed up, so the refresh behind this dialog
-    // badges the slot as still running. Saying nothing would leave that reading as a tap that did
-    // not work, rather than as what it is (ID-124).
-    if (!wentDown && mounted) {
-      await AppErrors.system(
-        context,
-        _c,
-        'wgc$slot was disabled, but its tunnel is still up on the router.',
-        detail: "The router accepted the change - its own web interface will show the profile "
-            'disconnected - but the interface has not gone. Reboot the router if it stays this way; '
-            'the app log has every command that was run.',
-      );
-    }
-  }
-
-  Future<void> _editManage() async {
-    final slot = _selected;
-    final params = await _readSlotParams(slot);
-    if (params == null || !mounted) return;
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => SlotParamsEditor(
-        slot: slot,
-        initial: params,
-        desc: _slots.slots[slot]?.desc ?? '',
-        routerDotServers: _slots.routerDotServers,
-        onSave: (editable) => _saveSlotParams(slot, editable),
-      ),
-    );
-    if (saved == true) await _refresh();
-  }
-
-  /// The slot's settings for EDIT, or null when they could not be read, which has been reported.
-  Future<Map<String, String>?> _readSlotParams(int slot) async {
-    Map<String, String>? params;
-    setState(() => _processing = true);
-    Object? error;
-    try {
-      final client = await widget.connect();
-      params = await _slotSvc(client).readSlotParams(slot);
-    } catch (e) {
-      error = e;
-    } finally {
-      if (mounted) setState(() => _processing = false);
-    }
-    if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
-    return params;
-  }
-
-  /// EDIT's SAVE. A running tunnel keeps its old settings until it is restarted, which MAN-11 found
-  /// the hard way on 2026-09-19. So SAVE restarts it, and says so first (ID-203).
-  Future<bool> _saveSlotParams(int slot, Map<String, String> editable) async {
-    final running = _slots.activeSlots.contains(slot);
-    if (running &&
-        !await _confirm(
-          'Save and restart ${slotLabel(slot, _slots.slots[slot]?.desc ?? '')}?',
-          message: 'Saving restarts wgc$slot. Anything using it drops for a few seconds.',
-          confirmLabel: 'SAVE',
-        )) {
-      return false;
-    }
-    if (!await _runSlot((svc) => svc.writeSlotParams(slot, editable))) return false;
-    // Saved either way from here: a restart that fails is reported, and the editor closes.
-    if (running) await _runSlot((svc) => svc.restartSlot(slot));
-    return true;
-  }
-
   /// The names of the devices pinned to [slot], for a confirmation to show: empty on Merlin, which
   /// has no device assignment here, and null when they could not be read.
   Future<List<String>?> _pinnedNames(int slot) async {
     if (!isStockFirmware) return const [];
     try {
-      return await _slotSvc(await widget.connect()).pinnedDeviceNames(slot);
+      return await _slotSvc(await _spec.connect()).pinnedDeviceNames(slot);
     } catch (_) {
       return null;
     }
-  }
-
-  Future<void> _deleteManage() async {
-    final slot = _selected;
-    final info = _selectedInfo;
-    final wdActive = info?.watchdogActive ?? false;
-    // Names both, because it removes both: the watchdog's script, schedule and settings go with
-    // the slot, and neither comes back from an ENABLE afterwards (ID-095).
-    final hasWatchdog = wdActive || (info?.watchdogConfigured ?? false);
-    final pinned = await _pinnedNames(slot);
-    final ok = await _confirm(
-      'Delete VPN ${slotLabel(slot, info?.desc ?? '')}?',
-      message: hasWatchdog
-          ? 'Removes the VPN and its watchdog: the schedule, the script on the router and the watchdog '
-              'settings. Nothing is left to ENABLE afterwards.'
-          : 'Removes the VPN configuration from the router.',
-      warning: movedDeviceWarning(pinned),
-      confirmLabel: 'DELETE',
-      destructive: true,
-    );
-    if (!ok) return;
-    await _runSlot((svc) async {
-      // stopWatchdog, not disableWatchdog: DELETE is the path that takes the script and the
-      // settings away too. Run for a PAUSED watchdog as well, or MANAGE DELETE leaves the script
-      // and the SMTP password on the router (ID-066).
-      if (hasWatchdog) await _wdSvc(svc.client).stopWatchdog(slot);
-      await svc.deleteSlot(slot);
-    });
   }
 
   // Slots run side by side, but stock caps how many (vpnc_max_conn); Merlin reports no limit.
@@ -605,7 +333,7 @@ class _SlotModalState extends State<SlotModal> {
     // from there kept the old limit until the screen was left and entered again (ID-147).
     if (maxActive != null) {
       try {
-        maxActive = await _slotSvc(await widget.connect()).readMaxActiveVpns();
+        maxActive = await _slotSvc(await _spec.connect()).readMaxActiveVpns();
       } catch (_) {
         // keep the value from the last read
       }
@@ -621,174 +349,9 @@ class _SlotModalState extends State<SlotModal> {
     return false;
   }
 
-  // ── Watchdog-mode actions ────────────────────────────────────────────────────────
-  // CREATE/EDIT: the dialog both creates (region pick on an empty slot) and updates, and its SAVE
-  // deploys via RouterWatchdog.deployWatchdog — there is no separate enable step.
-  Future<void> _editWatchdog() async {
-    final slot = _selected;
-    // Deploying brings the slot's tunnel up, so it counts against the same limit ENABLE does.
-    // Checked before the dialog, so the user is not made to fill it in for nothing.
-    if (!(_slots.activeSlots.contains(slot)) && !await _withinVpnLimit(slot)) return;
-    if (!mounted) return;
-    // Pushed as a page for the same reason the slot list is (418), and with more at stake: it is a
-    // long form, and as a card its height was wrong twice over, leaving SAVE and its spinner below
-    // a fold that would not scroll. The route name matches the screen underneath so the drawer
-    // keeps highlighting WATCHDOG.
-    await Navigator.of(context).push<void>(MaterialPageRoute(
-      settings: RouteSettings(name: AppDestination.watchdog.routeName),
-      builder: (ctx) => WatchdogDialog(
-        slotIndex: slot,
-        regionDesc: _slots.slots[slot]?.desc ?? '',
-        slotIsEmpty: _slots.slots[slot]?.isEmpty ?? true,
-        controller: _c,
-        piaUsername: _c.piaUsername,
-        piaPassword: _c.piaPassword,
-        connect: widget.connect,
-        piaService: widget.piaService,
-        serviceFactory: widget.watchdogServiceFactory,
-        routerDotServers: _slots.routerDotServers,
-        otherSlotDns: {
-          for (final s in _slots.slots.values)
-            if (s.index != slot && !s.isEmpty) s.index: s.dns,
-        },
-      ),
-    ));
-    await _refresh();
-  }
-
-  // DISABLE: stop supervising, keep the settings. Only the cron entries go, so ENABLE can put
-  // the schedule straight back without asking for the configuration again.
-  Future<void> _disableWatchdog() async {
-    final slot = _selected;
-    final ok = await _confirm(
-      'Disable watchdog wgc$slot?',
-      message: 'Removes its scheduled checks. The settings stay on the router and the VPN keeps running, '
-          'just unsupervised - ENABLE puts the schedule back.',
-      confirmLabel: 'DISABLE',
-    );
-    if (!ok) return;
-    await _runSlot((svc) => _wdSvc(svc.client).disableWatchdog(slot));
-  }
-
-  // ENABLE: re-add the cron entries from the settings already in NVRAM.
-  Future<void> _enableWatchdog() async {
-    final slot = _selected;
-    await _runSlot((svc) => _wdSvc(svc.client).enableWatchdog(slot));
-  }
-
-  Future<void> _deleteWatchdog() async {
-    final slot = _selected;
-    // "and VPN": DELETE here tears down the underlying slot too, which the old wording buried.
-    final pinned = await _pinnedNames(slot);
-    final ok = await _confirm('Delete watchdog and VPN ${slotLabel(slot, _selectedInfo?.desc ?? '')}?',
-        warning: movedDeviceWarning(pinned), confirmLabel: 'DELETE', destructive: true);
-    if (!ok) return;
-    setState(() => _processing = true);
-    Object? error;
-    try {
-      final client = await widget.connect();
-      await _wdSvc(client).stopWatchdog(slot);
-      await _slotSvc(client).deleteSlot(slot);
-    } catch (e) {
-      error = e;
-    }
-    await _refresh();
-    if (mounted) setState(() => _processing = false);
-    if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
-  }
-
-  Future<void> _viewWatchdogLog() async {
-    _reading = true;
-    final slot = _selected;
-    String? log;
-    setState(() => _processing = true);
-    Object? error;
-    try {
-      final client = await widget.connect();
-      log = await _wdSvc(client).getWatchdogLog(slot);
-    } catch (e) {
-      error = e;
-    } finally {
-      if (mounted) setState(() => _processing = _reading = false);
-    }
-    if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
-    if (log == null || !mounted) return;
-    final logText = log.isEmpty ? '(watchdog log is empty)' : log;
-    // A PAGE, not a dialog. Reported 2026-09-10: selecting the whole log put Android's own
-    // "Copy / Share" toolbar directly over the action row at the bottom of the card, and a tap
-    // meant for Copy landed on CLEAR. A full screen gives the text room to be selected without
-    // the selection's toolbar and the app's buttons competing for the same 48 pixels.
-    await Navigator.of(context).push<void>(MaterialPageRoute(
-      settings: RouteSettings(name: AppDestination.watchdog.routeName),
-      builder: (ctx) => _WatchdogLogScreen(
-        slot: slot,
-        desc: _slots.slots[slot]?.desc ?? '',
-        text: logText,
-        // Not a secret: copying a log must not arm the 60s auto-clear, which would count down on
-        // the config screen and then wipe the log the user has just copied.
-        onCopy: (text) => _c.copyToClipboard(text, armAutoClear: false),
-        onClear: () => _clearWatchdogLog(slot),
-        // The log is read once on entry; REFRESH reads it again without leaving the screen (ID-211).
-        onRefresh: () async {
-          final fresh = await _wdSvc(await widget.connect()).getWatchdogLog(slot);
-          return fresh.isEmpty ? '(watchdog log is empty)' : fresh;
-        },
-        controller: _c,
-      ),
-    ));
-  }
-
-  Future<void> _clearWatchdogLog(int slot) async {
-    setState(() => _processing = true);
-    Object? error;
-    try {
-      await _wdSvc(await widget.connect()).clearWatchdogLog(slot);
-    } catch (e) {
-      error = e;
-    } finally {
-      if (mounted) setState(() => _processing = false);
-    }
-    if (error != null && mounted) {
-      await AppErrors.system(context, _c, plainError(error));
-    } else {
-      _c.logEntry('Watchdog log cleared for wgc$slot.', isSuccess: true);
-    }
-  }
-
-  // ── Sub-dialogs ─────────────────────────────────────────────────────────────────
-  // PIA username/password/DNS form (prefilled from session) for CREATE.
-  //
-  // [submit] runs on CONTINUE with the dialog still open, and returns an error to show in it, or
-  // null to close it.
-  Future<(String, String, String)?> _piaCredsDialog(
-      {required Future<String?> Function(String user, String pass, String dns) submit}) async {
-    final result = await showDialog<(String, String, String)?>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => _PiaCredsDialog(
-        submit: submit,
-        initialUsername: _c.piaUsername,
-        initialPassword: _c.piaPassword,
-        initialDns: _c.dns,
-        routerDotServers: _slots.routerDotServers,
-      ),
-    );
-    if (result != null) {
-      _c.piaUsername = result.$1;
-      _c.piaPassword = result.$2;
-      _c.dns = result.$3;
-      return result;
-    }
-    return null;
-  }
-
-  // Editable primary/secondary ping targets for the manage ENABLE check.
-  Future<(String, String)?> _promptPingTargets(String primary, String secondary) async {
-    return await showDialog<(String, String)?>(
-      context: context,
-      builder: (ctx) => _PingTargetsDialog(primary: primary, secondary: secondary),
-    );
-  }
+  String get _heading;
+  AppDestination get _destination;
+  List<Widget> _buttons();
 
   // ── UI ────────────────────────────────────────────────────────────────────────────
   @override
@@ -814,11 +377,7 @@ class _SlotModalState extends State<SlotModal> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // The heading carries the colour of the menu item that opened this screen (ID-112).
-              ScreenHeading(
-                widget.mode == SlotModalMode.manage ? 'MANAGE CONFIGURATION' : 'WATCHDOG CONFIGURATION',
-                colour: destinationColour(
-                    widget.mode == SlotModalMode.manage ? AppDestination.manageRouter : AppDestination.watchdog),
-              ),
+              ScreenHeading(_heading, colour: destinationColour(_destination)),
               const SizedBox(height: 16),
               _slotList(),
               const SizedBox(height: 20),
@@ -930,47 +489,6 @@ class _SlotModalState extends State<SlotModal> {
     ];
   }
 
-  List<Widget> _buttons() => widget.mode == SlotModalMode.manage ? _manageButtons(_selectedInfo) : _watchdogButtons(_selectedInfo);
-
-  List<Widget> _manageButtons(SlotInfo? info) {
-    final hasDesc = info != null && !info.isEmpty;
-    final enabled = info?.enabled ?? false;
-    // There is something to stop if the flag says so OR the interface is up. The two can disagree,
-    // and gating on the flag alone would strand a user with a running tunnel and a greyed DISABLE.
-    final stoppable = enabled || (info != null && _slots.activeSlots.contains(info.index));
-    return [
-      _btn('slot_create', 'CREATE', _gated(Pitch.create, info == null ? null : _create)),
-      // ENABLE is greyed when the slot is already active (only one interface active at a time).
-      _btn('slot_enable', 'ENABLE', _gated(Pitch.enable, (hasDesc && !enabled) ? _enableManage : null)),
-      _btn('slot_edit', 'EDIT', _gated(Pitch.edit, hasDesc ? _editManage : null)),
-      // DISABLE and DELETE are free even without the entitlement. Greyed once the slot is down -
-      // nothing left to stop.
-      _btn('slot_disable', 'DISABLE', (hasDesc && stoppable) ? _disableManage : null),
-      _btn('slot_delete', 'DELETE', hasDesc ? _deleteManage : null),
-    ];
-  }
-
-  /// Watchdog mode: CREATE/EDIT creates-or-updates and deploys, so it is live for an empty slot too;
-  /// DELETE and VIEW LOG still require a non-empty slot (spec round-2).
-  ///
-  /// ENABLE / DISABLE act on the SCHEDULE, not the tunnel: DISABLE drops the cron entries and keeps
-  /// the settings, so ENABLE only lights up for a slot that has settings but no schedule.
-  List<Widget> _watchdogButtons(SlotInfo? info) {
-    final hasDesc = info != null && !info.isEmpty;
-    final wdActive = info?.watchdogActive ?? false;
-    final wdConfigured = info?.watchdogConfigured ?? false;
-    return [
-      _btn('slot_edit', 'CREATE/EDIT', _gated(Pitch.watchdog, info != null ? _editWatchdog : null)),
-      _btn('slot_wd_enable', 'ENABLE',
-          _gated(Pitch.watchdogEnable, (hasDesc && wdConfigured && !wdActive) ? _enableWatchdog : null)),
-      // Stopping and removing stay free: never trap a script on someone's router behind a purchase.
-      _btn('slot_wd_disable', 'DISABLE', (hasDesc && wdActive) ? _disableWatchdog : null),
-      _btn('slot_delete', 'DELETE', hasDesc ? _deleteWatchdog : null),
-      // Configured is enough: /tmp/watchdog_wgcN.log outlives the schedule, and the log of the
-      // run that prompted a DISABLE is exactly what you want to read afterwards.
-      _btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (hasDesc && (wdActive || wdConfigured)) ? _viewWatchdogLog : null),
-    ];
-  }
 
   /// Gated is CREATE or CHANGE; free is REMOVE. A locked user can always undo, never build.
   ///
@@ -999,6 +517,528 @@ class _SlotModalState extends State<SlotModal> {
           ),
         ),
       );
+}
+
+class _ManageSlotsState extends _SlotModalState<_ManageSlots> {
+  @override
+  String get _heading => 'MANAGE CONFIGURATION';
+  @override
+  AppDestination get _destination => AppDestination.manageRouter;
+
+  // Region picker that returns the chosen id (or null if dismissed).
+  /// Returns the region RECORD, not just its id. `generateConfig` would otherwise fetch the server
+  /// list a second time and resolve the id against that - and a region with no WireGuard servers in
+  /// the second snapshot is dropped, which failed a CREATE on a region the picker had just offered.
+  Future<Region?> _pickRegion() async {
+    Region? chosen;
+    try {
+      final regions = await _spec.piaService.fetchRegions(onProgress: _c.onLog);
+      if (!mounted) return null;
+      // Today's list failed PIA's signature check and the last one that passed is in use (ID-325).
+      final fallback = _spec.piaService.fallbackListDate;
+      if (fallback != null) {
+        await AppErrors.warning(context, _c, serverListFallbackNotice(fallback));
+        if (!mounted) return null;
+      }
+      await RegionPickerSheet.show(context, regions: regions, onSelected: (id) => chosen = regions.firstWhere((r) => r.id == id));
+    } catch (e) {
+      if (mounted) await AppErrors.system(context, _c, 'Failed to load regions: ${plainError(e)}');
+    }
+    return chosen;
+  }
+
+  // ── Manage-mode actions ──────────────────────────────────────────────────────────
+  Future<void> _create() async {
+    final slot = _selected;
+    final info = _slots.slots[slot]!;
+    if (!info.isEmpty && !await _confirmOverwrite(slot, info)) return;
+    final region = await _pickRegion();
+    if (region == null) return;
+    final regionId = region.id;
+    final generated = await _generateWithLogin(region);
+    if (generated == null) return;
+
+    var stopped = false;
+    final created = await _runSlot((svc) async {
+      stopped = await svc.createConfigToSlot(slot: slot, config: generated, regionId: regionId);
+    });
+    // Only on success. This used to fire whatever happened, so a failed generate was followed by
+    // "wgc5 has been created" over the top of the error saying it had not been.
+    if (created && mounted) {
+      await _info(
+          'Slot created',
+          stopped
+              ? 'wgc$slot has been created. Its old tunnel was stopped, so the slot is disabled. Remember to ENABLE it via '
+                  'the ENABLE button.'
+              : 'wgc$slot has been created. Remember to ENABLE it via the ENABLE button.');
+    }
+  }
+
+  /// The title names what is being overwritten - wgcN:region - so the body does not have to say it
+  /// a second time (ID-113). The same shape the watchdog and the delete prompts use.
+  Future<bool> _confirmOverwrite(int slot, SlotInfo info) {
+    // The service stops a running tunnel before it writes (createConfigToSlot); say so up front.
+    final running = info.enabled || _slots.activeSlots.contains(slot);
+    // The profile survives an overwrite, so its index 6 does too, and so does every pin naming it.
+    // Those devices follow the new region without being asked.
+    final whenPinned = running ? ' once the slot is enabled. Until then it uses the default connection.' : '.';
+    final stoppedFirst =
+        running ? '\n\nIts tunnel is running, so it will be stopped first. The new configuration stays disabled until you ENABLE it.' : '';
+    final pins = isStockFirmware ? '\n\nAny device assigned to this slot stays assigned, and will use the new region$whenPinned' : '';
+    return _confirm('Overwrite ${slotLabel(slot, info.desc)}?',
+        message: 'Creating a new configuration will overwrite this slot.$stoppedFirst$pins');
+  }
+
+  /// The PIA login, then the config, or null when the user backed out.
+  ///
+  /// Generated while the credentials dialog is still open, so the PIA login is proven before it
+  /// closes: a refusal is shown there, where it can be corrected, and a login that worked is
+  /// offered to the password manager, as STANDALONE does (ID-286). The dialog's autofill context
+  /// is cancelled when it closes, so the offer could never be made afterwards.
+  Future<String?> _generateWithLogin(Region region) async {
+    String? config;
+    final creds = await _piaCredsDialog(submit: (user, pass, dns) async {
+      _c.logEntry('Generating configuration for ${region.id}...');
+      try {
+        config = await _spec.piaService
+            .generateConfig(region: region.id, selected: region, username: user, password: pass, dns: dns, onProgress: _c.onLog);
+        return null;
+      } catch (e) {
+        final msg = plainError(e);
+        _c.logEntry(msg, isError: true);
+        return msg;
+      }
+    });
+    return creds == null ? null : config;
+  }
+
+  Future<void> _enableManage() async {
+    final slot = _selected;
+    // Settings but no schedule is the paused state DISABLE leaves behind, so ENABLE puts the
+    // schedule back with the tunnel (ID-095). A slot with no watchdog settings has nothing to
+    // resume, and neither has one whose watchdog is already scheduled.
+    final resumeWatchdog = (_selectedInfo?.watchdogConfigured ?? false) && !(_selectedInfo?.watchdogActive ?? false);
+
+    // 1) Concurrency gate FIRST. It needs no router round trip, so refusing here spares the user
+    //    a ping-target prompt for an enable that was never going to happen.
+    if (!await _withinVpnLimit(slot)) return;
+    if (!mounted) return;
+
+    // 2) Read stored ping targets (brief processing window).
+    final stored = await _readPingTargets(slot);
+    if (stored == null) return;
+    var (primary, secondary) = stored;
+    final haveTargets = primary.isNotEmpty && secondary.isNotEmpty;
+
+    // 3) Prompt for targets if none are stored (spinner is off while the prompt is open).
+    if (!haveTargets) {
+      final targets = await _promptPingTargets(primary.isEmpty ? '8.8.8.8' : primary, secondary.isEmpty ? '1.1.1.1' : secondary);
+      if (targets == null) return;
+      (primary, secondary) = targets;
+    }
+
+    // 4) Write targets if prompted, then enable with the connectivity check. Other slots are left
+    //    running - they no longer have to be torn down first.
+    setState(() => _processing = true);
+    final error = await _enable(slot, (primary, secondary), writeTargets: !haveTargets, resumeWatchdog: resumeWatchdog);
+    await _refresh();
+    if (mounted) setState(() => _processing = false);
+    if (error != null && mounted) await _reportEnableFailure(plainError(error));
+  }
+
+  /// Writes the targets when they were just chosen, enables the slot with its connectivity check, and
+  /// puts a paused watchdog back. Returns what failed, or null.
+  Future<Object?> _enable(int slot, (String, String) targets, {required bool writeTargets, required bool resumeWatchdog}) async {
+    final (primary, secondary) = targets;
+    try {
+      final client = await _spec.connect();
+      final svc = _slotSvc(client);
+      if (writeTargets) await svc.writeWatchdogPingTargets(slot, primary, secondary);
+      await svc.enableSlot(slot, primaryIp: primary, secondaryIp: secondary);
+      // After the tunnel is up: a schedule put back on a tunnel that failed its check would start
+      // by rebuilding what the app has just reverted.
+      if (resumeWatchdog) await _wdSvc(client).enableWatchdog(slot);
+      return null;
+    } catch (e) {
+      return e;
+    }
+  }
+
+  /// The slot's stored check targets, empty when it has none, or null when they could not be read,
+  /// which has been reported.
+  Future<(String, String)?> _readPingTargets(int slot) async {
+    setState(() => _processing = true);
+    Object? readError;
+    (String, String)? targets;
+    try {
+      final client = await _spec.connect();
+      targets = await _slotSvc(client).readWatchdogPingTargets(slot);
+    } catch (e) {
+      readError = e;
+    }
+    if (mounted) setState(() => _processing = false);
+    if (readError != null) {
+      if (mounted) await AppErrors.system(context, _c, plainError(readError));
+      return null;
+    }
+    return targets;
+  }
+
+  /// A tunnel that came up and was never answered, or one that never came up at all, is almost
+  /// always a PIA registration that has gone stale - and rebuilding it is the fix. Offer it here
+  /// rather than describing it and leaving the user to work out which button that is (ID-094).
+  Future<void> _reportEnableFailure(String message) async {
+    if (looksLikeStaleConfig(message)) {
+      final rebuild = await AppErrors.systemWithAction(context, _c, message, actionLabel: 'RECREATE', detail: kStaleConfigHint);
+      if (rebuild && mounted) await _create();
+      return;
+    }
+    await AppErrors.system(context, _c, message, detail: kStaleConfigHint);
+  }
+
+  // Asks first, as DELETE does and as the watchdog screen's DISABLE does. It used to take a tunnel down,
+  // and any watchdog running on it, on a single tap - the one action in either set that did not ask.
+  Future<void> _disableManage() async {
+    final slot = _selected;
+    final info = _selectedInfo;
+    final wdActive = info?.watchdogActive ?? false;
+    // Named before asking, because this is the one effect of a DISABLE on something other than the
+    // slot: a device pinned here keeps no internet at all while it is off (ID-213).
+    final pinned = await _pinnedNames(slot);
+    final ok = await _confirm(
+      'Disable VPN ${slotLabel(slot, info?.desc ?? '')}?',
+      message: wdActive
+          ? 'Takes the tunnel down and PAUSES its watchdog - a watchdog left running would rebuild the '
+              'tunnel you just stopped. The script and both sets of settings stay on the router, so ENABLE '
+              'brings the tunnel and the watchdog back together.'
+          : 'Takes the tunnel down. The settings stay on the router, so ENABLE brings it back.',
+      warning: pinnedDeviceWarning(pinned),
+      confirmLabel: 'DISABLE',
+    );
+    if (!ok) return;
+    var wentDown = true;
+    await _runSlot((svc) async {
+      // PAUSE, not remove (ID-095). `stopWatchdog` tears down the schedule, the script and the
+      // settings, which is DELETE's job - and on the last watchdog it takes the PIA credentials
+      // with it, leaving nothing for an ENABLE to restore.
+      if (wdActive) await _wdSvc(svc.client).disableWatchdog(slot);
+      wentDown = await svc.disableSlot(slot);
+    });
+    // The router took the setting and the interface stayed up, so the refresh behind this dialog
+    // badges the slot as still running. Saying nothing would leave that reading as a tap that did
+    // not work, rather than as what it is (ID-124).
+    if (!wentDown && mounted) {
+      await AppErrors.system(
+        context,
+        _c,
+        'wgc$slot was disabled, but its tunnel is still up on the router.',
+        detail: "The router accepted the change - its own web interface will show the profile "
+            'disconnected - but the interface has not gone. Reboot the router if it stays this way; '
+            'the app log has every command that was run.',
+      );
+    }
+  }
+
+  Future<void> _editManage() async {
+    final slot = _selected;
+    final params = await _readSlotParams(slot);
+    if (params == null || !mounted) return;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => SlotParamsEditor(
+        slot: slot,
+        initial: params,
+        desc: _slots.slots[slot]?.desc ?? '',
+        routerDotServers: _slots.routerDotServers,
+        onSave: (editable) => _saveSlotParams(slot, editable),
+      ),
+    );
+    if (saved == true) await _refresh();
+  }
+
+  /// The slot's settings for EDIT, or null when they could not be read, which has been reported.
+  Future<Map<String, String>?> _readSlotParams(int slot) async {
+    Map<String, String>? params;
+    setState(() => _processing = true);
+    Object? error;
+    try {
+      final client = await _spec.connect();
+      params = await _slotSvc(client).readSlotParams(slot);
+    } catch (e) {
+      error = e;
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+    if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
+    return params;
+  }
+
+  /// EDIT's SAVE. A running tunnel keeps its old settings until it is restarted, which MAN-11 found
+  /// the hard way on 2026-09-19. So SAVE restarts it, and says so first (ID-203).
+  Future<bool> _saveSlotParams(int slot, Map<String, String> editable) async {
+    final running = _slots.activeSlots.contains(slot);
+    if (running &&
+        !await _confirm(
+          'Save and restart ${slotLabel(slot, _slots.slots[slot]?.desc ?? '')}?',
+          message: 'Saving restarts wgc$slot. Anything using it drops for a few seconds.',
+          confirmLabel: 'SAVE',
+        )) {
+      return false;
+    }
+    if (!await _runSlot((svc) => svc.writeSlotParams(slot, editable))) return false;
+    // Saved either way from here: a restart that fails is reported, and the editor closes.
+    if (running) await _runSlot((svc) => svc.restartSlot(slot));
+    return true;
+  }
+
+  Future<void> _deleteManage() async {
+    final slot = _selected;
+    final info = _selectedInfo;
+    final wdActive = info?.watchdogActive ?? false;
+    // Names both, because it removes both: the watchdog's script, schedule and settings go with
+    // the slot, and neither comes back from an ENABLE afterwards (ID-095).
+    final hasWatchdog = wdActive || (info?.watchdogConfigured ?? false);
+    final pinned = await _pinnedNames(slot);
+    final ok = await _confirm(
+      'Delete VPN ${slotLabel(slot, info?.desc ?? '')}?',
+      message: hasWatchdog
+          ? 'Removes the VPN and its watchdog: the schedule, the script on the router and the watchdog '
+              'settings. Nothing is left to ENABLE afterwards.'
+          : 'Removes the VPN configuration from the router.',
+      warning: movedDeviceWarning(pinned),
+      confirmLabel: 'DELETE',
+      destructive: true,
+    );
+    if (!ok) return;
+    await _runSlot((svc) async {
+      // stopWatchdog, not disableWatchdog: DELETE is the path that takes the script and the
+      // settings away too. Run for a PAUSED watchdog as well, or MANAGE DELETE leaves the script
+      // and the SMTP password on the router (ID-066).
+      if (hasWatchdog) await _wdSvc(svc.client).stopWatchdog(slot);
+      await svc.deleteSlot(slot);
+    });
+  }
+
+  // ── Sub-dialogs ─────────────────────────────────────────────────────────────────
+  // PIA username/password/DNS form (prefilled from session) for CREATE.
+  //
+  // [submit] runs on CONTINUE with the dialog still open, and returns an error to show in it, or
+  // null to close it.
+  Future<(String, String, String)?> _piaCredsDialog(
+      {required Future<String?> Function(String user, String pass, String dns) submit}) async {
+    final result = await showDialog<(String, String, String)?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _PiaCredsDialog(
+        submit: submit,
+        initialUsername: _c.piaUsername,
+        initialPassword: _c.piaPassword,
+        initialDns: _c.dns,
+        routerDotServers: _slots.routerDotServers,
+      ),
+    );
+    if (result != null) {
+      _c.piaUsername = result.$1;
+      _c.piaPassword = result.$2;
+      _c.dns = result.$3;
+      return result;
+    }
+    return null;
+  }
+
+  // Editable primary/secondary ping targets for the manage ENABLE check.
+  Future<(String, String)?> _promptPingTargets(String primary, String secondary) async {
+    return await showDialog<(String, String)?>(
+      context: context,
+      builder: (ctx) => _PingTargetsDialog(primary: primary, secondary: secondary),
+    );
+  }
+
+  @override
+  List<Widget> _buttons() {
+    final info = _selectedInfo;
+    final hasDesc = info != null && !info.isEmpty;
+    final enabled = info?.enabled ?? false;
+    // There is something to stop if the flag says so OR the interface is up. The two can disagree,
+    // and gating on the flag alone would strand a user with a running tunnel and a greyed DISABLE.
+    final stoppable = enabled || (info != null && _slots.activeSlots.contains(info.index));
+    return [
+      _btn('slot_create', 'CREATE', _gated(Pitch.create, info == null ? null : _create)),
+      // ENABLE is greyed when the slot is already active (only one interface active at a time).
+      _btn('slot_enable', 'ENABLE', _gated(Pitch.enable, (hasDesc && !enabled) ? _enableManage : null)),
+      _btn('slot_edit', 'EDIT', _gated(Pitch.edit, hasDesc ? _editManage : null)),
+      // DISABLE and DELETE are free even without the entitlement. Greyed once the slot is down -
+      // nothing left to stop.
+      _btn('slot_disable', 'DISABLE', (hasDesc && stoppable) ? _disableManage : null),
+      _btn('slot_delete', 'DELETE', hasDesc ? _deleteManage : null),
+    ];
+  }
+}
+
+class _WatchdogSlotsState extends _SlotModalState<_WatchdogSlots> {
+  @override
+  String get _heading => 'WATCHDOG CONFIGURATION';
+  @override
+  AppDestination get _destination => AppDestination.watchdog;
+
+  // ── Watchdog-mode actions ────────────────────────────────────────────────────────
+  // CREATE/EDIT: the dialog both creates (region pick on an empty slot) and updates, and its SAVE
+  // deploys via RouterWatchdog.deployWatchdog — there is no separate enable step.
+  Future<void> _editWatchdog() async {
+    final slot = _selected;
+    // Deploying brings the slot's tunnel up, so it counts against the same limit ENABLE does.
+    // Checked before the dialog, so the user is not made to fill it in for nothing.
+    if (!(_slots.activeSlots.contains(slot)) && !await _withinVpnLimit(slot)) return;
+    if (!mounted) return;
+    // Pushed as a page for the same reason the slot list is (418), and with more at stake: it is a
+    // long form, and as a card its height was wrong twice over, leaving SAVE and its spinner below
+    // a fold that would not scroll. The route name matches the screen underneath so the drawer
+    // keeps highlighting WATCHDOG.
+    await Navigator.of(context).push<void>(MaterialPageRoute(
+      settings: RouteSettings(name: AppDestination.watchdog.routeName),
+      builder: (ctx) => WatchdogDialog(
+        slotIndex: slot,
+        regionDesc: _slots.slots[slot]?.desc ?? '',
+        slotIsEmpty: _slots.slots[slot]?.isEmpty ?? true,
+        controller: _c,
+        piaUsername: _c.piaUsername,
+        piaPassword: _c.piaPassword,
+        connect: _spec.connect,
+        piaService: _spec.piaService,
+        serviceFactory: _spec.watchdogServiceFactory,
+        routerDotServers: _slots.routerDotServers,
+        otherSlotDns: {
+          for (final s in _slots.slots.values)
+            if (s.index != slot && !s.isEmpty) s.index: s.dns,
+        },
+      ),
+    ));
+    await _refresh();
+  }
+
+  // DISABLE: stop supervising, keep the settings. Only the cron entries go, so ENABLE can put
+  // the schedule straight back without asking for the configuration again.
+  Future<void> _disableWatchdog() async {
+    final slot = _selected;
+    final ok = await _confirm(
+      'Disable watchdog wgc$slot?',
+      message: 'Removes its scheduled checks. The settings stay on the router and the VPN keeps running, '
+          'just unsupervised - ENABLE puts the schedule back.',
+      confirmLabel: 'DISABLE',
+    );
+    if (!ok) return;
+    await _runSlot((svc) => _wdSvc(svc.client).disableWatchdog(slot));
+  }
+
+  // ENABLE: re-add the cron entries from the settings already in NVRAM.
+  Future<void> _enableWatchdog() async {
+    final slot = _selected;
+    await _runSlot((svc) => _wdSvc(svc.client).enableWatchdog(slot));
+  }
+
+  Future<void> _deleteWatchdog() async {
+    final slot = _selected;
+    // "and VPN": DELETE here tears down the underlying slot too, which the old wording buried.
+    final pinned = await _pinnedNames(slot);
+    final ok = await _confirm('Delete watchdog and VPN ${slotLabel(slot, _selectedInfo?.desc ?? '')}?',
+        warning: movedDeviceWarning(pinned), confirmLabel: 'DELETE', destructive: true);
+    if (!ok) return;
+    setState(() => _processing = true);
+    Object? error;
+    try {
+      final client = await _spec.connect();
+      await _wdSvc(client).stopWatchdog(slot);
+      await _slotSvc(client).deleteSlot(slot);
+    } catch (e) {
+      error = e;
+    }
+    await _refresh();
+    if (mounted) setState(() => _processing = false);
+    if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
+  }
+
+  Future<void> _viewWatchdogLog() async {
+    _reading = true;
+    final slot = _selected;
+    String? log;
+    setState(() => _processing = true);
+    Object? error;
+    try {
+      final client = await _spec.connect();
+      log = await _wdSvc(client).getWatchdogLog(slot);
+    } catch (e) {
+      error = e;
+    } finally {
+      if (mounted) setState(() => _processing = _reading = false);
+    }
+    if (error != null && mounted) await AppErrors.system(context, _c, plainError(error));
+    if (log == null || !mounted) return;
+    final logText = log.isEmpty ? '(watchdog log is empty)' : log;
+    // A PAGE, not a dialog. Reported 2026-09-10: selecting the whole log put Android's own
+    // "Copy / Share" toolbar directly over the action row at the bottom of the card, and a tap
+    // meant for Copy landed on CLEAR. A full screen gives the text room to be selected without
+    // the selection's toolbar and the app's buttons competing for the same 48 pixels.
+    await Navigator.of(context).push<void>(MaterialPageRoute(
+      settings: RouteSettings(name: AppDestination.watchdog.routeName),
+      builder: (ctx) => _WatchdogLogScreen(
+        slot: slot,
+        desc: _slots.slots[slot]?.desc ?? '',
+        text: logText,
+        // Not a secret: copying a log must not arm the 60s auto-clear, which would count down on
+        // the config screen and then wipe the log the user has just copied.
+        onCopy: (text) => _c.copyToClipboard(text, armAutoClear: false),
+        onClear: () => _clearWatchdogLog(slot),
+        // The log is read once on entry; REFRESH reads it again without leaving the screen (ID-211).
+        onRefresh: () async {
+          final fresh = await _wdSvc(await _spec.connect()).getWatchdogLog(slot);
+          return fresh.isEmpty ? '(watchdog log is empty)' : fresh;
+        },
+        controller: _c,
+      ),
+    ));
+  }
+
+  Future<void> _clearWatchdogLog(int slot) async {
+    setState(() => _processing = true);
+    Object? error;
+    try {
+      await _wdSvc(await _spec.connect()).clearWatchdogLog(slot);
+    } catch (e) {
+      error = e;
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+    if (error != null && mounted) {
+      await AppErrors.system(context, _c, plainError(error));
+    } else {
+      _c.logEntry('Watchdog log cleared for wgc$slot.', isSuccess: true);
+    }
+  }
+
+  /// Watchdog mode: CREATE/EDIT creates-or-updates and deploys, so it is live for an empty slot too;
+  /// DELETE and VIEW LOG still require a non-empty slot (spec round-2).
+  ///
+  /// ENABLE / DISABLE act on the SCHEDULE, not the tunnel: DISABLE drops the cron entries and keeps
+  /// the settings, so ENABLE only lights up for a slot that has settings but no schedule.
+  @override
+  List<Widget> _buttons() {
+    final info = _selectedInfo;
+    final hasDesc = info != null && !info.isEmpty;
+    final wdActive = info?.watchdogActive ?? false;
+    final wdConfigured = info?.watchdogConfigured ?? false;
+    return [
+      _btn('slot_edit', 'CREATE/EDIT', _gated(Pitch.watchdog, info != null ? _editWatchdog : null)),
+      _btn('slot_wd_enable', 'ENABLE',
+          _gated(Pitch.watchdogEnable, (hasDesc && wdConfigured && !wdActive) ? _enableWatchdog : null)),
+      // Stopping and removing stay free: never trap a script on someone's router behind a purchase.
+      _btn('slot_wd_disable', 'DISABLE', (hasDesc && wdActive) ? _disableWatchdog : null),
+      _btn('slot_delete', 'DELETE', hasDesc ? _deleteWatchdog : null),
+      // Configured is enough: /tmp/watchdog_wgcN.log outlives the schedule, and the log of the
+      // run that prompted a DISABLE is exactly what you want to read afterwards.
+      _btn('slot_view_log', 'VIEW ROUTER WATCHDOG LOG', (hasDesc && (wdActive || wdConfigured)) ? _viewWatchdogLog : null),
+    ];
+  }
 }
 
 class _PiaCredsDialog extends StatefulWidget {

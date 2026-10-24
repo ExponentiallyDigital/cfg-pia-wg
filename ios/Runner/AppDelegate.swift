@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import UniformTypeIdentifiers
+import workmanager_apple
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -8,6 +9,7 @@ import UniformTypeIdentifiers
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    WidgetRefresh.register()
     PrivacyCover.start()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -20,6 +22,23 @@ import UniformTypeIdentifiers
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "CfgPiaWgClipboard") {
       SensitiveClipboard.register(with: registrar.messenger())
     }
+  }
+}
+
+/// The widget's background refresh on iOS (ID-424). iOS only hands a scene-based app a background task
+/// whose handler was registered before didFinishLaunching returns, which is before Flutter registers its
+/// plugins, so it is done here. The background engine registers the plugins the refresh uses (the key
+/// store, the widget's storage) through the callback. iOS decides when the task runs; the 15 minutes is
+/// only the earliest it may. The identifier is Info.plist's BGTaskSchedulerPermittedIdentifiers entry
+/// and lib/widget_refresh.dart's kIosWidgetRefreshTask; test/unit/ios_info_plist_test.dart holds all three.
+enum WidgetRefresh {
+  static let identifier = "com.exponentiallydigital.cfgpiawg.widget-refresh"
+
+  static func register() {
+    WorkmanagerPlugin.setPluginRegistrantCallback { registry in
+      GeneratedPluginRegistrant.register(with: registry)
+    }
+    WorkmanagerPlugin.registerPeriodicTask(withIdentifier: identifier, earliestBeginInSeconds: NSNumber(value: 15 * 60))
   }
 }
 

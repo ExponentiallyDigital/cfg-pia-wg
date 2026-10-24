@@ -65,9 +65,22 @@ echo "$*" >> "$STATE/syslog"
 // six `sleep 1`s, and a sleep that returned at once gave the lookup no time at all: on a Linux runner,
 // where starting a process is quick, the six "seconds" passed before it had run, and the probe killed
 // it. Windows was slow enough to hide that. Every wait in the script is short in these tests anyway.
+//
+// And while the shell that called it has another child, it waits for that first, up to two real
+// seconds. The script starts only its two nslookups with `&`, so that child is a lookup on its way.
+// A Mac under the full suite's load was slower again: the six twentieths passed before the
+// background shell had even started the stand-in nslookup (traced 2026-10-24: 26 sleeps, then the
+// resolver check's nslookup, and the probe's never), so the probe found no answer. A mark the
+// stand-in made itself was tried first and missed exactly that. Without pgrep (Git Bash), no wait.
 const String _sleep = r'''#!/bin/sh
 echo "$*" >> "$STATE/sleeps"
 [ -f "$STATE/realsleep" ] && exec "$REALSLEEP" "$@"
+if command -v pgrep >/dev/null 2>&1; then
+  i=0
+  while [ "$i" -lt 40 ] && [ -n "$(pgrep -P "$PPID" | grep -vx "$$")" ]; do
+    "$REALSLEEP" 0.05; i=$((i + 1))
+  done
+fi
 exec "$REALSLEEP" 0.05
 ''';
 
@@ -290,7 +303,7 @@ if [ "$1" = dgst ] || { [ "$1" = base64 ] && [ "$2" = -d ]; }; then
 fi
 mode="$1"; f=""
 while [ $# -gt 0 ]; do [ "$1" = "-in" ] && f="$2"; shift; done
-if [ "$mode" = "base64" ]; then [ -f "$f" ] && base64 -w0 "$f" && echo; exit $?; fi
+if [ "$mode" = "base64" ]; then [ -f "$f" ] && base64 < "$f" | tr -d '\n' && echo; exit $?; fi
 [ -n "$f" ] && grep -q 'BEGIN CERTIFICATE' "$f" 2>/dev/null && grep -q 'PIA-TEST-CA' "$f" 2>/dev/null
 ''';
 

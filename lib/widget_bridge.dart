@@ -1,4 +1,4 @@
-// widget_bridge.dart - turns WidgetStatus into what the Android widgets read (ID-376).
+// widget_bridge.dart - turns WidgetStatus into what the Android and iOS widgets read (ID-376, ID-438).
 //
 // This program is free software: you can redistribute it and/or modify it under the terms
 // of the GNU General Public License as published by the Free Software Foundation, either
@@ -13,7 +13,8 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// [buildWidgetData] is the pure half - a Map whose keys mirror WidgetKeys.kt in
+// [buildWidgetData] is the pure half - a Map whose keys mirror WidgetKeys.kt (and WidgetKeys in
+// ios/CfgPiaWgWidget/CfgPiaWgWidget.swift) in
 // android/.../widget/WidgetKeys.kt line for line, so a drifted key fails a test rather than
 // drawing a blank widget. [pushWidgetStatus] is the one line of this file with no test: it hands
 // that map to the home_widget plugin, which has nothing to read without a real widget on a real
@@ -34,6 +35,19 @@ import 'widget_status.dart';
 /// full name here, as `qualifiedAndroidName`, is what makes it find these two at all.
 const String kTunnelsWidgetQualifiedName = 'com.exponentiallydigital.pia_wireguard_cfga.widget.TunnelsWidgetProvider';
 const String kCompactWidgetQualifiedName = 'com.exponentiallydigital.pia_wireguard_cfga.widget.CompactWidgetProvider';
+
+/// iOS (ID-438): the app group the app and its widget share, which `home_widget` writes into, and
+/// each widget's `kind` in ios/CfgPiaWgWidget/CfgPiaWgWidget.swift. A test holds all three to the
+/// Swift and to both targets' entitlements. Android ignores the group.
+const String kWidgetAppGroup = 'group.com.exponentiallydigital.cfgpiawg';
+const String kTunnelsWidgetIosKind = 'CfgPiaWgTunnelsWidget';
+const String kCompactWidgetIosKind = 'CfgPiaWgCompactWidget';
+
+/// Asks both widgets to redraw from what was just written, on whichever platform this is.
+Future<void> _redrawWidgets() async {
+  await HomeWidget.updateWidget(qualifiedAndroidName: kTunnelsWidgetQualifiedName, iOSName: kTunnelsWidgetIosKind);
+  await HomeWidget.updateWidget(qualifiedAndroidName: kCompactWidgetQualifiedName, iOSName: kCompactWidgetIosKind);
+}
 
 String _pluralTunnels(int n) => n == 1 ? '1 tunnel' : '$n tunnels';
 String _pluralPinned(int n) => n == 1 ? '1 pinned' : '$n pinned';
@@ -201,6 +215,7 @@ Map<String, Object> buildWidgetData(WidgetStatus status, {required DateTime now,
 /// for the half that is.
 Future<void> pushWidgetStatus(WidgetStatus status, {required DateTime now, bool canRefresh = false}) async {
   final data = buildWidgetData(status, now: now, canRefresh: canRefresh);
+  await HomeWidget.setAppGroupId(kWidgetAppGroup);
   for (final entry in data.entries) {
     final value = entry.value;
     if (value is String) {
@@ -211,8 +226,7 @@ Future<void> pushWidgetStatus(WidgetStatus status, {required DateTime now, bool 
       await HomeWidget.saveWidgetData<bool>(entry.key, value);
     }
   }
-  await HomeWidget.updateWidget(qualifiedAndroidName: kTunnelsWidgetQualifiedName);
-  await HomeWidget.updateWidget(qualifiedAndroidName: kCompactWidgetQualifiedName);
+  await _redrawWidgets();
 }
 
 /// Records that a refresh ran at [attemptedAt] and could not reach the router, **without touching
@@ -223,8 +237,8 @@ Future<void> pushWidgetStatus(WidgetStatus status, {required DateTime now, bool 
 /// Untested for the same reason as [pushWidgetStatus] - there is no widget to read it without a
 /// real home screen. The text it composes is [attemptFailedFooter], which is tested.
 Future<void> pushWidgetAttemptFailed(DateTime attemptedAt, [WidgetAttemptFailure why = WidgetAttemptFailure.unreachable]) async {
+  await HomeWidget.setAppGroupId(kWidgetAppGroup);
   final previous = (await HomeWidget.getWidgetData<String>('last_checked_text')) ?? '';
   await HomeWidget.saveWidgetData<String>('last_checked_text', attemptFailedFooter(previous, attemptedAt, why));
-  await HomeWidget.updateWidget(qualifiedAndroidName: kTunnelsWidgetQualifiedName);
-  await HomeWidget.updateWidget(qualifiedAndroidName: kCompactWidgetQualifiedName);
+  await _redrawWidgets();
 }

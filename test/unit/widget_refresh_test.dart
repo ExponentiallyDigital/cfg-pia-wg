@@ -1,7 +1,8 @@
 // test/unit/widget_refresh_test.dart - what a background refresh decides to do, and not do
 // (ID-376). No router, no device, no plugins: every dependency of refreshWidgetStatus is injected.
-import 'dart:io' show File;
+import 'dart:io' show Directory, File;
 
+import 'package:cfg_pia_wg/background_refresh_log.dart';
 import 'package:cfg_pia_wg/router_host_keys.dart' show RouterHostKeyChanged;
 import 'package:cfg_pia_wg/router_prefs.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart' show buildVpncRecord, serialiseVpncClientlist;
@@ -285,7 +286,59 @@ void main() {
     expect(kotlin, contains('const val TAP_TASK = "$kWidgetTapTask"'));
   });
 
-  // ID-425: the widget is Android's, so iOS registers no background refresh for it.
+  // ID-438: no refresh on a locked iPhone, Andrew's choice. Not a fault, so nothing is written.
+  test('a locked phone: nothing is tried, and the footer is left as it was', () async {
+    await setUpKey();
+    var connected = false, recorded = false, pushed = false;
+    final outcome = await refreshWidgetStatus(
+      store: WidgetKeyStore(protectedDataAvailable: () async => false),
+      prefs: _MemoryRouterPrefs('192.168.1.1'),
+      connect: ({required ip, required user, required pem}) async {
+        connected = true;
+        throw StateError('should not be reached');
+      },
+      push: (status, {required now, canRefresh = false}) async => pushed = true,
+      onFailed: (at, [why = WidgetAttemptFailure.unreachable]) async => recorded = true,
+    );
+
+    expect(outcome, WidgetRefreshOutcome.locked);
+    expect(connected, isFalse);
+    expect(pushed, isFalse, reason: 'the last reading stands');
+    expect(recorded, isFalse, reason: 'a locked phone is not a failed refresh');
+  });
+
+  test('the key store is readable wherever the plugin has no answer, as off iOS', () async {
+    expect(await WidgetKeyStore(protectedDataAvailable: () async => null).readable(), isTrue);
+    expect(await WidgetKeyStore(protectedDataAvailable: () async => true).readable(), isTrue);
+    expect(await WidgetKeyStore(protectedDataAvailable: () async => false).readable(), isFalse);
+  });
+
+  // ID-438, then ID-424: iOS's background refresh comes too seldom to rely on, so the app refreshes the
+  // widget as it opens and comes back as well. Android's refresh stays WorkManager's alone.
+  group('refreshWidgetOnOpen', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('refreshes on iOS', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      var calls = 0;
+      await refreshWidgetOnOpen(refresh: () async {
+        calls++;
+        return WidgetRefreshOutcome.noKey;
+      });
+      expect(calls, 1);
+    });
+
+    test('does nothing on Android, where WorkManager refreshes', () async {
+      var calls = 0;
+      await refreshWidgetOnOpen(refresh: () async {
+        calls++;
+        return WidgetRefreshOutcome.noKey;
+      });
+      expect(calls, 0);
+    });
+  });
+
+  // ID-425, then ID-424: both platforms register, since the stored handle goes stale on both.
   group('reregisterWidgetRefresh', () {
     tearDown(() => debugDefaultTargetPlatformOverride = null);
 
@@ -295,16 +348,57 @@ void main() {
       expect(calls, 1);
     });
 
-    test('does nothing on iOS, where there is no widget', () async {
+    test('registers on iOS too (ID-424)', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       var calls = 0;
       await reregisterWidgetRefresh(initialize: () async => calls++);
+      expect(calls, 1);
+      expect(homeWidgetSupported(), isTrue);
+      expect(backgroundRefreshSupported(), isTrue);
+    });
+
+    test('does nothing where there is no widget', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      var calls = 0;
+      await reregisterWidgetRefresh(initialize: () async => calls++);
       expect(calls, 0);
-      expect(homeWidgetSupported(), isFalse);
     });
 
     test("a plugin that fails doesn't stop the app starting", () async {
       await reregisterWidgetRefresh(initialize: () async => throw StateError('no plugin'));
+    });
+  });
+
+  // ID-424: each scheduled run goes in the run log, so a day of them can be read back from an iPhone.
+  group('runBackgroundRefresh', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('a scheduled run is recorded with its start time and outcome', () async {
+      final dir = Directory.systemTemp.createTempSync('bg_refresh');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final log = BackgroundRefreshLog(directory: () async => dir);
+      final started = DateTime.utc(2026, 10, 25, 3, 12);
+      final outcome = await runBackgroundRefresh(kIosWidgetRefreshTask,
+          refresh: () async => WidgetRefreshOutcome.locked, log: log, clock: () => started);
+      expect(outcome, WidgetRefreshOutcome.locked);
+      final entries = (await log.since(started))!;
+      expect(entries, hasLength(1));
+      expect(entries.single.at, started.toLocal());
+      expect(entries.single.outcome, WidgetRefreshOutcome.locked);
+    });
+
+    test("a tap on Android's widget isn't a scheduled run, and isn't recorded", () async {
+      final dir = Directory.systemTemp.createTempSync('bg_refresh');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final log = BackgroundRefreshLog(directory: () async => dir);
+      await runBackgroundRefresh(kWidgetTapTask, refresh: () async => WidgetRefreshOutcome.done, log: log);
+      expect(await log.since(DateTime(2000)), isNull);
+    });
+
+    test("the job's name is iOS's permitted identifier on iOS, and Android's own elsewhere", () {
+      expect(widgetRefreshTaskName(), kWidgetRefreshTask);
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(widgetRefreshTaskName(), kIosWidgetRefreshTask);
     });
   });
 }
