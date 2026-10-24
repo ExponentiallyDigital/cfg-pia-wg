@@ -25,7 +25,8 @@ import 'entitlement.dart';
 import 'session_controller.dart';
 import 'widgets/paywall.dart';
 import 'widgets/app_scaffold.dart';
-import 'widget_refresh.dart' show refreshWidgetOnOpen;
+import 'background_refresh_log.dart';
+import 'widget_refresh.dart' show backgroundRefreshSupported, refreshWidgetOnOpen;
 
 /// Keeps [SessionController.currentDestination] in sync with the route on top so the drawer can
 /// no-op when the current screen is re-selected.
@@ -150,6 +151,17 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
     unawaited(_startPurchasing());
     // ID-438: on iOS the widget is brought up to date as the app opens, until it can refresh itself.
     unawaited(refreshWidgetOnOpen());
+    unawaited(_logBackgroundRefreshes());
+  }
+
+  /// ID-424: the last two days of background refreshes, into the LOG screen once per start, where
+  /// they can be shared. Nothing on a phone that never ran one.
+  Future<void> _logBackgroundRefreshes() async {
+    if (!backgroundRefreshSupported()) return;
+    final entries = await BackgroundRefreshLog().since(DateTime.now().subtract(kBackgroundRefreshLogShown));
+    for (final line in backgroundRefreshLogLines(entries)) {
+      _controller.logEntry(line);
+    }
   }
 
   /// Brings up the store, off the first frame.
