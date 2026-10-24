@@ -6,6 +6,7 @@
 // the prompt itself and the user is asked to allow something nobody has explained.
 import 'dart:io';
 
+import 'package:cfg_pia_wg/widget_refresh.dart' show kIosWidgetRefreshTask;
 import 'package:flutter_test/flutter_test.dart';
 
 /// The string value of [key] in [plist], or null when the key is absent.
@@ -74,5 +75,21 @@ void main() {
     final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
     final teams = [for (final m in RegExp(r'DEVELOPMENT_TEAM = ([^;]+);').allMatches(pbxproj)) m.group(1)!];
     expect(teams, List.filled(9, 'RL4UB6WKMV'), reason: 'Runner, RunnerTests and the widget, Debug, Profile and Release');
+  });
+
+  // ID-424. iOS runs a background task only if Info.plist permits its identifier and the app asked for
+  // background fetch, and a scene-based app must register the handler before didFinishLaunching
+  // returns. One name in three places: Info.plist, AppDelegate.swift and widget_refresh.dart.
+  test('the widget refresh is a permitted background task, registered at launch, under one name', () {
+    final permitted = RegExp(r'<key>BGTaskSchedulerPermittedIdentifiers</key>\s*<array>(.*?)</array>', dotAll: true).firstMatch(plist);
+    expect(permitted, isNotNull);
+    expect(permitted!.group(1), contains('<string>$kIosWidgetRefreshTask</string>'));
+    expect(RegExp(r'<key>UIBackgroundModes</key>\s*<array>\s*<string>fetch</string>').hasMatch(plist), isTrue);
+
+    final delegate = File('ios/Runner/AppDelegate.swift').readAsStringSync();
+    expect(delegate, contains('static let identifier = "$kIosWidgetRefreshTask"'));
+    final launch = RegExp(r'didFinishLaunchingWithOptions.*?return super', dotAll: true).firstMatch(delegate)!.group(0)!;
+    expect(launch, contains('WidgetRefresh.register()'), reason: 'after didFinishLaunching iOS no longer hands the task over');
+    expect(delegate, contains('GeneratedPluginRegistrant.register(with: registry)'), reason: 'the background engine needs the key store and the widget storage');
   });
 }

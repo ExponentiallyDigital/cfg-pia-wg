@@ -1,7 +1,8 @@
 // test/unit/widget_refresh_test.dart - what a background refresh decides to do, and not do
 // (ID-376). No router, no device, no plugins: every dependency of refreshWidgetStatus is injected.
-import 'dart:io' show File;
+import 'dart:io' show Directory, File;
 
+import 'package:cfg_pia_wg/background_refresh_log.dart';
 import 'package:cfg_pia_wg/router_host_keys.dart' show RouterHostKeyChanged;
 import 'package:cfg_pia_wg/router_prefs.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart' show buildVpncRecord, serialiseVpncClientlist;
@@ -312,8 +313,8 @@ void main() {
     expect(await WidgetKeyStore(protectedDataAvailable: () async => false).readable(), isFalse);
   });
 
-  // ID-438: iOS has the widget, but no background refresh until ID-439, so the app refreshes it as
-  // it opens and comes back. Android's refresh stays WorkManager's alone.
+  // ID-438, then ID-424: iOS's background refresh comes too seldom to rely on, so the app refreshes the
+  // widget as it opens and comes back as well. Android's refresh stays WorkManager's alone.
   group('refreshWidgetOnOpen', () {
     tearDown(() => debugDefaultTargetPlatformOverride = null);
 
@@ -337,7 +338,7 @@ void main() {
     });
   });
 
-  // ID-425, then ID-438: iOS has the widget now, but registers no background refresh until ID-439.
+  // ID-425, then ID-424: both platforms register, since the stored handle goes stale on both.
   group('reregisterWidgetRefresh', () {
     tearDown(() => debugDefaultTargetPlatformOverride = null);
 
@@ -347,17 +348,57 @@ void main() {
       expect(calls, 1);
     });
 
-    test('does nothing on iOS, which has the widget but no background refresh yet', () async {
+    test('registers on iOS too (ID-424)', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       var calls = 0;
       await reregisterWidgetRefresh(initialize: () async => calls++);
-      expect(calls, 0);
+      expect(calls, 1);
       expect(homeWidgetSupported(), isTrue);
-      expect(backgroundRefreshSupported(), isFalse);
+      expect(backgroundRefreshSupported(), isTrue);
+    });
+
+    test('does nothing where there is no widget', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      var calls = 0;
+      await reregisterWidgetRefresh(initialize: () async => calls++);
+      expect(calls, 0);
     });
 
     test("a plugin that fails doesn't stop the app starting", () async {
       await reregisterWidgetRefresh(initialize: () async => throw StateError('no plugin'));
+    });
+  });
+
+  // ID-424: each scheduled run goes in the run log, so a day of them can be read back from an iPhone.
+  group('runBackgroundRefresh', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('a scheduled run is recorded with its start time and outcome', () async {
+      final dir = Directory.systemTemp.createTempSync('bg_refresh');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final log = BackgroundRefreshLog(directory: () async => dir);
+      final started = DateTime.utc(2026, 10, 25, 3, 12);
+      final outcome = await runBackgroundRefresh(kIosWidgetRefreshTask,
+          refresh: () async => WidgetRefreshOutcome.locked, log: log, clock: () => started);
+      expect(outcome, WidgetRefreshOutcome.locked);
+      final entries = (await log.since(started))!;
+      expect(entries, hasLength(1));
+      expect(entries.single.at, started.toLocal());
+      expect(entries.single.outcome, WidgetRefreshOutcome.locked);
+    });
+
+    test("a tap on Android's widget isn't a scheduled run, and isn't recorded", () async {
+      final dir = Directory.systemTemp.createTempSync('bg_refresh');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final log = BackgroundRefreshLog(directory: () async => dir);
+      await runBackgroundRefresh(kWidgetTapTask, refresh: () async => WidgetRefreshOutcome.done, log: log);
+      expect(await log.since(DateTime(2000)), isNull);
+    });
+
+    test("the job's name is iOS's permitted identifier on iOS, and Android's own elsewhere", () {
+      expect(widgetRefreshTaskName(), kWidgetRefreshTask);
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(widgetRefreshTaskName(), kIosWidgetRefreshTask);
     });
   });
 }

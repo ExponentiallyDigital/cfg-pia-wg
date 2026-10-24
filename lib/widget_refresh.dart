@@ -38,6 +38,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
+import 'background_refresh_log.dart';
 import 'router_host_keys.dart';
 import 'router_prefs.dart';
 import 'router_slot_service.dart' show splitHostPort;
@@ -191,7 +192,16 @@ Future<WidgetRefreshOutcome> _refresh(
 /// The name WorkManager knows the periodic refresh by, and the tag it is cancelled with.
 const String kWidgetRefreshTask = 'cfg-pia-wg-widget-refresh';
 
-/// Android's own floor for a periodic job. Asking for less does not get less.
+/// The same job's name on iOS (ID-424), where it is a BGTaskScheduler identifier: Info.plist must
+/// permit it and AppDelegate.swift registers it, so it is reverse-DNS, as Apple asks. Android keeps
+/// [kWidgetRefreshTask], under which existing phones already have the job.
+const String kIosWidgetRefreshTask = 'com.exponentiallydigital.cfgpiawg.widget-refresh';
+
+/// The periodic job's name on this platform.
+String widgetRefreshTaskName() => defaultTargetPlatform == TargetPlatform.iOS ? kIosWidgetRefreshTask : kWidgetRefreshTask;
+
+/// Android's own floor for a periodic job. Asking for less does not get less. On iOS it is only the
+/// earliest the next run may be; iOS picks the time.
 const Duration kWidgetRefreshInterval = Duration(minutes: 15);
 
 /// The task name a tap on the widget's refresh button arrives as - WidgetRefreshReceiver.kt's
@@ -201,17 +211,32 @@ const String kWidgetTapTask = 'cfg-pia-wg-widget-tap';
 /// WorkManager's entry point, for both the fifteen-minute refresh and a tap on the widget's
 /// refresh button ([kWidgetTapTask]). A top-level function with `vm:entry-point` because it is
 /// called in a fresh background isolate, which has none of the app's state and has to register
-/// the plugins it uses for itself.
+/// the plugins it uses for itself. Each scheduled run, not a tap, goes in [BackgroundRefreshLog]
+/// (ID-424).
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, _) async {
     DartPluginRegistrant.ensureInitialized();
-    await refreshWidgetStatus();
+    await runBackgroundRefresh(task);
     // Always true: a refresh that could not reach the router has not failed in a way retrying
     // sooner would fix, and WorkManager's backoff is not the right answer to being out of the
     // house. The next scheduled run is soon enough.
     return true;
   });
+}
+
+/// One background run: the refresh, then, unless it was a tap on the widget, a line in the run log
+/// with the time it started. [refresh] and [log] stand in for the real ones in a test.
+Future<WidgetRefreshOutcome> runBackgroundRefresh(
+  String task, {
+  Future<WidgetRefreshOutcome> Function()? refresh,
+  BackgroundRefreshLog? log,
+  DateTime Function() clock = DateTime.now,
+}) async {
+  final started = clock();
+  final outcome = await (refresh ?? refreshWidgetStatus)();
+  if (task != kWidgetTapTask) await (log ?? BackgroundRefreshLog()).record(started, outcome);
+  return outcome;
 }
 
 /// Starts the periodic refresh, replacing any existing one. Called when a key is installed. The
@@ -222,16 +247,11 @@ void callbackDispatcher() {
 /// widget sits on whatever it last knew for fifteen minutes or more after the key goes in, which
 /// looks exactly like a feature that does not work (reported on a real phone, 2026-10-12).
 Future<void> scheduleWidgetRefresh() async {
-  if (!backgroundRefreshSupported()) {
-    // iOS: no schedule yet (ID-439). The app reads the router when it opens instead.
-    unawaited(refreshWidgetStatus());
-    return;
-  }
   await Workmanager().initialize(callbackDispatcher);
   unawaited(refreshWidgetStatus());
   await Workmanager().registerPeriodicTask(
-    kWidgetRefreshTask,
-    kWidgetRefreshTask,
+    widgetRefreshTaskName(),
+    widgetRefreshTaskName(),
     frequency: kWidgetRefreshInterval,
     existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
     constraints: Constraints(networkType: NetworkType.connected),
@@ -241,9 +261,8 @@ Future<void> scheduleWidgetRefresh() async {
 /// Stops the periodic refresh. Called when the key is removed - a job that can no longer log in
 /// has nothing to do but wake the phone up.
 Future<void> cancelWidgetRefresh() async {
-  if (!backgroundRefreshSupported()) return;
   await Workmanager().initialize(callbackDispatcher);
-  await Workmanager().cancelByUniqueName(kWidgetRefreshTask);
+  await Workmanager().cancelByUniqueName(widgetRefreshTaskName());
 }
 
 /// True where the app has a home screen widget: Android, and iOS from ID-438. Read through
@@ -251,16 +270,16 @@ Future<void> cancelWidgetRefresh() async {
 bool homeWidgetSupported() =>
     defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
 
-/// True where the widget refreshes itself in the background: Android. iOS until ID-439 reads the
-/// router only when the app opens or comes back ([refreshWidgetOnOpen]).
-bool backgroundRefreshSupported() => defaultTargetPlatform == TargetPlatform.android;
+/// True where the widget refreshes itself in the background: Android every fifteen minutes, and iOS
+/// from ID-424 whenever iOS allows, which may be a few times a day.
+bool backgroundRefreshSupported() => homeWidgetSupported();
 
-/// Where the widget can't refresh itself yet (iOS, until ID-439), the app refreshes it as it opens
-/// and each time it comes back, so a tap on the widget, which opens the app, brings it up to date.
-/// With no key it stops at the key store, and on Android it does nothing: WorkManager has it.
-/// [refresh] stands in for [refreshWidgetStatus] in a test.
+/// iOS's background refresh comes too seldom to rely on (ID-424), so on iOS the app also refreshes
+/// the widget as it opens and each time it comes back, and a tap on the widget, which opens the app,
+/// brings it up to date. With no key it stops at the key store, and on Android it does nothing:
+/// WorkManager has it. [refresh] stands in for [refreshWidgetStatus] in a test.
 Future<void> refreshWidgetOnOpen({Future<WidgetRefreshOutcome> Function()? refresh}) async {
-  if (!homeWidgetSupported() || backgroundRefreshSupported()) return;
+  if (defaultTargetPlatform != TargetPlatform.iOS) return;
   await (refresh ?? refreshWidgetStatus)();
 }
 
@@ -275,8 +294,8 @@ Future<void> refreshWidgetOnOpen({Future<WidgetRefreshOutcome> Function()? refre
 /// Deliberately swallows its errors - a platform without the plugin (a test, a desktop build)
 /// must not stop the app from starting over a widget it does not have.
 ///
-/// Android only: iOS registers no background refresh until ID-439. [initialize] stands in for the
-/// plugin in a test.
+/// Android and iOS, where the stored handle goes stale the same way (ID-424). [initialize] stands in
+/// for the plugin in a test.
 Future<void> reregisterWidgetRefresh({Future<void> Function()? initialize}) async {
   if (!backgroundRefreshSupported()) return;
   try {

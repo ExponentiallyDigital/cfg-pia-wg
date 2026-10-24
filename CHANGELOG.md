@@ -85,16 +85,8 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
-- ID-469 REL: the next tag uploads its own iOS build to TestFlight.
-  - DoD: the build shows in TestFlight, and Certificates, IDs & Profiles shows no new certificate left by each run.
-  - Plan: [plan_promote-both-stores.md](.claude/plans/plan_promote-both-stores.md)
-- ID-424 TST: measure how often iOS lets the app refresh in the background.
-  - DoD: a day's refresh times from an iPhone are recorded.
 - ID-439 ADD: the iOS widget refreshes itself in the background. After ID-424.
   - DoD: it updates with the app closed.
-- ID-453 MOD: the slot modal's manage and watchdog modes become two widgets sharing the slot list; they share little else.
-  - DoD: nothing a user sees changes, and the full suite passes unchanged.
-
 ---
 
 ### 1.2. WIP
@@ -110,11 +102,22 @@ Work items for the **current** release:
 - ID-438 ADD: an iOS home screen widget showing the last status the app read.
   - DoD: it shows each tunnel's state as last read.
   - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
-  - Now: built in build 535, tests pass; left: a CI build, signing, and WGT-8 on an iPhone.
+  - Now: Xcode builds and signs it on the MacBook (build 537); left: WGT-8 on an iPhone from TestFlight.
 - ID-471 TST: the tests and build.ps1 work on a Mac as well as on Windows.
   - DoD: build.ps1 all passes on both, with the tests' progress on one line on the Mac.
   - Plan: [plan_mac-build.md](.claude/plans/plan_mac-build.md)
   - Now: build.ps1 all passes on the MacBook; left: a build.ps1 run on Windows.
+- ID-469 REL: the next tag uploads its own iOS build to TestFlight.
+  - DoD: the build shows in TestFlight, and Certificates, IDs & Profiles shows no new certificate left by each run.
+  - Plan: [plan_promote-both-stores.md](.claude/plans/plan_promote-both-stores.md)
+  - Now: waiting for build 537's tag.
+- ID-424 TST: measure how often iOS lets the app refresh in the background.
+  - DoD: a day's refresh times from an iPhone are recorded.
+  - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
+  - Now: built, tests pass, Xcode builds it; left: a day on an iPhone from TestFlight.
+- ID-475 BLD: build.ps1 builds the iOS app on a Mac.
+  - DoD: build.ps1 ipa on the MacBook leaves an .ipa, and Windows is unchanged.
+  - Now: built here, signed Apple Distribution RL4UB6WKMV, in 163 s; left: ID-471's Windows run, to see Windows unchanged.
 
 ---
 
@@ -132,6 +135,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.167 build 537 - the iOS widget asks for background refreshes and logs when it gets them, build.ps1 builds the .ipa on a Mac, and the slot screen is split by mode
+
+- CHG: WIP 3 -> 7 bullets. Added, Andrew's go 2026-10-25 while App Review has 0.8.164: ID-469, ID-424 and ID-453 from 1.1, and ID-475, new.
+- ID-453 MOD: the slot modal's manage and watchdog modes become two widgets sharing the slot list; they share little else.
+  - DoD: nothing a user sees changes, and the full suite passes unchanged.
+  - Closed 2026-10-25: `_ManageSlots` and `_WatchdogSlots` over a shared `_SlotModalState`, `SlotModal(mode:)` unchanged; full suite 2014 passed with `slot_modal_test.dart` untouched, coverage 95.7%.
 
 2026-10-24 v0.8.166 build 536 - the tests and build.ps1 run on a MacBook, and a release build stops early without its signing key
 
