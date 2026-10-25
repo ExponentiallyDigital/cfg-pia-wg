@@ -544,6 +544,9 @@ class RouterSlotService {
   /// A command, as this service's own: for [RouterOps], which holds the calls that differ by firmware.
   Future<String> run(String cmd) => _run(cmd);
 
+  /// A read, as this service's own: stdout, never throwing. For [RouterOps].
+  Future<String> read(String cmd) => _read(cmd);
+
   // 'wgcN:<description>' for log lines. Cached per service instance - one is built per user
   // action, so the description is read at most once however many lines it appears in. (The SSH
   // connection underneath is shared and long-lived; the service on top of it is not.)
@@ -575,7 +578,19 @@ class RouterSlotService {
     return missing;
   }
 
-  // Reads vpnc_clientlist and indexes it by slot number (stock only).
+  /// Reads vpnc_clientlist and indexes it by slot number (stock only).
+  Future<Map<int, VpncRecord>> readVpncBySlot() => _readVpncBySlot();
+
+  /// For [StockOps.clearProfile]: lets go of what names stock profile [stateIdx], [slot]'s: the devices
+  /// pinned to it, and the default connection if it is that profile.
+  Future<void> releaseProfileIndex(int stateIdx, int slot) async {
+    await _releasePinnedDevices(stateIdx);
+    await _clearDefaultConnectionIfThisSlot(stateIdx, slot);
+  }
+
+  /// For [StockOps.clearProfile]: [slot]'s row out of vpnc_clientlist.
+  Future<void> removeProfileRow(int slot) => _editVpncClientlist((recs) => removeVpncRecord(recs, slot));
+
   Future<Map<int, VpncRecord>> _readVpncBySlot() async {
     final records = parseVpncClientlist(await _read('nvram get vpnc_clientlist'));
     return {
@@ -808,21 +823,13 @@ class RouterSlotService {
   Future<RouterSlots> fetchSlots() async {
     onLog?.call('Reading router configuration...');
     final isMerlin = (await _read('nvram get 3rd-party')) == 'merlin';
-    final stock = isStockFirmware;
-    // On stock the region name and active flag live in vpnc_clientlist, not in per-slot keys.
-    final vpnc = stock ? await _readVpncBySlot() : const <int, VpncRecord>{};
+    final ops = routerOps();
+    // The region name, the kill switch and whether it is switched on are where each firmware keeps them.
+    final stateOf = await ops.slotStateReader(this);
 
     final slots = <int, SlotInfo>{};
     for (int i = 1; i <= 5; i++) {
-      // Stock keeps the region name in vpnc_clientlist, but fall back to wgcN_desc when the row
-      // is missing or blank: a watchdog deployed before the deploy path wrote that row leaves the
-      // slot looking empty, which greys out every button that needs a description. DELETE unsets
-      // wgcN_desc along with the row, so this cannot resurrect a deleted slot.
-      var desc = stock ? (vpnc[i]?.desc ?? '') : await _read('nvram get wgc${i}_desc');
-      if (stock && desc.trim().isEmpty) desc = await _read('nvram get wgc${i}_desc');
-      // Stock exposes no kill switch (ARCHITECTURE.md "Field reference"), so the badge never lights there.
-      final killSwitch = stock ? false : (await _read('nvram get wgc${i}_enforce')) == '1';
-      final enabled = stock ? (vpnc[i]?.active ?? false) : (await _read('nvram get wgc${i}_enable')) == '1';
+      final (:desc, :killSwitch, :enabled) = await stateOf(i);
       // A cron entry alone is not a watchdog: a failed deploy left cru pointing at a script that
       // was never written, and the app called that ACTIVE. Both have to be there.
       final watchdog = (await _run("cru l | grep -qw watchdog_wgc$i && [ -s '${watchdogScriptPath(i)}' ] "
@@ -849,7 +856,29 @@ class RouterSlotService {
     // silently badged an arbitrary one of them.
     final ifaceOutput = await _read(kUpInterfacesCommand);
     final activeSlots = RegExp(r'wgc(\d)').allMatches(ifaceOutput).map((m) => int.parse(m.group(1)!)).toSet();
+    final answering = await _answeringSlots(activeSlots);
 
+    // The router's own encrypted-DNS servers, for the overlap note on CREATE and EDIT (ID-005), and its
+    // cap on tunnels at once: stock's, as the firmware holds them; Merlin has neither.
+    final dotServers = await ops.routerDotServers(this);
+    final maxActiveSlots = await ops.maxActiveSlots(this);
+
+    if (slots.values.every((s) => s.isEmpty)) {
+      onLog?.call('All WireGuard slots are unconfigured.');
+    }
+    onLog?.call('Successfully retrieved router config.', isSuccess: true);
+    return RouterSlots(
+        slots: slots,
+        activeSlots: activeSlots,
+        answeringSlots: answering,
+        routerDotServers: dotServers,
+        isMerlin: isMerlin,
+        maxActiveSlots: maxActiveSlots);
+  }
+
+  /// Which of [activeSlots] have heard from their server lately, said in the app log for each that
+  /// hasn't.
+  Future<Set<int>> _answeringSlots(Set<int> activeSlots) async {
     // One more command, for the difference between a tunnel that is up and one that is working
     // (ID-123). Best-effort: a router that cannot answer it leaves every up slot reading as
     // answering, which is the behaviour this had before the distinction existed.
@@ -880,33 +909,7 @@ class RouterSlotService {
               : 'wgc$slot is up but its server has not answered since the tunnel came up.',
           isWarning: true);
     }
-
-    // The router's own encrypted-DNS servers, for the overlap note on CREATE and EDIT (ID-005).
-    // Stock only: Merlin has no `dnspriv_rulelist`, and a failed read simply means no note.
-    var dotServers = <String>{};
-    if (stock) {
-      try {
-        dotServers = parseDotServerList(await _read(kDotServerListCommand));
-      } catch (_) {
-        dotServers = {};
-      }
-    }
-
-    // Stock caps concurrent tunnels; follow the router's own setting rather than assuming 2, so a
-    // user who changed it gets what they configured. Merlin has no such key, so no limit.
-    final maxActiveSlots = stock ? await _readMaxActiveSlots() : null;
-
-    if (slots.values.every((s) => s.isEmpty)) {
-      onLog?.call('All WireGuard slots are unconfigured.');
-    }
-    onLog?.call('Successfully retrieved router config.', isSuccess: true);
-    return RouterSlots(
-        slots: slots,
-        activeSlots: activeSlots,
-        answeringSlots: answering,
-        routerDotServers: dotServers,
-        isMerlin: isMerlin,
-        maxActiveSlots: maxActiveSlots);
+    return answering;
   }
 
   // Reads every per-slot NVRAM value (bare-keyed map) for the parameter editor. Keys the running
@@ -939,16 +942,54 @@ class RouterSlotService {
     // Stored descriptions carry the app's prefix so they stand out among any other VPNs on the
     // router; the router script strips it again before using the value as a PIA region id.
     final desc = slotDescFor(regionId);
+    final values = _slotValuesFor(config, desc);
+    final stock = isStockFirmware;
+    final keys = slotKeysFor(routerFirmware);
+
+    // Names the slot as it is NOW - the restore path puts this configuration back.
+    final oldLabel = await _label(slot);
+    final wasRunning = await _stopBeforeReplacing(slot, oldLabel);
+
+    ({Map<String, String> keys, String? vpnc})? backup;
+    try {
+      backup = await _backupSlot(slot, keys, stock: stock);
+
+      _labelCache[slot] = slotLabel(slot, desc); // later lines name the slot by its new region
+      onLog?.call('Writing NVRAM for ${_labelCache[slot]}...');
+      for (final key in keys) {
+        await _run('nvram set wgc${slot}_$key=${values[key]}');
+      }
+      // Stock keeps the region name and active flag here, so the router web UI sees the slot too.
+      if (stock) {
+        await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, desc: desc, active: false));
+      }
+      await _run('nvram commit');
+      onLog?.call('NVRAM committed.', isSuccess: true);
+      onLog?.call('Config written to ${await _label(slot)} (disabled).', isSuccess: true);
+      await _logRouter('Created ${await _label(slot)} configuration');
+      return wasRunning;
+    } catch (e) {
+      // Both go through _run, not client.run: a restore that itself fails must reach the CRITICAL line
+      // rather than reporting success on a discarded exit code (build 413).
+      if (backup != null) {
+        await _restoreAfterFailedCreate(oldLabel, backup);
+      } else {
+        await _clearHalfWrittenSlot(slot, keys, stock: stock);
+      }
+      rethrow;
+    }
+  }
+
+  /// CREATE's values for each wgcN_* key, from the generated [config], written in kSlotNvramKeys order.
+  /// Single-quoted like every other write: DNS is typed by the user, and the rest comes from PIA's answer,
+  /// and in double quotes a `$`, backtick or quote in either ran as shell (ID-237).
+  Map<String, String> _slotValuesFor(String config, String desc) {
     final wgMap = parseWgConfig(config);
     final epParts = wgMap['Endpoint']?.split(':') ?? [];
     final epIp = epParts.isNotEmpty ? epParts[0] : '';
     final epPort = epParts.length > 1 ? epParts[1] : '1337';
-
-    // Written in kSlotNvramKeys order; stock skips the four keys its firmware does not have.
-    // Single-quoted like every other write: DNS is typed by the user, and the rest comes from PIA's
-    // answer, and in double quotes a `$`, backtick or quote in either ran as shell (ID-237).
     const q = shellSingleQuote;
-    final values = <String, String>{
+    return {
       'addr': q(wgMap['Address'] ?? ''),
       'alive': '25',
       'desc': q(desc),
@@ -967,18 +1008,15 @@ class RouterSlotService {
       'rip': "''",
       'aips': q(wgMap['AllowedIPs'] ?? '0.0.0.0/0'),
     };
-    final stock = isStockFirmware;
-    final keys = slotKeysFor(routerFirmware);
+  }
 
-    // Names the slot as it is NOW - the restore path puts this configuration back.
-    final oldLabel = await _label(slot);
-
-    // A running tunnel is stopped BEFORE anything is written. Writing a new region's settings does
-    // not reach an interface that is already up, so the old server carried on under the new label.
-    // Measured on hardware 2026-09-14: wgc4 overwritten from us_alabama to aus_perth kept the
-    // Alabama peer key and tunnel address, while the app, the WebUI and the assignment screen all
-    // said aus_perth. Stopping first also means the backup below records a disabled slot, which is
-    // what is on the router if a failed write has to put it back.
+  /// A running tunnel is stopped BEFORE anything is written, and whether it was running is returned.
+  /// Writing a new region's settings does not reach an interface that is already up, so the old server
+  /// carried on under the new label. Measured on hardware 2026-09-14: wgc4 overwritten from us_alabama
+  /// to aus_perth kept the Alabama peer key and tunnel address, while the app, the WebUI and the
+  /// assignment screen all said aus_perth. Stopping first also means the backup records a disabled
+  /// slot, which is what is on the router if a failed write has to put it back.
+  Future<bool> _stopBeforeReplacing(int slot, String oldLabel) async {
     final wasRunning = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
     if (wasRunning) {
       onLog?.call('$oldLabel is running; stopping it before its configuration is replaced.');
@@ -989,75 +1027,58 @@ class RouterSlotService {
             'have carried on under the new name. Nothing was changed. Try again in a minute.');
       }
     }
+    return wasRunning;
+  }
 
-    Map<String, String>? backup;
-    String? vpncBackup;
+  /// What [slot] holds before CREATE writes over it, or null when it is empty. On stock the desc mirror
+  /// is only present for slots this app created; a profile made in the router web UI shows up in
+  /// vpnc_clientlist alone, and must still be backed up.
+  Future<({Map<String, String> keys, String? vpnc})?> _backupSlot(int slot, List<String> keys, {required bool stock}) async {
+    final existingDesc = await _read('nvram get wgc${slot}_desc');
+    final existingVpnc = stock ? await _read('nvram get vpnc_clientlist') : '';
+    final occupied = existingDesc.isNotEmpty || (stock && parseVpncClientlist(existingVpnc).any((r) => r.slot == slot));
+    if (!occupied) return null;
+    onLog?.call('Backing up existing ${await _label(slot)} config...');
+    final backup = <String, String>{};
+    for (final key in keys) {
+      backup['wgc${slot}_$key'] = await _read('nvram get wgc${slot}_$key');
+    }
+    return (keys: backup, vpnc: stock ? existingVpnc : null);
+  }
+
+  /// A failed CREATE over an occupied slot: what was there, put back.
+  Future<void> _restoreAfterFailedCreate(String oldLabel, ({Map<String, String> keys, String? vpnc}) backup) async {
+    onLog?.call('Create failed, restoring $oldLabel config...', isError: true);
     try {
-      // On stock the desc mirror is only present for slots this app created — a profile made in
-      // the router web UI shows up in vpnc_clientlist alone, and must still be backed up.
-      final existingDesc = await _read('nvram get wgc${slot}_desc');
-      final existingVpnc = stock ? await _read('nvram get vpnc_clientlist') : '';
-      final occupied = existingDesc.isNotEmpty || (stock && parseVpncClientlist(existingVpnc).any((r) => r.slot == slot));
-      if (occupied) {
-        onLog?.call('Backing up existing ${await _label(slot)} config...');
-        backup = {};
-        for (final key in keys) {
-          backup['wgc${slot}_$key'] = await _read('nvram get wgc${slot}_$key');
-        }
-        if (stock) vpncBackup = existingVpnc;
+      for (final entry in backup.keys.entries) {
+        await _run('nvram set ${entry.key}=${shellSingleQuote(entry.value)}');
       }
-
-      _labelCache[slot] = slotLabel(slot, desc); // later lines name the slot by its new region
-      onLog?.call('Writing NVRAM for ${_labelCache[slot]}...');
-      for (final key in keys) {
-        await _run('nvram set wgc${slot}_$key=${values[key]}');
-      }
-      // Stock keeps the region name and active flag here, so the router web UI sees the slot too.
-      if (stock) {
-        await _editVpncClientlist((recs) => upsertVpncRecord(recs, slot: slot, desc: desc, active: false));
+      if (backup.vpnc != null) {
+        await _run('nvram set vpnc_clientlist=${shellSingleQuote(backup.vpnc!)}');
       }
       await _run('nvram commit');
-      onLog?.call('NVRAM committed.', isSuccess: true);
-      onLog?.call('Config written to ${await _label(slot)} (disabled).', isSuccess: true);
-      await _logRouter('Created ${await _label(slot)} configuration');
-      return wasRunning;
-    } catch (e) {
-      // Both branches go through _run, not client.run: a restore that itself fails must reach the
-      // CRITICAL line rather than reporting success on a discarded exit code (build 413).
-      if (backup != null) {
-        onLog?.call('Create failed, restoring $oldLabel config...', isError: true);
-        try {
-          for (final entry in backup.entries) {
-            await _run('nvram set ${entry.key}=${shellSingleQuote(entry.value)}');
-          }
-          if (vpncBackup != null) {
-            await _run('nvram set vpnc_clientlist=${shellSingleQuote(vpncBackup)}');
-          }
-          await _run('nvram commit');
-          onLog?.call('$oldLabel config restored.', isSuccess: true);
-        } catch (_) {
-          onLog?.call('CRITICAL: could not restore $oldLabel. Check router manually.', isError: true);
-        }
-      } else {
-        // The slot was EMPTY, so there is nothing to restore - but everything written before the
-        // failure is still in NVRAM, and `nvram commit` never ran. That is the half-written slot
-        // seen on 2026-09-08: all 17 wgc5_* keys readable, no vpnc_clientlist row, so fetchSlots
-        // and the router web UI both showed the slot as unconfigured while the keys sat in RAM.
-        // Put it back to genuinely empty instead of leaving the wreckage.
-        onLog?.call('Create failed, clearing the half-written wgc$slot...', isError: true);
-        try {
-          for (final key in keys) {
-            await _run('nvram unset wgc${slot}_$key', allowFailure: true);
-          }
-          if (stock) await _editVpncClientlist((recs) => removeVpncRecord(recs, slot));
-          await _run('nvram commit');
-          _labelCache.remove(slot); // the region name never took; do not report it afterwards
-          onLog?.call('wgc$slot cleared.', isSuccess: true);
-        } catch (_) {
-          onLog?.call('CRITICAL: could not clear wgc$slot. Check router manually.', isError: true);
-        }
+      onLog?.call('$oldLabel config restored.', isSuccess: true);
+    } catch (_) {
+      onLog?.call('CRITICAL: could not restore $oldLabel. Check router manually.', isError: true);
+    }
+  }
+
+  /// A failed CREATE into an EMPTY slot: nothing to restore, but everything written before the failure
+  /// is still in NVRAM, and `nvram commit` never ran. That is the half-written slot seen on 2026-09-08:
+  /// all 17 wgc5_* keys readable, no vpnc_clientlist row, so fetchSlots and the router web UI both
+  /// showed the slot as unconfigured while the keys sat in RAM. Put back to genuinely empty.
+  Future<void> _clearHalfWrittenSlot(int slot, List<String> keys, {required bool stock}) async {
+    onLog?.call('Create failed, clearing the half-written wgc$slot...', isError: true);
+    try {
+      for (final key in keys) {
+        await _run('nvram unset wgc${slot}_$key', allowFailure: true);
       }
-      rethrow;
+      if (stock) await _editVpncClientlist((recs) => removeVpncRecord(recs, slot));
+      await _run('nvram commit');
+      _labelCache.remove(slot); // the region name never took; do not report it afterwards
+      onLog?.call('wgc$slot cleared.', isSuccess: true);
+    } catch (_) {
+      onLog?.call('CRITICAL: could not clear wgc$slot. Check router manually.', isError: true);
     }
   }
 
@@ -1076,26 +1097,7 @@ class RouterSlotService {
     // unit is that row's index.
     await routerOps().startSlot(this, slot);
 
-    onLog?.call('Verifying $label interface comes up...');
-    var up = false;
-    for (var retry = 0; retry < verifyMaxAttempts; retry++) {
-      await Future.delayed(verifyPollInterval);
-      // The interfaces that are UP, not the ones that exist. This loop is what decides the
-      // ACTIVE badge, and asking `wg show interfaces` meant a slot taken down with
-      // `ifconfig wgcN down` still reported active while the router's own web interface showed it
-      // as connecting and nothing passed. Measured 2026-09-09.
-      final raw = await _read(kUpInterfacesCommand);
-      final out = RegExp(r'wg[cs][0-9]').allMatches(raw).map((m) => m.group(0)!).join(' ');
-      onLog?.call('  interfaces up: ${out.isEmpty ? '(none)' : out}');
-      await _logRouter('interfaces up: ${out.isEmpty ? '(none)' : out}');
-      if (out.contains('wgc$slot')) {
-        up = true;
-        onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: $label is active');
-        break;
-      }
-      onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: $label not yet active');
-    }
-    if (!up) {
+    if (!await _awaitInterfaceUp(slot, label)) {
       final stopped = await _revertEnable(slot);
       throw Exception('$label did not come up - the configuration may have expired. Recreate it with CREATE, then ENABLE.'
           '${_revertNote(label, stopped)}');
@@ -1104,20 +1106,7 @@ class RouterSlotService {
     // The interface existing proves nothing: a PIA registration that has expired still produces a
     // wgcN device that sends and never receives, which is what leaves the router WebUI stuck on
     // "connecting". A handshake is the peer answering, so that is what ENABLE waits for.
-    onLog?.call('Waiting for a WireGuard handshake on $label...');
-    var handshake = false;
-    for (var retry = 0; retry < verifyMaxAttempts; retry++) {
-      final age = await handshakeAge(slot);
-      if (age != null) {
-        handshake = true;
-        onLog?.call('  Handshake ${age}s ago.', isSuccess: true);
-        await _logRouter('$label handshake ${age}s ago');
-        break;
-      }
-      onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: no handshake yet');
-      await Future.delayed(verifyPollInterval);
-    }
-    if (!handshake) {
+    if (!await _awaitHandshake(slot, label)) {
       await _logRouter('$label came up but the peer never answered (no handshake)');
       final stopped = await _revertEnable(slot);
       throw Exception('$label came up but the PIA server never answered it (no WireGuard handshake). '
@@ -1142,6 +1131,44 @@ class RouterSlotService {
     // What was checked, and no more (ID-339): the handshake, and both pings through the tunnel.
     onLog?.call('$label enabled: up, its server has answered, and both check addresses answered through it.',
         isSuccess: true);
+  }
+
+  /// ENABLE's wait for [slot]'s interface to be up, each check said in both logs.
+  Future<bool> _awaitInterfaceUp(int slot, String label) async {
+    onLog?.call('Verifying $label interface comes up...');
+    for (var retry = 0; retry < verifyMaxAttempts; retry++) {
+      await Future.delayed(verifyPollInterval);
+      // The interfaces that are UP, not the ones that exist. This loop is what decides the
+      // ACTIVE badge, and asking `wg show interfaces` meant a slot taken down with
+      // `ifconfig wgcN down` still reported active while the router's own web interface showed it
+      // as connecting and nothing passed. Measured 2026-09-09.
+      final raw = await _read(kUpInterfacesCommand);
+      final out = RegExp(r'wg[cs][0-9]').allMatches(raw).map((m) => m.group(0)!).join(' ');
+      onLog?.call('  interfaces up: ${out.isEmpty ? '(none)' : out}');
+      await _logRouter('interfaces up: ${out.isEmpty ? '(none)' : out}');
+      if (out.contains('wgc$slot')) {
+        onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: $label is active');
+        return true;
+      }
+      onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: $label not yet active');
+    }
+    return false;
+  }
+
+  /// ENABLE's wait for [slot]'s first handshake, the peer answering.
+  Future<bool> _awaitHandshake(int slot, String label) async {
+    onLog?.call('Waiting for a WireGuard handshake on $label...');
+    for (var retry = 0; retry < verifyMaxAttempts; retry++) {
+      final age = await handshakeAge(slot);
+      if (age != null) {
+        onLog?.call('  Handshake ${age}s ago.', isSuccess: true);
+        await _logRouter('$label handshake ${age}s ago');
+        return true;
+      }
+      onLog?.call('  Check ${retry + 1}/$verifyMaxAttempts: no handshake yet');
+      await Future.delayed(verifyPollInterval);
+    }
+    return false;
   }
 
   /// What to add to a failed ENABLE's message when the revert could not stop the tunnel: without
@@ -1180,30 +1207,34 @@ class RouterSlotService {
     final start = int.tryParse((await _read('date +%s')).trim()) ?? 0;
     final peer = (await _read('nvram get wgc${slot}_ppub')).trim();
 
-    Future<bool> restartTook() async {
-      for (var retry = 0; retry < verifyMaxAttempts; retry++) {
-        await Future.delayed(verifyPollInterval);
-        if (!(await _read(kUpInterfacesCommand)).contains('wgc$slot')) continue;
-        if (peer.isEmpty || (await _read('wg show wgc$slot peers 2>/dev/null')).split(RegExp(r'\s+')).contains(peer)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    Future<void> restart() => routerOps().restartSlot(this, slot);
-
-    await restart();
-    if (!await restartTook()) {
+    await routerOps().restartSlot(this, slot);
+    if (!await _restartTook(slot, peer)) {
       onLog?.call('  The router did not restart $label; trying once more.', isWarning: true);
       await _logRouter('$label restart was skipped; trying once more');
-      await restart();
-      if (!await restartTook()) {
+      await routerOps().restartSlot(this, slot);
+      if (!await _restartTook(slot, peer)) {
         throw Exception('The new settings for $label are saved, but the router did not restart it, so it is '
             'still running the old ones. Try SAVE again in a minute, or DISABLE and ENABLE it.');
       }
     }
+    await _awaitHandshakeSince(slot, label, start);
+  }
 
+  /// Whether [slot]'s interface came back with its peer, [peer], within the verification polls.
+  Future<bool> _restartTook(int slot, String peer) async {
+    for (var retry = 0; retry < verifyMaxAttempts; retry++) {
+      await Future.delayed(verifyPollInterval);
+      if (!(await _read(kUpInterfacesCommand)).contains('wgc$slot')) continue;
+      if (peer.isEmpty || (await _read('wg show wgc$slot peers 2>/dev/null')).split(RegExp(r'\s+')).contains(peer)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Waits for a handshake on [slot] newer than [start], the router's clock when the restart began, and
+  /// throws, saying what to do, when none comes.
+  Future<void> _awaitHandshakeSince(int slot, String label, int start) async {
     onLog?.call('Waiting for a WireGuard handshake on $label...');
     for (var retry = 0; retry < verifyMaxAttempts; retry++) {
       final age = await handshakeAge(slot);
@@ -1273,27 +1304,14 @@ class RouterSlotService {
     // also clear ping target keys
     await _run('nvram unset wgc${slot}_wd_primary_ip', allowFailure: true);
     await _run('nvram unset wgc${slot}_wd_secondary_ip', allowFailure: true);
-    if (isStockFirmware) {
-      // Resolve the runtime-state index from the record while it is still there - it is index 6,
-      // not the slot number, so wgc1 leaves vpnc9_* behind.
-      final stateIdx = vpncStateIndexForSlot(parseVpncClientlist(await _read('nvram get vpnc_clientlist')), slot);
-      // BEFORE the record goes: a device pinned to this profile keeps naming its index 6 forever.
-      // Stock never releases one, so the device ends up on whatever region is created in that slot
-      // next, the web interface cannot show the pin, and this screen can only call it "profile N".
-      // Measured on hardware 2026-09-11.
-      await _releasePinnedDevices(stateIdx);
-      await _clearDefaultConnectionIfThisSlot(stateIdx, slot);
-      for (final key in kVpncRuntimeKeys) {
-        await _run('nvram unset vpnc${stateIdx}_$key', allowFailure: true);
-      }
-      await _editVpncClientlist((recs) => removeVpncRecord(recs, slot));
-    }
+    final ops = routerOps();
+    await ops.clearProfile(this, slot);
     await _run('nvram commit');
     await _logRouter('Deleted $label configuration');
     // Read back before it is reported cleared (ID-338): the key that makes it a tunnel, and on stock
     // the profile row the web interface lists.
     final keyLeft = (await _read('nvram get wgc${slot}_priv')).trim().isNotEmpty;
-    final rowLeft = isStockFirmware && (await _readVpncBySlot()).containsKey(slot);
+    final rowLeft = await ops.profileLeft(this, slot);
     if (keyLeft || rowLeft) {
       onLog?.call(
           '$label was deleted, but the router still holds its ${keyLeft ? 'private key' : 'profile row'}. '
