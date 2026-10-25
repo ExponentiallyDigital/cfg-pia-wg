@@ -366,4 +366,5 @@ Added to 1.4's widget paragraph, after "If you do not add the widget, neither is
 - NET-3 changed the same day so it needs no disabled tunnel: with none, it asks through an empty slot, whose table holds no route through a tunnel either, so stock's read-back must answer NOROUTE.
 - Andrew's router password has an apostrophe, which broke the command line as written; the sheet's command now reads the password at a hidden prompt (`Read-Host -MaskInput` in PowerShell).
 - Second live run, the same day: NET-1 to NET-3 PASS. NET-3 asked through wgc2, an empty slot: `noRoute`, and no rule left at priority 1003.
+- Andrew approved both policy drafts, 2026-10-25, as written above; they are in `play-store/privacy.html`, effective 25 October 2026, and Andrew is uploading it.
 

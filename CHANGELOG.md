@@ -122,7 +122,7 @@ Work items for the **current** release:
 - ID-458 ADD: a NETWORK main menu item showing the public IP, country, town and provider of this phone and of each tunnel.
   - DoD: `live/network_live_test.dart` passes NET-1 to NET-3 on the router (no hand tests, Andrew 2026-10-25), the service is swappable in one class, the privacy policy says so, and a tunnel row through stock's route read-back is seen to fail closed.
   - Plan: [plan_network-menu.md](.claude/plans/plan_network-menu.md)
-  - Now: live run 2026-10-25 on stock, NET-1 to NET-3 all PASS (NET-3 through empty wgc2: NOROUTE, no rule left); left: the policy paragraph approved and published.
+  - Now: everything passes; the policy's 1.5 and widget sentence approved and in `play-store/privacy.html` (effective 25 October 2026); left: Andrew publishing it, then the release.
 
 ---
 
@@ -140,6 +140,10 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.175 build 545 - the privacy policy covers NETWORK and the widget's record of background refreshes
+
+- DOC: the privacy policy's new 1.5, the NETWORK screen, and 1.4's widget paragraph now names the record of background refreshes (build 537), both approved by Andrew 2026-10-25; effective 25 October 2026.
 
 2026-10-25 v0.8.174 build 544 - NETWORK passes all three live checks on the router, the fail-closed one included
 
