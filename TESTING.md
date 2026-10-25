@@ -18,6 +18,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [LOG. App log and router log](#log-app-log-and-router-log)
 - [SET. Settings](#set-settings)
 - [WGT. Home screen widget (optional, stock)](#wgt-home-screen-widget-optional-stock)
+- [NET. Network](#net-network)
 - [ABT. About](#abt-about)
 - [EXT. Exit, background and session](#ext-exit-background-and-session)
 - [LCK. Locked, with no purchase (store build)](#lck-locked-with-no-purchase-store-build)
@@ -1707,6 +1708,38 @@ Until build 500, clearing the app's storage left its key on the router, and once
 - Pass if: the footer's time is now the time you tapped it.
 - Do: press the side button to lock the iPhone. Wait two minutes, then unlock it.
 - Pass if: the widget shows the same reading as before, with nothing about a failed refresh. A locked iPhone doesn't refresh, by design.
+
+---
+
+## <a name='net'></a>NET. Network
+
+**NET-1** NETWORK sends nothing until LOOK UP, then shows this phone's address (ID-458) [hand]
+
+- Starts with: the app just opened, with no router login in this session. On Wi-Fi at home, with this phone not using a VPN of its own.
+- Do: HOME, NETWORK.
+- Pass if: the notice says LOOK UP asks Mullvad, and nothing has been looked up yet. Tapping "privacy policy" opens Mullvad's privacy policy.
+- Do: tap LOOK UP.
+- Pass if: "This phone" shows an address, a place and your internet provider, and the address is your home connection's: the same as the one the router's web interface shows on its Network Map, Internet status. Under it, "login to router to include the tunnels".
+
+**NET-2** Each tunnel that is up gets its own row, read through that tunnel (ID-458) [hand]
+
+- Starts with: NET-1, and at least one tunnel up.
+- Do: tap "login to router to include the tunnels" and log in.
+- Pass if: a row for each tunnel that is up, highest slot first, each named `wgcN:region`. Each row's address differs from "This phone" and from every other tunnel's, its provider isn't your internet provider, and its place agrees with its PIA region or is next to it.
+- Do: on the router:
+
+  ```sh
+  ip rule show | grep -c '^1003:'
+  ```
+
+- Pass if: it prints `0`: no lookup rule was left behind.
+
+**NET-3** A tunnel that is down isn't asked (ID-458) [hand]
+
+- Starts with: NET-2.
+- Do: MANAGE, select one of the tunnels that are up, DISABLE. Then NETWORK, LOOK UP.
+- Pass if: that tunnel has no row, and the others still have theirs. With no tunnel up, it says "No tunnel is up."
+- Do: MANAGE, ENABLE the same tunnel again.
 
 ---
 

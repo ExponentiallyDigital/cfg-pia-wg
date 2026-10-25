@@ -30,6 +30,7 @@ import '../screens/main_menu_screen.dart';
 import '../screens/router_log_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/manage_router_screen.dart';
+import '../screens/network_screen.dart';
 import '../screens/standalone_config_screen.dart';
 import '../screens/watchdog_management_screen.dart';
 import '../session_controller.dart';
@@ -48,6 +49,8 @@ Widget screenForDestination(AppDestination dest) {
       return const WatchdogManagementScreen();
     case AppDestination.deviceAssignment:
       return const DeviceAssignmentScreen();
+    case AppDestination.network:
+      return const NetworkScreen();
     case AppDestination.routerLog:
       return const RouterLogScreen();
     case AppDestination.log:
@@ -67,6 +70,7 @@ IconData destinationIcon(AppDestination dest) => switch (dest) {
       AppDestination.manageRouter => Icons.app_registration_outlined,
       AppDestination.watchdog => Icons.monitor_heart_outlined,
       AppDestination.deviceAssignment => Icons.hub_outlined,
+      AppDestination.network => Icons.public,
       AppDestination.routerLog => Icons.router_outlined,
       AppDestination.log => Icons.list_alt_outlined,
       AppDestination.settings => Icons.settings_outlined,
@@ -150,6 +154,7 @@ class AppDrawer extends StatelessWidget {
     AppDestination.manageRouter,
     AppDestination.watchdog,
     AppDestination.deviceAssignment,
+    AppDestination.network,
     AppDestination.routerLog,
     AppDestination.log,
     AppDestination.settings,
