@@ -32,6 +32,10 @@ D=192.168.1.30   # DESKTOP's address
 
 - Covered by `test/unit/x_test.dart`.
 
+**AAA-4** Run against the router by a live test [live]
+
+- Run by `live/x_test.dart`.
+
 ---
 
 ## <a name='bbb'></a>BBB. All automated
@@ -58,6 +62,7 @@ void main() {
 
     test('leaves out what a machine already runs, and Part 2', () {
       expect(out, isNot(contains('AAA-3')));
+      expect(out, isNot(contains('AAA-4')), reason: 'a [live] test runs with nobody pressing anything');
       expect(out, isNot(contains('BBB')), reason: 'a group with nothing left to do is left out whole');
       expect(out, isNot(contains('ZZZ-1')));
     });
@@ -87,6 +92,23 @@ void main() {
 
     test('every test is tagged, and every label is used once', () {
       expect(readTests(md).length, greaterThan(150));
+    });
+
+    // A [live] tag takes a test off the run sheet too, so it has to name the live/ runner that does it.
+    test('every [live] test names a live/ runner that exists', () {
+      final part1 = md.substring(md.indexOf('# Part 1. Run sheet'), md.indexOf('# Part 2. Reference'));
+      final live = readTests(md).where((t) => t.tier == Tier.live).toList();
+      expect(live, isNotEmpty);
+      for (final t in live) {
+        final start = part1.indexOf('**${t.label}**');
+        final next = part1.indexOf(RegExp(r'\n\*\*[A-Z]{2,3}-\d+\*\*|\n## '), start + 1);
+        final body = part1.substring(start, next < 0 ? part1.length : next);
+        final files = RegExp(r'live/\w+_test\.dart').allMatches(body).map((m) => m.group(0)!).toList();
+        expect(files, isNotEmpty, reason: '${t.label} is [live] but names no live/ runner');
+        for (final f in files) {
+          expect(File(f).existsSync(), isTrue, reason: '${t.label} names $f');
+        }
+      }
     });
 
     // A [ci] tag takes a test off the run sheet, so it has to say where the automated one is.

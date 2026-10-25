@@ -148,7 +148,10 @@ class _MenuRow extends StatelessWidget {
         side: BorderSide(color: outline),
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
         alignment: Alignment.centerLeft,
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        // Roboto by name, which is what Android draws with no name, and iOS falls back to its own system
+        // font for, so nothing changes on a phone: named so the README screenshot test, whose unnamed
+        // font draws blocks, can show the labels (readme_screenshots_test.dart).
+        textStyle: const TextStyle(fontFamily: 'Roboto', fontSize: 14, fontWeight: FontWeight.w700),
       ),
       onPressed: onTap,
       child: Row(
