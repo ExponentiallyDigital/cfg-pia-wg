@@ -98,7 +98,7 @@
   </head>
   <body>
     <h1>Privacy Policy</h1>
-    <p><strong>Effective Date:</strong> 21 October, 2026</p>
+    <p><strong>Effective Date:</strong> 25 October, 2026</p>
     <p>
       Exponentially Digital ("we", "our", or "us") operates the
       <strong>cfg-pia-wg</strong> mobile application (the "App"). This Privacy Policy (the "Policy") outlines our strict data
@@ -184,7 +184,9 @@
       else. The login name is stored because SSH cannot connect without one; it is useless without the key, and the key is useless
       without it. Each phone or tablet you set it up on has a key of its own. SETTINGS → HOME SCREEN WIDGET KEY → REMOVE deletes
       every widget key from your router, your other devices' included, and both items from the device you use it on. If you do not
-      add the widget, neither is ever stored.
+      add the widget, neither is ever stored. With the widget set up, the app also keeps the time and outcome of each background
+      refresh, such as "read the router" or "phone locked", the newest 500 of them, so you can see how often your phone lets it
+      refresh. Nothing read from the router is kept in it.
     </p>
     <p>
       Never stored on your device, in any configuration: your Private Internet Access username or password, your router's SSH
@@ -195,6 +197,16 @@
       On Android, nothing on this list is backed up to Google Drive (android:allowBackup="false"). On iPhone and iPad, it may be
       included in the device's own backup, to iCloud or a computer, as other apps' settings are. None of it is transmitted
       anywhere by the app.
+    </p>
+
+    <h3>1.5 The NETWORK screen</h3>
+    <p>
+      NETWORK shows the public internet address of your phone or tablet, and of each VPN tunnel your router has running, with the
+      country, town and internet provider that address belongs to. Each time you open NETWORK or tap REFRESH, the app makes one
+      request to PIA's website (the same lookup its "What is my IP" page uses), sent from your device for its own address and from
+      your router, through the tunnel, for each tunnel's. PIA already sees your device's address whenever the app logs in or fetches
+      PIA's server list, and a tunnel's address is PIA's own, so no one new learns anything. The app sends nothing else with the
+      request, and keeps nothing it is told: the results are on screen until you leave it.
     </p>
     <h2>2. Third-party service providers</h2>
     <p>
