@@ -44,3 +44,8 @@ The CHANGELOG items as they were, 2026-10-21, before they were made short:
 - The app still refreshes the widget as it opens and comes back on iOS, since background time may come only a few times a day.
 - Checked: new tests in `background_refresh_log_test.dart`, `widget_refresh_test.dart` and `ios_info_plist_test.dart`, each seen to fail with its code broken (the registration taken out of AppDelegate, a tap recorded, iOS left without background refresh). `flutter build ios --release --no-codesign` builds; its first try caught an Int passed where workmanager_apple takes an NSNumber.
 - ID-439 is mostly this same code; what it still needs is decided by what ID-424 measures, and by the locked phone.
+
+### 2026-10-25: ID-438 closed
+
+- Andrew installed build 537 from TestFlight (v0.8.167, the first tag to upload its own iOS build) on the spare iPhone 11, installed the widget key and put both widgets on the home screen. WGT-8 passed.
+- The same phone now runs ID-424: Andrew reads its LOG on 2026-10-26.
