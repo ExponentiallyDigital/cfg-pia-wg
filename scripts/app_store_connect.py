@@ -7,6 +7,8 @@
   python scripts/app_store_connect.py attach-build --build N   the build the App Store version is submitted with (ID-436)
   python scripts/app_store_connect.py has-build --build N      whether Apple already has that build number (ID-468)
   python scripts/app_store_connect.py promote --build N --to alpha|beta|production [--dry-run]   Play's tracks, on the App Store (ID-468)
+  python scripts/app_store_connect.py note-certificates --to FILE        the team's certificates before a CI archive (ID-469)
+  python scripts/app_store_connect.py revoke-new-certificates --since FILE   the Development ones the run made, revoked (ID-469)
 
 --check reads and checks every file and says what it would send, and sends nothing; it needs no key.
 Otherwise the key comes from the environment, as release.yml's iOS job has it (ID-463):
@@ -591,6 +593,55 @@ def cmd_promote(args):
             f.write(f'**App Store, build {args.build} ({build_version}) to {args.to}:** ' + ' '.join(lines) + '\n')
 
 
+# ── The certificates a CI run makes (ID-469) ────────────────────────────────────────────────
+#
+# Each runner starts with an empty keychain, so Xcode's automatic signing makes a new Development
+# certificate for the archive every run, and nothing ever removed one: 7 by 2026-10-25, against a cap
+# Apple puts on how many a team can have. The .ipa is signed with the cloud-managed Distribution
+# certificate, which is reused, so the Development one is never needed after the run. release.yml notes
+# the team's certificates before the archive and revokes the new Development ones at the end.
+
+DEVELOPMENT_TYPES = {'DEVELOPMENT', 'IOS_DEVELOPMENT', 'MAC_APP_DEVELOPMENT'}
+
+
+def certificate_ids(api):
+    return [c['id'] for c in api.get('/v1/certificates', limit=200)['data']]
+
+
+def new_certificates(before, now):
+    """The certificates in [now] not in [before]: the Development ones to revoke, and any others, which are
+    left alone and reported - a Distribution certificate is shared by every run and signs what Apple has."""
+    new = [c for c in now if c['id'] not in before]
+    dev = [c for c in new if c['attributes'].get('certificateType') in DEVELOPMENT_TYPES]
+    return dev, [c for c in new if c not in dev]
+
+
+def describe(cert):
+    a = cert['attributes']
+    return f'{a.get("certificateType")} "{a.get("name") or a.get("displayName")}", expires {a.get("expirationDate", "?")[:10]}'
+
+
+def cmd_note_certificates(args):
+    ids = certificate_ids(Api())
+    with open(args.to, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(ids) + '\n')
+    print(f'  {len(ids)} certificates before the archive')
+
+
+def cmd_revoke_new_certificates(args):
+    api = Api()
+    with open(args.since, encoding='utf-8') as f:
+        before = {line.strip() for line in f if line.strip()}
+    dev, other = new_certificates(before, api.get('/v1/certificates', limit=200)['data'])
+    for cert in dev:
+        api.call('DELETE', f'/v1/certificates/{cert["id"]}')
+        print(f'  revoked {describe(cert)}: made by this run, and needed by nothing after it')
+    for cert in other:
+        print(f'::warning::this run made {describe(cert)}, which is left alone; check it in Certificates, IDs & Profiles')
+    if not dev and not other:
+        print('  no new certificates')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='cmd', required=True)
@@ -608,9 +659,14 @@ def main():
     pr.add_argument('--build', required=True)
     pr.add_argument('--to', required=True, choices=['alpha', 'beta', 'production'])
     pr.add_argument('--dry-run', action='store_true')
+    nc = sub.add_parser('note-certificates')
+    nc.add_argument('--to', required=True)
+    rc = sub.add_parser('revoke-new-certificates')
+    rc.add_argument('--since', required=True)
     args = p.parse_args()
     {'listing': cmd_listing, 'testers': cmd_testers, 'whats-new': cmd_whats_new,
-     'attach-build': cmd_attach_build, 'has-build': cmd_has_build, 'promote': cmd_promote}[args.cmd](args)
+     'attach-build': cmd_attach_build, 'has-build': cmd_has_build, 'promote': cmd_promote,
+     'note-certificates': cmd_note_certificates, 'revoke-new-certificates': cmd_revoke_new_certificates}[args.cmd](args)
 
 
 if __name__ == '__main__':
