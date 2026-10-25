@@ -85,15 +85,12 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
-- ID-449 ARC: firmware abstraction, slice 1: starting and stopping a slot go through one `RouterOps`, resolved once per session. After ID-448.
-  - DoD: no `isStockFirmware` branch is left in start or stop, the suite passes with no test changed, and MAN-3, MAN-8 and MRL pass on hardware.
-  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
 - ID-450 ARC: slice 2: reading the slots (`fetchSlots`, `vpnc_clientlist`). After ID-449's release.
-  - DoD: as ID-449, for reading, with MAN-15, MAN-16 and DEV-1 on hardware.
+  - DoD: as ID-449, for reading, with a `live/` run reading the stock router's slots.
 - ID-451 ARC: slice 3: persisting the watchdog's schedule (services-start or `S50downloadmaster`). After ID-450's release.
-  - DoD: as ID-449, for persistence, with WD-9 and WD-17 on hardware.
+  - DoD: as ID-449, for persistence, with a `live/` run pausing and resuming a watchdog on the stock router.
 - ID-452 ARC: slice 4: deleting a slot and clearing its runtime keys. After ID-451's release.
-  - DoD: as ID-449, for delete, with MAN-14 and the delete DEV tests on hardware.
+  - DoD: as ID-449, for delete, with a `live/` run deleting and recreating a spare slot on the stock router.
 - ID-419 CHG: the eight SonarCloud findings left in the watchdog and the slot service, so SonarCloud shows none. After ID-452.
   - DoD: SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
   - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
@@ -115,11 +112,15 @@ Work items for the **current** release:
 - ID-424 TST: measure how often iOS lets the app refresh in the background.
   - DoD: a day's refresh times from an iPhone are recorded.
   - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
-  - Now: build 537 from TestFlight on the spare iPhone 11, key and widgets in place, 2026-10-25; left: its LOG after a day.
+  - Now: D11's run was lost to a debug install, 2026-10-25; restarted on B11 from TestFlight; left: B11's widget key and widgets, then its LOG after a day.
 - ID-458 ADD: a NETWORK main menu item showing the public IP, country, town and provider of this phone and of each tunnel.
   - DoD: `live/network_live_test.dart` passes NET-1 to NET-3 on the router (no hand tests, Andrew 2026-10-25), the service is swappable in one class, the privacy policy says so, and a tunnel row through stock's route read-back is seen to fail closed.
   - Plan: [plan_network-menu.md](.claude/plans/plan_network-menu.md)
-  - Now: everything passes; the policy's 1.5 and widget sentence approved and in `play-store/privacy.html` (effective 25 October 2026); left: Andrew publishing it, then the release.
+  - Now: everything passes, and the policy is published (read back 2026-10-25); left: v0.8.175's release run.
+- ID-449 ARC: firmware abstraction, slice 1: starting and stopping a slot go through one `RouterOps`, resolved once per session. After ID-448.
+  - DoD: no `isStockFirmware` branch is left in start or stop, the suite passes with no test changed (`firmware_paths_test.dart` covers Merlin), and a `live/` run starts and stops a tunnel on the stock router.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
+  - Now: `RouterOps` (lib/router_ops.dart) holds start, stop and restart, the suite passes with no test changed; left: Andrew's run of `live/slots_live_test.dart` on stock.
 
 ---
 
@@ -137,6 +138,10 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.177 build 547 - starting, stopping and restarting a tunnel go through one RouterOps, the first slice of the firmware abstraction
+
+- CHG: WIP gains ID-449, after ID-448; the slices' DoDs name `live/` runs on stock in place of hand tests, and Merlin rests on `firmware_paths_test.dart`, Andrew's decision 2026-10-25 (no Merlin router). ID-424 moved from D11 to B11.
 
 2026-10-25 v0.8.176 build 546 - the five firmware-specific operations are each tested on both firmwares, before the abstraction moves them
 

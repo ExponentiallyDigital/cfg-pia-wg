@@ -49,3 +49,8 @@ The CHANGELOG items as they were, 2026-10-21, before they were made short:
 
 - Andrew installed build 537 from TestFlight (v0.8.167, the first tag to upload its own iOS build) on the spare iPhone 11, installed the widget key and put both widgets on the home screen. WGT-8 passed.
 - The same phone now runs ID-424: Andrew reads its LOG on 2026-10-26.
+
+### 2026-10-25: ID-424 moved to B11
+
+- D11's measurement was cut short the same day: an earlier `flutter run` from the MacBook, meant for the Pixel, picked D11 over Wi-Fi and installed a debug build over the TestFlight one, which iOS won't launch from the home screen. The run's record went with it. Andrew installed the TestFlight build on B11, his other iPhone 11, to carry the measurement; it needs the widget key and widgets there too.
+
