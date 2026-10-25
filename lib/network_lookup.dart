@@ -19,9 +19,9 @@
 // service that answers it is behind [IpLookupService], so changing service later is one new class and
 // a change to [kIpLookupService]; nothing else here or in the screen names one (Andrew, 2026-10-25).
 //
-// The service is Mullvad's connection check, Andrew's choice on 2026-10-25 for privacy: one call, no
-// token, from a company whose policy is to keep no activity logs. Cloudflare Radar was ruled out by its
-// non-commercial licence and IPinfo by logging (.claude/plans/plan_network-menu.md).
+// The service is PIA's own, and only PIA's, Andrew's choice on 2026-10-25: the app needs PIA anyway, so
+// PIA already sees this phone's address whenever the app logs in or fetches its servers, and each
+// tunnel's address is PIA's own; no other company learns anything (plan_network-menu.md).
 
 import 'dart:convert';
 import 'dart:io';
@@ -53,23 +53,31 @@ abstract class IpLookupService {
   /// Its privacy page, linked from the notice.
   String get privacyUrl;
 
+  /// What the notice says about who sees the lookups, after the link to [privacyUrl].
+  String get notice;
+
   /// The facts in [body], or null when it isn't a reply this service gives.
   NetworkFacts? parse(String body);
 }
 
-/// Mullvad's connection check, `https://ipv4.am.i.mullvad.net/json`: `ip`, `country`, `city` and
-/// `organization` (the provider), among others. Measured 2026-10-25.
-class MullvadLookup extends IpLookupService {
-  const MullvadLookup();
+/// PIA's own lookup, the one its "What is my IP" page uses: `https://www.privateinternetaccess.com/site-api/get-location-info`,
+/// answering `ip`, `isp`, `cty` (the town) and `cn` (the country), among others. Measured 2026-10-25. Not a
+/// published API, so it may change without notice: if it does, a replacement is a new [IpLookupService]. The
+/// site has no IPv6 address, so the phone's row is IPv4 as the tunnels' are.
+class PiaLookup extends IpLookupService {
+  const PiaLookup();
 
   @override
-  String get name => 'Mullvad';
+  String get name => 'PIA';
   @override
-  String get host => 'ipv4.am.i.mullvad.net';
+  String get host => 'www.privateinternetaccess.com';
   @override
-  String get path => '/json';
+  String get path => '/site-api/get-location-info';
   @override
-  String get privacyUrl => 'https://mullvad.net/en/help/privacy-policy';
+  String get privacyUrl => 'https://www.privateinternetaccess.com/privacy-policy';
+  @override
+  String get notice => 'PIA already sees this phone\'s address whenever the app logs in or fetches its servers, and each '
+      'tunnel\'s address is PIA\'s own, so no one else learns anything.';
 
   @override
   NetworkFacts? parse(String body) {
@@ -79,7 +87,7 @@ class MullvadLookup extends IpLookupService {
       String text(String key) => json[key] is String ? (json[key] as String).trim() : '';
       final ip = text('ip');
       if (InternetAddress.tryParse(ip) == null) return null;
-      return NetworkFacts(ip: ip, country: text('country'), city: text('city'), provider: text('organization'));
+      return NetworkFacts(ip: ip, country: text('cn'), city: text('cty'), provider: text('isp'));
     } on FormatException {
       return null;
     }
@@ -87,7 +95,7 @@ class MullvadLookup extends IpLookupService {
 }
 
 /// The service in use. Change this, and only this, to change service.
-const IpLookupService kIpLookupService = MullvadLookup();
+const IpLookupService kIpLookupService = PiaLookup();
 
 /// This phone's own public address, by a request from the phone. Throws when there's no answer, or
 /// an answer that isn't the service's. [client] stands in for the network in a test.

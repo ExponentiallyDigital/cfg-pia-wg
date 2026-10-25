@@ -1717,7 +1717,7 @@ Until build 500, clearing the app's storage left its key on the router, and once
 
 - Starts with: the app just opened, with no router login in this session. On Wi-Fi at home, with this phone not using a VPN of its own.
 - Do: HOME, NETWORK.
-- Pass if: the notice says LOOK UP asks Mullvad, and nothing has been looked up yet. Tapping "privacy policy" opens Mullvad's privacy policy.
+- Pass if: the notice says LOOK UP asks PIA, and nothing has been looked up yet. Tapping "PIA's privacy policy" opens it.
 - Do: tap LOOK UP.
 - Pass if: "This phone" shows an address, a place and your internet provider, and the address is your home connection's: the same as the one the router's web interface shows on its Network Map, Internet status. Under it, "login to router to include the tunnels".
 

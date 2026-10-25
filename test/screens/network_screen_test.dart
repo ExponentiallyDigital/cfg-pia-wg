@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../watchdog_test_utils.dart';
 
 const _phone = NetworkFacts(ip: '198.51.100.7', country: 'Australia', city: 'Sydney', provider: 'Home ISP');
-const _reply = '{"ip":"203.0.113.9","country":"Australia","city":"Melbourne","organization":"PIA Exit"}';
+const _reply = '{"ip":"203.0.113.9","cn":"Australia","cty":"Melbourne","isp":"PIA Exit"}';
 
 /// A router with wgc5 up as "Melbourne, Australia", answering the lookup through it with [tunnel].
 RecordingSSHClient _router({String firmwareTag = 'merlin', String tunnel = _reply, String up = 'wgc5'}) =>
@@ -51,7 +51,7 @@ void main() {
               calls.add(1);
               return phone == null ? _phone : await phone();
             },
-            addressLookup: () async => '45.83.223.233',
+            addressLookup: () async => '104.18.40.93',
           ),
         ),
       ),
@@ -71,7 +71,7 @@ void main() {
   testWidgets('says where the lookups go, and sends nothing until LOOK UP', (tester) async {
     final ssh = _router();
     final r = await pump(tester, ssh: ssh);
-    expect(find.textContaining('Mullvad', findRichText: true), findsWidgets);
+    expect(find.textContaining('LOOK UP asks PIA', findRichText: true), findsOneWidget);
     expect(find.textContaining('Nothing is sent until you tap LOOK UP', findRichText: true), findsOneWidget);
     expect(r.phoneCalls, isEmpty);
     expect(ssh.commands, isEmpty);
@@ -86,7 +86,7 @@ void main() {
     expect(row, contains('Sydney, Australia'));
     expect(row, contains('Home ISP'));
     expect(find.textContaining(kNetworkLoginPrompt, findRichText: true), findsOneWidget);
-    expect(find.textContaining('Address data from Mullvad.'), findsOneWidget);
+    expect(find.textContaining('Address data from PIA.'), findsOneWidget);
   });
 
   testWidgets('with a router: a row for each tunnel up, with PIA\'s region beside the place', (tester) async {
@@ -124,7 +124,7 @@ void main() {
   testWidgets('a phone lookup that fails says so, and the tunnels are still shown', (tester) async {
     await pump(tester, ssh: _router(), phone: () async => throw Exception('no network'));
     await lookUp(tester);
-    expect(textOf(tester, const Key('network_phone')), contains('No answer from Mullvad'));
+    expect(textOf(tester, const Key('network_phone')), contains('No answer from PIA'));
     expect(find.byKey(const Key('network_wgc5')), findsOneWidget);
   });
 
