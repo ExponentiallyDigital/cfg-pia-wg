@@ -360,3 +360,10 @@ Added to 1.4's widget paragraph, after "If you do not add the widget, neither is
 - No hand tests (Andrew): `live/network_live_test.dart`, beside `devices_live_test.dart`, runs NET-1 to NET-3 against the router with nobody tapping, through the app's own code, and needs only `CFG_LIVE_ROUTER`, `CFG_LIVE_USER` and `CFG_LIVE_PASS`. NET-3 is the live fail-closed check: the stock command for a tunnel that is set up but down must answer NOROUTE and leave no rule. TESTING gains a `[live]` tag, left off the run sheet like `[ci]`; `runsheet_test.dart` checks every `[live]` test names a `live/` runner that exists.
 - Left: one live run on the router; the drawer screenshot, `images/99.02`, still shows the drawer without NETWORK.
 
+### 2026-10-25: the first live run (Andrew, stock)
+
+- `live/network_live_test.dart` from the MacBook: NET-1 PASS (PIA answered the Mac with an address, place and provider; the Mac's address was wgc5's, so the Mac is pinned to wgc5); NET-2 PASS for wgc5 (pia-aus_melbourne, Melbourne) and wgc1 (pia-nz, Auckland), distinct addresses, neither the WAN's, and no rule left at priority 1003; NET-3 SKIP, as no tunnel was set up and down. Addresses are in the run's log in `.claude/testing/`, not here.
+- NET-3 changed the same day so it needs no disabled tunnel: with none, it asks through an empty slot, whose table holds no route through a tunnel either, so stock's read-back must answer NOROUTE.
+- Andrew's router password has an apostrophe, which broke the command line as written; the sheet's command now reads the password at a hidden prompt (`Read-Host -MaskInput` in PowerShell).
+- Second live run, the same day: NET-1 to NET-3 PASS. NET-3 asked through wgc2, an empty slot: `noRoute`, and no rule left at priority 1003.
+

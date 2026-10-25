@@ -1713,7 +1713,7 @@ Until build 500, clearing the app's storage left its key on the router, and once
 
 ## <a name='net'></a>NET. Network
 
-**Unattended, from the computer (ID-458):** `live/network_live_test.dart` runs NET-1 to NET-3 with nobody tapping: `CFG_LIVE_ROUTER=<router>:22 CFG_LIVE_USER=<login> CFG_LIVE_PASS=<password> flutter test live/network_live_test.dart --reporter expanded`. It asks PIA through the app's own code, from the computer for "This device" and from the router through each tunnel, and changes nothing NETWORK doesn't change each time it opens. Its log, with the real addresses, goes to `.claude/testing/`.
+**Unattended, from the computer (ID-458):** `live/network_live_test.dart` runs NET-1 to NET-3 with nobody tapping: in PowerShell, `$env:CFG_LIVE_PASS = Read-Host -MaskInput 'Router password'`, then `$env:CFG_LIVE_ROUTER = '<router>:22'; $env:CFG_LIVE_USER = '<login>'` and `flutter test live/network_live_test.dart --reporter expanded`. The prompt keeps the password out of the shell's history, and any quote in it needs no escaping. It asks PIA through the app's own code, from the computer for "This device" and from the router through each tunnel, and changes nothing NETWORK doesn't change each time it opens. Its log, with the real addresses, goes to `.claude/testing/`.
 
 **NET-1** PIA answers "This device" with an address, a place and a provider (ID-458) [live]
 
@@ -1723,9 +1723,9 @@ Until build 500, clearing the app's storage left its key on the router, and once
 
 - Run by `live/network_live_test.dart`: the app's own router command for every tunnel that is up. PASS if each answers with its own address, none of them the WAN's, and `ip rule show` has nothing at priority 1003 afterwards. SKIP when no tunnel is up.
 
-**NET-3** A tunnel that is set up but down is not asked, and no rule is left (ID-458) [live]
+**NET-3** A slot that isn't up is not asked, and no rule is left (ID-458) [live]
 
-- Run by `live/network_live_test.dart`: the same command for every tunnel that has a configuration but isn't up. PASS on stock if each answers NOROUTE, so nothing was sent, and no rule is left; on Merlin, if nothing answers. SKIP when no tunnel is down.
+- Run by `live/network_live_test.dart`: the same command for every tunnel that is set up but not up, or, with none, for an empty slot, since its table has no route through a tunnel either. PASS on stock if each answers NOROUTE, so nothing was sent, and no rule is left; on Merlin, if nothing answers. SKIP only when every slot is up.
 
 **NET-4** The screen: looked up on opening, REFRESH, the rows and the footer (ID-458) [ci]
 
