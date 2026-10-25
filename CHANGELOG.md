@@ -99,21 +99,14 @@ Work items for the **current** release:
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
   - Now: 0.8.164 (534) and Router features are with App Review, submitted 2026-10-21.
-- ID-471 TST: the tests and build.ps1 work on a Mac as well as on Windows.
-  - DoD: build.ps1 all passes on both, with the tests' progress on one line on the Mac.
-  - Plan: [plan_mac-build.md](.claude/plans/plan_mac-build.md)
-  - Now: build.ps1 all passes on the MacBook; left: a build.ps1 run on Windows.
 - ID-469 REL: the next tag uploads its own iOS build to TestFlight.
   - DoD: the build shows in TestFlight, and Certificates, IDs & Profiles shows no new certificate left by each run.
   - Plan: [plan_promote-both-stores.md](.claude/plans/plan_promote-both-stores.md)
-  - Now: v0.8.167's tag uploaded build 537 itself; build 538 revokes the Development certificate each run makes; left: a dry run showing it, then Andrew revoking the 8 left before.
+  - Now: dry run 40151279067 revoked the Development certificate it made, 9 before and after; left: Andrew's count, and revoking the 7 older ones.
 - ID-424 TST: measure how often iOS lets the app refresh in the background.
   - DoD: a day's refresh times from an iPhone are recorded.
   - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
   - Now: build 537 from TestFlight on the spare iPhone 11, key and widgets in place, 2026-10-25; left: its LOG after a day.
-- ID-475 BLD: build.ps1 builds the iOS app on a Mac.
-  - DoD: build.ps1 ipa on the MacBook leaves an .ipa, and Windows is unchanged.
-  - Now: built here, signed Apple Distribution RL4UB6WKMV, in 163 s; left: ID-471's Windows run, to see Windows unchanged.
 
 ---
 
@@ -131,6 +124,17 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.169 build 539 - building on the Mac and on Windows both checked, and the dry run that proves the certificate clean-up
+
+- ID-471 TST: the tests and build.ps1 work on a Mac as well as on Windows.
+  - DoD: build.ps1 all passes on both, with the tests' progress on one line on the Mac.
+  - Plan: [plan_mac-build.md](.claude/plans/plan_mac-build.md)
+  - Closed 2026-10-25: Andrew's build.ps1 all passed on the Windows desktop, at build 538, after passing on the MacBook.
+- ID-475 BLD: build.ps1 builds the iOS app on a Mac.
+  - DoD: build.ps1 ipa on the MacBook leaves an .ipa, and Windows is unchanged.
+  - Plan: [plan_mac-build.md](.claude/plans/plan_mac-build.md)
+  - Closed 2026-10-25: built and signed on the MacBook (Apple Distribution, RL4UB6WKMV); build.ps1 all on Windows passed as before.
 
 2026-10-25 v0.8.168 build 538 - the iOS widget is done, and a CI release revokes the Development certificate it makes
 

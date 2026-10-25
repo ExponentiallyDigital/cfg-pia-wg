@@ -23,7 +23,7 @@ Moved from the CHANGELOG items, word for word, 2026-10-21, when work items were 
 
 ### 2026-10-25: the certificates the CI runs left (ID-469)
 
-- Andrew read Certificates, IDs & Profiles, Certificates: his own Development certificate (Xcode, expires 2027-10-14); one Distribution Managed certificate created by the App Store Connect API key (expires 2027-10-20); and 7 Development certificates "Created via API" by the same key, 4 expiring 2027-10-20 and 3 2027-10-21.
+- Andrew read Certificates, IDs & Profiles, Certificates: Andrew's own Development certificate (Xcode, expires 2027-10-14); one Distribution Managed certificate created by the App Store Connect API key (expires 2027-10-20); and 7 Development certificates "Created via API" by the same key, 4 expiring 2027-10-20 and 3 2027-10-21.
 - release.yml ran 9 times on 2026-10-20 and 21 UTC (4 on the 20th and 5 on the 21st in Australian time), 3 of them failing, some before the archive. So about one Development certificate per run that reached the archive: the archive signs with a development identity, each runner starts with an empty keychain, and `-allowProvisioningUpdates` makes a new one each time. The distribution side is fine: the one cloud-managed certificate is reused.
 - Apple caps how many Development certificates a team can have, so this would end in a failed release. Building the .ipa on the MacBook (ID-475) added none: it used Andrew's own.
 - Fix to try first, needing no secret: archive with the distribution identity (`CODE_SIGN_IDENTITY="Apple Distribution"` on the archive), checked with a dry run from dev and a count afterwards. If Xcode refuses that with automatic signing, keep one Development certificate as a .p12 in GitHub secrets and import it into a temporary keychain, as the plan said. Then revoke the 7, which signed nothing that was distributed.
@@ -33,5 +33,11 @@ Moved from the CHANGELOG items, word for word, 2026-10-21, when work items were 
 - Not the first idea, signing the archive with the Distribution identity: the cloud-managed certificate's private key stays with Apple, so a local archive can't sign with it, and asking would most likely make a second, local Distribution certificate, of which a team gets even fewer.
 - Instead the run cleans up after itself. "Note the team's certificates", before the archive, writes their ids to the runner (`app_store_connect.py note-certificates`); "Revoke the certificates this run made", after the last export and whatever failed (`always()`, once the note succeeded), revokes the new ones whose type is Development (`revoke-new-certificates`). Any other new certificate, such as a Distribution one, is left alone with a warning. The venv for the App Store Connect client moved into the note step, so a dry run has it too.
 - Tests in `scripts/test_app_store_connect.py`: only new Development certificates are revoked, Andrew's own and the shared Distribution one never; the note comes before the archive and the revoke after the upload, under `always()`. Each was seen to fail with its code broken. Two runs at once could revoke each other's certificate mid-archive; release runs aren't run in parallel here.
-- Left: a dry run from dev, after which the certificate count should be what it was before; then Andrew revokes the 8 "Created via API" Development certificates, by hand, leaving his own (expires 2027-10-14) and the Distribution Managed one.
+- Left: a dry run from dev, after which the certificate count should be what it was before; then Andrew revokes the 8 "Created via API" Development certificates, by hand, leaving Andrew's own (expires 2027-10-14) and the Distribution Managed one.
+
+### 2026-10-25: the dry run (ID-469)
+
+- Dry run 40151279067 from dev, build 538, passed. "Note the team's certificates": 9 before the archive. The archive and export passed. "Revoke the certificates this run made": revoked `DEVELOPMENT "Apple Development: Created via API", expires 2027-10-25`, the one this run made; nothing else new.
+- 9, not the 10 expected if v0.8.167's tag run had added an 8th: Andrew's own, the Distribution Managed one and the 7 Andrew counted. Which of the 7 are which isn't needed: all 7 "Created via API" Development ones go.
+- Left: Andrew's count in Certificates, IDs & Profiles (9 expected), then revoking the 7 by hand.
 

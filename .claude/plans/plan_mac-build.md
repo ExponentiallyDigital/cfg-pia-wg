@@ -32,3 +32,9 @@ Moved from the CHANGELOG item, word for word, 2026-10-24, when it was made short
 ### 2026-10-25: ID-473 closed
 
 - Andrew ran `build.ps1 all` on the MacBook: it passed, with no restricted-method warning. ID-471's Mac half is the same run; its Windows run is left.
+
+### 2026-10-25: ID-471 and ID-475 closed
+
+- ID-475 (build.ps1 ipa) was built in build 537: `ipa` mode on a Mac, and `all` there builds the .ipa after the Android ones; elsewhere `ipa` stops at the start and `all` is unchanged. `build/cfg-pia-wg-v0.8.167_build537.ipa`, signed Apple Distribution RL4UB6WKMV, in 163 s. Without `REVENUECAT_IOS_KEY` it warns that every feature is unlocked. `test/unit/build_script_test.dart` holds the rules.
+- Andrew pulled build 538 on the Windows desktop and ran `build.ps1 all`: it passed. That is ID-471's Windows half, the WSL tests after the Mac fixes, and ID-475's "Windows unchanged".
+
