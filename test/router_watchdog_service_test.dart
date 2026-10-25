@@ -725,6 +725,25 @@ void main() {
           reason: "ROUTER LOG gets the sentence without Dart's prefix");
     });
 
+    // The other side of ID-196: a slot with a tunnel to go back to, whose save failed AFTER its schedule
+    // was written, keeps the schedule and says when it tries again. Added with ID-419's split of
+    // deployWatchdog, when a rename that reached this sentence went unnoticed by every test.
+    test('a save onto a set-up slot that fails after scheduling keeps the watchdog, and says when it retries', () async {
+      useStock();
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('nvram get wgc1_desc')) return 'pia-aus_melbourne';
+        if (cmd.contains('nvram get vpnc_clientlist')) return 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg';
+        return cmd.contains('jffs2') ? '0' : '';
+      });
+      c.failExactly['${watchdogScriptPath(1)} deploy'] = '';
+
+      await expectLater(
+        _wd(c).deployWatchdog(cfg(slot: 1, interval: 5), desc: 'aus_melbourne'),
+        throwsA(predicate((e) => e.toString().contains('Its watchdog stays scheduled and will try again in 5 minutes.'))),
+      );
+      expect(c.commands.any((x) => x.contains('cru a watchdog_wgc1')), isTrue);
+    });
+
     // ID-196: a save that failed before its schedule was written left the new watchdog settings on
     // the router with no cron entry - which is PAUSED - under an error saying it "stays scheduled".
     test('a first save that fails before it is scheduled leaves no watchdog, and says so', () async {
