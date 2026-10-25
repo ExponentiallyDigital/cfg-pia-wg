@@ -3,16 +3,17 @@
 //   dart run tool/runsheet.dart [--set T=192.168.1.20 ...] > .claude/testing/<date>_e2e.md
 //
 // TESTING.md tags every test with where it runs: [hand], [script] (e2e.sh does the checking and
-// you press the buttons), [ci] (an automated test covers it) or [retired]. This keeps Part 1's group
-// headings and their start states, and every [hand] and [script] test, in order, each with a Result
-// line to fill in. Everything [ci] or [retired], and Part 2, is left out, so nothing in the output
-// is something a machine already does. --set fills in the router shell variables.
+// you press the buttons), [live] (a live/ test runs it against the router with nobody pressing
+// anything), [ci] (an automated test covers it) or [retired]. This keeps Part 1's group headings and
+// their start states, and every [hand] and [script] test, in order, each with a Result line to fill
+// in. Everything [live], [ci] or [retired], and Part 2, is left out, so nothing in the output is
+// something a machine already does. --set fills in the router shell variables.
 import 'dart:io';
 
 /// Where a test runs, from the tag at the end of its title line.
-enum Tier { hand, script, ci, retired }
+enum Tier { hand, script, live, ci, retired }
 
-final RegExp kTestTitle = RegExp(r'^\*\*([A-Z]{2,3}-\d+)\*\* (.*?)\s*\[(hand|script|ci|retired)\]\s*$');
+final RegExp kTestTitle = RegExp(r'^\*\*([A-Z]{2,3}-\d+)\*\* (.*?)\s*\[(hand|script|live|ci|retired)\]\s*$');
 final RegExp _anyTitle = RegExp(r'^\*\*([A-Z]{2,3}-\d+)\*\*');
 
 class TestEntry {
@@ -30,7 +31,7 @@ List<TestEntry> readTests(String md) {
     if (!_anyTitle.hasMatch(line)) continue;
     final m = kTestTitle.firstMatch(line);
     final label = _anyTitle.firstMatch(line)!.group(1)!;
-    if (m == null) throw FormatException('$label has no [hand], [script], [ci] or [retired] tag: $line');
+    if (m == null) throw FormatException('$label has no [hand], [script], [live], [ci] or [retired] tag: $line');
     if (!seen.add(label)) throw FormatException('$label is used twice');
     out.add(TestEntry(label, m.group(2)!, Tier.values.byName(m.group(3)!)));
   }

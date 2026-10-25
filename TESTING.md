@@ -18,6 +18,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [LOG. App log and router log](#log-app-log-and-router-log)
 - [SET. Settings](#set-settings)
 - [WGT. Home screen widget (optional, stock)](#wgt-home-screen-widget-optional-stock)
+- [NET. Network](#net-network)
 - [ABT. About](#abt-about)
 - [EXT. Exit, background and session](#ext-exit-background-and-session)
 - [LCK. Locked, with no purchase (store build)](#lck-locked-with-no-purchase-store-build)
@@ -56,7 +57,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 
 - Each test has a label, such as `MAN-3`. Labels never change. A new test takes the next number in its group; nothing is ever renumbered.
 
-- Each test's title ends with where it runs. `[hand]`: you do it and judge it. `[script]`: you press the buttons, and `e2e.sh` on the router does the checking and answers PASS or FAIL. `[ci]`: an automated test covers it, named in the test, so nobody runs it twice. `[retired]`: kept so its label is never reused, and no longer run.
+- Each test's title ends with where it runs. `[hand]`: you do it and judge it. `[script]`: you press the buttons, and `e2e.sh` on the router does the checking and answers PASS or FAIL. `[live]`: a runner in `live/` does it against the router from the computer, with nobody pressing anything, named in the test, and it isn't on the run sheet. `[ci]`: an automated test covers it, named in the test, so nobody runs it twice. `[retired]`: kept so its label is never reused, and no longer run.
 
 - For a run, `dart run tool/runsheet.dart --set T=<TABLET> --set D=<DESKTOP> --set P=<PHONE> > .claude/testing/<date>_e2e.md` writes the run sheet: every `[hand]` and `[script]` test in order, with its group's start state, and nothing else. Write PASS, FAIL or SKIP on each Result line, with anything worth keeping.
 
@@ -1707,6 +1708,28 @@ Until build 500, clearing the app's storage left its key on the router, and once
 - Pass if: the footer's time is now the time you tapped it.
 - Do: press the side button to lock the iPhone. Wait two minutes, then unlock it.
 - Pass if: the widget shows the same reading as before, with nothing about a failed refresh. A locked iPhone doesn't refresh, by design.
+
+---
+
+## <a name='net'></a>NET. Network
+
+**Unattended, from the computer (ID-458):** `live/network_live_test.dart` runs NET-1 to NET-3 with nobody tapping: in PowerShell, `$env:CFG_LIVE_PASS = Read-Host -MaskInput 'Router password'`, then `$env:CFG_LIVE_ROUTER = '<router>:22'; $env:CFG_LIVE_USER = '<login>'` and `flutter test live/network_live_test.dart --reporter expanded`. The prompt keeps the password out of the shell's history, and any quote in it needs no escaping. It asks PIA through the app's own code, from the computer for "This device" and from the router through each tunnel, and changes nothing NETWORK doesn't change each time it opens. Its log, with the real addresses, goes to `.claude/testing/`.
+
+**NET-1** PIA answers "This device" with an address, a place and a provider (ID-458) [live]
+
+- Run by `live/network_live_test.dart`: PASS if PIA's lookup answers this computer with an address, a place and a provider. The log says whether the address is the router's WAN address.
+
+**NET-2** Each tunnel that is up answers through itself, and no rule is left (ID-458) [live]
+
+- Run by `live/network_live_test.dart`: the app's own router command for every tunnel that is up. PASS if each answers with its own address, none of them the WAN's, and `ip rule show` has nothing at priority 1003 afterwards. SKIP when no tunnel is up.
+
+**NET-3** A slot that isn't up is not asked, and no rule is left (ID-458) [live]
+
+- Run by `live/network_live_test.dart`: the same command for every tunnel that is set up but not up, or, with none, for an empty slot, since its table has no route through a tunnel either. PASS on stock if each answers NOROUTE, so nothing was sent, and no rule is left; on Merlin, if nothing answers. SKIP only when every slot is up.
+
+**NET-4** The screen: looked up on opening, REFRESH, the rows and the footer (ID-458) [ci]
+
+- Covered by `test/screens/network_screen_test.dart`: nothing above the results but the heading, a lookup on opening and on REFRESH, REFRESH and HOME at the bottom, "This device", "login to router for tunnel details", a row per tunnel with its PIA region, the "Not checked" wording, and "Address data from PIA." opening PIA's What is my IP page. The router command itself is run in a shell by `test/unit/network_lookup_test.dart`.
 
 ---
 
