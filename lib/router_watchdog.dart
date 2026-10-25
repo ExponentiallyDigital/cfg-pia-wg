@@ -22,6 +22,7 @@ import 'package:dartssh2/dartssh2.dart';
 
 import 'fail_closed_guard.dart';
 import 'router_command.dart';
+import 'router_ops.dart';
 import 'router_service_queue.dart';
 import 'firmware.dart';
 import 'router_slot_service.dart'
@@ -1523,18 +1524,9 @@ class RouterWatchdog {
           onLog?.call('${await _label(slot)} is already up, so its tunnel was left running.', isSuccess: true);
           return;
         }
-        // Stock drives WireGuard through VPN Fusion; start_wgc is Merlin's. Same calls MANAGE
-        // makes, so a watchdog-managed tunnel comes up the same way as a hand-enabled one.
-        if (isStockFirmware) {
-          // runVpncService already clears a ghost marker and waits for the queue to drain.
-          await slots.runVpncService(slot, 'restart_vpnc', required: true);
-        } else {
-          await _serviceQueue.clearIfStale();
-          final skips = await _serviceQueue.skipCount();
-          await _run('service "start_wgc $slot"; service restart_vpnrouting0');
-          await _serviceQueue.awaitIdle();
-          await _serviceQueue.checkNotSkipped(skips, 'start_wgc');
-        }
+        // Same calls MANAGE makes, so a watchdog-managed tunnel comes up the same way as a
+        // hand-enabled one, and through the router's service queue on both firmwares.
+        await routerOps().startSlot(slots, slot, queued: true);
         if (rebuilding) {
           await _logRouter('Enabled ${await _label(slot)}; its watchdog builds the tunnel next');
           onLog?.call('${await _label(slot)} enabled; the watchdog builds its tunnel next.', isSuccess: true);
@@ -1566,13 +1558,7 @@ class RouterWatchdog {
     await _run('nvram set wgc${slot}_enable=0');
     await slots.writeVpncProfile(slot, active: false);
     await _run('nvram commit');
-    // There is no start_vpnc on stock; stop_vpnc is what actually tears the interface down
-    // (ARCHITECTURE.md "Stop/Disable"). restart_vpnc would leave it up.
-    if (isStockFirmware) {
-      await slots.runVpncService(slot, 'stop_vpnc');
-    } else {
-      await _run('service "stop_wgc $slot"; service start_vpnrouting0');
-    }
+    await routerOps().stopSlot(slots, slot);
     await _logRouter('Disabled ${await _label(slot)}');
     onLog?.call('${await _label(slot)} disabled.', isSuccess: true);
   }

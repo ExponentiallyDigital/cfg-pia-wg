@@ -90,4 +90,29 @@ The firmware abstraction, in slices, each on its own build and released on its o
 - ID-419 CHG: the SonarCloud findings left in the watchdog and the slot service, after ID-452. Split from ID-041 2026-10-16, Andrew's decision. On 2026-10-19: `uninstallFromRouter` 38, `deployWatchdog` 36, `validate` 30, `testEmail` 18 (`router_watchdog.dart`); `createConfigToSlot` 37, `fetchSlots` 30, `enableSlot` 22, `restartSlot` 19 (`router_slot_service.dart`).
   - DoD: SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
 
+## 2026-10-25: ID-448, the both-firmwares test
+
+- `test/unit/firmware_paths_test.dart` runs each of the five operations the abstraction will hold under `useStock()` and `useMerlin()`, against one fake router (wgc5 with its `vpnc_clientlist` profile, tunnels up once switched on, pings answering, a watchdog interval stored), and checks each sends its own firmware's command and not the other's:
+
+| Operation | Through | Stock sends | Merlin sends |
+| --- | --- | --- | --- |
+| start a slot | `RouterSlotService.enableSlot` | `restart_vpnc` (with `vpnc_unit`) | `service "start_wgc N"` |
+| stop a slot | `disableSlot` | `stop_vpnc` | `service "stop_wgc N"` |
+| read the slots | `fetchSlots` | `nvram get vpnc_clientlist` | `nvram get wgcN_enforce` (only Merlin has a kill switch) |
+| persist the schedule | `RouterWatchdog.enableWatchdog` | `S50downloadmaster` | `services-start` |
+| delete a slot | `deleteSlot` | `nvram unset vpncN_*` (the profile's runtime keys) | `service "stop_wgc N"` |
+
+- Seen to fail: with `enableSlot`'s stock branch taken out, "start a slot on stock" failed; with Merlin's kill-switch read taken out of `fetchSlots`, "read the slots on Merlin" failed.
+- For ID-449 on: each slice's DoD names hand tests (MAN-3, MAN-8, MRL and others). Andrew wants no hand tests (2026-10-25), so those become `[live]` runs like `live/network_live_test.dart` before each slice is released; MRL needs a Merlin router, which is a question for Andrew.
+- Andrew, 2026-10-25: no Merlin router, and swapping firmware takes several hours, so not unless absolutely necessary. Each slice's Merlin side rests on `firmware_paths_test.dart` and the suite passing with no test changed; stock's on a `live/` run on Andrew's router, changing the router only with `CFG_LIVE_GO=1`, as `devices_live_test.dart` does. The slices' DoDs in CHANGELOG 1.1 now say so, in place of MAN, WD, DEV and MRL hand tests.
+
+## 2026-10-25: ID-449, slice 1: start, stop and restart
+
+- `lib/router_ops.dart`: `RouterOps` with `startSlot`, `stopSlot` and `restartSlot`, `StockOps` and `MerlinOps` side by side, and `routerOps()`, the one place these ask which firmware it is (detected once per session, when the app connects). Each call takes the `RouterSlotService` of the action in hand, for its connection, logging and service queue; the slot service gained a public `run` for it.
+- Moved to it: `enableSlot`'s start, `_revertEnable`'s stop, EDIT's restart, `disableSlot`'s and `deleteSlot`'s stops (router_slot_service.dart), and the watchdog's ENABLE start and DISABLE stop (router_watchdog.dart). Restart joined start and stop: it is the same pair of commands, and EDIT's SAVE is where the plan's "start/stop" bug class would bite next.
+- One difference kept, not smoothed over: the watchdog's Merlin start went through the router's service queue and MANAGE's didn't, so `startSlot` takes `queued`, and only the watchdog sets it. Making MANAGE's queued too would be a behaviour change, for its own item if wanted.
+- Left alone: the watchdog's shell script, whose start and stop are already substituted from a template, and `device_assignment_service.dart`, which is stock only.
+- No `isStockFirmware` is left in any start, stop or restart. The suite passed unchanged (2054, 3 skipped), `firmware_paths_test.dart` included.
+- `live/slots_live_test.dart`: DISABLE then ENABLE on `CFG_LIVE_SLOT`, as MANAGE does them, pausing and resuming a scheduled watchdog; only with `CFG_LIVE_GO=1`. Left: Andrew's run on stock.
+- Live runs on stock, Andrew, 2026-10-25, wgc1 (pia-nz, watchdog scheduled): the first failed SLT-2 on a bug of the runner's own, an up check that split `ip -o link show up` on spaces and never matched `wgc1:`, which also made SLT-1's second half hollow (DISABLE's own read-back still said down). Fixed to match `wgcN:`; the second run passed SLT-1 to SLT-3. ID-449 closed.
 
