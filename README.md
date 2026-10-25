@@ -62,16 +62,17 @@ You'll need SSH enabled on the router, a PIA subscription, and firmware with Wir
     - [5.4.4. Phones and random MAC addresses](#544-phones-and-random-mac-addresses)
     - [5.4.5. Where the device list comes from](#545-where-the-device-list-comes-from)
     - [5.4.6. Renaming a device, and disabling its internet](#546-renaming-a-device-and-disabling-its-internet)
-  - [5.5. ROUTER LOG](#55-router-log)
-  - [5.6. APP LOG](#56-app-log)
-  - [5.7. SETTINGS](#57-settings)
-  - [5.8. ABOUT](#58-about)
-  - [5.9. EXIT - Close the app](#59-exit---close-the-app)
-  - [5.10. Hamburger menu](#510-hamburger-menu)
-  - [5.11. HOME SCREEN WIDGET (optional)](#511-home-screen-widget-optional)
-    - [5.11.1. Why it needs a key, and what the key can do](#5111-why-it-needs-a-key-and-what-the-key-can-do)
-    - [5.11.2. What is stored, and where](#5112-what-is-stored-and-where)
-    - [5.11.3. When it refreshes, and when it doesn't](#5113-when-it-refreshes-and-when-it-doesnt)
+  - [5.5. NETWORK - public addresses](#55-network---public-addresses)
+  - [5.6. ROUTER LOG](#56-router-log)
+  - [5.7. APP LOG](#57-app-log)
+  - [5.8. SETTINGS](#58-settings)
+  - [5.9. ABOUT](#59-about)
+  - [5.10. EXIT - Close the app](#510-exit---close-the-app)
+  - [5.11. Hamburger menu](#511-hamburger-menu)
+  - [5.12. HOME SCREEN WIDGET (optional)](#512-home-screen-widget-optional)
+    - [5.12.1. Why it needs a key, and what the key can do](#5121-why-it-needs-a-key-and-what-the-key-can-do)
+    - [5.12.2. What is stored, and where](#5122-what-is-stored-and-where)
+    - [5.12.3. When it refreshes, and when it doesn't](#5123-when-it-refreshes-and-when-it-doesnt)
 - [6. Notes](#6-notes)
 - [7. What does the app do to my router?](#7-what-does-the-app-do-to-my-router)
 - [8. App permissions](#8-app-permissions)
@@ -117,15 +118,16 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
 - **Per-device VPN assignment:** pick, per device, whether it leaves through a VPN tunnel or straight out to the internet, from a list of everything on your network and what each one is using right now. One tap per device, nothing to stop first, and the list says where a device's traffic really goes when its tunnel is down. Stock firmware only: Merlin does the same job through VPN Director, which this app does not replace.
 - **Rename a device, or switch its internet off:** give a device a name you recognise, or take it off the internet and every VPN with one tap, a simple parental control. Both are written exactly as your router's own web interface writes them, so they show there and in the ASUS Router app too, and can be undone in either place ([5.4.6](#546-renaming-a-device-and-disabling-its-internet)).
 - **A kill switch on stock firmware:** Merlin has one. Stock doesn't. So the app builds its own, out of your router's routing rules and its own firewall filter. A device pinned to a tunnel uses that tunnel or nothing: if the tunnel's config expires, the watchdog is rebuilding it, you switch it off, or the router restarts, the device goes offline rather than out in the clear. Over IPv4 only: the app doesn't support IPv6, so switch IPv6 off in the router if you rely on this. Pinned devices only; [5.4](#54-devices---assign-rename-and-disable) has the detail and the limits.
+- **See where each tunnel comes out:** NETWORK shows the public address of your phone or tablet, and of every tunnel that's up, with its town, country and provider, asked of PIA itself through each tunnel. Free, and nobody new learns anything: PIA already knows these addresses.
 - **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
 - **Secure clipboard handling:** a copied config is marked sensitive, so Android 13 and later show dots rather than your private key in the clipboard preview. A visible 60-second countdown then clears the clipboard. If Android closes the app before then, the app clears its own copy the next time it starts. On iOS, a copy stays on that iPhone, never passed to your Mac by Universal Clipboard, and iOS deletes it itself after the same 60 seconds, even if the app has been closed.
 - **Share/save support:** share a generated `.conf` via the Android share function and save it to a file location of your choice.
 - **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WireGuard slot configurations directly.
 - **Three remembered things:** a successful router connect stores the router's LAN address, so you don't retype it every session, and the fingerprint of its SSH key, so the app can refuse anything pretending to be your router. Clear both with **FORGET ROUTER IP** on the SETTINGS screen. The third is PIA's own list of its servers, the last one that passed PIA's signature check, so a list that fails can be refused without stopping the app; **REMOVE CACHED PIA SERVERS** clears it. All three stay in the app's private storage. See [SECURITY.md](SECURITY.md).
-- **Optional home screen widget (Android):** each tunnel's state at a glance, refreshed in the background. It is off until you set it up, and setting it up is the one thing that makes the app keep a login - a restricted key and your router's login name, which it can use to read the router's status and nothing else. Don't want that? Don't add the widget, and nothing is kept. See [5.11](#511-home-screen-widget-optional).
+- **Optional home screen widget (Android):** each tunnel's state at a glance, refreshed in the background. It is off until you set it up, and setting it up is the one thing that makes the app keep a login - a restricted key and your router's login name, which it can use to read the router's status and nothing else. Don't want that? Don't add the widget, and nothing is kept. See [5.12](#512-home-screen-widget-optional).
 - **Your router is who it says it is:** the app records your router's SSH key the first time you connect, says so in APP LOG, and refuses to send your router password to anything with a different key. If you reset or reflash the router, tap **FORGET ROUTER IP** and connect again.
 - **PIA's server list is checked:** PIA signs its list of servers, and the app and the watchdog both check that signature, the same way PIA's own desktop app does, before they use it. A list that fails might have been tampered with, so it isn't used: the last list that passed is used instead, and the app tells you on screen, the watchdog in its alert email.
-- **No persistent credential storage (app):** your PIA login and your router's SSH password are held only in the app's memory, never written to your device's storage. A generated config is the same, until you SHARE it: then sharing needs a file, which the app deletes when you leave the config screen. The one exception is the optional home screen widget, which cannot refresh itself without something to log in with - see [5.11](#511-home-screen-widget-optional). Your PIA login and your router's password are never stored either way.
+- **No persistent credential storage (app):** your PIA login and your router's SSH password are held only in the app's memory, never written to your device's storage. A generated config is the same, until you SHARE it: then sharing needs a file, which the app deletes when you leave the config screen. The one exception is the optional home screen widget, which cannot refresh itself without something to log in with - see [5.12](#512-home-screen-widget-optional). Your PIA login and your router's password are never stored either way.
 - **Watchdog credential storage (router):** deploying the watchdog stores the necessary PIA credentials in router NVRAM so it can monitor and self-heal independently of the app. This is a deliberate trade-off for "set and forget" operation, see [ARCHITECTURE.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md) and [SECURITY.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/SECURITY.md) for details.
 - **Automated lowest-latency server selection:** measures live latency across all available servers in your selected region, ensuring that you provision with the fastest node.
 - **Native task-switcher protection:** on Android, `(FLAG_SECURE)` enforces native OS-level window flags to block third-party screenshot capturing and automatically obscures the app layout view inside the Android Recent Apps / Task Switcher interface. iOS can't block screenshots; instead the app covers its screen as you switch away, so the app switcher shows a blank screen. Debug builds skip both to enable screenshotting while testing; every release build has them.
@@ -788,7 +790,23 @@ Three things to know:
 - **Disabling follows the device's MAC address.** A phone that randomises its MAC ([5.4.4](#544-phones-and-random-mac-addresses)) gets its internet back when its address changes, just as it slips out of a pin. APPLY warns you when a device you're disabling looks like one.
 - **Disabling takes a device off your home internet, not off every internet.** A phone with mobile data falls back to it when its Wi-Fi has no internet, so a disabled phone carries on through your carrier. Turn its mobile data off too if you mean it.
 
-### 5.5. ROUTER LOG
+### 5.5. NETWORK - public addresses
+
+Where does each tunnel actually come out? NETWORK answers that as soon as you open it: the public address of the phone or tablet you're holding, and of every tunnel that's up, each with its town, country and internet provider. **REFRESH** asks again.
+
+<p align="center">
+  <img src="./images/04.5-network.png" alt="NETWORK" width="300">
+  <br>
+  NETWORK (the addresses and providers here are made up)
+</p>
+
+- **This device** is asked from your phone or tablet, so it shows whatever it's using right now: your home internet on Wi-Fi, your carrier on mobile data, or a tunnel if the device is pinned to one in DEVICES.
+- **Each tunnel** is asked by your router, through that tunnel, so its row is that tunnel's exit and nothing else's. Each row also shows **PIA region**, the name PIA gives the server, beside the town and country PIA's database gives the address. They usually agree; where PIA's region is a virtual location, they won't, and the app shows both rather than choose.
+- The tunnels need your router login. Without one this session, NETWORK shows **This device** only, with a **login to router for tunnel details** link.
+- **Not checked: the router has no route through this tunnel right now** means that by the time the router asked, the tunnel wasn't carrying traffic: most often it was restarting, perhaps by its watchdog. Rather than risk asking by your ordinary internet and showing your home address as the tunnel's, the router sends nothing for that row. **REFRESH** in a moment.
+- **Where the answers come from:** PIA's own website, the same lookup its [What is my IP](https://www.privateinternetaccess.com/what-is-my-ip) page uses; tap **Address data from PIA.** at the bottom to open it. PIA already sees your device's address whenever the app logs in or fetches PIA's servers, and a tunnel's address is PIA's own, so nobody new learns anything. Nothing the lookup returns is kept: it's on screen until you leave.
+
+### 5.6. ROUTER LOG
 
 Your ASUS router's log, because we all love a great read. Seriously though, I've found my eye balls burning having hunted through the minuscule WebUI log panel. This one's colour coded, just like the APP LOG below. To make it really easy to see the stuff that you need to know about. Watchdog entries in lavender, errors in red, cfg-pia-wg in-app device operations in the app's signature teal. Everything else in fashionable white. Selectable or copy everything that's been pulled down to your phone/tablet over to your device's system clipboard. On scrolling, more of the router log is loaded as far back as it goes. And it does go on, and on, and on. **REFRESH** reads the router again for anything newer. There is no CLEAR here: the log is the router's, not the app's.
 <br>
@@ -798,7 +816,7 @@ Your ASUS router's log, because we all love a great read. Seriously though, I've
   Router log
 </p><br>
 
-### 5.6. APP LOG
+### 5.7. APP LOG
 
 `cfg-pia-wg` extensively logs everything it does. The author is a big fan of "observability" - being able to see what's been happening. Entries are colour coded to make it easy to see at a glance what's been going on. Within any of the "log" type views (APP / ROUTER / WATCHDOG) you can select text and copy it to the system clipboard, or **COPY** to grab everything. The APP LOG and the watchdog log can be zapped with **CLEAR**. ROUTER LOG and the watchdog log have **REFRESH**, to read the router again.
 <br>
@@ -808,7 +826,7 @@ Your ASUS router's log, because we all love a great read. Seriously though, I've
   App log
 </p><br>
 
-### 5.7. SETTINGS
+### 5.8. SETTINGS
 
 All those things that you won't need until you do need them, and all in one place.
 
@@ -845,7 +863,7 @@ All those things that you won't need until you do need them, and all in one plac
   Check where do lookups go
 </p><br>
 
-  - **HOME SCREEN WIDGET KEY** - makes or removes the key the optional home screen widget uses to check your router on its own. Nothing is kept on your phone until you tap GENERATE here, and REMOVE takes it off both your router and your phone. The whole story, including exactly what gets stored and what the key can and cannot do, is in [5.11](#511-home-screen-widget-optional).
+  - **HOME SCREEN WIDGET KEY** - makes or removes the key the optional home screen widget uses to check your router on its own. Nothing is kept on your phone until you tap GENERATE here, and REMOVE takes it off both your router and your phone. The whole story, including exactly what gets stored and what the key can and cannot do, is in [5.12](#512-home-screen-widget-optional).
   - **FORGET ROUTER IP** - removes the remembered router address and its associated SSH key fingerprint. Those two and PIA's server list (below), plus the home screen widget's key if you've added it, are the _**only**_ data retained on your device. No SSH credentials, no usernames, no PIA password, no tracking, no advertising ID, no ad cache, no in-app user journeys. Zip. Zilch. Nada.
   - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run. Why? Just in case. The "Irish" approach - to be sure, to be sure. Try doing an Irish accent via a keyboard. Not easy. But why? In case it ever expires/gets updated by PIA, you'll have a way to get a fresh one straight from their official GitHub repo when you run any operation that authenticates with PIA's servers.
   - **REMOVE CACHED PIA SERVERS** - deletes the last PIA server list that passed PIA's signature check, from your router and from this phone. Why keep one at all? PIA signs its server list, and a list that fails the check might have been tampered with, so it isn't used. Keeping the last good one means a list that fails doesn't stop a rebuild or CREATE. Delete them, and until a new list passes, a list that fails will not be used.
@@ -854,7 +872,7 @@ All those things that you won't need until you do need them, and all in one plac
   - **RESTORE PURCHASE** - if you install to a different device, this resurrects your Google Play Store entitlement for your one-off, lifetime purchase of `pia-cfg-wg`, you did do that didn't you? Help suppport independent open-source software development. If nothing matches, based on your device's current Play Store logged in account, you'll be told too. This button is only shown when you've installed the official Play Store release.
   - **UNINSTALL FEATURES DEPLOYED TO ROUTER** - completely removes any watchdogs, their helper apps, and all app configuration deployed to your router; configured WireGuard VPNs are retained. See [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice. The "Irish" approach, alive and well. Everything really is removed, nothing's left behind, no stray filaments to clog up your device's storage. That's good software practice, I wish more folks did that.
 
-### 5.8. ABOUT
+### 5.9. ABOUT
 
 All the details of what version you have, the provenance of who built it, and a bunch of stuff that geeks love, me included.
 <br>
@@ -881,11 +899,11 @@ All the details of what version you have, the provenance of who built it, and a 
 
 - **Update watchdog version** - if your on-router watchdog version is older than the current release, simply upgrade by tapping here. Button only appears if a version mismatch is detected.
 
-### 5.9. EXIT - Close the app
+### 5.10. EXIT - Close the app
 
 **EXIT** prompts for confirmation before closing the app, wipes _**all**_ volatile session data, and clears the system clipboard. On iOS it reads **CLEAR**, since Apple doesn't let an app close itself: it wipes the same things, then returns to the main menu.
 
-### 5.10. Hamburger menu
+### 5.11. Hamburger menu
 
 You can quickly jump between functions via the hamburger menu, always shown in the <span style="color: green; font-weight: bold;">top left corner</span> of each screen:
 
@@ -906,7 +924,7 @@ This is particularly useful for looking through the application's log during ope
 
 ---
 
-### 5.11. HOME SCREEN WIDGET (optional)
+### 5.12. HOME SCREEN WIDGET (optional)
 
 A watchdog, once it's set up, is something you rarely touch again. That's the point of it. But it does mean the app spends most of its life closed, and you have no idea what your tunnels are doing unless you go and look. The widget is the answer to that: each tunnel's state on your home screen, where you'll see it without opening anything.
 
@@ -921,7 +939,7 @@ Add it the way you add any widget: long-press an empty spot on your home screen,
   Tap the widget to open the app.
 </p>
 
-#### 5.11.1. Why it needs a key, and what the key can do
+#### 5.12.1. Why it needs a key, and what the key can do
 
 Here's the problem. Refreshing by itself means logging into your router while you're not there, and the app doesn't keep your router password - it asks you every session and forgets it. So a refresh at three in the morning has nothing to log in with.
 
@@ -935,7 +953,7 @@ Measured on stock firmware, 12 October 2026, with that key:
 
 So if your phone is lost or stolen, whoever has it can read whether your tunnels are up. They cannot change a setting, cannot reach anything else on your network, and cannot get your router password, because the app never had it.
 
-#### 5.11.2. What is stored, and where
+#### 5.12.2. What is stored, and where
 
 Two things, both in Android's Keystore-backed secure storage, and both only once you've tapped GENERATE:
 
@@ -944,7 +962,7 @@ Two things, both in Android's Keystore-backed secure storage, and both only once
 
 Neither is backed up to Google Drive (`android:allowBackup="false"`). Each phone or tablet you set the widget up on gets a key of its own. REMOVE deletes every widget key from your router, your other devices' included, and both items from the current device, together - never one without the other. Use this if GENERATE fails, or after clearing the app's storage, then tap GENERATE on each device you want to display the widget on.
 
-#### 5.11.3. When it refreshes, and when it doesn't
+#### 5.12.3. When it refreshes, and when it doesn't
 
 Every 15 minutes, which is the shortest interval Android allows a background job, and less often while your phone is asleep - that's Android's decision, not the app's. The refresh button on the large widget checks immediately. Until you've generated a key the button is plain, and tapping it opens the app instead.
 
@@ -967,7 +985,7 @@ One deliberate limit, stricter than the app's own screens: a background refresh 
 - **Watchdog shortcut** - if you deploy a _watchdog_ on an empty slot, that will also create the config for that slot in one step.
 - **"Applying - do not leave this screen."** - while MANAGE, WATCHDOG or DEVICES is changing your router, it says so, and the back button does nothing until it has finished. Leaving part way through could leave a slot half-changed. A deploy can take a minute.
 - **Change things in one place at a time** - the router's web interface writes the whole VPN list back when you press **Apply all settings**, using the copy it loaded when the page was opened - so a change made in this app can be overwritten by a web page that was open before you made it. If you use both, finish and apply in one before switching to the other, and reload the web page afterwards.
-- **Maximum VPN count** - ASUS limits you to two concurrent VPNs on stock firmware, and the app keeps to whatever limit your router is set to. SETTINGS -> MAX ACTIVE VPNS raises it to as many as 5, which ASUS doesn't support ([5.7](#57-settings)). On Merlin, there is no VPN limit.
+- **Maximum VPN count** - ASUS limits you to two concurrent VPNs on stock firmware, and the app keeps to whatever limit your router is set to. SETTINGS -> MAX ACTIVE VPNS raises it to as many as 5, which ASUS doesn't support ([5.8](#58-settings)). On Merlin, there is no VPN limit.
 <br>
 
 > [!NOTE]
@@ -1096,7 +1114,7 @@ This application does not collect analytics, advertising identifiers, or persona
 What the app keeps on your device, in full:
 
 - **Always:** your router's LAN address, the fingerprint of its SSH key, and the last PIA server list that passed PIA's signature check. None is a credential - the address identifies nothing outside your own network, the fingerprint is public by design, and the server list is PIA's own public list. **FORGET ROUTER IP** deletes the first two, **REMOVE CACHED PIA SERVERS** the third.
-- **Only if you add the home screen widget:** the widget's own restricted SSH key, and your router's login name, both in Keystore-backed secure storage. **REMOVE** deletes both, along with the key on the router. Don't add the widget and neither exists - see [5.11](#511-home-screen-widget-optional).
+- **Only if you add the home screen widget:** the widget's own restricted SSH key, and your router's login name, both in Keystore-backed secure storage. **REMOVE** deletes both, along with the key on the router. Don't add the widget and neither exists - see [5.12](#512-home-screen-widget-optional).
 - **Never, in any configuration:** your PIA username or password, your router's SSH password, your SMTP password, or a generated WireGuard configuration.
 
 ---

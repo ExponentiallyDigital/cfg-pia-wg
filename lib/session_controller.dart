@@ -76,6 +76,8 @@ enum AppDestination {
   // DEVICES since ID-261: a device can be renamed and disabled there too, not only assigned. The route
   // name stays, so nothing keyed on it moves.
   deviceAssignment('device_assignment', 'DEVICES'),
+  // ID-458: the public address of this phone and of each tunnel.
+  network('network', 'NETWORK'),
   routerLog('router_log', 'ROUTER LOG'),
   log('log', 'APP LOG'),
   settings('settings', 'SETTINGS'),

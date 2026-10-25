@@ -68,3 +68,26 @@ Worth adding first: a test asserting that for every operation in `RouterOps`, bo
 
 - `router_watchdog.dart` at 1,554 lines holds three separable things: the config model, the email layout, and the deployed script template. The email layout (`buildEmailBody`, `RouterEmailFacts`, the section constants) is self-contained and would move out cleanly with no behaviour change.
 - `slot_modal.dart` at 767 lines carries manage mode and watchdog mode in one widget; they share the slot list and little else.
+
+## 2026-10-25: moved to CHANGELOG 1.1
+
+Andrew's order: after NETWORK (ID-458), this abstraction, then SonarCloud to zero (ID-419). BACKLOG's section as it was, moved here word for word when the items were made short:
+
+#### BACKLOG 1.2. Codebase cleanup
+
+The firmware abstraction, in slices, each on its own build and released on its own, with MAN, WD and DEV hand tests on stock and the MRL smoke test on Merlin before each release. It touches every path stock support landed on, so it starts after the release that carries ID-041 step 4. Plan: `.claude/plans/plan_firmware-abstraction.md`.
+
+- ID-448 TST: a test that every operation the firmware abstraction will hold runs on both firmwares, so a stock-only path can't quietly lose its Merlin coverage. After the release carrying ID-041 step 4.
+  - DoD: the test lists start, stop, slot reading, cron persistence and delete, finds each run under both `useStock()` and `useMerlin()`, and fails when one isn't.
+- ID-449 ARC: firmware abstraction, slice 1: starting and stopping a slot go through one `RouterOps`, resolved once per session. After ID-448. The smallest slice, and the one that produced two hardware bugs (`restart_vpnc` for `stop_vpnc`, a row index for a slot).
+  - DoD: no `isStockFirmware` branch is left in start or stop, the suite passes with no test changed, and MAN-3, MAN-8 and MRL pass on hardware.
+- ID-450 ARC: slice 2: reading the slots (`fetchSlots`, `vpnc_clientlist`). After ID-449's release.
+  - DoD: as ID-449, for reading, with MAN-15, MAN-16 and DEV-1 on hardware.
+- ID-451 ARC: slice 3: persisting the watchdog's schedule (services-start or `S50downloadmaster`). After ID-450's release.
+  - DoD: as ID-449, for persistence, with WD-9 and WD-17 on hardware.
+- ID-452 ARC: slice 4: deleting a slot and clearing its runtime keys. After ID-451's release. Then ID-419.
+  - DoD: as ID-449, for delete, with MAN-14 and the delete DEV tests on hardware.
+- ID-419 CHG: the SonarCloud findings left in the watchdog and the slot service, after ID-452. Split from ID-041 2026-10-16, Andrew's decision. On 2026-10-19: `uninstallFromRouter` 38, `deployWatchdog` 36, `validate` 30, `testEmail` 18 (`router_watchdog.dart`); `createConfigToSlot` 37, `fetchSlots` 30, `enableSlot` 22, `restartSlot` 19 (`router_slot_service.dart`).
+  - DoD: SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
+
+

@@ -285,3 +285,86 @@ Whether `curl --interface wgcN` on stock sends its request out through the tunne
 - [IPinfo: public API without an account](https://support.ipinfo.io/hc/en-us/articles/30792479436562-What-Is-the-Difference-Between-Using-the-Authenticated-Free-Plan-and-the-Public-API-With-No-Account): 1,000 requests a day, shared per IP.
 - [IPinfo: free plan usage limit](https://support.ipinfo.io/hc/en-us/articles/30792535492626-What-Is-the-Usage-Limit-for-the-Free-Plan): Lite with a token has no cap, and covers country and ASN only.
 - [publicapi.dev: Cloudflare Trace fields](https://publicapi.dev/cloudflare-trace-api): `ip`, `loc` and `colo`, from a third party. Cloudflare doesn't document the trace.
+
+## Decided, 2026-10-25
+
+The BACKLOG item as it was, moved here word for word when it went to WIP:
+
+- ID-458 ADD: a "Network" item on the main menu that shows the public IP address and provider of this device, and of each tunnel, using Cloudflare Radar. Raised 2026-10-20 by Andrew. Cloudflare's assistant suggested an approach, which is recorded as given, and not yet checked, in `.claude/plans/plan_network-menu.md`: get the external IP (`https://1.1.1.1/cdn-cgi/trace` or ipify), then call Radar's `/radar/entities/ip` (location) and `/radar/entities/asns/ip` (provider) with a read-only API token. A follow-up answer, recorded in the same file, gives a way that needs no token and uses hostnames only: `https://ipinfo.io/json` returns both the IP and the provider (`org`, e.g. "AS12345 Example Provider"), and `https://cloudflare-dns.com/cdn-cgi/trace` gives the IP alone. The plan file's "Recommended design" section holds Claude's recommendation, not yet decided: the IP from the trace, sent from the phone and through each `wgcN` on the router; the provider from one Radar call on the phone, with the user's own token; PIA's region name instead of a town. A hand run on 2026-10-20 confirmed that one Radar call, `/radar/entities/ip`, returns the country and a readable provider name, so the second call isn't needed. The steps Andrew used to make the token are in the plan's "Getting a Radar token" section, for the setup instructions. It rules out ipinfo.io without a token, because its 1,000 requests a day are shared by everyone on the same IP, and a PIA exit IP has many users.
+  - To decide first: Radar with a token, which every user would have to supply because one compiled into the app can be pulled out (its limit, 1,200 requests per 5 minutes per Cloudflare user, is ample at two requests per lookup, but each user needs a Cloudflare account), or ipinfo.io without one, once its rate limit and terms are read; how each tunnel's exit IP is read on the router, by a request sent out through `wgcN` to a hostname, since stock's curl refuses a URL whose host is an IP address (ID-127); and what the screen tells the user about sending the address to the lookup service.
+  - First probe: a read-only paste block on stock showing whether `curl --interface wgcN` sends its request out through the tunnel, and not out through the ISP.
+  - DoD: decided, the probe has been run, the chosen service's endpoints and terms are confirmed against its own documentation, and the build items are written with their own done-when.
+  - Decided, 2026-10-20 (Andrew): the plan's recommended design: the IP and country from Cloudflare's trace, with no token; the provider from one Radar call, with a token each user supplies; PIA's region name, not a town.
+  - First probe, 2026-10-20: neither of curl's ways of choosing a tunnel works on stock. `--interface wgcN` and `--interface <wgcN's address>` each printed nothing, for wgc1 and wgc5, the second the same way a ping from a tunnel's address leaves by the WAN (ID-396). Next: a second probe with the watchdog's own way through a tunnel (ID-078), a rule `to <address> iif lo lookup <table>` at priority 1000 for one request, checked with `ip route get` before the request is made.
+  - Second probe, 2026-10-20: it works. With the rule in place, `ip route get` named the tunnel, and the trace answered through each one with an IP different from the WAN's and the country of the tunnel's region: wgc1 New Zealand, wgc5 Australia. The rules were gone afterwards. It waited for the watchdog's DNS probe lock first (ID-193), and the router build will too.
+  - Radar's licence, checked 2026-10-20: Cloudflare's developer docs say data from the Radar API is under CC BY-NC 4.0, non-commercial, with exceptions by request on Radar's About page. This app is paid, so the decided design needs either Cloudflare's exception or another provider. IPinfo Lite, also one call per IP with a free token of the user's own, is CC BY-SA 4.0 by IPinfo's pages, commercial use allowed with attribution, unlimited, country and provider only. Left: Andrew's choice between the two; then the build items.
+  - Free tier, Andrew's decision, 2026-10-20: NETWORK needs no unlock, as "looking is free" (the Play listing), and the exception request to Cloudflare says so. That includes each tunnel's lookup, though it briefly adds a routing rule on the router: the build makes NETWORK reachable without `Entitlement.isUnlocked`, with a test.
+  - Asked of Cloudflare, 2026-10-20: Andrew is emailing Radar's contact for an exception to the CC BY-NC 4.0 licence. IPinfo Lite is the fallback if the answer is no or doesn't come.
+  - On hold, 2026-10-20, Andrew's decision: moved from CHANGELOG WIP to BACKLOG so the iOS release comes first. Picked up again once Cloudflare answers the exception request, or on 2026-10-28, whichever comes first (Andrew, 2026-10-21).
+
+Andrew's decisions:
+
+- No reply from Cloudflare to the request for a Radar exemption, so Radar is out (its data is CC BY-NC 4.0).
+- The service must be privacy focused and not log, which rules out Google, Cloudflare's trace and IPinfo. Claude proposed Mullvad's connection check, `https://ipv4.am.i.mullvad.net/json`: one call, no token, and it returns `ip`, `country`, `city` and `organization` (the provider), plus `mullvad_exit_ip`, `blacklisted`, `latitude` and `longitude`, which aren't used (measured 2026-10-25). Mullvad's privacy policy says "our policy to never store any activity logs or metadata", but doesn't name the check site; Mullvad's blog says its API can be used "with your own software or script". Neither settles a paid app's use, so Andrew is to ask Mullvad. Built so it can change later: the service is one class behind `IpLookupService`, chosen by `kIpLookupService`.
+- `ipv4.am.i.mullvad.net` resolves to 45.83.223.233, below 128.0.0.0, so stock's tunnel table carries it (its tables route `0.0.0.0/1` only). Devices pinned to a tunnel aren't affected by that limit: they use the guard's own tables, `200 + slot`, with the tunnel's default route.
+- Free, since it only reads. A notice on the screen before any lookup, and a privacy policy paragraph for Andrew's approval, published before the release that carries it.
+- Town is now available (Mullvad's `city`, GeoIP's estimate); a tunnel row shows PIA's region beside it, and doesn't choose between them.
+
+The build:
+
+- `lib/network_lookup.dart`: `IpLookupService` and `MullvadLookup`; `lookUpThisPhone`; `tunnelLookupAddress` (the service's IPv4 address below 128.0.0.0, resolved on the phone); `tunnelLookupCommand`, one router command for every tunnel that is up, stock by ENABLE's own route read-back method with its own rule priority 1003, Merlin by `curl --interface wgcN` (not measured on Merlin); `parseTunnelLookups`.
+- Nothing is looked up until the user taps LOOK UP, under the notice, so the notice is read before every lookup, not only the first, and there is no remembered "seen it" to store.
+
+### 2026-10-25: built, in build 541
+
+- `lib/screens/network_screen.dart`: the notice, LOOK UP, "This phone", a row per tunnel that is up (highest slot first, `wgcN:region`, then address, place, provider and PIA region), and "Address data from Mullvad." Without a router login, the tunnels are offered by a login link, as ABOUT does. The firmware is read afresh (`nvram get 3rd-party`), since NETWORK can be the first router screen of a session. Drawer and menu: after DEVICES, `Icons.public`, `kNetworkColour`.
+- Tests: `test/unit/network_lookup_test.dart` (15), with the stock command run in a shell against stand-in `ip` and `curl`: asked through each tunnel's own table by name, a tunnel the rule doesn't reach is NOROUTE with nothing sent, and no rule is left; seen to fail with the route read-back and the clean-up taken out. `test/screens/network_screen_test.dart` (7); seen to fail with the firmware check, the PIA region line and stock's command broken. The drawer gained a row, so main_test's two CLEAR-from-the-drawer tests drag the drawer before tapping (the list scrolls, 30 px of room in the test's 800x600 window). Full suite 2040 passed, 1 skipped, 95.9%.
+- TESTING: NET-1 to NET-3.
+- Not yet: the privacy policy paragraph below, approved and published; Andrew's question to Mullvad; NET-1 to NET-3 on hardware; Merlin's `curl --interface` measured.
+
+### 2026-10-25: PIA's own lookup instead of Mullvad's
+
+- Andrew's suggestion: the app requires PIA, and PIA has a "What is my IP" page (https://www.privateinternetaccess.com/what-is-my-ip). The page fetches `/site-api/get-location-info` from its script (found in `dist/js/frontend/pia/script.js`), which answers, with no token: `ip`, `cc`, `cn` (country), `cty` (town), `pc`, `lat`, `lng`, `isp` (the provider), `rgn` and `org` (measured 2026-10-25). `/api/client/status`, the other candidate, now gives only `ip` and `connected`.
+- Why it's better on privacy: PIA already sees the phone's address whenever the app logs in or fetches PIA's servers, and each tunnel's address is PIA's own, so no other company learns anything, and the policy names no new party.
+- The risk: it's PIA's website's own endpoint, not a published API, so it can change without notice. If it does, a replacement is one new `IpLookupService` and `kIpLookupService`.
+- Andrew, the same day: PIA only, no Mullvad. `MullvadLookup` and its tests were removed.
+- `www.privateinternetaccess.com` has no IPv6 address, so the phone's row is IPv4. It resolves to 172.64.147.163 and 104.18.40.93 (Cloudflare); the router aims at the first below 128.0.0.0, 104.18.40.93.
+- The notice's wording comes from the service now (`IpLookupService.notice`), since "keeps no logs" was Mullvad's claim, not PIA's website's.
+- The question for Mullvad is no longer needed.
+
+### Drafts for Andrew's approval: the privacy policy
+
+A new section after 1.4:
+
+> **1.5 The NETWORK screen.** NETWORK shows the public internet address of your phone or tablet, and of each VPN tunnel your router has running, with the country, town and internet provider that address belongs to. Each time you open NETWORK or tap REFRESH, the app makes one request to PIA's website (the same lookup its "What is my IP" page uses), sent from your device for its own address and from your router, through the tunnel, for each tunnel's. PIA already sees your device's address whenever the app logs in or fetches PIA's server list, and a tunnel's address is PIA's own, so no one new learns anything. The app sends nothing else with the request, and keeps nothing it is told: the results are on screen until you leave it.
+
+Added to 1.4's widget paragraph, after "If you do not add the widget, neither is ever stored.":
+
+> With the widget set up, the app also keeps the time and outcome of each background refresh, such as "read the router" or "phone locked", the newest 500 of them, so you can see how often your phone lets it refresh. Nothing read from the router is kept in it.
+
+### 2026-10-25: less text above LOOK UP, and "This device"
+
+- Andrew, on the Pixel: far less text above LOOK UP, and "This device", not "This phone", since it may be a tablet. The notice is now one line: "LOOK UP asks PIA for the public address of this device and each tunnel. PIA already knows them. Privacy", the last word the link to PIA's privacy policy. The "nothing is sent until LOOK UP" sentence went: the screen itself shows it, since nothing appears until the tap. A test holds the line's wording and keeps it under 120 characters.
+
+### 2026-10-25: the layout from Andrew's mock-up, in build 543
+
+- Agreed from a mock-up before any code changed: no text above the results; looked up as the screen opens, and again on REFRESH; REFRESH and HOME side by side at the bottom, ROUTER LOG's `LogButtonRow`, in place of the scaffold's own HOME; the first card "This device"; the link "login to router for tunnel details"; a footer, "Address data from PIA.", the whole line opening https://www.privateinternetaccess.com/what-is-my-ip.
+- No notice is needed before looking up, because PIA already knows every address it is asked about. `IpLookupService.notice` and `privacyUrl` went; `sourceUrl` is the footer's page. The privacy policy draft now says "Each time you open NETWORK or tap REFRESH".
+- A tunnel with no route (NOROUTE) was "Couldn't be aimed through this tunnel, so nothing was sent.", which Andrew found cryptic. When it shows: the router listed the tunnel as up, but by the lookup it had no route through it, most likely because it was going down or restarting, perhaps by its watchdog. Now: "Not checked: the router has no route through this tunnel right now. It may be restarting; try REFRESH."
+- During a REFRESH the cards stay and REFRESH shows its spinner; before the first answer the body shows a spinner.
+
+### 2026-10-25: README, screenshots and a live runner, build 543
+
+- README 5.5 NETWORK (sections after it renumbered, 5.6 to 5.12), and a features line. `images/04.5-network.png`, new, and `images/00.0-main-menu.png`, redrawn with NETWORK, by `test/release/readme_screenshots_test.dart` (skipped unless `--dart-define=README_SHOT=true`): Flutter draws the app at 1440 x 3120, device pixel ratio 3.0, measured from the old screenshot's text widths (the Pixel was at a smaller display size than its default 3.5), with the status bar and gesture handle copied from `images/02.0` over the edges. Roboto from Flutter's own fonts, Menlo for the app's monospace. NETWORK's invented tunnels mirror 02.0: wgc5 pia-aus_melbourne to wgc1 pia-uk, addresses from the documentation ranges, providers "Example Hosting XX".
+- The main menu's labels named no font, so the test drew them as blocks: Flutter's test font can't be replaced for unnamed text. They now name Roboto, which is what Android draws when none is named; iOS has no Roboto and falls back to its system font, as before.
+- No hand tests (Andrew): `live/network_live_test.dart`, beside `devices_live_test.dart`, runs NET-1 to NET-3 against the router with nobody tapping, through the app's own code, and needs only `CFG_LIVE_ROUTER`, `CFG_LIVE_USER` and `CFG_LIVE_PASS`. NET-3 is the live fail-closed check: the stock command for a tunnel that is set up but down must answer NOROUTE and leave no rule. TESTING gains a `[live]` tag, left off the run sheet like `[ci]`; `runsheet_test.dart` checks every `[live]` test names a `live/` runner that exists.
+- Left: one live run on the router; the drawer screenshot, `images/99.02`, still shows the drawer without NETWORK.
+
+### 2026-10-25: the first live run (Andrew, stock)
+
+- `live/network_live_test.dart` from the MacBook: NET-1 PASS (PIA answered the Mac with an address, place and provider; the Mac's address was wgc5's, so the Mac is pinned to wgc5); NET-2 PASS for wgc5 (pia-aus_melbourne, Melbourne) and wgc1 (pia-nz, Auckland), distinct addresses, neither the WAN's, and no rule left at priority 1003; NET-3 SKIP, as no tunnel was set up and down. Addresses are in the run's log in `.claude/testing/`, not here.
+- NET-3 changed the same day so it needs no disabled tunnel: with none, it asks through an empty slot, whose table holds no route through a tunnel either, so stock's read-back must answer NOROUTE.
+- Andrew's router password has an apostrophe, which broke the command line as written; the sheet's command now reads the password at a hidden prompt (`Read-Host -MaskInput` in PowerShell).
+- Second live run, the same day: NET-1 to NET-3 PASS. NET-3 asked through wgc2, an empty slot: `noRoute`, and no rule left at priority 1003.
+- Andrew approved both policy drafts, 2026-10-25, as written above; they are in `play-store/privacy.html`, effective 25 October 2026, and Andrew is uploading it.
+

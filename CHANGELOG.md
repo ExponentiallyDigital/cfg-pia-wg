@@ -85,28 +85,44 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
+- ID-448 TST: a test that every operation the firmware abstraction will hold runs on both firmwares.
+  - DoD: it lists start, stop, slot reading, cron persistence and delete, finds each run under both `useStock()` and `useMerlin()`, and fails when one isn't.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
+- ID-449 ARC: firmware abstraction, slice 1: starting and stopping a slot go through one `RouterOps`, resolved once per session. After ID-448.
+  - DoD: no `isStockFirmware` branch is left in start or stop, the suite passes with no test changed, and MAN-3, MAN-8 and MRL pass on hardware.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
+- ID-450 ARC: slice 2: reading the slots (`fetchSlots`, `vpnc_clientlist`). After ID-449's release.
+  - DoD: as ID-449, for reading, with MAN-15, MAN-16 and DEV-1 on hardware.
+- ID-451 ARC: slice 3: persisting the watchdog's schedule (services-start or `S50downloadmaster`). After ID-450's release.
+  - DoD: as ID-449, for persistence, with WD-9 and WD-17 on hardware.
+- ID-452 ARC: slice 4: deleting a slot and clearing its runtime keys. After ID-451's release.
+  - DoD: as ID-449, for delete, with MAN-14 and the delete DEV tests on hardware.
+- ID-419 CHG: the eight SonarCloud findings left in the watchdog and the slot service, so SonarCloud shows none. After ID-452.
+  - DoD: SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
 - ID-439 ADD: the iOS widget refreshes itself in the background. After ID-424.
   - DoD: it updates with the app closed.
+
 ---
 
 ### 1.2. WIP
 
 Work items for the **current** release:
 
-**Claude, in priority order: the iOS release.**
+**Claude, in priority order: the iOS release, then NETWORK.**
 
-- ID-436 REL: the first App Store submission is approved, and the app is on sale.
+- ID-436 REL: the first App Store submission is approved, and the app is on sale at the Apple App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
   - Now: 0.8.164 (534) and Router features are with App Review, submitted 2026-10-21.
-- ID-469 REL: the next tag uploads its own iOS build to TestFlight.
-  - DoD: the build shows in TestFlight, and Certificates, IDs & Profiles shows no new certificate left by each run.
-  - Plan: [plan_promote-both-stores.md](.claude/plans/plan_promote-both-stores.md)
-  - Now: dry run 40151279067 revoked the Development certificate it made, 9 before and after; left: Andrew's count, and revoking the 7 older ones.
 - ID-424 TST: measure how often iOS lets the app refresh in the background.
   - DoD: a day's refresh times from an iPhone are recorded.
   - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
   - Now: build 537 from TestFlight on the spare iPhone 11, key and widgets in place, 2026-10-25; left: its LOG after a day.
+- ID-458 ADD: a NETWORK main menu item showing the public IP, country, town and provider of this phone and of each tunnel.
+  - DoD: `live/network_live_test.dart` passes NET-1 to NET-3 on the router (no hand tests, Andrew 2026-10-25), the service is swappable in one class, the privacy policy says so, and a tunnel row through stock's route read-back is seen to fail closed.
+  - Plan: [plan_network-menu.md](.claude/plans/plan_network-menu.md)
+  - Now: everything passes; the policy's 1.5 and widget sentence approved and in `play-store/privacy.html` (effective 25 October 2026); left: Andrew publishing it, then the release.
 
 ---
 
@@ -124,6 +140,40 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.175 build 545 - the privacy policy covers NETWORK and the widget's record of background refreshes
+
+- DOC: the privacy policy's new 1.5, the NETWORK screen, and 1.4's widget paragraph now names the record of background refreshes (build 537), both approved by Andrew 2026-10-25; effective 25 October 2026.
+
+2026-10-25 v0.8.174 build 544 - NETWORK passes all three live checks on the router, the fail-closed one included
+
+- TST: NET-3 asks through an empty slot when no tunnel is set up and down, and the sheet's live command reads the router password at a hidden prompt. Live run on stock, 2026-10-25: NET-1 to NET-3 PASS.
+
+2026-10-25 v0.8.173 build 543 - NETWORK as mocked up, in the README with its screenshot, and its tests run unattended against the router
+
+- CHG: NETWORK as Andrew's mock-up, 2026-10-25: no text above the results, looked up as it opens and again on REFRESH, REFRESH and HOME side by side at the bottom, the first row "This device" (it may be a tablet), "login to router for tunnel details", a plain "Not checked" for a tunnel with no route, and a footer, "Address data from PIA.", that opens PIA's What is my IP page.
+- DOC: README 5.5 NETWORK, new, with a drawn screenshot of invented addresses mirroring 02.0's tunnels (`images/04.5-network.png`), a features line, and 5.5 to 5.11 renumbered 5.6 to 5.12. `images/00.0-main-menu.png` redrawn with NETWORK. Both are drawn by `test/release/readme_screenshots_test.dart` at the Pixel's size, with its status bar and gesture handle copied from 02.0; the main menu's labels now name Roboto, which is what Android drew with no name, so the test can draw them.
+- TST: TESTING's NET tests run unattended by `live/network_live_test.dart` against the router, a new `[live]` tag that keeps them off the run sheet (Andrew, 2026-10-25: no hand tests). NET-4, the screen, is `[ci]`.
+
+2026-10-25 v0.8.172 build 542 - NETWORK asks PIA's own site, and no one else
+
+- CHG: NETWORK asks PIA's own site (`/site-api/get-location-info`, the lookup its "What is my IP" page uses), Andrew's idea 2026-10-25: PIA already sees the phone's address, and a tunnel's is PIA's own, so no other company learns anything. Mullvad's check is removed, Andrew's decision: PIA only.
+
+2026-10-25 v0.8.171 build 541 - NETWORK shows the public address of this phone and of each tunnel, through Mullvad's connection check
+
+- CHG: WIP 3 -> 4 bullets. Added: ID-458 from BACKLOG, Andrew's go 2026-10-25, to have NETWORK running this week.
+- CHG: 1.1 1 -> 7 bullets, Andrew's order 2026-10-25: after NETWORK, the firmware abstraction (ID-448 to ID-452), then SonarCloud to zero (ID-419), then ID-439. Moved from BACKLOG 1.2 and made short; their detail went word for word to `plan_firmware-abstraction.md`.
+- REL: v0.8.169 (539) released 2026-10-25, run 40162469563: Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end.
+- ID-469 REL: the next tag uploads its own iOS build to TestFlight.
+  - DoD: the build shows in TestFlight, and Certificates, IDs & Profiles shows no new certificate left by each run.
+  - Plan: [plan_promote-both-stores.md](.claude/plans/plan_promote-both-stores.md)
+  - Closed 2026-10-25: v0.8.169's tag run (40162469563) uploaded build 539 to TestFlight itself, and revoked the Development certificate it made: 9 certificates before and after.
+
+2026-10-25 v0.8.170 build 540 - ABOUT's UPDATE WATCHDOG VERSION and login link tested by tapping them
+
+- ID-476 TST: ABOUT's UPDATE WATCHDOG VERSION and its "login to router to retrieve" link are tested by tapping them.
+  - DoD: a tap's write, paywall, error and login are each held by a test seen to fail.
+  - Closed 2026-10-25: four tests in `about_screen_test.dart`: the script rewritten, read back and announced; locked, the paywall first and nothing written; an unknown firmware refused; the login asked for and cancelled. The first two failed with the paywall check and the snackbar taken out.
 
 2026-10-25 v0.8.169 build 539 - building on the Mac and on Windows both checked, and the dry run that proves the certificate clean-up
 
