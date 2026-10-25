@@ -85,9 +85,6 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
-- ID-448 TST: a test that every operation the firmware abstraction will hold runs on both firmwares.
-  - DoD: it lists start, stop, slot reading, cron persistence and delete, finds each run under both `useStock()` and `useMerlin()`, and fails when one isn't.
-  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
 - ID-449 ARC: firmware abstraction, slice 1: starting and stopping a slot go through one `RouterOps`, resolved once per session. After ID-448.
   - DoD: no `isStockFirmware` branch is left in start or stop, the suite passes with no test changed, and MAN-3, MAN-8 and MRL pass on hardware.
   - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
@@ -111,7 +108,7 @@ Work items for the **current** release:
 
 **Claude, in priority order: the iOS release, then NETWORK.**
 
-- ID-436 REL: the first App Store submission is approved, and the app is on sale at the Apple App Store.
+- ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
   - Now: 0.8.164 (534) and Router features are with App Review, submitted 2026-10-21.
@@ -140,6 +137,13 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.176 build 546 - the five firmware-specific operations are each tested on both firmwares, before the abstraction moves them
+
+- ID-448 TST: a test that every operation the firmware abstraction will hold runs on both firmwares.
+  - DoD: it lists start, stop, slot reading, cron persistence and delete, finds each run under both `useStock()` and `useMerlin()`, and fails when one isn't.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
+  - Closed 2026-10-25: `test/unit/firmware_paths_test.dart`, each of the five under both firmwares, checked for its own firmware's command and not the other's; failed with stock's start path, and with Merlin's slot read, taken out.
 
 2026-10-25 v0.8.175 build 545 - the privacy policy covers NETWORK and the widget's record of background refreshes
 
