@@ -18,8 +18,9 @@ import 'package:http/testing.dart';
 import '../posix_shell.dart';
 import '../watchdog_harness.dart' show findShell;
 
-const _reply = '{"ip":"203.0.113.9","country":"Australia","city":"Melbourne","longitude":144.9,"latitude":-37.8,'
-    '"mullvad_exit_ip":false,"blacklisted":{"blacklisted":false,"results":[]},"organization":"Example Provider"}';
+// PIA's site-api/get-location-info, with every field it sent on 2026-10-25.
+const _reply = '{"ip":"203.0.113.9","cc":"AU","cn":"Australia","cty":"Melbourne","pc":"3000","lat":-37.8,"lng":144.9,'
+    '"isp":"Example Provider","rgn":"Victoria","org":"Example Org"}';
 
 const _ip = r'''#!/bin/sh
 case "$1 $2" in
@@ -34,7 +35,7 @@ esac
 exit 0
 ''';
 
-// Records each call, with the rules in force at the time, and answers as Mullvad does.
+// Records each call, with the rules in force at the time, and answers as PIA does.
 const _curl = r'''#!/bin/sh
 echo "$* | rules: $(cat "$STATE/rules" 2>/dev/null | tr '\n' ' ')" >> "$STATE/curls"
 [ -f "$STATE/curl_fails" ] && exit 28
@@ -42,30 +43,23 @@ printf '%s\n' "$REPLY"
 ''';
 
 void main() {
-  group('Mullvad', () {
-    const m = MullvadLookup();
+  group('PIA', () {
+    const p = PiaLookup();
 
     test('reads the address, country, town and provider', () {
-      final f = m.parse(_reply)!;
+      final f = p.parse(_reply)!;
       expect([f.ip, f.country, f.city, f.provider], ['203.0.113.9', 'Australia', 'Melbourne', 'Example Provider']);
-      expect(f.place, 'Melbourne, Australia');
     });
 
     test('a reply without an address, or not JSON, is not an answer', () {
-      expect(m.parse('{"country":"Australia"}'), isNull);
-      expect(m.parse('{"ip":"not an address"}'), isNull);
-      expect(m.parse('<html>blocked</html>'), isNull);
-      expect(m.parse('[]'), isNull);
+      expect(p.parse('{"cn":"Australia"}'), isNull);
+      expect(p.parse('<html>blocked</html>'), isNull);
     });
 
-    test('a missing field is empty, not an error', () {
-      final f = m.parse('{"ip":"203.0.113.9","city":null}')!;
-      expect([f.country, f.city, f.provider, f.place], ['', '', '', '']);
-    });
-
-    test('is the service in use, over IPv4', () {
-      expect(kIpLookupService, isA<MullvadLookup>());
-      expect(kIpLookupService.host, 'ipv4.am.i.mullvad.net');
+    test('is the service in use (Andrew, 2026-10-25), on PIA\'s own site', () {
+      expect(kIpLookupService, isA<PiaLookup>());
+      expect(kIpLookupService.host, 'www.privateinternetaccess.com');
+      expect(kIpLookupService.notice, contains('no one else learns anything'));
     });
   });
 
@@ -76,7 +70,7 @@ void main() {
         asked = req.url;
         return http.Response(_reply, 200);
       }));
-      expect(asked.toString(), 'https://ipv4.am.i.mullvad.net/json');
+      expect(asked.toString(), 'https://www.privateinternetaccess.com/site-api/get-location-info');
       expect(facts.ip, '203.0.113.9');
     });
 
@@ -90,7 +84,7 @@ void main() {
     Future<List<InternetAddress>> answers(List<String> a) async => [for (final s in a) InternetAddress(s)];
 
     test('the first IPv4 address below 128.0.0.0', () async {
-      expect(await tunnelLookupAddress(lookup: (_) => answers(['2a03:1b20::1', '45.83.223.233'])), '45.83.223.233');
+      expect(await tunnelLookupAddress(lookup: (_) => answers(['2606:4700::6812:285d', '172.64.147.163', '104.18.40.93'])), '104.18.40.93');
     });
 
     test('none when every address is above what the tunnel table carries', () async {
@@ -103,12 +97,12 @@ void main() {
   });
 
   test('the command refuses anything but an IPv4 address', () {
-    expect(() => tunnelLookupCommand([1], '45.83.223.233; reboot', stock: true), throwsArgumentError);
-    expect(() => tunnelLookupCommand([1], 'am.i.mullvad.net', stock: true), throwsArgumentError);
+    expect(() => tunnelLookupCommand([1], '104.18.40.93; reboot', stock: true), throwsArgumentError);
+    expect(() => tunnelLookupCommand([1], 'www.privateinternetaccess.com', stock: true), throwsArgumentError);
   });
 
   test("Merlin binds the request to the tunnel, as its ENABLE ping does", () {
-    final cmd = tunnelLookupCommand([2], '45.83.223.233', stock: false);
+    final cmd = tunnelLookupCommand([2], '104.18.40.93', stock: false);
     expect(cmd, contains('--interface "wgc\$N"'));
     expect(cmd, isNot(contains('ip rule')));
   });
@@ -142,7 +136,7 @@ void main() {
     tearDown(() => dir.deleteSync(recursive: true));
 
     Future<String> run(List<int> slots) async {
-      File('${dir.path}/c.sh').writeAsStringSync('${tunnelLookupCommand(slots, '45.83.223.233', stock: true)}\n');
+      File('${dir.path}/c.sh').writeAsStringSync('${tunnelLookupCommand(slots, '104.18.40.93', stock: true)}\n');
       final sep = Platform.isWindows ? ';' : ':';
       final r = await runSh(shell!, ['-c', r'P="${PATH%%:*}"; PATH="$P:/usr/bin:/bin:$PATH"; export PATH; exec sh "$1"', 'sh', '${dir.path}/c.sh'],
           environment: {'PATH': '${dir.path}/bin$sep${Platform.environment['PATH']}', 'STATE': state, 'REPLY': _reply});
@@ -161,9 +155,9 @@ void main() {
       expect(r[5]!.outcome, TunnelLookupOutcome.found);
       final curls = lines('curls');
       expect(curls, hasLength(2));
-      expect(curls[0], contains('--resolve ipv4.am.i.mullvad.net:443:45.83.223.233 https://ipv4.am.i.mullvad.net/json'));
-      expect(curls[0], contains('rules: 45.83.223.233 9'), reason: 'wgc1 is table 9, in force while it asks');
-      expect(curls[1], contains('rules: 45.83.223.233 5'), reason: 'wgc5 is table 5');
+      expect(curls[0], contains('--resolve www.privateinternetaccess.com:443:104.18.40.93 https://www.privateinternetaccess.com/site-api/get-location-info'));
+      expect(curls[0], contains('rules: 104.18.40.93 9'), reason: 'wgc1 is table 9, in force while it asks');
+      expect(curls[1], contains('rules: 104.18.40.93 5'), reason: 'wgc5 is table 5');
       expect(lines('rules'), isEmpty);
     });
 

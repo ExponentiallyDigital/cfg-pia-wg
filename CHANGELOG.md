@@ -122,7 +122,7 @@ Work items for the **current** release:
 - ID-458 ADD: a NETWORK main menu item showing the public IP, country, town and provider of this phone and of each tunnel.
   - DoD: on a phone, each row matches what the path really uses, the service is swappable in one class, the privacy policy says so, and a tunnel row through stock's route read-back is seen to fail closed.
   - Plan: [plan_network-menu.md](.claude/plans/plan_network-menu.md)
-  - Now: built and tested in build 541 (full suite passes); left: Andrew's approval of the policy paragraph, NET-1 to NET-3 on hardware.
+  - Now: asks PIA's own site only, since build 542; left: the policy paragraph approved, NET-1 to NET-3 on hardware.
 
 ---
 
@@ -140,6 +140,10 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.172 build 542 - NETWORK asks PIA's own site, and no one else
+
+- CHG: NETWORK asks PIA's own site (`/site-api/get-location-info`, the lookup its "What is my IP" page uses), Andrew's idea 2026-10-25: PIA already sees the phone's address, and a tunnel's is PIA's own, so no other company learns anything. Mullvad's check is removed, Andrew's decision: PIA only.
 
 2026-10-25 v0.8.171 build 541 - NETWORK shows the public address of this phone and of each tunnel, through Mullvad's connection check
 

@@ -322,13 +322,22 @@ The build:
 - TESTING: NET-1 to NET-3.
 - Not yet: the privacy policy paragraph below, approved and published; Andrew's question to Mullvad; NET-1 to NET-3 on hardware; Merlin's `curl --interface` measured.
 
+### 2026-10-25: PIA's own lookup instead of Mullvad's
+
+- Andrew's suggestion: the app requires PIA, and PIA has a "What is my IP" page (https://www.privateinternetaccess.com/what-is-my-ip). The page fetches `/site-api/get-location-info` from its script (found in `dist/js/frontend/pia/script.js`), which answers, with no token: `ip`, `cc`, `cn` (country), `cty` (town), `pc`, `lat`, `lng`, `isp` (the provider), `rgn` and `org` (measured 2026-10-25). `/api/client/status`, the other candidate, now gives only `ip` and `connected`.
+- Why it's better on privacy: PIA already sees the phone's address whenever the app logs in or fetches PIA's servers, and each tunnel's address is PIA's own, so no other company learns anything, and the policy names no new party.
+- The risk: it's PIA's website's own endpoint, not a published API, so it can change without notice. If it does, a replacement is one new `IpLookupService` and `kIpLookupService`.
+- Andrew, the same day: PIA only, no Mullvad. `MullvadLookup` and its tests were removed.
+- `www.privateinternetaccess.com` has no IPv6 address, so the phone's row is IPv4. It resolves to 172.64.147.163 and 104.18.40.93 (Cloudflare); the router aims at the first below 128.0.0.0, 104.18.40.93.
+- The notice's wording comes from the service now (`IpLookupService.notice`), since "keeps no logs" was Mullvad's claim, not PIA's website's.
+- The question for Mullvad is no longer needed.
+
 ### Drafts for Andrew's approval: the privacy policy
 
 A new section after 1.4:
 
-> **1.5 The NETWORK screen.** NETWORK shows the public internet address of your phone, and of each VPN tunnel your router has running, with the country, town and internet provider that address belongs to. Nothing is looked up until you tap LOOK UP. Each lookup is one request to Mullvad's connection check (am.i.mullvad.net), sent from your phone for its own address and from your router, through the tunnel, for each tunnel's. Mullvad sees the address each request comes from, which is how it answers, and Mullvad's own privacy policy says it keeps no activity logs. The app sends nothing else with the request, and keeps nothing it is told: the results are on screen until you leave it.
+> **1.5 The NETWORK screen.** NETWORK shows the public internet address of your phone, and of each VPN tunnel your router has running, with the country, town and internet provider that address belongs to. Nothing is looked up until you tap LOOK UP. Each lookup is one request to PIA's website (the same lookup its "What is my IP" page uses), sent from your phone for its own address and from your router, through the tunnel, for each tunnel's. PIA already sees your phone's address whenever the app logs in or fetches PIA's server list, and a tunnel's address is PIA's own, so no one new learns anything. The app sends nothing else with the request, and keeps nothing it is told: the results are on screen until you leave it.
 
 Added to 1.4's widget paragraph, after "If you do not add the widget, neither is ever stored.":
 
 > With the widget set up, the app also keeps the time and outcome of each background refresh, such as "read the router" or "phone locked", the newest 500 of them, so you can see how often your phone lets it refresh. Nothing read from the router is kept in it.
-

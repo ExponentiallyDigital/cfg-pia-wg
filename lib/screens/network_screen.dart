@@ -14,9 +14,9 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// Nothing is sent until LOOK UP is tapped, and the notice above it says where the lookups go, so it is
-// read before every lookup, not only the first (Andrew, 2026-10-25). Free: it only reads. The phone's
-// row needs no router; the tunnels' need the session's router login, asked for as ABOUT asks.
+// Nothing is sent until LOOK UP is tapped, and the notice above it says where the lookups go and who sees
+// them, so it is read before every lookup, not only the first (Andrew, 2026-10-25). Free: it only reads.
+// The phone's row needs no router; the tunnels' need the session's router login, asked for as ABOUT asks.
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/gestures.dart';
@@ -179,11 +179,10 @@ class _NetworkScreenState extends State<NetworkScreen> {
             Text.rich(
               TextSpan(children: [
                 TextSpan(
-                    text: 'LOOK UP asks ${_service.name}\'s connection check for the public address of this phone, and of '
-                        'each tunnel that is up, sent through the router. ${_service.name} sees each address it is asked '
-                        'from, and its '),
-                TextSpan(text: 'privacy policy', style: const TextStyle(color: kHighlight), recognizer: _privacyRecogniser),
-                const TextSpan(text: ' says it keeps no logs. Nothing is sent until you tap LOOK UP.'),
+                    text: 'LOOK UP asks ${_service.name} for the public address of this phone, and of each tunnel that is '
+                        'up, sent through the router. ${_service.notice} '),
+                TextSpan(text: '${_service.name}\'s privacy policy', style: const TextStyle(color: kHighlight), recognizer: _privacyRecogniser),
+                const TextSpan(text: '. Nothing is sent until you tap LOOK UP.'),
               ]),
               key: const Key('network_notice'),
               style: const TextStyle(color: kMuted, fontSize: 13),
