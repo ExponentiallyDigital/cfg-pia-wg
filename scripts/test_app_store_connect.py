@@ -151,5 +151,70 @@ class PromoteTestflight(unittest.TestCase):
         self.assertIn('Dry run: nothing was changed.', lines)
 
 
+
+def cert(id_, kind):
+    return {'id': id_, 'attributes': {'certificateType': kind, 'name': f'cert {id_}', 'expirationDate': '2027-10-25T00:00:00.000+0000'}}
+
+
+class NewCertificates(unittest.TestCase):
+    """ID-469: a run revokes the Development certificate it made, and nothing else."""
+
+    BEFORE = [cert('andrew', 'DEVELOPMENT'), cert('managed', 'DISTRIBUTION')]
+
+    def test_only_new_development_certificates_are_revoked(self):
+        now = self.BEFORE + [cert('run', 'DEVELOPMENT'), cert('run-ios', 'IOS_DEVELOPMENT'), cert('new-dist', 'DISTRIBUTION')]
+        dev, other = asc.new_certificates({'andrew', 'managed'}, now)
+        self.assertEqual([c['id'] for c in dev], ['run', 'run-ios'])
+        self.assertEqual([c['id'] for c in other], ['new-dist'])
+
+    def test_nothing_new_revokes_nothing(self):
+        self.assertEqual(asc.new_certificates({'andrew', 'managed'}, self.BEFORE), ([], []))
+
+    def run_revoke(self, now):
+        import tempfile
+        api = FakeApi({'/v1/certificates': {'data': now}})
+        with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as f:
+            f.write('andrew\nmanaged\n')
+        real, asc.Api = asc.Api, lambda: api
+        try:
+            asc.cmd_revoke_new_certificates(type('Args', (), {'since': f.name}))
+        finally:
+            asc.Api = real
+            os.unlink(f.name)
+        return api.sent
+
+    def test_the_command_deletes_the_run_s_development_certificate_only(self):
+        sent = self.run_revoke(self.BEFORE + [cert('run', 'DEVELOPMENT'), cert('new-dist', 'DISTRIBUTION')])
+        self.assertEqual(sent, [('DELETE', '/v1/certificates/run')])
+
+    def test_the_command_leaves_andrews_own_and_the_shared_distribution_one(self):
+        self.assertEqual(self.run_revoke(self.BEFORE), [])
+
+
+class ReleaseWorkflowCertificates(unittest.TestCase):
+    """ID-469: release.yml notes the certificates before the archive, and revokes the run's own after the
+    last export, even when a step between failed."""
+
+    def setUp(self):
+        with open(os.path.join(asc.ROOT, '.github', 'workflows', 'release.yml'), encoding='utf-8') as f:
+            self.yml = f.read()
+
+    def at(self, text):
+        i = self.yml.find(text)
+        self.assertNotEqual(i, -1, text)
+        return i
+
+    def test_noted_before_the_archive_and_revoked_after_the_upload(self):
+        note = self.at('app_store_connect.py note-certificates --to')
+        revoke = self.at('app_store_connect.py revoke-new-certificates --since')
+        self.assertLess(note, self.at('- name: Archive, signed with the team'))
+        self.assertGreater(revoke, self.at('- name: Upload to App Store Connect for TestFlight'))
+        self.assertLess(revoke, self.at('- name: Remove the App Store Connect key'))
+
+    def test_the_revoke_runs_whatever_happened_after_the_note(self):
+        step = self.yml[self.yml.rfind('- name:', 0, self.at('revoke-new-certificates --since')):]
+        self.assertIn("if: ${{ always() && steps.certificates.outcome == 'success' }}", step.split('run:')[0])
+
+
 if __name__ == '__main__':
     unittest.main()

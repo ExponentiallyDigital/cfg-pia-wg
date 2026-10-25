@@ -574,6 +574,22 @@ jobs:
             exit 1
           }
 
+      # ID-469: the archive's automatic signing makes a new Development certificate on every runner,
+      # whose keychain starts empty, and nothing removed them: 7 by 2026-10-25. The team's certificates
+      # are noted here, and "Revoke the certificates this run made" takes the new Development ones away
+      # at the end. The client is set up here for the App Store Connect steps after, too.
+      - name: Note the team's certificates
+        id: certificates
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/asc"
+          "$RUNNER_TEMP/asc/bin/pip" install --quiet --disable-pip-version-check \
+            PyJWT==2.10.1 cryptography==44.0.2 requests==2.34.2
+          "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py note-certificates --to "$RUNNER_TEMP/certificates-before.txt"
+
       - name: Prepare the Xcode project
         # Writes Flutter's generated settings, the version and build number from pubspec.yaml and the
         # RevenueCat key among them, without building: xcodebuild below builds and signs.
@@ -653,7 +669,7 @@ jobs:
           echo "$sig" | grep -q '^Authority=Apple Distribution' || { echo "::error::the .ipa is not signed for distribution"; exit 1; }
 
       # ID-468: Apple refuses a build number twice, and a build can go up from a manual run before its
-      # tag, as 534 did for the first submission. The client is set up here for the steps after, too.
+      # tag, as 534 did for the first submission.
       - name: Is the build in App Store Connect already
         id: asc
         if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.testflight == true }}
@@ -662,9 +678,6 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         run: |
-          python3 -m venv "$RUNNER_TEMP/asc"
-          "$RUNNER_TEMP/asc/bin/pip" install --quiet --disable-pip-version-check \
-            PyJWT==2.10.1 cryptography==44.0.2 requests==2.34.2
           BUILD=$(grep -m1 '^version:' pubspec.yaml | sed 's/.*+//')
           "$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py has-build --build "$BUILD"
 
@@ -737,6 +750,16 @@ jobs:
             sleep 30
           done
           gh release upload "$TAG" "$RUNNER_TEMP/cfg-pia-wg-${TAG}_ios-sbom.spdx.json" --clobber --repo "$GITHUB_REPOSITORY"
+
+      # ID-469: after the last export, and whatever failed on the way. The .ipa is signed with the shared
+      # Distribution certificate, so the Development one the archive made is needed by nothing now.
+      - name: Revoke the certificates this run made
+        if: ${{ always() && steps.certificates.outcome == 'success' }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: '"$RUNNER_TEMP/asc/bin/python" scripts/app_store_connect.py revoke-new-certificates --since "$RUNNER_TEMP/certificates-before.txt"'
 
       - name: Remove the App Store Connect key
         if: always()
