@@ -85,15 +85,6 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
-- ID-450 ARC: slice 2: reading the slots (`fetchSlots`, `vpnc_clientlist`). After ID-449's release.
-  - DoD: as ID-449, for reading, with a `live/` run reading the stock router's slots.
-- ID-451 ARC: slice 3: persisting the watchdog's schedule (services-start or `S50downloadmaster`). After ID-450's release.
-  - DoD: as ID-449, for persistence, with a `live/` run pausing and resuming a watchdog on the stock router.
-- ID-452 ARC: slice 4: deleting a slot and clearing its runtime keys. After ID-451's release.
-  - DoD: as ID-449, for delete, with a `live/` run deleting and recreating a spare slot on the stock router.
-- ID-419 CHG: the eight SonarCloud findings left in the watchdog and the slot service, so SonarCloud shows none. After ID-452.
-  - DoD: SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
-  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
 - ID-439 ADD: the iOS widget refreshes itself in the background. After ID-424.
   - DoD: it updates with the app closed.
 
@@ -113,6 +104,19 @@ Work items for the **current** release:
   - DoD: a day's refresh times from an iPhone are recorded.
   - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
   - Now: measuring on B11 (and D11) from 2026-10-25 evening, build 545 from TestFlight, key and widgets in place; left: the LOG after a day.
+- ID-450 ARC: slice 2: reading the slots (`fetchSlots`, `vpnc_clientlist`). After ID-449's release.
+  - DoD: as ID-449, for reading, with a `live/` run reading the stock router's slots.
+  - Now: `RouterOps.slotStateReader`, `routerDotServers` and `maxActiveSlots`; `fetchSlots` has no firmware branch; left: `live/abstraction_live_test.dart` RDS-1 on stock.
+- ID-451 ARC: slice 3: persisting the watchdog's schedule (services-start or `S50downloadmaster`). After ID-450's release.
+  - DoD: as ID-449, for persistence, with a `live/` run pausing and resuming a watchdog on the stock router.
+  - Now: `RouterOps.persistSchedule`, `unpersistSchedule`, `removeAllSchedules` and `bootPersistenceReady`; left: SCH-1 and SCH-2 on stock.
+- ID-452 ARC: slice 4: deleting a slot and clearing its runtime keys. After ID-451's release.
+  - DoD: as ID-449, for delete, with a `live/` run deleting and recreating a spare slot on the stock router.
+  - Now: `RouterOps.clearProfile` and `profileLeft`; left: DEL-1 and DEL-2 on stock, with Andrew's PIA login.
+- ID-419 CHG: the eight SonarCloud findings left in the watchdog and the slot service, so SonarCloud shows none. After ID-452.
+  - DoD: SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
+  - Now: the eight split, each function only split; a local measure, matching SonarCloud's figures exactly on all eight, finds none over 15 in lib/; one test added for a message no test covered; left: SonarCloud's own reading after the merge.
 
 ---
 
@@ -130,6 +134,11 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.179 build 549 - the rest of the firmware abstraction, reading, the schedule and delete, and the eight SonarCloud findings split
+
+- CHG: WIP gains ID-450, ID-451, ID-452 and ID-419, done together, Andrew's decision 2026-10-25, in place of a release per slice; one live run, `live/abstraction_live_test.dart`, checks the three slices on stock before their release.
+- REL: v0.8.178 (548), ID-449's release, tagged 2026-10-25 (run 40182043578).
 
 2026-10-25 v0.8.178 build 548 - NETWORK released, and the first firmware slice, start and stop through RouterOps, passes live on the router
 

@@ -176,22 +176,23 @@ class WatchdogConfig {
     this.dohIp = '',
   });
 
-  // Human-readable validation errors; an empty list means the config is valid.
-  List<String> validate() {
+  // Human-readable validation errors; an empty list means the config is valid. In the form's order:
+  // the checks, the PIA login, then the email settings.
+  List<String> validate() => [..._checkErrors(), ..._loginErrors(), if (emailAlertsEnabled) ..._emailErrors()];
+
+  /// The interval, the two ping targets, the slot's DNS and the encrypted lookup.
+  List<String> _checkErrors() {
     final errors = <String>[];
     // Above 59, `*/N` in the cron line no longer means every N minutes (ID-237).
     if (cronIntervalMinutes < 1 || cronIntervalMinutes > 59) {
       errors.add('Check interval must be a whole number of minutes from 1 to 59.');
     }
-    if (primaryIp.trim().isEmpty) {
-      errors.add('Primary ping IP is required.');
-    } else if (!isValidIpv4(primaryIp)) {
-      errors.add('Primary ping IP is not a valid IPv4 address.');
-    }
-    if (secondaryIp.trim().isEmpty) {
-      errors.add('Secondary ping IP is required.');
-    } else if (!isValidIpv4(secondaryIp)) {
-      errors.add('Secondary ping IP is not a valid IPv4 address.');
+    for (final (name, value) in [('Primary', primaryIp), ('Secondary', secondaryIp)]) {
+      if (value.trim().isEmpty) {
+        errors.add('$name ping IP is required.');
+      } else if (!isValidIpv4(value)) {
+        errors.add('$name ping IP is not a valid IPv4 address.');
+      }
     }
     // The slot's DNS, when the form has one: a mistyped address makes the watchdog rebuild a healthy
     // tunnel on every check, because nothing ever answers it (ID-237).
@@ -201,49 +202,48 @@ class WatchdogConfig {
     // Both or neither, each the right shape: swapped, the script built no encrypted lookup and said
     // nothing (ID-221, 2026-09-27).
     errors.addAll(checkDohPair(dohUrl, dohIp));
-    if (piaUsername.trim().isEmpty) {
-      errors.add('PIA username is required.');
+    return errors;
+  }
+
+  /// The PIA login, and no line break in any field that ends up in an email header or the log (ID-237).
+  List<String> _loginErrors() => [
+        if (piaUsername.trim().isEmpty) 'PIA username is required.',
+        if (piaPassword.isEmpty) 'PIA password is required.',
+        for (final (name, value) in [
+          ('PIA username', piaUsername),
+          ('PIA password', piaPassword),
+          ('Email subject', emailSubject),
+          ('SMTP username', smtpUsername),
+          ('SMTP password', smtpPassword),
+        ])
+          if (hasControlCharacter(value)) '$name cannot contain a line break or other control character.',
+      ];
+
+  /// What email alerts need, when they are on.
+  List<String> _emailErrors() {
+    final errors = <String>[];
+    for (final (name, value) in [('From', emailFrom), ('To', emailTo)]) {
+      if (value.trim().isEmpty) {
+        errors.add('Email "$name" is required when email alerts are enabled.');
+      } else if (!isValidEmail(value)) {
+        errors.add('Email "$name" is not a valid address.');
+      }
     }
-    if (piaPassword.isEmpty) {
-      errors.add('PIA password is required.');
+    if (emailSubject.trim().isEmpty) {
+      errors.add('Email subject is required when email alerts are enabled.');
     }
-    // A line break in any of these becomes a new line in an email header or the log (ID-237).
-    for (final (name, value) in [
-      ('PIA username', piaUsername),
-      ('PIA password', piaPassword),
-      ('Email subject', emailSubject),
-      ('SMTP username', smtpUsername),
-      ('SMTP password', smtpPassword),
-    ]) {
-      if (hasControlCharacter(value)) errors.add('$name cannot contain a line break or other control character.');
+    if (smtpServer.trim().isEmpty) {
+      errors.add('SMTP server (host:port) is required when email alerts are enabled.');
+    } else if (checkHostPort(smtpServer, field: 'SMTP server') case final e?) {
+      // The port has to be real: the test email fell back to 465, the script used the text as typed,
+      // so a test could pass while every real alert failed (ID-237).
+      errors.add(e);
     }
-    if (emailAlertsEnabled) {
-      if (emailFrom.trim().isEmpty) {
-        errors.add('Email "From" is required when email alerts are enabled.');
-      } else if (!isValidEmail(emailFrom)) {
-        errors.add('Email "From" is not a valid address.');
-      }
-      if (emailTo.trim().isEmpty) {
-        errors.add('Email "To" is required when email alerts are enabled.');
-      } else if (!isValidEmail(emailTo)) {
-        errors.add('Email "To" is not a valid address.');
-      }
-      if (emailSubject.trim().isEmpty) {
-        errors.add('Email subject is required when email alerts are enabled.');
-      }
-      if (smtpServer.trim().isEmpty) {
-        errors.add('SMTP server (host:port) is required when email alerts are enabled.');
-      } else if (checkHostPort(smtpServer, field: 'SMTP server') case final e?) {
-        // The port has to be real: the test email fell back to 465, the script used the text as typed,
-        // so a test could pass while every real alert failed (ID-237).
-        errors.add(e);
-      }
-      if (smtpUsername.trim().isEmpty) {
-        errors.add('SMTP username is required when email alerts are enabled.');
-      }
-      if (smtpPassword.isEmpty) {
-        errors.add('SMTP password is required when email alerts are enabled.');
-      }
+    if (smtpUsername.trim().isEmpty) {
+      errors.add('SMTP username is required when email alerts are enabled.');
+    }
+    if (smtpPassword.isEmpty) {
+      errors.add('SMTP password is required when email alerts are enabled.');
     }
     return errors;
   }
@@ -1023,6 +1023,14 @@ class RouterWatchdog {
   /// A read: returns stdout and never throws, whatever the exit code.
   Future<String> _read(String cmd) => _run(cmd, allowFailure: true);
 
+  // For [RouterOps], which holds the calls that differ by firmware (ID-451): this watchdog's own
+  // command, read, and stock's boot script and its stand-ins.
+  Future<String> run(String cmd) => _run(cmd);
+  Future<String> read(String cmd) => _read(cmd);
+  Future<void> backupOriginalS50() => _backupOriginal(kS50Path, ours: _kOurScriptSignature);
+  Future<void> writeS50(int slot, {List<String> extra = const []}) => _writeS50(slot, extra: extra);
+  Future<void> writeLighttpdStub() => _writeLighttpdStub();
+
   /// Runs [read] over [path] only when the file exists. A file the watchdog has not created yet - no
   /// ping has succeeded, no script is deployed - is an ordinary answer, and logging it as "router
   /// command failed" alarmed people who had done nothing wrong. A file that IS there but cannot be
@@ -1206,8 +1214,7 @@ class RouterWatchdog {
   /// that reads like a full filesystem, and with the directory present but no working Download
   /// Master the write succeeds, cron installs, and nothing runs it at the next boot. Checking
   /// first turns both into one sentence the user can act on.
-  Future<bool> isBootPersistenceReady() async =>
-      !isStockFirmware || (await _run("[ -d '$kStockBootDir' ] && echo 1 || echo 0")) == '1';
+  Future<bool> isBootPersistenceReady() => routerOps().bootPersistenceReady(this);
 
   // Ensures the watchdog script has somewhere to live. jffs2_scripts / jffs2_on are a Merlin
   // custom-scripts feature; on stock only the directory matters.
@@ -1304,89 +1311,110 @@ class RouterWatchdog {
         final loginBefore = {
           for (final k in ['cfg_pia_wg_user', 'cfg_pia_wg_password']) k: await _read('nvram get $k'),
         };
-        var scheduled = false;
-        var emailProblem = '';
-        String? didNothing;
+        final progress = _DeployProgress();
         try {
-          if (regionChanged) await _clearForRebuild(slot, running: up, region: desc);
-          await _writeWatchdogNvram(config, desc: desc);
-          await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
-          await _writeScript(config.slotIndex, buildWatchdogScript(config));
-          if (isStockFirmware) await _guardService.ensure();
-          await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
-          await _run(buildCronRotateLine(config.slotIndex));
-          scheduled = true;
-          await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
-          onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
-          await _run(kSeedCountersCommand);
-          await _logRouter('Running ${watchdogScriptPath(config.slotIndex)} deploy');
-          // Where the log stands, so what this run writes can be read back on its own.
-          final logFile = '/tmp/watchdog_wgc$slot.log';
-          final linesBefore = int.tryParse((await _read("wc -l < $logFile 2>/dev/null || echo 0")).trim()) ?? 0;
-          // A deploy is the user asking for a run now: a backoff left by earlier failures would make
-          // this one exit at once, having done nothing (ID-327).
-          await _read('rm -f /tmp/watchdog_backoff_wgc$slot');
-          // `deploy` makes this run report itself as a deployment rather than a re-configuration,
-          // and makes it email even when it finds the tunnel already healthy.
-          await _run('${watchdogScriptPath(config.slotIndex)} deploy');
-          final runLog = await _read('tail -n +${linesBefore + 1} $logFile 2>/dev/null');
-          emailProblem = deployEmailFailure(runLog) ?? '';
-          didNothing = deployDidNothing(runLog);
+          await _deploySteps(config, desc, progress, regionChanged: regionChanged, up: up);
         } catch (e) {
-          final hadWatchdog = (settingsBefore['wgc${slot}_wd_check_interval'] ?? '').isNotEmpty;
-          // A slot that was EMPTY goes back to empty, and its watchdog with it. Keeping the schedule
-          // is what rescued a slot that had a tunnel to go back to (2026-09-17), but the clean-up
-          // below deletes the description the watchdog takes its region from, so on an empty slot
-          // the retry could never build anything: it failed every five minutes and emailed, on a
-          // slot the app couldn't delete (2026-10-01).
-          final emptied = before.keys == null;
-          if (emptied && scheduled) {
-            await _removeWatchdogArtifacts(slot);
-            scheduled = false;
-          }
-          if (!scheduled) await _restoreWatchdogSettings(settingsBefore);
-          if (emptied) await _restoreWatchdogSettings(loginBefore);
-          final undone = await _restoreSlot(slot, before);
-          var cause = plainError(e).trim();
-          // When it was the watchdog's first run that failed, its own log says why in plain words:
-          // "router command failed (exit 1): /jffs/cfg-pia-wg/watchdog_wgc3.sh deploy" said nothing
-          // the user could act on (2026-10-01).
-          if (cause.contains('${watchdogScriptPath(config.slotIndex)} deploy')) {
-            final err = (await _read("grep 'ERROR: ' /tmp/watchdog_wgc$slot.log 2>/dev/null | tail -1 | cut -c21-"))
-                .trim()
-                .replaceFirst(RegExp(r'^ERROR: '), '');
-            // Its first sentence only: the rest ("the watchdog will try again") is the run's view,
-            // and whether it does try again is decided below.
-            if (err.isNotEmpty) cause = "The watchdog's first run failed: ${err.split('. ').first.replaceFirst(RegExp(r'\.$'), '')}.";
-          }
-          // Names the cause AND what was done about it: a failure that silently leaves a router in
-          // an unknown state is the thing this whole item is about.
-          final watchdog = switch ((scheduled, hadWatchdog, emptied)) {
-            (true, _, _) => 'Its watchdog stays scheduled and will try again in ${config.cronIntervalMinutes} minutes.',
-            (_, true, _) => "Its watchdog's previous settings were put back.",
-            (_, _, true) => 'No watchdog was set up. SAVE & DEPLOY again when the cause is fixed.',
-            _ => 'No watchdog was set up.',
-          };
-          throw Exception('$cause $undone $watchdog');
+          throw await _undoFailedDeploy(config, e, progress, before: before, settingsBefore: settingsBefore, loginBefore: loginBefore);
         }
-        onLog?.call('Ran ${watchdogScriptPath(config.slotIndex)}', isSuccess: true);
-        lastDeployDidNothing = didNothing;
-        if (didNothing != null) {
-          // Scheduled, but not proved: say so rather than "deployed" (ID-327).
-          await _logRouter('Watchdog scheduled for ${await _label(config.slotIndex)}, but $didNothing');
-          onLog?.call(
-              'The watchdog for ${await _label(config.slotIndex)} is scheduled, but $didNothing. '
-              'It runs again in ${config.cronIntervalMinutes} minutes; check ROUTER LOG then.',
-              isWarning: true);
-          return null;
-        }
-        await _logRouter(
-            'Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
-        onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
-        if (emailProblem.isEmpty) return null;
-        onLog?.call("The deploy's alert email could not be sent: $emailProblem", isError: true);
-        return emailProblem;
+        return _reportDeploy(config, progress);
       });
+
+  /// SAVE & DEPLOY's steps, [progress] recording how far they got for [_undoFailedDeploy].
+  Future<void> _deploySteps(WatchdogConfig config, String? desc, _DeployProgress progress,
+      {required bool regionChanged, required bool up}) async {
+    final slot = config.slotIndex;
+    if (regionChanged) await _clearForRebuild(slot, running: up, region: desc!);
+    await _writeWatchdogNvram(config, desc: desc);
+    await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
+    await _writeScript(config.slotIndex, buildWatchdogScript(config));
+    if (isStockFirmware) await _guardService.ensure();
+    await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
+    await _run(buildCronRotateLine(config.slotIndex));
+    progress.scheduled = true;
+    await _ensureServicesStart(config.slotIndex, config.cronIntervalMinutes);
+    onLog?.call('Watchdog settings saved for ${await _label(config.slotIndex)}.', isSuccess: true);
+    await _run(kSeedCountersCommand);
+    await _logRouter('Running ${watchdogScriptPath(config.slotIndex)} deploy');
+    // Where the log stands, so what this run writes can be read back on its own.
+    final logFile = '/tmp/watchdog_wgc$slot.log';
+    final linesBefore = int.tryParse((await _read("wc -l < $logFile 2>/dev/null || echo 0")).trim()) ?? 0;
+    // A deploy is the user asking for a run now: a backoff left by earlier failures would make
+    // this one exit at once, having done nothing (ID-327).
+    await _read('rm -f /tmp/watchdog_backoff_wgc$slot');
+    // `deploy` makes this run report itself as a deployment rather than a re-configuration,
+    // and makes it email even when it finds the tunnel already healthy.
+    await _run('${watchdogScriptPath(config.slotIndex)} deploy');
+    final runLog = await _read('tail -n +${linesBefore + 1} $logFile 2>/dev/null');
+    progress.emailProblem = deployEmailFailure(runLog) ?? '';
+    progress.didNothing = deployDidNothing(runLog);
+  }
+
+  /// A failed SAVE & DEPLOY, put back as far as it can be, and the error saying what failed and what was
+  /// done about it.
+  Future<Exception> _undoFailedDeploy(WatchdogConfig config, Object e, _DeployProgress progress,
+    {required ({Map<String, String>? keys, String? vpnc}) before,
+    required Map<String, String> settingsBefore,
+    required Map<String, String> loginBefore}) async {
+    final slot = config.slotIndex;
+    final hadWatchdog = (settingsBefore['wgc${slot}_wd_check_interval'] ?? '').isNotEmpty;
+    // A slot that was EMPTY goes back to empty, and its watchdog with it. Keeping the schedule
+    // is what rescued a slot that had a tunnel to go back to (2026-09-17), but the clean-up
+    // below deletes the description the watchdog takes its region from, so on an empty slot
+    // the retry could never build anything: it failed every five minutes and emailed, on a
+    // slot the app couldn't delete (2026-10-01).
+    final emptied = before.keys == null;
+    if (emptied && progress.scheduled) {
+      await _removeWatchdogArtifacts(slot);
+      progress.scheduled = false;
+    }
+    if (!progress.scheduled) await _restoreWatchdogSettings(settingsBefore);
+    if (emptied) await _restoreWatchdogSettings(loginBefore);
+    final undone = await _restoreSlot(slot, before);
+    var cause = plainError(e).trim();
+    // When it was the watchdog's first run that failed, its own log says why in plain words:
+    // "router command failed (exit 1): /jffs/cfg-pia-wg/watchdog_wgc3.sh deploy" said nothing
+    // the user could act on (2026-10-01).
+    if (cause.contains('${watchdogScriptPath(config.slotIndex)} deploy')) {
+      final err = (await _read("grep 'ERROR: ' /tmp/watchdog_wgc$slot.log 2>/dev/null | tail -1 | cut -c21-"))
+          .trim()
+          .replaceFirst(RegExp(r'^ERROR: '), '');
+      // Its first sentence only: the rest ("the watchdog will try again") is the run's view,
+      // and whether it does try again is decided below.
+      if (err.isNotEmpty) cause = "The watchdog's first run failed: ${err.split('. ').first.replaceFirst(RegExp(r'\.$'), '')}.";
+    }
+    // Names the cause AND what was done about it: a failure that silently leaves a router in
+    // an unknown state is the thing this whole item is about.
+    final watchdog = switch ((progress.scheduled, hadWatchdog, emptied)) {
+      (true, _, _) => 'Its watchdog stays scheduled and will try again in ${config.cronIntervalMinutes} minutes.',
+      (_, true, _) => "Its watchdog's previous settings were put back.",
+      (_, _, true) => 'No watchdog was set up. SAVE & DEPLOY again when the cause is fixed.',
+      _ => 'No watchdog was set up.',
+    };
+    return Exception('$cause $undone $watchdog');
+  }
+
+  /// What a SAVE & DEPLOY that finished says: scheduled but not proved, deployed, or deployed with its
+  /// alert email failing, which is returned for the form to show.
+  Future<String?> _reportDeploy(WatchdogConfig config, _DeployProgress progress) async {
+    onLog?.call('Ran ${watchdogScriptPath(config.slotIndex)}', isSuccess: true);
+    lastDeployDidNothing = progress.didNothing;
+    if (progress.didNothing != null) {
+      // Scheduled, but not proved: say so rather than "deployed" (ID-327).
+      await _logRouter('Watchdog scheduled for ${await _label(config.slotIndex)}, but ${progress.didNothing}');
+      onLog?.call(
+          'The watchdog for ${await _label(config.slotIndex)} is scheduled, but ${progress.didNothing}. '
+          'It runs again in ${config.cronIntervalMinutes} minutes; check ROUTER LOG then.',
+          isWarning: true);
+      return null;
+    }
+    await _logRouter(
+        'Watchdog deployed for ${await _label(config.slotIndex)} (check interval is ${config.cronIntervalMinutes}m)');
+    onLog?.call('Watchdog deployed for ${await _label(config.slotIndex)}.', isSuccess: true);
+    if (progress.emailProblem.isEmpty) return null;
+    onLog?.call("The deploy's alert email could not be sent: ${progress.emailProblem}", isError: true);
+    return progress.emailProblem;
+  }
 
   /// Takes away what a deploy added for [slot]'s watchdog: its two schedule entries, its lines in
   /// the boot hook, its script and its files in /tmp. Settings are the caller's to put back. Best
@@ -1567,28 +1595,8 @@ class RouterWatchdog {
   static bool _cruLineForSlot(String line, int slot) =>
       line.contains('watchdog_wgc$slot ') || line.contains('watchdog_log_rotate_wgc$slot ');
 
-  // Makes the two cron entries survive a reboot. Merlin appends them to services-start; stock has
-  // no equivalent, so the app owns the replacement block of an init script the firmware already
-  // runs at boot and on a firewall restart.
-  Future<void> _ensureServicesStart(int slot, int intervalMin) async {
-    if (isStockFirmware) {
-      await _backupOriginal(kS50Path, ours: _kOurScriptSignature);
-      await _writeS50(slot, extra: [buildCronCheckLine(slot, intervalMin), buildCronRotateLine(slot)]);
-      await _writeLighttpdStub();
-      // Install the entries now rather than waiting for the next boot.
-      await _run("'$kS50Path' start");
-      return;
-    }
-    const path = kServicesStartPath;
-    await _run("[ -f '$path' ] || { echo '#!/bin/sh' > '$path'; chmod +x '$path'; }");
-    await _run(
-      "grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' > '$path.tmp' 2>/dev/null; "
-      "mv '$path.tmp' '$path'",
-    );
-    await _run("printf '%s\\n' ${shellSingleQuote(buildCronCheckLine(slot, intervalMin))} >> '$path'");
-    await _run("printf '%s\\n' ${shellSingleQuote(buildCronRotateLine(slot))} >> '$path'");
-    await _run("chmod +x '$path'");
-  }
+  // Makes the two cron entries survive a reboot, wherever this firmware keeps them (RouterOps).
+  Future<void> _ensureServicesStart(int slot, int intervalMin) => routerOps().persistSchedule(this, slot, intervalMin);
 
   /// A line that appears in the app's copy of an init script and never in the router's own, so a
   /// backup is only ever taken of the ORIGINAL.
@@ -1636,131 +1644,145 @@ class RouterWatchdog {
   /// and the slots, which have their own DELETE; an uninstall that silently tore down a working VPN
   /// would be a much bigger action than the button says.
   Future<List<String>> uninstallFromRouter() => _guard('uninstall from router', () async {
-        final done = <String>[];
-        // Every schedule FIRST, the guard's own every-minute entry included (ID-330): a watchdog or
-        // guard run that fires mid-uninstall puts back rules and settings the steps below have just
-        // removed. Then any run already going is stopped, for the same reason. Each step is counted
-        // again afterwards, and a step that left something behind says so (ID-330).
-        final crons = await _read('cru l');
-        final tags = [
-          for (final line in crons.split('\n'))
-            if (RegExp('#((watchdog_[a-z_0-9]+)|$kLegacyGuardCronTag)#').firstMatch(line) case final m?) m.group(1)!
-        ];
-        for (final tag in tags) {
-          await _read('cru d $tag');
-        }
-        await _read("for P in \$(ps | grep -E '[w]atchdog_wgc[1-9][.]sh|[g]uard[.]sh' | awk '{print \$1}'); do kill \$P 2>/dev/null; done");
-        final cronLeft = int.tryParse((await _read("cru l | grep -cE '#(watchdog_|$kLegacyGuardCronTag)' || true")).trim()) ?? 0;
-        final watchdogTags = tags.where((t) => t.startsWith('watchdog_')).length;
-        done.add(switch (cronLeft) {
-          > 0 => '$cronLeft schedule(s) could not be removed: check `cru l` on the router',
-          _ when watchdogTags == 0 => 'No watchdog schedules to remove',
-          _ => 'Removed $watchdogTags watchdog schedule(s)',
-        });
-
-        // The guard, while its script is still there to do it; then any rule it left, directly, in
-        // case the script was missing or failed. Left behind, the rules would keep every pinned
-        // device off the internet whenever its tunnel is down, with no app left to explain why.
-        final guardRules = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):' || true")).trim());
-        final filterHad = (await _read('nvram get cfg_pia_wg_lwlist')).trim().isNotEmpty;
-        await _guardService.clear();
-        // The guard's second layer, the router's Network Services Filter (ID-348): the app's own
-        // entries out, and the filter and its ping setting put back as the app found them. Run
-        // directly as well, in case the script was missing; it touches nothing that isn't the app's.
-        await _read(kFilterClearCommand);
-        final filterLeft = (await _read('nvram get cfg_pia_wg_lwlist')).trim().isNotEmpty;
-        done.add(switch ((filterLeft, filterHad)) {
-          (true, _) => "The app's entries in the router's Network Services Filter could not all be removed: check Firewall, "
-              'Network Services Filter',
-          (_, true) => "Took the app's entries out of the router's Network Services Filter",
-          _ => 'No Network Services Filter entries to remove',
-        });
-        await _read('for PR in 88 89 90 91; do N=0; while [ \$N -lt 400 ] && ip rule del priority \$PR 2>/dev/null; '
-            'do N=\$((N + 1)); done; done; for T in 201 202 203 204 205; do ip route flush table \$T 2>/dev/null; done');
-        final guardLeft = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):' || true")).trim()) ?? 0;
-        done.add(switch (guardLeft) {
-          > 0 => '$guardLeft fail-closed guard rule(s) could not be removed: check `ip rule show` on the router',
-          _ when guardRules == 0 => 'No fail-closed guard rules to remove',
-          _ => 'Removed the fail-closed guard rules',
-        });
-        for (final path in [kS50Path, kS50LighttpdPath]) {
-          final name = path.split('/').last;
-          final backup = originalScriptBackupPath(path);
-          // The `grep` is the whole fix for the 425 bug. Uninstall run twice deleted the ROUTER'S
-          // OWN scripts the second time: the first run restored them, and the second saw a file it
-          // did not recognise and removed it. Never touch a file without our header on it.
-          final result = await _read("[ -f '$backup' ] && mv -f '$backup' '$path' && echo RESTORED || "
-              "{ [ -f '$path' ] && grep -q '$_kOurScriptSignature' '$path' && rm -f '$path' && echo REMOVED || "
-              "{ [ -f '$path' ] && echo NOTOURS || echo ABSENT; }; }");
-          if (result.contains('RESTORED')) {
-            done.add('Restored the original $name');
-          } else if (result.contains('REMOVED')) {
-            done.add("Removed the app's $name - no original was saved to put back");
-          } else if (result.contains('NOTOURS')) {
-            done.add('Left $name alone - it is not ours');
-          } else {
-            done.add('No $name to remove');
-          }
-        }
-        // Merlin keeps the schedule for the next boot in services-start, two `cru a` lines per
-        // slot. Left there, the next boot put the schedule back, pointing at scripts about to be
-        // deleted (ID-303). Stock keeps its in the S50 script, which is dealt with above.
-        if (!isStockFirmware) {
-          const path = kServicesStartPath;
-          final lines = int.tryParse((await _read(
-                  "grep -cE 'watchdog_(log_rotate_)?wgc[1-9] ' '$path' 2>/dev/null || true"))
-              .trim()
-              .split('\n')
-              .first);
-          if (lines != null && lines > 0) {
-            await _read("grep -vE 'watchdog_(log_rotate_)?wgc[1-9] ' '$path' > '$path.tmp'; "
-                "mv '$path.tmp' '$path' && chmod 700 '$path'");
-            done.add('Removed the watchdog lines from $path');
-          } else {
-            done.add('No watchdog lines in $path to remove');
-          }
-        }
-
-        // The VPN cap, if the app is what raised it (ID-098). The key records what the router had
-        // before, so a user who set 3 themselves keeps 3 - this puts back a change the app made, it
-        // does not impose a default.
-        final previousCap = int.tryParse((await _read('nvram get $kMaxActiveVpnsPreviousKey')).trim());
-        if (previousCap != null && previousCap >= 1 && previousCap <= 5) {
-          await _read('nvram set vpnc_max_conn=$previousCap');
-          done.add('Put the maximum active VPNs back to $previousCap');
-        } else {
-          done.add('Left the maximum active VPNs alone - the app never changed it');
-        }
-
-        // Every key the app ever writes, so an uninstalled router carries none of our settings.
-        // The wgcN_* TUNNEL configuration is deliberately NOT touched: the tunnels keep working and
-        // the user manages them from the web interface.
-        const countKeys = r"nvram show 2>/dev/null | grep -cE '^(cfg_pia_wg_|wgc[1-5]_wd_)' || true";
-        final appKeys = int.tryParse((await _read(countKeys)).trim());
-        await _read(kUninstallNvramCommand);
-        // And by pattern, for a key the list above does not name - a newer build's, say (ID-330).
-        await _read(r"for K in $(nvram show 2>/dev/null | grep -oE '^(cfg_pia_wg_|wgc[1-5]_wd_)[^=]*'); do nvram unset $K; done; "
-            'nvram commit');
-        final keysLeft = int.tryParse((await _read(countKeys)).trim()) ?? 0;
-        done.add(switch (keysLeft) {
-          > 0 => '$keysLeft app setting(s) could not be removed from NVRAM',
-          _ when appKeys == 0 => 'No app settings in NVRAM to remove',
-          _ => "Removed the app's NVRAM settings, including the reconfigure history",
-        });
-
-        final dir = await _read("[ -d '$kRouterAppDir' ] && rm -rf '$kRouterAppDir' && echo REMOVED || echo ABSENT");
-        final dirLeft = (await _read("[ -d '$kRouterAppDir' ] && echo LEFT || echo GONE")).contains('LEFT');
-        done.add(switch ((dirLeft, dir.contains('REMOVED'))) {
-          (true, _) => '$kRouterAppDir could not be removed',
-          (_, true) => 'Removed $kRouterAppDir',
-          _ => 'No $kRouterAppDir to remove',
-        });
+        // In this order: every schedule first, so nothing puts back what the later steps take away.
+        final done = [await _uninstallSchedules(), ...await _uninstallGuard(), ...await _uninstallInitScripts()];
+        // Every slot's schedule for the next boot, where the firmware keeps it. Left there, the next
+        // boot put it back, pointing at scripts about to be deleted (ID-303). Stock's is in the S50
+        // script, dealt with above, so there is nothing more to say.
+        final schedules = await routerOps().removeAllSchedules(this);
+        if (schedules != null) done.add(schedules);
+        done.add(await _uninstallVpnCap());
+        done.add(await _uninstallSettings());
+        done.add(await _uninstallAppDir());
         for (final line in done) {
           onLog?.call(line);
         }
         await _logRouter('cfg-pia-wg uninstalled from this router');
         return done;
       });
+
+  /// UNINSTALL: every schedule first, then any run already going.
+  Future<String> _uninstallSchedules() async {
+    // Every schedule FIRST, the guard's own every-minute entry included (ID-330): a watchdog or
+    // guard run that fires mid-uninstall puts back rules and settings the steps below have just
+    // removed. Then any run already going is stopped, for the same reason. Each step is counted
+    // again afterwards, and a step that left something behind says so (ID-330).
+    final crons = await _read('cru l');
+    final tags = [
+      for (final line in crons.split('\n'))
+        if (RegExp('#((watchdog_[a-z_0-9]+)|$kLegacyGuardCronTag)#').firstMatch(line) case final m?) m.group(1)!
+    ];
+    for (final tag in tags) {
+      await _read('cru d $tag');
+    }
+    await _read("for P in \$(ps | grep -E '[w]atchdog_wgc[1-9][.]sh|[g]uard[.]sh' | awk '{print \$1}'); do kill \$P 2>/dev/null; done");
+    final cronLeft = int.tryParse((await _read("cru l | grep -cE '#(watchdog_|$kLegacyGuardCronTag)' || true")).trim()) ?? 0;
+    final watchdogTags = tags.where((t) => t.startsWith('watchdog_')).length;
+    return switch (cronLeft) {
+      > 0 => '$cronLeft schedule(s) could not be removed: check `cru l` on the router',
+      _ when watchdogTags == 0 => 'No watchdog schedules to remove',
+      _ => 'Removed $watchdogTags watchdog schedule(s)',
+    };
+  }
+
+  /// UNINSTALL: the fail-closed guard and its Network Services Filter entries.
+  Future<List<String>> _uninstallGuard() async {
+    final done = <String>[];
+    // The guard, while its script is still there to do it; then any rule it left, directly, in
+    // case the script was missing or failed. Left behind, the rules would keep every pinned
+    // device off the internet whenever its tunnel is down, with no app left to explain why.
+    final guardRules = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):' || true")).trim());
+    final filterHad = (await _read('nvram get cfg_pia_wg_lwlist')).trim().isNotEmpty;
+    await _guardService.clear();
+    // The guard's second layer, the router's Network Services Filter (ID-348): the app's own
+    // entries out, and the filter and its ping setting put back as the app found them. Run
+    // directly as well, in case the script was missing; it touches nothing that isn't the app's.
+    await _read(kFilterClearCommand);
+    final filterLeft = (await _read('nvram get cfg_pia_wg_lwlist')).trim().isNotEmpty;
+    done.add(switch ((filterLeft, filterHad)) {
+      (true, _) => "The app's entries in the router's Network Services Filter could not all be removed: check Firewall, "
+          'Network Services Filter',
+      (_, true) => "Took the app's entries out of the router's Network Services Filter",
+      _ => 'No Network Services Filter entries to remove',
+    });
+    await _read('for PR in 88 89 90 91; do N=0; while [ \$N -lt 400 ] && ip rule del priority \$PR 2>/dev/null; '
+        'do N=\$((N + 1)); done; done; for T in 201 202 203 204 205; do ip route flush table \$T 2>/dev/null; done');
+    final guardLeft = int.tryParse((await _read("ip rule show | grep -cE '^(8[89]|9[01]):' || true")).trim()) ?? 0;
+    done.add(switch (guardLeft) {
+      > 0 => '$guardLeft fail-closed guard rule(s) could not be removed: check `ip rule show` on the router',
+      _ when guardRules == 0 => 'No fail-closed guard rules to remove',
+      _ => 'Removed the fail-closed guard rules',
+    });
+    return done;
+  }
+
+  /// UNINSTALL: stock's two init scripts, put back as the router had them.
+  Future<List<String>> _uninstallInitScripts() async {
+    final done = <String>[];
+    for (final path in [kS50Path, kS50LighttpdPath]) {
+      final name = path.split('/').last;
+      final backup = originalScriptBackupPath(path);
+      // The `grep` is the whole fix for the 425 bug. Uninstall run twice deleted the ROUTER'S
+      // OWN scripts the second time: the first run restored them, and the second saw a file it
+      // did not recognise and removed it. Never touch a file without our header on it.
+      final result = await _read("[ -f '$backup' ] && mv -f '$backup' '$path' && echo RESTORED || "
+          "{ [ -f '$path' ] && grep -q '$_kOurScriptSignature' '$path' && rm -f '$path' && echo REMOVED || "
+          "{ [ -f '$path' ] && echo NOTOURS || echo ABSENT; }; }");
+      if (result.contains('RESTORED')) {
+        done.add('Restored the original $name');
+      } else if (result.contains('REMOVED')) {
+        done.add("Removed the app's $name - no original was saved to put back");
+      } else if (result.contains('NOTOURS')) {
+        done.add('Left $name alone - it is not ours');
+      } else {
+        done.add('No $name to remove');
+      }
+    }
+    return done;
+  }
+
+  /// UNINSTALL: the VPN cap, if the app raised it.
+  Future<String> _uninstallVpnCap() async {
+    // The VPN cap, if the app is what raised it (ID-098). The key records what the router had
+    // before, so a user who set 3 themselves keeps 3 - this puts back a change the app made, it
+    // does not impose a default.
+    final previousCap = int.tryParse((await _read('nvram get $kMaxActiveVpnsPreviousKey')).trim());
+    if (previousCap != null && previousCap >= 1 && previousCap <= 5) {
+      await _read('nvram set vpnc_max_conn=$previousCap');
+      return 'Put the maximum active VPNs back to $previousCap';
+    }
+    return 'Left the maximum active VPNs alone - the app never changed it';
+  }
+
+  /// UNINSTALL: every setting the app wrote to NVRAM.
+  Future<String> _uninstallSettings() async {
+    // Every key the app ever writes, so an uninstalled router carries none of our settings.
+    // The wgcN_* TUNNEL configuration is deliberately NOT touched: the tunnels keep working and
+    // the user manages them from the web interface.
+    const countKeys = r"nvram show 2>/dev/null | grep -cE '^(cfg_pia_wg_|wgc[1-5]_wd_)' || true";
+    final appKeys = int.tryParse((await _read(countKeys)).trim());
+    await _read(kUninstallNvramCommand);
+    // And by pattern, for a key the list above does not name - a newer build's, say (ID-330).
+    await _read(r"for K in $(nvram show 2>/dev/null | grep -oE '^(cfg_pia_wg_|wgc[1-5]_wd_)[^=]*'); do nvram unset $K; done; "
+        'nvram commit');
+    final keysLeft = int.tryParse((await _read(countKeys)).trim()) ?? 0;
+    return switch (keysLeft) {
+      > 0 => '$keysLeft app setting(s) could not be removed from NVRAM',
+      _ when appKeys == 0 => 'No app settings in NVRAM to remove',
+      _ => "Removed the app's NVRAM settings, including the reconfigure history",
+    };
+  }
+
+  /// UNINSTALL: the app's own directory.
+  Future<String> _uninstallAppDir() async {
+    final dir = await _read("[ -d '$kRouterAppDir' ] && rm -rf '$kRouterAppDir' && echo REMOVED || echo ABSENT");
+    final dirLeft = (await _read("[ -d '$kRouterAppDir' ] && echo LEFT || echo GONE")).contains('LEFT');
+    return switch ((dirLeft, dir.contains('REMOVED'))) {
+      (true, _) => '$kRouterAppDir could not be removed',
+      (_, true) => 'Removed $kRouterAppDir',
+      _ => 'No $kRouterAppDir to remove',
+    };
+  }
 
   /// Replaces S50asuslighttpd with a stub that returns immediately on any trigger.
   ///
@@ -1825,18 +1847,7 @@ class RouterWatchdog {
       });
 
   // Drops [slot]'s cron lines from whichever boot-persistence file this firmware uses.
-  Future<void> _removeCronPersistence(int slot) async {
-    if (isStockFirmware) {
-      await _writeS50(slot);
-      await _run("chmod 700 '$kS50Path'");
-      return;
-    }
-    const path = kServicesStartPath;
-    await _run(
-      "[ -f '$path' ] && grep -v -e 'watchdog_wgc$slot ' -e 'watchdog_log_rotate_wgc$slot ' '$path' "
-      "> '$path.tmp' && mv '$path.tmp' '$path' && chmod 700 '$path'",
-    );
-  }
+  Future<void> _removeCronPersistence(int slot) => routerOps().unpersistSchedule(this, slot);
 
   /// True if any slot other than [slot] still has a watchdog cron entry.
   ///
@@ -2114,32 +2125,36 @@ class RouterWatchdog {
         }
 
         onLog?.call('Test email FAILED (exit $exitCode) sending to ${config.emailTo} via $host:$port.', isError: true);
-
-        // Layer 1: mailer stderr
-        final stderrRaw = await _read('cat /tmp/wd_smtp_err 2>/dev/null | tail -20 | tr "\\n" "|"');
-        await _logRouter('Email FAILED (exit=$exitCode) stderr=[${stderrRaw.trim()}]');
-        if (stderrRaw.trim().isNotEmpty) onLog?.call('  mailer: ${stderrRaw.trim()}', isError: true);
-
-        // Layer 2: connect and hand-shake in one probe.
-        //
-        // There is no `nc` layer any more. BusyBox on stock builds nc as `nc IPADDR PORT` with no
-        // options at all, so `nc -w 5` failed on a usage error and reported UNREACHABLE for every
-        // host - including ones that were demonstrably delivering mail seconds later. openssl is
-        // already needed for the handshake, tells us the same thing about reachability, and says
-        // considerably more when it does fail.
-        final tlsOut = await _run(
-          'printf "QUIT\\r\\n" | openssl s_client '
-          '-connect $host:$port '
-          '-CAfile /etc/ssl/certs/ca-certificates.crt '
-          '2>&1 | tail -20 | tr "\\n" "|"',
-        );
-        final probe = tlsOut.trim();
-        await _logRouter('SMTP probe $host:$port: ${probe.isEmpty ? 'no output' : probe}');
-        if (probe.isNotEmpty) onLog?.call('  probe $host:$port: $probe', isError: true);
-
+        await _diagnoseFailedEmail(host, port, exitCode);
         await _run('rm -f /tmp/mail.txt /tmp/wd_smtp_err');
         return false;
       });
+
+  /// Why a test email failed, as far as the router can tell: the mailer's own errors, then one
+  /// openssl probe of [host]:[port] that says whether it can be reached and how its TLS answers.
+  Future<void> _diagnoseFailedEmail(String host, int port, int exitCode) async {
+    // Layer 1: mailer stderr
+    final stderrRaw = await _read('cat /tmp/wd_smtp_err 2>/dev/null | tail -20 | tr "\\n" "|"');
+    await _logRouter('Email FAILED (exit=$exitCode) stderr=[${stderrRaw.trim()}]');
+    if (stderrRaw.trim().isNotEmpty) onLog?.call('  mailer: ${stderrRaw.trim()}', isError: true);
+
+    // Layer 2: connect and hand-shake in one probe.
+    //
+    // There is no `nc` layer any more. BusyBox on stock builds nc as `nc IPADDR PORT` with no
+    // options at all, so `nc -w 5` failed on a usage error and reported UNREACHABLE for every
+    // host - including ones that were demonstrably delivering mail seconds later. openssl is
+    // already needed for the handshake, tells us the same thing about reachability, and says
+    // considerably more when it does fail.
+    final tlsOut = await _run(
+      'printf "QUIT\\r\\n" | openssl s_client '
+      '-connect $host:$port '
+      '-CAfile /etc/ssl/certs/ca-certificates.crt '
+      '2>&1 | tail -20 | tr "\\n" "|"',
+    );
+    final probe = tlsOut.trim();
+    await _logRouter('SMTP probe $host:$port: ${probe.isEmpty ? 'no output' : probe}');
+    if (probe.isNotEmpty) onLog?.call('  probe $host:$port: $probe', isError: true);
+  }
 
   int _parseExitCode(String output) {
     final match = RegExp(r'EXITCODE:(\d+)').firstMatch(output);
@@ -3180,3 +3195,10 @@ INTERVALV="$INTERVAL minutes"
 send_alert SUCCESS "$DETAILV"
 exit 0
 ''';
+
+/// How far a SAVE & DEPLOY got: whether its schedule was written, and what its first run said.
+class _DeployProgress {
+  bool scheduled = false;
+  String emailProblem = '';
+  String? didNothing;
+}
