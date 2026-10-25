@@ -111,7 +111,7 @@ Work items for the **current** release:
 
 **Claude, in priority order: the iOS release, then NETWORK.**
 
-- ID-436 REL: the first App Store submission is approved, and the app is on sale.
+- ID-436 REL: the first App Store submission is approved, and the app is on sale at the Apple App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
   - Now: 0.8.164 (534) and Router features are with App Review, submitted 2026-10-21.
@@ -122,7 +122,7 @@ Work items for the **current** release:
 - ID-458 ADD: a NETWORK main menu item showing the public IP, country, town and provider of this phone and of each tunnel.
   - DoD: `live/network_live_test.dart` passes NET-1 to NET-3 on the router (no hand tests, Andrew 2026-10-25), the service is swappable in one class, the privacy policy says so, and a tunnel row through stock's route read-back is seen to fail closed.
   - Plan: [plan_network-menu.md](.claude/plans/plan_network-menu.md)
-  - Now: built to Andrew's mock-up, README and screenshots done, in build 543; left: Andrew runs `live/network_live_test.dart` once, and approves the policy paragraph.
+  - Now: live run 2026-10-25 on stock, NET-1 to NET-3 all PASS (NET-3 through empty wgc2: NOROUTE, no rule left); left: the policy paragraph approved and published.
 
 ---
 
@@ -140,6 +140,10 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.174 build 544 - NETWORK passes all three live checks on the router, the fail-closed one included
+
+- TST: NET-3 asks through an empty slot when no tunnel is set up and down, and the sheet's live command reads the router password at a hidden prompt. Live run on stock, 2026-10-25: NET-1 to NET-3 PASS.
 
 2026-10-25 v0.8.173 build 543 - NETWORK as mocked up, in the README with its screenshot, and its tests run unattended against the router
 

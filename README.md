@@ -805,7 +805,6 @@ Where does each tunnel actually come out? NETWORK answers that as soon as you op
 - The tunnels need your router login. Without one this session, NETWORK shows **This device** only, with a **login to router for tunnel details** link.
 - **Not checked: the router has no route through this tunnel right now** means that by the time the router asked, the tunnel wasn't carrying traffic: most often it was restarting, perhaps by its watchdog. Rather than risk asking by your ordinary internet and showing your home address as the tunnel's, the router sends nothing for that row. **REFRESH** in a moment.
 - **Where the answers come from:** PIA's own website, the same lookup its [What is my IP](https://www.privateinternetaccess.com/what-is-my-ip) page uses; tap **Address data from PIA.** at the bottom to open it. PIA already sees your device's address whenever the app logs in or fetches PIA's servers, and a tunnel's address is PIA's own, so nobody new learns anything. Nothing the lookup returns is kept: it's on screen until you leave.
-- NETWORK is free: it only reads.
 
 ### 5.6. ROUTER LOG
 

@@ -12,8 +12,9 @@
 //   NET-1  PIA answers this computer with an address, a place and a provider.
 //   NET-2  every tunnel that is up answers through itself, each with its own address, none the WAN's,
 //          and no lookup rule is left on the router.
-//   NET-3  a tunnel that is set up but down is not asked: stock's route read-back answers NOROUTE, so
-//          nothing is sent, and no rule is left. Skipped when no tunnel is down.
+//   NET-3  a slot that isn't up is not asked: stock's route read-back answers NOROUTE, so nothing is
+//          sent, and no rule is left. A tunnel that is set up but down if there is one, else an empty
+//          slot: either way the slot's table has no route through a tunnel, which is what is tested.
 @Timeout(Duration(minutes: 5))
 library;
 
@@ -133,12 +134,16 @@ class _NetworkRun {
       _result('NET-2 clean', left == 0, '$left lookup rule(s) left at priority $kTunnelLookupPriority');
     }
 
-    // NET-3: a tunnel set up but down is never asked. On stock the route read-back says NOROUTE; Merlin
-    // binds to an interface that isn't there, so nothing answers.
-    final down = [for (final e in slots.slots.entries) if (!e.value.isEmpty && !slots.activeSlots.contains(e.key)) e.key]..sort();
+    // NET-3: a slot that isn't up is never asked. On stock the route read-back says NOROUTE; Merlin
+    // binds to an interface that isn't there, so nothing answers. A tunnel set up but down is the case
+    // NETWORK meets; with none, an empty slot's table is just as empty of a route through a tunnel.
+    final notUp = [for (final s in slots.slots.keys) if (!slots.activeSlots.contains(s)) s]..sort();
+    final setUpDown = [for (final s in notUp) if (!slots.slots[s]!.isEmpty) s];
+    final down = setUpDown.isNotEmpty ? setUpDown : notUp.take(1).toList();
     if (down.isEmpty) {
-      _say('NET-3 SKIP: no tunnel is set up and down.');
+      _say('NET-3 SKIP: every slot is up.');
     } else {
+      _say('NET-3 asks through ${down.map((s) => 'wgc$s').join(', ')}, ${setUpDown.isNotEmpty ? 'set up but down' : 'an empty slot'}.');
       final found = parseTunnelLookups(await _sh(tunnelLookupCommand(down, address, stock: stock)), down);
       for (final s in down) {
         final want = stock ? TunnelLookupOutcome.noRoute : TunnelLookupOutcome.failed;
