@@ -90,4 +90,18 @@ The firmware abstraction, in slices, each on its own build and released on its o
 - ID-419 CHG: the SonarCloud findings left in the watchdog and the slot service, after ID-452. Split from ID-041 2026-10-16, Andrew's decision. On 2026-10-19: `uninstallFromRouter` 38, `deployWatchdog` 36, `validate` 30, `testEmail` 18 (`router_watchdog.dart`); `createConfigToSlot` 37, `fetchSlots` 30, `enableSlot` 22, `restartSlot` 19 (`router_slot_service.dart`).
   - DoD: SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
 
+## 2026-10-25: ID-448, the both-firmwares test
+
+- `test/unit/firmware_paths_test.dart` runs each of the five operations the abstraction will hold under `useStock()` and `useMerlin()`, against one fake router (wgc5 with its `vpnc_clientlist` profile, tunnels up once switched on, pings answering, a watchdog interval stored), and checks each sends its own firmware's command and not the other's:
+
+| Operation | Through | Stock sends | Merlin sends |
+| --- | --- | --- | --- |
+| start a slot | `RouterSlotService.enableSlot` | `restart_vpnc` (with `vpnc_unit`) | `service "start_wgc N"` |
+| stop a slot | `disableSlot` | `stop_vpnc` | `service "stop_wgc N"` |
+| read the slots | `fetchSlots` | `nvram get vpnc_clientlist` | `nvram get wgcN_enforce` (only Merlin has a kill switch) |
+| persist the schedule | `RouterWatchdog.enableWatchdog` | `S50downloadmaster` | `services-start` |
+| delete a slot | `deleteSlot` | `nvram unset vpncN_*` (the profile's runtime keys) | `service "stop_wgc N"` |
+
+- Seen to fail: with `enableSlot`'s stock branch taken out, "start a slot on stock" failed; with Merlin's kill-switch read taken out of `fetchSlots`, "read the slots on Merlin" failed.
+- For ID-449 on: each slice's DoD names hand tests (MAN-3, MAN-8, MRL and others). Andrew wants no hand tests (2026-10-25), so those become `[live]` runs like `live/network_live_test.dart` before each slice is released; MRL needs a Merlin router, which is a question for Andrew.
 
