@@ -104,4 +104,14 @@ The firmware abstraction, in slices, each on its own build and released on its o
 
 - Seen to fail: with `enableSlot`'s stock branch taken out, "start a slot on stock" failed; with Merlin's kill-switch read taken out of `fetchSlots`, "read the slots on Merlin" failed.
 - For ID-449 on: each slice's DoD names hand tests (MAN-3, MAN-8, MRL and others). Andrew wants no hand tests (2026-10-25), so those become `[live]` runs like `live/network_live_test.dart` before each slice is released; MRL needs a Merlin router, which is a question for Andrew.
+- Andrew, 2026-10-25: no Merlin router, and swapping firmware takes several hours, so not unless absolutely necessary. Each slice's Merlin side rests on `firmware_paths_test.dart` and the suite passing with no test changed; stock's on a `live/` run on Andrew's router, changing the router only with `CFG_LIVE_GO=1`, as `devices_live_test.dart` does. The slices' DoDs in CHANGELOG 1.1 now say so, in place of MAN, WD, DEV and MRL hand tests.
+
+## 2026-10-25: ID-449, slice 1: start, stop and restart
+
+- `lib/router_ops.dart`: `RouterOps` with `startSlot`, `stopSlot` and `restartSlot`, `StockOps` and `MerlinOps` side by side, and `routerOps()`, the one place these ask which firmware it is (detected once per session, when the app connects). Each call takes the `RouterSlotService` of the action in hand, for its connection, logging and service queue; the slot service gained a public `run` for it.
+- Moved to it: `enableSlot`'s start, `_revertEnable`'s stop, EDIT's restart, `disableSlot`'s and `deleteSlot`'s stops (router_slot_service.dart), and the watchdog's ENABLE start and DISABLE stop (router_watchdog.dart). Restart joined start and stop: it is the same pair of commands, and EDIT's SAVE is where the plan's "start/stop" bug class would bite next.
+- One difference kept, not smoothed over: the watchdog's Merlin start went through the router's service queue and MANAGE's didn't, so `startSlot` takes `queued`, and only the watchdog sets it. Making MANAGE's queued too would be a behaviour change, for its own item if wanted.
+- Left alone: the watchdog's shell script, whose start and stop are already substituted from a template, and `device_assignment_service.dart`, which is stock only.
+- No `isStockFirmware` is left in any start, stop or restart. The suite passed unchanged (2054, 3 skipped), `firmware_paths_test.dart` included.
+- `live/slots_live_test.dart`: DISABLE then ENABLE on `CFG_LIVE_SLOT`, as MANAGE does them, pausing and resuming a scheduled watchdog; only with `CFG_LIVE_GO=1`. Left: Andrew's run on stock.
 

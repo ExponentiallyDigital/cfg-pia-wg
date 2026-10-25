@@ -23,6 +23,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 import 'router_command.dart';
+import 'router_ops.dart';
 import 'router_service_queue.dart';
 import 'firmware.dart';
 import 'device_assignment.dart';
@@ -539,6 +540,9 @@ class RouterSlotService {
 
   /// A read: returns stdout and never throws, whatever the exit code.
   Future<String> _read(String cmd) => _run(cmd, allowFailure: true);
+
+  /// A command, as this service's own: for [RouterOps], which holds the calls that differ by firmware.
+  Future<String> run(String cmd) => _run(cmd);
 
   // 'wgcN:<description>' for log lines. Cached per service instance - one is built per user
   // action, so the description is read at most once however many lines it appears in. (The SSH
@@ -1068,14 +1072,9 @@ class RouterSlotService {
     await _setVpncActive(slot, true);
     // Commit before the service call, so the service can never read a half-written slot.
     await _run('nvram commit');
-    // stock requires a different start command to Merlin
-    if (isStockFirmware) {
-      // Must follow _setVpncActive: upsert appends a row for a slot that had none, and the unit
-      // is that row's index. There is no start_vpnc on stock (ARCHITECTURE.md "Enable existing slot").
-      await runVpncService(slot, 'restart_vpnc', required: true);
-    } else {
-      await _run('service "start_wgc $slot"; service restart_vpnrouting0');
-    }
+    // Must follow _setVpncActive: on stock, upsert appends a row for a slot that had none, and the
+    // unit is that row's index.
+    await routerOps().startSlot(this, slot);
 
     onLog?.call('Verifying $label interface comes up...');
     var up = false;
@@ -1158,12 +1157,7 @@ class RouterSlotService {
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
     await _run('nvram commit');
-    // stock requires a different stop command to Merlin
-    if (isStockFirmware) {
-      await runVpncService(slot, 'stop_vpnc');
-    } else {
-      await _run('service "stop_wgc $slot"; service start_vpnrouting0');
-    }
+    await routerOps().stopSlot(this, slot);
     // Same reason as disableSlot: the caller refreshes as soon as this returns.
     return _awaitInterfaceDown(slot);
   }
@@ -1197,13 +1191,7 @@ class RouterSlotService {
       return false;
     }
 
-    Future<void> restart() async {
-      if (isStockFirmware) {
-        await runVpncService(slot, 'restart_vpnc', required: true);
-      } else {
-        await _run('service "stop_wgc $slot"; sleep 2; service "start_wgc $slot"; service restart_vpnrouting0');
-      }
-    }
+    Future<void> restart() => routerOps().restartSlot(this, slot);
 
     await restart();
     if (!await restartTook()) {
@@ -1247,14 +1235,9 @@ class RouterSlotService {
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
     await _run('nvram commit');
-    // stock requires a different stop command to Merlin. `restart_vpnc` clears the nvram flags but
-    // leaves the interface up (ARCHITECTURE.md "Stop/Disable" specifies stop_vpnc) — that mismatch is what
-    // left a tunnel running behind a WebUI that reported it disconnected.
-    if (isStockFirmware) {
-      await runVpncService(slot, 'stop_vpnc');
-    } else {
-      await _run('service "stop_wgc $slot"; service start_vpnrouting0');
-    }
+    // On stock, `restart_vpnc` clears the nvram flags but leaves the interface up, which left a tunnel
+    // running behind a WebUI that reported it disconnected; StockOps stops with stop_vpnc.
+    await routerOps().stopSlot(this, slot);
     // Return only once the tunnel is really down. The stop is queued through notify_rc and returns
     // at once, so a caller that refreshes straight away reads `wg show interfaces` while the
     // interface is still listed and leaves the ACTIVE badge on a slot it just disabled.
@@ -1276,13 +1259,9 @@ class RouterSlotService {
     final label = await _label(slot);
     onLog?.call('Deleting $label configuration...');
     await _run('nvram set wgc${slot}_enable=0');
-    // stock requires a different stop command to Merlin. Must precede removeVpncRecord below:
-    // the unit is the row's index, so dropping the row first would lose it.
-    if (isStockFirmware) {
-      await runVpncService(slot, 'stop_vpnc');
-    } else {
-      await _run('service "stop_wgc $slot"; service start_vpnrouting0');
-    }
+    // Must precede removeVpncRecord below: on stock the unit is the row's index, so dropping the row
+    // first would lose it.
+    await routerOps().stopSlot(this, slot);
     // `service stop_vpnc` / `stop_wgc` return as soon as notify_rc is queued, and the firmware
     // writes slot state as it tears the tunnel down. Unsetting before that lands leaves keys
     // re-created behind us - wgcN_enable in particular - so wait for the interface to go first.
