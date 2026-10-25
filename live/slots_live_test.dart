@@ -66,8 +66,9 @@ class _SlotsRun {
 
   void _onLog(String m, {bool isError = false, bool isSuccess = false, bool isWarning = false}) => _log.writeln('  app: $m');
 
-  Future<bool> _up() async =>
-      (await runRouterCommand(_client!, kUpInterfacesCommand, allowFailure: true)).stdout.split(RegExp(r'\s+')).contains('wgc$slot');
+  // `ip -o link show up` prints `12: wgc1: <POINTOPOINT,...>`, the name with a colon after it; read as
+  // fetchSlots reads it. The first version split on spaces and looked for `wgc1`, so it always said down.
+  Future<bool> _up() async => RegExp('\\bwgc$slot:').hasMatch((await runRouterCommand(_client!, kUpInterfacesCommand, allowFailure: true)).stdout);
 
   Future<void> go() async {
     if (slot < 1 || slot > 5) {
