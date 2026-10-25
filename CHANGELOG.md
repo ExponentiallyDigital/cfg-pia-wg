@@ -125,6 +125,12 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-10-25 v0.8.170 build 540 - ABOUT's UPDATE WATCHDOG VERSION and login link tested by tapping them
+
+- ID-476 TST: ABOUT's UPDATE WATCHDOG VERSION and its "login to router to retrieve" link are tested by tapping them.
+  - DoD: a tap's write, paywall, error and login are each held by a test seen to fail.
+  - Closed 2026-10-25: four tests in `about_screen_test.dart`: the script rewritten, read back and announced; locked, the paywall first and nothing written; an unknown firmware refused; the login asked for and cancelled. The first two failed with the paywall check and the snackbar taken out.
+
 2026-10-25 v0.8.169 build 539 - building on the Mac and on Windows both checked, and the dry run that proves the certificate clean-up
 
 - ID-471 TST: the tests and build.ps1 work on a Mac as well as on Windows.
