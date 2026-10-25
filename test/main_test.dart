@@ -190,6 +190,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.descendant(of: find.byKey(const Key('drawer_close_app')), matching: find.text('CLEAR')), findsOneWidget);
 
+      // Below the fold of the test's 800x600 window since the drawer gained NETWORK (ID-458); a phone scrolls it.
+      await tester.drag(find.descendant(of: find.byType(Drawer), matching: find.byType(Scrollable)), const Offset(0, -200));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('drawer_close_app')));
       await tester.pumpAndSettle();
       expect(find.text('Clear cfg-pia-wg?'), findsOneWidget);
@@ -226,6 +229,9 @@ void main() {
       expect(c.currentDestination, AppDestination.log);
 
       await tester.tap(find.byKey(const Key('app_hamburger')));
+      await tester.pumpAndSettle();
+      // Below the fold of the test's 800x600 window since the drawer gained NETWORK (ID-458); a phone scrolls it.
+      await tester.drag(find.descendant(of: find.byType(Drawer), matching: find.byType(Scrollable)), const Offset(0, -200));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('drawer_close_app')));
       await tester.pumpAndSettle();

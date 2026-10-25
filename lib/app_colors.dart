@@ -49,6 +49,7 @@ const kWatchdogColour = Color(0xFF8BC34A); // WATCHDOG, and its CREATE/EDIT and 
 const kAssignColour = Color(0xFFFFB300); // DEVICES, and the DISABLE verb
 const kRouterLogColour = Color(0xFF8E5499); // ROUTER LOG, and VIEW ROUTER WATCHDOG LOG
 const kAppLogColour = Color(0xFF6052FF);
+const kNetworkColour = Color(0xFF4DD0E1); // NETWORK (ID-458)
 const kUtilityColour = Color(0xFF8A97A0); // SETTINGS and ABOUT
 const kLinkIconColour = Color(0xFFBFB27C); // HOME's two footer links (ID-109)
 
@@ -59,6 +60,7 @@ const Map<AppDestination, Color> kDestinationColours = {
   AppDestination.manageRouter: kManageColour,
   AppDestination.watchdog: kWatchdogColour,
   AppDestination.deviceAssignment: kAssignColour,
+  AppDestination.network: kNetworkColour,
   AppDestination.routerLog: kRouterLogColour,
   AppDestination.log: kAppLogColour,
   AppDestination.settings: kUtilityColour,

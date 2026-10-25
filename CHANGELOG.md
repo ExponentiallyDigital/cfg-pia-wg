@@ -85,28 +85,44 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
+- ID-448 TST: a test that every operation the firmware abstraction will hold runs on both firmwares.
+  - DoD: it lists start, stop, slot reading, cron persistence and delete, finds each run under both `useStock()` and `useMerlin()`, and fails when one isn't.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
+- ID-449 ARC: firmware abstraction, slice 1: starting and stopping a slot go through one `RouterOps`, resolved once per session. After ID-448.
+  - DoD: no `isStockFirmware` branch is left in start or stop, the suite passes with no test changed, and MAN-3, MAN-8 and MRL pass on hardware.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
+- ID-450 ARC: slice 2: reading the slots (`fetchSlots`, `vpnc_clientlist`). After ID-449's release.
+  - DoD: as ID-449, for reading, with MAN-15, MAN-16 and DEV-1 on hardware.
+- ID-451 ARC: slice 3: persisting the watchdog's schedule (services-start or `S50downloadmaster`). After ID-450's release.
+  - DoD: as ID-449, for persistence, with WD-9 and WD-17 on hardware.
+- ID-452 ARC: slice 4: deleting a slot and clearing its runtime keys. After ID-451's release.
+  - DoD: as ID-449, for delete, with MAN-14 and the delete DEV tests on hardware.
+- ID-419 CHG: the eight SonarCloud findings left in the watchdog and the slot service, so SonarCloud shows none. After ID-452.
+  - DoD: SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
 - ID-439 ADD: the iOS widget refreshes itself in the background. After ID-424.
   - DoD: it updates with the app closed.
+
 ---
 
 ### 1.2. WIP
 
 Work items for the **current** release:
 
-**Claude, in priority order: the iOS release.**
+**Claude, in priority order: the iOS release, then NETWORK.**
 
 - ID-436 REL: the first App Store submission is approved, and the app is on sale.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
   - Now: 0.8.164 (534) and Router features are with App Review, submitted 2026-10-21.
-- ID-469 REL: the next tag uploads its own iOS build to TestFlight.
-  - DoD: the build shows in TestFlight, and Certificates, IDs & Profiles shows no new certificate left by each run.
-  - Plan: [plan_promote-both-stores.md](.claude/plans/plan_promote-both-stores.md)
-  - Now: dry run 40151279067 revoked the Development certificate it made, 9 before and after; left: Andrew's count, and revoking the 7 older ones.
 - ID-424 TST: measure how often iOS lets the app refresh in the background.
   - DoD: a day's refresh times from an iPhone are recorded.
   - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
   - Now: build 537 from TestFlight on the spare iPhone 11, key and widgets in place, 2026-10-25; left: its LOG after a day.
+- ID-458 ADD: a NETWORK main menu item showing the public IP, country, town and provider of this phone and of each tunnel.
+  - DoD: on a phone, each row matches what the path really uses, the service is swappable in one class, the privacy policy says so, and a tunnel row through stock's route read-back is seen to fail closed.
+  - Plan: [plan_network-menu.md](.claude/plans/plan_network-menu.md)
+  - Now: built and tested in build 541 (full suite passes); left: Andrew's approval of the policy paragraph, NET-1 to NET-3 on hardware.
 
 ---
 
@@ -124,6 +140,16 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.171 build 541 - NETWORK shows the public address of this phone and of each tunnel, through Mullvad's connection check
+
+- CHG: WIP 3 -> 4 bullets. Added: ID-458 from BACKLOG, Andrew's go 2026-10-25, to have NETWORK running this week.
+- CHG: 1.1 1 -> 7 bullets, Andrew's order 2026-10-25: after NETWORK, the firmware abstraction (ID-448 to ID-452), then SonarCloud to zero (ID-419), then ID-439. Moved from BACKLOG 1.2 and made short; their detail went word for word to `plan_firmware-abstraction.md`.
+- REL: v0.8.169 (539) released 2026-10-25, run 40162469563: Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end.
+- ID-469 REL: the next tag uploads its own iOS build to TestFlight.
+  - DoD: the build shows in TestFlight, and Certificates, IDs & Profiles shows no new certificate left by each run.
+  - Plan: [plan_promote-both-stores.md](.claude/plans/plan_promote-both-stores.md)
+  - Closed 2026-10-25: v0.8.169's tag run (40162469563) uploaded build 539 to TestFlight itself, and revoked the Development certificate it made: 9 certificates before and after.
 
 2026-10-25 v0.8.170 build 540 - ABOUT's UPDATE WATCHDOG VERSION and login link tested by tapping them
 
