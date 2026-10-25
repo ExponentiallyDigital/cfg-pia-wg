@@ -103,7 +103,7 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
-**Claude, in priority order: the iOS release, then NETWORK.**
+**Claude, in priority order: the iOS release, then the firmware abstraction.**
 
 - ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
@@ -112,15 +112,7 @@ Work items for the **current** release:
 - ID-424 TST: measure how often iOS lets the app refresh in the background.
   - DoD: a day's refresh times from an iPhone are recorded.
   - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
-  - Now: D11's run was lost to a debug install, 2026-10-25; restarted on B11 from TestFlight; left: B11's widget key and widgets, then its LOG after a day.
-- ID-458 ADD: a NETWORK main menu item showing the public IP, country, town and provider of this phone and of each tunnel.
-  - DoD: `live/network_live_test.dart` passes NET-1 to NET-3 on the router (no hand tests, Andrew 2026-10-25), the service is swappable in one class, the privacy policy says so, and a tunnel row through stock's route read-back is seen to fail closed.
-  - Plan: [plan_network-menu.md](.claude/plans/plan_network-menu.md)
-  - Now: everything passes, and the policy is published (read back 2026-10-25); left: v0.8.175's release run.
-- ID-449 ARC: firmware abstraction, slice 1: starting and stopping a slot go through one `RouterOps`, resolved once per session. After ID-448.
-  - DoD: no `isStockFirmware` branch is left in start or stop, the suite passes with no test changed (`firmware_paths_test.dart` covers Merlin), and a `live/` run starts and stops a tunnel on the stock router.
-  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
-  - Now: `RouterOps` (lib/router_ops.dart) holds start, stop and restart, the suite passes with no test changed; left: Andrew's run of `live/slots_live_test.dart` on stock.
+  - Now: measuring on B11 (and D11) from 2026-10-25 evening, build 545 from TestFlight, key and widgets in place; left: the LOG after a day.
 
 ---
 
@@ -138,6 +130,19 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.178 build 548 - NETWORK released, and the first firmware slice, start and stop through RouterOps, passes live on the router
+
+- REL: v0.8.175 (545) released 2026-10-25, run 40176230345: Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before and after).
+- ID-458 ADD: a NETWORK main menu item showing the public IP, country, town and provider of this phone and of each tunnel.
+  - DoD: `live/network_live_test.dart` passes NET-1 to NET-3 on the router (no hand tests, Andrew 2026-10-25), the service is swappable in one class, the privacy policy says so, and a tunnel row through stock's route read-back is seen to fail closed.
+  - Plan: [plan_network-menu.md](.claude/plans/plan_network-menu.md)
+  - Closed 2026-10-25: released in v0.8.175 (545), run 40176230345, to Play's internal track and TestFlight; NET-1 to NET-3 passed live on stock, the policy's 1.5 is published, and the lookup service is one class.
+- ID-449 ARC: firmware abstraction, slice 1: starting and stopping a slot go through one `RouterOps`, resolved once per session. After ID-448.
+  - DoD: no `isStockFirmware` branch is left in start or stop, the suite passes with no test changed (`firmware_paths_test.dart` covers Merlin), and a `live/` run starts and stops a tunnel on the stock router.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
+  - Closed 2026-10-25: `live/slots_live_test.dart` on stock, wgc1: SLT-1 down, SLT-2 up again with a fresh handshake and both targets answering, SLT-3 its watchdog scheduled again; the suite unchanged.
+- TST: `live/slots_live_test.dart`'s up check read `ip -o link show up` by splitting on spaces, so `wgc1:` never matched and it always said down: SLT-2 failed on a tunnel that was up. It now matches `wgcN:` as the app does.
 
 2026-10-25 v0.8.177 build 547 - starting, stopping and restarting a tunnel go through one RouterOps, the first slice of the firmware abstraction
 

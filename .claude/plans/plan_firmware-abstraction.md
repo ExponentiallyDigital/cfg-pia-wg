@@ -114,4 +114,5 @@ The firmware abstraction, in slices, each on its own build and released on its o
 - Left alone: the watchdog's shell script, whose start and stop are already substituted from a template, and `device_assignment_service.dart`, which is stock only.
 - No `isStockFirmware` is left in any start, stop or restart. The suite passed unchanged (2054, 3 skipped), `firmware_paths_test.dart` included.
 - `live/slots_live_test.dart`: DISABLE then ENABLE on `CFG_LIVE_SLOT`, as MANAGE does them, pausing and resuming a scheduled watchdog; only with `CFG_LIVE_GO=1`. Left: Andrew's run on stock.
+- Live runs on stock, Andrew, 2026-10-25, wgc1 (pia-nz, watchdog scheduled): the first failed SLT-2 on a bug of the runner's own, an up check that split `ip -o link show up` on spaces and never matched `wgc1:`, which also made SLT-1's second half hollow (DISABLE's own read-back still said down). Fixed to match `wgcN:`; the second run passed SLT-1 to SLT-3. ID-449 closed.
 
