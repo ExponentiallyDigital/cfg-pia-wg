@@ -336,8 +336,27 @@ The build:
 
 A new section after 1.4:
 
-> **1.5 The NETWORK screen.** NETWORK shows the public internet address of your phone, and of each VPN tunnel your router has running, with the country, town and internet provider that address belongs to. Nothing is looked up until you tap LOOK UP. Each lookup is one request to PIA's website (the same lookup its "What is my IP" page uses), sent from your phone for its own address and from your router, through the tunnel, for each tunnel's. PIA already sees your phone's address whenever the app logs in or fetches PIA's server list, and a tunnel's address is PIA's own, so no one new learns anything. The app sends nothing else with the request, and keeps nothing it is told: the results are on screen until you leave it.
+> **1.5 The NETWORK screen.** NETWORK shows the public internet address of your phone or tablet, and of each VPN tunnel your router has running, with the country, town and internet provider that address belongs to. Each time you open NETWORK or tap REFRESH, the app makes one request to PIA's website (the same lookup its "What is my IP" page uses), sent from your device for its own address and from your router, through the tunnel, for each tunnel's. PIA already sees your device's address whenever the app logs in or fetches PIA's server list, and a tunnel's address is PIA's own, so no one new learns anything. The app sends nothing else with the request, and keeps nothing it is told: the results are on screen until you leave it.
 
 Added to 1.4's widget paragraph, after "If you do not add the widget, neither is ever stored.":
 
 > With the widget set up, the app also keeps the time and outcome of each background refresh, such as "read the router" or "phone locked", the newest 500 of them, so you can see how often your phone lets it refresh. Nothing read from the router is kept in it.
+
+### 2026-10-25: less text above LOOK UP, and "This device"
+
+- Andrew, on the Pixel: far less text above LOOK UP, and "This device", not "This phone", since it may be a tablet. The notice is now one line: "LOOK UP asks PIA for the public address of this device and each tunnel. PIA already knows them. Privacy", the last word the link to PIA's privacy policy. The "nothing is sent until LOOK UP" sentence went: the screen itself shows it, since nothing appears until the tap. A test holds the line's wording and keeps it under 120 characters.
+
+### 2026-10-25: the layout from Andrew's mock-up, in build 543
+
+- Agreed from a mock-up before any code changed: no text above the results; looked up as the screen opens, and again on REFRESH; REFRESH and HOME side by side at the bottom, ROUTER LOG's `LogButtonRow`, in place of the scaffold's own HOME; the first card "This device"; the link "login to router for tunnel details"; a footer, "Address data from PIA.", the whole line opening https://www.privateinternetaccess.com/what-is-my-ip.
+- No notice is needed before looking up, because PIA already knows every address it is asked about. `IpLookupService.notice` and `privacyUrl` went; `sourceUrl` is the footer's page. The privacy policy draft now says "Each time you open NETWORK or tap REFRESH".
+- A tunnel with no route (NOROUTE) was "Couldn't be aimed through this tunnel, so nothing was sent.", which Andrew found cryptic. When it shows: the router listed the tunnel as up, but by the lookup it had no route through it, most likely because it was going down or restarting, perhaps by its watchdog. Now: "Not checked: the router has no route through this tunnel right now. It may be restarting; try REFRESH."
+- During a REFRESH the cards stay and REFRESH shows its spinner; before the first answer the body shows a spinner.
+
+### 2026-10-25: README, screenshots and a live runner, build 543
+
+- README 5.5 NETWORK (sections after it renumbered, 5.6 to 5.12), and a features line. `images/04.5-network.png`, new, and `images/00.0-main-menu.png`, redrawn with NETWORK, by `test/release/readme_screenshots_test.dart` (skipped unless `--dart-define=README_SHOT=true`): Flutter draws the app at 1440 x 3120, device pixel ratio 3.0, measured from the old screenshot's text widths (the Pixel was at a smaller display size than its default 3.5), with the status bar and gesture handle copied from `images/02.0` over the edges. Roboto from Flutter's own fonts, Menlo for the app's monospace. NETWORK's invented tunnels mirror 02.0: wgc5 pia-aus_melbourne to wgc1 pia-uk, addresses from the documentation ranges, providers "Example Hosting XX".
+- The main menu's labels named no font, so the test drew them as blocks: Flutter's test font can't be replaced for unnamed text. They now name Roboto, which is what Android draws when none is named; iOS has no Roboto and falls back to its system font, as before.
+- No hand tests (Andrew): `live/network_live_test.dart`, beside `devices_live_test.dart`, runs NET-1 to NET-3 against the router with nobody tapping, through the app's own code, and needs only `CFG_LIVE_ROUTER`, `CFG_LIVE_USER` and `CFG_LIVE_PASS`. NET-3 is the live fail-closed check: the stock command for a tunnel that is set up but down must answer NOROUTE and leave no rule. TESTING gains a `[live]` tag, left off the run sheet like `[ci]`; `runsheet_test.dart` checks every `[live]` test names a `live/` runner that exists.
+- Left: one live run on the router; the drawer screenshot, `images/99.02`, still shows the drawer without NETWORK.
+

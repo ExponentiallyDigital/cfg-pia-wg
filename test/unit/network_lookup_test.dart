@@ -59,11 +59,11 @@ void main() {
     test('is the service in use (Andrew, 2026-10-25), on PIA\'s own site', () {
       expect(kIpLookupService, isA<PiaLookup>());
       expect(kIpLookupService.host, 'www.privateinternetaccess.com');
-      expect(kIpLookupService.notice, contains('no one else learns anything'));
+      expect(kIpLookupService.sourceUrl, 'https://www.privateinternetaccess.com/what-is-my-ip');
     });
   });
 
-  group('this phone', () {
+  group('this device', () {
     test('asks the service over HTTPS and reads its answer', () async {
       Uri? asked;
       final facts = await lookUpThisPhone(client: MockClient((req) async {

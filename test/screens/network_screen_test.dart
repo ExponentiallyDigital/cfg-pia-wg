@@ -1,5 +1,6 @@
-// test/screens/network_screen_test.dart - NETWORK (ID-458): nothing sent until LOOK UP, the phone's
-// row with or without a router, and a row for each tunnel that is up, against a fake router.
+// test/screens/network_screen_test.dart - NETWORK (ID-458): looked up as it opens and on REFRESH, the
+// device's row with or without a router, a row for each tunnel that is up against a fake router, and the
+// footer that names the source and opens its page.
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/network_lookup.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart' show kUpInterfacesCommand;
@@ -26,12 +27,13 @@ RecordingSSHClient _router({String firmwareTag = 'merlin', String tunnel = _repl
 void main() {
   tearDown(resetRouterFirmware);
 
-  Future<({SessionController c, List<int> phoneCalls})> pump(
+  Future<({SessionController c, List<int> phoneCalls, List<Uri> opened})> pump(
     WidgetTester tester, {
     RecordingSSHClient? ssh,
     Future<NetworkFacts> Function()? phone,
   }) async {
     final calls = <int>[];
+    final opened = <Uri>[];
     final c = SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
     if (ssh != null) {
       c
@@ -52,47 +54,64 @@ void main() {
               return phone == null ? _phone : await phone();
             },
             addressLookup: () async => '104.18.40.93',
+            openUrl: (url) async => opened.add(url),
           ),
         ),
       ),
     ));
     await tester.pumpAndSettle();
-    return (c: c, phoneCalls: calls);
-  }
-
-  Future<void> lookUp(WidgetTester tester) async {
-    await tester.tap(find.byKey(const Key('network_look_up')));
-    await tester.pumpAndSettle();
+    return (c: c, phoneCalls: calls, opened: opened);
   }
 
   String textOf(WidgetTester tester, Key key) =>
       tester.widgetList<Text>(find.descendant(of: find.byKey(key), matching: find.byType(Text))).map((t) => t.data ?? t.textSpan!.toPlainText()).join('\n');
 
-  testWidgets('says where the lookups go, and sends nothing until LOOK UP', (tester) async {
+  // Andrew, 2026-10-25: no text above the results, a lookup as the screen opens, REFRESH and HOME below.
+  testWidgets('looks up as it opens, with nothing above the results but the heading', (tester) async {
     final ssh = _router();
     final r = await pump(tester, ssh: ssh);
-    expect(find.textContaining('LOOK UP asks PIA', findRichText: true), findsOneWidget);
-    expect(find.textContaining('Nothing is sent until you tap LOOK UP', findRichText: true), findsOneWidget);
-    expect(r.phoneCalls, isEmpty);
-    expect(ssh.commands, isEmpty);
+    expect(r.phoneCalls, [1]);
+    expect(ssh.commands.where((c) => c.contains(kTunnelLookupMarker)), hasLength(1));
+    final heading = tester.getRect(find.byKey(const Key('network_heading')));
+    final device = tester.getRect(find.byKey(const Key('network_phone')));
+    expect(device.top - heading.bottom, lessThan(30), reason: 'the device card straight under the heading');
+    expect(find.textContaining('LOOK UP'), findsNothing);
+    expect(find.byKey(const Key('screen_close')), findsNothing, reason: "REFRESH and HOME, not the scaffold's HOME");
+    expect(find.byKey(const Key('network_refresh')), findsOneWidget);
+    expect(find.byKey(const Key('network_home')), findsOneWidget);
   });
 
-  testWidgets('without a router: the phone\'s row, and the tunnels offered by a login', (tester) async {
-    final r = await pump(tester);
-    await lookUp(tester);
-    expect(r.phoneCalls, [1]);
+  testWidgets('REFRESH looks up again, the device and the tunnels', (tester) async {
+    final ssh = _router();
+    final r = await pump(tester, ssh: ssh);
+    await tester.tap(find.byKey(const Key('network_refresh')));
+    await tester.pumpAndSettle();
+    expect(r.phoneCalls, [1, 1]);
+    expect(ssh.commands.where((c) => c.contains(kTunnelLookupMarker)), hasLength(2));
+  });
+
+  testWidgets('without a router: the device\'s row, and the tunnels offered by a login', (tester) async {
+    await pump(tester);
     final row = textOf(tester, const Key('network_phone'));
+    expect(row, contains('This device'));
     expect(row, contains('198.51.100.7'));
     expect(row, contains('Sydney, Australia'));
     expect(row, contains('Home ISP'));
-    expect(find.textContaining(kNetworkLoginPrompt, findRichText: true), findsOneWidget);
-    expect(find.textContaining('Address data from PIA.'), findsOneWidget);
+    expect(find.textContaining('login to router for tunnel details', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('the whole footer line names PIA and opens its What is my IP page', (tester) async {
+    final r = await pump(tester);
+    expect(textOf(tester, const Key('network_source')), 'Address data from PIA.');
+    await tester.ensureVisible(find.byKey(const Key('network_source')));
+    await tester.tap(find.byKey(const Key('network_source')));
+    await tester.pumpAndSettle();
+    expect(r.opened, [Uri.parse('https://www.privateinternetaccess.com/what-is-my-ip')]);
   });
 
   testWidgets('with a router: a row for each tunnel up, with PIA\'s region beside the place', (tester) async {
     final ssh = _router();
     await pump(tester, ssh: ssh);
-    await lookUp(tester);
     final row = textOf(tester, const Key('network_wgc5'));
     expect(row, contains('wgc5:Melbourne, Australia'));
     expect(row, contains('203.0.113.9'));
@@ -105,25 +124,22 @@ void main() {
     expect(asked, contains('for N in 5;'));
   });
 
-  testWidgets('on stock the route is read back, and a tunnel it misses says nothing was sent', (tester) async {
+  testWidgets('on stock the route is read back, and a tunnel with no route says so plainly', (tester) async {
     final ssh = _router(firmwareTag: '', tunnel: '@@NOROUTE');
     await pump(tester, ssh: ssh);
-    await lookUp(tester);
     expect(ssh.commands.singleWhere((c) => c.contains(kTunnelLookupMarker)), contains('ip route get'));
-    expect(textOf(tester, const Key('network_wgc5')), contains("Couldn't be aimed through this tunnel, so nothing was sent."));
+    expect(textOf(tester, const Key('network_wgc5')), contains('Not checked: the router has no route through this tunnel right now.'));
   });
 
   testWidgets('no tunnel up: says so, and asks the router nothing more', (tester) async {
     final ssh = _router(up: '');
     await pump(tester, ssh: ssh);
-    await lookUp(tester);
     expect(find.byKey(const Key('network_no_tunnels')), findsOneWidget);
     expect(ssh.commands.where((c) => c.contains(kTunnelLookupMarker)), isEmpty);
   });
 
-  testWidgets('a phone lookup that fails says so, and the tunnels are still shown', (tester) async {
+  testWidgets('a device lookup that fails says so, and the tunnels are still shown', (tester) async {
     await pump(tester, ssh: _router(), phone: () async => throw Exception('no network'));
-    await lookUp(tester);
     expect(textOf(tester, const Key('network_phone')), contains('No answer from PIA'));
     expect(find.byKey(const Key('network_wgc5')), findsOneWidget);
   });
@@ -131,7 +147,6 @@ void main() {
   testWidgets('a firmware it does not know: the tunnels say so, and nothing is sent through them', (tester) async {
     final ssh = _router(firmwareTag: 'koolshare');
     await pump(tester, ssh: ssh);
-    await lookUp(tester);
     expect(textOf(tester, const Key('network_tunnels_error')), contains('this router firmware is not supported'));
     expect(ssh.commands.where((c) => c.contains(kTunnelLookupMarker)), isEmpty);
   });

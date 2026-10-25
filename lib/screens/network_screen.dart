@@ -1,4 +1,4 @@
-// screens/network_screen.dart - NETWORK: the public address, place and provider of this phone and of
+// screens/network_screen.dart - NETWORK: the public address, place and provider of this device and of
 // each tunnel that is up (ID-458).
 //
 // This program is free software: you can redistribute it and/or modify it under the terms
@@ -14,9 +14,10 @@
 //
 // Copyright (C) 2026 Andrew Newbury.
 //
-// Nothing is sent until LOOK UP is tapped, and the notice above it says where the lookups go and who sees
-// them, so it is read before every lookup, not only the first (Andrew, 2026-10-25). Free: it only reads.
-// The phone's row needs no router; the tunnels' need the session's router login, asked for as ABOUT asks.
+// It looks up as it opens and again on REFRESH, with no text above the results; the footer names the
+// source and opens its page (Andrew, 2026-10-25). PIA already knows every address it is asked about, so
+// no notice is needed before asking. Free: it only reads. The device's row needs no router; the tunnels'
+// need the session's router login, asked for as ABOUT asks.
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/gestures.dart';
@@ -29,20 +30,28 @@ import '../network_lookup.dart';
 import '../plain_error.dart';
 import '../router_slot_service.dart';
 import '../session_controller.dart';
-import '../widgets/app_button.dart';
+import '../widgets/app_drawer.dart' show navigateToDestination;
 import '../widgets/app_scaffold.dart';
+import '../widgets/log_buttons.dart';
 import '../widgets/ssh_creds_dialog.dart';
 
 /// What the tunnels' part of the screen says when there's no router to ask.
-const String kNetworkLoginPrompt = 'login to router to include the tunnels';
+const String kNetworkLoginPrompt = 'login to router for tunnel details';
+
+/// A tunnel the router had no route through when it was asked (TunnelLookupOutcome.noRoute): most likely
+/// it was going down or restarting, perhaps by its watchdog. Nothing was sent, rather than risk an answer
+/// by the WAN showing the home address as the tunnel's.
+const String kNetworkNoRoute = 'Not checked: the router has no route through this tunnel right now. It may be restarting; '
+    'try REFRESH.';
 
 class NetworkScreen extends StatefulWidget {
-  const NetworkScreen({super.key, this.testClientFactory, this.phoneLookup, this.addressLookup});
+  const NetworkScreen({super.key, this.testClientFactory, this.phoneLookup, this.addressLookup, this.openUrl});
 
-  // Test seams: the router, the phone's own lookup and the service's address.
+  // Test seams: the router, the device's own lookup, the service's address, and opening a page.
   final Future<SSHClient> Function(String ip, String user, String pass)? testClientFactory;
   final Future<NetworkFacts> Function()? phoneLookup;
   final Future<String?> Function()? addressLookup;
+  final Future<void> Function(Uri url)? openUrl;
 
   @override
   State<NetworkScreen> createState() => _NetworkScreenState();
@@ -67,17 +76,26 @@ class _NetworkScreenState extends State<NetworkScreen> {
   List<_TunnelRow>? _tunnels;
   String? _tunnelError;
   late final TapGestureRecognizer _loginRecogniser = TapGestureRecognizer()..onTap = _logInThenLookUp;
-  late final TapGestureRecognizer _privacyRecogniser = TapGestureRecognizer()..onTap = _openPrivacy;
+
+  @override
+  void initState() {
+    super.initState();
+    // Looked up as the screen opens (Andrew, 2026-10-25); REFRESH asks again. After the first frame,
+    // because the lookup reads the session from the context.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _lookUp();
+    });
+  }
 
   @override
   void dispose() {
     _loginRecogniser.dispose();
-    _privacyRecogniser.dispose();
     super.dispose();
   }
 
-  Future<void> _openPrivacy() async {
-    final url = Uri.parse(_service.privacyUrl);
+  Future<void> _openSource() async {
+    final url = Uri.parse(_service.sourceUrl);
+    if (widget.openUrl != null) return widget.openUrl!(url);
     if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
@@ -87,7 +105,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       _busy = true;
       _looked = true;
     });
-    controller.logEntry('NETWORK: asking ${_service.name} for the public address of this phone'
+    controller.logEntry('NETWORK: asking ${_service.name} for the public address of this device'
         '${controller.canReuseRouterSession ? ' and of each tunnel that is up' : ''}.');
     final phone = _lookUpPhone();
     final tunnels = controller.canReuseRouterSession ? _lookUpTunnels(controller) : Future<void>.value();
@@ -169,36 +187,45 @@ class _NetworkScreenState extends State<NetworkScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = SessionScope.of(context);
-    return AppScaffold(
-      child: SelectionArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            destinationHeading(AppDestination.network, key: const Key('network_heading')),
-            const SizedBox(height: 12),
-            Text.rich(
-              TextSpan(children: [
-                TextSpan(
-                    text: 'LOOK UP asks ${_service.name} for the public address of this phone, and of each tunnel that is '
-                        'up, sent through the router. ${_service.notice} '),
-                TextSpan(text: '${_service.name}\'s privacy policy', style: const TextStyle(color: kHighlight), recognizer: _privacyRecogniser),
-                const TextSpan(text: '. Nothing is sent until you tap LOOK UP.'),
-              ]),
-              key: const Key('network_notice'),
-              style: const TextStyle(color: kMuted, fontSize: 13),
+    // The first lookup has nothing to show yet; a REFRESH keeps the cards it is replacing.
+    final firstLookup = !_looked || (_busy && _phone == null && _phoneError == null);
+    // REFRESH and HOME side by side, ROUTER LOG's row, in place of the scaffold's own HOME.
+    return Material(
+      color: kBg,
+      child: Column(
+        children: [
+          Expanded(
+            child: AppScaffold(
+              showClose: false,
+              child: SelectionArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    destinationHeading(AppDestination.network, key: const Key('network_heading')),
+                    if (firstLookup)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 32),
+                        child: Center(child: CircularProgressIndicator(color: kHighlight)),
+                      )
+                    else
+                      ..._results(controller),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 16),
-            AppButton(
-              keyValue: 'network_look_up',
-              label: 'LOOK UP',
-              colour: kNetworkColour,
-              onPressed: _busy ? null : _lookUp,
-            ),
-            const SizedBox(height: 16),
-            if (_busy) const Center(child: CircularProgressIndicator(color: kHighlight)),
-            if (_looked && !_busy) ..._results(controller),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: LogButtonRow(children: [
+              LogButton(keyValue: 'network_refresh', label: 'REFRESH', busy: _busy, onPressed: _busy ? null : _lookUp),
+              LogButton(
+                keyValue: 'network_home',
+                label: 'HOME',
+                onPressed: () => navigateToDestination(context, controller, AppDestination.menu),
+              ),
+            ]),
+          ),
+        ],
       ),
     );
   }
@@ -206,7 +233,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
   List<Widget> _results(SessionController controller) => [
         _card(
           key: const Key('network_phone'),
-          title: 'This phone',
+          title: 'This device',
           facts: _phone,
           problem: _phoneError == null ? null : 'No answer from ${_service.name}: $_phoneError',
         ),
@@ -233,13 +260,21 @@ class _NetworkScreenState extends State<NetworkScreen> {
             region: t.region,
             problem: switch (t.result.outcome) {
               TunnelLookupOutcome.found => null,
-              TunnelLookupOutcome.noRoute => "Couldn't be aimed through this tunnel, so nothing was sent.",
+              TunnelLookupOutcome.noRoute => kNetworkNoRoute,
               TunnelLookupOutcome.failed => 'No answer through this tunnel.',
             },
           ),
+        // The whole line opens the service's own page (Andrew, 2026-10-25).
         Padding(
           padding: const EdgeInsets.only(top: 16),
-          child: Text('Address data from ${_service.name}.', style: const TextStyle(color: kMuted, fontSize: 11)),
+          child: InkWell(
+            key: const Key('network_source'),
+            onTap: _openSource,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('Address data from ${_service.name}.', style: const TextStyle(color: kHighlight, fontSize: 13)),
+            ),
+          ),
         ),
       ];
 

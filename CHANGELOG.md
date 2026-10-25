@@ -120,9 +120,9 @@ Work items for the **current** release:
   - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
   - Now: build 537 from TestFlight on the spare iPhone 11, key and widgets in place, 2026-10-25; left: its LOG after a day.
 - ID-458 ADD: a NETWORK main menu item showing the public IP, country, town and provider of this phone and of each tunnel.
-  - DoD: on a phone, each row matches what the path really uses, the service is swappable in one class, the privacy policy says so, and a tunnel row through stock's route read-back is seen to fail closed.
+  - DoD: `live/network_live_test.dart` passes NET-1 to NET-3 on the router (no hand tests, Andrew 2026-10-25), the service is swappable in one class, the privacy policy says so, and a tunnel row through stock's route read-back is seen to fail closed.
   - Plan: [plan_network-menu.md](.claude/plans/plan_network-menu.md)
-  - Now: asks PIA's own site only, since build 542; left: the policy paragraph approved, NET-1 to NET-3 on hardware.
+  - Now: built to Andrew's mock-up, README and screenshots done, in build 543; left: Andrew runs `live/network_live_test.dart` once, and approves the policy paragraph.
 
 ---
 
@@ -140,6 +140,12 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-25 v0.8.173 build 543 - NETWORK as mocked up, in the README with its screenshot, and its tests run unattended against the router
+
+- CHG: NETWORK as Andrew's mock-up, 2026-10-25: no text above the results, looked up as it opens and again on REFRESH, REFRESH and HOME side by side at the bottom, the first row "This device" (it may be a tablet), "login to router for tunnel details", a plain "Not checked" for a tunnel with no route, and a footer, "Address data from PIA.", that opens PIA's What is my IP page.
+- DOC: README 5.5 NETWORK, new, with a drawn screenshot of invented addresses mirroring 02.0's tunnels (`images/04.5-network.png`), a features line, and 5.5 to 5.11 renumbered 5.6 to 5.12. `images/00.0-main-menu.png` redrawn with NETWORK. Both are drawn by `test/release/readme_screenshots_test.dart` at the Pixel's size, with its status bar and gesture handle copied from 02.0; the main menu's labels now name Roboto, which is what Android drew with no name, so the test can draw them.
+- TST: TESTING's NET tests run unattended by `live/network_live_test.dart` against the router, a new `[live]` tag that keeps them off the run sheet (Andrew, 2026-10-25: no hand tests). NET-4, the screen, is `[ci]`.
 
 2026-10-25 v0.8.172 build 542 - NETWORK asks PIA's own site, and no one else
 

@@ -1,4 +1,4 @@
-// network_lookup.dart - the public IP address, country, town and provider of this phone and of each
+// network_lookup.dart - the public IP address, country, town and provider of this device and of each
 // tunnel, for the NETWORK screen (ID-458).
 //
 // This program is free software: you can redistribute it and/or modify it under the terms
@@ -15,12 +15,12 @@
 // Copyright (C) 2026 Andrew Newbury.
 //
 // The address is a fact only the path itself can give, so each lookup is a request sent out the way
-// being tested: from the phone for "This phone", and from the router through wgcN for a tunnel. The
+// being tested: from the phone or tablet for "This device", and from the router through wgcN for a tunnel. The
 // service that answers it is behind [IpLookupService], so changing service later is one new class and
 // a change to [kIpLookupService]; nothing else here or in the screen names one (Andrew, 2026-10-25).
 //
 // The service is PIA's own, and only PIA's, Andrew's choice on 2026-10-25: the app needs PIA anyway, so
-// PIA already sees this phone's address whenever the app logs in or fetches its servers, and each
+// PIA already sees this device's address whenever the app logs in or fetches its servers, and each
 // tunnel's address is PIA's own; no other company learns anything (plan_network-menu.md).
 
 import 'dart:convert';
@@ -43,18 +43,15 @@ class NetworkFacts {
 abstract class IpLookupService {
   const IpLookupService();
 
-  /// The name the screen gives it, in the notice and under the results.
+  /// The name the screen gives it, in the footer and in what it says went wrong.
   String get name;
 
   /// An IPv4-only hostname, so the phone's row compares with the tunnels', which are IPv4.
   String get host;
   String get path;
 
-  /// Its privacy page, linked from the notice.
-  String get privacyUrl;
-
-  /// What the notice says about who sees the lookups, after the link to [privacyUrl].
-  String get notice;
+  /// The page the footer, "Address data from [name].", opens.
+  String get sourceUrl;
 
   /// The facts in [body], or null when it isn't a reply this service gives.
   NetworkFacts? parse(String body);
@@ -74,10 +71,7 @@ class PiaLookup extends IpLookupService {
   @override
   String get path => '/site-api/get-location-info';
   @override
-  String get privacyUrl => 'https://www.privateinternetaccess.com/privacy-policy';
-  @override
-  String get notice => 'PIA already sees this phone\'s address whenever the app logs in or fetches its servers, and each '
-      'tunnel\'s address is PIA\'s own, so no one else learns anything.';
+  String get sourceUrl => 'https://www.privateinternetaccess.com/what-is-my-ip';
 
   @override
   NetworkFacts? parse(String body) {
@@ -97,7 +91,7 @@ class PiaLookup extends IpLookupService {
 /// The service in use. Change this, and only this, to change service.
 const IpLookupService kIpLookupService = PiaLookup();
 
-/// This phone's own public address, by a request from the phone. Throws when there's no answer, or
+/// This device's own public address, by a request from the device. Throws when there's no answer, or
 /// an answer that isn't the service's. [client] stands in for the network in a test.
 Future<NetworkFacts> lookUpThisPhone({IpLookupService service = kIpLookupService, http.Client? client}) async {
   final http.Client c = client ?? http.Client();
