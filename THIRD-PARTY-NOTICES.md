@@ -62,7 +62,7 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`plugin_platform_interface`](https://pub.dev/packages/plugin_platform_interface) | 2.1.8 | [BSD-3-Clause](https://pub.dev/packages/plugin_platform_interface/license) | transitive |
 | [`pointycastle`](https://pub.dev/packages/pointycastle) | 4.0.0 | [MIT](https://pub.dev/packages/pointycastle/license) | direct |
 | [`pub_semver`](https://pub.dev/packages/pub_semver) | 2.2.1 | [BSD-3-Clause](https://pub.dev/packages/pub_semver/license) | transitive |
-| [`purchases_flutter`](https://pub.dev/packages/purchases_flutter) | 10.16.0 | [MIT](https://pub.dev/packages/purchases_flutter/license) | direct |
+| [`purchases_flutter`](https://pub.dev/packages/purchases_flutter) | 10.18.1 | [MIT](https://pub.dev/packages/purchases_flutter/license) | direct |
 | [`record_use`](https://pub.dev/packages/record_use) | 1.1.1 | [BSD-3-Clause](https://pub.dev/packages/record_use/license) | transitive |
 | [`share_plus`](https://pub.dev/packages/share_plus) | 13.3.1 | [BSD-3-Clause](https://pub.dev/packages/share_plus/license) | direct |
 | [`share_plus_platform_interface`](https://pub.dev/packages/share_plus_platform_interface) | 7.2.0 | [BSD-3-Clause](https://pub.dev/packages/share_plus_platform_interface/license) | transitive |
@@ -80,7 +80,7 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`url_launcher_windows`](https://pub.dev/packages/url_launcher_windows) | 3.1.6 | [BSD-3-Clause](https://pub.dev/packages/url_launcher_windows/license) | transitive |
 | [`uuid`](https://pub.dev/packages/uuid) | 4.6.0 | [MIT](https://pub.dev/packages/uuid/license) | transitive |
 | [`vector_math`](https://pub.dev/packages/vector_math) | 2.4.3 | [BSD-3-Clause](https://pub.dev/packages/vector_math/license) | transitive |
-| [`web`](https://pub.dev/packages/web) | 1.1.1 | [BSD-3-Clause](https://pub.dev/packages/web/license) | transitive |
+| [`web`](https://pub.dev/packages/web) | 1.1.2 | [BSD-3-Clause](https://pub.dev/packages/web/license) | transitive |
 | [`win32`](https://pub.dev/packages/win32) | 6.4.0 | [BSD-3-Clause](https://pub.dev/packages/win32/license) | transitive |
 | [`workmanager`](https://pub.dev/packages/workmanager) | 0.10.10 | [MIT](https://pub.dev/packages/workmanager/license) | direct |
 | [`workmanager_android`](https://pub.dev/packages/workmanager_android) | 0.10.9 | [MIT](https://pub.dev/packages/workmanager_android/license) | transitive |
@@ -188,9 +188,9 @@ The Java and Kotlin libraries the release build packages: the `releaseRuntimeCla
 | `com.google.firebase:firebase-encoders-json` | 18.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.firebase:firebase-encoders-proto` | 16.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.guava:listenablefuture` | 1.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `com.revenuecat.purchases:purchases` | 10.27.0 | [MIT](http://opensource.org/licenses/MIT) |
-| `com.revenuecat.purchases:purchases-hybrid-common` | 19.12.0 | [MIT](http://opensource.org/licenses/MIT) |
-| `com.revenuecat.purchases:purchases-store-amazon` | 10.27.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases` | 10.29.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases-hybrid-common` | 19.15.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases-store-amazon` | 10.29.0 | [MIT](http://opensource.org/licenses/MIT) |
 | `dev.drewhamilton.poko:poko-annotations` | 0.17.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `dev.drewhamilton.poko:poko-annotations-jvm` | 0.17.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `javax.inject:javax.inject` | 1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
