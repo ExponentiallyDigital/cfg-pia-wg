@@ -85,8 +85,6 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
-- ID-439 ADD: the iOS widget refreshes itself in the background. After ID-424.
-  - DoD: it updates with the app closed.
 
 ---
 
@@ -94,20 +92,11 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
-**Claude, in priority order: the iOS release, then the firmware abstraction.**
-
 - ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
-  - Now: 0.8.164 (534) and Router features are with App Review, submitted 2026-10-21.
-- ID-424 TST: measure how often iOS lets the app refresh in the background.
-  - DoD: a day's refresh times from an iPhone are recorded.
-  - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
-  - Now: measuring on B11 (and D11) from 2026-10-25 evening, build 545 from TestFlight, key and widgets in place; left: the LOG after a day.
-- ID-419 CHG: the eight SonarCloud findings left in the watchdog and the slot service, so SonarCloud shows none. After ID-452.
-  - DoD: SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
-  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
-  - Now: the eight split, each only split; a local measure matching SonarCloud's figures finds none over 15 in lib/; left: SonarCloud's own reading of the release PR.
+  - Now: In Review on 2026-10-28, a week after submission; Andrew asked Apple for its status the same day, case 103010748637.
+- ID-480 TST: with RevenueCat 11, a purchase and RESTORE PURCHASE work on a phone, before the next release.
 
 ---
 
@@ -125,6 +114,45 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-29 v0.8.183 build 553 - Android Lint's own libraries moved to versions with no known vulnerabilities, so the OSV scan passes
+
+- ID-481 SEC: Android Lint's libraries carry no known vulnerabilities, so PR #62's OSV scan passes.
+  - Closed 2026-10-29: AGP 9.4.1 (ID-479) put Lint's tool in the lockfile, `androidLintTool`, with 7 known vulnerabilities in Guava, commons-lang3, httpclient and Bouncy Castle (1 Critical, 2 High). Lint runs in every release build (lintVitalRelease) but never ships, so unlike ID-058's test platform it stays locked, with those five, and bcutil, forced to fixed versions in `android/build.gradle.kts`. A release bundle builds and passes lintVitalRelease on a fresh Gradle daemon; the scan's own run is the evidence it clears.
+
+2026-10-25 v0.8.182 build 552 - the iPhone widget's background refresh measured and its items closed, Sonar badges, and Flutter, Gradle, Kotlin and RevenueCat 11
+
+- REL: v0.8.180 (550) passed 2026-10-25 (run 40185678464): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs on the release.
+- ID-424 TST: measure how often iOS lets the app refresh in the background.
+  - DoD: a day's refresh times from an iPhone are recorded.
+  - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
+  - Closed 2026-10-26: B11, 25 Oct 14:38 to 26 Oct 20:03, 14 runs: 5 read the router, all between 08:53 and 09:56 about 16 minutes apart, and 9 found the phone locked; none from 15:45 to 08:53 overnight. The times are in the plan.
+- CHG: WIP 3 -> 2 bullets. Removed: ID-424, closed, above.
+- ID-439 ADD: the iOS widget refreshes itself in the background. After ID-424.
+  - DoD: it updates with the app closed.
+  - Closed 2026-10-26: the background refresh built for ID-424 (build 537) read the router 5 times on B11 with the app not open, 08:53 to 09:56 on 2026-10-26. Andrew chose to keep no refresh while locked (option A), so it refreshes only while the phone is in use; the 9 locked runs read nothing, by design.
+- CHG: 1.1 lost ID-439, closed, above.
+- ID-470 CHG: Android's widget doesn't refresh while the phone is locked, as iOS's won't (Andrew, 2026-10-21).
+  - DoD: measured whether Android refreshes while locked today; if it does, it skips while locked, with a test.
+  - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
+  - Closed 2026-10-26, won't do, Andrew's decision: Android keeps refreshing while the phone is locked, as it always has; only the iPhone skips a locked phone (option A for ID-439).
+- CHG: BACKLOG lost ID-470, closed, above.
+- CHG: BACKLOG gained ID-478, new main menu colours, on hold (Andrew, 2026-10-26); the choices so far are in `plan_menu-colours.md`.
+- ID-477 REL: add Sonar badges:
+  - [![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=ExponentiallyDigital_cfg-pia-wg)
+  - [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=ExponentiallyDigital_cfg-pia-wg)
+  - [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=ExponentiallyDigital_cfg-pia-wg&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=ExponentiallyDigital_cfg-pia-wg)
+- ID-479 BLD: Flutter pin 3.47.7 -> 3.47.8, the current stable and the version on Andrew's PC, which `build.ps1` warned about; Gradle 9.8.1 -> 9.8.2, the Android Gradle plugin 9.0.1 -> 9.4.1, Kotlin 2.3.20 -> 2.4.21.
+  - Closed 2026-10-29: the Gradle lockfiles and THIRD-PARTY-NOTICES.md regenerated, which also brings in RevenueCat 11 and Play Billing 9.1.0 from this block's `purchases_flutter` 11; analyze shows 1 info, `syncPurchases` deprecated in `purchases_flutter` 11; 2055 tests pass; the debug APK builds with only ID-472's warning; its `KOTLIN_VERSION` reads 2.4.21, and `gradlew --version` reports 9.8.2. AGP 9.4.1 now warns that `android.newDsl=false` is deprecated; it stays, since Flutter's Gradle plugin still needs the old DSL. On this PC the pub cache held lockfiles for `home_widget` and `url_launcher_android` from an earlier all-project `--write-locks`, still on Kotlin 2.3.20, and they failed the build until they were relocked; CI starts with an empty pub cache and has none.
+- CHG: at launch the app asks RevenueCat for what the store already holds through `syncPurchasesForResult`, as `syncPurchases` is deprecated in `purchases_flutter` 11 and CI's analyzer fails on the deprecation; its answer is applied at once as well as through the listener. Then GitHub's weekly Flutter and package updates (PRs #60, #61) brought in, the lockfiles and notices regenerated over them; analyze clean, 2055 Flutter and 16 Python tests pass, and the debug APK builds with only ID-472's warning. Left: ID-480, added to WIP (1 -> 2 bullets).
+
+2026-10-25 v0.8.181 build 551 - SonarCloud shows no open issues
+
+- REL: v0.8.180 (550) tagged 2026-10-25 (run 40185678464), carrying slices 2 to 4 and the split functions.
+- ID-419 CHG: the eight SonarCloud findings left in the watchdog and the slot service, so SonarCloud shows none. After ID-452.
+  - DoD: SonarCloud shows none of the eight, each function only split, and the suite passes unchanged.
+  - Plan: [plan_firmware-abstraction.md](.claude/plans/plan_firmware-abstraction.md)
+  - Closed 2026-10-25: SonarCloud's analysis of the merge of PR #59 (e534111) shows 0 open issues, from 8; the functions were only split, and the suite passed with no existing test changed.
 
 2026-10-25 v0.8.180 build 550 - reading, the schedule and delete pass live on the router, completing the firmware abstraction
 
