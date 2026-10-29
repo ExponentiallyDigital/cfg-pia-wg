@@ -14,3 +14,10 @@ Moved from the CHANGELOG item, word for word, 2026-10-21, when work items were m
   - **Also:** Apple's email confirming the Small Business Program enrolment (ID-437) has arrived, so the US$9.99 pays 15% commission, not 30%.
   - **Confirmed, 2026-10-20:** Apple's email confirming the enrolment arrived.
 
+
+### 2026-10-28: a status inquiry, a week in
+
+- Five hours short of seven days after submission, the version was still not decided. A dry run of "Promote release" (run 40577566950) read its state: `IN_REVIEW`, so a reviewer had it, rather than it waiting in the queue.
+- Likely cause, not confirmed: the app does nothing without an ASUS router, which a reviewer won't have; the demo video and review notes are for that.
+- Andrew sent Apple a status inquiry through Contact Us, App Review, offering to answer questions or send more. Apple's case ID: 103010748637.
+- Not done, on purpose: cancelling and resubmitting, which goes to the back of the queue, and an expedited review, which Apple keeps for urgent fixes.
