@@ -128,4 +128,5 @@ Andrew asked for all four at once, uninterrupted, in place of a release per slic
 - Suite: 2055 passed, 3 skipped, 95.9%.
 - `live/abstraction_live_test.dart`: RDS-1 reads the slots and checks them against the router's own lists; with `CFG_LIVE_GO=1`, SCH-1 and SCH-2 pause and resume a watchdog and count its boot lines; with `CFG_LIVE_PIA_USER` and `CFG_LIVE_PIA_PASS` as well, DEL-1 and DEL-2 create a throwaway configuration in an empty slot and delete it, then check no key, no row and no runtime keys are left. No tunnel that is up is touched.
 - Live run on stock, Andrew, 2026-10-25, `live/abstraction_live_test.dart`: RDS-1, SCH-1, SCH-2, DEL-1 and DEL-2 all PASS (wgc1 paused and resumed; a throwaway wgc2 in Melbourne created and deleted, nothing left). ID-450, ID-451 and ID-452 closed. ID-419 waits on SonarCloud's own reading.
+- SonarCloud, 2026-10-25: its analysis of the merge of PR #59 (e534111) shows 0 open issues, from 8. ID-419 closed. The abstraction and the clean-up are done.
 

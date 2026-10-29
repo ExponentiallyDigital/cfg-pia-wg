@@ -53,9 +53,8 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.2. FTR - future implementation
 
-- ID-470 CHG: Android's widget doesn't refresh while the phone is locked, as iOS's won't (Andrew, 2026-10-21).
-  - DoD: measured whether Android refreshes while locked today; if it does, it skips while locked, with a test.
-  - Plan: [plan_ios-widget.md](.claude/plans/plan_ios-widget.md)
+- ID-478 GUI: new colours for the main menu rows, and so for each screen's header; on hold, Andrew, 2026-10-26.
+  - Plan: [plan_menu-colours.md](.claude/plans/plan_menu-colours.md)
 - ID-467 CHG: shorter widget key lines on the router, through a script. Raised 2026-10-21, Andrew, on seeing them in the web interface's Authorized Keys. Each home screen widget key's line in `sshd_authkeys` carries the whole status read inline as its `command=` restriction, about 750 characters, so the key can run nothing but that read. The same restriction, as strong, fits in about 60 characters: the read in a script in `/jffs/cfg-pia-wg` (for example `widget-read.sh`) and the line `command="/bin/sh /jffs/cfg-pia-wg/widget-read.sh"`; only root can change the script, and root can already change the keys.
   - Costs: GENERATE puts the script on the router and keeps it in step with the app's read (`lib/widget_status_service.dart`); UNINSTALL removes it with the folder, so widgets stop until GENERATE is run again; keys already on routers are long lines until each phone does GENERATE again.
   - To check first: whether the web interface's Authorized Keys box has a length limit, so that saving that page could cut a long line short and break the widget. If it has, this is a fix, not tidiness.

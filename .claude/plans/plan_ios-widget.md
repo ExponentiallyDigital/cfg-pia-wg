@@ -54,3 +54,39 @@ The CHANGELOG items as they were, 2026-10-21, before they were made short:
 
 - D11's measurement was cut short the same day: an earlier `flutter run` from the MacBook, meant for the Pixel, picked D11 over Wi-Fi and installed a debug build over the TestFlight one, which iOS won't launch from the home screen. The run's record went with it. Andrew installed the TestFlight build on B11, his other iPhone 11, to carry the measurement; it needs the widget key and widgets there too.
 
+
+### 2026-10-26: ID-424's measurement, B11
+
+B11's LOG at 21:54 on 2026-10-26, build 545 from TestFlight, widget key and both widgets in place:
+
+```text
+Background refreshes in the last 48 hours: 14
+  2026-10-25 14:38 phone locked, nothing read
+  2026-10-25 15:45 phone locked, nothing read
+  2026-10-26 08:53 read the router
+  2026-10-26 09:09 read the router
+  2026-10-26 09:25 read the router
+  2026-10-26 09:41 read the router
+  2026-10-26 09:56 read the router
+  2026-10-26 11:52 phone locked, nothing read
+  2026-10-26 14:22 phone locked, nothing read
+  2026-10-26 14:55 phone locked, nothing read
+  2026-10-26 15:54 phone locked, nothing read
+  2026-10-26 18:54 phone locked, nothing read
+  2026-10-26 19:10 phone locked, nothing read
+  2026-10-26 20:03 phone locked, nothing read
+```
+
+- 14 runs in about 30 hours, but uneven: none for 17 hours overnight, then five about 16 minutes apart, the shortest interval asked for, while the phone was in use.
+- Only those five read the router. The other nine came while the phone was locked, so, by the design agreed for ID-438, they read nothing. Most of the background time iOS gives comes while the phone is locked.
+- One phone, one day: a pattern, not a rate to promise.
+
+### 2026-10-26: no refresh while locked kept, and ID-439 closed
+
+- Offered, and declined: keeping the key readable after the first unlock ("after first unlock, this device only"), which would have let the 9 locked runs read the router. Andrew chose A: the key stays readable only while the phone is unlocked.
+- ID-439 closed on B11's log: the background refresh already built for ID-424 updated the widget with the app not open, 5 times.
+
+### 2026-10-26: A kept, and ID-470 closed
+
+- Andrew considered B again, then kept A for the iPhone. Nothing was changed for B.
+- ID-470 closed as won't do: Android keeps refreshing while locked, so the two platforms differ here by choice.
