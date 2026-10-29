@@ -52,6 +52,20 @@ subprojects {
     configurations.matching { it.name.startsWith("_internal-unified-test-platform") }.configureEach {
         resolutionStrategy.deactivateDependencyLocking()
     }
+    // ID-481: Android Lint, which the plugin's release build runs as lintVitalRelease, came with AGP 9.4.1 carrying
+    // five libraries with seven known vulnerabilities (Guava, commons-lang3, httpclient, Bouncy Castle). It runs at
+    // build time and never ships, but unlike the test platform above it does run, so it stays locked, on the fixed
+    // versions instead. Remove a line here once the plugin's own lint tool carries that version or newer.
+    configurations.matching { it.name == "androidLintTool" }.configureEach {
+        resolutionStrategy.force(
+            "com.google.guava:guava:33.7.2-jre",
+            "org.apache.commons:commons-lang3:3.21.0",
+            "org.apache.httpcomponents:httpclient:4.5.14",
+            "org.bouncycastle:bcprov-jdk18on:1.86",
+            "org.bouncycastle:bcpkix-jdk18on:1.86",
+            "org.bouncycastle:bcutil-jdk18on:1.86",
+        )
+    }
     // ID-217: a plugin module that still compiles its Java at source and target 8 made javac print three "value 8 is
     // obsolete" warnings on every build. The app itself is on 17 (app/build.gradle.kts). Silenced for the plugins
     // only, with the switch javac's own warning names, so the app's compile keeps every warning it has.
