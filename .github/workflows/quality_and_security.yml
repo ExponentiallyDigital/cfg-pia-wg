@@ -87,7 +87,7 @@ jobs:
       # `schedule` trigger above scans the default branch every week regardless.
       - name: SonarQube scan
         if: github.actor != 'dependabot[bot]'
-        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304 # v8.4.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -262,7 +262,7 @@ jobs:
           path: build/app/outputs/flutter-apk/
 
       - name: Run mobsfscan
-        uses: MobSF/mobsfscan@4645ea70bc093268502fe9f6df93e41bb482254a # 1.0.1
+        uses: MobSF/mobsfscan@18cce72c077cbac1925439c3158363fd3bb361aa # 1.1.0
         with:
           args: "build/app/outputs/flutter-apk/app-debug.apk --sarif --output mobsfscan.sarif || true"
 

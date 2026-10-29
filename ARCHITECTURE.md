@@ -1976,8 +1976,8 @@ The same design, so nothing is decided twice (ID-438). Everything above 10.4 is 
 
 - **Shared through an app group,** `group.com.exponentiallydigital.cfgpiawg`, in both targets' entitlements; `pushWidgetStatus` names it before it writes. `test/unit/widget_ios_test.dart` holds the keys, the widget kinds, the group and the colours to the Dart side and to Android's.
 - **Embedded before Thin Binary.** After it, Xcode reports a dependency cycle in a Flutter app.
-- **No background refresh yet (ID-439).** The app reads the router as it opens and each time it comes back (`refreshWidgetOnOpen`), so a tap on the widget, which opens the app, brings it up to date.
-- **Nothing while the phone is locked,** Andrew's choice. The key keeps iOS's default protection, readable only while the phone is unlocked, and a refresh that finds it locked returns `locked` and writes nothing: the last reading stands, with no failure in the footer.
+- **Background refresh when iOS allows it (ID-424, ID-439).** A BGAppRefreshTask through workmanager_apple runs the same Dart refresh as Android's. iOS chooses when: on one iPhone over a day, 14 runs, none overnight, five about 16 minutes apart while the phone was in use. The app also reads the router as it opens and each time it comes back (`refreshWidgetOnOpen`), so a tap on the widget, which opens the app, brings it up to date.
+- **Nothing while the phone is locked,** Andrew's choice, kept on 2026-10-26 after the measurement showed most background runs come while the phone is locked. The key keeps iOS's default protection, readable only while the phone is unlocked, and a refresh that finds it locked returns `locked` and writes nothing: the last reading stands, with no failure in the footer. Android doesn't do the same, also Andrew's choice (ID-470): it refreshes locked or not, so its widget is usually fresher.
 
 ---
 

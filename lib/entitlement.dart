@@ -112,13 +112,13 @@ abstract class Entitlement {
       Purchases.addCustomerInfoUpdateListener(_apply);
       _apply(await Purchases.getCustomerInfo());
       // A reinstall, or a new phone, arrives as a brand-new anonymous id that RevenueCat has never
-      // seen and which holds nothing. `syncPurchases` hands it whatever Google Play already knows
-      // this account owns, and the listener above turns that into an unlocked app.
+      // seen and which holds nothing. `syncPurchasesForResult` hands it whatever the store already
+      // knows this account owns, and its answer is applied here as well as through the listener above.
       //
       // NOT `restorePurchases`, which RevenueCat says must never be called programmatically: it can
       // raise an operating-system sign-in prompt, and one of those on a cold start, unasked, is
       // both alarming and inexplicable. Restore stays on a button the user presses.
-      if (!_held) await Purchases.syncPurchases();
+      if (!_held) _apply((await Purchases.syncPurchasesForResult()).customerInfo);
     } catch (e) {
       onLog('Store unavailable: ${_plain(e)}');
     }
@@ -155,7 +155,7 @@ abstract class Entitlement {
   ///
   /// **Only ever from a control the user pressed.** RevenueCat's own guidance: called
   /// programmatically it can raise an operating-system sign-in prompt, which is alarming when
-  /// nobody asked for it. The launch path uses `syncPurchases` instead - see [configure].
+  /// nobody asked for it. The launch path uses `syncPurchasesForResult` instead - see [configure].
   ///
   /// The app never calls `logIn`, so every customer is anonymous and their purchase is tied to
   /// their Google account rather than to anything this app stores. That is why restore works with
