@@ -115,6 +115,11 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-10-29 v0.8.183 build 553 - Android Lint's own libraries moved to versions with no known vulnerabilities, so the OSV scan passes
+
+- ID-481 SEC: Android Lint's libraries carry no known vulnerabilities, so PR #62's OSV scan passes.
+  - Closed 2026-10-29: AGP 9.4.1 (ID-479) put Lint's tool in the lockfile, `androidLintTool`, with 7 known vulnerabilities in Guava, commons-lang3, httpclient and Bouncy Castle (1 Critical, 2 High). Lint runs in every release build (lintVitalRelease) but never ships, so unlike ID-058's test platform it stays locked, with those five, and bcutil, forced to fixed versions in `android/build.gradle.kts`. A release bundle builds and passes lintVitalRelease on a fresh Gradle daemon; the scan's own run is the evidence it clears.
+
 2026-10-25 v0.8.182 build 552 - the iPhone widget's background refresh measured and its items closed, Sonar badges, and Flutter, Gradle, Kotlin and RevenueCat 11
 
 - REL: v0.8.180 (550) passed 2026-10-25 (run 40185678464): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs on the release.
