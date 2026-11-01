@@ -1458,6 +1458,31 @@ The check that lets ID-364 leave WIP, under the CHANGELOG's rule for protection 
 - See: `GUARD-wgcN-no91` says where that device's traffic went with rule 91 gone: `WAN`, or the default connection's tunnel if that's another one. That line is the check seen to fail; `-stopped` just before it is the same check passing with the guard whole.
 - See: `GUARD-wgcN-back` gives the seconds from starting the tunnel to the device's traffic going through it: about 10, plus the tunnel's own start.
 - Do: DEVICES, PHONE back to where it was, APPLY.
+- See (from build 554): `WHOLE-watchdog_wgcN.sh` and `WHOLE-guard.sh` PASS, and each `-cut` PASS, which is the same check seen to fail on a copy cut to 7,940 bytes (ID-484); a `SCHED-wgcN` PASS for every scheduled watchdog (ID-486); and `ERRREPORT` and `ERRREPORT-off` PASS, the second being the check seen to find no report from a copy with the report taken out (ID-485).
+
+**GRD-10** A damaged guard says so (ID-484) [hand]
+
+- Do: email alerts on for wgc1 and wgc5, a device pinned to each (DEVICES).
+- Do: on the router, cut the guard short and run it, keeping the whole one to put back.
+
+```bash
+logger "**GRD-10 START** A damaged guard says so"
+G=/jffs/cfg-pia-wg/guard.sh
+if [ "$(tail -n 1 "$G")" = "# end of guard.sh" ]; then
+  cp "$G" /tmp/guard.sh.whole
+  dd if=/tmp/guard.sh.whole of="$G" bs=4000 count=1 2>/dev/null
+  /bin/sh "$G"; echo "exit $?"                                                   # exit 1
+  cp /tmp/guard.sh.whole "$G"; rm -f /tmp/guard.sh.whole
+  /bin/sh "$G"                                                                   # guarded N of N
+else
+  echo "STOP: $G is not a whole build 554 or later guard - update it in ABOUT first"
+fi
+logger "**GRD-10 END** A damaged guard says so"
+```
+
+- See: `exit 1`, and ROUTER LOG, in red, "ERROR: guard.sh is damaged (4000 bytes, and its last line is missing), so the fail-closed guard is not running."
+- See: one alert email from wgc1's settings and one from wgc5's, each with that sentence as its Event.
+- Pass if: the last line printed is `guarded N of N`, with the whole guard back.
 
 ---
 
@@ -1511,6 +1536,21 @@ The check that lets ID-364 leave WIP, under the CHANGELOG's rule for protection 
 - Do: EXIT the app, reopen, open the drawer and go straight to ROUTER LOG.
 - See: it asks for router details. Do: CANCEL.
 - See: back where you came from, not an empty log (ID-155).
+
+**LOG-8** A script error is reported (ID-485) [hand]
+
+- Do: on the router, leave an error as a finished watchdog run would: `logger "**LOG-8 START** A script error is reported"; echo 'LOG-8 test error' > /tmp/watchdog_wgc1.err.4194999`
+- Do: wait for wgc1's next run, at the next five-minute mark.
+- See: ROUTER LOG, in red, "wgc1: ERROR: This watchdog's last run reported a script error: [LOG-8 test error]", and an alert email with it if wgc1's alerts are on.
+- Pass if: `ls /tmp/watchdog_wgc1.err.* 2>/dev/null` lists nothing but a run in progress, and the red line is not repeated at the run after.
+- Do: EXIT the app, reopen, MANAGE.
+- See: APP LOG, in red, "ERROR: wgc1's watchdog reported at <time>: This watchdog's last run reported a script error: [LOG-8 test error]".
+- Do: `logger "**LOG-8 END** A script error is reported"`
+
+**LOG-9** A day of runs reports no errors (ID-485) [hand]
+
+- Do: a day after deploying this build, on the router: `grep -c 'reported a script error' /tmp/syslog.log; ls /tmp/*.err.* 2>/dev/null`
+- Pass if: the count is 0 and nothing is listed. Every error a run writes is now reported; anything here is either a real fault or a command writing to stderr that should not, and either is a bug to raise.
 
 ---
 
@@ -1763,6 +1803,7 @@ logger "**ABT-3 END** Script from another version"
 ```
 
 - Note: installing an APK of a different version over the top is the real-world case and does the same thing; editing the header line is the quick way to provoke it.
+- Note: an unlocked app brings an older script up to date by itself the first time it reaches the router after it opens (ID-487), and then the amber row never shows. Connect from the app first, then edit the header, and stay in the app. ABT-6 is the automatic update.
 - Do: note `wg show wgc1 latest-handshakes` now, so you can tell afterwards whether the tunnel was restarted.
 - Do: ABOUT, logging in if it asks.
 - See: the script version in amber, reading `v0.0.1 build 1`, and UPDATE WATCHDOG VERSION centred on its own line directly above COPY BUILD INFO, in the same amber.
@@ -1795,6 +1836,76 @@ logger "**ABT-3 END** Script from another version"
 - See: the rows end CPU Architecture (`arm64`), iOS version (the phone's, such as `iOS 27.0`), iOS SDK (with the minimum, `iOS 15.0`) and Xcode; none of them reads `unknown`.
 - Do: COPY BUILD INFO, and paste it into a note.
 - Pass if: the pasted text has the same lines as the screen.
+
+**ABT-6** Scripts updated by themselves (ID-487) [hand]
+
+- Do: on the router, make wgc1's script look older and then newer than the app, one after the other, as below.
+
+```bash
+logger "**ABT-6 START** Scripts updated by themselves"
+F=/jffs/cfg-pia-wg/watchdog_wgc1.sh
+if [ -f "$F" ]; then
+  sed -n '2p' "$F"                                                               # write down the real version
+  sed -i '2s/cfg-pia-wg v[^;]*;/cfg-pia-wg v0.0.1 build 1;/' "$F"
+  sed -n '2p' "$F"                                                               # now build 1
+else
+  echo "STOP: no $F - deploy wgc1's watchdog first"
+fi
+```
+
+- Do: EXIT the app, open it again, MANAGE (an unlocked app: a store build that has been bought, or your own build).
+- See: a snackbar "The scripts on the router were updated to <this build>: watchdog_wgc1.sh."
+- See: APP LOG and ROUTER LOG both "Watchdog script updated automatically to <this build> for wgc1:pia-nz".
+- Do: on the router, `sed -i '2s/cfg-pia-wg v[^;]*;/cfg-pia-wg v9.9.99 build 9999;/' /jffs/cfg-pia-wg/watchdog_wgc1.sh`, then EXIT, reopen, MANAGE.
+- Pass if: no snackbar, and `sed -n '2p' /jffs/cfg-pia-wg/watchdog_wgc1.sh` still says build 9999: a newer script is never replaced.
+- Do: ABOUT, UPDATE WATCHDOG VERSION, to put this build back. Then `logger "**ABT-6 END** Scripts updated by themselves"`.
+
+**ABT-7** A damaged watchdog script (ID-484, ID-486, ID-488) [hand]
+
+- Do: switch email alerts on for wgc1 in WATCHDOG, CREATE/EDIT, if they aren't, and SAVE & DEPLOY.
+- Do: on the router, cut wgc1's script short where 2026-10-29's was, keeping the whole one to put back.
+
+```bash
+logger "**ABT-7 START** A damaged watchdog script"
+F=/jffs/cfg-pia-wg/watchdog_wgc1.sh
+if [ "$(tail -n 1 "$F")" = "# end of watchdog_wgc1.sh" ]; then
+  cp "$F" /tmp/watchdog_wgc1.sh.whole
+  dd if=/tmp/watchdog_wgc1.sh.whole of="$F" bs=7940 count=1 2>/dev/null
+  wc -c < "$F"                                                                   # 7940
+else
+  echo "STOP: $F is not a whole build 554 or later script - update it in ABOUT first"
+fi
+```
+
+- Do: wait for the next five-minute mark, and a minute more.
+- See: ROUTER LOG, in red, "wgc1: ERROR: watchdog_wgc1.sh is damaged (7940 bytes, and its last line is missing), so this watchdog is not running."
+- See: an alert email, subject ending "ERROR - wgc1:pia-nz", with that sentence as its Event.
+- Do: wait for the next run.
+- See: the red line again, and no second email yet: the next waits out the backoff ladder.
+- Do: in the app, ABOUT (logging in if asked; on an unlocked app that has not yet reached the router since it opened, the script is replaced at once, which is ABT-6's case).
+- See: the Watchdog script row in red, ending "DAMAGED: watchdog_wgc1.sh", and UPDATE WATCHDOG VERSION offered; APP LOG has the same red line.
+- See (if you have the widget, after GENERATE in SETTINGS since this build): wgc1's row ends "watchdog broken".
+- Do: UPDATE WATCHDOG VERSION.
+- See: the row goes plain. At the next run, no red line: `tail -n 3 /tmp/watchdog_wgc1.log`.
+- Do: `rm -f /tmp/watchdog_wgc1.sh.whole; logger "**ABT-7 END** A damaged watchdog script"`
+
+**ABT-8** An update that loses the router part-way (ID-482, ID-483) [hand]
+
+- Do: on the router, `logger "**ABT-8 START** An update that loses the router part-way"`. In the app, make the script look older as in ABT-3, so UPDATE WATCHDOG VERSION is offered.
+- Do: UPDATE WATCHDOG VERSION, and straight away switch the phone's Wi-Fi off.
+- See: the back key does nothing while the spinner shows, and a message asks you to wait.
+- See: the update fails on screen, and APP LOG has it in red.
+- Do: switch Wi-Fi back on, and press anything that reaches the router (MANAGE).
+- See: ROUTER LOG "ERROR during update of the watchdog scripts: ... (at <time>, logged late: the router could not be reached then)".
+- Pass if: on the router, the script is whole and still the older one: `tail -n 1 /jffs/cfg-pia-wg/watchdog_wgc1.sh` is its end line, and `sed -n 2p` says build 1.
+- Do: UPDATE WATCHDOG VERSION again, with Wi-Fi on.
+- Pass if: `ls /jffs/cfg-pia-wg/*.new.* 2>/dev/null` lists nothing: the pieces of the failed write went with the next one.
+- Do: `logger "**ABT-8 END** An update that loses the router part-way"`
+
+**ABT-9** A script replaced while it runs (ID-482) [hand]
+
+- Do: start a rebuild as in BRK-1, and while its log shows "Requesting PIA token" or later (`tail -f /tmp/watchdog_wgc1.log`), make the script look older and press UPDATE WATCHDOG VERSION.
+- Pass if: the rebuild's log carries on to "Reconfig SUCCESS", with no shell error, and the next run is on this build's script.
 
 ---
 

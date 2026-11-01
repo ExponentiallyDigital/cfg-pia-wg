@@ -52,8 +52,9 @@ Future<void> _redrawWidgets() async {
 String _pluralTunnels(int n) => n == 1 ? '1 tunnel' : '$n tunnels';
 String _pluralPinned(int n) => n == 1 ? '1 pinned' : '$n pinned';
 
-/// `WidgetTunnelInfo.region · wgcN · up/down · N pinned`, the row's second line. No duration, no
-/// watchdog state: [WidgetStatus] does not carry either yet.
+/// `WidgetTunnelInfo.region · wgcN · up/down · N pinned`, the row's second line, and
+/// `· watchdog broken` when its watchdog can't run (ID-488). No duration: [WidgetStatus] does not
+/// carry one yet.
 String _tunnelDetail(WidgetTunnelInfo t) {
   final pinned = t.pinnedDeviceNames.length;
   final state = switch ((t.answering, t.up)) {
@@ -61,7 +62,7 @@ String _tunnelDetail(WidgetTunnelInfo t) {
     (_, true) => 'not answering',
     _ => 'down',
   };
-  return 'wgc${t.slot} · $state · ${_pluralPinned(pinned)}';
+  return 'wgc${t.slot} · $state · ${_pluralPinned(pinned)}${t.watchdogBroken ? ' · watchdog broken' : ''}';
 }
 
 /// "DESKTOP kept offline by the guard", or "DESKTOP, TABLET kept offline by the guard" - empty
@@ -108,6 +109,9 @@ String _compactBadgeText(WidgetStatus status) {
 String _compactDetailText(WidgetStatus status) {
   switch (status.badge) {
     case WidgetBadge.protected:
+      // Up now, but nothing will rebuild it when it fails (ID-488): worth the compact line.
+      final broken = status.tunnels.where((t) => t.watchdogBroken).toList();
+      if (broken.isNotEmpty) return 'wgc${broken.first.slot} watchdog broken · open the app';
       final pinned = status.tunnels.fold<int>(0, (sum, t) => sum + t.pinnedDeviceNames.length);
       return '${_pluralTunnels(status.tunnels.length)} up · ${_pluralPinned(pinned)}';
     case WidgetBadge.tunnelDown:

@@ -19,6 +19,24 @@ WidgetTunnelInfo tunnel({
     WidgetTunnelInfo(slot: slot, region: region, up: up, handshakeAgeSeconds: handshakeAgeSeconds, pinnedDeviceNames: pinned);
 
 void main() {
+  // ID-488: on 2026-10-29 wgc5's watchdog was cut short and nothing anywhere said so for a day.
+  group('a broken watchdog', () {
+    test('is named on its tunnel row and in the compact widget, though the tunnel is up', () {
+      final status = WidgetStatus(
+        tunnels: [
+          tunnel(slot: 1, region: 'Auckland, New Zealand'),
+          WidgetTunnelInfo(slot: 5, region: 'Melbourne, Australia', up: true, handshakeAgeSeconds: 0, watchdogBroken: true),
+        ],
+        checkedAt: kNow,
+      );
+      final data = buildWidgetData(status, now: kNow);
+      expect(data['badge'], 'protected', reason: 'the tunnel is up; the watchdog is what is broken');
+      expect(data['tunnel2_detail'], 'wgc5 · up · 0 pinned · watchdog broken');
+      expect(data['tunnel1_detail'], 'wgc1 · up · 0 pinned');
+      expect(data['compact_detail_text'], 'wgc5 watchdog broken · open the app');
+    });
+  });
+
   group('buildWidgetData', () {
     test('every tunnel answering: protected, both rows filled, nobody held offline', () {
       final status = WidgetStatus(

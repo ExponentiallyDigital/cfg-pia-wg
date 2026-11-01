@@ -23,6 +23,38 @@ Future<void> _teardown(WidgetTester tester, SessionController c) async {
 }
 
 void main() {
+  // ID-487: only what the app could not put right itself; absent otherwise.
+  testWidgets('a damaged script the app could not replace is a red banner that opens ABOUT', (tester) async {
+    final c = _quietController();
+    await tester.pumpWidget(PiaWgApp(controller: c));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('menu_script_problem')), findsNothing, reason: 'nothing wrong, nothing shown');
+
+    c.routerScriptProblems = [
+      'watchdog_wgc5.sh on the router is damaged (7940 bytes, and its last line is missing), so that watchdog is not running.'
+    ];
+    // The field alone does not redraw; the check that sets it notifies. A fresh tree stands in.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(PiaWgApp(controller: c));
+    await tester.pumpAndSettle();
+    final banner = find.byKey(const Key('menu_script_problem'));
+    expect(banner, findsOneWidget);
+    expect(find.descendant(of: banner, matching: find.textContaining('watchdog_wgc5.sh on the router is damaged')), findsOneWidget);
+    expect(find.descendant(of: banner, matching: find.textContaining('Tap to open ABOUT and update it.')), findsOneWidget);
+    expect(tester.getTopLeft(banner).dy, lessThan(tester.getTopLeft(find.byKey(const Key('menu_standalone'))).dy));
+
+    await tester.tap(banner);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('about_heading')), findsOneWidget, reason: 'ABOUT, where UPDATE puts it right');
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pumpAndSettle();
+
+    c.clearRouterScriptProblems();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('menu_script_problem')), findsNothing, reason: 'the banner follows the controller');
+    await _teardown(tester, c);
+  });
+
   testWidgets('main menu shows all nine entries in drawer order, with no footnotes', (tester) async {
     final c = _quietController();
     await tester.pumpWidget(PiaWgApp(controller: c));

@@ -138,13 +138,19 @@ class PiaWgApp extends StatefulWidget {
 
 class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
-  late final SessionController _controller = widget.controller ?? SessionController();
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  // The app's own controller checks the scripts on each router it reaches (ID-486, ID-487); a test
+  // that hands one in decides for itself.
+  late final SessionController _controller = widget.controller ?? SessionController(checkRouterScripts: true);
   late final DestinationObserver _observer = DestinationObserver(_controller);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // What the controller has to say on screen with no screen of its own to say it on: the scripts
+    // on the router updated by themselves (ID-487).
+    _controller.onNotice = (m) => _messengerKey.currentState?.showSnackBar(SnackBar(content: Text(m)));
     // The router address remembered from a previous session. Fire and forget: a router screen
     // reads it when it prefills, and the controller notifies if it arrives after that.
     _controller.loadRememberedRouterIp();
@@ -224,6 +230,7 @@ class _PiaWgAppState extends State<PiaWgApp> with WidgetsBindingObserver {
         debugShowCheckedModeBanner: false,
         theme: buildAppTheme(),
         navigatorKey: _navigatorKey,
+        scaffoldMessengerKey: _messengerKey,
         navigatorObservers: [_observer],
         home: const MainMenuScreen(),
         builder: (context, child) => AppChrome(navigatorKey: _navigatorKey, child: child!),

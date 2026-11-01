@@ -99,8 +99,26 @@ class RecordingSSHClient implements SSHClient {
     if (out.isEmpty && (command.contains('latest-handshakes') || command.contains('date +%s'))) {
       out = kFakeNow.toString();
     }
-    if (out.isEmpty) out = _sizeOf(command) ?? '';
+    if (out.isEmpty) out = _sizeOf(command) ?? _lastLineOf(command) ?? '';
+    _rememberMove(command);
     return Uint8List.fromList(utf8.encode(out));
+  }
+
+  /// `chmod ... 'tmp' && mv -f 'tmp' 'path'`: the write puts its temporary file in place (ID-482).
+  void _rememberMove(String command) {
+    final m = RegExp(r"mv -f '([^']+)' '([^']+)'").firstMatch(command);
+    if (m == null) return;
+    final from = files.remove(m.group(1)!);
+    if (from != null) files[m.group(2)!] = from;
+  }
+
+  /// Answers `tail -n 1 'path'` from what was written: the write checks the last line (ID-482).
+  String? _lastLineOf(String command) {
+    final m = RegExp(r"^tail -n 1 '([^']+)'").firstMatch(command);
+    if (m == null) return null;
+    final body = files[m.group(1)]?.toString() ?? '';
+    final b = body.endsWith('\n') ? body.substring(0, body.length - 1) : body;
+    return b.split('\n').last;
   }
 
   @override

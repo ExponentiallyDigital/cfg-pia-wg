@@ -21,4 +21,5 @@ Pointers for an agent working in this repository. The detail lives in the docume
 - A protection's check belongs in `scripts/check-claims.sh`, which runs on the router unattended.
 - Scripts copied to the router go in `/jffs/cfg-pia-wg`, the app's own directory, never loose in `/jffs` (CONTEXT.md section 1).
 - Router instructions are given as one copyable block with real values filled in, not prose steps to type.
-- Do not commit or push unless asked.
+- Do not commit or push unless asked. Andrew always says when he wants Claude to commit, and these days usually asks rather than committing himself; when he commits, he does it himself. Every commit is a build and follows the steps at the top of CHANGELOG.md.
+- After every commit, and after every release (a dev-to-main merge and its tag), the next CHANGELOG release block, `<date> vN.N.NN build NNN - in progress`, must be open and `pubspec.yaml`'s `version:` must match it, both halves. Check at the start of any work and straight after a merge and tag. If the newest block has been committed, open the next one and bump `pubspec.yaml`. Never commit them on their own: they go in with the next commit.
