@@ -25,6 +25,10 @@
 #
 # Every mode checks PIA's server list signature with the deployed watchdog's own check (ID-325):
 # today's list must pass, and copies of it with a region moved or the signature taken off must not.
+# And that every script the app put there is whole, with a cut-short copy to show the check can tell
+# (ID-484), and every scheduled watchdog has its script (ID-486). Quick and full also leave an error
+# for a watchdog's next run to report, and show the check finds no report from a copy without it
+# (ID-485), with that slot's alert emails off for the run.
 #
 # On Merlin (ID-353) the firmware-neutral checks run as they are: TLS, secrets, DNS-over-TLS. Mail is
 # checked as Merlin sends it, openssl naming the server. There is no guard or filter to check; Merlin's
@@ -210,6 +214,83 @@ else
 fi
 # Only tamper.sh is needed from here on; the lists are 175 KB each, in RAM.
 rm -f "$SLDIR/list" "$SLDIR/moved" "$SLDIR/nosig" "$SLDIR/data" "$SLDIR/sig" "$SLDIR/key.pem"
+
+# ---- 1c. The scripts on the router are whole (ID-484, ID-486) -----------------------------------
+# On 2026-10-29 an update left watchdog_wgc5.sh cut short at 7,940 bytes, and it failed silently for
+# a day. Each watchdog script from build 554 on, and guard.sh, ends with its own last line, which it
+# checks for itself before anything else. The same test on a copy cut where that one was must call it
+# damaged, or this check could not tell. And every scheduled watchdog must have its script.
+whole() { [ "$(tail -n 1 "$1" 2>/dev/null)" = "# end of $2" ]; }
+for S in "$D"/watchdog_wgc?.sh "$D/guard.sh"; do
+  [ -f "$S" ] || continue
+  N="$(basename "$S")"
+  B="$(sed -n 2p "$S" | sed -n 's/.* build \([0-9]*\);.*/\1/p')"
+  if [ "${B:-0}" -lt 554 ]; then
+    info "WHOLE-$N" "$N is from build ${B:-unknown}, before scripts ended with a line to check: update it"
+    continue
+  fi
+  if whole "$S" "$N"; then
+    pass "WHOLE-$N" "$N ends with its last line"
+  else
+    fail "WHOLE-$N" "$N ends with its last line" "$(wc -c < "$S" | tr -d ' ') bytes, last line: $(tail -n 1 "$S" | cut -c1-60)"
+  fi
+  dd if="$S" of=/tmp/check-claims.cut bs=7940 count=1 2>/dev/null
+  if whole /tmp/check-claims.cut "$N"; then
+    fail "WHOLE-$N-cut" "the check sees $N cut short" "a copy cut to 7940 bytes passed"
+  else
+    pass "WHOLE-$N-cut" "the check sees $N cut short at 7940 bytes"
+  fi
+  rm -f /tmp/check-claims.cut
+done
+# The schedules as they were before this run paused them.
+SCHED="$({ cru l; cat "$CRUSAVE" 2>/dev/null; } | grep -o 'watchdog_wgc[1-5]#' | sort -u)"
+for S in 1 2 3 4 5; do
+  echo "$SCHED" | grep -q "^watchdog_wgc$S#" || continue
+  if [ -f "$D/watchdog_wgc$S.sh" ]; then
+    pass "SCHED-wgc$S" "wgc$S's watchdog is scheduled and its script is there"
+  else
+    fail "SCHED-wgc$S" "wgc$S's watchdog is scheduled and its script is there" "the script is missing"
+  fi
+done
+
+# ---- 1d. A script error is reported (ID-485) ---------------------------------------------------
+# An error a finished run left behind, reported by the next run as a red ERROR line, once. Run on a
+# watchdog whose tunnel is answering, so the run checks and rebuilds nothing, with its alerts off for
+# the run so nobody is emailed; the restore puts them back. Then the same error again, with a copy of
+# the script whose report is taken out: the check must find nothing, or it could not tell.
+if [ "$MODE" != dry ]; then
+  ES=""
+  for S in 1 2 3 4 5; do whole "$D/watchdog_wgc$S.sh" "watchdog_wgc$S.sh" && handshake "wgc$S" && { ES=$S; break; }; done
+  if [ -z "$ES" ]; then
+    info "ERRREPORT" "no build 554 or later watchdog with its tunnel answering: not checked"
+  else
+    E0="$(nvram get "wgc${ES}_wd_email_enabled")"
+    printf 'nvram set %s=%s\n' "wgc${ES}_wd_email_enabled" "'$E0'" >> "$RESTORE"
+    nvram set "wgc${ES}_wd_email_enabled=0"
+    EF="/tmp/watchdog_wgc$ES.err.4194999"
+    EMSG="check-claims test error $$"
+    echo "$EMSG" > "$EF"
+    SL0="$(wc -l < /tmp/syslog.log 2>/dev/null)"
+    T=120; bounded /bin/sh "$D/watchdog_wgc$ES.sh" foreground
+    NEWLOG="$(tail -n +"$((${SL0:-0} + 1))" /tmp/syslog.log 2>/dev/null)"
+    if echo "$NEWLOG" | grep -qF "wgc$ES: ERROR: This watchdog's last run reported a script error: [$EMSG]" && [ ! -f "$EF" ]; then
+      pass "ERRREPORT" "an error a run left behind is reported red by wgc$ES's next run, and its file goes"
+    else
+      fail "ERRREPORT" "an error a run left behind is reported by the next run" "rc=$RC file_left=$([ -f "$EF" ] && echo yes || echo no)"
+    fi
+    echo "$EMSG" > "$EF"
+    sed 's#^for EF in /tmp/watchdog_#for EF in /nonexistent/watchdog_#' "$D/watchdog_wgc$ES.sh" > /tmp/check-claims-noreport.sh
+    SL0="$(wc -l < /tmp/syslog.log 2>/dev/null)"
+    T=120; bounded /bin/sh /tmp/check-claims-noreport.sh foreground
+    if tail -n +"$((${SL0:-0} + 1))" /tmp/syslog.log 2>/dev/null | grep -qF "[$EMSG]"; then
+      fail "ERRREPORT-off" "with the report taken out of a copy, the check finds none" "it found one"
+    else
+      pass "ERRREPORT-off" "with the report taken out of a copy, the check finds none: it can tell"
+    fi
+    rm -f "$EF" /tmp/check-claims-noreport.sh
+    nvram set "wgc${ES}_wd_email_enabled=$E0"
+  fi
+fi
 
 # ---- 2. Mail: certificate names are checked ----------------------------------------------------
 M="$D/mailsend-go"

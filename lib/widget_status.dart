@@ -30,9 +30,14 @@ class WidgetTunnelInfo {
     required this.up,
     this.handshakeAgeSeconds,
     this.pinnedDeviceNames = const [],
+    this.watchdogBroken = false,
   });
 
   final int slot;
+
+  /// Its watchdog is scheduled but its script is damaged or missing, so nothing will rebuild this
+  /// tunnel when it fails (ID-488). On 2026-10-29 that went unseen for a day.
+  final bool watchdogBroken;
 
   /// The PIA region name, `wgcN_desc` by way of `vpnc_clientlist` (ID-376 reuses what MANAGE
   /// already reads; `VpncRecord.desc` in router_slot_service.dart).
@@ -100,6 +105,7 @@ class WidgetStatus {
 /// [upInterfaces]: `kUpInterfacesCommand`'s output (`ip -o link show up`, router_slot_service.dart).
 /// [handshakeAgesRaw]: `kHandshakeAgesCommand`'s output, the router's own clock included.
 /// [devices]: from [buildDeviceList], for showing a pin by name rather than by bare address.
+/// [brokenWatchdogs]: slots whose watchdog is damaged or missing (ID-488).
 WidgetStatus buildWidgetStatus({
   required String vpncClientlist,
   required String devicePolicyList,
@@ -107,6 +113,7 @@ WidgetStatus buildWidgetStatus({
   required String handshakeAgesRaw,
   required List<LanDevice> devices,
   required DateTime checkedAt,
+  Set<int> brokenWatchdogs = const {},
 }) {
   final profiles = parseVpncClientlist(vpncClientlist);
   final ages = parseHandshakeAges(handshakeAgesRaw);
@@ -121,6 +128,7 @@ WidgetStatus buildWidgetStatus({
           up: upInterfaces.contains('wgc${p.slot}'),
           handshakeAgeSeconds: ages[p.slot],
           pinnedDeviceNames: List.unmodifiable(pinnedBySlot[p.slot] ?? const []),
+          watchdogBroken: brokenWatchdogs.contains(p.slot),
         ),
   ];
 

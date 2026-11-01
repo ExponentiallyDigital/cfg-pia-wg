@@ -289,14 +289,19 @@ void main() {
         expect(stock, isNot(contains('have no internet rather than an unprotected one')));
       });
 
-      test('being the default connection is not passed off as protecting the devices that follow it', () {
+      // Andrew, 2026-11-01: added to the kill switch line, straight after the pinned devices' names, the
+      // note read as doubt about them. It is its own paragraph now, and names who it is about.
+      test('being the default connection is its own paragraph, about devices pinned to nothing', () {
         expect(stock, contains(r'if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then'));
-        expect(stock, contains('devices that only follow the default are not covered by the guard'));
+        expect(stock, contains("This tunnel is the router's default connection: a device not pinned to any tunnel, such as one "
+            'that joins your network later, will use the default connection, so it can reach the internet without a VPN '
+            'while this tunnel is down.'));
+        expect(stock, isNot(contains('devices that only follow the default')));
       });
 
-      test('each of the three cases still carries all three tenses, and the default note adds to each', () {
+      test('each of the three cases still carries all three tenses, and the default note adds to none', () {
         for (final v in ['KILLSW_UP=', 'KILLSW_FIXED=', 'KILLSW_DOWN=']) {
-          expect(RegExp(RegExp.escape(v)).allMatches(stock).length, 4, reason: '$v: three cases and the default note');
+          expect(RegExp(RegExp.escape(v)).allMatches(stock).length, 3, reason: '$v: three cases');
         }
       });
     });

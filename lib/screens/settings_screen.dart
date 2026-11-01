@@ -660,12 +660,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           store: _widgetKeyStore,
           installOnRouter: _installWidgetKeyOnRouter,
           removeFromRouter: _removeWidgetKeysFromRouter,
+          startRefresh: widget.testScheduleRefresh ?? scheduleWidgetRefresh,
         ),
       );
 
-  /// Installs the line, remembers the login it was installed under (the key cannot be used without
-  /// it - see WidgetKeyStore's header), and starts the periodic refresh. Returns null, or a
-  /// plain-English reason the dialog shows instead of claiming success.
+  /// Installs the line and remembers the login it was installed under (the key cannot be used without
+  /// it - see WidgetKeyStore's header). Returns null, or a plain-English reason the dialog shows
+  /// instead of claiming success. The refresh starts in the dialog, once the new key is saved.
   Future<String?> _installWidgetKeyOnRouter(String publicKeyLine) async {
     final creds = await _credentials();
     if (creds == null || !mounted) return 'Cancelled - nothing was made or installed.';
@@ -678,7 +679,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           .install(publicKeyLine, replacing: old == null ? null : widgetKeyPairFromSeed(old).publicKeyBytes);
       await _connected(ip);
       await _widgetKeyStore.saveLogin(user);
-      await (widget.testScheduleRefresh ?? scheduleWidgetRefresh)();
       return null;
     } catch (e) {
       return _widgetKeyFailure(e, ip, 'the key was saved', 'nothing was saved on this phone');
@@ -1093,10 +1093,16 @@ class _MaxVpnsDialogState extends State<_MaxVpnsDialog> {
 /// [installOnRouter]/[removeFromRouter], from _SettingsScreenState - this dialog only ever touches
 /// [store], the phone side, and only once the router side has already succeeded.
 class _WidgetKeyDialog extends StatefulWidget {
-  const _WidgetKeyDialog({required this.store, required this.installOnRouter, required this.removeFromRouter});
+  const _WidgetKeyDialog(
+      {required this.store, required this.installOnRouter, required this.removeFromRouter, required this.startRefresh});
   final WidgetKeyStore store;
   final Future<String?> Function(String publicKeyLine) installOnRouter;
   final Future<String?> Function() removeFromRouter;
+
+  /// The first refresh and the periodic one. Started only once the new key is saved: started from
+  /// [installOnRouter], it ran with the old key, which the same write had just taken off the router,
+  /// and the widget said "could not reach the router" until the next refresh, up to 15 minutes later.
+  final Future<void> Function() startRefresh;
 
   @override
   State<_WidgetKeyDialog> createState() => _WidgetKeyDialogState();
@@ -1132,7 +1138,10 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
       comment: kWidgetKeyComment,
     );
     final error = await widget.installOnRouter(line);
-    if (error == null) await widget.store.save(pair.seed);
+    if (error == null) {
+      await widget.store.save(pair.seed);
+      await widget.startRefresh();
+    }
     if (!mounted) return;
     setState(() {
       _exists = error == null;

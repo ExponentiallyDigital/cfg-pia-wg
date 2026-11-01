@@ -91,6 +91,10 @@ String? routerConnectMessage(Object error, String address) {
 /// whatever the timer is doing.
 const Duration kBackgroundSessionGrace = Duration(minutes: 5);
 
+/// How long [RouterSession.onConnected] may hold up the first action on a connection. A check that
+/// replaces two watchdog scripts and the guard is about 30 round trips; this is several times that.
+const Duration kConnectedHookLimit = Duration(seconds: 90);
+
 /// A long-lived router connection that opens on demand and survives a drop.
 ///
 /// One instance lives on `SessionController` for as long as the app holds router credentials.
@@ -103,11 +107,21 @@ class RouterSession implements SSHClient {
 
   final void Function(String, {bool isError, bool isSuccess, bool isWarning})? onLog;
 
+  /// Run on each new connection before any action uses it, with the connection itself (ID-483,
+  /// ID-487): it writes the router log lines kept while the router could not be reached, and checks
+  /// the scripts on the router. Awaited, so nothing an action does can race it, and bounded by
+  /// [kConnectedHookLimit] so a hung check cannot hold the action up for long. Whatever it throws is
+  /// its own business: the action goes ahead.
+  final Future<void> Function(SSHClient client)? onConnected;
+
   SSHClient? _client;
   Future<SSHClient>? _opening;
   bool _closed = false;
 
-  RouterSession({required this.connect, this.onLog});
+  /// [kConnectedHookLimit], unless a test needs less.
+  final Duration connectedHookLimit;
+
+  RouterSession({required this.connect, this.onLog, this.onConnected, this.connectedHookLimit = kConnectedHookLimit});
 
   /// How many connections this session has opened. Reuse is the whole point, so it is worth being
   /// able to assert on it.
@@ -139,6 +153,17 @@ class RouterSession implements SSHClient {
       _connectCount++;
       _client = c;
       if (reopening) onLog?.call('Router SSH connection re-established.');
+      final hook = onConnected;
+      if (hook != null) {
+        try {
+          await hook(c).timeout(connectedHookLimit);
+        } on TimeoutException {
+          onLog?.call('The check of the scripts on the router took longer than ${connectedHookLimit.inSeconds}s; '
+              'carrying on without it.', isWarning: true);
+        } catch (_) {
+          // The hook reports its own failures; an action must not fail because of it.
+        }
+      }
       return c;
     } finally {
       _opening = null;
