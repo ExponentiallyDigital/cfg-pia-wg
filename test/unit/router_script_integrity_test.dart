@@ -34,7 +34,7 @@ Future<int> write(RecordingSSHClient c, {String body = '', int seed = 1}) => wri
         return String.fromCharCodes(r.stdout).trim();
       },
       read: (cmd) => _read(c, cmd),
-      random: Random(seed),
+      options: WriteOptions(random: Random(seed)),
     );
 
 void main() {
@@ -101,8 +101,7 @@ void main() {
             mode: '+x',
             run: hangOrAnswer,
             read: hangOrAnswer,
-            chunkTimeout: const Duration(milliseconds: 300),
-            tidyTimeout: const Duration(milliseconds: 300),
+            options: const WriteOptions(chunkTimeout: Duration(milliseconds: 300), tidyTimeout: Duration(milliseconds: 300)),
           ),
           throwsA(predicate((e) => e.toString().contains('longer than') && e.toString().contains('The router kept'))));
       expect(watch.elapsed, lessThan(const Duration(seconds: 5)));

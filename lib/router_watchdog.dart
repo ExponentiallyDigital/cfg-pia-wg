@@ -1106,37 +1106,39 @@ class RouterWatchdog {
         if (firmware == null) {
           throw Exception('this router firmware is not supported, so its watchdog scripts were left alone.');
         }
-        final List<int> deployed;
-        if (only != null) {
-          deployed = (only.where((s) => s >= 1 && s <= 5).toList()..sort());
-        } else {
-          final probes = [
-            for (var s = 1; s <= 5; s++) "{ [ -s '${watchdogScriptPath(s)}' ] || cru l 2>/dev/null | grep -qw watchdog_wgc$s; } && echo $s"
-          ].join('; ');
-          deployed = RegExp(r'\d+').allMatches(await _read('$probes; true')).map((m) => int.parse(m.group(0)!)).toList();
-        }
+        final deployed = await _slotsToRedeploy(only);
         final version = appVersionLabel.isEmpty ? 'this app version' : appVersionLabel;
+        final how = automatic ? ' automatically' : '';
         for (final slot in deployed) {
           await _writeScript(slot, buildWatchdogScript(await loadConfig(slot), firmware: firmware));
           // One sentence for both logs. The app log said only the path and its size, the router log the
           // version, so the two did not read as the same event (ID-190).
-          final updated = 'Watchdog script updated${automatic ? ' automatically' : ''} to $version for ${await _label(slot)}';
-          onLog?.call('$updated.', isSuccess: true);
-          await _logRouter(updated);
+          await _logUpdated('Watchdog script updated$how to $version for ${await _label(slot)}');
         }
         // The guard and the boot hook that restores it came with 460. A router updated from an older
         // build has neither until something writes them, and this is the update the user is prompted for.
         if (firmware == RouterFirmware.stock && (deployed.isNotEmpty || refreshGuard)) {
           await _guardService.ensure();
           await _refreshS50();
-          if (refreshGuard) {
-            final updated = 'guard.sh updated${automatic ? ' automatically' : ''} to $version';
-            onLog?.call('$updated.', isSuccess: true);
-            await _logRouter(updated);
-          }
+          if (refreshGuard) await _logUpdated('guard.sh updated$how to $version');
         }
         return deployed;
       });
+
+  /// The slots [redeployScripts] touches: [only]'s valid ones, or each whose script is there or
+  /// that a watchdog cron entry names.
+  Future<List<int>> _slotsToRedeploy(Set<int>? only) async {
+    if (only != null) return only.where((s) => s >= 1 && s <= 5).toList()..sort();
+    final probes = [
+      for (var s = 1; s <= 5; s++) "{ [ -s '${watchdogScriptPath(s)}' ] || cru l 2>/dev/null | grep -qw watchdog_wgc$s; } && echo $s"
+    ].join('; ');
+    return RegExp(r'\d+').allMatches(await _read('$probes; true')).map((m) => int.parse(m.group(0)!)).toList();
+  }
+
+  Future<void> _logUpdated(String updated) async {
+    onLog?.call('$updated.', isSuccess: true);
+    await _logRouter(updated);
+  }
 
   /// [_logRouter] for a line that must not stop what follows: one the router can't take now is
   /// kept, and written at the next connection (ID-483).
