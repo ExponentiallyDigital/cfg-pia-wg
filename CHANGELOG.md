@@ -97,30 +97,6 @@ Work items for the **current** release:
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
   - Now: still In Review on 2026-10-31, ten days after submission; no email and no reply to case 103010748637 since the agreement was accepted on 2026-10-30.
-- ID-482 FIX: a script the app writes to the router can't be left half-written. Each is written to a uniquely named file beside the live one, checked, then renamed over it, so a failed write leaves the old script running. Covers the watchdog scripts, `guard.sh` and the boot script. On 2026-10-29 an update from ABOUT left `watchdog_wgc5.sh` at 7,940 of 49 KB, and that watchdog stopped without a word.
-  - DoD: tests show a failed write leaves the live file unchanged, and on the router a watchdog run in progress finishes normally when its script is replaced.
-  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
-  - Now: built in build 554; a failed write leaves the live file unchanged in `router_script_integrity_test.dart`, with the old write as its control. Left: TESTING ABT-8 and ABT-9 on the router.
-- ID-483 FIX: updating the watchdog scripts reports the result, success or failure, in the router log and the app log. A failure is red in both and shown on screen, even if ABOUT was left. If the connection dropped, the failure is written to the router log over a fresh connection, or at the next one, with the time it happened. ABOUT keeps its spinner and can't be left until every script is written.
-  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
-  - Now: built in build 554 and tested (`router_script_check_session_test.dart`, `about_screen_test.dart`). Left: TESTING ABT-8 on a phone.
-- ID-484 ADD: every watchdog script and `guard.sh` ends with a fixed last line and checks for it at the top of each run. If it is missing, each run logs a red ERROR to the router log, and emails when that slot's email alerts are on, spaced by the watchdog's backoff ladder; for `guard.sh`, each slot with alerts on whose devices it guards.
-  - DoD: a check in `scripts/check-claims.sh`, seen to fail against a cut-short copy on the router and pass on the real one.
-  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
-  - Now: built in build 554; `watchdog_integrity_test.dart` and `guard_integrity_test.dart` pass, each with its check taken out as a control, and `check-claims.sh` has `WHOLE-` with a `-cut` copy. Left: check-claims on the router (GRD-9), then TESTING ABT-7 and GRD-10.
-- ID-485 ADD: every error from a script the app runs on the router is captured and reported, always, without exception: the watchdogs, `guard.sh` and the boot script, from a syntax error to a crash part-way through. Each is a red ERROR in the router log and the app log, and emails as ID-484 does.
-  - DoD: on the router, a script made to fail at its start, part-way and at its end gives the red line each time, and `scripts/check-claims.sh` holds it.
-  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
-  - Now: built in build 554; the harness tests pass with a real syntax error in a detached run, and fail with the redirect taken out; `check-claims.sh` has `ERRREPORT` with `ERRREPORT-off` as its control. Left: on the router, check-claims (GRD-9), TESTING LOG-8, and LOG-9's day of runs, which measures what real commands write to stderr.
-- ID-486 ADD: the app checks each deployed script's last line, and that every watchdog cron entry has its script. A damaged or missing script is a red line in the router log and the app log, shows red in ABOUT, and ABOUT offers UPDATE for it.
-  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
-  - Now: built in build 554 and tested; `check-claims.sh` has `SCHED-wgcN`. Left: TESTING ABT-7 on a phone.
-- ID-487 CHG: the app brings the router's watchdog scripts and `guard.sh` up to date by itself, in paid versions only. At its first connection to a router in a session, any script that is older than the app, or damaged, is replaced and logged in both logs; one that is newer is never touched. A banner shows only what it couldn't fix. `guard.sh` gains a version line for this, and ABOUT's check stays. If an update is applied, then a snackbar message is displayed that scripts were updated.
-  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
-  - Now: built in build 554 and tested, the banner included. Left: TESTING ABT-6 on a phone.
-- ID-488 ADD: the home screen widget shows a watchdog that is broken or damaged, not only the tunnel. First, check what the widget's restricted login can read.
-  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
-  - Now: built in build 554. The restricted login runs the widget's read and nothing else, so the read now includes `cru l` and each script's header and last line; a key made before 554 needs GENERATE again to show it. Left: the ABT-7 widget step on a phone.
 
 ---
 
@@ -138,6 +114,63 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-01 v0.8.185 build 555 - the script checks proved on the router and the phone, GENERATE's first widget refresh fixed, and clearer alert wording
+
+```play
+• Fixed: an update in ABOUT that lost the connection could leave a watchdog script cut short, and it stopped quietly. Scripts are now written in full first.
+• A damaged script or a script error shows red in the router log and the app, and is emailed if alerts are on.
+• With the unlock, the app updates your router's scripts itself.
+• Fixed: after GENERATE, the widget said it could not reach the router.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- FIX: a script write that loses the router keeps its reason (ID-482): the tidy-up of its temporary file failed as well, and that error replaced "The router kept the script it had". Found writing ID-492's lost-connection test; a unit test now drops every command after the third piece.
+- CHG: WIP 8 -> 9 bullets. Added: ID-492, after ID-488. Nothing removed.
+- ID-482 FIX: a script the app writes to the router can't be left half-written. Each is written to a uniquely named file beside the live one, checked, then renamed over it, so a failed write leaves the old script running. Covers the watchdog scripts, `guard.sh` and the boot script. On 2026-10-29 an update from ABOUT left `watchdog_wgc5.sh` at 7,940 of 49 KB, and that watchdog stopped without a word.
+  - DoD: tests show a failed write leaves the live file unchanged, and on the router a watchdog run in progress finishes normally when its script is replaced.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Closed 2026-11-01: on the router, `live/scripts_live_test.dart`: ABT-9 replaced wgc5's script while a run of it waited (inode 97022 -> 97090) and the run finished normally, with no error; ABT-8 cut the write at its third piece and wgc1 stayed whole and unchanged, and the next write left nothing beside it. Unit tests: `router_script_integrity_test.dart`, with the old write as the control.
+- ID-487 CHG: the app brings the router's watchdog scripts and `guard.sh` up to date by itself, in paid versions only. At its first connection to a router in a session, any script that is older than the app, or damaged, is replaced and logged in both logs; one that is newer is never touched. A banner shows only what it couldn't fix. `guard.sh` gains a version line for this, and ABOUT's check stays. If an update is applied, then a snackbar message is displayed that scripts were updated.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Closed 2026-11-01: on the router, live ABT-6: wgc1's script made build 1 was replaced automatically and the router log said so; made build 9999, it was left alone. On the emulator, the app updated the router's scripts at its first connection (Andrew). Unit and widget tests cover the snackbar and the banner.
+- ID-492 TST: the router side of TESTING ABT-6 to ABT-9, GRD-10 and LOG-8 runs unattended from the PC, `live/scripts_live_test.dart`, through the app's own code; the on-screen steps stay by hand.
+  - DoD: it passes on the router, and its log is in `.claude/testing/`.
+  - Closed 2026-11-01: all 30 checks passed on the router, log `.claude/testing/2026-11-01T163535_live_scripts.log`. With alerts on for wgc1 and wgc5, the mailer reported each fault email sent; their arrival is not part of this check.
+- CHG: WIP 9 -> 6 bullets. Removed: ID-482, ID-487 and ID-492, closed, above.
+- ID-484 ADD: every watchdog script and `guard.sh` ends with a fixed last line and checks for it at the top of each run. If it is missing, each run logs a red ERROR to the router log, and emails when that slot's email alerts are on, spaced by the watchdog's backoff ladder; for `guard.sh`, each slot with alerts on whose devices it guards.
+  - DoD: a check in `scripts/check-claims.sh`, seen to fail against a cut-short copy on the router and pass on the real one.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Closed 2026-11-01: `check-claims.sh quick` on the router, 55 passed and 0 failed (`.claude/testing/2026-11-01_check-claims-quick.txt`): `WHOLE-` passed for both watchdog scripts and guard.sh, and each `-cut` copy at 7940 bytes was seen to fail the same check. Live ABT-7 and GRD-10 passed: red lines, one email per slot inside the backoff.
+- ID-486 ADD: the app checks each deployed script's last line, and that every watchdog cron entry has its script. A damaged or missing script is a red line in the router log and the app log, shows red in ABOUT, and ABOUT offers UPDATE for it.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Closed 2026-11-01: `check-claims.sh quick` on the router: `SCHED-wgc1` and `SCHED-wgc5` passed. Live ABT-7 and GRD-10: the app found the damaged wgc1 script and guard.sh, red in both logs.
+- CHG: WIP 6 -> 4 bullets. Removed: ID-484 and ID-486, closed, above.
+- FIX: an update that loses the router no longer waits on it for minutes (ID-483). After a failed piece, the tidy-up of the temporary file and the router log line each waited on a connection that had gone without closing, for as long as the socket took to give up; they are now bounded at 10 s and 15 s. Found writing ID-494's Wi-Fi-off test; a unit test holds a silent connection to under 5 s.
+- CHG: WIP 4 -> 6 bullets. Added: ID-493 and ID-494, after ID-488. Nothing removed.
+- FIX: README's Lines of code badge shows again: its image address ran over a line, so it ended in a line break and SonarCloud returned nothing a browser could draw. A test now fails on any `src` or `href` in the project's Markdown that runs over a line, and fails on the line as it was.
+- ID-493 FIX: the first widget refresh after GENERATE runs with the new key. It started before the new key was saved, so it used the old one, which the same write had taken off the router, and the widget said "could not reach the router" until the next refresh, up to 15 minutes later.
+  - Closed 2026-11-01: on the emulator, `live/app_live_test.dart`: GENERATE's first refresh reached the router with the new key, the widget's footer "Router checked 17:15". `settings_screen_test.dart` holds the order: the refresh starts only once the new key is saved.
+- CHG: WIP 6 -> 5 bullets. Removed: ID-493, closed, above.
+- ID-488 ADD: the home screen widget shows a watchdog that is broken or damaged, not only the tunnel. First, check what the widget's restricted login can read.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Closed 2026-11-01: on the emulator, `live/app_live_test.dart` (`.claude/testing/2026-11-01T172318_live_app.log`): after GENERATE, wgc1's row read "wgc1 · up · 1 pinned" with its script whole, "... · watchdog broken" with it cut to 7940 bytes, and the compact widget "wgc1 watchdog broken · open the app"; put back, the row was plain again. Live ABT-7 on the router: the widget's read called the damaged watchdog broken. A widget key made before build 554 needs GENERATE again to show it.
+- CHG: WIP 5 -> 4 bullets. Removed: ID-488, closed, above.
+- ID-483 FIX: updating the watchdog scripts reports the result, success or failure, in the router log and the app log. A failure is red in both and shown on screen, even if ABOUT was left. If the connection dropped, the failure is written to the router log over a fresh connection, or at the next one, with the time it happened. ABOUT keeps its spinner and can't be left until every script is written.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Closed 2026-11-01: on the emulator, `live/app_live_test.dart`, all 12 checks passed (`.claude/testing/2026-11-01T173117_live_app.log`): UPDATE in ABOUT with the network cut part-way through wgc5's write; the back key, pressed while it wrote, was refused with "Wait until the watchdog scripts have been written to the router." and ABOUT stayed open; the failure showed on screen and in the app log; wgc5 stayed the older script, whole; with the network back, the router log had the failure marked late and the retry left nothing beside either script. Live ABT-8 on the router passed too, with a client cut at the third piece.
+- CHG: WIP 4 -> 3 bullets. Removed: ID-483, closed, above.
+- ID-495 DEC: LOG-9 is an active run, not a 24-hour wait, Andrew's decision, 2026-11-01. A quiet day of healthy runs repeats one path every five minutes and never takes the rare ones, so the run forces a rebuild of each watchdog's tunnel, run detached as cron runs it, and a firewall restart, which runs the boot script and the guard, then checks no script error was reported by those runs or by any build 554 or later run in the watchdogs' logs. The 24-hour version stays, without `CFG_LIVE_GO`.
+  - Closed 2026-11-01: decided; built into `live/day_of_runs_live_test.dart` for ID-485 and ID-494.
+- ID-485 ADD: every error from a script the app runs on the router is captured and reported, always, without exception: the watchdogs, `guard.sh` and the boot script, from a syntax error to a crash part-way through. Each is a red ERROR in the router log and the app log, and emails as ID-484 does.
+  - DoD: on the router, a script made to fail at its start, part-way and at its end gives the red line each time, and `scripts/check-claims.sh` holds it.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Closed 2026-11-01: on the router (`.claude/testing/2026-11-01T174249_live_scripts.log`), three copies of wgc1's script failing for real at a run's start, part-way and end, each run detached as cron runs it, were each reported red by wgc1's next run, quoting the shell's own error. LOG-8 and check-claims' `ERRREPORT`, with `ERRREPORT-off` as its control, passed earlier. LOG-9's active run (ID-495, `.claude/testing/2026-11-01T174456_live_log9_active.log`): a detached rebuild of wgc1 and of wgc5 and a firewall restart reported no script error, nor did the 30 and 20 runs since build 555 went on, and no error file was left.
+- ID-494 TST: the checks ID-483, ID-485 and ID-488 still need run unattended: ABT-8's phone steps and the widget's line on the Android emulator, driven by adb, and LOG-9's day of runs on the router.
+  - DoD: each passes, its log in `.claude/testing/`.
+  - Closed 2026-11-01: `live/app_live_test.dart` passed on the emulator, all 12 checks (`.claude/testing/2026-11-01T173117_live_app.log`), and `live/day_of_runs_live_test.dart`'s active run passed on the router, all 8 checks (`.claude/testing/2026-11-01T174456_live_log9_active.log`).
+- CHG: WIP 3 -> 1 bullets. Removed: ID-485 and ID-494, closed, above.
+- CHG: the alert email's note about the default connection is its own paragraph, in Andrew's wording: "This tunnel is the router's default connection: a device not pinned to any tunnel, such as one that joins your network later, will use the default connection, so it can reach the internet without a VPN while this tunnel is down." Added to the kill switch line, straight after the pinned devices' names, "devices that only follow the default are not covered by the guard" read as doubt about them, on a router where every device was pinned. A harness test reads the paragraph from a real deploy email, below the rows, and finds none with another default.
 
 2026-10-29 v0.8.184 build 554 - scripts on the router are written whole and check themselves, every fault is reported in red, and the app updates them itself
 

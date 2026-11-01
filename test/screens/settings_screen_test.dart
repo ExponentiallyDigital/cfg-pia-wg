@@ -1488,6 +1488,39 @@ void main() {
       expect(tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data, contains('installed on your router'));
     });
 
+    // The first refresh used to start before the new key was saved, so it used the old one, which the
+    // same write had taken off the router, and the widget said it could not reach the router.
+    testWidgets('the first refresh after GENERATE runs with the new key, not the one it replaced', (tester) async {
+      await store.save(generateWidgetKeyPair().seed);
+      final old = await store.read();
+      List<int>? atRefresh;
+      final c = connected();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MaterialApp(
+        home: SessionScope(
+          controller: c,
+          child: Scaffold(
+            body: SettingsScreen(
+              testWidgetKeyStore: store,
+              testClientFactory: (_, __, ___) async => FakeKeysRouter('').client,
+              testScheduleRefresh: () async => atRefresh = await store.read(),
+              testCancelRefresh: () async {},
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_widget_key')));
+      await tester.tap(find.byKey(const Key('settings_widget_key')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('widget_key_generate')));
+      await tester.pumpAndSettle();
+
+      expect(atRefresh, isNotNull, reason: 'a refresh was started');
+      expect(atRefresh, isNot(old), reason: 'not with the key GENERATE replaced');
+      expect(atRefresh, await store.read(), reason: 'with the key now saved');
+    });
+
     testWidgets('GENERATE remembers the login it installed under, and starts the periodic refresh', (tester) async {
       await openDialog(tester, ssh: FakeKeysRouter('').client);
       await tester.tap(find.byKey(const Key('widget_key_generate')));
