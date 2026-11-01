@@ -53,6 +53,10 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.2. FTR - future implementation
 
+- ID-490 ADD: each watchdog checks that the others still run: a red ERROR in the router log when one with a cron entry hasn't started in 3 intervals, and an email. Parked by Andrew, 2026-10-31 (ID-489): slots can have different email settings, so which slot's settings report another slot's fault is to be decided first.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+- ID-491 REL: every release's What's New says how the router's scripts get the release: updated by the app the next time it connects, or, without the unlock, with UPDATE WATCHDOG VERSION in ABOUT.
+  - DoD: a test fails a release block whose `play` fence leaves it out.
 - ID-478 GUI: new colours for the main menu rows, and so for each screen's header; on hold, Andrew, 2026-10-26.
   - Plan: [plan_menu-colours.md](.claude/plans/plan_menu-colours.md)
 - ID-467 CHG: shorter widget key lines on the router, through a script. Raised 2026-10-21, Andrew, on seeing them in the web interface's Authorized Keys. Each home screen widget key's line in `sshd_authkeys` carries the whole status read inline as its `command=` restriction, about 750 characters, so the key can run nothing but that read. The same restriction, as strong, fits in about 60 characters: the read in a script in `/jffs/cfg-pia-wg` (for example `widget-read.sh`) and the line `command="/bin/sh /jffs/cfg-pia-wg/widget-read.sh"`; only root can change the script, and root can already change the keys.

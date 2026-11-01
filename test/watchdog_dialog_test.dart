@@ -462,7 +462,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(ssh.ran("nvram set wgc1_wd_primary_ip='8.8.8.8'"), isTrue);
-    expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
+    expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh.new."), isTrue);
     expect(ssh.ran('cru a watchdog_wgc1'), isTrue);
   });
 
@@ -625,7 +625,7 @@ void main() {
     expect(logged, hasLength(1));
     expect(logged.single, contains('Saving anyway.'));
     expect(ssh.commands.where((cmd) => cmd.startsWith('logger') && cmd.contains('Secondary IP')), isEmpty);
-    expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
+    expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh.new."), isTrue);
   });
 
   testWidgets('save on a disabled empty slot deploys the region chosen on the form', (tester) async {
@@ -651,7 +651,7 @@ void main() {
     expect(find.byType(BottomSheet), findsNothing, reason: 'no picker arriving after SAVE');
 
     expect(ssh.ran("nvram set wgc1_desc='pia-aus_melbourne'"), isTrue); // same prefix as MANAGE
-    expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh'"), isTrue);
+    expect(ssh.ran("cat > '/jffs/cfg-pia-wg/watchdog_wgc1.sh.new."), isTrue);
 
     // Empty-slot create is enabled immediately; no reminder dialog is shown.
     expect(find.text('Watchdog configured'), findsNothing);

@@ -614,7 +614,7 @@ void main() {
     });
 
     test('a guard that cannot be put in place is reported, and the APPLY still finishes', () async {
-      final c = guardClient(installed: false)..failWith["guard.sh' <<"] = 'cat: write error: No space left on device';
+      final c = guardClient(installed: false)..failWith["guard.sh.new."] = 'cat: write error: No space left on device';
       final logs = <String>[];
       final svc = DeviceAssignmentService(c,
           pollInterval: Duration.zero,

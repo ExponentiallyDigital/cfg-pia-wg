@@ -85,6 +85,7 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 Work items for the **next** release:
 
+`<none>`
 
 ---
 
@@ -95,8 +96,31 @@ Work items for the **current** release:
 - ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
-  - Now: In Review on 2026-10-28, a week after submission; Andrew asked Apple for its status the same day, case 103010748637.
-- ID-480 TST: with RevenueCat 11, a purchase and RESTORE PURCHASE work on a phone, before the next release.
+  - Now: still In Review on 2026-10-31, ten days after submission; no email and no reply to case 103010748637 since the agreement was accepted on 2026-10-30.
+- ID-482 FIX: a script the app writes to the router can't be left half-written. Each is written to a uniquely named file beside the live one, checked, then renamed over it, so a failed write leaves the old script running. Covers the watchdog scripts, `guard.sh` and the boot script. On 2026-10-29 an update from ABOUT left `watchdog_wgc5.sh` at 7,940 of 49 KB, and that watchdog stopped without a word.
+  - DoD: tests show a failed write leaves the live file unchanged, and on the router a watchdog run in progress finishes normally when its script is replaced.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Now: built in build 554; a failed write leaves the live file unchanged in `router_script_integrity_test.dart`, with the old write as its control. Left: TESTING ABT-8 and ABT-9 on the router.
+- ID-483 FIX: updating the watchdog scripts reports the result, success or failure, in the router log and the app log. A failure is red in both and shown on screen, even if ABOUT was left. If the connection dropped, the failure is written to the router log over a fresh connection, or at the next one, with the time it happened. ABOUT keeps its spinner and can't be left until every script is written.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Now: built in build 554 and tested (`router_script_check_session_test.dart`, `about_screen_test.dart`). Left: TESTING ABT-8 on a phone.
+- ID-484 ADD: every watchdog script and `guard.sh` ends with a fixed last line and checks for it at the top of each run. If it is missing, each run logs a red ERROR to the router log, and emails when that slot's email alerts are on, spaced by the watchdog's backoff ladder; for `guard.sh`, each slot with alerts on whose devices it guards.
+  - DoD: a check in `scripts/check-claims.sh`, seen to fail against a cut-short copy on the router and pass on the real one.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Now: built in build 554; `watchdog_integrity_test.dart` and `guard_integrity_test.dart` pass, each with its check taken out as a control, and `check-claims.sh` has `WHOLE-` with a `-cut` copy. Left: check-claims on the router (GRD-9), then TESTING ABT-7 and GRD-10.
+- ID-485 ADD: every error from a script the app runs on the router is captured and reported, always, without exception: the watchdogs, `guard.sh` and the boot script, from a syntax error to a crash part-way through. Each is a red ERROR in the router log and the app log, and emails as ID-484 does.
+  - DoD: on the router, a script made to fail at its start, part-way and at its end gives the red line each time, and `scripts/check-claims.sh` holds it.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Now: built in build 554; the harness tests pass with a real syntax error in a detached run, and fail with the redirect taken out; `check-claims.sh` has `ERRREPORT` with `ERRREPORT-off` as its control. Left: on the router, check-claims (GRD-9), TESTING LOG-8, and LOG-9's day of runs, which measures what real commands write to stderr.
+- ID-486 ADD: the app checks each deployed script's last line, and that every watchdog cron entry has its script. A damaged or missing script is a red line in the router log and the app log, shows red in ABOUT, and ABOUT offers UPDATE for it.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Now: built in build 554 and tested; `check-claims.sh` has `SCHED-wgcN`. Left: TESTING ABT-7 on a phone.
+- ID-487 CHG: the app brings the router's watchdog scripts and `guard.sh` up to date by itself, in paid versions only. At its first connection to a router in a session, any script that is older than the app, or damaged, is replaced and logged in both logs; one that is newer is never touched. A banner shows only what it couldn't fix. `guard.sh` gains a version line for this, and ABOUT's check stays. If an update is applied, then a snackbar message is displayed that scripts were updated.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Now: built in build 554 and tested, the banner included. Left: TESTING ABT-6 on a phone.
+- ID-488 ADD: the home screen widget shows a watchdog that is broken or damaged, not only the tunnel. First, check what the widget's restricted login can read.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+  - Now: built in build 554. The restricted login runs the widget's read and nothing else, so the read now includes `cru l` and each script's header and last line; a key made before 554 needs GENERATE again to show it. Left: the ABT-7 widget step on a phone.
 
 ---
 
@@ -114,6 +138,23 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-10-29 v0.8.184 build 554 - scripts on the router are written whole and check themselves, every fault is reported in red, and the app updates them itself
+
+```play
+• Fixed: an update in ABOUT that lost the connection could leave a watchdog script cut short, and it stopped silently. Scripts are now written in full before they replace the old ones.
+• A damaged script or a script error shows red in the router log and the app, and is emailed if alerts are on.
+• With the unlock, the app updates your router's scripts itself; if not, use UPDATE WATCHDOG VERSION in ABOUT.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- REL: v0.8.183 (553) passed 2026-10-29 (run 40811598032): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs and the Dart licences on the release.
+- ID-480 TST: with RevenueCat 11, a purchase and RESTORE PURCHASE work on a phone, before the next release.
+  - Closed 2026-10-29: on build 553 from Play's internal track, after Andrew refunded his test purchase: the app was locked, a new purchase unlocked it, after Clear storage it unlocked at launch with nothing tapped (`syncPurchasesForResult`), and after a second Clear storage RESTORE PURCHASE found it. All five steps passed.
+- CHG: WIP 2 -> 1 bullets. Removed: ID-480, closed, above.
+- ID-489 DEC: how damaged and outdated router scripts are handled, Andrew's decisions, 2026-10-31. Scripts are updated automatically, in paid versions only, because updating writes to the router; never to an older version; damaged scripts are replaced the same way; a banner only for what the app couldn't fix. A damaged or failing script emails only when that slot's own email alerts are on, spaced by the watchdog's backoff ladder, not once a day; a damaged `guard.sh` emails through each slot with alerts on whose devices it guards. One watchdog checking on the others is parked (ID-490): slots can have different email settings.
+  - Closed 2026-10-31: decided; built in ID-484, ID-485 and ID-487.
+- CHG: WIP 1 -> 8 bullets. Added after ID-436, in build order: ID-482 to ID-488, from wgc5's watchdog found stopped on 2026-10-30, its script cut short by an update on 2026-10-29. Nothing removed.
 
 2026-10-29 v0.8.183 build 553 - Android Lint's own libraries moved to versions with no known vulnerabilities, so the OSV scan passes
 
