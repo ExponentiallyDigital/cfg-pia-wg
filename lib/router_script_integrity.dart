@@ -71,6 +71,28 @@ String lastLineOf(String body) {
   return b.split('\n').last;
 }
 
+/// [e] as a sentence can carry it: without Dart's own "Exception: " in front.
+String plainReason(Object e) => e.toString().replaceFirst(RegExp(r'^Exception: '), '');
+
+/// How long [writeRouterFile] waits, and where its temporary name comes from.
+class WriteOptions {
+  const WriteOptions({
+    this.chunkTimeout = const Duration(seconds: 30),
+    this.tidyTimeout = const Duration(seconds: 10),
+    this.random,
+  });
+
+  /// Each piece of the write.
+  final Duration chunkTimeout;
+
+  /// Removing the temporary file after a failure: on a connection that has gone without closing, a
+  /// command can wait for minutes.
+  final Duration tidyTimeout;
+
+  /// For the temporary file's name; a secure one when null. A test passes a seeded one.
+  final Random? random;
+}
+
 /// Writes [body] to [path] on the router so that [path] only ever holds the old file, whole, or the
 /// new one, whole (ID-482). Returns the size written.
 ///
@@ -81,8 +103,7 @@ String lastLineOf(String body) {
 /// leaves [path] as it was and throws, saying so; the temporary file is removed when the router can
 /// still be reached, and otherwise by the next write to [path].
 ///
-/// [run] throws on a non-zero exit; [read] never throws. [chunkTimeout] bounds each piece, and
-/// [tidyTimeout] the removal of the temporary file after a failure.
+/// [run] throws on a non-zero exit; [read] never throws. [options] bounds the waits.
 Future<int> writeRouterFile({
   required String path,
   required String body,
@@ -90,11 +111,10 @@ Future<int> writeRouterFile({
   required String mode,
   required Future<String> Function(String cmd) run,
   required Future<String> Function(String cmd) read,
-  Duration chunkTimeout = const Duration(seconds: 30),
-  Duration tidyTimeout = const Duration(seconds: 10),
-  Random? random,
+  WriteOptions options = const WriteOptions(),
 }) async {
-  final tmp = tempWritePath(path, random);
+  final chunkTimeout = options.chunkTimeout;
+  final tmp = tempWritePath(path, options.random);
   final expected = writtenByteCount(body);
   final last = lastLineOf(body).trim();
   final kept = 'The router kept the $what it had, so nothing changed there';
@@ -103,7 +123,7 @@ Future<int> writeRouterFile({
     // has gone this fails too, or hangs on a socket nobody answers, and the next write to this path
     // removes the pieces instead.
     try {
-      await read("rm -f '$tmp'").timeout(tidyTimeout);
+      await read("rm -f '$tmp'").timeout(options.tidyTimeout);
     } catch (_) {}
     throw Exception('Writing $path failed: $why. $kept.');
   }
@@ -116,7 +136,7 @@ Future<int> writeRouterFile({
     await fail('a piece took longer than ${chunkTimeout.inSeconds}s to send. Check the connection to the router and '
         'that its filesystem (JFFS) is writable');
   } catch (e) {
-    await fail('the connection failed part-way through (${e.toString().replaceFirst(RegExp(r'^Exception: '), '')})');
+    await fail('the connection failed part-way through (${plainReason(e)})');
   }
   final size = int.tryParse((await read("wc -c < '$tmp' 2>/dev/null | tr -d ' '")).trim()) ?? 0;
   if (size != expected) {
@@ -133,7 +153,7 @@ Future<int> writeRouterFile({
   try {
     await run("chmod $mode '$tmp' && mv -f '$tmp' '$path'");
   } catch (e) {
-    await fail('it could not be put in place (${e.toString().replaceFirst(RegExp(r'^Exception: '), '')})');
+    await fail('it could not be put in place (${plainReason(e)})');
   }
   final placed = int.tryParse((await read("wc -c < '$path' 2>/dev/null | tr -d ' '")).trim()) ?? 0;
   if (placed != expected) {
@@ -248,34 +268,46 @@ RouterScriptHealth parseScriptHealth(String out) {
   final faults = <ScriptFault>[];
   for (final raw in out.split('\n')) {
     final f = raw.trimRight().split('|');
-    if (f.length >= 4 && f[0] == 'fault') {
-      final slot = int.tryParse(f[1]);
-      final epoch = int.tryParse(f[2].trim());
-      if (slot != null && epoch != null) {
-        faults.add(ScriptFault(
-            slot: slot, at: DateTime.fromMillisecondsSinceEpoch(epoch * 1000), message: f.sublist(3).join('|').trim()));
-      }
+    final fault = _faultLine(f);
+    if (fault != null) {
+      faults.add(fault);
       continue;
     }
-    if (f.length < 6) continue;
-    final m = RegExp(r'^wgc([1-5])$').firstMatch(f[0]);
-    if (m == null && f[0] != 'guard') continue;
-    final script = DeployedScript(
-      fileName: m == null ? 'guard.sh' : 'watchdog_wgc${m.group(1)}.sh',
-      slot: m == null ? null : int.parse(m.group(1)!),
-      scheduled: f[1] == '1',
-      exists: f[2] == '1',
-      size: int.tryParse(f[3].trim()) ?? 0,
-      version: parseScriptVersion(f[4]),
-      lastLine: f.sublist(5).join('|'),
-    );
-    if (m == null) {
+    final script = _scriptLine(f);
+    if (script == null) continue;
+    if (script.slot == null) {
       guard = script;
     } else {
       watchdogs.add(script);
     }
   }
   return RouterScriptHealth(watchdogs: watchdogs, guard: guard, faults: faults);
+}
+
+/// `fault|<slot>|<epoch>|<message>`, or null.
+ScriptFault? _faultLine(List<String> f) {
+  if (f.length < 4 || f[0] != 'fault') return null;
+  final slot = int.tryParse(f[1]);
+  final epoch = int.tryParse(f[2].trim());
+  if (slot == null || epoch == null) return null;
+  return ScriptFault(slot: slot, at: DateTime.fromMillisecondsSinceEpoch(epoch * 1000), message: f.sublist(3).join('|').trim());
+}
+
+/// `wgcN|scheduled|exists|size|header|last line` or the same for `guard`, or null. The last line can
+/// hold a `|` of its own, so it is everything after the fifth.
+DeployedScript? _scriptLine(List<String> f) {
+  if (f.length < 6) return null;
+  final m = RegExp(r'^wgc([1-5])$').firstMatch(f[0]);
+  if (m == null && f[0] != 'guard') return null;
+  return DeployedScript(
+    fileName: m == null ? 'guard.sh' : 'watchdog_wgc${m.group(1)}.sh',
+    slot: m == null ? null : int.parse(m.group(1)!),
+    scheduled: f[1] == '1',
+    exists: f[2] == '1',
+    size: int.tryParse(f[3].trim()) ?? 0,
+    version: parseScriptVersion(f[4]),
+    lastLine: f.sublist(5).join('|'),
+  );
 }
 
 // ─── The widget (ID-488) ─────────────────────────────────────────────────────────────────────────
@@ -356,13 +388,7 @@ Future<RouterScriptCheck> checkRouterScripts(
     onLog?.call(s.problem!, isError: true);
     await w.logRouterQuietly(s.problem!);
   }
-  final now = clock();
-  for (final f in health.faults) {
-    final key = '${f.slot}@${f.at.millisecondsSinceEpoch}';
-    if (now.difference(f.at) > const Duration(days: 1) || !(seenFaults?.add(key) ?? true)) continue;
-    final at = '${f.at.year}-${_two(f.at.month)}-${_two(f.at.day)} ${_two(f.at.hour)}:${_two(f.at.minute)}';
-    onLog?.call("ERROR: wgc${f.slot}'s watchdog reported at $at: ${f.message}", isError: true);
-  }
+  _logFaults(health.faults, onLog: onLog, seenFaults: seenFaults, now: clock());
 
   final slots = <int>{
     for (final s in health.watchdogs)
@@ -371,6 +397,12 @@ Future<RouterScriptCheck> checkRouterScripts(
   final guard = firmware == RouterFirmware.stock && (health.guard?.needsUpdate ?? false);
   final broken = [for (final s in health.damaged) s.problem!.replaceFirst('ERROR: ', '')];
   if (!canUpdate || (slots.isEmpty && !guard)) return RouterScriptCheck(unfixed: broken);
+  return _updateScripts(w, slots: slots, guard: guard, broken: broken);
+}
+
+/// [checkRouterScripts]'s update of [slots], and of guard.sh if [guard].
+Future<RouterScriptCheck> _updateScripts(RouterWatchdog w,
+    {required Set<int> slots, required bool guard, required List<String> broken}) async {
   try {
     final done = await w.redeployScripts(only: slots, refreshGuard: guard, automatic: true);
     return RouterScriptCheck(updated: [
@@ -381,8 +413,19 @@ Future<RouterScriptCheck> checkRouterScripts(
     // redeployScripts has said what failed, in both logs.
     return RouterScriptCheck(unfixed: [
       ...broken,
-      'The app could not bring the router\'s scripts up to date: ${e.toString().replaceFirst(RegExp(r'^Exception: '), '')}',
+      "The app could not bring the router's scripts up to date: ${plainReason(e)}",
     ]);
+  }
+}
+
+/// Each fault from the last day that the app log does not already hold, red. Older ones are in the
+/// router's own log and the alert emails.
+void _logFaults(List<ScriptFault> faults, {ScriptLog? onLog, Set<String>? seenFaults, required DateTime now}) {
+  for (final f in faults) {
+    final key = '${f.slot}@${f.at.millisecondsSinceEpoch}';
+    if (now.difference(f.at) > const Duration(days: 1) || !(seenFaults?.add(key) ?? true)) continue;
+    final at = '${f.at.year}-${_two(f.at.month)}-${_two(f.at.day)} ${_two(f.at.hour)}:${_two(f.at.minute)}';
+    onLog?.call("ERROR: wgc${f.slot}'s watchdog reported at $at: ${f.message}", isError: true);
   }
 }
 

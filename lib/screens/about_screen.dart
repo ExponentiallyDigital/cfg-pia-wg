@@ -276,6 +276,16 @@ class _AboutScreenState extends State<AboutScreen> {
       errorDetail = plain == null ? null : e.toString();
       error = plain ?? plainError(e);
     }
+    await _reportRedeploy(controller, slots: slots, damaged: damaged, version: version, error: error, errorDetail: errorDetail);
+  }
+
+  /// [_redeployScripts]'s result: on screen and in the app log, or the app log alone if the screen has gone.
+  Future<void> _reportRedeploy(SessionController controller,
+      {required List<int> slots,
+      required List<String> damaged,
+      String? version,
+      String? error,
+      String? errorDetail}) async {
     final message = slots.isEmpty
         ? 'No deployed watchdog script to update.'
         : 'Watchdog script updated on ${slots.map((s) => 'wgc$s').join(', ')}.';
@@ -354,6 +364,28 @@ class _AboutScreenState extends State<AboutScreen> {
     );
   }
 
+  Widget _history() => Text.rich(
+        key: const Key('about_watchdog_history'),
+        _historyLine != null
+            ? TextSpan(text: _historyLine, style: _valueStyle)
+            : TextSpan(
+                children: [
+                  const TextSpan(text: 'Watchdog history: ', style: _labelStyle),
+                  TextSpan(text: kScriptLoginPrompt, style: _linkStyle, recognizer: _historyLoginRecogniser),
+                ],
+              ),
+      );
+
+  Widget _updateButton() => AppButton(
+        keyValue: 'about_redeploy_scripts',
+        label: 'UPDATE WATCHDOG VERSION',
+        icon: Icons.system_update_alt,
+        fontSize: 12,
+        colour: kWarn,
+        busy: _redeploying,
+        onPressed: _redeploying ? null : _redeployScripts,
+      );
+
   Widget _body(BuildContext context) {
     return AppScaffold(
       // One selection region for the whole screen, so a drag - or the long-press "Select all" -
@@ -387,17 +419,7 @@ class _AboutScreenState extends State<AboutScreen> {
                   // counters, so an untouched router shows no empty gap where it would have been.
                   if (_historyLine != null || !_scriptChecked) ...[
                     const SizedBox(height: 16),
-                    Text.rich(
-                      key: const Key('about_watchdog_history'),
-                      _historyLine != null
-                          ? TextSpan(text: _historyLine, style: _valueStyle)
-                          : TextSpan(
-                              children: [
-                                const TextSpan(text: 'Watchdog history: ', style: _labelStyle),
-                                TextSpan(text: kScriptLoginPrompt, style: _linkStyle, recognizer: _historyLoginRecogniser),
-                              ],
-                            ),
-                    ),
+                    _history(),
                   ],
                   // ID-085: the way to fix the amber `Watchdog script` row above, in the amber that
                   // row uses, sitting with the other two actions rather than wedged into the build
@@ -405,17 +427,7 @@ class _AboutScreenState extends State<AboutScreen> {
                   // once the router has been read and its script turns out to be another version.
                   if (_scriptStale || _damaged.isNotEmpty) ...[
                     const SizedBox(height: 20),
-                    Center(
-                      child: AppButton(
-                        keyValue: 'about_redeploy_scripts',
-                        label: 'UPDATE WATCHDOG VERSION',
-                        icon: Icons.system_update_alt,
-                        fontSize: 12,
-                        colour: kWarn,
-                        busy: _redeploying,
-                        onPressed: _redeploying ? null : _redeployScripts,
-                      ),
-                    ),
+                    Center(child: _updateButton()),
                   ],
                   // ID-051: clear of the watchdog history line above, and centred under it.
                   const SizedBox(height: 20),

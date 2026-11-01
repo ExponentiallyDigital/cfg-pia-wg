@@ -115,6 +115,19 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-11-01 v0.8.186 build 556 - the 7 new SonarCloud issues fixed, and Dart changes now checked against Sonar's rules before each commit
+
+```play
+• Fixed: an update in ABOUT that lost the connection could leave a watchdog script cut short, and it stopped quietly. Scripts are now written in full first.
+• A damaged script or a script error shows red in the router log and the app, and is emailed if alerts are on.
+• With the unlock, the app updates your router's scripts itself.
+• Fixed: after GENERATE, the widget said it could not reach the router.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- MOD: the 7 new SonarCloud issues on PR #63 fixed, no change in behaviour: five functions over cognitive complexity 15 split into helpers (`redeployScripts`, `parseScriptHealth`, `checkRouterScripts`, and ABOUT's update and layout), `writeRouterFile`'s 9 parameters cut to 7 with a `WriteOptions`, and a literal used three times made a helper.
+- DOC: CLAUDE.md: Dart changes are checked against SonarCloud's rules before each commit, and a dev-to-main PR is merged only at zero new Sonar issues.
+
 2026-11-01 v0.8.185 build 555 - the script checks proved on the router and the phone, GENERATE's first widget refresh fixed, and clearer alert wording
 
 ```play
