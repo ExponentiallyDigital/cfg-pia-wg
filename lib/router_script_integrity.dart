@@ -81,7 +81,8 @@ String lastLineOf(String body) {
 /// leaves [path] as it was and throws, saying so; the temporary file is removed when the router can
 /// still be reached, and otherwise by the next write to [path].
 ///
-/// [run] throws on a non-zero exit; [read] never throws. [chunkTimeout] bounds each piece.
+/// [run] throws on a non-zero exit; [read] never throws. [chunkTimeout] bounds each piece, and
+/// [tidyTimeout] the removal of the temporary file after a failure.
 Future<int> writeRouterFile({
   required String path,
   required String body,
@@ -90,6 +91,7 @@ Future<int> writeRouterFile({
   required Future<String> Function(String cmd) run,
   required Future<String> Function(String cmd) read,
   Duration chunkTimeout = const Duration(seconds: 30),
+  Duration tidyTimeout = const Duration(seconds: 10),
   Random? random,
 }) async {
   final tmp = tempWritePath(path, random);
@@ -97,7 +99,12 @@ Future<int> writeRouterFile({
   final last = lastLineOf(body).trim();
   final kept = 'The router kept the $what it had, so nothing changed there';
   Future<Never> fail(String why) async {
-    await read("rm -f '$tmp'");
+    // Tidying up is worth trying, not worth losing the reason for, or waiting on: when the connection
+    // has gone this fails too, or hangs on a socket nobody answers, and the next write to this path
+    // removes the pieces instead.
+    try {
+      await read("rm -f '$tmp'").timeout(tidyTimeout);
+    } catch (_) {}
     throw Exception('Writing $path failed: $why. $kept.');
   }
 

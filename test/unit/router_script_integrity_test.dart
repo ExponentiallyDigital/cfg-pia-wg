@@ -2,6 +2,7 @@
 // scripts on the router (ID-486); and the check at the first connection that replaces what is
 // damaged or older (ID-487).
 
+import 'dart:async';
 import 'dart:math';
 
 import 'package:cfg_pia_wg/firmware.dart';
@@ -60,6 +61,51 @@ void main() {
       expect(c.files[kPath].toString(), 'old\n', reason: 'the 2026-10-29 failure, now harmless');
       expect(c.commands.any((x) => x.contains('mv -f')), isFalse);
       expect(c.commands.any((x) => RegExp(r"^rm -f '\S+\.new\.[0-9a-f]{8}'$").hasMatch(x)), isTrue, reason: 'its pieces are removed');
+    });
+
+    test('a connection that is gone for good still gives the reason, not the failed tidy-up', () async {
+      // MARK-C3 fails the third piece; every command after it fails as well, as a dropped router does.
+      var gone = false;
+      final c = RecordingSSHClient(responder: (cmd) {
+        if (gone || cmd.contains('MARK-C3')) {
+          gone = true;
+          throw Exception('Connection closed');
+        }
+        return '';
+      })
+        ..files[kPath] = StringBuffer('old\n');
+      await expectLater(
+          write(c),
+          throwsA(predicate((e) =>
+              e.toString().contains('failed part-way') && e.toString().contains('The router kept the watchdog script it had'))));
+      expect(c.files[kPath].toString(), 'old\n');
+    });
+
+    test('a connection that goes silent, as when Wi-Fi goes off, holds the write up for a bounded time', () async {
+      // From the third piece on, nothing ever answers: no error, no reply.
+      var silent = false;
+      Future<String> hangOrAnswer(String cmd) {
+        if (silent || cmd.contains('MARK-C3')) {
+          silent = true;
+          return Completer<String>().future;
+        }
+        return Future.value('');
+      }
+
+      final watch = Stopwatch()..start();
+      await expectLater(
+          writeRouterFile(
+            path: kPath,
+            body: kBody,
+            what: 'watchdog script',
+            mode: '+x',
+            run: hangOrAnswer,
+            read: hangOrAnswer,
+            chunkTimeout: const Duration(milliseconds: 300),
+            tidyTimeout: const Duration(milliseconds: 300),
+          ),
+          throwsA(predicate((e) => e.toString().contains('longer than') && e.toString().contains('The router kept'))));
+      expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
     });
 
     test('control: the old write, straight over the live file, left it cut short', () async {

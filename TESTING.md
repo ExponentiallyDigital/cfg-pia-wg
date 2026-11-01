@@ -799,7 +799,7 @@ logger "**BRK-1 END** Expired registration (the real one, slow)"
   - nothing pinned to the tunnel: it says so;
   - devices pinned and guarded: "the app's guard kept TABLET pinned to this tunnel, and off the internet while this tunnel was down", naming each pinned device as DEVICES does, comma-separated;
   - guard rules missing: how many are covered, and that opening DEVICES and applying puts it back.
-- See, when wgc1 is also the default connection: the line adds that devices only following the default are not covered.
+- See, when wgc1 is also the default connection: a paragraph of its own below the WHAT HAPPENED rows, "This tunnel is the router's default connection: a device not pinned to any tunnel, such as one that joins your network later, will use the default connection, so it can reach the internet without a VPN while this tunnel is down." The kill-switch line says nothing about it.
 
 **BRK-2** Expired registration (the quick one) [hand]
 
@@ -1462,6 +1462,8 @@ The check that lets ID-364 leave WIP, under the CHANGELOG's rule for protection 
 
 **GRD-10** A damaged guard says so (ID-484) [hand]
 
+- Unattended: `live/scripts_live_test.dart` runs it, with ABT-6 to ABT-9 and LOG-8. See [ABT](#abt).
+
 - Do: email alerts on for wgc1 and wgc5, a device pinned to each (DEVICES).
 - Do: on the router, cut the guard short and run it, keeping the whole one to put back.
 
@@ -1539,6 +1541,8 @@ logger "**GRD-10 END** A damaged guard says so"
 
 **LOG-8** A script error is reported (ID-485) [hand]
 
+- Unattended: `live/scripts_live_test.dart` runs its router side and the app's check, with ABT-6 to ABT-9 and GRD-10. See [ABT](#abt).
+
 - Do: on the router, leave an error as a finished watchdog run would: `logger "**LOG-8 START** A script error is reported"; echo 'LOG-8 test error' > /tmp/watchdog_wgc1.err.4194999`
 - Do: wait for wgc1's next run, at the next five-minute mark.
 - See: ROUTER LOG, in red, "wgc1: ERROR: This watchdog's last run reported a script error: [LOG-8 test error]", and an alert email with it if wgc1's alerts are on.
@@ -1549,8 +1553,10 @@ logger "**GRD-10 END** A damaged guard says so"
 
 **LOG-9** A day of runs reports no errors (ID-485) [hand]
 
-- Do: a day after deploying this build, on the router: `grep -c 'reported a script error' /tmp/syslog.log; ls /tmp/*.err.* 2>/dev/null`
-- Pass if: the count is 0 and nothing is listed. Every error a run writes is now reported; anything here is either a real fault or a command writing to stderr that should not, and either is a bug to raise.
+- Do: a day after deploying this build, on the router: `grep 'reported a script error' /tmp/syslog.log | grep -vc 'test error'; ls /tmp/*.err.* 2>/dev/null`
+- Pass if: the count is 0 and nothing is listed. The `grep -v` leaves out the errors LOG-8, check-claims and the live runners make on purpose, each of which says `test error`. Every error a run writes is now reported; anything here is either a real fault or a command writing to stderr that should not, and either is a bug to raise.
+- Active instead, Andrew's choice of 2026-11-01: the same runner with `CFG_LIVE_GO=1` forces a rebuild of each watchdog's tunnel, run detached as cron runs it, and a firewall restart, then checks no script error was reported. Each tunnel drops for a few seconds, one PIA login each, and each sends its usual rebuilt email with alerts on.
+- Unattended: `live/day_of_runs_live_test.dart` reads each scheduled watchdog's own log, today's and yesterday's, and passes when each has run a build 554 or later script for 24 hours with no script error but the ones the tests leave on purpose, and no error file is left by a finished run. It reads only. Same `CFG_LIVE_*` settings, without `CFG_LIVE_GO`: `flutter test live/day_of_runs_live_test.dart --reporter expanded`.
 
 ---
 
@@ -1836,6 +1842,10 @@ logger "**ABT-3 END** Script from another version"
 - See: the rows end CPU Architecture (`arm64`), iOS version (the phone's, such as `iOS 27.0`), iOS SDK (with the minimum, `iOS 15.0`) and Xcode; none of them reads `unknown`.
 - Do: COPY BUILD INFO, and paste it into a note.
 - Pass if: the pasted text has the same lines as the screen.
+
+**Unattended, from the PC (ID-492):** `live/scripts_live_test.dart` runs the router side of ABT-6 to ABT-9, GRD-10 and LOG-8 with nobody tapping, through the app's own code, and runs the router's scripts itself rather than waiting for cron. In PowerShell: `$env:CFG_LIVE_PASS = Read-Host -MaskInput 'Router password'`, then `$env:CFG_LIVE_ROUTER = '<router>:22'; $env:CFG_LIVE_USER = '<login>'; $env:CFG_LIVE_GO = '1'` and `flutter test live/scripts_live_test.dart --reporter expanded`. Without `CFG_LIVE_GO` it checks the start state, prints the plan and changes nothing. It puts every script back and ends by checking they are all whole. With alert emails on, ABT-7, LOG-8 and GRD-10 send real ones. ABT-8's lost connection is a client that drops at the third piece of the write, where the hand test switches the phone's Wi-Fi off. What these tests show on screen, the snackbar, the red ABOUT row, the held back key, the widget's line and the main menu banner, stays the hand steps below, and widget tests in CI cover each. Its log goes to `.claude/testing/`.
+
+**On the emulator, by adb (ID-494):** `live/app_live_test.dart` runs ABT-8's phone steps (airplane mode on the emulator the moment the first piece of the write lands on the router), and the widget's line from ABT-7 with GENERATE's first refresh (ID-493), reading the widget's data from the app's own storage. It needs a debug build running on the emulator (`flutter run -d emulator-5554`), connected to the router once (open MANAGE), and the same `CFG_LIVE_*` settings, then `flutter test live/app_live_test.dart --reporter expanded`. It switches wgc1's alert emails off while wgc1 is damaged, so cron emails nobody, and puts them back.
 
 **ABT-6** Scripts updated by themselves (ID-487) [hand]
 

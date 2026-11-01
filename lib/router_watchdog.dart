@@ -662,8 +662,9 @@ const String _kMailHdrMerlin = r'''  {
 // watchdog exists to catch: a tunnel whose server stops answering blocks its devices outright. And
 // where they did fall through - a rebuild, a DISABLE - it was a leak, not a reassurance (ID-198).
 //
-// The guard covers PINNED devices only. When this tunnel is also the default connection, the ones
-// that merely follow the default are not covered, and the line says so rather than implying they are.
+// The guard covers PINNED devices only. When this tunnel is also the default connection, a device
+// pinned to nothing uses it and is not covered, and the email says so in a paragraph of its own,
+// DEFNOTE, rather than implying such devices are covered.
 const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
 [ -n "$DEFIDX" ] || DEFIDX=0
 # Index 2 of a vpnc_clientlist record is the slot, index 6 the table its devices are routed by.
@@ -706,10 +707,12 @@ else
   KILLSW_FIXED="$KILLSW_UP"
   KILLSW_DOWN="$KILLSW_UP"
 fi
+# Its own paragraph, below the rows, not added to the kill switch line: added there, straight after
+# the pinned devices' names, it read as doubt about them, when every device on the router was pinned
+# (Andrew, 2026-11-01). The risk is to devices pinned to nothing, which use the default connection.
+DEFNOTE=""
 if [ -n "$MYIDX" ] && [ "$DEFIDX" = "$MYIDX" ]; then
-  KILLSW_UP="$KILLSW_UP. This tunnel is also the default connection, and devices that only follow the default are not covered by the guard"
-  KILLSW_FIXED="$KILLSW_FIXED. This tunnel is also the default connection, and devices that only follow the default are not covered by the guard"
-  KILLSW_DOWN="$KILLSW_DOWN. This tunnel is also the default connection, and devices that only follow the default are not covered by the guard"
+  DEFNOTE="This tunnel is the router's default connection: a device not pinned to any tunnel, such as one that joins your network later, will use the default connection, so it can reach the internet without a VPN while this tunnel is down."
 fi''';
 
 const String _kKillSwitchMerlin = r'''if [ "$ENFORCE" = "1" ]; then
@@ -1139,7 +1142,9 @@ class RouterWatchdog {
   /// kept, and written at the next connection (ID-483).
   Future<void> logRouterQuietly(String msg) async {
     try {
-      await _logRouter(msg);
+      // Bounded: on a connection that has gone without closing, a command can wait for minutes, and
+      // the screen with it.
+      await _logRouter(msg).timeout(const Duration(seconds: 15));
     } catch (_) {
       keepForRouterLog(msg);
     }
@@ -2632,6 +2637,8 @@ __MAILHDR__
   row "Kill switch" "$KILLSW"
   row "Attempt" "$ATTEMPTV"
   row "Interval" "$INTERVALV"
+  # Only when this tunnel is the default connection; never set on Merlin.
+  [ -n "$DEFNOTE" ] && printf '\n%s\n' "$DEFNOTE" >> "$TMPMAIL"
 
   # Every run that falls back says so, in the email it sends anyway (ID-325).
   if [ -n "$SLFALLBACK" ]; then
