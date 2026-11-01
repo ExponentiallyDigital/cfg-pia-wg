@@ -28,6 +28,9 @@ import 'package:flutter/widgets.dart';
 
 import 'clipboard_service.dart';
 import 'entitlement.dart';
+import 'firmware.dart' show appVersionLabel;
+import 'router_script_integrity.dart' show checkRouterScripts;
+import 'router_watchdog.dart' show RouterWatchdog;
 import 'router_host_keys.dart';
 import 'router_prefs.dart';
 import 'share_cache.dart';
@@ -109,7 +112,9 @@ class SessionController extends ChangeNotifier {
     RouterPrefs? routerPrefs,
     RouterHostKeys? hostKeys,
     int logCapChars = kLogCapChars,
-  })  : _clipboardTimeout = clipboardTimeout,
+    bool checkRouterScripts = false,
+  })  : _checkRouterScripts = checkRouterScripts,
+        _clipboardTimeout = clipboardTimeout,
         _logCapChars = logCapChars,
         _tickInterval = tickInterval,
         _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter,
@@ -313,7 +318,46 @@ class SessionController extends ChangeNotifier {
     if (existing != null && _routerSessionKey == key) return existing;
     if (existing != null) unawaited(existing.close());
     _routerSessionKey = key;
-    return _routerSession = RouterSession(connect: connect, onLog: onLog);
+    return _routerSession = RouterSession(connect: connect, onLog: onLog, onConnected: _onRouterConnected);
+  }
+
+  // ── The scripts on the router (ID-483, ID-486, ID-487) ─────────────────────────
+  /// Whether the first connection to each router checks the app's scripts on it. On in the app
+  /// (app_shell.dart); off by default, so a test's fake router sees only the commands it is about.
+  final bool _checkRouterScripts;
+
+  /// Routers checked in this run of the app, by address: once each, not at every reconnect.
+  final Set<String> _scriptsCheckedFor = {};
+
+  /// Faults the routers' watchdogs recorded that the app log already shows.
+  final Set<String> _seenScriptFaults = {};
+
+  /// What the check found wrong and could not put right, one sentence each, for the main menu's
+  /// banner. Empty when there is nothing, which is nearly always.
+  List<String> routerScriptProblems = const [];
+
+  /// A short message for the screen, shown as a snackbar by the app shell.
+  void Function(String message)? onNotice;
+
+  /// Run on every new connection, before an action uses it ([RouterSession.onConnected]).
+  Future<void> _onRouterConnected(SSHClient client) async {
+    // Lines a failure could not write to the router's log when it happened (ID-483).
+    await RouterWatchdog(client, onLog: onLog).flushKeptRouterLog();
+    if (!_checkRouterScripts || !_scriptsCheckedFor.add(routerIp.trim())) return;
+    final r = await checkRouterScripts(client, canUpdate: isUnlocked, onLog: onLog, seenFaults: _seenScriptFaults);
+    routerScriptProblems = r.unfixed;
+    if (r.updated.isNotEmpty) {
+      onNotice?.call('The scripts on the router were updated to ${appVersionLabel.isEmpty ? 'this app version' : appVersionLabel}: '
+          '${r.updated.join(', ')}.');
+    }
+    notifyListeners();
+  }
+
+  /// After ABOUT has put the scripts right by hand.
+  void clearRouterScriptProblems() {
+    if (routerScriptProblems.isEmpty) return;
+    routerScriptProblems = const [];
+    notifyListeners();
   }
 
   /// Drops the shared connection. Idempotent; the next action opens a fresh one.

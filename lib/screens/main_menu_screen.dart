@@ -69,6 +69,8 @@ class MainMenuScreen extends StatelessWidget {
             // only height that is genuinely spare, and on a phone they collapse to nothing and the
             // screen scrolls exactly as it did.
             const Spacer(flex: 10),
+            // Only what the app could not put right itself (ID-487): nothing at all, nearly always.
+            _ScriptProblemBanner(controller: controller),
             // Every destination the drawer offers, in the drawer's order, built from the drawer's own list so
             // the two cannot drift. The keys are unchanged: each is `menu_` plus the route name.
             for (final d in AppDrawer.destinations) ...[
@@ -103,6 +105,52 @@ class MainMenuScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A red notice above the menu while a script on the router is damaged or missing and the app could
+/// not replace it: a version without the unlock, or an update that failed (ID-487). Tapping it opens
+/// ABOUT, where UPDATE puts it right. Absent otherwise, taking no space.
+class _ScriptProblemBanner extends StatelessWidget {
+  const _ScriptProblemBanner({required this.controller});
+
+  final SessionController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final problems = controller.routerScriptProblems;
+        if (problems.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: OutlinedButton(
+            key: const Key('menu_script_problem'),
+            style: OutlinedButton.styleFrom(
+              backgroundColor: kBg,
+              foregroundColor: kError,
+              side: const BorderSide(color: kError),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 18),
+              alignment: Alignment.centerLeft,
+            ),
+            onPressed: () => navigateToDestination(context, controller, AppDestination.about),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, size: 20),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    '${problems.join(' ')} Tap to open ABOUT and update it.',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

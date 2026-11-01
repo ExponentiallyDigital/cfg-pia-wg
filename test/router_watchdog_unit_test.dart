@@ -955,7 +955,7 @@ void main() {
     test('every -connect in the Merlin script is paired with -verify_hostname', () {
       final s = buildWatchdogScript(_valid(email: true), firmware: RouterFirmware.merlin);
       final connects = s.split('\n').where((l) => l.contains('SMTPCONN="-connect'));
-      expect(connects, hasLength(2), reason: 'the private-lookup path and the plain one');
+      expect(connects, hasLength(3), reason: 'the private-lookup path, the plain one, and the fault email (ID-484)');
       for (final l in connects) {
         expect(l, contains(r'-verify_hostname $SMTP_HOST'), reason: l);
         expect(l, contains(r'-servername $SMTP_HOST'), reason: l);

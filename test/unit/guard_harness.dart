@@ -149,6 +149,9 @@ class GuardRouter {
     script = File('${dir.path}/guard.sh')..writeAsStringSync(kGuardScript);
     if (!Platform.isWindows) Process.runSync('chmod', ['+x', ...bin.listSync().map((f) => f.path)]);
     set('vpnc_clientlist', kClientlist);
+    // No tunnel up. An empty file rather than none: the `ip` stand-in reads it, and a missing one is
+    // an error on stderr, which the guard now keeps and a watchdog reports (ID-485).
+    File('${state.path}/up').writeAsStringSync('');
     // The filter's settings as a stock router ships them (read 2026-09-30).
     set('fw_enable_x', '1');
     set('fw_lw_enable_x', '0');
@@ -181,9 +184,15 @@ class GuardRouter {
       'GUARD_LOCK': '${state.path}/lock',
       'GUARD_NEXT': '${state.path}/next',
       'GUARD_SOON': '$soonSeconds',
+      'GUARD_ERR': '${state.path}/guard.err',
+      'GUARD_APPDIR': dir.path,
       'LW_WAIT': '1',
     });
   }
+
+  /// The error files runs left behind (ID-485): an empty one is removed on the way out.
+  List<File> errorFiles() =>
+      [for (final f in state.listSync().whereType<File>()) if (f.uri.pathSegments.last.startsWith('guard.err.')) f];
 
   String nv(String key) {
     final f = File('${state.path}/nv_$key');

@@ -30,6 +30,7 @@ import '../entitlement.dart';
 import '../firmware.dart';
 import '../license_text.dart';
 import '../router_slot_service.dart';
+import '../router_script_integrity.dart' show kScriptHealthCommand, parseScriptHealth;
 import '../router_watchdog.dart';
 import '../router_session.dart' show routerConnectMessage;
 import '../session_controller.dart';
@@ -90,6 +91,11 @@ class _AboutScreenState extends State<AboutScreen> {
   /// never recorded any - in which case the screen shows nothing rather than an empty row.
   String? _historyLine;
   bool _scriptChecked = false, _scriptLoading = false, _redeploying = false;
+
+  /// Scripts on the router that are damaged or missing, by file name (ID-486). Each is drawn in red
+  /// and offered UPDATE, whatever its version says: on 2026-10-29 a script cut short still carried
+  /// the current version in its header, and this screen called it up to date.
+  List<String> _damaged = const [];
   late final TapGestureRecognizer _scriptLoginRecogniser;
   late final TapGestureRecognizer _historyLoginRecogniser;
 
@@ -160,17 +166,20 @@ class _AboutScreenState extends State<AboutScreen> {
     String? history;
     String? error, errorDetail;
     var model = '', firmware = '', type = '';
+    var damaged = const <String>[];
     try {
       final client =
           controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       // Both ABOUT rows in one round trip - neither is worth a handshake of its own, and it means
       // tapping either row's login link fills in the other.
-      final facts = await RouterWatchdog(client, onLog: controller.onLog).aboutRouterFacts();
+      final watchdog = RouterWatchdog(client, onLog: controller.onLog);
+      final facts = await watchdog.aboutRouterFacts();
       version = facts.version;
       history = facts.history;
       model = facts.model;
       firmware = facts.firmware;
       type = facts.type;
+      damaged = await _readDamaged(watchdog);
       await controller.rememberRouterIp(ip);
     } catch (e) {
       // Plain English on screen, the raw exception in the log (ID-108).
@@ -190,6 +199,7 @@ class _AboutScreenState extends State<AboutScreen> {
       _routerModel = model;
       _routerFirmware = firmware;
       _routerType = type;
+      _damaged = damaged;
     });
     if (error != null && mounted) {
       await AppErrors.system(context, controller, errorDetail == null ? 'Could not read the deployed watchdog script: $error' : error,
@@ -197,11 +207,22 @@ class _AboutScreenState extends State<AboutScreen> {
     }
   }
 
+  /// The damaged or missing scripts, by name, each logged red in both logs (ID-486).
+  static Future<List<String>> _readDamaged(RouterWatchdog watchdog) async {
+    final health = parseScriptHealth(await watchdog.read(kScriptHealthCommand));
+    for (final s in health.damaged) {
+      watchdog.onLog?.call(s.problem!, isError: true);
+      await watchdog.logRouterQuietly(s.problem!);
+    }
+    return [for (final s in health.damaged) s.fileName];
+  }
+
   /// The plain-text value of the `Watchdog script` row, which is also what COPY BUILD INFO writes.
   String get _scriptStatus {
     if (_scriptLoading) return 'reading...';
     if (!_scriptChecked) return kScriptLoginPrompt;
-    return _scriptVersion ?? 'not deployed';
+    final version = _scriptVersion ?? 'not deployed';
+    return _damaged.isEmpty ? version : '$version, DAMAGED: ${_damaged.join(', ')}';
   }
 
   /// True when the router's script was stamped by a different app version than this one. The app
@@ -240,31 +261,57 @@ class _AboutScreenState extends State<AboutScreen> {
     final ip = controller.routerIp.trim(), user = controller.sshUsername.trim(), pass = controller.sshPassword;
     String? error, errorDetail, version;
     var slots = <int>[];
+    var damaged = _damaged;
     try {
       final client =
           controller.routerSession(() => widget.testClientFactory?.call(ip, user, pass) ?? openSshClient(ip, user, pass));
       final watchdog = RouterWatchdog(client, onLog: controller.onLog);
+      // Its result goes to both logs, failure included (ID-483).
       slots = await watchdog.redeployScripts();
       version = (await watchdog.aboutRouterFacts()).version;
+      damaged = await _readDamaged(watchdog);
     } catch (e) {
       // Plain English on screen, the raw exception in the log (ID-108).
       final plain = routerConnectMessage(e, ip);
       errorDetail = plain == null ? null : e.toString();
       error = plain ?? plainError(e);
     }
-    if (!mounted) return;
+    await _reportRedeploy(controller, slots: slots, damaged: damaged, version: version, error: error, errorDetail: errorDetail);
+  }
+
+  /// [_redeployScripts]'s result: on screen and in the app log, or the app log alone if the screen has gone.
+  Future<void> _reportRedeploy(SessionController controller,
+      {required List<int> slots,
+      required List<String> damaged,
+      String? version,
+      String? error,
+      String? errorDetail}) async {
+    final message = slots.isEmpty
+        ? 'No deployed watchdog script to update.'
+        : 'Watchdog script updated on ${slots.map((s) => 'wgc$s').join(', ')}.';
+    if (error == null && damaged.isEmpty) controller.clearRouterScriptProblems();
+    if (!mounted) {
+      // The screen is held while this runs, so this is the app closing under it. The result still
+      // reaches the app log, red if it failed: on 2026-10-29 a failure here went nowhere (ID-483).
+      if (error == null) {
+        controller.logEntry(message, isSuccess: slots.isNotEmpty);
+      } else {
+        controller.logEntry('Could not update the watchdog script: ${errorDetail ?? error}', isError: true);
+      }
+      return;
+    }
     setState(() {
       _redeploying = false;
-      if (error == null) _scriptVersion = version;
+      if (error == null) {
+        _scriptVersion = version;
+        _damaged = damaged;
+      }
     });
     if (error != null) {
       await AppErrors.system(context, controller, errorDetail == null ? 'Could not update the watchdog script: $error' : error,
           logDetail: errorDetail);
       return;
     }
-    final message = slots.isEmpty
-        ? 'No deployed watchdog script to update.'
-        : 'Watchdog script updated on ${slots.map((s) => 'wgc$s').join(', ')}.';
     controller.logEntry(message, isSuccess: slots.isNotEmpty);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
@@ -304,6 +351,42 @@ class _AboutScreenState extends State<AboutScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Held while the scripts are written (ID-483): leaving part-way used to drop the result, and a
+    // failure with it.
+    return PopScope(
+      canPop: !_redeploying,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Wait until the watchdog scripts have been written to the router.')));
+      },
+      child: _body(context),
+    );
+  }
+
+  Widget _history() => Text.rich(
+        key: const Key('about_watchdog_history'),
+        _historyLine != null
+            ? TextSpan(text: _historyLine, style: _valueStyle)
+            : TextSpan(
+                children: [
+                  const TextSpan(text: 'Watchdog history: ', style: _labelStyle),
+                  TextSpan(text: kScriptLoginPrompt, style: _linkStyle, recognizer: _historyLoginRecogniser),
+                ],
+              ),
+      );
+
+  Widget _updateButton() => AppButton(
+        keyValue: 'about_redeploy_scripts',
+        label: 'UPDATE WATCHDOG VERSION',
+        icon: Icons.system_update_alt,
+        fontSize: 12,
+        colour: kWarn,
+        busy: _redeploying,
+        onPressed: _redeploying ? null : _redeployScripts,
+      );
+
+  Widget _body(BuildContext context) {
     return AppScaffold(
       // One selection region for the whole screen, so a drag - or the long-press "Select all" -
       // spans the build info, the links and the licence text, and copies to the system clipboard.
@@ -325,6 +408,7 @@ class _AboutScreenState extends State<AboutScreen> {
                     info: snap.data,
                     scriptStatus: _scriptStatus,
                     scriptStale: _scriptStale,
+                    scriptDamaged: _damaged.isNotEmpty,
                     appOlder: _appOlderThanScript,
                     firmware: _firmwareStatus,
                     licence: _licence(context),
@@ -335,35 +419,15 @@ class _AboutScreenState extends State<AboutScreen> {
                   // counters, so an untouched router shows no empty gap where it would have been.
                   if (_historyLine != null || !_scriptChecked) ...[
                     const SizedBox(height: 16),
-                    Text.rich(
-                      key: const Key('about_watchdog_history'),
-                      _historyLine != null
-                          ? TextSpan(text: _historyLine, style: _valueStyle)
-                          : TextSpan(
-                              children: [
-                                const TextSpan(text: 'Watchdog history: ', style: _labelStyle),
-                                TextSpan(text: kScriptLoginPrompt, style: _linkStyle, recognizer: _historyLoginRecogniser),
-                              ],
-                            ),
-                    ),
+                    _history(),
                   ],
                   // ID-085: the way to fix the amber `Watchdog script` row above, in the amber that
                   // row uses, sitting with the other two actions rather than wedged into the build
                   // information. Centred on its own line above them, per Andrew's mock-up. Only
                   // once the router has been read and its script turns out to be another version.
-                  if (_scriptStale) ...[
+                  if (_scriptStale || _damaged.isNotEmpty) ...[
                     const SizedBox(height: 20),
-                    Center(
-                      child: AppButton(
-                        keyValue: 'about_redeploy_scripts',
-                        label: 'UPDATE WATCHDOG VERSION',
-                        icon: Icons.system_update_alt,
-                        fontSize: 12,
-                        colour: kWarn,
-                        busy: _redeploying,
-                        onPressed: _redeploying ? null : _redeployScripts,
-                      ),
-                    ),
+                    Center(child: _updateButton()),
                   ],
                   // ID-051: clear of the watchdog history line above, and centred under it.
                   const SizedBox(height: 20),
@@ -506,6 +570,9 @@ class _BuildInfoBlock extends StatelessWidget {
   /// True when the deployed script is from another app version, which draws its value in amber.
   final bool scriptStale;
 
+  /// True when a script on the router is damaged or missing, which draws the value in red (ID-486).
+  final bool scriptDamaged;
+
   /// True when that script is newer than this app, which draws the app's own version in red.
   final bool appOlder;
 
@@ -521,6 +588,7 @@ class _BuildInfoBlock extends StatelessWidget {
     this.scriptStatus = '',
     this.scriptLoginRecogniser,
     this.scriptStale = false,
+    this.scriptDamaged = false,
     this.firmware = '',
     this.licence = '',
   });
@@ -589,6 +657,9 @@ class _BuildInfoBlock extends StatelessWidget {
           // every other value, so the block still reads as one table rather than a call to action.
           if (n == 0 && scriptLoginRecogniser != null)
             TextSpan(text: data[n].$2, style: _linkStyle, recognizer: scriptLoginRecogniser)
+          else if (n == 0 && scriptDamaged)
+            // Red: a script that can't run is a protection that has stopped, not just an old one.
+            TextSpan(text: data[n].$2, style: _valueStyle.copyWith(color: kError))
           else if (n == 0 && scriptStale)
             // Amber, the app's out-of-date colour, with the redeploy offer directly under the block.
             TextSpan(text: data[n].$2, style: _valueStyle.copyWith(color: kWarn))

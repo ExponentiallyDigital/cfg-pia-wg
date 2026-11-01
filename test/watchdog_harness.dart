@@ -581,12 +581,24 @@ exit 0
   }
 
   /// Runs one check in the foreground and waits for it. [edit] changes the script first, for a
-  /// control that takes a protection out to show a test can tell.
-  Future<ProcessResult> run({String mode = 'foreground', WatchdogConfig? config, String Function(String)? edit}) async {
+  /// control that takes a protection out to show a test can tell. [args] follow the mode: `fault`
+  /// takes the sentence to email (ID-484).
+  Future<ProcessResult> run(
+      {String mode = 'foreground', WatchdogConfig? config, String Function(String)? edit, List<String> args = const []}) async {
     final path = '${root.path}/watchdog_$iface.sh';
     File(path).writeAsStringSync((edit ?? (s) => s)(script(config)));
-    return runSh(shell, ['-c', _unixToolsFirst, 'sh', path, mode], environment: _env);
+    return runSh(shell, ['-c', _unixToolsFirst, 'sh', path, mode, ...args], environment: _env);
   }
+
+  /// Lines the script sent to the router's log, through `logger`.
+  List<String> get syslog => _lines('syslog');
+
+  /// A file in the router's /tmp, as this harness has moved it.
+  File tmp(String name) => File('${root.path}/tmp/$name');
+
+  /// The router's /tmp, by name, for tests about what a run leaves there.
+  List<String> get tmpFiles =>
+      [for (final f in Directory('${root.path}/tmp').listSync()) f.uri.pathSegments.where((s) => s.isNotEmpty).last];
 
   /// Runs [body], a piece of the script, against this fake router, for a test of one part alone.
   Future<ProcessResult> runSnippet(String body) async {

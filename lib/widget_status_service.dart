@@ -25,6 +25,7 @@ import 'package:dartssh2/dartssh2.dart';
 
 import 'device_assignment.dart';
 import 'router_command.dart';
+import 'router_script_integrity.dart' show brokenWatchdogSlots, kWatchdogHeadsAndTailsCommand;
 import 'router_slot_service.dart' show kHandshakeAgesCommand, kUpInterfacesCommand;
 import 'widget_status.dart';
 
@@ -47,6 +48,10 @@ const String kWidgetStatusCommand = 'echo $_sep; nvram get vpnc_clientlist; '
     'echo $_sep; nvram get cfg_device_list; '
     'echo $_sep; cat /jffs/nmp_cl_json.js 2>/dev/null; '
     'echo $_sep; cat /tmp/nmp_cache.js 2>/dev/null; '
+    // ID-488: the watchdogs' schedules and scripts, so a broken watchdog shows. A key made before
+    // this build runs the read without them, which reads as nothing broken until GENERATE is run again.
+    'echo $_sep; cru l 2>/dev/null; '
+    'echo $_sep; $kWatchdogHeadsAndTailsCommand; '
     'echo $_sep';
 
 /// Reads [kWidgetStatusCommand] over [client] and turns it into [WidgetStatus] - the I/O half;
@@ -83,6 +88,7 @@ class WidgetStatusService {
       handshakeAgesRaw: at(3),
       devices: devices,
       checkedAt: clock(),
+      brokenWatchdogs: brokenWatchdogSlots(cronList: at(9), headsAndTails: at(10)),
     );
   }
 }
