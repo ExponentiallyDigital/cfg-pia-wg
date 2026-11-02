@@ -115,6 +115,17 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-11-02 v0.8.188 build 558 - Mermaid labels drawn as SVG text so they aren't clipped on Android, and README test figures updated
+
+```play
+• Docs: the architecture diagrams now read properly on Android tablets.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- REL: v0.8.187 (557) passed 2026-11-02 (run 41407497559): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs and the Dart licences on the release. PR #66 merged at 0 open Sonar issues, gate OK.
+- DOC: every Mermaid diagram in ARCHITECTURE.md and ROUTER-DNS.md draws its labels as SVG text. In Chrome on an Android tablet, GitHub's HTML labels lost the end of their text in most diagrams; desktop Chrome showed them whole. Italic and bold labels are now Markdown labels, and Mermaid no longer adds line breaks of its own. `mermaid_svg_labels_test.dart` fails a diagram without the setting, and failed all 18 before the change.
+- DOC: README's testing figures brought up to build 558: 2,120 automated tests, line coverage 95.96%, 173 manual tests on the router (23 checked by a script, 13 needing a Play build), and 26 once manual now automated, counted from TESTING.md's tags.
+
 2026-11-01 v0.8.187 build 557 - NETWORK drawn in ARCHITECTURE.md's diagrams
 
 ```play
