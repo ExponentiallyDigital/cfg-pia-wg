@@ -148,7 +148,7 @@ Everything below was measured on hardware, not read in documentation - ASUS publ
 
 ## 3. <a name='app-processing-flow'></a>App processing flow
 
-How the app works, screen by screen: the main menu, then each screen that does work, STANDALONE, MANAGE, WATCHDOG and DEVICES, in the order the menu lists them. Each diagram reads top to bottom. The two logs, SETTINGS and ABOUT aren't drawn: each of their actions is a single step. After the diagrams, 3.1 and 3.2 describe the push operation again in plain language and then in detail, because that is the part most worth being able to check.
+How the app works, screen by screen: the main menu, then each screen that does work, STANDALONE, MANAGE, WATCHDOG, DEVICES and NETWORK, in the order the menu lists them. Each diagram reads top to bottom. The two logs, SETTINGS and ABOUT aren't drawn: each of their actions is a single step. After the diagrams, 3.1 and 3.2 describe the push operation again in plain language and then in detail, because that is the part most worth being able to check.
 
 **The main menu.** Every screen opens from here, and the drawer offers the same destinations from anywhere in the app. EXIT is the one way out that wipes what the app holds: the logins, the generated config and the clipboard. On iOS it reads CLEAR, because Apple doesn't let an app close itself: it wipes the same things, then closes every screen above the main menu and leaves the app open there (ID-394).
 
@@ -161,6 +161,7 @@ flowchart LR
     B --> D["MANAGE<br/>the router's<br/>WireGuard slots"]
     B --> E["WATCHDOG<br/>keeps a slot's<br/>tunnel alive"]
     B --> DA["DEVICES<br/>which device uses<br/>which tunnel"]
+    B --> NW["NETWORK<br/>the public address<br/>of the phone and<br/>each tunnel"]
     B --> RL["ROUTER LOG"]
     B --> AL["APP LOG"]
     B --> ST["SETTINGS"]
@@ -172,7 +173,7 @@ flowchart LR
     classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
     classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
     class A,B go
-    class C,D,E,DA work
+    class C,D,E,DA,NW work
     class RL,AL,ST,AB step
     class X bad
 ```
@@ -414,6 +415,46 @@ flowchart TB
 <p align="center"><em>APPLY: confirmed, checked against the router, written in this order, and read back before it's called done. The check compares the policy list, the profiles and, when they change, the names and Time Scheduling with what was read; the read back looks for one firmware rule per device and the guard for each pin. The read back follows an apply that moved a device; a default-connection change reads back its own. Every service call waits its turn in the router's queue (7.4.1).</em></p>
 
 The confirmation's warnings: a tunnel that is down or whose server isn't answering; devices that will be given a fixed address ([6.8.9](#assigning-a-device-with-no-dhcp-reservation-crea)); tunnels that will restart, when the default connection changes; schedules in Time Scheduling that disabling a device would switch on ([6.9](#time-scheduling-disabling-a-device)); an address that looks randomised; and a device on a VPN the app doesn't manage.
+
+**NETWORK** shows the public address, place and provider that PIA sees for the phone, and for each tunnel that is up, beside PIA's own name for the tunnel's region. It's the quick way to check a tunnel really comes out where it should. It's free, because it only reads, and it looks up as it opens and again on REFRESH. The phone's card needs no router. The tunnels' cards need the session's router login, and without one the screen offers a link to log in, asked for as ABOUT asks.
+
+Why ask through the router, rather than from the phone? Because the phone's own request goes out whichever way the phone does, and only the router can send one through a given tunnel. All the tunnels are asked in one SSH command. On stock, a rule for PIA's address goes into the tunnel's own table and is read back with `ip route get` before anything is sent, as ENABLE's ping does. A tunnel with no route through it is reported as not checked, rather than answered by the internet connection with your home address. Merlin binds the request to the tunnel instead, not yet measured on hardware.
+
+<a name='network-lookup'></a>
+<div align="center">
+
+```mermaid
+flowchart TB
+    O["Open NETWORK,<br/>or REFRESH"] --> PH["lookUpThisPhone<br/>HTTPS from the<br/>phone to PIA"]
+    O --> Q{"Router login<br/>this session?"}
+    PH --> PC["This device<br/>address, place,<br/>provider"]
+    Q -->|"no"| LG["login to router<br/>for tunnel details<br/>asks as ABOUT does"]
+    LG -->|"logged in"| O
+    Q -->|"yes"| F{"Which firmware?<br/><i>nvram get 3rd-party</i>"}
+    F -->|"neither"| FU["Tunnels: could not<br/>look them up"]
+    F -->|"stock or Merlin"| FS["fetchSlots<br/>which tunnels<br/>are up"]
+    FS -->|"none"| NONE["No tunnel is up."]
+    FS -->|"one or more"| AD["tunnelLookupAddress<br/>PIA's IPv4 address,<br/>below 128.0.0.0,<br/>from the phone's DNS"]
+    AD --> TL["tunnelLookupCommand<br/>one SSH command,<br/>each tunnel in turn"]
+    TL --> STK["Stock: a rule into<br/>the tunnel's table,<br/>checked with<br/>ip route get"]
+    TL --> MER["Merlin: the request<br/>bound to the tunnel"]
+    STK -->|"no route"| NR["Not checked:<br/>nothing sent"]
+    STK -->|"route through<br/>the tunnel"| TC
+    MER --> TC["A card per tunnel<br/>address, place,<br/>provider, PIA region"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class PC,TC go
+    class FU,NR bad
+    class PH,FS,AD,TL,STK,MER work
+    class O,Q,LG,F,NONE step
+```
+
+</div>
+
+<p align="center"><em>NETWORK: the phone asks PIA for itself, and the router asks PIA through each tunnel that is up. Nothing is written.</em></p>
 
 ### 3.1. <a name='overview'></a>Overview
 
