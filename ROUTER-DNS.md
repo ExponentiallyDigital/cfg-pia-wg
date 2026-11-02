@@ -30,6 +30,7 @@ The router works the same way. Your device's lookup arrives at the router and st
 A device pinned to a slot is different. The router catches its ordinary lookups and sends them to that slot's DNS servers, through that slot's tunnel.
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
   U["Device not pinned"] -- "web and app traffic" --> DC["Your default<br/>connection"]
   U -- "DNS lookups" --> R["The router looks it up<br/>using its own settings"]
@@ -92,6 +93,7 @@ This router's DNS Server and DoT Server List are both set to Quad9, `9.9.9.9` an
 For example, suppose `wgc4:pia-aus_melbourne` breaks because PIA has rotated that server's key, as it does from time to time. The tunnel still looks connected, but nothing comes back. This is what happens:
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
   U["Devices not pinned"] -- "DNS lookups" --> R["Router"]
   W["Watchdog and<br/>the router's<br/>other programs"] --> R
@@ -152,6 +154,7 @@ For the **DoT Server List**, there are two sensible setups. Both work. Each cost
 | `wgc5` | Cloudflare: `1.1.1.1`, `1.0.0.1` |
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
   T["Tablet, pinned to wgc2"] -- "DNS, redirected to<br>1.1.1.3" --> W2["wgc2 tunnel,<br/>New Zealand"] --> CFF["Cloudflare<br/>family filter"]
   TV["TV, not pinned"] -- "web and app traffic" --> W1["wgc1 tunnel, Melbourne<br/>(default connection)"]
@@ -187,6 +190,7 @@ The DoT Server List uses the same addresses as `wgc1`, and every other slot uses
 | `wgc5` | Cloudflare: `1.1.1.1`, `1.0.0.1` |
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
   L["Laptop, pinned to wgc3"] -- "DNS, redirected to<br>9.9.9.11" --> W3["wgc3 tunnel, Italy"] --> QE["Quad9, server<br/>near Italy"]
   TV["TV, not pinned"] -- "web and app traffic" --> W1T["wgc1 tunnel, Melbourne<br/>(default connection)"]
@@ -237,6 +241,7 @@ What follows is a representation of what a stock ASUS router can look like. Ever
 The settings you choose in the web interface are stored in nvram, the router's settings store. The firmware builds the files, rules and redirects from them:
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
   subgraph settings ["Web interface settings, stored in nvram"]
     N1["DNS Server"]

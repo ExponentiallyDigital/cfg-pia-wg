@@ -51,6 +51,8 @@ No bold inside work items. When an item closes, it moves to its release block wi
 
 Every new work item gets an ID. This is the standard from the v0.8.78 build 448 release (and the current Pending/WIP items) onward. It was not applied retrospectively: v0.8.77 build 447 and every earlier release keep their original, ID-free form.
 
+Two kinds of line record what happened rather than work, and take no ID: a release result, `REL: vN.N.NN (NNN) passed <date> (run N): ...`, and an audit line, `CHG: WIP|1.1|BACKLOG ...` saying what moved. Anything else is a work item and gets an ID, however small, including work found and done in the same pass. `test/unit/changelog_ids_test.dart` fails any other line without one, from build 553 on; builds 541 to 552 keep some ID-free items from before the test.
+
 IDs are shared with BACKLOG.md: one number line across both files, so an ID always points to exactly one item no matter which file it lives in.
 
 Format: `ID-NNN XXX:`, where `XXX` is the item's prefix code, placed at the start of the bullet before the prefix.
@@ -93,7 +95,7 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
-- ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store.
+- ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store. Update README "3. Pre-built release"when the application is available on the Apple App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
   - Now: still In Review on 2026-10-31, ten days after submission; no email and no reply to case 103010748637 since the agreement was accepted on 2026-10-30.
@@ -115,6 +117,40 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-11-02 v0.8.190 build 560 - THIRD-PARTY-NOTICES.md names Flutter 3.47.9, and the weekly bot's Flutter update keeps it current
+
+```play
+• Docs: the architecture diagrams now read properly on Android tablets.
+• Built with Flutter 3.47.9.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-506 FIX: THIRD-PARTY-NOTICES.md names Flutter SDK 3.47.9, the version the app is now built with; it still said 3.47.8 after the bot's Flutter update (#65), the only line that changed.
+  - Closed 2026-11-02: regenerated with `tool/third_party_notices.dart`; its `--check`, the release's own, now reports the file current.
+- ID-507 FIX: the weekly bot's Flutter update regenerates THIRD-PARTY-NOTICES.md and commits it with the new pin. Only the packages job did, and it builds with the old pin, so a Flutter update left the notices naming the old SDK.
+  - Closed 2026-11-02: `ci_config_test.dart` fails on the workflow as it was and passes now. The step itself first runs when the next Flutter stable is proposed.
+
+2026-11-02 v0.8.189 build 559 - every CHANGELOG work item has an ID, checked by a test
+
+```play
+• Docs: the architecture diagrams now read properly on Android tablets.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-505 TST: every CHANGELOG work item carries an ID, checked by `changelog_ids_test.dart` from build 553 on. Release results and audit lines are exempt, now written into the ID rule; builds 555 to 558's nine items without one were given ID-496 to ID-504.
+  - Closed 2026-11-02: the test failed on the CHANGELOG as committed in build 558, naming all nine, and passes now.
+
+2026-11-02 v0.8.188 build 558 - Mermaid labels drawn as SVG text so they aren't clipped on Android, and README test figures updated
+
+```play
+• Docs: the architecture diagrams now read properly on Android tablets.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- REL: v0.8.187 (557) passed 2026-11-02 (run 41407497559): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs and the Dart licences on the release. PR #66 merged at 0 open Sonar issues, gate OK.
+- ID-503 DOC: every Mermaid diagram in ARCHITECTURE.md and ROUTER-DNS.md draws its labels as SVG text. In Chrome on an Android tablet, GitHub's HTML labels lost the end of their text in most diagrams; desktop Chrome showed them whole. Italic and bold labels are now Markdown labels, and Mermaid no longer adds line breaks of its own. `mermaid_svg_labels_test.dart` fails a diagram without the setting, and failed all 18 before the change.
+- ID-504 DOC: README's testing figures brought up to build 558: 2,120 automated tests, line coverage 95.96%, 173 manual tests on the router (23 checked by a script, 13 needing a Play build), and 26 once manual now automated, counted from TESTING.md's tags.
+
 2026-11-01 v0.8.187 build 557 - NETWORK drawn in ARCHITECTURE.md's diagrams
 
 ```play
@@ -127,7 +163,7 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 ```
 
 - REL: v0.8.186 (556) passed 2026-11-01 (run 41285426529): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs and the Dart licences on the release. PR #63 merged at 0 open Sonar issues, gate OK.
-- DOC: ARCHITECTURE.md section 3 draws NETWORK: on the main menu's diagram, and in its own diagram after DEVICES, with how a tunnel is asked through the router.
+- ID-502 DOC: ARCHITECTURE.md section 3 draws NETWORK: on the main menu's diagram, and in its own diagram after DEVICES, with how a tunnel is asked through the router.
 
 2026-11-01 v0.8.186 build 556 - the 7 new SonarCloud issues fixed, and Dart changes now checked against Sonar's rules before each commit
 
@@ -139,8 +175,8 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 • Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
 ```
 
-- MOD: the 7 new SonarCloud issues on PR #63 fixed, no change in behaviour: five functions over cognitive complexity 15 split into helpers (`redeployScripts`, `parseScriptHealth`, `checkRouterScripts`, and ABOUT's update and layout), `writeRouterFile`'s 9 parameters cut to 7 with a `WriteOptions`, and a literal used three times made a helper.
-- DOC: CLAUDE.md: Dart changes are checked against SonarCloud's rules before each commit, and a dev-to-main PR is merged only at zero new Sonar issues.
+- ID-500 MOD: the 7 new SonarCloud issues on PR #63 fixed, no change in behaviour: five functions over cognitive complexity 15 split into helpers (`redeployScripts`, `parseScriptHealth`, `checkRouterScripts`, and ABOUT's update and layout), `writeRouterFile`'s 9 parameters cut to 7 with a `WriteOptions`, and a literal used three times made a helper.
+- ID-501 DOC: CLAUDE.md: Dart changes are checked against SonarCloud's rules before each commit, and a dev-to-main PR is merged only at zero new Sonar issues.
 
 2026-11-01 v0.8.185 build 555 - the script checks proved on the router and the phone, GENERATE's first widget refresh fixed, and clearer alert wording
 
@@ -152,7 +188,7 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 • Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
 ```
 
-- FIX: a script write that loses the router keeps its reason (ID-482): the tidy-up of its temporary file failed as well, and that error replaced "The router kept the script it had". Found writing ID-492's lost-connection test; a unit test now drops every command after the third piece.
+- ID-496 FIX: a script write that loses the router keeps its reason (ID-482): the tidy-up of its temporary file failed as well, and that error replaced "The router kept the script it had". Found writing ID-492's lost-connection test; a unit test now drops every command after the third piece.
 - CHG: WIP 8 -> 9 bullets. Added: ID-492, after ID-488. Nothing removed.
 - ID-482 FIX: a script the app writes to the router can't be left half-written. Each is written to a uniquely named file beside the live one, checked, then renamed over it, so a failed write leaves the old script running. Covers the watchdog scripts, `guard.sh` and the boot script. On 2026-10-29 an update from ABOUT left `watchdog_wgc5.sh` at 7,940 of 49 KB, and that watchdog stopped without a word.
   - DoD: tests show a failed write leaves the live file unchanged, and on the router a watchdog run in progress finishes normally when its script is replaced.
@@ -173,9 +209,9 @@ Every commit is a build. Whoever commits follows these steps, in this order:
   - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
   - Closed 2026-11-01: `check-claims.sh quick` on the router: `SCHED-wgc1` and `SCHED-wgc5` passed. Live ABT-7 and GRD-10: the app found the damaged wgc1 script and guard.sh, red in both logs.
 - CHG: WIP 6 -> 4 bullets. Removed: ID-484 and ID-486, closed, above.
-- FIX: an update that loses the router no longer waits on it for minutes (ID-483). After a failed piece, the tidy-up of the temporary file and the router log line each waited on a connection that had gone without closing, for as long as the socket took to give up; they are now bounded at 10 s and 15 s. Found writing ID-494's Wi-Fi-off test; a unit test holds a silent connection to under 5 s.
+- ID-497 FIX: an update that loses the router no longer waits on it for minutes (ID-483). After a failed piece, the tidy-up of the temporary file and the router log line each waited on a connection that had gone without closing, for as long as the socket took to give up; they are now bounded at 10 s and 15 s. Found writing ID-494's Wi-Fi-off test; a unit test holds a silent connection to under 5 s.
 - CHG: WIP 4 -> 6 bullets. Added: ID-493 and ID-494, after ID-488. Nothing removed.
-- FIX: README's Lines of code badge shows again: its image address ran over a line, so it ended in a line break and SonarCloud returned nothing a browser could draw. A test now fails on any `src` or `href` in the project's Markdown that runs over a line, and fails on the line as it was.
+- ID-498 FIX: README's Lines of code badge shows again: its image address ran over a line, so it ended in a line break and SonarCloud returned nothing a browser could draw. A test now fails on any `src` or `href` in the project's Markdown that runs over a line, and fails on the line as it was.
 - ID-493 FIX: the first widget refresh after GENERATE runs with the new key. It started before the new key was saved, so it used the old one, which the same write had taken off the router, and the widget said "could not reach the router" until the next refresh, up to 15 minutes later.
   - Closed 2026-11-01: on the emulator, `live/app_live_test.dart`: GENERATE's first refresh reached the router with the new key, the widget's footer "Router checked 17:15". `settings_screen_test.dart` holds the order: the refresh starts only once the new key is saved.
 - CHG: WIP 6 -> 5 bullets. Removed: ID-493, closed, above.
@@ -197,7 +233,7 @@ Every commit is a build. Whoever commits follows these steps, in this order:
   - DoD: each passes, its log in `.claude/testing/`.
   - Closed 2026-11-01: `live/app_live_test.dart` passed on the emulator, all 12 checks (`.claude/testing/2026-11-01T173117_live_app.log`), and `live/day_of_runs_live_test.dart`'s active run passed on the router, all 8 checks (`.claude/testing/2026-11-01T174456_live_log9_active.log`).
 - CHG: WIP 3 -> 1 bullets. Removed: ID-485 and ID-494, closed, above.
-- CHG: the alert email's note about the default connection is its own paragraph, in Andrew's wording: "This tunnel is the router's default connection: a device not pinned to any tunnel, such as one that joins your network later, will use the default connection, so it can reach the internet without a VPN while this tunnel is down." Added to the kill switch line, straight after the pinned devices' names, "devices that only follow the default are not covered by the guard" read as doubt about them, on a router where every device was pinned. A harness test reads the paragraph from a real deploy email, below the rows, and finds none with another default.
+- ID-499 CHG: the alert email's note about the default connection is its own paragraph, in Andrew's wording: "This tunnel is the router's default connection: a device not pinned to any tunnel, such as one that joins your network later, will use the default connection, so it can reach the internet without a VPN while this tunnel is down." Added to the kill switch line, straight after the pinned devices' names, "devices that only follow the default are not covered by the guard" read as doubt about them, on a router where every device was pinned. A harness test reads the paragraph from a real deploy email, below the rows, and finds none with another default.
 
 2026-10-29 v0.8.184 build 554 - scripts on the router are written whole and check themselves, every fault is reported in red, and the app updates them itself
 

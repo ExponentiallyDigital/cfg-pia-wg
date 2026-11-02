@@ -116,6 +116,15 @@ jobs:
         continue-on-error: true
         run: flutter build apk --debug
 
+      # The notices name the Flutter SDK's version, and the packages job builds with the old pin, so this
+      # job is the one that can bring it up to date (ID-507). After the build, so the Gradle cache holds the
+      # Android libraries' POMs the tool reads their licences from.
+      - name: Regenerate THIRD-PARTY-NOTICES.md
+        id: notices
+        if: steps.move.outcome == 'success'
+        continue-on-error: true
+        run: dart run tool/third_party_notices.dart
+
       - name: Open the PR
         if: steps.move.outcome == 'success'
         env:
@@ -124,20 +133,21 @@ jobs:
           ANALYZE: ${{ steps.analyze.outcome }}
           TEST: ${{ steps.test.outcome }}
           BUILD: ${{ steps.build.outcome }}
+          NOTICES: ${{ steps.notices.outcome }}
         run: |
           branch="bot/flutter-$LATEST"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
-          git add pubspec.yaml pubspec.lock
+          git add pubspec.yaml pubspec.lock THIRD-PARTY-NOTICES.md
           git commit -m "Flutter $LATEST, from the weekly check (ID-410)"
           git push origin "$branch"
           draft=""
-          [ "$ANALYZE$TEST$BUILD" = "successsuccesssuccess" ] || draft="--draft"
+          [ "$ANALYZE$TEST$BUILD$NOTICES" = "successsuccesssuccesssuccess" ] || draft="--draft"
           {
             echo "Flutter $LATEST is the current stable; pubspec.yaml pins $PINNED. This moves the pin, which every workflow installs."
             echo
-            echo "Checked in this run with Flutter $LATEST: analyze **$ANALYZE**, tests **$TEST**, debug build **$BUILD**. CI doesn't run on PRs into dev; the full suite runs on the release PR."
+            echo "Checked in this run with Flutter $LATEST: analyze **$ANALYZE**, tests **$TEST**, debug build **$BUILD**, THIRD-PARTY-NOTICES.md **$NOTICES**. CI doesn't run on PRs into dev; the full suite runs on the release PR."
             echo
             echo "Before merging: upgrade Flutter locally (\`flutter upgrade\`), so scripts/build.ps1 stops warning, read the release notes for breaking changes, and add a CHANGELOG line to the next build."
             echo
