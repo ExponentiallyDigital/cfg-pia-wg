@@ -155,6 +155,7 @@ How the app works, screen by screen: the main menu, then each screen that does w
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart LR
     A["Start app"] --> B["Main menu"]
     B --> C["STANDALONE<br/>a PIA WireGuard config<br/>for any device"]
@@ -187,6 +188,7 @@ flowchart LR
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
     H["Enter region, PIA<br/>username and password,<br/>DNS"] --> I{"GENERATE CONFIG"}
     I -->|"a required<br/>field is empty"| H
@@ -222,6 +224,7 @@ flowchart TB
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
     D1["Router login<br/>asked once per session"] --> D3["fetchSlots<br/>wgc1-5, which<br/>are up, firmware"]
     D3 --> D5["Pick a slot,<br/>then an action"]
@@ -258,6 +261,7 @@ flowchart TB
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
     E1["Router login<br/>asked once per session"] --> E3["Firmware check,<br/>then fetchSlots"]
     E3 --> E5["Pick a slot,<br/>then an action"]
@@ -293,8 +297,10 @@ flowchart TB
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
-    L["Router login<br/>asked once per session;<br/>straight in when connected"] --> F{"Which firmware?<br/><i>nvram get 3rd-party</i>"}
+    L["Router login<br/>asked once per session;<br/>straight in when connected"] --> F{"`Which firmware?
+*nvram get 3rd-party*`"}
     F -->|"Merlin"| FM["Refused: DEVICES is<br/>a stock feature.<br/>OK goes to HOME"]
     F -->|"neither"| FU["Refused: firmware<br/>not supported"]
     F -->|"stock"| READ
@@ -332,6 +338,7 @@ flowchart TB
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
     S["DEVICES"] --> T1["Tap a device's<br/>connection"]
     S --> T2["Tap a device's name<br/>edit it in place;<br/>no angle brackets,<br/>32 characters at most;<br/>empty shows the<br/>detected name"]
@@ -369,6 +376,7 @@ flowchart TB
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
     A["APPLY N CHANGES"] --> PW{"Unlocked?"}
     PW -->|"no"| PAY["Paywall<br/>nothing written<br/>unless bought"]
@@ -424,13 +432,15 @@ Why ask through the router, rather than from the phone? Because the phone's own 
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
     O["Open NETWORK,<br/>or REFRESH"] --> PH["lookUpThisPhone<br/>HTTPS from the<br/>phone to PIA"]
     O --> Q{"Router login<br/>this session?"}
     PH --> PC["This device<br/>address, place,<br/>provider"]
     Q -->|"no"| LG["login to router<br/>for tunnel details<br/>asks as ABOUT does"]
     LG -->|"logged in"| O
-    Q -->|"yes"| F{"Which firmware?<br/><i>nvram get 3rd-party</i>"}
+    Q -->|"yes"| F{"`Which firmware?
+*nvram get 3rd-party*`"}
     F -->|"neither"| FU["Tunnels: could not<br/>look them up"]
     F -->|"stock or Merlin"| FS["fetchSlots<br/>which tunnels<br/>are up"]
     FS -->|"none"| NONE["No tunnel is up."]
@@ -810,12 +820,17 @@ pia-aus_melbourne>WireGuard>5>>password>1>5>>>0>0>cfg-pia-wg<pia-aus>WireGuard>4
 The single hardest thing to hold in your head about stock, and the cause of more wrong guesses during development than anything else. One WireGuard profile is referred to by **three different numbers**, and every one of them is used somewhere.
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 graph TD
-    P["One profile<br/><i>pia-aus_melbourne</i>"]
+    P["`One profile
+*pia-aus_melbourne*`"]
 
-    P --> S["<b>Slot number</b> - 1..5<br/>index 2 of the clientlist record"]
-    P --> R["<b>Row index</b> - 0-based<br/>position in vpnc_clientlist"]
-    P --> X["<b>State index</b> - index 6<br/>of the clientlist record"]
+    P --> S["`**Slot number** - 1..5
+index 2 of the clientlist record`"]
+    P --> R["`**Row index** - 0-based
+position in vpnc_clientlist`"]
+    P --> X["`**State index** - index 6
+of the clientlist record`"]
 
     S --> S1["wgcN_* NVRAM keys<br/>wgc1_enable, wgc1_priv, ..."]
     S --> S2["the interface: wgc1"]
@@ -1213,6 +1228,7 @@ What the app does with it, in `_setDefaultConnection`: the same sequence, with a
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
     U["vpnc_unit = the new<br/>default's row; the old<br/>default's when the new<br/>one is Internet"] --> S1["stop_vpnc<br/>wait for that<br/>tunnel to go"]
     S1 --> S2["restart_default_wan<br/>wait for vpnc_default_wan<br/>to reset to 0"]
@@ -1573,13 +1589,17 @@ Most runs do nothing, which is the point. The expensive path costs a PIA token a
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TD
-    CRON["cron fires<br/><i>every N minutes</i>"] --> DETACH
-    DEPLOY["app runs it with 'deploy'<br/><i>immediately after SAVE</i>"] --> LOAD
+    CRON["`cron fires
+*every N minutes*`"] --> DETACH
+    DEPLOY["`app runs it with 'deploy'
+*immediately after SAVE*`"] --> LOAD
 
     DETACH{"started by cron?"}
     DETACH -->|yes| REEXEC["re-exec detached,<br/>wait for PPid = 1"]
-    REEXEC --> STAGGER["wait 15 s x (N - 1)<br/><i>wgc1 at once, wgc5 at 60 s</i>"]
+    REEXEC --> STAGGER["`wait 15 s x (N - 1)
+*wgc1 at once, wgc5 at 60 s*`"]
     STAGGER --> LOAD
     DETACH -->|no| LOAD
 
@@ -1591,7 +1611,8 @@ flowchart TD
     SETS -->|yes| STOP5["exit 0 - nothing<br/>left to watch"]
     SETS -->|no| IFACE
 
-    IFACE{"is wgcN up?<br/><i>ip -o link show up</i>"}
+    IFACE{"`is wgcN up?
+*ip -o link show up*`"}
     IFACE -->|no| BACKOFF
     IFACE -->|yes| HS{"handshake<br/>newer than 300s?"}
     HS -->|yes| OK["record success,<br/>reset backoff, exit 0"]
@@ -1603,7 +1624,8 @@ flowchart TD
     BACKOFF -->|yes| STOP2["log why, exit 0"]
     BACKOFF -->|no| WAN{"is the WAN up?"}
     WAN -->|no| STOP3["exit 0 - not our problem,<br/>and no alert"]
-    WAN -->|yes| RECONF["RECONFIGURE<br/><i>see the next section</i>"]
+    WAN -->|yes| RECONF["`RECONFIGURE
+*see the next section*`"]
 
     classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
     classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
@@ -1647,21 +1669,32 @@ Reached only when everything above has failed. Every step can abort, and an abor
 <div align="center">
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TD
-    A["fetch the PIA CA cert<br/><i>cached after the first run;</i><br/><i>one retry without encrypted DNS</i>"] --> B
-    B["POST for a session token<br/><i>with the PIA credentials from NVRAM</i>"] --> C
-    C["fetch the region's server list<br/><i>refused unless it carries PIA's signature;</i><br/><i>then the last list that passed is used</i>"] --> D
+    A["`fetch the PIA CA cert
+*cached after the first run;*
+*one retry without encrypted DNS*`"] --> B
+    B["`POST for a session token
+*with the PIA credentials from NVRAM*`"] --> C
+    C["`fetch the region's server list
+*refused unless it carries PIA's signature;*
+*then the last list that passed is used*`"] --> D
     D["ping every candidate,<br/>take the lowest latency"] --> E
     E["generate a fresh WireGuard keypair"] --> F
-    F["register the public key<br/><i>addKey on the chosen server, port 1337</i>"] --> G
+    F["`register the public key
+*addKey on the chosen server, port 1337*`"] --> G
     G["write the wgcN_* values<br/>to NVRAM"] --> W
     W["wait for the router's<br/>service queue to be free"] --> H
-    H["restart the tunnel<br/><i>stock: restart_vpnc</i><br/><i>Merlin: stop, start,</i><br/><i>restart routing</i>"] --> T
+    H["`restart the tunnel
+*stock: restart_vpnc*
+*Merlin: stop, start,*
+*restart routing*`"] --> T
     T{"is the tunnel on<br/>the new server's key?"}
     T -->|"no, the first time"| W
     T -->|yes| K
     K{"wgcN up, and<br/>a handshake<br/>within 20s?"}
-    K -->|yes| GS["ask the guard for one run<br/><i>stock: guard.sh soon</i>"]
+    K -->|yes| GS["`ask the guard for one run
+*stock: guard.sh soon*`"]
     GS --> OK["Reconfig SUCCESS<br/>count it,<br/>send the<br/>recovery alert"]
     K -->|no| FAIL["abort<br/>count it,<br/>send the<br/>failure alert"]
     T -->|"no, twice"| FAIL
@@ -2259,6 +2292,7 @@ What to know when covering an address, a username or a MAC:
 How a work item travels from wherever it was noticed to a release. The rules themselves live in the headers of [BACKLOG.md](BACKLOG.md) and [CHANGELOG.md](CHANGELOG.md); this is the map of them.
 
 ```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
 flowchart TB
     subgraph IN["Where work items come from"]
         S1["Andrew's notes<br/>and ideas"]
