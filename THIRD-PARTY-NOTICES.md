@@ -227,7 +227,7 @@ The dev dependencies in `pubspec.yaml`, used to build and test the project and n
 
 ## Flutter SDK components
 
-The app also includes components of the Flutter SDK 3.47.8: `flutter`, `flutter_web_plugins`, `sky_engine`. They are licensed under [the Flutter SDK's licence](https://github.com/flutter/flutter/blob/main/LICENSE). The engine (`sky_engine`) bundles third-party code of its own, whose licences are listed in full on the app's licence page.
+The app also includes components of the Flutter SDK 3.47.9: `flutter`, `flutter_web_plugins`, `sky_engine`. They are licensed under [the Flutter SDK's licence](https://github.com/flutter/flutter/blob/main/LICENSE). The engine (`sky_engine`) bundles third-party code of its own, whose licences are listed in full on the app's licence page.
 
 ## Maintenance
 
