@@ -117,6 +117,19 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-11-02 v0.8.190 build 560 - THIRD-PARTY-NOTICES.md names Flutter 3.47.9, and the weekly bot's Flutter update keeps it current
+
+```play
+• Docs: the architecture diagrams now read properly on Android tablets.
+• Built with Flutter 3.47.9.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-506 FIX: THIRD-PARTY-NOTICES.md names Flutter SDK 3.47.9, the version the app is now built with; it still said 3.47.8 after the bot's Flutter update (#65), the only line that changed.
+  - Closed 2026-11-02: regenerated with `tool/third_party_notices.dart`; its `--check`, the release's own, now reports the file current.
+- ID-507 FIX: the weekly bot's Flutter update regenerates THIRD-PARTY-NOTICES.md and commits it with the new pin. Only the packages job did, and it builds with the old pin, so a Flutter update left the notices naming the old SDK.
+  - Closed 2026-11-02: `ci_config_test.dart` fails on the workflow as it was and passes now. The step itself first runs when the next Flutter stable is proposed.
+
 2026-11-02 v0.8.189 build 559 - every CHANGELOG work item has an ID, checked by a test
 
 ```play

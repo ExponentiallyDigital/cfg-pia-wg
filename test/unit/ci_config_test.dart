@@ -164,4 +164,12 @@ void main() {
     expect(ecosystems, greaterThan(0));
     expect(toDev, ecosystems, reason: 'every update block needs target-branch: "dev"');
   });
+
+  test("the weekly Flutter update regenerates THIRD-PARTY-NOTICES.md and commits it with the pin", () {
+    // The notices name the Flutter SDK's version; on 2026-11-02 the update to 3.47.9 left them at 3.47.8 (ID-507).
+    final yaml = File('.github/workflows/weekly_updates.yml').readAsStringSync().replaceAll('\r\n', '\n');
+    final flutterJob = yaml.substring(yaml.indexOf('\n  flutter:'), yaml.indexOf('\n  packages:'));
+    expect(flutterJob, contains('run: dart run tool/third_party_notices.dart'));
+    expect(flutterJob, contains('git add pubspec.yaml pubspec.lock THIRD-PARTY-NOTICES.md'));
+  });
 }
