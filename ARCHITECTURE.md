@@ -2357,6 +2357,7 @@ What each workflow in `.github/workflows` does, and when it runs. A release goes
 | `pia_key_check.yml` | daily | emails Andrew if PIA's server list key changes |
 | `target_api_reminder.yml` | each 1 June | opens an issue to raise Android's target API level |
 | `weekly_updates.yml` | weekly | pull requests for a newer Flutter and package updates |
+| `notices_on_dev.yml` | a push to `dev` that changes `pubspec.yaml`, `pubspec.lock` or a Gradle lockfile | regenerates THIRD-PARTY-NOTICES.md and commits it straight to `dev` (ID-508). The job that runs package code can only read the repo; the job that commits runs no package code, takes only that one text file, and changes no version. Launcher icons are left out: they ship in the app, and the tool that makes them is third-party code. Its commit starts no workflow, so it can't trigger itself |
 
 The App Store has no tracks. Every version goes through App Review, so each of Play's tracks has an App Store counterpart:
 

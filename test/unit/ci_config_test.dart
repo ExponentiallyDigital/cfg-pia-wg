@@ -172,4 +172,35 @@ void main() {
     expect(flutterJob, contains('run: dart run tool/third_party_notices.dart'));
     expect(flutterJob, contains('git add pubspec.yaml pubspec.lock THIRD-PARTY-NOTICES.md'));
   });
+
+  group('notices after a dependency change (ID-508)', () {
+    final yaml = File('.github/workflows/notices_on_dev.yml').readAsStringSync().replaceAll('\r\n', '\n');
+    final generate = yaml.substring(yaml.indexOf('\n  generate:'), yaml.indexOf('\n  commit:'));
+    final commit = yaml.substring(yaml.indexOf('\n  commit:'));
+
+    test('runs on a push to dev that changes a dependency file', () {
+      expect(yaml, contains('  push:\n    branches:\n      - dev\n'));
+      for (final path in ['pubspec.yaml', 'pubspec.lock', '"android/**/*.lockfile"']) {
+        expect(yaml, contains('      - $path\n'));
+      }
+    });
+
+    test('the job that runs package code can only read, keeps no credentials and changes no version', () {
+      expect(yaml, contains('\npermissions:\n  contents: read\n'));
+      expect(generate, contains('    permissions:\n      contents: read\n'));
+      expect(generate, isNot(contains('contents: write')));
+      expect(generate, contains('persist-credentials: false'));
+      expect(generate, contains('flutter pub get --enforce-lockfile'));
+      expect(generate, isNot(contains('pub upgrade')));
+      expect(generate, isNot(contains('--write-locks')));
+    });
+
+    test('the job that can write runs no package code and commits only the notices', () {
+      expect(commit, contains('    permissions:\n      contents: write\n'));
+      expect(RegExp(r'\b(flutter|dart)\b', caseSensitive: false).hasMatch(commit), isFalse,
+          reason: 'the write job must not run Flutter or Dart');
+      expect(commit, contains('git commit -m "THIRD-PARTY-NOTICES.md regenerated after a dependency change (ID-508)" -- THIRD-PARTY-NOTICES.md'));
+      expect(RegExp(r'git add').hasMatch(commit), isFalse, reason: 'it commits the one file by path, never git add');
+    });
+  });
 }
