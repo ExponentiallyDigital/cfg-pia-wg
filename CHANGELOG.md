@@ -117,6 +117,16 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-11-03 v0.8.193 build 563 - ARCHITECTURE.md's stock vpnc_unit diagram back to its original text, in plain ASCII so it lines up on phones
+
+```play
+• Docs: an architecture diagram now lines up on phones.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-512 DOC: ARCHITECTURE.md 4.2's `vpnc_unit` diagram is the original text diagram again, ID-511's Mermaid version undone. Its only fault was that its lines didn't line up on Andrew's tablet: `◄`, `▼` and the box-drawing lines aren't in every monospace font, and one drawn from another font is a different width. Now plain ASCII, one character for each, so nothing moves.
+  - Closed 2026-11-03: the same lines as build 561's, character for character, with every character ASCII and every line the same length as before; `mermaid_svg_labels_test.dart` passes.
+
 2026-11-02 v0.8.192 build 562 - App Review's questions answered in the review notes, Apple's new age rating questions set, and the firmware flow diagrams in Mermaid
 
 ```play
