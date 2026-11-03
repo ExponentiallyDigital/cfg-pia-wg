@@ -501,21 +501,20 @@ To manage Wireguard Merlin uses VPN Director, stock ASUS uses VPN Fusion. These 
 
 VPN Director exposes each slot directly: there is no clientlist and no unit indirection. Write the `wgcN_*` keys, commit, then act on the slot **by its own number**.
 
-```text
-   nvram set wgcN_*      (17 keys, see the field reference)
-          │
-   nvram commit          always BEFORE the service call, so the
-          │              service cannot read a half-written slot
-          ▼
-        exec
-  service "start_wgc N"  OR  service "stop_wgc N"
-          │
-          ▼
-  service restart_vpnrouting0   (start)
-  service start_vpnrouting0     (stop)
-          │
-          ▼
-        wgcN
+```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
+graph TD
+    K["nvram set wgcN_*<br/>17 keys, see the field reference"] --> C["`nvram commit
+always before the service call,
+so the service cannot read a half-written slot`"]
+    C --> S["service #quot;start_wgc N#quot;<br/>or service #quot;stop_wgc N#quot;"]
+    S --> R["service restart_vpnrouting0 to start<br/>service start_vpnrouting0 to stop"]
+    R --> W["wgcN"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class K,W go
+    class C,S,R step
 ```
 
 #### 4.1.1. <a name='enable'></a>Enable
@@ -566,25 +565,23 @@ VPN Fusion abstracts the underlying per slot calls to manipulate WG VPNs. Find t
 > [!IMPORTANT]
 > **`vpnc_unit` must be set before every `service` call in this section, and it is what the call acts on.** `stop_vpnc` and `restart_vpnc` take no argument: the only thing telling VPN Fusion which profile is meant is the value sitting in `vpnc_unit` when the call is made. It keeps its last value, so a call made without setting it first acts on whatever was targeted previously - silently, and with no error. This applies to **all** of the operations below, not just the one that happens to mention it.
 
-```text
-        vpnc_clientlist
-              │
-              ├── row 0 ── slot 5 ─┐
-              ├── row 1 ── slot 1  │  find the row whose
-              └── row N ── slot M  │  index 2 == target slot
-              │                    │
-             set ◄─────────────────┘
-   vpnc_unit=(row index)
-              │
-              ▼
-            exec
-  stop_vpnc OR restart_vpnc
-              │
-              ▼
-          VPN Fusion
-              │
-              ▼
-             wgcN
+```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
+graph TD
+    L["`**vpnc_clientlist**
+row 0: slot 5
+row 1: slot 1`"] --> F["`find the row whose index 2
+is the target slot: slot 1 is row 1`"]
+    F --> U["nvram set vpnc_unit=1"]
+    U --> E["service stop_vpnc<br/>or service restart_vpnc"]
+    E --> V["`VPN Fusion acts on the row
+vpnc_unit names`"]
+    V --> W["wgc1 stops or starts"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class L,W go
+    class F,U,E,V step
 ```
 
 > [!IMPORTANT]
