@@ -981,6 +981,7 @@ void main() {
       expect(ssh.ran('nvram set vpnc_max_conn'), isFalse);
     });
 
+    // ID-509: and App Review, with no router, is sent this way to the purchase (app-store/review_notes.md).
     testWidgets('a locked user meets the paywall before any question about the router', (tester) async {
       Entitlement.debugSetUnlocked(false);
       addTearDown(() => Entitlement.debugSetUnlocked(null));

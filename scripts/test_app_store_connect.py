@@ -216,5 +216,41 @@ class ReleaseWorkflowCertificates(unittest.TestCase):
         self.assertIn("if: ${{ always() && steps.certificates.outcome == 'success' }}", step.split('run:')[0])
 
 
+# Every attribute of Apple's AgeRatingDeclaration, from its documentation, read 2026-11-03.
+APPLE_AGE_ATTRIBUTES = [
+    'advertising', 'alcoholTobaccoOrDrugUseOrReferences', 'contests', 'gambling', 'gamblingSimulated',
+    'gunsOrOtherWeapons', 'healthOrWellnessTopics', 'kidsAgeBand', 'lootBox', 'medicalOrTreatmentInformation',
+    'messagingAndChat', 'parentalControls', 'profanityOrCrudeHumor', 'ageAssurance', 'sexualContentGraphicAndNudity',
+    'sexualContentOrNudity', 'socialMedia', 'socialMediaAgeRestricted', 'horrorOrFearThemes', 'matureOrSuggestiveThemes',
+    'unrestrictedWebAccess', 'userGeneratedContent', 'violenceCartoonOrFantasy',
+    'violenceRealisticProlongedGraphicOrSadistic', 'violenceRealistic', 'ageRatingOverride', 'ageRatingOverrideV2',
+    'koreaAgeRatingOverride', 'gracRatingClassificationNumber', 'developerAgeRatingInfoUrl',
+]
+
+
+class AgeRating(unittest.TestCase):
+    """ID-510: every age rating question Apple asks is answered None or No, and one it adds is reported."""
+
+    def test_every_question_apple_asks_is_answered(self):
+        answers, unknown = asc.age_answers({k: None for k in APPLE_AGE_ATTRIBUTES})
+        self.assertEqual(unknown, [])
+        self.assertIs(answers['socialMedia'], False)
+        self.assertIs(answers['socialMediaAgeRestricted'], False)
+        self.assertEqual(answers['violenceRealistic'], 'NONE')
+
+    def test_overrides_are_left_as_they_are(self):
+        answers, _ = asc.age_answers({k: None for k in APPLE_AGE_ATTRIBUTES})
+        self.assertFalse(asc.AGE_NOT_ASKED & set(answers))
+
+    def test_a_question_apple_adds_is_reported(self):
+        answers, unknown = asc.age_answers({'socialMedia': None, 'someNewQuestion': None})
+        self.assertEqual(answers, {'socialMedia': False})
+        self.assertEqual(unknown, ['someNewQuestion'])
+
+    def test_only_the_questions_apple_returns_are_sent(self):
+        answers, _ = asc.age_answers({'contests': None})
+        self.assertEqual(answers, {'contests': 'NONE'})
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -98,7 +98,7 @@ Work items for the **current** release:
 - ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store. Update README "3. Pre-built release"when the application is available on the Apple App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
-  - Now: still In Review on 2026-10-31, ten days after submission; no email and no reply to case 103010748637 since the agreement was accepted on 2026-10-30.
+  - Now: App Review asked on 2026-11-02 what the app collects through VPN, and how to reach the purchase without a router; Andrew replied and resubmitted on 2026-11-03. Waiting on App Review.
 
 ---
 
@@ -117,6 +117,20 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-11-02 v0.8.192 build 562 - App Review's questions answered in the review notes, Apple's new age rating questions set, and the firmware flow diagrams in Mermaid
+
+```play
+• Behind the scenes: App Store review notes updated, and the architecture's firmware diagrams redrawn.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- REL: v0.8.191 (561) passed 2026-11-02 (run 41439429070): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs and the Dart licences on the release; THIRD-PARTY-NOTICES.md current. PR #68 merged at 0 open Sonar issues, gate OK.
+- ID-509 DOC: the App Review notes say what the app collects through VPN (nothing), where each login goes, and how to reach the purchase without a router: SETTINGS, MAX ACTIVE VPNS. App Review asked both on 2026-11-02 (ID-436).
+  - Closed 2026-11-03: `app_store_listing_test.dart` holds the notes to Apple's 4,000 characters and to the steps, and failed with MAX ACTIVE VPNS taken out; the settings test already pins that a locked MAX ACTIVE VPNS opens the purchase with no router command. They reach App Store Connect with the next `listing` run.
+- ID-510 REL: `scripts/app_store_connect.py listing` answers Apple's two new age rating questions, social media and social media disabled for users under 13, No, and warns of any question Apple adds that it doesn't answer. Andrew answered both No when resubmitting.
+  - Closed 2026-11-03: the attributes are Apple's, `socialMedia` and `socialMediaAgeRestricted`, read from its documentation; `test_app_store_connect.py` checks every question Apple lists is answered, and failed with `socialMedia` taken out. The next `listing` run is the first to send them.
+- ID-511 DOC: ARCHITECTURE.md's two firmware flow diagrams, VPN Fusion's `vpnc_unit` lookup on stock and VPN Director's on Merlin, are Mermaid, not box-drawing text. The stock one read as if row 0 were always the row chosen, with two paths into `set`, and box-drawing characters fall out of line in the fallback fonts on Andrew's Android tablet.
+  - Closed 2026-11-03: both rendered with GitHub's Mermaid viewer at 412 and 980 pixels wide, every node drawn and none clipped; `mermaid_svg_labels_test.dart` passes with both.
 2026-11-02 v0.8.191 build 561 - licence notices regenerate themselves after a dependency change, with no package code able to write
 
 ```play
