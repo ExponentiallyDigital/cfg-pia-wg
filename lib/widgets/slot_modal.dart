@@ -49,6 +49,7 @@ import 'log_buttons.dart';
 import 'paywall.dart';
 import 'region_picker_sheet.dart';
 import '../plain_error.dart';
+import 'slot_text.dart';
 
 /// Shown in the DIALOG when an ENABLE fails, and deliberately not written to the app log: an
 /// explanation that helps at the moment of failure is noise in a log read later, and the log
@@ -261,7 +262,7 @@ abstract class _SlotModalState<T extends _SlotScreen> extends State<T> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
-        title: Text(title, style: const TextStyle(color: kText, fontSize: 15)),
+        title: SlotText(title, style: const TextStyle(color: kText, fontSize: 15)),
         content: _confirmBody(message, warning),
         actions: [
           AppButton(label: 'CANCEL', role: ButtonRole.dismiss, onPressed: () => Navigator.pop(ctx, false)),
@@ -284,7 +285,7 @@ abstract class _SlotModalState<T extends _SlotScreen> extends State<T> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (message != null) Text(message, style: const TextStyle(color: kMuted, fontSize: 13)),
+        if (message != null) SlotText(message, style: const TextStyle(color: kMuted, fontSize: 13)),
         if (message != null && warning != null) const SizedBox(height: 10),
         if (warning != null) _confirmWarning(warning),
       ],
@@ -307,8 +308,8 @@ abstract class _SlotModalState<T extends _SlotScreen> extends State<T> {
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: kSurface,
-          title: Text(title, style: const TextStyle(color: kHighlight, fontSize: 15)),
-          content: Text(message, style: const TextStyle(color: kText, fontSize: 13)),
+          title: SlotText(title, style: const TextStyle(color: kHighlight, fontSize: 15)),
+          content: SlotText(message, style: const TextStyle(color: kText, fontSize: 13)),
           actions: [AppButton(label: 'OK', onPressed: () => Navigator.pop(ctx))],
         ),
       );
@@ -431,17 +432,17 @@ abstract class _SlotModalState<T extends _SlotScreen> extends State<T> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // One line, `wgc1:pia-region_name`, the way every log line and dialog names a slot (ID-035).
-                  // The slot stays teal and the region white; an empty slot says so in grey.
+                  // One line, `wgc1:pia-region_name`, the way every log line and dialog names a slot (ID-035),
+                  // all of it in the slot's colour (ID-515); an empty slot says so in grey after its name.
                   Text.rich(
                     TextSpan(children: [
                       TextSpan(
                         text: 'wgc$slotNum',
-                        style: const TextStyle(color: kHighlight, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                        style: TextStyle(color: slotColour(slotNum), fontFamily: 'monospace', fontWeight: FontWeight.bold),
                       ),
                       info.isEmpty
                           ? TextSpan(text: ' $desc', style: const TextStyle(color: kMuted, fontSize: 12))
-                          : TextSpan(text: ':${desc.trim()}', style: const TextStyle(color: Colors.white)),
+                          : TextSpan(text: ':${desc.trim()}', style: TextStyle(color: slotColour(slotNum))),
                     ]),
                   ),
                   if (badges.isNotEmpty) ...[
@@ -1250,7 +1251,7 @@ class _FormDialog extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(title, style: const TextStyle(color: kHighlight, fontSize: 14)),
+                SlotText(title, style: const TextStyle(color: kHighlight, fontSize: 14)),
                 const SizedBox(height: 16),
                 ...fields,
                 const SizedBox(height: 16),
@@ -1377,7 +1378,7 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: kSurface,
-            title: Text('Clear the watchdog log for $label?', style: const TextStyle(color: kText, fontSize: 15)),
+            title: SlotText('Clear the watchdog log for $label?', style: const TextStyle(color: kText, fontSize: 15)),
             content: Text(
               "Empties /tmp/watchdog_wgc$slot.log on the router and deletes yesterday's rotated copy. The "
               'watchdog keeps writing to it from its next run.',
@@ -1425,10 +1426,11 @@ class _WatchdogLogScreenState extends State<_WatchdogLogScreen> {
                     width: double.infinity,
                     child: SelectableText.rich(
                       TextSpan(children: [
+                        // A slot named in the line takes its own colour; the rest keeps the line's (ID-515).
                         for (final (i, line) in text.split('\n').indexed)
                           TextSpan(
-                            text: i == 0 ? line : '\n$line',
                             style: TextStyle(color: watchdogLogLineColour(line)),
+                            children: slotSpans(i == 0 ? line : '\n$line', const TextStyle()),
                           ),
                       ]),
                       key: const Key('watchdog_log_text'),

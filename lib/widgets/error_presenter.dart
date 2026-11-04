@@ -23,6 +23,7 @@ import 'app_button.dart';
 
 import '../app_colors.dart';
 import '../session_controller.dart';
+import 'slot_text.dart';
 
 class AppErrors {
   // Tracks the single open error dialog so a newer error can dismiss an older one. The token
@@ -113,7 +114,7 @@ class _ErrorDialog extends StatelessWidget {
           Icon(warning ? Icons.warning_amber_rounded : Icons.error_outline, color: warning ? kWarn : kError, size: 20),
           const SizedBox(width: 8),
           Expanded(
-              child: Text(title,
+              child: SlotText(title,
                   style: TextStyle(color: warning ? kWarn : kError, fontSize: 14, fontWeight: FontWeight.w700))),
         ],
       ),
@@ -127,7 +128,7 @@ class _ErrorDialog extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (messages.length > 1) const Text('• ', style: TextStyle(color: kText)),
-                      Expanded(child: Text(m, style: const TextStyle(color: kText, fontSize: 13))),
+                      Expanded(child: SlotText(m, style: const TextStyle(color: kText, fontSize: 13))),
                     ],
                   ),
                 ))

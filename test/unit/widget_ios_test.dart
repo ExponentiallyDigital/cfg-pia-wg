@@ -20,7 +20,7 @@ void main() {
     final swiftKeys = all(RegExp(r'^\s+static let \w+ = "(\w+)"', multiLine: true), swift);
     final kotlinKeys = all(RegExp(r'const val \w+ = "(\w+)"'), kotlin);
     final written = buildWidgetData(WidgetStatus(tunnels: const [], checkedAt: DateTime(2026, 10, 21)), now: DateTime(2026, 10, 21)).keys.toSet();
-    expect(swiftKeys, hasLength(16));
+    expect(swiftKeys, hasLength(18)); // with each row's slot, for its colour (ID-516)
     expect(swiftKeys, kotlinKeys);
     expect(swiftKeys, written);
   });

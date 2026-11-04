@@ -41,6 +41,7 @@ import 'app_scaffold.dart';
 import 'applying_panel.dart';
 import 'common_fields.dart';
 import 'error_presenter.dart';
+import 'slot_text.dart';
 
 /// What DEVICES calls the router's default route, the one a device with no tunnel uses.
 const String kDefaultConnectionLabel = 'Default connection';
@@ -631,7 +632,7 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
           child: Row(children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                Text(label, style: TextStyle(color: labelColour, fontSize: 14)),
+                SlotText(label, style: TextStyle(color: labelColour, fontSize: 14)), // a tunnel in its slot's colour (ID-515)
                 if (active != null || note.isNotEmpty) _pickerNote(active, note),
               ]),
             ),
@@ -1324,7 +1325,11 @@ class _PickerButton extends StatelessWidget {
                     ]),
                     key: Key('${keyValue}_disabled'),
                     overflow: TextOverflow.ellipsis)
-                : Text(label, overflow: TextOverflow.ellipsis),
+                // A slot shows in its own colour, `default - wgc5:...` included (ID-515); Internet keeps the
+                // button's colour, as does a staged change, in amber, and a muted row, in grey.
+                : (changed || muted)
+                    ? Text(label, overflow: TextOverflow.ellipsis)
+                    : SlotText(label, overflow: TextOverflow.ellipsis),
           ),
           const Icon(Icons.arrow_drop_down, size: 18),
         ]),
@@ -1374,7 +1379,7 @@ class _ApplyDialog extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             for (final l in lines) ...[
               Text(l.name, style: const TextStyle(color: kText, fontSize: 13)),
-              Text('${l.from} -> ${l.to}', style: const TextStyle(color: kMuted, fontSize: 12)),
+              SlotText('${l.from} -> ${l.to}', style: const TextStyle(color: kMuted, fontSize: 12)),
               const SizedBox(height: 6),
             ],
             for (final w in tunnelWarnings) ...[
@@ -1459,7 +1464,7 @@ class _PickerDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AlertDialog(
         backgroundColor: kSurface,
-        title: Text(title, style: const TextStyle(color: kHighlight, fontSize: 15)),
+        title: SlotText(title, style: const TextStyle(color: kHighlight, fontSize: 15)),
         contentPadding: const EdgeInsets.symmetric(vertical: 8),
         content: SizedBox(
           width: double.maxFinite,

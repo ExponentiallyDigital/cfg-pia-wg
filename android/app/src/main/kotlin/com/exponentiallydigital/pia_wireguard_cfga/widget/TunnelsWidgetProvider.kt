@@ -52,7 +52,8 @@ class TunnelsWidgetProvider : HomeWidgetProvider() {
                 data.getString(WidgetKeys.T1_REGION, "") ?: "",
                 data.getString(WidgetKeys.T1_DETAIL, "") ?: "",
                 data.getString(WidgetKeys.T1_GUARD, "") ?: "",
-                data.getString(WidgetKeys.T1_STATE, "unchecked") ?: "unchecked"
+                data.getString(WidgetKeys.T1_STATE, "unchecked") ?: "unchecked",
+                data.getInt(WidgetKeys.T1_SLOT, 0)
             )
             populateRow(
                 this, tunnelCount >= 2, R.id.row2_container, R.id.dot_row2,
@@ -60,7 +61,8 @@ class TunnelsWidgetProvider : HomeWidgetProvider() {
                 data.getString(WidgetKeys.T2_REGION, "") ?: "",
                 data.getString(WidgetKeys.T2_DETAIL, "") ?: "",
                 data.getString(WidgetKeys.T2_GUARD, "") ?: "",
-                data.getString(WidgetKeys.T2_STATE, "unchecked") ?: "unchecked"
+                data.getString(WidgetKeys.T2_STATE, "unchecked") ?: "unchecked",
+                data.getInt(WidgetKeys.T2_SLOT, 0)
             )
 
             val overflow = data.getString(WidgetKeys.OVERFLOW_TEXT, "") ?: ""
@@ -92,6 +94,15 @@ class TunnelsWidgetProvider : HomeWidgetProvider() {
         }
 
     companion object {
+        /** Each slot's colour, the same as lib/app_colors.dart's kSlotColours (ID-516). */
+        val SLOT_COLOURS = mapOf(
+            5 to 0xFFBBDC17.toInt(), // lime
+            4 to 0xFFFE7CE8.toInt(), // pink
+            3 to 0xFFAC88FD.toInt(), // violet
+            2 to 0xFF80B3FD.toInt(), // blue
+            1 to 0xFF19D7F9.toInt() // cyan
+        )
+
         /** `RemoteViews.setViewVisibility` takes the `View` constant, not a bare boolean. */
         fun visibleIf(shown: Boolean) = if (shown) android.view.View.VISIBLE else android.view.View.GONE
 
@@ -107,11 +118,14 @@ class TunnelsWidgetProvider : HomeWidgetProvider() {
             region: String,
             detail: String,
             guard: String,
-            state: String
+            state: String,
+            slot: Int
         ) {
             views.setViewVisibility(containerId, visibleIf(show))
             if (!show) return
             views.setTextViewText(regionId, region)
+            // The region in its slot's colour, as everywhere in the app (ID-516); white for an unknown slot.
+            SLOT_COLOURS[slot]?.let { views.setTextColor(regionId, it) }
             views.setTextViewText(detailId, detail)
             views.setViewVisibility(guardId, visibleIf(guard.isNotEmpty()))
             if (guard.isNotEmpty()) views.setTextViewText(guardId, guard)

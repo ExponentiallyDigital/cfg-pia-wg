@@ -61,6 +61,9 @@ void main() {
       expect(data['tunnel2_region'], 'Auckland, New Zealand');
       expect(data['tunnel2_detail'], 'wgc1 · up · 2 pinned');
       expect(data['tunnel2_state'], 'answering');
+      // Each row's slot, for its colour (ID-516): wgc5 then wgc1.
+      expect(data['tunnel1_slot'], 5); // WidgetKeys.T1_SLOT
+      expect(data['tunnel2_slot'], 1); // WidgetKeys.T2_SLOT
 
       expect(data['compact_badge_text'], 'Protected'); // WidgetKeys.COMPACT_BADGE_TEXT
       expect(data['compact_detail_text'], '2 tunnels up · 3 pinned'); // WidgetKeys.COMPACT_DETAIL_TEXT

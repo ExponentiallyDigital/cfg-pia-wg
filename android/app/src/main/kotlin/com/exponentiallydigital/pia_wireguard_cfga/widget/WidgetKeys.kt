@@ -15,11 +15,13 @@ object WidgetKeys {
     const val T1_DETAIL = "tunnel1_detail"
     const val T1_GUARD = "tunnel1_guard" // empty when nobody is held offline by this tunnel
     const val T1_STATE = "tunnel1_state" // "answering" | "down" | "unchecked"
+    const val T1_SLOT = "tunnel1_slot" // int, 1..5, for the row's colour (ID-516); 0 for no row
 
     const val T2_REGION = "tunnel2_region"
     const val T2_DETAIL = "tunnel2_detail"
     const val T2_GUARD = "tunnel2_guard"
     const val T2_STATE = "tunnel2_state"
+    const val T2_SLOT = "tunnel2_slot"
 
     const val OVERFLOW_TEXT = "overflow_text" // e.g. "+1 more tunnel"; empty when there is none
     const val LAST_CHECKED_TEXT = "last_checked_text"

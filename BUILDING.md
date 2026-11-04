@@ -23,12 +23,15 @@
     - [5.1.1. Why this is a best practice](#511-why-this-is-a-best-practice)
   - [5.2. Reading the output](#52-reading-the-output)
 - [6. Build chain \& utility notes](#6-build-chain--utility-notes)
+- [7. Alternative: a MacBook, with VS Code](#7-alternative-a-macbook-with-vs-code)
 
 The scripts `build.ps1` / `build.sh` in the `./scripts` folder automate a local build or if you prefer to compile and test the application locally, follow the below steps.
 
 On a Mac, `build.ps1 ipa` builds the iOS app as `build/cfg-pia-wg-v<version>_build<build>.ipa`, signed for App Store Connect by Xcode with the Apple account in Xcode's Settings, Accounts, and `build.ps1 all` builds it after the Android ones. Without `REVENUECAT_IOS_KEY` set, the .ipa has every feature unlocked, so it is for trying on a phone; App Store builds come from `release.yml`.
 
 ## 1. Prerequisites
+
+These are for the primary build pathway, Windows with VS Code. Building on a MacBook instead is [7. Alternative: a MacBook, with VS Code](#7-alternative-a-macbook-with-vs-code).
 
 - **Flutter SDK:** the version pinned as `flutter:` under `environment` in `pubspec.yaml`, which every workflow installs; `scripts/build.ps1` and `build.sh` warn when yours differs ([Flutter installation guide](https://flutter.dev/docs/get-started/install))
 - **Android SDK / Studio:** [download Android Studio](https://developer.android.com/studio) and configure with Java Development Kit (JDK 17), also install Android SDK Command-line Tools and check your config with `flutter doctor`
@@ -352,3 +355,76 @@ Exit codes: `0` when every pin matches its tag, `1` when one does not (the check
   ## 4. Scan Android Gradle dependencies (expect many!)
   osv-scanner --lockfile=android/app/gradle.lockfile
   ```
+
+## 7. Alternative: a MacBook, with VS Code
+
+The primary build pathway is Windows with VS Code, as in sections 1 and 2. A MacBook is the alternative, and the only way to build the iOS app locally; it builds the Android app too. Each step below is done once, in order, on an Apple silicon MacBook. Commands go in Terminal: press Command-Space, type `Terminal` and press Return.
+
+1. **Xcode.** Open the App Store app, search for Xcode, and click Get. When it has installed, finish its setup in Terminal. `sudo` asks for your Mac's login password; nothing shows as you type it.
+
+   ```bash
+   sudo xcodebuild -license accept
+   xcodebuild -runFirstLaunch
+   xcodebuild -downloadPlatform iOS
+   ```
+
+   This also installs `git`.
+
+2. **Your Apple account in Xcode.** Open Xcode, then Xcode, Settings..., Accounts, click `+`, choose Apple Account, and sign in. The project signs automatically with the team in `ios/Runner.xcodeproj` (RL4UB6WKMV). On someone else's team, choose yours under Signing & Capabilities for both the Runner and CfgPiaWgWidget targets.
+
+3. **Homebrew, then VS Code, Android Studio and PowerShell.** `build.ps1` needs PowerShell; `build.sh` doesn't. Homebrew's own installer is the first line:
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   brew install --cask visual-studio-code android-studio powershell
+   ```
+
+   The installer ends by printing two lines that put `brew` on your path. Run them before the second command.
+
+4. **The repository.**
+
+   ```bash
+   mkdir -p ~/GitHubRepos && cd ~/GitHubRepos
+   git clone https://github.com/ExponentiallyDigital/cfg-pia-wg.git
+   cd cfg-pia-wg
+   git switch dev
+   ```
+
+5. **Flutter, at the version `pubspec.yaml` pins.** Read from the file, so it is always the one CI builds with:
+
+   ```bash
+   FLUTTER_PIN=$(sed -nE 's/^[[:space:]]+flutter:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\1/p' pubspec.yaml | head -n 1)
+   git clone https://github.com/flutter/flutter.git -b "$FLUTTER_PIN" ~/development/flutter
+   echo 'export PATH="$HOME/development/flutter/bin:$PATH"' >> ~/.zprofile
+   source ~/.zprofile
+   flutter --version
+   ```
+
+   When the pin moves, `git -C ~/development/flutter fetch --tags` then `git -C ~/development/flutter checkout <new version>`.
+
+6. **Android Studio.** Open it once and choose the Standard setup, which downloads the Android SDK. Then More Actions, SDK Manager, the SDK Tools tab: tick Android SDK Command-line Tools (latest), and click Apply. Back in Terminal, accept the licences, answering `y` to each:
+
+   ```bash
+   flutter doctor --android-licenses
+   ```
+
+7. **VS Code.** Open it, then the Extensions view (Command-Shift-X), and install **Flutter** (it brings Dart with it) and **SonarQube for IDE**, which `.vscode/settings.json` connects to this project's SonarCloud. Open the Command Palette (Command-Shift-P) and run `Shell Command: Install 'code' command in PATH`. Then, from the repository folder, `code .` opens the project.
+
+8. **Check.** `flutter doctor` should tick Flutter, Android toolchain, Xcode, Android Studio and VS Code. Chrome isn't needed; this project builds no web app.
+
+9. **The Android signing key.** Copy `android/key.properties` and the keystore it names from the machine that has them (see [2.1.4](#214-local-developer-set-up-one-time)). Both are git-ignored, so a clone doesn't bring them. Debug builds don't need them; `build.ps1` and `build.sh` stop a release build early without them.
+
+10. **Build.** `all` builds the Android release, then the iOS `.ipa`:
+
+    ```bash
+    flutter pub get --enforce-lockfile
+    flutter test
+    pwsh scripts/build.ps1 all
+    ```
+
+11. **Running on an iPhone from VS Code.** Connect the iPhone by cable and tap Trust on it. The first time, turn on Developer Mode: on the iPhone, Settings, Privacy & Security, Developer Mode, and let it restart. In VS Code, click the device name at the right of the status bar, choose the iPhone, and press F5.
+
+    > [!CAUTION]
+    > A debug build replaces whatever build of the app is on that iPhone, TestFlight's included. Choose the device by name: `flutter run` with no `-d` can pick an iPhone on the same Wi-Fi instead of the one you meant.
+
+A build started from VS Code rather than by `build.ps1` or `build.sh`, such as `flutter run`, prints Java's four `restricted method` warning lines. They're harmless: Gradle's launcher, on Android Studio's Java, loads a native library the way newer Java warns about. The two scripts add `--enable-native-access=ALL-UNNAMED` to `GRADLE_OPTS`, which switches them off.
