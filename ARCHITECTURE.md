@@ -501,21 +501,20 @@ To manage Wireguard Merlin uses VPN Director, stock ASUS uses VPN Fusion. These 
 
 VPN Director exposes each slot directly: there is no clientlist and no unit indirection. Write the `wgcN_*` keys, commit, then act on the slot **by its own number**.
 
-```text
-   nvram set wgcN_*      (17 keys, see the field reference)
-          │
-   nvram commit          always BEFORE the service call, so the
-          │              service cannot read a half-written slot
-          ▼
-        exec
-  service "start_wgc N"  OR  service "stop_wgc N"
-          │
-          ▼
-  service restart_vpnrouting0   (start)
-  service start_vpnrouting0     (stop)
-          │
-          ▼
-        wgcN
+```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
+graph TD
+    K["nvram set wgcN_*<br/>17 keys, see the field reference"] --> C["`nvram commit
+always before the service call,
+so the service cannot read a half-written slot`"]
+    C --> S["service #quot;start_wgc N#quot;<br/>or service #quot;stop_wgc N#quot;"]
+    S --> R["service restart_vpnrouting0 to start<br/>service start_vpnrouting0 to stop"]
+    R --> W["wgcN"]
+
+    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+    class K,W go
+    class C,S,R step
 ```
 
 #### 4.1.1. <a name='enable'></a>Enable
@@ -568,22 +567,22 @@ VPN Fusion abstracts the underlying per slot calls to manipulate WG VPNs. Find t
 
 ```text
         vpnc_clientlist
-              │
-              ├── row 0 ── slot 5 ─┐
-              ├── row 1 ── slot 1  │  find the row whose
-              └── row N ── slot M  │  index 2 == target slot
-              │                    │
-             set ◄─────────────────┘
+              |
+              +-- row 0 -- slot 5 -+
+              +-- row 1 -- slot 1  |  find the row whose
+              +-- row N -- slot M  |  index 2 == target slot
+              |                    |
+             set <-----------------+
    vpnc_unit=(row index)
-              │
-              ▼
+              |
+              v
             exec
   stop_vpnc OR restart_vpnc
-              │
-              ▼
+              |
+              v
           VPN Fusion
-              │
-              ▼
+              |
+              v
              wgcN
 ```
 
@@ -2015,9 +2014,11 @@ Optional, stock only, and the only part of the app that keeps a login. Nothing h
 
 ### 10.1. <a name='the-status-read'></a>The status read
 
-One SSH round trip, `kWidgetStatusCommand` in `lib/widget_status_service.dart`, built the same way the device screen's read is ([3.2](#32-detail)): nine `nvram get` and file reads separated by an echoed marker, split on the way back. It is deliberately one string, because it is also the value of the key's `command="…"` restriction - what the app reads with the user's own login and what the widget reads with its restricted key are the same command, so neither can drift into being more than the other.
+One SSH round trip, `kWidgetStatusCommand` in `lib/widget_status_service.dart`, built the same way the device screen's read is ([3.2](#32-detail)): nine `nvram get` and file reads separated by an echoed marker, split on the way back. It is deliberately one string, because it is also what the widget's restricted key runs - what the app reads with the user's own login and what the widget reads with its restricted key are the same command, so neither can drift into being more than the other.
 
-The marker is single-quoted (`echo '@@CFGPIAWG-WIDGET@@'`) rather than double-quoted, for one reason: the whole command is later embedded inside the double quotes of `command="…"` in `authorized_keys`, and a double quote there would need escaping. `widgetKeyRestriction` escapes anyway, belt and braces, and a test asserts the real command survives that escaping with nothing unescaped.
+Since ID-467 the key doesn't carry the read itself. The read lives in `/jffs/cfg-pia-wg/widget-read.sh`, and the key's restriction is `command="/bin/sh /jffs/cfg-pia-wg/widget-read.sh"`, so each key's line is about 210 characters, not 750. Measured 2026-11-04: the web interface's Authorized Keys box takes 2,999 characters, and four of the long lines filled 3,503, so no key could be added or changed on that page. The restriction is as strong as before: only root can change the script, and root can already change the keys. On every connection, paid or not, the app puts the script back as its version has it wherever a widget key uses it, and moves this phone's own line to the short form if it is still the long one; other phones' lines move when they next connect. UNINSTALL deletes the folder the script is in, so it takes every widget key off too, and the widgets stop until GENERATE is run again.
+
+The marker is single-quoted (`echo '@@CFGPIAWG-WIDGET@@'`) rather than double-quoted, for one reason: until ID-467 the whole command was embedded inside the double quotes of `command="…"` in `authorized_keys`, and a double quote there would need escaping. `widgetKeyRestriction` escapes anyway, belt and braces, and a test asserts the real command survives that escaping with nothing unescaped.
 
 What comes back feeds `buildWidgetStatus` (`lib/widget_status.dart`), which is pure: the tunnel rows, who is pinned to each, who the guard is therefore holding offline, and one of three badges. "Up" is the interface being present; "answering" additionally requires a handshake within `kAnsweringWithinSeconds`, the same 300 seconds ENABLE and the watchdog use, so the widget never calls a tunnel healthy that they would not.
 

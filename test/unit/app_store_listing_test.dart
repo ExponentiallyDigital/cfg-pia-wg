@@ -30,6 +30,20 @@ void main() {
     expect(length(description), lessThanOrEqualTo(4000));
   });
 
+  // The text below review_notes.md's `---` line, as scripts/app_store_connect.py sends it (ID-509).
+  final notes = File('app-store/review_notes.md').readAsStringSync().split(RegExp(r'^---\s*$', multiLine: true))[1].trim();
+
+  test('the review notes are within 4,000 characters', () {
+    expect(length(notes), lessThanOrEqualTo(4000));
+  });
+
+  // App Review couldn't find the purchase on 2026-11-02: the notes name the way to it without a router.
+  test('the review notes say how to reach the purchase without a router', () {
+    for (final step in ['SETTINGS', 'MAX ACTIVE VPNS', 'UNLOCK FOR LIFE', 'RESTORE PURCHASE']) {
+      expect(notes, contains(step), reason: step);
+    }
+  });
+
   test('keywords are separated by commas with no spaces after them', () {
     expect(field(listing, 'Keywords'), isNot(contains(', ')));
   });

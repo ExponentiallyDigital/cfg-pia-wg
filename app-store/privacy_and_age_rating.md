@@ -27,6 +27,7 @@ Every question is answered **None** or **No**, which gives **4+**.
 - **Unrestricted web access: No.** Links open in Safari, outside the app; the app has no browser of its own.
 - **User-generated content: No.** Nothing is shared between users.
 - **Messaging and chat: No.**
+- **Social media: No,** and **Social media disabled for users under 13: No,** since there is no social media to disable. Two questions Apple added after the first submission, answered by Andrew when resubmitting on 2026-11-03, and set by `listing` since (ID-510). The rating stayed 4+.
 - **Medical or treatment information: No.**
 
 ## Content rights

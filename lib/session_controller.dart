@@ -22,6 +22,7 @@
 // goes there - not the PIA login, not the SSH password, not the SMTP password.
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/widgets.dart';
@@ -36,6 +37,8 @@ import 'router_prefs.dart';
 import 'share_cache.dart';
 import 'router_session.dart';
 import 'watchdog_email.dart';
+import 'widget_key.dart' show WidgetKeyStore, widgetKeyPairFromSeed;
+import 'widget_key_service.dart';
 
 // Default DNS servers (Quad9), matching the value the standalone form pre-fills.
 const String kDefaultDns = '9.9.9.9, 149.112.112.112';
@@ -113,7 +116,9 @@ class SessionController extends ChangeNotifier {
     RouterHostKeys? hostKeys,
     int logCapChars = kLogCapChars,
     bool checkRouterScripts = false,
+    Future<Uint8List?> Function()? ownWidgetKey,
   })  : _checkRouterScripts = checkRouterScripts,
+        _ownWidgetKey = ownWidgetKey ?? _storedWidgetKey,
         _clipboardTimeout = clipboardTimeout,
         _logCapChars = logCapChars,
         _tickInterval = tickInterval,
@@ -326,6 +331,14 @@ class SessionController extends ChangeNotifier {
   /// (app_shell.dart); off by default, so a test's fake router sees only the commands it is about.
   final bool _checkRouterScripts;
 
+  /// This phone's widget public key, or null without one (ID-467). Injected by tests.
+  final Future<Uint8List?> Function() _ownWidgetKey;
+
+  static Future<Uint8List?> _storedWidgetKey() async {
+    final seed = await WidgetKeyStore().read();
+    return seed == null ? null : widgetKeyPairFromSeed(seed).publicKeyBytes;
+  }
+
   /// Routers checked in this run of the app, by address: once each, not at every reconnect.
   final Set<String> _scriptsCheckedFor = {};
 
@@ -346,11 +359,24 @@ class SessionController extends ChangeNotifier {
     if (!_checkRouterScripts || !_scriptsCheckedFor.add(routerIp.trim())) return;
     final r = await checkRouterScripts(client, canUpdate: isUnlocked, onLog: onLog, seenFaults: _seenScriptFaults);
     routerScriptProblems = r.unfixed;
+    await _keepWidgetKeyCurrent(client);
     if (r.updated.isNotEmpty) {
       onNotice?.call('The scripts on the router were updated to ${appVersionLabel.isEmpty ? 'this app version' : appVersionLabel}: '
           '${r.updated.join(', ')}.');
     }
     notifyListeners();
+  }
+
+  /// ID-467: the widget's read script and this phone's key line as this version has them, on every
+  /// connection, paid or not: the script only reads, and an old line fills the web interface's
+  /// Authorized Keys box. A failure is logged and nothing more; the action the connection is for goes on.
+  Future<void> _keepWidgetKeyCurrent(SSHClient client) async {
+    try {
+      final changed = await WidgetKeyRouterService(client, onLog: onLog).keepCurrent(ownKey: await _ownWidgetKey());
+      if (changed.isNotEmpty) logEntry('Updated on the router: ${changed.join(' and ')}.', isSuccess: true);
+    } catch (e) {
+      logEntry('Could not check the home screen widget key on the router: $e', isWarning: true);
+    }
   }
 
   /// After ABOUT has put the scripts right by hand.

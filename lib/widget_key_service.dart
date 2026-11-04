@@ -28,9 +28,11 @@ import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 
+import 'firmware.dart' show kRouterAppDir;
 import 'router_command.dart';
 import 'router_watchdog.dart' show heredocWriteCommands;
 import 'widget_key.dart';
+import 'widget_status_service.dart' show kWidgetKeyCommand, kWidgetReadScript, kWidgetReadScriptPath;
 
 /// A failure this service found by reading the router back, already in plain English (ID-407).
 class WidgetKeyRouterException implements Exception {
@@ -54,7 +56,9 @@ class WidgetKeyRouterService {
   /// phone's previous key, [replacing], if it had one. Other devices' widget keys stay (ID-398).
   /// Throws a plain-English reason if the router doesn't hold the new key afterwards (ID-407).
   Future<void> install(String publicKeyLine, {Uint8List? replacing}) async {
-    final current = await _read('nvram get sshd_authkeys');
+    // The script first, so the key never points at a read that isn't there (ID-467).
+    await writeScript();
+    final current = await _read(_kReadAuthKeys);
     var next = replaceWidgetKeyLine(current, publicKeyLine);
     if (replacing != null) next = removeWidgetKeyLine(next, widgetKeyBlob(replacing));
     await _write(next);
@@ -71,7 +75,7 @@ class WidgetKeyRouterService {
   /// still in use (ID-407). The user's own keys stay. Returns how many were taken off; throws a
   /// plain-English reason if any is still there afterwards.
   Future<int> removeAll() async {
-    final current = await _read('nvram get sshd_authkeys');
+    final current = await _read(_kReadAuthKeys);
     final next = removeAllWidgetKeyLines(current);
     final count = widgetKeyLineCount(current);
     if (count > 0) await _write(next);
@@ -82,9 +86,48 @@ class WidgetKeyRouterService {
     return count;
   }
 
+  /// The widget's read script, as this app version has it, in the app's folder (ID-467). Throws a
+  /// plain-English reason if the router doesn't hold it afterwards.
+  Future<void> writeScript() async {
+    await _run('mkdir -p $kRouterAppDir');
+    for (final cmd in heredocWriteCommands(kWidgetReadScriptPath, kWidgetReadScript)) {
+      await _run(cmd);
+    }
+    await _run('chmod 755 $kWidgetReadScriptPath');
+    if (!await _scriptCurrent()) {
+      throw const WidgetKeyRouterException("The router didn't keep the widget's read script, so nothing was saved on this phone. Try again.");
+    }
+  }
+
+  Future<bool> _scriptCurrent() async => (await _read('cat $kWidgetReadScriptPath 2>/dev/null')) == kWidgetReadScript.trim();
+
+  /// Run on every connection, paid or not (ID-467): [ownKey]'s line, this phone's, moves to the short
+  /// form if it's still the long one, and the read script is put back as this version has it wherever
+  /// a widget key uses it. Other phones' lines are left as they are: each moves when its own phone
+  /// next connects. Returns what changed, for the app log; empty when nothing needed doing.
+  Future<List<String>> keepCurrent({Uint8List? ownKey}) async {
+    final current = await _read(_kReadAuthKeys);
+    var next = current;
+    if (ownKey != null) {
+      final blob = widgetKeyBlob(ownKey);
+      final own = current.split('\n').where((l) => sshKeyBlob(l) == blob);
+      if (own.isNotEmpty && !own.first.contains(kWidgetReadScriptPath)) next = replaceWidgetKeyLine(current, widgetKeyLine(ownKey));
+    }
+    final changed = <String>[];
+    if (next.contains(kWidgetReadScriptPath) && !await _scriptCurrent()) {
+      await writeScript();
+      changed.add("the home screen widget's read script");
+    }
+    if (next != current) {
+      await _write(next);
+      changed.add("this phone's home screen widget key, now its short form");
+    }
+    return changed;
+  }
+
   /// `sshd_authkeys` and the live file, as the router has them now.
   Future<(String, String)> _readBack() async {
-    final nv = await _read('nvram get sshd_authkeys');
+    final nv = await _read(_kReadAuthKeys);
     final live = await _read('cat ~/.ssh/authorized_keys 2>/dev/null');
     return (nv, live);
   }
@@ -109,6 +152,14 @@ class WidgetKeyRouterService {
         'rm -f $kAuthKeysUploadPath');
   }
 }
+
+/// This phone's widget key line for [publicKeyBytes]: the read script as its only command (ID-467),
+/// with the four flags measured to hold, and the comment every widget line shares.
+String widgetKeyLine(Uint8List publicKeyBytes) =>
+    openSshPublicKeyLine(publicKeyBytes, restriction: widgetKeyRestriction(kWidgetKeyCommand), comment: kWidgetKeyComment);
+
+/// The router's key list, as NVRAM keeps it.
+const String _kReadAuthKeys = 'nvram get sshd_authkeys';
 
 /// Where the key list is put together on the router before it goes into NVRAM (ID-407). In /tmp,
 /// RAM, gone at the next reboot; removed straight after the write anyway.

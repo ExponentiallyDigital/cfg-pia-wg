@@ -33,3 +33,13 @@ Moved from the CHANGELOG item, word for word, 2026-10-21, when work items were m
 
 - Andrew: still In Review, no email, and no reply to case 103010748637.
 - The review notes already answer guideline 5.4's VPN question (no VPN service, no NEVPNManager or Network Extension). 5.4 also allows VPN apps only from developers enrolled as an organisation, and the membership is still individual (ID-421, after ID-440's D-U-N-S number). Not confirmed as the cause; it's the rejection that would take longest to fix if it came.
+
+### 2026-11-02 and 03: App Review's questions, answered and resubmitted
+
+- 2026-11-02, 2:51 AM, App Review's message on the submission page: version 0.8.164 (534) Rejected under 2.1.0 Performance: App Completeness, reviewed on an iPad Air 11-inch (M3); Router features left Ready for Review. Both points were Information Needed, not a fault in the build:
+  - 2.1: what user information the app collects using VPN, why, and whether it is shared with third parties, and where.
+  - 2.1(b): they couldn't find the in-app purchase, and asked for the steps to reach it; with the usual reminder that the Paid Apps Agreement must be accepted.
+- Why they couldn't find it: the notes said only "Any of those buttons offers the purchase", and almost all of those need a router. SETTINGS, MAX ACTIVE VPNS opens the purchase before any router question, in build 534 as now, so no new build was needed.
+- Checked before replying (Andrew, Business in App Store Connect): the Paid Apps Agreement Active from 20 Oct 2026, and the bank account, tax forms and Digital Services Act Active too.
+- 2026-11-03: Andrew replied with the VPN answers and the steps, as now in `app-store/review_notes.md` (ID-509). Resubmitting asked two new age rating questions, social media and social media disabled for users under 13; Andrew answered both No and the rating stayed 4+ (ID-510). He asked whether to add anything for encryption: no, already decided under ID-430 (`app-store/export_compliance.md`). Resubmitted 2026-11-03 at 11:07 AM, the same submission ID.
+- Still open, from 2026-10-31: guideline 5.4 allows VPN apps only from organisations, and the membership is individual (ID-421). The questions suggest the reviewer read the app as a VPN app; the reply says it isn't one.

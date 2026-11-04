@@ -39,6 +39,7 @@ import 'widgets/common_fields.dart';
 import 'widgets/error_presenter.dart';
 import 'widgets/region_picker_sheet.dart';
 import 'plain_error.dart';
+import 'widgets/slot_text.dart';
 
 class WatchdogDialog extends StatefulWidget {
   final int slotIndex;
@@ -327,7 +328,9 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         // Without this the menu sizes to its longest label and overflows a narrow phone.
         isExpanded: true,
         dropdownColor: kSurface,
-        style: const TextStyle(color: kText, fontSize: 13),
+        // Named, as the platform's font it already was on Android (and is anyway on iOS, which has no
+        // Roboto), so a test draws it too, not as blocks (ID-517).
+        style: const TextStyle(color: kText, fontSize: 13, fontFamily: 'Roboto'),
         decoration: const InputDecoration(isDense: true),
         items: [
           for (final r in kDohResolvers) DropdownMenuItem(value: r.url, child: Text(r.label, overflow: TextOverflow.ellipsis)),
@@ -485,7 +488,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       builder: (ctx) => AlertDialog(
         backgroundColor: kSurface,
         // Names what is being overwritten, the same shape the delete prompts use.
-        title: Text('Overwrite ${slotLabel(widget.slotIndex, widget.regionDesc)}?',
+        title: SlotText('Overwrite ${slotLabel(widget.slotIndex, widget.regionDesc)}?',
             style: const TextStyle(color: kText, fontSize: 15)),
         content: Text(
             rebuild

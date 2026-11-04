@@ -34,6 +34,7 @@ import '../widgets/app_drawer.dart' show navigateToDestination;
 import '../widgets/app_scaffold.dart';
 import '../widgets/log_buttons.dart';
 import '../widgets/ssh_creds_dialog.dart';
+import '../widgets/slot_text.dart';
 
 /// What the tunnels' part of the screen says when there's no router to ask.
 const String kNetworkLoginPrompt = 'login to router for tunnel details';
@@ -294,7 +295,7 @@ class _NetworkScreenState extends State<NetworkScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(color: kHighlight, fontWeight: FontWeight.bold)),
+          SlotText(title, style: const TextStyle(color: kHighlight, fontWeight: FontWeight.bold)),
           if (problem != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(problem, style: const TextStyle(color: kWarn))),
           if (facts != null) ...[
             line('Address', facts.ip),

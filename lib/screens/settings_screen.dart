@@ -47,9 +47,9 @@ import '../widgets/ssh_creds_dialog.dart';
 import '../widget_key.dart';
 import '../widget_key_service.dart';
 import '../widget_refresh.dart' show cancelWidgetRefresh, homeWidgetSupported, scheduleWidgetRefresh;
-import '../widget_status_service.dart' show kWidgetStatusCommand;
 import 'router_dns_screen.dart';
 import '../plain_error.dart';
+import '../widgets/slot_text.dart';
 
 class SettingsScreen extends StatefulWidget {
   /// Injected by tests so the router actions can run without a router.
@@ -223,7 +223,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     var done = const <String>[];
     final ok = await _onRouter(ip, 'Could not remove the app from the router', () async {
-      done = await RouterWatchdog(_session(ip, user, pass), onLog: _c.onLog).uninstallFromRouter();
+      final client = _session(ip, user, pass);
+      done = [...await RouterWatchdog(client, onLog: _c.onLog).uninstallFromRouter(), await _uninstallWidgetKeys(client)];
       await _connected(ip);
     });
     if (ok && mounted) await _showUninstalled(done);
@@ -241,7 +242,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // What was done in the body colour, what was not done - nothing there, or not the app's -
           // in red, so a second uninstall reads as the no-op it is (ID-287, Andrew's request).
           for (final line in done)
-            Text(line, style: TextStyle(color: uninstallStepDidNothing(line) ? kError : kText, fontSize: 12)),
+            SlotText(line, style: TextStyle(color: uninstallStepDidNothing(line) ? kError : kText, fontSize: 12)),
           // Amber, and set apart. The cron entries are gone but a running watchdog process is
           // not, and the firmware keeps its own idea of what is configured until it restarts.
           // Only when something was removed: a run that changed nothing has nothing to restart for.
@@ -685,6 +686,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// UNINSTALL's last step (ID-467): every widget key off the router, since their read script went with
+  /// the app's folder, and this phone's own key and login with them, as REMOVE does.
+  Future<String> _uninstallWidgetKeys(SSHClient client) async {
+    final n = await WidgetKeyRouterService(client, onLog: _c.onLog).removeAll();
+    if (n == 0) return 'No home screen widget keys to remove';
+    try {
+      await _widgetKeyStore.remove();
+      await (widget.testCancelRefresh ?? cancelWidgetRefresh)();
+    } catch (e) {
+      // The router's side is done, which is what UNINSTALL is for; a stale copy here only fails to refresh.
+      _c.logEntry("Widget key: this phone's copy could not be cleared: $e", isWarning: true);
+    }
+    return 'Removed $n home screen widget key${n == 1 ? '' : 's'}';
+  }
+
   /// Takes every widget key off the router - every device's, leftovers included (ID-407) - and stops
   /// the periodic refresh. The phone's own key and login are cleared by the dialog, and only once
   /// this has succeeded.
@@ -833,8 +849,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // Named after the menu item that opened it, in that item's colour (ID-112).
         destinationHeading(AppDestination.settings, key: const Key('settings_heading')),
         const SizedBox(height: 16),
-        // The order Andrew set on 2026-10-14 (ID-325): the uninstall last. RESTORE PURCHASE, shown only
-        // where purchasing is, sits just above it.
+        // Andrew's order, 2026-11-04 (ID-514): by how often each is used, REBOOT ROUTER first and UNINSTALL last;
+        // the three that make major changes red, the rest each in their own colour (kSettingsRowColours).
         _Action(
           keyValue: 'settings_reboot_router',
           label: 'REBOOT ROUTER',
@@ -875,45 +891,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         // The router address and its host key fingerprint are kept on the phone, so they need a way to
         // be cleared. Greyed out when there is nothing stored.
-        ListenableBuilder(
-          listenable: _c,
-          builder: (context, _) => _Action(
-            keyValue: 'settings_forget_router_ip',
-            label: 'FORGET ROUTER IP',
-            note: 'Deletes the remembered router address. No router SSH credentials are stored on this device.',
-            icon: Icons.wifi_off_outlined,
-            onTap: _c.rememberedRouterIp.isEmpty ? null : _unlessBusy(_forgetRouterIp),
-          ),
-        ),
-        _Action(
-          keyValue: 'settings_del_pia_cert',
-          label: 'REMOVE CACHED PIA CERT',
-          note: 'Removes $kPiaCaCertPath. The watchdog downloads a fresh copy on its next run.',
-          icon: Icons.gpp_bad_outlined,
-          onTap: _unlessBusy(_deletePiaCert),
-        ),
-        // ID-325: both copies of the last server list that passed PIA's signature check.
-        _Action(
-          keyValue: 'settings_del_pia_servers',
-          label: 'REMOVE CACHED PIA SERVERS',
-          note: "Removes $kPiaServerListPath and this phone's copy: the last PIA server lists that passed "
-              "PIA's signature check. The next list that passes is kept again.",
-          icon: Icons.dns_outlined,
-          onTap: _unlessBusy(_deleteServerLists),
-        ),
-        // A user decision behind a plain warning, and deliberately not written up outside the code - see
-        // RouterSlotService.setMaxActiveVpns. Red because the warning is the point of the row.
-        _Action(
-          keyValue: 'settings_max_vpns',
-          label: 'MAX ACTIVE VPNS',
-          note: 'Unsupported by ASUS. Lets more than the default of 2 VPNs run at once, on stock firmware.',
-          icon: Icons.warning_amber_outlined,
-          destructive: true,
-          onTap: _unlessBusy(_maxActiveVpns),
-        ),
-        // ID-356: hidden once the router is known to be Merlin, whose own kill switch covers it. Before
-        // the firmware is known it shows, and says on tap if there is nothing to change, as MAX ACTIVE
-        // VPNS does.
         if (!(firmwareDetected && routerFirmware == RouterFirmware.merlin))
           _Action(
             keyValue: 'settings_secure_startup',
@@ -934,6 +911,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.restore_outlined,
             onTap: _unlessBusy(_restorePurchase),
           ),
+        ListenableBuilder(
+          listenable: _c,
+          builder: (context, _) => _Action(
+            keyValue: 'settings_forget_router_ip',
+            label: 'FORGET ROUTER IP',
+            note: 'Deletes the remembered router address. No router SSH credentials are stored on this device.',
+            icon: Icons.wifi_off_outlined,
+            onTap: _c.rememberedRouterIp.isEmpty ? null : _unlessBusy(_forgetRouterIp),
+          ),
+        ),
+        _Action(
+          keyValue: 'settings_del_pia_servers',
+          label: 'REMOVE CACHED PIA SERVERS',
+          note: "Removes $kPiaServerListPath and this phone's copy: the last PIA server lists that passed "
+              "PIA's signature check. The next list that passes is kept again.",
+          icon: Icons.dns_outlined,
+          onTap: _unlessBusy(_deleteServerLists),
+        ),
+        // A user decision behind a plain warning, and deliberately not written up outside the code - see
+        // RouterSlotService.setMaxActiveVpns. Red because the warning is the point of the row.
+        _Action(
+          keyValue: 'settings_del_pia_cert',
+          label: 'REMOVE CACHED PIA CERT',
+          note: 'Removes $kPiaCaCertPath. The watchdog downloads a fresh copy on its next run.',
+          icon: Icons.gpp_bad_outlined,
+          onTap: _unlessBusy(_deletePiaCert),
+        ),
+        // ID-325: both copies of the last server list that passed PIA's signature check.
+        _Action(
+          keyValue: 'settings_max_vpns',
+          label: 'MAX ACTIVE VPNS',
+          note: 'Unsupported by ASUS. Lets more than the default of 2 VPNs run at once, on stock firmware.',
+          icon: Icons.warning_amber_outlined,
+          destructive: true,
+          onTap: _unlessBusy(_maxActiveVpns),
+        ),
+        // ID-356: hidden once the router is known to be Merlin, whose own kill switch covers it. Before
+        // the firmware is known it shows, and says on tap if there is nothing to change, as MAX ACTIVE
+        // VPNS does.
         _Action(
           keyValue: 'settings_uninstall',
           label: 'UNINSTALL FEATURES DEPLOYED TO ROUTER',
@@ -973,7 +989,9 @@ class _Action extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tint = AppButton.tint(destructive ? ButtonRole.destructive : ButtonRole.action, enabled: onTap != null);
+    final edge = AppButton.tint(destructive ? ButtonRole.destructive : ButtonRole.action, enabled: onTap != null);
+    // The name and icon in the row's own colour (ID-514); the outline stays teal, or red for a major change.
+    final tint = onTap == null || destructive ? edge : (kSettingsRowColours[keyValue] ?? edge);
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -981,7 +999,7 @@ class _Action extends StatelessWidget {
           key: Key(keyValue),
           style: OutlinedButton.styleFrom(
             foregroundColor: tint,
-            side: BorderSide(color: tint),
+            side: BorderSide(color: edge),
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
             alignment: Alignment.centerLeft,
           ),
@@ -1132,11 +1150,7 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
   Future<void> _generate() async {
     setState(() => _working = true);
     final pair = generateWidgetKeyPair();
-    final line = openSshPublicKeyLine(
-      pair.publicKeyBytes,
-      restriction: widgetKeyRestriction(kWidgetStatusCommand),
-      comment: kWidgetKeyComment,
-    );
+    final line = widgetKeyLine(pair.publicKeyBytes); // the read script as its only command (ID-467)
     final error = await widget.installOnRouter(line);
     if (error == null) {
       await widget.store.save(pair.seed);

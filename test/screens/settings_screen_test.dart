@@ -391,19 +391,19 @@ void main() {
     testWidgets('each action is a full-width row that explains what it removes', (tester) async {
       await _pumpSettings(tester);
 
-      // The order Andrew set on 2026-10-14 (ID-325), the uninstall last. RESTORE PURCHASE sits between
-      // SECURE STARTUP and UNINSTALL on a store build; a test build has no store key, so it is not
-      // shown here.
+      // Andrew's order, 2026-11-04 (ID-514): by how often each is used, REBOOT ROUTER first and the
+      // uninstall last. RESTORE PURCHASE sits between SECURE STARTUP and FORGET ROUTER IP on a store
+      // build; a test build has no store key, so it is not shown here.
       const keys = [
         'settings_reboot_router',
         'settings_resolver_status',
         'settings_dns_routing',
         'settings_widget_key',
-        'settings_forget_router_ip',
-        'settings_del_pia_cert',
-        'settings_del_pia_servers',
-        'settings_max_vpns',
         'settings_secure_startup',
+        'settings_forget_router_ip',
+        'settings_del_pia_servers',
+        'settings_del_pia_cert',
+        'settings_max_vpns',
         'settings_uninstall',
       ];
       for (final key in keys) {
@@ -418,6 +418,19 @@ void main() {
       expect(find.text('ROUTER'), findsNothing);
       expect(find.text('THIS DEVICE'), findsNothing);
       expect(tester.takeException(), isNull, reason: 'no overflow');
+    });
+
+    // ID-514: each row's name and icon in its own colour, and the three that make major changes red.
+    testWidgets('each row is in its own colour, and only the major changes are red', (tester) async {
+      await _pumpSettings(tester);
+      Color? labelColour(String label) => tester.widget<Text>(find.text(label)).style?.color;
+      for (final label in ['REBOOT ROUTER', 'MAX ACTIVE VPNS', 'UNINSTALL FEATURES DEPLOYED TO ROUTER']) {
+        expect(labelColour(label), kError, reason: label);
+      }
+      expect(labelColour('ROUTER RESOLVER STATUS'), kSettingsRowColours['settings_resolver_status']);
+      expect(labelColour('REMOVE CACHED PIA CERT'), kSettingsRowColours['settings_del_pia_cert']);
+      expect(kSettingsRowColours.values.toSet(), hasLength(kSettingsRowColours.length), reason: 'no two rows share a colour');
+      expect(kSettingsRowColours.values, isNot(contains(kError)));
     });
 
     // ID-438: iOS has the home screen widget too, so it has the key's row, with the others.
@@ -981,6 +994,7 @@ void main() {
       expect(ssh.ran('nvram set vpnc_max_conn'), isFalse);
     });
 
+    // ID-509: and App Review, with no router, is sent this way to the purchase (app-store/review_notes.md).
     testWidgets('a locked user meets the paywall before any question about the router', (tester) async {
       Entitlement.debugSetUnlocked(false);
       addTearDown(() => Entitlement.debugSetUnlocked(null));
@@ -1559,13 +1573,17 @@ void main() {
       expect(note, contains('nothing was saved on this phone'));
     });
 
-    testWidgets('a router that did not keep the key is said plainly, and nothing is kept on the phone', (tester) async {
+    // Since ID-467 the read script is written first, so a router that keeps nothing fails there.
+    testWidgets('a router that did not keep the key or its script is said plainly, and nothing is kept on the phone',
+        (tester) async {
       await openDialog(tester, ssh: FakeKeysRouter('', keeps: false).client);
       await tester.tap(find.byKey(const Key('widget_key_generate')));
       await tester.pumpAndSettle();
 
       expect(await store.exists(), isFalse);
-      expect(tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data, contains("The router didn't keep the new key"));
+      final note = tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data;
+      expect(note, contains("The router didn't keep the widget's read script"));
+      expect(note, contains('nothing was saved on this phone'));
     });
 
     testWidgets('an existing key says so on opening', (tester) async {
