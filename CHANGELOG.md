@@ -117,6 +117,21 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-11-05 v0.8.195 build 565 - every screenshot drawn for stock firmware, Play's screenshots uploaded with its listing, and the pinned actions moved up
+
+```play
+• Behind the scenes: the store's screenshots are redrawn for this version's colours.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- REL: v0.8.194 (564) passed 2026-11-05 (run 41840577566): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs and the Dart licences on the release; THIRD-PARTY-NOTICES.md current. PR #69 merged at 0 open Sonar issues, gate OK; its notices check failed once on a licence lookup, and passed rerun.
+- ID-518 BLD: the quality workflow's pinned actions moved up by Andrew's build: SonarQube scan to v8.4.1, CodeQL's init, analyze and upload-sarif to v4.39.2.
+  - Closed 2026-11-05: each pinned SHA is its release tag's commit, read from GitHub: SonarSource/sonarqube-scan-action v8.4.1 e805d875, github/codeql-action v4.39.2 1fc58d04.
+- ID-519 BLD: the Update Play listing workflow uploads the store's screenshots too, in the same edit as the text: each of the phone, 7-inch and 10-inch sets replaced whole from `play-store/screenshots/`, after a check that each has 2 to 8.
+  - Closed 2026-11-05: `ci_config_test.dart` holds the edit's order (opened, each set emptied and filled, committed) and the check before anything is sent; it failed with the upload taken out.
+- ID-520 DOC: every README and store screenshot drawn for stock firmware, as the README is: 02.05 showed Merlin's kill switch and inbound firewall, which stock doesn't have. Each header now carries this build's v0.8.195. images/home-screen-widgets.png, a photo of Android's own widgets, has its two region lines recoloured by hand to their slots' colours (ID-516).
+  - Closed 2026-11-05: 02.05 seen without the kill switch and inbound firewall, with stock's DNS note; the README test's router answers as stock throughout; both store sets rebuilt.
+
 2026-11-03 v0.8.194 build 564 - a colour for every menu row and its screen, one per VPN slot wherever it shows, SETTINGS by use, and short widget keys
 
 ```play
