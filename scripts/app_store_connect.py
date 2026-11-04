@@ -49,8 +49,22 @@ AGE_NONE = [
 ]
 AGE_NO = [
     'advertising', 'ageAssurance', 'gambling', 'healthOrWellnessTopics', 'lootBox', 'messagingAndChat',
-    'parentalControls', 'unrestrictedWebAccess', 'userGeneratedContent',
+    'parentalControls', 'socialMedia', 'socialMediaAgeRestricted', 'unrestrictedWebAccess', 'userGeneratedContent',
 ]
+# The declaration's other attributes: overrides and extra information, not questions, so left as they are.
+AGE_NOT_ASKED = {
+    'ageRatingOverride', 'ageRatingOverrideV2', 'developerAgeRatingInfoUrl', 'gracRatingClassificationNumber',
+    'kidsAgeBand', 'koreaAgeRatingOverride',
+}
+
+
+def age_answers(present):
+    """The answers to the age rating questions Apple's declaration [present]s, and the questions it has that
+    this script doesn't know (ID-510): Apple added two about social media in 2026, found only at submission."""
+    answers = {k: 'NONE' for k in AGE_NONE if k in present}
+    answers.update({k: False for k in AGE_NO if k in present})
+    unknown = sorted(set(present) - set(AGE_NONE) - set(AGE_NO) - AGE_NOT_ASKED)
+    return answers, unknown
 
 
 def die(message):
@@ -268,11 +282,12 @@ def cmd_listing(args):
     print('  name, subtitle, privacy policy URL and categories set')
 
     age = api.get(f'/v1/appInfos/{info}/ageRatingDeclaration')['data']
-    present = age.get('attributes', {})
-    answers = {k: 'NONE' for k in AGE_NONE if k in present}
-    answers.update({k: False for k in AGE_NO if k in present})
+    answers, unknown = age_answers(age.get('attributes', {}))
     api.patch('ageRatingDeclarations', age['id'], answers)
     print(f'  age rating: {len(answers)} questions answered None or No')
+    if unknown:
+        print(f'::warning::Apple asks age rating questions this script does not answer: {", ".join(unknown)}. '
+              'Answer them in App Store Connect, then add them to AGE_NONE or AGE_NO.')
 
     version = editable_version(api, app, version_string)
     # The version number is pubspec.yaml's, as on Play, and as the build it is submitted with carries:

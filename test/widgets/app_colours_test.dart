@@ -21,9 +21,9 @@ void main() {
       expect(kDestinationColours[d], isNotNull, reason: '${d.routeName} has no colour');
       expect(destinationColour(d), kDestinationColours[d]);
     }
-    // SETTINGS and ABOUT deliberately share the utility grey; everything else is its own colour.
+    // Every screen its own colour since set C (ID-478): SETTINGS and ABOUT no longer share a grey.
     final distinct = AppDrawer.destinations.map(destinationColour).toSet();
-    expect(distinct, hasLength(AppDrawer.destinations.length - 1));
+    expect(distinct, hasLength(AppDrawer.destinations.length));
   });
 
   test('every slot action verb has a colour, and DELETE alone is red', () {

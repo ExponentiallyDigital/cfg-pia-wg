@@ -15,6 +15,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
+import 'slot_text.dart';
 
 /// A spinner beside "Applying - do not leave this screen.", centred on the screen.
 ///
@@ -33,7 +34,7 @@ class ApplyingPanel extends StatelessWidget {
         content: Row(mainAxisSize: MainAxisSize.min, children: [
           SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: kHighlight)),
           SizedBox(width: 16),
-          Flexible(child: Text(message, style: TextStyle(color: kText, fontSize: 14))),
+          Flexible(child: SlotText(message, style: TextStyle(color: kText, fontSize: 14))),
         ]),
       );
 }

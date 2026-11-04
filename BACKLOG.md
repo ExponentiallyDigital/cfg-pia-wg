@@ -53,19 +53,6 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.2. FTR - future implementation
 
-- ID-490 ADD: each watchdog checks that the others still run: a red ERROR in the router log when one with a cron entry hasn't started in 3 intervals, and an email. Parked by Andrew, 2026-10-31 (ID-489): slots can have different email settings, so which slot's settings report another slot's fault is to be decided first.
-  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
-- ID-491 REL: every release's What's New says how the router's scripts get the release: updated by the app the next time it connects, or, without the unlock, with UPDATE WATCHDOG VERSION in ABOUT.
-  - DoD: a test fails a release block whose `play` fence leaves it out.
-- ID-478 GUI: new colours for the main menu rows, and so for each screen's header; on hold, Andrew, 2026-10-26.
-  - Plan: [plan_menu-colours.md](.claude/plans/plan_menu-colours.md)
-- ID-467 CHG: shorter widget key lines on the router, through a script. Raised 2026-10-21, Andrew, on seeing them in the web interface's Authorized Keys. Each home screen widget key's line in `sshd_authkeys` carries the whole status read inline as its `command=` restriction, about 750 characters, so the key can run nothing but that read. The same restriction, as strong, fits in about 60 characters: the read in a script in `/jffs/cfg-pia-wg` (for example `widget-read.sh`) and the line `command="/bin/sh /jffs/cfg-pia-wg/widget-read.sh"`; only root can change the script, and root can already change the keys.
-  - Costs: GENERATE puts the script on the router and keeps it in step with the app's read (`lib/widget_status_service.dart`); UNINSTALL removes it with the folder, so widgets stop until GENERATE is run again; keys already on routers are long lines until each phone does GENERATE again.
-  - To check first: whether the web interface's Authorized Keys box has a length limit, so that saving that page could cut a long line short and break the widget. If it has, this is a fix, not tidiness.
-  - Not urgent: the limit that broke GENERATE with five keys (ID-407) is fixed: the key list is sent in pieces.
-  - DoD: a widget works through a line under 100 characters, a test fails if the inline read comes back, and WGT-7 passes on a phone.
-- ID-462 FTR: sell the iOS app in France, once the French encryption declaration is accepted. Split from ID-430 on 2026-10-20, Andrew's decision: France is left out of the first App Store release so the declaration can't delay it. Selling in France needs the declaration uploaded in App Store Connect (`app-store/export_compliance.md`), then `ITSAppUsesNonExemptEncryption` YES and Apple's `ITSEncryptionExportComplianceCode` in `Info.plist`.
-  - DoD: the declaration is accepted, the two keys are set with a test, and App Store Connect lists France.
 - ID-440 REL: get a D-U-N-S number from Dun & Bradstreet.
   - DoD: the D-U-N-S number is issued.
 - ID-421 REL: move the Apple membership to the company, through Apple support. After ID-440.
@@ -90,18 +77,8 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
   For now we run the tool through a small wrapper that puts the other lines back afterwards.
   ```
   - DoD: a `flutter_launcher_icons` release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the comment having been posted, and the wrapper and its notes are gone. Checked 2026-10-19: 0.14.4 is still the latest, and PR #549 is open.
-- ID-414 FTR: waiting on upstream: clear the Kotlin Gradle plugin warning once `home_widget` and `workmanager_android` stop applying the plugin. Split from ID-408 on 2026-10-16. Every build warns that future Flutter versions will fail with such plugins; on 2026-10-19 both were still the latest (`home_widget` 0.10.0, `workmanager` 0.10.10). Check each new release of the two, which ID-411's weekly upgrade brings, and each new Flutter's notes for when the warning becomes a failure: if that comes first, fork the plugin or hold Flutter back.
-  - DoD: a local `flutter build apk` no longer prints the warning.
-  - Plan: [plan_kgp-plugins.md](.claude/plans/plan_kgp-plugins.md)
-  - Now: still the latest on 2026-10-24 (workmanager_android 0.10.9, Flutter 3.47.7).
-- ID-135 DEC: decide what "clear offline devices" in DEVICES should do. Raised 2026-09-28 (merged from ID-153). Whatever it does, it leaves DHCP reservations alone: removing one restarts the whole network and can break a pin at a later lease renewal (ARCHITECTURE 6.3, 6.8.3), and the web interface can already do it.
-  - The choice: hide offline devices in DEVICES on this phone only; or remove them from the router's own client list, as the web interface does.
-  - DoD: decided, and the build item written with its own done-when.
-- ID-305 FTR: stock's mail sender moves to `mailsend-go` v1.0.13, so a failed send's diagnostics include the server's certificate (`-printCerts`). Diagnostics only: v1.0.12 already verifies the certificate when sending (`InsecureSkipVerify: !VerifyCert`), and upstream says there's "no need to update unless you need certificate details" (issue #76).
-  - Work: new pins and SHA-256s for both architectures in `binary_installer.dart`, from the published checksums and recomputed on hardware; the archive member names; offering the update to routers on v1.0.12.
-  - DoD: on stock, TEST EMAIL sends with v1.0.13, and a deliberately failed send prints the certificate in the app log.
-- ID-127 FTR: contingency, not scheduled: ship our own `curl` if a firmware update breaks stock's two curl workarounds. Stock's `/usr/sbin/curl` refuses a caller with `crond` in its ancestry and any URL whose host is an IP address (ARCHITECTURE 2, rows 6 and 7); the script detaches from cron and uses hostnames with `--resolve`. Our own curl would make its TLS CVEs this project's job, outside the dependency scanning. Raised 2026-09-19.
-  - Trigger: a firmware update breaks row 6 or 7. Until then there is nothing to do.
+- ID-462 FTR: sell the iOS app in France, once the French encryption declaration is accepted. Split from ID-430 on 2026-10-20, Andrew's decision: France is left out of the first App Store release so the declaration can't delay it. Selling in France needs the declaration uploaded in App Store Connect (`app-store/export_compliance.md`), then `ITSAppUsesNonExemptEncryption` YES and Apple's `ITSEncryptionExportComplianceCode` in `Info.plist`.
+  - DoD: the declaration is accepted, the two keys are set with a test, and App Store Connect lists France.
 - ID-024 FTR: decide whether and when to localise the app, starting with French, Spanish and Latin American Spanish. The groundwork and each language are ID-442 to ID-446.
   - DoD: decided, and those items sequenced or closed.
 - ID-442 FTR: the app's text moves into Flutter's localisation files, English only, nothing visibly changed. Every on-screen string read through `AppLocalizations`.
@@ -114,9 +91,18 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
   - DoD: as ID-443, for `es-419`.
 - ID-446 FTR: the Play listing in each language the app is in, translated by hand. Google's automatic translations break the character limits.
   - DoD: the Update Play listing workflow publishes each, within Play's limits.
+- ID-414 FTR: waiting on upstream: clear the Kotlin Gradle plugin warning once `home_widget` and `workmanager_android` stop applying the plugin. Split from ID-408 on 2026-10-16. Every build warns that future Flutter versions will fail with such plugins; on 2026-10-19 both were still the latest (`home_widget` 0.10.0, `workmanager` 0.10.10). Check each new release of the two, which ID-411's weekly upgrade brings, and each new Flutter's notes for when the warning becomes a failure: if that comes first, fork the plugin or hold Flutter back.
+  - DoD: a local `flutter build apk` no longer prints the warning.
+  - Plan: [plan_kgp-plugins.md](.claude/plans/plan_kgp-plugins.md)
+  - Now: still the latest on 2026-10-24 (workmanager_android 0.10.9, Flutter 3.47.7).
 - ID-257 FTR: parked 2026-09-28 (Andrew's decision): a pilot of hand tests as Flutter integration tests on the emulator, against a real router. Start with SET, ROUTER LOG, ROUTER RESOLVER STATUS and ROUTER DNS ROUTING. It stopped because `integration_test` put `androidx.test`, `junit` and `guava` into the debug build, which broke the Gradle lockfile and brought new OSV findings (ID-058). Plan: `.claude/plans/plan_integration-test-pilot.md`.
   - To resume: lock the new libraries or exempt the debug build from locking.
   - DoD: the four groups run as integration tests against the router, and Andrew has judged whether to go further.
+- ID-305 FTR: stock's mail sender moves to `mailsend-go` v1.0.13, so a failed send's diagnostics include the server's certificate (`-printCerts`). Diagnostics only: v1.0.12 already verifies the certificate when sending (`InsecureSkipVerify: !VerifyCert`), and upstream says there's "no need to update unless you need certificate details" (issue #76).
+  - Work: new pins and SHA-256s for both architectures in `binary_installer.dart`, from the published checksums and recomputed on hardware; the archive member names; offering the update to routers on v1.0.12.
+  - DoD: on stock, TEST EMAIL sends with v1.0.13, and a deliberately failed send prints the certificate in the app log.
+- ID-127 FTR: contingency, not scheduled: ship our own `curl` if a firmware update breaks stock's two curl workarounds. Stock's `/usr/sbin/curl` refuses a caller with `crond` in its ancestry and any URL whose host is an IP address (ARCHITECTURE 2, rows 6 and 7); the script detaches from cron and uses hostnames with `--resolve`. Our own curl would make its TLS CVEs this project's job, outside the dependency scanning. Raised 2026-09-19.
+  - Trigger: a firmware update breaks row 6 or 7. Until then there is nothing to do.
 
 #### 1.1.3. Unconfirmed BUGs
 

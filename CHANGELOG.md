@@ -98,7 +98,7 @@ Work items for the **current** release:
 - ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store. Update README "3. Pre-built release"when the application is available on the Apple App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
-  - Now: still In Review on 2026-10-31, ten days after submission; no email and no reply to case 103010748637 since the agreement was accepted on 2026-10-30.
+  - Now: App Review asked on 2026-11-02 what the app collects through VPN, and how to reach the purchase without a router; Andrew replied and resubmitted on 2026-11-03. Waiting on App Review.
 
 ---
 
@@ -117,6 +117,73 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-11-03 v0.8.194 build 564 - a colour for every menu row and its screen, one per VPN slot wherever it shows, SETTINGS by use, and short widget keys
+
+```play
+• A fresh look: every main menu item, and the screen it opens, has its own colour.
+• Each VPN tunnel has one colour, wgc1 to wgc5, on every screen, in both logs and on the home screen widget.
+• SETTINGS lists what you use most first.
+• The home screen widget's keys are far shorter on the router, so its web interface can add keys again.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-490 ADD: CLOSED. each watchdog checks that the others still run: a red ERROR in the router log when one with a cron entry hasn't started in 3 intervals, and an email. Parked by Andrew, 2026-10-31 (ID-489): slots can have different email settings, so which slot's settings report another slot's fault is to be decided first.
+  - Plan: [plan_script-integrity.md](.claude/plans/plan_script-integrity.md)
+- CHG: WIP 2 -> 4 bullets, Andrew's order, 2026-11-04: ID-478 from BACKLOG, then ID-513, then ID-467 from BACKLOG, then ID-436, which waits on App Review. ID-513 is Andrew's new item, first written as ID-153, a number build 458 had already used. Nothing removed.
+- CHG: WIP 3 -> 7 bullets: ID-514 to ID-517 added after ID-478, new, the rest of the colour work Andrew decided on 2026-11-04. Nothing removed.
+- CHG: BACKLOG 1.1.2 19 -> 14 bullets: ID-490, ID-491 and ID-135 moved to this block, closed (Andrew); ID-478 and ID-467 to WIP. The rest resequenced, 2026-11-04, Claude's order with Andrew's changes: ID-440, ID-421, ID-375, ID-462, ID-024, ID-442 to ID-446, ID-414, ID-257, ID-305, ID-127. Nothing deleted.
+- ID-491 REL: every release's What's New says how the router's scripts get the release: updated by the app the next time it connects, or, without the unlock, with UPDATE WATCHDOG VERSION in ABOUT.
+  - DoD: a test fails a release block whose `play` fence leaves it out.
+  - Closed 2026-11-04, Andrew's decision: not needed. The app now updates the router's scripts itself (ID-489), so What's New has nothing to tell users to do.
+- ID-135 DEC: decide what "clear offline devices" in DEVICES should do. Raised 2026-09-28 (merged from ID-153). Whatever it does, it leaves DHCP reservations alone: removing one restarts the whole network and can break a pin at a later lease renewal (ARCHITECTURE 6.3, 6.8.3), and the web interface can already do it.
+  - The choice: hide offline devices in DEVICES on this phone only; or remove them from the router's own client list, as the web interface does.
+  - DoD: decided, and the build item written with its own done-when.
+  - Closed 2026-11-04, Andrew's decision: nothing to build. Offline devices clear themselves.
+- ID-513 DOC: update BUILDING with how to set up to build the app on a MacBook, with VS Code.
+  - Closed 2026-11-04: BUILDING 7, "Alternative: a MacBook, with VS Code", eleven steps from Xcode to F5 on an iPhone, after the primary Windows and VS Code pathway; Andrew read it and accepted it.
+- ID-478 GUI: new colours for the main menu rows, and so for each screen's header.
+  - Plan: [plan_menu-colours.md](.claude/plans/plan_menu-colours.md)
+  - Closed 2026-11-04: set C in `lib/app_colors.dart`, each screen's heading its menu row's colour; seen on a phone in a `flutter run`; a test fails a heading in any other colour, seen to fail.
+- ID-514 GUI: SETTINGS' row names and icons in a spectrum of their own, the three that make major changes (REBOOT ROUTER, MAX ACTIVE VPNS, UNINSTALL) staying red; and the rows reordered by how often they're used, REBOOT at the top and UNINSTALL at the bottom. Andrew's choice, 2026-11-04: `menu-colours/settings-v2-new-order.png`.
+  - Closed 2026-11-04: `kSettingsRowColours` and the new order, held by `settings_screen_test.dart`; seen on a phone in a `flutter run`.
+- ID-515 GUI: each VPN slot has one colour, wgc5 lime #BBDC17, wgc4 pink #FE7CE8, wgc3 violet #AC88FD, wgc2 blue #80B3FD, wgc1 cyan #19D7F9, on its whole `wgcN:region` label wherever the app shows one: MANAGE, WATCHDOG, DEVICES, NETWORK, ROUTER DNS ROUTING, the app log and the router log. Andrew's choice, 2026-11-04.
+  - Closed 2026-11-04: every slot label through `lib/widgets/slot_text.dart`; seen on a phone in a `flutter run`; `slot_text_test.dart` failed with the pattern loosened.
+- ID-517 DOC: every README image and store screenshot showing a changed colour redone for ID-478, ID-514 and ID-515, rendered or edited by Claude, with the version in the header's top right corner the build they ship in (Andrew, 2026-11-04: no screenshots taken by hand).
+  - Closed 2026-11-04: `test/release/readme_screenshots_test.dart` draws all 26 of the README's app screenshots that a colour or the version reaches, and the 8 tablet sources, at v0.8.194; `scripts/readme-crops.py` cuts the 4 cropped ones; both store sets rebuilt from them. The 4 crops no colour reaches are as they were.
+- ID-516 GUI: the home screen widget's tunnel rows, on Android and iOS, in their slot's colour (ID-515).
+  - Closed 2026-11-05, Andrew's decision: passed; he checks the widget on the Play build. Android's debug build compiled the change, and `widget_ios_test.dart` holds Dart, Kotlin and Swift to the same 18 keys.
+- ID-467 CHG: shorter widget key lines on the router, through a script. Raised 2026-10-21, Andrew, on seeing them in the web interface's Authorized Keys. Each home screen widget key's line in `sshd_authkeys` carries the whole status read inline as its `command=` restriction, about 750 characters, so the key can run nothing but that read. The same restriction, as strong, fits in about 60 characters: the read in a script in `/jffs/cfg-pia-wg` (for example `widget-read.sh`) and the line `command="/bin/sh /jffs/cfg-pia-wg/widget-read.sh"`; only root can change the script, and root can already change the keys.
+  - Costs: GENERATE puts the script on the router and keeps it in step with the app's read (`lib/widget_status_service.dart`); UNINSTALL removes it with the folder, so widgets stop until GENERATE is run again; keys already on routers are long lines until each phone does GENERATE again.
+  - To check first: whether the web interface's Authorized Keys box has a length limit, so that saving that page could cut a long line short and break the widget. If it has, this is a fix, not tidiness.
+  - Not urgent: the limit that broke GENERATE with five keys (ID-407) is fixed: the key list is sent in pieces.
+  - DoD: a widget works through a line under 250 characters, a test fails if the inline read comes back, and WGT-7 passes on a phone.
+  - Plan: [plan_widget-key-script.md](.claude/plans/plan_widget-key-script.md)
+  - Closed 2026-11-05: WGT-2 and WGT-7 passed on a phone and the router, and the web interface's Authorized Keys box takes typing again; `widget_key_service_test.dart` fails if the inline read comes back, seen to fail.
+
+2026-11-03 v0.8.193 build 563 - ARCHITECTURE.md's stock vpnc_unit diagram back to its original text, in plain ASCII so it lines up on phones
+
+```play
+• Docs: an architecture diagram now lines up on phones.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-512 DOC: ARCHITECTURE.md 4.2's `vpnc_unit` diagram is the original text diagram again, ID-511's Mermaid version undone. Its only fault was that its lines didn't line up on Andrew's tablet: `◄`, `▼` and the box-drawing lines aren't in every monospace font, and one drawn from another font is a different width. Now plain ASCII, one character for each, so nothing moves.
+  - Closed 2026-11-03: the same lines as build 561's, character for character, with every character ASCII and every line the same length as before; `mermaid_svg_labels_test.dart` passes.
+
+2026-11-02 v0.8.192 build 562 - App Review's questions answered in the review notes, Apple's new age rating questions set, and the firmware flow diagrams in Mermaid
+
+```play
+• Behind the scenes: App Store review notes updated, and the architecture's firmware diagrams redrawn.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- REL: v0.8.191 (561) passed 2026-11-02 (run 41439429070): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs and the Dart licences on the release; THIRD-PARTY-NOTICES.md current. PR #68 merged at 0 open Sonar issues, gate OK.
+- ID-509 DOC: the App Review notes say what the app collects through VPN (nothing), where each login goes, and how to reach the purchase without a router: SETTINGS, MAX ACTIVE VPNS. App Review asked both on 2026-11-02 (ID-436).
+  - Closed 2026-11-03: `app_store_listing_test.dart` holds the notes to Apple's 4,000 characters and to the steps, and failed with MAX ACTIVE VPNS taken out; the settings test already pins that a locked MAX ACTIVE VPNS opens the purchase with no router command. They reach App Store Connect with the next `listing` run.
+- ID-510 REL: `scripts/app_store_connect.py listing` answers Apple's two new age rating questions, social media and social media disabled for users under 13, No, and warns of any question Apple adds that it doesn't answer. Andrew answered both No when resubmitting.
+  - Closed 2026-11-03: the attributes are Apple's, `socialMedia` and `socialMediaAgeRestricted`, read from its documentation; `test_app_store_connect.py` checks every question Apple lists is answered, and failed with `socialMedia` taken out. The next `listing` run is the first to send them.
+- ID-511 DOC: ARCHITECTURE.md's two firmware flow diagrams, VPN Fusion's `vpnc_unit` lookup on stock and VPN Director's on Merlin, are Mermaid, not box-drawing text. The stock one read as if row 0 were always the row chosen, with two paths into `set`, and box-drawing characters fall out of line in the fallback fonts on Andrew's Android tablet.
+  - Closed 2026-11-03: both rendered with GitHub's Mermaid viewer at 412 and 980 pixels wide, every node drawn and none clipped; `mermaid_svg_labels_test.dart` passes with both.
 2026-11-02 v0.8.191 build 561 - licence notices regenerate themselves after a dependency change, with no package code able to write
 
 ```play

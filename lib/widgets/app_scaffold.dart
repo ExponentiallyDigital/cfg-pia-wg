@@ -26,6 +26,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../app_colors.dart';
 import '../session_controller.dart';
 import 'app_drawer.dart';
+import 'slot_text.dart';
 
 /// Wraps the whole navigator with the static header bar and the hamburger drawer.
 class AppChrome extends StatefulWidget {
@@ -242,7 +243,8 @@ class ScreenHeading extends StatelessWidget {
   static const TextStyle style = TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.5);
 
   @override
-  Widget build(BuildContext context) => Text(text, style: style.copyWith(color: colour));
+  // A slot named in the heading, such as WATCHDOG · wgc5:pia-aus_melbourne, takes its own colour (ID-515).
+  Widget build(BuildContext context) => SlotText(text, style: style.copyWith(color: colour));
 }
 
 /// The heading for [dest], named and coloured from the same map the menu and the drawer read.

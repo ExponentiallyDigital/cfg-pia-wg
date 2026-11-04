@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:cfg_pia_wg/router_watchdog.dart' show kMaxSshCommandBytes;
 import 'package:cfg_pia_wg/widget_key.dart';
 import 'package:cfg_pia_wg/widget_key_service.dart';
-import 'package:cfg_pia_wg/widget_status_service.dart' show kWidgetStatusCommand;
+import 'package:cfg_pia_wg/widget_status_service.dart' show kWidgetReadScript, kWidgetReadScriptPath, kWidgetStatusCommand;
 import 'package:flutter_test/flutter_test.dart';
 
 import '../widget_key_router_fake.dart';
@@ -49,6 +49,50 @@ void main() {
         WidgetKeyRouterService(r.client).install(_line(_key(7))),
         throwsA(isA<WidgetKeyRouterException>().having((e) => e.message, 'message', contains('nothing was saved on this phone'))),
       );
+    });
+  });
+
+  // ID-467: the read lives in a script on the router, so each key's line is short.
+  group('the read script', () {
+    test('GENERATE writes the script before the key, and the line is short, with no inline read', () async {
+      final r = FakeKeysRouter(kTheirLine);
+      await WidgetKeyRouterService(r.client).install(widgetKeyLine(_key(7)));
+      expect(r.files[kWidgetReadScriptPath], kWidgetReadScript);
+      final script = r.client.commands.indexWhere((c) => c.contains("'$kWidgetReadScriptPath' <<"));
+      final key = r.client.commands.indexWhere((c) => c.startsWith('nvram set sshd_authkeys'));
+      expect(script, lessThan(key), reason: 'the key never points at a script that is not there');
+      expect(widgetKeyLine(_key(7)).length, lessThan(250));
+      expect(widgetKeyLine(_key(7)), isNot(contains('nvram get')), reason: 'the inline read is back');
+      expect(widgetKeyLine(_key(7)), contains('command="/bin/sh $kWidgetReadScriptPath"'));
+    });
+
+    test("an old long line moves to the short form when its phone connects, and nobody else's changes", () async {
+      final r = FakeKeysRouter('$kTheirLine\n${_line(_key(9))}\n${_line(_key(7))}');
+      final changed = await WidgetKeyRouterService(r.client).keepCurrent(ownKey: _key(7));
+      expect(r.nv, '$kTheirLine\n${_line(_key(9))}\n${widgetKeyLine(_key(7))}');
+      expect(r.files[kWidgetReadScriptPath], kWidgetReadScript, reason: 'written first, since the new line uses it');
+      expect(changed, hasLength(2));
+    });
+
+    test('a stale or missing script is put back wherever a key uses it, even with no key on this phone', () async {
+      for (final script in [null, '#!/bin/sh\necho old\n']) {
+        final r = FakeKeysRouter('$kTheirLine\n${widgetKeyLine(_key(9))}', script: script);
+        final changed = await WidgetKeyRouterService(r.client).keepCurrent();
+        expect(r.files[kWidgetReadScriptPath], kWidgetReadScript, reason: '$script');
+        expect(r.nv, '$kTheirLine\n${widgetKeyLine(_key(9))}', reason: 'the keys are left alone');
+        expect(changed, ["the home screen widget's read script"]);
+      }
+    });
+
+    test('nothing to do writes nothing: a current script and line, or no widget key at all', () async {
+      for (final r in [
+        FakeKeysRouter('$kTheirLine\n${widgetKeyLine(_key(7))}', script: kWidgetReadScript),
+        FakeKeysRouter(kTheirLine),
+        FakeKeysRouter('$kTheirLine\n${_line(_key(9))}'),
+      ]) {
+        expect(await WidgetKeyRouterService(r.client).keepCurrent(ownKey: _key(7)), isEmpty);
+        expect(r.client.commands.where((c) => c.contains('<<') || c.startsWith('nvram set')), isEmpty, reason: r.nv);
+      }
     });
   });
 

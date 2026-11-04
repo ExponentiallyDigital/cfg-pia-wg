@@ -1685,7 +1685,9 @@ The widget is the one part of the app that keeps a login, so these check what it
 - Pass if: the dialog says it is installed, and **the widget fills in within a few seconds** - a row per configured tunnel, the badge, and a footer reading "Router checked HH:MM" at the current time. It must not sit empty waiting for the schedule: a key install reads the router straight away for exactly this reason.
 - See: the footer is a clock time, never "just now". It is written once and nothing redraws it until the next refresh, so an age there would be a lie within minutes (ID-376, 2026-10-12).
 - Do: on the router, `nvram get sshd_authkeys`.
-- Pass if: one line ending `cfg-pia-wg-widget`, carrying `command="…"`, `no-port-forwarding`, `no-agent-forwarding`, `no-X11-forwarding` and `no-pty`, and any key of your own is still there untouched.
+- Pass if: one line ending `cfg-pia-wg-widget`, under 250 characters, carrying `command="/bin/sh /jffs/cfg-pia-wg/widget-read.sh"`, `no-port-forwarding`, `no-agent-forwarding`, `no-X11-forwarding` and `no-pty`, and any key of your own is still there untouched. `cat /jffs/cfg-pia-wg/widget-read.sh` shows the read, under a header naming it (ID-467).
+- Do: in the router's web interface, Administration, System, and scroll to Authorized Keys. Don't click Apply.
+- Pass if: you can type in the box. Until ID-467 four widget keys filled it past its 2,999 characters, and it took no more.
 
 **WGT-3** The widget keeps refreshing after an app update (ID-384) [hand]
 

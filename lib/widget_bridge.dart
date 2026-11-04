@@ -203,6 +203,8 @@ Map<String, Object> buildWidgetData(WidgetStatus status, {required DateTime now,
 
   void writeRow(int n, WidgetTunnelInfo? t) {
     data['tunnel${n}_region'] = t?.region ?? '';
+    // The slot, so each widget can draw the row in the slot's colour, as the app does (ID-516). 0 for no row.
+    data['tunnel${n}_slot'] = t?.slot ?? 0;
     data['tunnel${n}_detail'] = t == null ? '' : _tunnelDetail(t);
     data['tunnel${n}_guard'] = t == null ? '' : _guardLine(t);
     data['tunnel${n}_state'] = t == null ? 'unchecked' : stateOf(t);
