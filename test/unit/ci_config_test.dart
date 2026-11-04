@@ -203,4 +203,17 @@ void main() {
       expect(RegExp(r'git add').hasMatch(commit), isFalse, reason: 'it commits the one file by path, never git add');
     });
   });
+
+  // ID-519: the Play listing's screenshots go up with its text, in the same edit, each set replaced whole.
+  test('the Play listing workflow replaces all three screenshot sets inside the one edit', () {
+    final yaml = File('.github/workflows/play_listing.yml').readAsStringSync().replaceAll('\r\n', '\n');
+    expect(yaml, contains('phoneScreenshots:phone sevenInchScreenshots:tablet-7 tenInchScreenshots:tablet-10'));
+    final open = yaml.indexOf(r'''call -X POST -d '{}' "$api/edits"'''), delete = yaml.indexOf(r'call -X DELETE "$api/edits/$edit_id/listings/$LISTING_LANGUAGE/$type"');
+    final upload = yaml.indexOf(r'?uploadType=media'), commit = yaml.indexOf(r'"$api/edits/$edit_id:commit"');
+    expect([open, delete, upload, commit].every((i) => i > 0), isTrue);
+    expect(open < delete && delete < upload && upload < commit, isTrue, reason: 'opened, emptied, filled, then committed');
+    // Checked, 2 to 8 a set, before anything is sent, and a check-only run sends nothing.
+    expect(yaml.indexOf('- name: Check the screenshots'), lessThan(yaml.indexOf('- name: Publish the store listing')));
+    expect(yaml, contains(r'if [ "$n" -lt 2 ] || [ "$n" -gt 8 ]; then'));
+  });
 }
