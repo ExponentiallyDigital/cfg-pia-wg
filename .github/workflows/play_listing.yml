@@ -1,7 +1,7 @@
 # ==========================================================================
-# GitHub Actions Workflow: Update the Google Play store listing text (ID-045)
+# GitHub Actions Workflow: Update the Google Play store listing text and screenshots (ID-045, ID-519)
 # Trigger manually via the Actions tab after editing play-store/description.md
-# or play-store/description_short.md
+# or play-store/description_short.md, or redrawing play-store/screenshots/
 # ==========================================================================
 name: "Update Play listing"
 run-name: "Play listing - en-AU - ${{ inputs.check_only && 'check only' || 'publish' }}"
@@ -54,6 +54,18 @@ jobs:
       # exits 1 naming the file, its length and how far over it is.
       - name: Check the listing text
         run: dart tool/play_listing.dart --out "$RUNNER_TEMP/listing.json"
+
+      # Play takes 2 to 8 screenshots of each type; a set outside that would fail mid-edit.
+      - name: Check the screenshots
+        run: |
+          for dir in phone tablet-7 tablet-10; do
+            n=$(ls play-store/screenshots/$dir/*.png 2>/dev/null | wc -l)
+            if [ "$n" -lt 2 ] || [ "$n" -gt 8 ]; then
+              echo "::error::play-store/screenshots/$dir has $n screenshots; Play takes 2 to 8."
+              exit 1
+            fi
+            echo "play-store/screenshots/$dir: $n screenshots"
+          done
 
       - name: Check only - nothing sent
         if: ${{ inputs.check_only }}
@@ -113,6 +125,22 @@ jobs:
           call -X PATCH --data-binary @"$RUNNER_TEMP/listing.json" "$api/edits/$edit_id/listings/$LISTING_LANGUAGE" \
             | jq -r '"Patched \(.language): full description \(.fullDescription | length) characters, short description \(.shortDescription | length)"'
 
+          # ID-519: the screenshots, in the same edit, so text and images go live together. Each type's set
+          # is replaced whole: every old image deleted, then play-store/screenshots/<dir>/*.png uploaded in
+          # name order, which is the order Play shows them in.
+          upload="https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/$PACKAGE_NAME"
+          for pair in phoneScreenshots:phone sevenInchScreenshots:tablet-7 tenInchScreenshots:tablet-10; do
+            type="${pair%%:*}"; dir="play-store/screenshots/${pair#*:}"
+            call -X DELETE "$api/edits/$edit_id/listings/$LISTING_LANGUAGE/$type" > /dev/null
+            n=0
+            for f in "$dir"/*.png; do
+              curl -sS --fail-with-body -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: image/png" \
+                --data-binary @"$f" "$upload/edits/$edit_id/listings/$LISTING_LANGUAGE/$type?uploadType=media" > /dev/null
+              n=$((n + 1))
+            done
+            echo "Uploaded $n $type from $dir"
+          done
+
           call -X POST "$api/edits/$edit_id:commit" | jq -r '"Committed edit \(.id)"'
           edit_id=""
-          echo "::notice::The $LISTING_LANGUAGE store listing now carries play-store/description.md and play-store/description_short.md."
+          echo "::notice::The $LISTING_LANGUAGE store listing now carries play-store/description.md, play-store/description_short.md and play-store/screenshots/."
