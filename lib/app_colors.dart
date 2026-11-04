@@ -44,13 +44,18 @@ const kWatchdogText = Color(0xFFB69CFF); // watchdog lines in the router log: ap
 // The menu's row OUTLINES stay teal; only the icon and the label take these colours, so the rows
 // still read as one control set rather than nine unrelated buttons.
 
-const kManageColour = Color(0xFF29B6F6); // MANAGE, and the EDIT verb that belongs to it
-const kWatchdogColour = Color(0xFF8BC34A); // WATCHDOG, and its CREATE/EDIT and LOG headings
-const kAssignColour = Color(0xFFFFB300); // DEVICES, and the DISABLE verb
-const kRouterLogColour = Color(0xFF8E5499); // ROUTER LOG, and VIEW ROUTER WATCHDOG LOG
-const kAppLogColour = Color(0xFF6052FF);
-const kNetworkColour = Color(0xFF4DD0E1); // NETWORK (ID-458)
-const kUtilityColour = Color(0xFF8A97A0); // SETTINGS and ABOUT
+// Set C (ID-478, Andrew's choice, 2026-11-04): a spectrum down the menu from STANDALONE's teal to
+// EXIT's red, each hue as saturated as sRGB allows at its lightness, the warm ones lighter so they
+// glow rather than go muddy. Every one is at least 6:1 against kBg. The reasoning and the mock-ups
+// are in .claude/plans/plan_menu-colours.md.
+const kManageColour = Color(0xFF19B3EE); // MANAGE, and the EDIT verb that belongs to it
+const kWatchdogColour = Color(0xFF699CFC); // WATCHDOG, and its CREATE/EDIT and LOG headings
+const kAssignColour = Color(0xFFA288FC); // DEVICES, and the DISABLE verb
+const kNetworkColour = Color(0xFFE550FC); // NETWORK (ID-458)
+const kRouterLogColour = Color(0xFFFD55AC); // ROUTER LOG, and VIEW ROUTER WATCHDOG LOG
+const kAppLogColour = Color(0xFFFD932F);
+const kSettingsColour = Color(0xFFF4CE1F);
+const kAboutColour = Color(0xFF4EE11C);
 const kLinkIconColour = Color(0xFFBFB27C); // HOME's two footer links (ID-109)
 
 /// The colour of each destination. `menu` is HOME, which only the drawer shows.
@@ -63,8 +68,8 @@ const Map<AppDestination, Color> kDestinationColours = {
   AppDestination.network: kNetworkColour,
   AppDestination.routerLog: kRouterLogColour,
   AppDestination.log: kAppLogColour,
-  AppDestination.settings: kUtilityColour,
-  AppDestination.about: kUtilityColour,
+  AppDestination.settings: kSettingsColour,
+  AppDestination.about: kAboutColour,
 };
 
 /// [dest]'s colour, falling back to the house teal so a new destination is never invisible.
@@ -90,6 +95,38 @@ const Map<String, Color> kSlotActionColours = {
 
 /// [label]'s colour, falling back to the house teal for a verb the map does not name.
 Color slotActionColour(String label) => kSlotActionColours[label] ?? kHighlight;
+
+// ── SETTINGS' rows (ID-514) ──────────────────────────────────────────────────────────────────
+//
+// Each row's name and icon in a spectrum down the screen, in its order there; not the menu's
+// colours, so a SETTINGS row isn't taken for a menu row. REBOOT ROUTER, MAX ACTIVE VPNS and UNINSTALL
+// aren't here: they make major changes, and stay red. Andrew's choice, 2026-11-04.
+const Map<String, Color> kSettingsRowColours = {
+  'settings_resolver_status': Color(0xFF1ABAC8),
+  'settings_dns_routing': Color(0xFF1FAFFC),
+  'settings_widget_key': Color(0xFF8B9CFC),
+  'settings_secure_startup': Color(0xFFBF84FC),
+  'settings_restore_purchase': Color(0xFFFD52E1),
+  'settings_forget_router_ip': Color(0xFFFDA75C),
+  'settings_del_pia_servers': Color(0xFFDEBB1B),
+  'settings_del_pia_cert': Color(0xFF90D61C),
+};
+
+// ── One colour per VPN slot (ID-515) ─────────────────────────────────────────────────────────
+//
+// A slot's whole `wgcN:region` label takes its colour wherever the app shows one, logs included,
+// so the same tunnel looks the same on every screen. Andrew's choice, 2026-11-04: none is near the
+// teal, red or amber that mean OK, error and warning, and each is at least 6:1 against kBg.
+const Map<int, Color> kSlotColours = {
+  5: Color(0xFFBBDC17), // lime
+  4: Color(0xFFFE7CE8), // pink
+  3: Color(0xFFAC88FD), // violet
+  2: Color(0xFF80B3FD), // blue
+  1: Color(0xFF19D7F9), // cyan
+};
+
+/// [slot]'s colour, or null for a number that isn't a WireGuard slot.
+Color? slotColour(int slot) => kSlotColours[slot];
 
 // ── The DNS screens' tags (ID-194) ───────────────────────────────────────────────────────────
 //

@@ -22,6 +22,7 @@ import 'package:flutter/rendering.dart' show SelectedContent;
 import '../app_colors.dart';
 import '../router_slot_service.dart' show dnsSharedWithRouter;
 import '../session_controller.dart';
+import 'slot_text.dart';
 
 const _kMono = TextStyle(color: kText, fontFamily: 'monospace');
 
@@ -411,7 +412,8 @@ class _LogPanelState extends State<LogPanel> {
           child: Icon(_icon(e), size: 12, color: colour),
         ),
       ));
-      spans.add(TextSpan(text: e.message, style: _style.copyWith(color: colour)));
+      // A slot named in the line takes its own colour; the rest keeps the line's (ID-515).
+      spans.addAll(slotSpans(e.message, _style.copyWith(color: colour)));
       if (i < entries.length - 1) spans.add(const TextSpan(text: '\n'));
     }
     return Text.rich(TextSpan(children: spans), style: _style);

@@ -28,6 +28,7 @@ import '../widgets/app_drawer.dart' show navigateToDestination;
 import '../widgets/app_scaffold.dart';
 import '../widgets/common_fields.dart' show SlotBadge;
 import '../widgets/log_buttons.dart';
+import '../widgets/slot_text.dart';
 
 class DnsReportScreen extends StatefulWidget {
   const DnsReportScreen({
@@ -265,7 +266,7 @@ class _DnsReportScreenState extends State<DnsReportScreen> {
       );
 
   Widget _checkRow(DnsCheckRow r) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(width: 64, child: Text('${r.who} ', style: const TextStyle(color: kText, fontSize: 12))),
+        SizedBox(width: 64, child: SlotText('${r.who} ', style: const TextStyle(color: kText, fontSize: 12))),
         _pill(r.state),
         _space,
         // One text per row: the addresses, why it failed, and the running line, each on its own
@@ -287,7 +288,12 @@ class _DnsReportScreenState extends State<DnsReportScreen> {
         ),
       ]);
 
+  // A tunnel tag naming a slot takes that slot's colour, as everywhere else (ID-515).
+  static SlotBadge _slotTag(String label, Color colour) =>
+      SlotBadge(label: label, text: colour, border: colour, bg: kTagNeutralBg);
+
   static SlotBadge _tag(DnsTag t) => switch (t.kind) {
+        DnsTagKind.tunnel when slotOf(t.label) != null => _slotTag(t.label, slotColour(slotOf(t.label)!)!),
         DnsTagKind.tunnel || DnsTagKind.encrypted =>
           SlotBadge(label: t.label, text: kHighlight, border: kHighlight, bg: kTagTunnelBg),
         DnsTagKind.internet => SlotBadge(label: t.label, text: kTagInternet, border: kTagInternet, bg: kTagInternetBg),
@@ -303,8 +309,9 @@ class _DnsReportScreenState extends State<DnsReportScreen> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text.rich(TextSpan(style: const TextStyle(color: kText, fontSize: 12, height: 1.5), children: [
-                TextSpan(text: l.head, style: const TextStyle(fontWeight: FontWeight.w600)),
-                TextSpan(text: l.rest),
+                // A slot named in the line takes its own colour, as everywhere else (ID-515).
+                TextSpan(style: const TextStyle(fontWeight: FontWeight.w600), children: slotSpans(l.head, const TextStyle())),
+                ...slotSpans(l.rest, const TextStyle()),
                 _br,
               ])),
               if (l.note.isNotEmpty) _t(l.note, _note),

@@ -34,6 +34,7 @@ import '../widgets/app_drawer.dart' show navigateToDestination;
 import '../widgets/app_scaffold.dart';
 import '../widgets/error_presenter.dart';
 import '../widgets/log_buttons.dart';
+import '../widgets/slot_text.dart';
 import '../widgets/ssh_creds_dialog.dart';
 import '../plain_error.dart';
 
@@ -302,9 +303,13 @@ class _RouterLogScreenState extends State<RouterLogScreen> {
     );
   }
 
+  // A slot named in the line takes its own colour; the rest keeps the line's (ID-515).
   static TextSpan _line(String line, {required bool last}) {
     final colour = routerLogLineColour(line);
-    return TextSpan(text: last ? line : '$line\n', style: colour == null ? null : TextStyle(color: colour));
+    return TextSpan(
+      style: colour == null ? null : TextStyle(color: colour),
+      children: slotSpans(last ? line : '$line\n', const TextStyle()),
+    );
   }
 
   @override

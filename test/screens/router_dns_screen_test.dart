@@ -74,7 +74,7 @@ Future<String?> _selectAllAndCopy(WidgetTester tester, String inside) async {
 void main() {
   group('SETTINGS', () {
     // Since ID-356 they come straight after REBOOT ROUTER: SETTINGS is ordered by use.
-    testWidgets('the two DNS buttons follow REBOOT ROUTER, teal, with icons used nowhere else', (tester) async {
+    testWidgets('the two DNS buttons follow REBOOT ROUTER, each in its own colour, with icons used nowhere else', (tester) async {
       await _pumpSettings(tester, _connected());
       final reboot = tester.getTopLeft(find.byKey(const Key('settings_reboot_router'))).dy;
       final resolver = tester.getTopLeft(find.byKey(const Key('settings_resolver_status'))).dy;
@@ -83,8 +83,9 @@ void main() {
       expect(reboot < resolver && resolver < routing && routing < forget, isTrue);
       expect(find.byIcon(Icons.troubleshoot_outlined), findsOneWidget);
       expect(find.byIcon(Icons.alt_route_outlined), findsOneWidget);
+      // Each in its own colour since ID-514, no longer the house teal.
       final label = tester.widget<Text>(find.text('ROUTER RESOLVER STATUS'));
-      expect(label.style?.color, kHighlight);
+      expect(label.style?.color, kSettingsRowColours['settings_resolver_status']);
     });
   });
 

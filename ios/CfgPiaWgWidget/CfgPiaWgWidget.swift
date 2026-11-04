@@ -22,10 +22,12 @@ enum WidgetKeys {
   static let t1Detail = "tunnel1_detail"
   static let t1Guard = "tunnel1_guard"
   static let t1State = "tunnel1_state"
+  static let t1Slot = "tunnel1_slot"
   static let t2Region = "tunnel2_region"
   static let t2Detail = "tunnel2_detail"
   static let t2Guard = "tunnel2_guard"
   static let t2State = "tunnel2_state"
+  static let t2Slot = "tunnel2_slot"
   static let overflowText = "overflow_text"
   static let lastCheckedText = "last_checked_text"
   static let canRefresh = "can_refresh"
@@ -46,6 +48,10 @@ enum Palette {
   static let grey = Color(hex: 0xC3CAD6) // widget_grey
   static let greyBorder = Color(hex: 0x8892A4) // widget_grey_border
   static let greyBg = Color(hex: 0x1F242D) // widget_grey_bg
+  /// Each slot's colour, the same as lib/app_colors.dart's kSlotColours (ID-516).
+  static let slots: [Int: Color] = [
+    5: Color(hex: 0xBBDC17), 4: Color(hex: 0xFE7CE8), 3: Color(hex: 0xAC88FD), 2: Color(hex: 0x80B3FD), 1: Color(hex: 0x19D7F9),
+  ]
 }
 
 extension Color {
@@ -62,6 +68,7 @@ struct TunnelRow {
   let detail: String
   let guardLine: String
   let state: String
+  let slot: Int
 }
 
 /// Everything the widgets show, read once from the app group. Missing values read as Android's
@@ -84,13 +91,15 @@ struct WidgetData {
       rows.append(
         TunnelRow(
           region: text(WidgetKeys.t1Region), detail: text(WidgetKeys.t1Detail),
-          guardLine: text(WidgetKeys.t1Guard), state: d?.string(forKey: WidgetKeys.t1State) ?? "unchecked"))
+          guardLine: text(WidgetKeys.t1Guard), state: d?.string(forKey: WidgetKeys.t1State) ?? "unchecked",
+          slot: d?.integer(forKey: WidgetKeys.t1Slot) ?? 0))
     }
     if count >= 2 {
       rows.append(
         TunnelRow(
           region: text(WidgetKeys.t2Region), detail: text(WidgetKeys.t2Detail),
-          guardLine: text(WidgetKeys.t2Guard), state: d?.string(forKey: WidgetKeys.t2State) ?? "unchecked"))
+          guardLine: text(WidgetKeys.t2Guard), state: d?.string(forKey: WidgetKeys.t2State) ?? "unchecked",
+          slot: d?.integer(forKey: WidgetKeys.t2Slot) ?? 0))
     }
     let down = d?.object(forKey: WidgetKeys.downCount) as? Int ?? 1
     return WidgetData(
@@ -181,7 +190,8 @@ struct TunnelsView: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
           DotView(state: row.state)
           VStack(alignment: .leading, spacing: 1) {
-            Text(row.region).font(.system(size: 13)).foregroundStyle(Palette.textPrimary)
+            // In its slot's colour, as in the app (ID-516); white for an unknown slot.
+            Text(row.region).font(.system(size: 13)).foregroundStyle(Palette.slots[row.slot] ?? Palette.textPrimary)
             Text(row.detail).font(.system(size: 11)).foregroundStyle(Palette.textSecondary)
             if !row.guardLine.isEmpty {
               Text(row.guardLine).font(.system(size: 11)).foregroundStyle(Palette.teal)

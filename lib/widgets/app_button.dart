@@ -99,7 +99,9 @@ class AppButton extends StatelessWidget {
       disabledForegroundColor: kHint,
       side: BorderSide(color: tone),
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-      textStyle: fontSize == null ? null : TextStyle(fontSize: fontSize),
+      // A size alone left the family to the platform: Roboto on Android, the system font on iOS, which
+      // has no Roboto and falls back to it anyway. Named, so a test draws it too, not as blocks (ID-517).
+      textStyle: fontSize == null ? null : TextStyle(fontSize: fontSize, fontFamily: 'Roboto'),
     );
     final key = keyValue == null ? null : Key(keyValue!);
     final Widget child = busy
