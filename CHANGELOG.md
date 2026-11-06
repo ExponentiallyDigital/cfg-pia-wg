@@ -95,14 +95,8 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
-- ID-527 BUG: per README section 5.12.2, confirm on iOS that the widget authentication key is not backed up by setting the kSecAttrAccessible accessibility attribute/mark the file with the isExcludedFromBackup resource value. The key should never be backed up to either Apple or Google.
-  - Now: it was backed up on iOS: the plugin's default keeps an item out of iCloud Keychain but in iCloud and computer backups, and restorable onto another iPhone. Both widget items are now saved "this device only", deleted first so a key from an earlier build isn't refused as a duplicate, and re-saved on the first connection to each router. Android leaves every domain out of cloud backup and device-to-device transfer (data_extraction_rules.xml). widget_key_test and no_backup_test seen to fail with each undone. README 5.12.2 and SECURITY.md say so. WGT-9 to run on an iPhone.
-- ID-533 CHG: make dialogue box for home screen widget key easier to understand: highlight what's changed in a different colour, call it "key generated " rather than "key created" and put a section break line under that text. Make the text in the dialogue box "REMOVE" appear in RED and "GENERATE" appear in TEAL to match the buttons.
-  - Now: done in the app: the top line in teal with a line under it, "Key generated", REMOVE red and GENERATE teal in the help, and GENERATE's result reads "Key generated" too, its "once the background refresh is built" gone. settings_screen_test seen to fail. Seen on hardware in WGT-9 and WGT-10.
-- ID-534 BUG: on iOS the home screen widget key screen says in SETTINGS "key created: saved to Android's local keystone" which is patently wrong as we are on iOS not Android: dynamically alter the text based on what OS the device is running.
-  - Now: done in the app: iOS reads "saved in the iOS Keychain", Android keeps its keystore line. settings_screen_test seen to fail. WGT-9 to run on an iPhone.
-- ID-521 ADD: on Android when youn tap on HOME SCREEN WIDGET KEY, say when battery optimisation is set to "on" for the app and offer a button to Android's battery optimisation settings; and add this functionality to README section 5.12.
-  - Now: done: Android answers through a new channel in MainActivity, the dialog shows amber text and BATTERY SETTINGS, which opens the app's own page in Android's settings, and asks again on the way back. README 5.12.3 says so. battery_optimisation_test and settings_screen_test seen to fail. WGT-10 to run on the Tab S10 FE.
+- ID-537 BUG: on an iPhone the HOME SCREEN WIDGET KEY dialog's buttons overflow its right edge by 25 pixels, and GENERATE is clipped: CLOSE, REMOVE and GENERATE sit in one row too wide for the dialog. Seen in WGT-9, 2026-11-06.
+  - Now: the buttons wrap onto a second line when they don't fit; settings_screen_test, at a 375-point screen, seen to fail on the old row. WGT-9's dialog step to run again on an iPhone.
 - ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store. Update README "3. Pre-built release"when the application is available on the Apple App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
@@ -121,11 +115,34 @@ When a work item in "1.2. WIP" is completed, move it to the bottom of the curren
 Every commit is a build. Whoever commits follows these steps, in this order:
 
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
-2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
+2. **Before the commit**, check the current release block has a ```` ```play ```` fence under its header. If it does not, write one: at most 500 characters, a `•` line for each thing a user of this build will notice, plain-language "Behind the scenes" when there is nothing they would see, and the "Full changelog" link as the last line. Never commit a block without one (ID-536).
+3. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
 
-2026-11-05 v0.8.196 build 566 - Android/iOS documentation updates
+2026-11-06 v0.8.197 build 567 - the home screen widget key dialog's buttons fit an iPhone, and every commit carries a Play note
+
+```play
+• On iPhone, the home screen widget key screen's buttons no longer run off its edge.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- CHG: WIP 5 -> 2 bullets: ID-527, ID-533, ID-534 and ID-521 done, moved to build 567; ID-537 added, new.
+- ID-536 CHG: every commit's release block has a `play` fence, written before the commit when it has none; the commit steps above say so. Closed 2026-11-06: the step is in the CHANGELOG header and in memory. Build 566's summary now names its widget changes too; it was committed and pushed as "Android/iOS documentation updates".
+- ID-527 BUG: per README section 5.12.2, confirm on iOS that the widget authentication key is not backed up by setting the kSecAttrAccessible accessibility attribute/mark the file with the isExcludedFromBackup resource value. The key should never be backed up to either Apple or Google.
+  - Now: it was backed up on iOS: the plugin's default keeps an item out of iCloud Keychain but in iCloud and computer backups, and restorable onto another iPhone. Both widget items are now saved "this device only", deleted first so a key from an earlier build isn't refused as a duplicate, and re-saved on the first connection to each router. Android leaves every domain out of cloud backup and device-to-device transfer (data_extraction_rules.xml). widget_key_test and no_backup_test seen to fail with each undone. README 5.12.2 and SECURITY.md say so. WGT-9 to run on an iPhone.
+  - Closed 2026-11-06: WGT-9 passed on an iPhone: a key from an earlier build kept working after the update. The rest rests on widget_key_test and no_backup_test.
+- ID-533 CHG: make dialogue box for home screen widget key easier to understand: highlight what's changed in a different colour, call it "key generated " rather than "key created" and put a section break line under that text. Make the text in the dialogue box "REMOVE" appear in RED and "GENERATE" appear in TEAL to match the buttons.
+  - Now: done in the app: the top line in teal with a line under it, "Key generated", REMOVE red and GENERATE teal in the help, and GENERATE's result reads "Key generated" too, its "once the background refresh is built" gone. settings_screen_test seen to fail. Seen on hardware in WGT-9 and WGT-10.
+  - Closed 2026-11-06: WGT-9 and WGT-10 passed for the colours, the line and the wording. The buttons clipping on an iPhone is ID-537, a separate bug.
+- ID-534 BUG: on iOS the home screen widget key screen says in SETTINGS "key created: saved to Android's local keystone" which is patently wrong as we are on iOS not Android: dynamically alter the text based on what OS the device is running.
+  - Now: done in the app: iOS reads "saved in the iOS Keychain", Android keeps its keystore line. settings_screen_test seen to fail. WGT-9 to run on an iPhone.
+  - Closed 2026-11-06: WGT-9 passed: the iPhone reads "saved in the iOS Keychain", and nothing in the dialog names Android.
+- ID-521 ADD: on Android when youn tap on HOME SCREEN WIDGET KEY, say when battery optimisation is set to "on" for the app and offer a button to Android's battery optimisation settings; and add this functionality to README section 5.12.
+  - Now: done: Android answers through a new channel in MainActivity, the dialog shows amber text and BATTERY SETTINGS, which opens the app's own page in Android's settings, and asks again on the way back. README 5.12.3 says so. battery_optimisation_test and settings_screen_test seen to fail. WGT-10 to run on the Tab S10 FE.
+  - Closed 2026-11-06: WGT-10 passed on the Tab S10 FE: the warning and BATTERY SETTINGS showed, went once optimisation was off, and the widget refreshed with the app closed; nothing showed on the Pixel 7 Pro.
+
+2026-11-05 v0.8.196 build 566 - Android/iOS documentation updates, a clearer home screen widget key screen with a battery optimisation warning on Android, and the widget key never backed up
 
 ```play
 • The home screen widget key screen is clearer, names where the key is kept on your phone, and on Android says when battery optimisation would stop the widget refreshing.
