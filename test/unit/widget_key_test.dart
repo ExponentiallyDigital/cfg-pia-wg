@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:cfg_pia_wg/widget_key.dart';
 import 'package:dartssh2/dartssh2.dart' show SSHKeyPair;
 import 'package:cfg_pia_wg/widget_status_service.dart' show kWidgetStatusCommand;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -250,4 +251,91 @@ void main() {
       expect(backing, isEmpty);
     });
   });
+
+  // ID-527: on iOS the key and its login are kept on this device only, so no backup carries them and no
+  // restore puts them on another iPhone. The keychain refuses to add an item whose name is already there
+  // under another setting, which this fake does too, as a key kept before ID-527 is.
+  group('WidgetKeyStore on iOS, never backed up', () {
+    late _KeychainFake keychain;
+
+    setUp(() {
+      keychain = _KeychainFake();
+      FlutterSecureStoragePlatform.instance = keychain;
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    });
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('the key and its login are both saved this device only, and not synchronised', () async {
+      final store = WidgetKeyStore();
+      await store.save(Uint8List(32));
+      await store.saveLogin('admin');
+      expect(keychain.accessibility, {
+        WidgetKeyStore.kStorageKey: _thisDeviceOnly,
+        WidgetKeyStore.kLoginKey: _thisDeviceOnly,
+      });
+      expect(keychain.synchronizable.values, everyElement('false'));
+    });
+
+    test('GENERATE over a key kept before ID-527 replaces it, rather than being refused as a duplicate', () async {
+      keychain.keep(WidgetKeyStore.kStorageKey, 'b2xk', 'unlocked');
+      await WidgetKeyStore().save(Uint8List(32));
+      expect(keychain.accessibility[WidgetKeyStore.kStorageKey], _thisDeviceOnly);
+      expect(keychain.values[WidgetKeyStore.kStorageKey], base64.encode(Uint8List(32)));
+    });
+
+    test('keepOnThisDevice moves a key and login kept before ID-527, values unchanged', () async {
+      keychain.keep(WidgetKeyStore.kStorageKey, 'c2VlZA==', 'unlocked');
+      keychain.keep(WidgetKeyStore.kLoginKey, 'admin', 'unlocked');
+      await WidgetKeyStore().keepOnThisDevice();
+      expect(keychain.values, {WidgetKeyStore.kStorageKey: 'c2VlZA==', WidgetKeyStore.kLoginKey: 'admin'});
+      expect(keychain.accessibility.values, everyElement(_thisDeviceOnly));
+    });
+
+    test('keepOnThisDevice writes nothing when there is no key', () async {
+      await WidgetKeyStore().keepOnThisDevice();
+      expect(keychain.values, isEmpty);
+    });
+  });
+}
+
+const _thisDeviceOnly = 'unlocked_this_device';
+
+/// A keychain as iOS keeps one: one item per name whatever its setting, and an add over an existing
+/// name refused. Records the setting each item was written with.
+class _KeychainFake extends FlutterSecureStoragePlatform {
+  final Map<String, String> values = {};
+  final Map<String, String> accessibility = {};
+  final Map<String, String> synchronizable = {};
+
+  void keep(String key, String value, String level) {
+    values[key] = value;
+    accessibility[key] = level;
+  }
+
+  @override
+  Future<void> write({required String key, required String value, required Map<String, String> options}) async {
+    final level = options['accessibility'] ?? 'unlocked';
+    if (values.containsKey(key) && accessibility[key] != level) throw StateError('errSecDuplicateItem');
+    keep(key, value, level);
+    synchronizable[key] = options['synchronizable'] ?? 'false';
+  }
+
+  @override
+  Future<String?> read({required String key, required Map<String, String> options}) async => values[key];
+
+  @override
+  Future<bool> containsKey({required String key, required Map<String, String> options}) async => values.containsKey(key);
+
+  @override
+  Future<void> delete({required String key, required Map<String, String> options}) async {
+    values.remove(key);
+    accessibility.remove(key);
+    synchronizable.remove(key);
+  }
+
+  @override
+  Future<Map<String, String>> readAll({required Map<String, String> options}) async => Map.of(values);
+
+  @override
+  Future<void> deleteAll({required Map<String, String> options}) async => values.clear();
 }
