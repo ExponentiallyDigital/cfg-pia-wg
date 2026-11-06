@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
+import 'package:cfg_pia_wg/battery_optimisation.dart' show kBatteryOptimisedText;
 import 'package:cfg_pia_wg/entitlement.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_prefs.dart';
@@ -1454,7 +1455,8 @@ void main() {
       cancelled = 0;
     });
 
-    Future<void> openDialog(WidgetTester tester, {SessionController? controller, RecordingSSHClient? ssh}) async {
+    Future<void> openDialog(WidgetTester tester,
+        {SessionController? controller, RecordingSSHClient? ssh, Future<bool> Function()? batteryOptimised}) async {
       final c = controller ?? connected();
       addTearDown(c.dispose);
       await tester.pumpWidget(
@@ -1467,6 +1469,7 @@ void main() {
                 testClientFactory: (_, __, ___) async => ssh ?? RecordingSSHClient(responder: (_) => ''),
                 testScheduleRefresh: () async => scheduled++,
                 testCancelRefresh: () async => cancelled++,
+                testBatteryOptimised: batteryOptimised ?? () async => false,
               ),
             ),
           ),
@@ -1490,6 +1493,76 @@ void main() {
       expect(find.byKey(const Key('widget_key_help')), findsOneWidget);
     });
 
+    // ID-533: the state stands out from the help, with a line under it, and the button names in the help
+    // are the colours of their buttons.
+    testWidgets('the status is periwinkle with a line under it, and REMOVE and GENERATE in the help match their buttons',
+        (tester) async {
+      await openDialog(tester);
+      // ID-538: the colour of the row that opened it, periwinkle, so it is neither the teal nor the white around it.
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).style?.color, const Color(0xFF8B9CFC));
+      expect(kSettingsRowColours['settings_widget_key'], const Color(0xFF8B9CFC));
+      expect(find.byKey(const Key('widget_key_status_rule')), findsOneWidget);
+      final help = tester.widget<Text>(find.byKey(const Key('widget_key_help'))).textSpan! as TextSpan;
+      final coloured = {
+        for (final c in help.children!.cast<TextSpan>().where((c) => c.style?.color != null)) c.text: c.style!.color,
+      };
+      expect(coloured, {'GENERATE': kHighlight, 'REMOVE': kError});
+      expect(help.toPlainText(), kWidgetKeyHelp);
+    });
+
+    // ID-521: with optimisation on, Android may hold back the widget's refresh until the app is open.
+    testWidgets('with battery optimisation on, the dialog says so and offers BATTERY SETTINGS', (tester) async {
+      await openDialog(tester, batteryOptimised: () async => true);
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_battery_text'))).data, kBatteryOptimisedText);
+      expect(find.byKey(const Key('widget_key_battery')), findsOneWidget);
+    });
+
+    testWidgets('with battery optimisation off, there is no warning and no button', (tester) async {
+      await openDialog(tester);
+      expect(find.byKey(const Key('widget_key_battery_text')), findsNothing);
+      expect(find.byKey(const Key('widget_key_battery')), findsNothing);
+    });
+
+    testWidgets('back from the settings with optimisation off, the warning goes', (tester) async {
+      var optimised = true;
+      await openDialog(tester, batteryOptimised: () async => optimised);
+      expect(find.byKey(const Key('widget_key_battery_text')), findsOneWidget);
+
+      optimised = false;
+      for (final s in [AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused,
+          AppLifecycleState.hidden, AppLifecycleState.inactive, AppLifecycleState.resumed]) {
+        tester.binding.handleAppLifecycleStateChanged(s);
+      }
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('widget_key_battery_text')), findsNothing);
+    });
+
+    // ID-537: on an iPhone the three buttons were one row 25 pixels wider than the dialog, and GENERATE was
+    // cut off. They wrap instead, and each stays whole inside the dialog.
+    testWidgets('on a phone-width screen the buttons fit inside the dialog, none cut off', (tester) async {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await openDialog(tester);
+      expect(tester.takeException(), isNull);
+      final dialog = tester.getRect(find.byType(Dialog));
+      for (final k in ['widget_key_close', 'widget_key_remove', 'widget_key_generate']) {
+        final r = tester.getRect(find.byKey(Key(k)));
+        expect(r.left >= dialog.left && r.right <= dialog.right, isTrue, reason: '$k at $r, dialog $dialog');
+      }
+    });
+
+    // ID-534: each platform names its own store.
+    test('the generated line names the store of the platform it is on', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      final ios = widgetKeyGeneratedText();
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final android = widgetKeyGeneratedText();
+      debugDefaultTargetPlatformOverride = null;
+      expect(ios, 'Key generated: saved in the iOS Keychain, and installed on your router.');
+      expect(android, "Key generated: saved to Android's local keystore, and installed on your router.");
+    });
+
     testWidgets('GENERATE installs on the router, reads it back, then saves on the phone', (tester) async {
       final r = FakeKeysRouter('');
       await openDialog(tester, ssh: r.client);
@@ -1498,7 +1571,7 @@ void main() {
 
       expect(await store.exists(), isTrue);
       expect(widgetKeyLineCount(r.nv), 1);
-      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).data, contains('Key created'));
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).data, contains('Key generated'));
       expect(tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data, contains('installed on your router'));
     });
 
@@ -1590,7 +1663,7 @@ void main() {
       await store.save(generateWidgetKeyPair().seed);
       await openDialog(tester);
 
-      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).data, contains('Key created'));
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).data, contains('Key generated'));
     });
 
     // ID-407: REMOVE takes every widget key, any device's and leftovers alike, after asking.

@@ -218,6 +218,10 @@ List<String> _linesWithout(String current, String? keyBlob) => current
     .where((l) => l.isNotEmpty && (keyBlob == null || sshKeyBlob(l) != keyBlob))
     .toList();
 
+/// The widget key's iOS Keychain setting (ID-527): readable only while the phone is unlocked, as
+/// before (ID-438), and only on this device, so it is never in a backup. Not synchronised to iCloud.
+const IOSOptions kWidgetKeyIosOptions = IOSOptions(accessibility: KeychainAccessibility.unlocked_this_device);
+
 /// Keeps exactly two things, both Keystore-backed: the widget key's seed, and the router login
 /// name that key was installed under. Nothing else may ever be written through this - see
 /// widget_key_test.dart's "nothing but" test, which names both and would fail on a third.
@@ -228,17 +232,20 @@ List<String> _linesWithout(String current, String? keyBlob) => current
 /// in without the key, and the key cannot log in without it. It deliberately does not go in
 /// `router_prefs.dart`, which stays the router address and nothing else, for the reasons its own
 /// header gives. README, SECURITY.md and the privacy policy have to say both are kept.
+///
+/// **Never backed up** (ID-527, 2026-11-06): on iOS both are kept "this device only"
+/// ([kWidgetKeyIosOptions]), so neither goes into an iCloud or computer backup, nor is restored
+/// onto another iPhone. Android's side is the manifest: no backup, and no device-to-device transfer.
 class WidgetKeyStore {
   WidgetKeyStore({FlutterSecureStorage? storage, Future<bool?> Function()? protectedDataAvailable})
-      : _storage = storage ?? const FlutterSecureStorage(),
+      : _storage = storage ?? const FlutterSecureStorage(iOptions: kWidgetKeyIosOptions),
         _protectedDataAvailable = protectedDataAvailable;
 
   final FlutterSecureStorage _storage;
   final Future<bool?> Function()? _protectedDataAvailable;
 
-  /// False while an iPhone is locked: the key is kept with iOS's default protection, readable only
-  /// while the phone is unlocked, which is Andrew's choice (2026-10-21): no refresh on a locked phone
-  /// (ID-438). True everywhere else, since the plugin answers null off iOS. [protectedDataAvailable]
+  /// False while an iPhone is locked: the key is kept readable only while the phone is unlocked,
+  /// which is Andrew's choice (2026-10-21): no refresh on a locked phone (ID-438). True everywhere else, since the plugin answers null off iOS. [protectedDataAvailable]
   /// stands in for the plugin in a test.
   Future<bool> readable() async =>
       (await (_protectedDataAvailable ?? _storage.isCupertinoProtectedDataAvailable)()) ?? true;
@@ -250,7 +257,24 @@ class WidgetKeyStore {
   /// secret by itself; see this class's header.
   static const String kLoginKey = 'cfg_pia_wg_widget_key_login';
 
-  Future<void> save(Uint8List seed) async => _storage.write(key: kStorageKey, value: base64.encode(seed));
+  Future<void> save(Uint8List seed) async => _write(kStorageKey, base64.encode(seed));
+
+  /// Deletes, then writes. On iOS an item saved before ID-527, under the plugin's default (backed
+  /// up), cannot be overwritten under this device only: the plugin finds it for a read but its
+  /// update misses it, and the add is refused as a duplicate. The delete clears it at any level.
+  Future<void> _write(String key, String value) async {
+    await _storage.delete(key: key);
+    await _storage.write(key: key, value: value);
+  }
+
+  /// ID-527: saves whatever is here again, so an item kept before this build moves to this device
+  /// only. Run where the phone is in use (a connection from the app), never from a background refresh.
+  Future<void> keepOnThisDevice() async {
+    final seed = await _storage.read(key: kStorageKey);
+    final login = await _storage.read(key: kLoginKey);
+    if (seed != null) await _write(kStorageKey, seed);
+    if (login != null) await _write(kLoginKey, login);
+  }
 
   /// The stored seed, or null if none has been generated (or it was removed).
   Future<Uint8List?> read() async {
@@ -261,7 +285,7 @@ class WidgetKeyStore {
 
   Future<bool> exists() async => (await _storage.containsKey(key: kStorageKey));
 
-  Future<void> saveLogin(String user) async => _storage.write(key: kLoginKey, value: user);
+  Future<void> saveLogin(String user) async => _write(kLoginKey, user);
 
   Future<String?> readLogin() async => _storage.read(key: kLoginKey);
 
