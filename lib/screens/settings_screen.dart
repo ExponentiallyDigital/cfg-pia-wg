@@ -1259,11 +1259,12 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
               Flexible(
                 child: SingleChildScrollView(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    // ID-533: the state in the highlight colour, a line under it; ID-534: where it is kept, by platform.
+                    // ID-533: the state stands out, with a line under it; ID-538: in its SETTINGS row's colour, not
+                    // the teal or white around it. ID-534: where the key is kept, by platform.
                     Text(
                       _exists ? widgetKeyGeneratedText() : 'No key exists yet.',
                       key: const Key('widget_key_status'),
-                      style: const TextStyle(color: kHighlight, fontSize: 13),
+                      style: TextStyle(color: kSettingsRowColours['settings_widget_key'], fontSize: 13),
                     ),
                     const Divider(key: Key('widget_key_status_rule'), color: kBorder, height: 24),
                     if (_batteryOptimised) ...[
