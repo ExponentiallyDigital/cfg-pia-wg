@@ -118,6 +118,17 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-11-06 v0.8.199 build 569 - the BATTERY SETTINGS button made const, for SonarCloud
+
+```play
+• The home screen widget key screen is clearer: its buttons fit an iPhone, and it names where your key is kept.
+• On Android it says when battery optimisation would stop the widget refreshing, with a button to fix it.
+• The widget key is never backed up, or copied to another phone.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-540 BLD: SonarCloud found 2 new issues on PR #71, both S7112: the Align and AppButton around BATTERY SETTINGS (ID-521) could be const. Closed 2026-11-06: made const; analyze clean and settings_screen_test passes.
+
 2026-11-06 v0.8.198 build 568 - the widget key's top line in its row's periwinkle, SECURITY.md's widget section current, and the D-U-N-S number in hand
 
 ```play

@@ -1271,7 +1271,7 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
                       const Text(kBatteryOptimisedText,
                           key: Key('widget_key_battery_text'), style: TextStyle(color: kWarn, fontSize: 12, height: 1.4)),
                       const SizedBox(height: 8),
-                      Align(
+                      const Align(
                         alignment: Alignment.centerLeft,
                         child: AppButton(
                           keyValue: 'widget_key_battery',
