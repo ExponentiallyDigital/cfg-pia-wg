@@ -53,11 +53,7 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.2. FTR - future implementation
 
-- ID-440 REL: get a D-U-N-S number from Dun & Bradstreet.
-  - DoD: the D-U-N-S number is issued.
-- ID-421 REL: move the Apple membership to the company, through Apple support. After ID-440.
-  - DoD: the App Store shows the company as the seller.
-- ID-375 BLD: either replace this module or post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix. Agreed 2026-10-09, Andrew's call, but not posted: the `gh` token here can't comment outside the organisation ("Resource not accessible by personal access token"). Post it from Andrew's own login, or after `gh auth refresh -s public_repo`. Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment:
+- ID-375 BLD: either replace this module or post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix. Agreed 2026-10-09, Andrew's call; posted 2026-11-06 from his login, as [this comment](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549#issuecomment-6674977473). Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment, as posted:
 
   ```markdown
   Still happening on 0.14.4, and not only with flavors or App Clips: plain `ios: true` triggers it too.

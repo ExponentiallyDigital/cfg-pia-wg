@@ -1495,10 +1495,12 @@ void main() {
 
     // ID-533: the state stands out from the help, with a line under it, and the button names in the help
     // are the colours of their buttons.
-    testWidgets('the status is teal with a line under it, and REMOVE and GENERATE in the help match their buttons',
+    testWidgets('the status is periwinkle with a line under it, and REMOVE and GENERATE in the help match their buttons',
         (tester) async {
       await openDialog(tester);
-      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).style?.color, kHighlight);
+      // ID-538: the colour of the row that opened it, periwinkle, so it is neither the teal nor the white around it.
+      expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).style?.color, const Color(0xFF8B9CFC));
+      expect(kSettingsRowColours['settings_widget_key'], const Color(0xFF8B9CFC));
       expect(find.byKey(const Key('widget_key_status_rule')), findsOneWidget);
       final help = tester.widget<Text>(find.byKey(const Key('widget_key_help'))).textSpan! as TextSpan;
       final coloured = {

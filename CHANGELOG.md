@@ -95,8 +95,6 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
-- ID-537 BUG: on an iPhone the HOME SCREEN WIDGET KEY dialog's buttons overflow its right edge by 25 pixels, and GENERATE is clipped: CLOSE, REMOVE and GENERATE sit in one row too wide for the dialog. Seen in WGT-9, 2026-11-06.
-  - Now: the buttons wrap onto a second line when they don't fit; settings_screen_test, at a 375-point screen, seen to fail on the old row. WGT-9's dialog step to run again on an iPhone.
 - ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store. Update README "3. Pre-built release"when the application is available on the Apple App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
@@ -119,6 +117,29 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 3. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-06 v0.8.198 build 568 - the widget key's top line in its row's periwinkle, SECURITY.md's widget section current, and the D-U-N-S number in hand
+
+```play
+• The home screen widget key screen is clearer: its buttons fit an iPhone, and it names where your key is kept.
+• On Android it says when battery optimisation would stop the widget refreshing, with a button to fix it.
+• The widget key is never backed up, or copied to another phone.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- CHG: WIP 2 -> 1 bullets: ID-537 done, moved to build 568. Nothing else removed.
+- CHG: BACKLOG 1.1.2 14 -> 12 bullets: ID-440 done and ID-421 closed, both moved to build 568. Nothing else removed.
+- ID-537 BUG: on an iPhone the HOME SCREEN WIDGET KEY dialog's buttons overflow its right edge by 25 pixels, and GENERATE is clipped: CLOSE, REMOVE and GENERATE sit in one row too wide for the dialog. Seen in WGT-9, 2026-11-06.
+  - Now: the buttons wrap onto a second line when they don't fit; settings_screen_test, at a 375-point screen, seen to fail on the old row. WGT-9's dialog step to run again on an iPhone.
+  - Closed 2026-11-06: WGT-9 passed on an iPhone, all three buttons whole inside the dialog.
+- ID-440 REL: get a D-U-N-S number from Dun & Bradstreet.
+  - DoD: the D-U-N-S number is issued.
+  - Closed 2026-11-06: issued, as a sole trader with Exponentially Digital as the trade style. The record is kept in .claude/testing/, which git ignores, not here.
+- ID-421 REL: move the Apple membership to the company, through Apple support. After ID-440.
+  - DoD: the App Store shows the company as the seller.
+  - Closed 2026-11-06, not done: Andrew's decision, he stays a sole trader. Apple enrols a sole trader as an individual, so there is no company membership to move to.
+- ID-538 CHG: HOME SCREEN WIDGET KEY's top line, "Key generated: ..." or "No key exists yet.", in its SETTINGS row's periwinkle (#8B9CFC), not teal: Andrew's choice from a mock-up, 2026-11-06. Closed 2026-11-06: settings_screen_test seen to fail on the teal, passes on periwinkle.
+- ID-539 DOC: SECURITY.md's widget key section said "Android only: iOS has no widget yet", and pointed at README 5.11. It now says both platforms, where iOS keeps the key, and README 5.12. Closed 2026-11-06.
 
 2026-11-06 v0.8.197 build 567 - the home screen widget key dialog's buttons fit an iPhone, and every commit carries a Play note
 
