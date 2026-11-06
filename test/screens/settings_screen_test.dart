@@ -1535,6 +1535,21 @@ void main() {
       expect(find.byKey(const Key('widget_key_battery_text')), findsNothing);
     });
 
+    // ID-537: on an iPhone the three buttons were one row 25 pixels wider than the dialog, and GENERATE was
+    // cut off. They wrap instead, and each stays whole inside the dialog.
+    testWidgets('on a phone-width screen the buttons fit inside the dialog, none cut off', (tester) async {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await openDialog(tester);
+      expect(tester.takeException(), isNull);
+      final dialog = tester.getRect(find.byType(Dialog));
+      for (final k in ['widget_key_close', 'widget_key_remove', 'widget_key_generate']) {
+        final r = tester.getRect(find.byKey(Key(k)));
+        expect(r.left >= dialog.left && r.right <= dialog.right, isTrue, reason: '$k at $r, dialog $dialog');
+      }
+    });
+
     // ID-534: each platform names its own store.
     test('the generated line names the store of the platform it is on', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;

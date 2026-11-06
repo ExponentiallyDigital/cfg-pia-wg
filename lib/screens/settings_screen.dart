@@ -1299,14 +1299,15 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
                 ),
               ),
             const SizedBox(height: 16),
-            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+            // ID-537: a Wrap, not a Row: on an iPhone the three were 25 pixels wider than the dialog, and
+            // GENERATE was cut off. Too wide for one line, they take two.
+            Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: [
               AppButton(
                 keyValue: 'widget_key_close',
                 label: 'CLOSE',
                 role: ButtonRole.dismiss,
                 onPressed: () => Navigator.pop(context),
               ),
-              const SizedBox(width: 8),
               // All three, always (ID-407): REMOVE has to be there for a phone whose own key was lost with its
               // storage, which is just when leftovers on the router stop GENERATE working.
               if (!_loading) ...[
@@ -1316,7 +1317,6 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
                   role: ButtonRole.destructive,
                   onPressed: _working ? null : _remove,
                 ),
-                const SizedBox(width: 8),
                 AppButton(
                   keyValue: 'widget_key_generate',
                   label: 'GENERATE',
