@@ -25,12 +25,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../widgets/app_button.dart';
 
 import '../app_colors.dart';
+import '../battery_optimisation.dart';
 import '../device_assignment_service.dart';
 import '../entitlement.dart';
 import '../firmware.dart';
@@ -70,6 +72,9 @@ class SettingsScreen extends StatefulWidget {
 
   /// Injected by tests in place of the phone's copy of the last PIA server list that passed (ID-325).
   final ServerListStore? testServerListStore;
+
+  /// Injected by tests in place of asking Android about battery optimisation (ID-521).
+  final Future<bool> Function()? testBatteryOptimised;
   const SettingsScreen({
     super.key,
     this.testClientFactory,
@@ -79,6 +84,7 @@ class SettingsScreen extends StatefulWidget {
     this.testScheduleRefresh,
     this.testCancelRefresh,
     this.testServerListStore,
+    this.testBatteryOptimised,
   });
 
   @override
@@ -662,6 +668,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           installOnRouter: _installWidgetKeyOnRouter,
           removeFromRouter: _removeWidgetKeysFromRouter,
           startRefresh: widget.testScheduleRefresh ?? scheduleWidgetRefresh,
+          isBatteryOptimised: widget.testBatteryOptimised ?? batteryOptimised,
         ),
       );
 
@@ -1112,7 +1119,11 @@ class _MaxVpnsDialogState extends State<_MaxVpnsDialog> {
 /// [store], the phone side, and only once the router side has already succeeded.
 class _WidgetKeyDialog extends StatefulWidget {
   const _WidgetKeyDialog(
-      {required this.store, required this.installOnRouter, required this.removeFromRouter, required this.startRefresh});
+      {required this.store,
+      required this.installOnRouter,
+      required this.removeFromRouter,
+      required this.startRefresh,
+      required this.isBatteryOptimised});
   final WidgetKeyStore store;
   final Future<String?> Function(String publicKeyLine) installOnRouter;
   final Future<String?> Function() removeFromRouter;
@@ -1122,6 +1133,9 @@ class _WidgetKeyDialog extends StatefulWidget {
   /// and the widget said "could not reach the router" until the next refresh, up to 15 minutes later.
   final Future<void> Function() startRefresh;
 
+  /// ID-521: whether Android is holding back the app's background work; false off Android.
+  final Future<bool> Function() isBatteryOptimised;
+
   @override
   State<_WidgetKeyDialog> createState() => _WidgetKeyDialogState();
 }
@@ -1130,12 +1144,29 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
   bool _loading = true;
   bool _exists = false;
   bool _working = false;
+  bool _batteryOptimised = false;
   String? _note;
+
+  /// Asks again on the way back from Android's settings, so the warning goes once it is put right.
+  late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(onResume: _checkBattery);
     _load();
+    _checkBattery();
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkBattery() async {
+    final optimised = await widget.isBatteryOptimised();
+    if (mounted && optimised != _batteryOptimised) setState(() => _batteryOptimised = optimised);
   }
 
   Future<void> _load() async {
@@ -1161,7 +1192,7 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
       _exists = error == null;
       _working = false;
       _note = error == null
-          ? 'Made, and installed on your router. The widget can refresh itself once the background refresh is built.'
+          ? 'Key generated, and installed on your router. The widget can now refresh itself.'
           : 'Not installed: $error';
     });
   }
@@ -1228,28 +1259,38 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
               Flexible(
                 child: SingleChildScrollView(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    // ID-533: the state stands out, with a line under it; ID-538: in its SETTINGS row's colour, not
+                    // the teal or white around it. ID-534: where the key is kept, by platform.
                     Text(
-                      _exists
-                          ? "Key created: saved to Android's local keystore, and installed on your router."
-                          : 'No key exists yet.',
+                      _exists ? widgetKeyGeneratedText() : 'No key exists yet.',
                       key: const Key('widget_key_status'),
-                      style: const TextStyle(color: kText, fontSize: 13),
+                      style: TextStyle(color: kSettingsRowColours['settings_widget_key'], fontSize: 13),
                     ),
-                    const SizedBox(height: 8),
+                    const Divider(key: Key('widget_key_status_rule'), color: kBorder, height: 24),
+                    if (_batteryOptimised) ...[
+                      const Text(kBatteryOptimisedText,
+                          key: Key('widget_key_battery_text'), style: TextStyle(color: kWarn, fontSize: 12, height: 1.4)),
+                      const SizedBox(height: 8),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: AppButton(
+                          keyValue: 'widget_key_battery',
+                          label: 'BATTERY SETTINGS',
+                          onPressed: openAppSettings,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     const Text(
                       "This allows the home screen widget to display your router's VPN status, and do nothing else. "
                       'An unlocked stolen phone could read the status but it could not change anything at all.',
                       style: TextStyle(color: kText, fontSize: 12, height: 1.4),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'GENERATE makes a new key for this phone and installs it on your router. Keys belonging to your '
-                      'other phones or tablets are left alone.\n\n'
-                      'REMOVE takes every widget key off your router, including those of your other phones and tablets, '
-                      "and deletes this phone's key. Their widgets stop refreshing until you tap GENERATE on each one "
-                      "again. Use it if GENERATE fails, or after clearing the app's storage.",
-                      key: Key('widget_key_help'),
-                      style: TextStyle(color: kText, fontSize: 12, height: 1.4),
+                    Text.rich(
+                      TextSpan(children: buttonNameSpans(kWidgetKeyHelp)),
+                      key: const Key('widget_key_help'),
+                      style: const TextStyle(color: kText, fontSize: 12, height: 1.4),
                     ),
                     if (_note != null) ...[
                       const SizedBox(height: 8),
@@ -1259,14 +1300,15 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
                 ),
               ),
             const SizedBox(height: 16),
-            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+            // ID-537: a Wrap, not a Row: on an iPhone the three were 25 pixels wider than the dialog, and
+            // GENERATE was cut off. Too wide for one line, they take two.
+            Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: [
               AppButton(
                 keyValue: 'widget_key_close',
                 label: 'CLOSE',
                 role: ButtonRole.dismiss,
                 onPressed: () => Navigator.pop(context),
               ),
-              const SizedBox(width: 8),
               // All three, always (ID-407): REMOVE has to be there for a phone whose own key was lost with its
               // storage, which is just when leftovers on the router stop GENERATE working.
               if (!_loading) ...[
@@ -1276,7 +1318,6 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
                   role: ButtonRole.destructive,
                   onPressed: _working ? null : _remove,
                 ),
-                const SizedBox(width: 8),
                 AppButton(
                   keyValue: 'widget_key_generate',
                   label: 'GENERATE',
@@ -1289,6 +1330,30 @@ class _WidgetKeyDialogState extends State<_WidgetKeyDialog> {
       ),
     );
   }
+}
+
+/// ID-534: where this phone keeps its widget key, named for the platform it is on.
+String widgetKeyGeneratedText() => defaultTargetPlatform == TargetPlatform.iOS
+    ? 'Key generated: saved in the iOS Keychain, and installed on your router.'
+    : "Key generated: saved to Android's local keystore, and installed on your router.";
+
+const String kWidgetKeyHelp = 'GENERATE makes a new key for this phone and installs it on your router. Keys belonging to '
+    'your other phones or tablets are left alone.\n\n'
+    'REMOVE takes every widget key off your router, including those of your other phones and tablets, '
+    "and deletes this phone's key. Their widgets stop refreshing until you tap GENERATE on each one "
+    "again. Use it if GENERATE fails, or after clearing the app's storage.";
+
+/// ID-533: each REMOVE in [text] in red and each GENERATE in teal, the colours of their buttons.
+List<TextSpan> buttonNameSpans(String text) {
+  final spans = <TextSpan>[];
+  var at = 0;
+  for (final m in RegExp(r'\b(REMOVE|GENERATE)\b').allMatches(text)) {
+    if (m.start > at) spans.add(TextSpan(text: text.substring(at, m.start)));
+    spans.add(TextSpan(text: m[0], style: TextStyle(color: m[0] == 'GENERATE' ? kHighlight : kError)));
+    at = m.end;
+  }
+  if (at < text.length) spans.add(TextSpan(text: text.substring(at)));
+  return spans;
 }
 
 class _SecureStartupDialog extends StatefulWidget {

@@ -4,10 +4,14 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.os.PersistableBundle
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -55,6 +59,39 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BATTERY_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    METHOD_IS_BATTERY_OPTIMISED -> result.success(isBatteryOptimised())
+                    METHOD_OPEN_APP_SETTINGS -> openAppSettings(result)
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /**
+     * ID-521: true unless the app is Unrestricted. On a Galaxy Tab S10 FE with optimisation on, the
+     * home screen widget refreshed only while the app was open.
+     */
+    private fun isBatteryOptimised(): Boolean {
+        val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return !power.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    /**
+     * The app's own page in Android's settings, where Battery -> Unrestricted is one tap away. It
+     * needs no permission; asking Android to exempt the app directly needs one Play restricts.
+     */
+    private fun openAppSettings(result: MethodChannel.Result) {
+        try {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+            )
+            result.success(null)
+        } catch (e: Exception) {
+            result.error(ERROR_UNAVAILABLE, e.message, null)
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -62,6 +99,8 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler(null)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CLIPBOARD_CHANNEL)
+            .setMethodCallHandler(null)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BATTERY_CHANNEL)
             .setMethodCallHandler(null)
         super.cleanUpFlutterEngine(flutterEngine)
     }
@@ -259,6 +298,10 @@ class MainActivity : FlutterActivity() {
         const val METHOD_CLEAR_CLIPBOARD = "clearClipboard"
         const val METHOD_COPY_SENSITIVE = "copySensitive"
         const val CLIP_LABEL = "cfg-pia-wg"
+        // Mirrored in lib/battery_optimisation.dart; a test fails if the two drift apart (ID-521).
+        const val BATTERY_CHANNEL = "com.exponentiallydigital.pia_wireguard_cfga/battery"
+        const val METHOD_IS_BATTERY_OPTIMISED = "isBatteryOptimised"
+        const val METHOD_OPEN_APP_SETTINGS = "openAppSettings"
         const val ERROR_UNSUPPORTED = "unsupported"
         const val ERROR_UNAVAILABLE = "unavailable"
         const val UNKNOWN = "unknown"

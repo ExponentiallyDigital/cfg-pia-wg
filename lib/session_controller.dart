@@ -335,7 +335,9 @@ class SessionController extends ChangeNotifier {
   final Future<Uint8List?> Function() _ownWidgetKey;
 
   static Future<Uint8List?> _storedWidgetKey() async {
-    final seed = await WidgetKeyStore().read();
+    final store = WidgetKeyStore();
+    await store.keepOnThisDevice(); // ID-527: a key kept before this build moves to this device only
+    final seed = await store.read();
     return seed == null ? null : widgetKeyPairFromSeed(seed).publicKeyBytes;
   }
 
