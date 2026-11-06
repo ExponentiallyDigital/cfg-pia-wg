@@ -73,18 +73,25 @@ You'll need SSH enabled on the router, a PIA subscription, and firmware with Wir
   - [5.10. EXIT - Close the app](#510-exit---close-the-app)
   - [5.11. Hamburger menu](#511-hamburger-menu)
   - [5.12. HOME SCREEN WIDGET (optional)](#512-home-screen-widget-optional)
+  - [Android](#android)
+  - [iOS](#ios)
     - [5.12.1. Why it needs a key, and what the key can do](#5121-why-it-needs-a-key-and-what-the-key-can-do)
     - [5.12.2. What is stored, and where](#5122-what-is-stored-and-where)
     - [5.12.3. When it refreshes, and when it doesn't](#5123-when-it-refreshes-and-when-it-doesnt)
 - [6. Notes](#6-notes)
 - [7. What does the app do to my router?](#7-what-does-the-app-do-to-my-router)
 - [8. App permissions](#8-app-permissions)
-  - [8.1. Internet (android.permission.INTERNET)](#81-internet-androidpermissioninternet)
-  - [8.2. Network state (android.permission.ACCESS\_NETWORK\_STATE)](#82-network-state-androidpermissionaccess_network_state)
-  - [8.3. Storage access](#83-storage-access)
-    - [8.3.1. Write external storage (android.permission.WRITE\_EXTERNAL\_STORAGE)](#831-write-external-storage-androidpermissionwrite_external_storage)
-    - [8.3.2. Read external storage (android.permission.READ\_EXTERNAL\_STORAGE)](#832-read-external-storage-androidpermissionread_external_storage)
-  - [8.4. Billing (com.android.vending.BILLING)](#84-billing-comandroidvendingbilling)
+  - [8.1. Android permissions](#81-android-permissions)
+  - [8.1.1 Internet (android.permission.INTERNET)](#811-internet-androidpermissioninternet)
+  - [8.1.2. Network state (android.permission.ACCESS\_NETWORK\_STATE)](#812-network-state-androidpermissionaccess_network_state)
+  - [8.1.3. Storage access](#813-storage-access)
+    - [8.1.3.1. Write external storage (android.permission.WRITE\_EXTERNAL\_STORAGE)](#8131-write-external-storage-androidpermissionwrite_external_storage)
+    - [8.1.3.2. Read external storage (android.permission.READ\_EXTERNAL\_STORAGE)](#8132-read-external-storage-androidpermissionread_external_storage)
+  - [8.1.4. Billing (com.android.vending.BILLING)](#814-billing-comandroidvendingbilling)
+  - [8.2 iOS permissions](#82-ios-permissions)
+    - [8.2.1. Local Network access (NSLocalNetworkUsageDescription)](#821-local-network-access-nslocalnetworkusagedescription)
+    - [8.2.2. Background execution (UIBackgroundModes - fetch \& BGTaskSchedulerPermittedIdentifiers)](#822-background-execution-uibackgroundmodes---fetch--bgtaskschedulerpermittedidentifiers)
+    - [8.2.3. Internet access](#823-internet-access)
 - [9. Security](#9-security)
   - [9.1. How to check the watchdog script yourself](#91-how-to-check-the-watchdog-script-yourself)
 - [10. Privacy](#10-privacy)
@@ -123,11 +130,11 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
 - **A kill switch on stock firmware:** Merlin has one. Stock doesn't. So the app builds its own, out of your router's routing rules and its own firewall filter. A device pinned to a tunnel uses that tunnel or nothing: if the tunnel's config expires, the watchdog is rebuilding it, you switch it off, or the router restarts, the device goes offline rather than out in the clear. Over IPv4 only: the app doesn't support IPv6, so switch IPv6 off in the router if you rely on this. Pinned devices only; [5.4](#54-devices---assign-rename-and-disable) has the detail and the limits.
 - **See where each tunnel comes out:** NETWORK shows the public address of your phone or tablet, and of every tunnel that's up, with its town, country and provider, asked of PIA itself through each tunnel. Free, and nobody new learns anything: PIA already knows these addresses.
 - **Standalone PIA config generation:** choose a region, enter PIA username/password and DNS values, then generate a complete `.conf` file.
-- **Secure clipboard handling:** a copied config is marked sensitive, so Android 13 and later show dots rather than your private key in the clipboard preview. A visible 60-second countdown then clears the clipboard. If Android closes the app before then, the app clears its own copy the next time it starts. On iOS, a copy stays on that iPhone, never passed to your Mac by Universal Clipboard, and iOS deletes it itself after the same 60 seconds, even if the app has been closed.
-- **Share/save support:** share a generated `.conf` via the Android share function and save it to a file location of your choice.
+- **Secure clipboard handling:** a copied config is marked sensitive, so Android/iOS show dots rather than your private key in the clipboard preview. A visible 60-second countdown then clears the clipboard. If Android closes the app before then, the app clears its own copy the next time it starts. On iOS, a copy stays on that iPhone, never passed to your Mac by Universal Clipboard, and iOS deletes it itself after the same 60 seconds, even if the app has been closed.
+- **Share/save support:** share a generated `.conf` via the Android/iOS share function and save it to a file location of your choice.
 - **Router slot management:** connect to an ASUS router over SSH and inspect `wgc1`–`wgc5` slots. Create, enable, edit, disable, or delete WireGuard slot configurations directly.
 - **Three remembered things:** a successful router connect stores the router's LAN address, so you don't retype it every session, and the fingerprint of its SSH key, so the app can refuse anything pretending to be your router. Clear both with **FORGET ROUTER IP** on the SETTINGS screen. The third is PIA's own list of its servers, the last one that passed PIA's signature check, so a list that fails can be refused without stopping the app; **REMOVE CACHED PIA SERVERS** clears it. All three stay in the app's private storage. See [SECURITY.md](SECURITY.md).
-- **Optional home screen widget (Android):** each tunnel's state at a glance, refreshed in the background. It is off until you set it up, and setting it up is the one thing that makes the app keep a login - a restricted key and your router's login name, which it can use to read the router's status and nothing else. Don't want that? Don't add the widget, and nothing is kept. See [5.12](#512-home-screen-widget-optional).
+- **Optional home screen widget:** each tunnel's state at a glance, refreshed in the background. It is off until you set it up, and setting it up is the one thing that makes the app keep a login - a restricted key and your router's login name, which it can use to read the router's status and nothing else. Don't want that? Don't add the widget, and nothing is kept. See [5.12](#512-home-screen-widget-optional).
 - **Your router is who it says it is:** the app records your router's SSH key the first time you connect, says so in APP LOG, and refuses to send your router password to anything with a different key. If you reset or reflash the router, tap **FORGET ROUTER IP** and connect again.
 - **PIA's server list is checked:** PIA signs its list of servers, and the app and the watchdog both check that signature, the same way PIA's own desktop app does, before they use it. A list that fails might have been tampered with, so it isn't used: the last list that passed is used instead, and the app tells you on screen, the watchdog in its alert email.
 - **No persistent credential storage (app):** your PIA login and your router's SSH password are held only in the app's memory, never written to your device's storage. A generated config is the same, until you SHARE it: then sharing needs a file, which the app deletes when you leave the config screen. The one exception is the optional home screen widget, which cannot refresh itself without something to log in with - see [5.12](#512-home-screen-widget-optional). Your PIA login and your router's password are never stored either way.
@@ -326,7 +333,7 @@ With two handy links: **how to use this app**, which opens this README at [4. Pr
   Standalone config generation
 </p>
 
-6. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android sharing. Copying a config to the clipboard starts a 60 second timer, displayed on screen, after which the clipboard is automatically cleared.
+6. Tap **COPY** to copy the config to the clipboard, or **SHARE / SAVE** to export the file via Android/iOS sharing. Copying a config to the clipboard starts a 60 second timer, displayed on screen, after which the clipboard is automatically cleared.
 
 ### 5.2. MANAGE - Manage router PIA WireGuard configuration
 
@@ -867,11 +874,11 @@ All those things that you won't need until you do need them, and all in one plac
 </p><br>
 
   - **HOME SCREEN WIDGET KEY** - makes or removes the key the optional home screen widget uses to check your router on its own. Nothing is kept on your phone until you tap GENERATE here, and REMOVE takes it off both your router and your phone. The whole story, including exactly what gets stored and what the key can and cannot do, is in [5.12](#512-home-screen-widget-optional).
-  - **FORGET ROUTER IP** - removes the remembered router address and its associated SSH key fingerprint. Those two and PIA's server list (below), plus the home screen widget's key if you've added it, are the _**only**_ data retained on your device. No SSH credentials, no usernames, no PIA password, no tracking, no advertising ID, no ad cache, no in-app user journeys. Zip. Zilch. Nada.
-  - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run. Why? Just in case. The "Irish" approach - to be sure, to be sure. Try doing an Irish accent via a keyboard. Not easy. But why? In case it ever expires/gets updated by PIA, you'll have a way to get a fresh one straight from their official GitHub repo when you run any operation that authenticates with PIA's servers.
-  - **REMOVE CACHED PIA SERVERS** - deletes the last PIA server list that passed PIA's signature check, from your router and from this phone. Why keep one at all? PIA signs its server list, and a list that fails the check might have been tampered with, so it isn't used. Keeping the last good one means a list that fails doesn't stop a rebuild or CREATE. Delete them, and until a new list passes, a list that fails will not be used.
-  - **MAX ACTIVE VPNS** - allows you to run more than two concurrent VPN clients on your router. Absolutely unsupported. You did read the license agreement didn't you? If not that's in ABOUT, because we all love reading legal documents.
   - **SECURE STARTUP** - closes the last gap in pinning on stock firmware. For a few seconds while your router starts, or about half a minute after it resets its network, devices on a VPN can ping the internet directly, which shows your real internet address to whatever they ping. Your router can only block pings for every device at once, so turning this on means devices that aren't on a VPN can never ping anything on the internet, which makes troubleshooting harder. Off by default, and for most people it should stay that way. It asks before it changes anything, and the whole story is in [5.4.1](#541-pinned-means-pinned-the-fail-closed-guard). Stock only: Merlin's own excellent kill switch already covers this gap.
+  - **FORGET ROUTER IP** - removes the remembered router address and its associated SSH key fingerprint. Those two and PIA's server list (below), plus the home screen widget's key if you've added it, are the _**only**_ data retained on your device. No SSH credentials, no usernames, no PIA password, no tracking, no advertising ID, no ad cache, no in-app user journeys. Zip. Zilch. Nada.
+  - **REMOVE CACHED PIA SERVERS** - deletes the last PIA server list that passed PIA's signature check, from your router and from this phone. Why keep one at all? PIA signs its server list, and a list that fails the check might have been tampered with, so it isn't used. Keeping the last good one means a list that fails doesn't stop a rebuild or CREATE. Delete them, and until a new list passes, a list that fails will not be used.
+  - **REMOVE CACHED PIA CERT** - deletes the cached PIA certificate from the router; the watchdog fetches a fresh one on its next run. Why? Just in case. The "Irish" approach - to be sure, to be sure. Try doing an Irish accent via a keyboard. Not easy. But why? In case it ever expires/gets updated by PIA, you'll have a way to get a fresh one straight from their official GitHub repo when you run any operation that authenticates with PIA's servers.
+  - **MAX ACTIVE VPNS** - allows you to run more than two concurrent VPN clients on your router. Absolutely unsupported. You did read the license agreement didn't you? If not that's in ABOUT, because we all love reading legal documents.
   - **RESTORE PURCHASE** - if you install to a different device, this resurrects your Google Play Store entitlement for your one-off, lifetime purchase of `pia-cfg-wg`, you did do that didn't you? Help suppport independent open-source software development. If nothing matches, based on your device's current Play Store logged in account, you'll be told too. This button is only shown when you've installed the official Play Store release.
   - **UNINSTALL FEATURES DEPLOYED TO ROUTER** - completely removes any watchdogs, their helper apps, and all app configuration deployed to your router; configured WireGuard VPNs are retained. See [What does the app do to my router?](#7-what-does-the-app-do-to-my-router). It asks twice. The "Irish" approach, alive and well. Everything really is removed, nothing's left behind, no stray filaments to clog up your device's storage. That's good software practice, I wish more folks did that.
 
@@ -901,6 +908,10 @@ All the details of what version you have, the provenance of who built it, and a 
 </p><br>
 
 - **Update watchdog version** - if your on-router watchdog version is older than the current release, simply upgrade by tapping here. Button only appears if a version mismatch is detected.
+
+> [!TIP]
+> As of 2026-11-01 (v0.8.185 build 555), watchdog scripts are automatically updated when you connect to the router.
+
 
 ### 5.10. EXIT - Close the app
 
@@ -934,7 +945,18 @@ A watchdog, once it's set up, is something you rarely touch again. That's the po
 > [!IMPORTANT]
 > **The widget is entirely optional, and it's the only part of the app that keeps a login.** Skip it and nothing changes: the app stores your router's address and its SSH key fingerprint, exactly as before, and **your router's login name is not stored anywhere**. Everything below happens only if you choose to set it up, and **REMOVE** undoes all of it.
 
-Add it the way you add any widget: long-press an empty spot on your home screen, choose Widgets, find cfg-pia-wg, and drag the size you want into place. Two sizes: a large one with a row per tunnel - where it exits, up or down, how many devices are pinned to it, and which ones the guard is holding offline - and a small one with just the badge and a summary line.
+### Android
+
+Long-press an empty spot on your Home Screen, select **Widgets**, search or scroll to **cfg-pia-wg**, then touch and hold your preferred size to drag it into place.
+
+### iOS
+
+Long-press an empty area on your Home Screen until the apps jiggle, tap the **+** button in the top corner, search for **cfg-pia-wg**, select your preferred size, and tap **Add Widget**.
+
+**Widget Sizes:**
+
+* **Large:** Displays a row per tunnel—showing its exit location, up/down status, pinned device count, and which devices the guard is holding offline.
+* **Small:** Displays just the badge and a summary line.
 
 <p align="center">
   <img src="./images/home-screen-widgets.png" alt="The small and large home screen widgets, both showing two tunnels up and protected" width="300">
@@ -958,16 +980,18 @@ So if your phone is lost or stolen, whoever has it can read whether your tunnels
 
 #### 5.12.2. What is stored, and where
 
-Two things, both in Android's Keystore-backed secure storage, and both only once you've tapped GENERATE:
+Two things, both in Android's Keystore-backed secure storage or the iOS Keychain Service, and both only once you've tapped GENERATE:
 
 - **The key itself.** The private half never leaves your phone.
 - **Your router's login name.** Not a password; it's just a name. SSH cannot connect without a name, so a key with no name beside it is a key that can never be used. It is of no value/use on its own either: the name without the key logs into nothing.
 
-Neither is backed up to Google Drive (`android:allowBackup="false"`). Each phone or tablet you set the widget up on gets a key of its own. REMOVE deletes every widget key from your router, your other devices' included, and both items from the current device, together - never one without the other. Use this if GENERATE fails, or after clearing the app's storage, then tap GENERATE on each device you want to display the widget on.
+Neither is ever backed up, or copied to another phone. On iOS both are kept "this device only", so iCloud and computer backups leave them out, and restoring a backup onto a new iPhone doesn't bring them back. On Android the app turns off Google Drive backup, and the phone-to-phone transfer Android offers when you set up a new phone, for everything it keeps. A new phone means a new key: tap GENERATE on it. Each phone or tablet you set the widget up on gets a key of its own. REMOVE deletes every widget key from your router, your other devices' included, and both items from the current device, together - never one without the other. Use this if GENERATE fails, or after clearing the app's storage, then tap GENERATE on each device you want to display the widget on.
 
 #### 5.12.3. When it refreshes, and when it doesn't
 
-Every 15 minutes, which is the shortest interval Android allows a background job, and less often while your phone is asleep - that's Android's decision, not the app's. The refresh button on the large widget checks immediately. Until you've generated a key the button is plain, and tapping it opens the app instead.
+On Android, background updates run every 15 minutes—the shortest interval the OS allows—and less often while your phone is asleep. On iOS, updates are managed by the WidgetKit budget: the system determines when to refresh the widget based on how often you view it, your device usage patterns, and your battery state, meaning intervals can vary. On both platforms, these timings are decided by the operating system, not the app. The refresh button on the large widget checks immediately. Until you've generated a key the button is greyed out, and tapping it opens the app instead.
+
+On Android, battery optimisation can stop the widget refreshing. Measured on a Galaxy Tab S10 FE (Android 16), 5 November 2026: with optimisation on, the widget refreshed only while the app was open, and every refresh in between ended "could not reach the router". Turning battery optimisation off fixed that. So when you open **HOME SCREEN WIDGET KEY** in SETTINGS and optimisation is on, the app says so, and **BATTERY SETTINGS** opens the app's own page in Android's settings: tap **Battery**, then **Unrestricted**. Section 6 has the other reason to do it (router writes may be aborted/stalled).
 
 It only works at home. Your router's SSH only ever answers on your own network, so away from the house the refresh simply fails and nothing is retried in a hurry. The widget keeps its last reading, and the footer adds the time it tried, for example "Router checked 19:54 · could not reach the router at 20:01". No error, no notification, nothing to dismiss. There's no point telling you that your router is unreachable from the other side of town, but you can see that it tried.
 
@@ -979,7 +1003,7 @@ One deliberate limit, stricter than the app's own screens: a background refresh 
 
 - **Pre-shared keys** - PIA WireGuard does not use pre-shared keys. When pushing a config to the router, this field is always set to empty unless a push fails, then its original value is restored.
 - **Time-to-live constraints** - PIA WireGuard configs expire without warning per PIA's token handling, requiring you to regenerate a config file periodically (which is why this app exists!).
-- **Turn OFF battery optimisation** - for `cfg-pia-wg` otherwise Android may freeze the moment you switch away, and any work it was doing on your router will likely stop mid-action - an SSH session dropped during a watchdog deployment, an alert email abandoned halfway through. Nothing is damaged, but it fails for a reason you cannot see. On most phones: **Settings -> Apps -> cfg-pia-wg -> Battery -> Unrestricted**. Worth doing before you deploy your first watchdog.
+- **Turn OFF battery optimisation** - on Android for `cfg-pia-wg`, otherwise Android may freeze the moment you switch away, and any work it was doing on your router will likely stop mid-action - an SSH session dropped during a watchdog deployment, an alert email abandoned halfway through. Nothing is damaged, but it fails for a reason you cannot see. On Android phones: **Settings -> Apps -> cfg-pia-wg -> Battery -> Unrestricted**. Worth doing before you deploy your first watchdog. iOS offers no similar function, so stay on any screen that's updating your router until the operation is complete and the spinner/dialogue box has closed; deploying a watchdog can take up to 60 seconds.
 - **Extra logins in the router's log are normal** - the router aggressively expires idle SSH sessions - well inside a session spent reading a screen and deciding what to do - so the app reconnects when it finds the connection's expired, and its next action carries on as though nothing happened. What you see afterwards is several `dropbear` logins from your phone for one sitting. That is the app picking the phone back up, not someone else picking the lock.
 - **Key safety** - generated configs contain private encryption keys. Treat them like passwords and manage them securely.
 - **When PIA's login service is down** - every new configuration starts with a login to PIA, and if that service stops answering while PIA's own apps keep working, the app gives it 20 seconds, then says "PIA's login service isn't answering ... This is at PIA's end, not the app or your router; try again later.". A watchdog that needs to rebuild a tunnel during an outage can't, so its failure email says the same thing, and it keeps trying on its schedule until the login service is available. Tunnels that are already up keep working meanwhile.
@@ -1041,10 +1065,12 @@ In summary, the app requires only the following:
 
 - Have full network access
 - View network connections
-- Google Play billing service
-- Google Play license check
+- Google Play/App Store billing service
+- Google Play/App Store license check
 
-### 8.1. Internet (android.permission.INTERNET)
+### 8.1. Android permissions
+
+### 8.1.1 Internet (android.permission.INTERNET)
 
 Required to:
 
@@ -1055,7 +1081,7 @@ Required to:
 
 No user traffic is routed through this application. The app communicates only with PIA provisioning and API endpoints required to generate configuration files.
 
-### 8.2. Network state (android.permission.ACCESS_NETWORK_STATE)
+### 8.1.2. Network state (android.permission.ACCESS_NETWORK_STATE)
 
 Required to:
 
@@ -1063,21 +1089,21 @@ Required to:
 - avoid unnecessary network requests when offline
 - provide error handling and process diagnostics
 
-### 8.3. Storage access
+### 8.1.3. Storage access
 
 The application can export generated WireGuard configuration files to the device.
 
-#### 8.3.1. Write external storage (android.permission.WRITE_EXTERNAL_STORAGE)
+#### 8.1.3.1. Write external storage (android.permission.WRITE_EXTERNAL_STORAGE)
 
 - used only on legacy Android versions (Android 9 and earlier)
 - allows exported configuration files to be written to the Downloads folder
 
-#### 8.3.2. Read external storage (android.permission.READ_EXTERNAL_STORAGE)
+#### 8.1.3.2. Read external storage (android.permission.READ_EXTERNAL_STORAGE)
 
 - used only on older Android versions where required by the operating system
 - allows the application to verify exported configuration files
 
-### 8.4. Billing (com.android.vending.BILLING)
+### 8.1.4. Billing (com.android.vending.BILLING)
 
 Required to offer the one-off in-app purchase through Google Play.
 
@@ -1085,6 +1111,42 @@ Required to offer the one-off in-app purchase through Google Play.
 - it grants no access to your device, your files or your network
 - payment is handled entirely by Google Play. The app never sees a card number, and no payment detail reaches this app or its developer
 - the app asks Google Play whether this installation holds the purchase, and nothing else
+
+### 8.2 iOS permissions
+
+In summary, the iOS app requires only the following:
+
+- Local Network access
+- Background App Refresh & Task Scheduling
+- Standard Internet connectivity
+
+#### 8.2.1. Local Network access (NSLocalNetworkUsageDescription)
+
+Required to:
+
+- discover and communicate with your router via SSH over your local Wi-Fi network
+- manage, configure, and monitor your WireGuard VPN tunnels directly on the router
+
+iOS prompts for this permission the first time the app attempts to reach a device on your local network.
+
+#### 8.2.2. Background execution (UIBackgroundModes - fetch & BGTaskSchedulerPermittedIdentifiers)
+
+Required to:
+
+- allow the Home Screen widget (`com.exponentiallydigital.cfgpiawg.widget-refresh`) to periodically wake in the background
+- query your router for updated tunnel status, connected device counts, and offline guard holds
+
+This runs strictly under iOS WidgetKit and background task budget rules to preserve battery life.
+
+#### 8.2.3. Internet access
+
+Required to:
+
+- authenticate with Private Internet Access (PIA) endpoints
+- retrieve current VPN server lists and region information
+- generate WireGuard configuration profiles
+
+Like the Android version, no personal network traffic is routed through the app itself, it communicates only with PIA APIs to generate your configuration files.
 
 ---
 

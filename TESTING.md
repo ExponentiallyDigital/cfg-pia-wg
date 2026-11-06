@@ -1757,6 +1757,30 @@ Until build 500, clearing the app's storage left its key on the router, and once
 - Do: press the side button to lock the iPhone. Wait two minutes, then unlock it.
 - Pass if: the widget shows the same reading as before, with nothing about a failed refresh. A locked iPhone doesn't refresh, by design.
 
+**WGT-9** On an iPhone, a key from an earlier build keeps working once it moves to this device only (ID-527, ID-533, ID-534) [hand]
+
+- Starts with: an iPhone where WGT-8 passed on a build before 566, at home, and this build ready in TestFlight.
+- Do: in TestFlight, tap Update beside cfg-pia-wg. Open the app and connect to the router.
+- Do: SETTINGS, HOME SCREEN WIDGET KEY.
+- Pass if: the top line reads "Key generated: saved in the iOS Keychain, and installed on your router." in teal, with a line under it, and nothing in the dialog names Android. In the help text below, REMOVE is red and GENERATE is teal.
+- Do: tap CLOSE. Go to the home screen: swipe up from the bottom edge. Wait two minutes, then tap the Tunnels widget. The app opens. Go back to the home screen.
+- Pass if: the footer's time is now the time you tapped it. The app saved the key again, this device only, when it connected, and the refresh on opening logged in with it; a key lost in the move would leave the old time there.
+- See: that the key is left out of backups is checked by `test/unit/widget_key_test.dart`, which fails unless both items are saved "this device only". Proving it on hardware means restoring a backup onto a second iPhone.
+
+**WGT-10** With battery optimisation on, HOME SCREEN WIDGET KEY says so, and the widget refreshes once it's off (ID-521) [hand]
+
+- Starts with: the Galaxy Tab S10 FE with this build, at home, WGT-2 passed on it, and battery optimisation on for the app: Settings, Apps, cfg-pia-wg, Battery, Optimised.
+- Do: open the app, SETTINGS, HOME SCREEN WIDGET KEY.
+- Pass if: amber text under the top line says battery optimisation is on for this app, with a BATTERY SETTINGS button under it.
+- Do: tap BATTERY SETTINGS.
+- Pass if: Android's App info page for cfg-pia-wg opens.
+- Do: tap Battery, then Unrestricted. Swipe back twice, to the app.
+- Pass if: the amber text and the BATTERY SETTINGS button have gone.
+- Do: swipe up from the bottom and hold, to show Recent Apps, then swipe cfg-pia-wg away. Note the time. Wait 30 minutes.
+- Pass if: the widget's footer reads "Router checked HH:MM" at a time after you closed the app. Tap the widget's refresh button: the footer's time is now the time you tapped it.
+- Do: on the Pixel 7 Pro, open SETTINGS, HOME SCREEN WIDGET KEY.
+- Pass if: no amber text and no BATTERY SETTINGS button: its optimisation is already off.
+
 ---
 
 ## <a name='net'></a>NET. Network

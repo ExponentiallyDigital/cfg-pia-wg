@@ -95,6 +95,14 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
+- ID-527 BUG: per README section 5.12.2, confirm on iOS that the widget authentication key is not backed up by setting the kSecAttrAccessible accessibility attribute/mark the file with the isExcludedFromBackup resource value. The key should never be backed up to either Apple or Google.
+  - Now: it was backed up on iOS: the plugin's default keeps an item out of iCloud Keychain but in iCloud and computer backups, and restorable onto another iPhone. Both widget items are now saved "this device only", deleted first so a key from an earlier build isn't refused as a duplicate, and re-saved on the first connection to each router. Android leaves every domain out of cloud backup and device-to-device transfer (data_extraction_rules.xml). widget_key_test and no_backup_test seen to fail with each undone. README 5.12.2 and SECURITY.md say so. WGT-9 to run on an iPhone.
+- ID-533 CHG: make dialogue box for home screen widget key easier to understand: highlight what's changed in a different colour, call it "key generated " rather than "key created" and put a section break line under that text. Make the text in the dialogue box "REMOVE" appear in RED and "GENERATE" appear in TEAL to match the buttons.
+  - Now: done in the app: the top line in teal with a line under it, "Key generated", REMOVE red and GENERATE teal in the help, and GENERATE's result reads "Key generated" too, its "once the background refresh is built" gone. settings_screen_test seen to fail. Seen on hardware in WGT-9 and WGT-10.
+- ID-534 BUG: on iOS the home screen widget key screen says in SETTINGS "key created: saved to Android's local keystone" which is patently wrong as we are on iOS not Android: dynamically alter the text based on what OS the device is running.
+  - Now: done in the app: iOS reads "saved in the iOS Keychain", Android keeps its keystore line. settings_screen_test seen to fail. WGT-9 to run on an iPhone.
+- ID-521 ADD: on Android when youn tap on HOME SCREEN WIDGET KEY, say when battery optimisation is set to "on" for the app and offer a button to Android's battery optimisation settings; and add this functionality to README section 5.12.
+  - Now: done: Android answers through a new channel in MainActivity, the dialog shows amber text and BATTERY SETTINGS, which opens the app's own page in Android's settings, and asks again on the way back. README 5.12.3 says so. battery_optimisation_test and settings_screen_test seen to fail. WGT-10 to run on the Tab S10 FE.
 - ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store. Update README "3. Pre-built release"when the application is available on the Apple App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
@@ -116,6 +124,29 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 2. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-05 v0.8.196 build 566 - Android/iOS documentation updates
+
+```play
+• The home screen widget key screen is clearer, names where the key is kept on your phone, and on Android says when battery optimisation would stop the widget refreshing.
+• The widget key is never backed up, or copied to another phone.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- REL: v0.8.195 (565) passed 2026-11-05 (run 41847250734): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs and the Dart licences on the release; THIRD-PARTY-NOTICES.md current. PR #70 merged at 0 open Sonar issues, gate OK; the signed iOS build was cancelled twice for want of a macOS runner, and passed on its third attempt.
+- CHG: WIP 1 -> 2 bullets: ID-521 added, new. Nothing removed.
+- CHG: WIP 6 -> 5 bullets: ID-522 done, moved to build 566. Nothing else removed.
+- ID-523 BUG: README.md end rules in section 5.8 SETTINGS does not match the order that the screen list them in. 
+- ID-524 DOC: add a note at the end of section 5.9 that as of build 555, watchdogs are automatically upgraded to the current version when you first login to the router.
+- ID-526 DOC: README 5.12.2 "both in Android's key store", include where on iOS this is stored.
+- ID-525 DOC: add to section 5.12 how to add a widget on iOS.
+- ID-535 CHG: README.md is no longer off limits to Claude; CONTEXT.md's rule that only Andrew edits it is replaced by the ordinary rules. Closed 2026-11-06: CONTEXT.md section 1 and the memory rule changed; README edits still follow the voice guide.
+- ID-522 BUG: README.md has the wrong screenshot for "configuring a watchdog ", it shows "error, download master is not installed" instead of the configuration screen for a watchdog. Closed 2026-11-06: the screenshot's fake router never answered the Download Master check; it does now, and 03.01 is redrawn showing the form.
+- ID-531 DOC: README 5.1, #6 says "via Android sharing".
+- ID-530 DOC: README bullets "secure clipboard handling", "share/save support", " optional home screen widget", "native task switcher protection" assumes everyone is on android.
+- ID-532 DOC: README section 6 "turn off battery optimisation" assumes everyone is on Android.
+- ID-528 DOC: README section 5.12.3 assumes everyone is using Android, it does not cater for Apple and how often that refreshes the widget.
+- ID-529 DOC: README, add to section 8, what permissions are required on iOS.
 
 2026-11-05 v0.8.195 build 565 - every screenshot drawn for stock firmware, Play's screenshots uploaded with its listing, and the pinned actions moved up
 
@@ -199,6 +230,7 @@ Every commit is a build. Whoever commits follows these steps, in this order:
   - Closed 2026-11-03: the attributes are Apple's, `socialMedia` and `socialMediaAgeRestricted`, read from its documentation; `test_app_store_connect.py` checks every question Apple lists is answered, and failed with `socialMedia` taken out. The next `listing` run is the first to send them.
 - ID-511 DOC: ARCHITECTURE.md's two firmware flow diagrams, VPN Fusion's `vpnc_unit` lookup on stock and VPN Director's on Merlin, are Mermaid, not box-drawing text. The stock one read as if row 0 were always the row chosen, with two paths into `set`, and box-drawing characters fall out of line in the fallback fonts on Andrew's Android tablet.
   - Closed 2026-11-03: both rendered with GitHub's Mermaid viewer at 412 and 980 pixels wide, every node drawn and none clipped; `mermaid_svg_labels_test.dart` passes with both.
+
 2026-11-02 v0.8.191 build 561 - licence notices regenerate themselves after a dependency change, with no package code able to write
 
 ```play
