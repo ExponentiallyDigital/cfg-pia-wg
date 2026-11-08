@@ -1093,6 +1093,10 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
       setState(() => _error = e);
       return;
     }
+    // iOS offers to save a login only when its fields leave the screen, and Flutter's iOS engine puts
+    // a still-focused field's view straight back after the save request, so let go of the keyboard
+    // while PIA is asked. The autofill context survives it (ID-441).
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _busy = true;
       _error = null;

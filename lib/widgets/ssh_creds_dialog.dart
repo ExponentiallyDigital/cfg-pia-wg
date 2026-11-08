@@ -98,6 +98,10 @@ class SshCredsDialogState extends State<SshCredsDialog> {
     }
     final verify = widget.verify;
     if (verify != null) {
+      // iOS offers to save a login only when its fields leave the screen, and Flutter's iOS engine
+      // puts a still-focused field's view straight back after the save request, so let go of the
+      // keyboard while the router is asked. The autofill context survives it (ID-441).
+      FocusManager.instance.primaryFocus?.unfocus();
       setState(() {
         _checking = true;
         _error = null;

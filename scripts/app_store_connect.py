@@ -463,7 +463,7 @@ def cmd_has_build(args):
 # Play's closed and open testing, are the external group below, after Beta App Review. production is
 # App Review, then the release. Every step is safe to run again: what is done already is reported.
 
-EXTERNAL_GROUP = 'Family'
+EXTERNAL_GROUP = 'Family and friends'
 
 # appVersionState, or the older appStoreState Apple still sends beside it.
 WITH_APP_REVIEW = {'WAITING_FOR_REVIEW', 'IN_REVIEW', 'READY_FOR_REVIEW', 'WAITING_FOR_EXPORT_COMPLIANCE', 'ACCEPTED'}

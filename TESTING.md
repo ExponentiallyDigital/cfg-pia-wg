@@ -23,6 +23,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [EXT. Exit, background and session](#ext-exit-background-and-session)
 - [LCK. Locked, with no purchase (store build)](#lck-locked-with-no-purchase-store-build)
 - [BUY. Buying and restoring (store build)](#buy-buying-and-restoring-store-build)
+- [IOB. Buying again and again on iOS (Xcode's local store)](#iob-buying-again-and-again-on-ios-xcodes-local-store)
 - [MRL. Merlin smoke test (under an hour)](#mrl-merlin-smoke-test-under-an-hour)
 - [END. Last, because it removes things](#end-last-because-it-removes-things)
 - [R1. When something looks broken, check these first](#r1-when-something-looks-broken-check-these-first)
@@ -65,7 +66,7 @@ The automated tests prove the code does what it says. They cannot prove what a r
 
 - Stock firmware unless a test says otherwise. Merlin has its own short smoke test: see [MRL](#mrl).
 
-- **Which build you need.** Every group here runs on any build - your own debug or release APK included - except [LCK](#lck) and [BUY](#buy). Those two need the app installed **from Play**, on a testing track, with the account on the licence testers list: a build Play did not distribute is always unlocked and never shows a paywall, so there is nothing there to test. [R8](#r8) has the rest of the store setup.
+- **Which build you need.** Every group here runs on any build - your own debug or release APK included - except [LCK](#lck) and [BUY](#buy), and [IOB](#iob), which runs in the iOS simulator from Xcode. LCK and BUY need the app installed **from Play**, on a testing track, with the account on the licence testers list: a build Play did not distribute is always unlocked and never shows a paywall, so there is nothing there to test. [R8](#r8) has the rest of the store setup.
 
 - Guest Wi-Fi is out of scope. The app does not manage its traffic or assignments.
 
@@ -174,7 +175,7 @@ ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
 - See: "Install helper programs?", because PRE removed `jq`. Do: NOT NOW.
 - See: the main menu, not the router login again (ID-252).
 - See: APP LOG has "Router firmware detected: stock.", and "Router address remembered." if the address is new or has changed since the last login - kept although the install was put off (ID-201). The same address as before writes no line.
-- See: your password manager offers to save the login.
+- See: your password manager offers to save the login. On an iPhone: type it, don't fill it from Passwords, and see iOS offer to save it for www.exponentiallydigital.com (ID-441).
 
 **CON-4** Helper programs missing, declined [ci]
 
@@ -256,7 +257,7 @@ ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
 
 - Do: choose a region with the browse button, enter PIA details, GENERATE CONFIG.
 - See: the heading `GENERATED CONFIG: pia-<region>` and the config text.
-- See: the password manager offers to save.
+- See: the password manager offers to save. On an iPhone: type it, don't fill it from Passwords, and see iOS offer to save it for www.exponentiallydigital.com (ID-441).
 
 **STD-2** Region filter [hand]
 
@@ -314,6 +315,7 @@ Every test starts on MANAGE, connected. MAN-13 and MAN-14 are in the [WD](#wd) g
 
 - Do: select wgc1, CREATE, choose a region, enter PIA details, CONTINUE.
 - See: "Slot created" and "wgc1 has been created. Remember to ENABLE it via the ENABLE button."
+- See: if the PIA details were typed, the password manager offers to save them. On an iPhone: type it, don't fill it from Passwords, and see iOS offer to save it for www.exponentiallydigital.com (ID-441).
 
 **MAN-2** Create wgc5, in a different region [hand]
 
@@ -450,7 +452,7 @@ Do first: SETTINGS, Max active VPNs, `4`. At WD-23 wgc1, wgc2, wgc3 and wgc5 all
 **WD-4** Test email follows the form's region [hand]
 
 - Do: change the region on the form, TEST EMAIL.
-- Pass if: the subject and the body's Watchdog row name the new region, and the password manager offers to save the SMTP login.
+- Pass if: the subject and the body's Watchdog row name the new region, and the password manager offers to save the SMTP login. On an iPhone: type the SMTP login, don't fill it from Passwords, and see iOS offer to save it for www.exponentiallydigital.com (ID-441).
 - Do: set the region back. Left changed, the next SAVE & DEPLOY is a region change and a rebuild.
 
 **WD-5** Test email failure [hand]
@@ -2107,6 +2109,40 @@ Before starting, read [R8](#r8): the tester must be on BOTH Play Console lists, 
 
 - Do: refund and revoke the order in Play Console, then wait for RevenueCat to catch up - a few minutes - and reopen the app.
 - Pass if: it relocks without a reinstall, and a paid control shows the paywall again.
+
+---
+
+## <a name='iob'></a>IOB. Buying again and again on iOS (Xcode's local store)
+
+TestFlight lets each Apple Account buy Router features once, with no undo, so BUY can't be repeated on an iPhone. This group runs in the iOS simulator against Xcode's local store, `ios/StoreKit/cfg-pia-wg.storekit`, which charges nothing, never touches the App Store, and lets a purchase be deleted and bought again (ID-543). No router is needed.
+
+Set up once, as in BUILDING 7, step 12: the RevenueCat iOS key in `secrets/revenuecat_ios_key`, and the local store's certificate uploaded to RevenueCat. Then run `scripts/xcode-storekit.sh`, choose the **cfg-pia-wg StoreKit** scheme and a simulator at the top of the Xcode window, and press Command-R. Run the script again before every session: any `flutter run` or `flutter build` since the last one takes the key back out of Xcode's build settings, and without it the app unlocks everything and IOB-1 never sees the purchase screen. Run these in the order written.
+
+**IOB-1** The local store is the one in use [hand]
+
+- Starts with: a fresh install in the simulator, locked.
+- Do: SETTINGS, MAX ACTIVE VPNS, UNLOCK FOR LIFE.
+- See: a sheet titled "Xcode", "Router features", USD 9.99, one-time charge, "For testing purposes only".
+- Pass if: nothing asks you to sign in to an Apple Account. If something does, cancel it: the scheme isn't using the local store, and a purchase would be the real once-only TestFlight one. In Xcode, Edit Scheme, Run, Options, StoreKit Configuration must show `cfg-pia-wg.storekit` in normal, not red, text.
+
+**IOB-2** Buy [hand]
+
+- Do: Purchase.
+- See: "Purchase complete. Router features unlocked." and MAX ACTIVE VPNS carries on.
+- Pass if: every paid control is live straight away, with no restart, and APP LOG has no warning about the store. A purchase that seems to go through but leaves the app locked means RevenueCat doesn't have the local store's certificate.
+
+**IOB-3** Restore by hand [hand]
+
+- Do: SETTINGS, RESTORE PURCHASE.
+- See: "This app is already unlocked on this Apple Account. Nothing changed."
+
+**IOB-4** Delete the purchase and buy again [hand]
+
+- Do: in Xcode, Debug, StoreKit, Manage Transactions..., select the purchase, and delete it.
+- Do: in the simulator, press and hold the app's icon, Remove App. Then Command-R in Xcode.
+- See: locked; MAX ACTIVE VPNS shows the purchase screen again.
+- Do: UNLOCK FOR LIFE, Purchase.
+- Pass if: it unlocks again, as in IOB-2. Removing the app matters: RevenueCat remembers the purchase against the install that made it, and a new install is a new customer.
 
 ---
 

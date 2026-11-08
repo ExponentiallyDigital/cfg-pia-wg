@@ -150,6 +150,21 @@ class PromoteTestflight(unittest.TestCase):
         self.assertEqual(api.sent, [])
         self.assertIn('Dry run: nothing was changed.', lines)
 
+    def groups(self, name):
+        return {'/v1/apps/app/betaGroups': {'data': [{'id': 'gx', 'attributes': {'name': name, 'isInternalGroup': False}}]},
+                '/v1/betaGroups/gx/builds': {'data': []},
+                '/v1/builds/b534/buildBetaDetail': {'data': {'attributes': {'externalBuildState': 'READY_FOR_BETA_SUBMISSION'}}}}
+
+    def test_the_external_group_is_family_and_friends(self):
+        # Andrew's group in App Store Connect since 2026-11-08, when Family was deleted (ID-542).
+        api = FakeApi(self.groups('Family and friends'))
+        asc.promote_testflight(api, 'app', BUILD, '534', dry_run=False)
+        self.assertEqual(api.sent, [('POST', '/v1/betaGroups/gx/relationships/builds'), ('POST', 'betaAppReviewSubmissions')])
+
+    def test_the_deleted_family_group_is_not_used(self):
+        with self.assertRaises(SystemExit):
+            asc.promote_testflight(FakeApi(self.groups('Family')), 'app', BUILD, '534', dry_run=False)
+
 
 
 def cert(id_, kind):

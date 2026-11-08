@@ -185,6 +185,10 @@ class _StandaloneConfigScreenState extends State<StandaloneConfigScreen> {
       return;
     }
 
+    // iOS offers to save a login only when its fields leave the screen. This screen stays open, and
+    // Flutter's iOS engine puts the focused field's view straight back after the save request, so
+    // the keyboard is let go here, long before PIA answers (ID-441). The autofill context survives it.
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _loading = true);
     _controller.setGeneratedConfig(null, region);
     _controller.logEntry('Starting...');

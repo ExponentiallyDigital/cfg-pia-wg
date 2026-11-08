@@ -427,4 +427,23 @@ The primary build pathway is Windows with VS Code, as in sections 1 and 2. A Mac
     > [!CAUTION]
     > A debug build replaces whatever build of the app is on that iPhone, TestFlight's included. Choose the device by name: `flutter run` with no `-d` can pick an iPhone on the same Wi-Fi instead of the one you meant.
 
+12. **Buying Router features over and over, in the simulator (ID-543).** TestFlight lets each Apple Account buy it once, with no way to undo it. Xcode's local store, `ios/StoreKit/cfg-pia-wg.storekit`, sells it as often as you like, charges nothing, and never touches the App Store. Only the **cfg-pia-wg StoreKit** scheme uses it; the Runner scheme, which CI archives, never does.
+
+    Once only:
+
+    - **The RevenueCat iOS key.** It's the public key starting `appl_`, in RevenueCat under Project Settings, API keys. Put it in `secrets/revenuecat_ios_key`, which git ignores, or set `REVENUECAT_IOS_KEY`.
+    - **The local store's certificate, for RevenueCat.** RevenueCat's server checks every purchase, and a local one is signed by Xcode, not Apple. In Xcode, File, Open..., choose `ios/StoreKit/cfg-pia-wg.storekit`; then Editor, Save Public Certificate, and save it anywhere outside the repository. In RevenueCat, Project Settings, Apps, the App Store app, open **StoreKit testing framework** and upload that file. It should say "Certificate added". Without it, the purchase seems to go through but nothing unlocks.
+
+    Each time:
+
+    ```bash
+    scripts/xcode-storekit.sh
+    ```
+
+    It writes the key into Xcode's build settings and opens the project. At the top of the Xcode window, click the scheme name and choose **cfg-pia-wg StoreKit**, then choose a simulator beside it, and press Command-R. SETTINGS, MAX ACTIVE VPNS opens the purchase screen.
+
+    To buy again: with the app running from Xcode, Debug, StoreKit, Manage Transactions..., select the purchase and delete it. Then delete the app from the simulator (press and hold its icon, Remove App) and press Command-R again. A new install is a new customer to RevenueCat, which remembers the old one's purchase.
+
+    Any `flutter run` or `flutter build` rewrites Xcode's build settings without the key, so run `scripts/xcode-storekit.sh` again before the next Command-R.
+
 A build started from VS Code rather than by `build.ps1` or `build.sh`, such as `flutter run`, prints Java's four `restricted method` warning lines. They're harmless: Gradle's launcher, on Android Studio's Java, loads a native library the way newer Java warns about. The two scripts add `--enable-native-access=ALL-UNNAMED` to `GRADLE_OPTS`, which switches them off.
