@@ -39,7 +39,7 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`hooks`](https://pub.dev/packages/hooks) | 2.2.0 | [BSD-3-Clause](https://pub.dev/packages/hooks/license) | transitive |
 | [`http`](https://pub.dev/packages/http) | 1.6.0 | [BSD-3-Clause](https://pub.dev/packages/http/license) | direct |
 | [`http_parser`](https://pub.dev/packages/http_parser) | 4.1.2 | [BSD-3-Clause](https://pub.dev/packages/http_parser/license) | transitive |
-| [`jni`](https://pub.dev/packages/jni) | 1.1.1 | [BSD-3-Clause](https://pub.dev/packages/jni/license) | transitive |
+| [`jni`](https://pub.dev/packages/jni) | 1.1.2 | [BSD-3-Clause](https://pub.dev/packages/jni/license) | transitive |
 | [`jni_flutter`](https://pub.dev/packages/jni_flutter) | 1.0.4+1 | [BSD-3-Clause](https://pub.dev/packages/jni_flutter/license) | transitive |
 | [`jni_util`](https://pub.dev/packages/jni_util) | 1.0.0 | [BSD-3-Clause](https://pub.dev/packages/jni_util/license) | transitive |
 | [`logging`](https://pub.dev/packages/logging) | 1.3.0 | [BSD-3-Clause](https://pub.dev/packages/logging/license) | transitive |
@@ -62,7 +62,7 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`plugin_platform_interface`](https://pub.dev/packages/plugin_platform_interface) | 2.1.8 | [BSD-3-Clause](https://pub.dev/packages/plugin_platform_interface/license) | transitive |
 | [`pointycastle`](https://pub.dev/packages/pointycastle) | 4.0.0 | [MIT](https://pub.dev/packages/pointycastle/license) | direct |
 | [`pub_semver`](https://pub.dev/packages/pub_semver) | 2.2.1 | [BSD-3-Clause](https://pub.dev/packages/pub_semver/license) | transitive |
-| [`purchases_flutter`](https://pub.dev/packages/purchases_flutter) | 11.0.0 | [MIT](https://pub.dev/packages/purchases_flutter/license) | direct |
+| [`purchases_flutter`](https://pub.dev/packages/purchases_flutter) | 11.0.1 | [MIT](https://pub.dev/packages/purchases_flutter/license) | direct |
 | [`record_use`](https://pub.dev/packages/record_use) | 1.1.1 | [BSD-3-Clause](https://pub.dev/packages/record_use/license) | transitive |
 | [`share_plus`](https://pub.dev/packages/share_plus) | 13.3.1 | [BSD-3-Clause](https://pub.dev/packages/share_plus/license) | direct |
 | [`share_plus_platform_interface`](https://pub.dev/packages/share_plus_platform_interface) | 7.2.0 | [BSD-3-Clause](https://pub.dev/packages/share_plus_platform_interface/license) | transitive |

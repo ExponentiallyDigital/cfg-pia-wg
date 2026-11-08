@@ -98,7 +98,7 @@ Work items for the **current** release:
 - ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store. Update README "3. Pre-built release"when the application is available on the Apple App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
-  - Now: App Review asked on 2026-11-02 what the app collects through VPN, and how to reach the purchase without a router; Andrew replied and resubmitted on 2026-11-03. Waiting on App Review.
+  - Now: rejected again 2026-11-08, 2.1(a), a crash on launch on an iPad, not reproduced; 569 runs normally on an iPhone 11 and, as an iPad app, on an Apple silicon Mac. Resubmitted 2026-11-08 11:13 AM with 0.8.199 (569) and the notes carrying the 2026-11-03 answers (ID-541). Waiting on App Review.
 
 ---
 
@@ -117,6 +117,30 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 3. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-08 v0.8.200 build 570 - every login offered for saving on iOS, repeatable test purchases in the simulator, and the App Review notes in full
+
+```play
+• The keyboard now closes as soon as you tap GENERATE CONFIG, TEST EMAIL, or CONTINUE on a router or PIA login.
+• Behind the scenes: on iPhone and iPad, every login is now offered to your password manager to save; RevenueCat's purchase library is updated; and testing tools for the App Store version.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-541 DOC: the App Review notes carry Andrew's reply of 2026-11-03 in full, below the listing notes, cut to fit Apple's 4,000 characters, ending with Andrew's request for a crash log: 3,993, as in App Store Connect (ID-436). App Store Connect still had October's notes: the only listing run since, 2026-11-04, failed with the version in review. Closed 2026-11-08: Andrew pastes them in by hand; app_store_listing_test now measures past the notes' own `---` line, and passes.
+- ID-542 CHG: the external TestFlight group is Family and friends, not Family, which Andrew deleted on 2026-11-08; without it every App Store promote to alpha or beta stopped. Closed 2026-11-08: two new tests in test_app_store_connect.py, seen to fail on Family, pass.
+- CHG: WIP 1 -> 2 bullets: ID-441 from BACKLOG 1.1.3, now confirmed and a FIX, Andrew's go 2026-11-08. BACKLOG 1.1.3 1 -> 0 bullets. Nothing removed.
+- CHG: BACKLOG 1.1.2 12 -> 13 bullets: ID-543 added, Andrew's request 2026-11-08. Nothing removed.
+- ID-441 FIX: on iOS, offer to save the PIA, router and email logins in a password manager, as Android does. iOS offers to save only for an app that names its website as an Associated Domain (`webcredentials:`), with the website naming the app back.
+  - DoD: on an iPhone, iOS offers to save the PIA login after STANDALONE, and the router login after connecting.
+  - Closed 2026-11-08: on D1, with a build from Xcode, iOS offered to save and then filled every login: the PIA login from STANDALONE and from a slot's CREATE, the router login, and the watchdog's email login. Each save point lets go of the keyboard before the save is asked for, since Flutter's iOS engine puts a still-focused field's view back after the request; a test for each seen to fail without it.
+- CHG: WIP 2 -> 1 bullets: ID-441 done, moved to build 570. Nothing else removed.
+- ID-544 DOC: ARCHITECTURE 9.1 says how a login is offered to a password manager, and why an iOS form must let go of the keyboard before asking (ID-441). TESTING's CON-3, STD-1, WD-4 and MAN-1 check the offer on an iPhone with the login typed. Closed 2026-11-08.
+- ID-545 DOC: README's testing figures brought up to build 570: 2,175 automated tests, line coverage 95.94%, 179 manual tests (175 on the router, and IOB's 4 in the iOS simulator) (23 checked by a script, 13 needing a Play build), and 26 once manual now automated, counted from TESTING.md's tags. CLAUDE.md now says to update them whenever a test is added (Andrew, 2026-11-08). Closed 2026-11-08.
+- CHG: WIP 1 -> 2 bullets: ID-543 from BACKLOG 1.1.2, Andrew's go 2026-11-08. BACKLOG 1.1.2 13 -> 12 bullets. Nothing removed.
+- ID-543 TST: buy Router features over and over on iOS, in the simulator, without App Store Connect. TestFlight lets each Apple Account buy it once, with no reset, so after the first buy only restoring can be tested (Andrew, 2026-11-08). A StoreKit configuration file holding `lifetime_unlock`, chosen in the Runner scheme for builds run from Xcode, does the whole purchase locally; Xcode's Debug, StoreKit, Manage Transactions deletes it to buy again. Xcode builds also need the RevenueCat iOS key, without which the app unlocks everything and never shows the purchase screen.
+  - DoD: in the simulator, Router features bought, deleted in Manage Transactions, and bought again, with the paywall shown each time; the store key kept out of git.
+  - Closed 2026-11-08: Andrew, in the iPhone 18 Pro Max simulator, bought Router features from Xcode's local store, deleted it in Manage Transactions, removed the app, and was shown the purchase screen and bought it again. The scheme's path counts from `ios/Runner.xcworkspace`, as Xcode wrote it when Andrew chose the file; storekit_config_test, first seen to fail without the files, now resolves it from there. The key lives in `secrets/`, which git ignores. TESTING's new IOB group, IOB-1 to IOB-4, and BUILDING 7, step 12.
+- CHG: WIP 2 -> 1 bullets: ID-543 done, moved to build 570. Nothing else removed.
 
 2026-11-06 v0.8.199 build 569 - the BATTERY SETTINGS button made const, for SonarCloud
 

@@ -967,6 +967,13 @@ void main() {
 
         final saves = tester.testTextInput.log.where((m) => m.method == 'TextInput.finishAutofillContext' && m.arguments == true);
         expect(saves, delivered ? isNotEmpty : isEmpty);
+        if (delivered) {
+          // iOS offers to save only when the login's fields leave the screen, and this form stays open.
+          final methods = tester.testTextInput.log.map((m) => m.method).toList();
+          final before = methods.sublist(0, methods.indexOf('TextInput.finishAutofillContext'));
+          expect(before.lastIndexOf('TextInput.clearClient'), greaterThan(before.lastIndexOf('TextInput.setClient')),
+              reason: 'no field may hold the keyboard when the save is asked for (ID-441)');
+        }
       });
     }
   });

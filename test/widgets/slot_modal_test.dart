@@ -481,6 +481,40 @@ void main() {
       c.dispose();
     });
 
+    // iOS offers to save a login only when its fields leave the screen, and Flutter's iOS engine puts a
+    // still-focused field's view straight back after the save request (ID-441).
+    testWidgets('a typed PIA login lets go of the keyboard before it is offered for saving', (tester) async {
+      final c = _controller();
+      final ssh = RecordingSSHClient(responder: (_) => '');
+      await tester.pumpWidget(_host(ssh, SlotModalMode.manage, _slots({}), c));
+      await _open(tester);
+
+      await tester.tap(find.byKey(const Key('slot_row_2')));
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('slot_create')));
+      await tester.tap(find.byKey(const Key('slot_create')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('aus_melbourne').last);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextFormField, 'PIA username'), 'p1234567');
+      await tester.enterText(find.widgetWithText(TextFormField, 'PIA password'), 'secret');
+      await tester.pump();
+      tester.testTextInput.log.clear();
+      await tester.tap(_inDialog('CONTINUE'));
+      await tester.pumpAndSettle();
+
+      final methods = tester.testTextInput.log.map((m) => m.method).toList();
+      final save = methods.indexOf('TextInput.finishAutofillContext');
+      expect(save, isNonNegative, reason: 'PIA accepted it, so offer to save');
+      final before = methods.sublist(0, save);
+      expect(before.lastIndexOf('TextInput.clearClient'), greaterThan(before.lastIndexOf('TextInput.setClient')),
+          reason: 'no field may hold the keyboard when the save is asked for');
+
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+
     testWidgets('a failed ENABLE explains itself in the dialog, and not in the log', (tester) async {
       // The hint belongs where the user is looking when it happens. In the log it is noise on every
       // scroll, and the log already carries the error itself.

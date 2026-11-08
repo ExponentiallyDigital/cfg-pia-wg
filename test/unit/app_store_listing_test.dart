@@ -30,8 +30,11 @@ void main() {
     expect(length(description), lessThanOrEqualTo(4000));
   });
 
-  // The text below review_notes.md's `---` line, as scripts/app_store_connect.py sends it (ID-509).
-  final notes = File('app-store/review_notes.md').readAsStringSync().split(RegExp(r'^---\s*$', multiLine: true))[1].trim();
+  // The text below review_notes.md's first `---` line, as scripts/app_store_connect.py sends it (ID-509):
+  // the notes have a `---` line of their own (ID-541).
+  final notesFile = File('app-store/review_notes.md').readAsStringSync();
+  final notesStart = RegExp(r'^---\s*$', multiLine: true).firstMatch(notesFile)!.end;
+  final notes = notesFile.substring(notesStart).trim();
 
   test('the review notes are within 4,000 characters', () {
     expect(length(notes), lessThanOrEqualTo(4000));
