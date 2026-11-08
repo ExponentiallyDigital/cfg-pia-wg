@@ -4,7 +4,7 @@
 # ==========================================================================
 # One run promotes the same build on both stores (ID-468). The App Store has no tracks, so each of
 # Play's has its counterpart: internal is TestFlight's Internal group, which the tag already fills;
-# alpha and beta are the external TestFlight group Family, after Beta App Review; production is App
+# alpha and beta are the external TestFlight group Family and friends, after Beta App Review; production is App
 # Review, then the release. The App Store side reads only the target: there is nothing to promote FROM.
 name: "Promote release"
 # The build number first, so the Actions list says what was promoted (ID-178).
@@ -114,7 +114,7 @@ jobs:
           "$RUNNER_TEMP/promote/bin/python" scripts/play_promote.py
 
   # ------------------------------------------------------------
-  # The same build on the App Store (ID-468): to the Family group for alpha or beta, to App Review
+  # The same build on the App Store (ID-468): to the Family and friends group for alpha or beta, to App Review
   # and then the release for production. Run again, it reports what is already done.
   # ------------------------------------------------------------
   app-store:

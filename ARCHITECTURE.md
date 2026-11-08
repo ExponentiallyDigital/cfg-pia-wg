@@ -83,6 +83,7 @@ Optionally and for stock only, **show each tunnel's state on the home screen**, 
     - [The caller check](#the-caller-check)
 - [8. Network traffic](#8-network-traffic)
 - [9. Output \& session destruction](#9-output--session-destruction)
+  - [9.1. Offering a login to a password manager](#91-offering-a-login-to-a-password-manager)
 - [10. The home screen widget (ID-376)](#10-the-home-screen-widget-id-376)
   - [10.1. The status read](#101-the-status-read)
   - [10.2. The key, and what it can do](#102-the-key-and-what-it-can-do)
@@ -2004,6 +2005,14 @@ Generated configuration data is managed via:
 - **Clipboard sanitisation:** tapping **COPY** invokes a 60-second timer that clears the clipboard storage space automatically.
 - **Application exit:** all application exit paths flush credentials and scrub configs from memory before application shutdown.
 
+### 9.1. <a name='offering-a-login-to-a-password-manager'></a>Offering a login to a password manager
+
+Each login form asks the password manager to save its login only once the login is proven: PIA has accepted it, the router has, or a test email has been delivered. It does that with `TextInput.finishAutofillContext()`. Every login field sits in an `AutofillGroup` that cancels when it's disposed, so a form closed without proof offers nothing.
+
+**On iOS, a form must let go of the keyboard before it asks.** iOS offers to save only when the login's fields leave the screen. Flutter's iOS engine removes the fields' hidden views when the save is asked for, then puts the focused field's view straight back (`triggerAutofillSave` in `FlutterTextInputPlugin.mm`). A form that stays on screen with a field still focused is therefore never offered, with no error anywhere. So each save point calls `FocusManager.instance.primaryFocus?.unfocus()` when the user submits, before the slow check runs. The autofill context survives the unfocus. Seen on an iPhone on 2026-11-08 (ID-441): STANDALONE and TEST EMAIL stay open and were never offered, and the router login dialog was offered only some of the time. All four were offered every time once they let go of the keyboard. Each save point's test checks that `TextInput.clearClient` comes before `TextInput.finishAutofillContext`.
+
+**iOS also needs the app linked to its website.** `Runner.entitlements` names `webcredentials:www.exponentiallydigital.com`, and the website's `/.well-known/apple-app-site-association` names the app back by team and bundle ID (`app-store/apple-app-site-association`). Without both, iOS offers nothing at all. Saved logins are filed under that website. Filling a saved login from the Passwords key above the keyboard needs neither, which is why filling worked long before saving did.
+
 ---
 
 ## 10. <a name='the-home-screen-widget'></a>The home screen widget (ID-376)
@@ -2365,7 +2374,7 @@ The App Store has no tracks. Every version goes through App Review, so each of P
 | Play track | App Store counterpart |
 | --- | --- |
 | internal | TestFlight's Internal group, which gets every build on the tag |
-| alpha / beta | TestFlight's external group Family: the build is added and sent to Beta App Review |
+| alpha / beta | TestFlight's external group Family and friends: the build is added and sent to Beta App Review |
 | `** PRODUCTION **` | the version goes to App Review with the build; once approved, it's released, by Apple or by running production again, as the version's release option says |
 
 Each App Store step is safe to run again: what is already done is reported, and a version carrying a different build stops the run. A dry run shows both stores' next steps and changes nothing.

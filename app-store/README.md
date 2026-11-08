@@ -9,6 +9,7 @@ Everything the App Store listing needs that is not the app itself, drafted befor
 | `privacy_and_age_rating.md` | The App Privacy answers and the age rating answers, each with why. |
 | `review_notes.md` | The notes for App Review: what the app is and isn't, and how to review it without a router. |
 | `export_compliance.md` | The facts for the encryption question, for Andrew to decide (ID-430). |
+| `apple-app-site-association` | Not for App Store Connect: goes on the website at `https://www.exponentiallydigital.com/.well-known/apple-app-site-association`, as JSON, so iOS offers to save the app's logins (ID-441). |
 
 `test/unit/app_store_listing_test.dart` holds the description and the short fields to Apple's limits, and fails if any of them names another platform, which App Review refuses.
 

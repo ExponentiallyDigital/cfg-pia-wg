@@ -389,6 +389,41 @@ void main() {
         c.dispose();
       });
 
+      // iOS offers to save only when the login's fields leave the screen. STANDALONE stays open, and
+      // Flutter puts the focused field's iOS view straight back after the save request, so the field
+      // must have let go of the keyboard (clearClient) before the save is asked for (ID-441).
+      testWidgets('the fields let go of the keyboard before the save is asked for', (tester) async {
+        tester.view.physicalSize = const Size(1200, 3000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final c = _controller([]);
+        await withFakeHttpClient(() async {
+          await tester.pumpWidget(_host(c, service: PiaService(probePort: probeServer!.port)));
+          await tester.pumpAndSettle();
+
+          await tester.enterText(find.widgetWithText(TextFormField, 'Region ID'), kTestRegion);
+          await tester.enterText(find.widgetWithText(TextFormField, 'PIA username'), 'p1234567');
+          await tester.enterText(find.widgetWithText(TextFormField, 'PIA password'), 'secret');
+          await tester.pump();
+          tester.testTextInput.log.clear();
+
+          await tester.tap(find.byKey(const Key('generate_config')));
+          await driveUntil(tester, () => find.byKey(const Key('generated_config_text')).evaluate().isNotEmpty);
+
+          final methods = tester.testTextInput.log.map((m) => m.method).toList();
+          final save = methods.indexWhere((m) => m == 'TextInput.finishAutofillContext');
+          expect(save, isNonNegative, reason: 'PIA accepted them, so offer to save');
+          final lastClear = methods.sublist(0, save).lastIndexOf('TextInput.clearClient');
+          final lastSet = methods.sublist(0, save).lastIndexOf('TextInput.setClient');
+          expect(lastClear, greaterThan(lastSet), reason: 'no field may hold the keyboard when the save is asked for');
+        }, fakeGenerateResponses);
+
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      });
+
       // Leaving the screen with credentials typed in must NOT raise a save prompt - that is what
       // onDisposeAction.cancel buys, and without it a half-filled form would offer to save itself.
       testWidgets('typing credentials and leaving offers nothing', (tester) async {

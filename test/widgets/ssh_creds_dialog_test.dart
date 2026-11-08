@@ -44,6 +44,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextFormField, 'SSH Username'), 'admin');
     await tester.enterText(find.widgetWithText(TextFormField, 'SSH Password'), 'pw');
+    tester.testTextInput.log.clear(); // from here, only what CONTINUE sends to the platform
     await tester.tap(find.byKey(const Key('about_ssh_continue')));
     await tester.pumpAndSettle();
     return result;
@@ -54,6 +55,19 @@ void main() {
     expect(find.byType(SshCredsDialog), findsNothing);
     expect(c.routerConnected, isTrue);
     expect(c.canReuseRouterSession, isTrue, reason: 'MANAGE and the rest reuse it without asking');
+  });
+
+  // iOS offers to save a login only when its fields leave the screen, and Flutter's iOS engine puts
+  // a still-focused field's view straight back after the save request. So the fields let go of the
+  // keyboard before the save is asked for: seen on an iPhone, 2026-11-08 (ID-441).
+  testWidgets('the fields let go of the keyboard before the save is asked for', (tester) async {
+    await open(tester, reachable: true);
+    final methods = tester.testTextInput.log.map((m) => m.method).toList();
+    final save = methods.indexOf('TextInput.finishAutofillContext');
+    expect(save, isNonNegative, reason: 'the router accepted it, so offer to save');
+    final before = methods.sublist(0, save);
+    expect(before.lastIndexOf('TextInput.clearClient'), greaterThan(before.lastIndexOf('TextInput.setClient')),
+        reason: 'no field may hold the keyboard when the save is asked for');
   });
 
   testWidgets('a login that fails keeps the dialog open with the reason, and is not kept', (tester) async {

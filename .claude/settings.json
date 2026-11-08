@@ -8,7 +8,8 @@
       "Bash(awk '/^SF:/{f=$0;sub\\(/^SF:/,\"\",f\\)} /^LF:/{lf=substr\\($0,4\\)} /^LH:/{lh=substr\\($0,4\\); tot_lf+=lf; tot_lh+=lh; if\\(lf>0 && 100*lh/lf < 90\\) printf \"  %5.1f%%  %s\\\\n\",100*lh/lf,f} END{printf \"TOTAL %.1f%% \\(%d/%d\\)\\\\n\",100*tot_lh/tot_lf,tot_lh,tot_lf}' coverage/lcov.info)",
       "Bash(gh pr merge *)",
       "Bash(git tag -a v*)",
-      "Bash(git push origin v*)"
+      "Bash(git push origin v*)",
+      "mcp__claude-in-chrome__select_browser"
     ]
   },
   "hooks": {

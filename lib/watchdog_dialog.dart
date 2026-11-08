@@ -651,6 +651,10 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       await AppErrors.inputs(context, _c, errors);
       return;
     }
+    // iOS offers to save a login only when its fields leave the screen, and this form stays open:
+    // Flutter's iOS engine would put a still-focused field's view straight back after the save
+    // request. So let go of the keyboard while the email is sent, as SAVE & DEPLOY does (ID-441).
+    FocusManager.instance.primaryFocus?.unfocus();
     // The region on the form, which the router does not carry until the first deploy (ID-049).
     final sent = await _withService((svc) => svc.testEmail(_currentConfig(), desc: slotDescFor(_regionCtrl.text)));
     if (!mounted) return;
