@@ -18,7 +18,7 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`async`](https://pub.dev/packages/async) | 2.13.1 | [BSD-3-Clause](https://pub.dev/packages/async/license) | transitive |
 | [`characters`](https://pub.dev/packages/characters) | 1.4.1 | [BSD-3-Clause](https://pub.dev/packages/characters/license) | transitive |
 | [`clock`](https://pub.dev/packages/clock) | 1.1.3 | [Apache-2.0](https://pub.dev/packages/clock/license) | transitive |
-| [`code_assets`](https://pub.dev/packages/code_assets) | 2.1.0 | [BSD-3-Clause](https://pub.dev/packages/code_assets/license) | transitive |
+| [`code_assets`](https://pub.dev/packages/code_assets) | 2.2.0 | [BSD-3-Clause](https://pub.dev/packages/code_assets/license) | transitive |
 | [`collection`](https://pub.dev/packages/collection) | 1.19.1 | [BSD-3-Clause](https://pub.dev/packages/collection/license) | transitive |
 | [`convert`](https://pub.dev/packages/convert) | 3.1.2 | [BSD-3-Clause](https://pub.dev/packages/convert/license) | transitive |
 | [`cross_file`](https://pub.dev/packages/cross_file) | 0.3.5+5 | [BSD-3-Clause](https://pub.dev/packages/cross_file/license) | transitive |
@@ -46,7 +46,7 @@ Everything reachable from the direct dependencies in `pubspec.yaml`. Each licenc
 | [`material_color_utilities`](https://pub.dev/packages/material_color_utilities) | 0.13.0 | [Apache-2.0](https://pub.dev/packages/material_color_utilities/license) | transitive |
 | [`meta`](https://pub.dev/packages/meta) | 1.19.0 | [BSD-3-Clause](https://pub.dev/packages/meta/license) | transitive |
 | [`mime`](https://pub.dev/packages/mime) | 2.1.0 | [BSD-3-Clause](https://pub.dev/packages/mime/license) | transitive |
-| [`objective_c`](https://pub.dev/packages/objective_c) | 9.6.2 | [BSD-3-Clause](https://pub.dev/packages/objective_c/license) | transitive |
+| [`objective_c`](https://pub.dev/packages/objective_c) | 9.6.3 | [BSD-3-Clause](https://pub.dev/packages/objective_c/license) | transitive |
 | [`package_config`](https://pub.dev/packages/package_config) | 2.2.0 | [BSD-3-Clause](https://pub.dev/packages/package_config/license) | transitive |
 | [`package_info_plus`](https://pub.dev/packages/package_info_plus) | 10.2.2 | [BSD-3-Clause](https://pub.dev/packages/package_info_plus/license) | direct |
 | [`package_info_plus_platform_interface`](https://pub.dev/packages/package_info_plus_platform_interface) | 4.1.0 | [BSD-3-Clause](https://pub.dev/packages/package_info_plus_platform_interface/license) | transitive |
@@ -188,9 +188,9 @@ The Java and Kotlin libraries the release build packages: the `releaseRuntimeCla
 | `com.google.firebase:firebase-encoders-json` | 18.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.firebase:firebase-encoders-proto` | 16.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.guava:listenablefuture` | 1.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `com.revenuecat.purchases:purchases` | 11.0.0 | [MIT](http://opensource.org/licenses/MIT) |
-| `com.revenuecat.purchases:purchases-hybrid-common` | 20.0.0 | [MIT](http://opensource.org/licenses/MIT) |
-| `com.revenuecat.purchases:purchases-store-amazon` | 11.0.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases` | 11.0.1 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases-hybrid-common` | 20.3.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases-store-amazon` | 11.0.1 | [MIT](http://opensource.org/licenses/MIT) |
 | `dev.drewhamilton.poko:poko-annotations` | 0.20.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `dev.drewhamilton.poko:poko-annotations-jvm` | 0.20.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `javax.inject:javax.inject` | 1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
