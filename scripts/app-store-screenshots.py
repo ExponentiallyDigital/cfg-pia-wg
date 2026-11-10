@@ -14,9 +14,9 @@ these two sets are all it needs. scripts/app_store_connect.py uploads them.
 
 The sources are the Play sources, with every name, address, MAC and credential already invented,
 and Android's status bar and gesture bar cropped off: the app's own screens are the same on iOS,
-but App Review refuses screenshots that show another platform (guideline 2.3.10). For the same
-reason, any shot showing a device named after another platform's phone ("Pixel-8",
-"android-dhcp-17") is left out; see SHOTS. Needs Pillow and the font play-screenshots.py needs.
+but App Review refuses screenshots that show another platform (guideline 2.3.10). The sources'
+device names are invented and name no platform (readme_screenshots_test.dart), so every shot is used
+on both; a shot that ever names one again leaves that set. Needs Pillow and the font play-screenshots.py needs.
 """
 import importlib.util
 import os
@@ -36,12 +36,9 @@ _spec.loader.exec_module(play)
 #  the indexes into play.SHOTS to use). Measured on the 1440 x 3120 phone and 1600 x 2560 tablet
 # sources: the status bar ends at about 150 and 60 px, and the HOME button at about 2990 and 2455.
 SETS = [
-    ('iphone', 1290, 2796, os.path.join(ROOT, 'images'), (0, 150, 1440, 3010),
-     # Shot 6, ROUTER DNS ROUTING, lists a device called "Pixel-8".
-     [0, 1, 2, 3, 4, 6, 7]),
+    ('iphone', 1290, 2796, os.path.join(ROOT, 'images'), (0, 150, 1440, 3010), list(range(8))),
     ('ipad', 2048, 2732, os.path.join(ROOT, 'play-store', 'screenshots', 'tablet-source'), (0, 60, 1600, 2480),
-     # Shots 1 to 3 show "Pixel-8" or "android-dhcp-17" in the device list, and 6 is the DNS screen.
-     [3, 4, 6, 7]),
+     list(range(8))),
 ]
 
 

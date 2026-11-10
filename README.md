@@ -160,7 +160,7 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
 
 ## 3. Pre-built release
 
-This app is available from the Google Play Store -> [cfg-pia-wg](https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga).
+This app is available from the Google Play Store -> [cfg-pia-wg](https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga) and the Apple App Store -> [cfg-pia-wg](https://apps.apple.com/app/cfg-pia-wg/id6824823717).
 
 If you want to build your own, see [BUILDING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BUILDING.md).
 

@@ -98,7 +98,9 @@ Work items for the **current** release:
 - ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store. Update README "3. Pre-built release"when the application is available on the Apple App Store.
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
-  - Now: rejected again 2026-11-08, 2.1(a), a crash on launch on an iPad, not reproduced; 569 runs normally on an iPhone 11 and, as an iPad app, on an Apple silicon Mac. Resubmitted 2026-11-08 11:13 AM with 0.8.199 (569) and the notes carrying the 2026-11-03 answers (ID-541). Waiting on App Review.
+  - Now: approved 2026-11-10, 0.8.199 (569) and the lifetime_unlock purchase; Apple's lookup shows 0.8.199 on sale, free, released 2026-11-10 19:51 UTC. README section 3 links the listing, and HOM-4 expects the App Store app to open it. Left: HOM-4's iPhone step seen to pass.
+- ID-548 REL: the App Store's iPad screenshots are the iPhone's 8, not 4. app-store-screenshots.py left out shots naming "Pixel-8" or "android-dhcp-17" (guideline 2.3.10), names the redrawn sources (ID-458) no longer have, so both sets now use all 8, checked by eye.
+  - Now: built 2026-11-11. Left: uploaded by the next App Store version's listing run (`app_store_listing` ticked); a released version's screenshots can't be changed.
 - ID-546 BLD: a dependency change on dev no longer needs Andrew to approve the PR's checks by hand. `notices_on_dev.yml` (ID-508) commits THIRD-PARTY-NOTICES.md back to dev as github-actions[bot], with the workflow's own token, and GitHub holds a pull request's checks on a commit pushed that way at action_required until a person approves them: first seen on PR #72, 2026-11-08, build 570.
   - DoD: a commit that changes a dependency goes from push to a mergeable dev-to-main PR with every check run, and nobody approves anything.
   - First: compare pushing as a GitHub App, whose commits start checks like anyone's; and regenerating the notices before the commit, locally or in a check that fails when they're stale, so the bot never commits.
@@ -121,6 +123,15 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 3. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-10 v0.8.202 build 572 - the App Store link in the README, and all 8 screenshots on iPad and iPhone
+
+```play
+• Behind the scenes: the App Store listing shows the same 8 screenshots on iPad as on iPhone; the app is unchanged.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- CHG: WIP 3 -> 4 bullets. Added after ID-436: ID-548, the iPad screenshots. Nothing removed.
 
 2026-11-08 v0.8.201 build 571 - release results for v0.8.199 and v0.8.200, ID-375 shortened, and two new work items
 
