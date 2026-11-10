@@ -668,7 +668,7 @@ const String _kMailHdrMerlin = r'''  {
 const String _kKillSwitchStock = r'''DEFIDX="$(nvram get vpnc_default_wan)"
 [ -n "$DEFIDX" ] || DEFIDX=0
 # Index 2 of a vpnc_clientlist record is the slot, index 6 the table its devices are routed by.
-MYIDX="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" '$3==s {print $7; exit}')"
+MYIDX="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" '$3==s && !f {print $7; f=1}')"
 PINNED="$(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {n++} END {print n+0}')"
 # Per pinned device, from the kernel (ID-320): its 90 rule into the guard's own table for this slot,
 # 200 + slot (ID-364), and its 91 blackhole. Counting 90 rules alone said "guarded" for a device
@@ -686,9 +686,9 @@ pinned_names() {
   SL="$(nvram get dhcp_staticlist | tr '<' '\n')"
   CL="$(nvram get custom_clientlist | tr '<' '\n')"
   for IP in $(nvram get vpnc_dev_policy_list | tr '<' '\n' | awk -F'>' -v i="$MYIDX" '$1=="1" && $4==i {print $2}'); do
-    MAC="$(echo "$SL" | awk -F'>' -v a="$IP" '$2==a {print toupper($1); exit}')"
+    MAC="$(echo "$SL" | awk -F'>' -v a="$IP" '$2==a && !f {print toupper($1); f=1}')"
     D=""
-    [ -n "$MAC" ] && D="$(echo "$CL" | awk -F'>' -v m="$MAC" 'toupper($2)==m && $1!="" {print $1; exit}')"
+    [ -n "$MAC" ] && D="$(echo "$CL" | awk -F'>' -v m="$MAC" 'toupper($2)==m && $1!="" && !f {print $1; f=1}')"
     [ -z "$D" ] && [ -n "$MAC" ] && D="$("$JQ" -r --arg m "$MAC" 'to_entries[] | select((.key|ascii_upcase)==$m) | .value.name // empty' 2>/dev/null < /jffs/nmp_cl_json.js | head -1)"
     printf '%s, ' "${D:-$IP}"
   done | sed 's/, $//'
@@ -771,7 +771,7 @@ service restart_vpnrouting0''';
 /// that does not exist - which is what produced the mystifying "did not come up" failures before
 /// the app learnt this rule.
 const String _kRestartStock = r'''
-UNIT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" 'length($0) == 0 { next } { if ($3 + 0 == s + 0) { print n + 0; exit } n++ }')"
+UNIT="$(nvram get vpnc_clientlist | tr '<' '\n' | awk -F'>' -v s="$SLOT" 'length($0) == 0 { next } { if ($3 + 0 == s + 0 && !f) { print n + 0; f = 1 } n++ }')"
 if [ -n "$UNIT" ]; then
   log "Restarting $IFACE through VPN Fusion (vpnc_unit=$UNIT)"
   nvram set vpnc_unit="$UNIT"
@@ -2700,7 +2700,7 @@ __MAILCMD__
     # How name resolution looked then (the 2026-09-06 alert failed with no record of it). The
     # route's interface only: this log is quoted in emails, and the full route names the WAN address.
     NS="$(awk '/^nameserver/ {printf "%s ", $2}' /etc/resolv.conf 2>/dev/null)"
-    NSDEV="$(ip route get "${NS%% *}" 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')"
+    NSDEV="$(ip route get "${NS%% *}" 2>/dev/null | awk '!f {for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); f = 1; break}}')"
     LOOKUP="$(nslookup "$SMTP_HOST" 2>&1 | tail -n +3 | grep -m 2 -E 'Address|resolve' | tr '\n' ' ')"
     log "Email diag: resolv.conf [${NS:-none}] via ${NSDEV:-unknown}; $SMTP_HOST resolves to [${LOOKUP:-nothing}]"
 

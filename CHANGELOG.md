@@ -104,7 +104,6 @@ Work items for the **current** release:
 - ID-546 BLD: a dependency change on dev no longer needs Andrew to approve the PR's checks by hand. `notices_on_dev.yml` (ID-508) commits THIRD-PARTY-NOTICES.md back to dev as github-actions[bot], with the workflow's own token, and GitHub holds a pull request's checks on a commit pushed that way at action_required until a person approves them: first seen on PR #72, 2026-11-08, build 570.
   - DoD: a commit that changes a dependency goes from push to a mergeable dev-to-main PR with every check run, and nobody approves anything.
   - First: compare pushing as a GitHub App, whose commits start checks like anyone's; and regenerating the notices before the commit, locally or in a check that fails when they're stale, so the bot never commits.
-- ID-547 BUG: watchdog_integrity_test's "a healthy deploy, a rebuild and a detached run leave no error behind" can check for leftover error files before the detached run has finished: the scheduled check of main on 2026-11-10 (run 42730468705) found `watchdog_wgc1.err.35956`, and the same code passed on PR #72. Make the test wait for the detached run to finish.
 
 ---
 
@@ -123,6 +122,18 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 3. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-11 v0.8.203 build 573 - watchdogs and the guard no longer report a false script error from a broken pipe
+
+```play
+• Fixed: a watchdog or the fail-closed guard could report a script error after a run that went well.
+• The keyboard now closes as soon as you tap GENERATE CONFIG, TEST EMAIL, or CONTINUE on a router or PIA login.
+• Behind the scenes: the App Store shows 8 screenshots on iPad as well as iPhone.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- CHG: WIP 4 -> 3 bullets. ID-547 done, moved below. Nothing else removed.
+- ID-547 BUG: watchdog_integrity_test's "a healthy deploy, a rebuild and a detached run leave no error behind" failed on main's scheduled check (run 42730468705) and twice on PR #75, with `tr: write error: Broken pipe` twice in the leftover `watchdog_wgc1.err` file. The cause was not the test: five `| awk '... exit'` lines in the watchdog and two in the fail-closed guard stopped reading at their first match, and where SIGPIPE is ignored the writer then reports a broken pipe, which a detached run keeps and the next run reports as a script error. Each now reads to the end and prints only its first match, the same output for the same input, checked in a shell; a new test finds any such line, and failed on all five watchdog lines before the fix.
 
 2026-11-10 v0.8.202 build 572 - the App Store link in the README, and all 8 screenshots on iPad and iPhone
 

@@ -11,6 +11,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cfg_pia_wg/fail_closed_guard.dart' show kGuardScript;
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_log_paging.dart';
 import 'package:cfg_pia_wg/router_script_integrity.dart';
@@ -207,6 +208,22 @@ void main() {
       final left = h.tmpFiles.where((f) => f.contains('.err.')).toList();
       expect(left, isEmpty, reason: [for (final f in left) h.tmp(f).readAsStringSync()].join('\n'));
     }, skip: skip);
+  });
+
+  // ID-547: an awk that exits at its first match closes the pipe while the writer may still be
+  // writing. Where SIGPIPE is ignored, the writer then prints "write error: Broken pipe", a detached
+  // run keeps that in its .err file, and the next run reports it as a script error. Reading to the
+  // end of the input instead takes the race away.
+  test('no awk reading a pipe stops before the end of it (ID-547)', () {
+    bool earlyExit(String line) =>
+        RegExp(r'\|\s*awk\b.*\bexit\b').hasMatch(line) && !RegExp(r'END\s*\{\s*exit').hasMatch(line);
+    for (final fw in [RouterFirmware.stock, RouterFirmware.merlin]) {
+      final s = buildWatchdogScript(
+          const WatchdogConfig(slotIndex: 1, cronIntervalMinutes: 5, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1'),
+          firmware: fw);
+      expect(s.split('\n').where(earlyExit), isEmpty, reason: '$fw watchdog');
+    }
+    expect(kGuardScript.split('\n').where(earlyExit), isEmpty, reason: 'guard');
   });
 
   test("check-claims' control edits a line the script really has (ID-485)", () {

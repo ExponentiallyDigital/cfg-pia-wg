@@ -324,9 +324,9 @@ drop() { N=0; while [ "$N" -lt 16 ] && ip rule del from "$1" priority "$2" 2>/de
 # The device as DEVICES names it, then its address: the user's name, else the detected
 # one, else the address alone (ID-262).
 name_of() {
-  M="$(nvram get dhcp_staticlist | tr '<' '\n' | awk -F'>' -v a="$1" '$2 == a {print toupper($1); exit}')"
+  M="$(nvram get dhcp_staticlist | tr '<' '\n' | awk -F'>' -v a="$1" '$2 == a && !f {print toupper($1); f = 1}')"
   D=""
-  [ -n "$M" ] && D="$(nvram get custom_clientlist | tr '<' '\n' | awk -F'>' -v m="$M" 'toupper($2) == m && $1 != "" {print $1; exit}')"
+  [ -n "$M" ] && D="$(nvram get custom_clientlist | tr '<' '\n' | awk -F'>' -v m="$M" 'toupper($2) == m && $1 != "" && !f {print $1; f = 1}')"
   [ -z "$D" ] && [ -n "$M" ] && [ -x /jffs/cfg-pia-wg/jq ] && D="$(/jffs/cfg-pia-wg/jq -r --arg m "$M" 'to_entries[] | select((.key | ascii_upcase) == $m) | .value.name // empty' 2>/dev/null < /jffs/nmp_cl_json.js | head -1)"
   echo "${D:+$D }$1"
 }
