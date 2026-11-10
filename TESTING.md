@@ -229,7 +229,7 @@ ssh <user>@<router> 'ls -l /jffs/cfg-pia-wg/*.sh'
 - Do: "add a Play Store app review".
 - See: the Play Store app opens the listing, not a web page inside cfg-pia-wg.
 - Do: on an iPhone, the same line, which reads "add an App Store app review" there.
-- See: until the app has an App Store listing, a message at the foot of the screen says cfg-pia-wg isn't on the App Store yet, and nothing opens - Safari least of all. Once the listing is in, the App Store app opens it (ID-417).
+- See: the App Store app opens the cfg-pia-wg listing, not Safari (ID-417, ID-436).
 
 **HOM-5** Tablet [hand]
 

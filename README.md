@@ -153,14 +153,14 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
   - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
   - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
-  - Testing: as at build 570 (8 November 2026), 2175 automated tests run on every build against a line-coverage target of 80%, actual 95.94 (the Coverage badge above is dynamically updated and records today's figure), and 179 manual end-to-end tests, 175 of them on a real router and 4 in the iOS simulator - 23 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
+  - Testing: as at build 573 (11 November 2026), 2176 automated tests run on every build against a line-coverage target of 80%, actual 95.94 (the Coverage badge above is dynamically updated and records today's figure), and 179 manual end-to-end tests, 175 of them on a real router and 4 in the iOS simulator - 23 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
   - Pinned GitHub Action hashes across [every workflow](https://github.com/ExponentiallyDigital/cfg-pia-wg/tree/main/.github/workflows) ensure automated builds execute with specific, verified tool versions.
 
 ---
 
 ## 3. Pre-built release
 
-This app is available from the Google Play Store -> [cfg-pia-wg](https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga).
+This app is available from the Google Play Store -> [cfg-pia-wg](https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga) and the Apple App Store -> [cfg-pia-wg](https://apps.apple.com/app/cfg-pia-wg/id6824823717).
 
 If you want to build your own, see [BUILDING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BUILDING.md).
 

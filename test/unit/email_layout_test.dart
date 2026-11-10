@@ -412,7 +412,7 @@ void main() {
       expect(s, contains(r'''nslookup "$SMTP_HOST"'''));
       // Only the interface name leaves `ip route get`: the full route carries the WAN address, and
       // this log is quoted in failure emails.
-      expect(s, contains(r'''if ($i == "dev") {print $(i + 1); exit}'''));
+      expect(s, contains(r'''if ($i == "dev") {print $(i + 1); f = 1; break}'''));
       // Read before the body is built, so the line describes alerts missed BEFORE this one.
       expect(s.indexOf('{ read -r MISSED; read -r MISSEDAT; }'), lessThan(s.indexOf('earlier alert(s)')));
     });
