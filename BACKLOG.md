@@ -53,26 +53,8 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 #### 1.1.2. FTR - future implementation
 
-- ID-375 BLD: either replace this module or post the following comment on flutter_launcher_icons pull request [#549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549), and retire `tool/launcher_icons.dart` once a release carries the fix. Agreed 2026-10-09, Andrew's call; posted 2026-11-06 from his login, as [this comment](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549#issuecomment-6674977473). Once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the wrapper (ID-374) can go, and `scripts/build.ps1`, `scripts/build.sh`, the quality and release workflows, BUILDING, CONTRIBUTING and the note in `pubspec.yaml` can run the tool directly again. The comment, as posted:
-
-  ```markdown
-  Still happening on 0.14.4, and not only with flavors or App Clips: plain `ios: true` triggers it too.
-
-  With `ios: true` and no flavor, `createIcons` ends with `changeIosLauncherIcon('AppIcon', flavor)`, which sets every line containing `ASSETCATALOG` in the build configurations to the icon name. In our `ios/Runner.xcodeproj/project.pbxproj` (Flutter 3.47.5), two of the three
-
-      ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-
-  lines became
-
-      ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = AppIcon;
-
-  even though the icon set's name hadn't changed.
-
-  This PR's one-line fix still works, but it no longer applies as is: the check has moved to around line 340 of `lib/ios.dart`. The equivalent there is `line.contains('ASSETCATALOG_COMPILER_APPICON_NAME')` in place of `line.contains('ASSETCATALOG')`.
-
-  For now we run the tool through a small wrapper that puts the other lines back afterwards.
-  ```
-  - DoD: a `flutter_launcher_icons` release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`, the comment having been posted, and the wrapper and its notes are gone. Checked 2026-10-19: 0.14.4 is still the latest, and PR #549 is open.
+- ID-375 BLD: retire `tool/launcher_icons.dart` (ID-374) once a flutter_launcher_icons release changes only `ASSETCATALOG_COMPILER_APPICON_NAME`. The fix was proposed on [PR #549](https://github.com/fluttercommunity/flutter_launcher_icons/pull/549#issuecomment-6674977473), posted 2026-11-06.
+  - DoD: such a release is out, and the wrapper and its notes in the build scripts, workflows, BUILDING, CONTRIBUTING and `pubspec.yaml` are gone.
 - ID-462 FTR: sell the iOS app in France, once the French encryption declaration is accepted. Split from ID-430 on 2026-10-20, Andrew's decision: France is left out of the first App Store release so the declaration can't delay it. Selling in France needs the declaration uploaded in App Store Connect (`app-store/export_compliance.md`), then `ITSAppUsesNonExemptEncryption` YES and Apple's `ITSEncryptionExportComplianceCode` in `Info.plist`.
   - DoD: the declaration is accepted, the two keys are set with a test, and App Store Connect lists France.
 - ID-024 FTR: decide whether and when to localise the app, starting with French, Spanish and Latin American Spanish. The groundwork and each language are ID-442 to ID-446.
@@ -108,7 +90,7 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 
 ### 1.2. Codebase cleanup
 
-Empty: ID-448 to ID-452 and ID-419 moved to CHANGELOG 1.1 on 2026-10-25, Andrew's order: after NETWORK (ID-458), the firmware abstraction, then SonarCloud to zero.
+`<none>`
 
 ---
 

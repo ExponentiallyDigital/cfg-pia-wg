@@ -99,6 +99,10 @@ Work items for the **current** release:
   - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
   - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
   - Now: rejected again 2026-11-08, 2.1(a), a crash on launch on an iPad, not reproduced; 569 runs normally on an iPhone 11 and, as an iPad app, on an Apple silicon Mac. Resubmitted 2026-11-08 11:13 AM with 0.8.199 (569) and the notes carrying the 2026-11-03 answers (ID-541). Waiting on App Review.
+- ID-546 BLD: a dependency change on dev no longer needs Andrew to approve the PR's checks by hand. `notices_on_dev.yml` (ID-508) commits THIRD-PARTY-NOTICES.md back to dev as github-actions[bot], with the workflow's own token, and GitHub holds a pull request's checks on a commit pushed that way at action_required until a person approves them: first seen on PR #72, 2026-11-08, build 570.
+  - DoD: a commit that changes a dependency goes from push to a mergeable dev-to-main PR with every check run, and nobody approves anything.
+  - First: compare pushing as a GitHub App, whose commits start checks like anyone's; and regenerating the notices before the commit, locally or in a check that fails when they're stale, so the bot never commits.
+- ID-547 BUG: watchdog_integrity_test's "a healthy deploy, a rebuild and a detached run leave no error behind" can check for leftover error files before the detached run has finished: the scheduled check of main on 2026-11-10 (run 42730468705) found `watchdog_wgc1.err.35956`, and the same code passed on PR #72. Make the test wait for the detached run to finish.
 
 ---
 
@@ -117,6 +121,19 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 3. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-08 v0.8.201 build 571 - release results for v0.8.199 and v0.8.200, ID-375 shortened, and two new work items
+
+```play
+• Behind the scenes: project records only; the app is unchanged.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- REL: v0.8.199 (569) passed 2026-11-06 (run 42152711736): Android to Play's internal track; iOS to TestFlight from the tag, its Development certificate revoked at the end (9 before); both SBOMs and the Dart licences on the release; THIRD-PARTY-NOTICES.md current. PR #71 merged at 0 open Sonar issues, gate OK, after build 569 made const the two places Sonar found in build 568 (ID-540). It carries builds 566 to 569.
+- REL: v0.8.200 (570) passed release run 42456015273, 2026-11-08: the quality and security checks, the Play internal track, and the signed iOS build, archived with the Associated Domains entitlement (ID-441) and uploaded to TestFlight.
+- CHG: WIP 1 -> 2 bullets: ID-546 added, Andrew's request 2026-11-08. Nothing removed.
+- CHG: WIP 2 -> 3 bullets: ID-547 added, new. Nothing removed.
+- CHG: BACKLOG 1.1.2 12 -> 12 bullets: ID-375 reworded, now that its comment is posted on PR #549; the comment's text taken out of the item. Nothing removed.
 
 2026-11-08 v0.8.200 build 570 - every login offered for saving on iOS, repeatable test purchases in the simulator, and the App Review notes in full
 
