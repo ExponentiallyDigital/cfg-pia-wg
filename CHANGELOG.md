@@ -51,7 +51,7 @@ No bold inside work items. When an item closes, it moves to its release block wi
 
 Every new work item gets an ID. This is the standard from the v0.8.78 build 448 release (and the current Pending/WIP items) onward. It was not applied retrospectively: v0.8.77 build 447 and every earlier release keep their original, ID-free form.
 
-Two kinds of line record what happened rather than work, and take no ID: a release result, `REL: vN.N.NN (NNN) passed <date> (run N): ...`, and an audit line, `CHG: WIP|1.1|BACKLOG ...` saying what moved. Anything else is a work item and gets an ID, however small, including work found and done in the same pass. `test/unit/changelog_ids_test.dart` fails any other line without one, from build 553 on; builds 541 to 552 keep some ID-free items from before the test.
+Two kinds of line record what happened rather than work, and take no ID: a release result, `REL: vN.N.NN (NNN) passed <date> (run N): ...`, and an audit line, `CHG: WIP|1.1|BACKLOG ...` saying what moved, which older blocks have but which is no longer written: a change to WIP is reported in the reply, not here (Andrew, 2026-11-11). Anything else is a work item and gets an ID, however small, including work found and done in the same pass. `test/unit/changelog_ids_test.dart` fails any other line without one, from build 553 on; builds 541 to 552 keep some ID-free items from before the test.
 
 IDs are shared with BACKLOG.md: one number line across both files, so an ID always points to exactly one item no matter which file it lives in.
 
@@ -95,15 +95,8 @@ Work items for the **next** release:
 
 Work items for the **current** release:
 
-- ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store. Update README "3. Pre-built release"when the application is available on the Apple App Store.
-  - DoD: on sale, and on an iPhone the home screen's review link opens the listing.
-  - Plan: [plan_app-store-submission.md](.claude/plans/plan_app-store-submission.md)
-  - Now: approved 2026-11-10, 0.8.199 (569) and the lifetime_unlock purchase; Apple's lookup shows 0.8.199 on sale, free, released 2026-11-10 19:51 UTC. README section 3 links the listing, and HOM-4 expects the App Store app to open it. Left: HOM-4's iPhone step seen to pass.
 - ID-548 REL: the App Store's iPad screenshots are the iPhone's 8, not 4. app-store-screenshots.py left out shots naming "Pixel-8" or "android-dhcp-17" (guideline 2.3.10), names the redrawn sources (ID-458) no longer have, so both sets now use all 8, checked by eye.
-  - Now: built 2026-11-11. Left: uploaded by the next App Store version's listing run (`app_store_listing` ticked); a released version's screenshots can't be changed.
-- ID-546 BLD: a dependency change on dev no longer needs Andrew to approve the PR's checks by hand. `notices_on_dev.yml` (ID-508) commits THIRD-PARTY-NOTICES.md back to dev as github-actions[bot], with the workflow's own token, and GitHub holds a pull request's checks on a commit pushed that way at action_required until a person approves them: first seen on PR #72, 2026-11-08, build 570.
-  - DoD: a commit that changes a dependency goes from push to a mergeable dev-to-main PR with every check run, and nobody approves anything.
-  - First: compare pushing as a GitHub App, whose commits start checks like anyone's; and regenerating the notices before the commit, locally or in a check that fails when they're stale, so the bot never commits.
+  - Now: uploaded to 0.8.203 and submitted with build 573, 2026-11-11; App Store Connect shows Waiting for Review. Left: the store showing 8 + 8 once Apple approves it.
 
 ---
 
@@ -119,9 +112,25 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
 2. **Before the commit**, check the current release block has a ```` ```play ```` fence under its header. If it does not, write one: at most 500 characters, a `•` line for each thing a user of this build will notice, plain-language "Behind the scenes" when there is nothing they would see, and the "Full changelog" link as the last line. Never commit a block without one (ID-536).
-3. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
+3. **Before the commit**, if `pubspec.yaml`, `pubspec.lock` or an Android lockfile changed since the last commit, run `dart run tool/third_party_notices.dart` and commit THIRD-PARTY-NOTICES.md with it. No workflow commits it back to dev any more, as such a commit held the next PR's checks for approval (ID-546); the weekly bot's PRs regenerate their own, and the release run warns when it is stale.
+4. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-11 v0.8.204 build 574 - the App Store listing run and promote handle a live app, and no workflow commits to dev
+
+```play
+• Behind the scenes: the App Store release steps now work for an app already on sale, and the project's build tooling is simpler; the app is unchanged.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- REL: v0.8.203 (573) passed release run 42921528491, 2026-11-11: the quality and security checks, the Play internal track, and the signed iOS build to TestFlight. PR #75 merged at 0 new Sonar issues after ID-547 failed its checks twice. App Store: version 0.8.203 made by hand (ID-549), the listing run twice (one screenshot stuck uploading), and 573 sent to App Review by promote; Waiting for Review. Google Play: Andrew promoted 573 to production.
+- ID-436 REL: the first App Store submission is approved, and the app is on sale at Apple's App Store. Update README "3. Pre-built release" when the application is available on the Apple App Store.
+  - Closed, 2026-11-11: approved 2026-11-10, 0.8.199 (569) and the lifetime_unlock purchase, on sale from 2026-11-10 19:51 UTC; README section 3 links the listing (build 572); HOM-4 passed on an iPhone with the App Store build, the review link opening the listing.
+- ID-549 BUG: once the app is on sale, the App Store listing run fails until someone makes the next version by hand: it sets name, subtitle and privacy policy URL before making the version, and Apple refuses those while only the live version exists (run 42921606900, 2026-11-11). A version it makes also has no What's New, which promote only sets on a version it makes itself, so submission needs it typed in. Make the version first, and set What's New from the release note.
+  - Closed, 2026-11-11, on the tests, Andrew's decision: the listing run makes the version before it touches the app info, and promote fills an empty What's New from the build's TestFlight notes, keeping one already written; tested with a fake that refuses app info changes as Apple does, the tests seen failing first. The dry runs before each release check it live.
+- ID-546 BLD: a dependency change on dev no longer needs Andrew to approve the PR's checks by hand. `notices_on_dev.yml` (ID-508) commits THIRD-PARTY-NOTICES.md back to dev as github-actions[bot], with the workflow's own token, and GitHub holds a pull request's checks on a commit pushed that way at action_required until a person approves them: first seen on PR #72, 2026-11-08, build 570.
+  - Closed, 2026-11-11: no workflow commits to dev any more, so no commit waits for approval. `notices_on_dev.yml` is gone, and the commit steps regenerate the notices locally whenever a dependency file changed (step 3); the weekly bot's PRs still regenerate their own, and the release still warns when they are stale. Dependabot only updates GitHub Actions, so it never needs them. A new ci_config test fails on any workflow that pushes back to the branch it ran on, seen failing on `notices_on_dev.yml` first; its ID-508 tests went with it. The notices are current (79 Dart packages, 112 Android libraries).
 
 2026-11-11 v0.8.203 build 573 - watchdogs and the guard no longer report a false script error from a broken pipe
 
