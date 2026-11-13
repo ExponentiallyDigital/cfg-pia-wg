@@ -424,8 +424,8 @@ The primary build pathway is Windows with VS Code, as in sections 1 and 2. A Mac
 
 11. **Running on an iPhone from VS Code.** Connect the iPhone by cable and tap Trust on it. The first time, turn on Developer Mode: on the iPhone, Settings, Privacy & Security, Developer Mode, and let it restart. In VS Code, click the device name at the right of the status bar, choose the iPhone, and press F5.
 
-    > [!CAUTION]
-    > A debug build replaces whatever build of the app is on that iPhone, TestFlight's included. Choose the device by name: `flutter run` with no `-d` can pick an iPhone on the same Wi-Fi instead of the one you meant.
+> [!CAUTION]
+> A debug build replaces whatever build of the app is on that iPhone, TestFlight's included. Choose the device by name: `flutter run` with no `-d` can pick an iPhone on the same Wi-Fi instead of the one you meant.
 
 12. **Buying Router features over and over, in the simulator (ID-543).** TestFlight lets each Apple Account buy it once, with no way to undo it. Xcode's local store, `ios/StoreKit/cfg-pia-wg.storekit`, sells it as often as you like, charges nothing, and never touches the App Store. Only the **cfg-pia-wg StoreKit** scheme uses it; the Runner scheme, which CI archives, never does.
 

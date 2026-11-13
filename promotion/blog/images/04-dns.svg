@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 470" width="800" height="470"><defs><marker id="m5B6474" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#5B6474"/></marker><marker id="m00856A" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#00856A"/></marker><marker id="mD23A3A" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#D23A3A"/></marker><marker id="mB86A00" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#B86A00"/></marker><marker id="m6E4FD6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#6E4FD6"/></marker><marker id="m0A7FBF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#0A7FBF"/></marker><marker id="m4659C9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#4659C9"/></marker></defs><rect width="800" height="470" fill="#FFFFFF"/>
+<text x="24" y="36.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="18" font-weight="600" fill="#1B1F27" text-anchor="start">Traffic and DNS take different roads</text>
+<text x="24" y="58.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="13" font-weight="400" fill="#5B6474" text-anchor="start">On stock firmware, the connection decides the traffic, not the lookups</text>
+<text x="24" y="106.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="700" fill="#D23A3A" text-anchor="start">NOT PINNED</text>
+<rect x="24" y="140" width="150" height="64" rx="8" fill="#F4F6F9" stroke="#CDD3DD" stroke-width="1.5"/>
+<text x="99.0" y="166.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#1B1F27" text-anchor="middle">Laptop</text>
+<text x="99.0" y="187.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">default connection: wgc1</text>
+<rect x="300" y="116" width="190" height="50" rx="8" fill="#F4F6F9" stroke="#00856A" stroke-width="1.5"/>
+<text x="395.0" y="135.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#1B1F27" text-anchor="middle">wgc1 tunnel</text>
+<text x="395.0" y="156.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">encrypted</text>
+<rect x="586" y="116" width="190" height="50" rx="8" fill="#F4F6F9" stroke="#00856A" stroke-width="1.5"/>
+<text x="681.0" y="135.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#1B1F27" text-anchor="middle">PIA</text>
+<text x="681.0" y="156.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">your browsing</text>
+<rect x="300" y="186" width="190" height="50" rx="8" fill="#F4F6F9" stroke="#CDD3DD" stroke-width="1.5"/>
+<text x="395.0" y="205.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#1B1F27" text-anchor="middle">Router's resolver</text>
+<text x="395.0" y="226.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">its own DNS settings</text>
+<rect x="586" y="186" width="190" height="50" rx="8" fill="#F4F6F9" stroke="#D23A3A" stroke-width="1.5"/>
+<text x="681.0" y="205.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#1B1F27" text-anchor="middle">Your ISP</text>
+<text x="681.0" y="226.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">every name you look up</text>
+<path d="M176 160 C240 160 240 141 296 141" fill="none" stroke="#00856A" stroke-width="2" marker-end="url(#m00856A)"/>
+<path d="M176 184 C240 184 240 211 296 211" fill="none" stroke="#D23A3A" stroke-width="2" marker-end="url(#mD23A3A)"/>
+<line x1="492" y1="141" x2="582" y2="141" stroke="#00856A" stroke-width="2" marker-end="url(#m00856A)"/>
+<line x1="492" y1="211" x2="582" y2="211" stroke="#D23A3A" stroke-width="2" marker-end="url(#mD23A3A)"/>
+<text x="206" y="132.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#00856A" text-anchor="start">traffic</text>
+<text x="206" y="232.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#D23A3A" text-anchor="start">lookups</text>
+<text x="537" y="256.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#D23A3A" text-anchor="middle">readable, unless you have set up encrypted DNS</text>
+<text x="24" y="316.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="700" fill="#00856A" text-anchor="start">PINNED WITH CFG-PIA-WG</text>
+<rect x="24" y="352" width="150" height="64" rx="8" fill="#F4F6F9" stroke="#CDD3DD" stroke-width="1.5"/>
+<text x="99.0" y="378.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#1B1F27" text-anchor="middle">Laptop</text>
+<text x="99.0" y="399.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">pinned to wgc1</text>
+<rect x="300" y="352" width="190" height="64" rx="8" fill="#F4F6F9" stroke="#00856A" stroke-width="1.5"/>
+<text x="395.0" y="370.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#1B1F27" text-anchor="middle">wgc1 tunnel</text>
+<text x="395.0" y="391.2" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">traffic and lookups,</text>
+<text x="395.0" y="406.8" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">both encrypted</text>
+<rect x="586" y="352" width="190" height="64" rx="8" fill="#F4F6F9" stroke="#00856A" stroke-width="1.5"/>
+<text x="681.0" y="378.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#1B1F27" text-anchor="middle">PIA</text>
+<text x="681.0" y="399.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">and the slot's DNS server</text>
+<line x1="176" y1="376" x2="296" y2="376" stroke="#00856A" stroke-width="2" marker-end="url(#m00856A)"/>
+<line x1="176" y1="394" x2="296" y2="394" stroke="#00856A" stroke-width="2" marker-end="url(#m00856A)"/>
+<line x1="492" y1="384" x2="582" y2="384" stroke="#00856A" stroke-width="2" marker-end="url(#m00856A)"/>
+<text x="206" y="370.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#00856A" text-anchor="start">traffic</text>
+<text x="206" y="412.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#00856A" text-anchor="start">lookups</text>
+<text x="24" y="450.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="start">The watchdog does its own lookups, for PIA and your mail server, over encrypted DNS to a server you choose.</text>
+</svg>

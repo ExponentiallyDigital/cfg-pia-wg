@@ -26,6 +26,9 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [IOB. Buying again and again on iOS (Xcode's local store)](#iob-buying-again-and-again-on-ios-xcodes-local-store)
 - [MRL. Merlin smoke test (under an hour)](#mrl-merlin-smoke-test-under-an-hour)
 - [END. Last, because it removes things](#end-last-because-it-removes-things)
+
+**Part 2. Reference**
+
 - [R1. When something looks broken, check these first](#r1-when-something-looks-broken-check-these-first)
 - [R2. How the watchdog decides a tunnel is broken](#r2-how-the-watchdog-decides-a-tunnel-is-broken)
 - [R3. The backoff ladder](#r3-the-backoff-ladder)
@@ -36,19 +39,6 @@ The automated tests prove the code does what it says. They cannot prove what a r
 - [R8. Store testing notes](#r8-store-testing-notes)
 - [R9. What the shape tests stand for, and what proves it](#r9-what-the-shape-tests-stand-for-and-what-proves-it)
 - [R10. An AI assistant on the router and in an emulator](#r10-an-ai-assistant-on-the-router-and-in-an-emulator)
-
-**Part 2. Reference**
-
-- [R1. When something looks broken, check these first](#r1)
-- [R2. How the watchdog decides a tunnel is broken](#r2)
-- [R3. The backoff ladder](#r3)
-- [R4. What the watchdog leaves on the router](#r4)
-- [R5. Device assignment and default connection notes](#r5)
-- [R6. Sending email by hand](#r6)
-- [R7. Examining NVRAM](#r7)
-- [R8. Store testing notes](#r8)
-- [R9. What the shape tests stand for, and what proves it](#r9)
-- [R10. An AI assistant on the router and in an emulator](#r10)
 
 ---
 
@@ -2148,7 +2138,7 @@ Set up once, as in BUILDING 7, step 12: the RevenueCat iOS key in `secrets/reven
 
 ## <a name='mrl'></a>MRL. Merlin smoke test (under an hour)
 
-Not a repeat of the whole run. The screens, DEVICES, the log windows and the paywall are the same code on both firmwares, and the automated tests build and run the watchdog script for both. This covers only what is different on Merlin: no helper programs, the kill switch, starting and stopping a tunnel, the mail command, boot persistence in `services-start`, and UNINSTALL (ID-301). Merlin is called beta in README and the Play description once it passes.
+Not a repeat of the whole run. The screens, DEVICES, the log windows and the paywall are the same code on both firmwares, and the automated tests build and run the watchdog script for both. This covers only what is different on Merlin: no helper programs, the kill switch, starting and stopping a tunnel, the mail command, boot persistence in `services-start`, and UNINSTALL (ID-301). It passed on Merlin 388.12_2 on 1 October 2026 (ID-353), and README says so in place of the beta label it had until then (ID-553).
 
 Set up: a Merlin router with JFFS scripts enabled, SSH on, and no cfg-pia-wg on it. Run in the order written. Bracket the router commands with `logger` lines, as elsewhere.
 

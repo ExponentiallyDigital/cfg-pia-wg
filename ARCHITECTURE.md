@@ -78,9 +78,9 @@ Optionally and for stock only, **show each tunnel's state on the home screen**, 
   - [7.6. Watchdog NVRAM fields](#76-watchdog-nvram-fields)
   - [7.7. Sample `cfg-pia-wg` output](#77-sample-cfg-pia-wg-output)
   - [7.8. `curl` polices who calls it and what it fetches](#78-curl-polices-who-calls-it-and-what-it-fetches)
+    - [7.8.1. The URL check](#781-the-url-check)
+    - [7.8.2. The caller check](#782-the-caller-check)
   - [7.9. Scripts that check themselves](#79-scripts-that-check-themselves)
-    - [The URL check](#the-url-check)
-    - [The caller check](#the-caller-check)
 - [8. Network traffic](#8-network-traffic)
 - [9. Output \& session destruction](#9-output--session-destruction)
   - [9.1. Offering a login to a password manager](#91-offering-a-login-to-a-password-manager)
@@ -98,7 +98,7 @@ Optionally and for stock only, **show each tunnel's state on the home screen**, 
 - [12. Appendix: readings that were superseded](#12-appendix-readings-that-were-superseded)
   - [12.1. The two-cost model for applying an assignment](#121-the-two-cost-model-for-applying-an-assignment)
   - [12.2. Placeholder records in the policy list](#122-placeholder-records-in-the-policy-list)
-- [13. House style: what the app looks like](#13-house-style-what-the-app-looks-like)
+- [13. Appendix: House style: what the app looks like](#13-appendix-house-style-what-the-app-looks-like)
   - [13.1. The palette](#131-the-palette)
   - [13.2. The type scale](#132-the-type-scale)
   - [13.3. Controls](#133-controls)
@@ -106,8 +106,8 @@ Optionally and for stock only, **show each tunnel's state on the home screen**, 
   - [13.5. Layout constants](#135-layout-constants)
   - [13.6. Which file does what](#136-which-file-does-what)
   - [13.7. Editing a screenshot](#137-editing-a-screenshot)
-- [Appendix. Process - BACKLOG and CHANGELOG management](#appendix-process---backlog-and-changelog-management)
-- [Appendix. Process - GitHub Actions workflows](#appendix-process---github-actions-workflows)
+- [14. Appendix: Process - BACKLOG and CHANGELOG management](#14-appendix-process---backlog-and-changelog-management)
+- [15. Appendix: Process - GitHub Actions workflows](#15-appendix-process---github-actions-workflows)
 
 ## 1. <a name='how-it-works'></a>How it works
 
@@ -1921,7 +1921,7 @@ AllowedIPs          = 0.0.0.0/0
 
 Two separate checks, both silent, both in the same binary. The caller check came first; the URL check was measured on 2026-09-19 while testing encrypted DNS for the watchdog.
 
-#### The URL check
+#### 7.8.1. <a name='the-url-check'></a>The URL check
 
 `/usr/sbin/curl` **refuses any URL whose host is an IP literal**, and the refusal is as quiet as the caller one: exit status 0, no output at all, nothing on stderr, with the only trace a line in `/jffs/curllst` reading `Invalid DL URL(<address>)`. It applies to `--doh-url` as well as to the request URL, which is how it was found.
 
@@ -1944,7 +1944,7 @@ The last row is the one that matters, and it is the pattern the watchdog already
 
 If ASUS ever extend the check to `--resolve`, or to hostnames the firmware does not recognise, the escape hatch is to install our own `curl` beside `jq` and `mailsend-go` - recorded as a BACKLOG FTR, not built, because it means shipping and maintaining a TLS stack.
 
-#### The caller check
+#### 7.8.2. <a name='the-caller-check'></a>The caller check
 
 `/usr/sbin/curl` on stock ASUS firmware inspects its own process ancestry at startup and **refuses to run if `crond` appears anywhere in the chain**. The rejection is silent in every way that matters: exit status 0, no HTTP status, no response body, and nothing on stderr. The only trace is a line in `/jffs/curllst`.
 
@@ -2151,7 +2151,7 @@ The rule the app depends on survived both readings unchanged, which is why nothi
 
 ---
 
-## 13. <a name='house-style'></a>House style: what the app looks like
+## 13. <a name='house-style'></a>Appendix: House style: what the app looks like
 
 Every value here was read out of `lib/`, not designed on paper. It exists for two jobs: writing UI code that matches what is already there, and editing a screenshot - covering an address or a username - without the patch looking like a patch. The cross-reference at the end says which file to change when one of these needs to move.
 
@@ -2297,7 +2297,7 @@ What to know when covering an address, a username or a MAC:
 
 ---
 
-## Appendix. <a name='appendix-process---backlog-and-changelog-management'></a>Process - BACKLOG and CHANGELOG management
+## 14. <a name='appendix-process---backlog-and-changelog-management'></a>Appendix: Process - BACKLOG and CHANGELOG management
 
 How a work item travels from wherever it was noticed to a release. The rules themselves live in the headers of [BACKLOG.md](BACKLOG.md) and [CHANGELOG.md](CHANGELOG.md); this is the map of them.
 
@@ -2353,7 +2353,7 @@ A work item says what is to be done, at a high level, in as few lines as it can,
 
 ---
 
-## Appendix. <a name='appendix-process---github-actions-workflows'></a>Process - GitHub Actions workflows
+## 15. <a name='appendix-process---github-actions-workflows'></a>Appendix: Process - GitHub Actions workflows
 
 What each workflow in `.github/workflows` does, and when it runs. A release goes out to both stores from one merge of `dev` to `main` and one `v*` tag on the merge commit; "Promote release" then moves the same build onwards on both (ID-468).
 

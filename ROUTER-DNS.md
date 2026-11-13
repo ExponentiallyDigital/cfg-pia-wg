@@ -15,11 +15,27 @@ Short version:
 
 This section covers stock ASUS firmware. Asuswrt-Merlin hasn't been tested yet.
 
-### What is DNS?
+- [1. What is DNS?](#1-what-is-dns)
+- [2. Why doesn't my DNS follow my default connection?](#2-why-doesnt-my-dns-follow-my-default-connection)
+- [3. Who looks things up on the router?](#3-who-looks-things-up-on-the-router)
+- [4. How can one tunnel take away DNS for everything?](#4-how-can-one-tunnel-take-away-dns-for-everything)
+- [5. What should I set?](#5-what-should-i-set)
+  - [5.1. Setup A: reliable](#51-setup-a-reliable)
+  - [5.2. Setup B: private](#52-setup-b-private)
+- [6. Using a slot for parental controls](#6-using-a-slot-for-parental-controls)
+- [7. For the technically inquisitive](#7-for-the-technically-inquisitive)
+  - [7.1. The pieces](#71-the-pieces)
+  - [7.2. The router rules](#72-the-router-rules)
+  - [7.3. Why a broken tunnel could blackhole DNS](#73-why-a-broken-tunnel-could-blackhole-dns)
+  - [7.4. Pinned and not pinned devices](#74-pinned-and-not-pinned-devices)
+  - [7.5. Common DNS services](#75-common-dns-services)
+  - [7.6. See it on your router](#76-see-it-on-your-router)
+
+### 1. <a name='what-is-dns'></a>What is DNS?
 
 DNS is the internet's phone book. It turns a name like `example.com` into the address your device actually connects to. The server that answers is called a DNS server, or resolver.
 
-### Why doesn't my DNS follow my default connection?
+### 2. <a name='why-doesnt-my-dns-follow-my-default-connection'></a>Why doesn't my DNS follow my default connection?
 
 Because a device that isn't pinned doesn't send its lookups out to the internet. It sends them **to the router**, and the router makes the lookup for it.
 
@@ -51,7 +67,7 @@ flowchart TB
 
 <p align="center"><em>Where a device's lookups go: to the router if it isn't pinned, through its slot's tunnel if it is.</em></p>
 
-### Who looks things up on the router?
+### 3. <a name='who-looks-things-up-on-the-router'></a>Who looks things up on the router?
 
 Two groups, and they use different settings.
 
@@ -70,7 +86,7 @@ Is the router's own lookup encrypted? That's up to the program making it, not th
 
 Until build 477 that paragraph was not true. The watchdog asked the router's own `curl` to use DoH, and ASUS's `curl` ignores that request on both stock and Merlin firmware, without a word: found 2026-09-30, when a DoH server that didn't exist made no difference at all. Every lookup it called encrypted went out as ordinary DNS. No public release carried that build.
 
-### How can one tunnel take away DNS for everything?
+### 4. <a name='how-can-one-tunnel-take-away-dns-for-everything'></a>How can one tunnel take away DNS for everything?
 
 Each VPN slot can have its own DNS servers. That's how you can send a child's tablet to a family filter while your own devices use something else.
 
@@ -120,7 +136,7 @@ The broken slot doesn't need to be your default connection, or have a watchdog, 
 
 What if the slot is stopped rather than broken? Then the router drops that slot's rules and moves its lookups to the next-highest slot using the same address, here `wgc3` in Italy. Lookups keep working, but they're answered by a server near Italy. Only a slot that looks connected but answers nothing makes lookups disappear.
 
-### What should I set?
+### 5. <a name='what-should-i-set'></a>What should I set?
 
 Start with the devices you care most about.
 
@@ -143,7 +159,7 @@ For the **DoT Server List**, there are two sensible setups. Both work. Each cost
 | If one tunnel breaks | Lookups carry on | If that slot looks connected but answers nothing, every device that isn't pinned loses DNS until the slot is rebuilt |
 | What cfg-pia-wg says | Nothing: there is nothing to say | A note under the DNS field, naming the shared addresses. It's information, not a warning - you matched them on purpose |
 
-#### Setup A: reliable
+#### 5.1. <a name='setup-a-reliable'></a>Setup A: reliable
 
 | Setting | DNS servers |
 | --- | --- |
@@ -176,7 +192,7 @@ flowchart TB
 
 Notice the TV. Its traffic leaves through `wgc1`, but its lookups leave through your internet connection, even though your default connection is a tunnel. They're encrypted, so your internet provider can't read them, but Cloudflare sees your home address.
 
-#### Setup B: private
+#### 5.2. <a name='setup-b-private'></a>Setup B: private
 
 The DoT Server List uses the same addresses as `wgc1`, and every other slot uses different addresses. Quad9 offers a second set of addresses that does the same job, so the overseas slots and `wgc4` can use those. `wgc4` is in Melbourne too, but it has a higher number than `wgc1`, so it must not use the router's addresses.
 
@@ -211,7 +227,7 @@ flowchart TB
 
 There's a bonus in using `9.9.9.11` on overseas slots. It passes part of the sender's address on to the website's own DNS servers, and for a device on `wgc3`, the sender is PIA's server in Italy. Websites then send that device to their servers near Italy, not near you. Your home address isn't passed on.
 
-### Using a slot for parental controls
+### 6. <a name='using-a-slot-for-parental-controls'></a>Using a slot for parental controls
 
 This is a suggested approach, not advice. Your network and your family's setup are yours to decide.
 
@@ -225,11 +241,11 @@ A filtering DNS service on a child's slot only works when the child's device ask
 >[!TIP]
 > For an _**extensive**_ list of DNS providers, see [Adguard's KB](https://adguard-dns.io/kb/general/dns-providers).
 > 
-### For the technically inquisitive
+### 7. <a name='for-the-technically-inquisitive'></a>For the technically inquisitive
 
 What follows is a representation of what a stock ASUS router can look like. Everything in it was measured on one stock ASUS router in September 2026, not read in documentation - ASUS publish none of it. Other models and firmware versions may differ.
 
-#### The pieces
+#### 7.1. <a name='the-pieces'></a>The pieces
 
 - **dnsmasq** is the router's local DNS server. Devices send their lookups to it, at the router's LAN address, port 53.
 - **stubby** is a small program that turns ordinary lookups into encrypted DoT. It listens on the router at `127.0.1.1`, port 53.
@@ -278,7 +294,7 @@ flowchart TB
 
 <p align="center"><em>How the settings you choose become the files, programs and routing rules that carry a lookup.</em></p>
 
-#### The router rules
+#### 7.2. <a name='the-router-rules'></a>The router rules
 
 For each address in a slot's DNS, the firmware adds a routing rule. On the example router above, `ip rule show` includes:
 
@@ -314,7 +330,7 @@ Each slot has its own routing table:
 
 The higher the slot number, the lower the table number and rule priority. So when more than one slot is set to the same DNS address, the highest-numbered slot's rule matches first and carries the router's lookups. Tables 6 to 9 were measured. Table 5 for `wgc5` follows the same pattern but hasn't been confirmed.
 
-#### Why a broken tunnel could blackhole DNS
+#### 7.3. <a name='why-a-broken-tunnel-could-blackhole-dns'></a>Why a broken tunnel could blackhole DNS
 
 Each slot's table sends traffic through that slot's `wgcN` interface. WireGuard has no way of knowing whether the other end is still answering, so a broken tunnel's interface stays up. Its rules and routes stay in place, and lookups go in and get nothing back. Ping to an IP address may still work, because the ping doesn't need DNS and may take a different path.
 
@@ -322,7 +338,7 @@ A tunnel that's **stopped** is different. When a slot is stopped, from the web i
 
 If the router's DNS Server setting uses the same address as a slot, you'll also see a second route for that address in each slot's table, through your internet connection with `metric 1`. The firmware adds it for the DNS Server setting. While the tunnel is up, the tunnel's route wins.
 
-#### Pinned and not pinned devices
+#### 7.4. <a name='pinned-and-not-pinned-devices'></a>Pinned and not pinned devices
 
 | | Pinned to a slot | Not pinned |
 | --- | --- | --- |
@@ -335,7 +351,7 @@ The redirect only matches UDP port 53 sent to the router's own address. DoH look
 
 One more thing about a pinned device's own route. The firmware copies a few routes through your internet connection into each slot's table: the router's own DNS servers, the tunnel's PIA server, and your internet provider's local network. Before build 480, a pinned device reached those addresses outside its tunnel, even with the tunnel up: a phone using Android's Private DNS at `1.1.1.2`, say, sent it from your real address. The app's fail-closed guard now holds each of those addresses to the tunnel, or blocks it while the tunnel is down.
 
-#### Common DNS services
+#### 7.5. <a name='common-dns-services'></a>Common DNS services
 
 Addresses are as published in September 2026. Check the provider's site before you rely on them.
 
@@ -362,7 +378,7 @@ Notes:
 - **Mullvad only answers encrypted lookups.** Use `194.242.2.2` (`dns.mullvad.net`) or `194.242.2.4` (`base.dns.mullvad.net`) in the router's DoT Server List, with the matching hostname.
 - **Google** records more about lookups than the privacy-focused services. It's included for comparison.
 
-#### See it on your router
+#### 7.6. <a name='see-it-on-your-router'></a>See it on your router
 
 All of these commands only read. They change nothing.
 

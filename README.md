@@ -26,15 +26,15 @@
 
 ---
 
-Manage Private Internet Access (PIA) WireGuard VPNs on your ASUS router from your Android or iOS device. Works with stock ASUS firmware, with [Asuswrt-Merlin](https://www.asuswrt-merlin.net/) support in beta.
-
-**Device assignment.** Which device is on which VPN? On stock firmware, your router can't easily tell you. It thinks in slots: five numbered WireGuard clients, and finding out which devices use one generally requires stopping it and seeing what breaks, or what goes out in the clear. `cfg-pia-wg` thinks in devices. One screen lists everything on your network and the VPN each device is using right now. Moving a device to a different VPN - or off VPN entirely - is taps away. No slot numbers, nothing to stop first, and no deciphering a multi-click WebUI apparently designed by a sadist.
+Always-on Private Internet Access (PIA) WireGuard VPNs on your ASUS router, managed from your Android or iOS device: tunnels that renew themselves, and a kill switch that holds while they do. Works with stock ASUS firmware and [Asuswrt-Merlin](https://www.asuswrt-merlin.net/).
 
 **Tunnels that stay up on their own.** PIA WireGuard configurations expire without warning, anywhere from a day to a couple of weeks or anywhere in between; often in the small hours of the morning. A dead tunnel looks much like a working one until something you care about stops loading or silently traverses the Internet in the raw. The app can install a **self-healing** watchdog on the router itself. It checks tunnels on your chosen schedule, builds fresh configurations when the old ones inevitably stop working, and emails you what happened and how long a tunnel was down for. Meanwhile, fail-closed routing blocks traffic from the affected devices rather than letting it out unprotected: a kill switch that fixes itself. Batteries not included.
 
+**Device assignment.** Which device is on which VPN? On stock firmware, your router can't easily tell you. It thinks in slots: five numbered WireGuard clients, and finding out which devices use one generally requires stopping it and seeing what breaks, or what goes out in the clear. `cfg-pia-wg` thinks in devices. One screen lists everything on your network and the VPN each device is using right now. Moving a device to a different VPN - or off VPN entirely - is taps away. No slot numbers, nothing to stop first, and no deciphering a multi-click WebUI apparently designed by a sadist.
+
 Underneath both is the plumbing: the app authenticates with PIA's provisioning API, selects the lowest-latency server in your chosen region, generates a fresh WireGuard keypair, and either writes the result into one of the router's five slots or hands you the complete `.conf` to copy, share, or save. Generating a `.conf` needs no router at all.
 
-You'll need SSH enabled on the router, a PIA subscription, and firmware with WireGuard in VPN Fusion: stock 3.0.0.4.388 or later, or Asuswrt-Merlin (beta, tested on 388.11 & 12). See [Prerequisites](#4-prerequisites--requirements).
+You'll need SSH enabled on the router, a PIA subscription, and firmware with WireGuard in VPN Fusion: stock 3.0.0.4.388 or later, or Asuswrt-Merlin, tested on 388.11 and 388.12. See [Prerequisites](#4-prerequisites--requirements).
 
 `cfg-pia-wg` is the evolution of my command-line Windows/Linux app [cfg-pia-wg-cmd](https://github.com/ExponentiallyDigital/cfg-pia-wg-cmd), in a functional, modern, and streamlined UI.
 
@@ -153,7 +153,7 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
   - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
   - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
-  - Testing: as at build 574 (11 November 2026), 2174 automated tests run on every build against a line-coverage target of 80%, actual 95.94 (the Coverage badge above is dynamically updated and records today's figure), and 179 manual end-to-end tests, 175 of them on a real router and 4 in the iOS simulator - 23 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
+  - Testing: as at build 575 (12 November 2026), 2186 automated tests run on every build against a line-coverage target of 80%, actual 95.94 (the Coverage badge above is dynamically updated and records today's figure), and 179 manual end-to-end tests, 175 of them on a real router and 4 in the iOS simulator - 23 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
   - Pinned GitHub Action hashes across [every workflow](https://github.com/ExponentiallyDigital/cfg-pia-wg/tree/main/.github/workflows) ensure automated builds execute with specific, verified tool versions.
 
 ---
@@ -174,7 +174,7 @@ If you want to build your own, see [BUILDING.md](https://github.com/Exponentiall
 Since build 403 (5 September 2026), this app extends support to stock ASUS firmware; [Merlin Firmware](https://www.asuswrt-merlin.net/) continues to be supported.
 
 > [!NOTE]
-> **Merlin support is in beta.** Everything since then has been built and tested on stock firmware, on a real router, end to end. Merlin shares nearly all of the code, and the automated tests cover the watchdog script on both, but the parts that differ on Merlin - its kill switch, starting and stopping a tunnel, boot persistence and uninstall - haven't had the same hand testing on a Merlin router for this release. If something doesn't behave on Merlin, please [raise an issue](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues).
+> **Tested on Merlin.** Everything except DEVICES works on Merlin. The parts that differ there - its kill switch, starting and stopping a tunnel, the mail command, boot persistence and uninstall - passed their hand tests on Merlin 388.12_2 on 1 October 2026, and `scripts/check-claims.sh` passed all 16 of its checks there, Merlin's own kill switch included. DEVICES is stock-only for now: on Merlin, VPN Director does that job. If something doesn't behave on Merlin, please [raise an issue](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues).
 
 If you don't have an ASUS router, you can still use the `Generate PIA WireGuard configuration` function to create standalone PIA configuration files from your phone/tablet. If that's you, you can skip to [5. Using the app](#5-using-the-app).
 

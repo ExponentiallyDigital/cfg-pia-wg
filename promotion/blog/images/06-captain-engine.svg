@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 470" width="800" height="470"><defs><marker id="m5B6474" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#5B6474"/></marker><marker id="m00856A" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#00856A"/></marker><marker id="mD23A3A" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#D23A3A"/></marker><marker id="mB86A00" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#B86A00"/></marker><marker id="m6E4FD6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#6E4FD6"/></marker><marker id="m0A7FBF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#0A7FBF"/></marker><marker id="m4659C9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#4659C9"/></marker></defs><rect width="800" height="470" fill="#FFFFFF"/>
+<text x="24" y="36.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="18" font-weight="600" fill="#1B1F27" text-anchor="start">The captain and the engine</text>
+<text x="24" y="58.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="13" font-weight="400" fill="#5B6474" text-anchor="start">Neither gets anywhere without the other</text>
+<rect x="40" y="100" width="300" height="84" rx="8" fill="#F4F6F9" stroke="#4659C9" stroke-width="1.5"/>
+<text x="190.0" y="128.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#4659C9" text-anchor="middle">Captain: Andrew</text>
+<text x="190.0" y="149.2" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">the idea, the design, the requirements,</text>
+<text x="190.0" y="164.8" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">and the rules</text>
+<rect x="460" y="100" width="300" height="84" rx="8" fill="#F4F6F9" stroke="#00856A" stroke-width="1.5"/>
+<text x="610.0" y="128.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#00856A" text-anchor="middle">Engine: Claude</text>
+<text x="610.0" y="149.2" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">the code, and a test</text>
+<text x="610.0" y="164.8" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">for every change</text>
+<rect x="460" y="316" width="300" height="84" rx="8" fill="#F4F6F9" stroke="#CDD3DD" stroke-width="1.5"/>
+<text x="610.0" y="344.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#1B1F27" text-anchor="middle">Automated tests</text>
+<text x="610.0" y="365.2" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">2,174 on every build,</text>
+<text x="610.0" y="380.8" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">95.9% of the code covered</text>
+<rect x="40" y="316" width="300" height="84" rx="8" fill="#F4F6F9" stroke="#4659C9" stroke-width="1.5"/>
+<text x="190.0" y="344.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#4659C9" text-anchor="middle">Measured on a real router</text>
+<text x="190.0" y="365.2" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">findings go back in as</text>
+<text x="190.0" y="380.8" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#5B6474" text-anchor="middle">the next requirement</text>
+<line x1="344" y1="142.0" x2="454" y2="142.0" stroke="#5B6474" stroke-width="2" marker-end="url(#m5B6474)"/>
+<line x1="610.0" y1="188" x2="610.0" y2="310" stroke="#5B6474" stroke-width="2" marker-end="url(#m5B6474)"/>
+<line x1="456" y1="358.0" x2="346" y2="358.0" stroke="#5B6474" stroke-width="2" marker-end="url(#m5B6474)"/>
+<line x1="190.0" y1="312" x2="190.0" y2="190" stroke="#5B6474" stroke-width="2" marker-end="url(#m5B6474)"/>
+<text x="400.0" y="236.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#B86A00" text-anchor="middle">Done means seen working</text>
+<text x="400.0" y="256.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="700" fill="#B86A00" text-anchor="middle">on the router</text>
+<text x="400.0" y="440.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="13" font-weight="400" fill="#5B6474" text-anchor="middle">Every protection is proved by a check that was first seen to fail.</text>
+</svg>

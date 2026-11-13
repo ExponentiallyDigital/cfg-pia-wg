@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450"><defs><marker id="m8892A4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8892A4"/></marker><marker id="m00D4AA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#00D4AA"/></marker><marker id="mFF5C5C" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#FF5C5C"/></marker><marker id="mEF9F27" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#EF9F27"/></marker><marker id="mB69CFF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#B69CFF"/></marker><marker id="m19B3EE" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#19B3EE"/></marker><marker id="m8B9CFC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8B9CFC"/></marker></defs><rect width="800" height="450" fill="#12141A"/>
+<text x="24" y="36.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="18" font-weight="600" fill="#E8EAF0" text-anchor="start">Five and a half months</text>
+<text x="24" y="58.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="13" font-weight="400" fill="#8892A4" text-anchor="start">23 May to 11 November 2026, drawn to scale</text>
+<line x1="50" y1="250" x2="750" y2="250" stroke="#2E3240" stroke-width="3"/>
+<line x1="86.6" y1="244" x2="86.6" y2="256" stroke="#4A5268" stroke-width="1.5"/>
+<text x="86.62790697674419" y="274.0" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">Jun</text>
+<line x1="208.7" y1="244" x2="208.7" y2="256" stroke="#4A5268" stroke-width="1.5"/>
+<text x="208.72093023255812" y="274.0" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">Jul</text>
+<line x1="334.9" y1="244" x2="334.9" y2="256" stroke="#4A5268" stroke-width="1.5"/>
+<text x="334.8837209302326" y="274.0" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">Aug</text>
+<line x1="461.0" y1="244" x2="461.0" y2="256" stroke="#4A5268" stroke-width="1.5"/>
+<text x="461.046511627907" y="274.0" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">Sep</text>
+<line x1="583.1" y1="244" x2="583.1" y2="256" stroke="#4A5268" stroke-width="1.5"/>
+<text x="583.1395348837209" y="274.0" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">Oct</text>
+<line x1="709.3" y1="244" x2="709.3" y2="256" stroke="#4A5268" stroke-width="1.5"/>
+<text x="709.3023255813954" y="274.0" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">Nov</text>
+<rect x="50" y="247" width="427.3" height="6" fill="#B69CFF" opacity="0.55"/>
+<text x="263.6627906976744" y="300.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#B69CFF" text-anchor="middle">built and tested on Merlin firmware</text>
+<line x1="50.0" y1="242" x2="50.0" y2="88" stroke="#E8EAF0" stroke-width="1" opacity="0.6"/>
+<text x="56.0" y="100.0" font-family="Consolas, Menlo, monospace" font-size="13" font-weight="700" fill="#E8EAF0" text-anchor="start">23 May</text>
+<text x="56.0" y="118.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="start">cfg-pia-wg-cmd,</text>
+<text x="56.0" y="133.6" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="start">and the app begins</text>
+<line x1="477.3" y1="242" x2="477.3" y2="88" stroke="#00D4AA" stroke-width="1" opacity="0.6"/>
+<text x="471.3255813953488" y="100.0" font-family="Consolas, Menlo, monospace" font-size="13" font-weight="700" fill="#00D4AA" text-anchor="end">5 Sep</text>
+<text x="471.3255813953488" y="118.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="end">stock firmware</text>
+<text x="471.3255813953488" y="133.6" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="end">support, build 403</text>
+<line x1="489.5" y1="258" x2="489.5" y2="352" stroke="#EF9F27" stroke-width="1" opacity="0.6"/>
+<text x="483.5348837209302" y="340.0" font-family="Consolas, Menlo, monospace" font-size="13" font-weight="700" fill="#EF9F27" text-anchor="end">8 Sep</text>
+<text x="483.5348837209302" y="358.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="end">eleven probes,</text>
+<text x="483.5348837209302" y="373.6" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="end">the first eight wrong</text>
+<line x1="579.1" y1="242" x2="579.1" y2="156" stroke="#FF5C5C" stroke-width="1" opacity="0.6"/>
+<text x="585.0697674418604" y="168.0" font-family="Consolas, Menlo, monospace" font-size="13" font-weight="700" fill="#FF5C5C" text-anchor="start">30 Sep</text>
+<text x="585.0697674418604" y="186.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="start">reboot leak and</text>
+<text x="585.0697674418604" y="201.6" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="start">curl DNS bug found</text>
+<line x1="583.1" y1="258" x2="583.1" y2="352" stroke="#00D4AA" stroke-width="1" opacity="0.6"/>
+<text x="589.1395348837209" y="340.0" font-family="Consolas, Menlo, monospace" font-size="13" font-weight="700" fill="#00D4AA" text-anchor="start">1 Oct</text>
+<text x="589.1395348837209" y="358.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="start">first public release,</text>
+<text x="589.1395348837209" y="373.6" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="start">Google Play, build 490</text>
+<line x1="745.9" y1="242" x2="745.9" y2="88" stroke="#00D4AA" stroke-width="1" opacity="0.6"/>
+<text x="739.9302325581396" y="100.0" font-family="Consolas, Menlo, monospace" font-size="13" font-weight="700" fill="#00D4AA" text-anchor="end">10 Nov</text>
+<text x="739.9302325581396" y="118.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="end">App Store</text>
+<text x="739.9302325581396" y="133.6" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#E8EAF0" text-anchor="end">approval</text>
+<circle cx="50.0" cy="250" r="6" fill="#E8EAF0" stroke="#12141A" stroke-width="2"/>
+<circle cx="477.3" cy="250" r="6" fill="#00D4AA" stroke="#12141A" stroke-width="2"/>
+<circle cx="489.5" cy="250" r="6" fill="#EF9F27" stroke="#12141A" stroke-width="2"/>
+<circle cx="579.1" cy="250" r="10" fill="none" stroke="#FF5C5C" stroke-width="2.5"/>
+<circle cx="583.1" cy="250" r="6" fill="#00D4AA" stroke="#12141A" stroke-width="2"/>
+<circle cx="745.9" cy="250" r="6" fill="#00D4AA" stroke="#12141A" stroke-width="2"/>
+<text x="750" y="426.0" font-family="Consolas, Menlo, monospace" font-size="13" font-weight="400" fill="#8892A4" text-anchor="end">612 commits  ·  574 builds  ·  2,174 automated tests</text>
+</svg>

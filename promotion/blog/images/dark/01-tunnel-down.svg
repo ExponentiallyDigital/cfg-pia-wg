@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 470" width="800" height="470"><defs><marker id="m8892A4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8892A4"/></marker><marker id="m00D4AA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#00D4AA"/></marker><marker id="mFF5C5C" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#FF5C5C"/></marker><marker id="mEF9F27" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#EF9F27"/></marker><marker id="mB69CFF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#B69CFF"/></marker><marker id="m19B3EE" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#19B3EE"/></marker><marker id="m8B9CFC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8B9CFC"/></marker></defs><rect width="800" height="470" fill="#12141A"/>
+<text x="24" y="36.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="18" font-weight="600" fill="#E8EAF0" text-anchor="start">When the tunnel is down</text>
+<text x="24" y="58.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="13" font-weight="400" fill="#8892A4" text-anchor="start">Switched off, restarting, being rebuilt, or the router booting</text>
+<text x="24" y="106.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="700" fill="#FF5C5C" text-anchor="start">STOCK FIRMWARE</text>
+<rect x="24" y="118" width="164" height="76" rx="8" fill="#1A1D23" stroke="#2E3240" stroke-width="1.5"/>
+<text x="106.0" y="150.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#E8EAF0" text-anchor="middle">Laptop</text>
+<text x="106.0" y="171.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">pinned to wgc1</text>
+<rect x="220" y="118" width="164" height="76" rx="8" fill="#1A1D23" stroke="#2E3240" stroke-width="1.5"/>
+<text x="302.0" y="150.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#E8EAF0" text-anchor="middle">ASUS router</text>
+<text x="302.0" y="171.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">tunnel down</text>
+<rect x="416" y="118" width="164" height="76" rx="8" fill="#1A1D23" stroke="#FF5C5C" stroke-width="1.5"/>
+<text x="498.0" y="150.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#E8EAF0" text-anchor="middle">Your ISP</text>
+<text x="498.0" y="171.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">no tunnel, no encryption</text>
+<rect x="612" y="118" width="164" height="76" rx="8" fill="#1A1D23" stroke="#FF5C5C" stroke-width="1.5"/>
+<text x="694.0" y="151.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#E8EAF0" text-anchor="middle">Every site</text>
+<text x="694.0" y="169.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#E8EAF0" text-anchor="middle">you visit</text>
+<line x1="190" y1="156" x2="216" y2="156" stroke="#FF5C5C" stroke-width="2" marker-end="url(#mFF5C5C)"/>
+<line x1="386" y1="156" x2="412" y2="156" stroke="#FF5C5C" stroke-width="2" marker-end="url(#mFF5C5C)"/>
+<line x1="582" y1="156" x2="608" y2="156" stroke="#FF5C5C" stroke-width="2" marker-end="url(#mFF5C5C)"/>
+<text x="694.0" y="220.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="13" font-weight="600" fill="#FF5C5C" text-anchor="middle">sees your real IP address</text>
+<text x="24" y="276.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="700" fill="#00D4AA" text-anchor="start">WITH CFG-PIA-WG</text>
+<rect x="24" y="288" width="164" height="76" rx="8" fill="#1A1D23" stroke="#2E3240" stroke-width="1.5"/>
+<text x="106.0" y="320.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#E8EAF0" text-anchor="middle">Laptop</text>
+<text x="106.0" y="341.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">pinned to wgc1</text>
+<rect x="220" y="288" width="164" height="76" rx="8" fill="#1A1D23" stroke="#EF9F27" stroke-width="1.5"/>
+<text x="302.0" y="320.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#E8EAF0" text-anchor="middle">ASUS router</text>
+<text x="302.0" y="341.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">kill switch holds</text>
+<line x1="190" y1="326" x2="216" y2="326" stroke="#8892A4" stroke-width="2" marker-end="url(#m8892A4)"/>
+<line x1="386" y1="326" x2="430" y2="326" stroke="#FF5C5C" stroke-width="2" stroke-dasharray="6 5"/>
+<circle cx="450" cy="326" r="18" fill="#12141A" stroke="#FF5C5C" stroke-width="2"/>
+<path d="M442 318 L458 334 M458 318 L442 334" stroke="#FF5C5C" stroke-width="2.5"/>
+<text x="480" y="322.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#E8EAF0" text-anchor="start">no tunnel, no internet</text>
+<text x="480" y="341.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="start">nothing leaves by your ISP</text>
+<rect x="612" y="388" width="164" height="56" rx="8" fill="#1A1D23" stroke="#00D4AA" stroke-width="1.5"/>
+<text x="694.0" y="410.1" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="14" font-weight="600" fill="#E8EAF0" text-anchor="middle">PIA tunnel</text>
+<text x="694.0" y="431.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">rebuilt by the watchdog</text>
+<path d="M302.0 366 L302.0 416 L608 416" fill="none" stroke="#00D4AA" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#m00D4AA)"/>
+<text x="314.0" y="408.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#00D4AA" text-anchor="start">back through the tunnel once it is up</text>
+</svg>

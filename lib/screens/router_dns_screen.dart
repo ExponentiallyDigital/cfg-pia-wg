@@ -314,7 +314,8 @@ class _DnsReportScreenState extends State<DnsReportScreen> {
                 ...slotSpans(l.rest, const TextStyle()),
                 _br,
               ])),
-              if (l.note.isNotEmpty) _t(l.note, _note),
+              // The note names slots too ("used by wgc1:pia-nz and wgc5:..."), and they take their colours (ID-561).
+              if (l.note.isNotEmpty) Text.rich(TextSpan(style: _note, children: [...slotSpans(l.note, const TextStyle()), _br])),
             ]),
           ),
           _space,
