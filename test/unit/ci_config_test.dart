@@ -173,35 +173,39 @@ void main() {
     expect(flutterJob, contains('git add pubspec.yaml pubspec.lock THIRD-PARTY-NOTICES.md'));
   });
 
-  group('notices after a dependency change (ID-508)', () {
-    final yaml = File('.github/workflows/notices_on_dev.yml').readAsStringSync().replaceAll('\r\n', '\n');
-    final generate = yaml.substring(yaml.indexOf('\n  generate:'), yaml.indexOf('\n  commit:'));
-    final commit = yaml.substring(yaml.indexOf('\n  commit:'));
+  // ID-576: Gradle, the Android Gradle plugin and Kotlin move weekly too, to their latest releases, gated
+  // on the job's own checks, with the release dry run named as the check a debug build can't make.
+  test('the weekly Android tools update moves all three, regenerates what follows, and opens a draft on failure', () {
+    final yaml = File('.github/workflows/weekly_updates.yml').readAsStringSync().replaceAll('\r\n', '\n');
+    final start = yaml.indexOf('\n  android-tools:');
+    expect(start, greaterThan(0), reason: 'weekly_updates.yml has no android-tools job');
+    final job = yaml.substring(start);
+    expect(job, contains('dart run tool/android_tools.dart --check'));
+    expect(job, contains('dart run tool/android_tools.dart --set --gradle'));
+    expect(job, contains('gradle-\$v-all.zip.sha256'), reason: "the wrapper refuses a distribution without its checksum");
+    // services.gradle.org answers the checksum with a 301, whose HTML page curl -sf hands back as the
+    // body; found by rehearsing the job, 2026-11-14. Every fetch follows redirects.
+    expect(RegExp(r'curl -sf[^L]').hasMatch(job), isFalse, reason: "a curl in the job that doesn't follow redirects");
+    expect(job, contains("grep -qxE '[0-9a-f]{64}'"), reason: 'the checksum is checked to be one before it is used');
+    expect(job, contains('--write-locks'));
+    expect(job, contains('run: dart run tool/third_party_notices.dart'));
+    expect(job, contains('git add -- android/gradle/wrapper/gradle-wrapper.properties android/settings.gradle.kts THIRD-PARTY-NOTICES.md'));
+    expect(job, contains('draft="--draft"'));
+    expect(job, contains('dry_run=true'), reason: 'the PR names the release dry run');
+    expect(job, contains('flutter-version-file: pubspec.yaml'));
+  });
 
-    test('runs on a push to dev that changes a dependency file', () {
-      expect(yaml, contains('  push:\n    branches:\n      - dev\n'));
-      for (final path in ['pubspec.yaml', 'pubspec.lock', '"android/**/*.lockfile"']) {
-        expect(yaml, contains('      - $path\n'));
-      }
-    });
-
-    test('the job that runs package code can only read, keeps no credentials and changes no version', () {
-      expect(yaml, contains('\npermissions:\n  contents: read\n'));
-      expect(generate, contains('    permissions:\n      contents: read\n'));
-      expect(generate, isNot(contains('contents: write')));
-      expect(generate, contains('persist-credentials: false'));
-      expect(generate, contains('flutter pub get --enforce-lockfile'));
-      expect(generate, isNot(contains('pub upgrade')));
-      expect(generate, isNot(contains('--write-locks')));
-    });
-
-    test('the job that can write runs no package code and commits only the notices', () {
-      expect(commit, contains('    permissions:\n      contents: write\n'));
-      expect(RegExp(r'\b(flutter|dart)\b', caseSensitive: false).hasMatch(commit), isFalse,
-          reason: 'the write job must not run Flutter or Dart');
-      expect(commit, contains('git commit -m "THIRD-PARTY-NOTICES.md regenerated after a dependency change (ID-508)" -- THIRD-PARTY-NOTICES.md'));
-      expect(RegExp(r'git add').hasMatch(commit), isFalse, reason: 'it commits the one file by path, never git add');
-    });
+  // ID-546: a commit a workflow pushes back to the branch it ran on (as notices_on_dev.yml did to dev)
+  // holds the next PR's checks until a person approves them. The notices are regenerated in the commit
+  // steps instead; a workflow may still push its own branch for a PR, as weekly_updates.yml does.
+  test('no workflow pushes a commit back to the branch it ran on (ID-546)', () {
+    final pushesBack = [
+      for (final f in Directory('.github/workflows').listSync().whereType<File>())
+        if (f.readAsStringSync().contains('git push origin "HEAD:')) f.path.replaceAll(r'\', '/')
+    ];
+    expect(pushesBack, isEmpty);
+    final steps = File('CHANGELOG.md').readAsStringSync();
+    expect(steps, contains('run `dart run tool/third_party_notices.dart` and commit THIRD-PARTY-NOTICES.md with it'));
   });
 
   // ID-519: the Play listing's screenshots go up with its text, in the same edit, each set replaced whole.

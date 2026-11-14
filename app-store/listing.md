@@ -12,7 +12,7 @@ WireGuard VPNs on ASUS routers
 
 ## Promotional text (170 characters)
 
-Every device on your network, every PIA VPN on your ASUS router, one screen. A kill switch for stock firmware, and a watchdog that rebuilds tunnels when PIA rotates keys.
+Always-on PIA on your ASUS router, stock or Merlin: a watchdog renews dead tunnels with fresh keys, and a kill switch holds while it does. Every device, one screen.
 
 ## Keywords (100 characters, commas, no spaces after them)
 

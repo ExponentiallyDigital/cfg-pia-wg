@@ -1,1 +1,1 @@
-Privacy and security for ASUS routers: PIA WireGuard VPNs with a kill switch
+Always-on PIA WireGuard for ASUS routers, stock and Merlin, with a kill switch

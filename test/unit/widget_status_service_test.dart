@@ -49,6 +49,46 @@ void main() {
     expect(status.badge, WidgetBadge.protected);
   });
 
+  // ID-570 and ID-571, seen on 388.13_0 on 2026-11-13: on Merlin the widget said "Not checked" with two
+  // tunnels up, as it read only stock's lists. Merlin's part comes after the eleven stock fields.
+  test("on Merlin, the tunnels and their pinned devices come from the wgcN keys and VPN Director's rules", () async {
+    const ip = '192.168.1.11';
+    final client = RecordingSSHClient(
+      responder: (cmd) => cmd == kWidgetStatusCommand
+          ? _blob([
+              '', '', // no vpnc_clientlist or vpnc_dev_policy_list on Merlin
+              ' wgc1: \n wgc5: ', // up interfaces
+              'wgc1\tPEERKEY\t1700000000\nwgc5\tPEERKEY\t1700000000\n---\n1700000000', // handshake ages
+              '', '', '', '', // dhcp_staticlist, custom_clientlist, cfg_device_list, nmp_cl_json
+              '{"AA:BB:CC:DD:EE:01":{"ip":"$ip","name":"TABLET","isOnline":"1"}}', // nmp_cache
+              '', '', // cru l, the watchdogs' heads and tails
+              'merlin', // nvram get 3rd-party
+              '1>pia-nz>1\n2>>\n3>>\n4>>\n5>pia-aus_melbourne>1', // the slots
+              '<1>vd1>$ip>>WGC1<1>default>192.168.1.0/24>>WGC5', // VPN Director's rules
+            ])
+          : '',
+    );
+
+    final status = await WidgetStatusService(client).read();
+
+    expect([for (final t in status.tunnels) 'wgc${t.slot}:${t.region} ${t.pinnedDeviceNames.join(',')}'.trim()], [
+      'wgc1:pia-nz TABLET',
+      'wgc5:pia-aus_melbourne',
+    ]);
+    expect(status.badge, WidgetBadge.protected, reason: 'not "Not checked"');
+  });
+
+  test('control: on stock the Merlin part is empty, and the stock lists decide as before', () async {
+    final vpnc = serialiseVpncClientlist([buildVpncRecord(slot: 5, desc: 'Melbourne, Australia', active: true)]);
+    final client = RecordingSSHClient(
+      responder: (cmd) => cmd == kWidgetStatusCommand
+          ? _blob([vpnc, '', ' wgc5: ', 'wgc5\tPEERKEY\t1700000000\n---\n1700000000', '', '', '', '', '', '', '', '', '', ''])
+          : '',
+    );
+    final status = await WidgetStatusService(client).read();
+    expect([for (final t in status.tunnels) t.slot], [5]);
+  });
+
   test('a blank reply (nothing matched, or the router refused) reads as not checked, not a crash', () async {
     final client = RecordingSSHClient(responder: (_) => '');
     final status = await WidgetStatusService(client).read();

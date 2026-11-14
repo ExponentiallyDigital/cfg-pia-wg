@@ -25,6 +25,7 @@ import 'package:dartssh2/dartssh2.dart';
 
 import 'device_assignment.dart';
 import 'firmware.dart' show kRouterAppDir;
+import 'merlin_vpn_director.dart';
 import 'router_command.dart';
 import 'router_script_integrity.dart' show brokenWatchdogSlots, kWatchdogHeadsAndTailsCommand;
 import 'router_slot_service.dart' show kHandshakeAgesCommand, kUpInterfacesCommand;
@@ -39,7 +40,8 @@ const String _marker = '@@CFGPIAWG-WIDGET@@';
 const String _sep = "'$_marker'";
 
 /// One round trip: everything [buildWidgetStatus] needs, in the order [WidgetStatusService.read]
-/// expects it back. Stock only - see widget_status.dart's header for why.
+/// expects it back. Merlin's part comes last (ID-570, ID-571), so a widget key made before it reads
+/// the stock part as it always has; on stock, that part is empty.
 const String kWidgetStatusCommand = 'echo $_sep; nvram get vpnc_clientlist; '
     'echo $_sep; nvram get vpnc_dev_policy_list; '
     'echo $_sep; $kUpInterfacesCommand; '
@@ -53,6 +55,9 @@ const String kWidgetStatusCommand = 'echo $_sep; nvram get vpnc_clientlist; '
     // this build runs the read without them, which reads as nothing broken until GENERATE is run again.
     'echo $_sep; cru l 2>/dev/null; '
     'echo $_sep; $kWatchdogHeadsAndTailsCommand; '
+    'echo $_sep; nvram get 3rd-party; '
+    'echo $_sep; $kMerlinSlotsCommand; '
+    'echo $_sep; cat $kVpnDirectorRulelistPath 2>/dev/null; '
     'echo $_sep';
 
 /// Where the widget's read lives on the router (ID-467). The widget's key runs this script and
@@ -98,9 +103,11 @@ class WidgetStatusService {
       cfgDeviceList: at(6),
     );
 
+    // Merlin has neither of stock's lists: its slots and VPN Director's rules, in the same shapes.
+    final merlin = at(11) == 'merlin';
     return buildWidgetStatus(
-      vpncClientlist: at(0),
-      devicePolicyList: at(1),
+      vpncClientlist: merlin ? parseMerlinSlots(at(12)).map((r) => r.serialise()).join('<') : at(0),
+      devicePolicyList: merlin ? serialiseDevicePolicyList(merlinPolicies(parseVpnDirectorRules(at(13)))) : at(1),
       upInterfaces: at(2),
       handshakeAgesRaw: at(3),
       devices: devices,

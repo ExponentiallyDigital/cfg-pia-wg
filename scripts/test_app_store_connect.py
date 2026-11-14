@@ -45,6 +45,8 @@ def version_answers(state, attached):
         '/v1/appStoreVersions/v1/build': {'data': {'id': attached} if attached else None},
         '/v1/reviewSubmissions': {'data': []},
         '/v1/reviewSubmissions/new-reviewSubmissions/items': {'data': []},
+        '/v1/appStoreVersions/v1/appStoreVersionLocalizations': {
+            'data': [{'id': 'vl1', 'attributes': {'locale': 'en-AU', 'whatsNew': 'Notes.'}}]},
     }
 
 
@@ -265,6 +267,88 @@ class AgeRating(unittest.TestCase):
     def test_only_the_questions_apple_returns_are_sent(self):
         answers, _ = asc.age_answers({'contests': None})
         self.assertEqual(answers, {'contests': 'NONE'})
+
+
+class LiveAppApi(FakeApi):
+    """App Store Connect for an app on sale (ID-549): only the live app info is there until a new version
+    is made, and Apple refuses any change to the live app info's localization."""
+
+    def __init__(self):
+        super().__init__({
+            '/v1/apps/app/appStoreVersions': {'data': [{'id': 'live', 'attributes': {'appVersionState': 'READY_FOR_SALE'}}]},
+            '/v1/appInfos/info-live/appInfoLocalizations': {'data': [{'id': 'loc-live', 'attributes': {'locale': 'en-AU'}}]},
+            '/v1/appInfos/info-next/appInfoLocalizations': {'data': [{'id': 'loc-next', 'attributes': {'locale': 'en-AU'}}]},
+            '/v1/appInfos/info-live/ageRatingDeclaration': {'data': {'id': 'age-live', 'attributes': {}}},
+            '/v1/appInfos/info-next/ageRatingDeclaration': {'data': {'id': 'age-next', 'attributes': {}}},
+            '/v1/appStoreVersions/new-appStoreVersions/appStoreVersionLocalizations': {'data': []},
+            '/v1/appStoreVersions/new-appStoreVersions/appStoreReviewDetail': {'data': None},
+        })
+        self.version_made = False
+
+    def get(self, path, **params):
+        if path == '/v1/apps/app/appInfos':
+            live = {'id': 'info-live', 'attributes': {'state': 'READY_FOR_DISTRIBUTION'}}
+            nxt = {'id': 'info-next', 'attributes': {'state': 'PREPARE_FOR_SUBMISSION'}}
+            return {'data': [nxt, live] if self.version_made else [live]}
+        return super().get(path, **params)
+
+    def patch(self, kind, id_, attributes=None, relationships=None):
+        if (kind, id_) == ('appInfoLocalizations', 'loc-live'):
+            raise AssertionError("HTTP 409: The field 'name' can not be modified in the current state.")
+        return super().patch(kind, id_, attributes, relationships)
+
+    def post(self, kind, attributes, relationships):
+        if kind == 'appStoreVersions':
+            self.version_made = True
+        return super().post(kind, attributes, relationships)
+
+
+LISTING_PLAN = {
+    'fields': {'Name': 'cfg-pia-wg', 'Subtitle': 'sub', 'Privacy policy URL': 'https://example.com/p',
+               'Primary category': 'Utilities', 'Secondary category': 'Productivity', 'Copyright': '2026 A',
+               'Keywords': 'k', 'Promotional text': 'p', 'Support URL': 'https://example.com/s',
+               'Marketing URL': 'https://example.com/m'},
+    'description': 'd', 'notes': 'n', 'screenshots': {},
+}
+
+
+class ListingOnALiveApp(unittest.TestCase):
+    """ID-549: run 42921606900 stopped at the app info, because the version that unlocks it came later."""
+
+    def test_the_next_version_is_made_before_the_app_info_is_changed(self):
+        api = LiveAppApi()
+        asc.publish_listing(api, 'app', LISTING_PLAN, '0.8.203')
+        self.assertIn(('PATCH', 'appInfoLocalizations', {'name': 'cfg-pia-wg', 'subtitle': 'sub',
+                                                         'privacyPolicyUrl': 'https://example.com/p'}), api.sent)
+        kinds = [s[1] for s in api.sent]
+        self.assertLess(kinds.index('appStoreVersions'), kinds.index('appInfoLocalizations'))
+
+
+class WhatsNewOnAVersionMadeElsewhere(unittest.TestCase):
+    """ID-549: a version the listing run or a person made has no What's New, which Apple needs for an update."""
+
+    def run_it(self, whats_new, notes):
+        answers = version_answers('PREPARE_FOR_SUBMISSION', None)
+        answers['/v1/appStoreVersions/v1/appStoreVersionLocalizations'] = {
+            'data': [{'id': 'vl1', 'attributes': {'locale': 'en-AU', 'whatsNew': whats_new}}]}
+        answers['/v1/builds/b534/betaBuildLocalizations'] = {
+            'data': [{'attributes': {'locale': 'en-AU', 'whatsNew': notes}}]}
+        api = FakeApi(answers)
+        asc.promote_production(api, 'app', BUILD, '534', '0.8.164', dry_run=False)
+        return api
+
+    def test_an_empty_one_is_filled_from_the_testflight_notes_before_submission(self):
+        api = self.run_it(None, '• Fixed: something.')
+        self.assertEqual(api.sent[0], ('PATCH', 'appStoreVersionLocalizations', {'whatsNew': '• Fixed: something.'}))
+        self.assertEqual(api.sent[-1], ('PATCH', 'reviewSubmissions', {'submitted': True}))
+
+    def test_one_already_written_is_kept(self):
+        api = self.run_it('Written by hand.', '• Fixed: something.')
+        self.assertNotIn('appStoreVersionLocalizations', [s[1] for s in api.sent])
+
+    def test_no_notes_anywhere_stops_before_anything_is_sent(self):
+        with self.assertRaises(SystemExit):
+            self.run_it('', '')
 
 
 if __name__ == '__main__':

@@ -5,6 +5,7 @@ import 'package:cfg_pia_wg/screens/router_dns_screen.dart';
 import 'package:cfg_pia_wg/screens/settings_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/app_scaffold.dart' show ScreenHeading;
+import 'package:cfg_pia_wg/widgets/slot_text.dart' show kSlotLabelPattern, slotOf;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -171,6 +172,32 @@ void main() {
       expect(find.text('not encrypted'), findsNWidgets(2), reason: "the router's own two DNS servers");
       expect(find.text('encrypted (DoH)'), findsNWidgets(4), reason: 'the four watchdogs');
       expect(find.text('not configured'), findsOneWidget, reason: 'wgc4');
+    });
+
+    testWidgets("a slot named in a line's note takes its slot colour, as in its head (ID-561)", (tester) async {
+      await _pumpSettings(tester, _connected());
+      await _open(tester, 'settings_dns_routing');
+
+      // THE SLOTS' DNS SERVERS: "used by wgc1:... and wgc5:... Rules ... through wgc5:...".
+      final notes = tester
+          .widgetList<RichText>(find.byType(RichText))
+          .where((t) => t.text.toPlainText().startsWith('used by wgc'))
+          .toList();
+      expect(notes, isNotEmpty);
+      final labels = <String, Color?>{};
+      for (final note in notes) {
+        note.text.visitChildren((span) {
+          if (span is TextSpan && span.text != null && kSlotLabelPattern.hasMatch(span.text!)) {
+            labels[span.text!] = span.style?.color;
+          }
+          return true;
+        });
+      }
+      expect(labels, isNotEmpty, reason: 'each slot label is its own span');
+      for (final e in labels.entries) {
+        expect(kSlotLabelPattern.matchAsPrefix(e.key)?.end, e.key.length, reason: e.key);
+        expect(e.value, slotColour(slotOf(e.key)!), reason: e.key);
+      }
     });
   });
 

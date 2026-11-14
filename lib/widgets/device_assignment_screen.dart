@@ -321,17 +321,15 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       setRouterFirmware(detected);
       _c.logEntry('Router firmware detected: ${detected.name}.');
     }
-    if (isStockFirmware) return null;
-    return (
-      message: 'DEVICES is a stock-firmware feature. This router runs Asuswrt-Merlin, '
-          'which has no VPN Fusion device policy to write.',
-      merlin: true,
-    );
+    // Merlin works too, through VPN Director's rules (ID-557): the service reads them into the same
+    // state, so nothing below needs to know which firmware it is.
+    return null;
   }
 
   DeviceAssignmentService _assignmentService(SSHClient client) =>
       widget.serviceFactory?.call(client) ??
       DeviceAssignmentService(client,
+          merlin: !isStockFirmware,
           onLog: (m, {isError = false, isSuccess = false, isWarning = false}) =>
               _c.logEntry(m, isError: isError, isSuccess: isSuccess, isWarning: isWarning));
 
@@ -723,7 +721,8 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
         tunnelWarnings: tunnelWarnings,
         lines: _changeLines(state),
         reservationNames: [for (final mac in reservations.keys) _byMac(state, mac).displayName],
-        restartsTunnels: _stagedDefault != null,
+        // On Merlin the default is a VPN Director rule, and changing it restarts no tunnel.
+        restartsTunnels: _stagedDefault != null && isStockFirmware,
         scheduleWarning: _scheduleWarning(state, disabling),
         randomMacNames: [for (final d in disabling) if (d.hasRandomisedMac) _nameOf(d)],
         foreignNames: _foreignNames(state),

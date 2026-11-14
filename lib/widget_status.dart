@@ -15,9 +15,8 @@
 //
 // No SSH in this file, same discipline as device_assignment.dart: parse and decide here, so the
 // shape the widget shows can be tested without a router, and WidgetStatusService (widget_status_
-// service.dart) is left with nothing but I/O. Stock only - the widget's first slice covers the
-// firmware device assignment already runs on; Merlin's own kill switch has no `vpnc_dev_policy_
-// list` to read pins from, and is a later slice.
+// service.dart) is left with nothing but I/O. On Merlin, widget_status_service.dart hands this the
+// same shapes, built from the `wgcN_*` keys and VPN Director's rules (ID-570, ID-571).
 
 import 'device_assignment.dart';
 import 'router_slot_service.dart' show VpncRecord, parseHandshakeAges, parseVpncClientlist, kAnsweringWithinSeconds;

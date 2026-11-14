@@ -209,6 +209,9 @@ abstract class Entitlement {
   /// The paywall used to show the plugin's raw exception text, and log nothing at all.
   static String describeStoreError(Object e) {
     if (e is! PlatformException) return plainError(e);
+    // A code that isn't a number is no store error code. purchases_flutter 11.0.1 threw on one and
+    // 11.0.2 calls it unknownError, which would hide the raw code a bug report needs (ID-590).
+    if (int.tryParse(e.code) == null) return e.message ?? e.code;
     final PurchasesErrorCode code;
     try {
       code = PurchasesErrorHelper.getErrorCode(e);

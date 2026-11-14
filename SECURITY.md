@@ -1,9 +1,19 @@
 # Security Policy
 
 > [!NOTE]
-> iOS support is being prepared. Where a protection differs on iOS, this page says so beside it.
+> This page covers both apps, Android and iOS. Where a protection differs on iOS, it says so beside it.
 
-## Reporting a vulnerability
+- [1. Reporting a vulnerability](#1-reporting-a-vulnerability)
+  - [1.1. Our disclosure process](#11-our-disclosure-process)
+- [2. Supported versions](#2-supported-versions)
+- [3. Security update policy](#3-security-update-policy)
+- [4. Secure development practices](#4-secure-development-practices)
+- [5. Dependency management](#5-dependency-management)
+- [6. Secret management](#6-secret-management)
+- [7. Build attestation](#7-build-attestation)
+- [8. Data handling & privacy](#8-data-handling--privacy)
+
+## 1. <a name='reporting-a-vulnerability'></a>Reporting a vulnerability
 
 **We use GitHub's Private Vulnerability Reporting feature.**
 
@@ -14,7 +24,7 @@
 
 We will be notified immediately and will respond to your report as soon as possible.
 
-### Our disclosure process
+### 1.1. <a name='our-disclosure-process'></a>Our disclosure process
 
 1. **Receipt & validation:** upon receiving your report, we will validate the vulnerability against the current stable release.
 2. **Coordinated resolution:** we will work to patch the vulnerability without exposing details publicly to ensure user infrastructure remains safe.
@@ -22,13 +32,13 @@ We will be notified immediately and will respond to your report as soon as possi
 
 ---
 
-## Supported versions
+## 2. <a name='supported-versions'></a>Supported versions
 
 Only the latest active [release](https://github.com/ExponentiallyDigital/cfg-pia-wg/releases) version receives security updates and vulnerability patches.
 
 ---
 
-## Security update policy
+## 3. <a name='security-update-policy'></a>Security update policy
 
 Security-sensitive updates are fast-tracked.
 
@@ -37,7 +47,7 @@ Security-sensitive updates are fast-tracked.
 
 ---
 
-## Secure development practices
+## 4. <a name='secure-development-practices'></a>Secure development practices
 
 This project incorporates strict, automated multi-layered quality and security validations (SSDLC) powered by GitHub Actions. Every single push and pull request targeted to the `main` branch must pass these checks prior to merging:
 
@@ -47,7 +57,7 @@ This project incorporates strict, automated multi-layered quality and security v
 
 ---
 
-## Dependency management
+## 5. <a name='dependency-management'></a>Dependency management
 
 To guarantee predictability and avoid supply-chain attacks, we aggressively monitor and enforce strict dependency baselines:
 
@@ -57,7 +67,7 @@ To guarantee predictability and avoid supply-chain attacks, we aggressively moni
 
 ---
 
-## Secret management
+## 6. <a name='secret-management'></a>Secret management
 
 We enforce a strict **zero-hardcoded-secrets policy** across this entire infrastructure:
 
@@ -74,20 +84,20 @@ We enforce a strict **zero-hardcoded-secrets policy** across this entire infrast
 
 ---
 
-## Build attestation
+## 7. <a name='build-attestation'></a>Build attestation
 
 Build provenance attestations are available for release APK, debug APK, and Google Play Store AAB. View them at: https://github.com/ExponentiallyDigital/cfg-pia-wg/attestations
 
 ---
 
-## Data handling & privacy
+## 8. <a name='data-handling--privacy'></a>Data handling & privacy
 
 **cfg-pia-wg** is built to keep as close to nothing on the device as the job allows. Out of the box that is two non-credential values; one optional feature, the home screen widget, adds a restricted key if the user asks for it. Each is listed below rather than summarised, because "nothing is stored" is a claim worth being exact about:
 
 - **Zero permanent footprint:** the application does not maintain long-term local telemetry, profiling metrics, or databases (`shared_preferences` or SQLite). Secure storage is used for one purpose only, and only when the user opts in: the optional home screen widget's key, described below.
 - **Three things are remembered on the device, and nothing else unless the home screen widget is added: the router's LAN address, its SSH host key fingerprint, and the last PIA server list that passed PIA's signature check.** Since build 410 a successful SSH connect writes the address you connected to into a single-line file in the app private storage, so it prefills next time instead of being retyped every session. Since build 478 a second file holds the router's host key fingerprint, the public line `ssh` prints, so the next connection can be checked against it. Neither is a credential: the address is a private-range address that identifies nothing outside your own network, and the fingerprint is public by design. No username, no password, no generated configuration. Both are written only after a login has succeeded, so a wrong address or an impostor at first connect never replaces a good record; `android:allowBackup="false"` keeps them off Google Drive (on iOS, the app's private storage is included in iCloud and computer backups, Apple's default; these files hold no credential); and SETTINGS -> FORGET ROUTER IP deletes both, and reads the store back to say whether it worked. A source-scanning test fails the build if the address file ever learns to write anything else. Since build 497 a third file holds PIA's server list exactly as PIA sent it, signature and all: the last one that passed the check described under "PIA's server list is checked against PIA's signature" above, kept so a list that fails can be refused without stopping the app. It is PIA's public list of its servers and holds nothing about the user. It is checked again every time it's used, so a file changed on the phone is refused just like a tampered download; `android:allowBackup="false"` keeps it off Google Drive too; and SETTINGS -> REMOVE CACHED PIA SERVERS deletes it, along with the router's copy, which it reads back to say whether it went.
 - **The optional home screen widget keeps a restricted key and the router login name, and only if the user sets it up.** On Android and on iOS, which has had the widget since ID-438. The widget (README 5.12) refreshes in the background, which means logging into the router unattended; the app holds no router password, so there is nothing to log in with. Since build 494 the user may instead generate an Ed25519 key in SETTINGS -> HOME SCREEN WIDGET KEY. The app installs the public half on the router restricted to a single command (`command="/bin/sh /jffs/cfg-pia-wg/widget-read.sh"`, plus `no-port-forwarding`, `no-agent-forwarding`, `no-X11-forwarding` and `no-pty`). Since ID-467 that command is a script holding the read, which only root can change, and root can already change the keys; UNINSTALL deletes the script's folder and takes every widget key off with it and keeps the private half, with the router login name beside it, in Keystore-backed secure storage on Android and in the Keychain on iOS. The login name is not a credential on its own: SSH cannot connect without a username, so the key is unusable without it and the name is unusable without the key. Neither is kept if the widget is not set up, and each phone or tablet that sets it up gets a key of its own, and GENERATE leaves other devices' keys alone (ID-398). REMOVE takes every widget key off the router, every device's, and deletes this phone's two stored items together (ID-407): a key left behind by a cleared or reinstalled app can't be told from one still in use, and five of them stopped GENERATE working. Neither is ever backed up or copied to another device (ID-527): `android:allowBackup="false"` keeps them off Google Drive, `data_extraction_rules.xml` keeps everything the app holds out of the device-to-device transfer Android 12 and later would otherwise make, and on iOS both are kept in the Keychain "this device only" (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`), so iCloud and computer backups leave them out and a restore onto another iPhone does not bring them back. **Measured on stock, Dropbear v2022.82, 2026-10-12:** with that key, another command was refused, reaching a second host through the router was refused, and opening a forwarded listening port was refused - the first two checked in this session, the third measured by the maintainer independently. A stolen phone can therefore read the router's status and do nothing else. The regular check that proves the forwarding block on hardware is tracked as ID-378 and is **not yet run**; until it is, that part of the claim rests on the one-off measurement rather than on a check that runs unattended. Two rules the background refresh keeps that the app's own screens do not: it refuses to connect unless a host key is already recorded (the app records an unknown key on first use and says so, with the user present to read it), and a failed refresh raises no notification, since nobody is watching, though the widget's footer records the time it failed. The widget's refresh button is a broadcast receiver declared `exported="false"`, so no other app can make the phone log into the router; the first build used `home_widget`'s own receiver, which is exported, and it was replaced for reliability in the same build (CHANGELOG, ID-376 FIX).
-- **What the store sees.** Once purchasing is enabled the app talks to Google Play and to RevenueCat, and that is the one place data leaves the device that is not the user's own router or Private Internet Access. RevenueCat receives the purchase history for a **pseudonymous installation identifier it generates itself**, and those purchase records are what tell the developer how many copies have sold. It collects no crash logs or diagnostics, and this app has no crash reporting of its own. It is never told who you are: the app makes no account, asks for no email, and never calls RevenueCat's `logIn`, so the identifier is anonymous and is not linked to any identity the app holds. There is still no analytics, no advertising identifier and no usage tracking of any kind.
+- **What the store sees.** A store build talks to the store it came from, Google Play or the App Store, and to RevenueCat, and that is the one place data leaves the device that is not the user's own router or Private Internet Access. RevenueCat receives the purchase history for a **pseudonymous installation identifier it generates itself**, and those purchase records are what tell the developer how many copies have sold. It collects no crash logs or diagnostics, and this app has no crash reporting of its own. It is never told who you are: the app makes no account, asks for no email, and never calls RevenueCat's `logIn`, so the identifier is anonymous and is not linked to any identity the app holds. A build you make yourself has no purchasing, so it talks to neither. There is still no analytics, no advertising identifier and no usage tracking of any kind.
 - **Shared configuration files:** SHARE writes the `.conf` to a temporary file and deletes it when the share sheet returns. The sharing library, share_plus, first copies that file into its own cache folder and hands the other app the copy, because the other app may read it after the sheet has closed. That copy, private key included, is deleted when you leave the config screen, when the app exits, and when it next starts. Until build 478 it stayed until the next share, while this page said the file was wiped immediately. Deleting a file does not overwrite it on the storage chip, and the app does not claim to.
 - **Clipboard:** a copied configuration is marked sensitive, so Android 13 and later show dots instead of its text in the clipboard preview. The app clears the clipboard 60 seconds after a copy, and when it exits. If Android kills the app inside those 60 seconds, the countdown dies with it, so the app also clears its own copy the next time it starts - its own only, recognised by its label, never something you copied from elsewhere. On iOS (ID-404) the copy is marked local, so Universal Clipboard never passes it to the user's other devices, and carries an expiry, so iOS deletes it after 60 seconds even if the app is suspended or killed. Clearing never reads the clipboard, which on iOS would show a paste banner. Checked on an iOS simulator in CI: a copy then a clear leaves nothing, and a copy expires by itself. A keyboard's own clipboard history is the keyboard's, and the app cannot reach it.
 - **Keyboard learning:** every text field asks the keyboard not to learn from what is typed (`IME_FLAG_NO_PERSONALIZED_LEARNING`, Android only; iOS has no such request), as well as turning off suggestions and autocorrect. Until build 478 only the last two were set. Whether a keyboard honours the request is up to the keyboard.

@@ -52,17 +52,20 @@ Future<void> _redrawWidgets() async {
 String _pluralTunnels(int n) => n == 1 ? '1 tunnel' : '$n tunnels';
 String _pluralPinned(int n) => n == 1 ? '1 pinned' : '$n pinned';
 
-/// `WidgetTunnelInfo.region · wgcN · up/down · N pinned`, the row's second line, and
-/// `· watchdog broken` when its watchdog can't run (ID-488). No duration: [WidgetStatus] does not
-/// carry one yet.
+/// `wgcN · up/down · N pinned`, the row's second line, and `· watchdog broken` when its watchdog
+/// can't run (ID-488). An answering tunnel names what is pinned to it instead of counting it
+/// (ID-587): `wgc1 · up · TABLET, PHONE`, cut short by the widget if too long. A tunnel that isn't
+/// answering keeps the count, as the guard line under it names them. Both widgets read this line,
+/// so Android and iOS change together. No duration: [WidgetStatus] does not carry one yet.
 String _tunnelDetail(WidgetTunnelInfo t) {
   final pinned = t.pinnedDeviceNames.length;
+  final what = t.answering && pinned > 0 ? t.pinnedDeviceNames.join(', ') : _pluralPinned(pinned);
   final state = switch ((t.answering, t.up)) {
     (true, _) => 'up',
     (_, true) => 'not answering',
     _ => 'down',
   };
-  return 'wgc${t.slot} · $state · ${_pluralPinned(pinned)}${t.watchdogBroken ? ' · watchdog broken' : ''}';
+  return 'wgc${t.slot} · $state · $what${t.watchdogBroken ? ' · watchdog broken' : ''}';
 }
 
 /// "DESKTOP kept offline by the guard", or "DESKTOP, TABLET kept offline by the guard" - empty

@@ -25,6 +25,8 @@ import 'device_assignment.dart'
 import 'firmware.dart' show RouterFirmware, classifyFirmwareTag;
 import 'input_checks.dart' show addressesIn;
 import 'router_command.dart' show runRouterCommand;
+import 'merlin_vpn_director.dart'
+    show defaultRuleFor, kVpnDirectorRulelistPath, lanSubnet, merlinPolicies, parseMerlinSlots, parseVpnDirectorRules;
 import 'router_slot_service.dart' show VpncRecord, parseVpncClientlist, slotLabel;
 import 'router_watchdog.dart' show dohDescription;
 
@@ -166,6 +168,38 @@ String _flowLineText(DnsFlowLine l) {
 
 // ── Reading the router ────────────────────────────────────────────────────────────────
 
+/// ROUTER DNS ROUTING's section headings. The screen colours any of them named in a box's text as it
+/// colours the heading itself, so a pointer to a section reads as one (ID-581).
+const String kDnsDevicesHeading = "YOUR DEVICES' LOOKUPS";
+const String kDnsRouterHeading = "THE ROUTER'S OWN LOOKUPS";
+const String kDnsWatchdogsHeading = "THE WATCHDOGS' LOOKUPS";
+const String kDnsSlotsHeading = "THE SLOTS' DNS SERVERS";
+const String kDnsEvidenceHeading = 'EVIDENCE';
+const List<String> kDnsSectionHeadings = [
+  kDnsDevicesHeading,
+  kDnsRouterHeading,
+  kDnsWatchdogsHeading,
+  kDnsSlotsHeading,
+  kDnsEvidenceHeading,
+];
+
+/// [text] in pieces, each a section heading or not, in order: for the screen to colour the headings.
+List<(String, bool)> splitOnHeadings(String text) {
+  final out = <(String, bool)>[];
+  final re = RegExp(kDnsSectionHeadings.map(RegExp.escape).join('|'));
+  var at = 0;
+  for (final m in re.allMatches(text)) {
+    if (m.start > at) out.add((text.substring(at, m.start), false));
+    out.add((m.group(0)!, true));
+    at = m.end;
+  }
+  if (at < text.length) out.add((text.substring(at), false));
+  return out;
+}
+
+/// Where dnsmasq answers the router itself, when the router uses it as its own resolver.
+const String kDnsmasqAddress = '127.0.0.1';
+
 /// Where stubby listens, on stock and Merlin alike. A resolver line naming it means DNS-over-TLS is on.
 const String kStubbyAddress = '127.0.1.1';
 
@@ -224,10 +258,12 @@ String dnsCheckCommand({required bool withStubby}) {
 const String kDnsRoutingCommand = 'echo "@@RESOLV"; cat /etc/resolv.conf 2>/dev/null; '
     'echo "@@DNSMASQ"; cat /tmp/resolv.dnsmasq 2>/dev/null; '
     'echo "@@RULES"; ip rule show | grep "iif lo"; '
-    'echo "@@FUSION"; iptables -t nat -S VPN_FUSION 2>/dev/null; '
+    // Stock's redirects are VPN Fusion's chain; Merlin's are VPN Director's, one chain per slot (ID-581).
+    'echo "@@FUSION"; iptables -t nat -S VPN_FUSION 2>/dev/null; iptables -t nat -S 2>/dev/null | grep -E "^-A DNSVPN[0-9]+ "; '
+    'echo "@@VPNDIRECTOR"; cat $kVpnDirectorRulelistPath 2>/dev/null; echo; '
     'echo "@@NVRAM"; nvram show 2>/dev/null | grep -E '
-    '\'^(vpnc_clientlist|vpnc_dev_policy_list|dnspriv_enable|dnspriv_rulelist|wan0_dnsenable_x|'
-    'wgc[1-5]_(desc|dns|wd_doh_url|wd_doh_ip|wd_check_interval))=\'; '
+    '\'^(vpnc_clientlist|vpnc_dev_policy_list|dnspriv_enable|dnspriv_rulelist|wan0_dnsenable_x|lan_ipaddr|lan_netmask|'
+    'wgc[1-5]_(desc|enable|dns|wd_doh_url|wd_doh_ip|wd_check_interval))=\'; '
     '$kDnsRouteGetCommand';
 
 /// Where each address this screen names ACTUALLY goes, asked of the kernel (ID-337).
@@ -238,7 +274,7 @@ const String kDnsRoutingCommand = 'echo "@@RESOLV"; cat /etc/resolv.conf 2>/dev/
 /// while it was down, and stamped "tunnel" on every pinned device's redirect without routing its
 /// target. Now: `ip route get` for every resolver, DoT, DoH and slot DNS address, each pinned
 /// device's redirect target routed FROM that device, and which interfaces are up.
-const String kDnsRouteGetCommand = r'''echo "@@ROUTES"; for A in $( (awk '/^nameserver/ {print $2}' /etc/resolv.conf; sed -n 's/^server=//p' /tmp/resolv.dnsmasq; nvram get dnspriv_rulelist | tr '<>' '\n\n'; for N in 1 2 3 4 5; do nvram get wgc${N}_dns | tr ', ' '\n\n'; nvram get wgc${N}_wd_doh_ip | tr ', ' '\n\n'; done) 2>/dev/null | grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | sort -u); do echo "$A $(ip route get "$A" 2>&1 | head -1)"; done; echo "@@PINNEDROUTES"; iptables -t nat -S VPN_FUSION 2>/dev/null | awk '{s = ""; d = ""; for (i = 1; i < NF; i++) {if ($i == "-s") s = $(i + 1); if ($i == "--to-destination") d = $(i + 1)} sub("/32", "", s); if (s != "" && d != "") print s, d}' | while read -r S D; do echo "$S $D $(ip route get "$D" from "$S" iif br0 2>&1 | head -1)"; done; echo "@@UP"; ip -o link show up | awk -F': ' '{print $2}' ''';
+const String kDnsRouteGetCommand = r'''echo "@@ROUTES"; for A in $( (awk '/^nameserver/ {print $2}' /etc/resolv.conf; sed -n 's/^server=//p' /tmp/resolv.dnsmasq; nvram get dnspriv_rulelist | tr '<>' '\n\n'; for N in 1 2 3 4 5; do nvram get wgc${N}_dns | tr ', ' '\n\n'; nvram get wgc${N}_wd_doh_ip | tr ', ' '\n\n'; done) 2>/dev/null | grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | sort -u); do echo "$A $(ip route get "$A" 2>&1 | head -1)"; done; echo "@@PINNEDROUTES"; iptables -t nat -S 2>/dev/null | grep -E '^-A (VPN_FUSION|DNSVPN[0-9]+) ' | awk '{s = ""; d = ""; for (i = 1; i < NF; i++) {if ($i == "-s") s = $(i + 1); if ($i == "--to-destination") d = $(i + 1)} sub("/32", "", s); if (s != "" && d != "" && index(s, "/") == 0) print s, d}' | while read -r S D; do echo "$S $D $(ip route get "$D" from "$S" iif br0 2>&1 | head -1)"; done; echo "@@UP"; ip -o link show up | awk -F': ' '{print $2}' ''';
 
 // ── Parsing ───────────────────────────────────────────────────────────────────────────
 
@@ -350,11 +386,28 @@ List<DnsRule> parseDnsRules(String raw) => [
     ];
 
 /// VPN_FUSION's DNAT lines: the device address, and the DNS server its lookups are sent to.
-Map<String, String> parseFusionRedirects(String raw) => {
-      for (final line in raw.split('\n'))
-        if (RegExp(r'-s (\d+\.\d+\.\d+\.\d+)(?:/32)?\b.*--to-destination (\d+\.\d+\.\d+\.\d+)').firstMatch(line) case final m?)
-          m.group(1)!: m.group(2)!,
-    };
+Map<String, String> parseFusionRedirects(String raw) {
+  final out = <String, String>{};
+  for (final line in raw.split('\n')) {
+    // A device's address only (/32 or bare): Merlin's whole-network redirect is read by
+    // [parseNetworkRedirect]. The first redirect for a device is the one it's shown with; Merlin
+    // writes one per DNS server (ID-581).
+    if (RegExp(r'-s (\d+\.\d+\.\d+\.\d+)(?:/32)?\s.*--to-destination (\d+\.\d+\.\d+\.\d+)').firstMatch(line) case final m?) {
+      out.putIfAbsent(m.group(1)!, () => m.group(2)!);
+    }
+  }
+  return out;
+}
+
+/// Merlin's redirect for a whole network, `-s 192.168.1.0/24 ... --to-destination 9.9.9.9`: the
+/// network and its first target, or null when there is none.
+(String, String)? parseNetworkRedirect(String raw) {
+  for (final line in raw.split('\n')) {
+    final m = RegExp(r'-s (\d+\.\d+\.\d+\.\d+/(\d+))\s.*--to-destination (\d+\.\d+\.\d+\.\d+)').firstMatch(line);
+    if (m != null && m.group(2) != '32') return (m.group(1)!, m.group(3)!);
+  }
+  return null;
+}
 
 /// `nameserver` addresses in a resolv.conf, in order.
 List<String> parseNameservers(String raw) => [
@@ -518,9 +571,31 @@ class DnsRouting {
     this.routes = const {},
     this.pinnedRoutes = const [],
     this.up = const {},
+    this.vpnDirectorRaw = '',
   }) {
-    records = parseVpncClientlist(nvram['vpnc_clientlist'] ?? '');
-    policies = parseDevicePolicyList(nvram['vpnc_dev_policy_list'] ?? '');
+    if (merlin) {
+      // Merlin has neither of stock's lists: its slots and VPN Director's rules, in the same shapes
+      // DEVICES uses (ID-581).
+      records = parseMerlinSlots([for (var s = 1; s <= 5; s++) '$s>${nvram['wgc${s}_desc'] ?? ''}>${nvram['wgc${s}_enable'] ?? ''}'].join('\n'));
+      policies = merlinPolicies(parseVpnDirectorRules(vpnDirectorRaw));
+    } else {
+      records = parseVpncClientlist(nvram['vpnc_clientlist'] ?? '');
+      policies = parseDevicePolicyList(nvram['vpnc_dev_policy_list'] ?? '');
+    }
+  }
+
+  /// VPN Director's rules file, as read on Merlin.
+  final String vpnDirectorRaw;
+
+  /// On Merlin, the whole-network rule's redirect: every device that isn't pinned has its lookups to
+  /// the router sent here, through the default's tunnel. Null on stock, or with no such rule.
+  (String, String)? get networkRedirect => merlin ? parseNetworkRedirect(fusionRaw) : null;
+
+  /// On Merlin, the slot the whole-network rule sends every other device to.
+  int? get networkSlot {
+    if (!merlin) return null;
+    final subnet = lanSubnet(nvram['lan_ipaddr'] ?? '', nvram['lan_netmask'] ?? '');
+    return defaultRuleFor(parseVpnDirectorRules(vpnDirectorRaw), subnet)?.wgSlot;
   }
 
   final List<String> nameservers, dnsmasqServers;
@@ -633,6 +708,7 @@ DnsRouting parseDnsRouting(String output, {required Map<String, String> names, r
           (l.trim().split(' ')[0], l.trim().split(' ')[1], l.trim().split(' ').skip(2).join(' ')),
     ],
     up: {for (final l in (m['UP'] ?? '').split('\n')) if (l.trim().isNotEmpty) l.trim()},
+    vpnDirectorRaw: (m['VPNDIRECTOR'] ?? '').trim(),
   );
 }
 
@@ -660,19 +736,25 @@ List<DnsBlock> buildDnsRouting(DnsRouting r, {required String readAt}) {
   final slotDns = _slotDnsLines(r);
 
   return [
-    DnsVerdict(_routingVerdict(pinned: pinned, others: [...routerOwn, everyone, ...watchdogs]), lead: true),
+    // On Merlin a whole-network rule puts every device's lookups in a tunnel: said as that, not as the
+    // router's own (ID-581).
+    DnsVerdict(
+        r.networkRedirect != null &&
+                everyone.where.kind == DnsTagKind.tunnel &&
+                ![...routerOwn, ...watchdogs].any((l) => l.where.kind == DnsTagKind.tunnel)
+            ? "Every device's lookups go through a tunnel: pinned devices' through their own, every other device's through "
+                "VPN Director's rule for the whole network."
+            : _routingVerdict(pinned: pinned, others: [...routerOwn, everyone, ...watchdogs]),
+        lead: true),
     DnsStamp('read $readAt'),
-    const DnsGroup("YOUR DEVICES' LOOKUPS"),
+    const DnsGroup(kDnsDevicesHeading),
     DnsFlow([...pinned, everyone]),
-    const DnsGroup("THE ROUTER'S OWN LOOKUPS"),
+    const DnsGroup(kDnsRouterHeading),
     DnsFlow(routerOwn),
-    const DnsGroup("THE WATCHDOGS' LOOKUPS"),
+    const DnsGroup(kDnsWatchdogsHeading),
     DnsFlow(watchdogs),
-    const DnsGroup("THE SLOTS' DNS SERVERS"),
+    const DnsGroup(kDnsSlotsHeading),
     if (slotDns.isEmpty) const DnsVerdict('No slot has DNS servers set.') else DnsFlow(slotDns),
-    if (r.merlin)
-      const DnsVerdict('On Merlin, a slot applies its DNS through its own firewall rules, which this screen does not '
-          'read, so pinned devices are not shown.'),
     ..._routingEvidence(r),
   ];
 }
@@ -720,18 +802,35 @@ List<DnsFlowLine> _pinnedLines(DnsRouting r) {
 
 /// Every device's lookups that aren't pinned: through stubby when DNS-over-TLS is on, otherwise
 /// straight to dnsmasq's servers.
+/// The head of the line for every device not pinned.
+const String _kEverythingElse = 'Everything else';
+
 DnsFlowLine _everyoneLine(DnsRouting r) {
+  // On Merlin, a whole-network VPN Director rule redirects every other device's lookups too (ID-581).
+  final (network, target) = r.networkRedirect ?? ('', '');
+  final slot = r.networkSlot;
+  if (target.isNotEmpty && slot != null) {
+    final up = r.up.contains('wgc$slot');
+    final where = up ? DnsTag(r.label(slot), DnsTagKind.tunnel) : DnsTag('${r.label(slot)}, which is down', DnsTagKind.neutral);
+    return DnsFlowLine(
+      head: _kEverythingElse,
+      rest: ' → $target',
+      note: "VPN Director's rule for $network",
+      where: where,
+      encryption: _encryptionOver(where),
+    );
+  }
   final dot = r.dotServers;
   return r.dotOn
       ? DnsFlowLine(
-          head: 'Everything else',
+          head: _kEverythingElse,
           rest: ' → dnsmasq → stubby → ${dot.join(', ')}',
           note: 'DNS-over-TLS',
           where: r.whereForAll(dot),
           encryption: _dot,
         )
       : DnsFlowLine(
-          head: 'Everything else',
+          head: _kEverythingElse,
           rest: ' → dnsmasq → ${r.dnsmasqServers.join(', ')}',
           note: 'ordinary DNS',
           where: r.whereForAll(r.dnsmasqServers),
@@ -739,8 +838,9 @@ DnsFlowLine _everyoneLine(DnsRouting r) {
         );
 }
 
-/// The router's own resolvers, other than stubby.
-List<String> _ordinaryNameservers(DnsRouting r) => r.nameservers.where((n) => n != kStubbyAddress).toList();
+/// The router's own resolvers, other than stubby and dnsmasq.
+List<String> _ordinaryNameservers(DnsRouting r) =>
+    r.nameservers.where((n) => n != kStubbyAddress && n != kDnsmasqAddress).toList();
 
 /// The router's own lookups, one line per resolver in `/etc/resolv.conf`.
 List<DnsFlowLine> _routerOwnLines(DnsRouting r) {
@@ -749,7 +849,9 @@ List<DnsFlowLine> _routerOwnLines(DnsRouting r) {
   final ordinary = _ordinaryNameservers(r);
   return [
     for (final n in r.nameservers)
-      if (n == kStubbyAddress)
+      if (n == kDnsmasqAddress)
+        _localCacheLine(r)
+      else if (n == kStubbyAddress)
         DnsFlowLine(
           head: n,
           rest: ' stubby',
@@ -769,6 +871,28 @@ List<DnsFlowLine> _routerOwnLines(DnsRouting r) {
           encryption: _encryptionOver(r.whereFor(n)),
         ),
   ];
+}
+
+/// The router's own lookups through dnsmasq, as the LAN's are: what Merlin's "Use local caching DNS
+/// server as system resolver" sets (`dns_local_cache=1`). With DNS-over-TLS on, dnsmasq hands them
+/// to stubby, so they are encrypted, not "ordinary DNS" as this screen said until ID-581.
+DnsFlowLine _localCacheLine(DnsRouting r) {
+  final dot = r.dotServers;
+  return r.dotOn
+      ? DnsFlowLine(
+          head: kDnsmasqAddress,
+          rest: ' dnsmasq → stubby → ${dot.join(', ')}',
+          note: 'local caching DNS server, DNS-over-TLS',
+          where: r.whereForAll(dot),
+          encryption: _dot,
+        )
+      : DnsFlowLine(
+          head: kDnsmasqAddress,
+          rest: ' dnsmasq → ${r.dnsmasqServers.join(', ')}',
+          note: 'local caching DNS server, ordinary DNS',
+          where: r.whereForAll(r.dnsmasqServers),
+          encryption: _encryptionOver(r.whereForAll(r.dnsmasqServers)),
+        );
 }
 
 /// Each slot's watchdog: its encrypted DNS when it has one, otherwise the router's own resolvers.
@@ -813,14 +937,33 @@ List<DnsFlowLine> _slotDnsLines(DnsRouting r) {
 /// lookups to it.
 DnsFlowLine _slotDnsLine(DnsRouting r, String servers, List<int> slots) {
   final winners = [for (final a in servers.split(', ')) r.ruleFor(a)].whereType<DnsRule>().toList();
-  final via = winners.isEmpty ? '' : ' Rules ${_join([for (final w in winners) '${w.priority}'])} send the '
-      "router's own lookups to them through ${r.tableLabel(winners.first.table)}.";
+  final via = _slotDnsVia(r, servers, winners);
   return DnsFlowLine(
     head: servers,
     note: 'used by ${_join([for (final s in slots) r.label(s)])}.$via',
     where: DnsTag(slots.length == 1 ? '1 slot' : 'shared by ${slots.length}', DnsTagKind.neutral),
   );
 }
+
+/// How the router's own lookups reach a slot's DNS servers, as a sentence for its note, or empty.
+/// Merlin has no rules for them: the first slot to start routes them in the main table (ID-581).
+String _slotDnsVia(DnsRouting r, String servers, List<DnsRule> winners) {
+  if (r.merlin) {
+    final via = r.whereForAll(servers.split(', '));
+    return via.kind == DnsTagKind.tunnel ? " The router's own lookups to them go through ${via.label}." : '';
+  }
+  if (winners.isEmpty) return '';
+  return ' Rules ${_join([for (final w in winners) '${w.priority}'])} send the '
+      "router's own lookups to them through ${r.tableLabel(winners.first.table)}.";
+}
+
+/// The rules box when there are none: on Merlin the reason goes above it (ID-581).
+String _noRulesContent(DnsRouting r) => r.merlin ? '(none)' : '(none: every address goes out your internet connection)';
+
+/// The redirects box when there are none.
+String _noRedirectsContent(DnsRouting r) => r.merlin
+    ? '(none: VPN Director sends no device to a slot with DNS servers)'
+    : '(none: no device is pinned to a slot with DNS servers)';
 
 /// The screen's first line: whether anything but pinned devices goes through a tunnel.
 String _routingVerdict({required List<DnsFlowLine> pinned, required List<DnsFlowLine> others}) {
@@ -838,16 +981,23 @@ List<DnsBlock> _routingEvidence(DnsRouting r) {
       'wgc${slot}_dns=${r.nvram['wgc${slot}_dns'] ?? ''}  # ${r.configured(slot) ? r.label(slot) : 'not configured'}',
   ];
   return [
-    const DnsGroup('EVIDENCE'),
+    const DnsGroup(kDnsEvidenceHeading),
     DnsFile(
       name: 'DNS routing rules (ip rule, iif lo)',
-      role: "Which tunnel carries the router's own lookups to each address. The lowest rule number wins.",
-      content: r.rules.isEmpty ? '(none: every address goes out your internet connection)' : r.rules.map(annotateRule).join('\n'),
+      // On Merlin the reason there are none goes above the box, which wraps; the box scrolls sideways,
+      // as config does (ID-581).
+      role: r.merlin && r.rules.isEmpty
+          ? "Merlin has no such rules. It sends the router's own lookups to a slot's DNS servers by its main table, "
+              'through the first slot to start. $kDnsSlotsHeading says which slot that is.'
+          : "Which tunnel carries the router's own lookups to each address. The lowest rule number wins.",
+      content: r.rules.isNotEmpty ? r.rules.map(annotateRule).join('\n') : _noRulesContent(r),
     ),
     DnsFile(
-      name: 'DNS redirects (VPN_FUSION)',
-      role: "Pinned devices' lookups to the router, sent on to their slot's first DNS server.",
-      content: r.redirects.isEmpty ? '(none: no device is pinned to a slot with DNS servers)' : r.fusionRaw,
+      name: r.merlin ? "DNS redirects (VPN Director's DNSVPN chains)" : 'DNS redirects (VPN_FUSION)',
+      role: r.merlin
+          ? "Lookups to the router from each device VPN Director sends to a tunnel, sent on to that slot's DNS servers."
+          : "Pinned devices' lookups to the router, sent on to their slot's first DNS server.",
+      content: r.redirects.isNotEmpty || r.networkRedirect != null ? r.fusionRaw : _noRedirectsContent(r),
     ),
     DnsFile(
       name: 'Slot DNS settings (nvram)',

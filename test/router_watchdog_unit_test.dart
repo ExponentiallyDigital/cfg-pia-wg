@@ -737,6 +737,14 @@ void main() {
   });
 
   group('buildWatchdogScript per firmware', () {
+    // ID-572, seen on 388.13_0 2026-11-13: stock's table number is an empty table on Merlin, which names
+    // each tunnel's table wgcN, so the slot that started second logged "Could not aim a lookup" every run.
+    // A shape test: that the name check then asks through the tunnel is for the router to show.
+    test("the name check asks through Merlin's own table name, and stock's number on stock", () {
+      expect(buildWatchdogScript(_valid(), firmware: RouterFirmware.merlin), contains(r'DNSTABLE=wgc$SLOT'));
+      expect(buildWatchdogScript(_valid(), firmware: RouterFirmware.stock), contains(r'DNSTABLE=$((10 - SLOT))'));
+    });
+
     test('jq resolves to the bare command on Merlin and the install path on stock', () {
       expect(buildWatchdogScript(_valid(), firmware: RouterFirmware.merlin), contains('JQ="jq"'));
       expect(buildWatchdogScript(_valid(), firmware: RouterFirmware.stock), contains('JQ="$kStockJqPath"'));

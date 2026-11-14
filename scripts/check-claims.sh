@@ -74,6 +74,8 @@ FW=stock; [ "$(nvram get 3rd-party)" = "merlin" ] && FW=merlin
 
 # ---- snapshot and restore --------------------------------------------------------------------
 KEYS="wan0_dns1_x wan0_dns2_x wan0_dnsenable_x dnspriv_enable"; [ "$FW" = stock ] && KEYS="$KEYS vpnc_unit filter_lwlist cfg_pia_wg_lwlist fw_lw_enable_x cfg_pia_wg_lw_on"
+# KS-disabled switches a Merlin slot off: each slot's switch is put back before the tunnels are restarted.
+[ "$FW" = merlin ] && KEYS="$KEYS wgc1_enable wgc2_enable wgc3_enable wgc4_enable wgc5_enable"
 if [ "$MODE" != dry ]; then
   mkdir -p "$D"
   : > "$RESTORE"
@@ -115,6 +117,7 @@ restore() {
     handshake "$IF" || NOTBACK="$NOTBACK $IF"
   done
   [ -x "$D/guard.sh" ] && "$D/guard.sh" >/dev/null 2>&1
+  [ "$FW" = merlin ] && [ -x "$D/merlin-guard.sh" ] && "$D/merlin-guard.sh" >/dev/null 2>&1
   # Filter rules taken out of the firewall by hand come back only with a firewall restart.
   [ -n "$FILTERBROKEN" ] && service restart_firewall
   # The SSH-forwarding test (4c), if this run was stopped while it was out: its cron entry, and the
@@ -132,6 +135,35 @@ WAN="$(nvram get wan0_ifname)"
 logger "**CHECK-CLAIMS START** $MODE"
 echo "== check-claims $MODE on $FW, $(date '+%Y-%m-%d %H:%M:%S')"
 
+# ---- verdicts (ID-580) -------------------------------------------------------------------------
+# Each names the safe answer exactly. "Anything but the bad value" is never safe (CONTEXT.md section 1):
+# check-reboot.sh counted every answer but the old WAN address as the tunnel, and a leak passed (ID-578).
+# test/unit/check_claims_verdicts_test.dart runs these on their own.
+# DNS-pinned: $1 the device's slot, $2 `ip route get` for its DNS server from it. Its own tunnel, or refused.
+dns_verdict() {
+  case "$2" in
+    *RTNETLINK*|*unreachable*|*prohibit*) echo ok ;;
+    *) echo "$2" | grep -qE " dev wgc$1( |\$)" && echo ok || echo leak ;;
+  esac
+}
+# TLS: curl's certificate refusals are 51 and 60. 7 and 28 are no answer, and 35 a handshake that failed
+# before the certificate was judged: neither is a verdict on the certificate.
+tls_verdict() { case "$1" in 51|60) echo refused ;; 7|28|35) echo unanswered ;; *) echo other ;; esac; }
+# ENABLE-broken: the app's ENABLE ping must say FAIL. NOROUTE means it couldn't be aimed at the tunnel.
+enable_broken_verdict() { case "$1" in FAIL) echo pass ;; NOROUTE) echo unchecked ;; *) echo fail ;; esac; }
+# GUARD-planted: $1 the guard's table, $2 its slot, $3 the WAN interface. The planted route is gone only
+# from a table that was read and still holds its tunnel.
+planted_verdict() {
+  if echo "$1" | grep -qE " dev $3( |\$)"; then echo still
+  elif echo "$1" | grep -qE "^default dev wgc$2( |\$)"; then echo gone
+  else echo unread; fi
+}
+# GUARD-no91: with rule 91 gone, route_of must show the device going out: the WAN, or a tunnel.
+no91_verdict() { case "$1" in WAN|wgc[0-9]) echo out ;; BLOCKED) echo refused ;; *) echo other ;; esac; }
+# GUARD-merlin-start: the guard's rules after a tunnel start must be exactly the ones before.
+merlin_back_verdict() { if [ -z "$1" ]; then echo unchecked; elif [ "$1" = "$2" ]; then echo back; else echo missing; fi; }
+# ---- end of verdicts
+
 # ---- 1. TLS: curl refuses bad certificates, and honours --cacert --------------------------------
 T=20
 bounded curl -s -o /dev/null --max-time 15 https://example.com/
@@ -140,9 +172,9 @@ for U in self-signed expired wrong.host; do
   bounded curl -s -o /dev/null --max-time 15 "https://$U.badssl.com/"
   # 28 and 7 are "no answer", not a verdict on the certificate: one more try, then say so.
   case "$RC" in 7|28) sleep 3; bounded curl -s -o /dev/null --max-time 15 "https://$U.badssl.com/" ;; esac
-  case "$RC" in
-    51|60) pass "TLS-$U" "curl refuses a $U certificate" ;;
-    7|28) info "TLS-$U" "badssl.com did not answer (rc=$RC); not checked" ;;
+  case "$(tls_verdict "$RC")" in
+    refused) pass "TLS-$U" "curl refuses a $U certificate" ;;
+    unanswered) info "TLS-$U" "badssl.com did not answer, or failed the handshake before the certificate (rc=$RC); not checked" ;;
     *) fail "TLS-$U" "curl refuses a $U certificate" "rc=$RC" ;;
   esac
 done
@@ -303,12 +335,15 @@ if [ "$FW" = merlin ]; then
   T=25
   smtp_tls() { echo QUIT | openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt -verify_return_error -connect "$SH:$SP" -servername "$SH" -verify_hostname "$1"; }
   bounded smtp_tls wrong.example.com
-  WRC="$RC"
+  WRC="$RC"; WLOG="$(cat "$LOG" 2>/dev/null)"
   bounded smtp_tls "$SH"
   case "$RC:$WRC" in
     0:0) fail MAIL-name "openssl refuses a certificate for the wrong name" "it accepted wrong.example.com" ;;
     0:143) info MAIL-name "the wrong-name connection hung; not checked" ;;
-    0:*) pass MAIL-name "openssl, as Merlin's mail uses it, refuses a certificate for the wrong name (rc=$WRC)" ;;
+    # Refused for the name, in openssl's own words: not for any other reason the connection could fail (ID-580).
+    0:*) echo "$WLOG" | grep -qiE 'hostname mismatch|num=62' \
+           && pass MAIL-name "openssl, as Merlin's mail uses it, refuses a certificate for the wrong name (rc=$WRC)" \
+           || fail MAIL-name "openssl refuses a certificate for the wrong name, saying so" "it failed (rc=$WRC) without naming a hostname mismatch" ;;
     *) info MAIL-name "$SH:$SP did not complete TLS for the right name either (rc=$RC); not checked" ;;
   esac
   [ "$RC" = 0 ] && pass MAIL-0 "control: the right name is accepted"
@@ -457,8 +492,11 @@ fi
 # The pinned devices' DNS redirects, routed from the devices.
 iptables -t nat -S VPN_FUSION 2>/dev/null | awk '{s=""; d=""; for (i = 1; i < NF; i++) {if ($i == "-s") s = $(i + 1); if ($i == "--to-destination") d = $(i + 1)} sub("/32", "", s); if (s != "" && d != "") print s, d}' > /tmp/check-claims.dnat
 LEAK=""
+PINSNOW="$(pins)"
 while read -r S DD; do
-  case "$(ip route get "$DD" from "$S" iif br0 2>&1 | head -1)" in *" dev wgc"*|*RTNETLINK*|*unreachable*|*prohibit*) ;; *) LEAK="$LEAK $S>$DD" ;; esac
+  # Its own tunnel, not any tunnel: another one's is the cross-slot DNS found on Merlin (ID-580).
+  DSL="$(echo "$PINSNOW" | awk -F'>' -v ip="$S" '$1 == ip {print $3; exit}')"
+  [ "$(dns_verdict "$DSL" "$(ip route get "$DD" from "$S" iif br0 2>&1 | head -1)")" = ok ] || LEAK="$LEAK $S>$DD"
 done < /tmp/check-claims.dnat
 rm -f /tmp/check-claims.dnat
 [ "$FW" = merlin ] || { [ -z "$LEAK" ] && pass DNS-pinned "pinned devices' redirected DNS goes through their tunnel, or nowhere" || fail DNS-pinned "pinned devices' DNS" "$LEAK"; }
@@ -472,6 +510,25 @@ if [ "$FW" = merlin ]; then
   for SN in 1 2 3 4 5; do
     [ -n "$(nvram get "wgc${SN}_addr")" ] || continue
     info "KS-wgc$SN" "kill switch setting $(nvram get "wgc${SN}_enforce"), VPN Director devices: $(mdevs "$SN" | tr '\n' ' ')"
+  done
+fi
+
+# ---- 3m2. Merlin: a routed device's DNS, and the router's DNS servers, through its tunnel -------
+# Merlin copies the main table into a tunnel's table as it starts: routes to the router's own DNS
+# servers by the WAN, and another tunnel's DNS server routes. Left there, a device sent to the tunnel
+# reaches those addresses outside it (ID-574), and its own DNS leaves by another tunnel (ID-572).
+# The app's guard tidies them out as each tunnel starts (merlin-guard.sh). Read-only.
+mvia() { R="$(ip route get "$1" from "$2" iif br0 2>&1 | head -1)"; case "$R" in *" dev wgc$3"*|*RTNETLINK*|*unreachable*) ;; *) echo "$1 (dev ${R##* dev })" ;; esac; }
+if [ "$FW" = merlin ]; then
+  RDNS="$( { nvram get wan0_dns; nvram get dnspriv_rulelist | tr '<' '\n' | cut -d'>' -f1; } | tr ' ' '\n' | grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | awk '!s[$0]++' | tr '\n' ' ')"
+  for SN in 1 2 3 4 5; do
+    handshake "wgc$SN" || continue
+    DEV="$(mdevs "$SN" | grep -v / | head -1)"
+    [ -n "$DEV" ] || continue
+    OUT=""; for A in $RDNS; do OUT="$OUT$(mvia "$A" "$DEV" "$SN") "; done; OUT="$(echo $OUT)"
+    [ -z "$OUT" ] && pass "MRL-addrs-wgc$SN" "$DEV reaches the router's DNS servers (${RDNS% }) through wgc$SN, or not at all" || fail "MRL-addrs-wgc$SN" "$DEV reaches the router's DNS servers through wgc$SN" "outside it: $OUT"
+    OUT=""; for A in $(nvram get "wgc${SN}_dns" | tr ',' ' '); do OUT="$OUT$(mvia "$A" "$DEV" "$SN") "; done; OUT="$(echo $OUT)"
+    [ -z "$OUT" ] && pass "MRL-dns-wgc$SN" "$DEV's DNS servers ($(nvram get "wgc${SN}_dns")) are reached through wgc$SN" || fail "MRL-dns-wgc$SN" "$DEV's DNS servers are reached through wgc$SN" "by another route: $OUT"
   done
 fi
 
@@ -666,7 +723,11 @@ else
     EB="$(enable_ping "$EN" 8.8.8.8)"
     EO=FAIL; [ -n "$EA" ] && ping -I "$EA" -c 1 -w 5 8.8.8.8 >/dev/null 2>&1 && EO=OK
     iptables -D OUTPUT -d 8.8.8.8 -p icmp -o "wgc$EN" -j DROP
-    [ "$EB" != OK ] && pass ENABLE-broken "with wgc$EN refusing it, the app's ENABLE ping fails (it said $EB)" || fail ENABLE-broken "with the tunnel refusing it, the app's ENABLE ping fails" "it said OK"
+    case "$(enable_broken_verdict "$EB")" in
+      pass) pass ENABLE-broken "with wgc$EN refusing it, the app's ENABLE ping fails (it said $EB)" ;;
+      unchecked) info ENABLE-broken "the ENABLE ping couldn't be aimed through wgc$EN (it said $EB); not checked" ;;
+      *) fail ENABLE-broken "with the tunnel refusing it, the app's ENABLE ping fails" "it said ${EB:-nothing}" ;;
+    esac
     [ "$EO" = OK ] && pass ENABLE-old "control: through the same break, the old ENABLE ping, from the tunnel's address, still answered - by the WAN" || info ENABLE-old "the old ENABLE ping didn't answer through the break either (it said $EO), so this run's control shows nothing"
     [ "$(iptables -S OUTPUT | grep -c -- '-d 8.8.8.8/32')" = 0 ] || fail ENABLE-clean "the counting and break rules taken out" "$(iptables -S OUTPUT | grep -c -- '-d 8.8.8.8/32') left"
   fi
@@ -698,7 +759,11 @@ if [ -n "$E" ]; then
     ip route add $WR table "$GT" 2>/dev/null
     guard_check planted expect-broken
     "$D/guard.sh" >/dev/null 2>&1
-    ip route show table "$GT" | grep -q " dev $WAN" && fail GUARD-planted "the guard takes a WAN route out of its table" "it is still there" || pass GUARD-planted "the guard's next run took the planted WAN route out of its table"
+    case "$(planted_verdict "$(ip route show table "$GT" 2>&1)" "$SL" "$WAN")" in
+      gone) pass GUARD-planted "the guard's next run took the planted WAN route out of its table" ;;
+      still) fail GUARD-planted "the guard takes a WAN route out of its table" "it is still there" ;;
+      *) fail GUARD-planted "the guard takes a WAN route out of its table" "table $GT couldn't be read, or lost its tunnel" ;;
+    esac
   fi
 
   # The filter (ID-348, ID-362), short of this device in NVRAM and in the firewall, as a firewall
@@ -813,6 +878,66 @@ if [ "$FW" = merlin ]; then
   fi
 fi
 
+# ---- 6m2. Merlin: a slot switched off; its devices must be refused, not sent elsewhere ----------
+# Merlin's kill switch goes with the slot (wgcN_enable=0), so on its own a device falls through to the
+# WAN or to another slot's whole-network rule. The app's guard holds it (ID-567). Switched off as the
+# web page and the app's DISABLE do; switched back on here, or by the restore if this run is stopped.
+if [ "$FW" = merlin ]; then
+  DSN=""; DDEV=""
+  for SN in 1 2 3 4 5; do
+    handshake "wgc$SN" || continue
+    DDEV="$(mdevs "$SN" | grep -v / | head -1)"; [ -n "$DDEV" ] && { DSN="$SN"; break; }
+  done
+  if [ -z "$DSN" ]; then
+    info KS-disabled "no running tunnel has a VPN Director device of its own; not checked"
+  else
+    nvram set "wgc${DSN}_enable=0"; service "stop_wgc $DSN"; service start_vpnrouting0
+    i=0; while [ "$i" -lt 30 ] && ip -o link show up | grep -q " wgc$DSN:"; do sleep 1; i=$((i + 1)); done
+    sleep 3
+    KR="$(mroute "$DDEV")"
+    case "$KR" in
+      *RTNETLINK*|*unreachable*|*prohibit*) pass "KS-wgc$DSN-disabled" "wgc$DSN switched off: $DDEV is refused" ;;
+      *) fail "KS-wgc$DSN-disabled" "wgc$DSN switched off: $DDEV is refused" "it goes out: $KR" ;;
+    esac
+    nvram set "wgc${DSN}_enable=1"
+    for TRY in 1 2; do
+      tunnel_start "$DSN"
+      i=0; while [ "$i" -lt 45 ] && ! handshake "wgc$DSN"; do sleep 1; i=$((i + 1)); done
+      handshake "wgc$DSN" && break
+    done
+    handshake "wgc$DSN" && pass "KS-wgc$DSN-reenabled" "wgc$DSN came back" || fail "KS-wgc$DSN-reenabled" "wgc$DSN came back" "no handshake after two starts"
+  fi
+fi
+
+# ---- 6m3. Merlin: the guard's rules back as a tunnel starts (ID-582) ----------------------------
+# Merlin clears every rule as the WAN comes up (`ip rule flush` in add_multi_routes) and puts back
+# only its own; the guard's come back as each tunnel starts, from wgclient-start. Taken out here as
+# the flush takes them, one running tunnel restarted, and exactly the same rules must be back.
+if [ "$FW" = merlin ]; then
+  MGPAT='^(9990|11409|11609|11809|12009|12209):'
+  MGBEFORE="$(ip rule show | grep -E "$MGPAT" | sort)"
+  MGN=""; for SN in 1 2 3 4 5; do handshake "wgc$SN" && { MGN="$SN"; break; }; done
+  if [ -z "$MGBEFORE" ] || [ -z "$MGN" ]; then
+    info GUARD-merlin-start "no guard rules, or no running tunnel; not checked"
+  else
+    ip rule show | grep -E "$MGPAT" | while read -r P F S A B; do ip rule del priority "${P%:}" from "$S" $A $B; done
+    tunnel_stop "$MGN"
+    i=0; while [ "$i" -lt 30 ] && ip -o link show up | grep -q " wgc$MGN:"; do sleep 1; i=$((i + 1)); done
+    for TRY in 1 2; do
+      tunnel_start "$MGN"
+      i=0; while [ "$i" -lt 45 ] && ! handshake "wgc$MGN"; do sleep 1; i=$((i + 1)); done
+      handshake "wgc$MGN" && break
+    done
+    sleep 3
+    MGAFTER="$(ip rule show | grep -E "$MGPAT" | sort)"
+    case "$(merlin_back_verdict "$MGBEFORE" "$MGAFTER")" in
+      back) pass GUARD-merlin-start "with the guard's rules taken out as the WAN coming up takes them, starting wgc$MGN put all $(echo "$MGBEFORE" | grep -c .) back" ;;
+      *) fail GUARD-merlin-start "starting wgc$MGN puts the guard's rules back" "after: $(echo "$MGAFTER" | grep -c .) of $(echo "$MGBEFORE" | grep -c .)" ;;
+    esac
+    "$D/merlin-guard.sh" >/dev/null 2>&1
+  fi
+fi
+
 # ---- 6. A tunnel stopped: its pinned devices are refused, not sent out the WAN ------------------
 E=""; [ "$FW" = stock ] && E="$(gpins | awk -F'>' '$3 ~ /^[0-9]+$/' | head -1)"
 if [ -n "$E" ]; then
@@ -844,7 +969,11 @@ if [ -n "$E" ]; then
     ip rule del from "$IP" priority 91 2>/dev/null
     R="$(route_of "$IP" 1.1.1.1)"
     ip rule show | grep -q "^91:.*from $IP blackhole" || ip rule add from "$IP" blackhole priority 91
-    [ "$R" != BLOCKED ] && pass "GUARD-wgc$SL-no91" "without rule 91, $IP's traffic goes $R: the check sees the leak rule 91 stops" || fail "GUARD-wgc$SL-no91" "without rule 91, the check sees $IP's traffic go out" "it was still refused, so this check can't tell a leak from the guard"
+    case "$(no91_verdict "$R")" in
+      out) pass "GUARD-wgc$SL-no91" "without rule 91, $IP's traffic goes $R: the check sees the leak rule 91 stops" ;;
+      refused) fail "GUARD-wgc$SL-no91" "without rule 91, the check sees $IP's traffic go out" "it was still refused, so this check can't tell a leak from the guard" ;;
+      *) fail "GUARD-wgc$SL-no91" "without rule 91, the check sees $IP's traffic go out" "route_of said $R" ;;
+    esac
     R="$(route_of "$IP" 1.1.1.1)"
     [ "$R" = BLOCKED ] || fail "GUARD-wgc$SL-91back" "rule 91 put back" "$IP goes $R"
   fi

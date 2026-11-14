@@ -106,14 +106,6 @@ Future<RecordingSSHClient> _pumpConnected(WidgetTester tester, {RecordingSSHClie
   return ssh;
 }
 
-/// The names of the routes pushed, to see where a screen sends the user.
-class _RouteNames extends NavigatorObserver {
-  final pushed = <String?>[];
-
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => pushed.add(route.settings.name);
-}
-
 /// A router whose next read of the device list fails once [failNextRead] is set: the re-read APPLY
 /// does afterwards.
 class _FailingReRead extends RecordingSSHClient {
@@ -791,61 +783,79 @@ void main() {
     expect(find.text('Default connection'), findsOneWidget, reason: 'the list opened');
   });
 
-  testWidgets('Merlin is refused with a reason rather than an empty screen', (tester) async {
-    useMerlin();
-    final ssh = _router();
-    await tester.pumpWidget(_wrap(ssh));
-    await tester.enterText(find.byType(TextFormField).first, '192.168.1.1');
-    await tester.enterText(find.byType(TextFormField).at(1), 'admin');
-    await tester.enterText(find.byType(TextFormField).at(2), 'pw');
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('device_connect')));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('stock-firmware feature'), findsOneWidget);
-  });
+  // ID-557: DEVICES works on Merlin, through VPN Director's rules. Until then it refused Merlin (MRL-1).
+  group('on Merlin', () {
+    // wgc1 and wgc5, as the app makes them; the laptop pinned to wgc1, the whole LAN to wgc5.
+    const slots = '1>pia-aus_melbourne>1\n2>>\n3>>\n4>>\n5>pia-aus_perth>1';
+    const rulelist = '<1>Laptop>192.168.1.50>>WGC1<1>default (cfg-pia-wg)>192.168.1.0/24>>WGC5';
 
-  // ID-359, seen on Merlin 2026-10-01: already logged in, the refusal showed over the login form, and OK
-  // left the user on it. There is nothing to retry, so neither: no form behind it, and OK goes to HOME.
-  testWidgets('on Merlin, an already-connected session gets no login form behind the refusal, and OK goes to HOME',
-      (tester) async {
-    useMerlin();
-    final observer = _RouteNames();
-    final c = SessionController(tickInterval: const Duration(hours: 1))
-      ..routerIp = '192.168.1.1'
-      ..sshUsername = 'admin'
-      ..sshPassword = 'pw'
-      ..routerConnected = true
-      // What the app's route observer sets on entering DEVICES.
-      ..currentDestination = AppDestination.deviceAssignment;
-    addTearDown(c.dispose);
-    final ssh = _router();
-    await tester.pumpWidget(SessionScope(
-      controller: c,
-      child: MaterialApp(
-        navigatorObservers: [observer],
-        home: Scaffold(body: DeviceAssignmentScreen(testClientFactory: (_, __, ___) async => ssh)),
-      ),
-    ));
-    // Stepped: the connecting placeholder spins behind the refusal, by design, so nothing settles.
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 200));
+    RecordingSSHClient merlinRouter({String rules = rulelist}) {
+      var file = rules;
+      return RecordingSSHClient(responder: (cmd) {
+        if (cmd.contains('cfg_device_list')) {
+          return [
+            '', slots, file, '192.168.1.1', '255.255.255.0', _staticlist, '', _cfgDeviceList, _clJson, _cache, '',
+            '0: from all lookup local', 'disabled', '',
+          ].join('\n$_sep\n');
+        }
+        if (cmd.contains('latest-handshakes')) return _health(cmd, const {1: 9950});
+        if (cmd.startsWith('mkdir -p -m 700 /jffs/openvpn')) {
+          file = RegExp(r"printf '%s' '([^']*)'").firstMatch(cmd)!.group(1)!;
+          return '';
+        }
+        if (cmd.contains('cat /jffs/openvpn/vpndirector_rulelist') || cmd.contains("cat '/jffs/openvpn/vpndirector_rulelist'")) return file;
+        if (cmd.startsWith('echo "1>')) return slots;
+        if (cmd.contains('ip -o link show up')) return '3: wgc1: <POINTOPOINT,NOARP,UP,LOWER_UP>';
+        return '';
+      });
     }
 
-    expect(find.textContaining('stock-firmware feature'), findsOneWidget);
-    expect(find.byKey(const Key('device_connect')), findsNothing, reason: 'no login form behind the refusal');
-    expect(find.byType(TextFormField), findsNothing);
+    Future<RecordingSSHClient> connect(WidgetTester tester, {String rules = rulelist}) async {
+      useMerlin();
+      return _pumpConnected(tester, router: merlinRouter(rules: rules));
+    }
 
-    await tester.tap(find.byKey(const Key('error_ok')));
-    // Stepped rather than settled: HOME animates.
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
-    expect(observer.pushed.last, AppDestination.menu.routeName);
-    // Back from HOME finds the screen itself, not a placeholder that never ends.
-    tester.state<NavigatorState>(find.byType(Navigator)).pop();
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
-    expect(find.byType(ReconnectingBody), findsNothing);
-    expect(find.byKey(const Key('device_connect')), findsOneWidget);
+    Future<void> pin(WidgetTester tester, String pick) async {
+      await tester.tap(find.byKey(const Key('row_11:22:33:44:55:66')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key(pick)));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('device_apply')));
+      await tester.tap(find.byKey(const Key('device_apply')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apply_confirm')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('DEVICES opens, with the default from the whole-network rule', (tester) async {
+      final ssh = await connect(tester);
+      expect(find.textContaining('stock-firmware feature'), findsNothing);
+      expect(find.text('Default connection'), findsOneWidget, reason: 'the list opened');
+      expect(find.textContaining('wgc5:pia-aus_perth'), findsWidgets, reason: 'the default, from the rule for the LAN');
+      expect(ssh.commands.any((c) => c.contains('vpnc_dev_policy_list')), isFalse, reason: "Merlin has no VPN Fusion list");
+    });
+
+    testWidgets('a pin is written as a VPN Director rule and applied with restart_vpnrouting0', (tester) async {
+      final ssh = await connect(tester);
+      await pin(tester, 'pick_9');
+
+      final write = ssh.commands.firstWhere((c) => c.startsWith('mkdir -p -m 700 /jffs/openvpn'));
+      expect(write, contains('<1>Box>192.168.1.20>>WGC1'), reason: 'a new rule, named for the device');
+      expect(write, contains('<1>Laptop>192.168.1.50>>WGC1<1>default (cfg-pia-wg)>192.168.1.0/24>>WGC5'),
+          reason: 'every other rule as it was');
+      expect(ssh.commands, contains('service restart_vpnrouting0'));
+      expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isFalse);
+    });
+
+    testWidgets('a pin above the default slot is refused, and nothing is written', (tester) async {
+      // The default on wgc1, so a pin to wgc5 would be ignored by VPN Director.
+      final ssh = await connect(tester, rules: '<1>default (cfg-pia-wg)>192.168.1.0/24>>WGC1');
+      await pin(tester, 'pick_5');
+
+      expect(find.textContaining('can be pinned only to a tunnel in a slot numbered'), findsOneWidget);
+      expect(ssh.commands.any((c) => c.startsWith('mkdir -p -m 700 /jffs/openvpn')), isFalse);
+      expect(ssh.commands, isNot(contains('service restart_vpnrouting0')));
+    });
   });
 
   // Reported 2026-09-13 while testing on hardware: devices were moved onto a tunnel that looked fine

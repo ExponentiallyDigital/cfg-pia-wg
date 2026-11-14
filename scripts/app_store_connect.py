@@ -262,9 +262,26 @@ def cmd_listing(args):
         print('::notice::Check only: every file reads, and nothing was sent to App Store Connect.')
         return
     api = Api()
-    f = plan['fields']
     app = app_id(api)
     version_string, _ = pubspec_version()
+    vloc = publish_listing(api, app, plan, version_string)
+    for slot, files in plan['screenshots'].items():
+        upload_screenshots(api, vloc, slot, files)
+    upload_iap_screenshot(api, app)
+    print('::notice::The listing is in App Store Connect. Left by hand: App Privacy, and the demo video.')
+
+
+def publish_listing(api, app, plan, version_string):
+    """Everything but the files: app info, age rating, the version's text and the review notes. Returns
+    the version's en-AU localization, which the screenshots go under."""
+    f = plan['fields']
+    # First, because a new version is what unlocks the app info once the app is on sale: until there is
+    # one, Apple refuses any change to the name, subtitle or privacy policy URL (ID-549).
+    version = editable_version(api, app, version_string)
+    # The version number is pubspec.yaml's, as on Play, and as the build it is submitted with carries:
+    # App Store Connect made the record at 1.0 (2026-10-21).
+    api.patch('appStoreVersions', version, {'copyright': f['Copyright'], 'versionString': version_string})
+    print(f'  version {version_string}, copyright {f["Copyright"]}')
 
     # privacy_and_age_rating.md, Content rights: Andrew's answer, 2026-10-21.
     api.patch('apps', app, {'contentRightsDeclaration': 'DOES_NOT_USE_THIRD_PARTY_CONTENT'})
@@ -289,11 +306,6 @@ def cmd_listing(args):
         print(f'::warning::Apple asks age rating questions this script does not answer: {", ".join(unknown)}. '
               'Answer them in App Store Connect, then add them to AGE_NONE or AGE_NO.')
 
-    version = editable_version(api, app, version_string)
-    # The version number is pubspec.yaml's, as on Play, and as the build it is submitted with carries:
-    # App Store Connect made the record at 1.0 (2026-10-21).
-    api.patch('appStoreVersions', version, {'copyright': f['Copyright'], 'versionString': version_string})
-    print(f'  version {version_string}, copyright {f["Copyright"]}')
     vloc = localization(api, f'/v1/appStoreVersions/{version}/appStoreVersionLocalizations',
                         'appStoreVersionLocalizations', 'appStoreVersion', version, {})
     api.patch('appStoreVersionLocalizations', vloc, {
@@ -318,11 +330,7 @@ def cmd_listing(args):
         # Apple won't make the review details without a phone, in the form +61 4xx xxx xxx (2026-10-20).
         print('::warning::No APP_REVIEW_PHONE secret, so the review notes and contact were not set. Add it, '
               'with the country code (+61 ...), and run this again.')
-
-    for slot, files in plan['screenshots'].items():
-        upload_screenshots(api, vloc, slot, files)
-    upload_iap_screenshot(api, app)
-    print('::notice::The listing is in App Store Connect. Left by hand: App Privacy, and the demo video.')
+    return vloc
 
 
 IAP_PRODUCT = 'lifetime_unlock'
@@ -548,6 +556,24 @@ def promote_testflight(api, app, build, number, dry_run):
     return lines
 
 
+def fill_whats_new(api, version, build, number, dry_run):
+    """What's New for a version made by the listing run or by hand, which has none, from the build's
+    TestFlight notes, as a version made here gets it: Apple won't take an update without it (ID-549).
+    One already written is kept. Returns the line for the log, or None when nothing was needed."""
+    path = f'/v1/appStoreVersions/{version}/appStoreVersionLocalizations'
+    locs = [l for l in api.get(path)['data'] if l['attributes'].get('locale') == LOCALE]
+    if locs and (locs[0]['attributes'].get('whatsNew') or '').strip():
+        return None
+    notes = build_notes(api, build['id'])
+    if not notes:
+        die(f"the App Store version has no \"What's New\", and build {number} has no TestFlight notes to fill it from")
+    if dry_run:
+        return f"\"What's New\" is empty: would fill it from build {number}'s TestFlight notes."
+    vloc = locs[0]['id'] if locs else localization(api, path, 'appStoreVersionLocalizations', 'appStoreVersion', version, {})
+    api.patch('appStoreVersionLocalizations', vloc, {'whatsNew': notes})
+    return f"\"What's New\" filled from build {number}'s TestFlight notes."
+
+
 def promote_production(api, app, build, number, build_version, dry_run):
     found = api.get(f'/v1/apps/{app}/appStoreVersions',
                     **{'filter[platform]': 'IOS', 'filter[versionString]': build_version})['data']
@@ -570,6 +596,9 @@ def promote_production(api, app, build, number, build_version, dry_run):
         lines.append(f'App Store version {build_version} made, with "What\'s New" from the TestFlight notes.')
     else:
         version = found[0]['id']
+        line = fill_whats_new(api, version, build, number, dry_run)
+        if line:
+            lines.append(line)
     a = api.get(f'/v1/appStoreVersions/{version}')['data']['attributes']
     state = a.get('appVersionState') or a.get('appStoreState')
     attached = (api.get(f'/v1/appStoreVersions/{version}/build').get('data') or {}).get('id')

@@ -72,7 +72,7 @@ Once an ID is given, it does not change even if the item moves section (e.g. fro
 - ID-414 FTR: waiting on upstream: clear the Kotlin Gradle plugin warning once `home_widget` and `workmanager_android` stop applying the plugin. Split from ID-408 on 2026-10-16. Every build warns that future Flutter versions will fail with such plugins; on 2026-10-19 both were still the latest (`home_widget` 0.10.0, `workmanager` 0.10.10). Check each new release of the two, which ID-411's weekly upgrade brings, and each new Flutter's notes for when the warning becomes a failure: if that comes first, fork the plugin or hold Flutter back.
   - DoD: a local `flutter build apk` no longer prints the warning.
   - Plan: [plan_kgp-plugins.md](.claude/plans/plan_kgp-plugins.md)
-  - Now: still the latest on 2026-10-24 (workmanager_android 0.10.9, Flutter 3.47.7).
+  - Now: still the latest on 2026-11-15 (home_widget 0.10.0, workmanager_android 0.10.9), and the warning still prints with Gradle 9.9.1 and the Android Gradle plugin 9.5.1.
 - ID-257 FTR: parked 2026-09-28 (Andrew's decision): a pilot of hand tests as Flutter integration tests on the emulator, against a real router. Start with SET, ROUTER LOG, ROUTER RESOLVER STATUS and ROUTER DNS ROUTING. It stopped because `integration_test` put `androidx.test`, `junit` and `guava` into the debug build, which broke the Gradle lockfile and brought new OSV findings (ID-058). Plan: `.claude/plans/plan_integration-test-pilot.md`.
   - To resume: lock the new libraries or exempt the debug build from locking.
   - DoD: the four groups run as integration tests against the router, and Andrew has judged whether to go further.

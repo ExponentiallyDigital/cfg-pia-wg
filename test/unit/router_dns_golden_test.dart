@@ -27,9 +27,31 @@ String _replace(String s, List<(Pattern, String)> edits) {
   return s;
 }
 
+/// [kRoutingFixture] as a Merlin router answers it (ID-581): no `iif lo` rules, VPN Director's DNSVPN
+/// chains in place of VPN Fusion's, its rules file, and the slots' desc and enable keys. Built by
+/// cutting at the section markers, since a pattern across the sections backtracks for minutes.
+String _merlinFixture() {
+  const f = kRoutingFixture;
+  final rules = f.indexOf('@@RULES\n') + '@@RULES\n'.length;
+  final nvram = f.indexOf('@@NVRAM\n', rules) + '@@NVRAM\n'.length;
+  return '${f.substring(0, rules)}@@FUSION\n'
+          '-A DNSVPN6 -s 192.168.1.55/32 -j DNAT --to-destination 9.9.9.9\n'
+          '-A DNSVPN6 -s 192.168.1.55/32 -j DNAT --to-destination 149.112.112.112\n'
+          '-A DNSVPN10 -s 192.168.1.0/24 -j DNAT --to-destination 9.9.9.9\n'
+          '@@VPNDIRECTOR\n<1>tablet>192.168.1.55>>WGC1<1>default>192.168.1.0/24>>WGC5\n'
+          '@@NVRAM\nlan_ipaddr=192.168.1.254\nlan_netmask=255.255.255.0\n'
+          'wgc1_enable=1\nwgc2_enable=1\nwgc3_enable=1\nwgc5_enable=1\n${f.substring(nvram)}'
+      .replaceFirst('wgc1\nbr0', 'wgc1\nwgc5\nbr0');
+}
+
 final _cases = <String, String Function()>{
   'routing_stock': () => _routing(kRoutingFixture),
-  'routing_merlin': () => _routing(kRoutingFixture, merlin: true),
+  'routing_merlin': () => _routing(_merlinFixture(), merlin: true),
+  // Merlin's "Use local caching DNS server as system resolver": the router's own lookups go to dnsmasq,
+  // then stubby, so they are encrypted when DNS-over-TLS is on (ID-581).
+  'routing_merlin_local_cache': () => _routing(
+      _merlinFixture().replaceFirst('nameserver 1.1.1.2\nnameserver 1.0.0.2\nnameserver 127.0.1.1', 'nameserver 127.0.0.1'),
+      merlin: true),
   'routing_dot_off': () => _routing(_replace(kRoutingFixture, [
         ('nameserver 127.0.1.1\n', ''),
         ('@@DNSMASQ\nserver=127.0.1.1', '@@DNSMASQ\nserver=1.1.1.2\nserver=1.0.0.2'),

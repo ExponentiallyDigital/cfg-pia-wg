@@ -1,0 +1,40 @@
+ROUTER DNS ROUTING
+Every device's lookups go through a tunnel: pinned devices' through their own, every other device's through VPN Director's rule for the whole network.
+read 04:09:30
+
+== YOUR DEVICES' LOOKUPS ==
+wgc1:pia-aus_perth → 9.9.9.9 [wgc1:pia-aus_perth, encrypted to PIA] - TABLET
+Everything else → 9.9.9.9 [wgc5:pia-aus_melbourne, encrypted to PIA] - VPN Director's rule for 192.168.1.0/24
+
+== THE ROUTER'S OWN LOOKUPS ==
+127.0.0.1 dnsmasq → stubby → 1.1.1.2, 1.0.0.2 [Internet, encrypted (DoT)] - local caching DNS server, DNS-over-TLS
+
+== THE WATCHDOGS' LOOKUPS ==
+wgc1:pia-aus_perth [Internet, encrypted (DoH)] - freedns.controld.com (76.76.2.1)
+wgc2:pia-au_adelaide-pf [Internet, encrypted (DoH)] - freedns.controld.com (76.76.2.1)
+wgc3:pia-au_brisbane-pf [Internet, encrypted (DoH)] - security.cloudflare-dns.com (1.1.1.2)
+wgc4 [not configured]
+wgc5:pia-aus_melbourne [Internet, encrypted (DoH)] - freedns.controld.com (76.76.2.1)
+
+== THE SLOTS' DNS SERVERS ==
+9.9.9.9, 149.112.112.112 [shared by 4] - used by wgc1:pia-aus_perth, wgc2:pia-au_adelaide-pf, wgc3:pia-au_brisbane-pf and wgc5:pia-aus_melbourne.
+
+== EVIDENCE ==
+
+DNS routing rules (ip rule, iif lo)
+Merlin has no such rules. It sends the router's own lookups to a slot's DNS servers by its main table, through the first slot to start. THE SLOTS' DNS SERVERS says which slot that is.
+(none)
+
+DNS redirects (VPN Director's DNSVPN chains)
+Lookups to the router from each device VPN Director sends to a tunnel, sent on to that slot's DNS servers.
+-A DNSVPN6 -s 192.168.1.55/32 -j DNAT --to-destination 9.9.9.9
+-A DNSVPN6 -s 192.168.1.55/32 -j DNAT --to-destination 149.112.112.112
+-A DNSVPN10 -s 192.168.1.0/24 -j DNAT --to-destination 9.9.9.9
+
+Slot DNS settings (nvram)
+Each slot's DNS servers, as set in MANAGE or the web interface.
+wgc1_dns=9.9.9.9, 149.112.112.112  # wgc1:pia-aus_perth
+wgc2_dns=9.9.9.9, 149.112.112.112  # wgc2:pia-au_adelaide-pf
+wgc3_dns=9.9.9.9, 149.112.112.112  # wgc3:pia-au_brisbane-pf
+wgc4_dns=  # not configured
+wgc5_dns=9.9.9.9, 149.112.112.112  # wgc5:pia-aus_melbourne

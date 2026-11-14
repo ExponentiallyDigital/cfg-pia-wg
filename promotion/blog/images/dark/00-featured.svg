@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540"><defs><marker id="m8892A4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8892A4"/></marker><marker id="m00D4AA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#00D4AA"/></marker><marker id="mFF5C5C" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#FF5C5C"/></marker><marker id="mEF9F27" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#EF9F27"/></marker><marker id="mB69CFF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#B69CFF"/></marker><marker id="m19B3EE" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#19B3EE"/></marker><marker id="m8B9CFC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8B9CFC"/></marker></defs><rect width="960" height="540" fill="#12141A"/>
+<rect x="0" y="0" width="12" height="540" fill="#00D4AA"/>
+<text x="64" y="120.0" font-family="Consolas, Menlo, monospace" font-size="16" font-weight="700" fill="#00D4AA" text-anchor="start">CFG-PIA-WG</text>
+<text x="64" y="196.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="64" font-weight="700" fill="#E8EAF0" text-anchor="start">Tunnel</text>
+<text x="64" y="268.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="64" font-weight="700" fill="#E8EAF0" text-anchor="start">or nothing</text>
+<text x="64" y="330.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="22" font-weight="400" fill="#8892A4" text-anchor="start">A kill switch for PIA WireGuard</text>
+<text x="64" y="362.0" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="22" font-weight="400" fill="#8892A4" text-anchor="start">on stock ASUS firmware</text>
+<text x="64" y="480.0" font-family="Consolas, Menlo, monospace" font-size="15" font-weight="400" fill="#8892A4" text-anchor="start">exponentiallydigital.com</text>
+<rect x="600" y="70" width="200" height="70" rx="8" fill="#1A1D23" stroke="#2E3240" stroke-width="1.5"/>
+<text x="700.0" y="100.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="18" font-weight="600" fill="#E8EAF0" text-anchor="middle">Laptop</text>
+<text x="700.0" y="126.7" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">pinned to wgc1</text>
+<line x1="700.0" y1="144" x2="700.0" y2="196" stroke="#8892A4" stroke-width="2" marker-end="url(#m8892A4)"/>
+<rect x="600" y="200" width="200" height="70" rx="8" fill="#1A1D23" stroke="#EF9F27" stroke-width="1.5"/>
+<text x="700.0" y="230.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="18" font-weight="600" fill="#E8EAF0" text-anchor="middle">ASUS router</text>
+<text x="700.0" y="256.7" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">kill switch holds</text>
+<path d="M660 274 L660 330 L560 330 L560 388" fill="none" stroke="#00D4AA" stroke-width="3" marker-end="url(#m00D4AA)"/>
+<rect x="470" y="392" width="180" height="70" rx="8" fill="#1A1D23" stroke="#00D4AA" stroke-width="1.5"/>
+<text x="560.0" y="422.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="18" font-weight="600" fill="#00D4AA" text-anchor="middle">PIA tunnel</text>
+<text x="560.0" y="448.7" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">encrypted</text>
+<path d="M740 274 L740 330 L850 330 L850 388" fill="none" stroke="#FF5C5C" stroke-width="3" stroke-dasharray="7 6"/>
+<circle cx="850" cy="330" r="20" fill="#12141A" stroke="#FF5C5C" stroke-width="3"/>
+<path d="M841 321 L859 339 M859 321 L841 339" stroke="#FF5C5C" stroke-width="3"/>
+<rect x="760" y="392" width="180" height="70" rx="8" fill="#1A1D23" stroke="#FF5C5C" stroke-width="1.5"/>
+<text x="850.0" y="422.3" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="18" font-weight="600" fill="#E8EAF0" text-anchor="middle">Your ISP</text>
+<text x="850.0" y="448.7" font-family="'Segoe UI', Inter, Arial, sans-serif" font-size="12" font-weight="400" fill="#8892A4" text-anchor="middle">blocked</text>
+</svg>

@@ -1,10 +1,10 @@
 ROUTER DNS ROUTING
-Only pinned devices' lookups go through a tunnel.
+Every device's lookups go through a tunnel: pinned devices' through their own, every other device's through VPN Director's rule for the whole network.
 read 04:09:30
 
 == YOUR DEVICES' LOOKUPS ==
 wgc1:pia-aus_perth → 9.9.9.9 [wgc1:pia-aus_perth, encrypted to PIA] - TABLET
-Everything else → dnsmasq → stubby → 1.1.1.2, 1.0.0.2 [Internet, encrypted (DoT)] - DNS-over-TLS
+Everything else → 9.9.9.9 [wgc5:pia-aus_melbourne, encrypted to PIA] - VPN Director's rule for 192.168.1.0/24
 
 == THE ROUTER'S OWN LOOKUPS ==
 1.1.1.2 [Internet, not encrypted] - DNS Server setting, ordinary DNS
@@ -19,26 +19,19 @@ wgc4 [not configured]
 wgc5:pia-aus_melbourne [Internet, encrypted (DoH)] - freedns.controld.com (76.76.2.1)
 
 == THE SLOTS' DNS SERVERS ==
-9.9.9.9, 149.112.112.112 [shared by 4] - used by wgc1:pia-aus_perth, wgc2:pia-au_adelaide-pf, wgc3:pia-au_brisbane-pf and wgc5:pia-aus_melbourne. Rules 1016 and 1017 send the router's own lookups to them through wgc5:pia-aus_melbourne.
-On Merlin, a slot applies its DNS through its own firewall rules, which this screen does not read, so pinned devices are not shown.
+9.9.9.9, 149.112.112.112 [shared by 4] - used by wgc1:pia-aus_perth, wgc2:pia-au_adelaide-pf, wgc3:pia-au_brisbane-pf and wgc5:pia-aus_melbourne.
 
 == EVIDENCE ==
 
 DNS routing rules (ip rule, iif lo)
-Which tunnel carries the router's own lookups to each address. The lowest rule number wins.
-1016:   from all to 9.9.9.9 iif lo lookup 5  # wgc5:pia-aus_melbourne
-1017:   from all to 149.112.112.112 iif lo lookup 5  # wgc5:pia-aus_melbourne
-1022:   from all to 9.9.9.9 iif lo lookup 7  # wgc3:pia-au_brisbane-pf
-1023:   from all to 149.112.112.112 iif lo lookup 7  # wgc3:pia-au_brisbane-pf
-1025:   from all to 9.9.9.9 iif lo lookup 8  # wgc2:pia-au_adelaide-pf
-1026:   from all to 149.112.112.112 iif lo lookup 8  # wgc2:pia-au_adelaide-pf
-1028:   from all to 9.9.9.9 iif lo lookup 9  # wgc1:pia-aus_perth
-1029:   from all to 149.112.112.112 iif lo lookup 9  # wgc1:pia-aus_perth
+Merlin has no such rules. It sends the router's own lookups to a slot's DNS servers by its main table, through the first slot to start. THE SLOTS' DNS SERVERS says which slot that is.
+(none)
 
-DNS redirects (VPN_FUSION)
-Pinned devices' lookups to the router, sent on to their slot's first DNS server.
--N VPN_FUSION
--A VPN_FUSION -s 192.168.1.55/32 -d 192.168.1.254/32 -p udp -m udp --dport 53 -j DNAT --to-destination 9.9.9.9
+DNS redirects (VPN Director's DNSVPN chains)
+Lookups to the router from each device VPN Director sends to a tunnel, sent on to that slot's DNS servers.
+-A DNSVPN6 -s 192.168.1.55/32 -j DNAT --to-destination 9.9.9.9
+-A DNSVPN6 -s 192.168.1.55/32 -j DNAT --to-destination 149.112.112.112
+-A DNSVPN10 -s 192.168.1.0/24 -j DNAT --to-destination 9.9.9.9
 
 Slot DNS settings (nvram)
 Each slot's DNS servers, as set in MANAGE or the web interface.

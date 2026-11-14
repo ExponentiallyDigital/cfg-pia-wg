@@ -93,6 +93,35 @@ void main() {
     });
   });
 
+  // ID-581: on Merlin the redirects are VPN Director's, one chain per slot, one line per DNS server,
+  // and one for the whole network when there is a default rule.
+  group("Merlin's DNSVPN redirects", () {
+    const chains = '-A DNSVPN6 -s 192.168.1.55/32 -j DNAT --to-destination 9.9.9.9\n'
+        '-A DNSVPN6 -s 192.168.1.55/32 -j DNAT --to-destination 149.112.112.112\n'
+        '-A DNSVPN10 -s 192.168.1.94/32 -j RETURN\n'
+        '-A DNSVPN10 -s 192.168.1.0/24 -j DNAT --to-destination 9.9.9.9';
+
+    test("a device's first redirect is the one it's shown with, and a network's is never read as a device's", () {
+      expect(parseFusionRedirects(chains), {'192.168.1.55': '9.9.9.9'});
+    });
+
+    test("the whole network's redirect is read on its own", () {
+      expect(parseNetworkRedirect(chains), ('192.168.1.0/24', '9.9.9.9'));
+      expect(parseNetworkRedirect('-A DNSVPN6 -s 192.168.1.55/32 -j DNAT --to-destination 9.9.9.9'), isNull);
+    });
+  });
+
+  // ID-581: a box's text that points to a section names it as the screen shows it, and the screen
+  // colours it as it colours the heading.
+  test('a section heading named in text is split out to be coloured, and nothing else is', () {
+    expect(splitOnHeadings("Merlin routes them by its main table. $kDnsSlotsHeading says which slot that is."), [
+      ('Merlin routes them by its main table. ', false),
+      (kDnsSlotsHeading, true),
+      (' says which slot that is.', false),
+    ]);
+    expect(splitOnHeadings('no heading here'), [('no heading here', false)]);
+  });
+
   group('ROUTER DNS ROUTING', () {
     test('the one-line answer, on this router', () {
       expect((kRoutingFixtureBlocks().first as DnsVerdict).text, "Only pinned devices' lookups go through a tunnel.");
