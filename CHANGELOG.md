@@ -98,7 +98,6 @@ To continue the Merlin work (DEVICES and the widget on Merlin), read first: `.cl
 Work items for the **current** release:
 
 - ID-568 DOC: README's Merlin note and the Features list stop implying Merlin's kill switch covers a tunnel switched off; it covers a tunnel down or rebuilding while enabled. The SNBForums first post says the same ("the tunnel being switched off"), which Andrew edits; recorded in `promotion/posts.md`.
-- ID-569 TST: four more measurements on Merlin 388.13_0 before ID-556 settles: whether VPN Director and the kill switch hold from the first second after a reboot, sampled once a second from a routed device as stock's reboot leak was found (ID-345); what applies a `vpndirector_rulelist` edited from a shell rather than the web page; whether a routed device keeps its tunnel's DNS with DNS Director on in "Router" mode; and whether a rule of the app's own added from `wgclient-stop` survives Merlin's clean-up. Results in the plan file.
 - ID-556 ARC: DEVICES on Merlin designed so stock and Merlin keep the same four promises to users, with Merlin's differences absorbed by the app: the default as one whole-network VPN Director rule, a pin above the default's slot refused, a `wgclient-start`/`wgclient-stop` hook doing the guard's work, rename as on stock, DNS Director supported but not required. Direction decided by Andrew, 2026-11-13.
   - Plan: `.claude/plans/plan_devices-on-merlin.md`, "ID-556 direction".
 - ID-570 FIX: on Merlin the home-screen widget shows "Not checked" with two tunnels up. It builds its rows from `vpnc_clientlist`, which Merlin doesn't have; on Merlin it reads the slots from `wgcN_*`, as MANAGE does. Seen on 388.13_0, 2026-11-13.
@@ -110,6 +109,10 @@ Work items for the **current** release:
 - ID-572 FIX: on Merlin, a slot's watchdog skips its name check ("Could not aim a lookup at 9.9.9.9 through wgc5") when another slot started first with the same DNS servers. The probe looks in table `10 - slot`, stock's numbering, where Merlin names its tables `wgc1` to `wgc5` (116 to 120), and Merlin copies the first slot's DNS route into the later slot's table. Confirmed on the rebuilt router, 2026-11-13. ID-556's hook removes the copied route; the probe then needs Merlin's table names.
 - ID-571 ADD: on Merlin the widget names the devices VPN Director sends to each tunnel, and the ones its kill switch holds offline, read from `vpndirector_rulelist`. After ID-557, which settles how DEVICES reads that file.
 - ID-558 TST: TESTING.md gains a Merlin DEVICES group, run by hand on the Merlin router, and `check-claims.sh` checks a pinned device's route on Merlin.
+- ID-578 SEC: rerun GRD-7 on stock with `check-reboot.sh` as fixed on 2026-11-14, the next time the router is on stock. Until then counted any answer but the WAN address read before the reboot as the tunnel, and the router's WAN address can change at a reboot (it did on Merlin that day), so a leak through the new address would have passed. README 5.4.1's "no leak across three restarts in a row" rests on those passes; the earlier runs that found leaks (4 of 6) are unaffected.
+  - DoD: three passes on stock with the fixed check, or README 5.4.1 corrected to what it finds.
+- ID-576 BLD: `weekly_updates.yml` opens a third pull request moving Gradle, the Android Gradle plugin and Kotlin to the newest versions the pinned Flutter supports (read from the Flutter SDK), with the lockfiles and THIRD-PARTY-NOTICES.md regenerated and analyze, the tests and a debug build run, a draft when any fails. Today the PR only lists them, because Dependabot can't rewrite the strict lockfiles (ID-411), and they last moved by hand in ID-479. Package major versions stay a list. Andrew's decision, 2026-11-13.
+  - DoD: the job run from `dev` (ID-416) opens the PR, and BUILDING.md section 6 says these three move weekly; the release dry run is named in the PR as the check a debug build can't make.
 - ID-554 DOC: the Play and App Store descriptions lead with always-on PIA, stock and Merlin. Play through `play_listing.yml`; the App Store with the next version, as a released version's text can't change.
 - ID-559 REL: DEVICES on Merlin released when Andrew asks, after the store dry runs; then a reply in SNBForums thread 98266 announcing it, and README and the listings say DEVICES works on both.
 
@@ -131,6 +134,17 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 4. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-13 v0.8.206 build 576 - Merlin's reboot, DISABLE and DNS Director measured, and the reboot check's blind spot fixed
+
+```play
+• Behind the scenes: more groundwork for device assignment on Merlin routers, and a sharper test of what happens while the router restarts; the app is unchanged.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-577 BLD: two pinned GitHub Actions moved by `build.ps1`'s pin update, 2026-11-13: the SonarQube scan v8.4.1 to v8.5.0, and the OSV scanner's reusable workflow v2.7.0 to v2.7.1, each to its tag's commit.
+- ID-569 TST: four more measurements on Merlin 388.13_0 before ID-556 settles: whether VPN Director and the kill switch hold from the first second after a reboot, sampled once a second from a routed device as stock's reboot leak was found (ID-345); what applies a `vpndirector_rulelist` edited from a shell rather than the web page; whether a routed device keeps its tunnel's DNS with DNS Director on in "Router" mode; and whether a rule of the app's own added from `wgclient-stop` survives Merlin's clean-up. Results in the plan file.
+  - Closed, 2026-11-14: measured on 388.13_0. A shell-edited rules file applies on `service restart_vpnrouting0`; an app-owned `prohibit` at the top of the slot's rule range holds a pinned device offline through DISABLE, and survives Merlin; DNS Director works alongside, a routed device keeping its tunnel's DNS; Merlin's kill switch holds a routed device through a reboot, `check-reboot.sh` seen failing with it off and passing with it on, after a blind spot in the script was fixed (ID-578); and a whole-network rule with its kill switch cuts the router off from its own LAN while the tunnel is down, fixed by exempting the router's address. Recorded in `.claude/plans/plan_devices-on-merlin.md`.
 
 2026-11-11 v0.8.205 build 575 - Merlin measured from scratch, DEVICES on Merlin designed, and numbered documents
 

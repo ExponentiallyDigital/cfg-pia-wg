@@ -1411,7 +1411,8 @@ ROUTER_SSH='ssh -o ConnectTimeout=3 admin@192.168.1.1' scripts/check-reboot.sh
 
 - See: the router reboots, and about two minutes later a PASS or FAIL line. It fetches Cloudflare's trace page by IP address once a second and records which public address answered.
 - Pass if: PASS: no answer came from the router's WAN address. Its INFO lines say how many probes were blocked and when the tunnel carried DESKTOP again.
-- Note: run it three times. It's a race: before build 488, 4 boots in 6 leaked for 3 to 6 seconds, and the other two passed. Since build 488 the router's Network Services Filter holds from boot (ID-348), and three in a row passed on 2026-10-01.
+- Note: run it three times. It's a race: before build 488, 4 boots in 6 leaked for 3 to 6 seconds, and the other two passed. Since build 488 the router's Network Services Filter holds from boot (ID-348), and three in a row passed on 2026-10-01. Those three were read by a version of the script that counted any answer but the WAN address from before the reboot as the tunnel; the router's WAN address can change at a reboot, so they're to be rerun with the fixed script (ID-578). The script now records the address that answered each probe, and fails on one that is neither the tunnel's nor the router's WAN address, before or after the reboot.
+- Note: on Merlin, "pinned" means VPN Director sends the device to a tunnel, by its own rule or a whole-network one; the script asks the router which (ID-569).
 
 **GRD-8** The router's filter holds pinned devices, and pings are the user's choice [script]
 
