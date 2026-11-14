@@ -93,6 +93,8 @@ Work items for the **next** release:
   - DoD: WGT-2 passed on stock, its row naming a pinned device.
 - ID-589 TST: WGT-8 on an iPhone, with the next TestFlight build: the Tunnels widget's rows name the devices pinned to each tunnel (ID-587), read from the same line as Android's.
   - DoD: WGT-8 passed on an iPhone, a row naming a pinned device.
+- ID-592 BLD: Flutter 3.47.9 to 3.50.0. The weekly job's PR #78 (left open as a draft, so the job doesn't take a closed one as the answer) passed its tests, debug build and notices, and failed analyze: 3.50 deprecates `package:flutter/material.dart` for the separate `material_ui` package, 72 imports across the app. Moving means a new UI dependency under every screen (material_ui 1.11.0, published 2026-11-09) and a check of every screen, too much to send to production unseen at 1 am, so the release after build 578 stayed on 3.47.9, as Andrew had said to do if the upgrade failed (2026-11-15). The `cli_util` override 3.50 needs is in already (ID-590).
+  - DoD: every import moved to `material_ui`, analyze clean with `--fatal-infos` on 3.50, the tests and the screen goldens passing, the screens checked on the emulator, PR #78 (or its successor) merged, and `flutter upgrade` on the PC and the MacBook.
 
 ---
 
@@ -100,12 +102,9 @@ Work items for the **next** release:
 
 Work items for the **current** release, in the order they are to be done:
 
-- ID-590 BLD: the release after build 577 is built with the latest Flutter, Gradle, Android Gradle plugin and Kotlin: Flutter 3.50.0 (stable since 2026-11-11; pinned 3.47.9), Gradle 9.9.1 and the plugin 9.5.1 as at 2026-11-15. Brought by `weekly_updates.yml` run from `dev` (ID-576's run), one PR each for Flutter, the packages and the Android tools, merged into `dev` one at a time, a later one re-run if an earlier merge leaves it stale. Then `flutter upgrade` on the PC and the MacBook, so local builds match the pin. Andrew's request, 2026-11-15.
-  - DoD: the PRs merged into `dev` with their checks green, `pubspec.yaml` and the wrapper at the latest stable versions, and `release.yml`'s dry run passing on them (the release build a debug build can't check).
-  - Now: the Android tools in (ID-576). The packages moved by hand, PR #77 closed: its tests failed on ID-591, fixed here. The Flutter job's first run failed in `pub get`: Flutter 3.50's test packages need a `pana` that needs `cli_util ^0.5.0`, which `flutter_launcher_icons` 0.14.4, the latest, refuses; a `cli_util` override for the dev tools, checked by regenerating the icons byte for byte. Left: the Flutter job's PR, the dry run, `flutter upgrade` on the PC.
-- ID-559 REL: DEVICES on Merlin released when Andrew asks, after ID-590 and the store dry runs, with README and the listings saying DEVICES works on both.
+- ID-559 REL: DEVICES on Merlin released when Andrew asks, after the store dry runs, with README and the listings saying DEVICES works on both.
   - Now: README says so, 2026-11-14: the Features list, the Merlin note in section 4, the Merlin tip in 5.2, 5.4 and 5.4.1 (what the app does on Merlin), section 7 (what it writes on Merlin, and what UNINSTALL takes out), and 388.13 among the versions tested. The listings were done in ID-554.
-  - Next: the four dry runs from `dev` once build 577 is pushed (`release.yml` with `dry_run`, `play_listing.yml` and `app_store_listing.yml` with `check_only`, `promote.yml` with `dry_run`), then the release when Andrew asks.
+  - Now: the four dry runs passed from `dev` on build 578, 2026-11-15: `release.yml` (43603113233), `play_listing.yml` check only (43603116136), `app_store_listing.yml` check only (43603119352), `promote.yml` internal to production (43603145463). Next: build 579's tag run, then production on both stores (Andrew's go, 2026-11-15).
 - ID-554 DOC: the Play and App Store descriptions lead with always-on PIA, stock and Merlin. Play through `play_listing.yml`; the App Store with the next version, as a released version's text can't change.
   - Now: text written 2026-11-14 in `play-store/description.md`, `description_short.md`, `app-store/description.md` and the promotional text in `app-store/listing.md`, all within limits: they lead with always-on PIA on stock and Merlin, and drop "Merlin support is in beta" and "Device assignment needs stock ASUS firmware". To send with the next release: Play through `play_listing.yml`, the App Store with that version.
   - Next: sent with ID-559's release: `play_listing.yml` once it's out, and the App Store text with that version.
@@ -129,6 +128,20 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 4. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-15 v0.8.209 build 579 - the release of DEVICES and the widget on Merlin, with the widget naming pinned devices
+
+```play
+• DEVICES works on Merlin, through VPN Director: a pinned device stays offline if its tunnel is switched off, and through a restart.
+• The widget works on Merlin, and on both stock and Merlin names each tunnel's pinned devices.
+• ROUTER DNS ROUTING reads Merlin routers, and shows each slot in its colour.
+• After a restart, the watchdog waits for the router's clock instead of reporting a false failure.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-590 BLD: the release after build 577 is built with the latest Flutter, Gradle, Android Gradle plugin and Kotlin: Flutter 3.50.0 (stable since 2026-11-11; pinned 3.47.9), Gradle 9.9.1 and the plugin 9.5.1 as at 2026-11-15. Brought by `weekly_updates.yml` run from `dev` (ID-576's run), one PR each for Flutter, the packages and the Android tools, merged into `dev` one at a time, a later one re-run if an earlier merge leaves it stale. Then `flutter upgrade` on the PC and the MacBook, so local builds match the pin. Andrew's request, 2026-11-15.
+  - DoD: the PRs merged into `dev` with their checks green, `pubspec.yaml` and the wrapper at the latest stable versions, and `release.yml`'s dry run passing on them (the release build a debug build can't check).
+  - Closed, 2026-11-15: Gradle 9.9.1 and the plugin 9.5.1 (ID-576, PR #76), Kotlin 2.4.21 already the latest, and the packages at their latest within pubspec.yaml's constraints (build 578, by hand after PR #77's tests found ID-591), with the `cli_util` override 3.50 needs. `release.yml`'s dry run on build 578 (run 43603113233) passed: the signed Android and iOS builds, CodeQL, MobSF and the OSV scan. Flutter 3.50.0 split out to ID-592: its PR #78 failed analyze on the `material_ui` move, so the release stays on 3.47.9, as Andrew had said to do if the upgrade failed. `flutter upgrade` on the PC isn't needed for 3.47.9.
 
 2026-11-15 v0.8.208 build 578 - Gradle 9.9.1 and the Android Gradle plugin 9.5.1 from the weekly PR, the packages at their latest, and the dev tools ready for Flutter 3.50
 
