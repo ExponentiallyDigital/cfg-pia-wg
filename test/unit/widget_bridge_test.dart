@@ -54,12 +54,13 @@ void main() {
       expect(data['overflow_text'], ''); // WidgetKeys.OVERFLOW_TEXT
 
       expect(data['tunnel1_region'], 'Melbourne, Australia'); // WidgetKeys.T1_REGION
-      expect(data['tunnel1_detail'], 'wgc5 · up · 1 pinned'); // WidgetKeys.T1_DETAIL
+      // ID-587: an answering tunnel's row names what is pinned to it, as DEVICES names them.
+      expect(data['tunnel1_detail'], 'wgc5 · up · TABLET'); // WidgetKeys.T1_DETAIL
       expect(data['tunnel1_guard'], ''); // WidgetKeys.T1_GUARD - answering, nobody held back
       expect(data['tunnel1_state'], 'answering'); // WidgetKeys.T1_STATE
 
       expect(data['tunnel2_region'], 'Auckland, New Zealand');
-      expect(data['tunnel2_detail'], 'wgc1 · up · 2 pinned');
+      expect(data['tunnel2_detail'], 'wgc1 · up · LAPTOP, PHONE');
       expect(data['tunnel2_state'], 'answering');
       // Each row's slot, for its colour (ID-516): wgc5 then wgc1.
       expect(data['tunnel1_slot'], 5); // WidgetKeys.T1_SLOT
@@ -82,7 +83,7 @@ void main() {
 
       expect(data['badge'], 'down');
       expect(data['down_count'], 1);
-      expect(data['tunnel2_detail'], 'wgc1 · down · 1 pinned');
+      expect(data['tunnel2_detail'], 'wgc1 · down · 1 pinned', reason: 'the guard line below names them; not twice');
       expect(data['tunnel2_guard'], 'DESKTOP kept offline by the guard');
       expect(data['tunnel2_state'], 'down');
       expect(data['tunnel1_guard'], ''); // tunnel 1 is answering - nobody named against it

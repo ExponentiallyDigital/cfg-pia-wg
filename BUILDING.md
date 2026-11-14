@@ -325,10 +325,11 @@ Exit codes: `0` when every pin matches its tag, `1` when one does not (the check
 
 ## 6. Build chain & utility notes
 
-- Keeping the build environment up to date is mostly automatic. Every Monday `weekly_updates.yml` opens up to two pull requests into `dev`, each checked with analyze, the tests and a debug build in the same run:
+- Keeping the build environment up to date is mostly automatic. Every Monday `weekly_updates.yml` opens up to three pull requests into `dev`, each checked with analyze, the tests and a debug build in the same run, and opened as a draft when any of them fails:
   - **Flutter**, when a newer stable is out: it moves the pin in `pubspec.yaml`. Before merging, run `flutter upgrade` locally so your Flutter matches.
-  - **Packages**: `flutter pub upgrade` within the constraints, with the Gradle lockfiles and `THIRD-PARTY-NOTICES.md` regenerated to match. Its description lists the major versions left behind, and Gradle, the Android Gradle plugin and Kotlin against their latest.
-  - By hand, for a major version or one of those three:
+  - **Packages**: `flutter pub upgrade` within the constraints, with the Gradle lockfiles and `THIRD-PARTY-NOTICES.md` regenerated to match. Its description lists the major versions left behind.
+  - **Gradle, the Android Gradle plugin and Kotlin**, each to its latest release, with the Gradle wrapper's checksum, the lockfiles and `THIRD-PARTY-NOTICES.md` to match (`tool/android_tools.dart`, ID-576). Its description says where each stands against the pinned Flutter's own known limits, read from Flutter's `gradle_utils.dart`: the project has run past them since ID-479, so the gate is the PR's own checks. A debug build doesn't shrink or sign, so run the release dry run before the next release.
+  - By hand, for a major version:
 
     ```cmd
     flutter pub upgrade --major-versions

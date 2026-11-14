@@ -157,6 +157,39 @@ OpenWrt isn't supported, sorry: the app is built around ASUS's own VPN client.
 
 Still to do: from a desktop, swapping the first image for `app-store/screenshots/ipad/04.png`, "Dead tunnels rebuilt, and an email to say so".
 
+## SNBForums first post: the Merlin bullet (2026-11-14, ID-568)
+
+The live "What it does" list said Merlin's kill switch covers a tunnel being switched off, which it doesn't. The replacement for its Merlin bullet, true of the release that's out:
+
+```text
+- On Merlin, its own kill switch holds a device VPN Director sends to a tunnel while that tunnel is down or rebuilding, and through a restart, though not once you switch the tunnel off. The next release closes that gap, and brings DEVICES to Merlin.
+```
+
+## SNBForums: DEVICES on Merlin (to post after the release, ID-584)
+
+A reply in thread 98266, once ID-559's release is in both stores. The version is the one the release carries; check it before posting.
+
+```text
+DEVICES now works on Merlin, in v0.8.207, on Google Play, the App Store and GitHub.
+
+It works through VPN Director rather than around it. It reads VPN Director's rules and writes its changes back to them the way the web page does, so what you set in the app shows on the VPN Director page, and the other way round. A rule of your own that isn't for a single device, a range of addresses say, is left alone.
+
+It also closes the gaps Merlin's kill switch leaves. I measured each of these on 388.13_0:
+
+- Switch a tunnel off and Merlin takes its kill switch away with it, so the tunnel's devices go out the next way they find: another tunnel, or straight out through your ISP. The app holds them offline instead, until you switch it back on or move them.
+- A VPN Director rule for your whole network on a higher-numbered tunnel comes before a lower tunnel's kill switch. Stop wgc1 with the default on wgc5, and wgc1's devices go out through wgc5. The app holds those too.
+- A whole-network rule with its kill switch on cuts the router off from its own LAN while that tunnel is down, about two minutes at every boot: no DNS, no web page, no SSH. The app keeps the router's own address out of that rule.
+- Merlin copies the main routing table into each tunnel's table as the tunnel starts, so a device's DNS lookups could leave by the WAN or through another tunnel. The app tidies each table as its tunnel starts.
+
+scripts/check-claims.sh tests the first, second and fourth on the router by doing them on purpose and watching where a device's traffic goes. Each check failed before the app's rules and passed after.
+
+Two smaller things came with it. SETTINGS > ROUTER DNS ROUTING now reads Merlin: each device's DNS, which tunnel it goes through, and VPN Director's DNS rules behind it, with DNS Director on or off. And the home screen widget names the devices VPN Director sends to each tunnel.
+
+If you try it on Merlin, I'd welcome a note on GitHub saying how it went, good or bad.
+
+GitHub: https://github.com/ExponentiallyDigital/cfg-pia-wg
+```
+
 ## SNBForums release thread (posted 2026-11-11)
 
 Posted in ASUSWRT - Official, the stock-firmware subforum, since the app is stock-first and Merlin support is in beta. The forum added the "Release" prefix to the title. Section headings were made bold in the forum's editor.

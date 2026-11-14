@@ -21,6 +21,7 @@ import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
 import 'fail_closed_guard.dart';
+import 'merlin_guard.dart';
 import 'router_command.dart';
 import 'router_ops.dart';
 import 'router_service_queue.dart';
@@ -928,6 +929,10 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       // stock creates keys nothing reads and DELETE does not clean up.
       .replaceAll('__MERLINONLY__', stock ? '' : _kMerlinOnlyNvsets)
       .replaceAll('__RESTART__', stock ? _kRestartStock : _kRestartMerlin)
+      // The table the name check asks through: stock numbers it 10 - slot, Merlin names it wgcN
+      // (116 to 120). Stock's number on Merlin is an empty table, so every lookup was "Could not aim"
+      // there, for the slot that started second (ID-572, 2026-11-13).
+      .replaceAll('__DNSTABLE__', stock ? r'$((10 - SLOT))' : 'wgc\$SLOT')
       .replaceAll('__DOHAWK__', kDohAnswerAwk)
       .replaceAll('__DOHURL__', doh?.url ?? '')
       .replaceAll('__DOHHOST__', doh?.host ?? '')
@@ -1117,6 +1122,7 @@ class RouterWatchdog {
         }
         // The guard and the boot hook that restores it came with 460. A router updated from an older
         // build has neither until something writes them, and this is the update the user is prompted for.
+        if (firmware == RouterFirmware.merlin && deployed.isNotEmpty) await _merlinGuard.ensure(quiet: true);
         if (firmware == RouterFirmware.stock && (deployed.isNotEmpty || refreshGuard)) {
           await _guardService.ensure();
           await _refreshS50();
@@ -1167,6 +1173,8 @@ class RouterWatchdog {
   }
 
   FailClosedGuard get _guardService => FailClosedGuard(read: _read, run: (cmd) => _run(cmd), onLog: onLog);
+
+  MerlinGuard get _merlinGuard => MerlinGuard(read: _read, run: (cmd) => _run(cmd), onLog: onLog);
 
   /// Rewrites S50downloadmaster from this build's template, keeping the cru lines it already holds.
   /// Only a copy the app wrote is touched; the router's own script, or none at all, is left alone.
@@ -1382,7 +1390,9 @@ class RouterWatchdog {
     await _writeWatchdogNvram(config, desc: desc);
     await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
     await _writeScript(config.slotIndex, buildWatchdogScript(config));
-    if (isStockFirmware) await _guardService.ensure();
+    // On Merlin, the app's guard tidies each tunnel's table as it starts, so the name check asks
+    // through this tunnel and not another one's copied route (ID-572).
+    await (isStockFirmware ? _guardService.ensure() : _merlinGuard.ensure(quiet: true));
     await _run(buildCronCheckLine(config.slotIndex, config.cronIntervalMinutes));
     await _run(buildCronRotateLine(config.slotIndex));
     progress.scheduled = true;
@@ -1767,7 +1777,26 @@ class RouterWatchdog {
       _ when guardRules == 0 => 'No fail-closed guard rules to remove',
       _ => 'Removed the fail-closed guard rules',
     });
+    done.addAll(await _uninstallMerlinGuard());
     return done;
+  }
+
+  /// UNINSTALL on Merlin: the app's rules beside VPN Director's and its lines in Merlin's hooks
+  /// (ID-557), through the script while it's there and directly after, as for the stock guard.
+  /// VPN Director's own rules are the user's routing, and stay.
+  Future<List<String>> _uninstallMerlinGuard() async {
+    const count = "ip rule show | grep -cE '$kMerlinGuardRulePattern' || true";
+    final had = int.tryParse((await _read(count)).trim()) ?? 0;
+    await MerlinGuard(read: _read, run: (cmd) => _run(cmd), onLog: onLog).clear();
+    await _read("ip rule show | grep -E '$kMerlinGuardRulePattern' | while read -r P F S A B; do "
+        'ip rule del priority "\${P%:}" from "\$S" \$A \$B; done');
+    final left = int.tryParse((await _read(count)).trim()) ?? 0;
+    if (had == 0 && left == 0) return const [];
+    return [
+      left > 0
+          ? "$left of the app's rules beside VPN Director could not be removed: check `ip rule show` on the router"
+          : "Removed the app's rules beside VPN Director, and its lines in Merlin's hooks",
+    ];
   }
 
   /// UNINSTALL: stock's two init scripts, put back as the router had them.
@@ -2545,6 +2574,13 @@ if [ "$RUNMODE" != "deploy" ] && [ -z "$(nvram get ${K}wd_check_interval)" ]; th
   log "$IFACE has no watchdog settings; standing down"
   exit 0
 fi
+# Until NTP has set the router's clock, every certificate looks "not yet valid", so PIA, the CA
+# download and the alert email all fail, and Merlin starts no WireGuard client at all. Only an
+# explicit "0" waits: firmware without the setting carries on (ID-583).
+if [ "$RUNMODE" != "deploy" ] && [ "$(nvram get ntp_ready)" = "0" ]; then
+  log "Waiting for the router's clock (NTP hasn't set it yet); not checking $IFACE until it has"
+  exit 0
+fi
 
 # Lifetime counters. Reconfigures are rare, so one nvram commit per event is an acceptable flash
 # cost; a broken tunnel retrying forever is what the token backoff is for.
@@ -2726,7 +2762,7 @@ __MAILCMD__
 # -- Does this tunnel resolve names? (ID-078) ------------------------------------------------------
 # Asks the slot's first DNS server, through this tunnel only: via the WAN a stopped slot would pass.
 DNS1="$(nvram get ${K}dns | tr ',' ' ' | awk '{print $1}')"
-DNSTABLE=$((10 - SLOT))
+DNSTABLE=__DNSTABLE__
 DNSFAILFILE="/tmp/watchdog_dnsfail_${IFACE}"
 DNSRULE=0
 DNSDEAD=0

@@ -63,6 +63,7 @@ Optionally and for stock only, **show each tunnel's state on the home screen**, 
     - [6.8.11. Stock leaves the old routing rule behind - MEASURED 2026-09-10](#6811-stock-leaves-the-old-routing-rule-behind---measured-2026-09-10)
     - [6.8.12. Every routing rule the app touches](#6812-every-routing-rule-the-app-touches)
   - [6.9. Time Scheduling (`MULTIFILTER_*`) - disabling a device](#69-time-scheduling-multifilter_---disabling-a-device)
+  - [6.10. Device assignment on Merlin (VPN Director)](#610-device-assignment-on-merlin-vpn-director)
 - [7. Watchdog details](#7-watchdog-details)
   - [7.1. Shell script](#71-shell-script)
     - [7.1.1. Backoff](#711-backoff)
@@ -1513,6 +1514,39 @@ What the app does (`applyBlocks`, `lib/device_assignment.dart`; `DeviceAssignmen
 - **The VPN assignment is kept** while a device is disabled (Andrew's decision); choosing a connection again enables it.
 - **A random MAC escapes it**, as it escapes a pin, and APPLY says so for a device whose address looks randomised.
 
+### 6.10. <a name='device-assignment-on-merlin'></a>Device assignment on Merlin (VPN Director)
+
+On Merlin there's no VPN Fusion list to write. A device is sent to a tunnel by a VPN Director rule, and the default connection is a rule for the whole network. DEVICES reads those rules into the same state it builds on stock, so the screen is the same on both, and writes its changes back to them (ID-557). Everything here was measured on 3004.388.13_0 between 2026-11-12 and 2026-11-14, and checked against Merlin's source at that tag (`release/src/router/libovpn/amvpn_routing.c`, `release/src/router/rc/wireguard.c`).
+
+**Where the rules are.** `/jffs/openvpn/vpndirector_rulelist`, one file, records each begun by `<`, fields `enable>description>local IP>remote IP>interface`, interface `WGC1` to `WGC5`, `OVPN1` to `OVPN5` or `WAN`. No trailing newline: the web page writes none, and one would end up in the last rule's interface name. The page refuses `<`, `>`, `'` and `%` in a description and stops at 32 characters; DEVICES does the same.
+
+**How DEVICES reads them.** A rule for one address with no remote address is a device's: to a slot, a pin to that slot's profile; to `WAN`, a pin to the internet; switched off, the device follows the default. The enabled rule for the LAN's network (`lan_ipaddr` and `lan_netmask`) is the default connection; with none, the default is the internet. A range, a remote address or OpenVPN is the user's own, and passes through untouched. Profiles are built from `wgcN_desc` and `wgcN_enable`, with stock's index of `10 - slot`, so a device's index means the same on both firmwares.
+
+**How DEVICES writes them.** A device's own rule is switched, keeping its description; a new one is named for the device. The file is written beside the live one with `printf`, renamed over it and read back, then `service restart_vpnrouting0` applies it, within seconds and without restarting a tunnel. The edit alone does nothing; the call is what applies it. Merlin renumbers on each apply, a rule's number following its place among its slot's records, so DEVICES finds rules by what they say, never by number.
+
+**A lower slot always wins.** VPN Director numbers its rules in fixed ranges: WAN 10010 up, then each slot in a block of 200, wgc1 11210 up to wgc5 12010 up. The kernel takes the lowest number first, so any rule for a lower slot beats any rule for a higher one, a whole-network rule included. A device pinned to a slot above the default's would be ignored without a word, so DEVICES refuses it before writing anything, and refuses a default change that would leave an existing pin above it. README 5.2.1's advice, the main VPN and default on wgc5, means the refusal never comes up.
+
+**Merlin's own kill switch, and where it stops.** With a slot's kill switch on, Merlin adds `prohibit` for each of its devices at 12214 + slot, from early in boot. It holds a device while the tunnel is down, rebuilding or the router is restarting: `check-reboot.sh` saw a routed device leak for 8 seconds at a reboot with it off, and three reboots with none with it on (2026-11-14). It doesn't hold in two cases:
+
+- **The slot switched off.** `wgcN_enable=0` takes the kill switch away with the slot, by design in `amvpn_set_killswitch_rules()`, so the device's `lookup` falls through to the next rule: the WAN, or another slot's whole-network rule (ID-567).
+- **A whole-network rule on a higher slot.** That rule, at 12011 for wgc5, comes before wgc1's kill switch at 12215, so with wgc1 stopped its devices go out through wgc5 (`check-claims.sh` KS-wgc1-stopped, 2026-11-14).
+
+**The app's guard closes both, and three more gaps.** `merlin-guard.sh` (`lib/merlin_guard.dart`) reads the rules file and:
+
+- gives each device sent to a tunnel a `prohibit` at the top of its slot's range, 11010 + 200 x slot + 199 (11409 for wgc1), after every Merlin rule for that slot and before every rule for any other. Merlin deletes only its own `lookup` rules there and its kill-switch numbers, so the rule stays through DISABLE and a tunnel's restart. At 12300, behind the whole-network rule, it didn't hold; at 11409 it did (2026-11-14);
+- exempts the router's own address from a whole-network rule, `9990: from <router's LAN address> lookup main`. Without it, that rule's kill switch cuts the router off from its own LAN while the tunnel is down, about two minutes at every boot and at each rebuild: no DNS from dnsmasq, no web page, no SSH, no app (measured 2026-11-14);
+- tidies each tunnel's table as Merlin starts it. Merlin copies the main table into a slot's table at its start, so the table gains the router's DNS servers by the WAN and another slot's DNS server routes. A routed device then reached Cloudflare's 1.1.1.2 from the home address (ID-574), and with two slots on Quad9, one slot's devices looked names up through the other (2026-11-13: the routes and the connection table agreed). Every route not through the tunnel, the LAN or the WireGuard server goes, except to the tunnel's endpoint. The same copy is what left the watchdog's name check without a route (ID-572).
+
+It runs after every DEVICES APPLY, before every DISABLE, with a watchdog deploy, at boot from Merlin's `services-start` (before the WAN is up), and as each tunnel starts from `wgclient-start`, with the slot as its argument.
+
+**The WAN coming up clears every rule.** `add_multi_routes()` (rc/wan.c) runs `ip rule flush` each time the WAN comes up, and Merlin then puts back only its own: its kill switch at once, its WireGuard server's rules as the server restarts, VPN Director's as each tunnel starts. At boot that is after `services-start`, so the guard's rules were there 21 s after boot and gone at 31 s, and with nothing to put them back, gone after both tunnels started too (2026-11-14, `check-claims.sh` KS-wgc1-stopped and KS-wgc1-disabled failing after the reboot). Every hook Merlin offers before the flush is useless here: `wan-event connected` and `firewall-start` both run before it in `wan_up()`. So `wgclient-start` runs the whole guard, not just the tidy, which covers a WAN reconnect while the router is up; and at boot, where the tunnels can wait minutes for NTP, `services-start` leaves a watch running that puts the rules back whenever it finds them missing, until two minutes after the clock is set or half an hour. Both say what they did in the syslog, as `merlin-guard:` (ID-582). UNINSTALL takes its rules out, and its lines out of both hooks. `check-claims.sh` checks it: KS-wgcN-disabled, KS-wgcN-stopped, MRL-addrs-wgcN and MRL-dns-wgcN all failed on 388.13_0 before the guard and passed after one APPLY (2026-11-14).
+
+**DNS.** Each slot has a `DNSVPN<unit>` chain in the nat table, units 6 to 10 for wgc1 to wgc5, rewriting a routed device's lookups to the slot's DNS servers, and a `RETURN` for a device with a WAN rule. The chains are put back in slot order on every slot start, lowest first, so a device in two slots' rules is rewritten by the lower slot's, the slot that routes it. The router's own route to a slot's DNS servers belongs to the first slot to start, which is wgc1 after a boot but can change at any restart. DNS Director's chain is appended after VPN Director's, so a routed device keeps its tunnel's DNS with DNS Director on (2026-11-14); a device with a WAN rule or none has plain DNS forced to the router.
+
+**The same as stock.** Disabling a device (6.9) writes the same `MULTIFILTER_*` keys and firewall rules on Merlin. Renaming writes `custom_clientlist`, as on stock; Merlin's page also leaves a reserved device's `dhcp_staticlist` name alone.
+
+**Not covered.** Devices that follow the default aren't pinned, so switching the default's slot off sends them to the internet, as on stock. A slot deleted with devices still sent to it holds them offline until they're moved, where stock moves them to the internet; the DELETE confirmation names them. A change made on Merlin's VPN Director page: `restart_vpnrouting0` runs no custom script (rc/services.c at 388.13), so the guard catches up only at the next tunnel start, boot or app action. Until then a device the page took off a tunnel keeps its `prohibit` and stays offline, and one it added has Merlin's kill switch but no hold for its slot switched off (2026-11-14: `11409` for a device whose rule the page had switched off, still there until the guard ran). README 5.4.1 says to make device changes in DEVICES, as it does on stock for another reason (ID-586).
+
 ## 7. <a name='watchdog-details'></a>Watchdog details
 
 Deploying a watchdog writes three things to the router, plus the settings in [Watchdog NVRAM fields](#watchdog-nvram-fields):
@@ -1530,6 +1564,8 @@ Watchdogs run per slot and concurrently — two slots can each have their own, w
 ### 7.1. <a name='shell-script'></a>Shell script
 
 Each run asks one question: is this tunnel carrying traffic?
+
+First, though, it waits for the clock. Until NTP has set it (`ntp_ready=0`), every certificate looks "not yet valid", so PIA, the CA download and the alert email would all fail, and Merlin starts no WireGuard client at all. A run then logs "Waiting for the router's clock" and stops. After a reboot on 2026-11-14 NTP took 11 minutes, and until then each run reported a dead tunnel, an ERROR and a failed email (ID-583). Firmware without the setting carries on.
 
 1. **Handshake.** `wg show wgcN latest-handshakes` — a handshake newer than 300 s means the peer is answering. This is the only firmware-independent liveness signal, and it is the primary one.
 2. **Ping fallback.** If there is no recent handshake, ping the two configured targets *through the interface* (`ping -I wgcN`), by default `8.8.8.8` and `1.1.1.1`. This is a Merlin fallback: on stock the router's own traffic is not routed into `wgcN`, so a failed ping there says nothing.

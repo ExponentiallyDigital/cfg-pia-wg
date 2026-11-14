@@ -27,6 +27,8 @@ import 'router_ops.dart';
 import 'router_service_queue.dart';
 import 'firmware.dart';
 import 'device_assignment.dart';
+import 'merlin_guard.dart';
+import 'merlin_vpn_director.dart' show kVpnDirectorRulelistPath, parseVpnDirectorRules;
 import 'fail_closed_guard.dart';
 import 'router_host_keys.dart';
 import 'router_watchdog.dart' show buildLoggerCommand, isValidIpv4, shellSingleQuote;
@@ -688,13 +690,21 @@ class RouterSlotService {
   FailClosedGuard get _guard => FailClosedGuard(read: _read, run: (cmd) => _run(cmd), onLog: onLog);
 
   /// The names of the devices pinned to [slot], for the DISABLE warning. Empty when there are none
-  /// or on Merlin, and null when they could not be read - the caller then warns without names rather
+  /// and null when they could not be read - the caller then warns without names rather
   /// than saying nothing.
   Future<List<String>?> pinnedDeviceNames(int slot) async {
-    if (!isStockFirmware) return const [];
     try {
-      final index = vpncStateIndexForSlot(parseVpncClientlist(await _read('nvram get vpnc_clientlist')), slot);
-      final pinned = devicesPinnedTo(parseDevicePolicyList(await _read('nvram get vpnc_dev_policy_list')), index);
+      final List<String> pinned;
+      if (isStockFirmware) {
+        final index = vpncStateIndexForSlot(parseVpncClientlist(await _read('nvram get vpnc_clientlist')), slot);
+        pinned = devicesPinnedTo(parseDevicePolicyList(await _read('nvram get vpnc_dev_policy_list')), index);
+      } else {
+        // Merlin: the devices VPN Director sends to this slot by a rule of their own (ID-567).
+        pinned = [
+          for (final r in parseVpnDirectorRules(await _read('cat $kVpnDirectorRulelistPath 2>/dev/null')))
+            if (r.isDeviceRule && r.enabled && r.wgSlot == slot) r.local,
+        ];
+      }
       if (pinned.isEmpty) return const [];
       final names = deviceNamesByIp(parseDeviceSources(await _read(kDeviceSourcesCommand)));
       return [for (final ip in pinned) names[ip] ?? ip];
@@ -1262,7 +1272,13 @@ class RouterSlotService {
     // Before the tunnel stops, not after: a reboot clears the guard's rules, and a DISABLE is when
     // they matter. Without them the devices pinned here would fall through to the default
     // connection - in the clear when that is Internet (ID-213).
-    if (isStockFirmware) await _guard.ensure();
+    // On Merlin, its own kill switch goes with the slot, so the app's hold is what keeps the devices
+    // VPN Director sends here offline (ID-567). Put in place now, for rules made in the web page too.
+    if (isStockFirmware) {
+      await _guard.ensure();
+    } else {
+      await MerlinGuard(read: _read, run: (cmd) => _run(cmd), onLog: onLog).ensure(quiet: true);
+    }
     await _run('nvram set wgc${slot}_enable=0');
     await _setVpncActive(slot, false);
     await _run('nvram commit');

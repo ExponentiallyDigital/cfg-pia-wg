@@ -189,6 +189,14 @@ class _DnsReportScreenState extends State<DnsReportScreen> {
   /// [text] as its own line when selected.
   static Widget _t(String text, TextStyle style) => Text.rich(TextSpan(style: style, children: [TextSpan(text: text), _br]));
 
+  /// [text] with any section heading it names in the headings' own teal, so a pointer to a section
+  /// reads as one (ID-581).
+  static Widget _withHeadings(String text, TextStyle style) => Text.rich(TextSpan(style: style, children: [
+        for (final (piece, heading) in splitOnHeadings(text))
+          TextSpan(text: piece, style: heading ? const TextStyle(color: kHighlight, fontWeight: FontWeight.w700) : null),
+        _br,
+      ]));
+
   Widget _block(DnsBlock b) => switch (b) {
         DnsGroup(:final title) => Container(
             padding: const EdgeInsets.only(top: 4, bottom: 4),
@@ -224,14 +232,14 @@ class _DnsReportScreenState extends State<DnsReportScreen> {
           const Text.rich(_br),
         ]),
         const SizedBox(height: 4),
-        _t(f.role, _note),
+        _withHeadings(f.role, _note),
         if (f.caution != null) _t(f.caution!, const TextStyle(color: kWarn, fontSize: 11, height: 1.45)),
         const SizedBox(height: 6),
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(color: kConfigBg, borderRadius: BorderRadius.circular(6)),
           // Long lines scroll sideways rather than wrap: a wrapped config line reads as two settings.
-          child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: _t(f.content, _data)),
+          child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: _withHeadings(f.content, _data)),
         ),
       ]);
 

@@ -15,12 +15,15 @@
 //
 // All the parsing lives in device_assignment.dart; this file is I/O and ordering.
 //
-// Stock firmware only - VPN Fusion is what device assignment is built on, and Merlin has no
-// equivalent. The caller gates on firmware before constructing this.
+// On stock, devices are assigned by VPN Fusion's `vpnc_dev_policy_list`. On Merlin, by VPN
+// Director's rules file: [DeviceAssignmentService.merlin] reads it into the same [AssignmentState]
+// and writes DEVICES' changes back to it (ID-557), so the screen works the same on both.
 import 'package:dartssh2/dartssh2.dart';
 
 import 'device_assignment.dart';
 import 'fail_closed_guard.dart';
+import 'merlin_guard.dart';
+import 'merlin_vpn_director.dart';
 import 'router_command.dart';
 import 'router_service_queue.dart';
 import 'router_slot_service.dart';
@@ -40,7 +43,16 @@ class AssignmentState {
     this.rawParental = '',
     this.guardRules,
     this.ipv6Service = '',
+    this.merlin = false,
+    this.lanSubnet = '',
   });
+
+  /// Read from a Merlin router: [policies], [profiles] and [defaultIndex] come from VPN Director's
+  /// rules and the `wgcN_*` keys, [rawPolicyList] is the rules file and [rawClientlist] the slots.
+  final bool merlin;
+
+  /// The LAN as a network, `192.168.1.0/24`: the whole-network rule's source on Merlin.
+  final String lanSubnet;
 
   final List<LanDevice> devices;
   final List<DevicePolicy> policies;
@@ -83,7 +95,7 @@ class AssignmentState {
     if (rules == null) return null;
     for (final p in profiles) {
       final slot = p.slot;
-      if (p.vpncStateIndex == table && slot != null) return guardHeld(rules, ip, slot);
+      if (p.vpncStateIndex == table && slot != null) return merlin ? merlinGuardHeld(rules, ip, slot) : guardHeld(rules, ip, slot);
     }
     return null;
   }
@@ -180,15 +192,33 @@ class AssignmentConflictException implements Exception {
       'The list has been refreshed - make the change again if you still want it.';
 }
 
+/// Thrown before anything is written when, on Merlin, a device would be pinned to a tunnel in a
+/// higher-numbered slot than the default connection's. VPN Director numbers its rules by slot, lowest
+/// first, so the whole-network rule would win and the pin would be ignored without a word (ID-556).
+class MerlinPrecedenceException implements Exception {
+  const MerlinPrecedenceException(this.names);
+  final List<String> names;
+
+  @override
+  String toString() => 'Nothing was applied. On Merlin a device can be pinned only to a tunnel in a slot numbered '
+      "at or below the default connection's: ${joinNames(names)} would be ignored, and go through the default "
+      'instead. Put your main VPN, the default, in the highest-numbered slot you use (README 5.2.1), or pin '
+      '${names.length == 1 ? 'it' : 'them'} to another tunnel.';
+}
+
 class DeviceAssignmentService {
   DeviceAssignmentService(
     this.client, {
     this.onLog,
     this.pollInterval = const Duration(seconds: 2),
     this.maxPolls = 40,
+    this.merlin = false,
   });
 
   final SSHClient client;
+
+  /// The router runs Merlin: assignments are VPN Director rules, not VPN Fusion's list (ID-557).
+  final bool merlin;
   final void Function(String message, {bool isError, bool isSuccess, bool isWarning})? onLog;
 
   /// How the default-connection sequence waits for each `service` call to finish. `notify_rc`
@@ -229,6 +259,7 @@ class DeviceAssignmentService {
   static const String _sep = kSourceSeparator;
 
   Future<AssignmentState> read() async {
+    if (merlin) return _readMerlin();
     onLog?.call('Reading device list...');
     // Written out rather than looped: an `eval "\$C"` loop is shorter, but a lower-case shell
     // variable in a command string is indistinguishable from the escaped-Dart-constant mistake
@@ -541,6 +572,7 @@ class DeviceAssignmentService {
   /// arrive silently at some later renewal.
   Future<void> apply({required AssignmentState base, required ApplyRequest request}) async {
     if (request.isEmpty) return;
+    if (base.merlin) return _applyMerlin(base, request);
     final guard = FailClosedGuard(read: _read, run: _run, onLog: onLog);
     await _checkUnchanged(base, request);
     await _createReservations(request.reservationsToCreate);
@@ -670,6 +702,144 @@ class DeviceAssignmentService {
       onLog?.call(
         "Device assignments written, but the router's rules do not match yet: ${problems.join('; ')}. "
         'APPLY again, or look at DEVICES.',
+        isWarning: true,
+      );
+    }
+  }
+
+  // ----- Merlin (ID-557) -----
+
+  /// The same state as [read], from VPN Director's rules and the `wgcN_*` keys, in one round trip.
+  Future<AssignmentState> _readMerlin() async {
+    onLog?.call('Reading device list...');
+    final parts = (await _read('echo "$_sep"; $kMerlinSlotsCommand; '
+            'echo "$_sep"; cat $kVpnDirectorRulelistPath 2>/dev/null; '
+            'echo "$_sep"; nvram get lan_ipaddr; '
+            'echo "$_sep"; nvram get lan_netmask; '
+            'echo "$_sep"; nvram get dhcp_staticlist; '
+            'echo "$_sep"; nvram get custom_clientlist; '
+            'echo "$_sep"; nvram get cfg_device_list; '
+            'echo "$_sep"; cat /jffs/nmp_cl_json.js 2>/dev/null; '
+            'echo "$_sep"; cat /tmp/nmp_cache.js 2>/dev/null; '
+            'echo "$_sep"; $_parentalRead'
+            'echo "$_sep"; ip rule show 2>/dev/null; '
+            'echo "$_sep"; nvram get ipv6_service; '
+            'echo "$_sep"'))
+        .split(_sep);
+    String at(int i) => i + 1 < parts.length ? parts[i + 1].trim() : '';
+
+    final rulelist = at(1);
+    final rules = parseVpnDirectorRules(rulelist);
+    final subnet = lanSubnet(at(2), at(3));
+    final devices = buildDeviceList(
+      nmpClJson: at(7),
+      nmpCache: at(8),
+      customClientlist: at(5),
+      dhcpStaticlist: at(4),
+      cfgDeviceList: at(6),
+    );
+    onLog?.call('Found ${devices.length} devices.');
+    final parental = _parseParental(at(9));
+    return AssignmentState(
+      devices: devices,
+      policies: merlinPolicies(rules),
+      profiles: parseMerlinSlots(at(0)),
+      defaultIndex: merlinDefaultIndex(rules, subnet),
+      rawPolicyList: rulelist,
+      rawClientlist: at(0),
+      parental: parseParentalControls(parental),
+      rawCustomClientlist: at(5),
+      rawParental: _joinParental(parental),
+      guardRules: at(10).isEmpty ? null : at(10),
+      ipv6Service: at(11),
+      merlin: true,
+      lanSubnet: subnet,
+    );
+  }
+
+  /// [apply] on Merlin: the same order, with VPN Director's rules file in place of VPN Fusion's list,
+  /// `service restart_vpnrouting0` to apply it (measured 2026-11-14), and [MerlinGuard] in place of
+  /// the stock guard. A refused pin is refused before anything is written.
+  Future<void> _applyMerlin(AssignmentState base, ApplyRequest request) async {
+    final guard = MerlinGuard(read: _read, run: _run, onLog: onLog);
+    await _checkUnchangedMerlin(base, request);
+    final names = {for (final d in base.devices) if (d.ip != null) d.ip!: d.displayName};
+    final rules = applyMerlinChanges(parseVpnDirectorRules(base.rawPolicyList),
+        changes: request.changes, newDefaultIndex: request.newDefaultIndex, subnet: base.lanSubnet, names: names);
+    final above = pinsAboveDefault(rules, base.lanSubnet);
+    if (above.isNotEmpty) throw MerlinPrecedenceException([for (final ip in above) names[ip] ?? ip]);
+
+    await _createReservations(request.reservationsToCreate);
+    if (request.reservationsToCreate.isNotEmpty) await _service('restart_dnsmasq');
+    await _applyRenames(base, request);
+    await _applyBlocks(base, request);
+    final moved = request.changes.isNotEmpty || request.newDefaultIndex != null;
+    if (moved) {
+      await _writeRules(rules);
+      await _logMoves(request);
+      await _service('restart_vpnrouting0');
+    }
+    await guard.ensure();
+    if (moved) await _reportAppliedMerlin(rules, base.lanSubnet);
+  }
+
+  /// Each move, by name, in both logs, as on stock: the app log goes when the app exits, and a move
+  /// that explains a device's traffic weeks later has to be in the router's.
+  Future<void> _logMoves(ApplyRequest request) async {
+    final n = request.changes.length;
+    if (n > 0) onLog?.call('Applying $n device change${n == 1 ? '' : 's'}:');
+    for (final d in request.changeDescriptions) {
+      onLog?.call('  $d');
+      await _read(buildLoggerCommand('$d reassigned'));
+    }
+    if (request.newDefaultIndex != null) {
+      final change = request.defaultFrom.isEmpty ? '' : ' from ${request.defaultFrom} to ${request.defaultTo}';
+      onLog?.call('Default connection set$change.');
+      await _read(buildLoggerCommand('default connection set$change'));
+    }
+  }
+
+  /// The stale-write check on Merlin: the rules file and the slots, then the two lists a rename and a
+  /// disable rewrite, as on stock.
+  Future<void> _checkUnchangedMerlin(AssignmentState base, ApplyRequest request) async {
+    onLog?.call('Checking the router has not changed...');
+    if ((await _read('cat $kVpnDirectorRulelistPath 2>/dev/null')).trim() != base.rawPolicyList) {
+      throw const AssignmentConflictException("VPN Director's rules were changed elsewhere");
+    }
+    if ((await _read(kMerlinSlotsCommand)).trim() != base.rawClientlist) {
+      throw const AssignmentConflictException('the VPN slots were changed elsewhere');
+    }
+    if (request.renames.isNotEmpty && (await _read('nvram get custom_clientlist')).trim() != base.rawCustomClientlist) {
+      throw const AssignmentConflictException('device names were changed elsewhere');
+    }
+    if (request.blocks.isNotEmpty && _joinParental(_parseParental(await _read(_parentalRead))) != base.rawParental) {
+      throw const AssignmentConflictException("the router's Time Scheduling was changed elsewhere");
+    }
+  }
+
+  /// The rules file, byte for byte as the web page writes it: no trailing newline, which would end
+  /// up in the last rule's interface name. Beside the live file, then renamed over it, and read back.
+  Future<void> _writeRules(List<VpnDirectorRule> rules) async {
+    const path = kVpnDirectorRulelistPath;
+    final body = serialiseVpnDirectorRules(rules);
+    await _run("mkdir -p -m 700 /jffs/openvpn && printf '%s' ${shellSingleQuote(body)} > '$path.cfgtmp' && "
+        "chmod 660 '$path.cfgtmp' && mv '$path.cfgtmp' '$path'");
+    if ((await _read("cat '$path' 2>/dev/null")).trim() != body) {
+      throw Exception("VPN Director's rules file didn't read back as written. Check VPN > VPN Director in the router's "
+          'web interface before trying again.');
+    }
+  }
+
+  /// Said only when the kernel holds it (ID-332): each device's VPN Director rule to its tunnel or
+  /// the WAN, the app's hold for each pinned one, and the whole-network rule for the default.
+  Future<void> _reportAppliedMerlin(List<VpnDirectorRule> rules, String subnet) async {
+    final problems = merlinRuleProblems(rules, subnet, await _read(kIpRuleCommand));
+    if (problems.isEmpty) {
+      onLog?.call('Device assignments applied.', isSuccess: true);
+    } else {
+      onLog?.call(
+        "Device assignments written, but the router's rules do not match yet: ${problems.join('; ')}. APPLY again, or "
+        'look at DEVICES.',
         isWarning: true,
       );
     }

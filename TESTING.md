@@ -1675,7 +1675,7 @@ The widget is the one part of the app that keeps a login, so these check what it
 **WGT-2** GENERATE installs the key and the widget fills in at once [hand]
 
 - Do: SETTINGS, HOME SCREEN WIDGET KEY, GENERATE. Give the router login when asked.
-- Pass if: the dialog says it is installed, and **the widget fills in within a few seconds** - a row per configured tunnel, the badge, and a footer reading "Router checked HH:MM" at the current time. It must not sit empty waiting for the schedule: a key install reads the router straight away for exactly this reason.
+- Pass if: the dialog says it is installed, and **the widget fills in within a few seconds** - a row per configured tunnel, the badge, and a footer reading "Router checked HH:MM" at the current time. An answering tunnel's row names the devices pinned to it, as DEVICES names them, `wgc1 · up · TABLET`; one with none reads `0 pinned` (ID-587). It must not sit empty waiting for the schedule: a key install reads the router straight away for exactly this reason.
 - See: the footer is a clock time, never "just now". It is written once and nothing redraws it until the next refresh, so an age there would be a lie within minutes (ID-376, 2026-10-12).
 - Do: on the router, `nvram get sshd_authkeys`.
 - Pass if: one line ending `cfg-pia-wg-widget`, under 250 characters, carrying `command="/bin/sh /jffs/cfg-pia-wg/widget-read.sh"`, `no-port-forwarding`, `no-agent-forwarding`, `no-X11-forwarding` and `no-pty`, and any key of your own is still there untouched. `cat /jffs/cfg-pia-wg/widget-read.sh` shows the read, under a header naming it (ID-467).
@@ -1742,7 +1742,7 @@ Until build 500, clearing the app's storage left its key on the router, and once
 - Starts with: an iPhone with this build from TestFlight, at home, and the app connected to the router once.
 - Do: in the app, SETTINGS, HOME SCREEN WIDGET KEY, GENERATE. Give the router login when asked.
 - Do: go to the iPhone's home screen. Touch and hold an empty space until the icons wiggle. Tap Edit at the top left, then Add Widget. Type `cfg-pia-wg` in the search box and tap it. Swipe to Tunnels, the wide one, and tap Add Widget. Tap Done at the top right.
-- Pass if: the widget shows a row per configured tunnel, the badge, and "Router checked HH:MM" at about the time of GENERATE.
+- Pass if: the widget shows a row per configured tunnel, each answering one naming the devices pinned to it (ID-587), the badge, and "Router checked HH:MM" at about the time of GENERATE.
 - Do: add Summary the same way, the small square one.
 - Pass if: it shows the same badge, and one line under it.
 - Do: wait two minutes, then tap the Tunnels widget. The app opens. Go back to the home screen: swipe up from the bottom edge.
@@ -2139,13 +2139,13 @@ Set up once, as in BUILDING 7, step 12: the RevenueCat iOS key in `secrets/reven
 
 ## <a name='mrl'></a>MRL. Merlin smoke test (under an hour)
 
-Not a repeat of the whole run. The screens, DEVICES, the log windows and the paywall are the same code on both firmwares, and the automated tests build and run the watchdog script for both. This covers only what is different on Merlin: no helper programs, the kill switch, starting and stopping a tunnel, the mail command, boot persistence in `services-start`, and UNINSTALL (ID-301). It passed on Merlin 388.12_2 on 1 October 2026 (ID-353), and README says so in place of the beta label it had until then (ID-553).
+Not a repeat of the whole run. The screens, the log windows and the paywall are the same code on both firmwares, and the automated tests build and run the watchdog script for both. This covers only what is different on Merlin: no helper programs, the kill switch, starting and stopping a tunnel, the mail command, boot persistence in `services-start`, DEVICES and the widget through VPN Director (ID-557, ID-570, ID-571), and UNINSTALL (ID-301). It passed on Merlin 388.12_2 on 1 October 2026 (ID-353), and README says so in place of the beta label it had until then (ID-553).
 
 Set up: a Merlin router with JFFS scripts enabled, SSH on, and no cfg-pia-wg on it. Run in the order written. Bracket the router commands with `logger` lines, as elsewhere.
 
-**MRL-1** Device assignment refuses [ci]
+**MRL-1** DEVICES reads and writes VPN Director [ci]
 
-- In CI: Merlin is refused with a reason rather than an empty screen. `test/widgets/device_assignment_screen_test.dart`.
+- In CI: on Merlin, DEVICES opens with the default from the whole-network rule, writes a pin as a VPN Director rule and applies it with `service restart_vpnrouting0`, and refuses a pin to a slot numbered above the default's, writing nothing (ID-557). `test/widgets/device_assignment_screen_test.dart`, `test/unit/merlin_vpn_director_test.dart`, and the guard script in `test/unit/merlin_guard_test.dart`. Until build 577 it refused Merlin.
 
 **MRL-2** No VPN limit [ci]
 
@@ -2190,11 +2190,45 @@ logger "**MRL-8 END** Break and rebuild"
 - Pass if: the log ends `Reconfig SUCCESS` then `Alert email sent (SUCCESS)`, and the SUCCESS email arrives with the kill switch line in Merlin's wording.
 - Pass if: that line agrees with `nvram get wgc1_enforce`: ON for `1`, OFF for `0`. The line reports the setting, so the setting is the check.
 
+**MRL-12** DEVICES pins a device [hand]
+
+- Starts with: wgc1 and wgc5 enabled, wgc5 the default, and the tablet following the default.
+- Do: DEVICES, connect. Tap the tablet, pick wgc1, APPLY.
+- See: APP LOG "Device assignments applied.", and in the router's web interface, VPN > VPN Director, a rule named for the tablet sending it to WGC1.
+- Pass if: on the router, `ip rule show | grep 192.168.1.55` shows a `lookup wgc1` rule and `11409: from 192.168.1.55 prohibit`, the app's hold, with your tablet's address in place of the example's.
+
+**MRL-13** The default, and a pin it would ignore [hand]
+
+- Starts with: no device pinned to wgc5 by a rule of its own; move any to wgc1 or the default first.
+- Do: DEVICES, Default connection, pick wgc1, APPLY.
+- Pass if: VPN Director shows the whole-network rule on WGC1, with no tunnel restart.
+- Do: pin the tablet to wgc5, APPLY.
+- Pass if: "Nothing was applied" names the tablet and says why, and VPN Director is unchanged. Put the default back on wgc5.
+- Note: with a device pinned to wgc5, moving the default to wgc1 is itself refused, naming that device: VPN Director would ignore its pin.
+
+**MRL-14** DISABLE holds a pinned device [hand]
+
+- Starts with: the tablet pinned to wgc1, as MRL-12 leaves it.
+- Do: MANAGE, wgc1, DISABLE.
+- See: the confirmation names the tablet.
+- Pass if: after DISABLE, the tablet loads no website, not even through another tunnel. ENABLE wgc1, and it loads websites again through wgc1.
+
+**MRL-15** The widget on Merlin [hand]
+
+- Do: on the emulator, with this build, refresh the cfg-pia-wg 4x2 widget.
+- Pass if: it shows wgc1 and wgc5 with their regions, not "Not checked", and with both up, wgc1's row reads `wgc1 · up · TABLET`, naming what VPN Director sends there (ID-570, ID-571, ID-587). If the rows show only their regions, make the widget a row taller: the line under each is cut off at that size.
+
 **MRL-10** The router check on Merlin [script]
 
-- Starts with: a watchdog on wgc1 with its kill switch on, and a VPN Director rule sending one device to WGC1.
+- Starts with: a watchdog on wgc1 with its kill switch on, and a VPN Director rule sending one device to WGC1, applied from DEVICES so the app's guard is in place.
 - Do: on the router, `/bin/sh /jffs/cfg-pia-wg/check-claims.sh quick`, then `full`.
-- Pass if: no FAIL. `MAIL-name`: openssl, as Merlin's mail runs it, refuses a certificate for the wrong name and accepts the right one. `KS-wgc1-stopped`: with wgc1 stopped, the VPN Director device's route to the internet is refused, not out of the WAN. Full's `SETUP-as-is`: a real rebuild, with every PIA name looked up over DoH and packets counted by the router at the DoH server; `MAIL-sent`: its SUCCESS email sent (ID-353).
+- Pass if: no FAIL. `MRL-addrs-wgcN` and `MRL-dns-wgcN`: a routed device reaches the router's DNS servers, and its own slot's, only through its tunnel (ID-574, ID-572). `KS-wgcN-disabled`: with the slot switched off, the device is refused, not sent out the WAN or through another tunnel (ID-567). Before DEVICES has applied on that router, those three fail: that is the check seen failing. `MAIL-name`: openssl, as Merlin's mail runs it, refuses a certificate for the wrong name and accepts the right one. `KS-wgc1-stopped`: with wgc1 stopped, the VPN Director device's route to the internet is refused, not out of the WAN. Full's `SETUP-as-is`: a real rebuild, with every PIA name looked up over DoH and packets counted by the router at the DoH server; `MAIL-sent`: its SUCCESS email sent (ID-353). `GUARD-merlin-start`: with the guard's rules taken out, as Merlin's `ip rule flush` takes them when the WAN comes up, starting a tunnel puts exactly the same rules back (ID-582).
+
+**MRL-16** The guard after a reboot [script]
+
+- Starts with: as MRL-10, with the app's guard installed by a DEVICES APPLY from a build with ID-582.
+- Do: reboot the router. Once both tunnels are up, run `grep merlin-guard /tmp/syslog.log`, then `/bin/sh /jffs/cfg-pia-wg/check-claims.sh quick`, with no APPLY or deploy in between.
+- Pass if: the syslog shows `merlin-guard: boot: guarded`, then `put back ... rule(s) the router cleared` within seconds of "Applying all killswitches", then `wgcN started: guarded` for each tunnel. check-claims has no FAIL, `KS-wgcN-stopped` and `KS-wgcN-disabled` included. Before ID-582 both failed after a reboot, the device going out through another slot's whole-network rule: that is the check seen failing (2026-11-14).
 
 **MRL-11** SECURE STARTUP is stock only [hand]
 
@@ -2211,7 +2245,7 @@ logger "**MRL-8 END** Break and rebuild"
 **MRL-9** Uninstall [hand]
 
 - Do: SETTINGS, UNINSTALL FEATURES DEPLOYED TO ROUTER, both prompts.
-- See: "Removed the watchdog lines from /jffs/scripts/services-start" among the results (ID-303).
+- See: "Removed the watchdog lines from /jffs/scripts/services-start" among the results (ID-303), and, after DEVICES has been used, "Removed the app's rules beside VPN Director, and its lines in Merlin's hooks".
 - Do: on the router:
 
 ```bash

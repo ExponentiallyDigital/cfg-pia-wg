@@ -173,6 +173,28 @@ void main() {
     expect(flutterJob, contains('git add pubspec.yaml pubspec.lock THIRD-PARTY-NOTICES.md'));
   });
 
+  // ID-576: Gradle, the Android Gradle plugin and Kotlin move weekly too, to their latest releases, gated
+  // on the job's own checks, with the release dry run named as the check a debug build can't make.
+  test('the weekly Android tools update moves all three, regenerates what follows, and opens a draft on failure', () {
+    final yaml = File('.github/workflows/weekly_updates.yml').readAsStringSync().replaceAll('\r\n', '\n');
+    final start = yaml.indexOf('\n  android-tools:');
+    expect(start, greaterThan(0), reason: 'weekly_updates.yml has no android-tools job');
+    final job = yaml.substring(start);
+    expect(job, contains('dart run tool/android_tools.dart --check'));
+    expect(job, contains('dart run tool/android_tools.dart --set --gradle'));
+    expect(job, contains('gradle-\$v-all.zip.sha256'), reason: "the wrapper refuses a distribution without its checksum");
+    // services.gradle.org answers the checksum with a 301, whose HTML page curl -sf hands back as the
+    // body; found by rehearsing the job, 2026-11-14. Every fetch follows redirects.
+    expect(RegExp(r'curl -sf[^L]').hasMatch(job), isFalse, reason: "a curl in the job that doesn't follow redirects");
+    expect(job, contains("grep -qxE '[0-9a-f]{64}'"), reason: 'the checksum is checked to be one before it is used');
+    expect(job, contains('--write-locks'));
+    expect(job, contains('run: dart run tool/third_party_notices.dart'));
+    expect(job, contains('git add -- android/gradle/wrapper/gradle-wrapper.properties android/settings.gradle.kts THIRD-PARTY-NOTICES.md'));
+    expect(job, contains('draft="--draft"'));
+    expect(job, contains('dry_run=true'), reason: 'the PR names the release dry run');
+    expect(job, contains('flutter-version-file: pubspec.yaml'));
+  });
+
   // ID-546: a commit a workflow pushes back to the branch it ran on (as notices_on_dev.yml did to dev)
   // holds the next PR's checks until a person approves them. The notices are regenerated in the commit
   // steps instead; a workflow may still push its own branch for a PR, as weekly_updates.yml does.

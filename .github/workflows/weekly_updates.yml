@@ -1,11 +1,14 @@
 name: "Weekly updates"
 run-name: "Weekly updates - ${{ github.event_name }}"
 
-# Two pull requests into dev, each only when there is something to bring:
+# Three pull requests into dev, each only when there is something to bring:
 #  - flutter (ID-410): a newer Flutter stable than the one pinned in pubspec.yaml.
 #  - packages (ID-411): `flutter pub upgrade` within pubspec.yaml's constraints, the Gradle lockfiles
 #    regenerated to match, and THIRD-PARTY-NOTICES.md regenerated - the three steps that had to be done
 #    together by hand, since release.yml refuses a stale notices file.
+#  - android-tools (ID-576): Gradle, the Android Gradle plugin and Kotlin to their latest releases, with
+#    the lockfiles and notices regenerated. Dependabot can't move them, as it can't rewrite the STRICT
+#    lockfiles. The PR says where each stands against the pinned Flutter's own known limits.
 #
 # Neither job commits to dev or main, or makes a build: every commit there is a build, and builds are
 # Andrew's. He merges the PR into dev and it goes out in his next build.
@@ -256,10 +259,7 @@ jobs:
             echo '```'
             flutter pub outdated --no-dev-dependencies 2>&1 | head -60 || true
             echo '```'
-            echo "### Not moved by this job"
-            echo "- Gradle: $(sed -nE 's/.*gradle-([0-9.]+)-(all|bin)\.zip/\1/p' android/gradle/wrapper/gradle-wrapper.properties), latest $(curl -sf https://services.gradle.org/versions/current | sed -nE 's/.*"version" *: *"([^"]+)".*/\1/p')"
-            echo "- Android Gradle plugin: $(sed -nE 's/.*"com\.android\.application"\) version "([^"]+)".*/\1/p' android/settings.gradle.kts), latest $(curl -sf https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/maven-metadata.xml | grep -oE '<version>[0-9]+\.[0-9]+\.[0-9]+</version>' | sed -E 's/<[^>]+>//g' | sort -V | tail -1)"
-            echo "- Kotlin: $(sed -nE 's/.*"org\.jetbrains\.kotlin\.android"\) version "([^"]+)".*/\1/p' android/settings.gradle.kts), latest $(curl -sf https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin/maven-metadata.xml | grep -oE '<version>[0-9]+\.[0-9]+\.[0-9]+</version>' | sed -E 's/<[^>]+>//g' | sort -V | tail -1)"
+            echo "Gradle, the Android Gradle plugin and Kotlin are moved by their own weekly PR (ID-576)."
           } > body.md
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -275,3 +275,130 @@ jobs:
           else
             gh pr edit "$branch" --repo "$GITHUB_REPOSITORY" --body-file body.md
           fi
+
+  android-tools:
+    name: Gradle, Android Gradle plugin and Kotlin
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+
+      - name: Set up Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      # Each to its latest release; the pinned Flutter's own limits are reported in the PR, not obeyed
+      # (Andrew's decision, 2026-11-14). tool/android_tools.dart says why.
+      - name: Newer versions?
+        id: plan
+        run: |
+          flutter pub get --enforce-lockfile
+          curl -sfL https://services.gradle.org/versions/current > gradle.json
+          curl -sfL https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/maven-metadata.xml > agp.xml
+          curl -sfL https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin/maven-metadata.xml > kotlin.xml
+          root="$(dirname "$(dirname "$(command -v flutter)")")"
+          dart run tool/android_tools.dart --check --gradle-json gradle.json --agp-xml agp.xml --kotlin-xml kotlin.xml \
+            --flutter-utils "$root/packages/flutter_tools/lib/src/android/gradle_utils.dart" \
+            --flutter "$(sed -nE 's/^  flutter: ([0-9.]+)$/\1/p' pubspec.yaml)"
+
+      # One PR per set of versions. A closed one is an answer, so it isn't opened again next week.
+      - name: Already proposed?
+        id: seen
+        if: steps.plan.outputs.changed == 'true'
+        run: |
+          branch="bot/android-tools-${{ steps.plan.outputs.gradle }}-${{ steps.plan.outputs.agp }}-${{ steps.plan.outputs.kotlin }}"
+          n=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state all --json number -q length)
+          echo "PRs for these versions: $n"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+
+      # The wrapper refuses a distribution without its checksum, so the new one comes with it.
+      - name: Move them
+        id: move
+        if: steps.plan.outputs.changed == 'true' && steps.seen.outputs.count == '0'
+        run: |
+          v="${{ steps.plan.outputs.gradle }}"
+          # services.gradle.org answers this with a 301: without -L, curl hands back its HTML page.
+          sha="$(curl -sfL "https://services.gradle.org/distributions/gradle-$v-all.zip.sha256")"
+          echo "$sha" | grep -qxE '[0-9a-f]{64}' || { echo "no checksum published for Gradle $v"; exit 1; }
+          dart run tool/android_tools.dart --set --gradle "$v" --gradle-sha "$sha" \
+            --agp "${{ steps.plan.outputs.agp }}" --kotlin "${{ steps.plan.outputs.kotlin }}"
+          git diff --stat -- android/
+
+      # STRICT locking refuses a build whose dependencies differ from the lockfiles, so they are written
+      # before anything builds. --config-only generates the Gradle wrapper, which isn't committed.
+      - name: Regenerate the Gradle lockfiles
+        id: locks
+        if: steps.move.outcome == 'success'
+        continue-on-error: true
+        run: |
+          flutter build apk --config-only
+          ./android/gradlew -p android :dependencies :app:dependencies --write-locks -q
+
+      - name: Generate launcher icons
+        if: steps.move.outcome == 'success'
+        run: dart run tool/launcher_icons.dart
+
+      - name: Analyze
+        id: analyze
+        if: steps.move.outcome == 'success'
+        continue-on-error: true
+        run: flutter analyze --fatal-infos
+
+      - name: Test
+        id: test
+        if: steps.move.outcome == 'success'
+        continue-on-error: true
+        run: flutter test
+
+      - name: Debug build
+        id: build
+        if: steps.move.outcome == 'success'
+        continue-on-error: true
+        run: flutter build apk --debug
+
+      - name: Regenerate THIRD-PARTY-NOTICES.md
+        id: notices
+        if: steps.move.outcome == 'success'
+        continue-on-error: true
+        run: dart run tool/third_party_notices.dart
+
+      - name: Open the PR
+        if: steps.move.outcome == 'success'
+        env:
+          BRANCH: ${{ steps.seen.outputs.branch }}
+          LOCKS: ${{ steps.locks.outcome }}
+          ANALYZE: ${{ steps.analyze.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          NOTICES: ${{ steps.notices.outcome }}
+        run: |
+          {
+            cat android_tools.md
+            echo
+            echo "Checked in this run: lockfiles **$LOCKS**, analyze **$ANALYZE**, tests **$TEST**, debug build **$BUILD**, THIRD-PARTY-NOTICES.md **$NOTICES**. CI doesn't run on PRs into dev; the full suite runs on the release PR."
+            echo
+            echo "A debug build doesn't shrink or sign: before the next release, run release.yml's dry run (\`gh workflow run release.yml --ref dev -f dry_run=true -f tag_name=v<pubspec version>\`), the check this PR can't make."
+            echo
+            echo "Before merging: add a CHANGELOG line to the next build saying what moved."
+          } > body.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add -- android/gradle/wrapper/gradle-wrapper.properties android/settings.gradle.kts THIRD-PARTY-NOTICES.md $(git ls-files 'android/*.lockfile')
+          git commit -m "Gradle, Android Gradle plugin and Kotlin, from the weekly check (ID-576)"
+          git push origin "$BRANCH"
+          draft=""
+          [ "$LOCKS$ANALYZE$TEST$BUILD$NOTICES" = "successsuccesssuccesssuccesssuccess" ] || draft="--draft"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base dev --head "$BRANCH" $draft --title "Gradle, Android Gradle plugin and Kotlin" --body-file body.md

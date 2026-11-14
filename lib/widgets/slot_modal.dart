@@ -314,10 +314,9 @@ abstract class _SlotModalState<T extends _SlotScreen> extends State<T> {
         ),
       );
 
-  /// The names of the devices pinned to [slot], for a confirmation to show: empty on Merlin, which
-  /// has no device assignment here, and null when they could not be read.
+  /// The names of the devices pinned to [slot], for a confirmation to show: by VPN Fusion's list on
+  /// stock and VPN Director's rules on Merlin (ID-567), and null when they could not be read.
   Future<List<String>?> _pinnedNames(int slot) async {
-    if (!isStockFirmware) return const [];
     try {
       return await _slotSvc(await _spec.connect()).pinnedDeviceNames(slot);
     } catch (_) {

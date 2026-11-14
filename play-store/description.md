@@ -1,18 +1,18 @@
-A privacy and security tool for your ASUS router. It already has a WireGuard client built in; this app turns it into VPN protection that looks after itself.
+PIA's WireGuard keys expire, often in the small hours, and the tunnel can look connected while passing nothing. On stock ASUS firmware, a tunnel that's down sends its devices out through your ISP, showing your real IP.
 
-cfg-pia-wg puts every device on your network and every PIA VPN on your router onto one screen, from your phone.
-
-Devices, not slots
-
-Router VPN clients are organised by slot. This app is organised by device, which is how you actually think about your network. Tap the TV, put it on a UK server. Tap the work laptop, send it straight to the internet. Tap the kids' tablet, put it on the local exit. See at a glance which device is on which VPN without touching a running tunnel. Three taps, done. Rename a device while you're there, or take it off the internet altogether.
+cfg-pia-wg keeps PIA's WireGuard tunnels up on your ASUS router, stock or Merlin firmware, from your phone. A watchdog on the router renews a dead tunnel with a fresh key from PIA, and a kill switch holds while it does: Merlin's own, or on stock, one the app builds.
 
 Set up once, then forget it
 
-PIA rotates its WireGuard keys and your tunnel dies. You find out a week later. Or never. The watchdog lives on your router, checks each tunnel at your chosen interval, and when a key rotates it fetches a new one, rebuilds the connection and emails you to say it did. You read the email over breakfast. The VPN never missed a beat.
+The watchdog lives on your router, checks each tunnel at your chosen interval, and when a key rotates it fetches a new one, rebuilds the connection and emails you to say it did. You read the email over breakfast. The VPN never missed a beat.
+
+Devices, not slots
+
+Router VPN clients are organised by slot. This app is organised by device, which is how you actually think about your network. Tap the TV, put it on a UK server. Tap the work laptop, send it straight to the internet. Tap the kids' tablet, put it on the local exit. See at a glance which device is on which VPN without touching a running tunnel. Rename a device while you're there, or take it off the internet altogether.
 
 Pinned means pinned
 
-Stock ASUS firmware has no VPN kill switch, so this app builds one for IPv4. A device pinned to a tunnel uses that tunnel or nothing. If the tunnel drops, expires or is being rebuilt, the device waits offline instead of slipping out unprotected. No settings required; it just comes with the pin.
+A device pinned to a tunnel uses that tunnel or nothing. If the tunnel drops, expires or is being rebuilt, the device waits offline instead of slipping out unprotected. Stock ASUS firmware has no VPN kill switch, so this app builds one for IPv4. On Merlin, it also holds the device when you switch a tunnel off. No settings required; it just comes with the pin.
 
 Faster than what you have now
 
@@ -45,7 +45,7 @@ Open source under GPL v3. Pinned dependencies, verifiable build provenance, auto
 
 You'll need
 
-An active PIA subscription. An ASUS router with WireGuard client support and SSH enabled, stock or Merlin firmware (Merlin support is in beta). Device assignment needs stock ASUS firmware. Standalone config generation works for any WireGuard-compatible router.
+An active PIA subscription. An ASUS router with WireGuard client support and SSH enabled, stock or Merlin firmware. Standalone config generation works for any WireGuard-compatible router.
 
 Not affiliated with, endorsed by or associated with Private Internet Access, WireGuard or ASUS. WireGuard® is a registered trademark of Jason A. Donenfeld. PIA and ASUS are trademarks of their respective owners.
 

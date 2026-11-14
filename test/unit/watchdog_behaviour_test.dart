@@ -59,6 +59,26 @@ void main() {
         expect(h.log.last, 'wgc1 is disabled in the router; standing down until it is enabled again');
         expect(h.lookups, isEmpty);
       });
+
+      // ID-583: after a reboot on 2026-11-14 NTP took 11 minutes, and every run in that time took a
+      // down tunnel for a failure, logged an ERROR for the CA download ("certificate is not yet
+      // valid") and tried an email. Merlin starts no WireGuard client until the clock is set.
+      test("waits for the router's clock, with the tunnel down, before any probe or PIA call", () async {
+        h.set('ntp_ready', '0');
+        h.tunnelDown();
+        final r = await h.run();
+        expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+        expect(h.log.last, "Waiting for the router's clock (NTP hasn't set it yet); not checking wgc1 until it has");
+        expect(h.log.where((l) => l.contains('Connectivity lost') || l.startsWith('ERROR')), isEmpty);
+        expect(h.curls, isEmpty);
+        expect(h.lookups, isEmpty);
+      });
+
+      test('a clock already set, or firmware without the setting, is checked as usual', () async {
+        h.set('ntp_ready', '1');
+        await h.run();
+        expect(h.log, contains('Checking wgc1 pia-nz connectivity'));
+      });
     });
 
     // BRK-6 on 2026-09-20 "failed" every rung because the test ran the script without a mode, so it
