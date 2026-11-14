@@ -1,6 +1,6 @@
 name: cfg_pia_wg
 description: cfg-pia-wg
-version: 0.8.207+577
+version: 0.8.208+578
 environment:
   sdk: ">=3.0.0 <4.0.0"
   flutter: 3.47.9
@@ -30,6 +30,13 @@ dev_dependencies:
   mocktail: ^1.0.4
   dart_pubspec_licenses: ^3.2.0
   flutter_native_splash: ^2.4.0
+# Dev tools only; nothing here ships in the app (ID-590). Flutter 3.50's flutter_test needs a
+# test_api only pana 0.23.13 and later accept, and those need cli_util ^0.5.0, which
+# dart_pubspec_licenses brings in; flutter_launcher_icons 0.14.4, the latest, still asks for
+# ^0.4.1. cli_util 0.5 only adds and deprecates (its changelog), so the icon tool runs on it as
+# before. Take this out once flutter_launcher_icons accepts ^0.5.0.
+dependency_overrides:
+  cli_util: ^0.5.2
 flutter:
   uses-material-design: true
   assets:
