@@ -1120,16 +1120,24 @@ class RouterWatchdog {
           // version, so the two did not read as the same event (ID-190).
           await _logUpdated('Watchdog script updated$how to $version for ${await _label(slot)}');
         }
-        // The guard and the boot hook that restores it came with 460. A router updated from an older
-        // build has neither until something writes them, and this is the update the user is prompted for.
-        if (firmware == RouterFirmware.merlin && deployed.isNotEmpty) await _merlinGuard.ensure(quiet: true);
-        if (firmware == RouterFirmware.stock && (deployed.isNotEmpty || refreshGuard)) {
-          await _guardService.ensure();
-          await _refreshS50();
-          if (refreshGuard) await _logUpdated('guard.sh updated$how to $version');
-        }
+        await _refreshGuardAfterRedeploy(firmware, deployed: deployed, refreshGuard: refreshGuard, said: '$how to $version');
         return deployed;
       });
+
+  /// The guard and the boot hook that restores it came with 460. A router updated from an older build
+  /// has neither until something writes them, and a script update is what the user is prompted for.
+  /// [said] ends the log line: " automatically to v0.8.209", say.
+  Future<void> _refreshGuardAfterRedeploy(RouterFirmware firmware,
+      {required List<int> deployed, required bool refreshGuard, required String said}) async {
+    if (firmware == RouterFirmware.merlin) {
+      if (deployed.isNotEmpty) await _merlinGuard.ensure(quiet: true);
+      return;
+    }
+    if (deployed.isEmpty && !refreshGuard) return;
+    await _guardService.ensure();
+    await _refreshS50();
+    if (refreshGuard) await _logUpdated('guard.sh updated$said');
+  }
 
   /// The slots [redeployScripts] touches: [only]'s valid ones, or each whose script is there or
   /// that a watchdog cron entry names.

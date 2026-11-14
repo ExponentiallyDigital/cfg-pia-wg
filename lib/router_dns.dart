@@ -802,6 +802,9 @@ List<DnsFlowLine> _pinnedLines(DnsRouting r) {
 
 /// Every device's lookups that aren't pinned: through stubby when DNS-over-TLS is on, otherwise
 /// straight to dnsmasq's servers.
+/// The head of the line for every device not pinned.
+const String _kEverythingElse = 'Everything else';
+
 DnsFlowLine _everyoneLine(DnsRouting r) {
   // On Merlin, a whole-network VPN Director rule redirects every other device's lookups too (ID-581).
   final (network, target) = r.networkRedirect ?? ('', '');
@@ -810,7 +813,7 @@ DnsFlowLine _everyoneLine(DnsRouting r) {
     final up = r.up.contains('wgc$slot');
     final where = up ? DnsTag(r.label(slot), DnsTagKind.tunnel) : DnsTag('${r.label(slot)}, which is down', DnsTagKind.neutral);
     return DnsFlowLine(
-      head: 'Everything else',
+      head: _kEverythingElse,
       rest: ' → $target',
       note: "VPN Director's rule for $network",
       where: where,
@@ -820,14 +823,14 @@ DnsFlowLine _everyoneLine(DnsRouting r) {
   final dot = r.dotServers;
   return r.dotOn
       ? DnsFlowLine(
-          head: 'Everything else',
+          head: _kEverythingElse,
           rest: ' → dnsmasq → stubby → ${dot.join(', ')}',
           note: 'DNS-over-TLS',
           where: r.whereForAll(dot),
           encryption: _dot,
         )
       : DnsFlowLine(
-          head: 'Everything else',
+          head: _kEverythingElse,
           rest: ' → dnsmasq → ${r.dnsmasqServers.join(', ')}',
           note: 'ordinary DNS',
           where: r.whereForAll(r.dnsmasqServers),
@@ -934,20 +937,33 @@ List<DnsFlowLine> _slotDnsLines(DnsRouting r) {
 /// lookups to it.
 DnsFlowLine _slotDnsLine(DnsRouting r, String servers, List<int> slots) {
   final winners = [for (final a in servers.split(', ')) r.ruleFor(a)].whereType<DnsRule>().toList();
-  // Merlin has no such rules: the first slot to start routes the servers in the main table (ID-581).
-  final merlinVia = r.whereForAll(servers.split(', '));
-  final via = r.merlin
-      ? (merlinVia.kind == DnsTagKind.tunnel ? " The router's own lookups to them go through ${merlinVia.label}." : '')
-      : winners.isEmpty
-          ? ''
-          : ' Rules ${_join([for (final w in winners) '${w.priority}'])} send the '
-              "router's own lookups to them through ${r.tableLabel(winners.first.table)}.";
+  final via = _slotDnsVia(r, servers, winners);
   return DnsFlowLine(
     head: servers,
     note: 'used by ${_join([for (final s in slots) r.label(s)])}.$via',
     where: DnsTag(slots.length == 1 ? '1 slot' : 'shared by ${slots.length}', DnsTagKind.neutral),
   );
 }
+
+/// How the router's own lookups reach a slot's DNS servers, as a sentence for its note, or empty.
+/// Merlin has no rules for them: the first slot to start routes them in the main table (ID-581).
+String _slotDnsVia(DnsRouting r, String servers, List<DnsRule> winners) {
+  if (r.merlin) {
+    final via = r.whereForAll(servers.split(', '));
+    return via.kind == DnsTagKind.tunnel ? " The router's own lookups to them go through ${via.label}." : '';
+  }
+  if (winners.isEmpty) return '';
+  return ' Rules ${_join([for (final w in winners) '${w.priority}'])} send the '
+      "router's own lookups to them through ${r.tableLabel(winners.first.table)}.";
+}
+
+/// The rules box when there are none: on Merlin the reason goes above it (ID-581).
+String _noRulesContent(DnsRouting r) => r.merlin ? '(none)' : '(none: every address goes out your internet connection)';
+
+/// The redirects box when there are none.
+String _noRedirectsContent(DnsRouting r) => r.merlin
+    ? '(none: VPN Director sends no device to a slot with DNS servers)'
+    : '(none: no device is pinned to a slot with DNS servers)';
 
 /// The screen's first line: whether anything but pinned devices goes through a tunnel.
 String _routingVerdict({required List<DnsFlowLine> pinned, required List<DnsFlowLine> others}) {
@@ -974,22 +990,14 @@ List<DnsBlock> _routingEvidence(DnsRouting r) {
           ? "Merlin has no such rules. It sends the router's own lookups to a slot's DNS servers by its main table, "
               'through the first slot to start. $kDnsSlotsHeading says which slot that is.'
           : "Which tunnel carries the router's own lookups to each address. The lowest rule number wins.",
-      content: r.rules.isNotEmpty
-          ? r.rules.map(annotateRule).join('\n')
-          : r.merlin
-              ? '(none)'
-              : '(none: every address goes out your internet connection)',
+      content: r.rules.isNotEmpty ? r.rules.map(annotateRule).join('\n') : _noRulesContent(r),
     ),
     DnsFile(
       name: r.merlin ? "DNS redirects (VPN Director's DNSVPN chains)" : 'DNS redirects (VPN_FUSION)',
       role: r.merlin
           ? "Lookups to the router from each device VPN Director sends to a tunnel, sent on to that slot's DNS servers."
           : "Pinned devices' lookups to the router, sent on to their slot's first DNS server.",
-      content: r.redirects.isNotEmpty || r.networkRedirect != null
-          ? r.fusionRaw
-          : r.merlin
-              ? '(none: VPN Director sends no device to a slot with DNS servers)'
-              : '(none: no device is pinned to a slot with DNS servers)',
+      content: r.redirects.isNotEmpty || r.networkRedirect != null ? r.fusionRaw : _noRedirectsContent(r),
     ),
     DnsFile(
       name: 'Slot DNS settings (nvram)',

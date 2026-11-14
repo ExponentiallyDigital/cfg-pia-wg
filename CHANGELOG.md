@@ -104,7 +104,7 @@ Work items for the **current** release, in the order they are to be done:
 
 - ID-559 REL: DEVICES on Merlin released when Andrew asks, after the store dry runs, with README and the listings saying DEVICES works on both.
   - Now: README says so, 2026-11-14: the Features list, the Merlin note in section 4, the Merlin tip in 5.2, 5.4 and 5.4.1 (what the app does on Merlin), section 7 (what it writes on Merlin, and what UNINSTALL takes out), and 388.13 among the versions tested. The listings were done in ID-554.
-  - Now: the four dry runs passed from `dev` on build 578, 2026-11-15: `release.yml` (43603113233), `play_listing.yml` check only (43603116136), `app_store_listing.yml` check only (43603119352), `promote.yml` internal to production (43603145463). Next: build 579's tag run, then production on both stores (Andrew's go, 2026-11-15).
+  - Now: the four dry runs passed from `dev` on build 578, 2026-11-15: `release.yml` (43603113233), `play_listing.yml` check only (43603116136), `app_store_listing.yml` check only (43603119352), `promote.yml` internal to production (43603145463). Next: the tag run (v0.8.210, build 580, after ID-593), then production on both stores (Andrew's go, 2026-11-15).
 - ID-554 DOC: the Play and App Store descriptions lead with always-on PIA, stock and Merlin. Play through `play_listing.yml`; the App Store with the next version, as a released version's text can't change.
   - Now: text written 2026-11-14 in `play-store/description.md`, `description_short.md`, `app-store/description.md` and the promotional text in `app-store/listing.md`, all within limits: they lead with always-on PIA on stock and Merlin, and drop "Merlin support is in beta" and "Device assignment needs stock ASUS firmware". To send with the next release: Play through `play_listing.yml`, the App Store with that version.
   - Next: sent with ID-559's release: `play_listing.yml` once it's out, and the App Store text with that version.
@@ -128,6 +128,19 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 4. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit.
 
 ---
+
+2026-11-15 v0.8.210 build 580 - SonarCloud's seven findings on the release PR fixed, for the release of DEVICES and the widget on Merlin
+
+```play
+• DEVICES works on Merlin, through VPN Director: a pinned device stays offline if its tunnel is switched off, and through a restart.
+• The widget works on Merlin, and on both stock and Merlin names each tunnel's pinned devices.
+• ROUTER DNS ROUTING reads Merlin routers, and shows each slot in its colour.
+• After a restart, the watchdog waits for the router's clock instead of reporting a false failure.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-593 MOD: SonarCloud found seven new issues on release PR #79, where a dev-to-main PR merges only at none: a literal used three times, four nested ternaries and a function over the complexity limit in `router_dns.dart` (from ID-581), and `redeployScripts` over the limit in `router_watchdog.dart` (from ID-557's Merlin guard line). The pre-commit check on 2026-11-15 had used a local estimate that missed them.
+  - Closed, 2026-11-15: the literal a constant, the ternaries and the boxes' empty text moved into small functions, and the guard refresh after a script update a method of its own; analyze clean and all 2,247 tests passing, the DNS screen's goldens unchanged. SonarCloud's count on the PR read back after the push.
 
 2026-11-15 v0.8.209 build 579 - the release of DEVICES and the widget on Merlin, with the widget naming pinned devices
 
