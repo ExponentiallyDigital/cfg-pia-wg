@@ -188,9 +188,9 @@ The Java and Kotlin libraries the release build packages: the `releaseRuntimeCla
 | `com.google.firebase:firebase-encoders-json` | 18.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.firebase:firebase-encoders-proto` | 16.0.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `com.google.guava:listenablefuture` | 1.0 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
-| `com.revenuecat.purchases:purchases` | 11.0.0 | [MIT](http://opensource.org/licenses/MIT) |
-| `com.revenuecat.purchases:purchases-hybrid-common` | 20.0.0 | [MIT](http://opensource.org/licenses/MIT) |
-| `com.revenuecat.purchases:purchases-store-amazon` | 11.0.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases` | 11.0.1 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases-hybrid-common` | 20.3.0 | [MIT](http://opensource.org/licenses/MIT) |
+| `com.revenuecat.purchases:purchases-store-amazon` | 11.0.1 | [MIT](http://opensource.org/licenses/MIT) |
 | `dev.drewhamilton.poko:poko-annotations` | 0.20.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `dev.drewhamilton.poko:poko-annotations-jvm` | 0.20.2 | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0.txt) |
 | `javax.inject:javax.inject` | 1 | [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0.txt) |
