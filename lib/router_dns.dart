@@ -684,6 +684,17 @@ class DnsRouting {
   }
 
   List<String> get dotServers => parseDotAddresses(nvram['dnspriv_rulelist'] ?? '');
+
+  /// The addresses the router's own lookups are sent to: its DNS-over-TLS servers when that is on,
+  /// otherwise the servers its resolver and dnsmasq hold, without the router's own loopback
+  /// addresses (ID-610).
+  List<String> get ownServers => dotOn
+      ? dotServers
+      : [
+          for (final a in {...dnsmasqServers, ...nameservers})
+            if (!a.startsWith('127.')) a,
+        ];
+
   bool get dotOn => dnsmasqServers.contains(kStubbyAddress);
 }
 
@@ -948,6 +959,15 @@ DnsFlowLine _slotDnsLine(DnsRouting r, String servers, List<int> slots) {
 /// How the router's own lookups reach a slot's DNS servers, as a sentence for its note, or empty.
 /// Merlin has no rules for them: the first slot to start routes them in the main table (ID-581).
 String _slotDnsVia(DnsRouting r, String servers, List<DnsRule> winners) {
+  // A route or rule to an address matters to the router's own lookups only if they go there. The
+  // sentence used to say they did whenever a route existed, which read as DNS going through a
+  // tunnel that nothing on the router used (ID-610: measured 2026-11-15, the route carried only
+  // the watchdogs' own test lookups, each through its own slot).
+  final own = r.ownServers;
+  if (!servers.split(', ').any(own.contains)) {
+    return " The router's own lookups don't use these servers${own.isEmpty ? '' : ': they go to ${own.join(', ')}'}. "
+        "Each watchdog's test lookup goes through its own slot.";
+  }
   if (r.merlin) {
     final via = r.whereForAll(servers.split(', '));
     return via.kind == DnsTagKind.tunnel ? " The router's own lookups to them go through ${via.label}." : '';

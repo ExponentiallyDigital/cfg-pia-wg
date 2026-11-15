@@ -19,7 +19,7 @@ wgc4 [not configured]
 wgc5:pia-aus_melbourne [Internet, encrypted (DoH)] - freedns.controld.com (76.76.2.1)
 
 == THE SLOTS' DNS SERVERS ==
-9.9.9.9, 149.112.112.112 [shared by 4] - used by wgc1:pia-aus_perth, wgc2:pia-au_adelaide-pf, wgc3:pia-au_brisbane-pf and wgc5:pia-aus_melbourne. Rules 1016 and 1017 send the router's own lookups to them through wgc5:pia-aus_melbourne.
+9.9.9.9, 149.112.112.112 [shared by 4] - used by wgc1:pia-aus_perth, wgc2:pia-au_adelaide-pf, wgc3:pia-au_brisbane-pf and wgc5:pia-aus_melbourne. The router's own lookups don't use these servers: they go to 1.1.1.2, 1.0.0.2. Each watchdog's test lookup goes through its own slot.
 
 == EVIDENCE ==
 

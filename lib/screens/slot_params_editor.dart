@@ -22,10 +22,11 @@ import 'package:flutter/material.dart';
 import '../input_checks.dart';
 import '../widgets/app_button.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/applying_panel.dart';
 
 import '../app_colors.dart';
 import '../firmware.dart';
-import '../router_slot_service.dart' show dnsSharedWithRouter, slotLabel;
+import '../router_slot_service.dart' show dnsMatchesWatchdogNote, dnsSharedWithRouter, dnsSharedWithWatchdogs, slotLabel;
 import '../widgets/common_fields.dart';
 
 // Default values for editable fields that have one (spec 3.3), pre-filled when NVRAM is blank.
@@ -48,8 +49,17 @@ class SlotParamsEditor extends StatefulWidget {
   /// confirmation, or the save failed and their edits should not be thrown away.
   final Future<Object?> Function(Map<String, String> editableParams) onSave;
 
+  /// Asked after the values pass their checks and before [onSave], when the caller has something to
+  /// say first: MANAGE's "Save and restart?" for a running slot. False keeps the editor open and
+  /// saves nothing. It is asked here, not inside [onSave], so no spinner runs under the question
+  /// (ID-611).
+  final Future<bool> Function()? confirmSave;
+
   /// The router's own encrypted-DNS servers, so the DNS field can say when the two overlap (ID-005).
   final Set<String> routerDotServers;
+
+  /// Each slot's watchdog's encrypted-DNS addresses, for the DNS field's other note (ID-609).
+  final Map<int, Set<String>> watchdogDohServers;
 
   const SlotParamsEditor({
     super.key,
@@ -57,7 +67,9 @@ class SlotParamsEditor extends StatefulWidget {
     required this.initial,
     required this.onSave,
     this.desc = '',
+    this.confirmSave,
     this.routerDotServers = const {},
+    this.watchdogDohServers = const {},
   });
 
   @override
@@ -109,6 +121,12 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
     final errors = slotParamErrors(params);
     setState(() => _errors = errors);
     if (errors.isNotEmpty) return;
+    // The keyboard goes before anything is shown, and again after the question: closing a dialog
+    // gives focus back to the field that had it, and the keyboard with it.
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (widget.confirmSave != null && !await widget.confirmSave!()) return;
+    if (!mounted) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _saving = true);
     try {
       final result = await widget.onSave(params);
@@ -120,6 +138,25 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
 
   @override
   Widget build(BuildContext context) {
+    // The spinner is an overlay over the whole screen, outside the card's scroll view (ID-611). It
+    // was in the SAVE button, at the bottom of a card that scrolls: with the keyboard up it sat
+    // under the keyboard, and a save looked like nothing had happened. The watchdog form had the
+    // same fault four times, 409 to 435, until its spinner left the scroll view; this is that fix.
+    // Back is blocked while the router is being changed, as there (ID-246).
+    return PopScope(
+      canPop: !_saving,
+      child: Stack(children: [
+        _card(context),
+        if (_saving)
+          const Positioned.fill(
+            key: Key('slot_params_saving_overlay'),
+            child: ColoredBox(color: Color(0x99000000), child: Center(child: ApplyingPanel())),
+          ),
+      ]),
+    );
+  }
+
+  Widget _card(BuildContext context) {
     return Dialog(
       backgroundColor: kSurface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -149,15 +186,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 // to its own controller rather than taking a fixed helper.
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _ctrls['dns']!,
-                  builder: (context, value, _) {
-                    final shared = dnsSharedWithRouter(value.text, widget.routerDotServers);
-                    return _text('dns', 'DNS servers',
-                        helper: [
-                          if (isStockFirmware) kDnsFirstServerNote,
-                          if (shared.isNotEmpty) '${shared.join(' and ')}: $kDnsMatchesRouterNote',
-                        ].join('\n\n'),
-                        helperColour: shared.isEmpty ? null : kWarn);
-                  },
+                  builder: (context, value, _) => _dnsField(value.text),
                 ),
                 _text('mtu', 'MTU', keyboard: TextInputType.number),
                 _text('alive', 'Persistent keepalive (s)', keyboard: TextInputType.number),
@@ -184,7 +213,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                   keyValue: 'slot_params_save',
                   label: 'SAVE',
                   fullWidth: true,
-                  busy: _saving,
+                  // The label stays during a save: the spinner is the overlay, not the button.
                   onPressed: (_saving || !_canSave) ? null : _save,
                 ),
                 const SizedBox(height: 8),
@@ -202,6 +231,19 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
         ),
       ),
     );
+  }
+
+  /// The DNS field with the notes that depend on what is typed in it (ID-005, ID-609).
+  Widget _dnsField(String typed) {
+    final shared = dnsSharedWithRouter(typed, widget.routerDotServers);
+    final watchdogs = dnsSharedWithWatchdogs(typed, widget.watchdogDohServers);
+    return _text('dns', 'DNS servers',
+        helper: [
+          if (isStockFirmware) kDnsFirstServerNote,
+          if (shared.isNotEmpty) '${shared.join(' and ')}: $kDnsMatchesRouterNote',
+          for (final e in watchdogs.entries) dnsMatchesWatchdogNote(e.key, e.value),
+        ].join('\n\n'),
+        helperColour: shared.isEmpty && watchdogs.isEmpty ? null : kWarn);
   }
 
   Widget _text(String key, String label,

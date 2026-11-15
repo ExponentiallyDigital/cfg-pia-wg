@@ -55,6 +55,16 @@ class _DownPia extends _FakePia {
       throw piaLoginUnavailable('no answer in 20 s');
 }
 
+/// A router whose encrypted DNS answers, which is what every test here is about something other
+/// than: the fakes answer nothing to a command they don't know, and SAVE & DEPLOY refuses a DoH
+/// server that doesn't answer (ID-612). The tests of that check pass `checkDoh: true`.
+class _DohWorks extends RouterWatchdog {
+  _DohWorks(super.client, {super.onLog});
+
+  @override
+  Future<String?> dohProblem(WatchdogConfig config) async => null;
+}
+
 SessionController _controller() => SessionController(tickInterval: const Duration(hours: 1), clipboardWriter: (_) async {});
 
 Widget _host(
@@ -68,6 +78,7 @@ Widget _host(
   Map<int, String> otherSlotDns = const {},
   Set<String> routerDotServers = const {},
   PiaService? pia,
+  bool checkDoh = false,
 }) {
   return SessionScope(
     controller: c,
@@ -82,7 +93,7 @@ Widget _host(
           piaPassword: piaPass,
           connect: connect ?? () async => client,
           piaService: pia ?? _FakePia(),
-          serviceFactory: (cl) => RouterWatchdog(cl, onLog: c.onLog),
+          serviceFactory: (cl) => checkDoh ? RouterWatchdog(cl, onLog: c.onLog) : _DohWorks(cl, onLog: c.onLog),
           otherSlotDns: otherSlotDns,
           routerDotServers: routerDotServers,
         ),
@@ -184,11 +195,12 @@ void main() {
       final c = _controller();
       addTearDown(c.dispose);
       final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
-      // The load on entry connects at once; the deploy's connect is held, to look at the screen mid-save.
+      // The load on entry and the encrypted DNS check (ID-612) connect at once; the deploy's connect, the
+      // third, is held, to look at the screen mid-save.
       final held = Completer<SSHClient>();
       addTearDown(() => held.complete(ssh));
       var connects = 0;
-      await tester.pumpWidget(_host(ssh, c, connect: () => ++connects == 1 ? Future.value(ssh) : held.future));
+      await tester.pumpWidget(_host(ssh, c, connect: () => ++connects <= 2 ? Future.value(ssh) : held.future));
       await tester.pumpAndSettle();
 
       await tester.ensureVisible(find.byKey(const Key('wd_save')));
@@ -449,6 +461,8 @@ void main() {
         // Scoped to wgc1 so the one-active-at-a-time sweep doesn't see phantom watchdogs on 2-5.
         if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1'; // already enabled -> no region pick
         if (cmd.contains('nvram get wgc1_enable')) return '1';
+        // A running slot has DNS servers, the ones the form shows: nothing to restart for (ID-609).
+        if (cmd == 'nvram get wgc1_dns') return '9.9.9.9, 149.112.112.112';
         if (cmd.contains('ip -o link show up')) return 'wgc1';
         if (cmd.contains('ping')) return 'OK';
         return '';
@@ -466,6 +480,110 @@ void main() {
     expect(ssh.ran('cru a watchdog_wgc1'), isTrue);
   });
 
+  // ID-609: new DNS servers on the form reached `wgcN_dns` and not the running tunnel's devices. The
+  // deploy now restarts the slot, and the form says so before anything is written.
+  group('new DNS servers for a running slot', () {
+    RecordingSSHClient router() => RecordingSSHClient(responder: (cmd) {
+          if (cmd.contains('which jq')) return '/opt/bin/jq';
+          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+          if (cmd.contains('nvram get wgc1_enable')) return '1';
+          if (cmd == 'nvram get wgc1_dns') return '9.9.9.9, 149.112.112.112';
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
+          if (cmd == 'date +%s') return '1700000100';
+          if (cmd.contains('latest-handshakes')) return '1700000100';
+          if (cmd.contains('ping')) return 'OK';
+          return '';
+        });
+
+    Future<void> saveWith(WidgetTester tester, RecordingSSHClient ssh, SessionController c, String dns) async {
+      useMerlin();
+      await tester.pumpWidget(_host(ssh, c));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(DnsField), dns);
+      await tester.ensureVisible(find.byKey(const Key('wd_save')));
+      await tester.tap(find.byKey(const Key('wd_save')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('asks before touching the router, and CANCEL changes nothing', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = router();
+      await saveWith(tester, ssh, c, '1.1.1.2, 1.0.0.2');
+
+      expect(find.textContaining('Save and restart wgc1'), findsOneWidget);
+      expect(find.textContaining('Its DNS servers changed'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('wd_dns_restart_cancel')));
+      await tester.pumpAndSettle();
+      expect(ssh.commands.any((cmd) => cmd.startsWith('nvram set')), isFalse);
+      expect(find.byKey(const Key('wd_save')), findsOneWidget, reason: 'the form stays open');
+    });
+
+    testWidgets('SAVE writes the servers and restarts the slot', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = router();
+      await saveWith(tester, ssh, c, '1.1.1.2, 1.0.0.2');
+      await tester.tap(find.byKey(const Key('wd_dns_restart_save')));
+      await tester.pumpAndSettle();
+
+      expect(ssh.ran("nvram set wgc1_dns='1.1.1.2, 1.0.0.2'"), isTrue);
+      expect(ssh.commands, contains('service "stop_wgc 1"; sleep 2; service "start_wgc 1"; service restart_vpnrouting0'));
+    });
+
+    testWidgets('the servers it already has ask nothing', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = router();
+      await saveWith(tester, ssh, c, '9.9.9.9, 149.112.112.112');
+      expect(find.textContaining('Save and restart'), findsNothing);
+      expect(ssh.ran('cru a watchdog_wgc1'), isTrue, reason: 'the deploy went ahead');
+    });
+  });
+
+  // ID-612, seen on Merlin 388.13_0, 2026-11-15: the form offered Quad9 for the watchdog's encrypted
+  // DNS, the router's curl couldn't speak to it (HTTP 505, no HTTP/2), and the deploy went ahead.
+  group("encrypted DNS the router can't use", () {
+    RecordingSSHClient router(String answer) => RecordingSSHClient(responder: (cmd) {
+          if (cmd.contains('which jq')) return '/opt/bin/jq';
+          if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
+          if (cmd.contains('nvram get wgc1_enable')) return '1';
+          if (cmd == 'nvram get wgc1_dns') return '9.9.9.9, 149.112.112.112';
+          if (cmd.contains('application/dns-message')) return answer;
+          if (cmd.contains('ip -o link show up')) return 'wgc1';
+          if (cmd.contains('ping')) return 'OK';
+          return '';
+        });
+
+    Future<void> save(WidgetTester tester, RecordingSSHClient ssh, SessionController c) async {
+      await tester.pumpWidget(_host(ssh, c, checkDoh: true));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('wd_save')));
+      await tester.tap(find.byKey(const Key('wd_save')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('is refused with the reason, nothing is written, and the form stays open', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = router('505');
+      await save(tester, ssh, c);
+
+      expect(find.textContaining("answers only over HTTP/2, which the router's curl doesn't have"), findsOneWidget);
+      expect(ssh.commands.any((cmd) => cmd.startsWith('nvram set')), isFalse);
+      expect(ssh.ran('cru a watchdog_wgc1'), isFalse);
+      expect(find.byKey(const Key('wd_save')), findsOneWidget);
+    });
+
+    testWidgets('a server that answers is deployed as before', (tester) async {
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = router('200');
+      await save(tester, ssh, c);
+      expect(ssh.ran('cru a watchdog_wgc1'), isTrue);
+    });
+  });
+
   // 2026-10-01: with PIA's login service down, a deploy went ahead and took 87 seconds to fail on the
   // router, which asked the same service. Now the phone's own answer stops it first, CANCEL first.
   group("PIA's login service down", () {
@@ -473,6 +591,8 @@ void main() {
           if (cmd.contains('which jq')) return '/opt/bin/jq';
           if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
           if (cmd.contains('nvram get wgc1_enable')) return '1';
+          // A running slot has DNS servers, the ones the form shows: nothing to restart for (ID-609).
+          if (cmd == 'nvram get wgc1_dns') return '9.9.9.9, 149.112.112.112';
           if (cmd.contains('ip -o link show up')) return 'wgc1';
           if (cmd.contains('ping')) return 'OK';
           return '';
@@ -538,6 +658,8 @@ void main() {
         if (cmd.contains('which jq')) return '/opt/bin/jq';
         if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
         if (cmd.contains('nvram get wgc1_enable')) return '1';
+        // A running slot has DNS servers, the ones the form shows: nothing to restart for (ID-609).
+        if (cmd == 'nvram get wgc1_dns') return '9.9.9.9, 149.112.112.112';
         if (cmd.contains('ip -o link show up')) return 'wgc1';
         if (cmd.contains('ping')) return 'OK';
         if (cmd.startsWith('tail -n +') && cmd.contains('watchdog_wgc1.log')) {
@@ -573,6 +695,8 @@ void main() {
         if (cmd.contains('which jq')) return '/opt/bin/jq';
         if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
         if (cmd.contains('nvram get wgc1_enable')) return '1';
+        // A running slot has DNS servers, the ones the form shows: nothing to restart for (ID-609).
+        if (cmd == 'nvram get wgc1_dns') return '9.9.9.9, 149.112.112.112';
         if (cmd.contains('ip -o link show up')) return 'wgc1';
         if (cmd.contains('ping')) return 'OK';
         if (cmd.startsWith('tail -n +') && cmd.contains('watchdog_wgc1.log')) {
@@ -603,6 +727,8 @@ void main() {
         if (cmd.contains('which jq')) return '/opt/bin/jq';
         if (cmd.contains('cru l') && cmd.contains('watchdog_wgc1')) return '1';
         if (cmd.contains('nvram get wgc1_enable')) return '1';
+        // A running slot has DNS servers, the ones the form shows: nothing to restart for (ID-609).
+        if (cmd == 'nvram get wgc1_dns') return '9.9.9.9, 149.112.112.112';
         if (cmd.contains('ip -o link show up')) return 'wgc1';
         if (cmd.contains('ping')) return cmd.contains('1.1.1.1') ? 'OK' : 'FAIL';
         return '';

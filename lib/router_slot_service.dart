@@ -28,7 +28,7 @@ import 'router_service_queue.dart';
 import 'firmware.dart';
 import 'device_assignment.dart';
 import 'merlin_guard.dart';
-import 'merlin_vpn_director.dart' show kVpnDirectorRulelistPath, parseVpnDirectorRules;
+import 'merlin_vpn_director.dart';
 import 'fail_closed_guard.dart';
 import 'router_host_keys.dart';
 import 'router_watchdog.dart' show buildLoggerCommand, isValidIpv4, shellSingleQuote;
@@ -311,6 +311,45 @@ Set<String> dnsAddressesIn(String raw) => {
 Set<String> dnsSharedWithRouter(String slotDns, Set<String> routerDotServers) =>
     dnsAddressesIn(slotDns).intersection(routerDotServers);
 
+/// Each slot's watchdog's encrypted-DNS address, `wgcN_wd_doh_ip`, one per line with `---` between
+/// (ID-609). Written out rather than looped: this BusyBox has no `seq`.
+const String kWatchdogDohServersCommand = 'nvram get wgc1_wd_doh_ip; echo ---; nvram get wgc2_wd_doh_ip; echo ---; '
+    'nvram get wgc3_wd_doh_ip; echo ---; nvram get wgc4_wd_doh_ip; echo ---; nvram get wgc5_wd_doh_ip';
+
+/// [kWatchdogDohServersCommand]'s output as slot to addresses, for the slots that have any.
+Map<int, Set<String>> parseWatchdogDohServers(String raw) {
+  final parts = raw.split('---');
+  return {
+    for (var i = 0; i < parts.length && i < 5; i++)
+      if (dnsAddressesIn(parts[i]).isNotEmpty) i + 1: dnsAddressesIn(parts[i]),
+  };
+}
+
+/// The addresses [slotDns] shares with a watchdog's encrypted DNS, each with the slots whose
+/// watchdog uses it, lowest first (ID-609). Both firmwares route the router's own traffic to a
+/// slot's DNS servers into a slot (Merlin by main-table routes, stock by its `iif lo` rules), so
+/// such a watchdog's lookups go through that slot and stop when it does: measured on Merlin
+/// 388.13_0, 2026-11-15, with wgc1's DNS on the address wgc5's watchdog used.
+Map<String, List<int>> dnsSharedWithWatchdogs(String slotDns, Map<int, Set<String>> watchdogDohServers) {
+  final out = <String, List<int>>{};
+  for (final address in dnsAddressesIn(slotDns)) {
+    final slots = [
+      for (final e in watchdogDohServers.entries)
+        if (e.value.contains(address)) e.key,
+    ]..sort();
+    if (slots.isNotEmpty) out[address] = slots;
+  }
+  return out;
+}
+
+/// What the DNS field says under an address a watchdog also uses ([dnsSharedWithWatchdogs]).
+String dnsMatchesWatchdogNote(String address, List<int> slots) {
+  final one = slots.length == 1;
+  final whose = slots.map((s) => "wgc$s's").join(' and ');
+  return '$address: $whose ${one ? 'watchdog uses' : 'watchdogs use'} this address for ${one ? 'its' : 'their'} own encrypted '
+      'DNS. While this slot is running, those lookups travel through it - and stop if it stops answering.';
+}
+
 /// How recent a handshake has to be for a tunnel to count as answering (ID-123).
 ///
 /// The same 300 seconds the watchdog script uses, and for the same reason: WireGuard renews a
@@ -484,10 +523,14 @@ class RouterSlots {
   // permits more than one tunnel at a time (vpnc_max_conn), and reporting only the first hid that.
   final Set<int> activeSlots;
 
-  /// The addresses the router uses for its OWN encrypted DNS, from `dnspriv_rulelist` (ID-005).
-  /// Empty on Merlin, and empty on stock whenever DNS Privacy is switched off. Read once with the
-  /// slots so the CREATE and EDIT forms can compare without a round trip of their own.
+  /// The addresses the router uses for its OWN encrypted DNS, from `dnspriv_rulelist` (ID-005), on
+  /// both firmwares. Empty whenever DNS Privacy is switched off. Read once with the slots so the
+  /// CREATE and EDIT forms can compare without a round trip of their own. Until build 581 it was
+  /// never read on Merlin, which was taken to have no such list; it has (ID-609).
   final Set<String> routerDotServers;
+
+  /// Each slot's watchdog's encrypted-DNS addresses, for the same forms' other note (ID-609).
+  final Map<int, Set<String>> watchdogDohServers;
 
   /// Of [activeSlots], the ones whose server has answered within [kAnsweringWithinSeconds]
   /// (ID-123). A slot that is up but NOT in here is the state an expired PIA registration leaves:
@@ -506,6 +549,7 @@ class RouterSlots {
     required this.isMerlin,
     this.answeringSlots = const {},
     this.routerDotServers = const {},
+    this.watchdogDohServers = const {},
     this.maxActiveSlots,
   });
 }
@@ -641,29 +685,58 @@ class RouterSlotService {
     await _logRouter('Maximum active VPNs set to $count');
   }
 
+  /// For [MerlinOps.clearProfile] (ID-606): lets go of what VPN Director sends to [slot]. Each
+  /// device with a rule of its own for it goes to the Internet, as DELETE's confirmation says and as
+  /// stock does, and the whole-network rule is switched off if [slot] carried the default. Applied
+  /// as DEVICES applies a change: the file, `restart_vpnrouting0`, the guard, then the kernel's rules
+  /// read back. Until build 581 nothing was changed, so each device kept its rule and the guard's
+  /// `prohibit`, and stayed offline behind a slot that was gone.
+  Future<void> releaseSlotRules(int slot) async {
+    final rules = parseVpnDirectorRules(await _read('cat $kVpnDirectorRulelistPath 2>/dev/null'));
+    final subnet = lanSubnet(await _read('nvram get lan_ipaddr'), await _read('nvram get lan_netmask'));
+    final released = releaseMerlinSlot(rules, slot, subnet);
+    if (serialiseVpnDirectorRules(released) == serialiseVpnDirectorRules(rules)) return;
+
+    await _logMovedToInternet(devicesSentTo(rules, slot));
+    if (defaultRuleFor(rules, subnet)?.wgSlot == slot) {
+      onLog?.call('This VPN was the default connection; setting the default back to Internet...');
+      await _logRouter('default connection reset to Internet - wgc$slot was deleted');
+    }
+    await writeVpnDirectorRules(released, read: _read, run: (cmd) => _run(cmd));
+    await _queuedService('restart_vpnrouting0');
+    // The guard held these devices to the slot. They are on the internet now, by design, so its
+    // rule for each goes too, or they would be blocked from where they were just sent.
+    await MerlinGuard(read: _read, run: (cmd) => _run(cmd), onLog: onLog).ensure(quiet: true);
+    final problems = merlinRuleProblems(released, subnet, await _read(kIpRuleCommand));
+    if (problems.isNotEmpty) {
+      onLog?.call("The router's rules do not match yet: ${problems.join('; ')}. Look at DEVICES.", isWarning: true);
+    }
+  }
+
+  /// Names each device a DELETE moves to the Internet, in both logs, the way DEVICES does. It used
+  /// to take names from `custom_clientlist` alone, so any device the user had not renamed in the web
+  /// interface showed up in the log as a bare address while the screen named it (ID-154).
+  Future<void> _logMovedToInternet(List<String> pinned) async {
+    if (pinned.isEmpty) return;
+    final names = deviceNamesByIp(parseDeviceSources(await _read(kDeviceSourcesCommand)));
+    onLog?.call('Moving ${pinned.length} device${pinned.length == 1 ? '' : 's'} to Internet:');
+    for (final ip in pinned) {
+      final name = names[ip];
+      final label = name == null ? ip : '$name ($ip)';
+      onLog?.call('  $label');
+      await _logRouter('$label moved to Internet - its VPN was deleted');
+    }
+  }
+
   // Read/modify/write of vpnc_clientlist. The caller commits.
   /// Sends every device pinned to [vpncIndex] to the plain internet, and removes the routing rules
-  /// that pointed at it.
-  ///
-  /// Names each device it moves, the way DEVICE ASSIGNMENT does. It used to take names from
-  /// `custom_clientlist` alone, so any device the user had not renamed in the web interface showed
-  /// up in the log as a bare address while the screen named it (ID-154).
+  /// that pointed at it. Each is named as it goes ([_logMovedToInternet]).
   Future<void> _releasePinnedDevices(int vpncIndex) async {
     final policies = parseDevicePolicyList(await _read('nvram get vpnc_dev_policy_list'));
     final pinned = devicesPinnedTo(policies, vpncIndex);
     if (pinned.isEmpty) return;
 
-    final names = deviceNamesByIp(parseDeviceSources(await _read(kDeviceSourcesCommand)));
-    String label(String ip) {
-      final name = names[ip];
-      return name == null ? ip : '$name ($ip)';
-    }
-
-    onLog?.call('Moving ${pinned.length} device${pinned.length == 1 ? '' : 's'} to Internet:');
-    for (final ip in pinned) {
-      onLog?.call('  ${label(ip)}');
-      await _logRouter('${label(ip)} moved to Internet - its VPN was deleted');
-    }
+    await _logMovedToInternet(pinned);
     final updated = serialiseDevicePolicyList(releaseDevicesFrom(policies, vpncIndex));
     await _run(kSavePolicyListTmpCommand);
     await _run('nvram set vpnc_dev_policy_list=${shellSingleQuote(updated)}');
@@ -700,10 +773,7 @@ class RouterSlotService {
         pinned = devicesPinnedTo(parseDevicePolicyList(await _read('nvram get vpnc_dev_policy_list')), index);
       } else {
         // Merlin: the devices VPN Director sends to this slot by a rule of their own (ID-567).
-        pinned = [
-          for (final r in parseVpnDirectorRules(await _read('cat $kVpnDirectorRulelistPath 2>/dev/null')))
-            if (r.isDeviceRule && r.enabled && r.wgSlot == slot) r.local,
-        ];
+        pinned = devicesSentTo(parseVpnDirectorRules(await _read('cat $kVpnDirectorRulelistPath 2>/dev/null')), slot);
       }
       if (pinned.isEmpty) return const [];
       final names = deviceNamesByIp(parseDeviceSources(await _read(kDeviceSourcesCommand)));
@@ -868,9 +938,10 @@ class RouterSlotService {
     final activeSlots = RegExp(r'wgc(\d)').allMatches(ifaceOutput).map((m) => int.parse(m.group(1)!)).toSet();
     final answering = await _answeringSlots(activeSlots);
 
-    // The router's own encrypted-DNS servers, for the overlap note on CREATE and EDIT (ID-005), and its
-    // cap on tunnels at once: stock's, as the firmware holds them; Merlin has neither.
+    // The router's own encrypted-DNS servers and each watchdog's, for the overlap notes on CREATE and
+    // EDIT (ID-005, ID-609), on both firmwares; and its cap on tunnels at once, which only stock has.
     final dotServers = await ops.routerDotServers(this);
+    final dohServers = parseWatchdogDohServers(await _read(kWatchdogDohServersCommand));
     final maxActiveSlots = await ops.maxActiveSlots(this);
 
     if (slots.values.every((s) => s.isEmpty)) {
@@ -882,6 +953,7 @@ class RouterSlotService {
         activeSlots: activeSlots,
         answeringSlots: answering,
         routerDotServers: dotServers,
+        watchdogDohServers: dohServers,
         isMerlin: isMerlin,
         maxActiveSlots: maxActiveSlots);
   }

@@ -226,6 +226,30 @@ void _applyDefaultChange(List<VpnDirectorRule> out, int index, String subnet) {
   }
 }
 
+/// The addresses VPN Director sends to [slot] by a rule of their own that is switched on: the
+/// devices DISABLE and DELETE name, and the ones DELETE moves.
+List<String> devicesSentTo(List<VpnDirectorRule> rules, int slot) => [
+      for (final r in rules)
+        if (r.isDeviceRule && r.enabled && r.wgSlot == slot) r.local,
+    ];
+
+/// [rules] with [slot] let go, for DELETE (ID-606): each device rule for it goes to WAN, on or off
+/// as it was, which is stock's "moved to the Internet"; and the whole-network rule is switched off
+/// when [slot] carried the default. The user's own rules for it, a range or one with a remote
+/// address, pass through. Until build 581 nothing was changed, so a deleted slot's devices kept
+/// their rule and the guard's `prohibit`, and stayed offline.
+List<VpnDirectorRule> releaseMerlinSlot(List<VpnDirectorRule> rules, int slot, String subnet) => [
+      for (final r in rules)
+        if (r.wgSlot != slot)
+          r
+        else if (r.isDeviceRule)
+          r.copyWith(iface: 'WAN')
+        else if (subnet.isNotEmpty && r.local == subnet && r.remote.isEmpty)
+          r.copyWith(enabled: false)
+        else
+          r,
+    ];
+
 /// The devices pinned to a slot numbered above the default's. VPN Director numbers its rules by
 /// slot, lowest first, so the whole-network rule on a lower slot always wins and such a pin would
 /// be ignored without a word; DEVICES refuses it instead (ID-556). Empty when the default is the

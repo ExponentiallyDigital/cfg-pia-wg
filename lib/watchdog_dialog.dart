@@ -56,6 +56,10 @@ class WatchdogDialog extends StatefulWidget {
   /// Every OTHER configured slot's DNS, by slot. A watchdog lookup sent to one of these addresses
   /// goes through that slot's tunnel, and breaks when it does (ID-221).
   final Map<int, String> otherSlotDns;
+
+  /// Every OTHER slot's watchdog's encrypted-DNS addresses, by slot. Made this slot's DNS servers,
+  /// one of them is routed into this slot, and that watchdog's lookups with it (ID-609).
+  final Map<int, Set<String>> otherWatchdogDohServers;
   final RouterWatchdog Function(SSHClient)? serviceFactory; // test seam
 
   const WatchdogDialog({
@@ -71,6 +75,7 @@ class WatchdogDialog extends StatefulWidget {
     this.serviceFactory,
     this.routerDotServers = const {},
     this.otherSlotDns = const {},
+    this.otherWatchdogDohServers = const {},
   });
 
   @override
@@ -527,9 +532,12 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     if (regionChanges) {
       if (!widget.slotIsEmpty && !await _confirmOverwrite(region)) return;
       newDesc = region;
+    } else if (!await _dnsRestartAgreed(cfg)) {
+      return;
     }
 
-    // Before a single NVRAM key is written (ID-120).
+    // Before a single NVRAM key is written (ID-120, ID-612).
+    if (!await _dohUsable(cfg)) return;
     if (!await _piaAllowsDeploy(cfg)) return;
 
     final (saved, didNothing) = await _deploy(cfg, newDesc);
@@ -542,6 +550,49 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
     // again for a slot that started empty, which bounced the tunnel the deploy's immediate script
     // run had just established - two `service restart_vpnc` calls on stock for one deploy.
     Navigator.of(context).pop();
+  }
+
+  /// New DNS servers for a running slot mean restarting it, or its devices go on being sent to the
+  /// old ones (ID-609): said first, as EDIT's SAVE says it (ID-203). True when nothing restarts, or
+  /// the user agreed; false on CANCEL, or when the router could not be asked, which has been reported.
+  Future<bool> _dnsRestartAgreed(WatchdogConfig cfg) async {
+    final restarts = await _withService((svc) => svc.dnsChangeRestartsSlot(widget.slotIndex, cfg.slotDns));
+    if (restarts == null || !mounted) return false;
+    if (!restarts) return true;
+    final label = slotLabel(widget.slotIndex, widget.regionDesc);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kSurface,
+        title: SlotText('Save and restart $label?', style: const TextStyle(color: kText, fontSize: 15)),
+        content: Text(
+            'Its DNS servers changed. Saving restarts wgc${widget.slotIndex}, so its devices use the new ones. '
+            'Anything using it drops for a few seconds.',
+            style: const TextStyle(color: kMuted, fontSize: 13)),
+        actions: [
+          AppButton(
+              keyValue: 'wd_dns_restart_cancel',
+              label: 'CANCEL',
+              role: ButtonRole.dismiss,
+              onPressed: () => Navigator.pop(ctx, false)),
+          AppButton(keyValue: 'wd_dns_restart_save', label: 'SAVE', onPressed: () => Navigator.pop(ctx, true)),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
+  /// One real lookup from the router through the encrypted DNS on the form (ID-612). A server the
+  /// router can't use is refused here, with the reason, and the form stays open to choose another:
+  /// Quad9's answers only over HTTP/2, which Merlin 388.13's curl doesn't have, and a watchdog set
+  /// to it fell back to the router's own DNS on every lookup (2026-11-15). False too when the router
+  /// could not be asked, which has been reported.
+  Future<bool> _dohUsable(WatchdogConfig cfg) async {
+    final asked = await _withService((svc) async => (problem: await svc.dohProblem(cfg)));
+    if (asked == null || !mounted) return false;
+    if (asked.problem == null) return true;
+    await AppErrors.inputs(context, _c, [asked.problem!]);
+    return false;
   }
 
   /// The two things a deploy needs on the router before anything else is asked.
@@ -731,7 +782,11 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
               _field(_secondaryCtrl, 'Secondary ping IP', const Key('wd_secondary')),
               // The slot's own DNS, not a watchdog setting - but this form builds slots, and one
               // built without it leaves its pinned devices resolving over the WAN (ID-126).
-              DnsField(controller: _dnsCtrl, firstServerNote: isStockFirmware, routerDotServers: widget.routerDotServers),
+              DnsField(
+                  controller: _dnsCtrl,
+                  firstServerNote: isStockFirmware,
+                  routerDotServers: widget.routerDotServers,
+                  watchdogDohServers: widget.otherWatchdogDohServers),
               const SizedBox(height: 12),
               _dohPicker(),
               const SizedBox(height: 12),

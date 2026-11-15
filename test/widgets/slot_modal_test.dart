@@ -860,7 +860,7 @@ void main() {
 
       expect(find.text('Saving restarts wgc1. Anything using it drops for a few seconds.'), findsOneWidget);
       expect(ssh.ran("nvram set wgc1_addr='10.0.0.2/32'"), isFalse, reason: 'nothing is written before SAVE is confirmed');
-      await tester.tap(_inDialog('SAVE'));
+      await tester.tap(_inDialog('SAVE').last); // the question's, on top of the editor's, whose label stays (ID-611)
       await tester.pumpAndSettle();
 
       expect(ssh.ran("nvram set wgc1_addr='10.0.0.2/32'"), isTrue);

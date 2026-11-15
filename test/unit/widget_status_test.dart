@@ -70,6 +70,33 @@ void main() {
       expect(status.guardedOfflineDeviceNames, isEmpty);
     });
 
+    // ID-606: a device pinned to a VPN that has been deleted has no internet on either firmware
+    // (stock's guard blackholes it, Merlin's prohibits it), and the widget said nothing about it.
+    test('a device pinned to a VPN that no longer exists is named as held offline', () {
+      final status = buildWidgetStatus(
+        vpncClientlist: twoSlots(),
+        devicePolicyList: '${policy(kDesktop, 7)}<${policy(kTablet, 5)}',
+        upInterfaces: ' wgc1: <> wgc5: <> ',
+        handshakeAgesRaw: 'wgc1\tPEERKEY\t1700000000\nwgc5\tPEERKEY\t1700000000\n---\n1700000000',
+        devices: kDevices,
+        checkedAt: kAt,
+      );
+      expect(status.deletedVpnDeviceNames, ['DESKTOP']);
+      expect(status.badge, WidgetBadge.protected, reason: 'every tunnel that exists is answering');
+    });
+
+    test('a pin to the internet, or one switched off, is not one to a deleted VPN', () {
+      final status = buildWidgetStatus(
+        vpncClientlist: twoSlots(),
+        devicePolicyList: '${policy(kDesktop, 0)}<${policy(kTablet, 7, enabled: false)}',
+        upInterfaces: ' wgc1: <> wgc5: <> ',
+        handshakeAgesRaw: '---\n1700000000',
+        devices: kDevices,
+        checkedAt: kAt,
+      );
+      expect(status.deletedVpnDeviceNames, isEmpty);
+    });
+
     test('no configured slot at all reads as not checked, not protected', () {
       final status = buildWidgetStatus(
         vpncClientlist: '',

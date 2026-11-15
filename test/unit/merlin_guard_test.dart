@@ -12,6 +12,7 @@ library;
 import 'dart:io';
 
 import 'package:cfg_pia_wg/merlin_guard.dart';
+import 'package:cfg_pia_wg/router_script_integrity.dart' show scriptEndLine;
 import 'package:flutter_test/flutter_test.dart';
 
 import '../posix_shell.dart';
@@ -72,9 +73,18 @@ void main() {
 
   Future<String> run([List<String> args = const [], Map<String, String> extra = const {}]) async {
     final sep = Platform.isWindows ? ';' : ':';
-    final env = {'PATH': '${dir.path}/bin$sep${Platform.environment['PATH']}', 'STATE': state, ...extra};
+    final env = {
+      'PATH': '${dir.path}/bin$sep${Platform.environment['PATH']}',
+      'STATE': state,
+      // Where the script keeps its errors, and finds the watchdogs it reports through (ID-607).
+      'GUARD_ERR': '$state/guard.err',
+      'GUARD_APPDIR': '$state/app',
+      ...extra,
+    };
+    // CUT=1 takes the script's last line off, as a write cut short would.
     const cmd = r'P="${PATH%%:*}"; PATH="$P:/usr/bin:/bin:$PATH"; export PATH; '
-        r'cd "$STATE" && sed "s#/jffs/openvpn/vpndirector_rulelist#$STATE/rulelist#" "$1" > g.sh && shift && exec sh g.sh "$@"';
+        r'cd "$STATE" && sed "s#/jffs/openvpn/vpndirector_rulelist#$STATE/rulelist#" "$1" > g.sh && shift && '
+        r'{ [ -z "$CUT" ] || { sed "\$d" g.sh > g.cut && mv g.cut g.sh; }; } && exec sh g.sh "$@"';
     final r = await runSh(shell!, ['-c', cmd, 'sh', '${dir.path}/merlin-guard.sh', ...args], environment: env);
     return '${r.stdout}${r.stderr}';
   }
@@ -199,6 +209,67 @@ void main() {
       expect(syslog(), contains('merlin-guard: boot: guarded 1 of 1'));
       expect(kMerlinGuardScript, contains('watch </dev/null >/dev/null 2>&1 &'));
       expect(kMerlinGuardBootLine, contains("merlin-guard.sh' boot "), reason: 'services-start asks for the watch');
+    });
+  });
+
+  // ID-607: stock's guard.sh checks its own last line and keeps its errors for a watchdog to email
+  // (ID-484, ID-485). merlin-guard.sh did neither, and the watchdog's list of slots to email about
+  // was empty on Merlin, so a damaged or failing guard went unnoticed.
+  group('its own faults', () {
+    List<File> errFiles() => [
+          for (final f in Directory(state).listSync().whereType<File>())
+            if (f.uri.pathSegments.last.startsWith('guard.err.')) f,
+        ];
+
+    /// A watchdog for each of [slots] that records what it was run with.
+    void watchdogs(List<int> slots) {
+      Directory('$state/app').createSync();
+      for (final s in slots) {
+        final f = File('$state/app/watchdog_wgc$s.sh')..writeAsStringSync('#!/bin/sh\necho "wgc$s: \$*" >> "\$STATE/faults"\n');
+        if (!Platform.isWindows) Process.runSync('chmod', ['+x', f.path]);
+      }
+    }
+
+    List<String> faults() => File('$state/faults').existsSync() ? File('$state/faults').readAsLinesSync() : [];
+
+    test('ends with the line it checks itself for', () {
+      expect(kMerlinGuardScript.trimRight().split('\n').last, scriptEndLine('merlin-guard.sh'));
+    });
+
+    test('cut short, it changes nothing, says so in the log, and each guarded slot reports it', () async {
+      if (shell == null) return markTestSkipped(_noShell);
+      // wgc1 and wgc5 have a device of their own; wgc3 has only a switched-off rule, wgc2 a range.
+      rulelist('<1>tablet>192.168.1.55>>WGC1<0>off>192.168.1.60>>WGC3<1>range>192.168.1.128/25>>WGC2'
+          '<1>phone>192.168.1.94>>WAN<1>desktop>192.168.1.250>>WGC5');
+      watchdogs([1, 2, 3, 5]);
+      final before = rules();
+      await run([], {'CUT': '1'});
+      expect(rules(), before, reason: 'no rule added or taken out by half a script');
+      expect(syslog().single, startsWith('ERROR: merlin-guard.sh is damaged ('));
+      expect(faults(), hasLength(2));
+      expect(faults()[0], startsWith('wgc1: fault merlin-guard.sh is damaged ('));
+      expect(faults()[1], startsWith('wgc5: fault merlin-guard.sh is damaged ('));
+    });
+
+    test('whole, it reports nothing and leaves no error file', () async {
+      if (shell == null) return markTestSkipped(_noShell);
+      rulelist('<1>tablet>192.168.1.55>>WGC1');
+      watchdogs([1]);
+      final out = await run();
+      expect(out, contains('guarded 1 of 1'));
+      expect(faults(), isEmpty);
+      expect(errFiles(), isEmpty);
+    });
+
+    test('a rule it could not add is kept as an error, for the next watchdog run to report', () async {
+      if (shell == null) return markTestSkipped(_noShell);
+      rulelist('<1>tablet>192.168.1.55>>WGC1');
+      // An `ip` that refuses to add a rule, as a full rule table or a kernel error would.
+      File('${dir.path}/bin/ip').writeAsStringSync(_ip.replaceFirst('"rule add") shift 2;', '"rule add") exit 2; shift 2;'));
+      final out = await run();
+      expect(out, contains('guarded 0 of 1'));
+      expect(errFiles(), hasLength(1));
+      expect(errFiles().single.readAsStringSync(), contains('holds 0 of 1'));
     });
   });
 

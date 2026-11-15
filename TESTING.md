@@ -2224,6 +2224,46 @@ logger "**MRL-8 END** Break and rebuild"
 - Do: on the router, `/bin/sh /jffs/cfg-pia-wg/check-claims.sh quick`, then `full`.
 - Pass if: no FAIL. `MRL-addrs-wgcN` and `MRL-dns-wgcN`: a routed device reaches the router's DNS servers, and its own slot's, only through its tunnel (ID-574, ID-572). `KS-wgcN-disabled`: with the slot switched off, the device is refused, not sent out the WAN or through another tunnel (ID-567). Before DEVICES has applied on that router, those three fail: that is the check seen failing. `MAIL-name`: openssl, as Merlin's mail runs it, refuses a certificate for the wrong name and accepts the right one. `KS-wgc1-stopped`: with wgc1 stopped, the VPN Director device's route to the internet is refused, not out of the WAN. Full's `SETUP-as-is`: a real rebuild, with every PIA name looked up over DoH and packets counted by the router at the DoH server; `MAIL-sent`: its SUCCESS email sent (ID-353). `GUARD-merlin-start`: with the guard's rules taken out, as Merlin's `ip rule flush` takes them when the WAN comes up, starting a tunnel puts exactly the same rules back (ID-582).
 
+**MRL-17** DEVICES from an empty VPN Director list [hand]
+
+- Starts with: Merlin, wgc1 and wgc5 up, the rules file saved so it can be put back.
+- Do: on the router, empty `/jffs/openvpn/vpndirector_rulelist` and run `service restart_vpnrouting0`. In DEVICES (open it again), set the default connection to wgc5 and pin the tablet to wgc1, then APPLY.
+- Pass if: the file holds the tablet's rule to WGC1 and a rule for the LAN's network to WGC5, and `ip rule show` holds the tablet's lookup, its hold, the default's lookup and the default's block. Nothing was made on the VPN Director page.
+- Passed 2026-11-16 on 388.13_0 (build 581, the emulator).
+
+**MRL-18** DELETE moves devices to the Internet [hand]
+
+- Starts with: a spare slot with a VPN, and the tablet pinned to it in DEVICES, the default on another slot.
+- Do: MANAGE, select that slot, DELETE. The confirmation names the tablet.
+- Pass if: afterwards the file holds the tablet's rule to WAN, `ip rule show` has its lookup of main and no hold for it, the slot is gone, the router's log says the tablet "moved to Internet", and the tablet loads a website. DEVICES shows it on Internet.
+- Passed 2026-11-16 on 388.13_0 (build 581, the emulator), without the website check (the tablet wasn't used).
+
+**MRL-19** The guard's own fault is emailed [hand]
+
+- Starts with: the tablet pinned to a slot with a watchdog that has email on.
+- Do: on the router, take the last line off `/jffs/cfg-pia-wg/merlin-guard.sh` and run it.
+- Pass if: it exits 1 with no rule changed, the log has "merlin-guard.sh is damaged", and that slot's watchdog logs "Fault alert email sent". Put the script back (opening DEVICES and applying does it).
+- Passed 2026-11-16 on 388.13_0 (build 581): wgc1's watchdog emailed it, 6450 bytes reported.
+
+**MRL-20** The watchdog email names what the guard holds [hand]
+
+- Starts with: as MRL-19.
+- Do: on the router, run the Merlin watchdog's kill switch block (lines 300 to 353 of `watchdog_wgc1.sh` in build 581) with the tablet's hold in place, then delete the hold with `ip rule del from <tablet> priority 11409 prohibit` and run it again, then run `merlin-guard.sh`.
+- Pass if: the first run's line says the app's guard holds the tablet, the second says it covers 0 of the 1 device pinned to the tunnel, and after the guard ran the hold is back.
+- Passed 2026-11-16 on 388.13_0 (build 581).
+
+**WD-DNS** A slot DNS change on the watchdog form reaches the tunnel's devices [hand]
+
+- Do: WATCHDOG, a running slot, change its DNS servers, SAVE & DEPLOY.
+- Pass if: "Save and restart" asks first, and afterwards the router's redirect for that slot's devices names the new servers (`iptables -t nat -S` on Merlin, the VPN_FUSION chain on stock), with the same dnsleaktest answer from a pinned device.
+- Not yet run by hand; the automated tests cover the deploy and the question. Stock is not yet run (ID-613).
+
+**WD-DOH** The watchdog form refuses an encrypted DNS server the router can't use [hand]
+
+- Do: WATCHDOG, choose Quad9, SAVE & DEPLOY.
+- Pass if: a popup says the router can't use it because it answers only over HTTP/2, nothing is written, and the form stays open. Choosing Cloudflare deploys.
+- The check itself was run on 388.13_0 on 2026-11-16: Quad9 answered 505, Cloudflare's family server and AdGuard 200, an unreachable address 000. Stock is not yet run (ID-613).
+
 **MRL-16** The guard after a reboot [script]
 
 - Starts with: as MRL-10, with the app's guard installed by a DEVICES APPLY from a build with ID-582.

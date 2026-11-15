@@ -109,7 +109,26 @@ String _compactBadgeText(WidgetStatus status) {
   }
 }
 
+/// "its VPN was deleted", or "their" for more than one.
+String _vpnWasDeleted(int n) => '${n == 1 ? 'its' : 'their'} VPN was deleted';
+
+/// The line under the tunnel rows for devices pinned to a VPN that no longer exists (ID-606):
+/// "TABLET offline: its VPN was deleted". Empty when there are none.
+String _deletedVpnLine(List<String> names) =>
+    names.isEmpty ? '' : '${names.join(', ')} offline: ${_vpnWasDeleted(names.length)}';
+
+/// The same for the compact widget's one line, which has room for one name or a count.
+String _deletedVpnCompact(List<String> names) {
+  if (names.isEmpty) return '';
+  final who = names.length == 1 ? names.first : '${names.length} devices';
+  return '$who offline · ${_vpnWasDeleted(names.length)}';
+}
+
 String _compactDetailText(WidgetStatus status) {
+  // A device with no internet outranks a count: said whenever no tunnel is down, which has a line
+  // of its own.
+  final deleted = _deletedVpnCompact(status.deletedVpnDeviceNames);
+  if (deleted.isNotEmpty && status.badge != WidgetBadge.tunnelDown) return deleted;
   switch (status.badge) {
     case WidgetBadge.protected:
       // Up now, but nothing will rebuild it when it fails (ID-488): worth the compact line.
@@ -197,7 +216,11 @@ Map<String, Object> buildWidgetData(WidgetStatus status, {required DateTime now,
     'badge': badgeName(),
     'down_count': status.tunnels.where((t) => !t.answering).length,
     'tunnel_count': status.tunnels.length,
-    'overflow_text': more > 0 ? '+$more more $moreTunnels' : '',
+    // The one free line under the rows: the tunnels not shown, then any device whose VPN is gone.
+    'overflow_text': [
+      if (more > 0) '+$more more $moreTunnels',
+      if (status.deletedVpnDeviceNames.isNotEmpty) _deletedVpnLine(status.deletedVpnDeviceNames),
+    ].join(' · '),
     'last_checked_text': _lastCheckedText(status.checkedAt, now),
     'can_refresh': canRefresh,
     'compact_badge_text': _compactBadgeText(status),

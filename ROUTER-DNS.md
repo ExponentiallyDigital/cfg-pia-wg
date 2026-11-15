@@ -377,6 +377,7 @@ Notes:
 - **Slot DNS must offer ordinary DNS.** The router's redirect sends plain port 53 lookups, so a slot can't use Mullvad, and PIA's addresses only work on a slot whose tunnel is up.
 - **Mullvad only answers encrypted lookups.** Use `194.242.2.2` (`dns.mullvad.net`) or `194.242.2.4` (`base.dns.mullvad.net`) in the router's DoT Server List, with the matching hostname.
 - **Google** records more about lookups than the privacy-focused services. It's included for comparison.
+- **Quad9's encrypted lookups need HTTP/2, and the router's `curl` on Merlin 388.13 (8.17.0) doesn't have it.** Every lookup through `https://dns.quad9.net/dns-query` (and `dns11.quad9.net`) returned HTTP 505 from that router on 2026-11-15, so Quad9 can't be a watchdog's encrypted DNS there, though it works as a slot's ordinary DNS and in the router's DoT list. SAVE & DEPLOY now makes one real lookup through the server you chose and refuses to deploy when it fails, saying why. Cloudflare, AdGuard and Control D answered 200 from the same router. Stock's curl is 7.84 and hasn't been tried.
 
 #### 7.6. <a name='see-it-on-your-router'></a>See it on your router
 

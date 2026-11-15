@@ -751,6 +751,8 @@ class _ManageSlotsState extends _SlotModalState<_ManageSlots> {
         initial: params,
         desc: _slots.slots[slot]?.desc ?? '',
         routerDotServers: _slots.routerDotServers,
+        watchdogDohServers: _slots.watchdogDohServers,
+        confirmSave: () => _confirmSaveRestart(slot),
         onSave: (editable) => _saveSlotParams(slot, editable),
       ),
     );
@@ -774,18 +776,21 @@ class _ManageSlotsState extends _SlotModalState<_ManageSlots> {
     return params;
   }
 
-  /// EDIT's SAVE. A running tunnel keeps its old settings until it is restarted, which MAN-11 found
-  /// the hard way on 2026-09-19. So SAVE restarts it, and says so first (ID-203).
+  /// EDIT's SAVE, for a running tunnel: it keeps its old settings until it is restarted, which MAN-11
+  /// found the hard way on 2026-09-19. So SAVE restarts it, and says so first (ID-203). The editor
+  /// asks this before it shows that it is saving (ID-611). True for a slot that isn't running.
+  Future<bool> _confirmSaveRestart(int slot) async {
+    if (!_slots.activeSlots.contains(slot)) return true;
+    return _confirm(
+      'Save and restart ${slotLabel(slot, _slots.slots[slot]?.desc ?? '')}?',
+      message: 'Saving restarts wgc$slot. Anything using it drops for a few seconds.',
+      confirmLabel: 'SAVE',
+    );
+  }
+
+  /// EDIT's SAVE, once agreed ([_confirmSaveRestart]): the values, then the restart a running slot needs.
   Future<bool> _saveSlotParams(int slot, Map<String, String> editable) async {
     final running = _slots.activeSlots.contains(slot);
-    if (running &&
-        !await _confirm(
-          'Save and restart ${slotLabel(slot, _slots.slots[slot]?.desc ?? '')}?',
-          message: 'Saving restarts wgc$slot. Anything using it drops for a few seconds.',
-          confirmLabel: 'SAVE',
-        )) {
-      return false;
-    }
     if (!await _runSlot((svc) => svc.writeSlotParams(slot, editable))) return false;
     // Saved either way from here: a restart that fails is reported, and the editor closes.
     if (running) await _runSlot((svc) => svc.restartSlot(slot));
@@ -836,6 +841,7 @@ class _ManageSlotsState extends _SlotModalState<_ManageSlots> {
         initialPassword: _c.piaPassword,
         initialDns: _c.dns,
         routerDotServers: _slots.routerDotServers,
+        watchdogDohServers: _slots.watchdogDohServers,
       ),
     );
     if (result != null) {
@@ -908,6 +914,11 @@ class _WatchdogSlotsState extends _SlotModalState<_WatchdogSlots> {
         piaService: _spec.piaService,
         serviceFactory: _spec.watchdogServiceFactory,
         routerDotServers: _slots.routerDotServers,
+        // The other slots' only: this slot's own is on the form, and its picker says when it clashes.
+        otherWatchdogDohServers: {
+          for (final e in _slots.watchdogDohServers.entries)
+            if (e.key != slot) e.key: e.value,
+        },
         otherSlotDns: {
           for (final s in _slots.slots.values)
             if (s.index != slot && !s.isEmpty) s.index: s.dns,
@@ -1049,6 +1060,9 @@ class _PiaCredsDialog extends StatefulWidget {
   /// The router's own encrypted-DNS servers, so the DNS field can say when the two overlap (ID-005).
   final Set<String> routerDotServers;
 
+  /// Each slot's watchdog's encrypted-DNS addresses, for the DNS field's other note (ID-609).
+  final Map<int, Set<String>> watchdogDohServers;
+
   final Future<String?> Function(String user, String pass, String dns) submit;
 
   const _PiaCredsDialog({
@@ -1057,6 +1071,7 @@ class _PiaCredsDialog extends StatefulWidget {
     required this.initialPassword,
     required this.initialDns,
     this.routerDotServers = const {},
+    this.watchdogDohServers = const {},
   });
 
   @override
@@ -1137,7 +1152,11 @@ class _PiaCredsDialogState extends State<_PiaCredsDialog> {
         ),
         const SizedBox(height: 10),
         // These servers become the slot's, and stock sends an assigned device to the first one only.
-        DnsField(controller: _dnsCtrl, firstServerNote: isStockFirmware, routerDotServers: widget.routerDotServers),
+        DnsField(
+            controller: _dnsCtrl,
+            firstServerNote: isStockFirmware,
+            routerDotServers: widget.routerDotServers,
+            watchdogDohServers: widget.watchdogDohServers),
         if (_busy) ...[
           const SizedBox(height: 14),
           const LinearProgressIndicator(key: Key('pia_creds_busy'), color: kHighlight, backgroundColor: kBorder),

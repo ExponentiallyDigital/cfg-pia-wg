@@ -789,12 +789,12 @@ void main() {
     const slots = '1>pia-aus_melbourne>1\n2>>\n3>>\n4>>\n5>pia-aus_perth>1';
     const rulelist = '<1>Laptop>192.168.1.50>>WGC1<1>default (cfg-pia-wg)>192.168.1.0/24>>WGC5';
 
-    RecordingSSHClient merlinRouter({String rules = rulelist}) {
+    RecordingSSHClient merlinRouter({String rules = rulelist, String netmask = '255.255.255.0'}) {
       var file = rules;
       return RecordingSSHClient(responder: (cmd) {
         if (cmd.contains('cfg_device_list')) {
           return [
-            '', slots, file, '192.168.1.1', '255.255.255.0', _staticlist, '', _cfgDeviceList, _clJson, _cache, '',
+            '', slots, file, '192.168.1.1', netmask, _staticlist, '', _cfgDeviceList, _clJson, _cache, '',
             '0: from all lookup local', 'disabled', '',
           ].join('\n$_sep\n');
         }
@@ -810,9 +810,9 @@ void main() {
       });
     }
 
-    Future<RecordingSSHClient> connect(WidgetTester tester, {String rules = rulelist}) async {
+    Future<RecordingSSHClient> connect(WidgetTester tester, {String rules = rulelist, String netmask = '255.255.255.0'}) async {
       useMerlin();
-      return _pumpConnected(tester, router: merlinRouter(rules: rules));
+      return _pumpConnected(tester, router: merlinRouter(rules: rules, netmask: netmask));
     }
 
     Future<void> pin(WidgetTester tester, String pick) async {
@@ -845,6 +845,36 @@ void main() {
           reason: 'every other rule as it was');
       expect(ssh.commands, contains('service restart_vpnrouting0'));
       expect(ssh.commands.any((c) => c.startsWith('nvram set vpnc_dev_policy_list')), isFalse);
+    });
+
+    // ID-606: a slot deleted in the web interface leaves its rule behind. The row said "profile 7
+    // (deleted)", the app's own number for wgc3, which nobody else calls it.
+    testWidgets('a device still sent to a slot that is gone is named by the slot, never by its index', (tester) async {
+      await connect(tester, rules: '<1>Box>192.168.1.20>>WGC3<1>default (cfg-pia-wg)>192.168.1.0/24>>WGC5');
+      expect(find.textContaining('wgc3 (deleted)'), findsWidgets);
+      expect(find.textContaining('profile 7'), findsNothing);
+    });
+
+    // ID-601: the default is a rule for the LAN's network, worked out from the router's address and
+    // netmask. With either unreadable the change was skipped without a word, the log still said
+    // "Default connection set", and the read-back passed, since it checked the rules DEVICES meant to
+    // write, which had no default in them either.
+    testWidgets("a default change is refused when the LAN's network can't be worked out, and nothing is written", (tester) async {
+      final ssh = await connect(tester, rules: '<1>Laptop>192.168.1.50>>WGC1', netmask: '');
+      await tester.tap(find.byKey(const Key('default_picker')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('default_pick_5')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('device_apply')));
+      await tester.tap(find.byKey(const Key('device_apply')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apply_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining("couldn't work out your LAN's network"), findsOneWidget);
+      expect(ssh.commands.any((c) => c.startsWith('mkdir -p -m 700 /jffs/openvpn')), isFalse);
+      expect(ssh.commands, isNot(contains('service restart_vpnrouting0')));
+      expect(ssh.commands.any((c) => c.contains('default connection set')), isFalse, reason: "the router's log must not say it was");
     });
 
     testWidgets('a pin above the default slot is refused, and nothing is written', (tester) async {
@@ -970,6 +1000,9 @@ void main() {
               rules: '0:\tfrom all lookup local\n91:\tfrom 192.168.1.20 blackhole\n100:\tfrom 192.168.1.20 lookup 7'));
       expect(tester.widget<Text>(find.byKey(const Key('exit_11:22:33:44:55:66'))).data,
           startsWith('pinned to a VPN profile that no longer exists, so it has no internet'));
+      // Stock's index names no slot the user knows, so the row doesn't show it (ID-606).
+      expect(find.textContaining('deleted VPN'), findsWidgets);
+      expect(find.textContaining('profile 7'), findsNothing);
     });
 
     testWidgets('and says it is unguarded when the router holds no rule 91 for it', (tester) async {

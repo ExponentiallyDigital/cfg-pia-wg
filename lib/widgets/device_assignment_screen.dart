@@ -33,6 +33,7 @@ import '../app_colors.dart';
 import '../device_assignment.dart';
 import '../device_assignment_service.dart';
 import '../firmware.dart';
+import '../merlin_vpn_director.dart' show slotForIndex;
 import '../router_slot_service.dart';
 import '../router_session.dart' show routerConnectMessage;
 import '../session_controller.dart';
@@ -463,9 +464,12 @@ class _DeviceAssignmentScreenState extends State<DeviceAssignmentScreen> {
       return slot == null ? p.desc : slotLabel(slot, p.desc);
     }
     // No profile carries this index any more. It happens when a VPN is deleted from somewhere
-    // else while the default connection still names it. Kept SHORT: this renders inside a device
-    // row on a phone, where anything longer wraps or clips.
-    return 'profile $idx (deleted)';
+    // else while a device or the default connection still names it. Kept SHORT: this renders inside
+    // a device row on a phone, where anything longer wraps or clips. Never the index itself, which
+    // is the app's own number: on Merlin it names a slot, so the slot is said; on stock it names
+    // nothing the user has seen (ID-606, where a row read "profile 7 (deleted)" for wgc3).
+    final slot = _state!.merlin ? slotForIndex(idx) : null;
+    return slot == null ? 'deleted VPN' : 'wgc$slot (deleted)';
   }
 
   Future<void> _pick(LanDevice d) async {

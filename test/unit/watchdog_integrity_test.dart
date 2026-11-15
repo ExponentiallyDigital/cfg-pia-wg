@@ -13,6 +13,7 @@ import 'dart:io';
 
 import 'package:cfg_pia_wg/fail_closed_guard.dart' show kGuardScript;
 import 'package:cfg_pia_wg/firmware.dart';
+import 'package:cfg_pia_wg/merlin_guard.dart' show kMerlinGuardedSlotsShell;
 import 'package:cfg_pia_wg/router_log_paging.dart';
 import 'package:cfg_pia_wg/router_script_integrity.dart';
 import 'package:cfg_pia_wg/router_watchdog.dart';
@@ -234,6 +235,18 @@ void main() {
         firmware: RouterFirmware.stock);
     expect(s.split('\n').where((l) => l.startsWith('for EF in /tmp/watchdog_')), hasLength(1),
         reason: 'or the control would take nothing out, and pass for the wrong reason');
+  });
+
+  // ID-607: on Merlin the list of slots that email about the guard's faults was empty, under a
+  // comment saying only stock has a guard. Merlin has had one since build 577, so its errors were
+  // claimed by a watchdog, logged, and emailed by nobody.
+  test("on Merlin the guard's faults are emailed by each slot VPN Director sends a device to", () {
+    const cfg = WatchdogConfig(slotIndex: 1, cronIntervalMinutes: 5, primaryIp: '8.8.8.8', secondaryIp: '1.1.1.1');
+    final merlin = buildWatchdogScript(cfg, firmware: RouterFirmware.merlin);
+    expect(merlin, contains('  for FS in \$($kMerlinGuardedSlotsShell); do'));
+    expect(merlin, isNot(contains('for FS in ; do')), reason: 'an empty list emails nobody');
+    final stock = buildWatchdogScript(cfg, firmware: RouterFirmware.stock);
+    expect(stock, contains('  for FS in \$($kGuardedSlotsShell); do'), reason: 'stock reads VPN Fusion, as before');
   });
 
   group('fault mode: another script reporting through this slot (ID-484)', () {
