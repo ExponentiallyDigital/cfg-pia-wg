@@ -186,17 +186,7 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
                 // to its own controller rather than taking a fixed helper.
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _ctrls['dns']!,
-                  builder: (context, value, _) {
-                    final shared = dnsSharedWithRouter(value.text, widget.routerDotServers);
-                    final watchdogs = dnsSharedWithWatchdogs(value.text, widget.watchdogDohServers);
-                    return _text('dns', 'DNS servers',
-                        helper: [
-                          if (isStockFirmware) kDnsFirstServerNote,
-                          if (shared.isNotEmpty) '${shared.join(' and ')}: $kDnsMatchesRouterNote',
-                          for (final e in watchdogs.entries) dnsMatchesWatchdogNote(e.key, e.value),
-                        ].join('\n\n'),
-                        helperColour: shared.isEmpty && watchdogs.isEmpty ? null : kWarn);
-                  },
+                  builder: (context, value, _) => _dnsField(value.text),
                 ),
                 _text('mtu', 'MTU', keyboard: TextInputType.number),
                 _text('alive', 'Persistent keepalive (s)', keyboard: TextInputType.number),
@@ -241,6 +231,19 @@ class _SlotParamsEditorState extends State<SlotParamsEditor> {
         ),
       ),
     );
+  }
+
+  /// The DNS field with the notes that depend on what is typed in it (ID-005, ID-609).
+  Widget _dnsField(String typed) {
+    final shared = dnsSharedWithRouter(typed, widget.routerDotServers);
+    final watchdogs = dnsSharedWithWatchdogs(typed, widget.watchdogDohServers);
+    return _text('dns', 'DNS servers',
+        helper: [
+          if (isStockFirmware) kDnsFirstServerNote,
+          if (shared.isNotEmpty) '${shared.join(' and ')}: $kDnsMatchesRouterNote',
+          for (final e in watchdogs.entries) dnsMatchesWatchdogNote(e.key, e.value),
+        ].join('\n\n'),
+        helperColour: shared.isEmpty && watchdogs.isEmpty ? null : kWarn);
   }
 
   Widget _text(String key, String label,

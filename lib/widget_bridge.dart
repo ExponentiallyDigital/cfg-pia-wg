@@ -118,9 +118,11 @@ String _deletedVpnLine(List<String> names) =>
     names.isEmpty ? '' : '${names.join(', ')} offline: ${_vpnWasDeleted(names.length)}';
 
 /// The same for the compact widget's one line, which has room for one name or a count.
-String _deletedVpnCompact(List<String> names) => names.isEmpty
-    ? ''
-    : '${names.length == 1 ? names.first : '${names.length} devices'} offline · ${_vpnWasDeleted(names.length)}';
+String _deletedVpnCompact(List<String> names) {
+  if (names.isEmpty) return '';
+  final who = names.length == 1 ? names.first : '${names.length} devices';
+  return '$who offline · ${_vpnWasDeleted(names.length)}';
+}
 
 String _compactDetailText(WidgetStatus status) {
   // A device with no internet outranks a count: said whenever no tunnel is down, which has a line

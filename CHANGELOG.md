@@ -126,6 +126,22 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 
 ---
 
+2026-11-16 v0.8.213 build 583 - in progress
+
+2026-11-16 v0.8.212 build 582 - SonarCloud's two findings on the release PR fixed, for the release of build 581's fixes
+
+```play
+• Deleting a VPN on Merlin now moves its pinned devices to the Internet, as the confirmation says.
+• Changing a slot's DNS in WATCHDOG restarts the tunnel, so its devices use the new servers.
+• EDIT's spinner is no longer hidden under the keyboard.
+• ROUTER DNS ROUTING says plainly whether the router's own lookups use a tunnel.
+• The watchdog refuses encrypted DNS the router can't use.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- ID-615 MOD: SonarCloud found two new issues on release PR #80 (build 581): a method over the cognitive complexity limit in `slot_params_editor.dart` (the DNS field's builder, 17 of 15) and a nested ternary in `widget_bridge.dart`.
+  - Closed, 2026-11-16: the DNS field's notes moved to `_dnsField` and the ternary to statements; analyze clean and all 2,298 tests passing. SonarCloud's count on the PR read back after the push.
+
 2026-11-15 v0.8.211 build 581 - DELETE on Merlin moves pinned devices to the Internet, the guard's faults and state reach the watchdog's email, a slot DNS change restarts a running tunnel, and ROUTER DNS ROUTING stops implying the router's DNS goes through a slot it doesn't
 
 ```play
