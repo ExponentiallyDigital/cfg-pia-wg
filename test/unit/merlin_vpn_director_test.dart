@@ -120,6 +120,36 @@ void main() {
     });
   });
 
+  // ID-606: DELETE on Merlin left a deleted slot's devices pointed at it, held offline by the guard,
+  // after a confirmation that said they would be moved to the Internet.
+  group('a slot let go, for DELETE', () {
+    final rules = parseVpnDirectorRules('<1>tablet>192.168.1.55>>WGC3<0>phone>192.168.1.94>>WGC3<1>desktop>192.168.1.250>>WGC1'
+        '<1>range>192.168.1.128/25>>WGC3<1>site>192.168.1.60>8.8.8.8>WGC3<1>default>192.168.1.0/24>>WGC3');
+
+    test("its device rules go to WAN, on or off as they were, and the default it carried is switched off", () {
+      expect(
+        serialiseVpnDirectorRules(releaseMerlinSlot(rules, 3, _subnet)),
+        '<1>tablet>192.168.1.55>>WAN<0>phone>192.168.1.94>>WAN<1>desktop>192.168.1.250>>WGC1'
+        '<1>range>192.168.1.128/25>>WGC3<1>site>192.168.1.60>8.8.8.8>WGC3<0>default>192.168.1.0/24>>WGC3',
+      );
+    });
+
+    test("another slot's rules, and the user's own ranges and remote addresses, pass through", () {
+      final out = releaseMerlinSlot(rules, 1, _subnet);
+      expect(out[2].serialise(), '1>desktop>192.168.1.250>>WAN');
+      expect([for (final i in [0, 1, 3, 4, 5]) out[i].serialise()], [for (final i in [0, 1, 3, 4, 5]) rules[i].serialise()]);
+    });
+
+    test('with nothing sent to the slot, nothing changes', () {
+      expect(serialiseVpnDirectorRules(releaseMerlinSlot(rules, 5, _subnet)), serialiseVpnDirectorRules(rules));
+    });
+
+    test('the devices it moves are the ones with a rule switched on', () {
+      expect(devicesSentTo(rules, 3), ['192.168.1.55']);
+      expect(devicesSentTo(rules, 2), isEmpty);
+    });
+  });
+
   test("the guard script's priorities are the Dart constants", () {
     for (var slot = 1; slot <= 5; slot++) {
       expect(kMerlinGuardRulePattern, contains('${merlinGuardPriority(slot)}'));

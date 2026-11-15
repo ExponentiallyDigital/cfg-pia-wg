@@ -95,6 +95,26 @@ void main() {
       expect(result.slots[1]!.emailAlerting, isFalse);
     });
 
+    // ID-609: the app assumed Merlin had no `dnspriv_rulelist`, so on Merlin no form ever said a
+    // slot's DNS was the router's own. Read on 388.13_0, 2026-11-15: `dnspriv_enable=1` and a list in
+    // stock's form, and with wgc1 on those servers the router's DNS-over-TLS went through wgc1.
+    test("on Merlin too, reads the router's own DNS-over-TLS servers and each watchdog's encrypted DNS", () async {
+      useMerlin();
+      final c = RecordingSSHClient(
+        responder: (cmd) {
+          if (cmd == kDotServerListCommand) return '1\n---\n<1.1.1.2>853>security.cloudflare-dns.com><1.0.0.2>853>x>';
+          if (cmd == kWatchdogDohServersCommand) return '94.140.14.14\n---\n\n---\n\n---\n\n---\n1.1.1.3,1.0.0.3';
+          return '';
+        },
+      );
+      final result = await svc(c).fetchSlots();
+      expect(result.routerDotServers, {'1.1.1.2', '1.0.0.2'});
+      expect(result.watchdogDohServers, {
+        1: {'94.140.14.14'},
+        5: {'1.1.1.3', '1.0.0.3'},
+      });
+    });
+
     test('logs "unconfigured" when every slot is empty and reports success', () async {
       final logs = <String>[];
       final c = RecordingSSHClient(responder: (_) => '');
@@ -693,6 +713,80 @@ void main() {
       // Stock leaves the routing rule behind too, so it goes by hand.
       // With the priority, or it could take the fail-closed guard's rule of the same shape.
       expect(c.ran('ip rule del from 192.168.1.20 lookup 5 priority 100'), isTrue);
+    });
+
+    // ID-606, seen by Andrew on Merlin 388.13_0, 2026-11-15: the confirmation said the pinned devices
+    // "will be moved to the Internet", and on Merlin nothing moved them. Each kept its VPN Director
+    // rule for the deleted slot and the guard's prohibit, stayed offline, and DEVICES called the slot
+    // "profile 7 (deleted)".
+    group('on Merlin', () {
+      const rulesFile = '<1>tablet>192.168.1.55>>WGC3<1>desktop>192.168.1.250>>WGC1<1>default>192.168.1.0/24>>WGC3';
+      RecordingSSHClient merlin({String rules = rulesFile, String ipRules = ''}) {
+        var written = rules;
+        return RecordingSSHClient(
+          responder: (cmd) {
+            if (cmd == kDeviceSourcesCommand) {
+              return [
+                '',
+                '<AA:BB:CC:DD:EE:FF>192.168.1.55>>',
+                '<Tablet>AA:BB:CC:DD:EE:FF>0>0>>',
+                '',
+                '{"AA:BB:CC:DD:EE:FF":{"name":"android-7f3a","online":1}}',
+                '',
+                '',
+              ].join('\n$kSourceSeparator\n');
+            }
+            final write = RegExp(r"printf '%s' '(.*)' > '/jffs/openvpn/vpndirector_rulelist\.cfgtmp'").firstMatch(cmd);
+            if (write != null) written = write.group(1)!;
+            if (cmd.startsWith('cat') && cmd.contains('vpndirector_rulelist')) return written;
+            if (cmd == 'nvram get lan_ipaddr') return '192.168.1.1';
+            if (cmd == 'nvram get lan_netmask') return '255.255.255.0';
+            if (cmd == 'ip rule show') return ipRules;
+            if (cmd.endsWith("merlin-guard.sh'")) return 'guarded 1 of 1';
+            return '';
+          },
+        );
+      }
+
+      const held = '10010: from 192.168.1.55 lookup main\n11210: from 192.168.1.250 lookup wgc1\n'
+          '11409: from 192.168.1.250 prohibit';
+
+      test('devices sent to the deleted slot are moved to the Internet, and its default is switched off', () async {
+        useMerlin();
+        final logs = <String>[];
+        final c = merlin(ipRules: held);
+        await svc(c, onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).deleteSlot(3);
+
+        final write = c.commands.indexWhere((cmd) => cmd.contains("> '/jffs/openvpn/vpndirector_rulelist.cfgtmp'"));
+        expect(write, isNot(-1), reason: "VPN Director's rules are rewritten");
+        expect(c.commands[write],
+            contains('<1>tablet>192.168.1.55>>WAN<1>desktop>192.168.1.250>>WGC1<0>default>192.168.1.0/24>>WGC3'));
+        // Applied as DEVICES applies a change: the service after the file, then the guard.
+        final restart = c.commands.indexOf('service restart_vpnrouting0');
+        final guard = c.commands.lastIndexWhere((cmd) => cmd.endsWith("merlin-guard.sh'"));
+        expect(restart, greaterThan(write));
+        expect(guard, greaterThan(restart));
+        // Named, as on stock, and the default's move said too.
+        expect(logs, contains('Moving 1 device to Internet:'));
+        expect(logs, contains('  Tablet (192.168.1.55)'));
+        expect(logs.any((m) => m.contains('was the default connection')), isTrue);
+        expect(logs.any((m) => m.contains('do not match')), isFalse);
+      });
+
+      test('says so when the kernel does not hold the new rules', () async {
+        useMerlin();
+        final logs = <String>[];
+        await svc(merlin(), onLog: (m, {isError = false, isSuccess = false, isWarning = false}) => logs.add(m)).deleteSlot(3);
+        expect(logs.any((m) => m.contains('do not match yet: 192.168.1.55 has no VPN Director rule')), isTrue);
+      });
+
+      test('with nothing sent to the slot, the rules file is left alone', () async {
+        useMerlin();
+        final c = merlin(rules: '<1>desktop>192.168.1.250>>WGC1');
+        await svc(c).deleteSlot(3);
+        expect(c.commands.any((cmd) => cmd.contains('vpndirector_rulelist.cfgtmp')), isFalse);
+        expect(c.ran('service restart_vpnrouting0'), isFalse);
+      });
     });
 
     test('a device named only by the router is named in the log too, not left as an address', () async {

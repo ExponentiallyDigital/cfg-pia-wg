@@ -52,8 +52,18 @@ abstract class RouterOps {
   /// one list read once.
   Future<Future<SlotState> Function(int slot)> slotStateReader(RouterSlotService slots);
 
-  /// The router's own encrypted-DNS servers, for CREATE and EDIT's overlap note (ID-005).
-  Future<Set<String>> routerDotServers(RouterSlotService slots);
+  /// The router's own encrypted-DNS servers, for CREATE and EDIT's overlap note (ID-005):
+  /// `dnspriv_rulelist`, the same key on both firmwares; a read that fails means no note. Merlin
+  /// was taken to have no such list and returned nothing here until build 581 (ID-609): read on
+  /// 388.13_0, 2026-11-15, it holds one in stock's form, and a slot on those servers carried the
+  /// router's DNS-over-TLS with no note anywhere.
+  Future<Set<String>> routerDotServers(RouterSlotService slots) async {
+    try {
+      return parseDotServerList(await slots.read(kDotServerListCommand));
+    } catch (_) {
+      return {};
+    }
+  }
 
   /// How many tunnels the router lets run at once, or null for no cap.
   Future<int?> maxActiveSlots(RouterSlotService slots);
@@ -108,16 +118,6 @@ class StockOps extends RouterOps {
       if (desc.trim().isEmpty) desc = await slots.read('nvram get wgc${slot}_desc');
       return (desc: desc, killSwitch: false, enabled: vpnc[slot]?.active ?? false);
     };
-  }
-
-  /// `dnspriv_rulelist`; a read that fails means no note.
-  @override
-  Future<Set<String>> routerDotServers(RouterSlotService slots) async {
-    try {
-      return parseDotServerList(await slots.read(kDotServerListCommand));
-    } catch (_) {
-      return {};
-    }
   }
 
   /// `vpnc_max_conn`, as the router holds it, so a user who changed it gets what they set.
@@ -210,10 +210,6 @@ class MerlinOps extends RouterOps {
         return (desc: desc, killSwitch: killSwitch, enabled: enabled);
       };
 
-  /// Merlin has no `dnspriv_rulelist`.
-  @override
-  Future<Set<String>> routerDotServers(RouterSlotService slots) async => {};
-
   /// Merlin has no `vpnc_max_conn`, and no cap.
   @override
   Future<int?> maxActiveSlots(RouterSlotService slots) async => null;
@@ -255,9 +251,11 @@ class MerlinOps extends RouterOps {
   @override
   Future<bool> bootPersistenceReady(RouterWatchdog wd) async => true;
 
-  /// A Merlin slot is its wgcN_* keys and nothing else.
+  /// A Merlin slot is its wgcN_* keys, and whatever VPN Director still sends to it: the devices with
+  /// a rule of their own go to the Internet, and the default is switched off if this slot carried it
+  /// (ID-606).
   @override
-  Future<void> clearProfile(RouterSlotService slots, int slot) async {}
+  Future<void> clearProfile(RouterSlotService slots, int slot) => slots.releaseSlotRules(slot);
 
   @override
   Future<bool> profileLeft(RouterSlotService slots, int slot) async => false;

@@ -99,6 +99,7 @@ Optionally and for stock only, **show each tunnel's state on the home screen**, 
 - [12. Appendix: readings that were superseded](#12-appendix-readings-that-were-superseded)
   - [12.1. The two-cost model for applying an assignment](#121-the-two-cost-model-for-applying-an-assignment)
   - [12.2. Placeholder records in the policy list](#122-placeholder-records-in-the-policy-list)
+  - [12.3. The guard's rules, added at boot, stay](#123-the-guards-rules-added-at-boot-stay)
 - [13. Appendix: House style: what the app looks like](#13-appendix-house-style-what-the-app-looks-like)
   - [13.1. The palette](#131-the-palette)
   - [13.2. The type scale](#132-the-type-scale)
@@ -720,7 +721,7 @@ Enabling the 3rd client tunnel logged nothing; the 4th and the 5th each logged i
 
 **Measured 2026-10-15: it costs nothing measurable.** `scripts/runner-tunnel-speed.sh` timed wgc4 in the table and out of it in turn, three times each, a 25 MB download each time, every one confirmed by wgc4's own received-bytes counter: average 3886 KB/s in the table, 3774 out, -2%, with the two fastest runs of all out of it. So the message is noise in the log. That was the router's own download through the tunnel; a pinned device's traffic comes back to the router at the same tunnel address, so the same is expected for it - inferred, not measured.
 
-**Sending the router's own traffic through one tunnel, on stock.** Measured while building that test, and worth knowing for anything else that needs it: with the tunnel's address as the source, the router routes by its main table and the traffic leaves by the WAN (2026-10-14); bound to the tunnel device, it connects and nothing ever answers (2026-10-15); a rule for the one destination address into the tunnel's routing table - stock numbers it 10 minus the slot - works, as the watchdog's DNS probe already does it: `ip rule add to <address> iif lo lookup <10 - slot> priority 1001`, taken out after. The app's ENABLE check used the first of the three until build 498, so on stock it didn't test the tunnel at all: measured 2026-10-15, its ping left by the WAN, 3 packets out of eth0 and none out of the tunnel, and answered. It uses the third now, reading the route back first and failing rather than sending a ping that could answer another way (ID-396, `kStockTunnelPingBody` in `lib/router_slot_service.dart`). Proved on the stock test router on 2026-10-15 by `check-claims.sh quick`, 45 passed and 0 failed: ENABLE-ping answered through the tunnel, and ENABLE-broken, with the tunnel refusing the ping, failed it.
+**Sending the router's own traffic through one tunnel, on stock.** Measured while building that test, and worth knowing for anything else that needs it: with the tunnel's address as the source, the router routes by its main table and the traffic leaves by the WAN (2026-10-14); bound to the tunnel device, it connects and nothing ever answers (2026-10-15); a rule for the one destination address into the tunnel's routing table - stock numbers it 10 minus the slot - works, as the watchdog's DNS probe already does it: `ip rule add to <address> iif lo lookup <10 - slot> priority 1002`, taken out after. The app's ENABLE check used the first of the three until build 498, so on stock it didn't test the tunnel at all: measured 2026-10-15, its ping left by the WAN, 3 packets out of eth0 and none out of the tunnel, and answered. It uses the third now, reading the route back first and failing rather than sending a ping that could answer another way (ID-396, `kStockTunnelPingBody` in `lib/router_slot_service.dart`). Proved on the stock test router on 2026-10-15 by `check-claims.sh quick`, 45 passed and 0 failed: ENABLE-ping answered through the tunnel, and ENABLE-broken, with the tunnel refusing the ping, failed it.
 
 **Inferred, not measured, before that reading:** the table is full by the 4th client tunnel. A failed add means only that the accelerator doesn't know that address as the router's own, so packets to it take the CPU's path instead; WireGuard runs on the CPU anyway. Nothing seen so far depends on it. The app's only part is MAX ACTIVE VPNS letting more tunnels run than ASUS's default of two, and nothing the app writes can change the table.
 
@@ -1461,6 +1462,8 @@ The app's only routes are in its own tables, 201 to 205, one for each tunnel wit
 | 91 | `from <ip> blackhole` | the app's fail-closed guard | the same as 90, added first; alone for a device pinned to a profile that no longer exists | whatever the table can't route is dropped, so a pinned device fails closed |
 | 100 | `from <ip> lookup <table>`, or `lookup main` when pinned to Internet | the firmware, on `restart_vpnc_dev_policy` | never adds; deletes stale copies after every APPLY and after DELETE moves devices to Internet, naming priority 100 in every delete | the firmware never removes an old rule and re-adds one per record on every call, so without the sweep a moved device keeps using the tunnel it left (6.8.11) |
 | 1000 | `to <dns> iif lo lookup <table>` | the watchdog's DNS probe | adds one for the length of one lookup and removes it, one probe at a time across all slots; each run first sweeps its own slot's, left by a run that was killed | aims the probe through the tunnel it is testing (ID-078); one at a time, because two probes in the same second shared a route and one asked through the other's tunnel (ID-193) |
+| 1002 | `to <address> iif lo lookup <10 - slot>` | the app's ENABLE check on stock (`router_slot_service.dart`, ID-396) | adds one for the length of one ping and removes it | aims the ping through the tunnel being enabled, so the check tests that tunnel and not the WAN |
+| 1003 | `to <address> iif lo lookup <10 - slot>` | NETWORK's lookup on stock (`kTunnelLookupPriority`, `network_lookup.dart`) | adds one for the length of one lookup and removes it, read back with `ip route get` first | asks PIA for the tunnel's public address through that tunnel |
 | 1016-1029 | `from all to <dns> iif lo lookup <table>` | the firmware, per DNS address of each running slot | never touches | the router's own lookups ([ROUTER-DNS.md](ROUTER-DNS.md#the-router-rules)) |
 | 10000 | `from all iif br0 lookup <table>`, and `br1` | the firmware, when the default connection is a tunnel | never edits; replaced only through the default-connection sequence (6.8.8) | where unassigned devices go |
 | 32766, 32767 | `from all lookup main`, `lookup default` | kernel | never touches | the router's fallback |
@@ -1545,7 +1548,7 @@ It runs after every DEVICES APPLY, before every DISABLE, with a watchdog deploy,
 
 **The same as stock.** Disabling a device (6.9) writes the same `MULTIFILTER_*` keys and firewall rules on Merlin. Renaming writes `custom_clientlist`, as on stock; Merlin's page also leaves a reserved device's `dhcp_staticlist` name alone.
 
-**Not covered.** Devices that follow the default aren't pinned, so switching the default's slot off sends them to the internet, as on stock. A slot deleted with devices still sent to it holds them offline until they're moved, where stock moves them to the internet; the DELETE confirmation names them. A change made on Merlin's VPN Director page: `restart_vpnrouting0` runs no custom script (rc/services.c at 388.13), so the guard catches up only at the next tunnel start, boot or app action. Until then a device the page took off a tunnel keeps its `prohibit` and stays offline, and one it added has Merlin's kill switch but no hold for its slot switched off (2026-11-14: `11409` for a device whose rule the page had switched off, still there until the guard ran). README 5.4.1 says to make device changes in DEVICES, as it does on stock for another reason (ID-586).
+**Not covered.** Devices that follow the default aren't pinned, so switching the default's slot off sends them to the internet, as on stock. DELETE moves each device sent to the slot to the Internet, as it does on stock: its rule goes to WAN and the whole-network rule is switched off if the slot carried the default, then `restart_vpnrouting0` and the guard run, and the kernel's rules are read back (ID-606; until build 581 nothing was moved, so each device kept its rule and the guard's `prohibit` and stayed offline behind a slot that was gone, against the confirmation's promise). A slot deleted in the web interface leaves its devices pointed at it, held offline by the guard; DEVICES names each "wgc3 (deleted)", and the widget names them as held offline. A change made on Merlin's VPN Director page: `restart_vpnrouting0` runs no custom script (rc/services.c at 388.13), so the guard catches up only at the next tunnel start, boot or app action. Until then a device the page took off a tunnel keeps its `prohibit` and stays offline, and one it added has Merlin's kill switch but no hold for its slot switched off (2026-11-14: `11409` for a device whose rule the page had switched off, still there until the guard ran). README 5.4.1 says to make device changes in DEVICES, as it does on stock for another reason (ID-586).
 
 ## 7. <a name='watchdog-details'></a>Watchdog details
 
@@ -2185,6 +2188,16 @@ A freshly rebuilt router that had never had a `wgc` slot configured was found on
 
 The rule the app depends on survived both readings unchanged, which is why nothing downstream had to move: index `0` says unassigned-from-a-VPN whichever story is true, so the app reads the index and never mere presence in the list. What did change is the expectation of the empty case. An untouched router has **no records at all**, so the screen has to render "every device is on the default connection" from an empty string rather than from a list of zeros.
 
+### 12.3. <a name='the-guards-rules-added-at-boot-stay'></a>The guard's rules, added at boot, stay
+
+Retracted in [Device assignment on Merlin](#device-assignment-on-merlin), "The WAN coming up clears every rule".
+
+The belief, from one boot's syslog on Merlin 388.13_0, 2026-11-14: rules the guard adds from `services-start` are in place before the WAN is up, and stay, so one line in that hook holds a pinned device from boot.
+
+**What killed it, the same day.** They were in place for about nine seconds. A recorder sampling `ip rule show` every 5 s through a reboot found the guard's rules there 21 s after boot and gone at 31 s: `wan_up()` reaches `add_multi_routes()` (rc/wan.c), which runs `ip rule flush` after `services-start` has run, and Merlin puts back only its own rules. `check-claims.sh` KS-wgc1-stopped and KS-wgc1-disabled failed after the reboot. Merlin's source, read after the measurement, agreed.
+
+A syslog shows what ran and in what order, not what was still true ten seconds later. The guard now puts its rules back as each tunnel starts and keeps a watch running after boot (ID-582), and `check-claims.sh` GUARD-merlin-start and TESTING's MRL-16 hold it to that.
+
 ---
 
 ## 13. <a name='house-style'></a>Appendix: House style: what the app looks like
@@ -2410,7 +2423,7 @@ The App Store has no tracks. Every version goes through App Review, so each of P
 | --- | --- |
 | internal | TestFlight's Internal group, which gets every build on the tag |
 | alpha / beta | TestFlight's external group Family and friends: the build is added and sent to Beta App Review |
-| `** PRODUCTION **` | the version goes to App Review with the build; once approved, it's released, by Apple or by running production again, as the version's release option says |
+| `** PRODUCTION **` | the version goes to App Review with the build; once approved, it's released, by Apple or by running production again, as the version's release option says. This app's versions are set to release automatically (Andrew, 2026-11-15), so approval is the release and a second run only reports the state |
 
 Each App Store step is safe to run again: what is already done is reported, and a version carrying a different build stops the run. A dry run shows both stores' next steps and changes nothing.
 

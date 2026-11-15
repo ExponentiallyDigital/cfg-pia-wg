@@ -34,8 +34,10 @@
 //    tunnel's own endpoint.
 
 import 'firmware.dart' show kRouterAppDir, kServicesStartPath;
-import 'merlin_vpn_director.dart' show kMerlinRouterExemptPriority, kVpnDirectorRulelistPath, merlinGuardPriority;
+import 'merlin_vpn_director.dart'
+    show VpnDirectorRule, kMerlinRouterExemptPriority, kVpnDirectorRulelistPath, merlinGuardPriority, serialiseVpnDirectorRules;
 import 'router_script_integrity.dart' show writeRouterFile;
+import 'router_watchdog.dart' show shellSingleQuote;
 
 const String kMerlinGuardScriptPath = '$kRouterAppDir/merlin-guard.sh';
 
@@ -52,6 +54,15 @@ const String kMerlinGuardBootLine = "[ -x '$kMerlinGuardScriptPath' ] && '$kMerl
 
 /// The app's line in `wgclient-start`: the rules put back, and the starting tunnel's table tidied.
 const String kMerlinGuardStartLine = "[ -x '$kMerlinGuardScriptPath' ] && '$kMerlinGuardScriptPath' table \"\$1\" $kMerlinGuardHookTag";
+
+/// Shell printing each slot VPN Director sends a device to by a rule of its own that is switched
+/// on, once: the slots the script holds devices to, and so the ones whose watchdogs email about its
+/// faults (ID-607). The same reading of the rules file as the script's `wanted`: a record is
+/// enable>description>local>remote>interface. The echo gives the last record, which the file doesn't
+/// end with a newline, a line of its own. Stock's counterpart is `kGuardedSlotsShell`.
+const String kMerlinGuardedSlotsShell = "F='$kVpnDirectorRulelistPath'; [ -f \"\$F\" ] && "
+    "{ tr '<' '\\n' < \"\$F\"; echo; } | awk -F'>' "
+    r"""'$1 == "1" && $3 != "" && $3 !~ /\// && $4 == "" && $5 ~ /^WGC[1-5]$/ { s = substr($5, 4); if (!(s in seen)) { seen[s] = 1; print s } }'""";
 
 /// The script. The priorities in it are [kMerlinRouterExemptPriority] and [merlinGuardPriority]'s,
 /// written out so the shell reads plainly; merlin_guard_test.dart holds them to the Dart constants.
@@ -70,7 +81,30 @@ const String kMerlinGuardScript = '#!/bin/sh\n'
     '#   clear          takes out every rule this script adds (UNINSTALL).\n'
     '# The app keeps it as its version has it.\n'
     "F='$kVpnDirectorRulelistPath'\n"
-    r'''OURS='^(9990|11409|11609|11809|12009|12209):'
+    '\n'
+    '# The slots VPN Director sends a device to by a rule of its own, each once: the slots whose\n'
+    "# devices this script holds, whose watchdogs email about its faults (ID-607).\n"
+    'guarded_slots() { $kMerlinGuardedSlotsShell; }\n'
+    r'''
+# Whole, or say so, before anything else (ID-607): this part runs even when the rest of the file is
+# missing. The watchdog of each slot with a device of its own emails about it, by its own settings,
+# as guard.sh does on stock (ID-484).
+if [ "$(tail -n 1 "$0" 2>/dev/null)" != "# end of merlin-guard.sh" ]; then
+  GMSG="merlin-guard.sh is damaged ($(wc -c < "$0" 2>/dev/null | tr -d ' ') bytes, and its last line is missing), so the app's rules beside VPN Director are not being kept. Open the app to replace it, or update it in ABOUT."
+  logger -t cfg-pia-wg "ERROR: $GMSG"
+  for S in $(guarded_slots); do
+    W="${GUARD_APPDIR:-/jffs/cfg-pia-wg}/watchdog_wgc$S.sh"
+    [ -x "$W" ] && "$W" fault "$GMSG" </dev/null >/dev/null 2>&1
+  done
+  exit 1
+fi
+# Every error this run writes is kept, and the next watchdog run reports it, as it does guard.sh's
+# on stock (ID-485). An empty file is removed on the way out.
+GERR="${GUARD_ERR:-/tmp/cfg-pia-wg-guard.err}.$$"
+exec 2>>"$GERR"
+trap '[ -s "$GERR" ] || rm -f "$GERR"' EXIT
+
+OURS='^(9990|11409|11609|11809|12009|12209):'
 
 # The rules wanted, one "priority from action" per line. The echo gives the last record, which the
 # file doesn't end with a newline, a line of its own.
@@ -93,20 +127,24 @@ held() {
 }
 
 # Adds what's wanted before taking out what isn't, so a device moved between slots is never
-# without one. Says how many of the devices it should hold it does.
+# without one. Says how many of the devices it should hold it does. `ip`'s own complaints are
+# dropped: two runs at once, the boot watch and a tunnel start, both add a missing rule, and the
+# second is told it exists. What counts is read back from the kernel, and a shortfall there is the
+# error kept for the watchdog (ID-607).
 rules() {
   W="$(wanted)"; H="$(held)"
   echo "$W" | while read -r P S A; do
     [ -n "$P" ] || continue
-    echo "$H" | grep -qxF "$P $S $A" || ip rule add from "$S" priority "$P" $A
+    echo "$H" | grep -qxF "$P $S $A" || ip rule add from "$S" priority "$P" $A 2>/dev/null
   done
   echo "$H" | while read -r P S A; do
     [ -n "$P" ] || continue
-    echo "$W" | grep -qxF "$P $S $A" || ip rule del from "$S" priority "$P" $A
+    echo "$W" | grep -qxF "$P $S $A" || ip rule del from "$S" priority "$P" $A 2>/dev/null
   done
   H="$(held)"
   T="$(echo "$W" | grep -c ' prohibit$')"
   G="$(printf '%s\n--\n%s\n' "$H" "$W" | awk '/^--$/ { w = 1; next } !w { h[$0] = 1; next } / prohibit$/ && h[$0] { c++ } END { print c + 0 }')"
+  [ "$G" -lt "$T" ] && echo "merlin-guard.sh holds $G of $T devices to their tunnel: the router refused a rule" >&2
   echo "guarded $G of $T"
 }
 
@@ -163,7 +201,27 @@ case "${1:-}" in
     for I in 1 2 3 4 5; do ip link show "wgc$I" >/dev/null 2>&1 && tidy "$I"; done ;;
 esac
 exit 0
+# end of merlin-guard.sh
 ''';
+
+/// VPN Director's rules file, byte for byte as the web page writes it: no trailing newline, which
+/// would end up in the last rule's interface name. Written beside the live file, renamed over it,
+/// and read back. [read] never throws and [run] throws on a non-zero exit. DEVICES' APPLY and
+/// DELETE both write it this way.
+Future<void> writeVpnDirectorRules(
+  List<VpnDirectorRule> rules, {
+  required Future<String> Function(String cmd) read,
+  required Future<String> Function(String cmd) run,
+}) async {
+  const path = kVpnDirectorRulelistPath;
+  final body = serialiseVpnDirectorRules(rules);
+  await run("mkdir -p -m 700 /jffs/openvpn && printf '%s' ${shellSingleQuote(body)} > '$path.cfgtmp' && "
+      "chmod 660 '$path.cfgtmp' && mv '$path.cfgtmp' '$path'");
+  if ((await read("cat '$path' 2>/dev/null")).trim() != body) {
+    throw Exception("VPN Director's rules file didn't read back as written. Check VPN > VPN Director in the router's "
+        'web interface before trying again.');
+  }
+}
 
 typedef MerlinGuardLog = void Function(String message, {bool isError, bool isSuccess, bool isWarning});
 

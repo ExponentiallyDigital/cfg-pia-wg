@@ -76,10 +76,18 @@ class WidgetStatus {
   const WidgetStatus({
     required this.tunnels,
     this.guardedOfflineDeviceNames = const [],
+    this.deletedVpnDeviceNames = const [],
     required this.checkedAt,
   });
 
   final List<WidgetTunnelInfo> tunnels;
+
+  /// Names of devices pinned to a VPN that no longer exists: deleted in the web interface, which
+  /// leaves the pin behind. On both firmwares the guard gives such a device no internet (stock's
+  /// rule 91, Merlin's `prohibit`), and no tunnel row can name it, so it has a line of its own
+  /// (ID-606). Until build 581 it was left out, and the widget said nothing about a device that
+  /// was offline.
+  final List<String> deletedVpnDeviceNames;
 
   /// Names of devices pinned to a tunnel that is not answering - the guard is holding them
   /// offline rather than letting them follow the default connection. Reused for the amber row's
@@ -116,7 +124,8 @@ WidgetStatus buildWidgetStatus({
 }) {
   final profiles = parseVpncClientlist(vpncClientlist);
   final ages = parseHandshakeAges(handshakeAgesRaw);
-  final pinnedBySlot = _pinnedBySlot(profiles, parseDevicePolicyList(devicePolicyList), devices);
+  final policies = parseDevicePolicyList(devicePolicyList);
+  final pinnedBySlot = _pinnedBySlot(profiles, policies, devices);
 
   final tunnels = [
     for (final p in profiles)
@@ -136,7 +145,28 @@ WidgetStatus buildWidgetStatus({
       if (!t.answering) ...t.pinnedDeviceNames,
   ];
 
-  return WidgetStatus(tunnels: tunnels, guardedOfflineDeviceNames: offline, checkedAt: checkedAt);
+  return WidgetStatus(
+    tunnels: tunnels,
+    guardedOfflineDeviceNames: offline,
+    deletedVpnDeviceNames: _pinnedToDeletedVpn(profiles, policies, devices),
+    checkedAt: checkedAt,
+  );
+}
+
+/// The devices pinned to an index no profile carries, of any protocol: its VPN was deleted. A pin
+/// to the internet is index 0 and one to an OpenVPN profile names a profile that exists, so neither
+/// counts, which is the guard's own reading of an orphan (fail_closed_guard.dart).
+List<String> _pinnedToDeletedVpn(List<VpncRecord> profiles, List<DevicePolicy> policies, List<LanDevice> devices) {
+  final known = {
+    for (final p in profiles)
+      if (p.vpncStateIndex != null) p.vpncStateIndex!,
+  };
+  final nameByIp = {for (final d in devices) if ((d.ip ?? '').isNotEmpty) d.ip!: d.displayName};
+  return [
+    for (final policy in policies)
+      if (policy.isAssigned && (policy.vpncIndex ?? 0) != 0 && !known.contains(policy.vpncIndex))
+        nameByIp[policy.ip] ?? policy.ip,
+  ];
 }
 
 /// The devices pinned to each slot, by the names DEVICES shows.

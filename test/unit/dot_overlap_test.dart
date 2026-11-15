@@ -56,4 +56,43 @@ void main() {
       expect(dnsSharedWithRouter('9.9.9.9, 149.112.112.112', const {}), isEmpty);
     });
   });
+
+  // ID-609, measured on Merlin 388.13_0, 2026-11-15: with wgc1's DNS set to 1.1.1.2, wgc5's
+  // watchdog's encrypted lookups to 1.1.1.2 went through wgc1. Both firmwares route the router's own
+  // traffic to a slot's DNS servers into a slot, so a watchdog whose DoH address is one of them
+  // depends on that slot, and the DNS field said nothing.
+  group("a slot's DNS that is also a watchdog's encrypted DNS", () {
+    const doh = {
+      1: {'94.140.14.14'},
+      5: {'1.1.1.2', '1.0.0.2'},
+    };
+
+    test('each watchdog address is read from its own line, one per slot', () {
+      expect(parseWatchdogDohServers('94.140.14.14\n---\n\n---\n\n---\n\n---\n1.1.1.2,1.0.0.2'), doh);
+      expect(parseWatchdogDohServers(''), isEmpty);
+      expect(parseWatchdogDohServers('\n---\n\n---\n\n---\n\n---\n'), isEmpty);
+    });
+
+    test('names each shared address with the slots whose watchdog uses it', () {
+      expect(dnsSharedWithWatchdogs('1.1.1.2, 9.9.9.9', doh), {
+        '1.1.1.2': [5]
+      });
+      expect(dnsSharedWithWatchdogs('1.1.1.2, 1.0.0.2', {...doh, 2: {'1.1.1.2'}}), {
+        '1.1.1.2': [2, 5],
+        '1.0.0.2': [5],
+      });
+    });
+
+    test('different addresses, or no watchdogs, share nothing', () {
+      expect(dnsSharedWithWatchdogs('9.9.9.9, 149.112.112.112', doh), isEmpty);
+      expect(dnsSharedWithWatchdogs('1.1.1.2', const {}), isEmpty);
+    });
+
+    test('the note says whose watchdog, and what it costs', () {
+      expect(dnsMatchesWatchdogNote('1.1.1.2', [5]),
+          "1.1.1.2: wgc5's watchdog uses this address for its own encrypted DNS. While this slot is running, those "
+          'lookups travel through it - and stop if it stops answering.');
+      expect(dnsMatchesWatchdogNote('1.1.1.2', [2, 5]), startsWith("1.1.1.2: wgc2's and wgc5's watchdogs use this address for their"));
+    });
+  });
 }

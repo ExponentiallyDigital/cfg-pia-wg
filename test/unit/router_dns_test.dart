@@ -162,9 +162,20 @@ void main() {
       final shared = _flowAfter(kRoutingFixtureBlocks(), "THE SLOTS' DNS SERVERS").single;
       expect(shared.head, '9.9.9.9, 149.112.112.112');
       expect(shared.where.label, 'shared by 4');
-      expect(shared.note, contains('Rules 1016 and 1017'));
-      expect(shared.note, contains('through wgc5:pia-aus_melbourne'));
       expect(shared.note.toLowerCase(), isNot(contains('harmless')));
+      // ID-610: the router's own DNS is elsewhere here, so no sentence says its lookups use a tunnel for
+      // these. It read that way whenever a route existed, and Andrew took it for DNS going to New Zealand.
+      expect(shared.note, contains("The router's own lookups don't use these servers: they go to 1.1.1.2"));
+      expect(shared.note, contains("Each watchdog's test lookup goes through its own slot."));
+      expect(shared.note, isNot(contains('Rules 1016')));
+    });
+
+    test("when the router's own DNS is one of them, the rules and the slot are named", () {
+      final shared = kRoutingFixture.replaceAll('<1.1.1.2>853', '<9.9.9.9>853');
+      final line = _flowAfter(kRoutingFixtureBlocks(shared), "THE SLOTS' DNS SERVERS").single;
+      expect(line.note, contains('Rules 1016 and 1017'));
+      expect(line.note, contains('through wgc5:pia-aus_melbourne'));
+      expect(line.note, isNot(contains("don't use these servers")));
     });
 
     test("a router DNS server a slot also uses goes through that slot's tunnel, and the answer says so", () {

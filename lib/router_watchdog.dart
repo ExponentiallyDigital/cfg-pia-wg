@@ -727,7 +727,52 @@ else
   KILLSW_UP="OFF - the kill switch is available but is not enabled"
   KILLSW_FIXED="$KILLSW_UP"
   KILLSW_DOWN="$KILLSW_UP"
+fi
+# The app's guard, after Merlin's own setting (ID-608). Merlin's kill switch goes when a slot is
+# switched off; what keeps a device VPN Director sends here by a rule of its own offline then is the
+# guard's prohibit, at the top of this slot's range (merlin-guard.sh). Counted from the rules the
+# router actually holds, as stock's line is (ID-320), and the devices named as DEVICES names them
+# (ID-242). A record is enable>description>local>remote>interface; the echo gives the last one,
+# which the file doesn't end with a newline, a line of its own.
+VDF='/jffs/openvpn/vpndirector_rulelist'
+PINIPS=""
+[ -f "$VDF" ] && PINIPS="$({ tr '<' '\n' < "$VDF"; echo; } | awk -F'>' -v i="WGC$SLOT" '$1 == "1" && $3 != "" && $3 !~ /\// && $4 == "" && $5 == i && !($3 in s) { s[$3] = 1; print $3 }')"
+PINNED=0
+GUARDED=0
+GRULES="$(ip rule show)"
+for GIP in $PINIPS; do
+  PINNED=$((PINNED + 1))
+  echo "$GRULES" | grep -qE "^$((11209 + 200 * SLOT)):[[:space:]]*from $GIP prohibit" && GUARDED=$((GUARDED + 1))
+done
+pinned_names() {
+  SL="$(nvram get dhcp_staticlist | tr '<' '\n')"
+  CL="$(nvram get custom_clientlist | tr '<' '\n')"
+  for IP in $PINIPS; do
+    MAC="$(echo "$SL" | awk -F'>' -v a="$IP" '$2==a && !f {print toupper($1); f=1}')"
+    D=""
+    [ -n "$MAC" ] && D="$(echo "$CL" | awk -F'>' -v m="$MAC" 'toupper($2)==m && $1!="" && !f {print $1; f=1}')"
+    [ -z "$D" ] && [ -n "$MAC" ] && [ -r /jffs/nmp_cl_json.js ] && D="$("$JQ" -r --arg m "$MAC" 'to_entries[] | select((.key|ascii_upcase)==$m) | .value.name // empty' 2>/dev/null < /jffs/nmp_cl_json.js | head -1)"
+    printf '%s, ' "${D:-$IP}"
+  done | sed 's/, $//'
+}
+if [ "$PINNED" != "0" ]; then
+  DEVS="devices"
+  [ "$PINNED" = "1" ] && DEVS="device"
+  NAMES="$(pinned_names)"
+  if [ "$GUARDED" -ge "$PINNED" ]; then
+    KILLSW_UP="$KILLSW_UP. The app's guard also holds $NAMES to this tunnel: no internet if it breaks or is switched off, until it is back"
+    KILLSW_FIXED="$KILLSW_FIXED. The app's guard kept $NAMES pinned to this tunnel, and off the internet while it was down"
+    KILLSW_DOWN="$KILLSW_DOWN. The app's guard is keeping $NAMES pinned to this tunnel, and off the internet until it is back"
+  else
+    GNOTE="The app's guard is not fully in place: it covers $GUARDED of the $PINNED $DEVS pinned to this tunnel ($NAMES), so the others can reach the internet another way while it is switched off. Opening DEVICES in the app and applying any change puts it back"
+    KILLSW_UP="$KILLSW_UP. $GNOTE"
+    KILLSW_FIXED="$KILLSW_FIXED. $GNOTE"
+    KILLSW_DOWN="$KILLSW_DOWN. $GNOTE"
+  fi
 fi''';
+
+/// The Merlin script's kill switch block, for the test that runs it in a shell (ID-608).
+const String kKillSwitchMerlinShell = _kKillSwitchMerlin;
 
 const String _kMailCmdMerlin = r'''  /usr/sbin/sendmail \
     -H "exec openssl s_client -quiet -tls1_3 -CAfile /etc/ssl/certs/ca-certificates.crt \
@@ -838,6 +883,31 @@ END {
   return (url: url.trim(), host: host, addresses: addresses);
 }
 
+/// One real lookup through [doh], for SAVE & DEPLOY to try before anything is written (ID-612): a
+/// DNS query for example.com posted as the script's `doh_a` posts its own, printing the HTTP status.
+/// The query goes in a file, and the firmware's record of the command is emptied, as there.
+String dohCheckCommand(({String url, String host, String addresses}) doh) =>
+    r'''Q="/tmp/cfg_pia_wg_doh_q.$$"; printf '\000\000\001\000\000\001\000\000\000\000\000\000\007example\003com\000\000\001\000\001' > "$Q"; '''
+    "curl -s --max-time 15 --connect-timeout 8 --tlsv1.2 -o /dev/null -w '%{http_code}' "
+    "-H 'content-type: application/dns-message' -H 'accept: application/dns-message' "
+    '--data-binary @"\$Q" --resolve ${shellSingleQuote('${doh.host}:443:${doh.addresses}')} ${shellSingleQuote(doh.url)}; '
+    'rm -f "\$Q"; [ -f /jffs/curllst ] && : > /jffs/curllst';
+
+/// What [dohCheckCommand]'s answer [code] means for the server [desc], as a sentence for the form, or
+/// null when the router can use it. 505 is Quad9's answer to a curl without HTTP/2, which is the
+/// router's on Merlin 388.13 (8.17.0), measured 2026-11-15.
+String? dohCheckProblem(String desc, String code) {
+  final c = code.trim();
+  if (c == '200') return null;
+  final why = switch (c) {
+    '505' => "it answers only over HTTP/2, which the router's curl doesn't have",
+    '' || '000' => 'it did not answer the router',
+    _ => 'it answered HTTP $c',
+  };
+  return "The router can't use $desc for the watchdog's encrypted DNS: $why. With it set, every lookup the "
+      "watchdog makes would fall back to the router's own DNS. Choose another server. Nothing on the router was changed.";
+}
+
 /// What the script logs once per run, so a reader can see which way lookups went.
 String dohDescription(String url, String ip) {
   if (checkDohPair(url, ip).isNotEmpty) return '';
@@ -916,8 +986,10 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
   return _kWatchdogScriptTemplate
       // The last line it checks itself for (ID-484). First, before __SLOT__ is filled in everywhere.
       .replaceAll('__ENDLINE__', scriptEndLine('watchdog_wgc${c.slotIndex}.sh'))
-      // Only stock has the guard and a boot script, so only stock has slots to email about them.
-      .replaceAll(r'$(__GUARDEDSLOTS__)', stock ? '\$($kGuardedSlotsShell)' : '')
+      // The slots whose devices the guard holds, which email about its faults: by VPN Fusion's list on
+      // stock, by VPN Director's rules on Merlin. Merlin's was empty until build 581, from before it
+      // had a guard, so its guard's errors were logged and emailed by nobody (ID-607).
+      .replaceAll(r'$(__GUARDEDSLOTS__)', '\$(${stock ? kGuardedSlotsShell : kMerlinGuardedSlotsShell})')
       .replaceAll('__APPDIR__', kRouterAppDir)
       .replaceAll('__SLOT__', '${c.slotIndex}')
       .replaceAll('__JQ__', jqCommand(fw))
@@ -1331,6 +1403,27 @@ class RouterWatchdog {
     await _run('nvram commit');
   }
 
+  /// Why the router can't use [config]'s encrypted DNS, from one real lookup through it, or null
+  /// when it can or none is set (ID-612). The form asks before SAVE & DEPLOY writes anything: a
+  /// server the router can't reach, or can't speak to, used to be saved and to fail on every run.
+  Future<String?> dohProblem(WatchdogConfig config) async {
+    final doh = dohEndpoint(config.dohUrl, config.dohIp);
+    if (doh == null) return null;
+    return dohCheckProblem(dohDescription(config.dohUrl, config.dohIp), await _read(dohCheckCommand(doh)));
+  }
+
+  /// Whether saving [newDns] as [slot]'s DNS servers means restarting it (ID-609): the slot is
+  /// running, and the servers differ from the ones it has. Both firmwares build a slot's DNS redirect
+  /// only as the slot starts, so a running tunnel left alone keeps sending its devices to the old
+  /// servers while `wgcN_dns` names the new ones (seen on Merlin 388.13_0, 2026-11-15). An empty
+  /// field changes nothing, and a stopped slot reads its servers when it starts. The form asks this
+  /// before SAVE & DEPLOY, to say the tunnel restarts; the deploy asks it again.
+  Future<bool> dnsChangeRestartsSlot(int slot, String newDns) async {
+    if (newDns.trim().isEmpty) return false;
+    if (!(await _read(kUpInterfacesCommand)).contains('wgc$slot')) return false;
+    return normaliseAddressList(newDns) != normaliseAddressList(await _read('nvram get wgc${slot}_dns'));
+  }
+
   // The single CREATE/EDIT path: persist the watchdog params, enable the VPN slot, then deploy
   // every runtime artifact (script, both cron jobs, services-start persistence) and run the script
   // once so the watchdog is live immediately rather than at its next scheduled interval.
@@ -1365,7 +1458,10 @@ class RouterWatchdog {
         final slot = config.slotIndex;
         final regionChanged = desc != null && desc.isNotEmpty && slotDescFor(desc) != await _read('nvram get wgc${slot}_desc');
         final up = (await _read(kUpInterfacesCommand)).contains('wgc$slot');
-        // Taken before anything is written, and after the two reads above, which need the slot as
+        // A running slot that keeps its region but changes its DNS servers is restarted, or its
+        // devices go on being sent to the old ones (ID-609). A rebuild starts the slot anyway.
+        final dnsRestart = !regionChanged && await dnsChangeRestartsSlot(slot, config.slotDns);
+        // Taken before anything is written, and after the reads above, which need the slot as
         // it is now.
         final before = await _snapshotSlot(slot);
         // The watchdog's own settings, for a save that fails before its schedule is written. They
@@ -1383,7 +1479,7 @@ class RouterWatchdog {
         };
         final progress = _DeployProgress();
         try {
-          await _deploySteps(config, desc, progress, regionChanged: regionChanged, up: up);
+          await _deploySteps(config, desc, progress, regionChanged: regionChanged, up: up, dnsRestart: dnsRestart);
         } catch (e) {
           throw await _undoFailedDeploy(config, e, progress, before: before, settingsBefore: settingsBefore, loginBefore: loginBefore);
         }
@@ -1392,11 +1488,12 @@ class RouterWatchdog {
 
   /// SAVE & DEPLOY's steps, [progress] recording how far they got for [_undoFailedDeploy].
   Future<void> _deploySteps(WatchdogConfig config, String? desc, _DeployProgress progress,
-      {required bool regionChanged, required bool up}) async {
+      {required bool regionChanged, required bool up, bool dnsRestart = false}) async {
     final slot = config.slotIndex;
     if (regionChanged) await _clearForRebuild(slot, running: up, region: desc!);
     await _writeWatchdogNvram(config, desc: desc);
-    await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged);
+    await enableVpnSlot(slot, alreadyUp: !regionChanged && up, rebuilding: regionChanged, restarting: dnsRestart);
+    if (dnsRestart) await _restartForNewDns(slot);
     await _writeScript(config.slotIndex, buildWatchdogScript(config));
     // On Merlin, the app's guard tidies each tunnel's table as it starts, so the name check asks
     // through this tunnel and not another one's copied route (ID-572).
@@ -1420,6 +1517,16 @@ class RouterWatchdog {
     final runLog = await _read('tail -n +${linesBefore + 1} $logFile 2>/dev/null');
     progress.emailProblem = deployEmailFailure(runLog) ?? '';
     progress.didNothing = deployDidNothing(runLog);
+  }
+
+  /// Restarts [slot] so the DNS servers just written reach its devices (ID-609), the way EDIT's SAVE
+  /// restarts a slot and with its checks: the interface back, on the same peer, with a handshake.
+  Future<void> _restartForNewDns(int slot) async {
+    final label = await _label(slot);
+    onLog?.call('$label has new DNS servers; restarting it so its devices use them.');
+    await _logRouter('$label DNS servers changed; restarting it so its devices use them');
+    await RouterSlotService(client, onLog: onLog, verifyPollInterval: verifyPollInterval, verifyMaxAttempts: verifyMaxAttempts)
+        .restartSlot(slot);
   }
 
   /// A failed SAVE & DEPLOY, put back as far as it can be, and the error saying what failed and what was
@@ -1611,7 +1718,10 @@ class RouterWatchdog {
   // [rebuilding] is a slot `_clearForRebuild` has just emptied. It takes the full enable - the same
   // sequence the empty-slot shortcut has always used, VPN Fusion's setup on stock included - but
   // does not wait for an interface: there are no keys to bring one up until the deploy run writes them.
-  Future<void> enableVpnSlot(int slot, {bool alreadyUp = false, bool rebuilding = false}) =>
+  //
+  // [restarting] is an [alreadyUp] slot the deploy restarts next, for new DNS servers (ID-609): the
+  // flags are written the same way, and it isn't said to have been left running.
+  Future<void> enableVpnSlot(int slot, {bool alreadyUp = false, bool rebuilding = false, bool restarting = false}) =>
       _guard('enable VPN slot', () async {
         final slots = RouterSlotService(client, onLog: onLog);
         await _run('nvram set wgc${slot}_enable=1');
@@ -1619,6 +1729,7 @@ class RouterWatchdog {
         // row has to exist before the service call, since vpnc_unit is that row's index.
         await slots.writeVpncProfile(slot, desc: await _descFor(slot), active: true);
         await _run('nvram commit');
+        if (alreadyUp && restarting) return;
         if (alreadyUp) {
           await _logRouter('${await _label(slot)} is already up; its tunnel was left running');
           onLog?.call('${await _label(slot)} is already up, so its tunnel was left running.', isSuccess: true);

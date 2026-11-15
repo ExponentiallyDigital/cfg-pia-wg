@@ -20,7 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SelectedContent;
 
 import '../app_colors.dart';
-import '../router_slot_service.dart' show dnsSharedWithRouter;
+import '../router_slot_service.dart' show dnsMatchesWatchdogNote, dnsSharedWithRouter, dnsSharedWithWatchdogs;
 import '../session_controller.dart';
 import 'slot_text.dart';
 
@@ -109,11 +109,16 @@ class DnsField extends StatelessWidget {
   /// config goes to another client entirely, so none of this applies there.
   final Set<String> routerDotServers;
 
+  /// Each slot's watchdog's encrypted-DNS addresses, from `RouterSlots.watchdogDohServers`
+  /// (ID-609): an address here that one of them uses gets a note of its own.
+  final Map<int, Set<String>> watchdogDohServers;
+
   const DnsField({
     super.key,
     required this.controller,
     this.firstServerNote = false,
     this.routerDotServers = const {},
+    this.watchdogDohServers = const {},
   });
 
   @override
@@ -121,10 +126,11 @@ class DnsField extends StatelessWidget {
         // Rebuilt as the field is typed into, so the note appears on the address that caused it
         // rather than after a save.
         valueListenable: controller,
-        builder: (context, value, _) => _field(dnsSharedWithRouter(value.text, routerDotServers)),
+        builder: (context, value, _) => _field(
+            dnsSharedWithRouter(value.text, routerDotServers), dnsSharedWithWatchdogs(value.text, watchdogDohServers)),
       );
 
-  Widget _field(Set<String> shared) => TextFormField(
+  Widget _field(Set<String> shared, Map<String, List<int>> watchdogs) => TextFormField(
         enableIMEPersonalizedLearning: false,
         controller: controller,
         style: const TextStyle(color: kText, fontFamily: 'monospace', fontSize: 13),
@@ -132,12 +138,13 @@ class DnsField extends StatelessWidget {
           labelText: 'DNS servers',
           hintText: kDefaultDns,
           prefixIcon: const Icon(Icons.dns_outlined, color: kMuted, size: 18),
-          helperText: firstServerNote ? null : _kDnsExamples,
+          helperText: firstServerNote || shared.isNotEmpty || watchdogs.isNotEmpty ? null : _kDnsExamples,
           helperStyle: const TextStyle(color: kHighlight, fontSize: 11),
           helperMaxLines: 6,
           // The notes in grey under the teal examples, so they read as a suggestion and then a
-          // caution. The overlap note is amber: it is the one that can cost the whole house its DNS.
-          helper: firstServerNote || shared.isNotEmpty
+          // caution. The overlap notes are amber: the first can cost the whole house its DNS, the
+          // second a watchdog its way to rebuild a tunnel.
+          helper: firstServerNote || shared.isNotEmpty || watchdogs.isNotEmpty
               ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const Text(_kDnsExamples, style: TextStyle(color: kHighlight, fontSize: 11)),
                   if (firstServerNote) ...[
@@ -149,6 +156,12 @@ class DnsField extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text('${shared.join(' and ')}: $kDnsMatchesRouterNote',
                         key: const Key('dns_matches_router_note'),
+                        style: const TextStyle(color: kWarn, fontSize: 11)),
+                  ],
+                  if (watchdogs.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text([for (final e in watchdogs.entries) dnsMatchesWatchdogNote(e.key, e.value)].join('\n'),
+                        key: const Key('dns_matches_watchdog_note'),
                         style: const TextStyle(color: kWarn, fontSize: 11)),
                   ],
                 ])

@@ -1,4 +1,6 @@
 // test/screens/slot_params_editor_test.dart - WireGuard slot parameter editor (spec 3.3).
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
@@ -156,6 +158,103 @@ void main() {
     // Read-only fields are not part of the saved editable set.
     expect(saved!.containsKey('enable'), isFalse);
     expect(saved!.containsKey('rip'), isFalse);
+  });
+
+  // ID-611, seen by Andrew on the phone, 2026-11-15: saving wgc1's DNS, the spinner was inside the
+  // SAVE button at the bottom of the scrolling card, under the keyboard. The watchdog form had the
+  // same fault four times (409 to 435) until its spinner became an overlay outside the scroll view.
+  group('saving', () {
+    Widget host({required Future<Object?> Function(Map<String, String>) onSave, Future<bool> Function()? confirmSave}) =>
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) => ElevatedButton(
+                onPressed: () => showDialog<bool>(
+                  context: ctx,
+                  builder: (_) => SlotParamsEditor(
+                      slot: 1,
+                      initial: {..._initial(), 'addr': '10.0.0.2/32', 'desc': 'aus_melbourne', 'ep_addr': '203.0.113.5'}
+                        ..['ppub'] = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBQ='
+                        ..['priv'] = 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCg=',
+                      confirmSave: confirmSave,
+                      onSave: onSave),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        );
+
+    /// Opens the editor with the keyboard up and the DNS field being typed into, then taps SAVE.
+    Future<void> typeThenSave(WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(400, 800);
+      addTearDown(tester.view.reset);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('slot_dns')));
+      await tester.tap(find.byKey(const Key('slot_dns')));
+      await tester.enterText(find.byKey(const Key('slot_dns')), '1.1.1.1, 1.0.0.1');
+      tester.view.viewInsets = const FakeViewPadding(bottom: 350);
+      await tester.pump();
+      expect(tester.testTextInput.hasAnyClients, isTrue, reason: 'the keyboard is up, on the DNS field');
+      await tester.ensureVisible(find.byKey(const Key('slot_params_save')));
+      await tester.tap(find.byKey(const Key('slot_params_save')));
+      await tester.pump();
+    }
+
+    testWidgets('drops the keyboard and covers the screen, with the spinner outside the scroll view', (tester) async {
+      final done = Completer<Object?>();
+      await tester.pumpWidget(host(onSave: (_) => done.future));
+      await typeThenSave(tester);
+
+      final overlay = find.byKey(const Key('slot_params_saving_overlay'));
+      expect(overlay, findsOneWidget);
+      expect(find.ancestor(of: overlay, matching: find.byType(SingleChildScrollView)), findsNothing,
+          reason: 'not in the scroll view, so it has no fold to be below');
+      expect(tester.getSize(overlay), const Size(400, 800), reason: 'the whole screen');
+      expect(tester.testTextInput.hasAnyClients, isFalse, reason: 'no field keeps the keyboard up');
+
+      done.complete(true);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('slot_params_saving_overlay')), findsNothing);
+    });
+
+    testWidgets('asks first when there is something to confirm, with no spinner under the question', (tester) async {
+      final asked = Completer<bool>();
+      var saved = false;
+      await tester.pumpWidget(host(onSave: (_) async => saved = true, confirmSave: () => asked.future));
+      await typeThenSave(tester);
+      expect(find.byKey(const Key('slot_params_saving_overlay')), findsNothing, reason: 'nothing is being saved yet');
+      expect(saved, isFalse);
+
+      asked.complete(false);
+      await tester.pumpAndSettle();
+      expect(saved, isFalse, reason: 'CANCEL saves nothing');
+      expect(find.byKey(const Key('slot_params_save')), findsOneWidget, reason: 'and the editor stays open');
+    });
+  });
+
+  // ID-609: with wgc1's DNS on the address wgc5's watchdog used for its encrypted lookups, those
+  // lookups went through wgc1, and the field said nothing.
+  testWidgets("the DNS field says when an address is a watchdog's encrypted DNS", (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SlotParamsEditor(
+              slot: 1,
+              initial: _initial(),
+              watchdogDohServers: const {
+                5: {'1.1.1.2'}
+              },
+              onSave: (_) async => true),
+        ),
+      ),
+    );
+    expect(find.textContaining("wgc5's watchdog uses this address"), findsNothing, reason: 'Quad9 is not it');
+    await tester.enterText(find.byKey(const Key('slot_dns')), '1.1.1.2, 1.0.0.2');
+    await tester.pump();
+    expect(find.textContaining("1.1.1.2: wgc5's watchdog uses this address for its own encrypted DNS"), findsOneWidget);
   });
 
   testWidgets('read-only fields are displayed', (tester) async {

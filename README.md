@@ -153,7 +153,7 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
   - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
   - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
-  - Testing: as at build 577 (14 November 2026), 2247 automated tests run on every build against a line-coverage target of 80%, actual 95.84 (the Coverage badge above is dynamically updated and records today's figure), and 184 manual end-to-end tests, 180 of them on a real router and 4 in the iOS simulator - 24 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
+  - Testing: as at build 581 (16 November 2026), 2298 automated tests run on every build against a line-coverage target of 80%, actual 95.87 (the Coverage badge above is dynamically updated and records today's figure), and 190 manual end-to-end tests, 186 of them on a real router and 4 in the iOS simulator - 24 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
   - Pinned GitHub Action hashes across [every workflow](https://github.com/ExponentiallyDigital/cfg-pia-wg/tree/main/.github/workflows) ensure automated builds execute with specific, verified tool versions.
 
 ---
@@ -614,6 +614,10 @@ What about rate limiting? No one wants to wake up to an inbox full of alerts! `c
 
 **On stock and Merlin.** On Merlin, DEVICES works through VPN Director: it reads VPN Director's rules and writes its changes back to them, so what you set here shows on the router's VPN Director page, and what you set there shows here. A rule of your own that isn't for a single device, a range of addresses say, is left alone.
 
+**Do I have to create VPN Director's rules first, on Merlin?** No. DEVICES writes every rule it needs, including the one for the default connection, so there's nothing to make on the VPN Director page beforehand. I checked it from an empty rules list on 3004.388.13_0 on 2026-11-16: I picked a default and pinned a device in DEVICES and nothing else, and the router held a rule for each, the lookups, the hold that keeps the pinned device off the internet, and the default's block. One caution if you do make a rule of your own for the whole network: DEVICES recognises the default as the rule for your LAN's exact network, such as `192.168.1.0/24`, and from the code a rule written another way, a range or `192.168.1.1/24`, isn't recognised as the default (I haven't tried that on the router), so you can end up with two.
+
+**What happens when I delete a VPN with devices pinned to it?** DELETE says it moves them to the Internet, with no VPN, and now does so on both firmwares. On Merlin it switches each device's VPN Director rule for that slot to WAN, and switches the whole-network rule off if that slot was your default. Before build 581 it did that on stock only: on Merlin the devices kept their rule, stayed held offline and DEVICES called the slot "profile 7 (deleted)". If you delete a slot in the router's web interface instead, DEVICES names any device still pointed at it as, say, "wgc3 (deleted)", and the widget lists it as offline. Pick another VPN for it in DEVICES.
+
 Normally every device on your network follows the router's default connection. This capability lets you send particular devices through a particular VPN tunnel and leave everything else alone - a games console straight out to the internet, a laptop through Melbourne, everything else through Perth.
 
 One simple, easy to use interface and your laptop can be globetrotting to anywhere in the world. Practical considerations do apply though as many organisations are actively enforcing geo-blocking via registered IP address blocks. That's never been the purpose of this app. It exists to do one thing extremely well. And that's stopping nominated devices from going out to the Internet in the clear, unprotected and naked, swinging in the breeze so to speak.
@@ -850,7 +854,7 @@ All those things that you won't need until you do need them, and all in one plac
   Settings
 </p>
 
-  - **REBOOT ROUTER** - surprisingly, this does precisely what it claims. It'll restart your router, after seeking confirmation. With a countdown.
+  - **REBOOT ROUTER** - surprisingly, this does precisely what it claims. It'll restart your router, after seeking confirmation. With a countdown. One thing about phones: while the router restarts, its Wi-Fi has no internet, so a phone can switch to mobile data and carry on using it after the Wi-Fi is back. The app can't reach the router that way, and the countdown ends with "The router has not answered" even though the router is back. Turn mobile data off, reconnect to the Wi-Fi, and open the app again. I saw exactly this on my own phone.
   <p align="center">
   <img src="./images/06.02-reboot-countdown.png" alt="Reboot router" width="300">
   <br>

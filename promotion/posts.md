@@ -167,10 +167,10 @@ The live "What it does" list said Merlin's kill switch covers a tunnel being swi
 
 ## SNBForums: DEVICES on Merlin (to post after the release, ID-584)
 
-A reply in thread 98266, once ID-559's release is in both stores. The version is the one the release carries; check it before posting.
+A reply in thread 98266, once ID-559's release is in both stores: v0.8.210 (build 580), released 2026-11-15.
 
 ```text
-DEVICES now works on Merlin, in v0.8.207, on Google Play, the App Store and GitHub.
+DEVICES now works on Merlin, in v0.8.210, on Google Play, the App Store and GitHub.
 
 It works through VPN Director rather than around it. It reads VPN Director's rules and writes its changes back to them the way the web page does, so what you set in the app shows on the VPN Director page, and the other way round. A rule of your own that isn't for a single device, a range of addresses say, is left alone.
 

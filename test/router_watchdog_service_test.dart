@@ -836,6 +836,71 @@ void main() {
       expect(c.commands.contains('service "start_wgc 1"; service restart_vpnrouting0'), isFalse);
     });
 
+    // ID-609, seen on Merlin 388.13_0, 2026-11-15: wgc1's DNS changed from Quad9 to Cloudflare on the
+    // watchdog form, `wgc1_dns` read the new servers, and the tunnel's devices were still sent to the
+    // old ones, because the firmware builds a slot's DNS redirect only as the slot starts and the
+    // deploy left a running tunnel alone.
+    group('a changed slot DNS on a running tunnel', () {
+      // The router, with [dns] as the slot's servers now and a handshake after any restart.
+      RecordingSSHClient running({required String dns, String clientlist = ''}) => RecordingSSHClient(responder: (cmd) {
+            if (cmd == 'ip -o link show up') return 'wgc1';
+            if (cmd == 'nvram get wgc1_dns') return dns;
+            if (cmd == 'nvram get wgc1_desc') return 'pia-aus_melbourne';
+            if (cmd == 'nvram get vpnc_clientlist') return clientlist;
+            if (cmd == 'date +%s') return '1700000100';
+            if (cmd.contains('latest-handshakes')) return '1700000100';
+            return cmd.contains('jffs2') ? '0' : '';
+          });
+      const merlinRestart = 'service "stop_wgc 1"; sleep 2; service "start_wgc 1"; service restart_vpnrouting0';
+
+      test('restarts the slot on Merlin, after the new servers are written and before the first run', () async {
+        useMerlin();
+        final c = running(dns: '9.9.9.9, 149.112.112.112');
+        await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5).copyWith(slotDns: '1.1.1.2, 1.0.0.2'));
+
+        final written = c.commands.indexOf("nvram set wgc1_dns='1.1.1.2, 1.0.0.2'");
+        final restart = c.commands.indexOf(merlinRestart);
+        final firstRun = c.commands.indexWhere((cmd) => cmd.endsWith('watchdog_wgc1.sh deploy'));
+        expect(written, isNot(-1));
+        expect(restart, greaterThan(written), reason: 'the firmware reads the servers as the slot starts');
+        expect(firstRun, greaterThan(restart));
+        final logged = c.commands.where((cmd) => cmd.contains('logger')).join('\n');
+        expect(logged, isNot(contains('was left running')), reason: 'it was restarted, and the log must not say otherwise');
+        expect(logged, contains('DNS servers changed'));
+      });
+
+      test('restarts it on stock too, through restart_vpnc', () async {
+        useStock();
+        final c = running(dns: '9.9.9.9', clientlist: 'pia-aus_melbourne>WireGuard>1>>pw>1>9>>>0>0>cfg-pia-wg');
+        await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5).copyWith(slotDns: '1.1.1.2'));
+        expect(c.commands, contains('service restart_vpnc'));
+      });
+
+      test('the same servers, however they are spaced, restart nothing', () async {
+        useMerlin();
+        final c = running(dns: '9.9.9.9,149.112.112.112');
+        await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5).copyWith(slotDns: '9.9.9.9, 149.112.112.112'));
+        expect(c.commands, isNot(contains(merlinRestart)));
+        expect(c.commands.where((cmd) => cmd.contains('logger')).join('\n'), contains('was left running'));
+      });
+
+      test('an empty DNS field changes nothing, so restarts nothing', () async {
+        useMerlin();
+        final c = running(dns: '9.9.9.9');
+        await _wd(c).deployWatchdog(cfg(slot: 1, interval: 5));
+        expect(c.commands, isNot(contains(merlinRestart)));
+      });
+
+      test('the form can ask first: only a running slot whose servers differ needs the restart', () async {
+        useMerlin();
+        expect(await _wd(running(dns: '9.9.9.9')).dnsChangeRestartsSlot(1, '1.1.1.2'), isTrue);
+        expect(await _wd(running(dns: '9.9.9.9')).dnsChangeRestartsSlot(1, ' 9.9.9.9 '), isFalse);
+        expect(await _wd(running(dns: '9.9.9.9')).dnsChangeRestartsSlot(1, ''), isFalse);
+        final stopped = RecordingSSHClient(responder: (cmd) => cmd == 'nvram get wgc1_dns' ? '9.9.9.9' : '');
+        expect(await _wd(stopped).dnsChangeRestartsSlot(1, '1.1.1.2'), isFalse, reason: 'a stopped slot reads them when it starts');
+      });
+    });
+
     // The CREATE fault again, on the watchdog form (found 2026-09-14): a region change wrote only the new
     // name, and the deploy run left the old server's tunnel alone because its handshake was recent. A
     // region change is a rebuild: stop the tunnel, blank the old server, and let the deploy run build it.

@@ -19,6 +19,37 @@ WidgetTunnelInfo tunnel({
     WidgetTunnelInfo(slot: slot, region: region, up: up, handshakeAgeSeconds: handshakeAgeSeconds, pinnedDeviceNames: pinned);
 
 void main() {
+  // ID-606: both widgets draw these two lines as plain text, so naming a held device needs no
+  // change to the Kotlin or the Swift.
+  group('a device pinned to a deleted VPN', () {
+    WidgetStatus status(List<String> names, {int tunnels = 2}) => WidgetStatus(
+          tunnels: [
+            for (var i = 0; i < tunnels; i++) tunnel(slot: 5 - i, region: 'Region $i'),
+          ],
+          deletedVpnDeviceNames: names,
+          checkedAt: kNow,
+        );
+
+    test('is named under the tunnel rows and in the compact widget', () {
+      final data = buildWidgetData(status(['TABLET']), now: kNow);
+      expect(data['overflow_text'], 'TABLET offline: its VPN was deleted'); // WidgetKeys.OVERFLOW_TEXT
+      expect(data['compact_detail_text'], 'TABLET offline · its VPN was deleted'); // WidgetKeys.COMPACT_DETAIL_TEXT
+      expect(data['badge'], 'protected', reason: 'no tunnel is down; the device is held, not leaking');
+    });
+
+    test('two share a line, and follow the count of tunnels not shown', () {
+      final data = buildWidgetData(status(['TABLET', 'PHONE'], tunnels: 3), now: kNow);
+      expect(data['overflow_text'], '+1 more tunnel · TABLET, PHONE offline: their VPN was deleted');
+      expect(data['compact_detail_text'], '2 devices offline · their VPN was deleted');
+    });
+
+    test('nothing is added when there is none', () {
+      final data = buildWidgetData(status(const []), now: kNow);
+      expect(data['overflow_text'], '');
+      expect(data['compact_detail_text'], '2 tunnels up · 0 pinned');
+    });
+  });
+
   // ID-488: on 2026-10-29 wgc5's watchdog was cut short and nothing anywhere said so for a day.
   group('a broken watchdog', () {
     test('is named on its tunnel row and in the compact widget, though the tunnel is up', () {

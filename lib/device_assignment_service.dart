@@ -206,6 +206,19 @@ class MerlinPrecedenceException implements Exception {
       '${names.length == 1 ? 'it' : 'them'} to another tunnel.';
 }
 
+/// Thrown before anything is written when, on Merlin, the default connection is to change and the
+/// LAN's network can't be worked out from `lan_ipaddr` and `lan_netmask`. The default is a VPN
+/// Director rule for that network, so there is nothing to write it for. Until build 581 the change
+/// was skipped without a word, and the log said "Default connection set" (ID-601).
+class MerlinNoSubnetException implements Exception {
+  const MerlinNoSubnetException();
+
+  @override
+  String toString() => "Nothing was applied. The app couldn't work out your LAN's network from the router's address "
+      'and netmask, and on Merlin the default connection is a VPN Director rule for that network. Check LAN > LAN IP in '
+      "the router's web interface, then open DEVICES again.";
+}
+
 class DeviceAssignmentService {
   DeviceAssignmentService(
     this.client, {
@@ -763,6 +776,7 @@ class DeviceAssignmentService {
   Future<void> _applyMerlin(AssignmentState base, ApplyRequest request) async {
     final guard = MerlinGuard(read: _read, run: _run, onLog: onLog);
     await _checkUnchangedMerlin(base, request);
+    if (request.newDefaultIndex != null && base.lanSubnet.isEmpty) throw const MerlinNoSubnetException();
     final names = {for (final d in base.devices) if (d.ip != null) d.ip!: d.displayName};
     final rules = applyMerlinChanges(parseVpnDirectorRules(base.rawPolicyList),
         changes: request.changes, newDefaultIndex: request.newDefaultIndex, subnet: base.lanSubnet, names: names);
@@ -817,18 +831,8 @@ class DeviceAssignmentService {
     }
   }
 
-  /// The rules file, byte for byte as the web page writes it: no trailing newline, which would end
-  /// up in the last rule's interface name. Beside the live file, then renamed over it, and read back.
-  Future<void> _writeRules(List<VpnDirectorRule> rules) async {
-    const path = kVpnDirectorRulelistPath;
-    final body = serialiseVpnDirectorRules(rules);
-    await _run("mkdir -p -m 700 /jffs/openvpn && printf '%s' ${shellSingleQuote(body)} > '$path.cfgtmp' && "
-        "chmod 660 '$path.cfgtmp' && mv '$path.cfgtmp' '$path'");
-    if ((await _read("cat '$path' 2>/dev/null")).trim() != body) {
-      throw Exception("VPN Director's rules file didn't read back as written. Check VPN > VPN Director in the router's "
-          'web interface before trying again.');
-    }
-  }
+  /// The rules file, written and read back ([writeVpnDirectorRules]).
+  Future<void> _writeRules(List<VpnDirectorRule> rules) => writeVpnDirectorRules(rules, read: _read, run: _run);
 
   /// Said only when the kernel holds it (ID-332): each device's VPN Director rule to its tunnel or
   /// the WAN, the app's hold for each pinned one, and the whole-network rule for the default.
