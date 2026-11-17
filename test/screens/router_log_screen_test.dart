@@ -7,7 +7,7 @@ import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/router_log_paging.dart';
 import 'package:cfg_pia_wg/screens/router_log_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../watchdog_test_utils.dart';
@@ -40,7 +40,7 @@ Future<RecordingSSHClient> _pump(WidgetTester tester, {RecordingSSHClient? ssh})
   await tester.pumpWidget(MaterialApp(
     home: SessionScope(
       controller: c,
-      child: Scaffold(body: RouterLogScreen(testClientFactory: (_, __, ___) async => client)),
+      child: Scaffold(body: RouterLogScreen(testClientFactory: (_, _, _) async => client)),
     ),
   ));
   await tester.pumpAndSettle();
@@ -190,7 +190,7 @@ void main() {
         ..routerConnected = true;
       addTearDown(c.dispose);
       await tester.pumpWidget(MaterialApp(
-        home: SessionScope(controller: c, child: Scaffold(body: RouterLogScreen(testClientFactory: (_, __, ___) async => ssh))),
+        home: SessionScope(controller: c, child: Scaffold(body: RouterLogScreen(testClientFactory: (_, _, _) async => ssh))),
       ));
       await tester.pumpAndSettle();
       // Load every older page.
@@ -218,7 +218,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: SessionScope(
           controller: c,
-          child: Scaffold(body: RouterLogScreen(testClientFactory: (_, __, ___) async => _router())),
+          child: Scaffold(body: RouterLogScreen(testClientFactory: (_, _, _) async => _router())),
         ),
       ));
       await tester.pumpAndSettle();

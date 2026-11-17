@@ -18,7 +18,7 @@ import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/app_scaffold.dart';
 import 'package:cfg_pia_wg/widgets/applying_panel.dart';
 import 'package:cfg_pia_wg/widgets/device_assignment_screen.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../watchdog_test_utils.dart';
@@ -89,7 +89,7 @@ Widget _wrap(RecordingSSHClient ssh) => SessionScope(
       controller: SessionController(),
       child: MaterialApp(
         home: Scaffold(
-          body: DeviceAssignmentScreen(testClientFactory: (_, __, ___) async => ssh),
+          body: DeviceAssignmentScreen(testClientFactory: (_, _, _) async => ssh),
         ),
       ),
     );
@@ -189,7 +189,7 @@ void main() {
     await tester.pumpWidget(SessionScope(
       controller: c,
       child: MaterialApp(
-        home: Scaffold(body: DeviceAssignmentScreen(testClientFactory: (_, __, ___) async => ssh)),
+        home: Scaffold(body: DeviceAssignmentScreen(testClientFactory: (_, _, _) async => ssh)),
       ),
     ));
 
@@ -412,7 +412,7 @@ void main() {
     Widget screen() => SessionScope(
           controller: c,
           child: MaterialApp(
-            home: Scaffold(body: DeviceAssignmentScreen(testClientFactory: (_, __, ___) async => ssh)),
+            home: Scaffold(body: DeviceAssignmentScreen(testClientFactory: (_, _, _) async => ssh)),
           ),
         );
 
@@ -686,7 +686,7 @@ void main() {
       child: MaterialApp(
         home: Scaffold(
           body: DeviceAssignmentScreen(
-            testClientFactory: (_, __, ___) async => ssh,
+            testClientFactory: (_, _, _) async => ssh,
             // Without this the screen builds a service with the real two-second poll interval and
             // the apply never finishes inside pumpAndSettle.
             serviceFactory: (c) => DeviceAssignmentService(c, pollInterval: Duration.zero),
@@ -732,7 +732,7 @@ void main() {
       child: MaterialApp(
         home: Scaffold(
           body: DeviceAssignmentScreen(
-            testClientFactory: (_, __, ___) async => ssh,
+            testClientFactory: (_, _, _) async => ssh,
             serviceFactory: (c) {
               handed = c;
               return DeviceAssignmentService(c);

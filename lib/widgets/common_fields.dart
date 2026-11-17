@@ -16,7 +16,7 @@
 // These widgets are lifted from main.dart / router_push.dart so the new screens reuse a single
 // set of consistently-styled controls (spec §3: "be consistent across all UI elements").
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show SelectedContent;
 
 import '../app_colors.dart';

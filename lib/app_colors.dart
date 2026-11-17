@@ -16,7 +16,7 @@
 // Centralises the colour values that were previously inlined across main.dart and
 // watchdog_dialog.dart so every screen and widget renders consistently.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'session_controller.dart';
 

@@ -1,6 +1,6 @@
 // test/screens/router_screens_test.dart - Manage-router + VPN-watchdog connect screens.
 import 'package:dartssh2/dartssh2.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart';

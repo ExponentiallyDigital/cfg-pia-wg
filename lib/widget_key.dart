@@ -237,9 +237,8 @@ const IOSOptions kWidgetKeyIosOptions = IOSOptions(accessibility: KeychainAccess
 /// ([kWidgetKeyIosOptions]), so neither goes into an iCloud or computer backup, nor is restored
 /// onto another iPhone. Android's side is the manifest: no backup, and no device-to-device transfer.
 class WidgetKeyStore {
-  WidgetKeyStore({FlutterSecureStorage? storage, Future<bool?> Function()? protectedDataAvailable})
-      : _storage = storage ?? const FlutterSecureStorage(iOptions: kWidgetKeyIosOptions),
-        _protectedDataAvailable = protectedDataAvailable;
+  WidgetKeyStore({FlutterSecureStorage? storage, this._protectedDataAvailable})
+      : _storage = storage ?? const FlutterSecureStorage(iOptions: kWidgetKeyIosOptions);
 
   final FlutterSecureStorage _storage;
   final Future<bool?> Function()? _protectedDataAvailable;

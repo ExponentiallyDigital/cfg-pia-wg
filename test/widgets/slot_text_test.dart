@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/slot_text.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Each coloured run in [text], as (text, colour), dropping the runs left in the base colour.

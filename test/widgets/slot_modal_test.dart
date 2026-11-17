@@ -1,7 +1,7 @@
 // test/widgets/slot_modal_test.dart - the parameterised slot modal (manage + watchdog modes).
 import 'package:dartssh2/dartssh2.dart';
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/widgets/applying_panel.dart';
 import 'package:cfg_pia_wg/app_colors.dart';

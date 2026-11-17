@@ -6,7 +6,7 @@ import 'package:cfg_pia_wg/network_lookup.dart';
 import 'package:cfg_pia_wg/router_slot_service.dart' show kUpInterfacesCommand;
 import 'package:cfg_pia_wg/screens/network_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../watchdog_test_utils.dart';
@@ -48,7 +48,7 @@ void main() {
         controller: c,
         child: Scaffold(
           body: NetworkScreen(
-            testClientFactory: (_, __, ___) async => ssh ?? RecordingSSHClient(),
+            testClientFactory: (_, _, _) async => ssh ?? RecordingSSHClient(),
             phoneLookup: () async {
               calls.add(1);
               return phone == null ? _phone : await phone();

@@ -20,7 +20,7 @@
 // path that brings a watchdog up, so there is no separate ENABLE action.
 
 import 'package:dartssh2/dartssh2.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import 'widgets/app_button.dart';
@@ -621,7 +621,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       regionProblem = null;
     }
     if (!mounted) return false;
-    final errors = [if (regionProblem != null) regionProblem, ...cfg.validate()];
+    final errors = [?regionProblem, ...cfg.validate()];
     if (errors.isEmpty) return true;
     await AppErrors.inputs(context, _c, errors);
     return false;

@@ -5,7 +5,7 @@
 import 'dart:io' show FileSystemException;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/battery_optimisation.dart' show kBatteryOptimisedText;
@@ -92,7 +92,7 @@ void main() {
           home: SessionScope(
             controller: c,
             child: Scaffold(
-              body: SettingsScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: (_) => '')),
+              body: SettingsScreen(testClientFactory: (_, _, _) async => RecordingSSHClient(responder: (_) => '')),
             ),
           ),
         ),
@@ -119,7 +119,7 @@ void main() {
           home: SessionScope(
             controller: c,
             child: Scaffold(
-              body: SettingsScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: (_) => '')),
+              body: SettingsScreen(testClientFactory: (_, _, _) async => RecordingSSHClient(responder: (_) => '')),
             ),
           ),
         ),
@@ -162,7 +162,7 @@ void main() {
         MaterialApp(
           home: SessionScope(
             controller: c,
-            child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+            child: Scaffold(body: SettingsScreen(testClientFactory: (_, _, _) async => ssh)),
           ),
         ),
       );
@@ -249,7 +249,7 @@ void main() {
         MaterialApp(
           home: SessionScope(
             controller: c,
-            child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+            child: Scaffold(body: SettingsScreen(testClientFactory: (_, _, _) async => ssh)),
           ),
         ),
       );
@@ -303,7 +303,7 @@ void main() {
         MaterialApp(
           home: SessionScope(
             controller: c,
-            child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+            child: Scaffold(body: SettingsScreen(testClientFactory: (_, _, _) async => ssh)),
           ),
         ),
       );
@@ -343,7 +343,7 @@ void main() {
         MaterialApp(
           home: SessionScope(
             controller: c,
-            child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+            child: Scaffold(body: SettingsScreen(testClientFactory: (_, _, _) async => ssh)),
           ),
         ),
       );
@@ -374,7 +374,7 @@ void main() {
         MaterialApp(
           home: SessionScope(
             controller: c,
-            child: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+            child: Scaffold(body: SettingsScreen(testClientFactory: (_, _, _) async => ssh)),
           ),
         ),
       );
@@ -762,8 +762,8 @@ void main() {
             controller: c,
             child: Scaffold(
               body: SettingsScreen(
-                testClientFactory: (_, __, ___) async => ssh,
-                testRouterAnswers: answers ?? (_, __) async => false,
+                testClientFactory: (_, _, _) async => ssh,
+                testRouterAnswers: answers ?? (_, _) async => false,
               ),
             ),
           ),
@@ -954,7 +954,7 @@ void main() {
         SessionScope(
           controller: c,
           child: MaterialApp(
-            home: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+            home: Scaffold(body: SettingsScreen(testClientFactory: (_, _, _) async => ssh)),
           ),
         ),
       );
@@ -1046,7 +1046,7 @@ void main() {
         SessionScope(
           controller: c,
           child: MaterialApp(
-            home: Scaffold(body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh)),
+            home: Scaffold(body: SettingsScreen(testClientFactory: (_, _, _) async => ssh)),
           ),
         ),
       );
@@ -1233,7 +1233,7 @@ void main() {
             controller: c,
             child: Scaffold(
               body: SettingsScreen(
-                testClientFactory: (_, __, ___) async => unreachable ? throw Exception('Connection refused') : ssh,
+                testClientFactory: (_, _, _) async => unreachable ? throw Exception('Connection refused') : ssh,
               ),
             ),
           ),
@@ -1312,7 +1312,7 @@ void main() {
           home: SessionScope(
             controller: c,
             child: Scaffold(
-              body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh, testRestore: restore),
+              body: SettingsScreen(testClientFactory: (_, _, _) async => ssh, testRestore: restore),
             ),
           ),
         ),
@@ -1466,7 +1466,7 @@ void main() {
             child: Scaffold(
               body: SettingsScreen(
                 testWidgetKeyStore: store,
-                testClientFactory: (_, __, ___) async => ssh ?? RecordingSSHClient(responder: (_) => ''),
+                testClientFactory: (_, _, _) async => ssh ?? RecordingSSHClient(responder: (_) => ''),
                 testScheduleRefresh: () async => scheduled++,
                 testCancelRefresh: () async => cancelled++,
                 testBatteryOptimised: batteryOptimised ?? () async => false,
@@ -1589,7 +1589,7 @@ void main() {
           child: Scaffold(
             body: SettingsScreen(
               testWidgetKeyStore: store,
-              testClientFactory: (_, __, ___) async => FakeKeysRouter('').client,
+              testClientFactory: (_, _, _) async => FakeKeysRouter('').client,
               testScheduleRefresh: () async => atRefresh = await store.read(),
               testCancelRefresh: () async {},
             ),
@@ -1758,7 +1758,7 @@ void main() {
           home: SessionScope(
             controller: controller,
             child: Scaffold(
-              body: SettingsScreen(testClientFactory: (_, __, ___) async => ssh, testServerListStore: store),
+              body: SettingsScreen(testClientFactory: (_, _, _) async => ssh, testServerListStore: store),
             ),
           ),
         ),

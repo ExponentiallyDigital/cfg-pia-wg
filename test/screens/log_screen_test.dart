@@ -3,7 +3,7 @@ import 'package:cfg_pia_wg/app_colors.dart';
 import 'package:cfg_pia_wg/screens/log_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/common_fields.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 SessionController _controller() => SessionController(

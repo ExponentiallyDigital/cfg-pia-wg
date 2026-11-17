@@ -21,7 +21,7 @@
 // a row of three cannot also be one full-width button - and that is recorded in CONTEXT.md so it
 // does not get "fixed" later.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'app_button.dart';
 

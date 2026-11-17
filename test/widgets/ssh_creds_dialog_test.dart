@@ -5,7 +5,7 @@
 import 'package:cfg_pia_wg/screens/router_log_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/ssh_creds_dialog.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../watchdog_test_utils.dart';
@@ -30,7 +30,7 @@ void main() {
                   initialUser: '',
                   initialPass: '',
                   verify: (ip, user, pass) => verifyRouterLogin(c, ip, user, pass,
-                      testClientFactory: (_, __, ___) async =>
+                      testClientFactory: (_, _, _) async =>
                           reachable ? RecordingSSHClient() : throw Exception('Connection refused')),
                 ),
               ),
@@ -86,7 +86,7 @@ void main() {
           builder: (ctx) => Scaffold(
             body: ElevatedButton(
               onPressed: () => Navigator.of(ctx).push(MaterialPageRoute<void>(
-                  builder: (_) => Scaffold(body: RouterLogScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient())))),
+                  builder: (_) => Scaffold(body: RouterLogScreen(testClientFactory: (_, _, _) async => RecordingSSHClient())))),
               child: const Text('where the user was'),
             ),
           ),

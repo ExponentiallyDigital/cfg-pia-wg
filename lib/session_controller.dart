@@ -109,19 +109,15 @@ class LogEntry {
 /// A single periodic tick drives the 60-second clipboard auto-clear countdown.
 class SessionController extends ChangeNotifier {
   SessionController({
-    Duration clipboardTimeout = kClipboardTimeout,
-    Duration tickInterval = const Duration(seconds: 1),
+    this._clipboardTimeout = kClipboardTimeout,
+    this._tickInterval = const Duration(seconds: 1),
     Future<void> Function(String text)? clipboardWriter,
     RouterPrefs? routerPrefs,
     RouterHostKeys? hostKeys,
-    int logCapChars = kLogCapChars,
-    bool checkRouterScripts = false,
+    this._logCapChars = kLogCapChars,
+    this._checkRouterScripts = false,
     Future<Uint8List?> Function()? ownWidgetKey,
-  })  : _checkRouterScripts = checkRouterScripts,
-        _ownWidgetKey = ownWidgetKey ?? _storedWidgetKey,
-        _clipboardTimeout = clipboardTimeout,
-        _logCapChars = logCapChars,
-        _tickInterval = tickInterval,
+  })  : _ownWidgetKey = ownWidgetKey ?? _storedWidgetKey,
         _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter,
         // A test that injects a writer clears through it, as before; the app reads the clear back.
         _clipboardClearer = clipboardWriter == null

@@ -7,7 +7,7 @@
 //
 // The grouping matters as much as the hints: this app holds three different logins (PIA, router
 // SSH, SMTP), and a provider that cannot tell them apart offers the wrong one for all three.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/widgets/common_fields.dart';
 

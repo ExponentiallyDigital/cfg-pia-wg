@@ -17,7 +17,7 @@
 // errors are shown one at a time, dismissing any previously-open error dialog first. Every
 // error is also appended to the application log.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'app_button.dart';
 

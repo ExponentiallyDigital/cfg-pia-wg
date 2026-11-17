@@ -22,7 +22,7 @@
 // router credential - it writes only the same data buildWidgetData would, by hand.
 import 'package:cfg_pia_wg/widget_bridge.dart';
 import 'package:cfg_pia_wg/widget_status.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() => runApp(const _PreviewApp());
 

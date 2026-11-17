@@ -22,7 +22,7 @@
 // card is the bug this project shipped four times, with SAVE below a fold that would not scroll.
 // A page has a bounded viewport by construction. See `.claude/plans/plan_revenuecat-implementation.md`.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../app_colors.dart';
 import '../entitlement.dart';

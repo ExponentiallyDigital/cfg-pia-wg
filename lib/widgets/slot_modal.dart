@@ -25,7 +25,7 @@
 import 'dart:async';
 
 import 'package:dartssh2/dartssh2.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import 'app_button.dart';
@@ -1201,8 +1201,8 @@ class _PingTargetsDialogState extends State<_PingTargetsDialog> {
     // The watchdog reads these same two values, and one it cannot ping made it decide the WAN was
     // down and never repair anything (ID-237).
     final errors = [
-      if (checkIpv4(_primaryCtrl.text, field: 'Primary ping IP') case final e?) e,
-      if (checkIpv4(_secondaryCtrl.text, field: 'Secondary ping IP') case final e?) e,
+      ?checkIpv4(_primaryCtrl.text, field: 'Primary ping IP'),
+      ?checkIpv4(_secondaryCtrl.text, field: 'Secondary ping IP'),
     ];
     if (errors.isNotEmpty) {
       setState(() => _error = errors.join('\n'));

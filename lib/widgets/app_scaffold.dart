@@ -18,7 +18,7 @@
 // the hamburger stays visible and tappable even while a dialog (slot modal, EDIT, error) is shown
 // below it (spec 3.1).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';

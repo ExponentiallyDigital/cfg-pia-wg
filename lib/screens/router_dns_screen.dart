@@ -18,7 +18,7 @@
 // 2026-09-27: the heading, notes and labels in teal, anything read from the router in white, and
 // every word selectable, with COPY still copying the whole window.
 import 'package:dartssh2/dartssh2.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../app_colors.dart';
 import '../router_dns.dart';
