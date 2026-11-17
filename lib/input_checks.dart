@@ -90,9 +90,9 @@ List<String> checkDohPair(String url, String ip) {
     return ['The watchdog\'s encrypted DNS needs both the DoH URL and the DoH server address, or neither.'];
   }
   return [
-    if (checkDohUrl(u) case final e?) e,
+    ?checkDohUrl(u),
     if (a.contains('://')) 'DoH server address: that is a URL. The address goes here, like 9.9.9.9, and the URL in "DoH URL".'
-    else if (checkIpv4List(a, field: 'DoH server address') case final e?) e,
+    else ?checkIpv4List(a, field: 'DoH server address'),
   ];
 }
 
@@ -155,19 +155,19 @@ List<String> slotParamErrors(Map<String, String> p) => [..._slotPeerErrors(p), .
 
 /// The slot's name, its address and the server it connects to: the top of the EDIT form.
 List<String> _slotPeerErrors(Map<String, String> p) => [
-      if (p.containsKey('desc')) if (checkSlotDescription(p['desc']!) case final e?) e,
+      if (p.containsKey('desc')) ?checkSlotDescription(p['desc']!),
       if (p.containsKey('addr') && !isIpv4Cidr(p['addr']!)) 'Address must be like 10.0.0.2/32.',
       if (p.containsKey('ep_addr') && !isValidIpv4(p['ep_addr']!) && !isHostname(p['ep_addr']!))
         'Endpoint must be a server address or name.',
-      if (p.containsKey('ep_port')) if (checkIntRange(p['ep_port']!, field: 'Endpoint port', min: 1, max: 65535) case final e?) e,
-      if (p.containsKey('ppub')) if (checkWireGuardKey(p['ppub']!, field: 'Server public key') case final e?) e,
+      if (p.containsKey('ep_port')) ?checkIntRange(p['ep_port']!, field: 'Endpoint port', min: 1, max: 65535),
+      if (p.containsKey('ppub')) ?checkWireGuardKey(p['ppub']!, field: 'Server public key'),
     ];
 
 /// The keys and tunnel settings: the rest of the EDIT form.
 List<String> _slotTunnelErrors(Map<String, String> p) => [
-      if (p.containsKey('priv')) if (checkWireGuardKey(p['priv']!, field: 'Private key') case final e?) e,
-      if (p.containsKey('dns')) if (checkIpv4List(p['dns']!, field: 'DNS servers') case final e?) e,
-      if (p.containsKey('mtu')) if (checkIntRange(p['mtu']!, field: 'MTU', min: 1280, max: 1500) case final e?) e,
-      if (p.containsKey('alive')) if (checkIntRange(p['alive']!, field: 'Keepalive', min: 0, max: 65535) case final e?) e,
-      if (p.containsKey('aips')) if (checkCidrList(p['aips']!, field: 'Allowed IPs') case final e?) e,
+      if (p.containsKey('priv')) ?checkWireGuardKey(p['priv']!, field: 'Private key'),
+      if (p.containsKey('dns')) ?checkIpv4List(p['dns']!, field: 'DNS servers'),
+      if (p.containsKey('mtu')) ?checkIntRange(p['mtu']!, field: 'MTU', min: 1280, max: 1500),
+      if (p.containsKey('alive')) ?checkIntRange(p['alive']!, field: 'Keepalive', min: 0, max: 65535),
+      if (p.containsKey('aips')) ?checkCidrList(p['aips']!, field: 'Allowed IPs'),
     ];

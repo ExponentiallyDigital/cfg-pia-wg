@@ -1,6 +1,6 @@
 // test/main_screen_widget_test.dart - standalone screen reached through the full app.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'app_test_harness.dart';

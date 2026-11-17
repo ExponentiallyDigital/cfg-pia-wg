@@ -12,7 +12,7 @@
 // If not, see https://www.gnu.org/licenses/.
 //
 // Copyright (C) 2026 Andrew Newbury.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../app_colors.dart';
 import 'slot_text.dart';

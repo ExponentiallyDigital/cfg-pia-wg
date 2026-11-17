@@ -18,7 +18,7 @@
 // included; a bare `wgc5` is coloured on its own. Everything else in the text keeps the style it
 // was given, so a red error line stays red around the label.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../app_colors.dart';
 

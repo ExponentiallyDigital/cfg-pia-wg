@@ -20,7 +20,7 @@
 // path that brings a watchdog up, so there is no separate ENABLE action.
 
 import 'package:dartssh2/dartssh2.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import 'widgets/app_button.dart';
@@ -121,8 +121,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   /// the keyboard up the button sits below the fold - which is what made a save look inert.
   bool _jqMissing = false;
 
-  /// Stock only: the init directory Download Master provides. Without it a watchdog deploys and
-  /// then loses its cron entries at the next reboot, so it is a precondition, not a warning.
+  /// Stock only: the init directory Download Master provides (ARCHITECTURE 7.4). Without it a watchdog
+  /// deploys and then loses its cron entries at the next reboot, so it is a precondition, not a warning.
   bool _bootDirMissing = false;
   bool _piaPassVisible = false;
   bool _smtpPassVisible = false;
@@ -621,7 +621,7 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       regionProblem = null;
     }
     if (!mounted) return false;
-    final errors = [if (regionProblem != null) regionProblem, ...cfg.validate()];
+    final errors = [?regionProblem, ...cfg.validate()];
     if (errors.isEmpty) return true;
     await AppErrors.inputs(context, _c, errors);
     return false;

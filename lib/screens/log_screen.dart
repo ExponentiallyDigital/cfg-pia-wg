@@ -17,7 +17,7 @@
 // HOME in one pinned row at the bottom. It opens at the newest entry, because the reason
 // anyone comes here is to see what just happened.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../app_colors.dart';
 import '../session_controller.dart';

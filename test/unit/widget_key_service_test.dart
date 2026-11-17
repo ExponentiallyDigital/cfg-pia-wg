@@ -3,7 +3,7 @@
 // storage - see widget_key_test.dart for that.
 import 'dart:typed_data';
 
-import 'package:cfg_pia_wg/router_watchdog.dart' show kMaxSshCommandBytes;
+import 'package:cfg_pia_wg/router_watchdog.dart' show buildLoggerCommand, kMaxSshCommandBytes;
 import 'package:cfg_pia_wg/widget_key.dart';
 import 'package:cfg_pia_wg/widget_key_service.dart';
 import 'package:cfg_pia_wg/widget_status_service.dart' show kWidgetReadScript, kWidgetReadScriptPath, kWidgetStatusCommand;
@@ -115,4 +115,124 @@ void main() {
       await expectLater(WidgetKeyRouterService(r.client).removeAll(), throwsA(isA<WidgetKeyRouterException>()));
     });
   });
+
+  // ID-616 (Andrew's rule, 2026-11-16): a widget key added, replaced or removed is logged to the app
+  // log and to the router's, always, success or failure, and never with the key in it.
+  group('every change is logged to both logs', () {
+    // What the service sent to the app log, and the lines it sent to the router's `logger`.
+    ({List<String> app, List<String> router}) logsOf(_AppLog log, FakeKeysRouter r) => (
+          app: [for (final m in log.messages) if (m.startsWith('Widget key:')) m],
+          router: [for (final c in r.client.commands) if (c.startsWith('logger -t ')) c],
+        );
+
+    // One line to each, the same words, and none of the key.
+    void expectBothLogs(({List<String> app, List<String> router}) l, Object words, {Uint8List? key}) {
+      expect(l.app, hasLength(1), reason: 'one app log line');
+      expect(l.router, hasLength(1), reason: 'one router log line');
+      expect(l.app.single, words);
+      expect(l.router.single, buildLoggerCommand(l.app.single), reason: 'the router is told what the app log says');
+      if (key != null) {
+        final blob = sshKeyBlob(_line(key))!;
+        expect(l.app.single, isNot(contains(blob)));
+        expect(l.router.single, isNot(contains(blob)));
+      }
+    }
+
+    test('GENERATE: the install, with how many keys the router holds now', () async {
+      final r = FakeKeysRouter('$kTheirLine\n${_line(_key(9))}');
+      final log = _AppLog();
+      await WidgetKeyRouterService(r.client, onLog: log.call).install(_line(_key(7)));
+      expectBothLogs(logsOf(log, r), 'Widget key: installed on the router; 2 widget keys there now', key: _key(7));
+      expect(log.kinds['Widget key: installed on the router; 2 widget keys there now'], 'success');
+    });
+
+    test('GENERATE on a phone that had a key: the replacement', () async {
+      final r = FakeKeysRouter('$kTheirLine\n${_line(_key(5))}');
+      final log = _AppLog();
+      await WidgetKeyRouterService(r.client, onLog: log.call).install(_line(_key(7)), replacing: _key(5));
+      expectBothLogs(logsOf(log, r), 'Widget key: replaced this phone\'s previous key on the router; 1 widget key there now', key: _key(5));
+    });
+
+    test('GENERATE the router did not keep: the failure, with the reason', () async {
+      final r = FakeKeysRouter(kTheirLine, keeps: false);
+      final log = _AppLog();
+      await expectLater(WidgetKeyRouterService(r.client, onLog: log.call).install(_line(_key(7))), throwsA(isA<WidgetKeyRouterException>()));
+      final l = logsOf(log, r);
+      expectBothLogs(l, startsWith('Widget key: install failed - '), key: _key(7));
+      expect(log.kinds[l.app.single], 'error');
+    });
+
+    test('REMOVE: how many keys came off', () async {
+      final r = FakeKeysRouter('$kTheirLine\n${_line(_key(5))}\n${_line(_key(9))}\n${_line(_key(7))}');
+      final log = _AppLog();
+      await WidgetKeyRouterService(r.client, onLog: log.call).removeAll();
+      expectBothLogs(logsOf(log, r), 'Widget key: removed 3 widget keys from the router', key: _key(5));
+    });
+
+    test('REMOVE with none there is logged too, since it was asked for', () async {
+      final r = FakeKeysRouter(kTheirLine);
+      final log = _AppLog();
+      await WidgetKeyRouterService(r.client, onLog: log.call).removeAll();
+      expectBothLogs(logsOf(log, r), 'Widget key: none on the router to remove');
+    });
+
+    test('REMOVE a key stayed on: the failure', () async {
+      final r = FakeKeysRouter(_line(_key(5)), keeps: false);
+      final log = _AppLog();
+      await expectLater(WidgetKeyRouterService(r.client, onLog: log.call).removeAll(), throwsA(isA<WidgetKeyRouterException>()));
+      expectBothLogs(logsOf(log, r), startsWith('Widget key: removal failed - '), key: _key(5));
+    });
+
+    test("a connection's housekeeping, when it changes something, is logged; when it changes nothing, it is not", () async {
+      final r = FakeKeysRouter('$kTheirLine\n${_line(_key(7))}');
+      final log = _AppLog();
+      await WidgetKeyRouterService(r.client, onLog: log.call).keepCurrent(ownKey: _key(7));
+      expectBothLogs(logsOf(log, r), startsWith('Widget key: updated on the router - '), key: _key(7));
+
+      final still = FakeKeysRouter(kTheirLine);
+      final quiet = _AppLog();
+      await WidgetKeyRouterService(still.client, onLog: quiet.call).keepCurrent(ownKey: _key(7));
+      final l = logsOf(quiet, still);
+      expect(l.app, isEmpty);
+      expect(l.router, isEmpty);
+    });
+
+    test("a housekeeping check that fails goes to the router's log, and to the caller to put in the app log", () async {
+      final r = FakeKeysRouter('$kTheirLine\n${_line(_key(7))}');
+      r.client.failWith['nvram set sshd_authkeys'] = 'nvram: write failed';
+      final log = _AppLog();
+      await expectLater(WidgetKeyRouterService(r.client, onLog: log.call).keepCurrent(ownKey: _key(7)), throwsA(isA<Object>()));
+      final l = logsOf(log, r);
+      expect(l.app, isEmpty, reason: 'the caller logs the failure to the app log, so not twice');
+      // A long reason goes to syslog in numbered pieces, in one command.
+      expect(l.router.single, contains('Widget key: check failed - '));
+      expect(l.router.single, isNot(contains(sshKeyBlob(_line(_key(7)))!)), reason: 'the error text has the key redacted');
+    });
+
+    test("a router that can't take the log line doesn't stop the change, and the app log still has it", () async {
+      final r = FakeKeysRouter(kTheirLine);
+      r.client.failWith['logger -t'] = 'logger: not found';
+      final log = _AppLog();
+      await WidgetKeyRouterService(r.client, onLog: log.call).install(_line(_key(7)));
+      expect(widgetKeyLineCount(r.nv), 1, reason: 'the key is installed');
+      expect(logsOf(log, r).app, hasLength(1));
+    });
+  });
+}
+
+/// What a service sent to its `onLog`, in order, and the kind of each message.
+class _AppLog {
+  final List<String> messages = [];
+  final Map<String, String> kinds = {};
+
+  void call(String message, {bool isError = false, bool isSuccess = false, bool isWarning = false}) {
+    messages.add(message);
+    if (isError) {
+      kinds[message] = 'error';
+    } else if (isSuccess) {
+      kinds[message] = 'success';
+    } else {
+      kinds[message] = isWarning ? 'warning' : 'info';
+    }
+  }
 }

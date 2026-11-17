@@ -1774,6 +1774,17 @@ Until build 500, clearing the app's storage left its key on the router, and once
 - Do: on the Pixel 7 Pro, open SETTINGS, HOME SCREEN WIDGET KEY.
 - Pass if: no amber text and no BATTERY SETTINGS button: its optimisation is already off.
 
+**WGT-11** A widget key being installed or removed is in ROUTER LOG as well as APP LOG, and never shows the key (ID-616) [hand]
+
+Until build 584 the app log said nothing when a key was installed, and the router's log never heard of either. REMOVE takes every device's widget key off the router, so run this on a router where that costs you nothing.
+
+- Do: in the app, SETTINGS, HOME SCREEN WIDGET KEY, GENERATE.
+- Pass if: APP LOG has one line `Widget key: installed on the router; N widget keys there now` (`Widget key: replaced this phone's previous key on the router; ...` on a phone that already had a key).
+- Do: SETTINGS, ROUTER LOG, REFRESH.
+- Pass if: it has the same line, from `cfg-pia-wg`, and neither log shows any part of the key.
+- Do: HOME SCREEN WIDGET KEY, REMOVE, then REMOVE at "Remove every widget key?".
+- Pass if: APP LOG and ROUTER LOG both have `Widget key: removed N widget keys from the router`, with the router's count from `nvram get sshd_authkeys | grep -c cfg-pia-wg-widget` at `0`.
+
 ---
 
 ## <a name='net'></a>NET. Network

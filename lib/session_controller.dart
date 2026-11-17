@@ -109,19 +109,15 @@ class LogEntry {
 /// A single periodic tick drives the 60-second clipboard auto-clear countdown.
 class SessionController extends ChangeNotifier {
   SessionController({
-    Duration clipboardTimeout = kClipboardTimeout,
-    Duration tickInterval = const Duration(seconds: 1),
+    this._clipboardTimeout = kClipboardTimeout,
+    this._tickInterval = const Duration(seconds: 1),
     Future<void> Function(String text)? clipboardWriter,
     RouterPrefs? routerPrefs,
     RouterHostKeys? hostKeys,
-    int logCapChars = kLogCapChars,
-    bool checkRouterScripts = false,
+    this._logCapChars = kLogCapChars,
+    this._checkRouterScripts = false,
     Future<Uint8List?> Function()? ownWidgetKey,
-  })  : _checkRouterScripts = checkRouterScripts,
-        _ownWidgetKey = ownWidgetKey ?? _storedWidgetKey,
-        _clipboardTimeout = clipboardTimeout,
-        _logCapChars = logCapChars,
-        _tickInterval = tickInterval,
+  })  : _ownWidgetKey = ownWidgetKey ?? _storedWidgetKey,
         _clipboardWriter = clipboardWriter ?? _defaultClipboardWriter,
         // A test that injects a writer clears through it, as before; the app reads the clear back.
         _clipboardClearer = clipboardWriter == null
@@ -374,8 +370,8 @@ class SessionController extends ChangeNotifier {
   /// Authorized Keys box. A failure is logged and nothing more; the action the connection is for goes on.
   Future<void> _keepWidgetKeyCurrent(SSHClient client) async {
     try {
-      final changed = await WidgetKeyRouterService(client, onLog: onLog).keepCurrent(ownKey: await _ownWidgetKey());
-      if (changed.isNotEmpty) logEntry('Updated on the router: ${changed.join(' and ')}.', isSuccess: true);
+      // What it changed is logged by the service, to the app log and the router's (ID-616).
+      await WidgetKeyRouterService(client, onLog: onLog).keepCurrent(ownKey: await _ownWidgetKey());
     } catch (e) {
       logEntry('Could not check the home screen widget key on the router: $e', isWarning: true);
     }

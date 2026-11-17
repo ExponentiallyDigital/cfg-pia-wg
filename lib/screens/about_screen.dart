@@ -18,7 +18,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../widgets/app_button.dart';
 import 'package:dartssh2/dartssh2.dart';

@@ -6,7 +6,7 @@
 // navigation bars. These tests pin that: simulated bar insets must push the header's CONTENT and
 // the screen body inward while the header's background still reaches the top of the window.
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/widgets/app_scaffold.dart';

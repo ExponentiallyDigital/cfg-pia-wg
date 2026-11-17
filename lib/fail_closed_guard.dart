@@ -33,7 +33,10 @@
 // routing changes, runs the guard again after both. Merlin's kill switch has the same shape: a
 // deny rule that stays put, after a lookup, kept true by events rather than a timer.
 //
-// Stock only. Merlin has a real kill switch, and device assignment is a stock feature here.
+// This is stock's guard. Merlin has a kill switch of its own and a guard script for the gaps in it,
+// merlin_guard.dart (ID-557), and DEVICES works on both firmwares (ARCHITECTURE 6.10, measured on
+// Merlin 3004.388.13_0, 2026-11-12 to 2026-11-14). This line said "device assignment is a stock
+// feature here" until 2026-11-17, long after Merlin had it (ID-619).
 
 import 'firmware.dart' show appVersionLabel, kRouterAppDir, kS50Path, kStockBootDir, originalScriptBackupPath;
 import 'router_script_integrity.dart' show kGuardedSlotsShell, scriptEndLine, writeRouterFile;

@@ -225,6 +225,10 @@ void main() {
       expect(s.split('\n').where(earlyExit), isEmpty, reason: '$fw watchdog');
     }
     expect(kGuardScript.split('\n').where(earlyExit), isEmpty, reason: 'guard');
+    // ID-620: the harness's fake commands run in the script's pipelines too, and the fake `service`'s
+    // `tr | awk ... exit` is what printed the error on CI, about one run in 2,600 with SIGPIPE ignored
+    // (23 in 60,000 on 2026-11-17, against none in 60,000 reading to the end).
+    expect(File('test/watchdog_harness.dart').readAsLinesSync().where(earlyExit), isEmpty, reason: "the harness's fake commands");
   });
 
   test("check-claims' control edits a line the script really has (ID-485)", () {

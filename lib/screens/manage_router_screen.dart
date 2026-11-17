@@ -14,7 +14,7 @@
 // Copyright (C) 2026 Andrew Newbury.
 
 import 'package:dartssh2/dartssh2.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../pia_service.dart';
 import '../router_slot_service.dart';

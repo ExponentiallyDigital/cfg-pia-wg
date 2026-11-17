@@ -12,7 +12,7 @@ import 'package:cfg_pia_wg/screens/main_menu_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/router_slots_screen.dart';
 import 'package:cfg_pia_wg/widgets/slot_modal.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../watchdog_test_utils.dart';
@@ -39,7 +39,7 @@ Widget _wrap(RecordingSSHClient ssh, SessionController c) => SessionScope(
       child: MaterialApp(
         home: RouterSlotsScreen(
           mode: SlotModalMode.watchdog, // the mode that wants mailsend as well as jq
-          testClientFactory: (_, __, ___) async => ssh,
+          testClientFactory: (_, _, _) async => ssh,
           slotServiceFactory: (cl) => RouterSlotService(cl, onLog: c.onLog),
         ),
       ),

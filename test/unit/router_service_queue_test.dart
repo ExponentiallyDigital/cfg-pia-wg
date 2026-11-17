@@ -10,10 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// A router whose rc_service marker is whatever the test says it is, and which forgets it when
 /// told to. Records every command so the ORDER of clear-then-act can be asserted.
 class _FakeRouter {
-  _FakeRouter({String service = '', int? pid, bool alive = false})
-      : _service = service,
-        _pid = pid,
-        _alive = alive;
+  _FakeRouter({this._service = '', this._pid, this._alive = false});
 
   String _service;
   int? _pid;

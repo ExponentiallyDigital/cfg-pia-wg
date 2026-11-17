@@ -1,7 +1,7 @@
 // test/screens/slot_params_editor_test.dart - WireGuard slot parameter editor (spec 3.3).
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/firmware.dart';
 import 'package:cfg_pia_wg/screens/slot_params_editor.dart';

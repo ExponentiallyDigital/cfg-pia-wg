@@ -17,7 +17,7 @@
 // enforce, ep_addr, ep_port, fw, mtu, nat, ppub, priv (obscured), aips. Read-only: enable,
 // ep_addr_r, psk, rip. SAVE is disabled until every editable text field is non-empty.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../input_checks.dart';
 import '../widgets/app_button.dart';

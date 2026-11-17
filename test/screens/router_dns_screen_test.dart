@@ -6,7 +6,7 @@ import 'package:cfg_pia_wg/screens/settings_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/app_scaffold.dart' show ScreenHeading;
 import 'package:cfg_pia_wg/widgets/slot_text.dart' show kSlotLabelPattern, slotOf;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -40,7 +40,7 @@ Future<void> _pumpSettings(WidgetTester tester, SessionController c, {String Fun
     child: MaterialApp(
       home: Scaffold(
         body: SettingsScreen(
-            testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: router ?? _router)),
+            testClientFactory: (_, _, _) async => RecordingSSHClient(responder: router ?? _router)),
       ),
     ),
   ));

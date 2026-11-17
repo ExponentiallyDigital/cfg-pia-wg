@@ -7,7 +7,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
@@ -370,7 +370,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: SessionScope(
           controller: c,
-          child: Scaffold(body: AboutScreen(testClientFactory: (_, __, ___) async => ssh)),
+          child: Scaffold(body: AboutScreen(testClientFactory: (_, _, _) async => ssh)),
         ),
       ));
       await tester.pumpAndSettle();
@@ -401,7 +401,7 @@ void main() {
         await tester.pumpWidget(MaterialApp(
           home: SessionScope(
             controller: c,
-            child: Scaffold(body: AboutScreen(testClientFactory: (_, __, ___) async => ssh)),
+            child: Scaffold(body: AboutScreen(testClientFactory: (_, _, _) async => ssh)),
           ),
         ));
         await tester.pumpAndSettle();
@@ -459,7 +459,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: SessionScope(
           controller: c,
-          child: Scaffold(body: AboutScreen(testClientFactory: (_, __, ___) async => ssh)),
+          child: Scaffold(body: AboutScreen(testClientFactory: (_, _, _) async => ssh)),
         ),
       ));
       await tester.pumpAndSettle();
@@ -487,7 +487,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: SessionScope(
           controller: c,
-          child: Scaffold(body: AboutScreen(testClientFactory: (_, __, ___) async => ssh)),
+          child: Scaffold(body: AboutScreen(testClientFactory: (_, _, _) async => ssh)),
         ),
       ));
       await tester.pumpAndSettle();
@@ -541,7 +541,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: SessionScope(
           controller: c,
-          child: Scaffold(body: AboutScreen(testClientFactory: (_, __, ___) async => ssh)),
+          child: Scaffold(body: AboutScreen(testClientFactory: (_, _, _) async => ssh)),
         ),
       ));
       await tester.pumpAndSettle();
@@ -566,7 +566,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: SessionScope(
           controller: c,
-          child: Scaffold(body: AboutScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: (_) => ''))),
+          child: Scaffold(body: AboutScreen(testClientFactory: (_, _, _) async => RecordingSSHClient(responder: (_) => ''))),
         ),
       ));
       await tester.pumpAndSettle();
@@ -586,7 +586,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: SessionScope(
           controller: c,
-          child: Scaffold(body: AboutScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: (_) => ''))),
+          child: Scaffold(body: AboutScreen(testClientFactory: (_, _, _) async => RecordingSSHClient(responder: (_) => ''))),
         ),
       ));
       await tester.pumpAndSettle();
@@ -630,7 +630,7 @@ void main() {
       c.setUnlocked(unlocked);
       addTearDown(c.dispose);
       await tester.pumpWidget(MaterialApp(
-        home: SessionScope(controller: c, child: Scaffold(body: AboutScreen(testClientFactory: (_, __, ___) async => ssh))),
+        home: SessionScope(controller: c, child: Scaffold(body: AboutScreen(testClientFactory: (_, _, _) async => ssh))),
       ));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('about_redeploy_scripts')), findsOneWidget, reason: 'the old script is offered the update');
@@ -674,7 +674,7 @@ void main() {
         ..routerConnected = true;
       addTearDown(c.dispose);
       await tester.pumpWidget(MaterialApp(
-        home: SessionScope(controller: c, child: Scaffold(body: AboutScreen(testClientFactory: (_, __, ___) async => ssh))),
+        home: SessionScope(controller: c, child: Scaffold(body: AboutScreen(testClientFactory: (_, _, _) async => ssh))),
       ));
       await tester.pumpAndSettle();
 

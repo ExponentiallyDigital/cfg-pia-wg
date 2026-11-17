@@ -26,7 +26,7 @@
 // A refusal is remembered for the session by the caller, so this does not reappear on every screen
 // entry. See .claude/plans/plan_install-helper-binaries.md.
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'app_button.dart';
 import 'package:url_launcher/url_launcher.dart';

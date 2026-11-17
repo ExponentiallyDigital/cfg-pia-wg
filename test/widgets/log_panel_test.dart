@@ -3,7 +3,7 @@
 // Reported: a selection copied out of the LOG screen pasted as one run-on line,
 // "...via SSH...[10:19:34] Router firmware detected: stock....". SelectionArea joins the text of
 // separate widgets with NO separator, so the old widget-per-entry Column lost every line break.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_colors.dart';
@@ -139,7 +139,7 @@ void main() {
           body: SingleChildScrollView(
             child: ValueListenableBuilder<int>(
               valueListenable: revision,
-              builder: (_, __, ___) => LogPanel(entries: log),
+              builder: (_, _, _) => LogPanel(entries: log),
             ),
           ),
         ),
@@ -165,7 +165,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: SingleChildScrollView(
-            child: ValueListenableBuilder<int>(valueListenable: revision, builder: (_, __, ___) => LogPanel(entries: log)),
+            child: ValueListenableBuilder<int>(valueListenable: revision, builder: (_, _, _) => LogPanel(entries: log)),
           ),
         ),
       ));

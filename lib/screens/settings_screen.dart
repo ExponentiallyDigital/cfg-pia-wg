@@ -27,7 +27,7 @@ import 'dart:io';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../widgets/app_button.dart';
 
@@ -632,7 +632,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!read || !mounted) return;
     final stock = svc;
     if (firmware != RouterFirmware.stock || stock == null) {
-      // Merlin has no such key and no such limit; writing it there would create a setting nothing reads.
+      // Merlin has no such key and no such limit (measured 2026-11-17, see RouterOps.maxActiveSlots, ID-619); writing
+      // it there would create a setting nothing reads.
       return _notStock(firmware, 'Merlin has no limit on active VPNs, so there is nothing to change.');
     }
 
@@ -717,8 +718,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final (ip, user, pass) = creds;
     try {
       final client = _session(ip, user, pass);
-      final n = await WidgetKeyRouterService(client, onLog: _c.onLog).removeAll();
-      _c.logEntry('Removed $n widget key(s) from the router.', isSuccess: true);
+      // The service logs the removal, to the app log and the router's (ID-616).
+      await WidgetKeyRouterService(client, onLog: _c.onLog).removeAll();
       await _connected(ip);
       await (widget.testCancelRefresh ?? cancelWidgetRefresh)();
       return null;

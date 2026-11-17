@@ -16,7 +16,7 @@
 // Extracted verbatim from main.dart's _RegionPickerSheet so every screen that needs region
 // selection (standalone generate, router CREATE, watchdog EDIT) reuses one implementation.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../app_colors.dart';
 import '../pia_service.dart';

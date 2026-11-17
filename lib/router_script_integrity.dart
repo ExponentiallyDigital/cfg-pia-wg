@@ -247,7 +247,7 @@ class RouterScriptHealth {
   final DeployedScript? guard;
   final List<ScriptFault> faults;
 
-  List<DeployedScript> get all => [...watchdogs, if (guard != null) guard!];
+  List<DeployedScript> get all => [...watchdogs, ?guard];
   List<DeployedScript> get damaged => [for (final s in all) if (s.damaged) s];
 }
 

@@ -99,7 +99,7 @@ if [ "$1" = "-o" ] && [ "$2" = "link" ]; then
 fi
 if [ "$1" = "route" ] && [ "$2" = "get" ]; then
   dst="$3"
-  t="$(sort -s -t: -k1,1n "$R" | awk -v d="$dst" '{for (i = 2; i < NF; i++) if ($i == "to" && $(i + 1) == d) {for (j = 2; j < NF; j++) if ($j == "lookup") {print $(j + 1); exit}}}')"
+  t="$(sort -s -t: -k1,1n "$R" | awk -v d="$dst" '!f {for (i = 2; !f && i < NF; i++) if ($i == "to" && $(i + 1) == d) {for (j = 2; !f && j < NF; j++) if ($j == "lookup") {print $(j + 1); f = 1}}}')"
   if [ -n "$t" ]; then echo "$dst dev wgc$((10 - t)) table $t src 10.0.0.2"; else echo "$dst via 192.0.2.1 dev eth0 src 192.0.2.10"; fi
   exit 0
 fi
@@ -164,7 +164,7 @@ case "$1" in
       if [ "$n" -gt 0 ]; then echo $((n - 1)) > "$STATE/skip_restarts"; echo "rc_service: skip the event: restart_vpnc." >> "$STATE/syslog"; exit 0; fi
     fi
     unit="$(cat "$STATE/nv/vpnc_unit" 2>/dev/null)"
-    slot="$(tr '<' '\n' < "$STATE/nv/vpnc_clientlist" | awk -F'>' -v u="$unit" 'length($0) == 0 {next} {if (n == u) {print $3; exit} n++}')"
+    slot="$(tr '<' '\n' < "$STATE/nv/vpnc_clientlist" | awk -F'>' -v u="$unit" 'length($0) == 0 {next} {if (n == u && !f) {print $3; f = 1} n++}')"
     [ -n "$slot" ] || exit 0
     IF="wgc$slot"
     cat "$STATE/nv/${IF}_ppub" > "$STATE/peer_$IF" 2>/dev/null

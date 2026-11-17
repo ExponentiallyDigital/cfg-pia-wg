@@ -3,7 +3,7 @@
 // The clipboard auto-clear timer ticks at 1 Hz once a COPY arms it; pushing the tick interval far
 // out keeps pumpAndSettle from hanging in tests that exercise the clipboard. Dispose the injected
 // controller at the end of the test body (cancels the timer).
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/app_shell.dart';
 import 'package:cfg_pia_wg/session_controller.dart';

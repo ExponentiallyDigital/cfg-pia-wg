@@ -1,5 +1,5 @@
 // test/widgets/error_presenter_test.dart - input-batch vs system-one + single-modal-at-a-time.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
 import 'package:cfg_pia_wg/widgets/error_presenter.dart';

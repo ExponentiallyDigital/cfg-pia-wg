@@ -30,7 +30,7 @@ import 'package:dartssh2/dartssh2.dart';
 
 import 'firmware.dart' show kRouterAppDir;
 import 'router_command.dart';
-import 'router_watchdog.dart' show heredocWriteCommands;
+import 'router_watchdog.dart' show buildLoggerCommand, heredocWriteCommands;
 import 'widget_key.dart';
 import 'widget_status_service.dart' show kWidgetKeyCommand, kWidgetReadScript, kWidgetReadScriptPath;
 
@@ -51,22 +51,44 @@ class WidgetKeyRouterService {
   Future<String> _read(String cmd) async => (await runRouterCommand(client, cmd, allowFailure: true, onLog: onLog)).stdout;
   Future<void> _run(String cmd) async => runRouterCommand(client, cmd, onLog: onLog);
 
+  /// One line to the app log and one to the router's, for every change this service makes to the
+  /// router's keys, success or failure, always (Andrew's rule, 2026-11-16; ID-616). It names what was
+  /// done and how many keys, never a key. The router's line is best effort, as everywhere else
+  /// (RouterSlotService._logRouter): a router that can't take it doesn't undo the change. [toApp]
+  /// false is for a failure the caller already put in the app log.
+  Future<void> _log(String detail, {bool isError = false, bool isSuccess = false, bool toApp = true}) async {
+    final message = 'Widget key: $detail';
+    if (toApp) onLog?.call(message, isError: isError, isSuccess: isSuccess, isWarning: false);
+    try {
+      await runRouterCommand(client, buildLoggerCommand(message), allowFailure: true);
+    } catch (_) {}
+  }
+
+  static String _keys(int n) => '$n widget key${n == 1 ? '' : 's'}';
+
   /// Installs [publicKeyLine] (from `widgetKeyRestriction` and `openSshPublicKeyLine`, with
   /// [kWidgetKeyComment] as its comment), replacing an earlier copy of the same key, and this
   /// phone's previous key, [replacing], if it had one. Other devices' widget keys stay (ID-398).
   /// Throws a plain-English reason if the router doesn't hold the new key afterwards (ID-407).
   Future<void> install(String publicKeyLine, {Uint8List? replacing}) async {
-    // The script first, so the key never points at a read that isn't there (ID-467).
-    await writeScript();
-    final current = await _read(_kReadAuthKeys);
-    var next = replaceWidgetKeyLine(current, publicKeyLine);
-    if (replacing != null) next = removeWidgetKeyLine(next, widgetKeyBlob(replacing));
-    await _write(next);
-    final blob = sshKeyBlob(publicKeyLine)!;
-    final (nv, live) = await _readBack();
-    if (!nv.contains(blob) || !live.contains(blob)) {
-      throw const WidgetKeyRouterException("The router didn't keep the new key, so nothing was saved on this phone. "
-          'Try again; if it fails again, use REMOVE first.');
+    try {
+      // The script first, so the key never points at a read that isn't there (ID-467).
+      await writeScript();
+      final current = await _read(_kReadAuthKeys);
+      var next = replaceWidgetKeyLine(current, publicKeyLine);
+      if (replacing != null) next = removeWidgetKeyLine(next, widgetKeyBlob(replacing));
+      await _write(next);
+      final blob = sshKeyBlob(publicKeyLine)!;
+      final (nv, live) = await _readBack();
+      if (!nv.contains(blob) || !live.contains(blob)) {
+        throw const WidgetKeyRouterException("The router didn't keep the new key, so nothing was saved on this phone. "
+            'Try again; if it fails again, use REMOVE first.');
+      }
+      final done = replacing == null ? 'installed on the router' : "replaced this phone's previous key on the router";
+      await _log('$done; ${_keys(widgetKeyLineCount(nv))} there now', isSuccess: true);
+    } on WidgetKeyRouterException catch (e) {
+      await _log('install failed - ${e.message}', isError: true);
+      rethrow;
     }
   }
 
@@ -81,8 +103,11 @@ class WidgetKeyRouterService {
     if (count > 0) await _write(next);
     final (nv, live) = await _readBack();
     if (widgetKeyLineCount(nv) > 0 || widgetKeyLineCount(live) > 0) {
-      throw const WidgetKeyRouterException("The router still holds a widget key after REMOVE, so this phone's key was kept. Try again.");
+      const failure = WidgetKeyRouterException("The router still holds a widget key after REMOVE, so this phone's key was kept. Try again.");
+      await _log('removal failed - ${failure.message}', isError: true);
+      throw failure;
     }
+    await _log(count == 0 ? 'none on the router to remove' : 'removed ${_keys(count)} from the router', isSuccess: count > 0);
     return count;
   }
 
@@ -106,22 +131,29 @@ class WidgetKeyRouterService {
   /// a widget key uses it. Other phones' lines are left as they are: each moves when its own phone
   /// next connects. Returns what changed, for the app log; empty when nothing needed doing.
   Future<List<String>> keepCurrent({Uint8List? ownKey}) async {
-    final current = await _read(_kReadAuthKeys);
-    var next = current;
-    if (ownKey != null) {
-      final blob = widgetKeyBlob(ownKey);
-      final own = current.split('\n').where((l) => sshKeyBlob(l) == blob);
-      if (own.isNotEmpty && !own.first.contains(kWidgetReadScriptPath)) next = replaceWidgetKeyLine(current, widgetKeyLine(ownKey));
-    }
     final changed = <String>[];
-    if (next.contains(kWidgetReadScriptPath) && !await _scriptCurrent()) {
-      await writeScript();
-      changed.add("the home screen widget's read script");
+    try {
+      final current = await _read(_kReadAuthKeys);
+      var next = current;
+      if (ownKey != null) {
+        final blob = widgetKeyBlob(ownKey);
+        final own = current.split('\n').where((l) => sshKeyBlob(l) == blob);
+        if (own.isNotEmpty && !own.first.contains(kWidgetReadScriptPath)) next = replaceWidgetKeyLine(current, widgetKeyLine(ownKey));
+      }
+      if (next.contains(kWidgetReadScriptPath) && !await _scriptCurrent()) {
+        await writeScript();
+        changed.add("the home screen widget's read script");
+      }
+      if (next != current) {
+        await _write(next);
+        changed.add("this phone's home screen widget key, now its short form");
+      }
+    } catch (e) {
+      // The caller puts this in the app log; the router's log gets it here (ID-616).
+      await _log('check failed - $e', toApp: false);
+      rethrow;
     }
-    if (next != current) {
-      await _write(next);
-      changed.add("this phone's home screen widget key, now its short form");
-    }
+    if (changed.isNotEmpty) await _log('updated on the router - ${changed.join(' and ')}', isSuccess: true);
     return changed;
   }
 

@@ -32,7 +32,7 @@ import 'dart:math';
 
 import 'package:cfg_pia_wg/screens/log_screen.dart';
 import 'package:cfg_pia_wg/session_controller.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 

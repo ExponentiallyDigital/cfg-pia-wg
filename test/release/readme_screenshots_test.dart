@@ -39,7 +39,7 @@ import 'package:cfg_pia_wg/widgets/app_button.dart';
 import 'package:cfg_pia_wg/widgets/device_assignment_screen.dart';
 import 'package:cfg_pia_wg/widgets/slot_text.dart';
 import 'package:cfg_pia_wg/widgets/slot_modal.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -185,7 +185,7 @@ void main() {
     navigator.push(MaterialPageRoute<void>(
       settings: RouteSettings(name: AppDestination.network.routeName),
       builder: (_) => NetworkScreen(
-        testClientFactory: (_, __, ___) async => ssh,
+        testClientFactory: (_, _, _) async => ssh,
         phoneLookup: () async =>
             const NetworkFacts(ip: '198.51.100.7', city: 'Sydney', country: 'Australia', provider: 'Example Broadband'),
         addressLookup: () async => '104.18.40.93',
@@ -302,7 +302,7 @@ void main() {
   Future<void> devicesShot(WidgetTester tester, String name, Future<void> Function() steps) async {
     useStock(); // the firmware is global; every README screenshot is of stock
     final ssh = devRouter();
-    await shoot(tester, name, DeviceAssignmentScreen(testClientFactory: (_, __, ___) async => ssh),
+    await shoot(tester, name, DeviceAssignmentScreen(testClientFactory: (_, _, _) async => ssh),
         route: AppDestination.deviceAssignment.routeName, then: () async {
       // The connect form, unless an earlier shot's session is still there to reuse.
       if (find.byKey(const Key('device_connect')).evaluate().isNotEmpty) {
@@ -407,7 +407,7 @@ void main() {
   for (final (name, body) in [('05.01-router-log.png', plainLog), ('05.02-router-log-guard.png', guardLog)]) {
     testWidgets(name, (tester) async {
       final ssh = logRouter(body);
-      await shoot(tester, name, RouterLogScreen(testClientFactory: (_, __, ___) async => ssh),
+      await shoot(tester, name, RouterLogScreen(testClientFactory: (_, _, _) async => ssh),
           controller: connected(), route: AppDestination.routerLog.routeName);
     }, skip: !_wanted || !fontsThere);
   }
@@ -423,7 +423,7 @@ void main() {
 
   Future<void> settingsShot(WidgetTester tester, String name, Future<void> Function() steps) async {
     await shoot(tester, name,
-        SettingsScreen(testClientFactory: (_, __, ___) async => RecordingSSHClient(responder: dnsRouter), testRestore: () async => true),
+        SettingsScreen(testClientFactory: (_, _, _) async => RecordingSSHClient(responder: dnsRouter), testRestore: () async => true),
         controller: connected(), route: AppDestination.settings.routeName, then: steps);
   }
 
@@ -636,7 +636,7 @@ void main() {
     useStock();
     buildInfo(tester);
     final ssh = flowRouter();
-    await shoot(tester, updateShot, AboutScreen(testClientFactory: (_, __, ___) async => ssh),
+    await shoot(tester, updateShot, AboutScreen(testClientFactory: (_, _, _) async => ssh),
         controller: connected(), route: AppDestination.about.routeName, then: () async {
       cropAround(tester, updateShot, find.byKey(const Key('about_heading')));
     });
@@ -698,7 +698,7 @@ void main() {
   testWidgets('tablet 07: ROUTER LOG with the guard', (tester) async {
     onTablet();
     final ssh = logRouter(guardLog);
-    await shoot(tester, '$tablet/07.png', RouterLogScreen(testClientFactory: (_, __, ___) async => ssh),
+    await shoot(tester, '$tablet/07.png', RouterLogScreen(testClientFactory: (_, _, _) async => ssh),
         controller: connected(), route: AppDestination.routerLog.routeName);
   }, skip: !_wanted || !fontsThere);
   testWidgets('tablet 08: STANDALONE', (tester) async {

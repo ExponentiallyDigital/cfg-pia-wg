@@ -24,7 +24,7 @@
 import 'dart:async';
 
 import 'package:dartssh2/dartssh2.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'app_button.dart';
 import 'app_drawer.dart' show navigateToDestination;
@@ -1311,7 +1311,7 @@ class _PickerButton extends StatelessWidget {
           // Amber for a staged change, never teal. The device name above is already teal, so a
           // teal picker made the whole row one colour and the pending state disappeared into it
           // (B2 feedback 2026-09-08). Amber also carries the right meaning: not yet written.
-          foregroundColor: changed ? kWarn : (muted ? kMuted : kText),
+          foregroundColor: _foreground,
           // Grey, not kBorder: at kBorder the outline all but vanished and the picker read as text.
           side: BorderSide(color: changed ? kWarn : kMuted),
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
@@ -1319,24 +1319,31 @@ class _PickerButton extends StatelessWidget {
         ),
         onPressed: onTap,
         child: Row(children: [
-          Expanded(
-            child: blocked
-                ? Text.rich(
-                    const TextSpan(children: [
-                      TextSpan(text: 'disabled', style: TextStyle(color: kError)),
-                      TextSpan(text: ' - no Internet or VPN access', style: TextStyle(color: kMuted)),
-                    ]),
-                    key: Key('${keyValue}_disabled'),
-                    overflow: TextOverflow.ellipsis)
-                // A slot shows in its own colour, `default - wgc5:...` included (ID-515); Internet keeps the
-                // button's colour, as does a staged change, in amber, and a muted row, in grey.
-                : (changed || muted)
-                    ? Text(label, overflow: TextOverflow.ellipsis)
-                    : SlotText(label, overflow: TextOverflow.ellipsis),
-          ),
+          Expanded(child: _labelWidget()),
           const Icon(Icons.arrow_drop_down, size: 18),
         ]),
       );
+
+  Color get _foreground {
+    if (changed) return kWarn;
+    return muted ? kMuted : kText;
+  }
+
+  Widget _labelWidget() {
+    if (blocked) {
+      return Text.rich(
+          const TextSpan(children: [
+            TextSpan(text: 'disabled', style: TextStyle(color: kError)),
+            TextSpan(text: ' - no Internet or VPN access', style: TextStyle(color: kMuted)),
+          ]),
+          key: Key('${keyValue}_disabled'),
+          overflow: TextOverflow.ellipsis);
+    }
+    // A slot shows in its own colour, `default - wgc5:...` included (ID-515); Internet keeps the
+    // button's colour, as does a staged change, in amber, and a muted row, in grey.
+    if (changed || muted) return Text(label, overflow: TextOverflow.ellipsis);
+    return SlotText(label, overflow: TextOverflow.ellipsis);
+  }
 }
 
 class _ChangeLine {
