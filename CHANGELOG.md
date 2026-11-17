@@ -85,13 +85,16 @@ This file contains lists of work items in a specific and purposeful relative seq
 
 **Work items in section 1.1 may not have been sequenced, review and agree sequencing before moving any items from here to section 1.2**
 
-Work items for the **next** release:
+Work items for the **next** release (ID-594 design to be finalised first):
 
 - ID-594 ADD: choose what carries the router's own DNS, on stock and Merlin: the firmware's choice, a named slot, or the internet connection. Today it's a side effect of which slot lists the router's own DNS servers as its DNS servers (the first to start on Merlin, the highest-numbered on stock). The design is a rule at priority 1010 for each of the router's DNS server addresses, into the chosen slot's table or a table holding only the WAN's default route, put back by the guard; it falls through to the firmware's choice when that slot is down. Raised 2026-11-15, and rewritten the same day: it first chose between slots sharing DNS servers, which the day's measurements showed matters only when the router's own DNS is among them.
   - First: Andrew decides whether to build it. His router's DNS already goes through wgc5 with no new code, by giving wgc5 the router's own DNS servers and keeping them off every other slot and watchdog.
   - DoD: on each firmware, through a reboot, `ip route get` shows the chosen route for each of the router's DNS servers, and `check-claims.sh` fails with the rule deleted by hand.
   - Plan: [plan_router-dns-slot.md](.claude/plans/plan_router-dns-slot.md)
   - Now: the rule measured on 388.13_0, 2026-11-15, one run: at 1010 it moved the router's route to 9.9.9.9 from wgc1 to wgc5, and to the WAN through a table of its own. Not yet seen through a reboot or with the slot stopped.
+
+Work items for the **next** release (requires Merlin to be swapped out for STOCK firmware):
+
 - ID-578 SEC: rerun GRD-7 on stock with `check-reboot.sh` as fixed on 2026-11-14, the next time the router is on stock. Until then counted any answer but the WAN address read before the reboot as the tunnel, and the router's WAN address can change at a reboot (it did on Merlin that day), so a leak through the new address would have passed. README 5.4.1's "no leak across three restarts in a row" rests on those passes; the earlier runs that found leaks (4 of 6) are unaffected.
   - DoD: three passes on stock with the fixed check, or README 5.4.1 corrected to what it finds.
 - ID-588 TST: WGT-2 on stock, the next time the router is on stock (with ID-578): an answering tunnel's widget row names the devices pinned to it (ID-587). The line is built the same way as on Merlin, where MRL-15 passed.
@@ -105,11 +108,17 @@ Work items for the **next** release:
 
 Work items for the **current** release, in the order they are to be done:
 
+- ID-622 BLD: the Gradle JVM's Metaspace ceiling is raised from 512m to 1g in `android/gradle.properties`, because R8 ran out of it in the signed release build for v0.8.214 on CI (`OutOfMemoryError: Metaspace` in `:app:minifyReleaseWithR8`, run 44070872593, 2026-11-17). It had been 512m since the first commit, and an older commented-out line held 1g. The same release bundle built on this PC in 1m27s, so nothing local would have said so. A ceiling, not memory taken.
+  - DoD: `test/unit/gradle_properties_test.dart` (three tests, seen failing on 512m), and a release build on CI with it, the release workflow's dry run or the next release, builds the signed Android bundle.
+  - Done 2026-11-17: the setting and its test. v0.8.214's release failed twice on CI at this step (run 44070872593, attempts 1 and 2, both `OutOfMemoryError: Metaspace`), so that tag stays without a release, and build 584's iOS build is in TestFlight. Left: a CI release build with it, a dry run and then v0.8.215.
+- ID-584 DOC: a reply in SNBForums thread 98266 announcing DEVICES on Merlin, posted by Andrew once ID-559's release is in both stores. Text in `promotion/posts.md`.
+  - Now: the text names v0.8.210, the release, 2026-11-15; Andrew posts it once ID-559 shows 0.8.210 live on both stores.
+  - Now: ready to post, 2026-11-15: ID-559 closed with 0.8.210 live on both stores.
 - ID-600 ADD: status for each slot from `wg show`, on stock and Merlin: the age of the latest handshake, data received and sent, and the endpoint, beside the watchdog's rebuilds from its log. The app already reads handshake ages (`kHandshakeAgesCommand`, DEVICES' tunnel health). Shown on NETWORK, beside each tunnel's public address (Andrew, 2026-11-15). Raised 2026-11-15.
   - Plan: [plan_network-tunnel-status.md](.claude/plans/plan_network-tunnel-status.md)
-- ID-604 ADD: a speed test for each tunnel on NETWORK, on stock and Merlin: the router downloads and uploads a fixed amount through each tunnel in turn, and the card shows Mbit/s each way with the time it was taken. First, Andrew decides the server: Cloudflare's free endpoints, which see only the tunnel's PIA address, or no outside party, showing only the current rate from `wg show`'s byte counts. Then a test on stock to see whether the server can be reached below 128.0.0.0. Raised 2026-11-15.
+- ID-604 ADD: a speed test for each tunnel on NETWORK, on stock and Merlin: the router downloads and uploads a fixed amount through each tunnel in turn, and the card shows Mbit/s each way with the time it was taken. Use Cloudflare's free endpoints, which see only the tunnel's PIA address. Then a test on stock to see whether the server can be reached below 128.0.0.0. Raised 2026-11-15.
   - Plan: [plan_network-tunnel-status.md](.claude/plans/plan_network-tunnel-status.md)
-- ID-596 ADD: on Merlin, a BY RULE view in DEVICES that lists every VPN Director rule in the order VPN Director acts on them, and can switch any WireGuard or WAN rule on or off, or delete it, through DEVICES' apply path so the guard runs after every change. OpenVPN rules are listed, read-only. Raised 2026-11-15, after "wanpin" and "vd2" could only be switched off in the web UI. The UI is an agreed concept, still to be discussed.
+- ID-596 ADD: on Merlin, a BY RULE view in DEVICES that lists every VPN Director rule in the order VPN Director acts on them, and can switch any WireGuard or WAN rule on or off, rename or delete it, through DEVICES' apply path so the guard runs after every change. OpenVPN rules are listed, read-only. Raised 2026-11-15, after "wanpin" and "vd2" could only be switched off in the web UI. The UI is an agreed concept but implementation of the UI must be agreed first via mock ups.
   - DoD: on Merlin, a rule switched off or deleted in the app is gone from `ip rule` with the guard's `prohibit` for it, `check-claims.sh` fails with it put back by hand, and README and the store screenshots are checked.
   - Plan: [plan_vpn-director-rules.md](.claude/plans/plan_vpn-director-rules.md)
 - ID-597 ADD: on Merlin, add and edit WireGuard and WAN rules in DEVICES' BY RULE view, ranges and remote addresses included; never OpenVPN. After ID-596. First, the guard's hold for a range sent to a tunnel is measured on the router, and Andrew decides whether a pinned device's remote address to the internet is refused or warned.
@@ -118,9 +127,6 @@ Work items for the **current** release, in the order they are to be done:
 - ID-305 CHG: stock's mail sender moves to `mailsend-go` v1.0.13, so a failed send's diagnostics include the server's certificate (`-printCerts`). Diagnostics only: v1.0.12 already verifies the certificate when sending (`InsecureSkipVerify: !VerifyCert`), and upstream says there's "no need to update unless you need certificate details" (issue #76).
   - Work: new pins and SHA-256s for both architectures in `binary_installer.dart`, from the published checksums and recomputed on hardware; the archive member names; offering the update to routers on v1.0.12.
   - DoD: on stock, TEST EMAIL sends with v1.0.13, and a deliberately failed send prints the certificate in the app log.
-- ID-584 DOC: a reply in SNBForums thread 98266 announcing DEVICES on Merlin, posted by Andrew once ID-559's release is in both stores. Text in `promotion/posts.md`.
-  - Now: the text names v0.8.210, the release, 2026-11-15; Andrew posts it once ID-559 shows 0.8.210 live on both stores.
-  - Now: ready to post, 2026-11-15: ID-559 closed with 0.8.210 live on both stores.
 
 ---
 
@@ -141,6 +147,14 @@ Every commit is a build. Whoever commits follows these steps, in this order:
 5. **Before a release's own commit**, open the dev-to-main PR, as a draft if need be, as soon as the release's code is pushed, read SonarCloud's count of new issues on it with the API call in CLAUDE.md, and fix them first. A local estimate of Sonar's rules can only screen, not clear: on 2026-11-15 it missed seven issues, and the release needed another build (ID-593); on 2026-11-16 it missed two more, a nested ternary and a closure over the complexity limit, and build 582 was the result (`test/unit/no_nested_ternary_test.dart`, ID-618, now catches the ternary).
 
 ---
+
+2026-11-17 v0.8.215 build 585 - the Android release build has room for R8: Gradle's Metaspace ceiling is 1 GB, after v0.8.214's signed build ran out on CI
+
+```play
+• HOME SCREEN WIDGET KEY now logs every install and removal to APP LOG and to the router's own log.
+• Behind the scenes: built on the latest Flutter 3.50 and packages, with new checks that keep the router log complete.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 2026-11-17 v0.8.214 build 584 - widget key changes are logged to the router too, two new checks (router log coverage, nested ternaries), and the flaky watchdog test is fixed
 
