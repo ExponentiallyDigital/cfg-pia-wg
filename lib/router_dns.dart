@@ -575,7 +575,7 @@ class DnsRouting {
   }) {
     if (merlin) {
       // Merlin has neither of stock's lists: its slots and VPN Director's rules, in the same shapes
-      // DEVICES uses (ID-581).
+      // DEVICES uses (ID-581; ARCHITECTURE 6.10, measured on 3004.388.13_0, 2026-11-12 to 2026-11-14).
       records = parseMerlinSlots([for (var s = 1; s <= 5; s++) '$s>${nvram['wgc${s}_desc'] ?? ''}>${nvram['wgc${s}_enable'] ?? ''}'].join('\n'));
       policies = merlinPolicies(parseVpnDirectorRules(vpnDirectorRaw));
     } else {
@@ -957,7 +957,8 @@ DnsFlowLine _slotDnsLine(DnsRouting r, String servers, List<int> slots) {
 }
 
 /// How the router's own lookups reach a slot's DNS servers, as a sentence for its note, or empty.
-/// Merlin has no rules for them: the first slot to start routes them in the main table (ID-581).
+/// Merlin has no rules for them: the first slot to start routes them in the main table (ID-581,
+/// measured on Merlin 3004.388.13_0, 2026-11-15).
 String _slotDnsVia(DnsRouting r, String servers, List<DnsRule> winners) {
   // A route or rule to an address matters to the router's own lookups only if they go there. The
   // sentence used to say they did whenever a route existed, which read as DNS going through a

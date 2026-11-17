@@ -62,6 +62,11 @@ class AppErrors {
   static Future<void> inputs(BuildContext context, SessionController controller, List<String> errors) =>
       errors.isEmpty ? Future<void>.value() : _present(context, controller, errors);
 
+  static String _dialogTitle({required bool warning, required int count}) {
+    if (warning) return 'Warning';
+    return count > 1 ? 'Please correct the following' : 'Error';
+  }
+
   static Future<bool?> _present(BuildContext context, SessionController controller, List<String> messages,
       {String? detail, String? logDetail, String? actionLabel, bool warning = false}) async {
     for (final m in messages) {
@@ -80,7 +85,7 @@ class AppErrors {
       context: context,
       useRootNavigator: true,
       builder: (ctx) => _ErrorDialog(
-        title: warning ? 'Warning' : (messages.length > 1 ? 'Please correct the following' : 'Error'),
+        title: _dialogTitle(warning: warning, count: messages.length),
         messages: shown,
         actionLabel: actionLabel,
         warning: warning,

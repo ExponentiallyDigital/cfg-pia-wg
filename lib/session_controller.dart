@@ -370,8 +370,8 @@ class SessionController extends ChangeNotifier {
   /// Authorized Keys box. A failure is logged and nothing more; the action the connection is for goes on.
   Future<void> _keepWidgetKeyCurrent(SSHClient client) async {
     try {
-      final changed = await WidgetKeyRouterService(client, onLog: onLog).keepCurrent(ownKey: await _ownWidgetKey());
-      if (changed.isNotEmpty) logEntry('Updated on the router: ${changed.join(' and ')}.', isSuccess: true);
+      // What it changed is logged by the service, to the app log and the router's (ID-616).
+      await WidgetKeyRouterService(client, onLog: onLog).keepCurrent(ownKey: await _ownWidgetKey());
     } catch (e) {
       logEntry('Could not check the home screen widget key on the router: $e', isWarning: true);
     }

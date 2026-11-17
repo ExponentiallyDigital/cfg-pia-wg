@@ -14,7 +14,7 @@
 // Copyright (C) 2026 Andrew Newbury.
 //
 // Stock firmware has no services-start equivalent and `cru` entries do not survive a reboot or
-// power cycle, so the app replaces /opt/etc/init.d/S50downloadmaster - a script the firmware
+// power cycle (ARCHITECTURE 4.1.4 and 7.4), so the app replaces /opt/etc/init.d/S50downloadmaster - a script the firmware
 // already runs at boot (`start`) and with `firewall-start` whenever its routing changes. Stock only
 // runs it while Download Master is enabled in its USB applications (`app_get_field.sh`, read
 // 2026-10-03), so the hook depends on that staying so.

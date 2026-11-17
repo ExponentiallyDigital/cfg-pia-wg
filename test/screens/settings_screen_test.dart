@@ -1565,7 +1565,8 @@ void main() {
 
     testWidgets('GENERATE installs on the router, reads it back, then saves on the phone', (tester) async {
       final r = FakeKeysRouter('');
-      await openDialog(tester, ssh: r.client);
+      final c = connected();
+      await openDialog(tester, controller: c, ssh: r.client);
       await tester.tap(find.byKey(const Key('widget_key_generate')));
       await tester.pumpAndSettle();
 
@@ -1573,6 +1574,9 @@ void main() {
       expect(widgetKeyLineCount(r.nv), 1);
       expect(tester.widget<Text>(find.byKey(const Key('widget_key_status'))).data, contains('Key generated'));
       expect(tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data, contains('installed on your router'));
+      // ID-616: the install is in the app log, once, and in the router's.
+      expect(c.log.where((e) => e.message.endsWith('Widget key: installed on the router; 1 widget key there now')), hasLength(1));
+      expect(r.client.commands.where((cmd) => cmd.startsWith('logger -t ') && cmd.contains('installed on the router; 1 widget key there now')), hasLength(1));
     });
 
     // The first refresh used to start before the new key was saved, so it used the old one, which the
@@ -1687,7 +1691,9 @@ void main() {
       expect(await store.readLogin(), isNull, reason: 'the login goes with the key, not without it');
       expect(tester.widget<Text>(find.byKey(const Key('widget_key_note'))).data,
           "Every widget key removed from your router, and this phone's key deleted.");
-      expect(c.log.any((e) => e.message.endsWith('Removed 3 widget key(s) from the router.')), isTrue);
+      // ID-616: the removal is in the app log, once, and in the router's.
+      expect(c.log.where((e) => e.message.endsWith('Widget key: removed 3 widget keys from the router')), hasLength(1));
+      expect(r.client.commands.where((cmd) => cmd.startsWith('logger -t ') && cmd.contains('removed 3 widget keys from the router')), hasLength(1));
       expect(cancelled, 1, reason: 'a job that can no longer log in should not keep waking the phone');
     });
 

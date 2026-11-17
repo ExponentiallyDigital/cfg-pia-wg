@@ -125,7 +125,8 @@ class StockOps extends RouterOps {
   Future<int?> maxActiveSlots(RouterSlotService slots) => slots.readMaxActiveVpns();
 
   /// Stock has no services-start, so the app owns the replacement block of an init script the firmware
-  /// already runs at boot and on a firewall restart, `S50downloadmaster`, keeping the original once.
+  /// already runs at boot and on a firewall restart, `S50downloadmaster`, keeping the original once
+  /// (ARCHITECTURE 7.4).
   @override
   Future<void> persistSchedule(RouterWatchdog wd, int slot, int intervalMin) async {
     await wd.backupOriginalS50();
@@ -210,7 +211,8 @@ class MerlinOps extends RouterOps {
         return (desc: desc, killSwitch: killSwitch, enabled: enabled);
       };
 
-  /// Merlin has no `vpnc_max_conn`, and no cap.
+  /// Merlin has no `vpnc_max_conn`, and no cap. Measured on Merlin 3004.388.13_0, 2026-11-17 (ID-619):
+  /// `nvram show` has no key naming `max_conn`, and `nvram get vpnc_max_conn` is empty.
   @override
   Future<int?> maxActiveSlots(RouterSlotService slots) async => null;
 

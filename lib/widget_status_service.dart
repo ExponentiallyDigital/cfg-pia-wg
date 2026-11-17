@@ -103,7 +103,8 @@ class WidgetStatusService {
       cfgDeviceList: at(6),
     );
 
-    // Merlin has neither of stock's lists: its slots and VPN Director's rules, in the same shapes.
+    // Merlin has neither of stock's lists: its slots and VPN Director's rules, in the same shapes
+    // (ARCHITECTURE 6.10, measured on Merlin 3004.388.13_0, 2026-11-12 to 2026-11-14).
     final merlin = at(11) == 'merlin';
     return buildWidgetStatus(
       vpncClientlist: merlin ? parseMerlinSlots(at(12)).map((r) => r.serialise()).join('<') : at(0),

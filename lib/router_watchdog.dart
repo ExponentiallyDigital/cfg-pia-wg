@@ -653,7 +653,7 @@ const String _kMailHdrMerlin = r'''  {
 // Each also needs three tenses, because the same fact reads wrong in the wrong one: UP for a deploy
 // run where the tunnel is fine, FIXED for a recovery that is over, DOWN for a failure that is not.
 //
-// Stock has no kill switch of its own, so what the line reports is the app's fail-closed guard
+// Stock has no kill switch of its own (ARCHITECTURE 5.1), so what the line reports is the app's fail-closed guard
 // (fail_closed_guard.dart, ID-213): two rules per pinned device that keep it off the internet while
 // its tunnel is down. It is counted from the rules the router actually holds, never assumed, so a
 // guard that a reboot cleared and nothing has put back yet is reported as missing rather than as on.
@@ -1348,7 +1348,8 @@ class RouterWatchdog {
 
   /// True when stock has the init directory the app's boot persistence depends on.
   ///
-  /// **Merlin always passes**: it has `/jffs/scripts/services-start` and needs nothing here.
+  /// **Merlin always passes**: it has `/jffs/scripts/services-start` and needs nothing here
+  /// (ARCHITECTURE 4.1.4; the app switches the custom-scripts partition on itself).
   ///
   /// On stock the directory comes from Download Master, and without it a watchdog is not durable.
   /// Which way that fails depends on the router, and neither is any use to the person in front of
@@ -1359,7 +1360,7 @@ class RouterWatchdog {
   Future<bool> isBootPersistenceReady() => routerOps().bootPersistenceReady(this);
 
   // Ensures the watchdog script has somewhere to live. jffs2_scripts / jffs2_on are a Merlin
-  // custom-scripts feature; on stock only the directory matters.
+  // custom-scripts feature; on stock only the directory matters (ARCHITECTURE 4.1.4).
   Future<void> enableJffsScripts() async {
     if (isStockFirmware) {
       // The app's own directory holds the watchdog script; /jffs/scripts is Merlin's hook
@@ -2387,7 +2388,7 @@ class RouterWatchdog {
   }
 }
 
-// The per-slot keys only Merlin uses; omitted from the stock script (kMerlinOnlySlotKeys).
+// The per-slot keys only Merlin uses; omitted from the stock script (kMerlinOnlySlotKeys; ARCHITECTURE 5.1).
 const String _kMerlinOnlyNvsets = r'''nvset "enforce=$ENFORCE"
 nvset "ep_addr_r="
 nvset "fw=1"
@@ -2985,7 +2986,7 @@ router_resolver_check() {
 #
 # One DNS query for an A record (RFC 1035), POSTed to the DoH server as RFC 8484 says every DoH
 # server must accept, at the address the form gave. The answer is binary, and stock has no
-# hexdump or od, so openssl turns it into base64 and awk reads that. Prints the first IPv4
+# hexdump or od (ARCHITECTURE 7.8, measured on stock 2026-09-30), so openssl turns it into base64 and awk reads that. Prints the first IPv4
 # address, or nothing: an empty answer is what every failure looks like, and the caller then
 # falls back to ordinary DNS and says so. Nothing here names the looked-up host on curl's
 # command line, so /jffs/curllst never records it.

@@ -75,7 +75,8 @@ String watchdogScriptPath(int slot) => '$kRouterAppDir/watchdog_wgc$slot.sh';
 String appVersionLabel = '';
 
 /// Merlin runs cron entries from services-start; stock has no equivalent, so the app replaces an
-/// unused init script that the firmware already executes at boot and on firewall restart.
+/// unused init script that the firmware already executes at boot and on firewall restart
+/// (ARCHITECTURE 4.1.4 and 7.4; the stock hook read from stock's source and measured on 2026-10-03).
 const String kServicesStartPath = '/jffs/scripts/services-start';
 /// The directory stock runs at boot, and the whole of the app's boot persistence on that firmware.
 ///

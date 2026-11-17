@@ -121,8 +121,8 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
   /// the keyboard up the button sits below the fold - which is what made a save look inert.
   bool _jqMissing = false;
 
-  /// Stock only: the init directory Download Master provides. Without it a watchdog deploys and
-  /// then loses its cron entries at the next reboot, so it is a precondition, not a warning.
+  /// Stock only: the init directory Download Master provides (ARCHITECTURE 7.4). Without it a watchdog
+  /// deploys and then loses its cron entries at the next reboot, so it is a precondition, not a warning.
   bool _bootDirMissing = false;
   bool _piaPassVisible = false;
   bool _smtpPassVisible = false;

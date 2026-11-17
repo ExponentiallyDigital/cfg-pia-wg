@@ -63,7 +63,8 @@ const List<String> kMerlinOnlySlotKeys = ['enforce', 'fw', 'rip'];
 
 /// VPN Fusion runtime state the firmware writes per slot while a profile is up, and leaves behind
 /// when it stops. Indexed by SLOT (`vpnc5_*` for wgc5), unlike `vpnc_unit`, which indexes the
-/// vpnc_clientlist row. Stock only - Merlin does not drive WireGuard through VPN Fusion.
+/// vpnc_clientlist row. Stock only - Merlin does not drive WireGuard through VPN Fusion (ARCHITECTURE
+/// 6.10, measured on Merlin 3004.388.13_0, 2026-11-12 to 2026-11-14).
 ///
 /// `vpncN_dns` is deliberately not here: it survives a stop too, but was left out of the DELETE
 /// sweep by choice.
@@ -108,7 +109,8 @@ String slotLabel(int slot, String desc) => desc.trim().isEmpty ? 'wgc$slot' : 'w
 /// Reads a slot's description from the router and formats it with [slotLabel].
 ///
 /// Stock keeps the authoritative description in vpnc_clientlist index 0 - a profile created in the
-/// router WebUI has no `wgcN_desc` mirror at all. Merlin has no clientlist, so `wgcN_desc` is it.
+/// router WebUI has no `wgcN_desc` mirror at all. Merlin has no clientlist, so `wgcN_desc` is it
+/// (ARCHITECTURE 5.1 and 6.10, as above).
 ///
 /// Best-effort by design: a label is decoration, so a failed lookup degrades to the bare 'wgcN'
 /// rather than breaking the action being logged or masking the real error.
@@ -139,7 +141,7 @@ List<String> slotKeysFor(RouterFirmware firmware) => firmware == RouterFirmware.
       ]
     : kSlotNvramKeys;
 
-// ─── vpnc_clientlist (stock only) ─────────────────────────────────────────────────────
+// ─── vpnc_clientlist (stock only; ARCHITECTURE 5.2) ───────────────────────────────────
 // Stock consolidates the region name and the active flag into one delimited nvram string holding
 // up to five profiles: records separated by '<' (no leading delimiter), fields by '>'.
 // See ARCHITECTURE.md "Stock vpnc_clientlist" for the field schema.
@@ -540,7 +542,8 @@ class RouterSlots {
   // Informational only — branching reads the session flag in firmware.dart. Kept so the two do not
   // silently disagree; folding them together is a job for the planned firmware abstraction.
   // How many tunnels may run at once, or null for no limit. Stock enforces a cap (vpnc_max_conn,
-  // normally 2); Merlin has no equivalent setting and is left unlimited.
+  // normally 2); Merlin has no equivalent setting and is left unlimited (stock's: exercised by
+  // TESTING.md SET-5; Merlin's: measured 2026-11-17, see RouterOps.maxActiveSlots, ID-619).
   final int? maxActiveSlots;
   final bool isMerlin;
   const RouterSlots({
@@ -939,7 +942,8 @@ class RouterSlotService {
     final answering = await _answeringSlots(activeSlots);
 
     // The router's own encrypted-DNS servers and each watchdog's, for the overlap notes on CREATE and
-    // EDIT (ID-005, ID-609), on both firmwares; and its cap on tunnels at once, which only stock has.
+    // EDIT (ID-005, ID-609), on both firmwares; and its cap on tunnels at once, which only stock has
+    // (on Merlin measured 2026-11-17, see RouterOps.maxActiveSlots, ID-619).
     final dotServers = await ops.routerDotServers(this);
     final dohServers = parseWatchdogDohServers(await _read(kWatchdogDohServersCommand));
     final maxActiveSlots = await ops.maxActiveSlots(this);
@@ -1433,7 +1437,7 @@ class RouterSlotService {
     onLog?.call('Saving ${await _label(slot)} parameters...');
     final live = slotKeysFor(routerFirmware);
     for (final e in params.entries) {
-      if (!live.contains(e.key)) continue; // stock has no enforce / fw / ep_addr_r / rip
+      if (!live.contains(e.key)) continue; // stock has no enforce / fw / rip (ARCHITECTURE 5.1; ep_addr_r is on both)
       await _run('nvram set wgc${slot}_${e.key}=${shellSingleQuote(e.value)}');
     }
     // On stock the region must stay in step with its vpnc_clientlist record, which is what the
