@@ -734,6 +734,40 @@ logger "**WD-28 END** A deploy that fails on an empty slot leaves nothing behind
 
 - Pass if: three counts of `0`, and `ls` says there is no such file. If another watchdog is running, it still works at its next check: the PIA login it uses was put back.
 
+**WD-29** A tunnel that mends itself after a FAILED alert sends RECOVERED [hand]
+
+A FAILED alert used to be left open when the tunnel came back between two attempts, since nothing was rebuilt and no SUCCESS followed. It was seen on 2026-11-18, when PIA's New Zealand servers stopped answering for about 25 minutes and four FAILED emails were never closed (ID-628). Needs alert emails on, and a watchdog on wgc1 that is not the only way off the internet for anything you care about: the tunnel is cut for several minutes.
+
+- Do: cut the tunnel's server and PIA's login at the router, so a check finds no handshake and a rebuild can't register:
+
+```bash
+logger "**WD-29 START** A tunnel that mends itself after a FAILED alert sends RECOVERED"
+EP="$(nvram get wgc1_ep_addr)"
+EPP="$(nvram get wgc1_ep_port)"
+iptables -I OUTPUT -d "$EP" -p udp --dport "$EPP" -j DROP
+iptables -I OUTPUT -p tcp --dport 443 -j DROP
+echo "cut at $(date)"
+```
+
+- Do: wait for one FAILED email, which takes up to ten minutes at a five minute interval. It says the tunnel could NOT be rebuilt.
+- Do: put it back, and note the time:
+
+```bash
+iptables -D OUTPUT -d "$EP" -p udp --dport "$EPP" -j DROP
+iptables -D OUTPUT -p tcp --dport 443 -j DROP
+echo "restored at $(date)"
+```
+
+- Do: wait one check interval, then two more, and:
+
+```bash
+grep -E "Alert email sent|Handshake" /tmp/watchdog_wgc1.log | tail -8
+logger "**WD-29 END** A tunnel that mends itself after a FAILED alert sends RECOVERED"
+```
+
+- Pass if: exactly one RECOVERED email arrives, within one check of putting the rules back. Its first line says the tunnel is working again without a rebuild, it gives how long the tunnel was down and how many attempts failed, and it has no WHAT TO DO and no ROUTER LOG.
+- Pass if: the log has `Alert email sent (RECOVERED)` once, and the two checks after it send nothing.
+
 The last two tests here are MANAGE ones. They live at the end of this group because they act on a watchdog, and there is none until this group has run.
 
 **MAN-13** Disable pauses a watchdog rather than removing it [hand]

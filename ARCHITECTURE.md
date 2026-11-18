@@ -1600,17 +1600,18 @@ The counter in `/tmp/watchdog_backoff_wgcN` counts attempts **actually made**, n
 
 Optional, per slot, and sent from the user's own SMTP account — nothing is routed through a third party. Merlin uses BusyBox `sendmail` over `openssl s_client`; stock uses `mailsend-go`, since BusyBox sendmail is not viable there.
 
-Three events send mail:
+Four events send mail:
 
 | Event | Subject | Notes |
 | --- | --- | --- |
 | Deploy | `<subject>: SUCCESS - wgcN:pia-<region>` | The `deploy` run always mails, **even when it finds the tunnel already healthy** - it is the user's proof that alerting works, at the moment they set it up rather than months later during an outage. It reports `Event: watchdog deployed` whichever path it took, counts as neither a successful nor a failed reconfigure, and omits the outage and attempt rows - there was no outage. Where the tunnel was already up no addKey ran either, so the endpoint comes from `wgcN_ep_addr`/`_ep_port` with no server name or latency. |
 | Reconfigure succeeded | `<subject>: SUCCESS - wgcN:pia-<region>` | Outage duration, kill-switch state, the new server and its latency, attempt number. |
+| Recovered without a rebuild | `<subject>: RECOVERED - wgcN:pia-<region>` | A healthy check that finds failed attempts on record in `/tmp/watchdog_backoff_wgcN`: the tunnel came back between two attempts, so nothing was rebuilt and no SUCCESS follows. Sent once, because the same check clears the record. Outage duration, how many attempts failed, kill-switch state; no `WHAT TO DO` and no log. It closes the FAILED alerts already sent (ID-628, 2026-11-18: four FAILED emails while PIA's New Zealand servers did not answer, then nothing). |
 | Reconfigure failed | `<subject>: FAILED - wgcN:pia-<region>` | Adds a `WHAT TO DO` block and the last ten lines of the router-side watchdog log, so the evidence travels with the alert. |
 
-A fourth, the **test email**, is sent by the app from the watchdog configuration screen and uses the same layout.
+A fifth, the **test email**, is sent by the app from the watchdog configuration screen and uses the same layout.
 
-A fifth, the **fault email**, `<subject>: ERROR - wgcN:pia-<region>`, is sent when a script on the router is damaged or reports a script error, by the slot's own settings and spaced by the backoff ladder while the fault lasts. It is short and sent from code near the top of the script, so a script cut short can still send it: see [Scripts that check themselves](#scripts-that-check-themselves).
+A sixth, the **fault email**, `<subject>: ERROR - wgcN:pia-<region>`, is sent when a script on the router is damaged or reports a script error, by the slot's own settings and spaced by the backoff ladder while the fault lasts. It is short and sent from code near the top of the script, so a script cut short can still send it: see [Scripts that check themselves](#scripts-that-check-themselves).
 
 Times carry a **numeric UTC offset** (`+1000`), never a zone name. `%Z` prints whatever the zone is *called*, and cron inherits `TZ` from init - on ASUS that is `/etc/TZ`, a POSIX string like `UTC-10DST,...` which literally names the zone "UTC" while offsetting by +10. Every cron-fired alert therefore labelled a correct local time as UTC, while manual and app-fired ones said AEST, because a dropbear login shell sets no `TZ` at all and falls back to `/etc/localtime`.
 

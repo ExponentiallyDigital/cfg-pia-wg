@@ -141,6 +141,59 @@ jobs:
           retention-days: 1
 
   # ============================================================
+  # Job 2a: Release-mode Android build (ID-623)
+  # ============================================================
+  # The debug build above runs no R8, and R8 is where v0.8.214's signed build ran out of memory
+  # (`:app:minifyReleaseWithR8`, Metaspace, ID-622) after pull request #82 had passed every check. A
+  # release bundle is the only build that runs it, so a failure only the shrinker finds shows here, on
+  # the pull request, and not on the tag.
+  #
+  # The release signing config reads android/key.properties and fails without it, so this job signs
+  # with a key it makes for the run and throws away. R8 runs before signing, so the key is only there
+  # to let the build finish. The RevenueCat key is a dummy: nothing here is published.
+  build-release:
+    name: Build release bundle
+    needs: osv-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: "zulu"
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            android/**/*.gradle*
+            android/**/gradle.properties
+            android/gradle/wrapper/gradle-wrapper.properties
+            android/**/*.lockfile
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: pubspec.yaml
+          cache: true
+
+      - name: Fetch dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate launcher icons
+        run: dart run tool/launcher_icons.dart
+
+      - name: Make a throwaway signing key
+        run: |
+          keytool -genkeypair -keystore "$RUNNER_TEMP/throwaway.jks" -alias throwaway -keyalg RSA -keysize 2048 \
+            -validity 1 -storepass throwaway -keypass throwaway -dname "CN=throwaway"
+          printf 'storeFile=%s\nstorePassword=throwaway\nkeyAlias=throwaway\nkeyPassword=throwaway\n' \
+            "$RUNNER_TEMP/throwaway.jks" > android/key.properties
+
+      - name: Build release bundle
+        run: flutter build appbundle --release --dart-define=REVENUECAT_ANDROID_KEY=ci-check
+
+  # ============================================================
   # Job 2b: iOS simulator build (ID-405)
   # ============================================================
   # Builds the iOS app on macOS, so a change that breaks iOS - the Swift side, a plugin's pod, the Xcode

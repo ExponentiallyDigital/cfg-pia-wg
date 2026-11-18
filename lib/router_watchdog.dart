@@ -2736,6 +2736,10 @@ down_for() {
 send_alert() {
   STATUS="$1"
   DETAIL="$2"
+  # SUCCESS and RECOVERED report a tunnel that is up, so they read in the past tense and carry
+  # neither the steps to take nor the log; FAILED and ERROR report one that is not (ID-628).
+  UPSTATUS=0
+  case "$STATUS" in SUCCESS|RECOVERED) UPSTATUS=1 ;; esac
   [ "$EMAIL_ON" = "1" ] || return 0
   if [ "$SMTP_BAD" = 1 ]; then
     log "Email not sent: the SMTP server setting is not a plain host:port. Fix it on the WATCHDOG form and SAVE & DEPLOY"
@@ -2743,7 +2747,7 @@ send_alert() {
   fi
   [ -n "$SMTP_HOST" ] || { log "Email enabled but SMTP server is not configured"; return 0; }
 
-  if [ "$STATUS" != "SUCCESS" ]; then
+  if [ "$UPSTATUS" != "1" ]; then
     KILLSW="$KILLSW_DOWN"
   elif [ "$RUNMODE" = "deploy" ]; then
     KILLSW="$KILLSW_UP"
@@ -2758,7 +2762,9 @@ send_alert() {
       OPENING="Watchdog deployed but the tunnel could NOT be brought up."
     fi
   else
-    if [ "$STATUS" = "SUCCESS" ]; then
+    if [ "$STATUS" = "RECOVERED" ]; then
+      OPENING="Connectivity was lost and the tunnel is working again without a rebuild."
+    elif [ "$STATUS" = "SUCCESS" ]; then
       OPENING="Connectivity was lost and the tunnel has been rebuilt."
     else
       OPENING="Connectivity was lost and the tunnel could NOT be rebuilt."
@@ -2803,7 +2809,7 @@ __MAILHDR__
     printf '\nSERVER LIST\n%s\n' "PIA's server list failed its signature check on this run, so it was not used: a list that fails PIA's signature check might have been tampered with. The server was chosen from the last list that passed, verified on $SLFALLBACK. PIA servers added or moved since then are not seen until a new list passes." >> "$TMPMAIL"
   fi
 
-  if [ "$STATUS" != "SUCCESS" ]; then
+  if [ "$UPSTATUS" != "1" ]; then
 __WHATTODO__
   fi
 
@@ -2822,7 +2828,7 @@ __WHATTODO__
       "$MISSED" "${MISSEDAT:-an unknown time}" >> "$TMPMAIL"
   fi
 
-  if [ "$STATUS" != "SUCCESS" ]; then
+  if [ "$UPSTATUS" != "1" ]; then
     printf '\nROUTER LOG (last 10 lines)\n' >> "$TMPMAIL"
     tail -10 "$LOGFILE" >> "$TMPMAIL"
   fi
@@ -3147,6 +3153,16 @@ router_resolver_check
 
 # Success: update status
 if [ "$FAIL" = "0" ]; then
+  # Failed rebuilds on record mean FAILED alerts went out. A tunnel that mends itself between
+  # attempts rebuilds nothing, so no SUCCESS follows, and on 2026-11-18 four FAILED emails were
+  # never closed (ID-628). Read before the reset below, and the outage measured before the status
+  # file is stamped, or it always reads zero.
+  PRIORFAILS=0
+  if [ "$RUNMODE" != "deploy" ] && [ -f "$BACKOFFFILE" ]; then
+    read -r PRIORFAILS < "$BACKOFFFILE"
+    case "$PRIORFAILS" in ''|*[!0-9]*) PRIORFAILS=0 ;; esac
+  fi
+  if [ "$PRIORFAILS" -gt 0 ]; then DOWNFOR="$(down_for)"; fi
   date '+%s %Y-%m-%d %H:%M:%S' > "$STATUSFILE"
   printf '0\n0\n' > "$BACKOFFFILE"
   # Not the DNS strike file: the check above already cleared it on an answer (ID-192).
@@ -3156,6 +3172,14 @@ if [ "$FAIL" = "0" ]; then
     CONNVALUE="$(nvram get ${K}ep_addr):$(nvram get ${K}ep_port)$HSDESC"
     INTERVALV="$INTERVAL minutes"
     send_alert SUCCESS "watchdog deployed"
+  elif [ "$PRIORFAILS" -gt 0 ]; then
+    # Once: the reset above clears the count, so the next pass finds nothing to report.
+    ATTEMPTWORD="attempts"
+    [ "$PRIORFAILS" = "1" ] && ATTEMPTWORD="attempt"
+    DOWNLABEL="Tunnel was down for"
+    ATTEMPTV="$PRIORFAILS failed since the last success; it recovered before the next one"
+    INTERVALV="$INTERVAL minutes"
+    send_alert RECOVERED "$IFACE passed its check again with no rebuild$HSDESC; $PRIORFAILS earlier $ATTEMPTWORD to rebuild it failed"
   fi
   exit 0
 fi

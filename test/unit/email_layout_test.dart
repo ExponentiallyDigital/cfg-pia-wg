@@ -317,9 +317,11 @@ void main() {
       }
       expect(script(RouterFirmware.merlin), contains("ON in the router's settings, so Merlin should be blocking"));
       expect(script(RouterFirmware.stock), contains(r"the app's guard is keeping $NAMES"));
-      // A failure picks the still-down wording whether or not this run was a deploy.
-      expect(script(RouterFirmware.merlin), contains('''if [ "\$STATUS" != "SUCCESS" ]; then
+      // A failure picks the still-down wording whether or not this run was a deploy. SUCCESS and
+      // RECOVERED are the two statuses for a tunnel that is up (ID-628).
+      expect(script(RouterFirmware.merlin), contains('''if [ "\$UPSTATUS" != "1" ]; then
     KILLSW="\$KILLSW_DOWN"'''));
+      expect(script(RouterFirmware.merlin), contains('case "\$STATUS" in SUCCESS|RECOVERED) UPSTATUS=1 ;; esac'));
     });
 
     test('the status file leads with an epoch so an outage can be measured', () {
