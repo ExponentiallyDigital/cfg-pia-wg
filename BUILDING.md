@@ -12,6 +12,7 @@
     - [2.1.7. Local output destinations](#217-local-output-destinations)
     - [2.1.8. Sideload](#218-sideload)
     - [2.1.9. Release: merge, then tag](#219-release-merge-then-tag)
+    - [2.1.10. Before the tag, and watching the release](#2110-before-the-tag-and-watching-the-release)
 - [3. Package dependencies](#3-package-dependencies)
 - [4. Dependency pinning \& reproducible builds](#4-dependency-pinning--reproducible-builds)
   - [4.1. Why this matters](#41-why-this-matters)
@@ -189,6 +190,29 @@ git push origin :refs/tags/v0.8.78
 ```
 
 Play accepts each version code once. Once a build's upload has succeeded, a second tag for the same build fails at the upload, so fix that release's tag and notes on GitHub rather than running the release again.
+
+#### 2.1.10. Before the tag, and watching the release
+
+A tag can't be made again for the same version, and a signed release build can fail where every check on the pull request passed: v0.8.214's Android build ran out of memory in R8 on 2026-11-17 (ID-622), and the release became v0.8.215. So:
+
+1. **Before the tag, when the release moved Flutter, Gradle, the Android Gradle plugin, Kotlin or anything under `android/`**, run the release workflow's dry run on `dev`. Push `dev` first, since the run reads GitHub's copy:
+
+   ```bash
+   gh workflow run release.yml --ref dev -f dry_run=true -f tag_name=v0.8.215
+   ```
+
+   `tag_name` is `v` and the version in `pubspec.yaml` on `dev`; without it the first job fails within seconds. The dry run builds the signed Android bundle and the signed iOS build, and skips the Play upload, the GitHub release and, unless `testflight` is set, the TestFlight upload. Tag only when its Android job passes. CONTEXT.md section 1 holds the rule (ID-416). Since ID-623 the pull request checks build a release bundle too, so an R8 failure shows on the pull request; the dry run is still the one that signs with the real key.
+2. **Run one release-workflow run at a time.** Each iOS job creates certificates in the Apple account and revokes its development ones at the end. Since ID-625 GitHub queues the iOS jobs, one at a time, but it keeps only one waiting: a third job replaces the second, and a tag's iOS job could be the one dropped. So before a tag, a dry run or a re-run, `gh run list --workflow release.yml --limit 5` should still show nothing `in_progress`.
+3. **After the tag, watch the run yourself, about every 20 seconds, and act on each result as it arrives:** `gh run view <id> --json status,conclusion,jobs`. Work out how long a job has left from its step's `started_at` and what the step does, never from when the job began.
+4. **A check that failed on a download error**, an HTTP 429 from Maven Central for example, is re-run with `gh run rerun <id> --failed`. `gh` refuses while the run is in progress, so wait for it to complete. The same goes for an iOS job that GitHub cancels with "The job was not acquired by Runner of type hosted" after waiting 20 minutes for a macOS runner (2026-11-18, a capacity shortage): nothing ran, so re-run the failed job.
+5. **Don't cancel the run to hurry it.** Since ID-624 the iOS job stops waiting for the GitHub release as soon as the Android job has failed or been cancelled, so a failed release no longer holds a macOS runner for 30 minutes. A force-cancel still skips the clean-up steps that revoke the certificates the run made.
+6. **Promote with the dry run first:**
+
+   ```bash
+   gh workflow run promote.yml -f build=585 -f source_track=internal -f target_track='** PRODUCTION **' -f stores=both -f dry_run=true
+   ```
+
+   Read what each store says it would do, then run it again with `dry_run=false`. Google Play goes to production. The App Store version is created, the build attached and the version sent to App Review, and it releases when Apple approves.
 
 ---
 

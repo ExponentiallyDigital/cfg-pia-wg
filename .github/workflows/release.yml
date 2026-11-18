@@ -522,9 +522,18 @@ jobs:
     runs-on: macos-latest
     # The archive takes about 20 minutes, and the TestFlight notes wait up to 40 for Apple.
     timeout-minutes: 90
+    # One iOS job at a time on the Apple account (ID-625). Each makes development certificates and
+    # revokes the ones it made at the end, so two overlapping revoked each other's mid-build, as a
+    # re-run, a dry run and a tag run did on 2026-11-17. A job waits for the one running. GitHub
+    # keeps one waiting job per group, so a third replaces the second: start release runs one at a time.
+    concurrency:
+      group: apple-account
+      cancel-in-progress: false
     permissions:
       # write only for attaching the iOS SBOM to the tag's release (ID-433)
       contents: write
+      # read only to see whether the Android job has failed, while waiting for its release (ID-624)
+      actions: read
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -736,7 +745,8 @@ jobs:
           if-no-files-found: error
 
       # On a tag, beside the Android SBOM. The Android job makes the release, and this job runs
-      # alongside it, so it waits for the release to exist, up to 30 minutes.
+      # alongside it, so it waits for the release to exist, up to 30 minutes, and stops at once if that
+      # job has failed, since no release is coming (ID-624; the macOS runner waited out all 30 on 2026-11-17).
       - name: Attach the iOS SBOM to the release
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         env:
@@ -744,11 +754,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           cp "$RUNNER_TEMP/cfg-pia-wg-ios-sbom.spdx.json" "$RUNNER_TEMP/cfg-pia-wg-${TAG}_ios-sbom.spdx.json"
-          for i in $(seq 1 60); do
-            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 && break
-            [ "$i" = 60 ] && { echo "::error::no release $TAG after 30 minutes, so the iOS SBOM is only the run's artifact"; exit 1; }
-            sleep 30
-          done
+          sh scripts/wait-for-release.sh "$TAG"
           gh release upload "$TAG" "$RUNNER_TEMP/cfg-pia-wg-${TAG}_ios-sbom.spdx.json" --clobber --repo "$GITHUB_REPOSITORY"
 
       # ID-469: after the last export, and whatever failed on the way. The .ipa is signed with the shared

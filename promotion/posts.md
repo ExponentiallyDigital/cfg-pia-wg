@@ -4,13 +4,16 @@ Every post, message and thread about the app: where it went, when, where it stan
 
 | Date | Where | What | Status | Link |
 | --- | --- | --- | --- | --- |
+| 2026-11-18 | r/PrivateInternetAccess, comment | A reply to the earlier "Call for testers: configure PIA WireGuard Android" thread, holding only the address of the new post above, so that thread's readers find it | Posted | [comment n0rnm261mph](https://www.reddit.com/r/PrivateInternetAccess/comments/1ujhgb6/call_for_testers_configure_pia_wireguard_android/?c=n0rnm261mph) |
+| 2026-11-18 | r/PrivateInternetAccess, post | Run PIA on your router: every device protected, at full WireGuard speed; the need, the speed measured in README section 1, three benefits, a quality line, the disclosure, and GitHub and both store links | Posted with the "Solved" flair, without waiting for the modmail reply | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
 | 2026-11-11 | LinkedIn, post | Eight wrong guesses: the measuring lessons and the captain and the engine, with the featured image; the blog link in the first comment | Posted | [activity 7526156146374656000](https://www.linkedin.com/feed/update/urn:li:activity:7526156146374656000/) |
 | 2026-11-11 | exponentiallydigital.com, blog | Tunnel or nothing: the story of cfg-pia-wg, the sequel to May's cfg-pia-wg-cmd post; text in [blog/article.md](blog/article.md) | Published; 2026-11-12, "Merlin works too, in beta" changed to tested on 388.11 and 388.12, DEVICES on Merlin next | [tunnel-or-nothing-wireguard-kill-switch](https://www.exponentiallydigital.com/tunnel-or-nothing-wireguard-kill-switch) |
 | 2026-11-11 | r/ASUS, modmail | Asks whether a how-to post fits rules 5 and 6 (no spam, no selling), and which flair | Sent, awaiting reply | - |
 | 2026-11-11 | r/WireGuard, modmail | Asks whether a post linking only GitHub fits Rule 2 (free software only) | Sent, awaiting reply | - |
-| 2026-11-11 | r/PrivateInternetAccess, modmail | Asks whether a [GUIDES] post fits Rule 7 (no solicitation) | Sent, awaiting reply | - |
+| 2026-11-11 | r/PrivateInternetAccess, modmail | Asks whether a [GUIDES] post fits Rule 7 (no solicitation) | Sent; no reply by 2026-11-18, when the post went up | - |
 | 2026-11-12 | SNBForums, same thread, reworked | Retitled "[cfg-pia-wg] Always-on PIA WireGuard, stock and Merlin"; first post rewritten around always-on PIA, stock and Merlin, after the first reply showed most readers run Merlin or OpenWrt (ID-552) | Edited; 91 views, 2 likes, 1 reply when checked | [thread 98266](https://www.snbforums.com/threads/cfg-pia-wg-always-on-pia-wireguard-stock-and-merlin.98266/) |
 | 2026-11-11 | SNBForums, Wi-Fi Networking > ASUS Wi-Fi > ASUSWRT - Official | Release thread: the kill switch for stock firmware, the DNS angle, how to check it all, and the price | Posted; superseded by the 2026-11-12 rework | [thread 98266](https://www.snbforums.com/threads/cfg-pia-wg-a-kill-switch-for-pia-wireguard-on-stock-asus-firmware.98266/) |
+| About 2026-06 (Reddit showed "5mo ago" on 2026-11-18) | r/PrivateInternetAccess, post | Call for testers - "Configure PIA WireGuard" Android app: the Play Store closed test needed 12 testers for 14 days; Android only, Merlin, "no plans for an iOS release" | Posted with the "SOLVED" flair; 3.8K views, 5 upvotes and 3 downvotes, 2 comments from others on 2026-11-18 | [1ujhgb6](https://www.reddit.com/r/PrivateInternetAccess/comments/1ujhgb6/call_for_testers_configure_pia_wireguard_android/) |
 
 How these are written:
 
@@ -19,6 +22,28 @@ How these are written:
 - Answer the likely objections in the post itself, under "Before you ask".
 - Check each figure on the day of posting, and each forum's rules before posting.
 - Bugs and feature requests go to GitHub Issues, never a forum thread.
+
+## r/PrivateInternetAccess post (posted 2026-11-18)
+
+Written for PIA customers, who are the app's audience, so it opens on what they need: everything on the network protected, at WireGuard's speed, and the catch that PIA's WireGuard configs expire. The speed figures are README section 1's real-world test. The modmail of 2026-11-11 had no reply after a week, so the post went up without one, with the "Solved" flair rather than the [GUIDES] one the modmail named. Unlike that modmail, it links both stores, and says plainly that writing to the router is a one-time unlock. Title as drafted; the link's address matches it. Text as posted, with any later edits not recorded here.
+
+```text
+Run PIA on your router and everything on your network is protected, including the TV, the console and the devices that can't run a VPN app. WireGuard makes it fast: on my 500/50 Mbps plan, 136 Mbps at peak on OpenVPN became 499 Mbps. The catch is that PIA's WireGuard configs expire anywhere from a day to a week, and your tunnel dies with them and creating a router config by hand is non-trivial.
+
+cfg-pia-wg, an Android and iOS app for ASUS routers (stock and Merlin), removes those barriers:
+
+- It renews dead tunnels for you, and emails you what happened.
+- You choose per device: the laptop through the nearest region, the console straight out, the TV through an unblocked one.
+- A kill switch that holds: a pinned device gets its tunnel or no internet, even when the router restarts.
+
+Quality: 2,333 automated tests (95.9% coverage), 189 hand tests on a public run sheet, and SonarCloud rates it A.
+
+I'm the developer, and I'm not affiliated with PIA, just a paying customer. It's open source (GPLv3) and free to build, with no ads, no ad ID and no tracking. In the store versions, reading your router is free and writing to it is a one-time unlock.
+
+- GitHub: https://github.com/ExponentiallyDigital/cfg-pia-wg
+- Google Play: https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga
+- App Store: https://apps.apple.com/app/cfg-pia-wg/id6824823717
+```
 
 ## LinkedIn post (posted 2026-11-11)
 
@@ -296,3 +321,33 @@ If you run a VPN on stock firmware today, I'd be interested to hear how you hand
 
 cfg-pia-wg is independent, and not affiliated with or endorsed by Private Internet Access, ASUS or WireGuard.
 ```
+
+## r/PrivateInternetAccess: Call for testers (posted about June 2026)
+
+The original post, read from the thread on 2026-11-18. It was written to find 12 testers for Google's closed test, so it is Android only and speaks of Merlin: the app has since gained stock firmware support, an iOS version and both store releases, and the post from 2026-11-18 above supersedes it. It carries the "SOLVED" flair. On 2026-11-18 Reddit showed 3.8K views, 5 upvotes and 3 downvotes. Text as read from the thread; the exact date wasn't shown, only "5mo ago".
+
+```text
+I'm seeking alpha testers for a free open source Android app I created to generate a PIA WireGuard router config file in a couple of taps.
+
+If you have an ASUS router with Merlin firmware, you can also create and manage PIA WG VPN connections and deploy a self-healing script to maintain a persistent WireGuard VPN.
+
+Why? I changed ISP plans a while back and while OpenVPN is great, I hit a router perf cap with wire-speed encryption. WireGuard doubled throughput but the configs aren't long-lived and aren't straightforward to generate.
+
+I've started the process to get it published on the Google Play Store, but I need 12 testers to install, run and keep the app installed for a minimum of 14 consecutive days.
+
+Google call this "closed" testing: I manually whitelist your Google account, and the app appears in your Play Store. If you'd like to take part, please send me a PM.
+
+The app is also available here https://github.com/ExponentiallyDigital/cfg-pia-wg with full user documentation, architecture, security, and build info, plus precompiled debug, release and Play Store binaries. But I really do need those 12 testers :)
+
+My app operates with a zero-retention, zero-persistence data model for security and privacy. Full details are available in the above repo.
+
+I have no plans for an IOS release.
+
+Disclaimer: the app is not affiliated with, endorsed by, sponsored by, or associated with Private Internet Access, WireGuard or ASUS.
+```
+
+The thread had two comments from the first weeks and one added on 2026-11-18.
+
+- NotAlwaysCautious asked what the app is for: an always-on PIA connection on the router, or a config for connecting a phone to PIA. They're quite different things.
+- Andrew replied that the primary purpose is a persistent, self-healing WireGuard connection on an ASUS router with PIA, managed from an Android device in a couple of taps, and that the secondary purpose is a config for any other router, added by hand.
+- On 2026-11-18 Andrew added a comment saying the app is now out of beta and supports Android and iOS, with only the address of the new post above.

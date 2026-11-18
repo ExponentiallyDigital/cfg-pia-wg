@@ -153,7 +153,7 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
   - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
   - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
-  - Testing: as at build 585 (17 November 2026), 2323 automated tests run on every build against a line-coverage target of 80%, actual 95.88 (the Coverage badge above is dynamically updated and records today's figure), and 189 manual end-to-end tests, 185 of them on a real router and 4 in the iOS simulator - 24 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
+  - Testing: as at build 586 (19 November 2026), 2359 automated tests run on every build against a line-coverage target of 80%, actual 95.88 (the Coverage badge above is dynamically updated and records today's figure), and 190 manual end-to-end tests, 186 of them on a real router and 4 in the iOS simulator - 24 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
   - Pinned GitHub Action hashes across [every workflow](https://github.com/ExponentiallyDigital/cfg-pia-wg/tree/main/.github/workflows) ensure automated builds execute with specific, verified tool versions.
 
 ---
@@ -593,6 +593,23 @@ If cfg-pia-wg is useful to you, please consider submitting a review by tapping o
 Thank you,
 cfg-pia-wg by Exponentially Digital
 ```
+
+**When a tunnel mends itself** after you've been told it couldn't be rebuilt, you get one more email, so a FAILED alert is never left open. It happens when the server comes back between two attempts: nothing needed rebuilding, so there's no SUCCESS. It says how long the tunnel was down and how many attempts had failed, and it has no steps to take:
+
+```text
+Subject: cfg-pia-wg alert: RECOVERED - wgc1:pia-region_name
+
+Connectivity was lost and the tunnel is working again without a rebuild.
+
+WHAT HAPPENED
+Event: wgc1 passed its check again with no rebuild (handshake 33s ago); 4 earlier attempts to rebuild it failed
+Tunnel was down for: 29m 41s (last seen good 2026-09-05 18:55:07 +1000)
+Kill switch: the app's guard kept TABLET, PHONE pinned to this tunnel, and off the internet while this tunnel was down
+Attempt: 4 failed since the last success; it recovered before the next one
+Interval: 5 minutes
+```
+
+The ROUTER and HISTORY sections follow, as in the others.
 
 How to interpret these emails:
 
