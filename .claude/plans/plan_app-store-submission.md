@@ -1,6 +1,6 @@
 # Plan: the first App Store submission (ID-436)
 
-Where ID-436 stands is its `Now:` line in CHANGELOG.md 1.2, not here. This file holds the detail.
+Where ID-436 stands is its `Now:` line in BACKLOG.md's Current Release, not here. This file holds the detail.
 
 ## Log
 

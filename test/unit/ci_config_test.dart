@@ -204,7 +204,7 @@ void main() {
         if (f.readAsStringSync().contains('git push origin "HEAD:')) f.path.replaceAll(r'\', '/')
     ];
     expect(pushesBack, isEmpty);
-    final steps = File('CHANGELOG.md').readAsStringSync();
+    final steps = File('CHANGE-PROCESS.md').readAsStringSync();
     expect(steps, contains('run `dart run tool/third_party_notices.dart` and commit THIRD-PARTY-NOTICES.md with it'));
   });
 

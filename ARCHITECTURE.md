@@ -139,7 +139,7 @@ Everything below was measured on hardware, not read in documentation - ASUS publ
 | 5 | `notify_rc` records the running action in `rc_service` and clears it when done; a caller finding it set waits 15s then DISCARDS its own event | [The router's service queue](#the-routers-service-queue-and-how-it-wedges) | A hung service makes the router silently ignore everything, including `reboot`. Only a power cycle recovers it |
 | 6 | `/usr/sbin/curl` walks its process ancestry and refuses to run with `crond` in the chain | [`curl` refuses to run from cron](#curl-refuses-to-run-from-cron) | The watchdog can never fetch a PIA token from cron, so it can never recover a tunnel. Exits 0 with no output at all |
 | 7 | `/usr/sbin/curl` refuses any URL whose host is an IP literal, silently, logging `Invalid DL URL(<ip>)` | [`curl` polices who calls it and what it fetches](#curl-refuses-to-run-from-cron) | The watchdog's encrypted DNS and its `addKey` call both stop working, with no error anywhere except `/jffs/curllst`. Both use a hostname URL with `--resolve`, which is what satisfies the check today |
-| 8 | For each DNS address a running slot uses, the firmware adds `from all to <addr> iif lo lookup <table>`, tables `wgc1` 9 down to `wgc5` 5, and the LOWEST priority number wins - so the router's own lookups follow the highest-numbered slot sharing that address, never the default connection | [ROUTER-DNS.md](ROUTER-DNS.md#the-router-rules) | The watchdog's name-resolution probe (ID-078) aims a lookup with a rule of the same shape at priority 1000, and would silently test the wrong path. The DNS overlap note (ID-005) would describe a consequence that no longer happens |
+| 8 | On stock, for each DNS address a running slot uses, the firmware adds `from all to <addr> iif lo lookup <table>`, tables `wgc1` 9 down to `wgc5` 5, and the LOWEST priority number wins - so the router's own lookups follow the highest-numbered slot sharing that address, never the default connection. Merlin adds no such rules: it puts one route per address in the main table, the first slot to start holds it, and when that slot stops the route goes and the router's lookups leave over the WAN until a sharing slot starts (6.10, "DNS") | [ROUTER-DNS.md](ROUTER-DNS.md#the-router-rules) | The watchdog's name-resolution probe (ID-078) aims a lookup with a rule of the same shape at priority 1000, and would silently test the wrong path. The DNS overlap note (ID-005) would describe a consequence that no longer happens |
 | 9 | Stock drives WireGuard through VPN Fusion (`restart_vpnc` / `stop_vpnc`), Merlin through `start_wgc` / `stop_wgc` | [Stock](#stock) and [Merlin](#merlin) | Enable and disable stop working on one firmware while continuing to look correct |
 | 10 | `/opt/etc/init.d/S50downloadmaster` and `S50asuslighttpd` are run at boot, and are the only user-writable boot hook on stock | [Cron entries](#cron-entries) | Watchdog schedules do not survive a reboot. Nothing reports this - it simply stops running |
 | 11 | The device inventory is split across `nmp_cl_json.js`, `nmp_cache.js`, `custom_clientlist`, `dhcp_staticlist` and `cfg_device_list`, none of which is complete on its own | [Device assignment (stock)](#device-assignment-stock) | Devices vanish from the assignment list, or appear without an address and cannot be assigned |
@@ -1477,7 +1477,7 @@ The hardware tests behind the table, all on stock with devices moved between wgc
 | 2026-09-08 | the device-assignment runsheet, eleven probes | a policy record becomes a rule at 100; the default connection is the pair at 10000, installed only by `restart_vpnc` at the end of an exact sequence; a stopped tunnel's rule goes with it |
 | 2026-09-10 | a device moved from wgc1 to wgc5 | the old rule stays beside the new one at 100 and wins on insertion order, while every list says wgc5; no service call clears it, only `restart_net_and_phy` |
 | 2026-09-11 | a device moved from Internet to wgc5 | the `lookup main` rule left behind wins the same way, so the sweep matches the table by name, not number |
-| 2026-09-19 | runsheet AN-2026-09-19_001 | the firmware's rules at 1016-1029 aim the router's lookups by the highest-numbered slot sharing an address, so the probe needs its own rule at 1000 |
+| 2026-09-19 | runsheet AN-2026-09-19_001 | on stock, the firmware's rules at 1016-1029 aim the router's lookups by the highest-numbered slot sharing an address, so the probe needs its own rule at 1000 (Merlin has no such rules; see 6.10) |
 | 2026-09-21 | DEV-17 and two `ip rule show` dumps around a reboot | four copies of one device's rule after a morning of applies, one after the reboot: `restart_vpnc_dev_policy` re-adds a rule for every record each time, so the sweep covers the whole list (ID-183) |
 | 2026-09-24 | runsheets FC, FG and FR | a rebuild and a DISABLE let a pinned device out; a route in the slot's table and anything in the firewall are wiped by the firmware; rules at 90 and 91 survive both and block every reply (6.8.10, ID-213) |
 | 2026-10-03 | the four measurements for ID-364, in `.claude/plans/plan_kill-switch-redesign.md` | which events call the boot hook with `firewall-start`; a stopped tunnel's route leaves the guard's table by itself within 0.26 s, so the device is refused with nothing running, and without rule 91 it goes out the WAN; the table's routing for the internet, the WAN gateway, the router's DNS servers and the LAN; at boot the tunnel is up before the hook's first call |
@@ -1544,7 +1544,23 @@ It runs after every DEVICES APPLY, before every DISABLE, with a watchdog deploy,
 
 **The WAN coming up clears every rule.** `add_multi_routes()` (rc/wan.c) runs `ip rule flush` each time the WAN comes up, and Merlin then puts back only its own: its kill switch at once, its WireGuard server's rules as the server restarts, VPN Director's as each tunnel starts. At boot that is after `services-start`, so the guard's rules were there 21 s after boot and gone at 31 s, and with nothing to put them back, gone after both tunnels started too (2026-11-14, `check-claims.sh` KS-wgc1-stopped and KS-wgc1-disabled failing after the reboot). Every hook Merlin offers before the flush is useless here: `wan-event connected` and `firewall-start` both run before it in `wan_up()`. So `wgclient-start` runs the whole guard, not just the tidy, which covers a WAN reconnect while the router is up; and at boot, where the tunnels can wait minutes for NTP, `services-start` leaves a watch running that puts the rules back whenever it finds them missing, until two minutes after the clock is set or half an hour. Both say what they did in the syslog, as `merlin-guard:` (ID-582). UNINSTALL takes its rules out, and its lines out of both hooks. `check-claims.sh` checks it: KS-wgcN-disabled, KS-wgcN-stopped, MRL-addrs-wgcN and MRL-dns-wgcN all failed on 388.13_0 before the guard and passed after one APPLY (2026-11-14).
 
-**DNS.** Each slot has a `DNSVPN<unit>` chain in the nat table, units 6 to 10 for wgc1 to wgc5, rewriting a routed device's lookups to the slot's DNS servers, and a `RETURN` for a device with a WAN rule. The chains are put back in slot order on every slot start, lowest first, so a device in two slots' rules is rewritten by the lower slot's, the slot that routes it. The router's own route to a slot's DNS servers belongs to the first slot to start, which is wgc1 after a boot but can change at any restart. DNS Director's chain is appended after VPN Director's, so a routed device keeps its tunnel's DNS with DNS Director on (2026-11-14); a device with a WAN rule or none has plain DNS forced to the router.
+**DNS.** Each slot has a `DNSVPN<unit>` chain in the nat table, units 6 to 10 for wgc1 to wgc5, rewriting a routed device's lookups to the slot's DNS servers, and a `RETURN` for a device with a WAN rule. The chains are put back in slot order on every slot start, lowest first, so a device in two slots' rules is rewritten by the lower slot's, the slot that routes it. The router's own route to a slot's DNS servers belongs to the first slot to start, which is wgc1 after a boot but can change at any restart. It is one route in the main table, not a rule (stock's are `iif lo` rules at 1016 to 1029, and the highest-numbered slot sharing an address wins there).
+
+Measured on 388.13_0 on 2026-11-20, one run each, the router having wgc1 (Quad9) and wgc5 (the default connection, Cloudflare) with DoT and DNS Director on, and two test slots made for the purpose, wgc2 and wgc3, sharing wgc1's DNS addresses with an unreachable endpoint (all keys unset and the router put back afterwards, nothing committed to flash):
+
+- **The default connection's DNS.** A whole-network rule in `DNSVPN10` rewrote every lookup from the LAN not matched earlier to wgc5's first DNS server, and the rule's counter rose 12 packets in 30 seconds while DNS Director's `DNSFILTER` rule stayed at 0. The connection table showed a device's lookup, addressed to the router, answered by that server to wgc5's tunnel address, and a routed lookup from an unpinned address to that server went out through wgc5. So with a tunnel as the default, devices that aren't pinned use the default slot's DNS servers through that tunnel, not the router's DoT Server List, unlike stock (ROUTER-DNS.md section 2). With the internet as the default, the paragraph's "none has plain DNS forced to the router" was measured again the same day, once: the default's rule was switched off in `vpndirector_rulelist` and applied as the app does (`restart_vpnrouting0`, then the guard). The whole-network rule left `ip rule` and `DNSVPN10` kept only the pinned device's rewrite, and a new UDP lookup from an unpinned device was answered by the router itself. The LAN was quiet, so `DNSFILTER`'s counter rose only 2 packets in 25 seconds, and flows already in the connection table kept the old tunnel rewrite until they expired. Everything was put back (the rule file byte for byte, `ip rule` identical to the baseline). A simulated route for an unpinned device to a slot's DNS address still went through that slot's tunnel with the default off, because the main table's route to the address isn't conditional on the default.
+- **The router's own programs.** `/etc/resolv.conf` is a link into `/rom` that names `127.0.0.1`, so they ask dnsmasq, which forwards to stubby and so to the DoT Server List; stubby's connections to it were in wgc5's tunnel, as the DoT list was also wgc5's DNS. `/tmp/resolv.conf` holds the DNS Server setting, and nothing reads it. Stock links `/etc/resolv.conf` to the file the DNS Server setting writes.
+- **Sharing.** Started in the order wgc1 (at boot), wgc2, wgc3, all three using 9.9.9.9 and 149.112.112.112: the one route in the main table stayed on wgc1, the later slots adding none.
+- **A stopped slot.** With wgc1 stopped, wgc2 and wgc3 still running: no route to either address in the main table, and the router's route to 9.9.9.9 went out through the WAN. Restarting wgc3 gave it the route; restarting wgc2 afterwards changed nothing, and nor did starting wgc1 last. With wgc3 stopped, restarting wgc2 gave it the route. So a vacated route goes to the next sharing slot to start, whatever its number, and a running slot never takes one over.
+- **DNS-over-TLS off.** Two command-line attempts were not measurements. Setting `dnspriv_enable=0` and running `service restart_dnspriv` and `restart_dnsmasq` stopped stubby but left `/tmp/resolv.dnsmasq` at `server=127.0.1.1`, so the router's own lookups failed until DoT was switched back on. Setting it and running `service restart_wan_if 0` without quoting the argument did nothing (`service` takes one quoted argument). With `service "restart_wan_if 0"`, which restarts the WAN: stubby stopped, `/tmp/resolv.dnsmasq` became the DNS Server setting (`server=<addr>` for each), `/etc/resolv.conf` stayed `127.0.0.1`, and the router's own lookups were ordinary UDP port 53 to those addresses, from wgc5's tunnel address because the DNS Server setting and wgc5's DNS were the same addresses and the router's route to them is wgc5's. Unpinned devices' rewrite (`DNSVPN10`) kept counting (1 to 8 packets in 20 seconds). After the WAN came back, `ip rule` matched the baseline without the guard being run. Restored the same way with DoT on: stubby running, `/tmp/resolv.dnsmasq` back to `server=127.0.1.1`, both tunnels handshaking. I didn't time the outage.
+- **A slot with no handshake** (the test slots' endpoint answers nothing) held the route: the router's route to 9.9.9.9 pointed into a tunnel that answers nothing. No lookup was sent through it.
+- **The leak, by packet (same day, wgc1 stopped and started again, nothing else running on 9.9.9.9).** One lookup sent from the router to 9.9.9.9 with wgc1 up showed in the connection table with the tunnel's address as its source. With wgc1 stopped, the router's route to 9.9.9.9 was `via` the WAN gateway and the same lookup showed the WAN address as its source, with the answer coming back to it: sent from the home address and answered. Everything was put back: `ip rule` identical to the baseline, and `iptables -t nat -S` identical apart from the order of the wgc1 and wgc5 `MASQUERADE` rules in `POSTROUTING`, which swapped because wgc1 started after wgc5 (two independent rules on different interfaces; the order comes back on the next start of either).
+- **DNS Director.** With it switched off (`dnsfilter_enable_x=0`, `service restart_dnsfilter`) and the default on wgc5, `DNSVPN10`'s whole-LAN rewrite stayed, and new lookups from two unpinned devices were answered by wgc5's DNS server, the whole-LAN rule's counter rising 10 packets in 30 seconds. With the default on the internet and DNS Director on, new lookups from unpinned devices were answered by the router (the catch-all `DNSFILTER` rule, a few packets in 30 seconds); with DNS Director off as well, `DNSFILTER` had no rule and an unpinned device's lookups, addressed to the router, were answered by the router. A flow already in the connection table kept its old rewrite while it was refreshed (conntrack keeps a flow's NAT), which showed in one long-lived flow in each run.
+- **Repeats and the clean version (same day).** With the old DNS flows deleted from the connection table first and only flows made in the next 25 seconds listed: default on the internet with DNS Director on, unpinned devices' lookups were answered by the router and the device pinned to wgc5 by wgc5's server; with DNS Director off as well, unpinned devices were still answered by the router. With the default moved to wgc1 (Quad9), every device's lookups, unpinned ones and the one pinned to wgc5, were answered by 9.9.9.9 (the lower slot's whole-network rule wins, as 6.10 says). The first-to-start runs were repeated in both directions: after wgc1, the holder, stopped, restarting wgc2 gave it the route, and after wgc2 stopped, restarting wgc3 gave it to wgc3, and then back again.
+- **A lookup into a slot with no handshake.** With the route held by wgc2, whose endpoint answers nothing, one lookup from the router to 9.9.9.9 appeared in the connection table with the tunnel's address as source and no reply, and `nslookup` printed nothing in 9 seconds: sent into the tunnel and not answered. Cleanup note: stopping the test slot wgc3 left its `MASQUERADE` rule in `POSTROUTING`, which had to be deleted by hand.
+- **Merlin's source** (tag `3004.388.13`, `rc/wireguard.c` and `rc/wan.c`) says why. `_wg_client_dns_setup` runs `ip route add <dns> dev wgcN` in the main table for each of a slot's DNS addresses, which fails when a route to the address exists, so the first slot to start keeps it. Stopping a slot deletes its interface, which takes the route with it, and flushes only the slot's own table, so nothing hands the route to another slot. `update_resolvconf` writes `/tmp/resolv.conf` from the WAN's DNS and `/tmp/resolv.dnsmasq` from the same, or only `server=127.0.1.1` when DoT is on; the call that would add the slots' DNS servers to it, `write_wgc_resolv_dnsmasq`, is commented out. That is why the DoT-off list held the DNS Server setting and not a slot's servers, and why only a WAN event rewrites it.
+
+DNS Director's chain is appended after VPN Director's, so a routed device keeps its tunnel's DNS with DNS Director on (2026-11-14); a device with a WAN rule or none has plain DNS forced to the router.
 
 **The same as stock.** Disabling a device (6.9) writes the same `MULTIFILTER_*` keys and firewall rules on Merlin. Renaming writes `custom_clientlist`, as on stock; Merlin's page also leaves a reserved device's `dhcp_staticlist` name alone.
 
@@ -2349,57 +2365,7 @@ What to know when covering an address, a username or a MAC:
 
 ## 14. <a name='appendix-process---backlog-and-changelog-management'></a>Appendix: Process - BACKLOG and CHANGELOG management
 
-How a work item travels from wherever it was noticed to a release. The rules themselves live in the headers of [BACKLOG.md](BACKLOG.md) and [CHANGELOG.md](CHANGELOG.md); this is the map of them.
-
-```mermaid
-%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
-flowchart TB
-    subgraph IN["Where work items come from"]
-        S1["Andrew's notes<br/>and ideas"]
-        S2["A test run<br/>findings on<br/>the run sheet"]
-        S3["CI failures and scans<br/>CodeQL, SonarCloud"]
-        S4["Analyses and audits<br/>syslogs, code reviews"]
-    end
-
-    IN --> TRI{"Triage:<br/>what is it, and when?"}
-    TRI -->|"not sorted yet"| NEW["BACKLOG 2.<br/>New work items<br/>no ID needed;<br/>triaged again later"]
-    TRI -->|"a bug nobody<br/>has reproduced"| UB["BACKLOG 1.1.3<br/>Unconfirmed BUGs"]
-    TRI -->|"longer term"| BL["BACKLOG 1.1 - 1.3<br/>DOC, FTR, cleanup, iOS"]
-    TRI -->|"the next release"| PEND["CHANGELOG 1.1<br/>Pending to do"]
-    TRI -->|"this release"| ID
-    TRI -->|"found and fixed<br/>in the same pass"| BLOCK
-
-    UB -->|"reproduced"| BL
-    BL -->|"prioritised"| PEND
-    PEND -->|"sequence agreed<br/>with Andrew"| ID
-
-    ID["Give it an ID<br/>search both files<br/>just before, and<br/>write the item before<br/>using the number"] --> WIP
-    WIP["CHANGELOG 1.2 WIP<br/>the current release,<br/>most important first"]
-    WIP --- AUD["Every item added<br/>to or removed<br/>from WIP gets<br/>an audit line:<br/>what moved, bullets<br/>before and after"]
-    WIP --> IMPL["Implement it,<br/>with tests"]
-    IMPL --> DONE{"Finished?"}
-    DONE -->|"not this release"| PEND
-    DONE -->|"yes, or closed as<br/>working as intended"| BLOCK
-
-    BLOCK["CHANGELOG 1.3<br/>bottom of the current<br/>release block<br/>keeping its ID"]
-    BLOCK --> COMMIT["Commit<br/>in progress becomes<br/>the block's summary,<br/>and the subject is<br/>vN.N.NN build NNN<br/>- summary"]
-    COMMIT --> NEXT["Open the next<br/>block, in progress,<br/>and bump the version<br/>in pubspec.yaml"]
-    NEXT -->|"the next item"| WIP
-    COMMIT --> MAIN["Merge dev to main;<br/>a release,<br/>when wanted,<br/>runs in GitHub Actions"]
-
-    classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
-    classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
-    classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
-    classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
-    class S1,S2,S3,S4,TRI,NEW,BL,PEND,ID,AUD,DONE,NEXT step
-    class UB bad
-    class WIP,IMPL work
-    class BLOCK,COMMIT,MAIN go
-```
-
-<p align="center"><em>A work item's route from where it was noticed, through BACKLOG and CHANGELOG, to a commit and a release.</em></p>
-
-A work item says what is to be done, at a high level, in as few lines as it can, and doesn't grow: `DoD:`, `Plan:` and a one-line `Now:` are added only when they earn their place, and the detail lives in its plan file under `.claude/plans/` (CHANGELOG.md, "Work items: less is better").
+How a work item is written, triaged, moved and committed, and the diagram of its route from where it was noticed to a release, are in [CHANGE-PROCESS.md](CHANGE-PROCESS.md). BACKLOG.md and CHANGELOG.md hold work items only.
 
 ---
 

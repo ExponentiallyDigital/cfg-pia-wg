@@ -13,7 +13,7 @@
 # first configuration change is the only chance to check that, and it does not come round often.
 #
 # The second and third exist to isolate what DownloadMaster actually installs. The app depends on
-# it for boot persistence on stock (`/opt/etc/init.d/S50downloadmaster`) and `BACKLOG.md` 1.1 wants
+# it for boot persistence on stock (`/opt/etc/init.d/S50downloadmaster`) and a `BACKLOG.md` item wants
 # to detect and deploy those binaries itself - which needs to know exactly what a real install puts
 # where.
 #

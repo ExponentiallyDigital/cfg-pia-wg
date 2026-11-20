@@ -153,7 +153,7 @@ Switching to WireGuard reduces overhead, allowing your hardware to operate close
   - [Dependabot](https://docs.github.com/code-security/dependabot) - automates updates to monitor and patch insecure or outdated dependencies;
   - [MobSF](https://github.com/MobSF/mobile-security-framework-mobsf) - performs static binary security analysis on the app's source code checking for platform-specific vulnerabilities;
   - [CodeQL](https://github.com/github/codeql-action) - static analysis of the code's structure to catch semantic gaps and injection risks;
-  - Testing: as at build 586 (19 November 2026), 2359 automated tests run on every build against a line-coverage target of 80%, actual 95.88 (the Coverage badge above is dynamically updated and records today's figure), and 190 manual end-to-end tests, 186 of them on a real router and 4 in the iOS simulator - 24 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
+  - Testing: as at build 587 (20 November 2026), 2374 automated tests run on every build against a line-coverage target of 80%, actual 95.88 (the Coverage badge above is dynamically updated and records today's figure), and 190 manual end-to-end tests, 186 of them on a real router and 4 in the iOS simulator - 24 of them with a script on the router doing the checking, and 13 needing a build distributed by Play. Another 26 that used to be manual are now automated, and TESTING.md says which test covers each. The manual run sheet is public, so you can see exactly what's tested by hand: [TESTING.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/TESTING.md); and
   - Pinned GitHub Action hashes across [every workflow](https://github.com/ExponentiallyDigital/cfg-pia-wg/tree/main/.github/workflows) ensure automated builds execute with specific, verified tool versions.
 
 ---
@@ -176,7 +176,7 @@ Since build 403 (5 September 2026), this app extends support to stock ASUS firmw
 > [!NOTE]
 > **Tested on Merlin.** Everything works on Merlin, DEVICES included. The parts that differ there - its kill switch, starting and stopping a tunnel, the mail command, boot persistence and uninstall - passed their hand tests on Merlin 388.12_2 on 1 October 2026, and `scripts/check-claims.sh` passed all 16 of its checks there, Merlin's own kill switch included. DEVICES passed its hand tests on Merlin 388.13_0 on 14 November 2026. It works through VPN Director rather than around it ([5.4](#54-devices---assign-rename-and-disable)). If something doesn't behave on Merlin, please [raise an issue](https://github.com/ExponentiallyDigital/cfg-pia-wg/issues).
 
-If you don't have an ASUS router, you can still use the `Generate PIA WireGuard configuration` function to create standalone PIA configuration files from your phone/tablet. If that's you, you can skip to [5. Using the app](#5-using-the-app).
+If you don't have an ASUS router, you can still use the `STANDALONE` main menu function to create PIA configuration files from your phone/tablet. If that's you, you can skip to [5. Using the app](#5-using-the-app).
 
 ### 4.1. Enabling prerequisites
 
@@ -407,7 +407,7 @@ Short version: build the VPN you use for most things on **wgc5**, and work downw
 
 The first reason is cosmetic. The router's own web interface creates `wgc5` first, and `cfg-pia-wg` lists slots the same way - `wgc5` at the top, down to `wgc1` - so the two agree about which slot is "the first one". Yes, that does my head in too; it's inverted but it is what it is :).
 
-The second reason isn't cosmetic, and it applies if your VPN's DNS servers are the **same** as your **router** which it uses for its **own** encrypted DNS lookups. Yes, read that twice too. Quad9 and Cloudflare are the usual overlap, because they're a sensible solution to fully encrypted DNS with extra sauce (protection from malware, ads, adult filters etc). When these addresses match, the firmware sends the router's **_own_** lookups - the ones it makes for every device that has not been assigned to a tunnel - through the slot with the lowest routing table number. The tables are `wgc1` `#9` through to `wgc5` `#5`, so the lowest table belongs to the **highest-numbered** slot. Whichever slot that is, it carries name resolution for the whole network. Bear with me, it does get easier. Read on, intrepid traveller.
+The second reason isn't cosmetic, and it applies if your VPN's DNS servers are the **same** as your **router** which it uses for its **own** encrypted DNS lookups. Yes, read that twice too. Quad9 and Cloudflare are the usual overlap, because they're a sensible solution to fully encrypted DNS with extra sauce (protection from malware, ads, adult filters etc). When these addresses match, the firmware sends the router's **_own_** lookups through one of those slots. Which one depends on the firmware. On **stock**, the lookups it makes for every device that has not been assigned to a tunnel go through the slot with the lowest routing table number. The tables are `wgc1` `#9` through to `wgc5` `#5`, so the lowest table belongs to the **highest-numbered** slot. Whichever slot that is, it carries name resolution for the whole network. On **Asuswrt-Merlin** it's the slot that **started first** (`wgc1` after a boot, and it can change at any restart), whatever its number, and only the router's own lookups use it; devices that aren't pinned are handled differently (5.2.2). Bear with me, it does get easier. Read on, intrepid traveller.
 
 Two things follow, and both are useful to know before choosing:
 
@@ -419,14 +419,14 @@ If your VPN DNS and your router DNS use _different_ addresses, regional movement
 #### 5.2.2. DNS: where your lookups go
 
 > [!IMPORTANT]
-> Your **default connection** decides where a device's traffic goes. It does **not** decide where that device's **DNS** goes.
+> On **stock** firmware, your **default connection** decides where a device's traffic goes. It does **not** decide where that device's **DNS** goes. On **Asuswrt-Merlin** it does, when your default connection is a tunnel.
 
-Yep, for real. That's a `seldom-known` feature of ASUS stock firmware. The short version:
+Yep, for real. That's a `seldom-known` feature of ASUS stock firmware, and Merlin does it differently. The short version:
 
 - **Why should I care?** While your traffic can flow through an encrypted tunnel, your DNS lookups can travel in clear text.
-- **Pin a device to a slot** with `DEVICES` and its DNS follows that slot, through that slot's tunnel. Safe, secure, and private.
-- **A device that's not pinned** sends its lookups to the router, and the router answers using its own DNS settings - whatever your default connection is.
-- **Keep your router's DNS addresses away from your slots' DNS addresses**, unless you are choosing to share one deliberately. When a slot uses the **same** address as the **router**, the router's own lookups travel through that slot's tunnel, and if that tunnel stops answering while still looking connected, every unpinned device loses name resolution until it is rebuilt. Read that twice, it's important. Read on for the [TL;DR](https://www.merriam-webster.com/dictionary/tl;dr).
+- **Pin a device to a slot** with `DEVICES` and its DNS follows that slot, through that slot's tunnel, on both firmwares. Safe, secure, and private.
+- **A device that's not pinned** differs. On stock it sends its lookups to the router, and the router answers using its own DNS settings - whatever your default connection is. On Merlin, when your default connection is a tunnel, its lookups go to that slot's DNS servers through that tunnel; when the default is the internet, the router answers, as on stock.
+- **Keep your router's DNS addresses away from your slots' DNS addresses**, unless you are choosing to share one deliberately. When a slot uses the **same** address as the **router**, the router's own lookups travel through that slot's tunnel. On stock, if that tunnel stops answering while still looking connected, every unpinned device loses name resolution until it is rebuilt. On Merlin, the router's own lookups stop, and if that slot is stopped they leave over your internet connection until a slot sharing the address starts. Read that twice, it's important. Read on for the [TL;DR](https://www.merriam-webster.com/dictionary/tl;dr).
 
 So, what can I do about it?
 
@@ -435,7 +435,7 @@ So, what can I do about it?
 > [!TIP]
 > Suggestion: use encrypted lookups with a "no log" privacy DNS service.
 
-On stock, `cfg-pia-wg` also highlights if a slot's DNS matches the addresses your router uses for its _own_ encrypted lookups via a note under the `MANAGE > EDIT` DNS field, naming the shared addresses. Why? Sharing is a reasonable choice. `cfg-pia-wg` never changes your router's DNS settings. That's your domain, but it can impact the watchdog's ability to do its job of keeping your tunnel(s) up.
+On both stock and Merlin (since build 581), `cfg-pia-wg` also highlights if a slot's DNS matches the addresses your router uses for its _own_ encrypted lookups via a note under the `MANAGE > EDIT` DNS field, naming the shared addresses. Why? Sharing is a reasonable choice. `cfg-pia-wg` never changes your router's DNS settings. That's your domain, but it can impact the watchdog's ability to do its job of keeping your tunnel(s) up.
 
 Since build 477 (30 September 2026), `cfg-pia-wg`'s watchdog resolves **both** PIA and your mail server over encrypted DNS, to an address of your choice. (Build 454 set out to do this, but the router's own `curl` quietly ignores its encrypted-DNS option, so until 477 those lookups were ordinary DNS. No public release carried it.) This keeps your VPN provider and your email provider off the wire in the clear. On your phone/tablet, `cfg-pia-wg's` lookups go through your device's resolver like any other on-device app - turn on Private DNS in your device's settings if that's important to you.
 
@@ -478,7 +478,7 @@ This manages a self-healing watchdog. When your WireGuard configurations inevita
    - **VIEW ROUTER WATCHDOG LOG:** review the router-side watchdog log for this specific slot, including previous logs. **REFRESH** reads it again, to see a check that has just run. **CLEAR** empties this watchdog's log. Logs are rotated at midnight retaining the current and previous logs and do not persist if the router is rebooted or a power loss occurs. That's a conscious design decision to avoid filling your non-volatile router RAM.
      Two things you'll meet reading it:
      - **The times are staggered by slot.** Each watchdog waits 15 seconds per slot below it before checking, so wgc1 checks on the minute and wgc5 60 seconds after. Several watchdogs starting in the same second upset the router's own services, so they take turns.
-     - **"Router resolver OK" or "Router resolver FAILED".** Every check also asks the router's own name lookups (dnsmasq, which your unpinned devices use) whether they work, and logs the answer. It's there so you know, and is never a reason to rebuild the tunnel: a FAILED line means devices that aren't pinned can't look names up, which is a router problem, not a VPN one. ROUTER RESOLVER STATUS in SETTINGS shows the detail.
+     - **"Router resolver OK" or "Router resolver FAILED".** Every check also asks the router's own name lookups (dnsmasq) whether they work, and logs the answer. On stock, and on Merlin when the default connection is the internet, dnsmasq is what your unpinned devices use, so a FAILED line means devices that aren't pinned can't look names up. On Merlin with a tunnel as the default connection, unpinned devices use that slot's DNS servers instead (5.2.2), so a FAILED line there affects the router's own lookups and not those devices. It's there so you know, and is never a reason to rebuild the tunnel: it's a router problem, not a VPN one. ROUTER RESOLVER STATUS in SETTINGS shows the detail.
   
 <p align="center">
   <img src="./images/03.02-watchdog-log.png" alt="Watchdog log" width="300">
