@@ -1,6 +1,6 @@
 # Choosing what carries the router's own DNS (ID-594)
 
-Reasoning and design only; status lives in BACKLOG and CHANGELOG. Written 2026-11-15, from Andrew's question on how to send the router's own lookups to 9.9.9.9 and 149.112.112.112 through wgc5:pia-aus_melbourne rather than wgc1:pia-nz. Rewritten the same day, after the measurements below changed what the item is for.
+Part of the DNS map in [plan_dns.md](plan_dns.md): ID-636 (the Merlin leak when a slot stops) is the same question as this plan's fallback, and was measured on 2026-11-20. Reasoning and design only; status lives in BACKLOG and CHANGELOG. Written 2026-11-15, from Andrew's question on how to send the router's own lookups to 9.9.9.9 and 149.112.112.112 through wgc5:pia-aus_melbourne rather than wgc1:pia-nz. Rewritten the same day, after the measurements below changed what the item is for.
 
 ## What the day's measurements showed
 

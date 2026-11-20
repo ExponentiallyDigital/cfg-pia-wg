@@ -1,6 +1,6 @@
 # DNS modes in SETTINGS (ID-621)
 
-Not finalised. This is a proposal to put to users before anything is built. Reasoning and findings only; status lives in BACKLOG and CHANGELOG. Device names and LAN addresses are invented, as CONTEXT.md section 1 requires.
+Part of the DNS map in [plan_dns.md](plan_dns.md), which also records what the 2026-11-20 Merlin measurements change here. Not finalised. This is a proposal to put to users before anything is built. Reasoning and findings only; status lives in BACKLOG and CHANGELOG. Device names and LAN addresses are invented, as CONTEXT.md section 1 requires.
 
 ## The problem
 

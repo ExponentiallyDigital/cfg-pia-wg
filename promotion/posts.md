@@ -4,6 +4,12 @@ Every post, message and thread about the app: where it went, when, where it stan
 
 | Date | Where | What | Status | Link |
 | --- | --- | --- | --- | --- |
+| 2026-11-20 | r/PrivateInternetAccess, comment | His own reply on DNS: on stock ASUS firmware a router VPN carries your traffic but not necessarily your DNS lookups, told with the hotel taxi and concierge, with the Merlin clause, why DEVICES and ROUTER DNS ROUTING exist, and a link to ROUTER-DNS.md | Posted | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
+| 2026-11-20 | r/PrivateInternetAccess, comment | Reply to "if your router supports such speeds over WG": speed is a bonus, the benefit is privacy across the LAN, which holds only while tunnels stay up (renewal, a kill switch that holds, seeing where traffic and DNS go), all from a phone app, with one screenshot | Posted | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
+| 2026-11-19 | r/PrivateInternetAccess, comment | Reply to a commenter who said protecting traffic from the ISP only moves the trust to PIA: the data retention laws of Australia (two years), the UK (up to 12 months) and the US (none), checked against the legislation | Posted | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
+| 2026-11-19 | r/PrivateInternetAccess, comment | Reply to a commenter whose router has no VPN support (Linksys): the app is ASUS only, why other routers aren't supported, and that not every ASUS router runs WireGuard | Posted | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
+| 2026-11-19 | r/PrivateInternetAccess, comment | Reply to "that's great if you are the only one at home": devices are set one by one, several tunnels run at once, moving one device restarts nothing; links README 5.4.3 | Posted | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
+| 2026-11-19 | r/PrivateInternetAccess, comment | Reply to a commenter who finds a router VPN a hassle to switch off: DEVICES "Internet (no VPN)", with the README 5.4.2 how-to link | Posted | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
 | 2026-11-18 | r/PrivateInternetAccess, comment | A reply to the earlier "Call for testers: configure PIA WireGuard Android" thread, holding only the address of the new post above, so that thread's readers find it | Posted | [comment n0rnm261mph](https://www.reddit.com/r/PrivateInternetAccess/comments/1ujhgb6/call_for_testers_configure_pia_wireguard_android/?c=n0rnm261mph) |
 | 2026-11-18 | r/PrivateInternetAccess, post | Run PIA on your router: every device protected, at full WireGuard speed; the need, the speed measured in README section 1, three benefits, a quality line, the disclosure, and GitHub and both store links | Posted with the "Solved" flair, without waiting for the modmail reply | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
 | 2026-11-11 | LinkedIn, post | Eight wrong guesses: the measuring lessons and the captain and the engine, with the featured image; the blog link in the first comment | Posted | [activity 7526156146374656000](https://www.linkedin.com/feed/update/urn:li:activity:7526156146374656000/) |
@@ -43,6 +49,88 @@ I'm the developer, and I'm not affiliated with PIA, just a paying customer. It's
 - GitHub: https://github.com/ExponentiallyDigital/cfg-pia-wg
 - Google Play: https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga
 - App Store: https://apps.apple.com/app/cfg-pia-wg/id6824823717
+```
+
+### Replies in that thread (2026-11-19 and 2026-11-20)
+
+The post showed 8.7K views on 2026-11-19, about 17 hours after it went up, and 14K views and 16 upvotes on 2026-11-20. Six replies in all, the first four to commenters, in the order they were made. The first answers a commenter who finds a router VPN a hassle to switch off, the second one saying it only suits a one-person home, the third a Linksys owner, the fourth two commenters who said a VPN only moves the trust from the ISP to PIA. Text as posted.
+
+```text
+Agreed! That's one of the main reasons I built the DEVICES function into the app. In DEVICES you tap your phone/desktop and set it to "Internet (no VPN)", and apply. Nothing has to be stopped first, and everything else stays on its tunnel. When you're done, tap it again and move it back. It works the same on stock and Merlin firmware.
+
+The ASUS interface feels like it was written by a UI contortionist; tunnel centric. cfg-pia-wg is device centric.
+
+See https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#542-a-practical-how-to for instructions and screenshots of moving a device on and off a VPN in the app.
+```
+
+```text
+:) the app manages that too:
+
+Individual devices can be independently moved on or off a VPN without affecting any other devices currently using that VPN.
+
+Every device is set on its own, and you can run several tunnels at once. For example: TV 1 on London, TV 2 on New York, the PS5 straight to the internet, and your phone on or off any VPN as you like.
+
+Moving your phone on or off the VPN doesn't affect anyone else, and nothing restarts.
+
+With the ASUS interface, changing a device can bounce the whole network. Here it's just your phone.
+
+The README covers it here:
+
+https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#543-the-default-connection
+
+"Assigning individual devices restarts nothing."
+```
+
+The `#54-devices---assign-rename-and-disable` anchor was tried first and didn't work in Reddit, probably because of the run of three hyphens, so a sub-section anchor was used instead.
+
+```text
+Understood, I investigated porting my app to other routers and found that most stock router firmware has no supported way to control the VPN from outside, and many don't even provide SSH access.
+
+ASUS does on stock and Merlin firmware, which is why it's ASUS only. I'm not selling ASUS routers, but they allow this and provide very rich functionality. NB not all ASUS routers support WireGuard, most do, but not all.
+```
+
+The fourth reply. The commenters had said "protected" was a strange notion, and that the VPN only moves trust from the ISP to PIA. The laws were checked on 2026-11-19: Australia's TIA Act Part 5-1A, section 187C (two years; section 187A(4) excludes browsing history); the UK's Investigatory Powers Act 2016 section 87 (retention notices, up to 12 months, includes internet connection records); and for the US, EFF and the Department of Justice's own manual say no law mandates retention, with 18 U.S.C. § 2703(f) preservation on request. Not verified: that ISPs sell connection data, and the claim that other countries have similar laws, both worded as opinion or in general terms.
+
+```text
+You're right that it's a trade of trust.
+
+Here in Australia the ISP and carrier aren't just able to watch: the Telecommunications (Interception and Access) Amendment (Data Retention) Act 2015 requires them to keep records of your connections for two years. That's connection details, not your browsing history.
+
+In the UK, the Investigatory Powers Act 2016 (section 87) lets the government order ISPs to retain connection records, including which internet services you connected to, for up to 12 months.
+
+The US has no equivalent retention mandate, but ISPs there can keep your data for their own purposes and be compelled to hand over what they hold.
+
+Other countries have similar laws, and some ISPs log your connections anyway.
+
+When that law came into force in Australia, I started running a VPN on my router 24x7.
+
+With a VPN tunnel, your ISP only sees that you connected to PIA. I'd rather trust a provider whose business is privacy than ISPs and carriers that the law requires to log, and that I can't trust not to retain or sell my connection data.
+```
+
+The fifth reply, to "if your router supports such speeds over WG then sure". It moves from speed to what a router VPN is for, and was posted with one screenshot. The text below is the version agreed in the session; the posted wording may differ slightly.
+
+```text
+True, it depends on your router. Getting the speed you're already paying for is a bonus. The benefit of a router VPN is privacy across all your LAN devices, and that only holds while the tunnels stay up. PIA's configs expire, so the risk is a tunnel that quietly dies and traffic going out in the clear. A kill switch that holds, a tunnel that renews itself, and being able to see where your traffic and DNS actually go are what make it private, not just fast.
+
+And you do all of it from a phone app, which makes it easy to use.
+```
+
+The sixth reply, his own, on DNS. Written after the revelation while building the app that a router VPN directs traffic but not DNS. Reviewed against the repo: "in the clear" is conditional on the router using its ISP's DNS, because the router's DNS-over-TLS is encrypted, and the Merlin clause says only that pinned devices are redirected, since unpinned devices on Merlin haven't been measured separately (ID-632). Text as posted.
+
+```text
+Something I didn't expect while creating this app: on stock ASUS firmware, a router VPN sends your traffic through the tunnel but not necessarily your DNS lookups.
+
+Think of a hotel. Your VPN is the taxi: it takes you and your web and app traffic wherever you're going. But when you ask the concierge for a restaurant's address, you don't get in the taxi. The concierge looks it up on the hotel's own phone, and your taxi booking has no say in how.
+
+Your router is the concierge. A device that isn't assigned to a tunnel (pinned, in my app) sends its lookups to the router, and the router makes them itself using its own DNS settings. So everything can be in the VPN while the lookups, which show every site name you visit, go out your normal internet connection instead, and in the clear if your router uses your ISP's DNS. The DNS server in your WireGuard config only applies to devices assigned to that tunnel.
+
+Assign a device to a tunnel and its lookups follow it. Merlin does this differently under the hood, but pinned devices are redirected to their tunnel's DNS servers there too.
+
+TBH assigning devices in the ASUS WebUI is painful and counter-intuitive, and it's hard to see which devices go where, never mind where their DNS goes.
+
+That's why I added a ROUTER DNS ROUTING screen showing where each lookup actually goes, and whether anyone along the way can read it. Worth checking on yours, and a DNS leak test site will show it from any device.
+
+The detailed write-up: https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ROUTER-DNS.md
 ```
 
 ## LinkedIn post (posted 2026-11-11)

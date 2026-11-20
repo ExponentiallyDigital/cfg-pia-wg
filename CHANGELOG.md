@@ -1,152 +1,31 @@
-# 1. CHANGELOG.md
+# CHANGELOG.md
 
-**DO NOT ALTER THE STRUCTURE OF THIS FILE** it is used by GitHub actions workflows.
+Always read and follow [CHANGE-PROCESS.md](CHANGE-PROCESS.md) before changing this file.
 
-- [Prefix codes](#prefix-codes)
-- [1. Changes](#1-changes)
-  - [1.1. Pending to do](#11-pending-to-do)
-  - [1.2. WIP](#12-wip)
-  - [1.3. Implemented - chronological change history](#13-implemented---chronological-change-history)
+Do not alter the structure of this file, it is used by GitHub Actions workflows: the release workflow reads the heading below and every release block header under it.
+
+- [1. Implemented - chronological change history](#1-implemented---chronological-change-history)
 
 ---
 
-See [Process - BACKLOG and CHANGELOG management](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/ARCHITECTURE.md#appendix-process---backlog-and-changelog-management)
+## 1. Implemented - chronological change history
 
-## Prefix codes
+2026-11-19 v0.8.217 build 587 - the project's process rules move into CHANGE-PROCESS.md, Merlin's DNS is measured and the DNS documentation corrected for both firmwares, and the DNS work is mapped in one plan
 
-Work items below use these three-letter prefixes.
+```play
+• Behind the scenes: the DNS documentation now describes stock and Asuswrt-Merlin separately, and the project's process rules and tests are reorganised. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
-| Prefix | Meaning                                                               |
-| :----: | --------------------------------------------------------------------- |
-|  ADD   | New feature or capability added                                       |
-|  ARC   | Architecture, design or structure notes                               |
-|  BLD   | Build process or build scripts                                        |
-|  BUG   | Known bug or defect                                                   |
-|  CFG   | Configuration change                                                  |
-|  CHG   | General change to existing behaviour                                  |
-|  DEC   | Design decision recorded                                              |
-| DELETE | Removal of a file, feature, or item                                   |
-|  DOC   | Documentation                                                         |
-|  FIX   | Bug fix                                                               |
-|  GUI   | User interface change, may altapoear under code UI                    |
-|  INF   | Informational note, points elsewhere for detail                       |
-|  MOD   | Code modification or optimisation                                     |
-|  NOTE  | General note                                                          |
-|  REL   | Release process or release readiness item                             |
-|  SEC   | Security related change                                               |
-|  TST   | Test added or updated                                                 |
-|   UI   | User interface, element or copy level, may also appear under code GUI |
-
-**Work items: less is better.** A work item says what is to be done, at a high level, in as few lines as it can: often its first line alone. It is not a running status, and it doesn't grow. Add a line only when it earns its place, and only these:
-
-- `DoD:` the definition of done, when the first line doesn't make it plain. For an item that changes what the app does to the router, it names the item's two log lines, the app log's and the router's (CONTEXT.md section 1, ID-617).
-- `Plan:` a link to its plan file in `.claude/plans/`, which holds the design, the decisions, the reasoning and a dated log of runs and evidence.
-- `Now:` where it stands, in one line, replaced when it changes, never added to. Anything still to do is written here, never only in the plan.
-
-No bold inside work items. When an item closes, it moves to its release block with one line added: `Closed <date>: <the evidence>.` Release blocks before build 535 keep their older, longer form.
-
-**A privacy or security item is not done until its check has been seen to fail.** Before a SEC item, or any item that makes or changes a claim about protection, moves out of WIP, a check that breaks the protected path must exist, and it must have been run and seen to fail with the protection broken and pass with it restored. The check goes in `scripts/check-claims.sh` wherever it can run on the router. A test that only checks command text doesn't count. This rule was added on 2026-09-30, after the watchdog's encrypted lookups (ID-076) turned out never to have worked.
-
-**Unique IDs**
-
-Every new work item gets an ID. This is the standard from the v0.8.78 build 448 release (and the current Pending/WIP items) onward. It was not applied retrospectively: v0.8.77 build 447 and every earlier release keep their original, ID-free form.
-
-Two kinds of line record what happened rather than work, and take no ID: a release result, `REL: vN.N.NN (NNN) passed <date> (run N): ...`, and an audit line, `CHG: WIP|1.1|BACKLOG ...` saying what moved, which older blocks have but which is no longer written: a change to WIP is reported in the reply, not here (Andrew, 2026-11-11). Anything else is a work item and gets an ID, however small, including work found and done in the same pass. `test/unit/changelog_ids_test.dart` fails any other line without one, from build 553 on; builds 541 to 552 keep some ID-free items from before the test.
-
-IDs are shared with BACKLOG.md: one number line across both files, so an ID always points to exactly one item no matter which file it lives in.
-
-Format: `ID-NNN XXX:`, where `XXX` is the item's prefix code, placed at the start of the bullet before the prefix.
-
-Example:
-
-- ID-014 FIX: the watchdog passes a tunnel that handshakes but cannot resolve names...
-
-To assign a new ID, search **both** CHANGELOG.md and BACKLOG.md for the highest existing `ID-NNN` and use the next number. No separate counter or log to maintain, and nothing already in either file needs to be touched or renumbered.
-
-Search again immediately before each new ID, even within a batch, and write the item into the file before using its number anywhere else.
-
----
-
- [BACKLOG.md](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/BACKLOG.md) contains work items that are longer term and yet to be release prioritised. Unverified bugs live in BACKLOG.md, never in this file.
-
----
-
-## 1. Changes
-
-This file contains lists of work items in a specific and purposeful relative sequence. All work items are sequenced in descending relative importance, this portrays the intended implementation sequence. The exception is "1.3. Implemented": each release block lists its completed work items in chronological implementation sequence, oldest first, so the most recently completed item is at the bottom of its block.
-
-1. work items listed under "1.1. Pending to do" are planned for the **next** release.
-2. "1.2. WIP" lists work items that are being actively worked on for the **current** release; and
-3. "1.3. Implemented - the chronological change history" which lists, in sequence, every release and its work items.
-
----
-
-### 1.1. Pending to do
-
-**Work items in section 1.1 may not have been sequenced, review and agree sequencing before moving any items from here to section 1.2**
-
-Work items for the **next** release (ID-594 design to be finalised first):
-
-- ID-594 ADD: choose what carries the router's own DNS, on stock and Merlin: the firmware's choice, a named slot, or the internet connection. Today it's a side effect of which slot lists the router's own DNS servers as its DNS servers (the first to start on Merlin, the highest-numbered on stock). The design is a rule at priority 1010 for each of the router's DNS server addresses, into the chosen slot's table or a table holding only the WAN's default route, put back by the guard; it falls through to the firmware's choice when that slot is down. Raised 2026-11-15, and rewritten the same day: it first chose between slots sharing DNS servers, which the day's measurements showed matters only when the router's own DNS is among them.
-  - First: Andrew decides whether to build it. His router's DNS already goes through wgc5 with no new code, by giving wgc5 the router's own DNS servers and keeping them off every other slot and watchdog.
-  - DoD: on each firmware, through a reboot, `ip route get` shows the chosen route for each of the router's DNS servers, and `check-claims.sh` fails with the rule deleted by hand.
-  - Plan: [plan_router-dns-slot.md](.claude/plans/plan_router-dns-slot.md)
-  - Now: the rule measured on 388.13_0, 2026-11-15, one run: at 1010 it moved the router's route to 9.9.9.9 from wgc1 to wgc5, and to the WAN through a table of its own. Not yet seen through a reboot or with the slot stopped.
-- ID-305 CHG: stock's mail sender moves to `mailsend-go` v1.0.13, so a failed send's diagnostics include the server's certificate (`-printCerts`). Diagnostics only: v1.0.12 already verifies the certificate when sending (`InsecureSkipVerify: !VerifyCert`), and upstream says there's "no need to update unless you need certificate details" (issue #76).
-  - Work: new pins and SHA-256s for both architectures in `binary_installer.dart`, from the published checksums and recomputed on hardware; the archive member names; offering the update to routers on v1.0.12.
-  - DoD: on stock, TEST EMAIL sends with v1.0.13, and a deliberately failed send prints the certificate in the app log.
-- ID-600 ADD: status for each slot from `wg show`, on stock and Merlin: the age of the latest handshake, data received and sent, and the endpoint, beside the watchdog's rebuilds from its log. The app already reads handshake ages (`kHandshakeAgesCommand`, DEVICES' tunnel health). Shown on NETWORK, beside each tunnel's public address (Andrew, 2026-11-15). Raised 2026-11-15.
-  - Plan: [plan_network-tunnel-status.md](.claude/plans/plan_network-tunnel-status.md)
-- ID-604 ADD: a speed test for each tunnel on NETWORK, on stock and Merlin: the router downloads and uploads a fixed amount through each tunnel in turn, and the card shows Mbit/s each way with the time it was taken. Use Cloudflare's free endpoints, which see only the tunnel's PIA address. Then a test on stock to see whether the server can be reached below 128.0.0.0. Raised 2026-11-15.
-  - Plan: [plan_network-tunnel-status.md](.claude/plans/plan_network-tunnel-status.md)
-- ID-596 ADD: on Merlin, a BY RULE view in DEVICES that lists every VPN Director rule in the order VPN Director acts on them, and can switch any WireGuard or WAN rule on or off, rename or delete it, through DEVICES' apply path so the guard runs after every change. OpenVPN rules are listed, read-only. Raised 2026-11-15, after "wanpin" and "vd2" could only be switched off in the web UI. The UI is an agreed concept but implementation of the UI must be agreed first via mock ups.
-  - DoD: on Merlin, a rule switched off or deleted in the app is gone from `ip rule` with the guard's `prohibit` for it, `check-claims.sh` fails with it put back by hand, and README and the store screenshots are checked.
-  - Plan: [plan_vpn-director-rules.md](.claude/plans/plan_vpn-director-rules.md)
-- ID-597 ADD: on Merlin, add and edit WireGuard and WAN rules in DEVICES' BY RULE view, ranges and remote addresses included; never OpenVPN. After ID-596. First, the guard's hold for a range sent to a tunnel is measured on the router, and Andrew decides whether a pinned device's remote address to the internet is refused or warned.
-  - DoD: a range sent to a tunnel fails closed with the tunnel stopped, through a reboot, and `check-claims.sh` fails with the guard's rule for it deleted by hand.
-  - Plan: [plan_vpn-director-rules.md](.claude/plans/plan_vpn-director-rules.md)
-- ID-629 TST: WD-29 on stock and on Merlin: a tunnel that mends itself after a FAILED alert sends one RECOVERED email (ID-628). Needs this release's watchdog deployed to the router, by SAVE & DEPLOY on each watchdog.
-  - DoD: WD-29 run by hand on stock and on Merlin, each result written in TESTING, and any failure a bug under its own ID.
-
-Work items for the **next** release (requires Merlin to be swapped out for STOCK firmware):
-
-- ID-578 SEC: rerun GRD-7 on stock with `check-reboot.sh` as fixed on 2026-11-14, the next time the router is on stock. Until then counted any answer but the WAN address read before the reboot as the tunnel, and the router's WAN address can change at a reboot (it did on Merlin that day), so a leak through the new address would have passed. README 5.4.1's "no leak across three restarts in a row" rests on those passes; the earlier runs that found leaks (4 of 6) are unaffected.
-  - DoD: three passes on stock with the fixed check, or README 5.4.1 corrected to what it finds.
-- ID-588 TST: WGT-2 on stock, the next time the router is on stock (with ID-578): an answering tunnel's widget row names the devices pinned to it (ID-587). The line is built the same way as on Merlin, where MRL-15 passed.
-  - DoD: WGT-2 passed on stock, its row naming a pinned device.
-- ID-613 TST: the hand tests for build 581's fixes that weren't run, on stock and on the watchdog form. Stock: ID-609 (a slot DNS change in WATCHDOG restarts the slot and its devices use the new servers, WD-DNS), ID-610 (ROUTER DNS ROUTING's sentence for slot DNS servers the router's own DNS doesn't use), ID-612 (the watchdog form refuses Quad9 where stock's curl 7.84 may also lack HTTP/2, WD-DOH) and ID-606's DEVICES label for a profile deleted in the web interface. Merlin: WD-DNS through the app's screens, which build 581 covers with automated tests and the router-side measurement only. Raised 2026-11-16, the release run having only a Merlin router.
-  - DoD: WD-DNS and WD-DOH run by hand on stock and on Merlin, ID-610's sentence read on stock, each result written in TESTING, and any failure a bug under its own ID.
-
----
-
-### 1.2. WIP
-
-Work items for the **current** release, in the order they are to be done:
-
----
-
-### 1.3. Implemented - chronological change history
-
-This section contains, in chronological order, all **completed** work items that are ready for the **current** release, or have been **committed** to a release. Each block commences with a header that contains the date that work commenced, the version and build number, followed by a very brief summary in one sentence or less describing what that release contains. Following the header are **completed** work items.
-
-Every release committed to GitHub **must** contain the version formatted as "vN.N.NN" and build number formatted as "build NNN", a dash and the brief summary, then a new line and all completed work items in chronological implementation sequence.
-
-When a work item in "1.2. WIP" is completed, move it to the bottom of the current release block below, keeping its ID.
-
-Every commit is a build. Whoever commits follows these steps, in this order:
-
-1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
-2. **Before the commit**, check the current release block has a ```` ```play ```` fence under its header. If it does not, write one: at most 500 characters, a `•` line for each thing a user of this build will notice, plain-language "Behind the scenes" when there is nothing they would see, and the "Full changelog" link as the last line. Never commit a block without one (ID-536).
-3. **Before the commit**, if `pubspec.yaml`, `pubspec.lock` or an Android lockfile changed since the last commit, run `dart run tool/third_party_notices.dart` and commit THIRD-PARTY-NOTICES.md with it. No workflow commits it back to dev any more, as such a commit held the next PR's checks for approval (ID-546); the weekly bot's PRs regenerate their own, and the release run warns when it is stale.
-4. **Straight after the commit**, open the next release block in "1.3. Implemented - chronological change history": a new header line above the current one, reading `<today's date> vN.N.NN build NNN - in progress` with the build number one higher, and bump `version:` in `pubspec.yaml` to match, both halves. Do not commit the new block and the bump on their own: they wait for the next commit. That holds when a fix commit follows a pushed PR: the block for the build after it is written after that commit, never in it (broken 2026-11-16, build 582's commit carried build 583's header).
-5. **SonarCloud is read before anything merges, and before the release commit for the code that is pushed ahead of it.** The release is the merge of `dev` into `main`. The release commit is the last commit on `dev` before that merge, the one whose block header names the release. Code is in one of two places, and each is handled differently:
-   - **Code in earlier commits, already pushed to `dev`:** open the dev-to-main PR as soon as it is pushed, as a draft if need be, and read SonarCloud's count of new issues on it with the API call in CLAUDE.md. Fix what it finds in a commit before the release commit, so the fix is not a build of its own after the release.
-   - **Code in the release commit itself:** SonarCloud can't read it first, because the PR carries it only once it is pushed. Before the commit it gets the local screen (CLAUDE.md's three rules, and `test/unit/no_nested_ternary_test.dart`) and the full suite; after the push, the PR's count is read before anything merges.
-   - **Either way:** nothing merges while SonarCloud shows a new issue. A fix made after the release commit is a new build, and that build is the release; the block after it follows step 4.
-
-   A local estimate of Sonar's rules can only screen, not clear. On 2026-11-15 it missed seven issues, and the release needed another build (ID-593); on 2026-11-16 it missed two more, a nested ternary and a closure over the complexity limit, and build 582 was the result (ID-615; `test/unit/no_nested_ternary_test.dart`, ID-618, now catches the ternary). On 2026-11-17 the PR carried builds 583 and 584 and its count was zero (ID-626 wrote this step out in full).
-
----
+- REL: v0.8.216 (586) passed 2026-11-19 (run 44335215202, attempt 5): every quality and security check, the signed Android build to Play's internal track and the GitHub release with the SBOM and licence manifest, and the signed iOS build to TestFlight with its SBOM attached by `scripts/wait-for-release.sh`, its first run on a real release. Promoted to production on 2026-11-19 (dry run 44355400659, then run 44355562642): Google Play's production track has build 586, and App Store version 0.8.216 was sent to App Review, to release when Apple approves. The iOS job was cancelled four times, attempts 1 to 4, with "The job was not acquired by Runner of type hosted" after about 15 minutes each, because GitHub had no macOS runner for it (about 1 hour 40 minutes); only that job was re-run each time, and the fifth attempt ran. The pull request's simulator job was cancelled twice the same way and passed on its third. Pull request #84, merge commit `669ba01`, SonarCloud 0 new issues.
+- ID-633 DOC: updated README.md section 4, standalone menu function name updated to match current UI.
+- ID-632 DOC: ROUTER-DNS.md no longer says Asuswrt-Merlin "hasn't been tested yet". Merlin's DNS has been measured since build 575 (ID-572, ID-574, ID-581, 388.13_0, 2026-11-13) and ROUTER DNS ROUTING has read it since build 577, so the opening now says what was measured, and that the rules in the document are stock's. Sections 2 to 6 then say what each firmware does wherever they differ, from Merlin measurements taken on 2026-11-20 (one run each, on one router): with a tunnel as the default connection, devices that aren't pinned use the default slot's DNS servers through that tunnel, not the router's DoT list; the router's own programs ask its local dnsmasq, not the DNS Server setting; a DNS address shared by slots is held by the first slot to start, not the highest-numbered; and when that slot stops the route is dropped and the router's lookups leave over the WAN until a sharing slot starts (raised as ID-636). The same stock-only claim was corrected in README 5.2.2 and its second reason for matching DNS, ARCHITECTURE row 8 of section 2, its 2026-09-19 history row and 6.10's DNS paragraph, which now holds the measurements. Scope widened from sections 3 to 6, with Andrew's agreement.
+  - Closed 2026-11-20: Merlin measured over SSH with WSL's key, read-only apart from two test slots made for the purpose (wgc2 and wgc3, throwaway keys, nothing committed to flash) and a stop and restart of wgc1; every key unset and `ip rule` back to the baseline afterwards, both tunnels handshaking. Later the same day, with Andrew's authority to change the router so long as it was put back: the default connection switched to the internet and back (twice: the whole-LAN DNS rewrite goes and unpinned devices' lookups are answered by the router); DNS Director switched off and on (no difference to unpinned devices while the default is a tunnel); DoT switched off and back with a WAN restart (two command-line attempts first, which weren't measurements): the router's own lookups become ordinary DNS to the DNS Server setting; a lookup sent to a stopped slot's DNS address leaves from the WAN address and is answered; and Merlin's source at tag 3004.388.13 gives the mechanism for first-to-start and for the dropped route. All restored: the rule file byte for byte, `ip rule` identical, `iptables -t nat -S` identical apart from the order of two independent `MASQUERADE` rules. The stock statements were not re-measured (the router is on Merlin) and are ID-639; the section 2 diagram has not been rendered; the app's overlap note does show on Merlin since build 581, so README and ROUTER-DNS.md now say so. A second round the same day repeated the default-internet runs with the old DNS flows deleted first, the default on wgc1, and the first-to-start runs in both directions, and sent a real lookup into a slot with no handshake (sent, no answer); all agreed. A text audit found that the app's messages about devices that aren't pinned, and README 5.5's line on the resolver check, are stock's: README is corrected and the app's text is ID-640. promotion/blog/article.md still carries the stock-only "default connection doesn't decide DNS" line.
+- ID-635 DOC: every process rule and step moved out of CHANGELOG.md, BACKLOG.md and ARCHITECTURE.md appendix 14 into CHANGE-PROCESS.md, so CHANGELOG.md holds what was done (the release blocks) and BACKLOG.md what is not (Current Release, Next Release, Unconfirmed BUGs, FTR, New work items). Each file opens with a line saying to read CHANGE-PROCESS.md, and the appendix is a pointer. The empty DOC and Codebase cleanup sections are gone.
+  - Plan: [plan_change-process.md](.claude/plans/plan_change-process.md)
+  - Closed 2026-11-20: `flutter test` 2369 passed; the release notes for v0.8.216 built from the new CHANGELOG.md are byte for byte those built from the old; `changelog_ids_test.dart` and `changelog_structure_test.dart` read BACKLOG's two release sections and the release blocks; `change_process_test.dart` fails when either file loses its pointer line or a rule grows back in it.
+- ID-642 DOC: `.claude/plans/plan_dns.md` (renamed from `plan_firmware-split.md`) is the one place that shows the DNS work items together: a map of each item with what it decides or waits for, the Merlin findings, how they were measured, and the recommended split by firmware. The two older DNS plans link up to it, and ID-641 points at it. It holds relationships and no status, which stays in each item's `Now:` line.
+  - Closed 2026-11-20: `test/unit/dns_map_test.dart` fails when an ID in the map's first column is in neither BACKLOG.md nor CHANGELOG.md, or when an older DNS plan stops linking up, seen to fail with the map's ID-594 row changed and to pass with it restored..
 
 2026-11-17 v0.8.216 build 586 - the watchdog emails RECOVERED when a tunnel mends itself after a FAILED alert, the pull request checks run R8, the iOS release jobs queue and stop waiting for a failed release, and the project's process rules are tests
 

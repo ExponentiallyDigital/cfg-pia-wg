@@ -1,11 +1,12 @@
-// test/unit/changelog_structure_test.dart - CHANGELOG's work-item sections hold only work items (ID-627).
+// test/unit/changelog_structure_test.dart - the work-item sections hold only work items (ID-627, ID-635).
 //
 // On 2026-11-17 a scripted edit turned the `\n` in `tr '<' '\n'` into a real line break. It split one
 // bullet in two, and moving the item left the second half in 1.2 WIP, under no bullet at all.
-// changelog_ids_test.dart counts IDs and could not see it; Andrew found it. Section 1.1, section 1.2 and
-// every release block from build 535 on (the form this file says its blocks have, "Release blocks before
-// build 535 keep their older, longer form") now fail if, after their first bullet, a line is neither a
-// bullet, an indented line under one, a blank line, a heading, nor inside a code fence.
+// changelog_ids_test.dart counts IDs and could not see it; Andrew found it. BACKLOG.md's Current Release and
+// Next Release (the old CHANGELOG 1.2 and 1.1, moved by ID-635) and every CHANGELOG release block from build
+// 535 on (the form CHANGE-PROCESS.md says its blocks have, "Release blocks before build 535 keep their
+// older, longer form") now fail if, after their first bullet, a line is neither a bullet, an indented line
+// under one, a blank line, a heading, nor inside a code fence.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -41,47 +42,63 @@ List<String> fragmentLines(List<String> lines, int start, int end) {
   return found;
 }
 
-/// Each (name, start, end) stretch of [changelog] that is held to the form: 1.1, 1.2, and each release
-/// block from [kFirstCheckedBuild] on. Stretches are line ranges, so reports can name real lines.
+/// The names of the BACKLOG.md sections held to the form, as they are headed.
+const List<String> kCheckedSections = ['Current Release', 'Next Release'];
+
+/// The name of the checked section [line] opens, or null.
+String? _checkedSection(String line) {
+  for (final name in kCheckedSections) {
+    if (RegExp('^## \\d+\\. $name').hasMatch(line)) return name;
+  }
+  return null;
+}
+
+/// Each (name, start, end) stretch of [lines] that is held to the form: BACKLOG.md's Current Release and Next
+/// Release, and each CHANGELOG.md release block from [kFirstCheckedBuild] on. Any other `## ` heading ends a
+/// stretch without being checked. Stretches are line ranges, so reports can name real lines.
 List<({String name, int start, int end})> checkedStretches(List<String> lines) {
   final starts = <(int, String)>[];
   for (var i = 0; i < lines.length; i++) {
     final l = lines[i];
-    if (l.startsWith('### 1.1.') || l.startsWith('### 1.2.') || l.startsWith('### 1.3.')) {
-      starts.add((i, l));
-    } else {
-      final m = _blockHeader.firstMatch(l);
-      if (m != null) starts.add((i, l));
-    }
+    if (l.startsWith('## ') || _blockHeader.hasMatch(l)) starts.add((i, l));
   }
   final out = <({String name, int start, int end})>[];
   for (var k = 0; k < starts.length; k++) {
     final (at, head) = starts[k];
     final end = k + 1 < starts.length ? starts[k + 1].$1 : lines.length;
     final m = _blockHeader.firstMatch(head);
-    final isBlock = m != null;
-    if (head.startsWith('### 1.3.')) continue;
-    if (isBlock && int.parse(m.group(1)!) < kFirstCheckedBuild) continue;
-    out.add((name: isBlock ? 'build ${m.group(1)}' : head.substring(4, 8), start: at + 1, end: end));
+    final section = _checkedSection(head);
+    if (m == null && section == null) continue;
+    if (m != null && int.parse(m.group(1)!) < kFirstCheckedBuild) continue;
+    out.add((name: m != null ? 'build ${m.group(1)}' : section!, start: at + 1, end: end));
   }
   return out;
 }
 
 void main() {
-  test("1.1, 1.2 and every release block from build $kFirstCheckedBuild hold only bullets, their indented lines and fences", () {
+  const reason = 'A line that is not a bullet, indented under one, blank or a heading is a fragment, usually of a bullet split in two by '
+      'a scripted edit. Edit the file with the Edit tool and read what was stored back (CONTEXT.md section 1).';
+
+  test('BACKLOG.md Current Release and Next Release hold only bullets, their indented lines and fences', () {
+    final lines = File('BACKLOG.md').readAsLinesSync();
+    final stretches = checkedStretches(lines);
+    expect(stretches.map((s) => s.name), containsAll(kCheckedSections), reason: 'the sections are found');
+    final problems = [
+      for (final s in stretches)
+        for (final f in fragmentLines(lines, s.start, s.end)) '${s.name}: $f'
+    ];
+    expect(problems, isEmpty, reason: reason);
+  });
+
+  test("every CHANGELOG.md release block from build $kFirstCheckedBuild holds only bullets, their indented lines and fences", () {
     final lines = File('CHANGELOG.md').readAsLinesSync();
     final stretches = checkedStretches(lines);
-    expect(stretches.map((s) => s.name), containsAll(['1.1.', '1.2.']), reason: 'the sections are found');
-    expect(stretches.length, greaterThan(10), reason: 'and so are the release blocks');
-    final problems = <String>[];
-    for (final s in stretches) {
-      for (final f in fragmentLines(lines, s.start, s.end)) {
-        problems.add('${s.name}: $f');
-      }
-    }
-    expect(problems, isEmpty,
-        reason: 'A line that is not a bullet, indented under one, blank or a heading is a fragment, usually of a bullet split in two by '
-            'a scripted edit. Edit CHANGELOG with the Edit tool and read what was stored back (CONTEXT.md section 1).');
+    expect(stretches.length, greaterThan(10), reason: 'the release blocks are found');
+    final problems = [
+      for (final s in stretches)
+        for (final f in fragmentLines(lines, s.start, s.end)) '${s.name}: $f'
+    ];
+    expect(problems, isEmpty, reason: reason);
   });
 
   group('the check itself', () {
@@ -112,11 +129,18 @@ void main() {
       expect(fragmentLines(l, 0, l.length), isEmpty);
     });
 
-    test('release blocks before build 535 keep their older form, and 1.3 is not a stretch', () {
-      final l = lines('### 1.2. WIP\n- a\n### 1.3. Done\n2026-09-01 v0.8.1 build 500 - old\n- a\nloose\n'
-          '2026-10-25 v0.8.179 build 549 - new\n- a\n  - b');
+    test('release blocks before build 535 keep their older form, and an unchecked section is not a stretch', () {
+      final l = lines('## 1. Current Release\n- a\n## 3. Backlog\n- b\nloose\n## 1. Implemented\n'
+          '2026-09-01 v0.8.1 build 500 - old\n- a\nloose\n2026-10-25 v0.8.179 build 549 - new\n- a\n  - b');
       final names = checkedStretches(l).map((s) => s.name).toList();
-      expect(names, ['1.2.', 'build 549']);
+      expect(names, ['Current Release', 'build 549']);
+    });
+
+    test('the sections are found whatever number they carry', () {
+      final l = lines('## 2. Next Release\n- a\nloose words');
+      final names = checkedStretches(l).map((s) => s.name).toList();
+      expect(names, ['Next Release']);
+      expect(fragmentLines(l, 1, l.length), ['line 3: loose words']);
     });
   });
 }
