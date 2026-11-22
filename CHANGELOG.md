@@ -10,6 +10,26 @@ Do not alter the structure of this file, it is used by GitHub Actions workflows:
 
 ## 1. Implemented - chronological change history
 
+2026-11-22 v0.8.220 build 590 - the quick start guide is rewritten for first-time users, with a README link on every step
+
+```play
+• Behind the scenes: the quick start guide and the README now explain each setup step in plain terms, with an example wherever a format is needed. No change to how the app works.
+• Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
+
+- REL: v0.8.219 (589) passed 2026-11-22 (run 45005122359, attempt 1): every quality and security check, the signed Android build to Play's internal track and the GitHub release, and the signed iOS build to TestFlight, with an iOS runner at once. Promoted for real, with no dry run, from internal to alpha (run 45007306364), to beta (45007367019) and to production (45007424693) on both stores; the App Store version 0.8.219 is with App Review and releases on approval.
+- ID-673 TST: a release block's header summary is at most 100 characters and one sentence, with no prose under it, checked on the newest block; the play note is in end-user terms, most important first.
+  - Plan: [plan_change-process.md](.claude/plans/plan_change-process.md)
+  - Closed 2026-11-22: `release_header_length_test.dart`, which flags the released headers of builds 587 (208 characters) and 588 (292) as its own proof, and CHANGE-PROCESS.md section 7 says so.
+- ID-674 DOC: `promotion/posts.md` records Andrew's SNBForums announcement of build 589, as he wrote it.
+  - Closed 2026-11-22: the row and the text are in the file; the thread's address is not recorded.
+- ID-676 DOC: QUICKSTART.md is rewritten from a first-time user's walk-through of it: plain steps with examples, what each screen asks for, and a README link on every step.
+  - Closed 2026-11-22: it tells the reader to follow a step's link when unsure, says the app uses their existing PIA subscription, and stays bulleted and brief.
+- ID-677 DOC: README explains what the quickstart now links to: clicking Apply for SSH, the router's IP address and SSH login, the fixed-address message, the watchdog's email fields, and how long Download Master takes.
+  - Closed 2026-11-22: sections 4.1, 4.1.3, 5.2, 5.3.1, 5.4.2 and 5.11, each a few sentences.
+- ID-678 BLD: the Claude Code hook that fires after each edit now says to add the work item at the bottom of the block, oldest first.
+  - Closed 2026-11-22: the reminder in `scripts/check-changelog-current.sh` says so, and `changelog_current_hook_test.dart` checks it.
+
 2026-11-22 v0.8.219 build 589 - SonarCloud's one finding on build 588 is fixed, so build 588's Merlin DNS work ships in this build
 
 ```play

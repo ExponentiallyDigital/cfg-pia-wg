@@ -4,6 +4,7 @@ Every post, message and thread about the app: where it went, when, where it stan
 
 | Date | Where | What | Status | Link |
 | --- | --- | --- | --- | --- |
+| 2026-11-22 | SNBForums, announcement of build 589 | The release announcement, written by Andrew from Claude's summary: when it is available, how long the stores take, and the three main changes; text [below](#snbforums-announcement-of-build-589-posted-2026-11-22) | Posted on 2026-11-22; the thread is not named here | |
 | 2026-11-22 | exponentiallydigital.com, comment under the "Tunnel or nothing" post | A clarification that the post's DNS section describes stock firmware and that Asuswrt-Merlin differs, added as a reply rather than an edit to the post; text [below](#dns-clarifications-posted-2026-11-22-id-637-and-id-662) | Posted on 2026-11-22 | [tunnel-or-nothing-wireguard-kill-switch](https://www.exponentiallydigital.com/tunnel-or-nothing-wireguard-kill-switch) |
 | 2026-11-22 | r/PrivateInternetAccess, comment | A correction to his own 2026-11-20 comments on DNS: they described stock firmware only, Asuswrt-Merlin differs, measured on 388.13 on one router, with a link to the project's repository; text [below](#dns-clarifications-posted-2026-11-22-id-637-and-id-662) | Posted on 2026-11-22; the thread's figures were not read that day | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
 | 2026-11-21 | SNBForums, Asus-Merlin Addon Software Catalog, post #90 by Viktor Jaep (not Andrew's post) | The catalog's maintainer lists cfg-pia-wg among the scripts "added or modified to the Asus-Merlin Addon Software Catalog": "cfg-pia-wg - Github - Dev: @Exponentially Digital", with a welcome to the add-ons section. Seen by Andrew at 1:10 PM on the day, as the forum showed it | Listed by a third party, so Merlin users can now find the app from the catalog; the thread's address isn't recorded | - |
@@ -33,6 +34,18 @@ How these are written:
 - Answer the likely objections in the post itself, under "Before you ask".
 - Check each figure on the day of posting, and each forum's rules before posting.
 - Bugs and feature requests go to GitHub Issues, never a forum thread.
+
+## SNBForums announcement of build 589 (posted 2026-11-22)
+
+Andrew's own wording, after he rewrote Claude's summary of the release for a reader: the date and version first, how long the stores take, then the changes in the reader's terms. The "Full changelog" link is the last line, as in the Play note.
+
+```text
+2026-11-22 v0.8.219 build 589 is now available on GitHub, store distributions are usually available within eight hours. Main changes:
+Merlin: DEVICES shows every single-address VPN Director rule, and each offline device at its reserved address.
+Merlin: for unpinned devices, while a slot that shares your router's DNS is down, the router's own lookups are refused, not sent from your home address. The watchdog still rebuilds it.
+The DNS screens and warnings read correctly for Merlin, and name a slot that conflicts in situations where the router and slot uses the same DNS addresses.
+Full changelog https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/CHANGELOG.md
+```
 
 ## DNS clarifications (posted 2026-11-22, ID-637 and ID-662)
 

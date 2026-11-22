@@ -15,6 +15,8 @@ Always read and follow [CHANGE-PROCESS.md](CHANGE-PROCESS.md) before changing th
 
 #### Commit 1 -  the CI rebuild, on its own because it changes how releases are made
 
+- ID-675 CHG: when an app update replaces the Merlin or stock guard, the app says so in both logs, as it does for the watchdog scripts. Today the guard is rewritten silently when it rides with a watchdog update.
+  - DoD: the app log and the router log each get a line naming the guard and the app version whenever the guard is replaced, `guard.sh` on stock or `merlin-guard.sh` on Merlin, by any path, with a test for each firmware and path; nothing is logged when it already matches.
 - ID-630 BLD: rearchitect cicd, so a release is fast and the app is still always checked before it: verify once, build once, and publish what was verified and built. Raised 2026-11-19, after v0.8.216.
   - DoD: a tag run takes under 15 minutes, builds the signed Android bundle and the signed iOS archive once per source tree, and publishes nothing unless the checks passed for that tree, seen on a real release.
   - Plan: [plan_rearchitect-cicd.md](.claude/plans/plan_rearchitect-cicd.md)
