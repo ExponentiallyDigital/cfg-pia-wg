@@ -153,13 +153,16 @@ class RouterEmailFacts {
     );
   }
 
-  /// [desc] stands in for the router's own `wgcN_desc` when the caller knows better (ID-049).
-  List<String> routerRows(int slot, {String? desc}) => [
+  /// [desc] stands in for the router's own `wgcN_desc` when the caller knows better (ID-049). [sentBy] is the app
+  /// version and build when the app itself sends the email, as the test email is; the emails a script sends
+  /// say which build deployed that script instead (ID-634).
+  List<String> routerRows(int slot, {String? desc, String sentBy = ''}) => [
         'Name: $name${lanIp.isEmpty || lanIp == name ? '' : ' ($lanIp)'}',
         if (model.isNotEmpty || firmware.isNotEmpty) 'Model: $model, firmware $firmware',
         if (time.isNotEmpty) 'Time: $time',
         if (uptime.isNotEmpty) 'Uptime: $uptime',
-        'Watchdog: ${(desc ?? this.desc).isEmpty ? 'region not yet set, configuration pending deployment' : 'wgc$slot:${desc ?? this.desc}'}',
+        'Watchdog: ${(desc ?? this.desc).isEmpty ? 'region not yet set, configuration pending deployment' : 'wgc$slot:${desc ?? this.desc}'}'
+            '${sentBy.isEmpty ? '' : ', sent by cfg-pia-wg $sentBy'}',
       ];
 
   /// The same three counters, short enough for the ABOUT screen's width.

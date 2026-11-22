@@ -26,7 +26,9 @@
 # Every mode checks PIA's server list signature with the deployed watchdog's own check (ID-325):
 # today's list must pass, and copies of it with a region moved or the signature taken off must not.
 # And that every script the app put there is whole, with a cut-short copy to show the check can tell
-# (ID-484), and every scheduled watchdog has its script (ID-486). Quick and full also leave an error
+# (ID-484), and every scheduled watchdog has its script (ID-486). On Merlin, quick also proves the guard's hold on a
+# DNS address a slot shares with the router (ID-636): a stand-in address held by the same rule, a probe to it
+# seen to leave by the WAN with the rule off and not with it on, and the rule through a firewall rebuild. Quick and full also leave an error
 # for a watchdog's next run to report, and show the check finds no report from a copy without it
 # (ID-485), with that slot's alert emails off for the run.
 #
@@ -97,7 +99,20 @@ RESTORED=""
 # ASUS's curl writes every command line it runs to /jffs/curllst, rotating it to curllst.1 and on;
 # ours leave nothing in any of them (ID-400).
 curllst_clear() { for F in /jffs/curllst /jffs/curllst.[0-9]*; do [ -f "$F" ] && : > "$F"; done; return 0; }
+# The throwaway slots of the takeover check (7m), whichever way the run ends.
+takeover_clean() {
+  [ -n "$TOSLOTS" ] || return 0
+  for TN in 3 4; do
+    nvram set wgc${TN}_enable=0; service "stop_wgc $TN" >/dev/null 2>&1; sleep 3
+    for TK in addr alive desc dns enable enforce ep_addr ep_addr_r ep_port fw mtu nat ppub priv psk rip aips; do nvram unset wgc${TN}_$TK; done
+    iptables -t nat -S POSTROUTING 2>/dev/null | grep -- "-o wgc$TN" | sed 's/^-A/-D/' | while read -r TL; do iptables -t nat $TL; done
+  done
+  iptables -t raw -D OUTPUT -d 203.0.113.9 ! -o wgc+ -j DROP 2>/dev/null
+  ip rule show | grep -E '^104[5-9]:.*to 203[.]0[.]113[.]9' | while read -r TP TF TA TTO TADDR TREST; do ip rule del priority "${TP%:}" to "$TADDR" iif lo lookup "${TREST##* }" 2>/dev/null; done
+  TOSLOTS=""
+}
 restore() {
+  takeover_clean
   curllst_clear
   [ -n "$RESTORED" ] || [ "$MODE" = dry ] && return 0
   RESTORED=1
@@ -118,6 +133,7 @@ restore() {
   done
   [ -x "$D/guard.sh" ] && "$D/guard.sh" >/dev/null 2>&1
   [ "$FW" = merlin ] && [ -x "$D/merlin-guard.sh" ] && "$D/merlin-guard.sh" >/dev/null 2>&1
+  [ "$FW" = merlin ] && iptables -t raw -D OUTPUT -d 203.0.113.9 ! -o wgc+ -j DROP 2>/dev/null
   # Filter rules taken out of the firewall by hand come back only with a firewall restart.
   [ -n "$FILTERBROKEN" ] && service restart_firewall
   # The SSH-forwarding test (4c), if this run was stopped while it was out: its cron entry, and the
@@ -162,6 +178,22 @@ planted_verdict() {
 no91_verdict() { case "$1" in WAN|wgc[0-9]) echo out ;; BLOCKED) echo refused ;; *) echo other ;; esac; }
 # GUARD-merlin-start: the guard's rules after a tunnel start must be exactly the ones before.
 merlin_back_verdict() { if [ -z "$1" ]; then echo unchecked; elif [ "$1" = "$2" ]; then echo back; else echo missing; fi; }
+# HOLD-refuses (ID-636): $1 whether the guard's raw rule is in place (present or absent), $2 the connections to
+# the held address that left with a source that is not a tunnel's or the LAN's. Held only with the rule in and
+# nothing out; a count that isn't a number is not read as zero.
+hold_verdict() { case "$1:$2" in present:0) echo held ;; present:[0-9]*) echo leaked ;; absent:*) echo norule ;; *) echo unread ;; esac; }
+# HOLD-control: with the rule off, the same probe must leave by the WAN, or the check could not see a leak.
+hold_seen_verdict() { case "$1" in ''|*[!0-9]*|0) echo blind ;; *) echo leak ;; esac; }
+# TAKEOVER-merlin (ID-652): $1 `ip route get` for the held address, $2 the interface it must use. Only that one:
+# the WAN, another tunnel, or a refusal is each named, never read as the right one.
+takeover_verdict() {
+  case "$1" in
+    *" dev $2"|*" dev $2 "*) echo right ;;
+    *RTNETLINK*|*unreachable*|*prohibit*) echo refused ;;
+    *" dev wgc"[0-9]*) echo other ;;
+    *) echo wan ;;
+  esac
+}
 # ---- end of verdicts
 
 # ---- 1. TLS: curl refuses bad certificates, and honours --cacert --------------------------------
@@ -938,6 +970,48 @@ if [ "$FW" = merlin ]; then
   fi
 fi
 
+# ---- 6m4. Merlin: the hold on a DNS address a slot shares with the router (ID-636) -------------
+# When the slot that holds one of the router's own DNS addresses stops, Merlin's WAN route for it carries the
+# router's lookups from the home address: 465 connections to each address in 30 s (measured 2026-11-22). The
+# guard refuses that path with a rule in the raw table. The router may share nothing here, so the check names an
+# address in the documentation range to the guard outright (GUARD_HOLD_ADDRS): the same rule, on this router's
+# kernel. Control first: with no rule the same probe must leave by the WAN, or this could not see a leak.
+hold_conns() { conntrack -L -p tcp 2>/dev/null | grep " dst=$1 " | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^src=/) { print substr($i, 5); break }}' | grep -v -e '^10\.' -e '^192\.168\.' | wc -l | tr -d ' '; }
+hold_probe() { ( echo | nc "$1" 853 >/dev/null 2>&1 ) & HPID=$!; sleep 2; kill -9 $HPID 2>/dev/null; }
+hold_in() { iptables -t raw -C OUTPUT -d "$1" ! -o wgc+ -j DROP 2>/dev/null && echo present || echo absent; }
+if [ "$FW" = merlin ]; then
+  HA=203.0.113.9
+  HG="$D/merlin-guard.sh"
+  # No `command` on this BusyBox (CONTEXT.md section 1): `which`.
+  if [ ! -x "$HG" ] || [ -z "$(which conntrack 2>/dev/null)" ] || [ -z "$(which nc 2>/dev/null)" ]; then
+    info HOLD-merlin "needs merlin-guard.sh, conntrack and nc; not checked"
+  else
+    iptables -t raw -D OUTPUT -d $HA ! -o wgc+ -j DROP 2>/dev/null
+    conntrack -D -p tcp -d $HA >/dev/null 2>&1
+    hold_probe $HA; LEAK="$(hold_conns $HA)"
+    case "$(hold_seen_verdict "$LEAK")" in
+      leak) pass HOLD-control "control: with no rule a probe to a documentation address left by the WAN ($LEAK connection(s)), so a leak can be seen" ;;
+      *) fail HOLD-control "the control probe leaves by the WAN, or the hold's check is blind" "nothing left with no rule in place" ;;
+    esac
+    conntrack -D -p tcp -d $HA >/dev/null 2>&1
+    GUARD_HOLD_ADDRS=$HA "$HG" hold >/dev/null 2>&1
+    PRES="$(hold_in $HA)"
+    hold_probe $HA; LEAK="$(hold_conns $HA)"
+    case "$(hold_verdict "$PRES" "$LEAK")" in
+      held) pass HOLD-refuses "with the guard's rule in the raw table a probe to the held address left no connection by the WAN" ;;
+      leaked) fail HOLD-refuses "a probe to the held address stays off the WAN" "$LEAK connection(s) left by the WAN with the rule in place" ;;
+      norule) fail HOLD-refuses "the guard places the hold" "no raw rule after merlin-guard.sh hold" ;;
+      *) fail HOLD-refuses "the hold can be read" "rule $PRES, $LEAK connection(s)" ;;
+    esac
+    # The rule is in the raw table because the filter table's is out for part of a second at every firewall rebuild.
+    service restart_firewall >/dev/null 2>&1; sleep 8
+    [ "$(hold_in $HA)" = present ] && pass HOLD-firewall "the rule survived a firewall rebuild" || fail HOLD-firewall "the rule survives a firewall rebuild" "gone after restart_firewall"
+    "$HG" hold >/dev/null 2>&1
+    [ "$(hold_in $HA)" = absent ] && pass HOLD-release "the guard let go of an address no slot lists" || fail HOLD-release "the guard lets go of an address no slot lists" "still held after merlin-guard.sh hold"
+    info HOLD-real "the router's own DNS addresses held now: $(iptables -t raw -S OUTPUT 2>/dev/null | awk '$3 == "-d" && $9 == "DROP" { sub("/32", "", $4); printf "%s ", $4 }')"
+  fi
+fi
+
 # ---- 6. A tunnel stopped: its pinned devices are refused, not sent out the WAN ------------------
 E=""; [ "$FW" = stock ] && E="$(gpins | awk -F'>' '$3 ~ /^[0-9]+$/' | head -1)"
 if [ -n "$E" ]; then
@@ -998,6 +1072,53 @@ if [ -n "$E" ]; then
 fi
 
 [ "$MODE" = quick ] && { echo "== $PASSN passed, $FAILN failed"; logger "**CHECK-CLAIMS END** $MODE: $PASSN passed, $FAILN failed"; exit "$FAILN"; }
+
+# ---- 7m. Merlin: a second running slot takes over the router's lookups (ID-652) ------------------
+# With the hold on, a second running slot that lists a held address must carry the router's lookups when the first
+# stops: Merlin adds a slot's route to its DNS address only as it starts, and only the first slot gets one. The guard has
+# one `ip rule` for each running slot that lists the address, at 1050 minus the slot, so the highest-numbered running
+# slot wins. Two throwaway slots, wgc3 and wgc4, aimed at a documentation address that answers nothing, both listing a
+# stand-in address named to the guard outright (GUARD_HOLD_ADDRS). The route is read straight after each stop, before the
+# guard has run again: the fall-through to the next slot is the kernel's, with no event.
+to_route() { ip route get 203.0.113.9 2>&1 | head -1 | sed 's/ src.*//'; }
+to_mkslot() {
+  TPRIV=$(wg genkey); TPUB=$(wg genkey | wg pubkey)
+  nvram set wgc$1_desc=claims$1; nvram set wgc$1_addr=10.99.$1.2/32; nvram set wgc$1_priv="$TPRIV"; nvram set wgc$1_ppub="$TPUB"
+  nvram set wgc$1_ep_addr=203.0.113.1; nvram set wgc$1_ep_port=51820; nvram set wgc$1_dns=203.0.113.9; nvram set wgc$1_aips=0.0.0.0/0
+  nvram set wgc$1_mtu=1420; nvram set wgc$1_nat=0; nvram set wgc$1_alive=25; nvram set wgc$1_enforce=0; nvram set wgc$1_fw=0; nvram set wgc$1_enable=1
+}
+to_wait() { TI=0; while [ "$TI" -lt 20 ] && { [ "$2" = up ] && ! ip -o link show up | grep -q " wgc$1:" || [ "$2" = gone ] && ip -o link show | grep -q " wgc$1:"; }; do sleep 1; TI=$((TI + 1)); done; sleep 2; }
+if [ "$FW" = merlin ]; then
+  TG="$D/merlin-guard.sh"
+  if [ ! -x "$TG" ] || [ -n "$(nvram get wgc3_desc)$(nvram get wgc3_enable)$(nvram get wgc4_desc)$(nvram get wgc4_enable)" ]; then
+    info TAKEOVER-merlin "needs merlin-guard.sh and wgc3 and wgc4 unused; not checked"
+  else
+    TOSLOTS=1
+    to_mkslot 3; to_mkslot 4
+    service "start_wgc 3" >/dev/null 2>&1; to_wait 3 up; service "start_wgc 4" >/dev/null 2>&1; to_wait 4 up
+    GUARD_HOLD_ADDRS=203.0.113.9 "$TG" hold >/dev/null 2>&1
+    R="$(to_route)"
+    case "$(takeover_verdict "$R" wgc4)" in
+      right) pass TAKEOVER-first "with wgc3 and wgc4 both running, the router's lookups go through wgc4, the highest-numbered" ;;
+      *) fail TAKEOVER-first "the highest-numbered running slot carries the router's lookups" "$R" ;;
+    esac
+    nvram set wgc4_enable=0; service "stop_wgc 4" >/dev/null 2>&1; to_wait 4 gone; nvram set wgc4_enable=1
+    R="$(to_route)"
+    case "$(takeover_verdict "$R" wgc3)" in
+      right) pass TAKEOVER-second "with wgc4 stopped, and the guard not yet run again, the lookups go through wgc3" ;;
+      *) fail TAKEOVER-second "the other running slot takes over when the first stops" "$R" ;;
+    esac
+    nvram set wgc3_enable=0; service "stop_wgc 3" >/dev/null 2>&1; to_wait 3 gone; nvram set wgc3_enable=1
+    GUARD_HOLD_ADDRS=203.0.113.9 "$TG" hold >/dev/null 2>&1
+    conntrack -D -p tcp -d 203.0.113.9 >/dev/null 2>&1
+    hold_probe 203.0.113.9; LEAK="$(hold_conns 203.0.113.9)"
+    case "$(hold_verdict "$(hold_in 203.0.113.9)" "$LEAK")" in
+      held) pass TAKEOVER-none "with no slot running, a probe to the address left no connection by the WAN: the hold refuses it" ;;
+      *) fail TAKEOVER-none "with no slot running the hold refuses the router's lookups" "$(hold_in 203.0.113.9), $LEAK connection(s)" ;;
+    esac
+    takeover_clean
+  fi
+fi
 
 # ---- 7. DNS setups, each proved by a real rebuild ---------------------------------------------
 W1="$(for S in "$D"/watchdog_wgc*.sh; do [ -f "$S" ] && echo "$S" && break; done)"

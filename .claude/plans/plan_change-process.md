@@ -158,3 +158,23 @@ BACKLOG.md gains:
 - The release workflow's notes change. Counter: the before and after comparison in step 8.
 - Agents stop following rules they no longer see. Counter: the pointer line, the safeguard test, and CLAUDE.md's reading list naming the new file first.
 - Old links to CHANGELOG sections that moved, in plan files or comments. Counter: the markdown links test, and the sweep in step 6.
+
+## Work item detail, moved from CHANGELOG.md (2026-11-22)
+
+Moved verbatim on 2026-11-22: a work item line is at most two sentences (CHANGE-PROCESS.md section 3, `test/unit/work_item_length_test.dart`), and this item's first line was longer. Nothing was cut.
+
+### ID-646
+
+```text
+- ID-646 DOC: CHANGE-PROCESS.md says that anything built is listed at once and a partly built item is split, Andrew's two rules of 2026-11-21. As soon as any source code or markdown that relates to a work item is altered, the item moves to CHANGELOG.md's current block; a partly built item gets a `Partly done ... Remainder: ID-NNN` line and a new item in Current Release for the rest; and the commit steps open with a check that every changed source or markdown file is explained by an item. The flow chart has a "partly built" branch. Plan files are exempt: writing one creates no item and moves none, since the item it relates to names it on its `Plan:` line. BACKLOG.md's "Current Release" and "Next Release" headings now say they are the planned work, so they hold only what is not yet built. Current Release can be divided by `####` headings marking the planned commits.
+```
+
+## Work item detail, moved from CHANGELOG.md (2026-11-22)
+
+Moved verbatim on 2026-11-22: a work item line is at most two sentences (CHANGE-PROCESS.md section 3, `test/unit/work_item_length_test.dart`), and this item's first line was longer. Nothing was cut.
+
+### ID-649
+
+```text
+- ID-649 BLD: two Claude Code hooks keep CHANGE-PROCESS.md section 1 from being forgotten, with Andrew's yes. `scripts/check-changelog-current.sh` runs as a `PostToolUse` hook after every Edit or Write (`edit`): for source code, or markdown other than BACKLOG.md, CHANGELOG.md and plan files, it tells Claude to move the item to CHANGELOG's current block now, in the same turn. And as a `Stop` hook at the end of each turn (`stop`): if such files differ from the last commit and CHANGELOG.md hasn't changed since, it blocks the stop until the item is moved (once per turn, so it can't loop). `.claude/settings.json` calls it for both, replacing the old hook, which covered only `lib/`, `scripts/` and the Android sources and asked about a `Now:` line. The commit-time check in section 8 is the third layer.
+```

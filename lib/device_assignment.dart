@@ -359,6 +359,7 @@ class LanDevice {
     this.detectedName,
     this.online = true,
     this.reserved = false,
+    this.reservedIp,
     this.type,
   });
 
@@ -374,6 +375,9 @@ class LanDevice {
   final bool online;
 
   final bool reserved; // present in dhcp_staticlist
+
+  /// The address its reservation gives, from `dhcp_staticlist`; null with no reservation (ID-644).
+  final String? reservedIp;
 
   /// The router's device type, the number behind its icon (`type` in the two device files). Carried
   /// into a `custom_clientlist` record the app creates, or the icon turns generic (ID-025).
@@ -414,6 +418,23 @@ class LanDevice {
 ///
 /// Nameless devices go last because a column of hex among real names is noise, and they are the
 /// entries a user is least likely to be looking for.
+/// The warning for a device pinned at an address that is not the one its reservation gives (ID-644):
+/// the pin is keyed by address, so it stops applying when the device takes its reserved one. Null when
+/// the device isn't pinned, has no reservation, or is at its reserved address.
+String? addressMismatchNote(LanDevice d, {required bool pinned}) {
+  final reservedIp = d.reservedIp;
+  if (!pinned || reservedIp == null || d.ip == null || reservedIp == d.ip) return null;
+  return 'Pinned at ${d.ip}, but its reservation is $reservedIp: the pin stops applying once it takes that address.';
+}
+
+/// The assigned rules whose address no device has (ID-644). A pin sits on an address, not a device, so
+/// one left behind by a device that moved keeps holding the address for whoever is given it next, with
+/// no row to show it.
+List<DevicePolicy> policiesWithoutDevice(List<LanDevice> devices, List<DevicePolicy> policies) {
+  final known = {for (final d in devices) if (d.ip != null) d.ip!};
+  return [for (final p in policies) if (p.isAssigned && p.ip.isNotEmpty && !known.contains(p.ip)) p];
+}
+
 List<LanDevice> sortDevicesForDisplay(List<LanDevice> devices) {
   final out = List.of(devices);
   out.sort((a, b) {
@@ -545,8 +566,12 @@ Map<String, String> deviceNamesByIp(List<LanDevice> devices) => {
 ///   - **device set** - `nmp_cl_json.js`, because it is in `/jffs` and lists devices that are off.
 ///   - **online** - `nmp_cache.js`'s `isOnline`, which the web interface follows to the second; else
 ///     `nmp_cl_json.js`, whose /jffs copy is written only every few minutes (ID-165).
-///   - **address** - `nmp_cache.js` first, then `dhcp_staticlist`. An offline device keeps its `ip`
-///     in the cache, so the reservation is a second source rather than the main one.
+///   - **address** - for a device that is on, `nmp_cache.js` first, then `dhcp_staticlist`: the cache
+///     holds the address it has now, which can differ from its reservation until its lease renews.
+///     For a device that is off and has a reservation, the reservation first: an offline device keeps
+///     its last-seen `ip` in the cache, but the reservation is the address it will have when it next
+///     connects, and a pin written at the old one stops applying (ID-644). With no reservation, the
+///     cache's last-seen address is all there is.
 ///   - **the user's name** - `custom_clientlist`, else `nickName` from `nmp_cache.js`.
 ///   - **the detected name** - `name` from `nmp_cl_json.js`, else `nmp_cache.js`.
 List<LanDevice> buildDeviceList({
@@ -577,19 +602,23 @@ List<LanDevice> buildDeviceList({
   for (final mac in macs) {
     final inv = inventory[mac];
     final cac = cache[mac];
+    // The cache first: it is what the web interface shows, and the /jffs inventory lags it by
+    // minutes (ID-165). Then the inventory, where `online` is an integer. Unknown to both reads as
+    // online, since claiming a device is off is worse than not saying.
+    final online = str(cac, 'isOnline') != null ? str(cac, 'isOnline') != '0' : inv == null || '${inv['online']}' != '0';
+    final cachedIp = str(cac, 'ip');
+    final reservedIp = reservations[mac];
     devices.add(LanDevice(
       mac: mac,
-      ip: str(cac, 'ip') ?? reservations[mac],
+      ip: online ? (cachedIp ?? reservedIp) : (reservedIp ?? cachedIp),
       // `custom_clientlist` first: it is what a rename writes, and the cache's `nickName` catches up
       // with it only when the router next rewrites the cache, so a list re-read straight after a
       // rename showed the old name (ID-261).
       customName: customNames[mac] ?? str(cac, 'nickName'),
       detectedName: str(inv, 'name') ?? str(cac, 'name'),
-      // The cache first: it is what the web interface shows, and the /jffs inventory lags it by
-      // minutes (ID-165). Then the inventory, where `online` is an integer. Unknown to both reads as
-      // online, since claiming a device is off is worse than not saying.
-      online: str(cac, 'isOnline') != null ? str(cac, 'isOnline') != '0' : inv == null || '${inv['online']}' != '0',
+      online: online,
       reserved: reservations.containsKey(mac),
+      reservedIp: reservedIp,
       type: str(cac, 'type') ?? str(inv, 'type'),
     ));
   }

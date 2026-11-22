@@ -52,6 +52,14 @@ final _cases = <String, String Function()>{
   'routing_merlin_local_cache': () => _routing(
       _merlinFixture().replaceFirst('nameserver 1.1.1.2\nnameserver 1.0.0.2\nnameserver 127.0.1.1', 'nameserver 127.0.0.1'),
       merlin: true),
+  // A watchdog with no encrypted DNS of its own, on that router: it asks dnsmasq like the router's own programs, so
+  // it is encrypted and follows their road. The screen said "the router's DNS Server setting, not encrypted", which
+  // nothing reads on Merlin with DNS-over-TLS on (ID-664).
+  'routing_merlin_local_cache_no_doh': () => _routing(
+      _merlinFixture()
+          .replaceFirst('nameserver 1.1.1.2\nnameserver 1.0.0.2\nnameserver 127.0.1.1', 'nameserver 127.0.0.1')
+          .replaceFirst('wgc3_wd_doh_url=https://security.cloudflare-dns.com/dns-query\nwgc3_wd_doh_ip=1.1.1.2\n', ''),
+      merlin: true),
   'routing_dot_off': () => _routing(_replace(kRoutingFixture, [
         ('nameserver 127.0.1.1\n', ''),
         ('@@DNSMASQ\nserver=127.0.1.1', '@@DNSMASQ\nserver=1.1.1.2\nserver=1.0.0.2'),

@@ -71,3 +71,13 @@ Each step stands alone and leaves the pipeline working.
 ## Log
 
 - 2026-11-19: written from the analysis of v0.8.216's pipeline. No workflow has been changed for it.
+
+## Work item detail, moved from BACKLOG.md (2026-11-22)
+
+Moved verbatim on 2026-11-22: a work item line is at most two sentences (CHANGE-PROCESS.md section 3, `test/unit/work_item_length_test.dart`), and this item's first line was longer. Nothing was cut.
+
+### ID-630
+
+```text
+- ID-630 BLD: rearchitect cicd, so a release is fast and the app is still always checked before it: verify once, build once, and publish what was verified and built. Today the same source is checked three times and built for iOS up to five times per release (three simulator builds, two signed, about 68 macOS minutes), and a tag run's serial path is about 27 minutes plus queueing. Raised 2026-11-19, after v0.8.216.
+```

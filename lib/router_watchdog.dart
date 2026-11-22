@@ -20,6 +20,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 
+import 'dns_wording.dart' show DnsWording;
 import 'fail_closed_guard.dart';
 import 'merlin_guard.dart';
 import 'router_command.dart';
@@ -1011,7 +1012,10 @@ String buildWatchdogScript(WatchdogConfig c, {RouterFirmware? firmware}) {
       .replaceAll('__DOHIPS__', doh?.addresses ?? '')
       .replaceAll('__DOHDESC__', doh == null ? '' : dohDescription(c.dohUrl, c.dohIp))
       .replaceAll('__DOHBAD__', dohUnusableNote(c.dohUrl, c.dohIp))
+      .replaceAll('__MGUARD__', kMerlinGuardScriptPath)
       .replaceAll('__BACKOFF__', buildBackoffCase())
+      // What fails when the router's resolver does depends on the firmware (ID-640): see dns_wording.dart.
+      .replaceAll('__RRTAIL__', DnsWording(fw).watchdogResolverTail)
       .replaceAll('__APPVER__', appVersionLabel)
       .replaceAll('__KILLSW__', stock ? _kKillSwitchStock : _kKillSwitchMerlin)
       .replaceAll('__MAILHDR__', stock ? _kMailHdrStock : _kMailHdrMerlin)
@@ -1194,6 +1198,20 @@ class RouterWatchdog {
         }
         await _refreshGuardAfterRedeploy(firmware, deployed: deployed, refreshGuard: refreshGuard, said: '$how to $version');
         return deployed;
+      });
+
+  /// The Merlin guard, brought up to this build's when one is installed and differs from it (ID-668). The check at
+  /// the first connection reads watchdog scripts and stock's guard.sh, and used to refresh the Merlin guard only
+  /// as a side effect of updating a watchdog script, so a router with the guard and no watchdog kept an old one
+  /// after the app was updated. Nothing is written when there is no guard: a router that never had one is not
+  /// given one here. True when it was replaced.
+  Future<bool> refreshMerlinGuardIfInstalled() => _guard('update of the Merlin guard', () async {
+        final current = (await _read("cat '$kMerlinGuardScriptPath' 2>/dev/null || true")).trim();
+        if (current.isEmpty || current == kMerlinGuardScript.trim()) return false;
+        await _merlinGuard.ensure(quiet: true);
+        final version = appVersionLabel.isEmpty ? 'this app version' : appVersionLabel;
+        await _logUpdated('Merlin guard updated automatically to $version');
+        return true;
       });
 
   /// The guard and the boot hook that restores it came with 460. A router updated from an older build
@@ -2302,7 +2320,7 @@ class RouterWatchdog {
             'Event: test email sent by hand from the watchdog configuration screen',
             facts.intervalRow,
           ],
-          router: facts.routerRows(config.slotIndex, desc: region),
+          router: facts.routerRows(config.slotIndex, desc: region, sentBy: appVersionLabel),
           history: facts.historyLine,
           howToDisable: false,
         );
@@ -2585,6 +2603,25 @@ done
 
 STATUSFILE="/tmp/watchdog_last_ping_success_${IFACE}"
 BACKOFFFILE="/tmp/watchdog_backoff_${IFACE}"
+# The backoff file has three lines: the attempts made (the ladder), when the last was made, and the
+# FAILED alerts sent since the outage began (ID-650). The first two climb with every attempt and are
+# cleared only by a healthy check, so a tunnel that is rebuilt and fails again keeps climbing. The
+# third is cleared by a SUCCESS as well, because that closes the outage: read as "failed rebuilds on
+# record", the attempt count made the next healthy check after a successful rebuild email RECOVERED
+# for a failure that never happened. A file from an older script has two lines, and reads as no alerts.
+fails_get() {
+  FAILN=0
+  [ -f "$BACKOFFFILE" ] && { read -r FAILA; read -r FAILB; read -r FAILN; } < "$BACKOFFFILE"
+  case "$FAILN" in ''|*[!0-9]*) FAILN=0 ;; esac
+}
+fails_set() {
+  FAILA=0
+  FAILB=0
+  [ -f "$BACKOFFFILE" ] && { read -r FAILA; read -r FAILB; } < "$BACKOFFFILE"
+  case "$FAILA" in ''|*[!0-9]*) FAILA=0 ;; esac
+  case "$FAILB" in ''|*[!0-9]*) FAILB=0 ;; esac
+  printf '%s\n%s\n%s\n' "$FAILA" "$FAILB" "$1" > "$BACKOFFFILE"
+}
 # Alerts not delivered, so the next email that gets through says how many were missed.
 UNSENTFILE="/tmp/watchdog_unsent_${IFACE}"
 CACERT="__CACERT__"
@@ -2980,11 +3017,11 @@ router_resolver_check() {
   if kill -0 "$RRPID" 2>/dev/null; then
     kill -9 "$RRPID" 2>/dev/null
     wait "$RRPID" 2>/dev/null
-    log "Router resolver FAILED: no answer from 127.0.0.1 in 6s, so devices that aren't pinned can't look names up"
+    log "Router resolver FAILED: no answer from 127.0.0.1 in 6s, __RRTAIL__"
   elif wait "$RRPID"; then
     log "Router resolver OK"
   else
-    log "Router resolver FAILED: 127.0.0.1 could not look up example.com, so devices that aren't pinned can't look names up"
+    log "Router resolver FAILED: 127.0.0.1 could not look up example.com, __RRTAIL__"
   fi
 }
 
@@ -3080,6 +3117,9 @@ abort() {
     case "$INTERVAL" in ''|*[!0-9]*) TICK=300 ;; *) TICK=$((INTERVAL * 60)) ;; esac
     [ "$NEXTWAIT" -ge "$TICK" ] || NEXTWAIT="$TICK"
     ATTEMPTV="${CNT:-1} since the last success, retrying per schedule, $((NEXTWAIT / 60)) minutes"
+    # One more FAILED alert on record, for the RECOVERED that follows if the tunnel mends itself.
+    fails_get
+    fails_set "$((FAILN + 1))"
   fi
   send_alert FAILED "$1"
   rm -f "$TMPSRV"
@@ -3153,14 +3193,15 @@ router_resolver_check
 
 # Success: update status
 if [ "$FAIL" = "0" ]; then
-  # Failed rebuilds on record mean FAILED alerts went out. A tunnel that mends itself between
+  # FAILED alerts on record mean an outage no SUCCESS closed. A tunnel that mends itself between
   # attempts rebuilds nothing, so no SUCCESS follows, and on 2026-11-18 four FAILED emails were
   # never closed (ID-628). Read before the reset below, and the outage measured before the status
-  # file is stamped, or it always reads zero.
+  # file is stamped, or it always reads zero. The count is the third line, not the attempts made:
+  # a successful rebuild leaves the attempts at 1 and used to read as a failure (ID-650).
   PRIORFAILS=0
-  if [ "$RUNMODE" != "deploy" ] && [ -f "$BACKOFFFILE" ]; then
-    read -r PRIORFAILS < "$BACKOFFFILE"
-    case "$PRIORFAILS" in ''|*[!0-9]*) PRIORFAILS=0 ;; esac
+  if [ "$RUNMODE" != "deploy" ]; then
+    fails_get
+    PRIORFAILS="$FAILN"
   fi
   if [ "$PRIORFAILS" -gt 0 ]; then DOWNFOR="$(down_for)"; fi
   date '+%s %Y-%m-%d %H:%M:%S' > "$STATUSFILE"
@@ -3210,7 +3251,8 @@ if [ "$LAST" -ne 0 ] && [ "$ELAPSED" -lt "$WAIT" ]; then
   exit 0
 fi
 CNT=$((CNT + 1))
-printf '%s\n%s\n' "$CNT" "$NOW" > "$BACKOFFFILE"
+fails_get
+printf '%s\n%s\n%s\n' "$CNT" "$NOW" "$FAILN" > "$BACKOFFFILE"
 if [ "$RUNMODE" = "deploy" ]; then
   # First run after SAVE: the tunnel not being up yet is expected, not an outage.
   log "Deploying: bringing $IFACE up for the first time${APPVER:+ [script $APPVER]}"
@@ -3221,6 +3263,44 @@ else
     log "Connectivity lost; reconfiguring (attempt #$CNT)${APPVER:+ [script $APPVER]}"
   fi
 fi
+# A rebuild is about to look names up (ID-653), and the check above has long since passed. The functions sit here, not at
+# the top: the script's self-check and its fault email must stay inside the first 7,940 bytes, as a script cut
+# short on 2026-10-29 was (test/unit/watchdog_integrity_test.dart).
+# On Merlin the app's guard refuses the router's lookups to a DNS address this slot shares with the router
+# while the slot is down (ID-636). A rebuild with no DoH server of its own looks PIA's names up through the
+# router's resolver, and so does the alert email's mail server, so the hold is lifted for this slot's
+# addresses from the start of the rebuild and put back as the script ends, whichever way it ends, after the
+# email has gone (ID-653). A slot with a DoH server keeps the hold on: its rebuild doesn't use the resolver.
+# No such guard on stock, where each is a no-op.
+HOLDLIFTED=""
+HOLDFREED=""
+hold_lift() {
+  [ -z "$DOHURL" ] || return 0
+  [ -x "__MGUARD__" ] || return 0
+  # Only a hold on this slot's own addresses stalled the resolver, so only that earns the restart below.
+  for HA in $(nvram get "${K}dns" | tr ',' ' '); do
+    iptables -t raw -S OUTPUT 2>/dev/null | grep -q -- "-d $HA/32 " && HOLDFREED=1
+  done
+  "__MGUARD__" lift "$SLOT" </dev/null >/dev/null 2>&1 || return 0
+  HOLDLIFTED=1
+  log "No DoH server of its own: the router's DNS hold is lifted for this rebuild, and put back when it ends"
+}
+hold_back() {
+  [ -n "$HOLDLIFTED" ] || return 0
+  HOLDLIFTED=""
+  "__MGUARD__" restore </dev/null >/dev/null 2>&1
+  log "The router's DNS hold is back"
+}
+# The router's encrypted resolver (stubby) stalls for about 15 s after the slot comes up if it was refused
+# while the hold was on, long enough for the alert email's name lookup to fail (measured 2026-11-22: 3 of 3
+# without this, 0 of 2 with it: ID-663). Restarting it once the tunnel has its handshake clears that.
+resolver_fresh() {
+  [ -n "$HOLDLIFTED" ] && [ -n "$HOLDFREED" ] || return 0
+  service restart_stubby </dev/null >/dev/null 2>&1
+  log "Restarted the router's encrypted resolver: it stalls for a while after a hold that refused it is lifted"
+}
+trap 'hold_back; [ -s "$ERRNOW" ] || rm -f "$ERRNOW"' EXIT
+hold_lift
 
 # Preflight checks
 [ -n "$DESC" ] || abort "${K}desc is empty"
@@ -3532,6 +3612,7 @@ while [ "$HSTRY" -lt 10 ]; do
   sleep 2
 done
 [ "$HSOK" = "1" ] || abort "$IFACE came up but the PIA server never answered it (no handshake in 20s)"
+resolver_fresh
 # The guard's table for this tunnel went with the old interface; one run, coalesced with the
 # firewall-start the restart raised, puts it back (ID-364). In case the boot hook isn't there.
 [ -x /jffs/cfg-pia-wg/guard.sh ] && /jffs/cfg-pia-wg/guard.sh soon </dev/null >/dev/null 2>&1 &
@@ -3570,6 +3651,9 @@ else
 fi
 date '+%s %Y-%m-%d %H:%M:%S' > "$STATUSFILE"
 INTERVALV="$INTERVAL minutes"
+# This SUCCESS closes the outage and any FAILED alerts before it: the attempts stay on record for the
+# backoff ladder, the next healthy check emails nothing (ID-650).
+fails_set 0
 send_alert SUCCESS "$DETAILV"
 exit 0
 __ENDLINE__

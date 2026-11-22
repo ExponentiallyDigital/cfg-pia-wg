@@ -30,7 +30,7 @@ import 'app_colors.dart';
 import 'firmware.dart';
 import 'pia_service.dart';
 import 'input_checks.dart' show addressesIn;
-import 'router_slot_service.dart' show dnsAddressesIn, kSlotDescPrefix, slotDescFor, slotLabel;
+import 'router_slot_service.dart' show dnsAddressesIn, dnsSharedWithRouter, kSlotDescPrefix, slotDescFor, slotLabel;
 import 'router_watchdog.dart';
 import 'session_controller.dart';
 import 'watchdog_email.dart';
@@ -360,6 +360,20 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
         _dohNote(clashSlot: clashSlot, clashRouter: clashRouter, clashOthers: clashOthers),
         key: const Key('wd_doh_note'),
         style: TextStyle(color: clash ? kWarn : kMuted, fontSize: 11),
+      ),
+      // Rebuilt as the DNS or the DoH URL is typed, as the DNS field's own notes are.
+      ListenableBuilder(
+        listenable: Listenable.merge([_dnsCtrl, _dohUrlCtrl]),
+        builder: (context, _) {
+          final hint = dohHoldHint(
+              sharesRouterDns: dnsSharedWithRouter(_dnsCtrl.text, widget.routerDotServers).isNotEmpty,
+              hasDoh: _dohUrlCtrl.text.trim().isNotEmpty);
+          if (hint == null) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(hint, key: const Key('wd_doh_hold_note'), style: const TextStyle(color: kWarn, fontSize: 11)),
+          );
+        },
       ),
     ]);
   }
@@ -960,6 +974,18 @@ class _WatchdogDialogState extends State<WatchdogDialog> {
       ),
     );
   }
+}
+
+/// What the DoH fields say on Merlin about the guard's hold (ID-653), when this slot's DNS servers are also the router's
+/// own and the watchdog has no DoH server: its rebuild then looks PIA's names up through the router's resolver, which the
+/// hold refuses while the slot is down, so the hold is lifted for each rebuild and the lookups can leave by the internet
+/// connection. With a DoH server the rebuild doesn't use the resolver and the hold stays on. Null on stock, which has no
+/// hold, and when the slot shares nothing with the router or the watchdog has a DoH server.
+String? dohHoldHint({required bool sharesRouterDns, required bool hasDoh}) {
+  if (isStockFirmware || !sharesRouterDns || hasDoh) return null;
+  return "This VPN's DNS servers are also the router's own. With no DoH server here, the router's hold on those lookups "
+      "is lifted for each rebuild, and the watchdog's lookups go through the router's resolver, over your internet "
+      'connection. Choose a DoH server and the hold stays on throughout.';
 }
 
 /// The note under the DoH fields. Two causes, named apart: the note said "used for DNS on this router" for

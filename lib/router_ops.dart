@@ -59,7 +59,7 @@ abstract class RouterOps {
   /// router's DNS-over-TLS with no note anywhere.
   Future<Set<String>> routerDotServers(RouterSlotService slots) async {
     try {
-      return parseDotServerList(await slots.read(kDotServerListCommand));
+      return parseDotServerList(await slots.read(kDotServerListCommand), dnsServerWhenOff: !isStockFirmware);
     } catch (_) {
       return {};
     }

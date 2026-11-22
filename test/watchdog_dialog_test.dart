@@ -295,6 +295,47 @@ void main() {
     expect(note(), startsWith('The watchdog resolves PIA'));
   });
 
+  // ID-653: on Merlin a rebuild with no DoH server looks PIA's names up through the router's resolver, which the guard's
+  // hold refuses while the slot is down; the guard lifts it for the rebuild, and the form says so, and says that a DoH server
+  // keeps it on. Nothing on stock, which has no hold, and nothing when the slot shares nothing with the router.
+  group("the form's hint about the router's hold (ID-653)", () {
+    test('only on Merlin, only when the slot shares the router\'s DNS, and only without a DoH server', () {
+      useMerlin();
+      expect(dohHoldHint(sharesRouterDns: true, hasDoh: false), startsWith("This VPN's DNS servers are also the router's own."));
+      expect(dohHoldHint(sharesRouterDns: true, hasDoh: false), contains('Choose a DoH server and the hold stays on throughout.'));
+      expect(dohHoldHint(sharesRouterDns: true, hasDoh: true), isNull);
+      expect(dohHoldHint(sharesRouterDns: false, hasDoh: false), isNull);
+      useStock();
+      addTearDown(useMerlin);
+      expect(dohHoldHint(sharesRouterDns: true, hasDoh: false), isNull);
+    });
+
+    testWidgets('the note appears as the DNS is typed, and goes when a DoH server is chosen', (tester) async {
+      useMerlin();
+      final c = _controller();
+      addTearDown(c.dispose);
+      final ssh = RecordingSSHClient(responder: (cmd) => cmd.contains('which jq') ? '/opt/bin/jq' : '');
+      await tester.pumpWidget(_host(ssh, c, routerDotServers: const {'9.9.9.9', '149.112.112.112'}));
+      await tester.pumpAndSettle();
+
+      // The form starts with a DoH server chosen; with none, the rebuild asks the router's resolver.
+      await tester.enterText(find.byKey(const Key('wd_doh_url')), '');
+      await tester.enterText(find.byKey(const Key('wd_doh_ip')), '');
+      await tester.enterText(find.widgetWithText(TextFormField, 'DNS servers'), '9.9.9.9, 149.112.112.112');
+      await tester.pump();
+      expect(find.byKey(const Key('wd_doh_hold_note')), findsOneWidget);
+
+      await tester.enterText(find.byKey(const Key('wd_doh_url')), 'https://dns.example.net/dns-query');
+      await tester.pump();
+      expect(find.byKey(const Key('wd_doh_hold_note')), findsNothing, reason: 'a DoH server keeps the hold on');
+
+      await tester.enterText(find.byKey(const Key('wd_doh_url')), '');
+      await tester.enterText(find.widgetWithText(TextFormField, 'DNS servers'), '8.8.8.8');
+      await tester.pump();
+      expect(find.byKey(const Key('wd_doh_hold_note')), findsNothing, reason: 'nothing shared with the router');
+    });
+  });
+
   // ID-041 step 3 moved these four notes into a function; each must read exactly as before.
   testWidgets('the DoH note reads word for word as it did, for each kind of clash', (tester) async {
     final c = _controller();

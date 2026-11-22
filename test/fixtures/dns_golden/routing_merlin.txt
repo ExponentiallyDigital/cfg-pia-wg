@@ -24,7 +24,7 @@ wgc5:pia-aus_melbourne [Internet, encrypted (DoH)] - freedns.controld.com (76.76
 == EVIDENCE ==
 
 DNS routing rules (ip rule, iif lo)
-Merlin has no such rules. It sends the router's own lookups to a slot's DNS servers by its main table, through the first slot to start. THE SLOTS' DNS SERVERS says which slot that is.
+Merlin adds no such rules itself: it sends the router's own lookups to a slot's DNS servers by its main table, through the first slot to start. The app's guard adds one for each running slot that shares an address with the router, and none is needed here. THE SLOTS' DNS SERVERS says which slot carries them.
 (none)
 
 DNS redirects (VPN Director's DNSVPN chains)

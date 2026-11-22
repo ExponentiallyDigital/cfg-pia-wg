@@ -22,6 +22,7 @@ import 'package:dartssh2/dartssh2.dart';
 
 import 'device_assignment.dart'
     show DevicePolicy, deviceNamesByIp, kDeviceSourcesCommand, parseDeviceSources, parseDevicePolicyList;
+import 'dns_wording.dart';
 import 'firmware.dart' show RouterFirmware, classifyFirmwareTag;
 import 'input_checks.dart' show addressesIn;
 import 'router_command.dart' show runRouterCommand;
@@ -230,7 +231,10 @@ String resolverFilesCommand([List<String> paths = kResolverFiles]) => [
 
 /// Whether each resolver is running, then the DNS settings the files are built from.
 const String kResolverFactsCommand = 'echo "@@dnsmasq \$(pidof dnsmasq)"; echo "@@stubby \$(pidof stubby)"; '
-    'echo "@@NVRAM"; nvram show 2>/dev/null | grep -E \'^(wan0_dns|dnspriv_)\' | sort';
+    'echo "@@NVRAM"; nvram show 2>/dev/null | grep -E \'^(wan0_dns|dnspriv_)\' | sort; '
+    // Each slot that has a server to connect to: its number, region, whether its interface is up, and its DNS (ID-665).
+    r'echo "@@SLOTS"; for N in 1 2 3 4 5; do [ -n "$(nvram get wgc${N}_ep_addr)" ] && '
+    r'echo "$N|$(nvram get wgc${N}_desc)|$(ip -o link show wgc$N up 2>/dev/null | grep -c .)|$(nvram get wgc${N}_dns)"; done';
 
 /// Looks up example.com through dnsmasq and, when [withStubby], stubby too, side by side.
 ///
@@ -429,29 +433,95 @@ List<String> parseDotAddresses(String rulelist) => [
 
 // ── ROUTER RESOLVER STATUS ─────────────────────────────────────────────────────────────
 
-String _role(String path) => switch (path) {
+String _role(String path, DnsWording wording) => switch (path) {
       kDnsmasqConf =>
-        "The router's DNS and DHCP server: how it answers your devices' lookups, and which address each device gets.",
+        "The router's DNS and DHCP server: how it answers ${wording.askedLookups}, and which address each device gets.",
       '/etc/hosts' =>
         'Names dnsmasq answers without asking anyone. The watchdog adds your mail server here for a moment while it sends an alert.',
-      kResolvDnsmasq => "Where dnsmasq sends your devices' lookups it can't answer itself.",
+      kResolvDnsmasq => "Where dnsmasq sends ${wording.askedLookups} it can't answer itself.",
       '/etc/stubby/stubby.yml' => 'stubby, the DNS-over-TLS client: the encrypted servers it forwards lookups to.',
       kResolvConf => "The router's own lookups: your DNS Server setting, then stubby when DNS-over-TLS is on.",
       _ => '',
     };
 
-String _group(String path) => path == kResolvConf ? "THE ROUTER'S OWN LOOKUPS" : "YOUR DEVICES' LOOKUPS";
+String _group(String path, DnsWording wording) =>
+    path == kResolvConf ? "THE ROUTER'S OWN LOOKUPS" : wording.resolverGroup;
+
+/// A slot that lists an address the router uses for its own lookups, and whether it is up (ID-665). When the
+/// router's resolver fails, that slot is the likeliest cause: the lookups go through it, or are refused while
+/// it is down.
+class SharingSlot {
+  const SharingSlot(this.slot, this.desc, {required this.running});
+
+  final int slot;
+  final String desc;
+  final bool running;
+
+  String get label => desc.isEmpty ? 'wgc$slot' : 'wgc$slot:$desc';
+}
+
+/// The addresses the router uses for its own lookups, from [kResolverFactsCommand]'s settings: the DoT list while
+/// DNS-over-TLS is on, the DNS Server setting while it is off.
+Set<String> _routerOwnAddresses(String nvram, {required bool dotOn}) {
+  final key = dotOn ? 'dnspriv_rulelist=' : 'wan0_dns=';
+  final line = nvram.split('\n').firstWhere((l) => l.startsWith(key), orElse: () => '');
+  final value = line.substring(line.isEmpty ? 0 : key.length);
+  return {
+    for (final m in RegExp(r'\b\d{1,3}(?:\.\d{1,3}){3}\b').allMatches(dotOn ? _dotAddressesOnly(value) : value)) m.group(0)!,
+  };
+}
+
+/// A DoT list is `<addr>port>hostname>` records; the addresses are the first field of each.
+String _dotAddressesOnly(String list) => [
+      for (final record in list.split('<'))
+        if (record.split('>').first.trim().isNotEmpty) record.split('>').first.trim(),
+    ].join(' ');
+
+/// The slots in [slots] (`N|desc|up|dns` lines) whose DNS lists an address in [own].
+List<SharingSlot> _sharingSlots(String slots, Set<String> own) {
+  final out = <SharingSlot>[];
+  for (final line in slots.split('\n')) {
+    final f = line.split('|');
+    final n = f.length < 4 ? null : int.tryParse(f[0]);
+    if (n == null) continue;
+    final dns = RegExp(r'\d{1,3}(?:\.\d{1,3}){3}').allMatches(f[3]).map((m) => m.group(0)!);
+    if (dns.any(own.contains)) out.add(SharingSlot(n, f[1].trim(), running: (int.tryParse(f[2].trim()) ?? 0) > 0));
+  }
+  return out;
+}
+
+/// The cause to name in the advice when a slot shares an address the router uses, or null when there is none to
+/// name. A running slot may be answering nothing; a stopped one is refused by the guard on Merlin. On stock a
+/// stopped slot's lookups move to another, so a failure then is not its doing and nothing is said.
+String? sharedCause(List<SharingSlot> sharing, DnsWording wording) {
+  final running = [for (final s in sharing) if (s.running) s.label];
+  final stopped = [for (final s in sharing) if (!s.running) s.label];
+  if (running.isNotEmpty) {
+    return '${_join(running)} lists those servers and ${running.length == 1 ? 'is' : 'are'} running, so the router\'s lookups '
+        'to them go through ${running.length == 1 ? 'its' : 'their'} tunnel, which may be answering nothing. '
+        'Check ${running.length == 1 ? 'that slot' : 'those slots'} in MANAGE, or let the watchdog rebuild it.';
+  }
+  if (stopped.isEmpty || !wording.merlin) return null;
+  return '${_join(stopped)} lists those servers and ${stopped.length == 1 ? "isn't" : "aren't"} running, so the app\'s guard '
+      'refuses the router\'s lookups to them until ${stopped.length == 1 ? 'it is' : 'one is'}. Start it in MANAGE (ENABLE).';
+}
 
 /// What to do about a failed check, from which resolver failed and whether it is running. Null
-/// when nothing failed. Facts and a next step, never a guess at the cause.
+/// when nothing failed. Facts and a next step, never a guess at the cause. [wording] says who depends on
+/// the router's resolver on this firmware and default connection (ID-640); the default is stock's.
 String? resolverAdvice({
   required NslookupResult dnsmasq,
   required bool dnsmasqRunning,
   required NslookupResult? stubby,
   required bool stubbyRunning,
   required bool dotOn,
+  DnsWording wording = DnsWording.stock,
+  List<SharingSlot> sharing = const [],
 }) {
-  const unpinned = "devices that aren't pinned to a VPN can't look names up";
+  final unpinned = wording.unpinnedLookupsFail;
+  // A slot that shares an address the router uses is named in place of "check the list or reboot": neither helps
+  // when the cause is that slot (ID-665).
+  final cause = sharedCause(sharing, wording);
   if (!dnsmasqRunning) return "dnsmasq, the router's DNS server, isn't running, so $unpinned. Reboot the router.";
   if (dotOn && !stubbyRunning) {
     return "stubby, the DNS-over-TLS client, isn't running, so $unpinned. Reboot the router.";
@@ -459,17 +529,17 @@ String? resolverAdvice({
   final stubbyFailed = dotOn && stubby != null && !stubby.ok;
   if (!dnsmasq.ok && stubbyFailed) {
     return "stubby is running but can't reach your DNS-over-TLS servers, so $unpinned. "
-        'Check the DoT Server List in the web interface, or reboot the router.';
+        '${cause ?? 'Check the DoT Server List in the web interface, or reboot the router.'}';
   }
   if (!dnsmasq.ok && dotOn) return "dnsmasq isn't answering, though stubby is, so $unpinned. Reboot the router.";
   if (!dnsmasq.ok) {
     return "dnsmasq is running but can't get an answer from your DNS servers, so $unpinned. "
-        'Check the WAN DNS settings in the web interface, or reboot the router.';
+        '${cause ?? 'Check the WAN DNS settings in the web interface, or reboot the router.'}';
   }
   if (stubbyFailed) {
     return "stubby can't reach your DNS-over-TLS servers. dnsmasq answered from what it remembers, "
-        'so lookups will start to fail as that runs out. Check the DoT Server List in the web interface, '
-        'or reboot the router.';
+        'so lookups will start to fail as that runs out. '
+        '${cause ?? 'Check the DoT Server List in the web interface, or reboot the router.'}';
   }
   return null;
 }
@@ -496,6 +566,7 @@ List<DnsBlock> buildResolverStatus({
   required String checks,
   required String files,
   required String checkedAt,
+  DnsWording wording = DnsWording.stock,
 }) {
   final f = splitMarked(facts);
   // `pidof` prints nothing for a program that is not running, so the marker line stands alone.
@@ -508,6 +579,7 @@ List<DnsBlock> buildResolverStatus({
   final c = splitChecks(checks);
   final a = parseNslookup(c['a'] ?? '');
   final b = dotOn ? parseNslookup(c['b'] ?? '') : null;
+  final sharing = _sharingSlots(f['SLOTS'] ?? '', _routerOwnAddresses(f['NVRAM'] ?? '', dotOn: dotOn));
 
   final blocks = <DnsBlock>[
     DnsCheck(
@@ -521,17 +593,23 @@ List<DnsBlock> buildResolverStatus({
       ],
       checkedAt: 'checked $checkedAt',
       advice: resolverAdvice(
-          dnsmasq: a, dnsmasqRunning: dnsmasqRunning, stubby: b, stubbyRunning: stubbyRunning, dotOn: dotOn),
+          dnsmasq: a,
+          dnsmasqRunning: dnsmasqRunning,
+          stubby: b,
+          stubbyRunning: stubbyRunning,
+          dotOn: dotOn,
+          wording: wording,
+          sharing: sharing),
     ),
   ];
   String? group;
   for (final file in parsed) {
-    final g = _group(file.path);
+    final g = _group(file.path, wording);
     if (g != group) blocks.add(DnsGroup(group = g));
     blocks.add(DnsFile(
       name: file.path,
       written: file.written,
-      role: _role(file.path),
+      role: _role(file.path, wording),
       content: file.content.isEmpty ? '(not present)' : file.content,
       caution: file.path == kDnsmasqConf && file.content.contains('dhcp-host=')
           ? "Lists every reserved device's MAC and address: review before sharing."
@@ -923,6 +1001,10 @@ List<DnsFlowLine> _watchdogLines(DnsRouting r) {
           where: r.whereForAll(addressesIn(r.nvram['wgc${slot}_wd_doh_ip'] ?? '')),
           encryption: _doh,
         )
+      else if (r.nameservers.contains(kDnsmasqAddress))
+        // Merlin's local cache: the watchdog's lookups go to dnsmasq like the router's own, so they follow the
+        // same road, and are encrypted when DNS-over-TLS is on. Nothing reads the DNS Server setting then.
+        _watchdogViaLocalCache(r, slot)
       else
         DnsFlowLine(
           head: r.label(slot),
@@ -931,6 +1013,18 @@ List<DnsFlowLine> _watchdogLines(DnsRouting r) {
           encryption: _encryptionOver(r.whereForAll(ordinary)),
         ),
   ];
+}
+
+/// A watchdog with no encrypted DNS of its own, on a router whose programs ask dnsmasq: the router's own
+/// road, with this slot's name on it (ID-664).
+DnsFlowLine _watchdogViaLocalCache(DnsRouting r, int slot) {
+  final line = _localCacheLine(r);
+  return DnsFlowLine(
+    head: r.label(slot),
+    note: "no encrypted DNS set: the router's own resolver, ${r.dotOn ? 'dnsmasq to stubby' : 'dnsmasq'}",
+    where: line.where,
+    encryption: line.encryption,
+  );
 }
 
 /// Each distinct set of slot DNS servers once, with the slots that use it, and the rules that
@@ -1008,8 +1102,9 @@ List<DnsBlock> _routingEvidence(DnsRouting r) {
       // On Merlin the reason there are none goes above the box, which wraps; the box scrolls sideways,
       // as config does (ID-581).
       role: r.merlin && r.rules.isEmpty
-          ? "Merlin has no such rules. It sends the router's own lookups to a slot's DNS servers by its main table, "
-              'through the first slot to start. $kDnsSlotsHeading says which slot that is.'
+          ? "Merlin adds no such rules itself: it sends the router's own lookups to a slot's DNS servers by its main table, "
+              "through the first slot to start. The app's guard adds one for each running slot that shares an address with "
+              'the router, and none is needed here. $kDnsSlotsHeading says which slot carries them.'
           : "Which tunnel carries the router's own lookups to each address. The lowest rule number wins.",
       content: r.rules.isNotEmpty ? r.rules.map(annotateRule).join('\n') : _noRulesContent(r),
     ),
@@ -1035,15 +1130,38 @@ String _clock(DateTime t) => [t.hour, t.minute, t.second].map((n) => '$n'.padLef
 Future<String> _read(SSHClient client, String cmd) async =>
     (await runRouterCommand(client, cmd, allowFailure: true)).stdout;
 
+/// What the resolver screen needs to word itself: the firmware, and whether VPN Director's whole-network rule makes
+/// a tunnel the default (ID-640). One round trip, read only.
+const String kDnsWordingCommand = 'echo "@@FW"; nvram get 3rd-party 2>/dev/null; '
+    'echo "@@RULES \$([ -f $kVpnDirectorRulelistPath ] && echo 1 || echo 0)"; cat $kVpnDirectorRulelistPath 2>/dev/null; echo; '
+    'echo "@@LAN"; nvram get lan_ipaddr 2>/dev/null; nvram get lan_netmask 2>/dev/null';
+
+/// The wording for [output] of [kDnsWordingCommand]. Stock, or a firmware the app doesn't support, is stock's; on
+/// Merlin a whole-network rule to a WireGuard slot that is switched on is a tunnel as the default, and none is the
+/// internet, the same reading ROUTER DNS ROUTING uses ([DnsRouting.networkSlot]).
+DnsWording parseDnsWording(String output) {
+  final m = splitMarked(output);
+  if (classifyFirmwareTag(m['FW'] ?? '') != RouterFirmware.merlin) return DnsWording.stock;
+  final lan = (m['LAN'] ?? '').split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+  final subnet = lan.length < 2 ? '' : lanSubnet(lan[0], lan[1]);
+  if (subnet.isEmpty) return const DnsWording(RouterFirmware.merlin);
+  final rulesKey = m.keys.firstWhere((k) => k.startsWith('RULES'), orElse: () => 'RULES 0');
+  final rules = parseVpnDirectorRules(m[rulesKey] ?? '');
+  final tunnel = defaultRuleFor(rules, subnet) != null;
+  return DnsWording(RouterFirmware.merlin, tunnel ? DefaultConnection.tunnel : DefaultConnection.internet);
+}
+
 /// Reads the router and builds ROUTER RESOLVER STATUS. Only reads.
 Future<List<DnsBlock>> loadResolverStatus(SSHClient client, {DateTime Function()? now}) async {
+  final wording = parseDnsWording(await _read(client, kDnsWordingCommand));
   final facts = await _read(client, kResolverFactsCommand);
   final files = await _read(client, resolverFilesCommand());
   final dotOn = parseDnsmasqServers(
           parseResolverFiles(files).where((f) => f.path == kResolvDnsmasq).firstOrNull?.content ?? '')
       .contains(kStubbyAddress);
   final checks = await _read(client, dnsCheckCommand(withStubby: dotOn));
-  return buildResolverStatus(facts: facts, checks: checks, files: files, checkedAt: _clock((now ?? DateTime.now)()));
+  return buildResolverStatus(
+      facts: facts, checks: checks, files: files, checkedAt: _clock((now ?? DateTime.now)()), wording: wording);
 }
 
 /// Reads the router and builds ROUTER DNS ROUTING. Only reads.

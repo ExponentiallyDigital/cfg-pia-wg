@@ -4,6 +4,11 @@ Every post, message and thread about the app: where it went, when, where it stan
 
 | Date | Where | What | Status | Link |
 | --- | --- | --- | --- | --- |
+| 2026-11-22 | exponentiallydigital.com, comment under the "Tunnel or nothing" post | A clarification that the post's DNS section describes stock firmware and that Asuswrt-Merlin differs, added as a reply rather than an edit to the post; text [below](#dns-clarifications-posted-2026-11-22-id-637-and-id-662) | Posted on 2026-11-22 | [tunnel-or-nothing-wireguard-kill-switch](https://www.exponentiallydigital.com/tunnel-or-nothing-wireguard-kill-switch) |
+| 2026-11-22 | r/PrivateInternetAccess, comment | A correction to his own 2026-11-20 comments on DNS: they described stock firmware only, Asuswrt-Merlin differs, measured on 388.13 on one router, with a link to the project's repository; text [below](#dns-clarifications-posted-2026-11-22-id-637-and-id-662) | Posted on 2026-11-22; the thread's figures were not read that day | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
+| 2026-11-21 | SNBForums, Asus-Merlin Addon Software Catalog, post #90 by Viktor Jaep (not Andrew's post) | The catalog's maintainer lists cfg-pia-wg among the scripts "added or modified to the Asus-Merlin Addon Software Catalog": "cfg-pia-wg - Github - Dev: @Exponentially Digital", with a welcome to the add-ons section. Seen by Andrew at 1:10 PM on the day, as the forum showed it | Listed by a third party, so Merlin users can now find the app from the catalog; the thread's address isn't recorded | - |
+| 2026-11-21 | LinkedIn, comment on his post that links the "Tunnel or nothing" blog | Why anyone should care: the data retention laws of Australia (two years of connection records) and the UK (up to 12 months, including connection records), the US having no such mandate, and why he runs a VPN on his router; text [below](#linkedin-comment-posted-2026-11-21) | Posted on 2026-11-21 | - |
+| 2026-11-21 | XDA Forums, new thread | "[app] [cfg-pia-wg] Self-healing always-on PIA WireGuard, ASUS routers stock and Merlin": the long-form post with four images, text [below](#xda-forums-post-posted-2026-11-21) | Posted on 2026-11-21, after he read the forum's rules, with the Merlin bullet already corrected (the kill switch gap and "next release" wording removed before posting) | [thread 4809593](https://xdaforums.com/t/app-cfg-pia-wg-self-healing-always-on-pia-wireguard-asus-routers-stock-and-merlin.4809593/) |
 | 2026-11-20 | r/PrivateInternetAccess, comment | His own reply on DNS: on stock ASUS firmware a router VPN carries your traffic but not necessarily your DNS lookups, told with the hotel taxi and concierge, with the Merlin clause, why DEVICES and ROUTER DNS ROUTING exist, and a link to ROUTER-DNS.md | Posted | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
 | 2026-11-20 | r/PrivateInternetAccess, comment | Reply to "if your router supports such speeds over WG": speed is a bonus, the benefit is privacy across the LAN, which holds only while tunnels stay up (renewal, a kill switch that holds, seeing where traffic and DNS go), all from a phone app, with one screenshot | Posted | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
 | 2026-11-19 | r/PrivateInternetAccess, comment | Reply to a commenter who said protecting traffic from the ISP only moves the trust to PIA: the data retention laws of Australia (two years), the UK (up to 12 months) and the US (none), checked against the legislation | Posted | [1xz6sgs](https://www.reddit.com/r/PrivateInternetAccess/comments/1xz6sgs/run_pia_on_your_router_every_device_protected_at/) |
@@ -28,6 +33,164 @@ How these are written:
 - Answer the likely objections in the post itself, under "Before you ask".
 - Check each figure on the day of posting, and each forum's rules before posting.
 - Bugs and feature requests go to GitHub Issues, never a forum thread.
+
+## DNS clarifications (posted 2026-11-22, ID-637 and ID-662)
+
+Both were written by Claude for Andrew and posted by him on 2026-11-22, a day after build 587 was out and before build 588. If he changed a word on posting, the text here is not what went up; he says so and it is corrected. The Reddit reply and the blog reply say the same thing in their own places.
+
+The reply on r/PrivateInternetAccess, under his own thread:
+
+```text
+A correction to my earlier comments on DNS in this thread. What I said about where an unpinned device's lookups go, that they go to the router and the router looks them up with its own settings whatever your default connection is, is true of stock ASUS firmware only. I wrote it as if it applied to every ASUS router, and it doesn't.
+
+Asuswrt-Merlin is different. I've now measured it on 388.13: with a tunnel as the default connection, a device that isn't pinned has its lookups rewritten to the default tunnel's DNS servers and sent through that tunnel. With the internet as the default, it behaves like stock. A pinned device behaves the same on both.
+
+That's one router, one WAN and one Merlin version, so treat it as measured, not guaranteed. The detail, including what I did and didn't measure, is in ROUTER-DNS.md, README.md and ARCHITECTURE.md in the project's GitHub repository: https://github.com/ExponentiallyDigital/cfg-pia-wg
+
+Sorry for the muddle.
+```
+
+The comment under the "Tunnel or nothing" post on exponentiallydigital.com. The post itself was not edited; the corrected article stays in [blog/article.md](blog/article.md):
+
+```text
+A clarification on the DNS section. I wrote it about stock ASUS firmware and didn't say so. Asuswrt-Merlin behaves differently: with a tunnel as the default connection, a device that isn't pinned has its lookups sent to that tunnel's DNS servers, through the tunnel. With the internet as the default, it behaves as stock does. A pinned device behaves the same on both.
+
+The diagram is stock's. On Merlin, with a tunnel as the default connection, the unpinned laptop's lookups go through the tunnel as well.
+
+I measured this on Merlin 388.13 in November 2026, on one router with one internet connection, so treat it as measured, not guaranteed. The detail, including what I didn't measure, is in ROUTER-DNS.md, README.md and ARCHITECTURE.md in the project's GitHub repository: https://github.com/ExponentiallyDigital/cfg-pia-wg
+```
+
+## LinkedIn comment (posted 2026-11-21)
+
+A comment Andrew added to his LinkedIn post that links the "Tunnel or nothing" blog (the LinkedIn post of 2026-11-11, or a later one that links it: he wrote "my 'tunnel or nothing' linked in post"). It gives the reason to care, with the laws as checked on 2026-11-19: Australia's Telecommunications (Interception and Access) Amendment (Data Retention) Act 2015 (two years, connection details and not browsing history), the UK's Investigatory Powers Act 2016 section 87 (up to 12 months, by retention notice, including internet connection records) and the US having no general retention mandate. The text below is exactly what Andrew posted, as he gave it to Claude on 2026-11-21 (an earlier paste had scanning artifacts, which his second one replaced).
+
+```text
+Why should anyone care about this?
+
+In Australia the Telecommunications (Interception and Access) Amendment (Data Retention) Act 2015 requires carriers and ISPs to keep records of your connections for two years. That's connection details, not your browsing history.
+
+In the UK, the Investigatory Powers Act 2016 (section 87) lets the government order ISPs to retain connection records, including which internet services you connected to, for up to 12 months.
+
+The US has no equivalent retention mandate, but ISPs there can keep your data for their own purposes and be compelled to hand over what they hold.
+
+Other countries have similar laws, and some ISPs log your connections anyway.
+
+When that law came into force in Australia, I started running a VPN on my router 24x7.
+
+With a VPN tunnel, your ISP only sees that you connected to PIA. I'd rather trust a provider whose business is privacy than ISPs and carriers that the law requires to log, and that I can't trust not to retain or sell my connection data.
+
+Privacy, a right everyone deserves.
+```
+
+## XDA Forums post (posted 2026-11-21)
+
+A new thread, written for the router and Android audience, after reading the forum's rules. It is the long-form post: the problem, what the app does, the DNS section, "Safe to try, and to take away", the open figures, "Before you ask" and where to get it. The figures in "Open, and checkable" were measured on the day: 28,077 lines of app, 38,915 lines of tests, 684 commits, 2,374 automated tests at 95.88% coverage, and 190 manual tests, 186 on a real router and 4 in a simulator.
+
+The title as posted: `[app] [cfg-pia-wg] Self-healing always-on PIA WireGuard, ASUS routers stock and Merlin`
+
+Images, four, in order, each with its caption. The first two are the SNBForums release thread's, and the last two are new:
+
+1. `app-store/screenshots/ipad/03.png`, after the opening: "Dead tunnels rebuilt, and an email to say so".
+2. `app-store/screenshots/iphone/06.png`, in the DNS section: "See exactly where your DNS goes".
+3. `images/vpn-protocol-comparison.png`, under "What about performance?": "VPN protocol comparison".
+4. `images/network-traffic-(logical)-dark.svg`, converted to a PNG, under "What does it connect to?": "Every connection, numbered, with the path each takes".
+
+The phone saved them as 1000070565, 1000070566, 1000070569 and 1000070568 when attached.
+
+```text
+PIA's WireGuard keys expire, anywhere from a day to a couple of weeks, often in the small hours. When one does, the tunnel can look connected while passing nothing. And a tunnel that's down or restarting sends its devices straight out through your ISP, showing your real IP address.
+
+cfg-pia-wg keeps PIA's WireGuard tunnels up on ASUS routers, stock and Merlin. A watchdog on the router renews a dead tunnel with a fresh key from PIA, and a kill switch holds while it does: Merlin's own, or on stock, one the app builds. I'm its developer. It's free and open source (GPLv3) with no advertising ID, no tracking, no ads, and everything is available on GitHub: https://github.com/ExponentiallyDigital/cfg-pia-wg
+
+[image: Dead tunnels rebuilt, and an email to say so]
+
+Built for the router
+
+The app runs on Android (and iOS), but the protection runs on the router. The kill switch and the watchdog live there, so they cover every device on your network, including the ones that can't run a VPN app, like a TV or games console. They keep working with your phone/tablet switched off.
+
+It grew out of cfg-pia-wg-cmd, my free Windows/Linux command-line go tool that generates PIA WireGuard configs, also GPL and on GitHub. Generating a config turned out to be the easy part. Keeping a router's tunnels alive, and failing closed when they aren't, was the part I needed. DNS traffic routing was eye opening!
+
+What it does
+
+Keeps your tunnels up. A watchdog on the router checks each tunnel at a user defined interval. When one stops passing traffic, it registers a fresh key with PIA, rewrites the slot, and emails you how long it was down, whether the kill switch held, and where it reconnected.
+Creates and manages PIA WireGuard tunnels in the router's five slots, on the lowest-latency server in the region you choose.
+On stock, adds the kill switch stock lacks: a pinned device gets its tunnel or nothing, through config expiry, a rebuild, the tunnel being switched off, and a restart. On Merlin its own kill switch does that job, and the app's router check tests it the same way.
+Lists every device on your network and where its traffic really goes, and pins, renames or switches off a device with one tap.
+On Merlin, its kill switch holds a device VPN Director sends to a tunnel while that tunnel is down or rebuilding, and through a restart.
+Shows where each tunnel comes out: its public address, town, country and provider.
+Checks PIA's signed server list the same way PIA's desktop app does.
+Works with your password manager: KeePass, KeePassium, Apple's Passwords, Google Password Manager, whatever you use. Log in to the router once, and every screen uses it for the session.
+Offers a home screen widget with each tunnel's state, and still generates standalone configs for any device.
+You'll need stock firmware 3.0.0.4.388 or later, or Asuswrt-Merlin (388.11+), SSH turned on, and a PIA subscription. QUICKSTART.md gets you protected in about ten minutes.
+
+DNS, the part most setups miss
+
+On stock firmware, the connection a device uses decides where its traffic goes, but not where its DNS goes. A device can browse through an encrypted tunnel while its lookups go out in the clear, through your ISP.
+
+cfg-pia-wg handles both halves:
+
+A pinned device's lookups follow its tunnel, so its traffic and its DNS leave from the same place.
+The watchdog looks up PIA's servers and your mail server over encrypted DNS, using a DNS-over-HTTPS server you choose, so neither goes out in the clear.
+It tells you where your DNS goes. ROUTER DNS ROUTING lists every path: your devices', the router's own, and each watchdog's. Each one is tagged with whether it goes through a tunnel or straight out, and whether anyone along the way can read it.
+ROUTER RESOLVER STATUS checks, live, that the router is answering lookups at all.
+It warns you when a tunnel shares the router's DNS address, a setting that can quietly break name lookups for every unpinned device.
+It never changes your router's DNS settings. That's your call, and ROUTER-DNS.md explains the options, with flow charts.
+
+[image: See exactly where your DNS goes]
+
+Safe to try, and to take away
+
+Anything that runs as root on your router deserves scrutiny, so:
+
+Nothing happens until you press a button, and README lists everything the app writes to the router.
+The watchdog is plain shell, in /jffs/cfg-pia-wg/: never obfuscated or minified, with its comments left in, generated from a template you can read in the repo. SSH in and read it.
+Every file the app writes is marked "auto-generated by cfg-pia-wg". Anything it replaces is kept beside the original, and UNINSTALL puts it back. UNINSTALL won't delete a file without that mark.
+scripts/showall.sh prints every NVRAM value the app has written, passwords included, and clearall.sh removes them.
+The kill switch is tested by trying to break it. scripts/check-claims.sh runs on the router and breaks each protected path on purpose: it wipes a rule, empties the filter, plants a route to the internet and stops a tunnel, then checks nothing leaked. Pinned devices are held by the router's own Network Services Filter from the moment it starts.
+
+Open, and checkable
+
+Everything is public, so none of this needs to be taken on trust.
+
+The code: 28,077 lines of app and 38,915 lines of tests, across 684 commits since May 2026.
+The tests: 2,374 automated tests on every build, covering 95.88% of the code, and 190 manual tests, 186 of them on a real router and 4 in a simulator, all listed in TESTING.md.
+The design: ARCHITECTURE.md, over 30,000 words and 14 flow diagrams, with each decision backed by router behaviour I measured.
+The quality: SonarCloud, an independent code scanner, rates it A for security, reliability and maintainability, with 0 bugs and 0 vulnerabilities. Live figures: https://sonarcloud.io/project/overview?id=ExponentiallyDigital_cfg-pia-wg
+The pipeline: every release is built, signed and uploaded by GitHub Actions from a tagged commit, after the tests and security scans, with every action pinned and every run log public.
+
+Before you ask
+
+Does it work on Merlin? Yes. Tested on Merlin 388.11_0 to 13_0, and scripts/check-claims.sh passes all 16 of its checks, Merlin's own kill switch included.
+
+Why not use PIA's WireGuard config as it is? PIA's WireGuard configs are ephemeral and expire, anywhere from a day to a couple of weeks, the watchdog builds a fresh one, and the kill switch holds while it does.
+
+What about performance? Switching to WireGuard reduces overhead, allowing your hardware to operate closer to your actual ISP's provisioned speed. In a real-world test with a 500/50 Mbps plan (546 Mbps measured baseline), speeds jumped from a peak of 136 Mbps on OpenVPN to 499 Mbps with WireGuard on the same hardware, a 75–81% throughput sacrifice under OpenVPN:
+
+[image: VPN protocol comparison]
+
+Where do my passwords go? The app holds your PIA and router passwords in memory only, and won't talk to a router whose SSH key has changed. The watchdog is different: so it can rebuild a tunnel while you're asleep, it keeps your PIA password, and your email password if you use alerts, in the router's NVRAM, in plain text. That's a deliberate trade-off, explained in SECURITY.md. The phone keeps no passwords at all, only the router's address, its SSH key fingerprint and PIA's server list.
+
+What does it connect to? Every connection the app and the watchdog make is in this diagram below, with the path each takes: your home network, the tunnel, or straight out. There's no tracking, no advertising ID and no ads.
+
+[image: Every connection, numbered, with the path each takes]
+
+Will it work on my router? It's tested end to end on stock and on Merlin. Any ASUS with WireGuard in VPN Fusion (stock 3.0.0.4.388 or later, or Merlin) should work. On another model? Tell me on GitHub how it went.
+
+What doesn't it do? IPv6: it's IPv4 only, so switch IPv6 off if you rely on the kill switch. Phones that use a private (random) Wi-Fi address change their MAC address, so a pin can't follow them; the device list tags them "random MAC", and README says how to turn it off per network. On stock, the watchdog needs a USB stick and Download Master, and README walks you through that.
+
+Was it built with AI? Yes, with Claude. I was the captain and Claude was the engine, and neither gets anywhere without the other. The ideas, the design, the requirements and the rules are mine: a test for every change, and nothing done until I'd seen it working on my router. Claude turned that into code far faster than I could type it.
+
+Getting it
+
+Build it yourself and everything is free and unlocked; BUILDING.md shows exactly how step-by-step. Or install it from a store, if you'd rather not build it. There, reading your router is free, and writing to it is a one-time unlock (US$6.99 on Google Play, and US$9.99 on the App Store, where Apple's annual developer fee is the difference):
+
+GitHub: https://github.com/ExponentiallyDigital/cfg-pia-wg
+Google Play: https://play.google.com/store/apps/details?id=com.exponentiallydigital.pia_wireguard_cfga
+App Store: https://apps.apple.com/app/cfg-pia-wg/id6824823717
+Please use GitHub Issues for bugs and feature requests rather than this thread, so they're tracked and fixed: https://github.com/ExponentiallyDigital/cfg-pia-wg/issues
+
+cfg-pia-wg is independent, and not affiliated with or endorsed by Private Internet Access, ASUS or WireGuard.
+```
 
 ## r/PrivateInternetAccess post (posted 2026-11-18)
 

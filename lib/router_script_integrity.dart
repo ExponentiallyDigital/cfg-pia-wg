@@ -350,7 +350,7 @@ Set<int> brokenWatchdogSlots({required String cronList, required String headsAnd
 class RouterScriptCheck {
   const RouterScriptCheck({this.updated = const [], this.unfixed = const []});
 
-  /// File names replaced, `watchdog_wgc5.sh` or `guard.sh`.
+  /// File names replaced, `watchdog_wgc5.sh`, `guard.sh` or `merlin-guard.sh`.
   final List<String> updated;
 
   /// One sentence for each problem still on the router, for the main menu's banner.
@@ -396,8 +396,21 @@ Future<RouterScriptCheck> checkRouterScripts(
   };
   final guard = firmware == RouterFirmware.stock && (health.guard?.needsUpdate ?? false);
   final broken = [for (final s in health.damaged) s.problem!.replaceFirst('ERROR: ', '')];
-  if (!canUpdate || (slots.isEmpty && !guard)) return RouterScriptCheck(unfixed: broken);
+  if (!canUpdate) return RouterScriptCheck(unfixed: broken);
+  if (slots.isEmpty && !guard) return RouterScriptCheck(updated: await _merlinGuardUpdate(w, firmware), unfixed: broken);
   return _updateScripts(w, slots: slots, guard: guard, broken: broken);
+}
+
+/// With no watchdog script to update, the Merlin guard on its own: the file name when it was replaced (ID-668). A
+/// watchdog script's update carries the guard with it, so this runs only when there is none. Never throws.
+Future<List<String>> _merlinGuardUpdate(RouterWatchdog w, RouterFirmware firmware) async {
+  if (firmware != RouterFirmware.merlin) return const [];
+  try {
+    return await w.refreshMerlinGuardIfInstalled() ? const ['merlin-guard.sh'] : const [];
+  } catch (_) {
+    // refreshMerlinGuardIfInstalled has said what failed, in both logs.
+    return const [];
+  }
 }
 
 /// [checkRouterScripts]'s update of [slots], and of guard.sh if [guard].

@@ -75,6 +75,66 @@ void main() {
     expect(h.mails, hasLength(1));
   }, skip: skip);
 
+  // ID-650: a rebuild that succeeds leaves the attempts at 1, and the next healthy check read that as one
+  // failed rebuild and sent RECOVERED five minutes after the SUCCESS, for the same outage, on every router
+  // running the build 586 watchdog. The failures are their own count now, the third line of the backoff file.
+  group('a rebuild that succeeds closes the outage (ID-650)', () {
+    test('SUCCESS, then a healthy check: one email, not two', () async {
+      h.tunnelDown();
+      final rebuilt = await h.run();
+      expect(rebuilt.exitCode, 0, reason: '${rebuilt.stdout}${rebuilt.stderr}');
+      expect(h.mails, hasLength(1));
+      expect(h.mails.single, contains('reconfigured successfully on attempt 1'));
+      expect(h.backoffFile, matches(RegExp(r'^1\n\d+\n0\n$')),
+          reason: 'the attempt stays on record for the backoff ladder; no FAILED alert was sent');
+      h.tunnelUp(handshakeAgo: 42);
+      final healthy = await h.run();
+      expect(healthy.exitCode, 0, reason: '${healthy.stdout}${healthy.stderr}');
+      expect(h.mails, hasLength(1), reason: 'the healthy check after the SUCCESS sends nothing');
+      expect(h.syslog.join('\n'), isNot(contains('Alert email sent (RECOVERED)')));
+      expect(h.backoffFile, '0\n0\n', reason: 'a healthy check still clears the ladder');
+    }, skip: skip);
+
+    test('a FAILED attempt is counted, and the healthy check after it sends one RECOVERED', () async {
+      lastGoodFiveMinutesAgo();
+      h.tunnelUp(handshakeAgo: null);
+      h.neverHandshakes();
+      final failed = await h.run();
+      expect(failed.exitCode, 1);
+      expect(h.backoffFile, matches(RegExp(r'^1\n\d+\n1\n$')), reason: 'one attempt, one FAILED alert');
+      expect(h.mails, hasLength(1));
+      h.tunnelUp(handshakeAgo: 30);
+      await h.run();
+      expect(h.mails, hasLength(2));
+      expect(h.mails.last, contains('1 earlier attempt to rebuild it failed'));
+    }, skip: skip);
+
+    test('FAILED, then a rebuild that succeeds, then a healthy check: the SUCCESS closed it, no RECOVERED', () async {
+      lastGoodFiveMinutesAgo();
+      h.tunnelUp(handshakeAgo: null);
+      h.neverHandshakes();
+      await h.run();
+      h.backoff(1, 9999, failed: 1); // the backoff wait has passed
+      h.handshakesAgain();
+      h.tunnelDown();
+      final rebuilt = await h.run();
+      expect(rebuilt.exitCode, 0, reason: '${rebuilt.stdout}${rebuilt.stderr}');
+      expect(h.backoffFile, matches(RegExp(r'^2\n\d+\n0\n$')), reason: 'two attempts on record, no failed alert still open');
+      h.tunnelUp(handshakeAgo: 42);
+      await h.run();
+      expect(h.mails, hasLength(2), reason: 'the FAILED and the SUCCESS, and nothing after: ${h.mails.length}');
+      expect(h.syslog.join('\n'), isNot(contains('Alert email sent (RECOVERED)')));
+    }, skip: skip);
+
+    test('a two-line file from an older script reads as no failed alerts', () async {
+      lastGoodFiveMinutesAgo();
+      h.backoffRaw('3\n${DateTime.now().millisecondsSinceEpoch ~/ 1000 - 120}\n');
+      await h.run();
+      expect(h.mails, isEmpty);
+      expect(h.backoffFile, '0\n0\n');
+    }, skip: skip);
+  });
+
   test('control: a healthy check with no failures on record sends nothing', () async {
     lastGoodFiveMinutesAgo();
     final r = await h.run();

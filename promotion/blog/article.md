@@ -62,7 +62,11 @@ This is the part that surprised me most, and I suspect it surprises most people 
 
 On stock firmware, the connection a device uses decides where its traffic goes. It does not decide where its DNS goes. A device can send every byte of its browsing through an encrypted tunnel while its lookups, a list of every name it asks for, go to the router, which answers using its own DNS settings, out through your ISP. Readable, unless you've set up encrypted DNS yourself.
 
-![Traffic and DNS take different roads: an unpinned laptop's traffic uses the tunnel while its lookups go to the ISP; a pinned laptop's traffic and lookups both go through the tunnel](images/04-dns.png)
+That is stock firmware. Asuswrt-Merlin differs: with a tunnel as the default connection, a device that isn't pinned has its lookups sent to that tunnel's DNS servers, through the tunnel, and with the internet as the default it behaves as stock does. I measured that on 388.13 in November 2026, on one router, and the detail is in ROUTER-DNS.md, README.md and ARCHITECTURE.md in the project's GitHub repository.
+
+![Stock firmware: traffic and DNS take different roads: an unpinned laptop's traffic uses the tunnel while its lookups go to the ISP; a pinned laptop's traffic and lookups both go through the tunnel](images/04-dns.png)
+
+*The diagram is stock firmware's. On Merlin, with a tunnel as the default connection, the unpinned laptop's lookups go through the tunnel as well.*
 
 Pinning fixes that: a pinned device's lookups follow its tunnel, so its traffic and its DNS leave from the same place. The watchdog's own lookups, for PIA's servers and your mail server, go over encrypted DNS to a server you choose.
 

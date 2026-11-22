@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 1475" width="100%" preserveAspectRatio="xMidYMid meet" style="max-width:1200px;height:auto;font-family:'Segoe UI',Arial,sans-serif;background:#0D1117" role="img" aria-labelledby="t d">
   <title id="t">Logical network traffic flow (dark theme)</title>
-  <desc id="d">Every connection the app and its router-side watchdog make. From the phone: SSH 22 to the router; HTTPS 443 to PIA for the server list, a token and the CA certificate; TCP 1337 latency probes and CA-pinned HTTPS 1337 key registration to PIA WireGuard servers; HTTPS to RevenueCat and Google Play for purchases; links opened in the browser; DNS through the phone's own resolver. From the router: the WireGuard tunnel on the port PIA returns; the watchdog's own HTTPS calls to PIA, ICMP latency pings and key registration; its encrypted DNS lookups (DoH) to the chosen resolver; a DNS name check through the tunnel; ICMP pings to the check targets; alert email over SMTP with TLS; helper downloads from github.com; and ordinary DNS through the router's DNS Server setting. Egress through PIA's internal network and public IP pool. All IP addresses illustrative.</desc>
+  <desc id="d">Every connection the app and its router-side watchdog make. From the phone: SSH 22 to the router; HTTPS 443 to PIA for the server list, a token and the CA certificate; TCP 1337 latency probes and CA-pinned HTTPS 1337 key registration to PIA WireGuard servers; HTTPS to RevenueCat, Google Play and the Apple App Store for purchases; links opened in the browser; DNS through the phone's own resolver. From the router: the WireGuard tunnel on the port PIA returns; the watchdog's own HTTPS calls to PIA, ICMP latency pings and key registration; its encrypted DNS lookups (DoH) to the chosen resolver; a DNS name check through the tunnel; ICMP pings to the check targets; alert email over SMTP with TLS; helper downloads from github.com; and ordinary DNS through the router's DNS Server setting. Egress through PIA's internal network and public IP pool. All IP addresses illustrative.</desc>
   <defs>
     <style>
       .zt{font:700 14px 'Segoe UI',Arial,sans-serif}
@@ -35,7 +35,7 @@
   <rect x="76" y="147" width="30" height="52" rx="6" fill="#0F2438" stroke="#1E88E5" stroke-width="1.5"/>
   <rect x="80" y="154" width="22" height="37" fill="#1A3A5C"/>
   <text x="118" y="165" class="nt">Phone (this app)</text>
-  <text x="118" y="183" class="ns">Android, on your Wi-Fi</text>
+  <text x="118" y="183" class="ns">Android or iOS, on your Wi-Fi</text>
   <text x="76" y="222" class="ns">192.168.1.100</text>
   <text x="76" y="240" class="ns">Dart HttpClient, dartssh2,</text>
   <text x="76" y="256" class="ns">RevenueCat SDK, url_launcher</text>
@@ -87,11 +87,11 @@
   <text x="670.0" y="715" class="nt" text-anchor="middle" style="font-size:13px">Check targets, e.g. 8.8.8.8 and 1.1.1.1</text>
   <text x="670.0" y="732" class="ns" text-anchor="middle">ICMP ping, to tell a dead WAN from a dead tunnel</text>
   <rect x="500" y="748" width="340" height="40" rx="10" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
-  <text x="670.0" y="767" class="nt" text-anchor="middle" style="font-size:13px">RevenueCat and Google Play</text>
-  <text x="670.0" y="784" class="ns" text-anchor="middle">api.revenuecat.com · Play Billing: purchases, unlock</text>
+  <text x="670.0" y="767" class="nt" text-anchor="middle" style="font-size:13px">RevenueCat, Google Play, App Store</text>
+  <text x="670.0" y="784" class="ns" text-anchor="middle">api.revenuecat.com · Play Billing · StoreKit</text>
   <rect x="500" y="800" width="340" height="40" rx="10" fill="#161B22" stroke="#1E88E5" stroke-width="2"/>
   <text x="670.0" y="819" class="nt" text-anchor="middle" style="font-size:13px">Links opened in the browser</text>
-  <text x="670.0" y="836" class="ns" text-anchor="middle">README on github.com · the Play Store listing</text>
+  <text x="670.0" y="836" class="ns" text-anchor="middle">README on github.com · the store listing</text>
   <rect x="500" y="852" width="340" height="30" rx="10" fill="#161B22" stroke="#9E9E9E" stroke-width="2"/>
   <text x="670.0" y="871" class="nt" text-anchor="middle" style="font-size:13px">DNS resolvers (UDP/TCP 53)</text>
   <rect x="935" y="140" width="310" height="120" rx="10" fill="#161B22" stroke="#43A047" stroke-width="2"/>
@@ -252,12 +252,12 @@
   <text x="60" y="1299" text-anchor="middle" class="bn">13</text>
   <text x="92" y="1299" class="lb" style="font-weight:700;fill:#64B5F6">HTTPS 443</text>
   <text x="262" y="1299" class="lb">Phone</text>
-  <text x="412" y="1299" class="lb">RevenueCat and Google Play Billing: buying, restoring and checking the unlock</text>
+  <text x="412" y="1299" class="lb">RevenueCat, Google Play Billing and the Apple App Store (StoreKit): buying, restoring and checking the unlock</text>
   <circle cx="60" cy="1321" r="10" fill="#1E88E5" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1325" text-anchor="middle" class="bn">14</text>
   <text x="92" y="1325" class="lb" style="font-weight:700;fill:#64B5F6">HTTPS 443</text>
   <text x="262" y="1325" class="lb">Phone browser</text>
-  <text x="412" y="1325" class="lb">Links you tap: the README on github.com, the Play Store listing</text>
+  <text x="412" y="1325" class="lb">Links you tap: the README on github.com, the store listing</text>
   <circle cx="60" cy="1347" r="10" fill="#9E9E9E" stroke="#161B22" stroke-width="1.5"/>
   <text x="60" y="1351" text-anchor="middle" class="bn">15</text>
   <text x="92" y="1351" class="lb" style="font-weight:700;fill:#B0B0B0">DNS 53</text>

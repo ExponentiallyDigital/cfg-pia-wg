@@ -20,18 +20,23 @@ A work item is either not done or done. BACKLOG.md holds what is not done. CHANG
 
 | Where | What it holds |
 | --- | --- |
-| BACKLOG.md, 1. Current Release | Work items for the release being built, in the order they are to be done |
-| BACKLOG.md, 2. Next Release | Work items planned for the release after, which may not have been sequenced yet |
+| BACKLOG.md, 1. Current Release - planned work | The work planned for the release being built, in the order it is to be done, and not yet built |
+| BACKLOG.md, 2. Next Release - planned work | The work planned for the release after, not yet built, which may not have been sequenced yet |
 | BACKLOG.md, 3.1 Unconfirmed BUGs | A bug nobody has reproduced. Unverified bugs live here, never in CHANGELOG.md |
 | BACKLOG.md, 3.2 FTR - future implementation | Longer term work, not yet scheduled to a release |
 | BACKLOG.md, 4. New work items | Items Andrew has just noted, unsequenced and often without an ID, until they are triaged |
 | CHANGELOG.md, 1. Implemented | Every release and the work items completed in it |
 
-Current Release and Next Release are sequenced in descending relative importance, which is the intended implementation sequence. Work items in Next Release may not have been sequenced: review and agree the sequence before moving any item to Current Release. A group of items in Next Release that depend on something can open with an introduction, for example `Work items for the **next** release (requires Merlin to be swapped out for STOCK firmware):`. That is the only prose allowed between bullets.
+Current Release and Next Release are sequenced in descending relative importance, which is the intended implementation sequence. Work items in Next Release may not have been sequenced: review and agree the sequence before moving any item to Current Release. Current Release can be divided by `####` headings that mark where a commit is planned ("Commit 1 - build 589: ..."), each followed by the items that go into it, in order; a heading with no items under it is a commit whose items are already built. A group of items in Next Release that depend on something can open with an introduction, for example `Work items for the **next** release (requires Merlin to be swapped out for STOCK firmware):`. That is the only prose allowed between bullets.
 
 Each release block in CHANGELOG.md lists its completed work items in chronological implementation sequence, oldest first, so the most recently completed item is at the bottom of its block.
 
-An item crosses from BACKLOG.md to CHANGELOG.md once, when it is done. Nothing is moved into CHANGELOG.md to say it is being worked on.
+The outcome Andrew wants: anything that has been built is in CHANGELOG.md, and anything that has yet to be built is in BACKLOG.md. An item is in BACKLOG.md only while nothing for it has been built. Two rules make that so, Andrew's of 2026-11-21 (ID-644 was built into build 588 while its item sat in Next Release, so the block that shipped it had no record of it):
+
+1. **Anything built is listed, at once.** As soon as any source code or markdown that relates to a work item is altered, that item moves to CHANGELOG.md, to "1. Implemented - chronological change history", under the current release block, whether or not the item is finished. Source code means everything under `lib/`, `test/`, `tool/`, `scripts/`, `android/`, `ios/` and `.github/`, and the files at the root that build the app (`pubspec.yaml`, `pubspec.lock`). Markdown means every `.md` file except BACKLOG.md and CHANGELOG.md, which hold the work items and are not themselves the work, and except the plan files under `.claude/plans/`. Writing or editing a plan creates no work item and moves none: the item a plan relates to names the plan file in its description, in its `Plan:` line (section 3), and if a plan is written for an item that doesn't name it yet, the name is added there. Run sheets and every other `.md` file count. The move is made with the first edit, in the same turn, not at the commit.
+2. **A partly implemented item is split, and the remainder is tracked.** The item moves to that block with what was built, and a new item in BACKLOG.md's Current Release (a new ID, with a `Now:` line) tracks the rest. The block's entry links to the new item by ID, in its closing line: `Partly done <date>: <what is built and the evidence>. Remainder: ID-NNN.` The new item's own first line says which item it continues.
+
+A change that relates to no item gets one first (section 4), since every change is a work item.
 
 CHANGELOG.md's structure must not change: GitHub Actions read it. The release workflow reads the heading whose title is "Implemented - chronological change history" and every release block header below it (section 7). Text above the first release block is ignored by it.
 
@@ -70,7 +75,9 @@ Work items: less is better. A work item says what is to be done, at a high level
 - `Plan:` a link to its plan file in `.claude/plans/`, which holds the design, the decisions, the reasoning and a dated log of runs and evidence.
 - `Now:` where it stands, in one line, replaced when it changes, never added to. Anything still to do is written here, never only in the plan.
 
-No bold inside work items. When an item closes, it moves to its release block with one line added: `Closed <date>: <the evidence>.` Release blocks before build 535 keep their older, longer form.
+Every line of a work item, the first line and each `DoD:`, `Plan:`, `Now:` and `Closed` line, is at most two sentences: a summary a reader understands, not a record. The detail goes to the plan file, moved there word for word and never deleted. `test/unit/work_item_length_test.dart` reads CHANGELOG.md's newest block and BACKLOG.md's Current Release and fails on a longer line, on a line that is not one of those four, and on bold (Andrew, 2026-11-22, after about 25 items grew into paragraphs).
+
+No bold inside work items. When an item closes, it moves to its release block with one line added: `Closed <date>: <the evidence>.` An item that is only partly built goes to the block the same way, with `Partly done <date>: <what is built and the evidence>. Remainder: ID-NNN.` instead (section 1). Release blocks before build 535 keep their older, longer form.
 
 A privacy or security item is not done until its check has been seen to fail. Before a SEC item, or any item that makes or changes a claim about protection, moves out of Current Release, a check that breaks the protected path must exist, and it must have been run and seen to fail with the protection broken and pass with it restored. The check goes in `scripts/check-claims.sh` wherever it can run on the router. A test that only checks command text doesn't count. This rule was added on 2026-09-30, after the watchdog's encrypted lookups (ID-076) turned out never to have worked.
 
@@ -105,9 +112,10 @@ When asked to triage BACKLOG's new work items, work through it in this order:
 ## 6. Moving a work item
 
 - A new item goes in New work items, or straight into the section that fits when its timing is known. An unreproduced bug goes in 3.1, and moves to 3.2 or to a release section once it is confirmed.
-- Longer term work in 3.2 moves to Next Release when it is prioritised, and from Next Release to Current Release once the sequence is agreed with Andrew.
-- An item moved out of Current Release because it will not make the release goes back to the top of Next Release.
+- Longer term work in 3.2 moves to Next Release when it is prioritised, and from Next Release to Current Release once the sequence is agreed with Andrew. An item is only ever planned in BACKLOG.md: the first source or markdown change for it moves it to CHANGELOG.md (section 1).
+- An item moved out of Current Release because it will not make the release goes back to the top of Next Release, provided nothing for it has been built. If anything has, that part is in CHANGELOG.md already and the rest is a remainder item (below).
 - When an item is completed, or closed as working as intended, it moves out of BACKLOG.md to the bottom of the current release block in CHANGELOG.md, keeping its ID, with its `Closed <date>: <the evidence>.` line (section 3). Work found and fixed in the same pass is written straight into the current release block.
+- When an item is only partly implemented, it moves to the bottom of the current release block with its `Partly done` line, keeping its ID, and a new item in Current Release tracks the remainder (section 1). The new item carries the remaining part of the original's definition of done.
 - Whoever edits Current Release between commits says what changed: which lines were removed, moved or reworded, and the bullet count before and after. These edits happen between commits, so git cannot show Andrew.
 
 ## 7. Release blocks
@@ -120,7 +128,7 @@ CHANGELOG.md's history is one block for each release, newest first. Each block o
 
 ## 8. Committing
 
-Every commit is a build. Whoever commits follows these steps, in this order:
+Every commit is a build. Whoever commits first checks that every changed source or markdown file is explained: `git diff --stat` against the current release block, which must list an item for each (section 1; BACKLOG.md, CHANGELOG.md and the plan files excepted). A changed file with no item means an item is missing from the block, or is still in BACKLOG.md with built work: move it to the block, or split it. Then follow these steps, in this order:
 
 1. **Before the commit**, replace `in progress` in the current release block's header with a short summary of what the block contains, one sentence or less. The commit subject is `vN.N.NN build NNN - <that summary>`, word for word. Never commit a header that still reads `in progress`.
 2. **Before the commit**, check the current release block has a ```` ```play ```` fence under its header. If it does not, write one: at most 500 characters, a `•` line for each thing a user of this build will notice, plain-language "Behind the scenes" when there is nothing they would see, and the "Full changelog" link as the last line. Never commit a block without one (ID-536).
@@ -132,6 +140,9 @@ Every commit is a build. Whoever commits follows these steps, in this order:
    - **Either way:** nothing merges while SonarCloud shows a new issue. A fix made after the release commit is a new build, and that build is the release; the block after it follows step 4.
 
    A local estimate of Sonar's rules can only screen, not clear. On 2026-11-15 it missed seven issues, and the release needed another build (ID-593); on 2026-11-16 it missed two more, a nested ternary and a closure over the complexity limit, and build 582 was the result (ID-615; `test/unit/no_nested_ternary_test.dart`, ID-618, now catches the ternary). On 2026-11-17 the PR carried builds 583 and 584 and its count was zero (ID-626 wrote this step out in full).
+
+6. **Before the commit**, check every claim about what the app does in the release note and the Play note: each names the function or test behind it, read through, not taken from a work item's wording (CONTEXT.md section 1). On 2026-11-22 a note was about to say a watchdog redeploy was needed, when the app updates its scripts itself at the first connection.
+7. **When the commit ends the session, and the session had a correction**, offer the review: one line at the end of the reply, as CONTEXT.md section 1.1 says (Andrew, 2026-11-22: "it is important that we regularly do a review so that we improve our working processes").
 
 ## 9. The route of a work item
 
@@ -162,6 +173,9 @@ flowchart TB
     CUR --> IMPL["Implement it,<br/>with tests"]
     IMPL --> DONE{"Finished?"}
     DONE -->|"not this release"| NEXTR
+    DONE -->|"partly built"| SPLIT["CHANGELOG records<br/>what is built; a new<br/>Current Release item<br/>tracks the rest,<br/>linked from the block"]
+    SPLIT --> BLOCK
+    SPLIT --> CUR
     DONE -->|"yes, or closed as<br/>working as intended"| BLOCK
 
     BLOCK["CHANGELOG<br/>bottom of the current<br/>release block<br/>keeping its ID"]
@@ -174,7 +188,7 @@ flowchart TB
     classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
     classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
     classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
-    class S1,S2,S3,S4,TRI,NEW,BL,NEXTR,ID,DONE,NEXT step
+    class S1,S2,S3,S4,TRI,NEW,BL,NEXTR,ID,DONE,NEXT,SPLIT step
     class UB bad
     class CUR,IMPL work
     class BLOCK,COMMIT,MAIN go

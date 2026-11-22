@@ -95,6 +95,32 @@ String? movedDeviceWarning(List<String>? names) {
       'for ${one ? 'it' : 'them'} in DEVICES.';
 }
 
+/// What DISABLE's and DELETE's confirmations say when the slot lists a DNS address the router also uses for its own
+/// lookups, on Merlin (ID-636). A stopped slot's route is gone, and Merlin's own WAN route would carry those
+/// lookups from the home address (465 connections in 30 s, measured 2026-11-22); the guard refuses them instead, so
+/// while the slot is down the router, and any device that relies on its resolver, can't look names up. DELETE ends
+/// the sharing, and then nothing carries them but the internet connection. Null on stock, and when nothing is shared.
+String? routerDnsWarning({required String slotDns, required Set<String> routerDns, required bool deleting}) {
+  if (isStockFirmware) return null;
+  final shared = dnsSharedWithRouter(slotDns, routerDns).toList()..sort();
+  if (shared.isEmpty) return null;
+  final one = shared.length == 1;
+  final lead = "${joinNames(shared)} ${one ? 'is' : 'are'} also the router's own DNS server${one ? '' : 's'}.";
+  if (deleting) {
+    return "$lead Once this VPN is gone nothing carries those lookups, so the router sends them over your internet "
+        'connection, from your home address.';
+  }
+  return "$lead While this VPN is down, the router refuses its lookups to ${one ? 'it' : 'them'} instead of sending "
+      "them over your internet connection, so the router and any device that relies on its resolver can't look up "
+      'names until you ENABLE it again.';
+}
+
+/// The warnings that are there, one after another, or null when there are none.
+String? joinWarnings(List<String?> parts) {
+  final there = parts.whereType<String>().toList();
+  return there.isEmpty ? null : there.join('\n\n');
+}
+
 class SlotModal extends StatelessWidget {
   final SlotModalMode mode;
   final SessionController controller;
@@ -712,7 +738,10 @@ class _ManageSlotsState extends _SlotModalState<_ManageSlots> {
               'tunnel you just stopped. The script and both sets of settings stay on the router, so ENABLE '
               'brings the tunnel and the watchdog back together.'
           : 'Takes the tunnel down. The settings stay on the router, so ENABLE brings it back.',
-      warning: pinnedDeviceWarning(pinned),
+      warning: joinWarnings([
+        pinnedDeviceWarning(pinned),
+        routerDnsWarning(slotDns: info?.dns ?? '', routerDns: _slots.routerDotServers, deleting: false),
+      ]),
       confirmLabel: 'DISABLE',
     );
     if (!ok) return;
@@ -811,7 +840,10 @@ class _ManageSlotsState extends _SlotModalState<_ManageSlots> {
           ? 'Removes the VPN and its watchdog: the schedule, the script on the router and the watchdog '
               'settings. Nothing is left to ENABLE afterwards.'
           : 'Removes the VPN configuration from the router.',
-      warning: movedDeviceWarning(pinned),
+      warning: joinWarnings([
+        movedDeviceWarning(pinned),
+        routerDnsWarning(slotDns: info?.dns ?? '', routerDns: _slots.routerDotServers, deleting: true),
+      ]),
       confirmLabel: 'DELETE',
       destructive: true,
     );
@@ -953,7 +985,12 @@ class _WatchdogSlotsState extends _SlotModalState<_WatchdogSlots> {
     // "and VPN": DELETE here tears down the underlying slot too, which the old wording buried.
     final pinned = await _pinnedNames(slot);
     final ok = await _confirm('Delete watchdog and VPN ${slotLabel(slot, _selectedInfo?.desc ?? '')}?',
-        warning: movedDeviceWarning(pinned), confirmLabel: 'DELETE', destructive: true);
+        warning: joinWarnings([
+          movedDeviceWarning(pinned),
+          routerDnsWarning(slotDns: _selectedInfo?.dns ?? '', routerDns: _slots.routerDotServers, deleting: true),
+        ]),
+        confirmLabel: 'DELETE',
+        destructive: true);
     if (!ok) return;
     setState(() => _processing = true);
     Object? error;

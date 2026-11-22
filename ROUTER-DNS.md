@@ -11,25 +11,36 @@ Short version:
 
 - **Pin a device to a slot** and its DNS follows that slot, on both firmwares.
 - **A device that isn't pinned** differs. On stock it uses the router's own DNS settings, whatever your default connection is. On Merlin, when your default connection is a tunnel, its lookups are sent to that slot's DNS servers through that tunnel; when the default is the internet, it uses the router's own settings, as on stock.
-- **Keep the router's DNS addresses away from your slots' DNS addresses**, unless you choose to share one on purpose (setup B below). If a slot uses the same address as the router, one broken tunnel can stop the router's own lookups, and on stock every device that isn't pinned, from finding websites, and stop the watchdog from fixing it. On Merlin, a slot that is stopped can instead send the router's lookups out over your internet connection (section 4).
+- **Keep the router's DNS addresses away from your slots' DNS addresses**, unless you choose to share one on purpose (setup B below). If a slot uses the same address as the router, one broken tunnel can stop the router's own lookups, and on stock every device that isn't pinned, from finding websites, and stop the watchdog from fixing it. On Merlin a stopped slot used to send the router's lookups out over your internet connection; from build 588 cfg-pia-wg's guard refuses them instead, so they fail until the slot is back (section 4).
 
 This section was written for stock ASUS firmware, and its rules and measurements are stock's (`VPN_FUSION`, and the slot numbering), measured in September 2026. Asuswrt-Merlin was measured on 388.13_0: first from build 575 (its `DNSVPN` chains, which rewrite a routed device's lookups to its slot's DNS servers), and again on 2026-11-20 (the default connection's DNS, slots sharing an address, and a stopped slot, each run on one router, with DNS-over-TLS and DNS Director on unless a section says otherwise). Where a statement below isn't marked, both firmwares behave the same; where it differs, both are described. ROUTER DNS ROUTING reads both firmwares, and the Merlin detail is in [ARCHITECTURE.md](ARCHITECTURE.md). Each Merlin measurement was taken once on one router, and ARCHITECTURE 6.10 lists every run and what it did and didn't show.
+
+Looking for what to do rather than why? **On stock firmware**, section 5.1 is the how-to. **On Asuswrt-Merlin**, it is section 5.2. Sections 2 to 4 explain the difference, and section 7 has the routing underneath each.
 
 - [1. What is DNS?](#1-what-is-dns)
 - [2. Why doesn't my DNS follow my default connection?](#2-why-doesnt-my-dns-follow-my-default-connection)
 - [3. Who looks things up on the router?](#3-who-looks-things-up-on-the-router)
 - [4. How can one tunnel take away DNS for everything?](#4-how-can-one-tunnel-take-away-dns-for-everything)
+  - [4.1. On stock firmware](#41-on-stock-firmware)
+  - [4.2. On Merlin](#42-on-merlin)
 - [5. What should I set?](#5-what-should-i-set)
-  - [5.1. Setup A: reliable](#51-setup-a-reliable)
-  - [5.2. Setup B: private](#52-setup-b-private)
+  - [5.1. On stock firmware](#51-on-stock-firmware)
+    - [5.1.1. Setup A: reliable](#511-setup-a-reliable)
+    - [5.1.2. Setup B: private](#512-setup-b-private)
+  - [5.2. On Merlin](#52-on-merlin)
 - [6. Using a slot for parental controls](#6-using-a-slot-for-parental-controls)
 - [7. For the technically inquisitive](#7-for-the-technically-inquisitive)
-  - [7.1. The pieces](#71-the-pieces)
-  - [7.2. The router rules](#72-the-router-rules)
-  - [7.3. Why a broken tunnel could blackhole DNS](#73-why-a-broken-tunnel-could-blackhole-dns)
-  - [7.4. Pinned and not pinned devices](#74-pinned-and-not-pinned-devices)
-  - [7.5. Common DNS services](#75-common-dns-services)
-  - [7.6. See it on your router](#76-see-it-on-your-router)
+  - [7.1. On stock firmware](#71-on-stock-firmware)
+    - [7.1.1. The pieces](#711-the-pieces)
+    - [7.1.2. The router rules](#712-the-router-rules)
+    - [7.1.3. Why a broken tunnel could blackhole DNS](#713-why-a-broken-tunnel-could-blackhole-dns)
+    - [7.1.4. Pinned and not pinned devices](#714-pinned-and-not-pinned-devices)
+  - [7.2. On Merlin](#72-on-merlin)
+    - [7.2.1. The pieces](#721-the-pieces)
+    - [7.2.2. What the app's guard adds](#722-what-the-apps-guard-adds)
+    - [7.2.3. Pinned and not pinned devices](#723-pinned-and-not-pinned-devices)
+  - [7.3. Common DNS services](#73-common-dns-services)
+  - [7.4. See it on your router](#74-see-it-on-your-router)
 
 ### 1. <a name='what-is-dns'></a>What is DNS?
 
@@ -37,15 +48,17 @@ DNS is the internet's phone book. It turns a name like `example.com` into the ad
 
 ### 2. <a name='why-doesnt-my-dns-follow-my-default-connection'></a>Why doesn't my DNS follow my default connection?
 
-On stock firmware, because a device that isn't pinned doesn't send its lookups out to the internet. It sends them **to the router**, and the router makes the lookup for it.
+Your default connection decides where a device's traffic goes. Where its lookups go depends on the firmware, and on whether the device is pinned.
+
+A device pinned to a slot is the same on both firmwares. The router catches its ordinary lookups and sends them to that slot's DNS servers, through that slot's tunnel.
+
+**On stock firmware**, a device that isn't pinned doesn't send its lookups out to the internet. It sends them **to the router**, and the router makes the lookup for it.
 
 Think of a hotel. Your default connection is the taxi you've booked: it takes you, your web and app traffic, wherever you're going. But when you ask the concierge for a restaurant's address, you don't get in the taxi. The concierge looks it up on the hotel's own phone, and your taxi booking has no say in how they do it.
 
 A stock router works the same way. Your device's lookup arrives at the router and stops there. The router then makes a new lookup of its own, and the router's own rules decide which way that goes. Your default connection only applies to traffic that passes **through** the router to somewhere else, so it never sees the lookup.
 
-**Merlin is different when your default connection is a tunnel.** Its firewall doesn't let the router make the lookup. It rewrites the lookup on its way in, to the default slot's DNS servers, and the lookup then leaves through that slot's tunnel, like the rest of the device's traffic: the concierge gets in the taxi. Measured on 388.13_0 on 2026-11-20 with the default connection on `wgc5`: the connection table showed a device's lookup, addressed to the router, answered by `wgc5`'s DNS server through `wgc5`'s tunnel address, and the rewrite rule's packet count rose while DNS Director's catch-all rule stayed at zero. When the default connection is the internet, Merlin forces a device's plain DNS to the router, as stock does (ARCHITECTURE 6.10, 2026-11-14, and measured again on 2026-11-20: the rewrite for the whole LAN went away, leaving only the pinned devices', and new lookups from unpinned devices were answered by the router itself). DNS Director makes no difference to a device that isn't pinned while the default is a tunnel: with it switched off, new lookups were still answered by the default slot's DNS server. With the default on the internet and DNS Director off, a device's plain DNS goes to whatever server it was given, which here was the router.
-
-A device pinned to a slot is the same on both firmwares. The router catches its ordinary lookups and sends them to that slot's DNS servers, through that slot's tunnel.
+**On Merlin, it's different when your default connection is a tunnel.** Its firewall doesn't let the router make the lookup. It rewrites the lookup on its way in, to the default slot's DNS servers, and the lookup then leaves through that slot's tunnel, like the rest of the device's traffic: the concierge gets in the taxi. Measured on 388.13_0 on 2026-11-20 with the default connection on `wgc5`: the connection table showed a device's lookup, addressed to the router, answered by `wgc5`'s DNS server through `wgc5`'s tunnel address, and the rewrite rule's packet count rose while DNS Director's catch-all rule stayed at zero. When the default connection is the internet, Merlin forces a device's plain DNS to the router, as stock does (ARCHITECTURE 6.10, 2026-11-14, and measured again on 2026-11-20: the rewrite for the whole LAN went away, leaving only the pinned devices', and new lookups from unpinned devices were answered by the router itself). DNS Director makes no difference to a device that isn't pinned while the default is a tunnel: with it switched off, new lookups were still answered by the default slot's DNS server. With the default on the internet and DNS Director off, a device's plain DNS goes to whatever server it was given, which here was the router.
 
 ```mermaid
 %%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
@@ -74,9 +87,15 @@ flowchart TB
 
 Two groups, and they use different settings.
 
-**Your devices** look up websites, apps, streaming services and everything else you use. On stock, devices that aren't pinned use the router's **DNS-over-TLS (DoT) Server List**. DoT is DNS sent inside an encrypted connection, so your internet provider can't read it. On Merlin that holds only when your default connection is the internet. When it's a tunnel, devices that aren't pinned use the default slot's DNS servers instead, through that tunnel (section 2), and the DoT Server List isn't used for them.
+**Your devices** look up websites, apps, streaming services and everything else you use. DNS-over-TLS (DoT) is DNS sent inside an encrypted connection, so your internet provider can't read it.
 
-**The router itself** looks up names for its own work. On stock it uses the router's **DNS Server** setting. On Merlin its programs ask the router's own dnsmasq (their `/etc/resolv.conf` names `127.0.0.1`), which hands the lookup to stubby and so to the **DoT Server List** when DNS-over-TLS is on. With DoT on, the DNS Server setting is still written to `/tmp/resolv.conf` on Merlin, but nothing reads it. With DoT off, dnsmasq's list of servers becomes the DNS Server setting, and the router's own lookups go to those addresses as ordinary DNS (measured on 388.13_0 on 2026-11-20, once each way; the DoT-off run needed the WAN restarted for the router to rewrite that list). For example:
+- **On stock**, devices that aren't pinned use the router's **DoT Server List**.
+- **On Merlin**, that holds only when your default connection is the internet. When it's a tunnel, devices that aren't pinned use the default slot's DNS servers instead, through that tunnel (section 2), and the DoT Server List isn't used for them.
+
+**The router itself** looks up names for its own work.
+
+- **On stock**, it uses the router's **DNS Server** setting.
+- **On Merlin**, its programs ask the router's own dnsmasq (their `/etc/resolv.conf` names `127.0.0.1`), which hands the lookup to stubby and so to the **DoT Server List** when DNS-over-TLS is on. With DoT on, the DNS Server setting is still written to `/tmp/resolv.conf` on Merlin, but nothing reads it. With DoT off, dnsmasq's list of servers becomes the DNS Server setting, and the router's own lookups go to those addresses as ordinary DNS (measured on 388.13_0 on 2026-11-20, once each way; the DoT-off run needed the WAN restarted for the router to rewrite that list). For example:
 
 - setting its clock (time servers);
 - checking for firmware updates;
@@ -85,7 +104,12 @@ Two groups, and they use different settings.
 - the watchdog sending you an alert email; and
 - on stock only, downloading the helper programs cfg-pia-wg installs. Merlin ships what the app needs, so it installs none.
 
-Is the router's own lookup encrypted? On stock that's up to the program making it, not the router. Most programs on the router look names up using ordinary DNS, which isn't encrypted. On Merlin with DoT on, their lookups go through stubby, so they are encrypted on the way out; with DoT off they are ordinary DNS, to the DNS Server setting, and if that address is also a slot's DNS address they leave through that slot's tunnel. The watchdog doesn't depend on either: it looks up PIA's servers and your mail server over encrypted DNS (DoH), using the resolver chosen on the WATCHDOG form, Cloudflare unless you pick another. It sends each DNS query to that resolver itself, over HTTPS, and hands the answer to the program that needs it, so the name is never looked up in the clear. If the resolver doesn't answer, the watchdog looks the name up the ordinary way, so it can still rebuild your tunnel, and its log says so. Leave both of its DoH fields empty and it uses ordinary DNS like everything else, so your internet provider could see that the router looked up a PIA server name, but nothing more. Either way, everything the watchdog then sends and receives is encrypted (HTTPS).
+Is the router's own lookup encrypted?
+
+- **On stock**, that's up to the program making it, not the router. Most programs on the router look names up using ordinary DNS, which isn't encrypted.
+- **On Merlin with DoT on**, their lookups go through stubby, so they are encrypted on the way out. **With DoT off** they are ordinary DNS, to the DNS Server setting, and if that address is also a slot's DNS address they leave through that slot's tunnel.
+
+The watchdog doesn't depend on either: it looks up PIA's servers and your mail server over encrypted DNS (DoH), using the resolver chosen on the WATCHDOG form, Cloudflare unless you pick another. It sends each DNS query to that resolver itself, over HTTPS, and hands the answer to the program that needs it, so the name is never looked up in the clear. If the resolver doesn't answer, the watchdog looks the name up the ordinary way, so it can still rebuild your tunnel, and its log says so. Leave both of its DoH fields empty and it uses ordinary DNS like everything else, so your internet provider could see that the router looked up a PIA server name, but nothing more. Either way, everything the watchdog then sends and receives is encrypted (HTTPS).
 
 Until build 477 that paragraph was not true. The watchdog asked the router's own `curl` to use DoH, and ASUS's `curl` ignores that request on both stock and Merlin firmware, without a word: found 2026-09-30, when a DoH server that didn't exist made no difference at all. Every lookup it called encrypted went out as ordinary DNS. No public release carried that build.
 
@@ -96,7 +120,7 @@ Each VPN slot can have its own DNS servers. That's how you can send a child's ta
 There's a catch. When a slot has DNS servers set, the router also sends **its own** traffic to those addresses through that slot's tunnel, on both firmwares. If the router's DNS settings use the same address as a slot, the router's lookups travel down that slot's tunnel. If more than one slot uses that address, which slot carries them depends on the firmware:
 
 - **On stock**, the highest-numbered slot carries them.
-- **On Merlin**, the slot that started first carries them: `wgc1` after a boot, and it can change at any restart. A slot that starts later doesn't take them over, whatever its number (measured on 388.13_0 on 2026-11-20, once: with `wgc1` up, `wgc2` and then `wgc3` started sharing its addresses, and the route stayed with `wgc1`).
+- **On Merlin, from build 588**, the highest-numbered running slot that lists the address carries them, as on stock. Before build 588 the slot that started first carried them: `wgc1` after a boot, and it could change at any restart. A slot that started later didn't take them over, whatever its number (measured on 388.13_0 on 2026-11-20, once: with `wgc1` up, `wgc2` and then `wgc3` started sharing its addresses, and the route stayed with `wgc1`).
 
 cfg-pia-wg can't change how the router routes its own traffic, and it never changes your router's DNS settings: they're yours.
 
@@ -110,7 +134,9 @@ Here's an example router with five slots:
 | `wgc4` | `pia-aus_melbourne` | | Quad9: `9.9.9.9`, `149.112.112.112` |
 | `wgc5` | `pia-uk` | | Cloudflare: `1.1.1.1`, `1.0.0.1` |
 
-This router's DNS Server and DoT Server List are both set to Quad9, `9.9.9.9` and `149.112.112.112`. Three slots use the same addresses. On stock, `wgc4` is the highest-numbered, so the router's lookups go through `wgc4`. On Merlin they go through whichever of the three started first, `wgc1` after a boot. The rest of this section follows the stock example; the Merlin differences are marked.
+This router's DNS Server and DoT Server List are both set to Quad9, `9.9.9.9` and `149.112.112.112`. Three slots use the same addresses. On stock, `wgc4` is the highest-numbered, so the router's lookups go through `wgc4`. On Merlin from build 588 they go through the highest-numbered running one of the three, `wgc4` here; before it, through whichever started first, `wgc1` after a boot. Section 4.1 follows the stock example and section 4.2 the Merlin differences.
+
+#### 4.1. <a name='on-stock-firmware-dns-sharing'></a>On stock firmware
 
 For example, suppose `wgc4:pia-aus_melbourne` breaks because PIA has rotated that server's key, as it does from time to time. The tunnel still looks connected, but nothing comes back. This is what happens on stock:
 
@@ -133,11 +159,6 @@ flowchart TB
 
 <p align="center"><em>On stock, one broken slot that shares the router's DNS address takes every unpinned device's lookups with it.</em></p>
 
-On Merlin the same break needs the broken slot to be the one that holds the address, `wgc1` in this example, and then:
-
-- **The router's own lookups stop**, and so does the watchdog, as below.
-- **Devices that aren't pinned lose DNS when the default connection is that slot**, because on Merlin their lookups go to the default slot's DNS servers (section 2). That is true of the default slot whether or not it shares an address with the router.
-
 On stock:
 
 - **Devices that aren't pinned can't find any website.**
@@ -145,12 +166,30 @@ On stock:
 - **No alert email is sent,** because the watchdog can't find your email server.
 - **Pinned devices keep working,** because their DNS goes through their own slot.
 
-The broken slot doesn't need to be your default connection, or have a watchdog, for this to happen. It only needs to use the same DNS address as the router. cfg-pia-wg can't change this router behaviour, but on both firmwares (Merlin since build 581) it tells you when a slot's DNS uses the same address as your router's DoT Server List: the note appears under the DNS field as you type it, in CREATE and in EDIT, and names the addresses that overlap.
+The broken slot doesn't need to be your default connection, or have a watchdog, for this to happen. It only needs to use the same DNS address as the router. cfg-pia-wg can't change this router behaviour, but it tells you when a slot's DNS uses the same address as your router's DoT Server List: the note appears under the DNS field as you type it, in CREATE and in EDIT, and names the addresses that overlap.
 
-What if the slot is stopped rather than broken? It differs again.
+What if the slot is stopped rather than broken? On stock the router drops that slot's rules and moves its lookups to the next-highest slot using the same address, here `wgc3` in Italy. Lookups keep working, but they're answered by a server near Italy.
 
-- **On stock**, the router drops that slot's rules and moves its lookups to the next-highest slot using the same address, here `wgc3` in Italy. Lookups keep working, but they're answered by a server near Italy.
-- **On Merlin**, the route to the address is dropped and nothing takes it over. The router's lookups for that address leave over your **internet connection**, from your home address, until a slot that shares the address starts again; the first to start then holds it, whatever its number. If the lookups are the router's DoT ones they are still encrypted, but your provider can see where they go. A lookup the router sent to the address with the slot stopped left from the router's WAN address and was answered, in the connection table, where with the slot up it left from the tunnel's address (2026-11-20). Merlin's own source explains the rest: it adds a route for each of a slot's DNS addresses with `ip route add`, which fails when a route to that address exists, so the first slot to start keeps it, and stopping the slot deletes its interface and with it the route (`rc/wireguard.c` at tag 3004.388.13). Measured on 388.13_0 on 2026-11-20, once: with `wgc1` stopped, `wgc2` and `wgc3` were both running and the router's route to `9.9.9.9` went to the internet connection; when `wgc3` was restarted it took the route; when `wgc3` was stopped again and `wgc2`, the lower number, was restarted, `wgc2` took it. Restarting a slot that didn't hold the route, and starting `wgc1` last, took nothing.
+#### 4.2. <a name='on-merlin-dns-sharing'></a>On Merlin
+
+A break on Merlin needs the broken slot to be the one that carries the address, `wgc4` in this example (from build 588; before it, whichever started first), and then:
+
+- **The router's own lookups stop**, and so does the watchdog, as below.
+- **Devices that aren't pinned lose DNS when the default connection is that slot**, because on Merlin their lookups go to the default slot's DNS servers (section 2). That is true of the default slot whether or not it shares an address with the router.
+
+The broken slot doesn't need to be your default connection, or have a watchdog, for the first of those to happen. It only needs to use the same DNS address as the router. cfg-pia-wg can't change this router behaviour, but since build 581 it tells you when a slot's DNS uses the same address as your router's DoT Server List: the note appears under the DNS field as you type it, in CREATE and in EDIT, and names the addresses that overlap.
+
+What if the slot is stopped rather than broken?
+
+- **Before build 588**, the route to the address was dropped and nothing took it over. The router's lookups for that address left over your **internet connection**, from your home address, until a slot that shared the address started again; the first to start then held it, whatever its number. If the lookups are the router's DoT ones they are still encrypted, but your provider can see where they go. A lookup the router sent to the address with the slot stopped left from the router's WAN address and was answered, in the connection table, where with the slot up it left from the tunnel's address (2026-11-20). Merlin's own source explains the rest: it adds a route for each of a slot's DNS addresses with `ip route add`, which fails when a route to that address exists, so the first slot to start keeps it, and stopping the slot deletes its interface and with it the route (`rc/wireguard.c` at tag 3004.388.13). Measured on 388.13_0 on 2026-11-20, once: with `wgc1` stopped, `wgc2` and `wgc3` were both running and the router's route to `9.9.9.9` went to the internet connection; when `wgc3` was restarted it took the route; when `wgc3` was stopped again and `wgc2`, the lower number, was restarted, `wgc2` took it. Restarting a slot that didn't hold the route, and starting `wgc1` last, took nothing.
+- **From build 588**, cfg-pia-wg's guard refuses those lookups instead of letting them out, and the highest-numbered running slot that lists the address carries them, as on stock.
+  - **What it does.** For each address the router uses for its own lookups that a slot also lists, the guard puts a rule in the router's raw firewall table: `-d <address> ! -o wgc+ -j DROP`. It refuses everything to that address except what goes through a tunnel. The addresses the router uses are its DoT Server List while DNS-over-TLS is on and its DNS Server setting while it is off; the other is unused, so a slot that lists only that one leaks nothing and needs no rule (measured 2026-11-22, with the two set to different addresses). A slot counts whether it is running, stopped, disabled or being rebuilt.
+  - **Does it work?** With `wgc5` stopped and no rule, 465 connections to each of the router's two DNS addresses left by the internet connection in 30 seconds. With the rule, none did, and 2,533 and 2,509 packets were refused instead (388.13_0, 2026-11-22, one router). The router's own lookups failed instead of leaving: the router, and any device that relies on its resolver, can't look names up while the slot is down. A slot that is up carries them as before.
+  - **Why the raw table?** A rule in the filter table is out for about half a second at every firewall rebuild, and let 8 to 31 connections out each time with the slot stopped. A route that refuses the address is beaten by the route Merlin re-adds when the internet connection comes up. The raw rule survived a firewall rebuild and an internet connection restart with none.
+  - **What isn't covered.** The first part of every boot. The router's time sync looks its server up through those addresses, and Merlin waits for the clock before it starts a tunnel, so a rule in place from boot stops both: with one of two addresses held from boot the clock took 274 seconds instead of 105, and with both held it never came until the rule was released. The guard therefore arms the rule once the clock is set. On the test router that was about 75 seconds after the internet connection came up, 105 seconds after the boot began, and the tunnels were up about 70 seconds after that; the router's lookups left by the internet connection until the clock was set, as they always have, and were refused from then until the tunnels were up (measured 2026-11-22 with the guard's own code, 298 and 293 packets refused).
+  - **Who carries the lookups when more than one slot lists the address.** The highest-numbered running one. Merlin adds a slot's route to its DNS address only as the slot starts, and only the first slot to start gets one, so before build 588 the second slot never carried them. The guard now has one rule for each running slot that lists the address, at 1050 minus its number, to that slot's own table. A stopped slot's table is empty, so the lookup falls to the next slot's rule, and last to the main table, where the raw rule refuses it. Measured 2026-11-22 with two throwaway slots: with both running the route went to the higher; with the higher stopped, before the guard ran again, to the lower; with both stopped, to the internet connection, and a probe left nothing.
+  - **A rebuild still works.** The watchdog's rebuild looks PIA's names up through the router's resolver unless the watchdog has a DoH server of its own, and so does its alert email, so for a slot with no DoH server the guard lifts the rule for that slot's addresses from the start of the rebuild until the watchdog ends, whichever way it ends. A slot with a DoH server keeps the rule on: its rebuild doesn't use the resolver. The WATCHDOG form says so when the slot's DNS is also the router's.
+  - **Where it says so.** The slot form's note under the DNS field, DISABLE's and DELETE's confirmations, and the watchdog form. If you'd rather none of this applies, give the router and the slot different DNS servers.
 
 On both firmwares only a slot that looks connected but answers nothing makes lookups disappear. On Merlin a slot with no handshake held the route in the same test, so the router's lookups were pointed into a tunnel that answers nothing (routing only: no lookup was sent).
 
@@ -163,23 +202,23 @@ Start with the devices you care most about.
 Then set the router. Both settings are under **Advanced Settings > WAN > Internet Connection > WAN DNS Setting** (see the [screenshot in `README`](https://github.com/ExponentiallyDigital/cfg-pia-wg/blob/main/README.md#42-router-dns-settings)):
 
 - **DNS Server** (click **Assign**). This is for the router's own lookups, and the watchdog's too if you turn its encrypted DNS off.
-- **DNS-over-TLS (DoT) Server List.** This is for every device that isn't pinned. It appears when **DNS Privacy Protocol** is set to **DNS-over-TLS (DoT)**.
+- **DNS-over-TLS (DoT) Server List.** On stock this is for every device that isn't pinned; on Merlin only when the default connection is the internet (section 2). It appears when **DNS Privacy Protocol** is set to **DNS-over-TLS (DoT)**.
 
-For the **DNS Server**, whichever setup you choose below, use addresses that no slot uses, from a service that blocks malware. The router makes few lookups of its own, but if anything on it ever misbehaves, a filtering service is one more thing in its way. Example: Cloudflare's malware filter, `1.1.1.2` and `1.0.0.2`.
+For the **DNS Server**, whichever setup you choose below, use addresses that no slot uses, from a service that blocks malware. The router makes few lookups of its own, but if anything on it ever misbehaves, a filtering service is one more thing in its way. Example: Cloudflare's malware filter, `1.1.1.2` and `1.0.0.2`. On Merlin with DNS-over-TLS on, the router's own programs use the DoT Server List and nothing reads the DNS Server setting (section 3), so it matters when DoT is off.
 
-For the **DoT Server List**, there are two sensible setups. Both work. Each costs something different, and the choice is yours. The table and the two setups below are stock's.
+For the **DoT Server List**, there are two sensible setups. Both work. Each costs something different, and the choice is yours. Section 5.1 is how they work on stock firmware and section 5.2 on Asuswrt-Merlin.
 
-On Merlin the DoT Server List matters less than on stock. When your default connection is a tunnel, devices that aren't pinned use the **default slot's DNS servers** through that tunnel (section 2), so those servers are what decide who sees their lookups, and the default slot's tunnel is the one that must keep answering. The DoT Server List then serves the router's own lookups only. When the default connection is the internet, the setups apply to Merlin as they do to stock, with the two differences marked in the table.
+#### 5.1. <a name='what-to-set-on-stock'></a>On stock firmware
 
 | | Setup A: reliable | Setup B: private |
 | --- | --- | --- |
-| DoT Server List | Addresses **no slot** uses | The same addresses as **one** slot in your own country, with the watchdog on. No higher-numbered slot may use them. On Merlin no other slot may use them at all, because the first slot to start holds them, not the highest-numbered. |
+| DoT Server List | Addresses **no slot** uses | The same addresses as **one** slot in your own country, with the watchdog on. No higher-numbered slot may use them. |
 | Lookups from devices that aren't pinned | Go straight out over your internet connection, encrypted, to the nearest server | Go through that slot's tunnel, encrypted |
-| Who sees your home address | The DNS provider | Nobody: the provider sees PIA's address. On Merlin, while that slot is stopped, the router's own lookups for those addresses go out over your internet connection and the provider sees yours |
-| If one tunnel breaks | Lookups carry on | If that slot looks connected but answers nothing, every device that isn't pinned loses DNS until the slot is rebuilt (on Merlin, only the router's own lookups, unless that slot is also the default connection) |
+| Who sees your home address | The DNS provider | Nobody: the provider sees PIA's address |
+| If one tunnel breaks | Lookups carry on | If that slot looks connected but answers nothing, every device that isn't pinned loses DNS until the slot is rebuilt |
 | What cfg-pia-wg says | Nothing: there is nothing to say | A note under the DNS field, naming the shared addresses. It's information, not a warning - you matched them on purpose |
 
-#### 5.1. <a name='setup-a-reliable'></a>Setup A: reliable
+##### 5.1.1. <a name='setup-a-reliable'></a>Setup A: reliable
 
 | Setting | DNS servers |
 | --- | --- |
@@ -210,9 +249,9 @@ flowchart TB
 
 <p align="center"><em>Setup A on stock: unpinned devices' lookups leave over your internet connection, encrypted, and no tunnel can take them down.</em></p>
 
-Notice the TV. On stock its traffic leaves through `wgc1`, but its lookups leave through your internet connection, even though your default connection is a tunnel. They're encrypted, so your internet provider can't read them, but Cloudflare sees your home address. On Merlin, with `wgc1` as the default connection, the TV's lookups are sent to `wgc1`'s DNS servers (Quad9 here) through `wgc1`'s tunnel instead, so Cloudflare doesn't see your home address, and a broken `wgc1` stops the TV's lookups.
+Notice the TV. On stock its traffic leaves through `wgc1`, but its lookups leave through your internet connection, even though your default connection is a tunnel. They're encrypted, so your internet provider can't read them, but Cloudflare sees your home address.
 
-#### 5.2. <a name='setup-b-private'></a>Setup B: private
+##### 5.1.2. <a name='setup-b-private'></a>Setup B: private
 
 The DoT Server List uses the same addresses as `wgc1`, and every other slot uses different addresses. Quad9 offers a second set of addresses that does the same job, so the overseas slots and `wgc4` can use those. `wgc4` is in Melbourne too, but it has a higher number than `wgc1`, so it must not use the router's addresses.
 
@@ -245,15 +284,34 @@ flowchart TB
 
 <p align="center"><em>Setup B on stock: unpinned devices' lookups go through wgc1's tunnel, so the DNS provider sees PIA's address, not yours.</em></p>
 
-On Merlin, setup B needs two things. The slot that carries the addresses must be the first to start (`wgc1` after a boot, but any restart can change it), and it mustn't be stopped while the router relies on it, because then the router's own lookups go out over your internet connection until a slot starts again. If that slot is also the default connection, its DNS servers are the ones devices that aren't pinned use too. ID-594 is the work item for choosing what carries the router's own DNS.
-
 There's a bonus in using `9.9.9.11` on overseas slots. It passes part of the sender's address on to the website's own DNS servers, and for a device on `wgc3`, the sender is PIA's server in Italy. Websites then send that device to their servers near Italy, not near you. Your home address isn't passed on.
+
+#### 5.2. <a name='what-to-set-on-merlin'></a>On Merlin
+
+On Merlin your default connection decides what an unpinned device's lookups do (section 2), so start there.
+
+- **The default connection is a tunnel.** Devices that aren't pinned use the **default slot's DNS servers** through that tunnel, so those servers are what decide who sees their lookups, and the default slot's tunnel is the one that must keep answering. The DoT Server List then serves the router's own lookups only.
+- **The default connection is the internet.** Devices that aren't pinned use the router's resolver, and the two setups apply to Merlin as they do to stock, with the differences in the table.
+
+The settings for each setup are the tables in 5.1.1 and 5.1.2. What differs is what they cost:
+
+| | Setup A: reliable | Setup B: private |
+| --- | --- | --- |
+| DoT Server List | Addresses **no slot** uses | The same addresses as **one** slot in your own country, with the watchdog on. The highest-numbered running slot that lists them carries the router's own lookups (from build 588; before it, the first to start, so no other slot could use them at all) |
+| Lookups from devices that aren't pinned | Default connection the internet: straight out over your internet connection, encrypted. Default connection a tunnel: the default slot's DNS servers, through that tunnel | Default connection the internet: through that slot's tunnel, encrypted. Default connection a tunnel: the default slot's DNS servers, through that tunnel |
+| Who sees your home address | The DNS provider | Nobody while a slot carries them: the provider sees PIA's address. While every slot that lists the addresses is stopped, disabled or being rebuilt, the router's own lookups for them are refused (from build 588), not sent over your internet connection; before that they left from your home address, and the first minute or so of every boot still does |
+| If one tunnel breaks | Lookups carry on, unless it is the default connection | If the slot that carries them looks connected but answers nothing, the router's own lookups stop, and the watchdog's with them; devices that aren't pinned lose DNS only if that slot is also the default connection. If every slot that lists them is stopped, the router's own lookups fail until one is back |
+| What cfg-pia-wg says | Nothing: there is nothing to say | A note under the DNS field, naming the shared addresses, and a warning on DISABLE and DELETE. It's information, not a block - you matched them on purpose |
+
+On Merlin, with `wgc1` as the default connection in setup A, the TV's lookups are sent to `wgc1`'s DNS servers (Quad9 here) through `wgc1`'s tunnel, not out over your internet connection. Cloudflare doesn't see your home address, and a broken `wgc1` stops the TV's lookups.
+
+On Merlin, setup B carries the router's own lookups through the highest-numbered running slot that lists the addresses (from build 588; before it, the first to start). While that slot is stopped, disabled or being rebuilt, the router's own lookups fail rather than leave from your home address, and so do those of any device that relies on the router's resolver. They are not covered for the first minute or so of a boot, before the router's clock is set. Whether that is a trade you want is yours to decide: it is why setup A, with different addresses for the router and the slots, is the reliable one. If the slot that carries the addresses is also the default connection, its DNS servers are the ones devices that aren't pinned use too. ID-594 is the work item for choosing what carries the router's own DNS.
 
 ### 6. <a name='using-a-slot-for-parental-controls'></a>Using a slot for parental controls
 
 This is a suggested approach, not advice. Your network and your family's setup are yours to decide.
 
-This works the same on stock and on Merlin: a device pinned to a slot has its ordinary lookups sent to that slot's DNS servers on both (Merlin's `DNSVPN` chains, measured 2026-11-14), and the device-side steps below don't depend on the firmware. A filtering DNS service on a child's slot only works when the child's device asks the router for DNS in the ordinary way. A device that encrypts its own DNS, or sends it to another server, goes straight past the filter. On the child's device:
+This works the same on stock and on Merlin: a device pinned to a slot has its ordinary lookups sent to that slot's DNS servers on both (Merlin's `DNSVPN` chains, measured 2026-11-14), and the device-side steps below don't depend on the firmware. A filtering DNS service on a child's slot only works when the child's device asks the router for DNS in the ordinary way. A device that encrypts its own DNS goes straight past the filter. One that sends plain DNS to another server does too on stock, but not on Merlin, where plain DNS on port 53 to any server is rewritten to the slot's (section 7.2.3); DoT is refused while DNS Director is on, and DoH isn't touched. On the child's device:
 
 - **Android:** set **Settings > Network and internet > Private DNS** to **Off** or **Automatic**. Automatic is fine: the router doesn't offer encrypted DNS, so the device falls back to the ordinary way.
 - **iPhone and iPad:** turn off **iCloud Private Relay** (**Settings > [your name] > iCloud > Private Relay**). Remove any DNS profile under **Settings > General > VPN & Device Management**. Under **Settings > Wi-Fi**, tap the (i) next to your network and check that **Configure DNS** is **Automatic**.
@@ -262,12 +320,14 @@ This works the same on stock and on Merlin: a device pinned to a slot has its or
 
 >[!TIP]
 > For an _**extensive**_ list of DNS providers, see [Adguard's KB](https://adguard-dns.io/kb/general/dns-providers).
-> 
+
 ### 7. <a name='for-the-technically-inquisitive'></a>For the technically inquisitive
 
-What follows is a representation of what a stock ASUS router can look like. Everything in it was measured on one stock ASUS router in September 2026, not read in documentation - ASUS publish none of it. Other models and firmware versions may differ. Merlin builds these differently (its own `DNSVPN` chains, a route in the main table for each slot's DNS servers, and `/etc/resolv.conf` pointing at its own dnsmasq): see sections 2 to 5 for what differs, and [ARCHITECTURE.md](ARCHITECTURE.md) 6.10 for the detail. The commands in 7.6 that name `VPN_FUSION` and the `iif lo` rules are stock's; on Merlin, `iptables -t nat -S | grep DNSVPN` shows its rewrites and `ip route show table main` its routes to each slot's DNS servers.
+What follows is what each firmware does underneath. Section 7.1 is stock: a representation of what a stock ASUS router can look like, measured on one stock ASUS router in September 2026, not read in documentation - ASUS publish none of it. Section 7.2 is Merlin, measured on one router running 388.13_0 in November 2026, with its source for the rest. Other models and firmware versions may differ. [ARCHITECTURE.md](ARCHITECTURE.md) 6.10 has every Merlin run and what it did and didn't show.
 
-#### 7.1. <a name='the-pieces'></a>The pieces
+#### 7.1. <a name='underneath-on-stock'></a>On stock firmware
+
+##### 7.1.1. <a name='the-pieces'></a>The pieces
 
 - **dnsmasq** is the router's local DNS server. Devices send their lookups to it, at the router's LAN address, port 53.
 - **stubby** is a small program that turns ordinary lookups into encrypted DoT. It listens on the router at `127.0.1.1`, port 53.
@@ -316,7 +376,7 @@ flowchart TB
 
 <p align="center"><em>How the settings you choose become the files, programs and routing rules that carry a lookup.</em></p>
 
-#### 7.2. <a name='the-router-rules'></a>The router rules
+##### 7.1.2. <a name='the-router-rules'></a>The router rules
 
 For each address in a slot's DNS, the firmware adds a routing rule. On the example router above, `ip rule show` includes:
 
@@ -352,7 +412,7 @@ Each slot has its own routing table:
 
 The higher the slot number, the lower the table number and rule priority. So when more than one slot is set to the same DNS address, the highest-numbered slot's rule matches first and carries the router's lookups. Tables 6 to 9 were measured. Table 5 for `wgc5` follows the same pattern but hasn't been confirmed.
 
-#### 7.3. <a name='why-a-broken-tunnel-could-blackhole-dns'></a>Why a broken tunnel could blackhole DNS
+##### 7.1.3. <a name='why-a-broken-tunnel-could-blackhole-dns'></a>Why a broken tunnel could blackhole DNS
 
 Each slot's table sends traffic through that slot's `wgcN` interface. WireGuard has no way of knowing whether the other end is still answering, so a broken tunnel's interface stays up. Its rules and routes stay in place, and lookups go in and get nothing back. Ping to an IP address may still work, because the ping doesn't need DNS and may take a different path.
 
@@ -360,7 +420,7 @@ A tunnel that's **stopped** is different. When a slot is stopped, from the web i
 
 If the router's DNS Server setting uses the same address as a slot, you'll also see a second route for that address in each slot's table, through your internet connection with `metric 1`. The firmware adds it for the DNS Server setting. While the tunnel is up, the tunnel's route wins.
 
-#### 7.4. <a name='pinned-and-not-pinned-devices'></a>Pinned and not pinned devices
+##### 7.1.4. <a name='pinned-and-not-pinned-devices'></a>Pinned and not pinned devices
 
 | | Pinned to a slot | Not pinned |
 | --- | --- | --- |
@@ -373,7 +433,72 @@ The redirect only matches UDP port 53 sent to the router's own address. DoH look
 
 One more thing about a pinned device's own route. The firmware copies a few routes through your internet connection into each slot's table: the router's own DNS servers, the tunnel's PIA server, and your internet provider's local network. Before build 480, a pinned device reached those addresses outside its tunnel, even with the tunnel up: a phone using Android's Private DNS at `1.1.1.2`, say, sent it from your real address. The app's fail-closed guard now holds each of those addresses to the tunnel, or blocks it while the tunnel is down.
 
-#### 7.5. <a name='common-dns-services'></a>Common DNS services
+#### 7.2. <a name='underneath-on-merlin'></a>On Merlin
+
+##### 7.2.1. <a name='merlin-the-pieces'></a>The pieces
+
+- **dnsmasq** is the router's local DNS server, and **stubby** turns its lookups into DoT while DNS-over-TLS is on, as on stock.
+- **The router's own programs ask dnsmasq.** Their `/etc/resolv.conf` names `127.0.0.1`, so with DoT on their lookups go to stubby and so to the DoT Server List. With DoT off, dnsmasq's list of servers becomes the DNS Server setting, and they go to those addresses as ordinary DNS (measured 2026-11-20, once each way; the DoT-off run needed the WAN restarted for the router to rewrite that list).
+- **`DNSVPN` chains rewrite a routed device's lookups.** Each slot has a `DNSVPN<unit>` chain in the nat table, units 6 to 10 for `wgc1` to `wgc5`, rewriting a pinned device's lookups to the slot's DNS servers. When the default connection is a tunnel, a whole-network rule in the default slot's chain does the same for every device not matched earlier.
+- **A slot's DNS addresses get a route, not a rule.** At the slot's start Merlin runs `ip route add <address> dev wgcN` for each address, in the main table. It fails when a route to the address exists, so the first slot to start keeps it, and stopping the slot deletes its interface and with it the route (`rc/wireguard.c`, tag 3004.388.13). The firmware also adds a route for each of the router's DNS addresses through your internet connection, with `metric 1`, whenever the internet connection comes up (`rc/wan.c`). That is where the router's lookups go when no slot holds the address.
+
+Put together, a lookup on Merlin takes one of these roads:
+
+```mermaid
+%%{init: {"htmlLabels": false, "flowchart": {"wrappingWidth": 400}}}%%
+flowchart TB
+  D["A device on your LAN"] -- "DNS on port 53,<br/>UDP or TCP,<br/>to any server" --> NAT["nat table, PREROUTING:<br/>the DNSVPN chains<br/>are checked first"]
+  D -- "DoT, port 853" --> REJ["Refused by DNS Director,<br/>while it is on"]
+  D -- "DoH, port 443" --> TR["Not rewritten: follows<br/>the device's traffic route"]
+  NAT -- "pinned device, or the<br/>default connection<br/>is a tunnel" --> SD["Rewritten to that slot's<br/>DNS servers, sent<br/>through its tunnel"]
+  NAT -- "default connection<br/>is the internet" --> DM["DNS Director sends it<br/>to the router's dnsmasq"]
+  RP["The router's<br/>own programs"] -- "127.0.0.1" --> DM
+  DM -- "DoT on" --> ST["stubby, to the<br/>DoT Server List"]
+  DM -- "DoT off" --> DS["The DNS Server<br/>setting"]
+  ST --> Q{"Does a slot list<br/>that address?"}
+  DS --> Q
+  Q -- "yes, and a slot is running" --> HS["Through that slot's tunnel.<br/>With more than one,<br/>the guard picks the<br/>highest-numbered"]
+  Q -- "yes, and none is running" --> RF["Refused by the guard"]
+  Q -- "no" --> WAN["Your internet<br/>connection"]
+
+  classDef go fill:#0F3D2E,stroke:#00D4AA,color:#E8E8E8
+  classDef bad fill:#3D1A1A,stroke:#E05252,color:#E8E8E8
+  classDef work fill:#3D2E0F,stroke:#E0A800,color:#E8E8E8
+  classDef step fill:#1A1D2E,stroke:#3A3F55,color:#C8C8C8
+  class D,RP step
+  class NAT,DM,ST,DS,Q work
+  class SD,HS,WAN,TR go
+  class REJ,RF bad
+```
+
+<p align="center"><em>On Merlin, a device's lookups are rewritten before the router sees them, and the router's own go through dnsmasq; the guard decides what happens when a slot that lists the address stops.</em></p>
+
+The bullets above say what each piece is. The next section is what the guard adds to the bottom of this picture.
+
+##### 7.2.2. <a name='merlin-guard-rules'></a>What the app's guard adds
+
+From build 588 cfg-pia-wg's guard, `/jffs/cfg-pia-wg/merlin-guard.sh`, adds two things for each address the router uses for its own lookups that a slot also lists:
+
+- **A refusal.** `iptables -t raw -I OUTPUT -d <address> ! -o wgc+ -j DROP`: everything the router sends to that address that isn't going through a tunnel is dropped. It sits in the raw table because the filter table's rule is absent for about half a second at every firewall rebuild, and a route that refuses the address is beaten by the route in the previous section. It is put in once the router's clock is set, because the router's time sync looks its server up through those addresses, and Merlin waits for the clock before it starts a tunnel.
+- **A rule for each running slot.** `ip rule add to <address> iif lo lookup wgcN`, at priority 1050 minus the slot's number, so the highest-numbered running slot is checked first. A stopped slot's table is empty, so the lookup falls to the next slot's rule and last to the main table, where the refusal drops it.
+
+The guard runs at boot, when a tunnel starts and when the router restarts DNS, the internet connection or stubby. While a watchdog rebuilds a slot that has no DoH server it lifts the refusal for that slot's addresses (marker `/tmp/cfg-pia-wg-hold-lift`, which expires after 10 minutes) and puts it back when the watchdog ends.
+
+##### 7.2.3. <a name='merlin-pinned-and-not'></a>Pinned and not pinned devices
+
+What a lookup does on Merlin depends on how it is sent. The left column was probed, the right column was read from the router's rules:
+
+| Sent as | Pinned device, or not pinned with a tunnel as the default | Not pinned, the internet as the default |
+| --- | --- | --- |
+| Ordinary DNS, UDP port 53, to the router | Rewritten to the slot's DNS server and answered from the tunnel's address | Forced to the router, which answers with dnsmasq, then stubby |
+| Ordinary DNS, TCP port 53, to the router | Rewritten, as UDP is | Forced to the router, as UDP is |
+| Ordinary DNS, UDP or TCP port 53, to another server such as `8.8.4.4` | Rewritten to the slot's DNS server: the other server is never asked | Forced to the router |
+| DoT, TCP port 853 | Refused (with DNS Director on): the connection never starts | Refused (with DNS Director on) |
+| DoH, TCP port 443 | Not rewritten: an ordinary connection that leaves from the tunnel's address | Not rewritten: an ordinary connection that leaves through your internet connection |
+
+Measured on 388.13_0 on 2026-11-22 on one router, with DNS-over-TLS and DNS Director on, from a PC that the default slot's whole-network rule covered: its counter rose from 554 to 579 packets across the probes and no per-device rule moved, and each probe's entry in the router's connection table showed the rewrite, or the lack of one, and the interface it left by. A device pinned to another slot wasn't probed: the chains that rewrite for it are selected by the same two rules in `PREROUTING` (TCP and UDP port 53, any destination), so the same is expected, but not measured. The right column is read from those rules and from DNS Director's (`DNSFILTER`, which sends port 53 to the router, and `DNSFILTER_DOT`, which refuses port 853 from the LAN); it wasn't probed with the internet as the default, because changing the default connection changes it for every device. DNS Director makes no difference to a device that isn't pinned while the default is a tunnel (2026-11-20). With DNS Director off, DoT wasn't measured. This is wider than stock's redirect, which matches UDP port 53 sent to the router's own address only (section 7.1.4). ARCHITECTURE 6.10 lists every run.
+
+#### 7.3. <a name='common-dns-services'></a>Common DNS services
 
 Addresses are as published in September 2026. Check the provider's site before you rely on them.
 
@@ -401,9 +526,11 @@ Notes:
 - **Google** records more about lookups than the privacy-focused services. It's included for comparison.
 - **Quad9's encrypted lookups need HTTP/2, and the router's `curl` on Merlin 388.13 (8.17.0) doesn't have it.** Every lookup through `https://dns.quad9.net/dns-query` (and `dns11.quad9.net`) returned HTTP 505 from that router on 2026-11-15, so Quad9 can't be a watchdog's encrypted DNS there, though it works as a slot's ordinary DNS and in the router's DoT list. SAVE & DEPLOY now makes one real lookup through the server you chose and refuses to deploy when it fails, saying why. Cloudflare, AdGuard and Control D answered 200 from the same router. Stock's curl is 7.84 and hasn't been tried.
 
-#### 7.6. <a name='see-it-on-your-router'></a>See it on your router
+#### 7.4. <a name='see-it-on-your-router'></a>See it on your router
 
 All of these commands only read. They change nothing.
+
+**On stock:**
 
 ```sh
 ls -l /etc/resolv.conf                           # a link to /tmp/resolv.conf
@@ -420,5 +547,21 @@ for t in 5 6 7 8 9; do echo "table $t:"; ip route show table $t; done
 ```
 
 If `ip route get` names a `wgc` interface for an address in your router's DNS Server or DoT Server List, that address is shared with a slot.
+
+**On Merlin:**
+
+```sh
+cat /etc/resolv.conf                              # 127.0.0.1: the router's programs ask dnsmasq
+nvram get dnspriv_enable                          # 1 while DNS-over-TLS is on
+nvram get dnspriv_rulelist                        # the DoT Server List
+nvram get wan0_dns                                # the DNS Server setting
+nvram show 2>/dev/null | grep -E '^wgc[0-9]_dns'  # each slot's DNS servers
+ip route show table main                          # a route to each held slot DNS address
+ip rule show | grep 'iif lo'                      # the guard's rule for each running slot
+iptables -t raw -S OUTPUT                         # the guard's refusals
+iptables -t nat -S | grep DNSVPN                  # pinned devices' rewrites
+```
+
+If `ip route get` names a `wgc` interface for an address in your router's DNS Server or DoT Server List, that address is shared with a slot. An empty `iptables -t raw -S OUTPUT` with a shared address means the guard isn't in place or the clock isn't set yet.
 
 ---

@@ -97,4 +97,50 @@ void main() {
     expect(await verdict('merlin_back_verdict "$before" ""'), 'missing', reason: 'as the old wgclient-start left them');
     expect(await verdict('merlin_back_verdict "" ""'), 'unchecked', reason: 'nothing to check is not a pass');
   });
+
+  test('HOLD-refuses (ID-636): held only with the rule in place and no connection out; a count that is not a number is not zero', () async {
+    if (shell == null) return markTestSkipped(_noShell);
+    expect(await verdict('hold_verdict present 0'), 'held');
+    expect(await verdict('hold_verdict present 8'), 'leaked', reason: 'the rule was there and 8 connections still left, as the filter table\'s did at a firewall rebuild');
+    expect(await verdict('hold_verdict absent 0'), 'norule', reason: 'no connection with no rule is not a hold');
+    expect(await verdict('hold_verdict absent 31'), 'norule');
+    expect(await verdict('hold_verdict present ""'), 'unread', reason: 'a conntrack that printed nothing is not zero');
+    expect(await verdict('hold_verdict present none'), 'unread');
+    expect(await verdict('hold_verdict "" 0'), 'unread');
+  });
+
+  test('HOLD-control (ID-636): the control must see a leak with the rule off, or the check is blind', () async {
+    if (shell == null) return markTestSkipped(_noShell);
+    expect(await verdict('hold_seen_verdict 16'), 'leak');
+    expect(await verdict('hold_seen_verdict 0'), 'blind');
+    expect(await verdict('hold_seen_verdict ""'), 'blind');
+    expect(await verdict('hold_seen_verdict none'), 'blind');
+  });
+
+  test('TAKEOVER-merlin (ID-652): only the slot expected is right; the WAN, another tunnel and a refusal are each named', () async {
+    if (shell == null) return markTestSkipped(_noShell);
+    expect(await verdict('takeover_verdict "203.0.113.9 dev wgc4" wgc4'), 'right');
+    expect(await verdict('takeover_verdict "203.0.113.9 dev wgc4 table 4" wgc4'), 'right');
+    expect(await verdict('takeover_verdict "203.0.113.9 dev wgc3" wgc4'), 'other', reason: 'the first slot to start still holding the route is not the takeover');
+    expect(await verdict('takeover_verdict "203.0.113.9 dev wgc40" wgc4'), 'other', reason: 'wgc4 is not wgc40');
+    expect(await verdict('takeover_verdict "203.0.113.9 via 198.51.100.1 dev eth0" wgc4'), 'wan');
+    expect(await verdict('takeover_verdict "RTNETLINK answers: Network is unreachable" wgc4'), 'refused');
+    expect(await verdict('takeover_verdict "" wgc4'), 'wan', reason: 'nothing read is not the right slot');
+  });
+
+  test('the takeover check is for full mode only, uses two throwaway slots, and cleans them up whichever way it ends', () {
+    final s = File('scripts/check-claims.sh').readAsStringSync();
+    final quickExit = s.indexOf('[ "\$MODE" = quick ] && { echo');
+    expect(quickExit, greaterThan(0));
+    expect(s.indexOf('# ---- 7m.'), greaterThan(quickExit), reason: 'after quick has exited, so it runs only in full');
+    expect(s, contains('takeover_clean\n  curllst_clear'), reason: 'the restore trap removes the slots if the run is stopped');
+    expect(s, contains('TAKEOVER-first'));
+  });
+
+  test('the hold check places the rule through the guard, with the stand-in named outright, and cleans up after itself', () {
+    final s = File('scripts/check-claims.sh').readAsStringSync();
+    expect(s, contains('GUARD_HOLD_ADDRS=\$HA "\$HG" hold'));
+    expect(s, contains('iptables -t raw -D OUTPUT -d 203.0.113.9 ! -o wgc+ -j DROP'), reason: 'the restore takes it out if the run is stopped');
+    expect(s, contains('HOLD-control'), reason: 'a check that finds nothing is seen able to find a leak first');
+  });
 }
